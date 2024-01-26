@@ -11,6 +11,7 @@ FetchContent_MakeAvailable(googletest)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+add_subdirectory(test/test-base)
+
 add_subdirectory(src/gen-ast)
-
-
+add_subdirectory(test/gen-ast-tester)

@@ -1,6 +1,6 @@
 all: build/CMakeCache.txt
 	cmake --build build
-	# cd build/test && rm -f core && ./tester
+	cd build && rm -f bin/core && bin/gen-ast-tester
 lcov:
 	# cd build && lcov -c -d . -b src -o all.info
 	# cd build && lcov -e all.info */c2pa/src/* -o lcov.info
