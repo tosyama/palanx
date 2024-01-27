@@ -1,0 +1,17 @@
+name: build
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: prepare
+        run: |
+          sudo apt -y install libboost-dev
+          sudo apt -y install lcov
+      - uses: actions/checkout@v2
+      - name: build
+        run: |
+          make
+
