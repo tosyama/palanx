@@ -6,8 +6,11 @@
 
 #include <iostream>
 #include <vector>
+#include <fstream>
 #include <getopt.h>
+
 #include "PlnGenAstMessage.h"
+#include "PlnLexer.h"
 
 using namespace std;
 
@@ -40,18 +43,25 @@ int main(int argc, char* argv[])
 		}
 	} 
 
-	if (optind >= argc) {
+	if ((argc-optind) != 1) {
 		cerr << "err" << endl;
 		return 1;
 	}
 	
-	vector<string> input_files;
-	for (int i=optind; i<argc; i++) {
-		input_files.push_back(argv[i]);
-	}
+	string input_file = argv[optind];
+	{
+		ifstream f(input_file);
+		if (!f) {
+			cout << "err" << endl;
+			return 1;
+		}
 
-	for (auto s: input_files)
-		cout << s << endl;
+		PlnLexer lexer;
+		lexer.switch_streams(&f);
+		while (int token = lexer.yylex()) {
+			cout << token << " ";
+		}
+	}
 
 	cout << "OK" << endl;
 

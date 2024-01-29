@@ -3,6 +3,7 @@
 #include <iostream>
 #include <thread>
 #include <future>
+#include <csignal>
 
 #ifdef __GNUC__
 	#include <ext/stdio_sync_filebuf.h>    
@@ -43,6 +44,20 @@ string execTestCommand(const string& cmd)
 
 	auto f = async(launch::async, exec_worker, cmd);
 	auto result = f.wait_for(chrono::seconds(1));
+
+	if (result == future_status::timeout) {
+		// time out and try killing process.
+		char pid_str[10];
+		string pid_cmd = "pidof -s " + cmd;
+		FILE *outf = popen(pid_cmd.c_str(), "r");
+		fgets(pid_str, 10, outf);
+		pclose(outf);
+		if (pid_str[0]) {
+			pid_t pid = strtoul(pid_str, NULL, 10);
+			kill(pid, SIGKILL);
+		}
+		return "killed by timeout(1sec):" + cmd;
+	}
 
 	return f.get();
 }
