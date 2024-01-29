@@ -8,8 +8,7 @@ jobs:
     steps:
       - name: prepare
         run: |
-          sudo apt -y install libboost-dev
-          sudo apt -y install lcov
+          sudo apt-get -y install libboost-dev flex lcov
       - uses: actions/checkout@v4
       - name: build
         run: |
