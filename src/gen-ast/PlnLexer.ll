@@ -1,5 +1,8 @@
 %{
 /// Palan Lexer
+/// 
+/// @file PlnLexer.ll
+/// @copyright 2024 YAMAGUCHI Toshinobu
 
 #include "PlnLexer.h"
 #include <string>
@@ -12,7 +15,8 @@ using std::string;
 enum {
 	INT = 1,
 	UINT,
-	ID
+	ID,
+	STRING
 };
 
 %}
@@ -24,7 +28,9 @@ enum {
 DIGIT	[0-9]+
 UDIGIT	[0-9]+"u"
 ID	[a-zA-Z_][0-9a-zA-Z]*
-DEMILITER	"{"|"}"
+DEMILITER	"{"|"}"|"("|")"|"["|"]"|","|";"|":"|"="|"+"|"-"|"*"|"/"|"%"|"<"|">"|"!"|"?"|"&"|"@"|"."|"$"
+STRING	"\""(\\.|\\\n|[^\\\"])*"\""
+COMMENT1	\/\/[^\n]*\n
 
 %%
 
@@ -37,11 +43,12 @@ DEMILITER	"{"|"}"
 	//	lval.build<string> = move(id);
 		return ID;
 	}
+{STRING}	{ return STRING; }
+{COMMENT1}	{ }
 {DEMILITER} { return yytext[0]; }
 [ \t]+ { }
 \r\n|\r|\n	{ }
 <<EOF>>	{ return 0; }
 
 %%
-
 

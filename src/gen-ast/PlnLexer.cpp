@@ -321,8 +321,8 @@ int yyFlexLexer::yylex()
 	(yy_hold_char) = *yy_cp; \
 	*yy_cp = '\0'; \
 	(yy_c_buf_p) = yy_cp;
-#define YY_NUM_RULES 6
-#define YY_END_OF_BUFFER 7
+#define YY_NUM_RULES 8
+#define YY_END_OF_BUFFER 9
 /* This struct is not used in this scanner,
    but its presence is necessary. */
 struct yy_trans_info
@@ -330,10 +330,11 @@ struct yy_trans_info
 	flex_int32_t yy_verify;
 	flex_int32_t yy_nxt;
 	};
-static const flex_int16_t yy_accept[16] =
+static const flex_int16_t yy_accept[24] =
     {   0,
-        0,    0,    7,    6,    4,    5,    5,    1,    2,    3,
-        4,    5,    1,    2,    0
+        0,    0,    9,    8,    6,    7,    7,    5,    8,    5,
+        1,    2,    6,    7,    0,    3,    0,    0,    1,    2,
+        0,    4,    0
     } ;
 
 static const YY_CHAR yy_ec[256] =
@@ -341,17 +342,17 @@ static const YY_CHAR yy_ec[256] =
         1,    1,    1,    1,    1,    1,    1,    1,    2,    3,
         1,    1,    4,    1,    1,    1,    1,    1,    1,    1,
         1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
-        1,    2,    1,    1,    1,    1,    1,    1,    1,    1,
-        1,    1,    1,    1,    1,    1,    1,    5,    5,    5,
-        5,    5,    5,    5,    5,    5,    5,    1,    1,    1,
-        1,    1,    1,    1,    6,    6,    6,    6,    6,    6,
-        6,    6,    6,    6,    6,    6,    6,    6,    6,    6,
-        6,    6,    6,    6,    6,    6,    6,    6,    6,    6,
-        1,    1,    1,    1,    7,    1,    6,    6,    6,    6,
+        1,    2,    5,    6,    1,    7,    8,    9,    1,   10,
+       11,   12,   13,   14,   15,   16,   17,   18,   18,   18,
+       18,   18,   18,   18,   18,   18,   18,   19,   20,   21,
+       22,   23,   24,   25,   26,   26,   26,   26,   26,   26,
+       26,   26,   26,   26,   26,   26,   26,   26,   26,   26,
+       26,   26,   26,   26,   26,   26,   26,   26,   26,   26,
+       27,   28,   29,    1,   30,    1,   26,   26,   26,   26,
 
-        6,    6,    6,    6,    6,    6,    6,    6,    6,    6,
-        6,    6,    6,    6,    6,    6,    6,    6,    6,    6,
-        6,    6,    8,    1,    9,    1,    1,    1,    1,    1,
+       26,   26,   26,   26,   26,   26,   26,   26,   26,   26,
+       26,   26,   26,   26,   26,   26,   26,   26,   26,   26,
+       26,   26,   31,    1,   32,    1,    1,    1,    1,    1,
         1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
         1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
         1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
@@ -368,35 +369,52 @@ static const YY_CHAR yy_ec[256] =
         1,    1,    1,    1,    1
     } ;
 
-static const YY_CHAR yy_meta[10] =
+static const YY_CHAR yy_meta[33] =
     {   0,
-        1,    1,    1,    1,    2,    2,    1,    1,    1
+        1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
+        1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
+        1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
+        1,    1
     } ;
 
-static const flex_int16_t yy_base[17] =
+static const flex_int16_t yy_base[26] =
     {   0,
-        0,    0,   16,   17,   13,   17,   11,    8,    0,   17,
-       10,   17,    6,    0,   17,    8
+        0,    0,   49,   58,   46,   58,   44,   58,   27,   29,
+       27,   16,   41,   58,   29,   58,    0,   38,   22,   18,
+       36,   58,   58,   37,   36
     } ;
 
-static const flex_int16_t yy_def[17] =
+static const flex_int16_t yy_def[26] =
     {   0,
-       15,    1,   15,   15,   15,   15,   15,   15,   16,   15,
-       15,   15,   15,   16,    0,   15
+       23,    1,   23,   23,   23,   23,   23,   23,   24,   23,
+       23,   23,   23,   23,   24,   23,   24,   25,   23,   23,
+       25,   23,    0,   23,   23
     } ;
 
-static const flex_int16_t yy_nxt[27] =
+static const flex_int16_t yy_nxt[91] =
     {   0,
-        4,    5,    6,    7,    8,    9,    9,   10,   10,   14,
-       13,   11,   13,   12,   11,   15,    3,   15,   15,   15,
-       15,   15,   15,   15,   15,   15
+        4,    5,    6,    7,    8,    9,    8,    8,    8,    8,
+        8,    8,    8,    8,    8,    8,   10,   11,    8,    8,
+        8,    8,    8,    8,    8,   12,    8,    4,    8,   12,
+        8,    8,   16,   20,   16,   20,   21,   15,   22,   19,
+       22,   20,   13,   20,   19,   18,   14,   13,   23,   23,
+       23,   23,   23,   23,   17,   23,   17,    3,   23,   23,
+       23,   23,   23,   23,   23,   23,   23,   23,   23,   23,
+       23,   23,   23,   23,   23,   23,   23,   23,   23,   23,
+       23,   23,   23,   23,   23,   23,   23,   23,   23,   23
     } ;
 
-static const flex_int16_t yy_chk[27] =
+static const flex_int16_t yy_chk[91] =
     {   0,
-        1,    1,    1,    1,    1,    1,    1,    1,    1,   16,
-       13,   11,    8,    7,    5,    3,   15,   15,   15,   15,
-       15,   15,   15,   15,   15,   15
+        1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
+        1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
+        1,    1,    1,    1,    1,    1,    1,    1,    1,    1,
+        1,    1,    9,   12,   15,   20,   25,   24,   21,   19,
+       18,   12,   13,   20,   11,   10,    7,    5,    3,    0,
+        0,    0,    0,    0,    9,    0,   15,   23,   23,   23,
+       23,   23,   23,   23,   23,   23,   23,   23,   23,   23,
+       23,   23,   23,   23,   23,   23,   23,   23,   23,   23,
+       23,   23,   23,   23,   23,   23,   23,   23,   23,   23
     } ;
 
 /* The intent behind this definition is that it'll catch
@@ -406,9 +424,12 @@ static const flex_int16_t yy_chk[27] =
 #define yymore() yymore_used_but_not_detected
 #define YY_MORE_ADJ 0
 #define YY_RESTORE_YY_MORE_OFFSET
-#line 1 "PlnLexer.ll"
-#line 2 "PlnLexer.ll"
+#line 1 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
+#line 2 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
 /// Palan Lexer
+/// 
+/// @file PlnLexer.ll
+/// @copyright 2024 YAMAGUCHI Toshinobu
 
 #include "PlnLexer.h"
 #include <string>
@@ -421,11 +442,12 @@ using std::string;
 enum {
 	INT = 1,
 	UINT,
-	ID
+	ID,
+	STRING
 };
 
-#line 428 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.cpp"
-#line 429 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.cpp"
+#line 450 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.cpp"
+#line 451 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.cpp"
 
 #define INITIAL 0
 
@@ -557,10 +579,10 @@ YY_DECL
 		}
 
 	{
-#line 29 "PlnLexer.ll"
+#line 35 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
 
 
-#line 564 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.cpp"
+#line 586 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.cpp"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -587,13 +609,13 @@ yy_match:
 			while ( yy_chk[yy_base[yy_current_state] + yy_c] != yy_current_state )
 				{
 				yy_current_state = (int) yy_def[yy_current_state];
-				if ( yy_current_state >= 16 )
+				if ( yy_current_state >= 24 )
 					yy_c = yy_meta[yy_c];
 				}
 			yy_current_state = yy_nxt[yy_base[yy_current_state] + yy_c];
 			++yy_cp;
 			}
-		while ( yy_base[yy_current_state] != 17 );
+		while ( yy_base[yy_current_state] != 58 );
 
 yy_find_action:
 		yy_act = yy_accept[yy_current_state];
@@ -619,7 +641,7 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 31 "PlnLexer.ll"
+#line 37 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
 {
 	//	lval.build<int64_t> = std::stoll(yytext); 
 		return INT;
@@ -627,7 +649,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 35 "PlnLexer.ll"
+#line 41 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
 {
 		string id = yytext;
 	//	lval.build<string> = move(id);
@@ -635,31 +657,43 @@ YY_RULE_SETUP
 	}
 	YY_BREAK
 case 3:
+/* rule 3 can match eol */
 YY_RULE_SETUP
-#line 40 "PlnLexer.ll"
-{ return yytext[0]; }
+#line 46 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
+{ return STRING; }
 	YY_BREAK
 case 4:
+/* rule 4 can match eol */
 YY_RULE_SETUP
-#line 41 "PlnLexer.ll"
+#line 47 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
 { }
 	YY_BREAK
 case 5:
-/* rule 5 can match eol */
 YY_RULE_SETUP
-#line 42 "PlnLexer.ll"
-{ }
-	YY_BREAK
-case YY_STATE_EOF(INITIAL):
-#line 43 "PlnLexer.ll"
-{ return 0; }
+#line 48 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
+{ return yytext[0]; }
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 45 "PlnLexer.ll"
+#line 49 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
+{ }
+	YY_BREAK
+case 7:
+/* rule 7 can match eol */
+YY_RULE_SETUP
+#line 50 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
+{ }
+	YY_BREAK
+case YY_STATE_EOF(INITIAL):
+#line 51 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
+{ return 0; }
+	YY_BREAK
+case 8:
+YY_RULE_SETUP
+#line 53 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
 ECHO;
 	YY_BREAK
-#line 663 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.cpp"
+#line 697 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.cpp"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -1074,7 +1108,7 @@ int yyFlexLexer::yy_get_next_buffer()
 		while ( yy_chk[yy_base[yy_current_state] + yy_c] != yy_current_state )
 			{
 			yy_current_state = (int) yy_def[yy_current_state];
-			if ( yy_current_state >= 16 )
+			if ( yy_current_state >= 24 )
 				yy_c = yy_meta[yy_c];
 			}
 		yy_current_state = yy_nxt[yy_base[yy_current_state] + yy_c];
@@ -1102,11 +1136,11 @@ int yyFlexLexer::yy_get_next_buffer()
 	while ( yy_chk[yy_base[yy_current_state] + yy_c] != yy_current_state )
 		{
 		yy_current_state = (int) yy_def[yy_current_state];
-		if ( yy_current_state >= 16 )
+		if ( yy_current_state >= 24 )
 			yy_c = yy_meta[yy_c];
 		}
 	yy_current_state = yy_nxt[yy_base[yy_current_state] + yy_c];
-	yy_is_jam = (yy_current_state == 15);
+	yy_is_jam = (yy_current_state == 23);
 
 		return yy_is_jam ? 0 : yy_current_state;
 }
@@ -1620,8 +1654,7 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 45 "PlnLexer.ll"
-
+#line 53 "/home/ubuntu/dev/palanx/src/gen-ast/PlnLexer.ll"
 
 
 
