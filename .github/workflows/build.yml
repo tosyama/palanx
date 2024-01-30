@@ -8,10 +8,16 @@ jobs:
     steps:
       - name: prepare
         run: |
-          sudo apt -y install libboost-dev
-          sudo apt -y install lcov
-      - uses: actions/checkout@v2
+          sudo apt-get -y install libboost-dev libfl-dev lcov
+
+      - uses: actions/checkout@v4
+
       - name: build
         run: |
-          make
+          make coverage
 
+      - name: Coveralls upload
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/lcov.info
