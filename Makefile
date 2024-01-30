@@ -7,7 +7,7 @@ build/CMakeCache.txt:
 clean:
 	rm -r build
 coverage:
-	rm -r build
+	rm -rf build
 	mkdir build
 	cd build && cmake -DOUTPUT_COVERAGE=ON ..
 	cmake --build build
