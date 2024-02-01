@@ -9,6 +9,9 @@
 
 class PlnLexer : public yyFlexLexer {
 public:
-	int yylex();
+	int yylex(
+		palan::PlnParser::semantic_type& yylval,
+		palan::PlnParser::location_type& location
+	);
 };
 

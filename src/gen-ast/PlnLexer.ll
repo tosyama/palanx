@@ -4,19 +4,21 @@
 /// @file PlnLexer.ll
 /// @copyright 2024 YAMAGUCHI Toshinobu
 
+#include "PlnParser.h"
 #include "PlnLexer.h"
 #include <string>
 
 using std::string;
+using namespace palan;
 
 #undef	YY_DECL
-#define	YY_DECL int PlnLexer::yylex()
+#define	YY_DECL int PlnLexer::yylex(PlnParser::semantic_type& lval, PlnParser::location_type& loc)
 
 enum {
-	INT = 1,
-	UINT,
-	ID,
-	STRING
+	INT = PlnParser::token::INT,
+	UINT = PlnParser::token::UINT,
+	ID = PlnParser::token::ID,
+	STRING = PlnParser::token::STRING
 };
 
 %}
@@ -35,12 +37,12 @@ COMMENT1	\/\/[^\n]*\n
 %%
 
 {DIGIT} {
-	//	lval.build<int64_t> = std::stoll(yytext); 
+		lval.build<int64_t>() = std::stoll(yytext); 
 		return INT;
 	}
 {ID} {
 		string id = yytext;
-	//	lval.build<string> = move(id);
+		lval.build<string>() = move(id);
 		return ID;
 	}
 {STRING}	{ return STRING; }

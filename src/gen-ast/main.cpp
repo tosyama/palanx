@@ -10,9 +10,11 @@
 #include <getopt.h>
 
 #include "PlnGenAstMessage.h"
+#include "PlnParser.h"
 #include "PlnLexer.h"
 
 using namespace std;
+using namespace palan;
 
 int main(int argc, char* argv[])
 {
@@ -57,10 +59,10 @@ int main(int argc, char* argv[])
 		}
 
 		PlnLexer lexer;
+		PlnParser parser(lexer);
 		lexer.switch_streams(&f);
-		while (int token = lexer.yylex()) {
-			cout << token << " ";
-		}
+
+		int res = parser.parse();
 	}
 
 	cout << "OK" << endl;
