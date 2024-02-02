@@ -59,7 +59,8 @@ int main(int argc, char* argv[])
 		}
 
 		PlnLexer lexer;
-		PlnParser parser(lexer);
+		json ast;
+		PlnParser parser(lexer, ast);
 		lexer.switch_streams(&f);
 
 		int res = parser.parse();

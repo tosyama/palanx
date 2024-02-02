@@ -7,7 +7,7 @@
 %require "3.0.2"
 %defines
 %define parser_class_name {PlnParser}
-%parse-param	{PlnLexer& lexer}
+%parse-param	{PlnLexer& lexer}	{json& ast}
 %lex-param	{PlnLexer& lexer}
 
 %code requires
@@ -15,12 +15,14 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include "../../lib/json/single_include/nlohmann/json.hpp"
 
 using std::vector;
 using std::string;
 using std::cout;
 using std::cerr;
 using std::endl;
+using json = nlohmann::json;
 
 class PlnLexer;
 }
@@ -66,12 +68,11 @@ block: '{' statements '}'
 
 term: INT
 	{
-		cout << $1 << ' ';
 	}| UINT | STRING | ID
 	;
 %%
 
 void palan::PlnParser::error(const location_type& l, const string& m)
 {
-	cout << "err" << endl;
+	cout << "err:" << m << endl;
 }
