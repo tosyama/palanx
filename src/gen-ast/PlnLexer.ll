@@ -21,7 +21,11 @@ enum {
 	INT =	PlnParser::token::INT,
 	UINT =	PlnParser::token::UINT,
 	ID =	PlnParser::token::ID,
-	STRING =	PlnParser::token::STRING
+	STRING =	PlnParser::token::STRING,
+	PATH =	PlnParser::token::PATH,
+	INCLUDE_FILE =	PlnParser::token::INCLUDE_FILE,
+	KW_IMPORT =	PlnParser::token::KW_IMPORT,
+	KW_FROM =	PlnParser::token::KW_FROM
 };
 
 static string& unescape(string& str);
@@ -34,35 +38,57 @@ static string& unescape(string& str);
 
 DIGIT	[0-9]+
 UDIGIT	[0-9]+"u"
-ID	[a-zA-Z_][0-9a-zA-Z]*
+ID	[a-zA-Z_][0-9a-zA-Z_]*
 DEMILITER	"{"|"}"|"("|")"|"["|"]"|","|";"|":"|"="|"+"|"-"|"*"|"/"|"%"|"<"|">"|"!"|"?"|"&"|"@"|"."|"$"
 STRING	"\""(\\.|\\\n|[^\\\"])*"\""
+PATH	"\"".*"\""
+INCLUDE_FILE	"<".*">"
 COMMENT1	\/\/[^\n]*\n
 
+%x import
 %%
 %{
 	loc.step();
 %}
 
-{DIGIT} {
+<*>{DIGIT} {
 		lval.build<int64_t>() = std::stoll(yytext); 
 		return INT;
 	}
-{ID} {
+<*>"import" {
+		BEGIN(import);
+		return KW_IMPORT;
+	}
+<import>"from"	{
+		return KW_FROM;
+	}
+<import>{PATH}	{
+		BEGIN(0);
+		string str(yytext+1, yyleng-2);
+		lval.build<string>() = move(str);
+		return PATH;
+	}
+<import>{INCLUDE_FILE}	{
+		BEGIN(0);
+		string str(yytext+1, yyleng-2);
+		lval.build<string>() = move(str);
+		return INCLUDE_FILE;
+	}
+<*>{ID} {
 		string id = yytext;
 		lval.build<string>() = move(id);
 		return ID;
 	}
-{STRING}	{
+<INITIAL>{STRING}	{
 		string str(yytext+1, yyleng-2);
 		lval.build<string>() = move(unescape(str));
 		return STRING;
 	}
-{COMMENT1}	{ loc.lines(); loc.step(); }
-{DEMILITER} { return yytext[0]; }
-[ \t]+	{ loc.step(); }
-\r\n|\r|\n	{ loc.lines(); loc.step(); }
-<<EOF>>	{ return 0; }
+<*>{COMMENT1}	{ loc.lines(); loc.step(); }
+<*>{DEMILITER} { return yytext[0]; }
+<*>[ \t]+	{ loc.step(); }
+<*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
+<*><<EOF>>	{ return 0; }
 
 %%
 

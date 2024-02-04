@@ -49,30 +49,70 @@ class PlnLexer;
 %token <uint64_t>	UINT	"unsigned integer"
 %token <string>	STRING	"string"
 %token <string>	ID	"identifier"
+%token <string>	PATH	"path"
+%token <string>	INCLUDE_FILE	"include file"
+%token KW_IMPORT	"import"
+%token KW_FROM	"from"
 
 %start module
 
 %%
-module: /* empty */
-	| module statements
+module: statements
 	;
 
-statements: statement
+statements: /* empty */
 	| statements statement
 	;
 
-statement: block | term
+statement: import ';'
+	| block
+	| declarations ';'
+	| expression
+	;
+
+import: KW_IMPORT PATH
+	| KW_IMPORT INCLUDE_FILE
+	| KW_IMPORT import_ids KW_FROM PATH
+	| KW_IMPORT import_ids KW_FROM INCLUDE_FILE
+	; 
+
+import_ids: ID | import_ids ',' ID
+	;
+
+declarations: declaration
+	| declarations ',' declaration
+	;
+
+declaration: var_type ID
+	| var_type ID '=' expression
+	| ID '=' expression
+	| tapple_decl '=' expression
+	;
+
+tapple_decl: '(' tapple_decl_inner ')'
+	;
+
+tapple_decl_inner: var_type ID
+	| tapple_decl_inner ',' var_type ID
+	| tapple_decl_inner ',' ID
 	;
 
 block: '{' statements '}'
 
-term: INT
-	{
-	}| UINT | STRING | ID
+expression: term
+	| expression '+' expression
 	;
+
+term: INT | UINT | STRING | ID
+	;
+
+var_type: ID
+	;
+
+
 %%
 
 void palan::PlnParser::error(const location_type& l, const string& m)
 {
-	cout << "err:" << m << endl;
+	cout << "err:" << l.begin.line << "," << l.begin.column << m << endl;
 }
