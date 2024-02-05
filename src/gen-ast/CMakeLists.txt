@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 find_package(FLEX)
-find_package(BISON)
+find_package(BISON 3.8)
 
 flex_target(PlnLexer ${CMAKE_CURRENT_SOURCE_DIR}/PlnLexer.ll ${CMAKE_CURRENT_SOURCE_DIR}/PlnLexer.cpp)
 bison_target(PlnParser ${CMAKE_CURRENT_SOURCE_DIR}/PlnParser.yy ${CMAKE_CURRENT_SOURCE_DIR}/PlnParser.cpp DEFINES_FILE ${CMAKE_CURRENT_SOURCE_DIR}/PlnParser.h)

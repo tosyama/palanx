@@ -3,14 +3,14 @@ import x, a from "example2.pa";
 import printf from <stdio.h>;
 
 int64 x = 10, y = x+3;
-//int32 a=10, (int32 a1, a2) = myFunc(x-3);
+int32 a=10, (int32 a1, a2) = myFunc(x-3);
 
-// (int32 b1, b2) = (3, 5);
-// (var z, zz) = myFunc(x);
-// (int32 z1, int64 z2) = myFunc(x);
-// (, int64 zzz) = myFunc(x);
-// 
-// myFunc(x) -> (z, );
+(int32 b1, b2) = (3, 5);
+(var z, zz) = myFunc(x);
+(int32 z1, int64 z2) = myFunc(x);
+(int32 _, int64 zzz) = myFunc(x);
+ 
+ myFunc(x) -> (z, );
 // 
 // export type MyType {
 // 	int64 y;

@@ -3,10 +3,13 @@
 /// @file PlnParser.yy
 /// @copyright 2024 YAMAGUCHI Toshinobu
 
-%skeleton "lalr1.cc"
-%require "3.0.2"
+%glr-parser
+%language "c++"
+%require "3.8"
+%skeleton "glr2.cc"
+
 %defines
-%define parser_class_name {PlnParser}
+%define api.parser.class	{PlnParser}
 %parse-param	{PlnLexer& lexer}	{json& ast}
 %lex-param	{PlnLexer& lexer}
 
@@ -32,7 +35,7 @@ class PlnLexer;
 	#include "PlnLexer.h"
 
 	int yylex(
-		palan::PlnParser::semantic_type* yylval,
+		palan::PlnParser::value_type* yylval,
 		palan::PlnParser::location_type* location,
 		PlnLexer& lexer)
 	{
@@ -53,6 +56,10 @@ class PlnLexer;
 %token <string>	INCLUDE_FILE	"include file"
 %token KW_IMPORT	"import"
 %token KW_FROM	"from"
+%token ARROW	"->"
+
+%left ARROW
+%left '+' '-'
 
 %start module
 
@@ -67,7 +74,7 @@ statements: /* empty */
 statement: import ';'
 	| block
 	| declarations ';'
-	| expression
+	| expression ';'
 	;
 
 import: KW_IMPORT PATH
@@ -77,6 +84,9 @@ import: KW_IMPORT PATH
 	; 
 
 import_ids: ID | import_ids ',' ID
+	;
+
+block: '{' statements '}'
 	;
 
 declarations: declaration
@@ -92,23 +102,40 @@ declaration: var_type ID
 tapple_decl: '(' tapple_decl_inner ')'
 	;
 
-tapple_decl_inner: var_type ID
-	| tapple_decl_inner ',' var_type ID
-	| tapple_decl_inner ',' ID
+tapple_decl_inner: var_type IDs
+	| tapple_decl_inner ',' var_type IDs
 	;
 
-block: '{' statements '}'
-
 expression: term
+	| func_call
 	| expression '+' expression
+	| expression '-' expression
+	| expression ARROW expression
 	;
 
 term: INT | UINT | STRING | ID
+	| '(' tapple_inner ')'
+	;
+
+tapple_inner: expression 
+	| ','
+	| tapple_inner ',' expression
+	| tapple_inner ','
+	;
+
+func_call: term '(' arguments ')'
+	;
+
+arguments: expression
+	| arguments ',' expression
 	;
 
 var_type: ID
 	;
 
+IDs: ID
+	| IDs ',' ID
+	;
 
 %%
 

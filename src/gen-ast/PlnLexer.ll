@@ -14,7 +14,7 @@ using std::string;
 using namespace palan;
 
 #undef	YY_DECL
-#define	YY_DECL int PlnLexer::yylex(PlnParser::semantic_type& lval, PlnParser::location_type& loc)
+#define	YY_DECL int PlnLexer::yylex(PlnParser::value_type& lval, PlnParser::location_type& loc)
 #define YY_USER_ACTION	loc.columns(yyleng);
 
 enum {
@@ -25,7 +25,8 @@ enum {
 	PATH =	PlnParser::token::PATH,
 	INCLUDE_FILE =	PlnParser::token::INCLUDE_FILE,
 	KW_IMPORT =	PlnParser::token::KW_IMPORT,
-	KW_FROM =	PlnParser::token::KW_FROM
+	KW_FROM =	PlnParser::token::KW_FROM,
+	ARROW =	PlnParser::token::ARROW
 };
 
 static string& unescape(string& str);
@@ -86,6 +87,7 @@ COMMENT1	\/\/[^\n]*\n
 	}
 <*>{COMMENT1}	{ loc.lines(); loc.step(); }
 <*>{DEMILITER} { return yytext[0]; }
+<*>"->"	{ return ARROW; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
 <*><<EOF>>	{ return 0; }
