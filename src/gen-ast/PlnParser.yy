@@ -54,8 +54,12 @@ class PlnLexer;
 %token <string>	ID	"identifier"
 %token <string>	PATH	"path"
 %token <string>	INCLUDE_FILE	"include file"
+%token KW_EXPORT	"export"
 %token KW_IMPORT	"import"
 %token KW_FROM	"from"
+%token KW_FUNC	"func"
+%token KW_TYPE	"type"
+%token KW_VOID	"void"
 %token ARROW	"->"
 
 %left ARROW
@@ -74,7 +78,9 @@ statements: /* empty */
 statement: import ';'
 	| block
 	| declarations ';'
+	| type_decl ';'
 	| expression ';'
+	| func_def
 	;
 
 import: KW_IMPORT PATH
@@ -93,21 +99,31 @@ declarations: declaration
 	| declarations ',' declaration
 	;
 
-declaration: var_type ID
-	| var_type ID '=' expression
-	| ID '=' expression
+declaration: var_type var_prefix ID var_postfix
+	| var_type var_prefix ID var_postfix '=' expression
+	| var_prefix ID var_postfix '=' expression
 	| tapple_decl '=' expression
 	;
 
 tapple_decl: '(' tapple_decl_inner ')'
 	;
 
-tapple_decl_inner: var_type IDs
-	| tapple_decl_inner ',' var_type IDs
+tapple_decl_inner: var_type vars
+	| KW_VOID
+	| tapple_decl_inner ',' var_type vars
+	| tapple_decl_inner ',' KW_VOID
+	;
+
+type_decl: do_export KW_TYPE ID '{' type_members '}'
+	;
+
+type_members: var_type var_prefix ID ';'
+	| type_members var_type var_prefix ID ';'
 	;
 
 expression: term
 	| func_call
+	| array_desc
 	| expression '+' expression
 	| expression '-' expression
 	| expression ARROW expression
@@ -118,23 +134,64 @@ term: INT | UINT | STRING | ID
 	;
 
 tapple_inner: expression 
-	| ','
+	| '-'
 	| tapple_inner ',' expression
-	| tapple_inner ','
+	| tapple_inner ',' '-'
 	;
 
 func_call: term '(' arguments ')'
 	;
 
-arguments: expression
+arguments: /* empty */
+	| expression
 	| arguments ',' expression
+	;
+
+array_desc: '[' array_items ']'
+	| array_desc '[' array_items ']'
+	;
+
+array_items: expression
+	| array_items ',' expression
+	;
+
+func_def: KW_FUNC ID '(' paramaters ')'
+	return_def block
+	;
+
+paramaters: /* empty */
+	| var_type ID
+	| paramaters ',' var_type ID
+	;
+
+return_def: /* empty */
+	| ARROW paramaters
 	;
 
 var_type: ID
 	;
 
-IDs: ID
-	| IDs ',' ID
+vars: ID var_postfix
+	| vars ',' ID var_postfix
+	;
+
+do_export: /* empty */ | KW_EXPORT
+	;
+
+var_prefix:	/* empty */ | '@' | '$'
+	;
+
+var_postfix: /* empty */ | array_postfix
+	;
+
+array_postfix: '[' expressions ']'
+	;
+
+expressions: decl_arr_exp
+	| expressions ',' decl_arr_exp
+	;
+
+decl_arr_exp: /* empty */ | expression
 	;
 
 %%

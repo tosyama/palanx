@@ -24,8 +24,12 @@ enum {
 	STRING =	PlnParser::token::STRING,
 	PATH =	PlnParser::token::PATH,
 	INCLUDE_FILE =	PlnParser::token::INCLUDE_FILE,
+	KW_EXPORT =	PlnParser::token::KW_EXPORT,
 	KW_IMPORT =	PlnParser::token::KW_IMPORT,
 	KW_FROM =	PlnParser::token::KW_FROM,
+	KW_FUNC =	PlnParser::token::KW_FUNC,
+	KW_TYPE =	PlnParser::token::KW_TYPE,
+	KW_VOID =	PlnParser::token::KW_VOID,
 	ARROW =	PlnParser::token::ARROW
 };
 
@@ -56,13 +60,12 @@ COMMENT1	\/\/[^\n]*\n
 		lval.build<int64_t>() = std::stoll(yytext); 
 		return INT;
 	}
+<*>"export" { return KW_EXPORT; }
 <*>"import" {
 		BEGIN(import);
 		return KW_IMPORT;
 	}
-<import>"from"	{
-		return KW_FROM;
-	}
+<import>"from"	{ return KW_FROM; }
 <import>{PATH}	{
 		BEGIN(0);
 		string str(yytext+1, yyleng-2);
@@ -75,6 +78,9 @@ COMMENT1	\/\/[^\n]*\n
 		lval.build<string>() = move(str);
 		return INCLUDE_FILE;
 	}
+<*>"func" { return KW_FUNC; }
+<*>"type" { return KW_TYPE; }
+<*>"void" { return KW_VOID; }
 <*>{ID} {
 		string id = yytext;
 		lval.build<string>() = move(id);
