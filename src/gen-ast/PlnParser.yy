@@ -59,7 +59,9 @@ class PlnLexer;
 %token KW_FROM	"from"
 %token KW_FUNC	"func"
 %token KW_TYPE	"type"
+%token KW_CONST	"const"
 %token KW_VOID	"void"
+%token KW_RETURN	"return"
 %token ARROW	"->"
 
 %left ARROW
@@ -78,9 +80,11 @@ statements: /* empty */
 statement: import ';'
 	| block
 	| declarations ';'
+	| const_decl ';'
 	| type_decl ';'
 	| expression ';'
 	| func_def
+	| return ';'
 	;
 
 import: KW_IMPORT PATH
@@ -114,6 +118,9 @@ tapple_decl_inner: var_type vars
 	| tapple_decl_inner ',' KW_VOID
 	;
 
+const_decl: KW_CONST ID '=' expression
+	;
+
 type_decl: do_export KW_TYPE ID '{' type_members '}'
 	;
 
@@ -124,14 +131,20 @@ type_members: var_type var_prefix ID ';'
 expression: term
 	| func_call
 	| array_desc
+	| dict_desc
 	| expression '+' expression
 	| expression '-' expression
 	| expression ARROW expression
+	| noname_func
 	;
 
-term: INT | UINT | STRING | ID
+term: INT | UINT | STRING | ID var_index
 	| '(' tapple_inner ')'
 	;
+
+var_index: /* empty */
+	| array_desc
+	; 
 
 tapple_inner: expression 
 	| '-'
@@ -155,17 +168,34 @@ array_items: expression
 	| array_items ',' expression
 	;
 
-func_def: KW_FUNC ID '(' paramaters ')'
+dict_desc: '{' dict_items '}'
+	;
+
+dict_items: ID ':' expression
+	| dict_items ',' ID ':' expression
+	;
+
+func_def:do_export KW_FUNC ID '(' paramaters ')'
 	return_def block
 	;
 
-paramaters: /* empty */
-	| var_type ID
-	| paramaters ',' var_type ID
+paramaters: /* empty */ | declarations
 	;
 
 return_def: /* empty */
-	| ARROW paramaters
+	| ARROW declarations
+	;
+
+noname_func: KW_FUNC '(' paramaters ')'
+	return_def block
+	;
+
+return: KW_RETURN
+	| KW_RETURN expressions
+	;
+
+expressions: expression
+	| expressions ',' expression
 	;
 
 var_type: ID
@@ -184,14 +214,15 @@ var_prefix:	/* empty */ | '@' | '$'
 var_postfix: /* empty */ | array_postfix
 	;
 
-array_postfix: '[' expressions ']'
+array_postfix: '[' emitable_exps ']' var_prefix
+	| array_postfix '[' emitable_exps ']' var_prefix
 	;
 
-expressions: decl_arr_exp
-	| expressions ',' decl_arr_exp
+emitable_exps: emitable_exp
+	| emitable_exps ',' emitable_exp
 	;
 
-decl_arr_exp: /* empty */ | expression
+emitable_exp: /* empty */ | expression
 	;
 
 %%

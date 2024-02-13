@@ -29,7 +29,9 @@ enum {
 	KW_FROM =	PlnParser::token::KW_FROM,
 	KW_FUNC =	PlnParser::token::KW_FUNC,
 	KW_TYPE =	PlnParser::token::KW_TYPE,
+	KW_CONST =	PlnParser::token::KW_CONST,
 	KW_VOID =	PlnParser::token::KW_VOID,
+	KW_RETURN = PlnParser::token::KW_RETURN,
 	ARROW =	PlnParser::token::ARROW
 };
 
@@ -80,7 +82,9 @@ COMMENT1	\/\/[^\n]*\n
 	}
 <*>"func" { return KW_FUNC; }
 <*>"type" { return KW_TYPE; }
+<*>"const" { return KW_CONST; }
 <*>"void" { return KW_VOID; }
+<*>"return" { return KW_RETURN; }
 <*>{ID} {
 		string id = yytext;
 		lval.build<string>() = move(id);
