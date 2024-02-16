@@ -18,6 +18,8 @@ export type MyType {
  	int64 y;
  	MyType @next;
 };
+
+type myInt = int64;
  
 (MyType t, MyType z[x,z+3]) = myFuncZ();
  

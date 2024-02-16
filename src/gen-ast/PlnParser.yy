@@ -62,9 +62,19 @@ class PlnLexer;
 %token KW_CONST	"const"
 %token KW_VOID	"void"
 %token KW_RETURN	"return"
+%token KW_FOR	"for"
+%token KW_WHILE	"while"
+%token KW_IF	"if"
+%token KW_ELSE	"else"
+%token OPE_LE	"<="
+%token OPE_GE	">="
+%token DBL_GRTR	">>"
 %token ARROW	"->"
+%token DBL_ARROW	"->>"
+%token DBL_PLUS	"++"
 
-%left ARROW
+%left ARROW DBL_ARROW
+%left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
 
 %start module
@@ -85,6 +95,10 @@ statement: import ';'
 	| expression ';'
 	| func_def
 	| return ';'
+	| for_loop
+	| while_loop
+	| if_stmt
+	| term DBL_PLUS ';'
 	;
 
 import: KW_IMPORT PATH
@@ -103,7 +117,7 @@ declarations: declaration
 	| declarations ',' declaration
 	;
 
-declaration: var_type var_prefix ID var_postfix
+declaration: var_type move_owner_r var_prefix ID var_postfix
 	| var_type var_prefix ID var_postfix '=' expression
 	| var_prefix ID var_postfix '=' expression
 	| tapple_decl '=' expression
@@ -122,6 +136,7 @@ const_decl: KW_CONST ID '=' expression
 	;
 
 type_decl: do_export KW_TYPE ID '{' type_members '}'
+	| do_export KW_TYPE ID '=' var_type 
 	;
 
 type_members: var_type var_prefix ID ';'
@@ -134,17 +149,20 @@ expression: term
 	| dict_desc
 	| expression '+' expression
 	| expression '-' expression
+	| expression OPE_LE expression
+	| expression OPE_GE expression
+	| expression '<' expression
+	| expression '>' expression
 	| expression ARROW expression
+	| expression DBL_ARROW expression
 	| noname_func
 	;
 
-term: INT | UINT | STRING | ID var_index
+term: INT | UINT | STRING | ID
 	| '(' tapple_inner ')'
+	| term '.' ID
+	| term array_desc
 	;
-
-var_index: /* empty */
-	| array_desc
-	; 
 
 tapple_inner: expression 
 	| '-'
@@ -194,6 +212,20 @@ return: KW_RETURN
 	| KW_RETURN expressions
 	;
 
+for_loop: KW_FOR ID ':' expression block
+	;
+
+while_loop: KW_WHILE expression block
+	;
+
+if_stmt: KW_IF expression block else_stmt
+	;
+
+else_stmt: /* empty */
+	| KW_ELSE block
+	| KW_ELSE if_stmt
+	;
+
 expressions: expression
 	| expressions ',' expression
 	;
@@ -208,14 +240,20 @@ vars: ID var_postfix
 do_export: /* empty */ | KW_EXPORT
 	;
 
+move_owner_r:	/* empty */ | DBL_GRTR
+	;
+
 var_prefix:	/* empty */ | '@' | '$'
 	;
 
 var_postfix: /* empty */ | array_postfix
 	;
 
-array_postfix: '[' emitable_exps ']' var_prefix
+array_postfix: '[' array_type emitable_exps ']' var_prefix
 	| array_postfix '[' emitable_exps ']' var_prefix
+	;
+
+array_type: /* empty */ | '#'
 	;
 
 emitable_exps: emitable_exp

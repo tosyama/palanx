@@ -32,7 +32,16 @@ enum {
 	KW_CONST =	PlnParser::token::KW_CONST,
 	KW_VOID =	PlnParser::token::KW_VOID,
 	KW_RETURN = PlnParser::token::KW_RETURN,
-	ARROW =	PlnParser::token::ARROW
+	KW_FOR =	PlnParser::token::KW_FOR,
+	KW_WHILE =	PlnParser::token::KW_WHILE,
+	KW_IF = PlnParser::token::KW_IF,
+	KW_ELSE = PlnParser::token::KW_ELSE,
+	OPE_LE =	PlnParser::token::OPE_LE,
+	OPE_GE =	PlnParser::token::OPE_GE,
+	DBL_GRTR =	PlnParser::token::DBL_GRTR,
+	ARROW =	PlnParser::token::ARROW,
+	DBL_ARROW =	PlnParser::token::DBL_ARROW,
+	DBL_PLUS =	PlnParser::token::DBL_PLUS
 };
 
 static string& unescape(string& str);
@@ -46,7 +55,7 @@ static string& unescape(string& str);
 DIGIT	[0-9]+
 UDIGIT	[0-9]+"u"
 ID	[a-zA-Z_][0-9a-zA-Z_]*
-DEMILITER	"{"|"}"|"("|")"|"["|"]"|","|";"|":"|"="|"+"|"-"|"*"|"/"|"%"|"<"|">"|"!"|"?"|"&"|"@"|"."|"$"
+DEMILITER	"{"|"}"|"("|")"|"["|"]"|","|";"|":"|"="|"+"|"-"|"*"|"/"|"%"|"<"|">"|"!"|"?"|"&"|"@"|"."|"$"|"#"
 STRING	"\""(\\.|\\\n|[^\\\"])*"\""
 PATH	"\"".*"\""
 INCLUDE_FILE	"<".*">"
@@ -85,6 +94,10 @@ COMMENT1	\/\/[^\n]*\n
 <*>"const" { return KW_CONST; }
 <*>"void" { return KW_VOID; }
 <*>"return" { return KW_RETURN; }
+<*>"for" { return KW_FOR; }
+<*>"while" { return KW_WHILE; }
+<*>"if" { return KW_IF; }
+<*>"else" { return KW_ELSE; }
 <*>{ID} {
 		string id = yytext;
 		lval.build<string>() = move(id);
@@ -97,7 +110,12 @@ COMMENT1	\/\/[^\n]*\n
 	}
 <*>{COMMENT1}	{ loc.lines(); loc.step(); }
 <*>{DEMILITER} { return yytext[0]; }
+<*>"<="	{ return OPE_LE; }
+<*>">="	{ return OPE_GE; }
+<*>">>"	{ return DBL_GRTR; }
 <*>"->"	{ return ARROW; }
+<*>"->>"	{ return DBL_ARROW; }
+<*>"++"	{ return DBL_PLUS; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
 <*><<EOF>>	{ return 0; }
