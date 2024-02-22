@@ -1,9 +1,12 @@
 #include "testBase.h"
 
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <thread>
 #include <future>
 #include <csignal>
+#include <sys/stat.h>
 
 #ifdef __GNUC__
 	#include <ext/stdio_sync_filebuf.h>    
@@ -18,7 +21,8 @@ int cleanTestEnv()
 
 string exec_worker(const string &cmd)
 {
-	FILE* p = popen(cmd.c_str(), "r");
+	system("rm -f .err");
+	FILE* p = popen((cmd + " 2>.err").c_str(), "r");
 	if (!p) return "exec err:" + cmd;
 
 	popen_filebuf p_buf(p);
@@ -28,12 +32,22 @@ string exec_worker(const string &cmd)
 	string tmp_str;
 	getline(is, result_str);
 	while (getline(is, tmp_str)) {
-		result_str += "\n" + tmp_str;
+		result_str += tmp_str + "\n";
 	}
 	int ret = pclose(p);
 
-	if (ret)
-		return "return:" + to_string(WIFEXITED(ret)) + "\n" + result_str;
+	if (ret) {
+		string err_str;
+		struct stat st;
+		if (stat(".err", &st) == 0) {
+			ifstream errfile(".err");
+			stringstream ss;
+			ss << errfile.rdbuf();
+			err_str = ss.str();
+		}
+		return "return" + to_string(WIFEXITED(ret)) + ":" + err_str + ":" +  result_str;
+	}
+	
 	
 	return result_str;
 }

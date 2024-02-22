@@ -54,7 +54,7 @@ int main(int argc, char* argv[])
 	{
 		ifstream f(input_file);
 		if (!f) {
-			cout << "err" << endl;
+			cerr << PlnGenAstMessage::getMessage(E_CouldNotOpenFile, input_file) << endl;
 			return 1;
 		}
 
