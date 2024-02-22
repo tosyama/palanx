@@ -64,9 +64,9 @@ int main(int argc, char* argv[])
 		lexer.switch_streams(&f);
 
 		int res = parser.parse();
-	}
 
-	cout << "OK" << endl;
+		cout << ast;
+	}
 
 	return 0;
 }

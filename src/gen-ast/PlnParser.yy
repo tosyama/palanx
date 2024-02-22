@@ -73,32 +73,93 @@ class PlnLexer;
 %token DBL_ARROW	"->>"
 %token DBL_PLUS	"++"
 
+%type <vector<json>>	statements
+%type <json>	statement
+
 %left ARROW DBL_ARROW
 %left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
+%left '*' '/' '%' '&' '|'
+%left '.'
 
 %start module
 
 %%
 module: statements
+	{
+		ast["ast"]["statements"] = move($1);
+	}
 	;
 
 statements: /* empty */
+	{ }
 	| statements statement
+	{
+		$$ = move($1);
+		$$.emplace_back($2);
+	}
 	;
 
 statement: import ';'
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| block
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| declarations ';'
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| const_decl ';'
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| type_decl ';'
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| expression ';'
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| func_def
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| return ';'
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| for_loop
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| while_loop
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| if_stmt
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	| term DBL_PLUS ';'
+	{
+		json temp = {"stmt-type", "not-impl"};
+		$$ = move(temp);
+	}
 	;
 
 import: KW_IMPORT PATH
@@ -137,6 +198,7 @@ const_decl: KW_CONST ID '=' expression
 
 type_decl: do_export KW_TYPE ID '{' type_members '}'
 	| do_export KW_TYPE ID '=' var_type 
+	| do_export KW_TYPE ID 
 	;
 
 type_members: var_type var_prefix ID ';'
@@ -149,6 +211,11 @@ expression: term
 	| dict_desc
 	| expression '+' expression
 	| expression '-' expression
+	| expression '*' expression
+	| expression '/' expression
+	| expression '%' expression
+	| expression '&' expression
+	| expression '|' expression
 	| expression OPE_LE expression
 	| expression OPE_GE expression
 	| expression '<' expression
@@ -193,8 +260,8 @@ dict_items: ID ':' expression
 	| dict_items ',' ID ':' expression
 	;
 
-func_def:do_export KW_FUNC ID '(' paramaters ')'
-	return_def block
+func_def:do_export KW_FUNC ID '(' paramaters ')' return_def block
+	| do_export KW_FUNC ID '<' temp_ids '>' '(' paramaters ')' return_def block
 	;
 
 paramaters: /* empty */ | declarations
@@ -202,6 +269,10 @@ paramaters: /* empty */ | declarations
 
 return_def: /* empty */
 	| ARROW declarations
+	| ARROW var_type
+	;
+
+temp_ids: ID | temp_ids ',' ID
 	;
 
 noname_func: KW_FUNC '(' paramaters ')'
@@ -250,10 +321,10 @@ var_postfix: /* empty */ | array_postfix
 	;
 
 array_postfix: '[' array_type emitable_exps ']' var_prefix
-	| array_postfix '[' emitable_exps ']' var_prefix
+	| array_postfix '[' array_type emitable_exps ']' var_prefix
 	;
 
-array_type: /* empty */ | '#'
+array_type: /* empty */ | '#' | '+'
 	;
 
 emitable_exps: emitable_exp
@@ -267,5 +338,8 @@ emitable_exp: /* empty */ | expression
 
 void palan::PlnParser::error(const location_type& l, const string& m)
 {
-	cout << "err:" << l.begin.line << "," << l.begin.column << m << endl;
+	json err = { {"message", m } };
+	err["loc"] = {(int)l.begin.line, (int)l.begin.column, (int)l.end.line, (int)l.end.column};
+	ast["err"].emplace_back(err);
 }
+

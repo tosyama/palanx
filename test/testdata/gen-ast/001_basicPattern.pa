@@ -20,6 +20,7 @@ export type MyType {
 };
 
 type myInt = int64;
+type XType;
  
 (MyType t, MyType z[x,z+3]) = myFuncZ();
  
@@ -30,6 +31,7 @@ func myFunc(int32 size)
  	flo32 $farr[] = [12,34][56,78];
  	MyType mt = {y:2, next:null};
  	MyType mt2[]$[]$=[[{y:2, next:null}]];
+	MyType @mt3[]@ = [{y: 3, next:{y:4, next: null}}];
  
 	return 3, 4;
 }
@@ -41,4 +43,9 @@ export func myFuncZ(int64 x=3, int32 z[]=[3,2])
 callback = func (int32 x) {
 		return x+1;
 	};
+
+export func myFuncT<T, U>(T a, U b) -> int64
+{
+	return 1;
+}
 
