@@ -1,9 +1,12 @@
 #include "testBase.h"
 
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <thread>
 #include <future>
 #include <csignal>
+#include <sys/stat.h>
 
 #ifdef __GNUC__
 	#include <ext/stdio_sync_filebuf.h>    
@@ -13,12 +16,13 @@ using namespace std;
 
 int cleanTestEnv()
 {
-	return system("rm -f -r out/*");
+	system("rm -f -r out");
+	return system("mkdir out");
 }
 
 string exec_worker(const string &cmd)
 {
-	FILE* p = popen(cmd.c_str(), "r");
+	FILE* p = popen((cmd + " 2>out/err").c_str(), "r");
 	if (!p) return "exec err:" + cmd;
 
 	popen_filebuf p_buf(p);
@@ -28,14 +32,25 @@ string exec_worker(const string &cmd)
 	string tmp_str;
 	getline(is, result_str);
 	while (getline(is, tmp_str)) {
-		result_str += "\n" + tmp_str;
+		result_str += tmp_str + "\n";
 	}
 	int ret = pclose(p);
 
-	if (ret)
-		return "return:" + to_string(WIFEXITED(ret)) + "\n" + result_str;
+	string err_str;
+	struct stat st;
+	if (stat("out/err", &st) == 0) {
+		ifstream errfile("out/err");
+		stringstream ss;
+		ss << errfile.rdbuf();
+		if (ss.str() != "")
+			err_str = ":" + ss.str();
+	}
+
+	if (ret) {
+		return "return" + to_string(WIFEXITED(ret)) + ":" + result_str + err_str;
+	}
 	
-	return result_str;
+	return result_str + err_str;
 }
 
 string execTestCommand(const string& cmd)

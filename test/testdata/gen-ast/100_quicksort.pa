@@ -1,0 +1,42 @@
+import <stdio.h>;
+
+// init data.
+int16 data[#10] = [0,4,8,3,7,2,6,1,5,0];
+
+// sort
+printf("before:");
+data.show();
+
+printf("after:");
+data ->> quicksort()
+	->> data
+	-> show();
+
+func show(int16 @data[#]) {
+	for d: data {
+		printf(" %d", d);
+	}
+	printf("\n");
+}
+
+func quicksort(int16 >>data[#], int32 left=0, right=data.len()-1) -> var data {
+	if left >= right { return; }
+
+	var mid = left, i=left+1;
+
+	while i<=right {
+		if data[i] < data[left] {
+			mid++;
+			// swap
+			(data[mid], data[i]) -> (data[i], data[mid]);
+		}
+		i++;
+	}
+	// swap
+	(data[left], data[mid]) -> (data[mid], data[left]);
+
+	data ->> quicksort(left, mid-1)
+		->> quicksort(mid+1, right)
+		->> data;
+}
+

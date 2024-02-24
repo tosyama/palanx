@@ -1,0 +1,51 @@
+import "example1.pa";	// import all from example1.pa.
+import x, a from "example2.pa";
+import printf from <stdio.h>;
+
+const N = 10;
+
+int64 x = 10, y = x+3;
+int32 a=10, (int32 a1, a2) = myFunc(x-3);
+
+(int32 b1, b2) = (3, 5);
+(var z, zz) = myFunc(x);
+(int32 z1, int64 z2) = myFunc(x);
+(void, int64 zzz) = myFunc(x);
+ 
+myFunc(x) -> (z,-);
+ 
+export type MyType {
+ 	int64 y;
+ 	MyType @next;
+};
+
+type myInt = int64;
+type XType;
+ 
+(MyType t, MyType z[x,z+3]) = myFuncZ();
+ 
+func myFunc(int32 size)
+ 	-> int32 z, int64 zz
+{
+ 	flo64 my_arr[size+1,3];
+ 	flo32 $farr[] = [12,34][56,78];
+ 	MyType mt = {y:2, next:null};
+ 	MyType mt2[]$[]$=[[{y:2, next:null}]];
+	MyType @mt3[]@ = [{y: 3, next:{y:4, next: null}}];
+ 
+	return 3, 4;
+}
+
+export func myFuncZ(int64 x=3, int32 z[]=[3,2])
+{
+}
+
+callback = func (int32 x) {
+		return x+1;
+	};
+
+export func myFuncT<T, U>(T a, U b) -> int64
+{
+	return 1;
+}
+

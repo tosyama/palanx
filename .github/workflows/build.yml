@@ -11,6 +11,8 @@ jobs:
           sudo apt-get -y install libboost-dev libfl-dev lcov
 
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: build
         run: |
@@ -20,4 +22,5 @@ jobs:
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          format: lcov
           file: build/lcov.info
