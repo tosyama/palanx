@@ -63,9 +63,22 @@ int main(int argc, char* argv[])
 		PlnParser parser(lexer, ast);
 		lexer.switch_streams(&f);
 
-		int res = parser.parse();
-
-		cout << ast;
+		int ret;
+		ret = parser.parse();
+		if (ret == 0) {
+			if (output_file) {
+				ofstream of(output_file);
+				if (!of) {
+					cerr << "err";
+					return 1;
+				}
+				of << ast;
+			} else {
+				cout << ast;
+			}
+		} else { // 1: parse err, 2: memory err
+			return 1;
+		}
 	}
 
 	return 0;

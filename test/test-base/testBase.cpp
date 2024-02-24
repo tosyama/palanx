@@ -16,13 +16,13 @@ using namespace std;
 
 int cleanTestEnv()
 {
-	return system("rm -f -r out/*");
+	system("rm -f -r out");
+	return system("mkdir out");
 }
 
 string exec_worker(const string &cmd)
 {
-	system("rm -f .err");
-	FILE* p = popen((cmd + " 2>.err").c_str(), "r");
+	FILE* p = popen((cmd + " 2>out/err").c_str(), "r");
 	if (!p) return "exec err:" + cmd;
 
 	popen_filebuf p_buf(p);
@@ -36,20 +36,21 @@ string exec_worker(const string &cmd)
 	}
 	int ret = pclose(p);
 
+	string err_str;
+	struct stat st;
+	if (stat("out/err", &st) == 0) {
+		ifstream errfile("out/err");
+		stringstream ss;
+		ss << errfile.rdbuf();
+		if (ss.str() != "")
+			err_str = ":" + ss.str();
+	}
+
 	if (ret) {
-		string err_str;
-		struct stat st;
-		if (stat(".err", &st) == 0) {
-			ifstream errfile(".err");
-			stringstream ss;
-			ss << errfile.rdbuf();
-			err_str = ss.str();
-		}
-		return "return" + to_string(WIFEXITED(ret)) + ":" + err_str + ":" +  result_str;
+		return "return" + to_string(WIFEXITED(ret)) + ":" + result_str + err_str;
 	}
 	
-	
-	return result_str;
+	return result_str + err_str;
 }
 
 string execTestCommand(const string& cmd)

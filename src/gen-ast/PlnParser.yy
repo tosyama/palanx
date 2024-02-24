@@ -338,8 +338,6 @@ emitable_exp: /* empty */ | expression
 
 void palan::PlnParser::error(const location_type& l, const string& m)
 {
-	json err = { {"message", m } };
-	err["loc"] = {(int)l.begin.line, (int)l.begin.column, (int)l.end.line, (int)l.end.column};
-	ast["err"].emplace_back(err);
+	cerr << l.begin.line << ":" << l.begin.column << "-" << l.end.line << ":" << l.end.column << m << endl;
 }
 
