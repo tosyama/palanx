@@ -57,8 +57,10 @@ class PlnLexer;
 %token KW_EXPORT	"export"
 %token KW_IMPORT	"import"
 %token KW_FROM	"from"
+%token KW_AS	"as"
 %token KW_FUNC	"func"
 %token KW_TYPE	"type"
+%token KW_INTERFACE	"interface"
 %token KW_CONST	"const"
 %token KW_VOID	"void"
 %token KW_RETURN	"return"
@@ -71,6 +73,7 @@ class PlnLexer;
 %token DBL_GRTR	">>"
 %token ARROW	"->"
 %token DBL_ARROW	"->>"
+%token AT_EXCL	"@!"
 %token DBL_PLUS	"++"
 
 %type <vector<json>>	statements
@@ -102,83 +105,93 @@ statements: /* empty */
 
 statement: import ';'
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| block
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
-	| declarations ';'
+	| var_declarations ';'
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| const_decl ';'
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| type_decl ';'
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
+		$$ = move(temp);
+	}
+	| interface_decl ';'
+	{
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| expression ';'
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| func_def
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| return ';'
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| for_loop
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| while_loop
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| if_stmt
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	| term DBL_PLUS ';'
 	{
-		json temp = {"stmt-type", "not-impl"};
+		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
 	;
 
-import: KW_IMPORT PATH
-	| KW_IMPORT INCLUDE_FILE
-	| KW_IMPORT import_ids KW_FROM PATH
-	| KW_IMPORT import_ids KW_FROM INCLUDE_FILE
+import: KW_IMPORT import_path import_as
+	| KW_IMPORT import_ids KW_FROM import_path import_as
 	; 
 
 import_ids: ID | import_ids ',' ID
 	;
 
+import_path: PATH | INCLUDE_FILE
+	;
+
+import_as: /* empty */
+	| KW_AS ID
+	;
+
 block: '{' statements '}'
 	;
 
-declarations: declaration
-	| declarations ',' declaration
+var_declarations: var_declaration
+	| var_declarations ',' var_declaration
 	;
 
-declaration: var_type move_owner_r var_prefix ID var_postfix
+var_declaration: var_type move_owner_r var_prefix ID var_postfix
 	| var_type var_prefix ID var_postfix '=' expression
 	| var_prefix ID var_postfix '=' expression
 	| tapple_decl '=' expression
@@ -196,13 +209,42 @@ tapple_decl_inner: var_type vars
 const_decl: KW_CONST ID '=' expression
 	;
 
-type_decl: do_export KW_TYPE ID '{' type_members '}'
+type_decl: do_export KW_TYPE ID implememts '{' type_members '}'
 	| do_export KW_TYPE ID '=' var_type 
 	| do_export KW_TYPE ID 
 	;
 
-type_members: var_type var_prefix ID ';'
-	| type_members var_type var_prefix ID ';'
+implememts: /* empty */
+	| ':' implements_types
+	;
+
+implements_types: implements_type
+	| implements_types ',' implements_type
+	;
+
+implements_type: var_type
+	| var_type KW_AS ID
+	;
+
+type_members: type_member
+	| type_members type_member
+	;
+
+type_member: var_declaration ';'
+	| KW_FUNC long_func_name '(' paramaters ')' return_def block
+	;
+
+long_func_name: ID
+	| long_func_name '.' ID
+	;
+
+interface_decl: do_export KW_INTERFACE ID '{' interface_methods '}'
+	| do_export KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
+	;
+
+interface_methods: /* empty */ 
+	| interface_methods KW_FUNC ID '(' paramaters ')' return_def ';'
+	| interface_methods KW_FUNC ID '(' paramaters ')' return_def block
 	;
 
 expression: term
@@ -241,8 +283,8 @@ func_call: term '(' arguments ')'
 	;
 
 arguments: /* empty */
-	| expression
-	| arguments ',' expression
+	| expression move_owner_r
+	| arguments ',' expression move_owner_r
 	;
 
 array_desc: '[' array_items ']'
@@ -261,18 +303,14 @@ dict_items: ID ':' expression
 	;
 
 func_def:do_export KW_FUNC ID '(' paramaters ')' return_def block
-	| do_export KW_FUNC ID '<' temp_ids '>' '(' paramaters ')' return_def block
 	;
 
-paramaters: /* empty */ | declarations
+paramaters: /* empty */ | var_declarations
 	;
 
 return_def: /* empty */
-	| ARROW declarations
+	| ARROW var_declarations
 	| ARROW var_type
-	;
-
-temp_ids: ID | temp_ids ',' ID
 	;
 
 noname_func: KW_FUNC '(' paramaters ')'
@@ -302,6 +340,10 @@ expressions: expression
 	;
 
 var_type: ID
+	| ID '<' temp_ids '>'
+	;
+
+temp_ids: ID | temp_ids ',' ID
 	;
 
 vars: ID var_postfix
@@ -314,7 +356,7 @@ do_export: /* empty */ | KW_EXPORT
 move_owner_r:	/* empty */ | DBL_GRTR
 	;
 
-var_prefix:	/* empty */ | '@' | '$'
+var_prefix:	/* empty */ | '@' | '$' | AT_EXCL
 	;
 
 var_postfix: /* empty */ | array_postfix

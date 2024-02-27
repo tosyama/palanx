@@ -20,7 +20,7 @@ TEST(gen_ast, basic_tests) {
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
-	ASSERT_EQ(jout["ast"]["statements"].size(), 19);
+	ASSERT_EQ(jout["ast"]["statements"].size(), 20);
 	
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/100_quicksort.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -41,6 +41,6 @@ TEST(gen_ast, cli_tests) {
 	output = execTestCommand("bin/palan-gen-ast not_exist_file.pa");
 	ASSERT_EQ(output, "return1::Could not open file 'not_exist_file.pa'.\n");
 
-	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa -o out/001ast.json");
+	output = execTestCommand("bin/palan-gen-ast -i ../test/testdata/gen-ast/001_basicPattern.pa -o out/001ast.json");
 	ASSERT_EQ(output, "");
 }

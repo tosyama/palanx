@@ -66,15 +66,16 @@ int main(int argc, char* argv[])
 		int ret;
 		ret = parser.parse();
 		if (ret == 0) {
+			string out_str = do_indent ? ast.dump(2) : ast.dump();
 			if (output_file) {
 				ofstream of(output_file);
 				if (!of) {
 					cerr << "err";
 					return 1;
 				}
-				of << ast;
+				of << out_str;
 			} else {
-				cout << ast;
+				cout << out_str;
 			}
 		} else { // 1: parse err, 2: memory err
 			return 1;

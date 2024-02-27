@@ -27,8 +27,10 @@ enum {
 	KW_EXPORT =	PlnParser::token::KW_EXPORT,
 	KW_IMPORT =	PlnParser::token::KW_IMPORT,
 	KW_FROM =	PlnParser::token::KW_FROM,
+	KW_AS	=	PlnParser::token::KW_AS,
 	KW_FUNC =	PlnParser::token::KW_FUNC,
 	KW_TYPE =	PlnParser::token::KW_TYPE,
+	KW_INTERFACE =	PlnParser::token::KW_INTERFACE,
 	KW_CONST =	PlnParser::token::KW_CONST,
 	KW_VOID =	PlnParser::token::KW_VOID,
 	KW_RETURN = PlnParser::token::KW_RETURN,
@@ -41,6 +43,7 @@ enum {
 	DBL_GRTR =	PlnParser::token::DBL_GRTR,
 	ARROW =	PlnParser::token::ARROW,
 	DBL_ARROW =	PlnParser::token::DBL_ARROW,
+	AT_EXCL =	PlnParser::token::AT_EXCL,
 	DBL_PLUS =	PlnParser::token::DBL_PLUS
 };
 
@@ -89,8 +92,10 @@ COMMENT1	\/\/[^\n]*\n
 		lval.build<string>() = move(str);
 		return INCLUDE_FILE;
 	}
+<*>"as"	{ return KW_AS; }
 <*>"func" { return KW_FUNC; }
 <*>"type" { return KW_TYPE; }
+<*>"interface" { return KW_INTERFACE; }
 <*>"const" { return KW_CONST; }
 <*>"void" { return KW_VOID; }
 <*>"return" { return KW_RETURN; }
@@ -115,6 +120,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>">>"	{ return DBL_GRTR; }
 <*>"->"	{ return ARROW; }
 <*>"->>"	{ return DBL_ARROW; }
+<*>"@!"	{ return AT_EXCL; }
 <*>"++"	{ return DBL_PLUS; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
