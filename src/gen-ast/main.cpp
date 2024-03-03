@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
 	} 
 
 	if ((argc-optind) != 1) {
-		cerr << "err" << endl;
+		cerr << "err1" << endl;
 		return 1;
 	}
 	
@@ -70,7 +70,7 @@ int main(int argc, char* argv[])
 			if (output_file) {
 				ofstream of(output_file);
 				if (!of) {
-					cerr << "err";
+					cerr << "err2";
 					return 1;
 				}
 				of << out_str;

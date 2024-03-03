@@ -31,8 +31,10 @@ string exec_worker(const string &cmd)
 	string result_str;
 	string tmp_str;
 	getline(is, result_str);
+	if (!is.eof()) result_str += "\n";
 	while (getline(is, tmp_str)) {
-		result_str += tmp_str + "\n";
+		result_str += tmp_str;
+		if (!is.eof()) result_str += "\n";
 	}
 	int ret = pclose(p);
 
