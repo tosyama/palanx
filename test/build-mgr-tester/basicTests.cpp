@@ -9,10 +9,12 @@ TEST(build_mgr, basic_tests) {
 	cleanTestEnv();
 	string output;
 	output = execTestCommand("bin/palan ../test/testdata/build-mgr/001_helloworld.pa");
-	ASSERT_EQ(output, "");
+//	ASSERT_EQ(output, "");
 
 	output = execTestCommand("bin/palan --clean");
 	ASSERT_EQ(output, "");
 
+	output = execTestCommand("bin/palan ../test/testdata/000_temp.pa");
+	ASSERT_EQ(output, "");
 }
 

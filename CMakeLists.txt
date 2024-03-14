@@ -18,6 +18,8 @@ add_subdirectory(test/test-base)
 add_subdirectory(src/gen-ast)
 add_subdirectory(test/gen-ast-tester)
 
+add_subdirectory(src/semantec-anlyzr)
+
 add_subdirectory(src/build-mgr)
 add_subdirectory(test/build-mgr-tester)
 

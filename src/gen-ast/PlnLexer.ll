@@ -30,6 +30,7 @@ enum {
 	KW_AS	=	PlnParser::token::KW_AS,
 	KW_FUNC =	PlnParser::token::KW_FUNC,
 	KW_TYPE =	PlnParser::token::KW_TYPE,
+	KW_CONSTRUCT =	PlnParser::token::KW_CONSTRUCT,
 	KW_INTERFACE =	PlnParser::token::KW_INTERFACE,
 	KW_CONST =	PlnParser::token::KW_CONST,
 	KW_VOID =	PlnParser::token::KW_VOID,
@@ -95,6 +96,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>"as"	{ return KW_AS; }
 <*>"func" { return KW_FUNC; }
 <*>"type" { return KW_TYPE; }
+<*>"construct" { return KW_CONSTRUCT; }
 <*>"interface" { return KW_INTERFACE; }
 <*>"const" { return KW_CONST; }
 <*>"void" { return KW_VOID; }

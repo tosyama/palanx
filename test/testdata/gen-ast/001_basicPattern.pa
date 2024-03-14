@@ -63,3 +63,7 @@ export func myFuncZ(int64 x=3, int32 z[]=[3,2])
 callback = func (int32 x) {
 		return x+1;
 	};
+
+construct int64(MyType@ t) {
+	return t.y;
+}

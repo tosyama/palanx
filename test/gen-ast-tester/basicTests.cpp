@@ -16,11 +16,11 @@ bool checkerr(string &output) {
 TEST(gen_ast, basic_tests) {
 	cleanTestEnv();
 	string output;
-//	output = execTestCommand("bin/gen-ast ../test/testdata/000_temp.pa");
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
-	ASSERT_EQ(jout["ast"]["statements"].size(), 20);
+	ASSERT_EQ(jout["ast"]["statements"].size(), 21);
+//	cout << output << endl;
 	
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/100_quicksort.pa");
 	ASSERT_TRUE(checkerr(output));

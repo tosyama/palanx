@@ -60,6 +60,7 @@ class PlnLexer;
 %token KW_AS	"as"
 %token KW_FUNC	"func"
 %token KW_TYPE	"type"
+%token KW_CONSTRUCT	"construct"
 %token KW_INTERFACE	"interface"
 %token KW_CONST	"const"
 %token KW_VOID	"void"
@@ -78,6 +79,9 @@ class PlnLexer;
 
 %type <vector<json>>	statements
 %type <json>	statement
+%type <json>	import import_path
+%type <vector<string>>	import_ids
+%type <string>	import_as
 
 %left ARROW DBL_ARROW
 %left '<' '>' OPE_LE OPE_GE
@@ -105,8 +109,8 @@ statements: /* empty */
 
 statement: import ';'
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		$$ = move($1);
+		$$["stmt-type"] = "import";
 	}
 	| block
 	{
@@ -143,6 +147,11 @@ statement: import ';'
 		json temp = {{"stmt-type", "not-impl"}};
 		$$ = move(temp);
 	}
+	| construct_def 
+	{
+		json temp = {{"stmt-type", "not-impl"}};
+		$$ = move(temp);
+	}
 	| return ';'
 	{
 		json temp = {{"stmt-type", "not-impl"}};
@@ -171,17 +180,53 @@ statement: import ';'
 	;
 
 import: KW_IMPORT import_path import_as
+	{
+		ast["import"].emplace_back($2);
+		$$ = move($2);
+		if ($3.size()) {
+			$$["alias"] = $3;
+		}
+	}
 	| KW_IMPORT import_ids KW_FROM import_path import_as
+	{
+		ast["import"].emplace_back($4);
+		$$ = move($4);
+		if ($2.size()) { $$["targets"] = move($2); }
+		if ($5.size()) { $$["alias"] = $5; }
+	}
 	; 
 
-import_ids: ID | import_ids ',' ID
+import_ids: ID
+	{ $$.emplace_back($1); }
+	| import_ids ',' ID
+	{
+		$$ = move($1);
+		$$.emplace_back($3);
+	}
 	;
 
-import_path: PATH | INCLUDE_FILE
+import_path: PATH
+	{
+		json pathinf = {
+			{"path-type", "src"},
+			{"path", $1}
+		};
+		$$ = move(pathinf);
+	}
+	| INCLUDE_FILE
+	{
+		json pathinf = {
+			{"path-type", "inc"},
+			{"path", $1}
+		};
+		$$ = move(pathinf);
+	}
 	;
 
 import_as: /* empty */
+	{ $$ = ""; }
 	| KW_AS ID
+	{ $$ = move($2); }
 	;
 
 block: '{' statements '}'
@@ -302,7 +347,7 @@ dict_items: ID ':' expression
 	| dict_items ',' ID ':' expression
 	;
 
-func_def:do_export KW_FUNC ID '(' paramaters ')' return_def block
+func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block
 	;
 
 paramaters: /* empty */ | var_declarations
@@ -315,6 +360,9 @@ return_def: /* empty */
 
 noname_func: KW_FUNC '(' paramaters ')'
 	return_def block
+	;
+
+construct_def: do_export KW_CONSTRUCT var_type '(' paramaters ')' block
 	;
 
 return: KW_RETURN

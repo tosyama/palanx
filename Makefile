@@ -1,7 +1,7 @@
 all: build/CMakeCache.txt
 	cmake --build build
-	cd build && rm -f bin/core && bin/gen-ast-tester
-	cd build && rm -f bin/core && bin/build-mgr-tester
+	@cd build && rm -f bin/core && bin/gen-ast-tester
+	@cd build && rm -f bin/core && bin/build-mgr-tester
 build/CMakeCache.txt:
 	mkdir -p build
 	cd build && cmake ..

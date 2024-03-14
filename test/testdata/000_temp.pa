@@ -1,4 +1,3 @@
-{ 123 test}
-id 
-// test
-"test"
+import "build-mgr/001_helloworld.pa";
+
+
