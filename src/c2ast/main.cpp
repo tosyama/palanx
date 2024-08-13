@@ -1,16 +1,18 @@
-/// Palan Semantec Analyzer
+/// C to Palan AST Generator
 /// Command line tool main.
 ///
 /// @file main.cpp
 /// @copyright 2024 YAMAGUCHI Toshinobu
 
+#include <vector>
 #include <iostream>
-#include <fstream>
-#include <filesystem>
 #include <getopt.h>
-#include "analysis.h"
 
-namespace fs = std::filesystem;
+using namespace std;
+#include "cfileinfo.h"
+#include "ctoken.h"
+#include "clexer.h"
+#include "cpreprocessor.h"
 
 int main(int argc, char* argv[])
 {
@@ -28,7 +30,7 @@ int main(int argc, char* argv[])
 	while (0 < (opt = getopt_long(argc, argv, "ho:i", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
-				cout << "help" << endl;
+				cout << "Help (not Inplemented.)" << endl;
 				return 0;
 			case 'o':
 				output_file = optarg;
@@ -42,24 +44,23 @@ int main(int argc, char* argv[])
 	} 
 
 	if ((argc-optind) != 1) {
-		// TODO: Error Message
-		cerr << "err" << endl;
+		cerr << "err1" << endl;
 		return 1;
 	}
 
-	fs::path exec_file_path = fs::canonical("/proc/self/exe");
-	string exec_path = exec_file_path.parent_path().string();
-	string c2ast_path = exec_path + "/palan-c2ast";
-
-	fs::path ast_path = argv[optind];
-
-	ifstream astfile(ast_path.string());
-	json ast = json::parse(astfile);
-
-	PlnSemanticAnalyzer analyzer(ast_path.parent_path().string(), c2ast_path);
-	analyzer.analysis(ast);
+	string input_file = argv[optind];
+	{
+		vector<CMacro*> macros;
+		vector<string> include_paths = {
+			"/usr/include",
+			"/usr/include/x86_64-linux-gnu",
+			"/usr/lib/gcc/x86_64-linux-gnu/7/include",
+			"/usr/lib/gcc/x86_64-linux-gnu/8/include",
+			"/usr/lib/gcc/x86_64-linux-gnu/9/include",
+			"/usr/lib/gcc/x86_64-linux-gnu/10/include",
+		};
+		CPreprocessor cpp(macros, include_paths);
+	}
 
 	return 0;
 }
-
-

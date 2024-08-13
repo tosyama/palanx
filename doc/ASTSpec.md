@@ -7,8 +7,8 @@ ver. 0.0.1
 
 Root
 ----
-- import\* - import file list
-- export\* - export declaration list
+- import - import file list
+- export - export declaration list
 - ast\* - AST model
 
 Import file list
