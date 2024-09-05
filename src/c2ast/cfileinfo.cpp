@@ -76,6 +76,11 @@ string CFileInfo::getFilePath(string filepath, string parentfile, vector<string>
 		BOOST_ASSERT(false);
 	}
 
+	return searchFilePath(fpath, searchpaths);
+}
+
+string CFileInfo::searchFilePath(const string& fpath, vector<string> &searchpaths) {
+
 	for (string& searchpath: searchpaths) {
 		const char *delim = "/";
 		if (searchpath.back() == *delim) {
@@ -83,7 +88,7 @@ string CFileInfo::getFilePath(string filepath, string parentfile, vector<string>
 		}
 		string checkpath = searchpath + delim + fpath;
 		if (file_exists(checkpath)) {
-			cout << "include file:" << checkpath << endl;
+			// cout << "include file:" << checkpath << endl;
 			return checkpath;
 		}
 	}

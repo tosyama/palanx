@@ -19,6 +19,7 @@ add_subdirectory(src/gen-ast)
 add_subdirectory(test/gen-ast-tester)
 
 add_subdirectory(src/c2ast)
+add_subdirectory(test/c2ast-tester)
 
 add_subdirectory(src/semantic-anlyzr)
 

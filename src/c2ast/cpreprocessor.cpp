@@ -274,7 +274,7 @@ int parse_params(vector<string>& params, CLexer& lexer, int n)
 		n = next_pos(token0s, n);
 		CToken0 &t = token0s[n];
 
-		if (t.type == TT0_ID) {
+		if (t.type == TT0_ID || (t.type == TT0_PUNCTUATOR && lexer.get_ch(&t) == '...')) {
 			is_not_eol(t);
 			params.push_back(lexer.get_str(&t));
 			n = next_pos(token0s, n);

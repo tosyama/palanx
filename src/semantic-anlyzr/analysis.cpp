@@ -59,11 +59,10 @@ void PlnSemanticAnalyzer::sa_import(const json &stmt)
 		if (stmt["path-type"] == "src") {
 
 		} else if (stmt["path-type"] == "inc") {
-			int ret = system(c2astPath.c_str());
+			string c2astcmd = c2astPath + " -s " + imp_path.string();
+			int ret = system(c2astcmd.c_str());
 			// TODO: Add include path?
 
-			cout << c2astPath << endl;
-			//cout << imp_path.string() << endl;
 		} else {
 			BOOST_ASSERT(false);
 		}
