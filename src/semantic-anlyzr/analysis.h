@@ -12,6 +12,7 @@ using json = nlohmann::json;
 
 class PlnSemanticAnalyzer {
 	string basePath;
+	string astFileName;
 	string c2astPath;
 	json sa;
 	
@@ -19,7 +20,7 @@ class PlnSemanticAnalyzer {
 	void sa_import(const json &stmt);
 
 public:
-	PlnSemanticAnalyzer(string base_path, string c2ast_path);
+	PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path);
 	void analysis(const json &ast);
 	json& result();
 };

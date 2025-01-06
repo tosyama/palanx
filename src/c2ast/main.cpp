@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <iostream>
+#include <fstream>
 #include <filesystem>
 #include <getopt.h>
 
@@ -95,6 +96,8 @@ int main(int argc, char* argv[])
 
 		// cout << "c2ast pre_path: " << predefined_path << endl;
 		// cout << "c2ast inputfile: " << input_file << endl;
+
+		cpp.setOutput(output_file);
 	}
 
 	return 0;

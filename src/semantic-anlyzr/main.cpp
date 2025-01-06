@@ -56,7 +56,16 @@ int main(int argc, char* argv[])
 	ifstream astfile(ast_path.string());
 	json ast = json::parse(astfile);
 
-	PlnSemanticAnalyzer analyzer(ast_path.parent_path().string(), c2ast_path);
+	string ast_filename = ast_path.filename();
+	string suffix = ".ast.json";
+
+	// Delete suffix from filename
+	if (ast_filename.size() >= suffix.size() && 
+		ast_filename.compare(ast_filename.size() - suffix.size(), suffix.size(), suffix) == 0) {
+		ast_filename.erase(ast_filename.size() - suffix.size());
+	}
+
+	PlnSemanticAnalyzer analyzer(ast_path.parent_path().string(), ast_filename, c2ast_path);
 	analyzer.analysis(ast);
 
 	return 0;

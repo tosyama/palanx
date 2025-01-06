@@ -26,21 +26,21 @@ class CPreprocessor {
 
 public:
 	vector<CToken*> top_tokens;
-
 	vector<CLexer*> lexers;
 	vector<CMacro*> &macros;
 	vector<CMacro*> macro_stack;
 	vector<string> &include_paths;
+	ostream *out_stream;
 
 	CPreprocessor(vector<CMacro*> &macros, vector<string> &include_paths)
-		: macros(macros), include_paths(include_paths) {}
+		: macros(macros), include_paths(include_paths), out_stream(&cout) {}
 	~CPreprocessor() {
 		for (CLexer* l: lexers) delete l;
 	}
 
 	// true: success, false: failed
+	void setOutput(const char* out_filename);
 	bool loadPredefined(const string& filepath);
 	bool preprocess(const string& filepath, vector<CToken*> *tokens=NULL);
 	void outputError(const CPreprocessError& err);
 };
-

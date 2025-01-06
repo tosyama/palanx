@@ -2,6 +2,7 @@
 #include <vector>
 #include <list>
 #include <iostream>
+#include <fstream>
 #include <algorithm>
 #include <boost/assert.hpp>
 
@@ -65,6 +66,14 @@ static CMacro* macro_exists(CPreprocessor& cpp, const string& id);
 static vector<CToken*> expand_macro_obj(CPreprocessor& cpp, CMacro *m);
 static vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool single_line=true);
 static vector<CToken*> expand_macro_func(CPreprocessor& cpp, CMacro *mi, vector<vector<CToken*>> args);
+
+void CPreprocessor::setOutput(const char* out_filename) {
+	if (out_filename) {
+		out_stream = new ofstream(out_filename);
+	} else {
+		out_stream = &cout;
+	}
+}
 
 bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 {

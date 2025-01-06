@@ -6,8 +6,8 @@
 
 using namespace std;
 
-PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string c2ast_path)
-	: basePath(base_path), c2astPath(c2ast_path)
+PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
+	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path)
 {
 }
 
@@ -59,7 +59,7 @@ void PlnSemanticAnalyzer::sa_import(const json &stmt)
 		if (stmt["path-type"] == "src") {
 
 		} else if (stmt["path-type"] == "inc") {
-			string c2astcmd = c2astPath + " -s " + imp_path.string();
+			string c2astcmd = c2astPath + " -s " + imp_path.string() + " -o " + basePath + '/' + astFileName + "#"+ imp_path.filename().string() + ".ast.json";
 			int ret = system(c2astcmd.c_str());
 			// TODO: Add include path?
 
