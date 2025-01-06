@@ -5,6 +5,7 @@
 #include <cctype>
 #include <regex>
 #include <iostream>
+#include <cstring>
 
 using namespace std;
 #include "cfileinfo.h"

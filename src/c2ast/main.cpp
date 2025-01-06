@@ -18,7 +18,6 @@ namespace fs = std::filesystem;
 #include "clexer.h"
 #include "cpreprocessor.h"
 
-
 int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
