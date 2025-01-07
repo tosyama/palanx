@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <getopt.h>
 
+
 using namespace std;
 namespace fs = std::filesystem;
 
@@ -17,6 +18,22 @@ namespace fs = std::filesystem;
 #include "ctoken.h"
 #include "clexer.h"
 #include "cpreprocessor.h"
+
+static vector<string> split(const string &str, const string &delim)
+{
+	vector<string> v;
+	string::size_type start = 0;
+	string::size_type end = str.find(delim);
+
+	while (end != string::npos) {
+		v.push_back(str.substr(start, end - start));
+		start = end + delim.size();
+		end = str.find(delim, start);
+	}
+
+	v.push_back(str.substr(start, end - start));
+	return v;
+}
 
 int main(int argc, char* argv[])
 {
@@ -36,6 +53,7 @@ int main(int argc, char* argv[])
 	bool is_sys_header = false;
 	vector<string> search_paths;
 	string current_directory = "";
+	string target = "x86_64-linux-gnu";
 
 	while (0 < (opt = getopt_long(argc, argv, "ho:ip:c:s", long_options, NULL))) {
 		switch (opt) {
@@ -68,18 +86,70 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
+	// Add serach latest gcc include path from /usr/lib/gcc/{target}/{version}/include
+	if (search_paths.size() == 0) {
+		int gcc_major = -1;
+		int gcc_minor = -1;
+		int gcc_build = -1;
+
+		fs::path gcc_path = "/usr/lib/gcc/" + target;
+		if (fs::exists(gcc_path)) {
+			for (auto& p: fs::directory_iterator(gcc_path)) {
+				fs::path include_path = p.path();
+				include_path.append("include");
+				if (fs::is_directory(include_path)) {
+					string version = p.path().filename();
+					vector<string> v = split(version, ".");
+					if (v.size() >= 1 && v.size() <= 3) {
+						int major = stoi(v[0]);
+						int minor = (v.size() >= 2) ? stoi(v[1]) : -1;
+						int build = (v.size() >= 3) ? stoi(v[2]) : -1;
+
+						if (major > gcc_major) {
+							gcc_major = major;
+							gcc_minor = minor;
+							gcc_build = build;
+						} else if (major == gcc_major) {
+							if (minor > gcc_minor) {
+								gcc_minor = minor;
+								gcc_build = build;
+							} else if (minor == gcc_minor) {
+								if (build > gcc_build) {
+									gcc_build = build;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		if (gcc_major >= 0) {
+			string gcc_latest = gcc_path.string() + "/" + to_string(gcc_major);
+			if (gcc_minor >= 0) {
+				gcc_latest += "." + to_string(gcc_minor);
+				if (gcc_build >= 0) {
+					gcc_latest += "." + to_string(gcc_build);
+				}
+			}
+
+			search_paths.push_back(gcc_latest + "/include");
+		}	
+	}
+
 	string input_file = argv[optind];
 	{
 		vector<CMacro*> macros;
 		vector<string> include_paths = {
 			"/usr/include",
-			"/usr/include/x86_64-linux-gnu",
-			"/usr/lib/gcc/x86_64-linux-gnu/7/include",
-			"/usr/lib/gcc/x86_64-linux-gnu/8/include",
-			"/usr/lib/gcc/x86_64-linux-gnu/9/include",
-			"/usr/lib/gcc/x86_64-linux-gnu/10/include",
-			"/usr/lib/gcc/x86_64-linux-gnu/11/include",
+			"/usr/local/include",
 		};
+
+		include_paths.push_back("/usr/include/" + target);
+
+		for (auto& p: search_paths) {
+			include_paths.push_back(p);
+		}
 
 		fs::path exec_file_path = fs::canonical("/proc/self/exe");
 		string exec_path = exec_file_path.parent_path().string();
