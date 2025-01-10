@@ -17,6 +17,10 @@ jobs:
       - name: build
         run: |
           make coverage
+        shell: bash
+        env:
+          CC: gcc-11
+          CXX: g++-11
 
       - name: Coveralls upload
         uses: coverallsapp/github-action@v2
