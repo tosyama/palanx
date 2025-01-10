@@ -8,5 +8,8 @@ add_executable(palan-c2ast
 	cpreprocessor.cpp
 )
 
+target_compile_options(palan-c2ast PRIVATE -Wno-multichar)
+
 file(MAKE_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/c2ast)
 file(COPY predefined.h DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/c2ast)
+
