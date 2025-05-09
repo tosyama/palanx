@@ -1,7 +1,7 @@
 /// Palan Parser
 ///
 /// @file PlnParser.yy
-/// @copyright 2024 YAMAGUCHI Toshinobu
+/// @copyright 2024-2025 YAMAGUCHI Toshinobu
 
 %glr-parser
 %language "c++"
@@ -18,7 +18,11 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
+
 #include "../../lib/json/single_include/nlohmann/json.hpp"
+#include "../common/fileutils.h"
 
 using std::vector;
 using std::string;
@@ -26,6 +30,7 @@ using std::cout;
 using std::cerr;
 using std::endl;
 using json = nlohmann::json;
+namespace fs = std::filesystem;
 
 class PlnLexer;
 }
@@ -40,6 +45,25 @@ class PlnLexer;
 		PlnLexer& lexer)
 	{
 		return lexer.yylex(*yylval, *location);
+	}
+
+	static void execute_c2ast(const string& out_filename)
+	{
+		fs::path exec_file_path = fs::canonical("/proc/self/exe");
+		string exec_path = exec_file_path.parent_path().string();
+		string c2ast_path = exec_path + "/palan-c2ast";
+
+		string c2astcmd = c2ast_path + " " + out_filename;
+		// int ret = system(c2astcmd.c_str());
+		// if (WIFEXITED(ret)) {
+		// 	ret = WEXITSTATUS(ret);
+		// 	if (ret) {
+		// 		BOOST_ASSERT(false);
+		// 	}
+		// } else {
+		// 	BOOST_ASSERT(false);
+		// }
+		// cout << "execute: " << c2ast_path << " " << out_filename << endl;
 	}
 }
 
@@ -56,6 +80,7 @@ class PlnLexer;
 %token <string>	INCLUDE_FILE	"include file"
 %token KW_EXPORT	"export"
 %token KW_IMPORT	"import"
+%token KW_CINCLUDE	"cinclude"
 %token KW_FROM	"from"
 %token KW_AS	"as"
 %token KW_FUNC	"func"
@@ -79,7 +104,7 @@ class PlnLexer;
 
 %type <vector<json>>	statements
 %type <json>	statement
-%type <json>	import import_path
+%type <json>	import cinclude import_path
 %type <vector<string>>	import_ids
 %type <string>	import_as
 
@@ -111,6 +136,14 @@ statement: import ';'
 	{
 		$$ = move($1);
 		$$["stmt-type"] = "import";
+	}
+	| cinclude ';'
+	{
+		$$ = move($1);
+		$$["stmt-type"] = "cinclude";
+
+		string cincude_outfilename =  getUniqueTempFileName("gen-ast");
+		execute_c2ast(cincude_outfilename);
 	}
 	| block
 	{
@@ -227,6 +260,15 @@ import_as: /* empty */
 	{ $$ = ""; }
 	| KW_AS ID
 	{ $$ = move($2); }
+	;
+
+cinclude: KW_CINCLUDE import_path import_as
+	{
+		$$ = move($2);
+		if ($3.size()) {
+			$$["alias"] = $3;
+		}
+	}
 	;
 
 block: '{' statements '}'

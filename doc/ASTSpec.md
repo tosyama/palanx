@@ -9,6 +9,7 @@ Root
 ----
 - import - import file list
 - export - export declaration list
+- original - original file path
 - ast\* - AST model
 
 Import file list

@@ -14,6 +14,7 @@ class PlnSemanticAnalyzer {
 	string basePath;
 	string astFileName;
 	string c2astPath;
+	string inputFilePath;
 	json sa;
 	
 	void sa_statements(const json &stmts);

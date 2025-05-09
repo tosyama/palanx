@@ -8,6 +8,9 @@
 #include <vector>
 #include <fstream>
 #include <getopt.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 #include "PlnGenAstMessage.h"
 #include "PlnParser.h"
@@ -50,21 +53,17 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 	
-	string input_file = argv[optind];
-	{
-		ifstream f(input_file);
-		if (!f) {
-			cerr << PlnGenAstMessage::getMessage(E_CouldNotOpenFile, input_file) << endl;
-			return 1;
-		}
 
-		PlnLexer lexer;
+	fs::path input_file = fs::weakly_canonical(argv[optind]);
+
+	try {
+		PlnLexer lexer(input_file.string());
 		json ast;
 		PlnParser parser(lexer, ast);
-		lexer.switch_streams(&f);
 
 		int ret;
 		ret = parser.parse();
+		ast["original"] = input_file;
 		if (ret == 0) {
 			string out_str = do_indent ? ast.dump(2) : ast.dump();
 			if (output_file) {
@@ -78,8 +77,13 @@ int main(int argc, char* argv[])
 				cout << out_str;
 			}
 		} else { // 1: parse err, 2: memory err
+			cerr << "err3" << endl;
 			return 1;
 		}
+
+	} catch(runtime_error& e) {
+		cerr << e.what() << endl;
+		return 1;
 	}
 
 	return 0;

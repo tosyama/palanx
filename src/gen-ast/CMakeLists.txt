@@ -13,6 +13,7 @@ add_executable(palan-gen-ast
 	PlnGenAstMessage.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/PlnLexer.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/PlnParser.cpp
+	../common/fileutils.cpp
 )
 
 option(OUTPUT_COVERAGE "Output coverage files.")

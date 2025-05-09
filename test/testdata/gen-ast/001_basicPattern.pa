@@ -1,6 +1,6 @@
 import "example1.pa" as ex;	// import all from example1.pa.
 import x, a from "example2.pa";
-import printf from <stdio.h>;
+cinclude <stdio.h>;
 
 const N = 10;
 

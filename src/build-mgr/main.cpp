@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
 
 	if ((argc-optind) != 1) {
 		// TODO: Error Message
-		cerr << "err" << endl;
+		cerr << "build-mgr err1" << endl;
 		return 1;
 	}
 
@@ -68,7 +68,9 @@ int main(int argc, char* argv[])
 	for (int i=0; i<target_files.size(); i++) {
 		fs::path input_file = target_files[i];
 		if (!fs::exists(input_file)) {
-			cerr << "err" << endl;
+			// TODO: Error Message
+			cerr << "build-mgr err2" << endl;
+			cerr << input_file << endl;
 			return 1;
 		}
 
@@ -76,6 +78,7 @@ int main(int argc, char* argv[])
 		fs::create_directories(input_file_work_path);
 		string output_ast_path = palan_work_path + input_file.string() + ".ast.json";
 		string astcmd = exec_path + "/palan-gen-ast " + input_file.string() + " -o " + output_ast_path;
+
 		int ret = system(astcmd.c_str());
 		if (WIFEXITED(ret)) {
 			ret = WEXITSTATUS(ret);
@@ -94,7 +97,7 @@ int main(int argc, char* argv[])
 				if (imp["path-type"] == "src") {
 					string import_path = imp["path"];
 
-					if (import_path.size()) {
+					if (import_path.ends_with(".pa")) {
 						if (import_path[0] != '/') {
 							import_path = input_file.parent_path().string() + "/" + import_path;
 						}

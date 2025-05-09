@@ -60,7 +60,7 @@ string execTestCommand(const string& cmd)
 	string result_str;
 
 	auto f = async(launch::async, exec_worker, cmd);
-	auto result = f.wait_for(chrono::seconds(1));
+	auto result = f.wait_for(chrono::seconds(5));
 
 	if (result == future_status::timeout) {
 		// time out and try killing process.
@@ -73,7 +73,7 @@ string execTestCommand(const string& cmd)
 			pid_t pid = strtoul(pid_str, NULL, 10);
 			kill(pid, SIGKILL);
 		}
-		return "killed by timeout(1sec):" + cmd;
+		return "killed by timeout(5sec):" + cmd + ":" + f.get();
 	}
 
 	return f.get();

@@ -7,12 +7,13 @@
 using namespace std;
 
 PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
-	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path)
+	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path), inputFilePath("")
 {
 }
 
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
+	this->inputFilePath = ast["original"];
 	sa_statements(ast["ast"]["statements"]);	
 }
 
@@ -22,6 +23,7 @@ void PlnSemanticAnalyzer::sa_statements(const json &stmts)
 		string stmt_type = stmt["stmt-type"];
 		if (stmt_type == "import") {
 			sa_import(stmt);
+		} else if (stmt_type == "cinclude") {
 		} else if (stmt_type == "not-impl") {
 		} else {
 			BOOST_ASSERT(false);
@@ -57,11 +59,23 @@ void PlnSemanticAnalyzer::sa_import(const json &stmt)
 
 	} else if (imp_path.string().ends_with(".h")) {
 		if (stmt["path-type"] == "src") {
+			filesystem::path input_file_path(inputFilePath);
+			string c2astcmd = c2astPath + " " + input_file_path.parent_path().string() + "/" + imp_path.filename().string()
+					+ " -o " + basePath + '/' + astFileName + "#"+ imp_path.filename().string() + ".ast.json";
+			int ret = system(c2astcmd.c_str());
+			if (WIFEXITED(ret)) {
+				ret = WEXITSTATUS(ret);
+				if (ret) {
+					BOOST_ASSERT(false);
+				}
+			} else {
+				BOOST_ASSERT(false);
+			}
 
 		} else if (stmt["path-type"] == "inc") {
+			// -s : system header
 			string c2astcmd = c2astPath + " -s " + imp_path.string() + " -o " + basePath + '/' + astFileName + "#"+ imp_path.filename().string() + ".ast.json";
 			int ret = system(c2astcmd.c_str());
-			// TODO: Add include path?
 
 		} else {
 			BOOST_ASSERT(false);

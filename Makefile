@@ -6,7 +6,7 @@ all: build/CMakeCache.txt
 
 build/CMakeCache.txt:
 	mkdir -p build
-	cd build && cmake ..
+	cd build && cmake -DCMAKE_BUILD_TYPE=Debug ..
 clean:
 	rm -r build
 coverage:

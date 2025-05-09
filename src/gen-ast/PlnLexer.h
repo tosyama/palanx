@@ -8,7 +8,11 @@
 #endif
 
 class PlnLexer : public yyFlexLexer {
+	std::ifstream inStream;
 public:
+	std::string inputFile;
+
+	PlnLexer(const std::string& input_file);
 	int yylex(
 		palan::PlnParser::value_type& yylval,
 		palan::PlnParser::location_type& location
