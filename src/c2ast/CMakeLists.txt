@@ -6,6 +6,7 @@ add_executable(palan-c2ast
 	ctoken.cpp
 	clexer.cpp
 	cpreprocessor.cpp
+	cparser.cpp
 )
 
 target_compile_options(palan-c2ast PRIVATE -Wno-multichar)

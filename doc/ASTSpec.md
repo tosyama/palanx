@@ -19,11 +19,63 @@ Import file list
 
 Export declaration list
 -------------------------
-T.B.D
+(TBD)
 
 AST model
 ---------
+- functions - Function difinition model list
 - statements - Statement model list
+
+Function definition model
+-------------------------
+- name\* - Function name string
+- parameters - Parameter list
+- func-type\* - Function type string: "palan" "c"
+  1. palan - Palan function (TBD)
+    - rets - Return value list
+  2. c - C function prototype
+    - ret - Return value (Anonymous)
+- loc - Location Array
+
+Parameter
+---------
+- name\* - Parameter name string
+- var-type\* - Variable type
+
+Parameter (Variable length)
+-------------------------
+- name\* - "..." string
+
+Return value
+------------
+- name\* - Return value name string (Anonymous if empty string)
+- var-type\* - Variable type
+
+Variable type
+-------------
+- type-kind\* - Type kind string: "prim" "pntr" "arr" "strct" "union" "enum" "func" "user"
+  1. prim - Primitive type
+    - type-name\* - Type name string: "int64" "void" etc.
+  2. pntr - Pointer type
+    - base-type\* - Base variable type
+  3. arr - Array type
+    - base-type\* - Base variable type
+    - size - Array size integer, null - unspecified
+  4. strct - Struct type
+    - name - Struct name string
+    - fields - Field list
+  5. union - Union type (TBD)
+    - name - Union name string
+    - fields - Field list
+  6. enum - Enum type (TBD)
+    - name - Enum name string
+    - enumerators - Enumerator list
+  7. func - Function pointer type (TBD)
+    - parameters - Parameter list
+    - ret-type\* - Return variable type
+  8. user - User defined type
+    - type-name\* - Type name string
+    - base-type\* - Base variable type
 
 Statement model
 ---------------
@@ -33,5 +85,15 @@ Statement model
     - path\* - Path string
     - targets - Import target name string list, null - all
     - alias - Alias name string
-T.B.D
+
+Location Array
+-----------------
+- 0\* - Source file ID integer
+- 1\* - Begin line integer
+- 2\* - Begin column integer
+- 3\* - End line integer
+- 4\* - End column integer
+
+(TBD)
+
 

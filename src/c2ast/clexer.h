@@ -8,7 +8,7 @@ public:
 	vector<CToken0>& scan();
 
 	CToken* createToken(int n);
-	CToken* createIfMacroToken(int n);
+//			CToken* createIfMacroToken(int n);
 
 	string get_str(CToken0* t0);
 	int get_ch(CToken0* t0);

@@ -39,7 +39,6 @@ public:
 	}
 
 	// true: success, false: failed
-	void setOutput(const char* out_filename);
 	bool loadPredefined(const string& filepath);
 	bool preprocess(const string& filepath, vector<CToken*> *tokens=NULL);
 	void outputError(const CPreprocessError& err);

@@ -297,8 +297,35 @@ CToken* CLexer::createToken(int n)
 
 	if (t0->type == TT0_ID) {
 		string str = get_str(t0);
-		t = new CToken(TT_ID, no, n);
-		t->info.id = new string(move(str));
+		if (str == "typedef") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_TYPEDEF;
+		} else if (str == "extern") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_EXTERN;
+		} else if (str == "signed") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_SIGNED;
+		} else if (str == "unsigned") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_UNSIGNED;
+		} else if (str == "short") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_SHORT;
+		} else if (str == "long") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_LONG;
+		} else if (str == "int") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_INT;
+		} else if (str == "char") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_CHAR;
+		} else {
+			t = new CToken(TT_ID, no, n);
+			t->info.id = new string(move(str));
+		}
+		return t;
 
 	} else if (t0->type == TT0_PUNCTUATOR) {
 		t = new CToken(TT_PUNCTUATOR, no, n);
@@ -356,20 +383,6 @@ CToken* CLexer::createToken(int n)
 	} else {
 		BOOST_ASSERT(t0->type == TT0_COMMENT);
 		return NULL;
-	}
-
-	return t;
-}
-
-CToken* CLexer::createIfMacroToken(int n)
-{
-	CToken *t = createToken(n);
-
-	BOOST_ASSERT(t);
-	if (t->type == TT_ID && *t->info.id == "defined") {
-		delete t;
-		t = new CToken(TT_KEYWORD, no, n);
-		t->info.keyword = TK_DEFINED;
 	}
 
 	return t;

@@ -67,14 +67,6 @@ static vector<CToken*> expand_macro_obj(CPreprocessor& cpp, CMacro *m);
 static vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool single_line=true);
 static vector<CToken*> expand_macro_func(CPreprocessor& cpp, CMacro *mi, vector<vector<CToken*>> args);
 
-void CPreprocessor::setOutput(const char* out_filename) {
-	if (out_filename) {
-		out_stream = new ofstream(out_filename);
-	} else {
-		out_stream = &cout;
-	}
-}
-
 bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 {
 	if (!tokens) {
@@ -371,25 +363,9 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 
 	while (!token0s[n].is_eol) {	// Read condition expression.
 		n = next_pos(token0s, n);
-		CToken* t = lexer.createIfMacroToken(n);
+		CToken* t = lexer.createToken(n);
 
-		if (t->type == TT_ID) {
-			CMacro* m = macro_exists(cpp, *t->info.id);
-			if (m) {
-				if (m->type == MT_OBJ) {
-					vector<CToken*> expanded_tokens = expand_macro_obj(cpp, m);
-					condition_tokens.insert(condition_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
-
-				} else {
-					BOOST_ASSERT(m->type == MT_FUNC);
-					vector<vector<CToken*>> args = extruct_macro_func_args(lexer, n);
-					vector<CToken*> expanded_tokens = expand_macro_func(cpp, m, args);
-					condition_tokens.insert(condition_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
-				}
-				continue;
-			}
-
-		} else if(t->type == TT_KEYWORD && t->info.keyword == TK_DEFINED) {
+		if(t->type == TT_ID && *t->info.id == "defined") {
 			// process of "defined" expression
 			int nn = n;
 			delete t;
@@ -429,8 +405,22 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 				t->info.intval = 0;
 			}
 
-		}
+		} else if (t->type == TT_ID) {
+			CMacro* m = macro_exists(cpp, *t->info.id);
+			if (m) {
+				if (m->type == MT_OBJ) {
+					vector<CToken*> expanded_tokens = expand_macro_obj(cpp, m);
+					condition_tokens.insert(condition_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
 
+				} else {
+					BOOST_ASSERT(m->type == MT_FUNC);
+					vector<vector<CToken*>> args = extruct_macro_func_args(lexer, n);
+					vector<CToken*> expanded_tokens = expand_macro_func(cpp, m, args);
+					condition_tokens.insert(condition_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
+				}
+				continue;
+			}
+		}
 		condition_tokens.push_back(t);
 	}
 
@@ -644,7 +634,8 @@ vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool sing
 	is_not_eol(token0s[n]);
 
 	n++;
-	CToken* t = lexer.createIfMacroToken(n);
+
+	CToken* t = lexer.createToken(n);
 	if (t->type != TT_PUNCTUATOR || t->info.punc != '(') {
 		BOOST_ASSERT(false);
 	}
@@ -668,7 +659,7 @@ vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool sing
 				goto ENDLOOP;
 		}
 
-		CToken* t = lexer.createIfMacroToken(n);
+		CToken* t = lexer.createToken(n);
 		if (t->type == TT_PUNCTUATOR) {
 			if (t->info.punc == '(') {
 				blace_level++;

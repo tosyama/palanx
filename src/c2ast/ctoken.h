@@ -38,7 +38,14 @@ typedef enum {
 } CTokenType;
 
 typedef enum {
-	TK_DEFINED,
+	TK_TYPEDEF,
+	TK_EXTERN,
+	TK_SIGNED,
+	TK_UNSIGNED,
+	TK_SHORT,
+	TK_LONG,
+	TK_INT,
+	TK_CHAR,
 } CTokenKeyword;
 
 class CToken {

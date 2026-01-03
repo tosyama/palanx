@@ -10,7 +10,6 @@
 #include <filesystem>
 #include <getopt.h>
 
-
 using namespace std;
 namespace fs = std::filesystem;
 
@@ -18,6 +17,7 @@ namespace fs = std::filesystem;
 #include "ctoken.h"
 #include "clexer.h"
 #include "cpreprocessor.h"
+#include "cparser.h"
 
 static vector<string> split(const string &str, const string &delim)
 {
@@ -163,10 +163,9 @@ int main(int argc, char* argv[])
 
 		cpp.preprocess(input_file);
 
-		// cout << "c2ast pre_path: " << predefined_path << endl;
-		// cout << "c2ast inputfile: " << input_file << endl;
-
-		cpp.setOutput(output_file);
+		CParser cparser(cpp.top_tokens, cpp.lexers);
+		json ast;
+		int ret = cparser.parse(ast);
 	}
 
 	return 0;
