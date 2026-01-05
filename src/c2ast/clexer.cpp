@@ -321,6 +321,15 @@ CToken* CLexer::createToken(int n)
 		} else if (str == "char") {
 			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_CHAR;
+		} else if (str == "struct") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_STRUCT;
+		} else if (str == "union") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_UNION;
+		} else if (str == "void") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_VOID;
 		} else {
 			t = new CToken(TT_ID, no, n);
 			t->info.id = new string(move(str));
