@@ -303,6 +303,9 @@ CToken* CLexer::createToken(int n)
 		} else if (str == "extern") {
 			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_EXTERN;
+		} else if (str == "sizeof") {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = TK_SIZEOF;
 		} else if (str == "signed") {
 			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_SIGNED;

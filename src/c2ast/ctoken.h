@@ -40,6 +40,9 @@ typedef enum {
 typedef enum {
 	TK_TYPEDEF,
 	TK_EXTERN,
+
+	TK_SIZEOF,
+
 	TK_SIGNED,
 	TK_UNSIGNED,
 	TK_SHORT,
