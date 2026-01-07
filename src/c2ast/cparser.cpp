@@ -13,6 +13,10 @@ using namespace std;
 
 void CParser::debug_token(const CToken* token)
 {
+	CLexer* lexer = lexers[token->lexer_no];
+	CToken0& token0 = lexer->tokens[token->token0_no];
+	cout << lexer->infile.fname << ":" << token0.line_no << ":" << token0.pos+1 << ": ";
+
 	switch (token->type) {
 		case TT_ID:
 			cout << "ID ";
@@ -28,7 +32,7 @@ void CParser::debug_token(const CToken* token)
 					cout << "STRUCT" << endl;
 					break;
 				default:
-					cout << "UNKNOWN_KEYWORD" << endl;
+					cout << "UNKNOWN_KEYWORD" << token->info.keyword << endl;
 					break;
 			}
 			break;
@@ -43,7 +47,7 @@ void CParser::debug_token(const CToken* token)
 			}
 		case TT_INCLUDE:
 		{
-			cout << "INCLUDE "; 
+			cout << "INCLUDE " << endl; 
 			break;
 		}
 		default:
@@ -52,9 +56,7 @@ void CParser::debug_token(const CToken* token)
 			break;
 	}
 
-	CLexer* lexer = lexers[token->lexer_no];
-	CToken0& token0 = lexer->tokens[token->token0_no];
-	cout << " at " << lexer->infile.fname << " line " << token0.line_no << endl;
+
 }
 
 CParser::CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexers)
@@ -374,6 +376,44 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	return false;
 }
 
+bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &result_index)
+{
+	int index = result_index;
+	bool is_const = CONSUME_KW(TK_CONST);
+	
+	if (declaration_specifiers(ast, tokens, index)) {
+		if (!declarator(ast, tokens, index, false)) {
+			if (!declarator(ast, tokens, index, true)) { // abstract declarator
+				debug_token(tokens[index]);
+				return false;
+			}
+		} 
+
+		while (CONSUME_PUNC(',')) {
+			is_const = CONSUME_KW(TK_CONST);
+			if (declaration_specifiers(ast, tokens, index)) {
+				if (!declarator(ast, tokens, index, false)) {
+					if (!declarator(ast, tokens, index, true)) { // abstract declarator
+						debug_token(tokens[index]);
+						return false;
+					}
+				}
+			} else if (CONSUME_PUNC('...')) {
+				EXPECT_PUNC(')');
+				index--;	// backtrack for ')'
+			} else {
+				debug_token(tokens[index]);
+				return false;
+			}
+		}
+
+		result_index = index;
+		return true;
+	}
+	return false;
+}
+
+
 bool CParser::declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
@@ -389,8 +429,13 @@ bool CParser::declarator_tail(json &ast, const vector<CToken*> &tokens, int &res
 			}
 		
 		} else if (CONSUME_PUNC('(')) {
+			if (CONSUME_PUNC(')')) {
+				// empty parameter list
+				result_index = index;
+				return true;
+			}
 			// function declarator
-			// TODO: parameter list
+			parameter_list(ast, tokens, index);
 			EXPECT_PUNC(')');
 		
 		} else {
@@ -419,12 +464,17 @@ bool CParser::declarator(json &ast, const vector<CToken*> &tokens, int &result_i
 			return false;
 		}
 		EXPECT_PUNC(')');
-		result_index = index;
-		return true;
-	}
 
-	if (!is_typeonly && !CONSUME(TT_ID)) {
-		return false;
+	} else if (!is_typeonly) {
+		if (CONSUME(TT_ID)) {
+			CToken *token = tokens[index-1];
+			if (*(token->info.id) == "restrict") { // C99 restrict content keyword
+				// try again for identifier
+				CONSUME(TT_ID);
+			}
+		} else {
+			return false;
+		}
 	}
 
 	declarator_tail(ast, tokens, index);
@@ -437,32 +487,19 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 {
 	int index = result_index;
 
-	if (CONSUME_KW(TK_TYPEDEF)) {
-		// typedef declaration
-		json decl;
-		if (!declaration_specifiers(decl, tokens, index)) {
-			return false;
-		}
-
-		if (declarator(decl, tokens, index, true)) {
-			// parsed declarator
-		} else {
-			return false;
-		}
-	
-		if (CONSUME(TT_ID)) {
-			// typedef name
-
-		} else {
-			return false;
-		}
-		EXPECT_PUNC(';');
-		result_index = index;
-		return true;
+	bool is_extern = false;
+	bool is_typedef = CONSUME_KW(TK_TYPEDEF);
+	if (!is_typedef) {
+		is_extern = CONSUME_KW(TK_EXTERN);
 	}
 
-	if (CONSUME_KW(TK_EXTERN)) {
-		return false;
+	if (declaration_specifiers(ast, tokens, index)) {
+		if (declarator(ast, tokens, index, false)) {
+			// parsed declarator
+			EXPECT_PUNC(';');
+			result_index = index;
+			return true;
+		}
 	}
 
 	index = result_index; // backtrack
@@ -474,7 +511,6 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 			result_index = index;
 			return true;
 		}
-		return false;
 	}
 
 	return false;
@@ -709,9 +745,6 @@ int CParser::parse(json &ast, const vector<CToken*> &tokens)
 
 	if (tokens.size() == 0)
 		return 0;
-	else { // debug
-		cout << "start " << lexers[tokens[0]->lexer_no]->infile.fname << endl;
-	}
 
 	while(index < tokens.size()) {
 		if (index >= tokens.size()) return 0;
@@ -726,12 +759,8 @@ int CParser::parse(json &ast, const vector<CToken*> &tokens)
 		} else {
 			cout << "Unhandled token: ";
 			debug_token(tokens[index]);
-			debug_token(tokens[index+1]);
 			return 1;
 		}
-		//debug_count++;
-		//if (debug_count > 5)
-		//	return 0;
 	}
 	return 0;
 }

@@ -297,44 +297,35 @@ CToken* CLexer::createToken(int n)
 
 	if (t0->type == TT0_ID) {
 		string str = get_str(t0);
+		t = new CToken(TT_KEYWORD, no, n);
 		if (str == "typedef") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_TYPEDEF;
 		} else if (str == "extern") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_EXTERN;
+		} else if (str == "const") {
+			t->info.keyword = TK_CONST;
 		} else if (str == "sizeof") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_SIZEOF;
 		} else if (str == "signed") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_SIGNED;
 		} else if (str == "unsigned") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_UNSIGNED;
 		} else if (str == "short") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_SHORT;
 		} else if (str == "long") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_LONG;
 		} else if (str == "int") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_INT;
 		} else if (str == "char") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_CHAR;
 		} else if (str == "struct") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_STRUCT;
 		} else if (str == "union") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_UNION;
 		} else if (str == "void") {
-			t = new CToken(TT_KEYWORD, no, n);
 			t->info.keyword = TK_VOID;
 		} else {
-			t = new CToken(TT_ID, no, n);
+			t->type = TT_ID;
 			t->info.id = new string(move(str));
 		}
 		return t;

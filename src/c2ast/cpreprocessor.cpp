@@ -671,10 +671,10 @@ vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool sing
 					break;
 				}
 			} else if (t->info.punc == ',' && blace_level == 1) {
-				delete t;
 				if (!arg.size()) {
 					BOOST_ASSERT(false);
 				}
+				delete t;
 				args.push_back(arg);
 				arg.clear();
 				continue;

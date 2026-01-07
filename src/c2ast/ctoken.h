@@ -41,6 +41,8 @@ typedef enum {
 	TK_TYPEDEF,
 	TK_EXTERN,
 
+	TK_CONST,
+
 	TK_SIZEOF,
 
 	TK_SIGNED,
@@ -49,10 +51,8 @@ typedef enum {
 	TK_LONG,
 	TK_INT,
 	TK_CHAR,
-
 	TK_STRUCT,
 	TK_UNION,
-	
 	TK_VOID,
 } CTokenKeyword;
 

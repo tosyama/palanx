@@ -24,11 +24,11 @@ class CParser {
 	bool conditional_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
 
 	bool constant_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
-
 	bool declaration(json &ast, const vector<CToken*> &tokens, int &index);
 	bool declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly);
 	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool parameter_list(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
 
 	void debug_token(const CToken* token);
