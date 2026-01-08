@@ -183,6 +183,14 @@ bool unsigned_long(const vector<CToken*> &tokens, int &index)
 		}
 		index--; // backtrack
 	}
+
+	if (CONSUME_KW(TK_LONG)) {
+		if (CONSUME_KW(TK_UNSIGNED)) {
+			CONSUME_KW(TK_INT); // optional
+			return true;
+		}
+		index--; // backtrack
+	}
 	return false;
 }
 

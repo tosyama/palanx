@@ -62,11 +62,6 @@ bool CPreprocessor::loadPredefined(const string& filepath)
 	return true;
 }
 
-static CMacro* macro_exists(CPreprocessor& cpp, const string& id);
-static vector<CToken*> expand_macro_obj(CPreprocessor& cpp, CMacro *m);
-static vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool single_line=true);
-static vector<CToken*> expand_macro_func(CPreprocessor& cpp, CMacro *mi, vector<vector<CToken*>> args);
-
 bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 {
 	if (!tokens) {
@@ -126,8 +121,7 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 				} else if (directive == "line") {
 				} else if (directive == "pragma") {
 				} else if (directive == "error") {
-					cout << "Error at " << lexer.infile.fname
-						<< ":" << t0->line_no << endl;
+					cout << "Error at " << lexer.infile.fname << ":" << t0->line_no << endl;
 					BOOST_ASSERT(false);	// error
 				} 
 
@@ -138,16 +132,16 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 		} else {
 			if (t0->type == TT0_ID) {
 				string s = lexer.get_str(t0);
-				CMacro* m = macro_exists(*this, s);
+				CMacro* m = macro_exists(s);
 				if (m) {
 					if (m->type == MT_OBJ) {
-						vector<CToken*> expanded_tokens = expand_macro_obj(*this, m);
+						vector<CToken*> expanded_tokens = expand_macro_obj(m);
 						tokens->insert(tokens->end(), expanded_tokens.begin(), expanded_tokens.end());
 
 					} else {
 						BOOST_ASSERT(m->type == MT_FUNC);
 						vector<vector<CToken*>> args = extruct_macro_func_args(lexer, n, false);
-						vector<CToken*> expanded_tokens = expand_macro_func(*this, m, args);
+						vector<CToken*> expanded_tokens = expand_macro_func(m, args);
 						tokens->insert(tokens->end(), expanded_tokens.begin(), expanded_tokens.end());
 
 					}
@@ -350,7 +344,6 @@ int process_undef(CPreprocessor& cpp, CLexer& lexer, int n)
 }
 
 static int skip_to_nextif(vector<IfInfo>& ifstack, CLexer& lexer, int n);
-static vector<vector<CToken*>> extruct_macro_func_args2(vector<CToken*> &tokens, int &n);
 static bool evaluate_condition(vector<CToken*> &tokens);
 
 int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n)
@@ -398,7 +391,7 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 			}
 
 			t = new CToken(TT_INT, lexer.no, nn);
-			CMacro* m = macro_exists(cpp, macro_name);
+			CMacro* m = cpp.macro_exists(macro_name);
 			if (m) {
 				t->info.intval = 1;
 			} else {
@@ -406,16 +399,16 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 			}
 
 		} else if (t->type == TT_ID) {
-			CMacro* m = macro_exists(cpp, *t->info.id);
+			CMacro* m = cpp.macro_exists(*t->info.id);
 			if (m) {
 				if (m->type == MT_OBJ) {
-					vector<CToken*> expanded_tokens = expand_macro_obj(cpp, m);
+					vector<CToken*> expanded_tokens = cpp.expand_macro_obj(m);
 					condition_tokens.insert(condition_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
 
 				} else {
 					BOOST_ASSERT(m->type == MT_FUNC);
-					vector<vector<CToken*>> args = extruct_macro_func_args(lexer, n);
-					vector<CToken*> expanded_tokens = expand_macro_func(cpp, m, args);
+					vector<vector<CToken*>> args = cpp.extruct_macro_func_args(lexer, n);
+					vector<CToken*> expanded_tokens = cpp.expand_macro_func(m, args);
 					condition_tokens.insert(condition_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
 				}
 				continue;
@@ -424,28 +417,6 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 		condition_tokens.push_back(t);
 	}
 
-/*
-	cout << "if:";
-	for (CToken* t: condition_tokens) {
-		if (t->type == TT_ID)
-			cout << " " << *t->info.id;
-		else if (t->type == TT_PUNCTUATOR) {
-			cout << " ";
-			char c0 = t->info.punc & 0xFF;
-			char c1 = (t->info.punc >> 8) & 0xFF;
-			if (c1) cout << c1;
-			cout << c0;
-
-		} else if (t->type == TT_INT || t->type == TT_UINT || t->type == TT_LONG || t->type == TT_ULONG)
-			cout << " " << t->info.intval;
-		else if (t->type == TT_KEYWORD)
-			cout << " d";
-		else 
-			cout << " ?";
-	}
-	cout << endl;
-	*/
-	
 	ifstack.back().is_fulfilled = evaluate_condition(condition_tokens);
 
 	if (!ifstack.back().is_fulfilled) {
@@ -455,30 +426,41 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 	return n;
 }
 
-vector<CToken*> expand_macro_obj(CPreprocessor& cpp, CMacro *m)
+CMacro* CPreprocessor::macro_exists(const string& id)
+{
+	auto mi = find_if(macros.begin(), macros.end(),
+			[id](CMacro* m) { return m->name == id; });
+
+	if (mi != macros.end()) {
+		return *mi;
+	}
+	return NULL;
+}
+
+vector<CToken*> CPreprocessor::expand_macro_obj(CMacro *m)
 {
 
-	auto mi = find(cpp.macro_stack.begin(), cpp.macro_stack.end(), m);
-	if (mi != cpp.macro_stack.end()) {
+	auto mi = find(macro_stack.begin(), macro_stack.end(), m);
+	if (mi != macro_stack.end()) {
 		BOOST_ASSERT(false); 	// recursive macro
 	}
 
 	vector<CToken*> tokens;
 
-	cpp.macro_stack.push_back(m);
+	macro_stack.push_back(m);
 
 	for (int n=0; n<m->body.size(); n++) {
 		CToken *t = m->body[n];
 		if (t->type == TT_ID) {
-			CMacro* mm = macro_exists(cpp, *t->info.id);
+			CMacro* mm = macro_exists(*t->info.id);
 			if (mm) {
 				if (mm->type == MT_OBJ) {
-					vector<CToken*> expanded_tokens = expand_macro_obj(cpp, mm);
+					vector<CToken*> expanded_tokens = expand_macro_obj(mm);
 					tokens.insert(tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
 				} else {
 					BOOST_ASSERT(mm->type == MT_FUNC);
 					vector<vector<CToken*>> args = extruct_macro_func_args2(m->body, n);
-					vector<CToken*> expanded_tokens = expand_macro_func(cpp, mm, args);
+					vector<CToken*> expanded_tokens = expand_macro_func(mm, args);
 					tokens.insert(tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
 				}
 				continue;
@@ -489,19 +471,31 @@ vector<CToken*> expand_macro_obj(CPreprocessor& cpp, CMacro *m)
 
 	}
 
-	cpp.macro_stack.pop_back();
+	macro_stack.pop_back();
 
 	return tokens;
 }
 
 static string get_oristr(CPreprocessor& ppc, CToken *t);
 
-vector<CToken*> expand_macro_func(CPreprocessor& cpp, CMacro *m, vector<vector<CToken*>> args)
+vector<CToken*> CPreprocessor::expand_macro_func(CMacro *m, vector<vector<CToken*>> args)
 {
-	auto mi = find(cpp.macro_stack.begin(), cpp.macro_stack.end(), m);
-	if (mi != cpp.macro_stack.end()) {
-		BOOST_ASSERT(false); 	// recursive macro
+	// Check recursive macro call limit
+	int call_count = 0;
+	for (CMacro* mm: macro_stack) {
+		if (mm == m) {
+			call_count++;
+		}
 	}
+	if (call_count >= 100) {
+		CPreprocessError err("recursive macro call: " + m->name);
+		if (args.size() && args[0].size()) {
+			err.lexer_no = args[0][0]->lexer_no;
+			err.token0_start = args[0][0]->token0_no;
+		}
+		outputError(err);
+		BOOST_ASSERT(false);
+	}	
 
 	if (m->params.size() != args.size()) {
 		CPreprocessError err("argment error: " + m->name);
@@ -509,12 +503,12 @@ vector<CToken*> expand_macro_func(CPreprocessor& cpp, CMacro *m, vector<vector<C
 			err.lexer_no = args[0][0]->lexer_no;
 			err.token0_start = args[0][0]->token0_no;
 		}
-		cpp.outputError(err);
+		outputError(err);
 		BOOST_ASSERT(false);
 	}
 
 	vector<CToken*> pre_tokens;
-	cpp.macro_stack.push_back(m);
+	macro_stack.push_back(m);
 
 	for (int n=0; n<m->body.size(); n++) {
 		CToken *t = m->body[n];
@@ -540,13 +534,19 @@ vector<CToken*> expand_macro_func(CPreprocessor& cpp, CMacro *m, vector<vector<C
 				BOOST_ASSERT(false);
 			}
 
-			CToken &arg_start = *args[p][0];
-			CToken &arg_end = **(args[p].end()-1);
-			CLexer &lexer = *cpp.lexers[arg_start.lexer_no];
+			if (args[p].size()) {
+				CToken &arg_start = *args[p][0];
+				CToken &arg_end = **(args[p].end()-1);
+				CLexer &lexer = *lexers[arg_start.lexer_no];
 
-			string s = lexer.get_oristr(&arg_start, &arg_end);
+				string s = lexer.get_oristr(&arg_start, &arg_end);
 
-			pre_tokens.push_back(new CToken(s, arg_start.lexer_no, arg_start.token0_no));
+				pre_tokens.push_back(new CToken(s, arg_start.lexer_no, arg_start.token0_no));
+
+			} else {
+				pre_tokens.push_back(new CToken("", t->lexer_no, t->token0_no));
+			}
+			continue;
 
 		} else if (t->type == TT_ID) {	// expand argument
 			bool matched = false;
@@ -583,7 +583,7 @@ vector<CToken*> expand_macro_func(CPreprocessor& cpp, CMacro *m, vector<vector<C
 				BOOST_ASSERT(false);
 			}
 			t = pre_tokens[n];
-			string s = get_oristr(cpp, t);
+			string s = get_oristr(*this, t);
 
 
 			delete t;
@@ -598,25 +598,32 @@ vector<CToken*> expand_macro_func(CPreprocessor& cpp, CMacro *m, vector<vector<C
 	for (int n=0; n<pre_tokens2.size(); n++) {
 		CToken *t = pre_tokens2[n];
 		if (t->type == TT_ID) {
-			CMacro* mm = macro_exists(cpp, *t->info.id);
+			CMacro* mm = macro_exists(*t->info.id);
 			if (mm) {
 				if (mm->type == MT_OBJ) {
-					vector<CToken*> expanded_tokens = expand_macro_obj(cpp, mm);
+					vector<CToken*> expanded_tokens = expand_macro_obj( mm);
 					tokens.insert(tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
 				} else {
 					BOOST_ASSERT(m->type == MT_FUNC);
 					vector<vector<CToken*>> args = extruct_macro_func_args2(pre_tokens2, n);
-					vector<CToken*> expanded_tokens = expand_macro_func(cpp, mm, args);
+					vector<CToken*> expanded_tokens = expand_macro_func(mm, args);
 					tokens.insert(tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
 				}
 				delete t;
 				continue;
 			}
+			if (*t->info.id == "") {
+				// empty argument
+				delete t->info.id;
+				delete t;
+				continue;
+			}
 		}
 		tokens.push_back(t);
+
 	}
 
-	cpp.macro_stack.pop_back();
+	macro_stack.pop_back();
 
 	return tokens;
 }
@@ -626,7 +633,7 @@ string get_oristr(CPreprocessor& cpp, CToken *t)
 	return cpp.lexers[t->lexer_no]->get_oristr(t->token0_no);
 }
 
-vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool single_line)
+vector<vector<CToken*>> CPreprocessor::extruct_macro_func_args(CLexer &lexer, int &n, bool single_line)
 {
 	vector<vector<CToken*>> args;
 
@@ -645,11 +652,13 @@ vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool sing
 	bool succeeded = false;
 
 	for(;;) {
-		// Skip comment
+		// Skip comment and increment n
 		for(;;) {
 			if(single_line && token0s[n].is_eol)
 				goto ENDLOOP;
+
 			n++;
+
 			if (n >= token0s.size()) 
 				goto ENDLOOP;
 			CToken0 &t0 = token0s[n];
@@ -672,9 +681,13 @@ vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool sing
 				}
 			} else if (t->info.punc == ',' && blace_level == 1) {
 				if (!arg.size()) {
-					BOOST_ASSERT(false);
+					// change to empty argument
+					t->type = TT_ID;
+					t->info.id = new string("");
+					arg.push_back(t);
+				} else { 
+					delete t;
 				}
-				delete t;
 				args.push_back(arg);
 				arg.clear();
 				continue;
@@ -687,13 +700,16 @@ ENDLOOP:
 		BOOST_ASSERT(false);
 	}
 
-	if (arg.size())
-		args.push_back(arg);
+	args.push_back(arg);
+
+	for (int i=0; i<args.size(); i++) {
+		args[i] = expand_macros(args[i]);
+	}
 
 	return args;
 }
 
-vector<vector<CToken*>> extruct_macro_func_args2(vector<CToken*> &tokens, int &n)
+vector<vector<CToken*>> CPreprocessor::extruct_macro_func_args2(vector<CToken*> &tokens, int &n)
 {
 	vector<vector<CToken*>> args;
 	BOOST_ASSERT(n+2 < tokens.size());
@@ -717,6 +733,7 @@ vector<vector<CToken*>> extruct_macro_func_args2(vector<CToken*> &tokens, int &n
 				}
 			} else if (t->info.punc == ',' && blace_level == 1) {
 				args.push_back(arg);
+				arg.clear();
 				continue;
 			}
 		}
@@ -724,18 +741,37 @@ vector<vector<CToken*>> extruct_macro_func_args2(vector<CToken*> &tokens, int &n
 	}
 	args.push_back(arg);
 
+	for (int i=0; i<args.size(); i++) {
+		args[i] = expand_macros(args[i]);
+	}
+
 	return args;
 }
 
-CMacro* macro_exists(CPreprocessor& cpp, const string& id)
-{
-	auto mi = find_if(cpp.macros.begin(), cpp.macros.end(),
-			[id](CMacro* m) { return m->name == id; });
 
-	if (mi != cpp.macros.end()) {
-		return *mi;
+vector<CToken*> CPreprocessor::expand_macros(vector<CToken*> &tokens)
+{
+	vector<CToken*> expanded_tokens;
+	for (int n=0; n<tokens.size(); n++) {
+		CToken *t = tokens[n];
+		if (t->type == TT_ID) {
+			CMacro* m = macro_exists(*t->info.id);
+			if (m) {
+				if (m->type == MT_OBJ) {
+					vector<CToken*> expanded = expand_macro_obj(m);
+					expanded_tokens.insert(expanded_tokens.end(), expanded.begin(), expanded.end());
+				} else {
+					BOOST_ASSERT(m->type == MT_FUNC);
+					vector<vector<CToken*>> args = extruct_macro_func_args2(tokens, n);
+					vector<CToken*> expanded = expand_macro_func(m, args);
+					expanded_tokens.insert(expanded_tokens.end(), expanded.begin(), expanded.end());
+				}
+				continue;
+			}
+		}
+		expanded_tokens.push_back(new CToken(*t));
 	}
-	return NULL;
+	return expanded_tokens;
 }
 
 // Condition parser definition
@@ -801,7 +837,7 @@ long lor(vector<CToken*> &tokens, int &n)
 	int x = land(tokens, n);
 	for (;;) {
 		if (CONSUME('||')) {
-			x = x & land(tokens, n);
+			x = x | land(tokens, n);
 		} else {
 			break;
 		}
