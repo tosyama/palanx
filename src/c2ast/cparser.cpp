@@ -139,6 +139,7 @@ bool unsigned_long_long(const vector<CToken*> &tokens, int &index)
 	if (CONSUME_KW(TK_UNSIGNED)) {
 		if (CONSUME_KW(TK_LONG)) {
 			if (CONSUME_KW(TK_LONG)) {
+				CONSUME_KW(TK_INT); // optional
 				return true;
 			}
 			index--; // backtrack
@@ -155,6 +156,7 @@ bool signed_long_long(const vector<CToken*> &tokens, int &index)
 	if (CONSUME_KW(TK_SIGNED)) {
 		if (CONSUME_KW(TK_LONG)) {
 			if (CONSUME_KW(TK_LONG)) {
+				CONSUME_KW(TK_INT); // optional
 				return true;
 			}
 			index--; // backtrack
@@ -165,6 +167,7 @@ bool signed_long_long(const vector<CToken*> &tokens, int &index)
 
 	if (CONSUME_KW(TK_LONG)) {
 		if (CONSUME_KW(TK_LONG)) {
+			CONSUME_KW(TK_INT); // optional
 			return true;
 		}
 		index--; // backtrack
@@ -284,6 +287,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 	}
 
 	do {
+		bool is_const = CONSUME_KW(TK_CONST);
 		if (declaration_specifiers(ast, tokens, index)) {
 			if (!declarator(ast, tokens, index, false)) {
 				return false;
@@ -330,6 +334,14 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 		return true;
 	}
 
+	if (CONSUME_KW(TK_LONG)) {
+		if (CONSUME_KW(TK_DOUBLE)) {
+			result_index = index;
+			return true;
+		}
+		index--; // backtrack
+	}
+
 	if (unsigned_long(tokens, index)) {
 		result_index = index;
 		return true;
@@ -356,6 +368,17 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	}
 
 	if (signed_int(tokens, index)) {
+		result_index = index;
+		return true;
+	}
+
+
+	if (CONSUME_KW(TK_DOUBLE)) {
+		result_index = index;
+		return true;
+	}
+
+	if (CONSUME_KW(TK_FLOAT)) {
 		result_index = index;
 		return true;
 	}
@@ -496,9 +519,14 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 	int index = result_index;
 
 	bool is_extern = false;
+	bool is_static = false;
 	bool is_typedef = CONSUME_KW(TK_TYPEDEF);
+
 	if (!is_typedef) {
 		is_extern = CONSUME_KW(TK_EXTERN);
+		if (!is_extern) {
+			is_static = CONSUME_KW(TK_STATIC);
+		}
 	}
 
 	if (declaration_specifiers(ast, tokens, index)) {

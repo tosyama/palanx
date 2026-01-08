@@ -40,6 +40,7 @@ typedef enum {
 typedef enum {
 	TK_TYPEDEF,
 	TK_EXTERN,
+	TK_STATIC,
 
 	TK_CONST,
 
@@ -51,6 +52,8 @@ typedef enum {
 	TK_LONG,
 	TK_INT,
 	TK_CHAR,
+	TK_FLOAT,
+	TK_DOUBLE,
 	TK_STRUCT,
 	TK_UNION,
 	TK_VOID,

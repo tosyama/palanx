@@ -302,6 +302,8 @@ CToken* CLexer::createToken(int n)
 			t->info.keyword = TK_TYPEDEF;
 		} else if (str == "extern") {
 			t->info.keyword = TK_EXTERN;
+		} else if (str == "static") {
+			t->info.keyword = TK_STATIC;
 		} else if (str == "const") {
 			t->info.keyword = TK_CONST;
 		} else if (str == "sizeof") {
@@ -318,6 +320,10 @@ CToken* CLexer::createToken(int n)
 			t->info.keyword = TK_INT;
 		} else if (str == "char") {
 			t->info.keyword = TK_CHAR;
+		} else if (str == "float") {
+			t->info.keyword = TK_FLOAT;
+		} else if (str == "double") {
+			t->info.keyword = TK_DOUBLE;
 		} else if (str == "struct") {
 			t->info.keyword = TK_STRUCT;
 		} else if (str == "union") {
