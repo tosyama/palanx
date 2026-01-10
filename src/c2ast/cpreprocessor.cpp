@@ -77,6 +77,8 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 
 	vector<CToken0>& token0s = lexer.scan();
 
+	bool debug = false;
+
 	for (int n=0; n<token0s.size(); n++) {
 		BOOST_ASSERT(!macro_stack.size());
 		CToken0 *t0 = &token0s[n];

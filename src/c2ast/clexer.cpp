@@ -297,43 +297,37 @@ CToken* CLexer::createToken(int n)
 
 	if (t0->type == TT0_ID) {
 		string str = get_str(t0);
-		t = new CToken(TT_KEYWORD, no, n);
-		if (str == "typedef") {
-			t->info.keyword = TK_TYPEDEF;
-		} else if (str == "extern") {
-			t->info.keyword = TK_EXTERN;
-		} else if (str == "static") {
-			t->info.keyword = TK_STATIC;
-		} else if (str == "const") {
-			t->info.keyword = TK_CONST;
-		} else if (str == "sizeof") {
-			t->info.keyword = TK_SIZEOF;
-		} else if (str == "signed") {
-			t->info.keyword = TK_SIGNED;
-		} else if (str == "unsigned") {
-			t->info.keyword = TK_UNSIGNED;
-		} else if (str == "short") {
-			t->info.keyword = TK_SHORT;
-		} else if (str == "long") {
-			t->info.keyword = TK_LONG;
-		} else if (str == "int") {
-			t->info.keyword = TK_INT;
-		} else if (str == "char") {
-			t->info.keyword = TK_CHAR;
-		} else if (str == "float") {
-			t->info.keyword = TK_FLOAT;
-		} else if (str == "double") {
-			t->info.keyword = TK_DOUBLE;
-		} else if (str == "struct") {
-			t->info.keyword = TK_STRUCT;
-		} else if (str == "union") {
-			t->info.keyword = TK_UNION;
-		} else if (str == "void") {
-			t->info.keyword = TK_VOID;
+		CTokenKeyword keyword =
+			(str == "typedef") ? TK_TYPEDEF:
+			(str == "extern") ? TK_EXTERN:
+			(str == "static") ? TK_STATIC:
+			(str == "const") ? TK_CONST:
+			(str == "sizeof") ? TK_SIZEOF:
+			(str == "signed") ? TK_SIGNED:
+			(str == "unsigned") ? TK_UNSIGNED:
+			(str == "short") ? TK_SHORT:
+			(str == "long") ? TK_LONG:
+			(str == "int") ? TK_INT:
+			(str == "char") ? TK_CHAR:
+			(str == "float") ? TK_FLOAT:
+			(str == "double") ? TK_DOUBLE:
+			(str == "struct") ? TK_STRUCT:
+			(str == "union") ? TK_UNION:
+			(str == "void") ? TK_VOID:
+			(str == "return") ? TK_RETURN:
+			(str == "inline") ? TK_INLINE:
+			(str == "restrict") ? TK_RESTRICT:
+			TK_NOT_KEYWORD;
+
+		if (keyword != TK_NOT_KEYWORD) {
+			t = new CToken(TT_KEYWORD, no, n);
+			t->info.keyword = keyword;
+
 		} else {
-			t->type = TT_ID;
+			t = new CToken(TT_ID, no, n);
 			t->info.id = new string(move(str));
 		}
+
 		return t;
 
 	} else if (t0->type == TT0_PUNCTUATOR) {

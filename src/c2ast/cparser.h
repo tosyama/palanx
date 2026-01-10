@@ -7,6 +7,16 @@ class CParser {
 
 	int parse(json &ast, const vector<CToken*>& tokens);
 	
+	bool declaration(json &ast, const vector<CToken*> &tokens, int &index, bool is_top_level);
+	bool declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly);
+	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool parameter_list(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
+
+	bool statement(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool jump_statement(json &ast, const vector<CToken*> &tokens, int &result_index);
+
 	bool primary_expression(json &ast, const vector<CToken*> &tokens, int &index);
 	bool postfix_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool unary_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
@@ -22,14 +32,9 @@ class CParser {
 	bool logical_and_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool logical_or_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool conditional_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
-
 	bool constant_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
-	bool declaration(json &ast, const vector<CToken*> &tokens, int &index);
-	bool declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index);
-	bool declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly);
-	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
-	bool parameter_list(json &ast, const vector<CToken*> &tokens, int &result_index);
-	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool assignment_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool expression(json &ast, const vector<CToken*> &tokens, int &result_index);
 
 	void debug_token(const CToken* token);
 

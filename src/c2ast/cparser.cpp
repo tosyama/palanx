@@ -308,6 +308,8 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 {
 	int index = result_index;
 
+	CONSUME_KW(TK_INLINE);
+
 	if (CONSUME(TT_ID)) {	// typedef name
 		// TODO: Check defined type
 		result_index = index;
@@ -497,13 +499,8 @@ bool CParser::declarator(json &ast, const vector<CToken*> &tokens, int &result_i
 		EXPECT_PUNC(')');
 
 	} else if (!is_typeonly) {
-		if (CONSUME(TT_ID)) {
-			CToken *token = tokens[index-1];
-			if (*(token->info.id) == "restrict") { // C99 restrict content keyword
-				// try again for identifier
-				CONSUME(TT_ID);
-			}
-		} else {
+		CONSUME_KW(TK_RESTRICT); // C99 restrict qualifier
+		if (!CONSUME(TT_ID)) {
 			return false;
 		}
 	}
@@ -514,7 +511,7 @@ bool CParser::declarator(json &ast, const vector<CToken*> &tokens, int &result_i
 	return true;
 }
 
-bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_index)
+bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_top_level)
 {
 	int index = result_index;
 
@@ -532,9 +529,29 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 	if (declaration_specifiers(ast, tokens, index)) {
 		if (declarator(ast, tokens, index, false)) {
 			// parsed declarator
-			EXPECT_PUNC(';');
-			result_index = index;
-			return true;
+			
+			if (CONSUME_PUNC(';')) {
+				// simple declaration
+				result_index = index;
+				return true;
+
+			} else if (is_top_level && CONSUME_PUNC('{')) {
+				// function definition
+				for (;;) {
+					if (declaration(ast, tokens, index, false))
+						continue;
+
+					if (statement(ast, tokens, index))
+						continue;
+
+					break;
+				}
+				
+				EXPECT_PUNC('}');
+				result_index = index;
+				return true;
+			}
+			return false;
 		}
 	}
 
@@ -553,14 +570,70 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 		
 }
 
-bool CParser::primary_expression(json &ast, const vector<CToken*> &tokens, int &index)
+bool CParser::statement(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	int index = result_index;
+
+	if (jump_statement(ast, tokens, index)) {
+		result_index = index;
+		return true;
+	}
+
+	return false;
+}
+
+static bool debug = false;
+bool CParser::jump_statement(json &ast, const vector<CToken*> &tokens, int &result_index)
+{
+	int index = result_index;
+
+	if (CONSUME_KW(TK_RETURN)) {
+		debug = true;
+		constant_expression(ast, tokens, index);
+		debug = false;
+		EXPECT_PUNC(';');
+		result_index = index;
+		return true;
+	}
+
+	return false;
+}
+
+bool CParser::primary_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
+{
+	int index = result_index;
+
 	if (CONSUME(TT_ID)) {
+		result_index = index;
 		return true;
 	}
 
 	if (CONSUME(TT_INT)) {
+		result_index = index;
 		return true;
+	}
+
+	if (CONSUME(TT_UINT)) {
+		result_index = index;
+		return true;
+	}
+
+	if (CONSUME(TT_LONG)) {
+		result_index = index;
+		return true;
+	}
+
+	if (CONSUME(TT_ULONG)) {
+		result_index = index;
+		return true;
+	}
+
+	if (CONSUME_PUNC('(')) {
+		if (expression(ast, tokens, index)) {
+			EXPECT_PUNC(')');
+			result_index = index;
+			return true;
+		}
 	}
 
 	return false;
@@ -570,12 +643,26 @@ bool CParser::postfix_expression(json &ast, const vector<CToken*> &tokens, int &
 {
 	int index = result_index;
 
-	if (primary_expression(ast, tokens, index)) {
-		result_index = index;
-		return true;
+	if (!primary_expression(ast, tokens, index)) {
+		return false;
 	}
 
-	return false;
+	for (;;) {
+		if (CONSUME_PUNC('(')) {
+			while (conditional_expression(ast, tokens, index)) { // TODO: assignment expression
+				if (!CONSUME_PUNC(',')) {
+					break;
+				}
+			}
+			
+			EXPECT_PUNC(')');
+		} else {
+			break;
+		}
+	}
+
+	result_index = index;
+	return true;
 }
 
 bool CParser::unary_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
@@ -609,9 +696,41 @@ bool CParser::unary_expression(json &ast, const vector<CToken*> &tokens, int &re
 bool CParser::cast_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
+	int save_index = index;
+
+ 	for (;;) {
+		if (!CONSUME_PUNC('(')) {
+			break;
+		}
+		if (!declaration_specifiers(ast, tokens, index)) {
+			index = save_index; // backtrack
+			break;
+		}
+
+		if (!declarator(ast, tokens, index, true)) {
+			index = save_index; // backtrack
+			break;
+		}
+
+		if (!CONSUME_PUNC(')')) {
+			index = save_index; // backtrack
+			break;
+		}
+
+		save_index = index;
+	}
+
+	// for after cast(s) expression
 	if (unary_expression(ast, tokens, index)) {
 		result_index = index;
 		return true;
+	}
+
+	// for not a cast expression
+	if (index != result_index) {
+		if (unary_expression(ast, tokens, result_index)) {
+			return true;
+		}
 	}
 
 	return false;
@@ -657,12 +776,17 @@ bool CParser::shift_expression(json &ast, const vector<CToken*> &tokens, int &re
 {
 	int index = result_index;
 
-	if (additive_expression(ast, tokens, index)) {
-		result_index = index;
-		return true;
+	if (!additive_expression(ast, tokens, index)) {
+		return false;
+	}
+	if (CONSUME_PUNC('<<') || CONSUME_PUNC('>>')) {
+		if (!shift_expression(ast, tokens, index)) {
+			return false;
+		}
 	}
 
-	return false;
+	result_index = index;
+	return true;
 }
 
 bool CParser::relational_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
@@ -693,36 +817,54 @@ bool CParser::and_expression(json &ast, const vector<CToken*> &tokens, int &resu
 {
 	int index = result_index;
 
-	if (equality_expression(ast, tokens, index)) {
-		result_index = index;
-		return true;
+	if (!equality_expression(ast, tokens, index)) {
+		return false;
+	}
+	if (CONSUME_PUNC('&')) {
+		if (!and_expression(ast, tokens, index)) {
+			cout << "NG" << endl;
+			return false;
+		}
 	}
 
-	return false;
+	result_index = index;
+	return true;
 }
 
 bool CParser::exclusive_or_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
 
-	if (and_expression(ast, tokens, index)) {
-		result_index = index;
-		return true;
+	if (!and_expression(ast, tokens, index)) {
+		return false;
 	}
 
-	return false;
+	if (CONSUME_PUNC('^')) {
+		if (!exclusive_or_expression(ast, tokens, index)) {
+			return false;
+		}
+	}
+
+	result_index = index;
+	return true;
 }
 
 bool CParser::inclusive_or_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
 
-	if (exclusive_or_expression(ast, tokens, index)) {
-		result_index = index;
-		return true;
+	if (!exclusive_or_expression(ast, tokens, index)) {
+		return false;
 	}
 
-	return false;
+	if (CONSUME_PUNC('|')) {
+		if (!inclusive_or_expression(ast, tokens, index)) {
+			return false;
+		}
+	}
+
+	result_index = index;
+	return true;
 }
 
 bool CParser::logical_and_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
@@ -773,6 +915,33 @@ bool CParser::constant_expression(json &ast, const vector<CToken*> &tokens, int 
 	return false;
 }
 
+bool CParser::assignment_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
+{
+	return conditional_expression(ast, tokens, result_index);
+}
+
+bool CParser::expression(json &ast, const vector<CToken*> &tokens, int &result_index)
+{
+	int index = result_index;
+
+	if (!assignment_expression(ast, tokens, index)) {
+		return false;
+	}
+
+	for (;;) {
+		if (CONSUME_PUNC(',')) {
+			if (!assignment_expression(ast, tokens, index)) {
+				return false;
+			}
+		} else {
+			break;
+		}
+	}
+
+	result_index = index;
+	return true;
+}
+
 // Starting point of parsing (top level & included file)
 int CParser::parse(json &ast, const vector<CToken*> &tokens)
 {
@@ -781,7 +950,7 @@ int CParser::parse(json &ast, const vector<CToken*> &tokens)
 
 	if (tokens.size() == 0)
 		return 0;
-
+	
 	while(index < tokens.size()) {
 		if (index >= tokens.size()) return 0;
 
@@ -789,8 +958,8 @@ int CParser::parse(json &ast, const vector<CToken*> &tokens)
 			CToken* token = tokens[index - 1];
 			if (parse(ast, *(token->info.tokens))) return 1;
 
-		} else if (declaration(ast, tokens, index)) {
-			// parsed declaration
+		} else if (declaration(ast, tokens, index, true)) {
+			// parsed declaration and function definition
 			
 		} else {
 			cout << "Unhandled token: ";

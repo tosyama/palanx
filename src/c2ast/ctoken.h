@@ -57,6 +57,13 @@ typedef enum {
 	TK_STRUCT,
 	TK_UNION,
 	TK_VOID,
+
+	TK_RETURN,
+
+	TK_INLINE,
+	TK_RESTRICT,
+
+	TK_NOT_KEYWORD,
 } CTokenKeyword;
 
 class CToken {
