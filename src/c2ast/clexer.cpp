@@ -6,6 +6,7 @@
 #include <regex>
 #include <iostream>
 #include <cstring>
+#include <cmath>
 
 using namespace std;
 #include "cfileinfo.h"
@@ -282,9 +283,9 @@ int read_id(string& str, int n)
 	return m.length(0);
 }
 
-static regex rex_octint("(0[0-7]+)([uU]?)([lL]?)");
-static regex rex_hexint("(0x[0-9a-fA-F]+)([uU]?)([lL]?)");
-static regex rex_decint("([0-9]+)([uU]?)([lL]?)");
+static regex rex_octint("(0[0-7]+)([uU]?)([lL]{0,2})");
+static regex rex_hexint("(0x[0-9a-fA-F]+)([uU]?)([lL]{0,2})");
+static regex rex_decint("([0-9]+)([uU]?)([lL]{0,2})");
 static regex rex_float("[0-9]*.?[0-9]*([eE]{1}[+-]?[0-9]+)?([fFlL]?)");
 
 static string& unescape(string& str);
@@ -313,10 +314,12 @@ CToken* CLexer::createToken(int n)
 			(str == "double") ? TK_DOUBLE:
 			(str == "struct") ? TK_STRUCT:
 			(str == "union") ? TK_UNION:
+			(str == "enum") ? TK_ENUM:
 			(str == "void") ? TK_VOID:
 			(str == "return") ? TK_RETURN:
 			(str == "inline") ? TK_INLINE:
 			(str == "restrict") ? TK_RESTRICT:
+			(str == "volatile") ? TK_VOLATILE:
 			TK_NOT_KEYWORD;
 
 		if (keyword != TK_NOT_KEYWORD) {
@@ -342,34 +345,44 @@ CToken* CLexer::createToken(int n)
 				|| regex_match(numstr, m, rex_hexint)
 				|| regex_match(numstr, m, rex_decint)) {
 			bool isUnsigned = m[2].str().size();
-			bool isLong = m[3].str().size();
+			bool isLong = (m[3].str().size() == 1);
+			bool isLongLong = (m[3].str().size() == 2);
 			if (isUnsigned) {
-				t = new CToken(isLong ? TT_ULONG : TT_UINT, no, n);
-				t->info.uintval = stoul(m[1].str(), NULL, 0);
+				t = new CToken(isLongLong ? TT_ULONGLONG: isLong ? TT_ULONG : TT_UINT, no, n);
+				t->info.uintval = stoull(m[1].str(), NULL, 0);
 			} else {
-				t = new CToken(isLong ? TT_LONG : TT_INT, no, n);
-				t->info.uintval = stol(m[1].str(), NULL, 0);
+				t = new CToken(isLongLong ? TT_LONGLONG: isLong ? TT_LONG : TT_INT, no, n);
+				t->info.intval = stoll(m[1].str(), NULL, 0);
 			}
 
 		} else if (regex_match(numstr, m, rex_float)) {
 			if (m[2].str() == "") {
 				t = new CToken(TT_DOUBLE, no, n);
-				t->info.floval = stof(numstr);
+				try {
+					t->info.floval = stod(numstr);
+				} catch(out_of_range& e) {
+					t->info.floval = HUGE_VAL;
+				}
 			} else if (m[2].str() == "f" || m[2].str() == "F") {
 				t = new CToken(TT_FLOAT, no, n);
-				t->info.dblval = stod(numstr);
+				try {
+					t->info.floval = stof(numstr);
+				} catch(out_of_range& e) {
+					t->info.floval = HUGE_VALF;
+				}
 			} else {
 				BOOST_ASSERT(m[2].str() == "l" || m[2].str() == "L");
 				t = new CToken(TT_LDOUBLE, no, n);
 				try {
 					t->info.ldblval = stold(numstr);
-				} catch(exception& e) {
-					cout << "warn: failed to convert ldouble: ";
-					cout << get_str(t0) << endl;
-					t->info.ldblval = 0.0l;
+				} catch(out_of_range& e) {
+					t->info.ldblval = HUGE_VALL;
 				}
 			}
 			return t;
+		} else {
+			cout << "warn: invalid number format: " << numstr << endl;
+			cout << " at " << infile.fname << ":" << t0->line_no << ":" << t0->pos+1 << endl;
 		}
 
 	} else if (t0->type == TT0_CHAR) {

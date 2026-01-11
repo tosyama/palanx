@@ -304,11 +304,50 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 	return true;
 }
 
+bool CParser::enum_definition(json &ast, const vector<CToken*> &tokens, int &result_index)
+{
+	int index = result_index;
+
+	if (CONSUME(TT_ID)) {
+		// enum with tag
+		if (!CONSUME_PUNC('{')) {
+			// enum with tag only
+			result_index = index;
+			return true;
+		}
+	} else {
+		// anonymous enum
+		EXPECT_PUNC('{');
+	}
+
+	do {
+		if (CONSUME(TT_ID)) {
+			if (CONSUME_PUNC('=')) {
+				if (!constant_expression(ast, tokens, index)) {
+					return false;
+				}
+			}
+		} else {
+			break;
+		}
+
+		if (!CONSUME_PUNC(',')) {
+			break;
+		}
+
+	} while (true);
+
+	EXPECT_PUNC('}');
+	result_index = index;
+	return true;
+}
+
 bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
 
 	CONSUME_KW(TK_INLINE);
+	CONSUME_KW(TK_VOLATILE);
 
 	if (CONSUME(TT_ID)) {	// typedef name
 		// TODO: Check defined type
@@ -401,6 +440,14 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 		return false;
 	}
 
+	if (CONSUME_KW(TK_ENUM)) {
+		if (enum_definition(ast, tokens, index)) {
+			result_index = index;
+			return true;
+		}
+		return false;
+	}
+
 	if (CONSUME_KW(TK_VOID)) {
 		result_index = index;
 		return true;
@@ -483,6 +530,7 @@ bool CParser::declarator_tail(json &ast, const vector<CToken*> &tokens, int &res
 bool CParser::declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly)
 {
 	int index = result_index;
+	bool is_const = CONSUME_KW(TK_CONST);
 
 	if (CONSUME_PUNC('*')) {
 		if (!declarator(ast, tokens, index, is_typeonly)) {
@@ -557,9 +605,18 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 
 	index = result_index; // backtrack
 
-	// just declaration of struct
-	if (CONSUME_KW(TK_STRUCT)) {
+	// just declaration of struct or union
+	if (CONSUME_KW(TK_STRUCT) || CONSUME_KW(TK_UNION)) {
 		if (struct_union_definition(ast, tokens, index)) {
+			EXPECT_PUNC(';');
+			result_index = index;
+			return true;
+		}
+	}
+	
+	// just declaration of enum
+	if (CONSUME_KW(TK_ENUM)) {
+		if (enum_definition(ast, tokens, index)) {
 			EXPECT_PUNC(';');
 			result_index = index;
 			return true;
@@ -624,6 +681,16 @@ bool CParser::primary_expression(json &ast, const vector<CToken*> &tokens, int &
 	}
 
 	if (CONSUME(TT_ULONG)) {
+		result_index = index;
+		return true;
+	}
+
+	if (CONSUME(TT_LONGLONG)) {
+		result_index = index;
+		return true;
+	}
+
+	if (CONSUME(TT_ULONGLONG)) {
 		result_index = index;
 		return true;
 	}
@@ -823,6 +890,7 @@ bool CParser::and_expression(json &ast, const vector<CToken*> &tokens, int &resu
 	if (CONSUME_PUNC('&')) {
 		if (!and_expression(ast, tokens, index)) {
 			cout << "NG" << endl;
+			debug_token(tokens[index]);
 			return false;
 		}
 	}

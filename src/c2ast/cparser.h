@@ -13,6 +13,7 @@ class CParser {
 	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool parameter_list(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool enum_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
 
 	bool statement(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool jump_statement(json &ast, const vector<CToken*> &tokens, int &result_index);

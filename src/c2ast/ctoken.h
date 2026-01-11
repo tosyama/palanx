@@ -30,6 +30,8 @@ typedef enum {
 	TT_UINT,
 	TT_LONG,
 	TT_ULONG,
+	TT_LONGLONG,
+	TT_ULONGLONG,
 
 	TT_FLOAT,
 	TT_DOUBLE,
@@ -56,12 +58,14 @@ typedef enum {
 	TK_DOUBLE,
 	TK_STRUCT,
 	TK_UNION,
+	TK_ENUM,
 	TK_VOID,
 
 	TK_RETURN,
 
 	TK_INLINE,
 	TK_RESTRICT,
+	TK_VOLATILE,
 
 	TK_NOT_KEYWORD,
 } CTokenKeyword;
@@ -77,8 +81,8 @@ public:
 		int punc;
 		string *str;
 		vector<CToken*> *tokens;	// for TT_INCLUDE
-		long intval;
-		unsigned long uintval;
+		long long intval;
+		unsigned long long uintval;
 		float floval;
 		double dblval;
 		long double ldblval;

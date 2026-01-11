@@ -30,9 +30,9 @@ CToken::CToken(const CToken& token)
 			info.keyword = token.info.keyword; break;
 		case TT_PUNCTUATOR:
 			info.punc = token.info.punc; break;
-		case TT_INT: case TT_LONG:
+		case TT_INT: case TT_LONG: case TT_LONGLONG:
 			info.intval = token.info.intval; break;
-		case TT_UINT: case TT_ULONG:
+		case TT_UINT: case TT_ULONG: case TT_ULONGLONG:
 			info.uintval = token.info.uintval; break;
 		case TT_FLOAT:
 			info.floval = token.info.floval; break;
