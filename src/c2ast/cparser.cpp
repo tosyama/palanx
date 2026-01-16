@@ -250,7 +250,7 @@ bool unsigned_int(const vector<CToken*> &tokens, int &index)
 		if (CONSUME_KW(TK_INT)) {
 			return true;
 		}
-		index--; // backtrack
+		return true; // unsigned long/short/char should be processed before this function
 	}
 	return false;
 }
@@ -261,7 +261,7 @@ bool signed_int(const vector<CToken*> &tokens, int &index)
 		if (CONSUME_KW(TK_INT)) {
 			return true;
 		}
-		index--; // backtrack
+		return true; // signed long/short/char should be processed before this function
 	}
 
 	if (CONSUME_KW(TK_INT)) {
@@ -291,6 +291,11 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		if (declaration_specifiers(ast, tokens, index)) {
 			if (!declarator(ast, tokens, index, false)) {
 				return false;
+			}
+			while (CONSUME_PUNC(',')) {
+				if (!declarator(ast, tokens, index, false)) {
+					return false;
+				}
 			}
 			EXPECT_PUNC(';');
 		} else {
@@ -344,10 +349,12 @@ bool CParser::enum_definition(json &ast, const vector<CToken*> &tokens, int &res
 
 bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: long double
 	int index = result_index;
 
 	CONSUME_KW(TK_INLINE);
 	CONSUME_KW(TK_VOLATILE);
+	CONSUME_KW(TK_CONST);
 
 	if (CONSUME(TT_ID)) {	// typedef name
 		// TODO: Check defined type
@@ -412,7 +419,6 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 		result_index = index;
 		return true;
 	}
-
 
 	if (CONSUME_KW(TK_DOUBLE)) {
 		result_index = index;
@@ -492,7 +498,6 @@ bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &resu
 	}
 	return false;
 }
-
 
 bool CParser::declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
@@ -574,6 +579,26 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 		}
 	}
 
+	if (!(is_typedef || is_extern || is_static)) {
+		// just declaration of struct or union
+		if (CONSUME_KW(TK_STRUCT) || CONSUME_KW(TK_UNION)) {
+			if (struct_union_definition(ast, tokens, index)) {
+				EXPECT_PUNC(';');
+				result_index = index;
+				return true;
+			}
+		}
+
+		// just declaration of enum
+		if (CONSUME_KW(TK_ENUM)) {
+			if (enum_definition(ast, tokens, index)) {
+				EXPECT_PUNC(';');
+				result_index = index;
+				return true;
+			}
+		}
+	}
+
 	if (declaration_specifiers(ast, tokens, index)) {
 		if (declarator(ast, tokens, index, false)) {
 			// parsed declarator
@@ -603,28 +628,8 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 		}
 	}
 
-	index = result_index; // backtrack
-
-	// just declaration of struct or union
-	if (CONSUME_KW(TK_STRUCT) || CONSUME_KW(TK_UNION)) {
-		if (struct_union_definition(ast, tokens, index)) {
-			EXPECT_PUNC(';');
-			result_index = index;
-			return true;
-		}
-	}
-	
-	// just declaration of enum
-	if (CONSUME_KW(TK_ENUM)) {
-		if (enum_definition(ast, tokens, index)) {
-			EXPECT_PUNC(';');
-			result_index = index;
-			return true;
-		}
-	}
-
 	return false;
-		
+
 }
 
 bool CParser::statement(json &ast, const vector<CToken*> &tokens, int &result_index)
@@ -658,6 +663,7 @@ bool CParser::jump_statement(json &ast, const vector<CToken*> &tokens, int &resu
 
 bool CParser::primary_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: string literal, character constant, floating constant
 	int index = result_index;
 
 	if (CONSUME(TT_ID)) {
@@ -708,6 +714,7 @@ bool CParser::primary_expression(json &ast, const vector<CToken*> &tokens, int &
 
 bool CParser::postfix_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: array subscripting, structure and union member access, postfix increment and decrement
 	int index = result_index;
 
 	if (!primary_expression(ast, tokens, index)) {
@@ -716,7 +723,7 @@ bool CParser::postfix_expression(json &ast, const vector<CToken*> &tokens, int &
 
 	for (;;) {
 		if (CONSUME_PUNC('(')) {
-			while (conditional_expression(ast, tokens, index)) { // TODO: assignment expression
+			while (assignment_expression(ast, tokens, index)) {
 				if (!CONSUME_PUNC(',')) {
 					break;
 				}
@@ -734,6 +741,7 @@ bool CParser::postfix_expression(json &ast, const vector<CToken*> &tokens, int &
 
 bool CParser::unary_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: prefix increment and decrement, unary &, unary *, unary + and -, bitwise NOT, logical NOT
 	int index = result_index;
 
 	if (postfix_expression(ast, tokens, index)) {
@@ -858,6 +866,7 @@ bool CParser::shift_expression(json &ast, const vector<CToken*> &tokens, int &re
 
 bool CParser::relational_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: implement relational operators
 	int index = result_index;
 
 	if (shift_expression(ast, tokens, index)) {
@@ -870,6 +879,7 @@ bool CParser::relational_expression(json &ast, const vector<CToken*> &tokens, in
 
 bool CParser::equality_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: implement equality operators
 	int index = result_index;
 
 	if (relational_expression(ast, tokens, index)) {
@@ -889,8 +899,6 @@ bool CParser::and_expression(json &ast, const vector<CToken*> &tokens, int &resu
 	}
 	if (CONSUME_PUNC('&')) {
 		if (!and_expression(ast, tokens, index)) {
-			cout << "NG" << endl;
-			debug_token(tokens[index]);
 			return false;
 		}
 	}
@@ -937,6 +945,7 @@ bool CParser::inclusive_or_expression(json &ast, const vector<CToken*> &tokens, 
 
 bool CParser::logical_and_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: implement logical AND operator
 	int index = result_index;
 
 	if (inclusive_or_expression(ast, tokens, index)) {
@@ -949,6 +958,7 @@ bool CParser::logical_and_expression(json &ast, const vector<CToken*> &tokens, i
 
 bool CParser::logical_or_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: implement logical OR operator
 	int index = result_index;
 
 	if (logical_and_expression(ast, tokens, index)) {
@@ -961,6 +971,7 @@ bool CParser::logical_or_expression(json &ast, const vector<CToken*> &tokens, in
 
 bool CParser::conditional_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: implement conditional operator
 	int index = result_index;
 
 	if (logical_or_expression(ast, tokens, index)) {
@@ -985,6 +996,7 @@ bool CParser::constant_expression(json &ast, const vector<CToken*> &tokens, int 
 
 bool CParser::assignment_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
+	// TODO: implement assignment operators
 	return conditional_expression(ast, tokens, result_index);
 }
 

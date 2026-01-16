@@ -358,6 +358,10 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 
 	while (!token0s[n].is_eol) {	// Read condition expression.
 		n = next_pos(token0s, n);
+
+		if (token0s[n].type == TT0_COMMENT) { // in the case of comment at end of line
+			continue;
+		}
 		CToken* t = lexer.createToken(n);
 
 		if(t->type == TT_ID && *t->info.id == "defined") {
@@ -489,6 +493,7 @@ vector<CToken*> CPreprocessor::expand_macro_func(CMacro *m, vector<vector<CToken
 			call_count++;
 		}
 	}
+
 	if (call_count >= 100) {
 		CPreprocessError err("recursive macro call: " + m->name);
 		if (args.size() && args[0].size()) {
@@ -571,29 +576,30 @@ vector<CToken*> CPreprocessor::expand_macro_func(CMacro *m, vector<vector<CToken
 	for (int n=0; n<pre_tokens.size(); n++) {
 		CToken *t = pre_tokens[n];
 		if (t->type == TT_PUNCTUATOR && t->info.punc == '##') {
+			delete t;
 			if (!pre_tokens2.size()) {
 				BOOST_ASSERT(false);
 			}
+
 			CToken* pt = pre_tokens2.back();
-			if (pt->type != TT_ID) {
+			if (pt->type == TT_ID) {
+				n++;
+				if (n>=pre_tokens.size()) {
+					BOOST_ASSERT(false);
+				}
+				t = pre_tokens[n];
+				string s = get_oristr(*this, t);
+				delete t;
+				*pt->info.id += s;
+				continue;
+
+			} else if (pt->type == TT_INT) { // for __UINT64_C(1234) macro
+				delete t;
+
 				BOOST_ASSERT(false);
 			}
-			delete t;
-
-			n++;
-			if (n>=pre_tokens.size()) {
-				BOOST_ASSERT(false);
-			}
-			t = pre_tokens[n];
-			string s = get_oristr(*this, t);
-
-
-			delete t;
-			*pt->info.id += s;
-			continue;
 		}
 		pre_tokens2.push_back(t);
-
 	}
 
 	vector<CToken*> tokens;

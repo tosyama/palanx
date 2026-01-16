@@ -7,6 +7,7 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
+#include <climits>
 
 using namespace std;
 #include "cfileinfo.h"
@@ -352,7 +353,14 @@ CToken* CLexer::createToken(int n)
 				t->info.uintval = stoull(m[1].str(), NULL, 0);
 			} else {
 				t = new CToken(isLongLong ? TT_LONGLONG: isLong ? TT_LONG : TT_INT, no, n);
-				t->info.intval = stoll(m[1].str(), NULL, 0);
+				try {
+					t->info.intval = stoll(m[1].str(), NULL, 0);
+
+				} catch(out_of_range& e) {
+					t->info.intval = LLONG_MAX;
+					//	cout << "warn: invalid number format: " << numstr << endl;
+					//cout << " at " << infile.fname << ":" << t0->line_no << ":" << t0->pos+1 << endl;
+				}
 			}
 
 		} else if (regex_match(numstr, m, rex_float)) {
@@ -380,6 +388,7 @@ CToken* CLexer::createToken(int n)
 				}
 			}
 			return t;
+
 		} else {
 			cout << "warn: invalid number format: " << numstr << endl;
 			cout << " at " << infile.fname << ":" << t0->line_no << ":" << t0->pos+1 << endl;
