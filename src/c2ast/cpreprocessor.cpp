@@ -399,9 +399,9 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 			t = new CToken(TT_INT, lexer.no, nn);
 			CMacro* m = cpp.macro_exists(macro_name);
 			if (m) {
-				t->info.intval = 1;
+				t->info.str = new string("1");	
 			} else {
-				t->info.intval = 0;
+				t->info.str = new string("0");
 			}
 
 		} else if (t->type == TT_ID) {
@@ -593,11 +593,35 @@ vector<CToken*> CPreprocessor::expand_macro_func(CMacro *m, vector<vector<CToken
 				*pt->info.id += s;
 				continue;
 
-			} else if (pt->type == TT_INT) { // for __UINT64_C(1234) macro
+			} else if (pt->type == TT_INT || pt->type == TT_UINT || pt->type == TT_LONG || pt->type == TT_ULONG || pt->type == TT_LONGLONG || pt->type == TT_ULONGLONG
+					|| pt->type == TT_FLOAT || pt->type == TT_DOUBLE || pt->type == TT_LDOUBLE) {
+				// Join number and following token via token pasting '##' and re-evaluate numeric type
+				n++;
+				if (n>=pre_tokens.size()) {
+					BOOST_ASSERT(false);
+				}
+				t = pre_tokens[n];
+				string s = get_oristr(*this, t);
 				delete t;
+				string combined = *pt->info.str + s;
+				CLexer* lex = lexers[pt->lexer_no];
+				CTokenType newtt = lex->get_number_token_type(combined);
+				if (newtt == TT_NOT_VALID_TOKEN) {
+					CPreprocessError err("invalid number after token pasting: " + combined);
+					err.lexer_no = pt->lexer_no;
+					err.token0_start = pt->token0_no;
+					outputError(err);
+					BOOST_ASSERT(false);
+				}
 
-				BOOST_ASSERT(false);
+				// update token
+				pt->type = newtt;
+				if (pt->info.str) delete pt->info.str;
+				pt->info.str = new string(combined);
+				continue;
 			}
+			BOOST_ASSERT(false);
+
 		}
 		pre_tokens2.push_back(t);
 	}
@@ -1031,9 +1055,9 @@ long primary(vector<CToken*> &tokens, int &n)
 	CTokenType tt = t->type;
 
 	if (tt == TT_INT || tt == TT_LONG) { 
-		x = t->info.intval;
+		x = stol(*t->info.str);
 	} else if (tt == TT_UINT || tt == TT_ULONG) {
-		x = t->info.uintval;
+		x = stoul(*t->info.str);
 	} else if (tt == TT_ID) {
 		x = 0;
 	} else {

@@ -292,6 +292,65 @@ static regex rex_float("[0-9]*.?[0-9]*([eE]{1}[+-]?[0-9]+)?([fFlL]?)");
 static string& unescape(string& str);
 static int ch2int(const string &s, int pos, int len);
 
+CTokenType CLexer::get_number_token_type(const string& numstr)
+{
+	smatch m;
+
+	if (regex_match(numstr, m, rex_octint) // integer
+			|| regex_match(numstr, m, rex_hexint)
+			|| regex_match(numstr, m, rex_decint)) {
+		bool isUnsigned = m[2].str().size();
+		bool isLong = (m[3].str().size() == 1);
+		bool isLongLong = (m[3].str().size() == 2);
+
+		CTokenType tt = TT_INT;
+		if (isUnsigned) {
+			tt = isLongLong ? TT_ULONGLONG : isLong ? TT_ULONG : TT_UINT;
+		} else {
+			tt = isLongLong ? TT_LONGLONG : isLong ? TT_LONG : TT_INT;
+		}
+
+		if (tt == TT_INT) {
+			try {
+				// check range of int literal
+				unsigned long long val = stoull(m[1].str(), NULL, 0);
+
+				if (val <= INT_MAX) {
+					return TT_INT;
+				} else if (val <= UINT_MAX) {
+					return TT_UINT;
+				} else if (val <= LONG_MAX) {
+					return TT_LONG;
+				} else if (val <= ULONG_MAX) {
+					return TT_ULONG;
+				} else if (val <= LLONG_MAX) {
+					return TT_LONGLONG;
+				} else {
+					return TT_ULONGLONG;
+				}
+
+			} catch(out_of_range& e) {
+				return TT_NOT_VALID_TOKEN;
+			}
+		}
+		return tt;
+
+
+	} else if (regex_match(numstr, m, rex_float)) {
+		if (m[2].str() == "") {
+			return TT_DOUBLE;
+		} else if (m[2].str() == "f" || m[2].str() == "F") {
+			return TT_FLOAT;
+		} else {
+			BOOST_ASSERT(m[2].str() == "l" || m[2].str() == "L");
+			return TT_LDOUBLE;
+		}
+
+	} else {
+		return TT_NOT_VALID_TOKEN;
+	}
+}
+
 CToken* CLexer::createToken(int n)
 {
 	CToken0 *t0 = &tokens[n];
@@ -340,63 +399,23 @@ CToken* CLexer::createToken(int n)
 
 	} else if (t0->type == TT0_NUMBER) {
 		string numstr = get_str(t0);
-		smatch m;
 
-		if (regex_match(numstr, m, rex_octint)
-				|| regex_match(numstr, m, rex_hexint)
-				|| regex_match(numstr, m, rex_decint)) {
-			bool isUnsigned = m[2].str().size();
-			bool isLong = (m[3].str().size() == 1);
-			bool isLongLong = (m[3].str().size() == 2);
-			if (isUnsigned) {
-				t = new CToken(isLongLong ? TT_ULONGLONG: isLong ? TT_ULONG : TT_UINT, no, n);
-				t->info.uintval = stoull(m[1].str(), NULL, 0);
-			} else {
-				t = new CToken(isLongLong ? TT_LONGLONG: isLong ? TT_LONG : TT_INT, no, n);
-				try {
-					t->info.intval = stoll(m[1].str(), NULL, 0);
+		CTokenType tt = get_number_token_type(numstr);
 
-				} catch(out_of_range& e) {
-					t->info.intval = LLONG_MAX;
-					//	cout << "warn: invalid number format: " << numstr << endl;
-					//cout << " at " << infile.fname << ":" << t0->line_no << ":" << t0->pos+1 << endl;
-				}
-			}
-
-		} else if (regex_match(numstr, m, rex_float)) {
-			if (m[2].str() == "") {
-				t = new CToken(TT_DOUBLE, no, n);
-				try {
-					t->info.floval = stod(numstr);
-				} catch(out_of_range& e) {
-					t->info.floval = HUGE_VAL;
-				}
-			} else if (m[2].str() == "f" || m[2].str() == "F") {
-				t = new CToken(TT_FLOAT, no, n);
-				try {
-					t->info.floval = stof(numstr);
-				} catch(out_of_range& e) {
-					t->info.floval = HUGE_VALF;
-				}
-			} else {
-				BOOST_ASSERT(m[2].str() == "l" || m[2].str() == "L");
-				t = new CToken(TT_LDOUBLE, no, n);
-				try {
-					t->info.ldblval = stold(numstr);
-				} catch(out_of_range& e) {
-					t->info.ldblval = HUGE_VALL;
-				}
-			}
-			return t;
-
-		} else {
+		if (tt == TT_NOT_VALID_TOKEN) {
 			cout << "warn: invalid number format: " << numstr << endl;
 			cout << " at " << infile.fname << ":" << t0->line_no << ":" << t0->pos+1 << endl;
+			return NULL;
 		}
+
+		t = new CToken(tt, no, n);
+		t->info.str = new string(move(numstr));
+
+		return t;
 
 	} else if (t0->type == TT0_CHAR) {
 		t = new CToken(TT_INT, no, n);
-		t->info.intval = -1;
+		t->info.ch = -1;
 		return t;
 
 	} else if (t0->type == TT0_STR) {

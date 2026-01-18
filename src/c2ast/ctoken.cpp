@@ -26,20 +26,16 @@ CToken::CToken(const CToken& token)
 	switch (type) {
 		case TT_ID:
 			info.id = new string(*token.info.id); break;
+
 		case TT_KEYWORD:
 			info.keyword = token.info.keyword; break;
+
 		case TT_PUNCTUATOR:
 			info.punc = token.info.punc; break;
+
 		case TT_INT: case TT_LONG: case TT_LONGLONG:
-			info.intval = token.info.intval; break;
 		case TT_UINT: case TT_ULONG: case TT_ULONGLONG:
-			info.uintval = token.info.uintval; break;
-		case TT_FLOAT:
-			info.floval = token.info.floval; break;
-		case TT_DOUBLE:
-			info.dblval = token.info.dblval; break;
-		case TT_LDOUBLE:
-			info.ldblval = token.info.ldblval; break;
+		case TT_FLOAT: case TT_DOUBLE: case TT_LDOUBLE:
 		case TT_STR:
 			info.str = new string(*token.info.str); break;
 	

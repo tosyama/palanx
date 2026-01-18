@@ -37,6 +37,8 @@ typedef enum {
 	TT_DOUBLE,
 	TT_LDOUBLE,
 	TT_INCLUDE,
+
+	TT_NOT_VALID_TOKEN,
 } CTokenType;
 
 typedef enum {
@@ -79,13 +81,9 @@ public:
 		string *id;
 		CTokenKeyword keyword;
 		int punc;
+		int ch;
 		string *str;
 		vector<CToken*> *tokens;	// for TT_INCLUDE
-		long long intval;
-		unsigned long long uintval;
-		float floval;
-		double dblval;
-		long double ldblval;
 	} info;
 
 	CToken(CTokenType type, int lexer_no, int token0_no);

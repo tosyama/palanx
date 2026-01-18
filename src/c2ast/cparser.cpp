@@ -636,6 +636,11 @@ bool CParser::statement(json &ast, const vector<CToken*> &tokens, int &result_in
 {
 	int index = result_index;
 
+	if (expression(ast, tokens, index)) {
+		EXPECT_PUNC(';');
+		result_index = index;
+		return true;
+	}
 	if (jump_statement(ast, tokens, index)) {
 		result_index = index;
 		return true;
