@@ -1,14 +1,14 @@
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-// #include <time.h>
-// #include <math.h>
-// #include <locale.h>
-// #include <ncurses.h>
-// #include <jpeglib.h>
-// #include <sqlite3.h>
-// #include <pthread.h>
-//#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <math.h>
+#include <locale.h>
+#include <ncurses.h>
+#include <jpeglib.h>
+#include <sqlite3.h>
+#include <pthread.h>
+#include <unistd.h>
 
 #define F(x) CHECK(G(x))
 #define G(x) CHECK(H(x))

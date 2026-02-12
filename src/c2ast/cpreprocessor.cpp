@@ -303,6 +303,13 @@ vector<CToken*> replace_parameter_tokens(CToken* t, const vector<string>& params
 				for (CToken* at: args[p]) {
 					result.push_back(new CToken(*at));
 				}
+
+				if (result.empty()) {
+					// if argument is empty, insert empty token
+					CToken* empty_token = new CToken(TT_ID, t->lexer_no, t->token0_no);
+					empty_token->info.id = new string("");
+					result.push_back(empty_token);
+				}
 				return result;
 			}
 		}
@@ -337,6 +344,7 @@ bool process_paste(vector<CToken*>& body_tokens, const vector<string>& params, c
 
 				BOOST_ASSERT(t_prev->type == TT_ID);	// may be other types?
 				BOOST_ASSERT(t_next->type == TT_ID);	// may be other types?
+
 				CToken* pasted_token = new CToken(TT_ID, t->lexer_no, t->token0_no);
 				pasted_token->info.id = new string(*t_prev->info.id + *t_next->info.id);
 				
