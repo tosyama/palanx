@@ -132,32 +132,281 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 			}
 
 		} else {
-			if (t0->type == TT0_ID) {
-				string s = lexer.get_str(t0);
-				CMacro* m = macro_exists(s);
-				if (m) {
-					if (m->type == MT_OBJ) {
-						vector<CToken*> expanded_tokens = expand_macro_obj(m);
-						tokens->insert(tokens->end(), expanded_tokens.begin(), expanded_tokens.end());
+			list<CToken* > unprocessed_tokens;
 
-					} else {
-						BOOST_ASSERT(m->type == MT_FUNC);
-						vector<vector<CToken*>> args = extruct_macro_func_args(lexer, n, false);
-						vector<CToken*> expanded_tokens = expand_macro_func(m, args);
-						tokens->insert(tokens->end(), expanded_tokens.begin(), expanded_tokens.end());
+			// collect tokens until next macro directive
+			do {
+				BOOST_ASSERT(t0->type != TT0_MACRO);
+				CToken* t = lexer.createToken(n);
+				if (t)	// skip comment
+					unprocessed_tokens.push_back(t);
 
-					}
-					continue;
-				}
-			}
+				n++;
 
-			CToken* t = lexer.createToken(n);
-			if (t) {	// skip comment
-				tokens->push_back(t);
-			}
+				if (n >= token0s.size())
+					break;
+				t0 = &token0s[n];
+			} while (t0->type != TT0_MACRO);
+
+			n--; // for n++ in for loop
+
+			// process unprocessed tokens
+			vector<CToken*> processed_tokens = scan_macro(unprocessed_tokens);
+			tokens->insert(tokens->end(), processed_tokens.begin(), processed_tokens.end() );
 		}
 	}
 	return true;
+}
+
+vector<list<CToken*> > extract_macro_func_args(list<CToken*> &tokens)
+{
+	// Extract macro function arguments from tokens starting at front (the position of '(')
+	// Remove argument tokens from tokens and return them as vector<list<CToken*>>
+
+	vector<list<CToken*> > args;
+	BOOST_ASSERT(tokens.front()->type == TT_PUNCTUATOR && tokens.front()->info.punc == '(');
+	delete tokens.front();
+	tokens.pop_front(); // remove '('
+	int blace_level = 1;
+	list<CToken*> arg;
+
+	while (!tokens.empty()) {
+		CToken* t = tokens.front();
+		tokens.pop_front();
+
+		if (t->type == TT_PUNCTUATOR) {
+			if (t->info.punc == '(') {
+				blace_level++;
+			} else if (t->info.punc == ')') {
+				blace_level--;
+				if (blace_level == 0) {
+					// end of arguments
+					delete t;
+					args.push_back(arg);
+					break;
+				}
+			}
+
+			if (blace_level == 1 && t->info.punc == ',') {
+				// end of current argument
+				delete t;
+				args.push_back(arg);
+				arg.clear();
+				continue;
+			}
+		}
+		arg.push_back(t);
+	}
+
+	return args;
+}
+
+CToken* get_defined_id_token(list<CToken*> &unprocessed_tokens)
+{
+	// expect '(' ID ')' or ID
+	if (unprocessed_tokens.empty()) return NULL;
+
+	CToken* t = unprocessed_tokens.front();
+	if (t->type == TT_ID) {
+		unprocessed_tokens.pop_front();
+		return t;
+	}
+
+	// expect '('
+	if (t->type != TT_PUNCTUATOR) return NULL;
+	if (t->info.punc != '(') return NULL;
+	unprocessed_tokens.pop_front(); // remove '('
+	delete t;
+
+	// expect ID
+	if (unprocessed_tokens.empty()) return NULL;
+	CToken* id_token = unprocessed_tokens.front();
+	if (id_token->type != TT_ID) return NULL;
+	unprocessed_tokens.pop_front(); // remove ID
+
+	// expect ')'
+	// TODO: handle error(delete id_token)
+	if (unprocessed_tokens.empty()) return NULL;
+	t = unprocessed_tokens.front();
+	if (t->type != TT_PUNCTUATOR) return NULL;
+	if (t->info.punc != ')') return NULL;
+	unprocessed_tokens.pop_front(); // remove ')'
+	delete t;
+
+	return id_token;
+}
+
+vector<CToken*> CPreprocessor::scan_macro(list<CToken*> &unprocessed_tokens, bool in_if_directive)
+{
+	vector<CToken*> result_tokens;
+	while (!unprocessed_tokens.empty()) {
+		CToken* t = unprocessed_tokens.front();
+
+		if (t->type == TT_ID) {
+			CMacro* m = macro_exists(*t->info.id);
+			if (m && !t->does_hide(m)) {
+				unprocessed_tokens.pop_front(); // remove macro name token
+				vector<list<CToken*> > args;
+				if (m->type == MT_FUNC) {
+					args = extract_macro_func_args(unprocessed_tokens);
+				}
+				vector<CToken*> expanded_tokens = expand_macro_tokens(m, args, t->hide_set);
+
+				//result_tokens.insert(result_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
+				unprocessed_tokens.insert(unprocessed_tokens.begin(), expanded_tokens.begin(), expanded_tokens.end());
+				delete t;
+				continue; // re-scan from the top
+			}
+			if (in_if_directive && *t->info.id == "defined") {
+				unprocessed_tokens.pop_front(); // remove "defined" token
+
+				// expect '(' ID ')' or ID
+				CToken* id_token = get_defined_id_token(unprocessed_tokens);
+				if (!id_token) {
+					delete t;
+					BOOST_ASSERT(false);	// syntax error
+				}
+
+				CMacro* dm = macro_exists(*id_token->info.id);
+				if (dm) {
+					CToken* one_token = new CToken(TT_INT, id_token->lexer_no, t->token0_no);
+					one_token->info.str = new string("1");
+					result_tokens.push_back(one_token);
+				} else {
+					CToken* zero_token = new CToken(TT_INT, id_token->lexer_no, t->token0_no);
+					zero_token->info.str = new string("0");
+					result_tokens.push_back(zero_token);
+				}
+
+				delete t;
+				delete id_token;
+				continue; // re-scan from the top
+			}
+		}
+
+		unprocessed_tokens.pop_front();
+		result_tokens.push_back(t);
+	}
+	return result_tokens;
+}
+
+vector<CToken*> replace_parameter_tokens(CToken* t, const vector<string>& params, const vector<list<CToken*> >& args)
+{
+	// replace parameter tokens in t and return as vector<CToken*>
+	// if t is not parameter token, return vector with t itself
+	vector<CToken*> result;
+	if (t->type == TT_ID) {
+		for (int p=0; p < params.size(); p++) {
+			if (*t->info.id == params[p]) {
+				// replace parameter by argument tokens
+				// copy args[p] tokens
+				for (CToken* at: args[p]) {
+					result.push_back(new CToken(*at));
+				}
+				return result;
+			}
+		}
+	}
+	// not parameter token
+	result.push_back(t);
+	return result;
+}
+
+bool process_paste(vector<CToken*>& body_tokens, const vector<string>& params, const vector<list<CToken*> >& args)
+{
+	if (body_tokens.size() >= 3) {
+		if (body_tokens[0]->type == TT_PUNCTUATOR && body_tokens[0]->info.punc == '##') {
+			BOOST_ASSERT(false); // '##' at beginning is not allowed
+		}
+
+		for (int n=1; n < body_tokens.size(); n++) {
+			CToken *t = body_tokens[n];
+			if (t->type == TT_PUNCTUATOR && t->info.punc == '##') {
+				if (n == body_tokens.size() - 1) {
+					BOOST_ASSERT(false); // '##' at end is not allowed
+				}
+				CToken *t_prev = body_tokens[n-1];
+				CToken *t_next = body_tokens[n+1];
+
+				vector<CToken*> prev_tokens = replace_parameter_tokens(t_prev, params, args);
+				vector<CToken*> next_tokens = replace_parameter_tokens(t_next, params, args);
+				t_prev = prev_tokens.back();
+				prev_tokens.pop_back();
+				t_next = next_tokens.front();
+				next_tokens.erase(next_tokens.begin());
+
+				BOOST_ASSERT(t_prev->type == TT_ID);	// may be other types?
+				BOOST_ASSERT(t_next->type == TT_ID);	// may be other types?
+				CToken* pasted_token = new CToken(TT_ID, t->lexer_no, t->token0_no);
+				pasted_token->info.id = new string(*t_prev->info.id + *t_next->info.id);
+				
+				body_tokens.erase(body_tokens.begin() + n - 1, body_tokens.begin() + n + 2);
+				body_tokens.insert(body_tokens.begin() + n - 1, prev_tokens.begin(), prev_tokens.end());
+				body_tokens.insert(body_tokens.begin() + n - 1 + prev_tokens.size(), pasted_token);
+				body_tokens.insert(body_tokens.begin() + n - 1 + prev_tokens.size() + 1, next_tokens.begin(), next_tokens.end());
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+vector<CToken*> CPreprocessor::expand_macro_tokens(CMacro *m, vector<list<CToken*> > &args, vector<CMacro*> *hide_set)
+{
+	vector<CToken*> body_tokens;
+	// copy macro body
+	for (int n=0; n < m->body.size(); n++) {
+		CToken *t = new CToken(*m->body[n]);
+		t->add_to_hide_set(m); // add to hide set
+		if (hide_set) {
+			for (CMacro* hm: *hide_set) {
+				t->add_to_hide_set(hm);
+			}
+		}
+		body_tokens.push_back(t);
+	}
+
+	// process token pasting '##'
+	while(process_paste(body_tokens, m->params, args))
+		;
+
+	// expand arguments
+	vector<vector<CToken*> > args_expanded;
+	for (list<CToken*> &arg: args) {
+		vector<CToken*> arg_tokens = scan_macro(arg);
+		args_expanded.push_back(arg_tokens);
+	}
+
+	// replace parameters in body_tokens
+	for (int n=0; n<body_tokens.size(); n++) {
+		CToken *t = body_tokens[n];
+		if (t->type == TT_ID) {
+			for (int p=0; p < m->params.size(); p++) {
+				if (*t->info.id == m->params[p]) {
+					// replace parameter by argument tokens
+					// copy args[p] tokens
+					vector<CToken*> arg_copied;
+					for (CToken* at: args_expanded[p]) {
+						arg_copied.push_back(new CToken(*at));
+					}
+					delete t;
+					body_tokens.erase(body_tokens.begin() + n);
+					body_tokens.insert(body_tokens.begin() + n, arg_copied.begin(), arg_copied.end());
+					n += arg_copied.size() - 1;
+					break;
+				}
+			}
+		}
+	}
+
+	for (vector<CToken*> &arg: args_expanded) {
+		for (CToken* at: arg) {
+			delete at;
+		}
+	}
+
+	return body_tokens;
 }
 
 //== utilities ==
@@ -354,74 +603,19 @@ int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n
 	is_not_eol(token0s[n]);
 
 	ifstack.emplace_back(&token0s[n]);
+	list<CToken*> unprocessed_tokens;
 	vector<CToken*> condition_tokens;
 
-	while (!token0s[n].is_eol) {	// Read condition expression.
-		n = next_pos(token0s, n);
-
-		if (token0s[n].type == TT0_COMMENT) { // in the case of comment at end of line
-			continue;
+	do {
+		n++;
+		CToken *t = lexer.createToken(n);
+		if (t) {
+			unprocessed_tokens.push_back(t);
 		}
-		CToken* t = lexer.createToken(n);
 
-		if(t->type == TT_ID && *t->info.id == "defined") {
-			// process of "defined" expression
-			int nn = n;
-			delete t;
-			is_not_eol(token0s[n]);
-			string macro_name;
-			n = next_pos(token0s, n);
-			CToken0& t0 = token0s[n];
-			if (t0.type == TT0_ID) {
-				// defined ID
-				macro_name = lexer.get_str(&t0);
+	} while (!token0s[n].is_eol);
 
-			} else if (t0.type == TT0_PUNCTUATOR && lexer.get_ch(&t0) == '(' && !t0.is_eol) {
-				// defined (ID)
-				n = next_pos(token0s, n);
-				t0 = token0s[n];
-				is_not_eol(token0s[n]);
-				if (t0.type == TT0_ID) {
-					macro_name = lexer.get_str(&t0);
-				} else {
-					BOOST_ASSERT(false);
-				}
-				n = next_pos(token0s, n);
-				t0 = token0s[n];
-				if (t0.type != TT0_PUNCTUATOR || lexer.get_ch(&t0) != ')') {
-					BOOST_ASSERT(false);
-				}
-				
-			} else {
-				BOOST_ASSERT(false);
-			}
-
-			t = new CToken(TT_INT, lexer.no, nn);
-			CMacro* m = cpp.macro_exists(macro_name);
-			if (m) {
-				t->info.str = new string("1");	
-			} else {
-				t->info.str = new string("0");
-			}
-
-		} else if (t->type == TT_ID) {
-			CMacro* m = cpp.macro_exists(*t->info.id);
-			if (m) {
-				if (m->type == MT_OBJ) {
-					vector<CToken*> expanded_tokens = cpp.expand_macro_obj(m);
-					condition_tokens.insert(condition_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
-
-				} else {
-					BOOST_ASSERT(m->type == MT_FUNC);
-					vector<vector<CToken*>> args = cpp.extruct_macro_func_args(lexer, n);
-					vector<CToken*> expanded_tokens = cpp.expand_macro_func(m, args);
-					condition_tokens.insert(condition_tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
-				}
-				continue;
-			}
-		}
-		condition_tokens.push_back(t);
-	}
+	condition_tokens = cpp.scan_macro(unprocessed_tokens, true);
 
 	ifstack.back().is_fulfilled = evaluate_condition(condition_tokens);
 
@@ -441,369 +635,6 @@ CMacro* CPreprocessor::macro_exists(const string& id)
 		return *mi;
 	}
 	return NULL;
-}
-
-vector<CToken*> CPreprocessor::expand_macro_obj(CMacro *m)
-{
-
-	auto mi = find(macro_stack.begin(), macro_stack.end(), m);
-	if (mi != macro_stack.end()) {
-		BOOST_ASSERT(false); 	// recursive macro
-	}
-
-	vector<CToken*> tokens;
-
-	macro_stack.push_back(m);
-
-	for (int n=0; n<m->body.size(); n++) {
-		CToken *t = m->body[n];
-		if (t->type == TT_ID) {
-			CMacro* mm = macro_exists(*t->info.id);
-			if (mm) {
-				if (mm->type == MT_OBJ) {
-					vector<CToken*> expanded_tokens = expand_macro_obj(mm);
-					tokens.insert(tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
-				} else {
-					BOOST_ASSERT(mm->type == MT_FUNC);
-					vector<vector<CToken*>> args = extruct_macro_func_args2(m->body, n);
-					vector<CToken*> expanded_tokens = expand_macro_func(mm, args);
-					tokens.insert(tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
-				}
-				continue;
-			}
-		}
-		CToken *tt = new CToken(*t);
-		tokens.push_back(tt);
-
-	}
-
-	macro_stack.pop_back();
-
-	return tokens;
-}
-
-static string get_oristr(CPreprocessor& ppc, CToken *t);
-
-vector<CToken*> CPreprocessor::expand_macro_func(CMacro *m, vector<vector<CToken*>> args)
-{
-	// Check recursive macro call limit
-	int call_count = 0;
-	for (CMacro* mm: macro_stack) {
-		if (mm == m) {
-			call_count++;
-		}
-	}
-
-	if (call_count >= 100) {
-		CPreprocessError err("recursive macro call: " + m->name);
-		if (args.size() && args[0].size()) {
-			err.lexer_no = args[0][0]->lexer_no;
-			err.token0_start = args[0][0]->token0_no;
-		}
-		outputError(err);
-		BOOST_ASSERT(false);
-	}	
-
-	if (m->params.size() != args.size()) {
-		CPreprocessError err("argment error: " + m->name);
-		if (args.size() && args[0].size()) {
-			err.lexer_no = args[0][0]->lexer_no;
-			err.token0_start = args[0][0]->token0_no;
-		}
-		outputError(err);
-		BOOST_ASSERT(false);
-	}
-
-	vector<CToken*> pre_tokens;
-	macro_stack.push_back(m);
-
-	for (int n=0; n<m->body.size(); n++) {
-		CToken *t = m->body[n];
-
-		if (t->type == TT_PUNCTUATOR && t->info.punc == '#') {	// stringnize
-			n++;
-			if (n>=m->body.size()) {
-				BOOST_ASSERT(false);
-			}
-			t = m->body[n];
-			if (t->type != TT_ID) {
-				BOOST_ASSERT(false);
-			}
-			int p;
-			bool matched = false;
-			for (p=0; p < m->params.size(); p++) {
-				if (*t->info.id == m->params[p]) {
-					matched = true;
-					break;
-				}
-			}
-			if (!matched) {
-				BOOST_ASSERT(false);
-			}
-
-			if (args[p].size()) {
-				CToken &arg_start = *args[p][0];
-				CToken &arg_end = **(args[p].end()-1);
-				CLexer &lexer = *lexers[arg_start.lexer_no];
-
-				string s = lexer.get_oristr(&arg_start, &arg_end);
-
-				pre_tokens.push_back(new CToken(s, arg_start.lexer_no, arg_start.token0_no));
-
-			} else {
-				pre_tokens.push_back(new CToken("", t->lexer_no, t->token0_no));
-			}
-			continue;
-
-		} else if (t->type == TT_ID) {	// expand argument
-			bool matched = false;
-			for (int p=0; p < m->params.size(); p++) {
-				if (*t->info.id == m->params[p]) {
-					for (CToken *at: args[p]) {
-						pre_tokens.push_back(new CToken(*at));
-					}
-					matched = true;
-					break;
-				}
-			}
-			if (matched)
-				continue;
-		}
-		pre_tokens.push_back(new CToken(*t));
-	}
-
-	vector<CToken*> pre_tokens2;
-	for (int n=0; n<pre_tokens.size(); n++) {
-		CToken *t = pre_tokens[n];
-		if (t->type == TT_PUNCTUATOR && t->info.punc == '##') {
-			delete t;
-			if (!pre_tokens2.size()) {
-				BOOST_ASSERT(false);
-			}
-
-			CToken* pt = pre_tokens2.back();
-			if (pt->type == TT_ID) {
-				n++;
-				if (n>=pre_tokens.size()) {
-					BOOST_ASSERT(false);
-				}
-				t = pre_tokens[n];
-				string s = get_oristr(*this, t);
-				delete t;
-				*pt->info.id += s;
-				continue;
-
-			} else if (pt->type == TT_INT || pt->type == TT_UINT || pt->type == TT_LONG || pt->type == TT_ULONG || pt->type == TT_LONGLONG || pt->type == TT_ULONGLONG
-					|| pt->type == TT_FLOAT || pt->type == TT_DOUBLE || pt->type == TT_LDOUBLE) {
-				// Join number and following token via token pasting '##' and re-evaluate numeric type
-				n++;
-				if (n>=pre_tokens.size()) {
-					BOOST_ASSERT(false);
-				}
-				t = pre_tokens[n];
-				string s = get_oristr(*this, t);
-				delete t;
-				string combined = *pt->info.str + s;
-				CLexer* lex = lexers[pt->lexer_no];
-				CTokenType newtt = lex->get_number_token_type(combined);
-				if (newtt == TT_NOT_VALID_TOKEN) {
-					CPreprocessError err("invalid number after token pasting: " + combined);
-					err.lexer_no = pt->lexer_no;
-					err.token0_start = pt->token0_no;
-					outputError(err);
-					BOOST_ASSERT(false);
-				}
-
-				// update token
-				pt->type = newtt;
-				if (pt->info.str) delete pt->info.str;
-				pt->info.str = new string(combined);
-				continue;
-			}
-			BOOST_ASSERT(false);
-
-		}
-		pre_tokens2.push_back(t);
-	}
-
-	vector<CToken*> tokens;
-	for (int n=0; n<pre_tokens2.size(); n++) {
-		CToken *t = pre_tokens2[n];
-		if (t->type == TT_ID) {
-			CMacro* mm = macro_exists(*t->info.id);
-			if (mm) {
-				if (mm->type == MT_OBJ) {
-					vector<CToken*> expanded_tokens = expand_macro_obj( mm);
-					tokens.insert(tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
-				} else {
-					BOOST_ASSERT(m->type == MT_FUNC);
-					vector<vector<CToken*>> args = extruct_macro_func_args2(pre_tokens2, n);
-					vector<CToken*> expanded_tokens = expand_macro_func(mm, args);
-					tokens.insert(tokens.end(), expanded_tokens.begin(), expanded_tokens.end());
-				}
-				delete t;
-				continue;
-			}
-			if (*t->info.id == "") {
-				// empty argument
-				delete t->info.id;
-				delete t;
-				continue;
-			}
-		}
-		tokens.push_back(t);
-
-	}
-
-	macro_stack.pop_back();
-
-	return tokens;
-}
-
-string get_oristr(CPreprocessor& cpp, CToken *t)
-{
-	return cpp.lexers[t->lexer_no]->get_oristr(t->token0_no);
-}
-
-vector<vector<CToken*>> CPreprocessor::extruct_macro_func_args(CLexer &lexer, int &n, bool single_line)
-{
-	vector<vector<CToken*>> args;
-
-	vector<CToken0> &token0s = lexer.tokens;
-	is_not_eol(token0s[n]);
-
-	n++;
-
-	CToken* t = lexer.createToken(n);
-	if (t->type != TT_PUNCTUATOR || t->info.punc != '(') {
-		BOOST_ASSERT(false);
-	}
-	
-	int blace_level = 1;
-	vector<CToken*> arg;
-	bool succeeded = false;
-
-	for(;;) {
-		// Skip comment and increment n
-		for(;;) {
-			if(single_line && token0s[n].is_eol)
-				goto ENDLOOP;
-
-			n++;
-
-			if (n >= token0s.size()) 
-				goto ENDLOOP;
-			CToken0 &t0 = token0s[n];
-			if (t0.type != TT0_COMMENT)
-				break;
-			if (t0.is_eol && single_line)
-				goto ENDLOOP;
-		}
-
-		CToken* t = lexer.createToken(n);
-		if (t->type == TT_PUNCTUATOR) {
-			if (t->info.punc == '(') {
-				blace_level++;
-			} else if (t->info.punc == ')') {
-				blace_level--;
-				if (blace_level == 0) {
-					delete t;
-					succeeded = true;
-					break;
-				}
-			} else if (t->info.punc == ',' && blace_level == 1) {
-				if (!arg.size()) {
-					// change to empty argument
-					t->type = TT_ID;
-					t->info.id = new string("");
-					arg.push_back(t);
-				} else { 
-					delete t;
-				}
-				args.push_back(arg);
-				arg.clear();
-				continue;
-			}
-		}
-		arg.push_back(t);
-	};
-ENDLOOP:
-	if (!succeeded) {
-		BOOST_ASSERT(false);
-	}
-
-	args.push_back(arg);
-
-	for (int i=0; i<args.size(); i++) {
-		args[i] = expand_macros(args[i]);
-	}
-
-	return args;
-}
-
-vector<vector<CToken*>> CPreprocessor::extruct_macro_func_args2(vector<CToken*> &tokens, int &n)
-{
-	vector<vector<CToken*>> args;
-	BOOST_ASSERT(n+2 < tokens.size());
-	n++;
-	BOOST_ASSERT(tokens[n]->type == TT_PUNCTUATOR);
-	BOOST_ASSERT(tokens[n]->info.punc == '(');
-	n++;
-
-	int blace_level = 1;
-	vector<CToken*> arg;
-
-	for (; n < tokens.size(); n++) {
-		CToken *t = tokens[n];
-		if (t->type == TT_PUNCTUATOR) {
-			if (t->info.punc == '(') {
-				blace_level++;
-			} else if (t->info.punc == ')') {
-				blace_level--;
-				if (blace_level == 0) {
-					break;
-				}
-			} else if (t->info.punc == ',' && blace_level == 1) {
-				args.push_back(arg);
-				arg.clear();
-				continue;
-			}
-		}
-		arg.push_back(new CToken(*t));
-	}
-	args.push_back(arg);
-
-	for (int i=0; i<args.size(); i++) {
-		args[i] = expand_macros(args[i]);
-	}
-
-	return args;
-}
-
-
-vector<CToken*> CPreprocessor::expand_macros(vector<CToken*> &tokens)
-{
-	vector<CToken*> expanded_tokens;
-	for (int n=0; n<tokens.size(); n++) {
-		CToken *t = tokens[n];
-		if (t->type == TT_ID) {
-			CMacro* m = macro_exists(*t->info.id);
-			if (m) {
-				if (m->type == MT_OBJ) {
-					vector<CToken*> expanded = expand_macro_obj(m);
-					expanded_tokens.insert(expanded_tokens.end(), expanded.begin(), expanded.end());
-				} else {
-					BOOST_ASSERT(m->type == MT_FUNC);
-					vector<vector<CToken*>> args = extruct_macro_func_args2(tokens, n);
-					vector<CToken*> expanded = expand_macro_func(m, args);
-					expanded_tokens.insert(expanded_tokens.end(), expanded.begin(), expanded.end());
-				}
-				continue;
-			}
-		}
-		expanded_tokens.push_back(new CToken(*t));
-	}
-	return expanded_tokens;
 }
 
 // Condition parser definition
@@ -1274,3 +1105,40 @@ CPreprocessError::CPreprocessError(const string& what, int lexer_no, int start, 
 	: runtime_error(what), lexer_no(lexer_no), token0_start(start), token0_end(end)
 {
 }
+
+void CPreprocessor::dumpPreprocessed(ostream& os, vector<CToken*> *tokens)
+{
+	if (!tokens) {
+		tokens = &top_tokens;
+	}
+
+	for (CToken* t: *tokens) {
+		if (t->type == TT_INCLUDE) {
+			dumpPreprocessed(os, t->info.tokens);
+		} else if (t->type == TT_ID) {
+			os << *t->info.id;
+		} else if (t->type == TT_INT || t->type == TT_UINT || t->type == TT_LONG || t->type == TT_ULONG
+				|| t->type == TT_LONGLONG || t->type == TT_ULONGLONG
+				|| t->type == TT_FLOAT || t->type == TT_DOUBLE || t->type == TT_LDOUBLE) {
+			os << *t->info.str;
+		} else if (t->type == TT_PUNCTUATOR) {
+			os << (char)(t->info.punc);
+		} else if (t->type == TT_STR) {
+			os << "\"" << *t->info.str << "\"";
+		} else if (t->type == TT_KEYWORD) {
+			switch (t->info.keyword) {
+				case TK_INT:		os << "int "; break;
+				case TK_RETURN:		os << "return "; break;
+				default:
+					os << "[keyword]";
+			}
+		} else if (t->type == TT_STR) {
+			os << "\"" << *t->info.str << "\"";	
+		} else {
+			os << ".";
+		}
+	}
+
+}
+
+

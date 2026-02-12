@@ -38,14 +38,13 @@ public:
 	}
 
 	CMacro* macro_exists(const string& id);
-	vector<CToken*> expand_macro_obj(CMacro *m);
-	vector<CToken*> expand_macro_func(CMacro *mi, vector<vector<CToken*>> args);
-	vector<vector<CToken*>> extruct_macro_func_args(CLexer &lexer, int &n, bool single_line=true);
-	vector<vector<CToken*>> extruct_macro_func_args2(vector<CToken*> &tokens, int &n);
-	vector<CToken*> expand_macros(vector<CToken*> &tokens);
+	vector<CToken*> scan_macro(list<CToken*> &unprocessed_tokens, bool in_if_directive=false);
+	vector<CToken*> expand_macro_tokens(CMacro *m, vector<list<CToken*>> &args, vector<CMacro*> *hide_set);
 
 	// true: success, false: failed
 	bool loadPredefined(const string& filepath);
 	bool preprocess(const string& filepath, vector<CToken*> *tokens=NULL);
 	void outputError(const CPreprocessError& err);
+
+	void dumpPreprocessed(ostream& os, vector<CToken*> *tokens=NULL);
 };

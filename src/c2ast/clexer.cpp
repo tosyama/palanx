@@ -402,12 +402,13 @@ CToken* CLexer::createToken(int n)
 
 		CTokenType tt = get_number_token_type(numstr);
 
-		if (tt == TT_NOT_VALID_TOKEN) {
-			cout << "warn: invalid number format: " << numstr << endl;
-			cout << " at " << infile.fname << ":" << t0->line_no << ":" << t0->pos+1 << endl;
-			return NULL;
-		}
+		// if (tt == TT_NOT_VALID_TOKEN) {
+		// 	cout << "warn: invalid number format: " << numstr << endl;
+		// 	cout << " at " << infile.fname << ":" << t0->line_no << ":" << t0->pos+1 << endl;
+		// 	return NULL;
+		// }
 
+		// Note: allow TT_NOT_VALID_TOKEN (e.g. 3.1.4 at jconfig.h for version macro)
 		t = new CToken(tt, no, n);
 		t->info.str = new string(move(numstr));
 

@@ -73,7 +73,19 @@ string CFileInfo::getFilePath(string filepath, string parentfile, vector<string>
 	}
 
 	if (search_curdir) {
-		BOOST_ASSERT(false);
+		// Check relative to the directory of the parent file first.
+		string parentdir;
+		size_t pos = parentfile.find_last_of('/');
+		if (pos == string::npos) parentdir = ".";
+		else parentdir = parentfile.substr(0, pos);
+
+		const char *delim = "/";
+		if (parentdir.empty() || parentdir.back() == *delim) delim = "";
+		string checkpath = parentdir + delim + fpath;
+		if (file_exists(checkpath)) {
+			return checkpath;
+		}
+
 	}
 
 	return searchFilePath(fpath, searchpaths);

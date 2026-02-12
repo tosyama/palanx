@@ -72,6 +72,8 @@ typedef enum {
 	TK_NOT_KEYWORD,
 } CTokenKeyword;
 
+class CMacro; // forward declaration
+
 class CToken {
 public:
 	CTokenType type;
@@ -85,9 +87,13 @@ public:
 		string *str;
 		vector<CToken*> *tokens;	// for TT_INCLUDE
 	} info;
+	vector<CMacro*> *hide_set;
 
 	CToken(CTokenType type, int lexer_no, int token0_no);
 	CToken(const CToken& token);
 	CToken(const string& s, int lexer_no, int token0_no);
 	~CToken();
+
+	void add_to_hide_set(CMacro* m);
+	bool does_hide(CMacro* m);
 };

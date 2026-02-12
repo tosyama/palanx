@@ -8,6 +8,6 @@ using namespace std;
 TEST(c2ast, basic_tests) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -s stdio.h");
-    // ASSERT_EQ(output, "");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/000_temp_c_header.h");
+    ASSERT_EQ(output, "");
 }

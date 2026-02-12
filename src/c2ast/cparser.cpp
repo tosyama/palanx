@@ -1,4 +1,5 @@
 #include <vector>
+#include <list>
 #include <string>
 #include <iostream>
 #include <boost/assert.hpp>
@@ -288,6 +289,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 
 	do {
 		bool is_const = CONSUME_KW(TK_CONST);
+		bool is_volatile = CONSUME_KW(TK_VOLATILE);
 		if (declaration_specifiers(ast, tokens, index)) {
 			if (!declarator(ast, tokens, index, false)) {
 				return false;
@@ -466,6 +468,7 @@ bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &resu
 {
 	int index = result_index;
 	bool is_const = CONSUME_KW(TK_CONST);
+	bool is_volatile = CONSUME_KW(TK_VOLATILE);
 	
 	if (declaration_specifiers(ast, tokens, index)) {
 		if (!declarator(ast, tokens, index, false)) {
@@ -477,6 +480,7 @@ bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &resu
 
 		while (CONSUME_PUNC(',')) {
 			is_const = CONSUME_KW(TK_CONST);
+			is_volatile = CONSUME_KW(TK_VOLATILE);
 			if (declaration_specifiers(ast, tokens, index)) {
 				if (!declarator(ast, tokens, index, false)) {
 					if (!declarator(ast, tokens, index, true)) { // abstract declarator
@@ -536,6 +540,7 @@ bool CParser::declarator(json &ast, const vector<CToken*> &tokens, int &result_i
 {
 	int index = result_index;
 	bool is_const = CONSUME_KW(TK_CONST);
+	bool is_volatile = CONSUME_KW(TK_VOLATILE);
 
 	if (CONSUME_PUNC('*')) {
 		if (!declarator(ast, tokens, index, is_typeonly)) {
@@ -649,15 +654,12 @@ bool CParser::statement(json &ast, const vector<CToken*> &tokens, int &result_in
 	return false;
 }
 
-static bool debug = false;
 bool CParser::jump_statement(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
 
 	if (CONSUME_KW(TK_RETURN)) {
-		debug = true;
 		constant_expression(ast, tokens, index);
-		debug = false;
 		EXPECT_PUNC(';');
 		result_index = index;
 		return true;
