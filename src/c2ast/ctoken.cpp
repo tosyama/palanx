@@ -69,6 +69,9 @@ CToken::~CToken()
 
 void CToken::add_to_hide_set(CMacro* m)
 {
+	if (type != TT_ID)
+		return;	// only ID tokens have hide set
+
 	if (!hide_set) {
 		hide_set = new vector<CMacro*>();
 	}

@@ -342,8 +342,8 @@ bool process_paste(vector<CToken*>& body_tokens, const vector<string>& params, c
 				t_next = next_tokens.front();
 				next_tokens.erase(next_tokens.begin());
 
-				BOOST_ASSERT(t_prev->type == TT_ID);	// may be other types?
-				BOOST_ASSERT(t_next->type == TT_ID);	// may be other types?
+				BOOST_ASSERT(t_prev->type == TT_ID);	// may be other types? TT_KEYWORD
+				BOOST_ASSERT(t_next->type == TT_ID);	// may be other types? TT_KEYWORD, TT_INT, etc.
 
 				CToken* pasted_token = new CToken(TT_ID, t->lexer_no, t->token0_no);
 				pasted_token->info.id = new string(*t_prev->info.id + *t_next->info.id);
@@ -375,6 +375,9 @@ vector<CToken*> CPreprocessor::expand_macro_tokens(CMacro *m, vector<list<CToken
 		body_tokens.push_back(t);
 	}
 
+	// process stringizing '#'
+	// TODO: implement stringizing
+
 	// process token pasting '##'
 	while(process_paste(body_tokens, m->params, args))
 		;
@@ -390,6 +393,30 @@ vector<CToken*> CPreprocessor::expand_macro_tokens(CMacro *m, vector<list<CToken
 	for (int n=0; n<body_tokens.size(); n++) {
 		CToken *t = body_tokens[n];
 		if (t->type == TT_ID) {
+			if (*t->info.id == "__VA_ARGS__") {
+				int va_idx = -1;
+				for (int p = 0; p < (int)m->params.size(); p++) {
+					if (m->params[p] == "...") { va_idx = p; break; }
+				}
+				if (va_idx >= 0) {
+					vector<CToken*> va_tokens;
+					for (int p = va_idx; p < (int)args_expanded.size(); p++) {
+						if (p > va_idx) {
+							CToken* comma = new CToken(TT_PUNCTUATOR, t->lexer_no, t->token0_no);
+							comma->info.punc = ',';
+							va_tokens.push_back(comma);
+						}
+						for (CToken* at: args_expanded[p]) {
+							va_tokens.push_back(new CToken(*at));
+						}
+					}
+					delete t;
+					body_tokens.erase(body_tokens.begin() + n);
+					body_tokens.insert(body_tokens.begin() + n, va_tokens.begin(), va_tokens.end());
+					n += (int)va_tokens.size() - 1;
+					continue;
+				}
+			}
 			for (int p=0; p < m->params.size(); p++) {
 				if (*t->info.id == m->params[p]) {
 					// replace parameter by argument tokens
@@ -708,7 +735,8 @@ long lor(vector<CToken*> &tokens, int &n)
 	int x = land(tokens, n);
 	for (;;) {
 		if (CONSUME('||')) {
-			x = x | land(tokens, n);
+			long rhs = land(tokens, n);
+			x = x || rhs;
 		} else {
 			break;
 		}
@@ -722,7 +750,8 @@ long land(vector<CToken*> &tokens, int &n)
 	int x = bor(tokens, n);
 	for (;;) {
 		if (CONSUME('&&')) {
-			x = x & bor(tokens, n);
+			long rhs = bor(tokens, n);
+			x = x && rhs;
 		} else {
 			break;
 		}
@@ -736,7 +765,7 @@ long bor(vector<CToken*> &tokens, int &n)
 	int x = bxor(tokens, n);
 	for (;;) {
 		if (CONSUME('|')) {
-			x = x & bxor(tokens, n);
+			x = x | bxor(tokens, n);
 		} else {
 			break;
 		}
@@ -750,7 +779,7 @@ long bxor(vector<CToken*> &tokens, int &n)
 	int x = band(tokens, n);
 	for (;;) {
 		if (CONSUME('^')) {
-			x = x & band(tokens, n);
+			x = x ^ band(tokens, n);
 		} else {
 			break;
 		}
@@ -1132,16 +1161,12 @@ void CPreprocessor::dumpPreprocessed(ostream& os, vector<CToken*> *tokens)
 		} else if (t->type == TT_PUNCTUATOR) {
 			os << (char)(t->info.punc);
 		} else if (t->type == TT_STR) {
-			os << "\"" << *t->info.str << "\"";
+			os << *t->info.str;
 		} else if (t->type == TT_KEYWORD) {
-			switch (t->info.keyword) {
-				case TK_INT:		os << "int "; break;
-				case TK_RETURN:		os << "return "; break;
-				default:
-					os << "[keyword]";
-			}
+			BOOST_ASSERT(t->info.keyword < TK_NOT_KEYWORD);
+			os << CLexer::keywords[t->info.keyword] << " ";
 		} else if (t->type == TT_STR) {
-			os << "\"" << *t->info.str << "\"";	
+			os << *t->info.str;	
 		} else {
 			os << ".";
 		}

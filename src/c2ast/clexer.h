@@ -3,6 +3,7 @@ public:
 	int no;
 	CFileInfo infile;
 	vector<CToken0> tokens;
+	static vector<string> keywords;
 
 	CLexer(CFileInfo &infile);
 	vector<CToken0>& scan();

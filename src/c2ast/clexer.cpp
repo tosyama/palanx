@@ -14,11 +14,37 @@ using namespace std;
 #include "ctoken.h"
 #include "clexer.h"
 
+vector<string> CLexer::keywords;
+
 static int read_number(string& str, int n);
 static int read_id(string& str, int n);
 
 CLexer::CLexer(CFileInfo &infile) : infile(move(infile)), no(-1)
 {
+	if (keywords.size() == 0) {
+		keywords.resize(TK_NOT_KEYWORD);
+		keywords[TK_TYPEDEF] = "typedef";
+		keywords[TK_EXTERN] = "extern";
+		keywords[TK_STATIC] = "static";
+		keywords[TK_CONST] = "const";
+		keywords[TK_SIZEOF] = "sizeof";
+		keywords[TK_SIGNED] = "signed";
+		keywords[TK_UNSIGNED] = "unsigned";
+		keywords[TK_SHORT] = "short";
+		keywords[TK_LONG] = "long";
+		keywords[TK_INT] = "int";
+		keywords[TK_CHAR] = "char";
+		keywords[TK_FLOAT] = "float";
+		keywords[TK_DOUBLE] = "double";
+		keywords[TK_STRUCT] = "struct";
+		keywords[TK_UNION] = "union";
+		keywords[TK_ENUM] = "enum";
+		keywords[TK_VOID] = "void";
+		keywords[TK_RETURN] = "return";
+		keywords[TK_INLINE] = "inline";
+		keywords[TK_RESTRICT] = "restrict";
+		keywords[TK_VOLATILE] = "volatile";
+	}
 }
 
 vector<CToken0>& CLexer::scan()
@@ -358,38 +384,17 @@ CToken* CLexer::createToken(int n)
 
 	if (t0->type == TT0_ID) {
 		string str = get_str(t0);
-		CTokenKeyword keyword =
-			(str == "typedef") ? TK_TYPEDEF:
-			(str == "extern") ? TK_EXTERN:
-			(str == "static") ? TK_STATIC:
-			(str == "const") ? TK_CONST:
-			(str == "sizeof") ? TK_SIZEOF:
-			(str == "signed") ? TK_SIGNED:
-			(str == "unsigned") ? TK_UNSIGNED:
-			(str == "short") ? TK_SHORT:
-			(str == "long") ? TK_LONG:
-			(str == "int") ? TK_INT:
-			(str == "char") ? TK_CHAR:
-			(str == "float") ? TK_FLOAT:
-			(str == "double") ? TK_DOUBLE:
-			(str == "struct") ? TK_STRUCT:
-			(str == "union") ? TK_UNION:
-			(str == "enum") ? TK_ENUM:
-			(str == "void") ? TK_VOID:
-			(str == "return") ? TK_RETURN:
-			(str == "inline") ? TK_INLINE:
-			(str == "restrict") ? TK_RESTRICT:
-			(str == "volatile") ? TK_VOLATILE:
-			TK_NOT_KEYWORD;
 
-		if (keyword != TK_NOT_KEYWORD) {
-			t = new CToken(TT_KEYWORD, no, n);
-			t->info.keyword = keyword;
-
-		} else {
-			t = new CToken(TT_ID, no, n);
-			t->info.id = new string(move(str));
+		for (int i=0; i<TK_NOT_KEYWORD; i++) {
+			if (str == keywords[i]) {	
+				t = new CToken(TT_KEYWORD, no, n);
+				t->info.keyword = (CTokenKeyword)i;
+				return t;
+			}
 		}
+
+		t = new CToken(TT_ID, no, n);
+		t->info.id = new string(move(str));
 
 		return t;
 
