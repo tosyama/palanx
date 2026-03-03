@@ -34,6 +34,7 @@ CToken::CToken(const CToken& token)
 			info.punc = token.info.punc; break;
 
 		case TT_PP_NUMBER:
+		case TT_CHAR:
 		case TT_STR:
 			info.str = new string(*token.info.str); break;
 	

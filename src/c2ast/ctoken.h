@@ -27,6 +27,7 @@ typedef enum {
 	TT_STR,
 
 	TT_PP_NUMBER,
+	TT_CHAR,
 	TT_INCLUDE,
 
 	TT_NOT_VALID_TOKEN,

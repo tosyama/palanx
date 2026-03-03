@@ -39,3 +39,16 @@ TEST(c2ast, pragma_once) {
     output = execTestCommand("bin/palan-c2ast -d ../test/testdata/003_pragma_once_main.h");
     ASSERT_EQ(output, "int result=1;");
 }
+TEST(c2ast, char_const_in_if) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/004_char_const.h");
+    ASSERT_EQ(output, "int char_result=1;");
+}
+
+TEST(c2ast, token_paste_keyword) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/005_token_paste_kw.h");
+    ASSERT_EQ(output, "int x;");
+}

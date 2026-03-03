@@ -342,7 +342,7 @@ CToken* CLexer::createToken(int n)
 		return t;
 
 	} else if (t0->type == TT0_CHAR) {
-		t = new CToken(TT_PP_NUMBER, no, n);
+		t = new CToken(TT_CHAR, no, n);
 		t->info.str = new string(get_str(t0));
 		return t;
 

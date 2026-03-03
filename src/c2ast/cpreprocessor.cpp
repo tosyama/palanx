@@ -957,6 +957,19 @@ long primary(vector<CToken*> &tokens, int &n)
 
 	if (tt == TT_PP_NUMBER) {
 		x = stoll(*t->info.str, nullptr, 0);
+	} else if (tt == TT_CHAR) {
+		// character-constant: evaluate inner value (e.g. 'a' -> 97)
+		const string& s = *t->info.str;
+		if (s.size() >= 3 && s[1] == '\\') {
+			switch (s[2]) {
+				case 'n': x = '\n'; break; case 't': x = '\t'; break;
+				case 'r': x = '\r'; break; case '0': x = '\0'; break;
+				case '\\': x = '\\'; break; case '\'': x = '\''; break;
+				default: x = s[2]; break;
+			}
+		} else if (s.size() >= 3) {
+			x = s[1];
+		}
 	} else if (tt == TT_ID) {
 		x = 0;
 	} else {
@@ -1185,7 +1198,7 @@ void CPreprocessor::dumpPreprocessed(ostream& os, vector<CToken*> *tokens)
 			dumpPreprocessed(os, t->info.tokens);
 		} else if (t->type == TT_ID) {
 			os << *t->info.id;
-		} else if (t->type == TT_PP_NUMBER) {
+		} else if (t->type == TT_PP_NUMBER || t->type == TT_CHAR) {
 			os << *t->info.str;
 		} else if (t->type == TT_PUNCTUATOR) {
 			os << (char)(t->info.punc);
