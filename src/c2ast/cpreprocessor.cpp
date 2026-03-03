@@ -276,11 +276,11 @@ vector<CToken*> CPreprocessor::scan_macro(list<CToken*> &unprocessed_tokens, boo
 
 				CMacro* dm = macro_exists(*id_token->info.id);
 				if (dm) {
-					CToken* one_token = new CToken(TT_INT, id_token->lexer_no, t->token0_no);
+					CToken* one_token = new CToken(TT_PP_NUMBER, id_token->lexer_no, t->token0_no);
 					one_token->info.str = new string("1");
 					result_tokens.push_back(one_token);
 				} else {
-					CToken* zero_token = new CToken(TT_INT, id_token->lexer_no, t->token0_no);
+					CToken* zero_token = new CToken(TT_PP_NUMBER, id_token->lexer_no, t->token0_no);
 					zero_token->info.str = new string("0");
 					result_tokens.push_back(zero_token);
 				}
@@ -331,10 +331,7 @@ static string token_paste_str(CToken* t)
 	switch (t->type) {
 		case TT_ID: return *t->info.id;
 		case TT_KEYWORD: return CLexer::keywords[t->info.keyword];
-		case TT_INT: case TT_UINT: case TT_LONG: case TT_ULONG:
-		case TT_LONGLONG: case TT_ULONGLONG:
-		case TT_FLOAT: case TT_DOUBLE: case TT_LDOUBLE:
-			return *t->info.str;
+		case TT_PP_NUMBER: return *t->info.str;
 		default:
 			BOOST_ASSERT(false);
 			return "";
@@ -364,8 +361,23 @@ bool process_paste(vector<CToken*>& body_tokens, const vector<string>& params, c
 				t_next = next_tokens.front();
 				next_tokens.erase(next_tokens.begin());
 
-				CToken* pasted_token = new CToken(TT_ID, t->lexer_no, t->token0_no);
-				pasted_token->info.id = new string(token_paste_str(t_prev) + token_paste_str(t_next));
+				string pasted_str = token_paste_str(t_prev) + token_paste_str(t_next);
+				CToken* pasted_token;
+				if (isdigit(pasted_str[0]) || (pasted_str[0] == '.' && pasted_str.size() > 1 && isdigit(pasted_str[1]))) {
+					pasted_token = new CToken(TT_PP_NUMBER, t->lexer_no, t->token0_no);
+					pasted_token->info.str = new string(move(pasted_str));
+				} else {
+					pasted_token = new CToken(TT_ID, t->lexer_no, t->token0_no);
+					pasted_token->info.id = new string(pasted_str);
+					for (int i = 0; i < TK_NOT_KEYWORD; i++) {
+						if (pasted_str == CLexer::keywords[i]) {
+							pasted_token->type = TT_KEYWORD;
+							delete pasted_token->info.id;
+							pasted_token->info.keyword = (CTokenKeyword)i;
+							break;
+						}
+					}
+				}
 				
 				body_tokens.erase(body_tokens.begin() + n - 1, body_tokens.begin() + n + 2);
 				body_tokens.insert(body_tokens.begin() + n - 1, prev_tokens.begin(), prev_tokens.end());
@@ -943,10 +955,8 @@ long primary(vector<CToken*> &tokens, int &n)
 	CToken *t = tokens[n];
 	CTokenType tt = t->type;
 
-	if (tt == TT_INT || tt == TT_LONG) { 
-		x = stol(*t->info.str);
-	} else if (tt == TT_UINT || tt == TT_ULONG) {
-		x = stoul(*t->info.str);
+	if (tt == TT_PP_NUMBER) {
+		x = stoll(*t->info.str, nullptr, 0);
 	} else if (tt == TT_ID) {
 		x = 0;
 	} else {
@@ -1175,9 +1185,7 @@ void CPreprocessor::dumpPreprocessed(ostream& os, vector<CToken*> *tokens)
 			dumpPreprocessed(os, t->info.tokens);
 		} else if (t->type == TT_ID) {
 			os << *t->info.id;
-		} else if (t->type == TT_INT || t->type == TT_UINT || t->type == TT_LONG || t->type == TT_ULONG
-				|| t->type == TT_LONGLONG || t->type == TT_ULONGLONG
-				|| t->type == TT_FLOAT || t->type == TT_DOUBLE || t->type == TT_LDOUBLE) {
+		} else if (t->type == TT_PP_NUMBER) {
 			os << *t->info.str;
 		} else if (t->type == TT_PUNCTUATOR) {
 			os << (char)(t->info.punc);

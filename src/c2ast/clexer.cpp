@@ -6,8 +6,6 @@
 #include <regex>
 #include <iostream>
 #include <cstring>
-#include <cmath>
-#include <climits>
 
 using namespace std;
 #include "cfileinfo.h"
@@ -276,8 +274,8 @@ vector<CToken0>& CLexer::scan()
 	return tokens;
 }
 
-static regex rex_numberpart("^[0-9A-Za-z\\.]+");
-static regex rex_exponent("^[+-]?[0-9]{1}[0-9A-Za-z]*");
+static regex rex_numberpart("^[0-9A-Za-z_\\.]+");
+static regex rex_sign("^[+-][0-9A-Za-z_\\.]+");
 
 int read_number(string& str, int n)
 {	// Note: this exclude number-like token include invalid format.
@@ -289,9 +287,9 @@ int read_number(string& str, int n)
 	BOOST_ASSERT(len > 0);
 
 	char c = str[n+len-1];
-	if ((c == 'E' || c == 'e') && (n+len)<str.size() ) {
+	if ((c == 'E' || c == 'e' || c == 'P' || c == 'p') && (n+len)<str.size() ) {
 		const char* target_str_e = str.c_str() + n + len;
-		regex_search(target_str_e,  m, rex_exponent);
+		regex_search(target_str_e,  m, rex_sign);
 		if (m.size() >= 1) {
 			len += m.length(0);
 		}
@@ -310,72 +308,8 @@ int read_id(string& str, int n)
 	return m.length(0);
 }
 
-static regex rex_octint("(0[0-7]+)([uU]?)([lL]{0,2})");
-static regex rex_hexint("(0x[0-9a-fA-F]+)([uU]?)([lL]{0,2})");
-static regex rex_decint("([0-9]+)([uU]?)([lL]{0,2})");
-static regex rex_float("[0-9]*.?[0-9]*([eE]{1}[+-]?[0-9]+)?([fFlL]?)");
-
 static string& unescape(string& str);
 static int ch2int(const string &s, int pos, int len);
-
-CTokenType CLexer::get_number_token_type(const string& numstr)
-{
-	smatch m;
-
-	if (regex_match(numstr, m, rex_octint) // integer
-			|| regex_match(numstr, m, rex_hexint)
-			|| regex_match(numstr, m, rex_decint)) {
-		bool isUnsigned = m[2].str().size();
-		bool isLong = (m[3].str().size() == 1);
-		bool isLongLong = (m[3].str().size() == 2);
-
-		CTokenType tt = TT_INT;
-		if (isUnsigned) {
-			tt = isLongLong ? TT_ULONGLONG : isLong ? TT_ULONG : TT_UINT;
-		} else {
-			tt = isLongLong ? TT_LONGLONG : isLong ? TT_LONG : TT_INT;
-		}
-
-		if (tt == TT_INT) {
-			try {
-				// check range of int literal
-				unsigned long long val = stoull(m[1].str(), NULL, 0);
-
-				if (val <= INT_MAX) {
-					return TT_INT;
-				} else if (val <= UINT_MAX) {
-					return TT_UINT;
-				} else if (val <= LONG_MAX) {
-					return TT_LONG;
-				} else if (val <= ULONG_MAX) {
-					return TT_ULONG;
-				} else if (val <= LLONG_MAX) {
-					return TT_LONGLONG;
-				} else {
-					return TT_ULONGLONG;
-				}
-
-			} catch(out_of_range& e) {
-				return TT_NOT_VALID_TOKEN;
-			}
-		}
-		return tt;
-
-
-	} else if (regex_match(numstr, m, rex_float)) {
-		if (m[2].str() == "") {
-			return TT_DOUBLE;
-		} else if (m[2].str() == "f" || m[2].str() == "F") {
-			return TT_FLOAT;
-		} else {
-			BOOST_ASSERT(m[2].str() == "l" || m[2].str() == "L");
-			return TT_LDOUBLE;
-		}
-
-	} else {
-		return TT_NOT_VALID_TOKEN;
-	}
-}
 
 CToken* CLexer::createToken(int n)
 {
@@ -403,25 +337,13 @@ CToken* CLexer::createToken(int n)
 		t->info.punc = get_ch(t0);
 
 	} else if (t0->type == TT0_NUMBER) {
-		string numstr = get_str(t0);
-
-		CTokenType tt = get_number_token_type(numstr);
-
-		// if (tt == TT_NOT_VALID_TOKEN) {
-		// 	cout << "warn: invalid number format: " << numstr << endl;
-		// 	cout << " at " << infile.fname << ":" << t0->line_no << ":" << t0->pos+1 << endl;
-		// 	return NULL;
-		// }
-
-		// Note: allow TT_NOT_VALID_TOKEN (e.g. 3.1.4 at jconfig.h for version macro)
-		t = new CToken(tt, no, n);
-		t->info.str = new string(move(numstr));
-
+		t = new CToken(TT_PP_NUMBER, no, n);
+		t->info.str = new string(get_str(t0));
 		return t;
 
 	} else if (t0->type == TT0_CHAR) {
-		t = new CToken(TT_INT, no, n);
-		t->info.ch = -1;
+		t = new CToken(TT_PP_NUMBER, no, n);
+		t->info.str = new string(get_str(t0));
 		return t;
 
 	} else if (t0->type == TT0_STR) {

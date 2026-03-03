@@ -16,6 +16,4 @@ public:
 	string get_oristr(int token0_no);
 	string get_oristr(const CToken *start, const CToken *end);
 
-	// utilities
-	static CTokenType get_number_token_type(const string& numstr);
 };

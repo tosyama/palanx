@@ -679,32 +679,7 @@ bool CParser::primary_expression(json &ast, const vector<CToken*> &tokens, int &
 		return true;
 	}
 
-	if (CONSUME(TT_INT)) {
-		result_index = index;
-		return true;
-	}
-
-	if (CONSUME(TT_UINT)) {
-		result_index = index;
-		return true;
-	}
-
-	if (CONSUME(TT_LONG)) {
-		result_index = index;
-		return true;
-	}
-
-	if (CONSUME(TT_ULONG)) {
-		result_index = index;
-		return true;
-	}
-
-	if (CONSUME(TT_LONGLONG)) {
-		result_index = index;
-		return true;
-	}
-
-	if (CONSUME(TT_ULONGLONG)) {
+	if (CONSUME(TT_PP_NUMBER)) {
 		result_index = index;
 		return true;
 	}

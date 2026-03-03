@@ -33,9 +33,7 @@ CToken::CToken(const CToken& token)
 		case TT_PUNCTUATOR:
 			info.punc = token.info.punc; break;
 
-		case TT_INT: case TT_LONG: case TT_LONGLONG:
-		case TT_UINT: case TT_ULONG: case TT_ULONGLONG:
-		case TT_FLOAT: case TT_DOUBLE: case TT_LDOUBLE:
+		case TT_PP_NUMBER:
 		case TT_STR:
 			info.str = new string(*token.info.str); break;
 	
