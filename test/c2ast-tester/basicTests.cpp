@@ -19,6 +19,13 @@ TEST(c2ast, va_args) {
     ASSERT_EQ(output, "int testproc(){mylog(\"hello\",1,2);}");
 }
 
+TEST(c2ast, token_paste_nonid) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/002_token_paste.h");
+    ASSERT_EQ(output, "int testproc(){return val1;return 1val;return 12;return int_t;}");
+}
+
 TEST(c2ast, std_headers) {
     cleanTestEnv();
     string output;
@@ -26,3 +33,9 @@ TEST(c2ast, std_headers) {
 	ASSERT_TRUE(output.find("int printf(const char") != string::npos);
 }
 
+TEST(c2ast, pragma_once) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/003_pragma_once_main.h");
+    ASSERT_EQ(output, "int result=1;");
+}

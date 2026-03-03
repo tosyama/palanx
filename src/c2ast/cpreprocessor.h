@@ -30,6 +30,7 @@ public:
 	vector<CMacro*> macro_stack;
 	vector<string> &include_paths;
 	ostream *out_stream;
+	set<string> once_included;
 
 	CPreprocessor(vector<CMacro*> &macros, vector<string> &include_paths)
 		: macros(macros), include_paths(include_paths), out_stream(&cout) {}

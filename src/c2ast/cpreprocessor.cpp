@@ -1,6 +1,7 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <set>
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -122,6 +123,12 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 
 				} else if (directive == "line") {
 				} else if (directive == "pragma") {
+					n = next_pos(token0s, n);
+					CToken0 &prag_t = token0s[n];
+					if (prag_t.type == TT0_ID && lexer.get_str(&prag_t) == "once") {
+						once_included.insert(lexer.infile.fname);
+					}
+					while (!token0s[n].is_eol) n = next_pos(token0s, n);
 				} else if (directive == "error") {
 					cout << "Error at " << lexer.infile.fname << ":" << t0->line_no << endl;
 					BOOST_ASSERT(false);	// error
@@ -319,6 +326,21 @@ vector<CToken*> replace_parameter_tokens(CToken* t, const vector<string>& params
 	return result;
 }
 
+static string token_paste_str(CToken* t)
+{
+	switch (t->type) {
+		case TT_ID: return *t->info.id;
+		case TT_KEYWORD: return CLexer::keywords[t->info.keyword];
+		case TT_INT: case TT_UINT: case TT_LONG: case TT_ULONG:
+		case TT_LONGLONG: case TT_ULONGLONG:
+		case TT_FLOAT: case TT_DOUBLE: case TT_LDOUBLE:
+			return *t->info.str;
+		default:
+			BOOST_ASSERT(false);
+			return "";
+	}
+}
+
 bool process_paste(vector<CToken*>& body_tokens, const vector<string>& params, const vector<list<CToken*> >& args)
 {
 	if (body_tokens.size() >= 3) {
@@ -342,11 +364,8 @@ bool process_paste(vector<CToken*>& body_tokens, const vector<string>& params, c
 				t_next = next_tokens.front();
 				next_tokens.erase(next_tokens.begin());
 
-				BOOST_ASSERT(t_prev->type == TT_ID);	// may be other types? TT_KEYWORD
-				BOOST_ASSERT(t_next->type == TT_ID);	// may be other types? TT_KEYWORD, TT_INT, etc.
-
 				CToken* pasted_token = new CToken(TT_ID, t->lexer_no, t->token0_no);
-				pasted_token->info.id = new string(*t_prev->info.id + *t_next->info.id);
+				pasted_token->info.id = new string(token_paste_str(t_prev) + token_paste_str(t_next));
 				
 				body_tokens.erase(body_tokens.begin() + n - 1, body_tokens.begin() + n + 2);
 				body_tokens.insert(body_tokens.begin() + n - 1, prev_tokens.begin(), prev_tokens.end());
@@ -474,7 +493,9 @@ int process_include(CPreprocessor& cpp, CLexer& lexer, int n, vector<CToken*>* t
 	}
 
 	tokens->push_back(new CToken(TT_INCLUDE, lexer.no, start));
-	cpp.preprocess(foundpath, tokens->back()->info.tokens);
+	if (cpp.once_included.count(foundpath) == 0) {
+		cpp.preprocess(foundpath, tokens->back()->info.tokens);
+	}
 	
 	if (!fname_t.is_eol) {
 		n = next_pos(token0s, n);
