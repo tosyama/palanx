@@ -1026,6 +1026,9 @@ long primary(vector<CToken*> &tokens, int &n)
 	CTokenType tt = t->type;
 
 	if (tt == TT_PP_NUMBER) {
+		// NOTE: stoll throws std::out_of_range for values that exceed INT64_MAX
+		// (e.g. 0xffffffffffffffffUL). Correct fix requires __int128 arithmetic
+		// throughout the evaluator, which is not yet implemented.
 		x = stoll(*t->info.str, nullptr, 0);
 	} else if (tt == TT_CHAR) {
 		// character-constant: evaluate inner value (e.g. 'a' -> 97)
