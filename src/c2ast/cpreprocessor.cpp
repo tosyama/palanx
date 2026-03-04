@@ -1280,8 +1280,6 @@ void CPreprocessor::dumpPreprocessed(ostream& os, vector<CToken*> *tokens)
 		} else if (t->type == TT_KEYWORD) {
 			BOOST_ASSERT(t->info.keyword < TK_NOT_KEYWORD);
 			os << CLexer::keywords[t->info.keyword] << " ";
-		} else if (t->type == TT_STR) {
-			os << *t->info.str;	
 		} else {
 			os << ".";
 		}
