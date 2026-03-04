@@ -129,10 +129,18 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 						once_included.insert(lexer.infile.fname);
 					}
 					while (!token0s[n].is_eol) n = next_pos(token0s, n);
+				} else if (directive == "warning") {
+					string msg = "";
+					while (!token0s[n].is_eol) {
+						n = next_pos(token0s, n);
+						msg += lexer.get_str(&token0s[n]) + " ";
+					}
+					cerr << lexer.infile.fname << ":" << t0->line_no
+						<< ": warning: " << msg << endl;
 				} else if (directive == "error") {
 					cout << "Error at " << lexer.infile.fname << ":" << t0->line_no << endl;
 					BOOST_ASSERT(false);	// error
-				} 
+				}
 
 			} else {
 				BOOST_ASSERT(false);

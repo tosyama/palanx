@@ -9,7 +9,7 @@ TEST(c2ast, basic_tests) {
     cleanTestEnv();
     string output;
     output = execTestCommand("bin/palan-c2ast -d ../test/testdata/000_temp_c_header.h");
-//    ASSERT_EQ(output, "int testproc(){H((A+H(1)));123;return xSz;}");
+    ASSERT_EQ(output, "int testproc(){H((A+H(1)));123;return xSz;}");
 }
 
 TEST(c2ast, va_args) {
@@ -51,4 +51,12 @@ TEST(c2ast, token_paste_keyword) {
     string output;
     output = execTestCommand("bin/palan-c2ast -d ../test/testdata/005_token_paste_kw.h");
     ASSERT_EQ(output, "int x;");
+}
+
+TEST(c2ast, warning_directive) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/006_warning.h");
+    ASSERT_TRUE(output.find("int warning_test=1;") != string::npos);
+    ASSERT_TRUE(output.find("warning: this is a test warning") != string::npos);
 }
