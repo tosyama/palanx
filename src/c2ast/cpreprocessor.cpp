@@ -562,11 +562,54 @@ int process_include(CPreprocessor& cpp, CLexer& lexer, int n, vector<CToken*>* t
 	n = next_pos(token0s, n);
 	CToken0 &fname_t = token0s[n];
 
-	if (fname_t.type != TT0_STR) {	// filename should be <...> or "..."
-		BOOST_ASSERT(false);
+	string inc_path;
+	if (fname_t.type == TT0_STR) {
+		inc_path = lexer.get_str(&fname_t);
+	} else {
+		// Macro expansion: collect tokens until EOL then expand
+		list<CToken*> unprocessed;
+		int m = n;
+		while (true) {
+			CToken* t = lexer.createToken(m);
+			if (t) unprocessed.push_back(t);
+			if (token0s[m].is_eol) break;
+			m = next_pos(token0s, m);
+		}
+		n = m;
+
+		vector<CToken*> expanded = cpp.scan_macro(unprocessed);
+
+		if (expanded.size() == 1 && expanded[0]->type == TT_STR) {
+			inc_path = *expanded[0]->info.str;
+		} else if (!expanded.empty()
+				&& expanded.front()->type == TT_PUNCTUATOR && expanded.front()->info.punc == '<'
+				&& expanded.back()->type  == TT_PUNCTUATOR && expanded.back()->info.punc == '>') {
+			for (CToken* t : expanded) {
+				switch (t->type) {
+					case TT_ID:      inc_path += *t->info.id; break;
+					case TT_PUNCTUATOR: inc_path += (char)t->info.punc; break;
+					case TT_PP_NUMBER:  inc_path += *t->info.str; break;
+					default: break;
+				}
+			}
+		} else {
+			for (CToken* t : expanded) delete t;
+			BOOST_ASSERT(false);
+		}
+		for (CToken* t : expanded) delete t;
+
+		string foundpath = CFileInfo::getFilePath(inc_path, lexer.infile.fname, cpp.include_paths);
+		if (foundpath == "") {
+			cout << inc_path << " is not found." << endl;
+			BOOST_ASSERT(false);
+		}
+		tokens->push_back(new CToken(TT_INCLUDE, lexer.no, start));
+		if (cpp.once_included.count(foundpath) == 0) {
+			cpp.preprocess(foundpath, tokens->back()->info.tokens);
+		}
+		return n;
 	}
 
-	string inc_path = lexer.get_str(&fname_t);
 	string foundpath = CFileInfo::getFilePath(inc_path, lexer.infile.fname, cpp.include_paths);
 
 	if (foundpath == "") {
@@ -578,7 +621,7 @@ int process_include(CPreprocessor& cpp, CLexer& lexer, int n, vector<CToken*>* t
 	if (cpp.once_included.count(foundpath) == 0) {
 		cpp.preprocess(foundpath, tokens->back()->info.tokens);
 	}
-	
+
 	if (!fname_t.is_eol) {
 		n = next_pos(token0s, n);
 		if (!token0s[n].type == TT0_COMMENT || !token0s[n].is_eol) {

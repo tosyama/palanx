@@ -67,3 +67,17 @@ TEST(c2ast, warning_directive) {
     ASSERT_TRUE(output.find("int warning_test=1;") != string::npos);
     ASSERT_TRUE(output.find("warning: this is a test warning") != string::npos);
 }
+
+TEST(c2ast, include_macro) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/008_include_macro.h");
+    ASSERT_EQ(output, "int macro_include_result=1;");
+}
+
+TEST(c2ast, include_macro_bracket) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/009_include_macro_bracket.h");
+    ASSERT_TRUE(output.find("int printf(const char") != string::npos);
+}
