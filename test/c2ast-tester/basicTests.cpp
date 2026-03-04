@@ -53,6 +53,13 @@ TEST(c2ast, token_paste_keyword) {
     ASSERT_EQ(output, "int x;");
 }
 
+TEST(c2ast, stringizing) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/007_stringify.h");
+    ASSERT_EQ(output, "int n=\"hello\";char *s=\"1 + 2\";");
+}
+
 TEST(c2ast, warning_directive) {
     cleanTestEnv();
     string output;

@@ -346,6 +346,68 @@ static string token_paste_str(CToken* t)
 	}
 }
 
+static string punc_to_str(int punc)
+{
+	if (punc > 0xFFFF)
+		return string({(char)(punc>>16), (char)(punc>>8), (char)punc});
+	if (punc > 0xFF)
+		return string({(char)(punc>>8), (char)punc});
+	return string(1, (char)punc);
+}
+
+static string stringify_arg(const list<CToken*>& arg)
+{
+	string result = "\"";
+	bool first = true;
+	for (CToken* t : arg) {
+		if (!first) result += " ";
+		first = false;
+		if (t->type == TT_STR || t->type == TT_CHAR) {
+			for (char c : *t->info.str) {
+				if (c == '\\' || c == '"') result += '\\';
+				result += c;
+			}
+		} else {
+			switch (t->type) {
+				case TT_ID:         result += *t->info.id; break;
+				case TT_KEYWORD:    result += CLexer::keywords[t->info.keyword]; break;
+				case TT_PP_NUMBER:  result += *t->info.str; break;
+				case TT_PUNCTUATOR: result += punc_to_str(t->info.punc); break;
+				default: BOOST_ASSERT(false);
+			}
+		}
+	}
+	result += "\"";
+	return result;
+}
+
+static void process_stringify(vector<CToken*>& body_tokens, const vector<string>& params, const vector<list<CToken*>>& args)
+{
+	for (int n = 0; n < (int)body_tokens.size(); n++) {
+		CToken* t = body_tokens[n];
+		if (t->type != TT_PUNCTUATOR || t->info.punc != '#') continue;
+
+		BOOST_ASSERT(n + 1 < (int)body_tokens.size()); // '#' at end not allowed
+		CToken* next = body_tokens[n + 1];
+		BOOST_ASSERT(next->type == TT_ID); // '#' must be followed by param name
+
+		int param_idx = -1;
+		for (int p = 0; p < (int)params.size(); p++) {
+			if (*next->info.id == params[p]) { param_idx = p; break; }
+		}
+		BOOST_ASSERT(param_idx >= 0); // param not found
+
+		string str_val = stringify_arg(args[param_idx]);
+		CToken* str_token = new CToken(TT_STR, t->lexer_no, t->token0_no);
+		str_token->info.str = new string(str_val);
+
+		delete t;
+		delete next;
+		body_tokens.erase(body_tokens.begin() + n, body_tokens.begin() + n + 2);
+		body_tokens.insert(body_tokens.begin() + n, str_token);
+	}
+}
+
 bool process_paste(vector<CToken*>& body_tokens, const vector<string>& params, const vector<list<CToken*> >& args)
 {
 	if (body_tokens.size() >= 3) {
@@ -415,7 +477,7 @@ vector<CToken*> CPreprocessor::expand_macro_tokens(CMacro *m, vector<list<CToken
 	}
 
 	// process stringizing '#'
-	// TODO: implement stringizing
+	process_stringify(body_tokens, m->params, args);
 
 	// process token pasting '##'
 	while(process_paste(body_tokens, m->params, args))
