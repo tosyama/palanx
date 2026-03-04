@@ -31,6 +31,7 @@ public:
 	vector<string> &include_paths;
 	ostream *out_stream;
 	set<string> once_included;
+	set<string> line_warned;
 
 	CPreprocessor(vector<CMacro*> &macros, vector<string> &include_paths)
 		: macros(macros), include_paths(include_paths), out_stream(&cout) {}

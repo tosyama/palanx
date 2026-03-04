@@ -75,6 +75,33 @@ TEST(c2ast, include_macro) {
     ASSERT_EQ(output, "int macro_include_result=1;");
 }
 
+TEST(c2ast, include_next_warning) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/010_include_next.h");
+    ASSERT_TRUE(output.find("int include_next_result=1;") != string::npos);
+    ASSERT_TRUE(output.find("warning: '#include_next' is not supported, ignored") != string::npos);
+}
+
+TEST(c2ast, line_directive_warning_once) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/011_line_directive.h");
+    ASSERT_TRUE(output.find("int line_directive_result=1;") != string::npos);
+    // warning appears exactly once despite two #line directives
+    size_t first = output.find("warning: '#line' is not supported");
+    ASSERT_NE(first, string::npos);
+    ASSERT_EQ(output.find("warning: '#line' is not supported", first + 1), string::npos);
+}
+
+TEST(c2ast, unknown_directive_warning) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/012_unknown_directive.h");
+    ASSERT_TRUE(output.find("int unknown_dir_result=1;") != string::npos);
+    ASSERT_TRUE(output.find("warning: unsupported directive '#ident'") != string::npos);
+}
+
 TEST(c2ast, include_macro_bracket) {
     cleanTestEnv();
     string output;

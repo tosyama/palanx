@@ -96,6 +96,9 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 					n = process_include(*this, lexer, n, tokens); 
 					
 				} else if (directive == "include_next") {
+					cerr << lexer.infile.fname << ":" << t0->line_no
+						<< ": warning: '#include_next' is not supported, ignored" << endl;
+					while (!token0s[n].is_eol) n = next_pos(token0s, n);
 
 				} else if (directive == "define") {
 					n = process_define(*this, lexer, n);
@@ -122,6 +125,13 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 					n = process_endif(ifstack, lexer, n);
 
 				} else if (directive == "line") {
+					if (line_warned.count(lexer.infile.fname) == 0) {
+						line_warned.insert(lexer.infile.fname);
+						cerr << lexer.infile.fname << ":" << t0->line_no
+							<< ": warning: '#line' is not supported, ignored" << endl;
+					}
+					while (!token0s[n].is_eol) n = next_pos(token0s, n);
+
 				} else if (directive == "pragma") {
 					n = next_pos(token0s, n);
 					CToken0 &prag_t = token0s[n];
@@ -140,6 +150,10 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 				} else if (directive == "error") {
 					cout << "Error at " << lexer.infile.fname << ":" << t0->line_no << endl;
 					BOOST_ASSERT(false);	// error
+				} else {
+					cerr << lexer.infile.fname << ":" << t0->line_no
+						<< ": warning: unsupported directive '#" << directive << "', ignored" << endl;
+					while (!token0s[n].is_eol) n = next_pos(token0s, n);
 				}
 
 			} else {
