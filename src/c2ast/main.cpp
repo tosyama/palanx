@@ -20,6 +20,8 @@ namespace fs = std::filesystem;
 #include "clexer.h"
 #include "cpreprocessor.h"
 #include "cparser.h"
+#include "../../lib/json/single_include/nlohmann/json.hpp"
+using json = nlohmann::json;
 
 static vector<string> split(const string &str, const string &delim)
 {
@@ -176,7 +178,21 @@ int main(int argc, char* argv[])
 		} else {
 			CParser cparser(cpp.top_tokens, cpp.lexers);
 			json ast;
+			ast["original"] = input_file;
 			int ret = cparser.parse(ast);
+			if (ret) return ret;
+
+			ostream* out = &cout;
+			ofstream outfile;
+			if (output_file) {
+				outfile.open(output_file);
+				out = &outfile;
+			}
+			if (do_indent) {
+				*out << ast.dump(2) << endl;
+			} else {
+				*out << ast.dump() << endl;
+			}
 		}
 	}
 

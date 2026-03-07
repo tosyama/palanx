@@ -292,11 +292,13 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		bool is_const = CONSUME_KW(TK_CONST);
 		bool is_volatile = CONSUME_KW(TK_VOLATILE);
 		if (declaration_specifiers(ast, tokens, index)) {
-			if (!declarator(ast, tokens, index, false)) {
+			json field;
+			if (!declarator(field, tokens, index, false)) {
 				return false;
 			}
 			while (CONSUME_PUNC(',')) {
-				if (!declarator(ast, tokens, index, false)) {
+				json field2;
+				if (!declarator(field2, tokens, index, false)) {
 					return false;
 				}
 			}
@@ -472,19 +474,21 @@ bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &resu
 	bool is_volatile = CONSUME_KW(TK_VOLATILE);
 	
 	if (declaration_specifiers(ast, tokens, index)) {
-		if (!declarator(ast, tokens, index, false)) {
-			if (!declarator(ast, tokens, index, true)) { // abstract declarator
+		json param;
+		if (!declarator(param, tokens, index, false)) {
+			if (!declarator(param, tokens, index, true)) { // abstract declarator
 				debug_token(tokens[index]);
 				return false;
 			}
-		} 
+		}
 
 		while (CONSUME_PUNC(',')) {
 			is_const = CONSUME_KW(TK_CONST);
 			is_volatile = CONSUME_KW(TK_VOLATILE);
 			if (declaration_specifiers(ast, tokens, index)) {
-				if (!declarator(ast, tokens, index, false)) {
-					if (!declarator(ast, tokens, index, true)) { // abstract declarator
+				json param2;
+				if (!declarator(param2, tokens, index, false)) {
+					if (!declarator(param2, tokens, index, true)) { // abstract declarator
 						debug_token(tokens[index]);
 						return false;
 					}
@@ -519,15 +523,15 @@ bool CParser::declarator_tail(json &ast, const vector<CToken*> &tokens, int &res
 			}
 		
 		} else if (CONSUME_PUNC('(')) {
+			ast["decl-kind"] = "func";
 			if (CONSUME_PUNC(')')) {
 				// empty parameter list
 				result_index = index;
 				return true;
 			}
-			// function declarator
 			parameter_list(ast, tokens, index);
 			EXPECT_PUNC(')');
-		
+
 		} else {
 			break;
 		}
@@ -537,6 +541,11 @@ bool CParser::declarator_tail(json &ast, const vector<CToken*> &tokens, int &res
 	return true;
 }
 
+// declarator() writes the following fields to ast (used as a decl accumulator):
+//   ast["name"]      - declared identifier
+//   ast["decl-kind"] - kind of declarator (set via declarator_tail):
+//     "func"     : function prototype  e.g. int foo(int x)
+//     (future)   : "var", "array", "func-ptr", ...
 bool CParser::declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly)
 {
 	int index = result_index;
@@ -562,6 +571,7 @@ bool CParser::declarator(json &ast, const vector<CToken*> &tokens, int &result_i
 		if (!CONSUME(TT_ID)) {
 			return false;
 		}
+		ast["name"] = *tokens[index-1]->info.id;
 	}
 
 	declarator_tail(ast, tokens, index);
@@ -605,12 +615,21 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 		}
 	}
 
+	json decl;
 	if (declaration_specifiers(ast, tokens, index)) {
-		if (declarator(ast, tokens, index, false)) {
+		if (declarator(decl, tokens, index, false)) {
 			// parsed declarator
-			
+
 			if (CONSUME_PUNC(';')) {
 				// simple declaration
+				if (is_extern && !is_typedef
+						&& decl.value("decl-kind", "") == "func"
+						&& decl.contains("name")) {
+					json func;
+					func["name"] = decl["name"];
+					func["func-type"] = "c";
+					ast["ast"]["functions"].push_back(func);
+				}
 				result_index = index;
 				return true;
 

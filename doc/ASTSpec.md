@@ -54,8 +54,12 @@ Return value
 Variable type
 -------------
 - type-kind\* - Type kind string: "prim" "pntr" "arr" "strct" "union" "enum" "func" "user"
+- const - Boolean, true if const qualified (omitted when false)
   1. prim - Primitive type
-    - type-name\* - Type name string: "int64" "void" etc.
+    - type-name\* - Type name string
+      - Integer: "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64"
+      - Float: "flt32" "flt64"
+      - Other: "void"
   2. pntr - Pointer type
     - base-type\* - Base variable type
   3. arr - Array type
@@ -76,6 +80,8 @@ Variable type
   8. user - User defined type
     - type-name\* - Type name string
     - base-type\* - Base variable type
+
+Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
 
 Statement model
 ---------------

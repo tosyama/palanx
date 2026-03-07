@@ -68,6 +68,22 @@ TEST(c2ast, warning_directive) {
     ASSERT_TRUE(output.find("warning: this is a test warning") != string::npos);
 }
 
+TEST(c2ast, printf_in_ast) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s stdio.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    bool found = false;
+    for (auto& f : functions) {
+        if (f["name"] == "printf" && f["func-type"] == "c") {
+            found = true;
+            break;
+        }
+    }
+	cout << output;
+    ASSERT_TRUE(found);
+}
+
 TEST(c2ast, include_macro) {
     cleanTestEnv();
     string output;
