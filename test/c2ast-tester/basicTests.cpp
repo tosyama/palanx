@@ -73,15 +73,20 @@ TEST(c2ast, printf_in_ast) {
     string output = execTestCommand("bin/palan-c2ast -s stdio.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
-    bool found = false;
+    json* pf = nullptr;
     for (auto& f : functions) {
         if (f["name"] == "printf" && f["func-type"] == "c") {
-            found = true;
+            pf = &f;
             break;
         }
     }
+    ASSERT_NE(pf, nullptr);
+    ASSERT_TRUE(pf->contains("parameters"));
+    auto& params = (*pf)["parameters"];
+    ASSERT_GE(params.size(), 2u);
+    ASSERT_TRUE(params[0].contains("name"));
+    ASSERT_EQ(params.back()["name"], "...");
 	cout << output;
-    ASSERT_TRUE(found);
 }
 
 TEST(c2ast, include_macro) {

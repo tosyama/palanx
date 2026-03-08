@@ -481,6 +481,8 @@ bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &resu
 				return false;
 			}
 		}
+		if (param.contains("name"))
+			ast["parameters"].push_back({{"name", param["name"]}});
 
 		while (CONSUME_PUNC(',')) {
 			is_const = CONSUME_KW(TK_CONST);
@@ -493,7 +495,10 @@ bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &resu
 						return false;
 					}
 				}
+				if (param2.contains("name"))
+					ast["parameters"].push_back({{"name", param2["name"]}});
 			} else if (CONSUME_PUNC('...')) {
+				ast["parameters"].push_back({{"name", "..."}});
 				EXPECT_PUNC(')');
 				index--;	// backtrack for ')'
 			} else {
@@ -628,6 +633,8 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 					json func;
 					func["name"] = decl["name"];
 					func["func-type"] = "c";
+					if (decl.contains("parameters"))
+						func["parameters"] = decl["parameters"];
 					ast["ast"]["functions"].push_back(func);
 				}
 				result_index = index;
