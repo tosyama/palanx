@@ -20,6 +20,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <cstdio>
 
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "../common/fileutils.h"
@@ -47,23 +48,41 @@ class PlnLexer;
 		return lexer.yylex(*yylval, *location);
 	}
 
-	static void execute_c2ast(const string& out_filename)
+	static json execute_c2ast(const string& path_type, const string& path)
 	{
 		fs::path exec_file_path = fs::canonical("/proc/self/exe");
 		string exec_path = exec_file_path.parent_path().string();
 		string c2ast_path = exec_path + "/palan-c2ast";
 
-		string c2astcmd = c2ast_path + " " + out_filename;
-		// int ret = system(c2astcmd.c_str());
-		// if (WIFEXITED(ret)) {
-		// 	ret = WEXITSTATUS(ret);
-		// 	if (ret) {
-		// 		BOOST_ASSERT(false);
-		// 	}
-		// } else {
-		// 	BOOST_ASSERT(false);
-		// }
-		// cout << "execute: " << c2ast_path << " " << out_filename << endl;
+		string cmd;
+		if (path_type == "inc") {
+			cmd = c2ast_path + " -s " + path;
+		} else {
+			cmd = c2ast_path + " " + path;
+		}
+
+		FILE* pipe = popen(cmd.c_str(), "r");
+		if (!pipe) {
+			cerr << "palan-c2ast: popen failed: " << cmd << endl;
+			return json{};
+		}
+
+		string result;
+		char buf[4096];
+		while (fgets(buf, sizeof(buf), pipe)) result += buf;
+		int status = pclose(pipe);
+		if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+			cerr << "palan-c2ast: exited with " << WEXITSTATUS(status) << ": " << cmd << endl;
+			return json{};
+		}
+
+		if (result.empty()) return json{};
+		json parsed = json::parse(result, nullptr, false);  // no exception
+		if (parsed.is_discarded()) {
+			cerr << "palan-c2ast: JSON parse failed" << endl;
+			return json{};
+		}
+		return parsed;
 	}
 }
 
@@ -142,8 +161,10 @@ statement: import ';'
 		$$ = move($1);
 		$$["stmt-type"] = "cinclude";
 
-		string cincude_outfilename =  getUniqueTempFileName("gen-ast");
-		execute_c2ast(cincude_outfilename);
+		json c_ast = execute_c2ast($$["path-type"], $$["path"]);
+		if (c_ast.is_object() && c_ast.contains("ast")) {
+			$$["functions"] = move(c_ast["ast"]["functions"]);
+		}
 	}
 	| block
 	{

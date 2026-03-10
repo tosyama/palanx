@@ -34,7 +34,7 @@ Function definition model
   1. palan - Palan function (TBD)
     - rets - Return value list
   2. c - C function prototype
-    - ret - Return value (Anonymous)
+    - ret-type\* - Return variable type
 - loc - Location Array
 
 Parameter
@@ -74,7 +74,7 @@ Variable type
   6. enum - Enum type (TBD)
     - name - Enum name string
     - enumerators - Enumerator list
-  7. func - Function pointer type (TBD)
+  7. func - Function type
     - parameters - Parameter list
     - ret-type\* - Return variable type
   8. user - User defined type
@@ -85,12 +85,16 @@ Note: C `restrict` qualifier is not represented in the AST (optimization hint on
 
 Statement model
 ---------------
-- stmt-type - Statement type: "import"
+- stmt-type - Statement type: "import" "cinclude"
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
     - targets - Import target name string list, null - all
     - alias - Alias name string
+  2. cinclude - C header include statement (expands in place, scope-aware)
+    - path-type\* - Path type string: "src" "inc"
+    - path\* - Path string
+    - functions - Function definition model list (C prototypes from the header)
 
 Location Array
 -----------------

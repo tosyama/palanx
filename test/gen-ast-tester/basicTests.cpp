@@ -33,6 +33,26 @@ TEST(gen_ast, basic_tests) {
 	ASSERT_EQ(jout["ast"]["statements"].size(), 12);
 }
 
+TEST(gen_ast, cinclude_functions_in_ast) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_printf = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		for (auto& f : stmt["functions"]) {
+			if (f["name"] == "printf" && f["func-type"] == "c") {
+				found_printf = true;
+				break;
+			}
+		}
+		if (found_printf) break;
+	}
+	ASSERT_TRUE(found_printf);
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");
