@@ -68,25 +68,59 @@ TEST(c2ast, warning_directive) {
     ASSERT_TRUE(output.find("warning: this is a test warning") != string::npos);
 }
 
-TEST(c2ast, printf_in_ast) {
+TEST(c2ast, stdio_functions_in_ast) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast -s stdio.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
-    json* pf = nullptr;
-    for (auto& f : functions) {
-        if (f["name"] == "printf" && f["func-type"] == "c") {
-            pf = &f;
-            break;
-        }
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name && f["func-type"] == "c") return &f;
+        return nullptr;
+    };
+
+    // printf: int printf(const char *format, ...)
+    {
+        json* pf = find_func("printf");
+        ASSERT_NE(pf, nullptr);
+        // ret-type: int
+        ASSERT_EQ((*pf)["ret-type"]["type-kind"], "prim");
+        ASSERT_EQ((*pf)["ret-type"]["type-name"], "int32");
+        // params
+        auto& params = (*pf)["parameters"];
+        ASSERT_GE(params.size(), 2u);
+        ASSERT_EQ(params.back()["name"], "...");
+        // first param: const char *
+        auto& p0vt = params[0]["var-type"];
+        ASSERT_EQ(p0vt["type-kind"], "pntr");
+        ASSERT_EQ(p0vt["base-type"]["type-kind"], "prim");
+        ASSERT_EQ(p0vt["base-type"]["type-name"], "int8");
+        ASSERT_EQ(p0vt["base-type"]["const"], true);
     }
-    ASSERT_NE(pf, nullptr);
-    ASSERT_TRUE(pf->contains("parameters"));
-    auto& params = (*pf)["parameters"];
-    ASSERT_GE(params.size(), 2u);
-    ASSERT_TRUE(params[0].contains("name"));
-    ASSERT_EQ(params.back()["name"], "...");
-	cout << output;
+
+    // fgets: char *fgets(char *s, int n, FILE *stream)
+    {
+        json* pf = find_func("fgets");
+        ASSERT_NE(pf, nullptr);
+        // ret-type: char *
+        auto& ret = (*pf)["ret-type"];
+        ASSERT_EQ(ret["type-kind"], "pntr");
+        ASSERT_EQ(ret["base-type"]["type-kind"], "prim");
+        ASSERT_EQ(ret["base-type"]["type-name"], "int8");
+        // params
+        auto& params = (*pf)["parameters"];
+        ASSERT_GE(params.size(), 3u);
+        // first param: char *
+        auto& p0vt = params[0]["var-type"];
+        ASSERT_EQ(p0vt["type-kind"], "pntr");
+        ASSERT_EQ(p0vt["base-type"]["type-kind"], "prim");
+        ASSERT_EQ(p0vt["base-type"]["type-name"], "int8");
+        // second param: int
+        auto& p1vt = params[1]["var-type"];
+        ASSERT_EQ(p1vt["type-kind"], "prim");
+        ASSERT_EQ(p1vt["type-name"], "int32");
+    }
 }
 
 TEST(c2ast, include_macro) {

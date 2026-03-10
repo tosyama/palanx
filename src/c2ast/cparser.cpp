@@ -3,6 +3,7 @@
 #include <set>
 #include <string>
 #include <iostream>
+#include <utility>
 #include <boost/assert.hpp>
 
 using namespace std;
@@ -291,13 +292,15 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 	do {
 		bool is_const = CONSUME_KW(TK_CONST);
 		bool is_volatile = CONSUME_KW(TK_VOLATILE);
-		if (declaration_specifiers(ast, tokens, index)) {
-			json field;
+		json flocal;
+		if (declaration_specifiers(flocal, tokens, index)) {
+			json base_vt = flocal.value("var-type", json{});
+			json field = {{"var-type", base_vt}};
 			if (!declarator(field, tokens, index, false)) {
 				return false;
 			}
 			while (CONSUME_PUNC(',')) {
-				json field2;
+				json field2 = {{"var-type", base_vt}};
 				if (!declarator(field2, tokens, index, false)) {
 					return false;
 				}
@@ -354,97 +357,56 @@ bool CParser::enum_definition(json &ast, const vector<CToken*> &tokens, int &res
 
 bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
-	// TODO: long double
 	int index = result_index;
 
 	CONSUME_KW(TK_INLINE);
 	CONSUME_KW(TK_VOLATILE);
-	CONSUME_KW(TK_CONST);
+	bool is_const = CONSUME_KW(TK_CONST);
+
+	auto set_prim = [&](const char* name) {
+		ast["var-type"] = {{"type-kind", "prim"}, {"type-name", name}};
+		if (is_const) ast["var-type"]["const"] = true;
+	};
 
 	if (CONSUME(TT_ID)) {	// typedef name
 		// TODO: Check defined type
+		ast["var-type"] = {{"type-kind", "user"}, {"type-name", *tokens[index-1]->info.id}};
 		result_index = index;
 		return true;
 	}
 
-	if (unsigned_char(tokens, index)) {
-		result_index = index;
-		return true;
-	}
-
-	if (signed_char(tokens, index)) {
-		result_index = index;
-		return true;
-	}
-
-	if (unsigned_long_long(tokens, index)) {
-		result_index = index;
-		return true;
-	}
-
-	if (signed_long_long(tokens, index)) {
-		result_index = index;
-		return true;
-	}
+	if (unsigned_char(tokens, index)) { set_prim("uint8"); result_index = index; return true; }
+	if (signed_char(tokens, index))   { set_prim("int8");  result_index = index; return true; }
+	if (unsigned_long_long(tokens, index)) { set_prim("uint64"); result_index = index; return true; }
+	if (signed_long_long(tokens, index))   { set_prim("int64");  result_index = index; return true; }
 
 	if (CONSUME_KW(TK_LONG)) {
-		if (CONSUME_KW(TK_DOUBLE)) {
-			result_index = index;
-			return true;
-		}
+		if (CONSUME_KW(TK_DOUBLE)) { set_prim("flt128"); result_index = index; return true; }
 		index--; // backtrack
 	}
 
-	if (unsigned_long(tokens, index)) {
-		result_index = index;
-		return true;
-	}
+	if (unsigned_long(tokens, index))  { set_prim("uint64"); result_index = index; return true; }
+	if (signed_long(tokens, index))    { set_prim("int64");  result_index = index; return true; }
+	if (unsigned_short(tokens, index)) { set_prim("uint16"); result_index = index; return true; }
+	if (signed_short(tokens, index))   { set_prim("int16");  result_index = index; return true; }
+	if (unsigned_int(tokens, index))   { set_prim("uint32"); result_index = index; return true; }
+	if (signed_int(tokens, index))     { set_prim("int32");  result_index = index; return true; }
 
-	if (signed_long(tokens, index)) {
-		result_index = index;
-		return true;
-	}
+	if (CONSUME_KW(TK_DOUBLE)) { set_prim("flt64"); result_index = index; return true; }
+	if (CONSUME_KW(TK_FLOAT))  { set_prim("flt32"); result_index = index; return true; }
 
-	if (unsigned_short(tokens, index)) {
-		result_index = index;
-		return true;
-	}
-
-	if (signed_short(tokens, index)) {
-		result_index = index;
-		return true;
-	}
-
-	if (unsigned_int(tokens, index)) {
-		result_index = index;
-		return true;
-	}
-
-	if (signed_int(tokens, index)) {
-		result_index = index;
-		return true;
-	}
-
-	if (CONSUME_KW(TK_DOUBLE)) {
-		result_index = index;
-		return true;
-	}
-
-	if (CONSUME_KW(TK_FLOAT)) {
-		result_index = index;
-		return true;
-	}
-
-	if (CONSUME_KW(TK_STRUCT)) { // struct definition
+	if (CONSUME_KW(TK_STRUCT)) {
 		if (struct_union_definition(ast, tokens, index)) {
+			ast["var-type"] = {{"type-kind", "strct"}};
 			result_index = index;
 			return true;
 		}
 		return false;
 	}
 
-	if (CONSUME_KW(TK_UNION)) { // union definition
+	if (CONSUME_KW(TK_UNION)) {
 		if (struct_union_definition(ast, tokens, index)) {
+			ast["var-type"] = {{"type-kind", "union"}};
 			result_index = index;
 			return true;
 		}
@@ -453,52 +415,46 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_ENUM)) {
 		if (enum_definition(ast, tokens, index)) {
+			ast["var-type"] = {{"type-kind", "enum"}};
 			result_index = index;
 			return true;
 		}
 		return false;
 	}
 
-	if (CONSUME_KW(TK_VOID)) {
-		result_index = index;
-		return true;
-	}
+	if (CONSUME_KW(TK_VOID)) { set_prim("void"); result_index = index; return true; }
 
 	return false;
 }
 
-bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &result_index)
+bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
-	bool is_const = CONSUME_KW(TK_CONST);
-	bool is_volatile = CONSUME_KW(TK_VOLATILE);
-	
-	if (declaration_specifiers(ast, tokens, index)) {
-		json param;
+
+	json local;
+	if (declaration_specifiers(local, tokens, index)) {
+		json param = {{"var-type", local.value("var-type", json{})}};
 		if (!declarator(param, tokens, index, false)) {
 			if (!declarator(param, tokens, index, true)) { // abstract declarator
 				debug_token(tokens[index]);
 				return false;
 			}
 		}
-		if (param.contains("name"))
-			ast["parameters"].push_back({{"name", param["name"]}});
+		params.push_back(param);
 
 		while (CONSUME_PUNC(',')) {
-			is_const = CONSUME_KW(TK_CONST);
-			is_volatile = CONSUME_KW(TK_VOLATILE);
-			if (declaration_specifiers(ast, tokens, index)) {
-				json param2;
+			json local2;
+			if (declaration_specifiers(local2, tokens, index)) {
+				json param2 = {{"var-type", local2.value("var-type", json{})}};
 				if (!declarator(param2, tokens, index, false)) {
 					if (!declarator(param2, tokens, index, true)) { // abstract declarator
 						debug_token(tokens[index]);
 						return false;
 					}
 				}
-				if (param2.contains("name"))
-					ast["parameters"].push_back({{"name", param2["name"]}});
+				params.push_back(param2);
 			} else if (CONSUME_PUNC('...')) {
-				ast["parameters"].push_back({{"name", "..."}});
+				params.push_back({{"name", "..."}});
 				EXPECT_PUNC(')');
 				index--;	// backtrack for ')'
 			} else {
@@ -513,29 +469,33 @@ bool CParser::parameter_list(json &ast, const vector<CToken*> &tokens, int &resu
 	return false;
 }
 
-bool CParser::declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index)
+bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
 
 	while (true) {
 		if (CONSUME_PUNC('[')) {
-			constant_expression(ast, tokens, index);
-			
-			//EXPECT_PUNC(']');
+			constant_expression(decl, tokens, index);
 			if (!CONSUME_PUNC(']')) {
 				debug_token(tokens[index]);
 				return false;
 			}
-		
+
 		} else if (CONSUME_PUNC('(')) {
-			ast["decl-kind"] = "func";
-			if (CONSUME_PUNC(')')) {
-				// empty parameter list
-				result_index = index;
-				return true;
+			vector<json> params;
+			if (!CONSUME_PUNC(')')) {
+				parameter_list(params, tokens, index);
+				EXPECT_PUNC(')');
 			}
-			parameter_list(ast, tokens, index);
-			EXPECT_PUNC(')');
+			json& vt = decl["var-type"];
+			if (vt.is_object() && vt.value("type-kind", "") == "pntr") {
+				// (*fp)(params) → fp is a pointer to function
+				// Move func inside the pntr, using pntr's base-type as return type.
+				vt = {{"type-kind", "pntr"}, {"base-type",
+					{{"type-kind", "func"}, {"ret-type", vt["base-type"]}, {"parameters", params}}}};
+			} else {
+				vt = {{"type-kind", "func"}, {"ret-type", vt}, {"parameters", params}};
+			}
 
 		} else {
 			break;
@@ -546,40 +506,46 @@ bool CParser::declarator_tail(json &ast, const vector<CToken*> &tokens, int &res
 	return true;
 }
 
-// declarator() writes the following fields to ast (used as a decl accumulator):
-//   ast["name"]      - declared identifier
-//   ast["decl-kind"] - kind of declarator (set via declarator_tail):
-//     "func"     : function prototype  e.g. int foo(int x)
-//     (future)   : "var", "array", "func-ptr", ...
-bool CParser::declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly)
+// declarator() parses a declarator, building up decl:
+//   decl["name"]     - declared identifier
+//   decl["var-type"] - complete type (caller initializes with base type from declaration_specifiers;
+//                      declarator wraps with pntr for *, declarator_tail wraps with func/array)
+bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_index, bool is_typeonly)
 {
 	int index = result_index;
-	bool is_const = CONSUME_KW(TK_CONST);
-	bool is_volatile = CONSUME_KW(TK_VOLATILE);
 
 	if (CONSUME_PUNC('*')) {
-		if (!declarator(ast, tokens, index, is_typeonly)) {
+		bool ptr_const = CONSUME_KW(TK_CONST);       // e.g. int * const p
+		bool ptr_volatile = CONSUME_KW(TK_VOLATILE);
+		if (!declarator(decl, tokens, index, is_typeonly))
 			return false;
+		json& vt = decl["var-type"];
+		if (vt.is_object() && vt.value("type-kind", "") == "func") {
+			// char *f(params) → f is a function returning char*
+			// The * modifies the return type, not the function itself.
+			vt["ret-type"] = {{"type-kind", "pntr"}, {"base-type", vt["ret-type"]}};
+			if (ptr_const) vt["ret-type"]["const"] = true;
+		} else {
+			vt = {{"type-kind", "pntr"}, {"base-type", vt}};
+			if (ptr_const) vt["const"] = true;
 		}
 		result_index = index;
 		return true;
 	}
-	
+
 	if (CONSUME_PUNC('(')) {
-		if (!declarator(ast, tokens, index, is_typeonly)) {
+		if (!declarator(decl, tokens, index, is_typeonly))
 			return false;
-		}
 		EXPECT_PUNC(')');
 
 	} else if (!is_typeonly) {
 		CONSUME_KW(TK_RESTRICT); // C99 restrict qualifier
-		if (!CONSUME(TT_ID)) {
+		if (!CONSUME(TT_ID))
 			return false;
-		}
-		ast["name"] = *tokens[index-1]->info.id;
+		decl["name"] = *tokens[index-1]->info.id;
 	}
 
-	declarator_tail(ast, tokens, index);
+	declarator_tail(decl, tokens, index);
 
 	result_index = index;
 	return true;
@@ -620,22 +586,39 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 		}
 	}
 
-	json decl;
-	if (declaration_specifiers(ast, tokens, index)) {
+	json local;
+	if (declaration_specifiers(local, tokens, index)) {
+		json base_vt = local.value("var-type", json{});
+		json decl = {{"var-type", base_vt}};
 		if (declarator(decl, tokens, index, false)) {
 			// parsed declarator
 
+			// consume additional comma-separated declarators (AST not emitted)
+			// Function prototypes must not appear in comma-separated lists.
+			if (CONSUME_PUNC(',')) {
+				BOOST_ASSERT(decl["var-type"].value("type-kind", "") != "func");
+				do {
+					json decl2 = {{"var-type", base_vt}};
+					bool ok = declarator(decl2, tokens, index, false);
+					BOOST_ASSERT(ok);
+					BOOST_ASSERT(decl2["var-type"].value("type-kind", "") != "func");
+				} while (CONSUME_PUNC(','));
+			}
+
 			if (CONSUME_PUNC(';')) {
 				// simple declaration
-				if (is_extern && !is_typedef
-						&& decl.value("decl-kind", "") == "func"
-						&& decl.contains("name")) {
-					json func;
-					func["name"] = decl["name"];
-					func["func-type"] = "c";
-					if (decl.contains("parameters"))
-						func["parameters"] = decl["parameters"];
-					ast["ast"]["functions"].push_back(func);
+				auto& vt = decl["var-type"];
+				BOOST_ASSERT(vt.is_object());
+				if (!is_static && !is_typedef
+						&& vt.value("type-kind", "") == "func") {
+					BOOST_ASSERT(decl.contains("name"));
+					BOOST_ASSERT(vt.contains("ret-type") && !vt["ret-type"].is_null());
+					ast["ast"]["functions"].push_back({
+						{"name", move(decl["name"])},
+						{"func-type", "c"},
+						{"ret-type", move(vt["ret-type"])},
+						{"parameters", move(vt["parameters"])}
+					});
 				}
 				result_index = index;
 				return true;
@@ -760,12 +743,13 @@ bool CParser::unary_expression(json &ast, const vector<CToken*> &tokens, int &re
 
 	if (CONSUME_KW(TK_SIZEOF)) {
 		EXPECT_PUNC('(');
-	
-		if (!declaration_specifiers(ast, tokens, index)) {
+
+		json slocal;
+		if (!declaration_specifiers(slocal, tokens, index)) {
 			return false;
 		}
-
-		if (!declarator(ast, tokens, index, true)) {
+		json sdecl = {{"var-type", slocal.value("var-type", json{})}};
+		if (!declarator(sdecl, tokens, index, true)) {
 			return false;
 		}
 
@@ -782,16 +766,17 @@ bool CParser::cast_expression(json &ast, const vector<CToken*> &tokens, int &res
 	int index = result_index;
 	int save_index = index;
 
- 	for (;;) {
+	for (;;) {
 		if (!CONSUME_PUNC('(')) {
 			break;
 		}
-		if (!declaration_specifiers(ast, tokens, index)) {
+		json clocal;
+		if (!declaration_specifiers(clocal, tokens, index)) {
 			index = save_index; // backtrack
 			break;
 		}
-
-		if (!declarator(ast, tokens, index, true)) {
+		json cdecl = {{"var-type", clocal.value("var-type", json{})}};
+		if (!declarator(cdecl, tokens, index, true)) {
 			index = save_index; // backtrack
 			break;
 		}
