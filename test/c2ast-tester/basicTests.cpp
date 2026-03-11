@@ -15,14 +15,14 @@ TEST(c2ast, basic_tests) {
 TEST(c2ast, va_args) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/001_va_args.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/001_va_args.h");
     ASSERT_EQ(output, "int testproc(){mylog(\"hello\",1,2);}");
 }
 
 TEST(c2ast, token_paste_nonid) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/002_token_paste.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/002_token_paste.h");
     ASSERT_EQ(output, "int testproc(){return val1;return 1val;return 12;return int_t;}");
 }
 
@@ -36,34 +36,34 @@ TEST(c2ast, std_headers) {
 TEST(c2ast, pragma_once) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/003_pragma_once_main.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/003_pragma_once_main.h");
     ASSERT_EQ(output, "int result=1;");
 }
 TEST(c2ast, char_const_in_if) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/004_char_const.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/004_char_const.h");
     ASSERT_EQ(output, "int char_result=1;");
 }
 
 TEST(c2ast, token_paste_keyword) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/005_token_paste_kw.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/005_token_paste_kw.h");
     ASSERT_EQ(output, "int x;");
 }
 
 TEST(c2ast, stringizing) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/007_stringify.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/007_stringify.h");
     ASSERT_EQ(output, "int n=\"hello\";char *s=\"1 + 2\";");
 }
 
 TEST(c2ast, warning_directive) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/006_warning.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/006_warning.h");
     ASSERT_TRUE(output.find("int warning_test=1;") != string::npos);
     ASSERT_TRUE(output.find("warning: this is a test warning") != string::npos);
 }
@@ -126,14 +126,14 @@ TEST(c2ast, stdio_functions_in_ast) {
 TEST(c2ast, include_macro) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/008_include_macro.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/008_include_macro.h");
     ASSERT_EQ(output, "int macro_include_result=1;");
 }
 
 TEST(c2ast, include_next_warning) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/010_include_next.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/010_include_next.h");
     ASSERT_TRUE(output.find("int include_next_result=1;") != string::npos);
     ASSERT_TRUE(output.find("warning: '#include_next' is not supported, ignored") != string::npos);
 }
@@ -141,7 +141,7 @@ TEST(c2ast, include_next_warning) {
 TEST(c2ast, line_directive_warning_once) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/011_line_directive.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/011_line_directive.h");
     ASSERT_TRUE(output.find("int line_directive_result=1;") != string::npos);
     // warning appears exactly once despite two #line directives
     size_t first = output.find("warning: '#line' is not supported");
@@ -152,7 +152,7 @@ TEST(c2ast, line_directive_warning_once) {
 TEST(c2ast, unknown_directive_warning) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/012_unknown_directive.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/012_unknown_directive.h");
     ASSERT_TRUE(output.find("int unknown_dir_result=1;") != string::npos);
     ASSERT_TRUE(output.find("warning: unsupported directive '#ident'") != string::npos);
 }
@@ -160,6 +160,6 @@ TEST(c2ast, unknown_directive_warning) {
 TEST(c2ast, include_macro_bracket) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/009_include_macro_bracket.h");
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/009_include_macro_bracket.h");
     ASSERT_TRUE(output.find("int printf(const char") != string::npos);
 }
