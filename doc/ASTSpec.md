@@ -85,7 +85,7 @@ Note: C `restrict` qualifier is not represented in the AST (optimization hint on
 
 Statement model
 ---------------
-- stmt-type - Statement type: "import" "cinclude"
+- stmt-type - Statement type: "import" "cinclude" "expr"
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
@@ -95,6 +95,25 @@ Statement model
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
     - functions - Function definition model list (C prototypes from the header)
+  3. expr - expression statement
+    - body\* - Expression model
+
+Expression model
+----------------
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "call"
+  1. lit-str - String literal
+    - value\* - String value
+  2. lit-int - Signed integer literal (corresponds to INT token)
+    - value\* - Decimal string (e.g. "10")
+  3. lit-uint - Unsigned integer literal (corresponds to UINT token)
+    - value\* - Decimal string (e.g. "10")
+  4. id - Identifier (variable reference)
+    - name\* - Identifier name string
+  5. call - Function call expression
+    - name\* - Function name string
+    - args - Argument expression list
+
+Note: Negative integer literals are represented as a unary minus expression (TBD).
 
 Location Array
 -----------------

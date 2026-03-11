@@ -23,6 +23,7 @@ add_subdirectory(src/c2ast)
 add_subdirectory(test/c2ast-tester)
 
 add_subdirectory(src/semantic-anlyzr)
+add_subdirectory(test/sa-tester)
 
 add_subdirectory(src/build-mgr)
 add_subdirectory(test/build-mgr-tester)

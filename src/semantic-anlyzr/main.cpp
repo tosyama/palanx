@@ -68,6 +68,13 @@ int main(int argc, char* argv[])
 	PlnSemanticAnalyzer analyzer(ast_path.parent_path().string(), ast_filename, c2ast_path);
 	analyzer.analysis(ast);
 
+	string sa_path = output_file
+		? output_file
+		: ast_path.parent_path().string() + "/" + ast_filename + ".sa.json";
+
+	ofstream safile(sa_path);
+	safile << (do_indent ? analyzer.result().dump(2) : analyzer.result().dump()) << endl;
+
 	return 0;
 }
 
