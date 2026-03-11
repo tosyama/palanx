@@ -86,7 +86,7 @@ COMMENT1	\/\/[^\n]*\n
 %}
 
 <*>{DIGIT} {
-		lval.build<int64_t>() = std::stoll(yytext); 
+		lval.build<string>() = yytext;
 		return INT;
 	}
 <*>"export" { return KW_EXPORT; }

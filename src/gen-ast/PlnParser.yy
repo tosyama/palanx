@@ -91,8 +91,8 @@ class PlnLexer;
 %define api.value.type	variant
 %define parse.error	verbose
 
-%token <int64_t>	INT	"integer"
-%token <uint64_t>	UINT	"unsigned integer"
+%token <string>	INT	"integer"
+%token <string>	UINT	"unsigned integer"
 %token <string>	STRING	"string"
 %token <string>	ID	"identifier"
 %token <string>	PATH	"path"
@@ -126,6 +126,8 @@ class PlnLexer;
 %type <json>	import cinclude import_path
 %type <vector<string>>	import_ids
 %type <string>	import_as
+%type <json>	expression func_call term
+%type <vector<json>>	arguments
 
 %left ARROW DBL_ARROW
 %left '<' '>' OPE_LE OPE_GE
@@ -193,8 +195,11 @@ statement: import ';'
 	}
 	| expression ';'
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		if ($1.value("expr-type", "") != "not-impl") {
+			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
+		} else {
+			$$ = {{"stmt-type", "not-impl"}};
+		}
 	}
 	| func_def
 	{
@@ -356,43 +361,84 @@ interface_methods: /* empty */
 	;
 
 expression: term
+	{ $$ = move($1); }
 	| func_call
+	{ $$ = move($1); }
 	| array_desc
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| dict_desc
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '+' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '-' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '*' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '/' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '%' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '&' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '|' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression OPE_LE expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression OPE_GE expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '<' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '>' expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression ARROW expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression DBL_ARROW expression
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| noname_func
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	;
 
-term: INT | UINT | STRING | ID
+term: INT
+	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}}; }
+	| UINT
+	{ $$ = {{"expr-type", "lit-uint"}, {"value", move($1)}}; }
+	| STRING
+	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; }
+	| ID
+	{ $$ = {{"expr-type", "id"}, {"name", move($1)}}; }
 	| '(' tapple_inner ')'
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| term '.' ID
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	| term array_desc
+	{ $$ = {{"expr-type", "not-impl"}}; }
 	;
 
-tapple_inner: expression 
+tapple_inner: expression
 	| '-'
 	| tapple_inner ',' expression
 	| tapple_inner ',' '-'
 	;
 
 func_call: term '(' arguments ')'
+	{
+		if ($1.value("expr-type", "") == "id") {
+			$$ = {{"expr-type", "call"}, {"name", $1["name"]}, {"args", move($3)}};
+		} else {
+			$$ = {{"expr-type", "not-impl"}};
+		}
+	}
 	;
 
 arguments: /* empty */
+	{ }
 	| expression move_owner_r
+	{ $$.push_back(move($1)); }
 	| arguments ',' expression move_owner_r
+	{
+		$$ = move($1);
+		$$.push_back(move($3));
+	}
 	;
 
 array_desc: '[' array_items ']'
