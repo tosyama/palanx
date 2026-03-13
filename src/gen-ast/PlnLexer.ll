@@ -6,11 +6,15 @@
 /// @file PlnLexer.ll
 /// @copyright 2024 YAMAGUCHI Toshinobu
 
+#include <string>
+#include <fstream>
 #include "PlnParser.h"
 #include "PlnLexer.h"
-#include <string>
+#include "PlnGenAstMessage.h"
 
-using std::string;
+#include <boost/assert.hpp>
+
+using namespace std;
 using namespace palan;
 
 #undef	YY_DECL
@@ -26,9 +30,13 @@ enum {
 	INCLUDE_FILE =	PlnParser::token::INCLUDE_FILE,
 	KW_EXPORT =	PlnParser::token::KW_EXPORT,
 	KW_IMPORT =	PlnParser::token::KW_IMPORT,
+	KW_CINCLUDE =	PlnParser::token::KW_CINCLUDE,
 	KW_FROM =	PlnParser::token::KW_FROM,
+	KW_AS	=	PlnParser::token::KW_AS,
 	KW_FUNC =	PlnParser::token::KW_FUNC,
 	KW_TYPE =	PlnParser::token::KW_TYPE,
+	KW_CONSTRUCT =	PlnParser::token::KW_CONSTRUCT,
+	KW_INTERFACE =	PlnParser::token::KW_INTERFACE,
 	KW_CONST =	PlnParser::token::KW_CONST,
 	KW_VOID =	PlnParser::token::KW_VOID,
 	KW_RETURN = PlnParser::token::KW_RETURN,
@@ -41,10 +49,20 @@ enum {
 	DBL_GRTR =	PlnParser::token::DBL_GRTR,
 	ARROW =	PlnParser::token::ARROW,
 	DBL_ARROW =	PlnParser::token::DBL_ARROW,
+	AT_EXCL =	PlnParser::token::AT_EXCL,
 	DBL_PLUS =	PlnParser::token::DBL_PLUS
 };
 
 static string& unescape(string& str);
+
+PlnLexer::PlnLexer(const string& input_file)
+	: inputFile(input_file), inStream(input_file), yyFlexLexer()
+{
+	if (!inStream) {
+		throw runtime_error(PlnGenAstMessage::getMessage(E_CouldNotOpenFile, input_file));
+	}
+	this->switch_streams(&inStream);
+}
 
 %}
 
@@ -68,13 +86,17 @@ COMMENT1	\/\/[^\n]*\n
 %}
 
 <*>{DIGIT} {
-		lval.build<int64_t>() = std::stoll(yytext); 
+		lval.build<string>() = yytext;
 		return INT;
 	}
 <*>"export" { return KW_EXPORT; }
 <*>"import" {
 		BEGIN(import);
 		return KW_IMPORT;
+	}
+<*>"cinclude" {
+		BEGIN(import);
+		return KW_CINCLUDE;
 	}
 <import>"from"	{ return KW_FROM; }
 <import>{PATH}	{
@@ -89,8 +111,11 @@ COMMENT1	\/\/[^\n]*\n
 		lval.build<string>() = move(str);
 		return INCLUDE_FILE;
 	}
+<*>"as"	{ return KW_AS; }
 <*>"func" { return KW_FUNC; }
 <*>"type" { return KW_TYPE; }
+<*>"construct" { return KW_CONSTRUCT; }
+<*>"interface" { return KW_INTERFACE; }
 <*>"const" { return KW_CONST; }
 <*>"void" { return KW_VOID; }
 <*>"return" { return KW_RETURN; }
@@ -115,6 +140,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>">>"	{ return DBL_GRTR; }
 <*>"->"	{ return ARROW; }
 <*>"->>"	{ return DBL_ARROW; }
+<*>"@!"	{ return AT_EXCL; }
 <*>"++"	{ return DBL_PLUS; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }

@@ -16,11 +16,11 @@ bool checkerr(string &output) {
 TEST(gen_ast, basic_tests) {
 	cleanTestEnv();
 	string output;
-//	output = execTestCommand("bin/gen-ast ../test/testdata/000_temp.pa");
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
-	ASSERT_EQ(jout["ast"]["statements"].size(), 19);
+	ASSERT_EQ(jout["ast"]["statements"].size(), 21);
+//	cout << output << endl;
 	
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/100_quicksort.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -33,6 +33,26 @@ TEST(gen_ast, basic_tests) {
 	ASSERT_EQ(jout["ast"]["statements"].size(), 12);
 }
 
+TEST(gen_ast, cinclude_functions_in_ast) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_printf = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		for (auto& f : stmt["functions"]) {
+			if (f["name"] == "printf" && f["func-type"] == "c") {
+				found_printf = true;
+				break;
+			}
+		}
+		if (found_printf) break;
+	}
+	ASSERT_TRUE(found_printf);
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");
@@ -41,6 +61,6 @@ TEST(gen_ast, cli_tests) {
 	output = execTestCommand("bin/palan-gen-ast not_exist_file.pa");
 	ASSERT_EQ(output, "return1::Could not open file 'not_exist_file.pa'.\n");
 
-	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa -o out/001ast.json");
+	output = execTestCommand("bin/palan-gen-ast -i ../test/testdata/gen-ast/001_basicPattern.pa -o out/001ast.json");
 	ASSERT_EQ(output, "");
 }

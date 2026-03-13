@@ -31,8 +31,10 @@ string exec_worker(const string &cmd)
 	string result_str;
 	string tmp_str;
 	getline(is, result_str);
+	if (!is.eof()) result_str += "\n";
 	while (getline(is, tmp_str)) {
-		result_str += tmp_str + "\n";
+		result_str += tmp_str;
+		if (!is.eof()) result_str += "\n";
 	}
 	int ret = pclose(p);
 
@@ -58,7 +60,7 @@ string execTestCommand(const string& cmd)
 	string result_str;
 
 	auto f = async(launch::async, exec_worker, cmd);
-	auto result = f.wait_for(chrono::seconds(1));
+	auto result = f.wait_for(chrono::seconds(5));
 
 	if (result == future_status::timeout) {
 		// time out and try killing process.
@@ -71,7 +73,7 @@ string execTestCommand(const string& cmd)
 			pid_t pid = strtoul(pid_str, NULL, 10);
 			kill(pid, SIGKILL);
 		}
-		return "killed by timeout(1sec):" + cmd;
+		return "killed by timeout(5sec):" + cmd + ":" + f.get();
 	}
 
 	return f.get();

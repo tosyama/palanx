@@ -4,16 +4,30 @@ project(palanx)
 include(FetchContent)
 FetchContent_Declare(
 	googletest
+	DOWNLOAD_EXTRACT_TIMESTAMP ON
 	URL https://github.com/google/googletest/archive/refs/tags/release-1.12.0.zip
 	)
 FetchContent_MakeAvailable(googletest)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(test/test-base)
+
 add_subdirectory(src/gen-ast)
 add_subdirectory(test/gen-ast-tester)
+
+add_subdirectory(src/c2ast)
+add_subdirectory(test/c2ast-tester)
+
+add_subdirectory(src/semantic-anlyzr)
+add_subdirectory(test/sa-tester)
+
+add_subdirectory(src/codegen)
+add_subdirectory(test/codegen-tester)
+
+add_subdirectory(src/build-mgr)
+add_subdirectory(test/build-mgr-tester)
 
