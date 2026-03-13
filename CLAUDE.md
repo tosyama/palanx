@@ -108,6 +108,7 @@ test/
 doc/
 ├── SpecAndDesign.md Language spec and toolchain design
 └── ASTSpec.md       JSON AST / sa.json format specification
+localtickets/        Local task management (Markdown, not tracked by git)
 ```
 
 ## Testing
