@@ -5,7 +5,7 @@
 #include <boost/assert.hpp>
 #include <sys/stat.h>
 using namespace std;
-#include "cfileinfo.h"
+#include "CFileInfo.h"
 
 CFileInfo::CFileInfo(string fname)
 	: fname(fname)

@@ -2,7 +2,7 @@
 #include <string>
 #include <boost/assert.hpp>
 using namespace std;
-#include "ctoken.h"
+#include "CToken.h"
 
 CToken0::CToken0(CToken0Type type, int line_no, int pos, int len)
 	: type(type), is_eol(false)

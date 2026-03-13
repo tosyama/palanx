@@ -2,11 +2,11 @@ cmake_minimum_required(VERSION 3.16)
 
 add_executable(palan-c2ast
 	main.cpp
-	cfileinfo.cpp
-	ctoken.cpp
-	clexer.cpp
-	cpreprocessor.cpp
-	cparser.cpp
+	CFileInfo.cpp
+	CToken.cpp
+	CLexer.cpp
+	CPreprocessor.cpp
+	CParser.cpp
 )
 
 target_compile_options(palan-c2ast PRIVATE -Wno-multichar)

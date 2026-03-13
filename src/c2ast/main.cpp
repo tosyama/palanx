@@ -15,11 +15,11 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-#include "cfileinfo.h"
-#include "ctoken.h"
-#include "clexer.h"
-#include "cpreprocessor.h"
-#include "cparser.h"
+#include "CFileInfo.h"
+#include "CToken.h"
+#include "CLexer.h"
+#include "CPreprocessor.h"
+#include "CParser.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 using json = nlohmann::json;
 

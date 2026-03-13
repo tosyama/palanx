@@ -8,11 +8,11 @@
 
 using namespace std;
 
-#include "cfileinfo.h"
-#include "ctoken.h"
-#include "clexer.h"
-#include "cpreprocessor.h"
-#include "cparser.h"
+#include "CFileInfo.h"
+#include "CToken.h"
+#include "CLexer.h"
+#include "CPreprocessor.h"
+#include "CParser.h"
 
 void CParser::debug_token(const CToken* token)
 {

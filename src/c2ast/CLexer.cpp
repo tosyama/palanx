@@ -8,9 +8,9 @@
 #include <cstring>
 
 using namespace std;
-#include "cfileinfo.h"
-#include "ctoken.h"
-#include "clexer.h"
+#include "CFileInfo.h"
+#include "CToken.h"
+#include "CLexer.h"
 
 vector<string> CLexer::keywords;
 
