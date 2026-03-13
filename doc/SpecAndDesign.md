@@ -120,20 +120,62 @@ Design:
  - For variadic C functions (e.g. printf), al is set to 0 (no floating-point arguments).
  - Palan function calling convention may differ and is defined separately.
 
- String literals are placed in the `.rodata` section with generated labels,
+ String literals are collected by palan-sa into the `str-literals` table in sa.json,
+ placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
  and referenced via `leaq label(%rip), %rdi` (RIP-relative addressing).
- Note: extracting literals into a separate table during SA is a future design option
- that could enable deduplication and simplify codegen traversal.
 
 
-## 4. Working Directory and Output Files
-### 4.1 Working Directory
+## 4. Usage Examples
+
+### 4.1 Hello World
+
+```
+cinclude <stdio.h>;
+printf("Hello World!\n");
+```
+
+Build and run:
+
+```bash
+bin/palan hello.pa
+./a.out
+# Hello World!
+```
+
+### 4.2 Calling C Standard Library Functions
+
+Palan imports C function declarations using `cinclude`. The `cinclude` statement causes
+`palan-gen-ast` to invoke `palan-c2ast` internally to translate the C header into AST nodes.
+Imported functions are resolved to their C ABI counterparts during semantic analysis.
+
+```
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+
+printf("value: %d\n");
+```
+
+### 4.3 System Include Path Configuration
+
+`palan-c2ast` reads predefined macros from `./c2ast/predefined.h` relative to the
+executable's location. This file is automatically copied to the build output directory
+by CMake.
+
+System headers are resolved by passing `-p <path>` flags (for additional search paths)
+and `-s` (to mark the input as a system header). In the normal pipeline, `palan-gen-ast`
+manages these flags automatically.
+
+For testing with stub headers instead of real system headers, place stub `.h` files
+in a directory and pass it as a search path via the `-p` option to `palan-c2ast`.
+
+## 5. Working Directory and Output Files
+### 5.1 Working Directory
 The working directory for all command-line tools is `~/.palan/work/` by default.
 And the original source file absolute path is mirrored under the working directory.
 For example, if the source file is located at `/home/user/project/main.pa`,
 related output files will be stored under `~/.palan/work/home/user/project/`.
 
-### 4.2 Output Files
+### 5.2 Output Files
 - palan-gen-ast:
   - Output AST file: `<source file path>.ast.json`
     e.g., for source file `main.pa`, the output AST file will be `main.pa.ast.json`
