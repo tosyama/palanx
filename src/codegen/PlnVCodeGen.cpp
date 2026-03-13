@@ -1,16 +1,16 @@
-#include "vcodegen.h"
+#include "PlnVCodeGen.h"
 #include <boost/assert.hpp>
 
 using namespace std;
 
-VReg VCodeGen::allocVReg()
+VReg PlnVCodeGen::allocVReg()
 {
     return nextVReg++;
 }
 
 // -------- Lower AST to VInstr --------
 
-void VCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
+void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
 {
     int argCount = 0;
     for (auto& arg : expr.args) {
@@ -25,12 +25,12 @@ void VCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
     func.instrs.push_back(CallC{expr.name, argCount});
 }
 
-void VCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
+void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 {
     BOOST_ASSERT(false);  // not-impl
 }
 
-void VCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
+void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
 {
     if (auto* e = dynamic_cast<const CCCallExpr*>(stmt.body.get())) {
         lowerCCCallExpr(*e, func);
@@ -43,7 +43,7 @@ void VCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
     // other expression statements: not-impl
 }
 
-void VCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
+void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 {
     if (auto* s = dynamic_cast<const ExprStmt*>(&stmt)) {
         lowerExprStmt(*s, func);
@@ -54,7 +54,7 @@ void VCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 
 // -------- Entry point --------
 
-VProg VCodeGen::generate(const Module& module)
+VProg PlnVCodeGen::generate(const Module& module)
 {
     // Build lookup map from SA-collected literals
     for (auto& d : module.strLiterals) {

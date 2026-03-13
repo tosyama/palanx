@@ -50,7 +50,7 @@ TEST(sa, str_literals_collected) {
 
 	auto& lits = jout["str-literals"];
 	ASSERT_EQ(lits.size(), 1u);
-	ASSERT_EQ(lits[0]["value"], "Hello World!");
+	ASSERT_EQ(lits[0]["value"], "Hello World!\n");
 	ASSERT_EQ(lits[0]["label"], ".str0");
 }
 

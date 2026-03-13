@@ -1,14 +1,14 @@
 /// x86-64 AT&T assembly code generator.
 ///
-/// @file x86codegen.h
+/// @file PlnX86CodeGen.h
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
 #include <ostream>
-#include "codegen.h"
-#include "regalloc.h"
+#include "PlnCodeGen.h"
+#include "PlnRegAlloc.h"
 
-class X86CodeGen : public CodeGen {
+class PlnX86CodeGen : public PlnCodeGen {
     std::ostream& out;
 
     void emitSection(const string& name);
@@ -20,7 +20,7 @@ class X86CodeGen : public CodeGen {
     void emitExit(int code);
 
 public:
-    explicit X86CodeGen(std::ostream& out) : out(out) {}
+    explicit PlnX86CodeGen(std::ostream& out) : out(out) {}
 
     void emit(const VProg& prog) override;
 };

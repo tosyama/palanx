@@ -8,7 +8,7 @@
 #include <fstream>
 #include <filesystem>
 #include <getopt.h>
-#include "analysis.h"
+#include "PlnSemanticAnalyzer.h"
 
 namespace fs = std::filesystem;
 

@@ -1,16 +1,16 @@
 /// Abstract code generator interface.
 ///
-/// @file codegen.h
+/// @file PlnCodeGen.h
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
 #include <string>
-#include "vprog.h"
+#include "PlnVProg.h"
 
 using std::string;
 
-class CodeGen {
+class PlnCodeGen {
 public:
-    virtual ~CodeGen() = default;
+    virtual ~PlnCodeGen() = default;
     virtual void emit(const VProg& prog) = 0;
 };

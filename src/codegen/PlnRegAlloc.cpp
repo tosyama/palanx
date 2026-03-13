@@ -1,4 +1,4 @@
-#include "regalloc.h"
+#include "PlnRegAlloc.h"
 #include <boost/assert.hpp>
 
 RegMap allocateRegisters(const VFunc& func, const PhysRegs& phys)

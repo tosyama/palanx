@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 add_executable(palan-sa
 	main.cpp
-	analysis.cpp
+	PlnSemanticAnalyzer.cpp
 )
 
 option(OUTPUT_COVERAGE "Output coverage files.")

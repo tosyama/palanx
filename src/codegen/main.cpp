@@ -9,9 +9,9 @@
 #include <filesystem>
 #include <getopt.h>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
-#include "deserialize.h"
-#include "vcodegen.h"
-#include "x86codegen.h"
+#include "PlnDeserialize.h"
+#include "PlnVCodeGen.h"
+#include "PlnX86CodeGen.h"
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -79,10 +79,10 @@ int main(int argc, char* argv[])
 	// Deserialize -> VProg -> assembly
 	Module module = deserialize(sa);
 
-	VCodeGen vgen;
+	PlnVCodeGen vgen;
 	VProg vprog = vgen.generate(module);
 
-	X86CodeGen codegen(asmfile);
+	PlnX86CodeGen codegen(asmfile);
 	codegen.emit(vprog);
 
 	return 0;

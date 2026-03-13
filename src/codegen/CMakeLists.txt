@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.16)
 
 add_executable(palan-codegen
 	main.cpp
-	deserialize.cpp
-	vcodegen.cpp
-	regalloc.cpp
-	x86codegen.cpp
+	PlnDeserialize.cpp
+	PlnVCodeGen.cpp
+	PlnRegAlloc.cpp
+	PlnX86CodeGen.cpp
 )
 
 option(OUTPUT_COVERAGE "Output coverage files.")

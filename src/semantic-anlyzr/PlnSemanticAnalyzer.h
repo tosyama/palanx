@@ -1,6 +1,6 @@
 /// Palan Semantic Analyzer
 ///
-/// @file analysis.h
+/// @file PlnSemanticAnalyzer.h
 /// @copyright 2024 YAMAGUCHI Toshinobu
 
 #include <string>

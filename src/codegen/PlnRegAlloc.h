@@ -1,13 +1,13 @@
 /// Virtual register allocator.
 ///
-/// @file regalloc.h
+/// @file PlnRegAlloc.h
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
 #include <map>
 #include <string>
 #include <vector>
-#include "vprog.h"
+#include "PlnVProg.h"
 
 using std::map;
 using std::string;

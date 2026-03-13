@@ -2,7 +2,7 @@
 #include <fstream>
 #include <filesystem>
 #include <boost/assert.hpp>
-#include "analysis.h"
+#include "PlnSemanticAnalyzer.h"
 
 using namespace std;
 

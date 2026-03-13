@@ -1,4 +1,4 @@
-#include "x86codegen.h"
+#include "PlnX86CodeGen.h"
 #include <boost/assert.hpp>
 #include <cctype>
 #include <array>
@@ -60,7 +60,7 @@ static const PhysRegs x86PhysRegs = {
     { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" }
 };
 
-void X86CodeGen::emit(const VProg& prog)
+void PlnX86CodeGen::emit(const VProg& prog)
 {
     if (!prog.data.empty()) {
         emitSection(".rodata");
@@ -89,22 +89,22 @@ void X86CodeGen::emit(const VProg& prog)
     }
 }
 
-void X86CodeGen::emitSection(const string& name)
+void PlnX86CodeGen::emitSection(const string& name)
 {
     out << "\t.section " << name << "\n";
 }
 
-void X86CodeGen::emitGlobal(const string& name)
+void PlnX86CodeGen::emitGlobal(const string& name)
 {
     out << "\t.globl " << name << "\n";
 }
 
-void X86CodeGen::emitLabel(const string& name)
+void PlnX86CodeGen::emitLabel(const string& name)
 {
     out << name << ":\n";
 }
 
-void X86CodeGen::emitStringLiteral(const string& label, const string& value)
+void PlnX86CodeGen::emitStringLiteral(const string& label, const string& value)
 {
     out << label << ":\n";
     out << "\t.string \"";
@@ -120,12 +120,12 @@ void X86CodeGen::emitStringLiteral(const string& label, const string& value)
     out << "\"\n";
 }
 
-void X86CodeGen::emitLeaLabel(const string& reg, const string& label)
+void PlnX86CodeGen::emitLeaLabel(const string& reg, const string& label)
 {
     out << "\tleaq " << label << "(%rip), " << reg << "\n";
 }
 
-void X86CodeGen::emitCallC(const string& name, int argCount)
+void PlnX86CodeGen::emitCallC(const string& name, int argCount)
 {
     (void)argCount;
     // For variadic C functions, al = number of floating-point args (0 here)
@@ -133,7 +133,7 @@ void X86CodeGen::emitCallC(const string& name, int argCount)
     out << "\tcall " << name << "\n";
 }
 
-void X86CodeGen::emitExit(int code)
+void PlnX86CodeGen::emitExit(int code)
 {
     out << "\tmovl $" << code << ", %edi\n";
     out << "\tcall exit\n";

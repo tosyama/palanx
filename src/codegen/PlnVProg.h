@@ -1,6 +1,6 @@
 /// Virtual instruction set (IR) for palan-codegen.
 ///
-/// @file vprog.h
+/// @file PlnVProg.h
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once

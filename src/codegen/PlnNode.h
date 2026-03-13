@@ -1,6 +1,6 @@
 /// Palan AST node definitions for code generation.
 ///
-/// @file plnnode.h
+/// @file PlnNode.h
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once

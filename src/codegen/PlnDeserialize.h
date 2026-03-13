@@ -1,10 +1,10 @@
 /// Deserialize sa.json into C++ AST nodes.
 ///
-/// @file deserialize.h
+/// @file PlnDeserialize.h
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
-#include "plnnode.h"
+#include "PlnNode.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
 using json = nlohmann::json;
