@@ -1,0 +1,28 @@
+/// VCodeGen: lowers C++ AST nodes to virtual instruction set (VProg).
+///
+/// @file vcodegen.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
+#pragma once
+#include <map>
+#include <string>
+#include "plnnode.h"
+#include "vprog.h"
+
+using std::map;
+using std::string;
+
+class VCodeGen {
+    map<string, string> strLiterals;  // value -> label
+    int nextVReg = 0;
+
+    VReg allocVReg();
+
+    void lowerStmt(const Stmt& stmt, VFunc& func);
+    void lowerExprStmt(const ExprStmt& stmt, VFunc& func);
+    void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
+    void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
+
+public:
+    VProg generate(const Module& module);
+};

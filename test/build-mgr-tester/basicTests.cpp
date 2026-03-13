@@ -5,16 +5,19 @@
 using json = nlohmann::json;
 using namespace std;
 
-TEST(build_mgr, basic_tests) {
+TEST(build_mgr, helloworld) {
 	cleanTestEnv();
-	string output;
-	output = execTestCommand("bin/palan ../test/testdata/build-mgr/001_helloworld.pa");
-//	ASSERT_EQ(output, "");
 
-	output = execTestCommand("bin/palan --clean");
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/001_helloworld.pa");
 	ASSERT_EQ(output, "");
 
-	output = execTestCommand("bin/palan ../test/testdata/000_temp.pa");
-	ASSERT_EQ(output, "");
+	output = execTestCommand("./a.out");
+	ASSERT_EQ(output, "Hello World!\n");
 }
 
+TEST(build_mgr, clean) {
+	cleanTestEnv();
+
+	string output = execTestCommand("bin/palan --clean");
+	ASSERT_EQ(output, "");
+}

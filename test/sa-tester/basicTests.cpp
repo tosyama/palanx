@@ -41,6 +41,19 @@ TEST(sa, call_c_function_annotated) {
 	ASSERT_TRUE(found);
 }
 
+TEST(sa, str_literals_collected) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_TRUE(jout.contains("str-literals"));
+
+	auto& lits = jout["str-literals"];
+	ASSERT_EQ(lits.size(), 1u);
+	ASSERT_EQ(lits[0]["value"], "Hello World!");
+	ASSERT_EQ(lits[0]["label"], ".str0");
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");

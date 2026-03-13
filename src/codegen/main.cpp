@@ -9,6 +9,9 @@
 #include <filesystem>
 #include <getopt.h>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
+#include "deserialize.h"
+#include "vcodegen.h"
+#include "x86codegen.h"
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -73,8 +76,14 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
-	// TODO: code generation
-	(void)sa;
+	// Deserialize -> VProg -> assembly
+	Module module = deserialize(sa);
+
+	VCodeGen vgen;
+	VProg vprog = vgen.generate(module);
+
+	X86CodeGen codegen(asmfile);
+	codegen.emit(vprog);
 
 	return 0;
 }

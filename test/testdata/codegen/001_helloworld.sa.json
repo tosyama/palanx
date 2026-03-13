@@ -1,0 +1,19 @@
+{
+  "original": "/test/helloworld.pa",
+  "str-literals": [
+    {"label": ".str0", "value": "Hello World!\n"}
+  ],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          {"expr-type": "lit-str", "value": "Hello World!\n"}
+        ]
+      }
+    }
+  ]
+}

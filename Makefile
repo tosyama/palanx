@@ -3,6 +3,7 @@ all: build/CMakeCache.txt
 	@cd build && rm -f bin/core && bin/c2ast-tester
 	@cd build && rm -f bin/core && bin/gen-ast-tester
 	@cd build && rm -f bin/core && bin/sa-tester
+	@cd build && rm -f bin/core && bin/codegen-tester
 	@cd build && rm -f bin/core && bin/build-mgr-tester
 
 build/CMakeCache.txt:

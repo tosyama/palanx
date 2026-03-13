@@ -112,18 +112,64 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	vector<string> obj_files;
+
 	for (int i=0; i<ast_files.size(); i++) {
-		fs::path input_file = ast_files[i];
-		string sacmd = exec_path + "/palan-sa " + input_file.string();
+		string ast_file = ast_files[i];
+
+		// palan-sa
+		string sacmd = exec_path + "/palan-sa " + ast_file;
 		int ret = system(sacmd.c_str());
 		if (WIFEXITED(ret)) {
 			ret = WEXITSTATUS(ret);
-			if (ret)
-				return ret;
+			if (ret) return ret;
 		} else {
 			return -1;
 		}
+
+		// Derive output paths (strip ".ast.json" suffix from ast_file)
+		string base = ast_file.substr(0, ast_file.size() - 9);  // remove ".ast.json"
+		string sa_file  = base + ".sa.json";
+		string asm_file = base + ".s";
+		string obj_file = base + ".o";
+
+		// palan-codegen
+		string codegencmd = exec_path + "/palan-codegen " + sa_file;
+		ret = system(codegencmd.c_str());
+		if (WIFEXITED(ret)) {
+			ret = WEXITSTATUS(ret);
+			if (ret) return ret;
+		} else {
+			return -1;
+		}
+
+		// as
+		string ascmd = "as " + asm_file + " -o " + obj_file;
+		ret = system(ascmd.c_str());
+		if (WIFEXITED(ret)) {
+			ret = WEXITSTATUS(ret);
+			if (ret) return ret;
+		} else {
+			return -1;
+		}
+
+		obj_files.push_back(obj_file);
 	}
+
+	// ld — link all object files into the final binary
+	// TODO: extract required libraries from AST cinclude link clauses
+	string binary_name = "a.out";
+	string ldcmd = "ld";
+	for (auto& obj : obj_files) ldcmd += " " + obj;
+	ldcmd += " -lc -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o " + binary_name;
+	int ret = system(ldcmd.c_str());
+	if (WIFEXITED(ret)) {
+		ret = WEXITSTATUS(ret);
+		if (ret) return ret;
+	} else {
+		return -1;
+	}
+
 	return 0;
 }
 

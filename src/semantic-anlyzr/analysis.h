@@ -19,6 +19,7 @@ class PlnSemanticAnalyzer {
 	string inputFilePath;
 	json sa;
 	vector<map<string, json>> cFunctionScopes;
+	map<string, string> strLiteralLabels;  // value -> label
 
 	void pushScope();
 	void popScope();

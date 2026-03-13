@@ -34,6 +34,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
 	sa["original"] = ast["original"];
+	sa["str-literals"] = json::array();
 	pushScope();
 	sa_statements(ast["ast"]["statements"]);
 	popScope();
@@ -65,10 +66,24 @@ void PlnSemanticAnalyzer::sa_statements(const json &stmts)
 json PlnSemanticAnalyzer::sa_expression(const json &expr)
 {
 	json sa_expr = expr;
-	if (expr["expr-type"] == "call") {
-		string name = expr["name"];
-		if (findCFunction(name)) {
+	string expr_type = expr["expr-type"];
+
+	if (expr_type == "lit-str") {
+		string value = expr["value"];
+		if (!strLiteralLabels.count(value)) {
+			string label = ".str" + to_string(strLiteralLabels.size());
+			strLiteralLabels[value] = label;
+			sa["str-literals"].push_back({{"label", label}, {"value", value}});
+		}
+	} else if (expr_type == "call") {
+		if (findCFunction(expr["name"])) {
 			sa_expr["func-type"] = "c";
+		}
+		if (expr.contains("args")) {
+			sa_expr["args"] = json::array();
+			for (auto& arg : expr["args"]) {
+				sa_expr["args"].push_back(sa_expression(arg));
+			}
 		}
 	}
 	return sa_expr;
