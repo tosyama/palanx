@@ -10,6 +10,16 @@ This document specifies the goals, scope, architecture, and requirements for the
 version: 0.1.0
 - This iteration goal is to enable importing the C header <stdio.h> and calling printf to make debugging easier and to allow unit test output checks to be performed more reliably.
 
+### 2.2 Iteration Goal (2026-03-13)
+version: 0.1.1
+- This iteration goal is to support integer variable declaration with initialization, addition operator, and displaying integer values (literals, variables, and expressions) via printf.
+- Specifically, the following should work end-to-end:
+  - `printf("%d\n", 42);` — display an integer literal
+  - `int64 x = 10;` — declare and initialize an integer variable
+  - `int64 y = x + 3;` — addition of variable and literal
+  - `printf("%d\n", y);` — display a variable value
+  - `printf("%d\n", x + 3);` — display an expression result
+
 ## 3. Command-line Tools' Responsibilities and Design
 
 ### 3.1 Build Manager (palan)
