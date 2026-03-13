@@ -5,93 +5,114 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-# ビルド + テスト実行
+# Build all targets and run all tests
 make
 
-# クリーン
+# Clean build artifacts
 make clean
 
-# カバレッジレポート生成
+# Generate coverage report (HTML + lcov.info in build/)
 make coverage
 ```
 
-**依存パッケージ:** g++ (C++20), CMake 3.16+, Flex, Bison 3.8+, libboost-dev, libfl-dev, lcov
+**Dependencies:** g++ (C++20), CMake 3.16+, Flex, Bison 3.8+, libboost-dev, libfl-dev, lcov
 
-### テスト個別実行
-
-```bash
-cd build && bin/c2ast-tester       # C→AST変換のテスト
-cd build && bin/gen-ast-tester     # Palanパーサーのテスト
-cd build && bin/build-mgr-tester   # ビルドマネージャーのテスト
-```
-
-### ツール単体実行
+### Running Individual Test Suites
 
 ```bash
-cd build && bin/palan-c2ast -d ../test/testdata/000_temp_c_header.h   # プリプロセッサ出力
-cd build && bin/palan-c2ast -ds stdio.h                                # 標準ヘッダーのAST化
+cd build && bin/c2ast-tester       # C header → AST parser tests
+cd build && bin/gen-ast-tester     # Palan parser tests
+cd build && bin/sa-tester          # Semantic analyzer tests
+cd build && bin/codegen-tester     # Code generator tests
+cd build && bin/build-mgr-tester   # Build manager integration tests
 ```
 
-## アーキテクチャ概要
+### Running a Single Test
 
-Palanは独立した4つのCLIツールが連携するマルチステージコンパイラ。ツール間の通信にはJSON形式のASTを使用する。
-
-### コンパイルパイプライン
-
-```
-Palanソース
-    ↓
-[palan-gen-ast]  PlnLexer.ll + PlnParser.yy → JSON AST生成
-    ↓
-[palan-c2ast]    Cヘッダー → JSON AST変換（import用）
-    ↓
-[palan-sa]       意味解析（型チェック、スコープ解決）
-    ↓
-[palan]          ビルドマネージャー（上記を統括）
+```bash
+cd build && bin/sa-tester --gtest_filter=sa.call_c_function_annotated
 ```
 
-### ディレクトリ構成
+### Running Individual Tools
+
+```bash
+cd build && bin/palan-c2ast -ds stdio.h                        # Parse system header to AST
+cd build && bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa
+cd build && bin/palan ../test/testdata/build-mgr/001_helloworld.pa && ./a.out
+```
+
+## Architecture
+
+Palan is a multi-stage compiler where independent CLI tools communicate via JSON AST files.
+
+### Compilation Pipeline
+
+```
+source.pa
+  ↓ palan-gen-ast   (PlnLexer.ll + PlnParser.yy → ast.json)
+  ↓ palan-c2ast     (invoked internally for each cinclude; C header → AST nodes embedded in ast.json)
+  ↓ palan-sa        (ast.json → sa.json; scope resolution, C function annotation, str-literal collection)
+  ↓ palan-codegen   (sa.json → .s; VCodeGen → VProg IR → PlnX86CodeGen → AT&T assembly)
+  ↓ as              (.s → .o)
+  ↓ ld              (.o → a.out)
+```
+
+`palan` (build manager) orchestrates the full pipeline. Intermediate files are stored under `~/.palan/work/<absolute-source-path>/`.
+
+### Key Design Points
+
+**codegen IR layer** (`src/codegen/`): The code generator uses a virtual register + virtual instruction set (VProg) as an intermediate representation between the AST and x86-64 assembly. This allows future register allocation strategies to be plugged in via `PlnRegAlloc`.
+
+- `PlnVCodeGen`: AST (Module) → VProg
+- `PlnRegAlloc`: VProg → RegMap (VReg → physical register)
+- `PlnX86CodeGen`: VProg + RegMap → AT&T assembly
+
+**cinclude scoping**: C function declarations from `cinclude` are scope-aware in palan-sa. Functions are visible from the `cinclude` point to the end of the enclosing scope. `cinclude` nodes are consumed and not emitted to sa.json.
+
+**str-literals**: String literals are collected by palan-sa (not codegen) into a `str-literals` table in sa.json. Codegen uses this table to emit `.rodata` entries.
+
+### File Naming Convention
+
+- Palan modules: `Pln<Name>.h/cpp` (e.g., `PlnSemanticAnalyzer`, `PlnX86CodeGen`)
+- C2ast modules: `C<Name>.h/cpp` (e.g., `CLexer`, `CParser`, `CPreprocessor`)
+- Entry points: `main.cpp` in each tool's directory
+
+### Source Layout
 
 ```
 src/
-├── build-mgr/      palan 本体（ビルド統括）
-├── c2ast/          palan-c2ast（Cヘッダー解析）
-│   ├── clexer.*        Cレキサー（手書き）
-│   ├── cparser.*       Cパーサー（再帰降下）
-│   ├── cpreprocessor.* Cプリプロセッサ（マクロ展開・include処理）
-│   ├── ctoken.*        トークン定義
-│   └── predefined.h    定義済みマクロ群
-├── gen-ast/        palan-gen-ast（Palanパーサー）
-│   ├── PlnLexer.ll     Flex字句解析ルール
-│   └── PlnParser.yy    Bisonパーサールール
-├── semantic-anlyzr/ palan-sa（意味解析）
-└── common/         共通ユーティリティ
+├── build-mgr/       palan — build manager (orchestrates pipeline)
+├── c2ast/           palan-c2ast — C header parser
+│   ├── CLexer.*         Hand-written C lexer
+│   ├── CParser.*        Recursive descent C parser
+│   ├── CPreprocessor.*  Macro expansion and #include handling
+│   ├── CToken.*         Token definitions
+│   └── predefined.h     Built-in macro definitions (copied to build/bin/c2ast/)
+├── gen-ast/         palan-gen-ast — Palan parser
+│   ├── PlnLexer.ll      Flex lexer rules
+│   └── PlnParser.yy     Bison grammar rules
+├── semantic-anlyzr/ palan-sa — semantic analyzer
+│   └── PlnSemanticAnalyzer.*
+├── codegen/         palan-codegen — x86-64 code generator
+│   ├── PlnNode.h        AST node types (Module, Stmt, Expr variants)
+│   ├── PlnVProg.h       VReg / VInstr / VProg IR definitions
+│   ├── PlnVCodeGen.*    AST → VProg
+│   ├── PlnRegAlloc.*    VProg → RegMap (register allocator plug-in point)
+│   ├── PlnX86CodeGen.*  VProg → x86-64 AT&T assembly
+│   ├── PlnDeserialize.* sa.json → Module
+│   └── PlnCodeGen.h     Abstract base class
+└── common/          Shared utilities (PlnFileUtils)
 test/
-├── c2ast-tester/   c2astのGoogle Testスイート
-├── gen-ast-tester/ gen-astのGoogle Testスイート
-├── build-mgr-tester/ build-mgrのGoogle Testスイート
-├── test-base/      テスト共通基盤（execTestCommand等）
-└── testdata/       テスト入力ファイル
+├── testdata/        Test input files (numbered sequentially per tool)
+└── test-base/       Shared test helpers (execTestCommand, cleanTestEnv)
 doc/
-├── SpecAndDesign.md  言語仕様・ツール設計
-└── ASTSpec.md        JSON AST形式仕様
-lib/json/           nlohmann/json（ヘッダーオンリー）
-localtickets/       ローカルタスク管理（Markdown）
+├── SpecAndDesign.md Language spec and toolchain design
+└── ASTSpec.md       JSON AST / sa.json format specification
 ```
 
-### AST出力先
+## Testing
 
-ビルド成果物は `~/.palan/work/` 以下にソースパスを反映した構造で格納される:
-- Palanソース: `<file>.pa.ast.json`
-- Cヘッダー変換: `<file>.pa#<header>.ast.json`
-- 意味解析済: `<file>.pa.sa.json`
-
-## テスト方針
-
-- フレームワーク: Google Test (CMake FetchContent で自動取得、v1.12.0)
-- カバレッジ目標: 全モジュール95%以上
-- 生成ファイル（PlnLexer.cpp, PlnParser.cpp/h）はカバレッジ対象外
-
-## タスク管理
-
-`localtickets/` にMarkdownファイルでローカルタスクを管理する。
+- Framework: Google Test (fetched via CMake FetchContent, v1.12.0)
+- Generated files (`PlnLexer.cpp`, `PlnParser.cpp/h`) are excluded from coverage
+- `execTestCommand` returns stdout + `:` + stderr; empty string means success
+- Test data files are numbered sequentially (e.g., `001_helloworld.pa`)
