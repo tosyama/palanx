@@ -12,6 +12,10 @@ RegMap allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // Ptr64 -> integer argument register
             BOOST_ASSERT(intArgIdx < (int)phys.intArgs.size());
             result[i->dst] = PhysLoc{phys.intArgs[intArgIdx++], i->type};
+        } else if (auto* i = std::get_if<MovImm>(&instr)) {
+            // integer immediate -> integer argument register
+            BOOST_ASSERT(intArgIdx < (int)phys.intArgs.size());
+            result[i->dst] = PhysLoc{phys.intArgs[intArgIdx++], i->type};
         } else if (std::get_if<CallC>(&instr)) {
             // Reset both counters for the next call's arguments
             intArgIdx   = 0;

@@ -80,6 +80,9 @@ void PlnX86CodeGen::emit(const VProg& prog)
             if (auto* i = std::get_if<LeaLabel>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
                 emitLeaLabel(sizedRegName(loc.base, loc.type), i->label);
+            } else if (auto* i = std::get_if<MovImm>(&instr)) {
+                const PhysLoc& loc = rm.at(i->dst);
+                emitMovImm(loc.base, i->value);
             } else if (auto* i = std::get_if<CallC>(&instr)) {
                 emitCallC(i->name, i->argCount);
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
@@ -123,6 +126,11 @@ void PlnX86CodeGen::emitStringLiteral(const string& label, const string& value)
 void PlnX86CodeGen::emitLeaLabel(const string& reg, const string& label)
 {
     out << "\tleaq " << label << "(%rip), " << reg << "\n";
+}
+
+void PlnX86CodeGen::emitMovImm(const string& reg, long long value)
+{
+    out << "\tmovq $" << value << ", " << reg << "\n";
 }
 
 void PlnX86CodeGen::emitCallC(const string& name, int argCount)

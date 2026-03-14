@@ -18,6 +18,21 @@ static string readFile(const string& path)
     return ss.str();
 }
 
+TEST(codegen, printf_int_literal) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/002_printf_int_literal.sa.json";
+    string asmf = "out/002_printf_int_literal.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movq $42,"),    string::npos);
+    ASSERT_NE(asm_text.find("%rdi"),         string::npos);
+    ASSERT_NE(asm_text.find("%rsi"),         string::npos);
+    ASSERT_NE(asm_text.find("call printf"),  string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";

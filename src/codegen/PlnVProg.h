@@ -26,11 +26,12 @@ enum class VRegType {
 
 // -------- Virtual instructions --------
 
-struct LeaLabel { VReg dst; VRegType type; string label; };  // dst = address of label
+struct LeaLabel { VReg dst; VRegType type; string label; };       // dst = address of label
+struct MovImm   { VReg dst; VRegType type; long long value; };    // dst = immediate integer
 struct CallC    { string name; int argCount; };
 struct ExitCode { int code; };
 
-using VInstr = std::variant<LeaLabel, CallC, ExitCode>;
+using VInstr = std::variant<LeaLabel, MovImm, CallC, ExitCode>;
 
 // -------- Program structure --------
 

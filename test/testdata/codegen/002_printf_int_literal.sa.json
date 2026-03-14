@@ -1,0 +1,20 @@
+{
+  "original": "/test/printf_int_literal.pa",
+  "str-literals": [
+    {"label": ".str0", "value": "%d\n"}
+  ],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          {"expr-type": "lit-str", "value": "%d\n"},
+          {"expr-type": "lit-int", "value": "42"}
+        ]
+      }
+    }
+  ]
+}
