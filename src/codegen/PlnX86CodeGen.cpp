@@ -57,7 +57,8 @@ static string sizedRegName(const string& base, VRegType type)
 // x86-64 System V ABI physical register lists
 static const PhysRegs x86PhysRegs = {
     { "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9" },
-    { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" }
+    { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" },
+    { "%rbx", "%r12", "%r13", "%r14", "%r15" }
 };
 
 void PlnX86CodeGen::emit(const VProg& prog)
@@ -84,7 +85,14 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 const PhysLoc& loc = rm.at(i->dst);
                 emitMovImm(loc.base, i->value);
             } else if (auto* i = std::get_if<CallC>(&instr)) {
-                emitCallC(i->name, i->argCount);
+                for (int j = 0; j < (int)i->args.size(); j++) {
+                    const PhysLoc& loc = rm.at(i->args[j]);
+                    const string& dst = x86PhysRegs.intArgs[j];
+                    if (loc.base != dst) {
+                        out << "\tmovq " << loc.base << ", " << dst << "\n";
+                    }
+                }
+                emitCallC(i->name);
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
                 emitExit(i->code);
             }
@@ -133,9 +141,8 @@ void PlnX86CodeGen::emitMovImm(const string& reg, long long value)
     out << "\tmovq $" << value << ", " << reg << "\n";
 }
 
-void PlnX86CodeGen::emitCallC(const string& name, int argCount)
+void PlnX86CodeGen::emitCallC(const string& name)
 {
-    (void)argCount;
     // For variadic C functions, al = number of floating-point args (0 here)
     out << "\txorl %eax, %eax\n";
     out << "\tcall " << name << "\n";

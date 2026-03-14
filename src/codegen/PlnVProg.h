@@ -28,7 +28,7 @@ enum class VRegType {
 
 struct LeaLabel { VReg dst; VRegType type; string label; };       // dst = address of label
 struct MovImm   { VReg dst; VRegType type; long long value; };    // dst = immediate integer
-struct CallC    { string name; int argCount; };
+struct CallC    { string name; vector<VReg> args; };
 struct ExitCode { int code; };
 
 using VInstr = std::variant<LeaLabel, MovImm, CallC, ExitCode>;

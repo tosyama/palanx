@@ -25,15 +25,16 @@ using RegMap = map<VReg, PhysLoc>;
 
 // Physical register lists (architecture-specific, passed in by caller)
 struct PhysRegs {
-    vector<string> intArgs;    // integer/pointer arg regs: "%rdi", "%rsi", ...
-    vector<string> floatArgs;  // floating-point arg regs: "%xmm0", "%xmm1", ...
+    vector<string> intArgs;     // integer/pointer arg regs: "%rdi", "%rsi", ...
+    vector<string> floatArgs;   // floating-point arg regs: "%xmm0", "%xmm1", ...
+    vector<string> calleeSaved; // callee-saved regs: "%rbx", "%r12", ...
 };
 
-// Trivial allocator: assigns VRegs to physical registers based on instruction kind.
-// Register kind is inferred from the defining instruction:
-//   LeaLabel -> pointer -> intArgs[intArgIdx++]
-//   (future) LoadDbl -> float -> floatArgs[floatArgIdx++]
-// Both counters reset after each CallC.
-//
-// Future: replace this function with a proper live-range-based allocator.
+// Live-range-based register allocator.
+// Assigns each VReg to a physical register:
+//   - VRegs used only within one call segment (def to use, no intervening call)
+//     are assigned directly to the required argument register.
+//   - VRegs live across a call are assigned to a callee-saved register;
+//     the x86 emitter inserts moves to argument registers at each call site.
+//   - Spill to stack only when physical registers are exhausted (not-impl yet).
 RegMap allocateRegisters(const VFunc& func, const PhysRegs& phys);

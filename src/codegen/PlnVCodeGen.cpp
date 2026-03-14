@@ -12,23 +12,25 @@ VReg PlnVCodeGen::allocVReg()
 
 void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
 {
-    int argCount = 0;
+    vector<VReg> args;
     for (auto& arg : expr.args) {
         if (auto* e = dynamic_cast<const StrLitExpr*>(arg.get())) {
             VReg r = allocVReg();
             func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, strLiterals.at(e->value)});
+            args.push_back(r);
         } else if (auto* e = dynamic_cast<const IntLitExpr*>(arg.get())) {
             VReg r = allocVReg();
             func.instrs.push_back(MovImm{r, VRegType::Int64, stoll(e->value)});
+            args.push_back(r);
         } else if (auto* e = dynamic_cast<const UintLitExpr*>(arg.get())) {
             VReg r = allocVReg();
             func.instrs.push_back(MovImm{r, VRegType::Int64, (long long)stoull(e->value)});
+            args.push_back(r);
         } else {
             BOOST_ASSERT(false);  // not-impl
         }
-        ++argCount;
     }
-    func.instrs.push_back(CallC{expr.name, argCount});
+    func.instrs.push_back(CallC{expr.name, move(args)});
 }
 
 void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
