@@ -3,6 +3,35 @@
 
 using namespace std;
 
+// -------- Variable scope management --------
+
+void PlnVCodeGen::enterVarScope()
+{
+    varScopes.push_back({});
+}
+
+void PlnVCodeGen::leaveVarScope()
+{
+    varScopes.pop_back();
+}
+
+VReg PlnVCodeGen::findVar(const string& name) const
+{
+    for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
+        auto f = it->find(name);
+        if (f != it->end()) return f->second;
+    }
+    BOOST_ASSERT(false);  // variable not declared
+    return -1;
+}
+
+void PlnVCodeGen::declareVar(const string& name, VReg r)
+{
+    varScopes.back()[name] = r;
+}
+
+// -------- Utilities --------
+
 VReg PlnVCodeGen::allocVReg()
 {
     return nextVReg++;
@@ -27,11 +56,8 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
             func.instrs.push_back(MovImm{r, VRegType::Int64, (long long)stoull(e->value)});
             args.push_back(r);
         } else if (auto* e = dynamic_cast<const IdExpr*>(arg.get())) {
-            auto it = localVarMap.find(e->name);
-            BOOST_ASSERT(it != localVarMap.end());
-            VReg r = allocVReg();
-            func.instrs.push_back(LoadFromStack{r, it->second.first, it->second.second});
-            args.push_back(r);
+            // Use the variable's VReg directly; RegAlloc decides its location.
+            args.push_back(findVar(e->name));
         } else {
             BOOST_ASSERT(false);  // not-impl
         }
@@ -60,12 +86,11 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
 void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
 {
     for (auto& ve : stmt.vars) {
-        stackOffset -= 8;  // int64 = 8 bytes
-        localVarMap[ve.varName] = {VRegType::Int64, stackOffset};
-
+        VReg r = allocVReg();
+        declareVar(ve.varName, r);
         if (ve.init) {
             if (auto* e = dynamic_cast<const IntLitExpr*>(ve.init.get())) {
-                func.instrs.push_back(StoreImm{stoll(e->value), VRegType::Int64, stackOffset});
+                func.instrs.push_back(InitVar{r, VRegType::Int64, stoll(e->value)});
             } else {
                 BOOST_ASSERT(false);  // other init exprs: 0204+
             }
@@ -105,10 +130,11 @@ VProg PlnVCodeGen::generate(const Module& module)
     // Build _start function
     VFunc startFunc;
     startFunc.name = "_start";
+    enterVarScope();
     for (auto& stmt : module.statements) {
         lowerStmt(*stmt, startFunc);
     }
-    startFunc.frameSize = -stackOffset;
+    leaveVarScope();
     startFunc.instrs.push_back(ExitCode{0});
     prog.funcs.push_back(move(startFunc));
 

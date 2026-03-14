@@ -6,19 +6,25 @@
 #pragma once
 #include <map>
 #include <string>
-#include <utility>
+#include <vector>
 #include "PlnNode.h"
 #include "PlnVProg.h"
 
 using std::map;
-using std::pair;
 using std::string;
+using std::vector;
 
 class PlnVCodeGen {
     map<string, string> strLiterals;  // value -> label
     int nextVReg = 0;
-    int stackOffset = 0;                           // current stack offset (negative)
-    map<string, pair<VRegType, int>> localVarMap;  // var name -> {type, offset}
+
+    // Variable symbol table: scoped stack of name -> VReg mappings.
+    // enterVarScope/leaveVarScope push/pop; findVar searches from innermost.
+    vector<map<string, VReg>> varScopes;
+    void enterVarScope();
+    void leaveVarScope();
+    VReg findVar(const string& name) const;
+    void declareVar(const string& name, VReg r);
 
     VReg allocVReg();
 

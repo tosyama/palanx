@@ -26,14 +26,13 @@ enum class VRegType {
 
 // -------- Virtual instructions --------
 
-struct LeaLabel      { VReg dst; VRegType type; string label; };       // dst = address of label
-struct MovImm        { VReg dst; VRegType type; long long value; };    // dst = immediate integer
-struct CallC         { string name; vector<VReg> args; };
-struct ExitCode      { int code; };
-struct StoreImm      { long long value; VRegType type; int offset; };  // movq $v, offset(%rbp)
-struct LoadFromStack { VReg dst; VRegType type; int offset; };         // movq offset(%rbp), reg
+struct LeaLabel { VReg dst; VRegType type; string label; };       // dst = address of label
+struct MovImm   { VReg dst; VRegType type; long long value; };    // dst = immediate integer
+struct InitVar  { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
+struct CallC    { string name; vector<VReg> args; };
+struct ExitCode { int code; };
 
-using VInstr = std::variant<LeaLabel, MovImm, CallC, ExitCode, StoreImm, LoadFromStack>;
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, CallC, ExitCode>;
 
 // -------- Program structure --------
 
@@ -44,7 +43,6 @@ struct VStringLiteral {
 
 struct VFunc {
     string name;
-    int    frameSize = 0;  // local var bytes (>0 → prologue required)
     vector<VInstr> instrs;
 };
 

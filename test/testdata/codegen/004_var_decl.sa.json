@@ -1,6 +1,8 @@
 {
   "original": "/test/var_decl.pa",
-  "str-literals": [],
+  "str-literals": [
+    { "label": ".str0", "value": "%lld\n" }
+  ],
   "statements": [
     {
       "stmt-type": "var-decl",
@@ -11,6 +13,18 @@
           "init": { "expr-type": "lit-int", "value": "10" }
         }
       ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "value": "%lld\n" },
+          { "expr-type": "id",      "name":  "x" }
+        ]
+      }
     }
   ]
 }

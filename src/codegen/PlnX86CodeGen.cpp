@@ -75,12 +75,13 @@ void PlnX86CodeGen::emit(const VProg& prog)
         emitGlobal(func.name);
         emitLabel(func.name);
 
-        RegMap rm = allocateRegisters(func, x86PhysRegs);
+        RegAllocResult ra = allocateRegisters(func, x86PhysRegs);
+        const RegMap& rm  = ra.regMap;
 
-        if (func.frameSize > 0) {
+        if (ra.frameSize > 0) {
             out << "\tpushq %rbp\n";
             out << "\tmovq %rsp, %rbp\n";
-            out << "\tsubq $" << func.frameSize << ", %rsp\n";
+            out << "\tsubq $" << ra.frameSize << ", %rsp\n";
         }
 
         for (auto& instr : func.instrs) {
@@ -90,22 +91,26 @@ void PlnX86CodeGen::emit(const VProg& prog)
             } else if (auto* i = std::get_if<MovImm>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
                 emitMovImm(loc.base, i->value);
+            } else if (auto* i = std::get_if<InitVar>(&instr)) {
+                const PhysLoc& loc = rm.at(i->dst);
+                if (loc.isStack()) {
+                    out << "\tmovq $" << i->imm << ", " << loc.stackOffset << "(%rbp)\n";
+                } else {
+                    out << "\tmovq $" << i->imm << ", " << sizedRegName(loc.base, loc.type) << "\n";
+                }
             } else if (auto* i = std::get_if<CallC>(&instr)) {
                 for (int j = 0; j < (int)i->args.size(); j++) {
                     const PhysLoc& loc = rm.at(i->args[j]);
                     const string& dst = x86PhysRegs.intArgs[j];
-                    if (loc.base != dst) {
+                    if (loc.isStack()) {
+                        out << "\tmovq " << loc.stackOffset << "(%rbp), " << dst << "\n";
+                    } else if (loc.base != dst) {
                         out << "\tmovq " << loc.base << ", " << dst << "\n";
                     }
                 }
                 emitCallC(i->name);
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
                 emitExit(i->code);
-            } else if (auto* i = std::get_if<StoreImm>(&instr)) {
-                out << "\tmovq $" << i->value << ", " << i->offset << "(%rbp)\n";
-            } else if (auto* i = std::get_if<LoadFromStack>(&instr)) {
-                const PhysLoc& loc = rm.at(i->dst);
-                out << "\tmovq " << i->offset << "(%rbp), " << sizedRegName(loc.base, loc.type) << "\n";
             }
         }
     }
