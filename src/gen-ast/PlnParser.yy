@@ -128,6 +128,10 @@ class PlnLexer;
 %type <string>	import_as
 %type <json>	expression func_call term
 %type <vector<json>>	arguments
+%type <string>	var_type var_prefix
+%type <bool>	var_postfix
+%type <json>	var_declaration
+%type <vector<json>>	var_declarations
 
 %left ARROW DBL_ARROW
 %left '<' '>' OPE_LE OPE_GE
@@ -175,8 +179,15 @@ statement: import ';'
 	}
 	| var_declarations ';'
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		bool all_ok = true;
+		for (auto& v : $1) {
+			if (v.count("not-impl")) { all_ok = false; break; }
+		}
+		if (all_ok) {
+			$$ = {{"stmt-type", "var-decl"}, {"vars", move($1)}};
+		} else {
+			$$ = {{"stmt-type", "not-impl"}};
+		}
 	}
 	| const_decl ';'
 	{
@@ -301,13 +312,27 @@ block: '{' statements '}'
 	;
 
 var_declarations: var_declaration
+	{ $$ = { $1 }; }
 	| var_declarations ',' var_declaration
+	{ $$ = move($1); $$.push_back($3); }
 	;
 
 var_declaration: var_type move_owner_r var_prefix ID var_postfix
+	{ $$ = {{"not-impl", true}}; }
 	| var_type var_prefix ID var_postfix '=' expression
+	{
+		if (!$1.empty() && $2.empty() && !$4) {
+			$$ = { {"var-name", $3},
+			       {"var-type", {{"type-kind", "prim"}, {"type-name", $1}}},
+			       {"init",     $6} };
+		} else {
+			$$ = {{"not-impl", true}};
+		}
+	}
 	| var_prefix ID var_postfix '=' expression
+	{ $$ = {{"not-impl", true}}; }
 	| tapple_decl '=' expression
+	{ $$ = {{"not-impl", true}}; }
 	;
 
 tapple_decl: '(' tapple_decl_inner ')'
@@ -497,7 +522,9 @@ expressions: expression
 	;
 
 var_type: ID
+	{ $$ = $1; }
 	| ID '<' temp_ids '>'
+	{ $$ = ""; }
 	;
 
 temp_ids: ID | temp_ids ',' ID
@@ -513,10 +540,14 @@ do_export: /* empty */ | KW_EXPORT
 move_owner_r:	/* empty */ | DBL_GRTR
 	;
 
-var_prefix:	/* empty */ | '@' | '$' | AT_EXCL
+var_prefix:	/* empty */ { $$ = ""; }
+	| '@'      { $$ = "@"; }
+	| '$'      { $$ = "$"; }
+	| AT_EXCL  { $$ = "@!"; }
 	;
 
-var_postfix: /* empty */ | array_postfix
+var_postfix: /* empty */   { $$ = false; }
+	| array_postfix        { $$ = true; }
 	;
 
 array_postfix: '[' array_type emitable_exps ']' var_prefix

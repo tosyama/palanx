@@ -54,6 +54,16 @@ struct ExprStmt : Stmt {
     unique_ptr<Expr> body;
 };
 
+struct VarEntry {
+    string           varName;
+    string           typeName;   // "int64" etc.
+    unique_ptr<Expr> init;       // nullable
+};
+
+struct VarDeclStmt : Stmt {
+    vector<VarEntry> vars;
+};
+
 // -------- Module --------
 
 struct StrLiteralDef {

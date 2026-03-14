@@ -26,6 +26,12 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
             VReg r = allocVReg();
             func.instrs.push_back(MovImm{r, VRegType::Int64, (long long)stoull(e->value)});
             args.push_back(r);
+        } else if (auto* e = dynamic_cast<const IdExpr*>(arg.get())) {
+            auto it = localVarMap.find(e->name);
+            BOOST_ASSERT(it != localVarMap.end());
+            VReg r = allocVReg();
+            func.instrs.push_back(LoadFromStack{r, it->second.first, it->second.second});
+            args.push_back(r);
         } else {
             BOOST_ASSERT(false);  // not-impl
         }
@@ -51,10 +57,30 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
     // other expression statements: not-impl
 }
 
+void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
+{
+    for (auto& ve : stmt.vars) {
+        stackOffset -= 8;  // int64 = 8 bytes
+        localVarMap[ve.varName] = {VRegType::Int64, stackOffset};
+
+        if (ve.init) {
+            if (auto* e = dynamic_cast<const IntLitExpr*>(ve.init.get())) {
+                func.instrs.push_back(StoreImm{stoll(e->value), VRegType::Int64, stackOffset});
+            } else {
+                BOOST_ASSERT(false);  // other init exprs: 0204+
+            }
+        }
+    }
+}
+
 void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 {
     if (auto* s = dynamic_cast<const ExprStmt*>(&stmt)) {
         lowerExprStmt(*s, func);
+        return;
+    }
+    if (auto* s = dynamic_cast<const VarDeclStmt*>(&stmt)) {
+        lowerVarDeclStmt(*s, func);
         return;
     }
     BOOST_ASSERT(false);
@@ -82,6 +108,7 @@ VProg PlnVCodeGen::generate(const Module& module)
     for (auto& stmt : module.statements) {
         lowerStmt(*stmt, startFunc);
     }
+    startFunc.frameSize = -stackOffset;
     startFunc.instrs.push_back(ExitCode{0});
     prog.funcs.push_back(move(startFunc));
 

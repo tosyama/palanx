@@ -77,6 +77,12 @@ void PlnX86CodeGen::emit(const VProg& prog)
 
         RegMap rm = allocateRegisters(func, x86PhysRegs);
 
+        if (func.frameSize > 0) {
+            out << "\tpushq %rbp\n";
+            out << "\tmovq %rsp, %rbp\n";
+            out << "\tsubq $" << func.frameSize << ", %rsp\n";
+        }
+
         for (auto& instr : func.instrs) {
             if (auto* i = std::get_if<LeaLabel>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
@@ -95,6 +101,11 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 emitCallC(i->name);
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
                 emitExit(i->code);
+            } else if (auto* i = std::get_if<StoreImm>(&instr)) {
+                out << "\tmovq $" << i->value << ", " << i->offset << "(%rbp)\n";
+            } else if (auto* i = std::get_if<LoadFromStack>(&instr)) {
+                const PhysLoc& loc = rm.at(i->dst);
+                out << "\tmovq " << i->offset << "(%rbp), " << sizedRegName(loc.base, loc.type) << "\n";
             }
         }
     }

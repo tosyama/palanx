@@ -54,6 +54,25 @@ TEST(sa, str_literals_collected) {
 	ASSERT_EQ(lits[0]["label"], ".str0");
 }
 
+TEST(sa, var_decl_emitted) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/build-mgr/002_var_decl.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (v["var-name"] == "x" && v["var-type"]["type-name"] == "int64") {
+				ASSERT_EQ(v["init"]["expr-type"], "lit-int");
+				ASSERT_EQ(v["init"]["value"],     "10");
+				found = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");

@@ -1,0 +1,3 @@
+cinclude <stdio.h>;
+int64 x = 10;
+printf("%lld\n", x);

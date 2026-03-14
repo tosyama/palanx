@@ -53,6 +53,21 @@ TEST(codegen, two_calls_arg_registers) {
     ASSERT_NE(asm_text.find("call printf"),  string::npos);
 }
 
+TEST(codegen, var_decl_init) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/004_var_decl.sa.json";
+    string asmf = "out/004_var_decl.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("pushq %rbp"),         string::npos);
+    ASSERT_NE(asm_text.find("movq %rsp, %rbp"),    string::npos);
+    ASSERT_NE(asm_text.find("subq $"),             string::npos);
+    ASSERT_NE(asm_text.find("movq $10, -8(%rbp)"), string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";

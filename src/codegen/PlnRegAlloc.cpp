@@ -30,6 +30,9 @@ RegMap allocateRegisters(const VFunc& func, const PhysRegs& phys)
             for (int j = 0; j < (int)c->args.size(); j++) {
                 meta[c->args[j]].uses.push_back({i, j});
             }
+        } else if (auto* l = get_if<LoadFromStack>(&instr)) {
+            meta[l->dst].def_idx = i;
+            meta[l->dst].type    = l->type;
         }
     }
 

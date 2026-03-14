@@ -63,6 +63,19 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         s->body = deserializeExpr(j["body"]);
         return s;
     }
+    if (stmt_type == "var-decl") {
+        auto s = make_unique<VarDeclStmt>();
+        for (auto& jv : j["vars"]) {
+            VarEntry ve;
+            ve.varName  = jv["var-name"];
+            ve.typeName = jv["var-type"]["type-name"];
+            if (jv.contains("init")) {
+                ve.init = deserializeExpr(jv["init"]);
+            }
+            s->vars.push_back(move(ve));
+        }
+        return s;
+    }
     if (stmt_type == "not-impl") {
         return nullptr;
     }
