@@ -33,6 +33,26 @@ TEST(codegen, printf_int_literal) {
     ASSERT_NE(asm_text.find("call printf"),  string::npos);
 }
 
+// Verify that two sequential C calls each get correct argument registers.
+// This exercises the multi-call path with the vector<VReg> CallC design.
+// (Callee-saved register allocation is tested in the variable declaration tests.)
+TEST(codegen, two_calls_arg_registers) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/003_two_calls.sa.json";
+    string asmf = "out/003_two_calls.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // puts call: only %rdi
+    ASSERT_NE(asm_text.find("call puts"),    string::npos);
+    // printf call: %rdi (format) and %rsi (integer 99)
+    ASSERT_NE(asm_text.find("movq $99,"),    string::npos);
+    ASSERT_NE(asm_text.find("%rsi"),         string::npos);
+    ASSERT_NE(asm_text.find("call printf"),  string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";
