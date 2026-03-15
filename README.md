@@ -17,7 +17,15 @@ Build and run:
 
 ```bash
 bin/palan hello.pa
-./a.out
+# Hello World!
+```
+
+When `-o` is not specified, `palan` executes the binary immediately after linking and removes it.
+To keep the binary, use `-o`:
+
+```bash
+bin/palan -o hello hello.pa
+./hello
 # Hello World!
 ```
 

@@ -150,7 +150,7 @@ printf("Hello World!\n");
 ```
 
 ```bash
-bin/palan hello.pa && ./a.out
+bin/palan hello.pa
 # Hello World!
 ```
 
@@ -164,7 +164,7 @@ printf("%lld\n", x + y);
 ```
 
 ```bash
-bin/palan add.pa && ./a.out
+bin/palan add.pa
 # 30
 ```
 
