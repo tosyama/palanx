@@ -54,10 +54,21 @@ static string sizedRegName(const string& base, VRegType type)
     return base;  // fallback
 }
 
+// Return the AT&T source operand string for a PhysLoc:
+//   stack  → "-8(%rbp)"  (memory reference)
+//   reg    → "%rsi"      (sized register name)
+static string srcOperand(const PhysLoc& loc)
+{
+    if (loc.isStack())
+        return std::to_string(loc.stackOffset) + "(%rbp)";
+    return sizedRegName(loc.base, loc.type);
+}
+
 // x86-64 System V ABI physical register lists
 static const PhysRegs x86PhysRegs = {
     { "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9" },
-    { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" }
+    { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" },
+    { "%rbx", "%r12", "%r13", "%r14", "%r15" }
 };
 
 void PlnX86CodeGen::emit(const VProg& prog)
@@ -74,14 +85,44 @@ void PlnX86CodeGen::emit(const VProg& prog)
         emitGlobal(func.name);
         emitLabel(func.name);
 
-        RegMap rm = allocateRegisters(func, x86PhysRegs);
+        RegAllocResult ra = allocateRegisters(func, x86PhysRegs);
+        const RegMap& rm  = ra.regMap;
+
+        if (ra.frameSize > 0) {
+            out << "\tpushq %rbp\n";
+            out << "\tmovq %rsp, %rbp\n";
+            out << "\tsubq $" << ra.frameSize << ", %rsp\n";
+        }
 
         for (auto& instr : func.instrs) {
             if (auto* i = std::get_if<LeaLabel>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
                 emitLeaLabel(sizedRegName(loc.base, loc.type), i->label);
+            } else if (auto* i = std::get_if<MovImm>(&instr)) {
+                const PhysLoc& loc = rm.at(i->dst);
+                emitMovImm(loc.base, i->value);
+            } else if (auto* i = std::get_if<InitVar>(&instr)) {
+                const PhysLoc& loc = rm.at(i->dst);
+                if (loc.isStack()) {
+                    out << "\tmovq $" << i->imm << ", " << loc.stackOffset << "(%rbp)\n";
+                } else {
+                    out << "\tmovq $" << i->imm << ", " << sizedRegName(loc.base, loc.type) << "\n";
+                }
+            } else if (auto* a = std::get_if<Add>(&instr)) {
+                if (!rm.count(a->dst)) continue;  // dead: result never used
+                const PhysLoc& dst_loc = rm.at(a->dst);
+                BOOST_ASSERT(!dst_loc.isStack());  // dst must be in a register
+                string dst_reg = sizedRegName(dst_loc.base, dst_loc.type);
+                out << "\tmovq " << srcOperand(rm.at(a->lhs)) << ", " << dst_reg << "\n";
+                out << "\taddq " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
             } else if (auto* i = std::get_if<CallC>(&instr)) {
-                emitCallC(i->name, i->argCount);
+                for (int j = 0; j < (int)i->args.size(); j++) {
+                    const string& dst = x86PhysRegs.intArgs[j];
+                    string src = srcOperand(rm.at(i->args[j]));
+                    if (src != dst)
+                        out << "\tmovq " << src << ", " << dst << "\n";
+                }
+                emitCallC(i->name);
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
                 emitExit(i->code);
             }
@@ -125,9 +166,13 @@ void PlnX86CodeGen::emitLeaLabel(const string& reg, const string& label)
     out << "\tleaq " << label << "(%rip), " << reg << "\n";
 }
 
-void PlnX86CodeGen::emitCallC(const string& name, int argCount)
+void PlnX86CodeGen::emitMovImm(const string& reg, long long value)
 {
-    (void)argCount;
+    out << "\tmovq $" << value << ", " << reg << "\n";
+}
+
+void PlnX86CodeGen::emitCallC(const string& name)
+{
     // For variadic C functions, al = number of floating-point args (0 here)
     out << "\txorl %eax, %eax\n";
     out << "\tcall " << name << "\n";

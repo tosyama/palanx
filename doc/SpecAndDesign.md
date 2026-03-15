@@ -29,7 +29,8 @@ Responsibility:
 
 Usage: palan [options] <source files>
  options:
-   -o, --output <file path> Specify output file path. If not specified, defaults to 'a.out'
+   -o, --output <file path> Specify output file path. If not specified, the binary is
+                            executed immediately after linking and then removed.
    -c, --clean              Clean build artifacts
    -h, --help               Display help information
    -v, --version            Display version information
@@ -39,7 +40,9 @@ Design:
  After generating ASTs of the source files by invoking palan-gen-ast, it checks for dependencies on other Palan source files and invokes palan-gen-ast for those dependent files if needed.
  After generating ASTs for all source files, it invokes palan-sa to perform semantic analysis on the generated ASTs.
  It then invokes palan-codegen to generate x86-64 assembly files from the analyzed ASTs,
- assembles them with `as`, and links the resulting object files with `ld` to create the final executable.
+ assembles them with `as`, and links the resulting object files with `ld` to create the final executable (default: `a.out`).
+ If `-o` is not specified, the resulting `a.out` is executed immediately after linking and then removed.
+ This allows palan to be used as a script runner without leaving build artifacts.
  Before linking, the build manager reads ast.json for each source file and collects `link` declarations
  from `cinclude` statements (e.g. `cinclude <stdio.h> link "c";`), passing the corresponding `-l` flags to `ld`.
  This link declaration feature is designed but not yet implemented; linking flags are handled manually in the interim.
@@ -144,39 +147,24 @@ cinclude <stdio.h>;
 printf("Hello World!\n");
 ```
 
-Build and run:
-
 ```bash
-bin/palan hello.pa
-./a.out
+bin/palan hello.pa && ./a.out
 # Hello World!
 ```
 
-### 4.2 Calling C Standard Library Functions
-
-Palan imports C function declarations using `cinclude`. The `cinclude` statement causes
-`palan-gen-ast` to invoke `palan-c2ast` internally to translate the C header into AST nodes.
-Imported functions are resolved to their C ABI counterparts during semantic analysis.
+### 4.2 Integer Variables and Arithmetic
 
 ```
 cinclude <stdio.h>;
-cinclude <stdlib.h>;
-
-printf("value: %d\n");
+int64 x = 10;
+int64 y = 20;
+printf("%lld\n", x + y);
 ```
 
-### 4.3 System Include Path Configuration
-
-`palan-c2ast` reads predefined macros from `./c2ast/predefined.h` relative to the
-executable's location. This file is automatically copied to the build output directory
-by CMake.
-
-System headers are resolved by passing `-p <path>` flags (for additional search paths)
-and `-s` (to mark the input as a system header). In the normal pipeline, `palan-gen-ast`
-manages these flags automatically.
-
-For testing with stub headers instead of real system headers, place stub `.h` files
-in a directory and pass it as a search path via the `-p` option to `palan-c2ast`.
+```bash
+bin/palan add.pa && ./a.out
+# 30
+```
 
 ## 5. Working Directory and Output Files
 ### 5.1 Working Directory

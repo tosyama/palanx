@@ -22,15 +22,18 @@ static string getPalanDirPath();
 int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
-		{ "help", no_argument, NULL, 'h' },
-		{ "clean", no_argument, NULL, 'c' },
+		{ "help",   no_argument,       NULL, 'h' },
+		{ "clean",  no_argument,       NULL, 'c' },
+		{ "output", required_argument, NULL, 'o' },
 		{ 0 }
 	};
 
 	int opt, option_index = 0;
 	bool do_clean = false;
+	string binary_name = "a.out";
+	bool output_specified = false;
 
-	while (0 < (opt = getopt_long(argc, argv, "h:", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "hco:", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
 				cout << "help" << endl;
@@ -38,10 +41,14 @@ int main(int argc, char* argv[])
 			case 'c':
 				do_clean = true;
 				break;
+			case 'o':
+				binary_name = optarg;
+				output_specified = true;
+				break;
 			default:
 				break;
 		}
-	} 
+	}
 
 	string palan_dir_path = getPalanDirPath();
 	string palan_work_path = palan_dir_path + "/work";
@@ -158,7 +165,6 @@ int main(int argc, char* argv[])
 
 	// ld — link all object files into the final binary
 	// TODO: extract required libraries from AST cinclude link clauses
-	string binary_name = "a.out";
 	string ldcmd = "ld";
 	for (auto& obj : obj_files) ldcmd += " " + obj;
 	ldcmd += " -lc -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o " + binary_name;
@@ -167,6 +173,15 @@ int main(int argc, char* argv[])
 		ret = WEXITSTATUS(ret);
 		if (ret) return ret;
 	} else {
+		return -1;
+	}
+
+	// When no explicit output is specified, run the binary and remove it.
+	// This enables script-style usage: palan script.pa
+	if (!output_specified) {
+		int run_ret = system(("./" + binary_name).c_str());
+		fs::remove(binary_name);
+		if (WIFEXITED(run_ret)) return WEXITSTATUS(run_ret);
 		return -1;
 	}
 

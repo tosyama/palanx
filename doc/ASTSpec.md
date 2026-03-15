@@ -85,7 +85,7 @@ Note: C `restrict` qualifier is not represented in the AST (optimization hint on
 
 Statement model
 ---------------
-- stmt-type - Statement type: "import" "cinclude" "expr"
+- stmt-type - Statement type: "import" "cinclude" "expr" "var-decl"
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
@@ -97,10 +97,15 @@ Statement model
     - functions - Function definition model list (C prototypes from the header)
   3. expr - expression statement
     - body\* - Expression model
+  4. var-decl - variable declaration statement
+    - vars\* - Variable declaration list
+      - var-name\* - Variable name string
+      - var-type\* - Variable type
+      - init - Initializer expression model (omitted if no initializer)
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "call"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "add" "call"
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token)
@@ -109,7 +114,10 @@ Expression model
     - value\* - Decimal string (e.g. "10")
   4. id - Identifier (variable reference)
     - name\* - Identifier name string
-  5. call - Function call expression
+  5. add - Binary addition
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  6. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
 

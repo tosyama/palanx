@@ -6,20 +6,32 @@
 #pragma once
 #include <map>
 #include <string>
+#include <vector>
 #include "PlnNode.h"
 #include "PlnVProg.h"
 
 using std::map;
 using std::string;
+using std::vector;
 
 class PlnVCodeGen {
     map<string, string> strLiterals;  // value -> label
     int nextVReg = 0;
 
+    // Variable symbol table: scoped stack of name -> VReg mappings.
+    // enterVarScope/leaveVarScope push/pop; findVar searches from innermost.
+    vector<map<string, VReg>> varScopes;
+    void enterVarScope();
+    void leaveVarScope();
+    VReg findVar(const string& name) const;
+    void declareVar(const string& name, VReg r);
+
     VReg allocVReg();
 
+    VReg lowerExpr(const Expr& expr, VFunc& func);
     void lowerStmt(const Stmt& stmt, VFunc& func);
     void lowerExprStmt(const ExprStmt& stmt, VFunc& func);
+    void lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func);
     void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
 

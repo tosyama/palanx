@@ -27,6 +27,12 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->name = j["name"];
         return e;
     }
+    if (expr_type == "add") {
+        auto e = make_unique<AddExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        return e;
+    }
     if (expr_type == "call") {
         string func_type = j.value("func-type", "");
         if (func_type == "c") {
@@ -61,6 +67,19 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     if (stmt_type == "expr") {
         auto s = make_unique<ExprStmt>();
         s->body = deserializeExpr(j["body"]);
+        return s;
+    }
+    if (stmt_type == "var-decl") {
+        auto s = make_unique<VarDeclStmt>();
+        for (auto& jv : j["vars"]) {
+            VarEntry ve;
+            ve.varName  = jv["var-name"];
+            ve.typeName = jv["var-type"]["type-name"];
+            if (jv.contains("init")) {
+                ve.init = deserializeExpr(jv["init"]);
+            }
+            s->vars.push_back(move(ve));
+        }
         return s;
     }
     if (stmt_type == "not-impl") {
