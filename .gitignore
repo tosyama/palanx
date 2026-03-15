@@ -1,4 +1,6 @@
 build/
+build-cov/
 localtickets/
 a.out
+test.pa
 .exrc
