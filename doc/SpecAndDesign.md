@@ -178,6 +178,28 @@ manages these flags automatically.
 For testing with stub headers instead of real system headers, place stub `.h` files
 in a directory and pass it as a search path via the `-p` option to `palan-c2ast`.
 
+### 4.4 Integer Variables and Arithmetic (v0.1.1)
+
+Palan supports 64-bit integer variable declaration with initialization and addition expressions.
+
+```
+cinclude <stdio.h>;
+
+int64 x = 10;
+int64 y = 20;
+printf("%lld\n", x);        // display a variable: 10
+printf("%lld\n", x + y);    // display an expression: 30
+```
+
+Build and run:
+
+```bash
+bin/palan add.pa
+./a.out
+# 10
+# 30
+```
+
 ## 5. Working Directory and Output Files
 ### 5.1 Working Directory
 The working directory for all command-line tools is `~/.palan/work/` by default.
