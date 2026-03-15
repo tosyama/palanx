@@ -144,41 +144,12 @@ cinclude <stdio.h>;
 printf("Hello World!\n");
 ```
 
-Build and run:
-
 ```bash
-bin/palan hello.pa
-./a.out
+bin/palan hello.pa && ./a.out
 # Hello World!
 ```
 
-### 4.2 Calling C Standard Library Functions
-
-Palan imports C function declarations using `cinclude`. The `cinclude` statement causes
-`palan-gen-ast` to invoke `palan-c2ast` internally to translate the C header into AST nodes.
-Imported functions are resolved to their C ABI counterparts during semantic analysis.
-
-```
-cinclude <stdio.h>;
-cinclude <stdlib.h>;
-
-printf("value: %d\n");
-```
-
-### 4.3 System Include Path Configuration
-
-`palan-c2ast` reads predefined macros from `./c2ast/predefined.h` relative to the
-executable's location. This file is automatically copied to the build output directory
-by CMake.
-
-System headers are resolved by passing `-p <path>` flags (for additional search paths)
-and `-s` (to mark the input as a system header). In the normal pipeline, `palan-gen-ast`
-manages these flags automatically.
-
-For testing with stub headers instead of real system headers, place stub `.h` files
-in a directory and pass it as a search path via the `-p` option to `palan-c2ast`.
-
-### 4.4 Integer Variables and Arithmetic
+### 4.2 Integer Variables and Arithmetic
 
 ```
 cinclude <stdio.h>;
