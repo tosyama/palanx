@@ -6,19 +6,19 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2025-12-13T03:20:20.760Z)
-version: 0.1.0
-- This iteration goal is to enable importing the C header <stdio.h> and calling printf to make debugging easier and to allow unit test output checks to be performed more reliably.
-
-### 2.2 Iteration Goal (2026-03-13)
-version: 0.1.1
-- This iteration goal is to support integer variable declaration with initialization, addition operator, and displaying integer values (literals, variables, and expressions) via printf.
+### 2.1 Iteration Goal (2026-03-15)
+version: 0.1.2
+- This iteration goal is to establish a type conversion mechanism across the full compiler pipeline.
+- The semantic analyzer (palan-sa) is responsible for all type conversion decisions:
+  - Deriving and annotating the `value-type` of every expression node in sa.json
+  - Inserting explicit `convert` nodes wherever an implicit widening conversion is required
+- The code generator mechanically lowers `convert` nodes to the appropriate x86-64 instructions (movsx, movzx, etc.)
+- This architecture is designed to scale to future struct/array implicit conversions,
+  where palan-sa will insert higher-level conversion nodes (e.g., constructor calls) that codegen handles uniformly.
 - Specifically, the following should work end-to-end:
-  - `printf("%d\n", 42);` — display an integer literal
-  - `int64 x = 10;` — declare and initialize an integer variable
-  - `int64 y = x + 3;` — addition of variable and literal
-  - `printf("%d\n", y);` — display a variable value
-  - `printf("%d\n", x + 3);` — display an expression result
+  - `int32 x = 10;` — declare a 32-bit integer variable
+  - `int64 y = x;` — implicit widening: int32 → int64 (SA inserts convert node)
+  - `printf("%lld\n", y);` — display the widened value (expected: 10)
 
 ## 3. Command-line Tools' Responsibilities and Design
 
@@ -110,7 +110,9 @@ Design:
  cinclude and import statements are consumed for scope resolution and are not emitted to sa.json.
  Expression statements are annotated with resolution results (e.g., func-type: "c" for calls
  resolved to C functions) and emitted to sa.json.
- Type checking and implicit type conversion (coerce nodes) are reserved for future iterations.
+ Type checking is performed during expression processing. When an implicit widening conversion is required
+ (e.g., int32 value used in an int64 context), palan-sa inserts a `convert` expression node into sa.json.
+ Narrowing conversions and explicit casts are not yet supported.
 
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:
