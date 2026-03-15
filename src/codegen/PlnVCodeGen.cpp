@@ -72,15 +72,11 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Add{dst, l, r, VRegType::Int64});
             return dst;
         }
-        case ExprKind::CCCall:
-            lowerCCCallExpr(static_cast<const CCCallExpr&>(expr), func);
-            return -1;  // call expr: no result VReg
-        case ExprKind::PlnCall:
-            lowerPlnCallExpr(static_cast<const PlnCallExpr&>(expr), func);
+        default:
+            // CCCall/PlnCall do not produce a value; use lowerExprStmt instead.
+            BOOST_ASSERT(false);
             return -1;
     }
-    BOOST_ASSERT(false);  // unreachable
-    return -1;
 }
 
 void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
@@ -99,7 +95,16 @@ void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 
 void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
 {
-    lowerExpr(*stmt.body, func);
+    switch (stmt.body->kind) {
+        case ExprKind::CCCall:
+            lowerCCCallExpr(static_cast<const CCCallExpr&>(*stmt.body), func);
+            return;
+        case ExprKind::PlnCall:
+            lowerPlnCallExpr(static_cast<const PlnCallExpr&>(*stmt.body), func);
+            return;
+        default:
+            BOOST_ASSERT(false);  // only call expressions are valid as statements
+    }
 }
 
 void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
