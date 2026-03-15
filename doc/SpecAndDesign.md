@@ -178,25 +178,17 @@ manages these flags automatically.
 For testing with stub headers instead of real system headers, place stub `.h` files
 in a directory and pass it as a search path via the `-p` option to `palan-c2ast`.
 
-### 4.4 Integer Variables and Arithmetic (v0.1.1)
-
-Palan supports 64-bit integer variable declaration with initialization and addition expressions.
+### 4.4 Integer Variables and Arithmetic
 
 ```
 cinclude <stdio.h>;
-
 int64 x = 10;
 int64 y = 20;
-printf("%lld\n", x);        // display a variable: 10
-printf("%lld\n", x + y);    // display an expression: 30
+printf("%lld\n", x + y);
 ```
 
-Build and run:
-
 ```bash
-bin/palan add.pa
-./a.out
-# 10
+bin/palan add.pa && ./a.out
 # 30
 ```
 
