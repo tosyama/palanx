@@ -20,6 +20,7 @@ class PlnSemanticAnalyzer {
 	json sa;
 	vector<map<string, json>> cFunctionScopes;
 	map<string, string> strLiteralLabels;  // value -> label
+	map<string, json> varSymbolTable;      // var name -> var-type
 
 	void pushScope();
 	void popScope();
@@ -30,6 +31,7 @@ class PlnSemanticAnalyzer {
 	void sa_cinclude(const json &stmt);
 	json sa_expression(const json &expr);
 	void sa_expression_stmt(const json &stmt);
+	void sa_var_decl(const json &stmt);
 
 public:
 	PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path);

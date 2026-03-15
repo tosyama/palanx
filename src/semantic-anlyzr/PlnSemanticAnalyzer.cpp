@@ -55,6 +55,8 @@ void PlnSemanticAnalyzer::sa_statements(const json &stmts)
 			sa_cinclude(stmt);
 		} else if (stmt_type == "expr") {
 			sa_expression_stmt(stmt);
+		} else if (stmt_type == "var-decl") {
+			sa_var_decl(stmt);
 		} else if (stmt_type == "not-impl") {
 			sa["statements"].push_back(stmt);
 		} else {
@@ -75,6 +77,14 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr)
 			strLiteralLabels[value] = label;
 			sa["str-literals"].push_back({{"label", label}, {"value", value}});
 		}
+	} else if (expr_type == "id") {
+		auto it = varSymbolTable.find(expr["name"].get<string>());
+		if (it != varSymbolTable.end()) {
+			sa_expr["var-type"] = it->second;
+		}
+	} else if (expr_type == "add") {
+		sa_expr["left"]  = sa_expression(expr["left"]);
+		sa_expr["right"] = sa_expression(expr["right"]);
 	} else if (expr_type == "call") {
 		if (findCFunction(expr["name"])) {
 			sa_expr["func-type"] = "c";
@@ -95,6 +105,22 @@ void PlnSemanticAnalyzer::sa_expression_stmt(const json &stmt)
 		{"stmt-type", "expr"},
 		{"body", sa_expression(stmt["body"])}
 	};
+	sa["statements"].push_back(sa_stmt);
+}
+
+void PlnSemanticAnalyzer::sa_var_decl(const json &stmt)
+{
+	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
+	for (auto& var : stmt["vars"]) {
+		string name = var["var-name"];
+		varSymbolTable[name] = var["var-type"];
+
+		json sa_var = var;
+		if (var.contains("init")) {
+			sa_var["init"] = sa_expression(var["init"]);
+		}
+		sa_stmt["vars"].push_back(sa_var);
+	}
 	sa["statements"].push_back(sa_stmt);
 }
 

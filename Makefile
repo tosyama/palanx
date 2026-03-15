@@ -1,5 +1,6 @@
 all: build/CMakeCache.txt
 	cmake --build build
+	find build -name "*.gcda" -delete 2>/dev/null; true
 	@cd build && rm -f bin/core && bin/c2ast-tester
 	@cd build && rm -f bin/core && bin/gen-ast-tester
 	@cd build && rm -f bin/core && bin/sa-tester
@@ -16,7 +17,10 @@ coverage:
 	mkdir build
 	cd build && cmake -DOUTPUT_COVERAGE=ON ..
 	cmake --build build
+	cd build && bin/c2ast-tester
 	cd build && bin/gen-ast-tester
+	cd build && bin/sa-tester
+	cd build && bin/codegen-tester
 	cd build && bin/build-mgr-tester
 	cd build && lcov -c -d . -b src -o all.info --rc branch_coverage=1 --ignore-errors mismatch
 	cd build && lcov -e all.info '*/palanx/src/*' -o lcov.info --rc branch_coverage=1

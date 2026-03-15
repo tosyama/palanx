@@ -53,6 +53,29 @@ TEST(gen_ast, cinclude_functions_in_ast) {
 	ASSERT_TRUE(found_printf);
 }
 
+TEST(gen_ast, addition) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/003_addition.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] == "call" && body["name"] == "printf") {
+			for (auto& arg : body["args"]) {
+				if (arg["expr-type"] == "add") {
+					ASSERT_EQ(arg["left"]["expr-type"],  "id");
+					ASSERT_EQ(arg["right"]["expr-type"], "id");
+					found = true;
+				}
+			}
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");

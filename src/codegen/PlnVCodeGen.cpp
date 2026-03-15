@@ -3,6 +3,35 @@
 
 using namespace std;
 
+// -------- Variable scope management --------
+
+void PlnVCodeGen::enterVarScope()
+{
+    varScopes.push_back({});
+}
+
+void PlnVCodeGen::leaveVarScope()
+{
+    varScopes.pop_back();
+}
+
+VReg PlnVCodeGen::findVar(const string& name) const
+{
+    for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
+        auto f = it->find(name);
+        if (f != it->end()) return f->second;
+    }
+    BOOST_ASSERT(false);  // variable not declared
+    return -1;
+}
+
+void PlnVCodeGen::declareVar(const string& name, VReg r)
+{
+    varScopes.back()[name] = r;
+}
+
+// -------- Utilities --------
+
 VReg PlnVCodeGen::allocVReg()
 {
     return nextVReg++;
@@ -10,19 +39,53 @@ VReg PlnVCodeGen::allocVReg()
 
 // -------- Lower AST to VInstr --------
 
+VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
+{
+    switch (expr.kind) {
+        case ExprKind::StrLit: {
+            auto& e = static_cast<const StrLitExpr&>(expr);
+            VReg r = allocVReg();
+            func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, strLiterals.at(e.value)});
+            return r;
+        }
+        case ExprKind::IntLit: {
+            auto& e = static_cast<const IntLitExpr&>(expr);
+            VReg r = allocVReg();
+            func.instrs.push_back(MovImm{r, VRegType::Int64, stoll(e.value)});
+            return r;
+        }
+        case ExprKind::UintLit: {
+            auto& e = static_cast<const UintLitExpr&>(expr);
+            VReg r = allocVReg();
+            func.instrs.push_back(MovImm{r, VRegType::Int64, (long long)stoull(e.value)});
+            return r;
+        }
+        case ExprKind::Id: {
+            auto& e = static_cast<const IdExpr&>(expr);
+            return findVar(e.name);
+        }
+        case ExprKind::Add: {
+            auto& e  = static_cast<const AddExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Add{dst, l, r, VRegType::Int64});
+            return dst;
+        }
+        default:
+            // CCCall/PlnCall do not produce a value; use lowerExprStmt instead.
+            BOOST_ASSERT(false);
+            return -1;
+    }
+}
+
 void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
 {
-    int argCount = 0;
+    vector<VReg> args;
     for (auto& arg : expr.args) {
-        if (auto* e = dynamic_cast<const StrLitExpr*>(arg.get())) {
-            VReg r = allocVReg();
-            func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, strLiterals.at(e->value)});
-        } else {
-            BOOST_ASSERT(false);  // not-impl
-        }
-        ++argCount;
+        args.push_back(lowerExpr(*arg, func));
     }
-    func.instrs.push_back(CallC{expr.name, argCount});
+    func.instrs.push_back(CallC{expr.name, move(args)});
 }
 
 void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
@@ -32,22 +95,46 @@ void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 
 void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
 {
-    if (auto* e = dynamic_cast<const CCCallExpr*>(stmt.body.get())) {
-        lowerCCCallExpr(*e, func);
-        return;
+    switch (stmt.body->kind) {
+        case ExprKind::CCCall:
+            lowerCCCallExpr(static_cast<const CCCallExpr&>(*stmt.body), func);
+            return;
+        case ExprKind::PlnCall:
+            lowerPlnCallExpr(static_cast<const PlnCallExpr&>(*stmt.body), func);
+            return;
+        default:
+            BOOST_ASSERT(false);  // only call expressions are valid as statements
     }
-    if (auto* e = dynamic_cast<const PlnCallExpr*>(stmt.body.get())) {
-        lowerPlnCallExpr(*e, func);
-        return;
+}
+
+void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
+{
+    for (auto& ve : stmt.vars) {
+        VReg r;
+        if (ve.init) {
+            if (ve.init->kind == ExprKind::IntLit) {
+                auto& e = static_cast<const IntLitExpr&>(*ve.init);
+                r = allocVReg();
+                func.instrs.push_back(InitVar{r, VRegType::Int64, stoll(e.value)});
+            } else {
+                r = lowerExpr(*ve.init, func);
+            }
+        } else {
+            r = allocVReg();
+        }
+        declareVar(ve.varName, r);
     }
-    // other expression statements: not-impl
 }
 
 void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 {
-    if (auto* s = dynamic_cast<const ExprStmt*>(&stmt)) {
-        lowerExprStmt(*s, func);
-        return;
+    switch (stmt.kind) {
+        case StmtKind::Expr:
+            lowerExprStmt(static_cast<const ExprStmt&>(stmt), func);
+            return;
+        case StmtKind::VarDecl:
+            lowerVarDeclStmt(static_cast<const VarDeclStmt&>(stmt), func);
+            return;
     }
     BOOST_ASSERT(false);
 }
@@ -71,9 +158,11 @@ VProg PlnVCodeGen::generate(const Module& module)
     // Build _start function
     VFunc startFunc;
     startFunc.name = "_start";
+    enterVarScope();
     for (auto& stmt : module.statements) {
         lowerStmt(*stmt, startFunc);
     }
+    leaveVarScope();
     startFunc.instrs.push_back(ExitCode{0});
     prog.funcs.push_back(move(startFunc));
 

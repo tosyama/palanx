@@ -1,0 +1,32 @@
+{
+  "original": "/test/two_calls.pa",
+  "str-literals": [
+    {"label": ".str0", "value": "start\n"},
+    {"label": ".str1", "value": "%d\n"}
+  ],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "puts",
+        "args": [
+          {"expr-type": "lit-str", "value": "start\n"}
+        ]
+      }
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          {"expr-type": "lit-str", "value": "%d\n"},
+          {"expr-type": "lit-int", "value": "99"}
+        ]
+      }
+    }
+  ]
+}

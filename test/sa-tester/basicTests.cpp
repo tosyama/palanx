@@ -54,6 +54,48 @@ TEST(sa, str_literals_collected) {
 	ASSERT_EQ(lits[0]["label"], ".str0");
 }
 
+TEST(sa, var_decl_emitted) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/build-mgr/002_var_decl.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (v["var-name"] == "x" && v["var-type"]["type-name"] == "int64") {
+				ASSERT_EQ(v["init"]["expr-type"], "lit-int");
+				ASSERT_EQ(v["init"]["value"],     "10");
+				found = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
+TEST(sa, addition) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/build-mgr/003_addition.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] == "call" && body["name"] == "printf") {
+			for (auto& arg : body["args"]) {
+				if (arg["expr-type"] == "add") {
+					ASSERT_EQ(arg["left"]["expr-type"],  "id");
+					ASSERT_EQ(arg["right"]["expr-type"], "id");
+					found = true;
+				}
+			}
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
