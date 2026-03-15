@@ -394,7 +394,7 @@ expression: term
 	| dict_desc
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '+' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; }
 	| expression '-' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '*' expression

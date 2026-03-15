@@ -27,6 +27,12 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->name = j["name"];
         return e;
     }
+    if (expr_type == "add") {
+        auto e = make_unique<AddExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        return e;
+    }
     if (expr_type == "call") {
         string func_type = j.value("func-type", "");
         if (func_type == "c") {

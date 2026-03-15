@@ -54,6 +54,16 @@ static string sizedRegName(const string& base, VRegType type)
     return base;  // fallback
 }
 
+// Return the AT&T source operand string for a PhysLoc:
+//   stack  → "-8(%rbp)"  (memory reference)
+//   reg    → "%rsi"      (sized register name)
+static string srcOperand(const PhysLoc& loc)
+{
+    if (loc.isStack())
+        return std::to_string(loc.stackOffset) + "(%rbp)";
+    return sizedRegName(loc.base, loc.type);
+}
+
 // x86-64 System V ABI physical register lists
 static const PhysRegs x86PhysRegs = {
     { "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9" },
@@ -98,15 +108,19 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 } else {
                     out << "\tmovq $" << i->imm << ", " << sizedRegName(loc.base, loc.type) << "\n";
                 }
+            } else if (auto* a = std::get_if<Add>(&instr)) {
+                if (!rm.count(a->dst)) continue;  // dead: result never used
+                const PhysLoc& dst_loc = rm.at(a->dst);
+                BOOST_ASSERT(!dst_loc.isStack());  // dst must be in a register
+                string dst_reg = sizedRegName(dst_loc.base, dst_loc.type);
+                out << "\tmovq " << srcOperand(rm.at(a->lhs)) << ", " << dst_reg << "\n";
+                out << "\taddq " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
             } else if (auto* i = std::get_if<CallC>(&instr)) {
                 for (int j = 0; j < (int)i->args.size(); j++) {
-                    const PhysLoc& loc = rm.at(i->args[j]);
                     const string& dst = x86PhysRegs.intArgs[j];
-                    if (loc.isStack()) {
-                        out << "\tmovq " << loc.stackOffset << "(%rbp), " << dst << "\n";
-                    } else if (loc.base != dst) {
-                        out << "\tmovq " << loc.base << ", " << dst << "\n";
-                    }
+                    string src = srcOperand(rm.at(i->args[j]));
+                    if (src != dst)
+                        out << "\tmovq " << src << ", " << dst << "\n";
                 }
                 emitCallC(i->name);
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {

@@ -29,10 +29,11 @@ enum class VRegType {
 struct LeaLabel { VReg dst; VRegType type; string label; };       // dst = address of label
 struct MovImm   { VReg dst; VRegType type; long long value; };    // dst = immediate integer
 struct InitVar  { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
+struct Add      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs + rhs
 struct CallC    { string name; vector<VReg> args; };
 struct ExitCode { int code; };
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, CallC, ExitCode>;
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, CallC, ExitCode>;
 
 // -------- Program structure --------
 

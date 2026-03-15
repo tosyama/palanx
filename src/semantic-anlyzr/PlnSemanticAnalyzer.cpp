@@ -82,6 +82,9 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr)
 		if (it != varSymbolTable.end()) {
 			sa_expr["var-type"] = it->second;
 		}
+	} else if (expr_type == "add") {
+		sa_expr["left"]  = sa_expression(expr["left"]);
+		sa_expr["right"] = sa_expression(expr["right"]);
 	} else if (expr_type == "call") {
 		if (findCFunction(expr["name"])) {
 			sa_expr["func-type"] = "c";

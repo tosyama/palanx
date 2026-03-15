@@ -67,6 +67,20 @@ TEST(codegen, var_decl_init) {
     ASSERT_NE(asm_text.find("call printf"),     string::npos);
 }
 
+TEST(codegen, addition) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/005_addition.sa.json";
+    string asmf = "out/005_addition.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movq"),       string::npos);
+    ASSERT_NE(asm_text.find("addq"),       string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";

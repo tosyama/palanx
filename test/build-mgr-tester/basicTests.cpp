@@ -25,6 +25,16 @@ TEST(build_mgr, var_decl) {
 	ASSERT_EQ(output, "10\n");
 }
 
+TEST(build_mgr, addition) {
+	cleanTestEnv();
+
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/003_addition.pa");
+	ASSERT_EQ(output, "");
+
+	output = execTestCommand("./a.out");
+	ASSERT_EQ(output, "30\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

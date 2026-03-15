@@ -8,11 +8,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 {
     // Step 1: Collect VReg metadata.
     struct VRegMeta {
-        VRegType type    = VRegType::Int64;
-        int      def_idx = -1;
-        bool     isVar   = false;  // true if defined by InitVar (variable)
-        // (call_instr_idx, arg_position) for each use as a call argument
-        vector<pair<int,int>> uses;
+        VRegType type         = VRegType::Int64;
+        int      def_idx      = -1;
+        bool     isVar        = false;   // true if defined by InitVar (variable)
+        int      last_any_use = -1;      // last use by Add (non-call) instructions
+        vector<pair<int,int>> call_uses; // (call_instr_idx, arg_position)
     };
     map<VReg, VRegMeta> meta;
 
@@ -30,10 +30,15 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             meta[v->dst].def_idx = i;
             meta[v->dst].type    = v->type;
             meta[v->dst].isVar   = true;
+        } else if (auto* a = get_if<Add>(&instr)) {
+            meta[a->dst].def_idx = i;
+            meta[a->dst].type    = a->type;
+            meta[a->lhs].last_any_use = max(meta[a->lhs].last_any_use, i);
+            meta[a->rhs].last_any_use = max(meta[a->rhs].last_any_use, i);
         } else if (auto* c = get_if<CallC>(&instr)) {
             call_indices.push_back(i);
             for (int j = 0; j < (int)c->args.size(); j++) {
-                meta[c->args[j]].uses.push_back({i, j});
+                meta[c->args[j]].call_uses.push_back({i, j});
             }
         }
     }
@@ -48,20 +53,32 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         result[vreg] = PhysLoc{"", type, -8 * stack_slots};
     };
 
+    auto allocCalleeSavedOrStack = [&](VReg vreg, VRegType type) {
+        if (callee_idx < (int)phys.calleeSaved.size()) {
+            result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], type};
+        } else {
+            allocStackSlot(vreg, type);
+        }
+    };
+
     for (auto& [vreg, m] : meta) {
-        // InitVar VReg with no uses: store side-effect must be preserved.
-        // Assign a stack slot so the emitter can still store the value.
-        if (m.uses.empty()) {
-            if (m.isVar) allocStackSlot(vreg, m.type);
+        if (m.call_uses.empty()) {
+            if (m.isVar) {
+                allocStackSlot(vreg, m.type);
+            } else if (m.last_any_use >= 0) {
+                // Used only as Add operand (not directly by any call)
+                allocCalleeSavedOrStack(vreg, m.type);
+            }
+            // else: dead — no allocation needed
             continue;
         }
 
-        // Determine whether this VReg must survive across a call.
+        // Has call uses — determine whether callee-saved is needed.
         bool needs_callee_saved = false;
-        if (m.uses.size() > 1) {
+        if (m.call_uses.size() > 1) {
             needs_callee_saved = true;
         } else {
-            int use_idx = m.uses.front().first;
+            int use_idx = m.call_uses.front().first;
             for (int c_idx : call_indices) {
                 if (m.def_idx < c_idx && c_idx < use_idx) {
                     needs_callee_saved = true;
@@ -71,15 +88,9 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
 
         if (needs_callee_saved) {
-            if (callee_idx < (int)phys.calleeSaved.size()) {
-                result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], m.type};
-            } else {
-                // Callee-saved registers exhausted: spill to stack.
-                allocStackSlot(vreg, m.type);
-            }
+            allocCalleeSavedOrStack(vreg, m.type);
         } else {
-            // Assign directly to the required argument register.
-            int arg_pos = m.uses.front().second;
+            int arg_pos = m.call_uses.front().second;
             BOOST_ASSERT(arg_pos < (int)phys.intArgs.size());
             result[vreg] = PhysLoc{phys.intArgs[arg_pos], m.type};
         }

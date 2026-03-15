@@ -28,6 +28,7 @@ class PlnVCodeGen {
 
     VReg allocVReg();
 
+    VReg lowerExpr(const Expr& expr, VFunc& func);
     void lowerStmt(const Stmt& stmt, VFunc& func);
     void lowerExprStmt(const ExprStmt& stmt, VFunc& func);
     void lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func);
