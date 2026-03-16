@@ -9,7 +9,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
 
     if (expr_type == "lit-str") {
         auto e = make_unique<StrLitExpr>();
-        e->value = j["value"];
+        e->label = j["label"];
         return e;
     }
     if (expr_type == "lit-int") {

@@ -45,7 +45,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         case ExprKind::StrLit: {
             auto& e = static_cast<const StrLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, strLiterals.at(e.value)});
+            func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.label});
             return r;
         }
         case ExprKind::IntLit: {
@@ -143,11 +143,6 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 
 VProg PlnVCodeGen::generate(const Module& module)
 {
-    // Build lookup map from SA-collected literals
-    for (auto& d : module.strLiterals) {
-        strLiterals[d.value] = d.label;
-    }
-
     VProg prog;
 
     // Populate .rodata entries

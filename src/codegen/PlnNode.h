@@ -33,7 +33,7 @@ protected:
 
 struct StrLitExpr : Expr {
     StrLitExpr() : Expr(ExprKind::StrLit) {}
-    string value;
+    string label;
 };
 
 struct IntLitExpr : Expr {

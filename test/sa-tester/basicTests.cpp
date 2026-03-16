@@ -96,6 +96,33 @@ TEST(sa, addition) {
 	ASSERT_TRUE(found);
 }
 
+TEST(sa, value_type_on_expressions) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/build-mgr/003_addition.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] == "call" && body["name"] == "printf") {
+			for (auto& arg : body["args"]) {
+				if (arg["expr-type"] == "add") {
+					ASSERT_EQ(arg["value-type"]["type-kind"],        "prim");
+					ASSERT_EQ(arg["value-type"]["type-name"],        "int64");
+					ASSERT_EQ(arg["left"]["value-type"]["type-kind"],  "prim");
+					ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
+					ASSERT_EQ(arg["right"]["value-type"]["type-kind"], "prim");
+					ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
+					found = true;
+				}
+			}
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
