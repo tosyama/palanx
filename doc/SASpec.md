@@ -32,7 +32,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
 
 - value-type - Resolved Variable type object (same structure as var-type in ASTSpec.md).
   Present on all expression kinds except call.
-  - lit-int: {"type-kind": "prim", "type-name": "int64"}
+  - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
+    defaults to int64 when no expected type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
   - id: same object as var-type
   - add: promoted type of left and right operands (see Promotion rules);

@@ -168,6 +168,23 @@ bin/palan add.pa
 # 30
 ```
 
+### 4.3 Integer Type Widening
+
+```
+cinclude <stdio.h>;
+int32 x = 10;
+int64 y = x;
+printf("%lld\n", y);
+```
+
+```bash
+bin/palan widening.pa
+# 10
+```
+
+`int32` values are implicitly widened to `int64` when assigned to a wider variable.
+palan-sa inserts an explicit `convert` node in sa.json; palan-codegen lowers it to `movslq` (sign-extend 32→64).
+
 ## 5. Working Directory and Output Files
 ### 5.1 Working Directory
 The working directory for all command-line tools is `~/.palan/work/` by default.

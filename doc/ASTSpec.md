@@ -122,6 +122,7 @@ Expression model
     - args - Argument expression list
 
 Note: Negative integer literals are represented as a unary minus expression (TBD).
+Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.
 
 Location Array
 -----------------
