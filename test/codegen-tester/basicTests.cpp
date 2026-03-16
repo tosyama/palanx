@@ -81,6 +81,19 @@ TEST(codegen, addition) {
     ASSERT_NE(asm_text.find("call printf"), string::npos);
 }
 
+TEST(codegen, convert_int32_to_int64) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/006_convert.sa.json";
+    string asmf = "out/006_convert.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movslq"), string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";

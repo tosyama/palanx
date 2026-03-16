@@ -3,6 +3,17 @@
 
 using namespace std;
 
+static VRegType toVRegType(const json& vt) {
+    if (vt["type-kind"] == "pntr") return VRegType::Ptr64;
+    string name = vt["type-name"].get<string>();
+    if (name == "int8")  return VRegType::Int8;
+    if (name == "int16") return VRegType::Int16;
+    if (name == "int32") return VRegType::Int32;
+    if (name == "int64") return VRegType::Int64;
+    BOOST_ASSERT(false);
+    return VRegType::Int64;
+}
+
 static unique_ptr<Expr> deserializeExpr(const json& j)
 {
     string expr_type = j["expr-type"];
@@ -25,6 +36,13 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     if (expr_type == "id") {
         auto e = make_unique<IdExpr>();
         e->name = j["name"];
+        return e;
+    }
+    if (expr_type == "convert") {
+        auto e = make_unique<ConvertExpr>();
+        e->from = toVRegType(j["from-type"]);
+        e->to   = toVRegType(j["value-type"]);
+        e->src  = deserializeExpr(j["src"]);
         return e;
     }
     if (expr_type == "add") {

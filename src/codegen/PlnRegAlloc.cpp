@@ -30,6 +30,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             meta[v->dst].def_idx = i;
             meta[v->dst].type    = v->type;
             meta[v->dst].isVar   = true;
+        } else if (auto* c = get_if<Convert>(&instr)) {
+            meta[c->dst].def_idx = i;
+            meta[c->dst].type    = c->to;
+            meta[c->src].last_any_use = max(meta[c->src].last_any_use, i);
         } else if (auto* a = get_if<Add>(&instr)) {
             meta[a->dst].def_idx = i;
             meta[a->dst].type    = a->type;

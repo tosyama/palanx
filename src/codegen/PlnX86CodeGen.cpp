@@ -115,6 +115,12 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 string dst_reg = sizedRegName(dst_loc.base, dst_loc.type);
                 out << "\tmovq " << srcOperand(rm.at(a->lhs)) << ", " << dst_reg << "\n";
                 out << "\taddq " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
+            } else if (auto* c = std::get_if<Convert>(&instr)) {
+                if (!rm.count(c->dst)) continue;  // dead
+                const PhysLoc& dst_loc = rm.at(c->dst);
+                BOOST_ASSERT(!dst_loc.isStack());
+                string dst_reg = sizedRegName(dst_loc.base, c->to);
+                emitConvert(dst_reg, srcOperand(rm.at(c->src)), c->from, c->to);
             } else if (auto* i = std::get_if<CallC>(&instr)) {
                 for (int j = 0; j < (int)i->args.size(); j++) {
                     const string& dst = x86PhysRegs.intArgs[j];
@@ -169,6 +175,18 @@ void PlnX86CodeGen::emitLeaLabel(const string& reg, const string& label)
 void PlnX86CodeGen::emitMovImm(const string& reg, long long value)
 {
     out << "\tmovq $" << value << ", " << reg << "\n";
+}
+
+void PlnX86CodeGen::emitConvert(const string& dst, const string& src, VRegType from, VRegType to)
+{
+    // Signed integer widening (movsx family)
+    if (from == VRegType::Int8  && to == VRegType::Int16) { out << "\tmovsbw " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int8  && to == VRegType::Int32) { out << "\tmovsbl " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int8  && to == VRegType::Int64) { out << "\tmovsbq " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int16 && to == VRegType::Int32) { out << "\tmovswl " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int16 && to == VRegType::Int64) { out << "\tmovswq " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int32 && to == VRegType::Int64) { out << "\tmovslq " << src << ", " << dst << "\n"; return; }
+    BOOST_ASSERT(false);  // unsupported conversion
 }
 
 void PlnX86CodeGen::emitCallC(const string& name)

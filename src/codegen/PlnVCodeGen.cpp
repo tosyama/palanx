@@ -60,6 +60,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(MovImm{r, VRegType::Int64, (long long)stoull(e.value)});
             return r;
         }
+        case ExprKind::Convert: {
+            auto& e = static_cast<const ConvertExpr&>(expr);
+            VReg src = lowerExpr(*e.src, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Convert{dst, src, e.from, e.to});
+            return dst;
+        }
         case ExprKind::Id: {
             auto& e = static_cast<const IdExpr&>(expr);
             return findVar(e.name);
