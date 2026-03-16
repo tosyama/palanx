@@ -81,6 +81,53 @@ TEST(codegen, addition) {
     ASSERT_NE(asm_text.find("call printf"), string::npos);
 }
 
+TEST(codegen, convert_int32_to_int64) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/006_convert.sa.json";
+    string asmf = "out/006_convert.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movslq"), string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, var_decl_int32) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/007_var_decl_int32.sa.json";
+    string asmf = "out/007_var_decl_int32.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // int32 init must use movl, not movq
+    ASSERT_NE(asm_text.find("movl $10,"),    string::npos);
+    ASSERT_EQ(asm_text.find("movq $10,"),    string::npos);
+    // int32 arg to printf must use 32-bit register (%edi), not 64-bit (%rdi)
+    ASSERT_NE(asm_text.find("%edi"),         string::npos);
+    ASSERT_EQ(asm_text.find("movq -"),       string::npos);
+    ASSERT_NE(asm_text.find("call printf"),  string::npos);
+}
+
+TEST(codegen, addition_int32) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/008_addition_int32.sa.json";
+    string asmf = "out/008_addition_int32.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // int32 addition must use movl/addl, not movq/addq
+    ASSERT_NE(asm_text.find("movl"),         string::npos);
+    ASSERT_NE(asm_text.find("addl"),         string::npos);
+    ASSERT_EQ(asm_text.find("addq"),         string::npos);
+    ASSERT_NE(asm_text.find("call printf"),  string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";

@@ -5,6 +5,24 @@
 
 using namespace std;
 
+static const char* movInstrForType(VRegType type) {
+    switch (type) {
+        case VRegType::Int8:  return "movb";
+        case VRegType::Int16: return "movw";
+        case VRegType::Int32: return "movl";
+        default:              return "movq";
+    }
+}
+
+static const char* addInstrForType(VRegType type) {
+    switch (type) {
+        case VRegType::Int8:  return "addb";
+        case VRegType::Int16: return "addw";
+        case VRegType::Int32: return "addl";
+        default:              return "addq";
+    }
+}
+
 // Derive the sized register name from the 64-bit base name and VRegType.
 // Classic registers (%rax/%rbx/...): drop 'r' prefix for 32-bit, use bare name for 16/8-bit.
 // Extended registers (%r8-%r15): append 'd'/'w'/'b' suffix.
@@ -100,27 +118,34 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 emitLeaLabel(sizedRegName(loc.base, loc.type), i->label);
             } else if (auto* i = std::get_if<MovImm>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
-                emitMovImm(loc.base, i->value);
+                emitMovImm(sizedRegName(loc.base, i->type), i->type, i->value);
             } else if (auto* i = std::get_if<InitVar>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
                 if (loc.isStack()) {
-                    out << "\tmovq $" << i->imm << ", " << loc.stackOffset << "(%rbp)\n";
+                    out << "\t" << movInstrForType(i->type) << " $" << i->imm << ", " << loc.stackOffset << "(%rbp)\n";
                 } else {
-                    out << "\tmovq $" << i->imm << ", " << sizedRegName(loc.base, loc.type) << "\n";
+                    out << "\t" << movInstrForType(i->type) << " $" << i->imm << ", " << sizedRegName(loc.base, i->type) << "\n";
                 }
             } else if (auto* a = std::get_if<Add>(&instr)) {
                 if (!rm.count(a->dst)) continue;  // dead: result never used
                 const PhysLoc& dst_loc = rm.at(a->dst);
                 BOOST_ASSERT(!dst_loc.isStack());  // dst must be in a register
-                string dst_reg = sizedRegName(dst_loc.base, dst_loc.type);
-                out << "\tmovq " << srcOperand(rm.at(a->lhs)) << ", " << dst_reg << "\n";
-                out << "\taddq " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
+                string dst_reg = sizedRegName(dst_loc.base, a->type);
+                out << "\t" << movInstrForType(a->type) << " " << srcOperand(rm.at(a->lhs)) << ", " << dst_reg << "\n";
+                out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
+            } else if (auto* c = std::get_if<Convert>(&instr)) {
+                if (!rm.count(c->dst)) continue;  // dead
+                const PhysLoc& dst_loc = rm.at(c->dst);
+                BOOST_ASSERT(!dst_loc.isStack());
+                string dst_reg = sizedRegName(dst_loc.base, c->to);
+                emitConvert(dst_reg, srcOperand(rm.at(c->src)), c->from, c->to);
             } else if (auto* i = std::get_if<CallC>(&instr)) {
                 for (int j = 0; j < (int)i->args.size(); j++) {
-                    const string& dst = x86PhysRegs.intArgs[j];
-                    string src = srcOperand(rm.at(i->args[j]));
+                    const PhysLoc& src_loc = rm.at(i->args[j]);
+                    string src = srcOperand(src_loc);
+                    string dst = sizedRegName(x86PhysRegs.intArgs[j], src_loc.type);
                     if (src != dst)
-                        out << "\tmovq " << src << ", " << dst << "\n";
+                        out << "\t" << movInstrForType(src_loc.type) << " " << src << ", " << dst << "\n";
                 }
                 emitCallC(i->name);
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
@@ -166,9 +191,21 @@ void PlnX86CodeGen::emitLeaLabel(const string& reg, const string& label)
     out << "\tleaq " << label << "(%rip), " << reg << "\n";
 }
 
-void PlnX86CodeGen::emitMovImm(const string& reg, long long value)
+void PlnX86CodeGen::emitMovImm(const string& reg, VRegType type, long long value)
 {
-    out << "\tmovq $" << value << ", " << reg << "\n";
+    out << "\t" << movInstrForType(type) << " $" << value << ", " << reg << "\n";
+}
+
+void PlnX86CodeGen::emitConvert(const string& dst, const string& src, VRegType from, VRegType to)
+{
+    // Signed integer widening (movsx family)
+    if (from == VRegType::Int8  && to == VRegType::Int16) { out << "\tmovsbw " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int8  && to == VRegType::Int32) { out << "\tmovsbl " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int8  && to == VRegType::Int64) { out << "\tmovsbq " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int16 && to == VRegType::Int32) { out << "\tmovswl " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int16 && to == VRegType::Int64) { out << "\tmovswq " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int32 && to == VRegType::Int64) { out << "\tmovslq " << src << ", " << dst << "\n"; return; }
+    BOOST_ASSERT(false);  // unsupported conversion
 }
 
 void PlnX86CodeGen::emitCallC(const string& name)

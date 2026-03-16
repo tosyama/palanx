@@ -30,6 +30,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             meta[v->dst].def_idx = i;
             meta[v->dst].type    = v->type;
             meta[v->dst].isVar   = true;
+        } else if (auto* c = get_if<Convert>(&instr)) {
+            meta[c->dst].def_idx = i;
+            meta[c->dst].type    = c->to;
+            meta[c->src].last_any_use = max(meta[c->src].last_any_use, i);
         } else if (auto* a = get_if<Add>(&instr)) {
             meta[a->dst].def_idx = i;
             meta[a->dst].type    = a->type;
@@ -46,11 +50,25 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     // Step 2: Assign physical registers or stack slots.
     RegMap result;
     int callee_idx  = 0;
-    int stack_slots = 0;  // number of 8-byte stack slots used
+    int stack_bytes = 0;  // bytes consumed below %rbp so far
+
+    static auto sizeOfType = [](VRegType type) -> int {
+        switch (type) {
+            case VRegType::Int8:  return 1;
+            case VRegType::Int16: return 2;
+            case VRegType::Int32: return 4;
+            default:              return 8;  // Int64, Ptr64
+        }
+    };
+
+    static auto alignUp = [](int v, int align) {
+        return (v + align - 1) / align * align;
+    };
 
     auto allocStackSlot = [&](VReg vreg, VRegType type) {
-        stack_slots++;
-        result[vreg] = PhysLoc{"", type, -8 * stack_slots};
+        int size    = sizeOfType(type);
+        stack_bytes = alignUp(stack_bytes, size) + size;
+        result[vreg] = PhysLoc{"", type, -stack_bytes};
     };
 
     auto allocCalleeSavedOrStack = [&](VReg vreg, VRegType type) {
@@ -99,7 +117,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     // Align frame size to 16 bytes.
     // After pushq %rbp the stack is offset by 8, so we need frameSize ≡ 8 (mod 16)
     // to keep rsp 16-byte aligned before each call.
-    int frameSize = stack_slots * 8;
+    int frameSize = alignUp(stack_bytes, 8);
     if (frameSize > 0 && frameSize % 16 == 0) frameSize += 8;
 
     return {result, frameSize};

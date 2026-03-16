@@ -11,7 +11,7 @@
         "func-type": "c",
         "name": "printf",
         "args": [
-          {"expr-type": "lit-str", "value": "Hello World!\n"}
+          {"expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}
         ]
       }
     }

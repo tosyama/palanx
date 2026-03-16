@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include "PlnVProg.h"
 
 using std::string;
 using std::vector;
@@ -20,6 +21,7 @@ enum class ExprKind {
     UintLit,
     Id,
     Add,
+    Convert,
     CCCall,
     PlnCall,
 };
@@ -33,12 +35,13 @@ protected:
 
 struct StrLitExpr : Expr {
     StrLitExpr() : Expr(ExprKind::StrLit) {}
-    string value;
+    string label;
 };
 
 struct IntLitExpr : Expr {
     IntLitExpr() : Expr(ExprKind::IntLit) {}
-    string value;  // decimal string
+    string   value;  // decimal string
+    VRegType type = VRegType::Int64;
 };
 
 struct UintLitExpr : Expr {
@@ -55,6 +58,14 @@ struct AddExpr : Expr {
     AddExpr() : Expr(ExprKind::Add) {}
     unique_ptr<Expr> left;
     unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct ConvertExpr : Expr {
+    ConvertExpr() : Expr(ExprKind::Convert) {}
+    VRegType         from;
+    VRegType         to;
+    unique_ptr<Expr> src;
 };
 
 struct CCCallExpr : Expr {

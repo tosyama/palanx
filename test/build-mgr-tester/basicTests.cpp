@@ -23,6 +23,12 @@ TEST(build_mgr, addition) {
 	ASSERT_EQ(output, "30\n");
 }
 
+TEST(build_mgr, int32_widening) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/004_int32_widening.pa");
+	ASSERT_EQ(output, "10\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

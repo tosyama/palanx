@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+int32 a = 5;
+int64 b = 10;
+printf("%lld\n", a + b);

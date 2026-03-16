@@ -12,7 +12,7 @@
         "func-type": "c",
         "name": "puts",
         "args": [
-          {"expr-type": "lit-str", "value": "start\n"}
+          {"expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}
         ]
       }
     },
@@ -23,8 +23,8 @@
         "func-type": "c",
         "name": "printf",
         "args": [
-          {"expr-type": "lit-str", "value": "%d\n"},
-          {"expr-type": "lit-int", "value": "99"}
+          {"expr-type": "lit-str", "label": ".str1", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}},
+          {"expr-type": "lit-int", "value": "99", "value-type": {"type-kind": "prim", "type-name": "int64"}}
         ]
       }
     }

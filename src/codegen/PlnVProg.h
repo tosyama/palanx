@@ -30,10 +30,11 @@ struct LeaLabel { VReg dst; VRegType type; string label; };       // dst = addre
 struct MovImm   { VReg dst; VRegType type; long long value; };    // dst = immediate integer
 struct InitVar  { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
 struct Add      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs + rhs
+struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 struct CallC    { string name; vector<VReg> args; };
 struct ExitCode { int code; };
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, CallC, ExitCode>;
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Convert, CallC, ExitCode>;
 
 // -------- Program structure --------
 

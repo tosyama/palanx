@@ -76,6 +76,26 @@ TEST(gen_ast, addition) {
 	ASSERT_TRUE(found);
 }
 
+TEST(gen_ast, var_decl_int32) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/004_int32_widening.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (v["var-name"] == "x") {
+				ASSERT_EQ(v["var-type"]["type-kind"], "prim");
+				ASSERT_EQ(v["var-type"]["type-name"], "int32");
+				found = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");

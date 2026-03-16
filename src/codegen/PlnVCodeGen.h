@@ -15,7 +15,6 @@ using std::string;
 using std::vector;
 
 class PlnVCodeGen {
-    map<string, string> strLiterals;  // value -> label
     int nextVReg = 0;
 
     // Variable symbol table: scoped stack of name -> VReg mappings.

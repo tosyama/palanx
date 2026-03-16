@@ -3,18 +3,30 @@
 
 using namespace std;
 
+static VRegType toVRegType(const json& vt) {
+    if (vt["type-kind"] == "pntr") return VRegType::Ptr64;
+    string name = vt["type-name"].get<string>();
+    if (name == "int8")  return VRegType::Int8;
+    if (name == "int16") return VRegType::Int16;
+    if (name == "int32") return VRegType::Int32;
+    if (name == "int64") return VRegType::Int64;
+    BOOST_ASSERT(false);
+    return VRegType::Int64;
+}
+
 static unique_ptr<Expr> deserializeExpr(const json& j)
 {
     string expr_type = j["expr-type"];
 
     if (expr_type == "lit-str") {
         auto e = make_unique<StrLitExpr>();
-        e->value = j["value"];
+        e->label = j["label"];
         return e;
     }
     if (expr_type == "lit-int") {
         auto e = make_unique<IntLitExpr>();
         e->value = j["value"];
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
     if (expr_type == "lit-uint") {
@@ -27,10 +39,18 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->name = j["name"];
         return e;
     }
+    if (expr_type == "convert") {
+        auto e = make_unique<ConvertExpr>();
+        e->from = toVRegType(j["from-type"]);
+        e->to   = toVRegType(j["value-type"]);
+        e->src  = deserializeExpr(j["src"]);
+        return e;
+    }
     if (expr_type == "add") {
         auto e = make_unique<AddExpr>();
         e->left  = deserializeExpr(j["left"]);
         e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
     if (expr_type == "call") {

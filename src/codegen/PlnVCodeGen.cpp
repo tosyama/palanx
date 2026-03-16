@@ -45,13 +45,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         case ExprKind::StrLit: {
             auto& e = static_cast<const StrLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, strLiterals.at(e.value)});
+            func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.label});
             return r;
         }
         case ExprKind::IntLit: {
             auto& e = static_cast<const IntLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(MovImm{r, VRegType::Int64, stoll(e.value)});
+            func.instrs.push_back(MovImm{r, e.type, stoll(e.value)});
             return r;
         }
         case ExprKind::UintLit: {
@@ -59,6 +59,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             VReg r = allocVReg();
             func.instrs.push_back(MovImm{r, VRegType::Int64, (long long)stoull(e.value)});
             return r;
+        }
+        case ExprKind::Convert: {
+            auto& e = static_cast<const ConvertExpr&>(expr);
+            VReg src = lowerExpr(*e.src, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Convert{dst, src, e.from, e.to});
+            return dst;
         }
         case ExprKind::Id: {
             auto& e = static_cast<const IdExpr&>(expr);
@@ -69,7 +76,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(Add{dst, l, r, VRegType::Int64});
+            func.instrs.push_back(Add{dst, l, r, e.type});
             return dst;
         }
         default:
@@ -115,7 +122,7 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
             if (ve.init->kind == ExprKind::IntLit) {
                 auto& e = static_cast<const IntLitExpr&>(*ve.init);
                 r = allocVReg();
-                func.instrs.push_back(InitVar{r, VRegType::Int64, stoll(e.value)});
+                func.instrs.push_back(InitVar{r, e.type, stoll(e.value)});
             } else {
                 r = lowerExpr(*ve.init, func);
             }
@@ -143,11 +150,6 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 
 VProg PlnVCodeGen::generate(const Module& module)
 {
-    // Build lookup map from SA-collected literals
-    for (auto& d : module.strLiterals) {
-        strLiterals[d.value] = d.label;
-    }
-
     VProg prog;
 
     // Populate .rodata entries

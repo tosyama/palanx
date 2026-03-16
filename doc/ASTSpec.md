@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
  
-ver. 0.0.1  
+ver. 0.1.2
 
 \* - Required
 
@@ -122,18 +122,7 @@ Expression model
     - args - Argument expression list
 
 Note: Negative integer literals are represented as a unary minus expression (TBD).
-
-SA JSON (sa.json)
------------------
-Output of palan-sa. Extends the expression-statement view with resolved type information
-and pre-collected literal tables.
-
-- original\* - original source file path
-- str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
-  - label\* - Assembly label string (e.g. ".str0")
-  - value\* - String value
-- statements\* - Statement list (same structure as AST statements, cinclude omitted)
-  - call expression: func-type\* added ("c" for C functions)
+Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.
 
 Location Array
 -----------------
