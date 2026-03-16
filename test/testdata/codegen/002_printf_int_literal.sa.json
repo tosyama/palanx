@@ -12,7 +12,7 @@
         "name": "printf",
         "args": [
           {"expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}},
-          {"expr-type": "lit-int", "value": "42"}
+          {"expr-type": "lit-int", "value": "42", "value-type": {"type-kind": "prim", "type-name": "int64"}}
         ]
       }
     }

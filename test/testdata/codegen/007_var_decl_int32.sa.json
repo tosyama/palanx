@@ -1,7 +1,7 @@
 {
-  "original": "/test/var_decl.pa",
+  "original": "/test/var_decl_int32.pa",
   "str-literals": [
-    { "label": ".str0", "value": "%lld\n" }
+    { "label": ".str0", "value": "%d\n" }
   ],
   "statements": [
     {
@@ -9,8 +9,8 @@
       "vars": [
         {
           "var-name": "x",
-          "var-type": { "type-kind": "prim", "type-name": "int64" },
-          "init": { "expr-type": "lit-int", "value": "10", "value-type": {"type-kind": "prim", "type-name": "int64"} }
+          "var-type": { "type-kind": "prim", "type-name": "int32" },
+          "init": { "expr-type": "lit-int", "value": "10", "value-type": {"type-kind": "prim", "type-name": "int32"} }
         }
       ]
     },
@@ -22,7 +22,7 @@
         "name": "printf",
         "args": [
           { "expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}} },
-          { "expr-type": "id", "name": "x", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} }
+          { "expr-type": "id", "name": "x", "var-type": {"type-kind": "prim", "type-name": "int32"}, "value-type": {"type-kind": "prim", "type-name": "int32"} }
         ]
       }
     }

@@ -27,6 +27,7 @@ add_subdirectory(test/sa-tester)
 
 add_subdirectory(src/codegen)
 add_subdirectory(test/codegen-tester)
+add_subdirectory(test/codegen-unit-tester)
 
 add_subdirectory(src/build-mgr)
 add_subdirectory(test/build-mgr-tester)

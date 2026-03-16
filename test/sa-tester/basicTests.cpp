@@ -146,6 +146,60 @@ TEST(sa, value_type_on_expressions) {
 	ASSERT_TRUE(found);
 }
 
+TEST(sa, int32_id_value_type) {
+	cleanTestEnv();
+	// int32 x = 10; int64 y = x;  → y's init is convert{src: id{x}}
+	// The id node for x must carry value-type: int32
+	json jout = run_sa("../test/testdata/sa/001_convert_widening.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (v["var-name"] != "y") continue;
+			auto& src = v["init"]["src"];
+			ASSERT_EQ(src["expr-type"],              "id");
+			ASSERT_EQ(src["name"],                   "x");
+			ASSERT_EQ(src["value-type"]["type-kind"], "prim");
+			ASSERT_EQ(src["value-type"]["type-name"], "int32");
+			found = true;
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
+TEST(sa, add_mixed_types_wraps_narrower_in_convert) {
+	cleanTestEnv();
+	// int32 a + int64 b → the int32 operand must be wrapped in a convert node
+	json jout = run_sa("../test/testdata/sa/002_add_mixed_types.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] != "call" || body["name"] != "printf") continue;
+		for (auto& arg : body["args"]) {
+			if (arg["expr-type"] != "add") continue;
+			// left operand (int32 a) must be wrapped in convert → int64
+			ASSERT_EQ(arg["left"]["expr-type"],               "convert");
+			ASSERT_EQ(arg["left"]["from-type"]["type-name"],  "int32");
+			ASSERT_EQ(arg["left"]["value-type"]["type-name"], "int64");
+			ASSERT_EQ(arg["left"]["src"]["expr-type"],        "id");
+			ASSERT_EQ(arg["left"]["src"]["name"],             "a");
+			// right operand (int64 b) needs no convert
+			ASSERT_EQ(arg["right"]["expr-type"],              "id");
+			ASSERT_EQ(arg["right"]["value-type"]["type-name"],"int64");
+			ASSERT_EQ(arg["value-type"]["type-name"],         "int64");
+			found = true;
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");

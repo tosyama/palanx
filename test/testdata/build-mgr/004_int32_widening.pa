@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+int32 x = 10;
+int64 y = x;
+printf("%lld\n", y);
