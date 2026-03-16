@@ -6,19 +6,16 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-03-15)
-version: 0.1.2
-- This iteration goal is to establish a type conversion mechanism across the full compiler pipeline.
-- The semantic analyzer (palan-sa) is responsible for all type conversion decisions:
-  - Deriving and annotating the `value-type` of every expression node in sa.json
-  - Inserting explicit `convert` nodes wherever an implicit widening conversion is required
-- The code generator mechanically lowers `convert` nodes to the appropriate x86-64 instructions (movsx, movzx, etc.)
-- This architecture is designed to scale to future struct/array implicit conversions,
-  where palan-sa will insert higher-level conversion nodes (e.g., constructor calls) that codegen handles uniformly.
-- Specifically, the following should work end-to-end:
-  - `int32 x = 10;` — declare a 32-bit integer variable
-  - `int64 y = x;` — implicit widening: int32 → int64 (SA inserts convert node)
-  - `printf("%lld\n", y);` — display the widened value (expected: 10)
+### 2.1 Iteration Goal (2026-03-16)
+version: 0.1.3
+- This iteration goal is to establish a formal type system foundation that can scale to user-defined types, structs, and arrays.
+- The semantic analyzer (palan-sa) introduces an internal `PlnType` class hierarchy, replacing ad-hoc JSON type comparisons.
+- A `typeCompat()` function formalizes compatibility rules for all current and future types.
+- C function call sites are the first target: argument types are checked against parameter types,
+  with implicit widening inserted automatically and incompatible types rejected with an error.
+- Explicit narrowing and signed/unsigned conversions require a cast expression: `int32(x)`.
+- Future iterations will allow user-defined implicit conversions via annotated constructors,
+  enabling struct/user types to participate in the same type compatibility framework.
 
 ## 3. Command-line Tools' Responsibilities and Design
 
