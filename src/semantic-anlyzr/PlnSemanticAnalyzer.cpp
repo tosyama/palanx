@@ -93,13 +93,16 @@ void PlnSemanticAnalyzer::sa_statements(const json &stmts)
 	}
 }
 
-json PlnSemanticAnalyzer::sa_expression(const json &expr)
+json PlnSemanticAnalyzer::sa_expression(const json &expr, const json* expected_type)
 {
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
 
 	if (expr_type == "lit-int") {
-		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int64"}};
+		if (expected_type && typeRank(*expected_type) > 0)
+			sa_expr["value-type"] = *expected_type;
+		else
+			sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int64"}};
 
 	} else if (expr_type == "lit-str") {
 		string value = expr["value"];
@@ -161,7 +164,7 @@ void PlnSemanticAnalyzer::sa_var_decl(const json &stmt)
 
 		json sa_var = var;
 		if (var.contains("init")) {
-			json init = sa_expression(var["init"]);
+			json init = sa_expression(var["init"], &var["var-type"]);
 			const json& var_type = var["var-type"];
 			if (init.contains("value-type") && init["value-type"] != var_type) {
 				int from_rank = typeRank(init["value-type"]);

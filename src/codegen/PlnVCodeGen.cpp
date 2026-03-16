@@ -51,7 +51,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         case ExprKind::IntLit: {
             auto& e = static_cast<const IntLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(MovImm{r, VRegType::Int64, stoll(e.value)});
+            func.instrs.push_back(MovImm{r, e.type, stoll(e.value)});
             return r;
         }
         case ExprKind::UintLit: {
@@ -76,7 +76,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(Add{dst, l, r, VRegType::Int64});
+            func.instrs.push_back(Add{dst, l, r, e.type});
             return dst;
         }
         default:
@@ -122,7 +122,7 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
             if (ve.init->kind == ExprKind::IntLit) {
                 auto& e = static_cast<const IntLitExpr&>(*ve.init);
                 r = allocVReg();
-                func.instrs.push_back(InitVar{r, VRegType::Int64, stoll(e.value)});
+                func.instrs.push_back(InitVar{r, e.type, stoll(e.value)});
             } else {
                 r = lowerExpr(*ve.init, func);
             }

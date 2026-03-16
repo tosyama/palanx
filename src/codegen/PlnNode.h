@@ -40,7 +40,8 @@ struct StrLitExpr : Expr {
 
 struct IntLitExpr : Expr {
     IntLitExpr() : Expr(ExprKind::IntLit) {}
-    string value;  // decimal string
+    string   value;  // decimal string
+    VRegType type = VRegType::Int64;
 };
 
 struct UintLitExpr : Expr {
@@ -57,6 +58,7 @@ struct AddExpr : Expr {
     AddExpr() : Expr(ExprKind::Add) {}
     unique_ptr<Expr> left;
     unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
 };
 
 struct ConvertExpr : Expr {

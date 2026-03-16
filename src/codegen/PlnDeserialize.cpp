@@ -26,6 +26,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     if (expr_type == "lit-int") {
         auto e = make_unique<IntLitExpr>();
         e->value = j["value"];
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
     if (expr_type == "lit-uint") {
@@ -49,6 +50,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         auto e = make_unique<AddExpr>();
         e->left  = deserializeExpr(j["left"]);
         e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
     if (expr_type == "call") {

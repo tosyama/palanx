@@ -29,7 +29,7 @@ class PlnSemanticAnalyzer {
 	void sa_statements(const json &stmts);
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
-	json sa_expression(const json &expr);
+	json sa_expression(const json &expr, const json* expected_type = nullptr);
 	void sa_expression_stmt(const json &stmt);
 	void sa_var_decl(const json &stmt);
 
