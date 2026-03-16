@@ -1,0 +1,2 @@
+cinclude <stdio.h>;
+printf("%d\n", 42);

@@ -200,6 +200,28 @@ TEST(sa, add_mixed_types_wraps_narrower_in_convert) {
 	ASSERT_TRUE(found);
 }
 
+TEST(sa, lit_int_default_value_type) {
+	cleanTestEnv();
+	// lit-int used directly as a function arg (no expected type context) → value-type: int64
+	json jout = run_sa("../test/testdata/sa/003_lit_int_printf.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] != "call" || body["name"] != "printf") continue;
+		for (auto& arg : body["args"]) {
+			if (arg["expr-type"] != "lit-int") continue;
+			ASSERT_EQ(arg["value-type"]["type-kind"], "prim");
+			ASSERT_EQ(arg["value-type"]["type-name"], "int64");
+			found = true;
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
