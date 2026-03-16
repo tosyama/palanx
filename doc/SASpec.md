@@ -35,7 +35,30 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   - lit-int: {"type-kind": "prim", "type-name": "int64"}
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
   - id: same object as var-type
-  - add: promoted type of left and right operands (see Promotion rules)
+  - add: promoted type of left and right operands (see Promotion rules);
+    the narrower operand is wrapped in a convert node if types differ
+
+SA-only expression kinds (not present in AST JSON):
+
+- convert - Implicit type widening inserted by SA. Wraps an expression whose
+  value-type is narrower than the required type.
+  - expr-type\*: "convert"
+  - value-type\*: target Variable type object (the wider type)
+  - from-type\*: source Variable type object (the narrower type)
+  - src\*: inner expression being converted
+
+  Example: `int64 y = x;` where x is int32
+  ```json
+  {
+    "expr-type":  "convert",
+    "value-type": {"type-kind": "prim", "type-name": "int64"},
+    "from-type":  {"type-kind": "prim", "type-name": "int32"},
+    "src": {"expr-type": "id", "name": "x", ...}
+  }
+  ```
+
+  Narrowing (wider → narrower) is a compile-time error except when the source
+  is an integer literal (lit-int / lit-uint).
 
 Additional fields per expression kind:
 
