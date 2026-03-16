@@ -96,6 +96,29 @@ TEST(sa, addition) {
 	ASSERT_TRUE(found);
 }
 
+TEST(sa, convert_node_widening) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/001_convert_widening.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (v["var-name"] != "y") continue;
+			auto& init = v["init"];
+			ASSERT_EQ(init["expr-type"],              "convert");
+			ASSERT_EQ(init["from-type"]["type-name"], "int32");
+			ASSERT_EQ(init["value-type"]["type-name"],"int64");
+			ASSERT_EQ(init["src"]["expr-type"],       "id");
+			ASSERT_EQ(init["src"]["name"],            "x");
+			found = true;
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, value_type_on_expressions) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/003_addition.pa");

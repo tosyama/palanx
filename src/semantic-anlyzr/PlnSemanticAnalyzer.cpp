@@ -7,18 +7,31 @@
 
 using namespace std;
 
-static json promoteType(const json& a, const json& b) {
-	static const map<string,int> rank = {
-		{"int8",1},{"int16",2},{"int32",3},{"int64",4},
-		{"uint8",1},{"uint16",2},{"uint32",3},{"uint64",4}
+static const map<string,int> typeRankTable = {
+	{"int8",1},{"int16",2},{"int32",3},{"int64",4},
+	{"uint8",1},{"uint16",2},{"uint32",3},{"uint64",4}
+};
+
+static int typeRank(const json& t) {
+	if (!t.contains("type-kind") || t["type-kind"] != "prim") return -1;
+	auto it = typeRankTable.find(t["type-name"].get<string>());
+	return it != typeRankTable.end() ? it->second : -1;
+}
+
+static json wrapConvert(const json& expr, const json& to_type) {
+	return {
+		{"expr-type",  "convert"},
+		{"value-type", to_type},
+		{"from-type",  expr["value-type"]},
+		{"src",        expr}
 	};
-	if (a["type-kind"] != "prim") return b;
-	if (b["type-kind"] != "prim") return a;
-	auto ia = rank.find(a["type-name"].get<string>());
-	auto ib = rank.find(b["type-name"].get<string>());
-	if (ia == rank.end()) return b;
-	if (ib == rank.end()) return a;
-	return ia->second >= ib->second ? a : b;
+}
+
+static json promoteType(const json& a, const json& b) {
+	int ra = typeRank(a), rb = typeRank(b);
+	if (ra < 0) return b;
+	if (rb < 0) return a;
+	return ra >= rb ? a : b;
 }
 
 PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
@@ -107,11 +120,14 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr)
 		}
 
 	} else if (expr_type == "add") {
-		sa_expr["left"]  = sa_expression(expr["left"]);
-		sa_expr["right"] = sa_expression(expr["right"]);
-		sa_expr["value-type"] = promoteType(
-			sa_expr["left"]["value-type"].get<json>(),
-			sa_expr["right"]["value-type"].get<json>());
+		json left  = sa_expression(expr["left"]);
+		json right = sa_expression(expr["right"]);
+		json promoted = promoteType(left["value-type"].get<json>(), right["value-type"].get<json>());
+		if (left["value-type"]  != promoted) left  = wrapConvert(left,  promoted);
+		if (right["value-type"] != promoted) right = wrapConvert(right, promoted);
+		sa_expr["left"]       = left;
+		sa_expr["right"]      = right;
+		sa_expr["value-type"] = promoted;
 
 	} else if (expr_type == "call") {
 		if (findCFunction(expr["name"])) {
@@ -145,7 +161,21 @@ void PlnSemanticAnalyzer::sa_var_decl(const json &stmt)
 
 		json sa_var = var;
 		if (var.contains("init")) {
-			sa_var["init"] = sa_expression(var["init"]);
+			json init = sa_expression(var["init"]);
+			const json& var_type = var["var-type"];
+			if (init.contains("value-type") && init["value-type"] != var_type) {
+				int from_rank = typeRank(init["value-type"]);
+				int to_rank   = typeRank(var_type);
+				if (from_rank > 0 && to_rank > 0) {
+					if (from_rank < to_rank) {
+						init = wrapConvert(init, var_type);
+					} else {
+						string et = init["expr-type"];
+						BOOST_ASSERT(et == "lit-int" || et == "lit-uint");  // narrowing only from literal
+					}
+				}
+			}
+			sa_var["init"] = init;
 		}
 		sa_stmt["vars"].push_back(sa_var);
 	}
