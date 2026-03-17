@@ -148,6 +148,13 @@ void PlnX86CodeGen::emit(const VProg& prog)
                         out << "\t" << movInstrForType(src_loc.type) << " " << src << ", " << dst << "\n";
                 }
                 emitCallC(i->name);
+                if (i->dst != -1 && rm.count(i->dst)) {
+                    const PhysLoc& dst_loc = rm.at(i->dst);
+                    string dst_reg = srcOperand(dst_loc);
+                    string rax     = sizedRegName("%rax", i->retType);
+                    if (dst_reg != rax)
+                        out << "\t" << movInstrForType(i->retType) << " " << rax << ", " << dst_reg << "\n";
+                }
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
                 emitExit(i->code);
             }

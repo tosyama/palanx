@@ -58,6 +58,10 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         if (func_type == "c") {
             auto e = make_unique<CCCallExpr>();
             e->name = j["name"];
+            if (j.contains("value-type")) {
+                e->hasRet  = true;
+                e->retType = toVRegType(j["value-type"]);
+            }
             if (j.contains("args")) {
                 for (auto& arg : j["args"]) {
                     e->args.push_back(deserializeExpr(arg));

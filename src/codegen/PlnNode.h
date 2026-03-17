@@ -71,6 +71,8 @@ struct ConvertExpr : Expr {
 struct CCCallExpr : Expr {
     CCCallExpr() : Expr(ExprKind::CCCall) {}
     string name;
+    bool     hasRet = false;
+    VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
 };
 

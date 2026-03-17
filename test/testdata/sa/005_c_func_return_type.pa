@@ -1,0 +1,2 @@
+cinclude <stdlib.h>;
+int64 x = atoi("32");

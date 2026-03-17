@@ -79,8 +79,18 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Add{dst, l, r, e.type});
             return dst;
         }
+        case ExprKind::CCCall: {
+            auto& e = static_cast<const CCCallExpr&>(expr);
+            BOOST_ASSERT(e.hasRet);
+            vector<VReg> args;
+            for (auto& arg : e.args)
+                args.push_back(lowerExpr(*arg, func));
+            VReg dst = allocVReg();
+            func.instrs.push_back(CallC{e.name, move(args), dst, e.retType});
+            return dst;
+        }
         default:
-            // CCCall/PlnCall do not produce a value; use lowerExprStmt instead.
+            // PlnCall does not produce a value; use lowerExprStmt instead.
             BOOST_ASSERT(false);
             return -1;
     }
@@ -92,7 +102,7 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
     for (auto& arg : expr.args) {
         args.push_back(lowerExpr(*arg, func));
     }
-    func.instrs.push_back(CallC{expr.name, move(args)});
+    func.instrs.push_back(CallC{expr.name, move(args), /*dst=*/-1});
 }
 
 void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)

@@ -44,6 +44,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             for (int j = 0; j < (int)c->args.size(); j++) {
                 meta[c->args[j]].call_uses.push_back({i, j});
             }
+            if (c->dst != -1) {
+                meta[c->dst].def_idx = i;
+                meta[c->dst].type    = c->retType;
+            }
         }
     }
 

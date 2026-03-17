@@ -16,6 +16,18 @@ static json wrapConvert(const json& expr, const json& to_type) {
 	};
 }
 
+static const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
+{
+	if (t->kind != PlnType::Kind::Prim) return t;
+	const auto* p = static_cast<const PrimType*>(t);
+	using N = PrimType::Name;
+	switch (p->name) {
+		case N::Int8:  case N::Int16:  return reg.prim(N::Int32);
+		case N::Uint8: case N::Uint16: return reg.prim(N::Uint32);
+		default: return t;
+	}
+}
+
 PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
 	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path), inputFilePath("")
 {
@@ -124,13 +136,47 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		sa_expr["value-type"] = registry_.toJson(promoted);
 
 	} else if (expr_type == "call") {
-		if (findCFunction(expr["name"])) {
+		const json* cfunc = findCFunction(expr["name"]);
+		if (cfunc) {
 			sa_expr["func-type"] = "c";
+			if (cfunc->contains("ret-type"))
+				sa_expr["value-type"] = (*cfunc)["ret-type"];
 		}
 		if (expr.contains("args")) {
 			sa_expr["args"] = json::array();
+
+			// Determine fixed param count and variadic flag
+			size_t fixedCount = 0;
+			bool isVariadic = false;
+			if (cfunc && cfunc->contains("parameters")) {
+				for (auto& p : (*cfunc)["parameters"]) {
+					if (p.contains("name") && p["name"] == "...") isVariadic = true;
+					else fixedCount++;
+				}
+			}
+
+			size_t argIdx = 0;
 			for (auto& arg : expr["args"]) {
-				sa_expr["args"].push_back(sa_expression(arg));
+				json saArg = sa_expression(arg);
+				if (saArg.contains("value-type")) {
+					const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+					if (cfunc && cfunc->contains("parameters") && argIdx < fixedCount) {
+						// Fixed parameter: type check
+						const PlnType* toType = registry_.fromJson(
+							(*cfunc)["parameters"][argIdx]["var-type"]);
+						TypeCompat compat = typeCompat(fromType, toType, registry_);
+						if (compat == TypeCompat::ImplicitWiden)
+							saArg = wrapConvert(saArg, registry_.toJson(toType));
+						// else: Identical or Incompatible (e.g. ptr types) — pass through as-is
+					} else if (isVariadic) {
+						// Variadic argument: caller promotion
+						const PlnType* promoted = variadicPromote(fromType, registry_);
+						if (promoted != fromType)
+							saArg = wrapConvert(saArg, registry_.toJson(promoted));
+					}
+				}
+				sa_expr["args"].push_back(saArg);
+				argIdx++;
 			}
 		}
 	}

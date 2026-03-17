@@ -222,6 +222,49 @@ TEST(sa, lit_int_default_value_type) {
 	ASSERT_TRUE(found);
 }
 
+TEST(sa, variadic_arg_int16_promoted_to_int32) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/004_variadic_promotion.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& call = stmt["body"];
+		if (call["expr-type"] != "call" || call["name"] != "printf") continue;
+		// args[1] should be a convert node wrapping the id
+		auto& arg1 = call["args"][1];
+		ASSERT_EQ(arg1["expr-type"], "convert");
+		ASSERT_EQ(arg1["value-type"]["type-name"], "int32");
+		ASSERT_EQ(arg1["src"]["expr-type"], "id");
+		found = true;
+		break;
+	}
+	ASSERT_TRUE(found);
+}
+
+TEST(sa, c_func_return_type_as_value_type) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/005_c_func_return_type.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& var : stmt["vars"]) {
+			if (var["var-name"] != "x") continue;
+			// init should be a convert node (int32 -> int64) wrapping the call
+			auto& init = var["init"];
+			ASSERT_EQ(init["expr-type"], "convert");
+			ASSERT_EQ(init["value-type"]["type-name"], "int64");
+			ASSERT_EQ(init["src"]["expr-type"], "call");
+			ASSERT_EQ(init["src"]["value-type"]["type-name"], "int32");
+			found = true;
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
