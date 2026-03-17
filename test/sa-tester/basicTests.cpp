@@ -265,6 +265,47 @@ TEST(sa, c_func_return_type_as_value_type) {
 	ASSERT_TRUE(found);
 }
 
+TEST(sa, cast_explicit_emits_convert) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/006_cast_explicit.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& call = stmt["body"];
+		if (call["expr-type"] != "call" || call["name"] != "printf") continue;
+		// args[1] is int32(x) → convert node
+		auto& arg = call["args"][1];
+		ASSERT_EQ(arg["expr-type"],              "convert");
+		ASSERT_EQ(arg["from-type"]["type-name"],  "int64");
+		ASSERT_EQ(arg["value-type"]["type-name"], "int32");
+		ASSERT_EQ(arg["src"]["expr-type"],        "id");
+		ASSERT_EQ(arg["src"]["name"],             "x");
+		found = true;
+		break;
+	}
+	ASSERT_TRUE(found);
+}
+
+TEST(sa, cast_identical_returns_src) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/007_cast_identical.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& expr = stmt["body"];
+		// cast disappears; id node comes through directly
+		ASSERT_EQ(expr["expr-type"], "id");
+		ASSERT_EQ(expr["name"],      "x");
+		found = true;
+		break;
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");

@@ -135,6 +135,19 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		sa_expr["right"]      = right;
 		sa_expr["value-type"] = registry_.toJson(promoted);
 
+	} else if (expr_type == "cast") {
+		const PlnType* target  = registry_.fromJson(expr["target-type"]);
+		json src               = sa_expression(expr["src"]);
+		const PlnType* srcType = registry_.fromJson(src["value-type"]);
+		TypeCompat compat      = typeCompat(srcType, target, registry_);
+		if (compat == TypeCompat::Identical) {
+			return src;
+		} else if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast) {
+			return wrapConvert(src, registry_.toJson(target));
+		} else {
+			BOOST_ASSERT(false);  // Incompatible
+		}
+
 	} else if (expr_type == "call") {
 		const json* cfunc = findCFunction(expr["name"]);
 		if (cfunc) {
