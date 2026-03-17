@@ -29,6 +29,12 @@ TEST(build_mgr, int32_widening) {
 	ASSERT_EQ(output, "10\n");
 }
 
+TEST(build_mgr, cast_explicit) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/005_cast_explicit.pa");
+	ASSERT_EQ(output, "100\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
