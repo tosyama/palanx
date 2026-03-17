@@ -306,6 +306,28 @@ TEST(sa, cast_identical_returns_src) {
 	ASSERT_TRUE(found);
 }
 
+TEST(sa, cast_signed_to_unsigned_emits_convert) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/008_cast_signed_unsigned.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& call = stmt["body"];
+		if (call["expr-type"] != "call" || call["name"] != "printf") continue;
+		auto& arg = call["args"][1];
+		ASSERT_EQ(arg["expr-type"],              "convert");
+		ASSERT_EQ(arg["from-type"]["type-name"],  "int32");
+		ASSERT_EQ(arg["value-type"]["type-name"], "uint32");
+		ASSERT_EQ(arg["src"]["expr-type"],        "id");
+		ASSERT_EQ(arg["src"]["name"],             "x");
+		found = true;
+		break;
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(sa, cinclude_not_in_output) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");

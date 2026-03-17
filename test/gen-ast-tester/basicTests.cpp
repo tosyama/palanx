@@ -116,6 +116,27 @@ TEST(gen_ast, cast_node) {
 	ASSERT_TRUE(found);
 }
 
+TEST(gen_ast, cast_compound_expr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/004_cast_compound.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& expr = stmt["body"];
+		if (expr["expr-type"] != "cast") continue;
+		ASSERT_EQ(expr["target-type"]["type-name"], "uint64");
+		ASSERT_EQ(expr["src"]["expr-type"], "add");
+		ASSERT_EQ(expr["src"]["left"]["expr-type"],  "id");
+		ASSERT_EQ(expr["src"]["right"]["expr-type"], "id");
+		found = true;
+		break;
+	}
+	ASSERT_TRUE(found);
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");

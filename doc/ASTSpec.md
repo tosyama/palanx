@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
  
-ver. 0.1.2
+ver. 0.1.3
 
 \* - Required
 
@@ -105,7 +105,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "add" "call"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "add" "call" "cast"
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token)
@@ -120,6 +120,9 @@ Expression model
   6. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
+  7. cast - Explicit type cast expression (`type-name(expr)` syntax)
+    - target-type\* - Target Variable type object
+    - src\* - Source expression model
 
 Note: Negative integer literals are represented as a unary minus expression (TBD).
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

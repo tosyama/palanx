@@ -109,7 +109,8 @@ Design:
  resolved to C functions) and emitted to sa.json.
  Type checking is performed during expression processing. When an implicit widening conversion is required
  (e.g., int32 value used in an int64 context), palan-sa inserts a `convert` expression node into sa.json.
- Narrowing conversions and explicit casts are not yet supported.
+ Explicit casts (`type-name(expr)`) allow narrowing and signed↔unsigned conversions; palan-sa resolves
+ the `cast` AST node to a `convert` node (or removes it for identical types) and emits `convert` to sa.json.
 
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:
@@ -181,6 +182,24 @@ bin/palan widening.pa
 
 `int32` values are implicitly widened to `int64` when assigned to a wider variable.
 palan-sa inserts an explicit `convert` node in sa.json; palan-codegen lowers it to `movslq` (sign-extend 32→64).
+
+### 4.4 Explicit Type Cast
+
+Narrowing conversions and signed↔unsigned conversions require an explicit cast:
+
+```
+cinclude <stdio.h>;
+int64 x = 100;
+printf("%d\n", int32(x));
+```
+
+```bash
+bin/palan cast.pa
+# 100
+```
+
+The cast expression `int32(x)` instructs palan-sa to insert a `convert` node that
+truncates the 64-bit value to 32 bits. Implicit narrowing (without a cast) is a compile error.
 
 ## 5. Working Directory and Output Files
 ### 5.1 Working Directory
