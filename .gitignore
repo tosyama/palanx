@@ -4,3 +4,4 @@ localtickets/
 a.out
 test.pa
 .exrc
+*.gcov
