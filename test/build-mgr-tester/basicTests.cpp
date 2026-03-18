@@ -35,6 +35,12 @@ TEST(build_mgr, variadic_promotion) {
 	ASSERT_EQ(output, "42\n");
 }
 
+TEST(build_mgr, cast_narrowing_int16_int8) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/007_cast_narrowing_int16_int8.pa");
+	ASSERT_EQ(output, "100 100 50 50\n");
+}
+
 TEST(build_mgr, cast_explicit) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/005_cast_explicit.pa");
