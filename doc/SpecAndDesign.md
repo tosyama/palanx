@@ -6,16 +6,18 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-03-16)
-version: 0.1.3
-- This iteration goal is to establish a formal type system foundation that can scale to user-defined types, structs, and arrays.
-- The semantic analyzer (palan-sa) introduces an internal `PlnType` class hierarchy, replacing ad-hoc JSON type comparisons.
-- A `typeCompat()` function formalizes compatibility rules for all current and future types.
-- C function call sites are the first target: argument types are checked against parameter types,
-  with implicit widening inserted automatically and incompatible types rejected with an error.
-- Explicit narrowing and signed/unsigned conversions require a cast expression: `int32(x)`.
-- Future iterations will allow user-defined implicit conversions via annotated constructors,
-  enabling struct/user types to participate in the same type compatibility framework.
+### 2.1 Iteration Goal (2026-03-18)
+version: 0.1.4
+- This iteration goal is to add support for user-defined Palan functions, including function definitions,
+  calls, return values (single and multiple), named return variables, and recursion.
+- The `func` keyword introduces function definitions with typed parameters and return values.
+- Multiple return values are supported; callers receive them via tuple-style declaration:
+  `(int64 q, int64 r) = divmod(a, b);`
+- Named return variables act as local variables and are returned by a bare `return;` statement.
+- The calling convention follows x86-64 System V ABI for arguments (rdi/rsi/rdx/rcx/r8/r9),
+  with a single return value in rax and multiple return values in rdi/rsi/rdx/...
+- `return` is not permitted at the top-level (`_start`); use `exit()` instead.
+- A language reference document (`doc/LangRef.md`) is introduced in this iteration.
 
 ## 3. Command-line Tools' Responsibilities and Design
 
@@ -131,7 +133,12 @@ Design:
  Calling convention:
  - C function calls follow the x86-64 System V ABI: arguments passed in rdi, rsi, rdx, rcx, r8, r9.
  - For variadic C functions (e.g. printf), al is set to 0 (no floating-point arguments).
- - Palan function calling convention may differ and is defined separately.
+ - Palan function calls use the same argument registers (rdi/rsi/rdx/rcx/r8/r9).
+ - A single return value is returned in rax (System V compatible).
+ - Two or more return values are returned in rdi/rsi/rdx/... (caller-saved; read immediately after call).
+ - Normal Palan functions use standard frame setup (pushq %rbp / movq %rsp, %rbp / subq $N, %rsp)
+   with frameSize rounded to a multiple of 16, and epilogue `leave; ret`.
+ - The `_start` entry point uses `call exit` as its epilogue; `return` statements are rejected by palan-sa.
 
  String literals are collected by palan-sa into the `str-literals` table in sa.json,
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
@@ -200,6 +207,64 @@ bin/palan cast.pa
 
 The cast expression `int32(x)` instructs palan-sa to insert a `convert` node that
 truncates the 64-bit value to 32 bits. Implicit narrowing (without a cast) is a compile error.
+
+### 4.5 User-defined Function
+
+```
+cinclude <stdio.h>;
+
+func add(int32 a, int32 b) -> int32 {
+    return a + b;
+}
+
+printf("%d\n", add(3, 4));
+```
+
+```bash
+bin/palan func.pa
+# 7
+```
+
+Named return variables can also be used. The function assigns the result via `->` and returns
+with a bare `return;`:
+
+```
+cinclude <stdio.h>;
+
+func increment(int64 n) -> int64 result {
+    n + 1 -> result;
+    return;
+}
+
+printf("%lld\n", increment(41));
+```
+
+```bash
+bin/palan increment.pa
+# 42
+```
+
+### 4.6 Multiple Return Values
+
+```
+cinclude <stdio.h>;
+
+func sumsOf(int64 a, int64 b, int64 c) -> int64 ab, int64 bc {
+    return a + b, b + c;
+}
+
+(int64 ab, int64 bc) = sumsOf(1, 2, 3);
+printf("%ld %ld\n", ab, bc);
+```
+
+```bash
+bin/palan multiret.pa
+# 3 5
+```
+
+Multiple return values are declared in the function signature with names and types.
+The caller receives them via a tuple-style declaration `(type name, ...) = call(...)`.
+`return expr, expr, ...` returns values positionally matching the declared return variables.
 
 ## 5. Working Directory and Output Files
 ### 5.1 Working Directory
