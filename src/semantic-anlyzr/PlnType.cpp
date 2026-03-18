@@ -6,6 +6,34 @@
 #include "PlnType.h"
 #include <stdexcept>
 
+// Singleton that holds bidirectional maps between type-name strings and PrimType::Name.
+// Using a struct with an explicit constructor body so gcov tracks each entry individually.
+namespace {
+struct PrimTypeNames {
+    std::map<std::string, PrimType::Name> toEnum;
+    std::map<PrimType::Name, std::string> fromEnum;
+
+    PrimTypeNames() {
+        toEnum["int8"]   = PrimType::Name::Int8;
+        toEnum["int16"]  = PrimType::Name::Int16;
+        toEnum["int32"]  = PrimType::Name::Int32;
+        toEnum["int64"]  = PrimType::Name::Int64;
+        toEnum["uint8"]  = PrimType::Name::Uint8;
+        toEnum["uint16"] = PrimType::Name::Uint16;
+        toEnum["uint32"] = PrimType::Name::Uint32;
+        toEnum["uint64"] = PrimType::Name::Uint64;
+        toEnum["flo32"]  = PrimType::Name::Float32;
+        toEnum["flo64"]  = PrimType::Name::Float64;
+        for (auto& [k, v] : toEnum) fromEnum[v] = k;
+    }
+
+    static const PrimTypeNames& instance() {
+        static PrimTypeNames inst;
+        return inst;
+    }
+};
+} // namespace
+
 // PlnTypeRegistry implementation
 
 const PrimType* PlnTypeRegistry::prim(PrimType::Name name)
@@ -29,20 +57,9 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
     std::string kind = j.at("type-kind").get<std::string>();
     if (kind == "prim") {
         std::string tname = j.at("type-name").get<std::string>();
-        static const std::map<std::string, PrimType::Name> nameMap = {
-            {"int8",    PrimType::Name::Int8},
-            {"int16",   PrimType::Name::Int16},
-            {"int32",   PrimType::Name::Int32},
-            {"int64",   PrimType::Name::Int64},
-            {"uint8",   PrimType::Name::Uint8},
-            {"uint16",  PrimType::Name::Uint16},
-            {"uint32",  PrimType::Name::Uint32},
-            {"uint64",  PrimType::Name::Uint64},
-            {"flo32",   PrimType::Name::Float32},
-            {"flo64",   PrimType::Name::Float64},
-        };
-        auto it = nameMap.find(tname);
-        if (it == nameMap.end())
+        auto& toEnum = PrimTypeNames::instance().toEnum;
+        auto it = toEnum.find(tname);
+        if (it == toEnum.end())
             throw std::runtime_error("unknown prim type-name: " + tname);
         return prim(it->second);
     }
@@ -57,19 +74,8 @@ json PlnTypeRegistry::toJson(const PlnType* t)
 {
     if (t->kind == PlnType::Kind::Prim) {
         const auto* p = static_cast<const PrimType*>(t);
-        static const std::map<PrimType::Name, std::string> nameStr = {
-            {PrimType::Name::Int8,    "int8"},
-            {PrimType::Name::Int16,   "int16"},
-            {PrimType::Name::Int32,   "int32"},
-            {PrimType::Name::Int64,   "int64"},
-            {PrimType::Name::Uint8,   "uint8"},
-            {PrimType::Name::Uint16,  "uint16"},
-            {PrimType::Name::Uint32,  "uint32"},
-            {PrimType::Name::Uint64,  "uint64"},
-            {PrimType::Name::Float32, "flo32"},
-            {PrimType::Name::Float64, "flo64"},
-        };
-        return {{"type-kind", "prim"}, {"type-name", nameStr.at(p->name)}};
+        auto& fromEnum = PrimTypeNames::instance().fromEnum;
+        return {{"type-kind", "prim"}, {"type-name", fromEnum.at(p->name)}};
     }
     if (t->kind == PlnType::Kind::Ptr) {
         const auto* p = static_cast<const PtrType*>(t);
