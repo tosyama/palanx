@@ -86,7 +86,7 @@ TEST(gen_ast, var_decl_int32) {
 	for (auto& stmt : jout["ast"]["statements"]) {
 		if (stmt["stmt-type"] != "var-decl") continue;
 		for (auto& v : stmt["vars"]) {
-			if (v["var-name"] == "x") {
+			if (v["name"] == "x") {
 				ASSERT_EQ(v["var-type"]["type-kind"], "prim");
 				ASSERT_EQ(v["var-type"]["type-name"], "int32");
 				found = true;
@@ -152,7 +152,7 @@ TEST(gen_ast, func_def) {
 		if (f["name"] != "add") continue;
 		ASSERT_EQ(f["func-type"], "palan");
 		ASSERT_EQ(f["parameters"].size(), 2u);
-		ASSERT_EQ(f["parameters"][0]["var-name"], "a");
+		ASSERT_EQ(f["parameters"][0]["name"], "a");
 		ASSERT_EQ(f["parameters"][0]["var-type"]["type-name"], "int32");
 		ASSERT_TRUE(f.contains("ret-type"));
 		ASSERT_EQ(f["ret-type"]["type-name"], "int32");
@@ -171,8 +171,8 @@ TEST(gen_ast, func_def) {
 		ASSERT_FALSE(f.contains("ret-type"));
 		ASSERT_TRUE(f.contains("rets"));
 		ASSERT_EQ(f["rets"].size(), 2u);
-		ASSERT_EQ(f["rets"][0]["var-name"], "q");
-		ASSERT_EQ(f["rets"][1]["var-name"], "r");
+		ASSERT_EQ(f["rets"][0]["name"], "q");
+		ASSERT_EQ(f["rets"][1]["name"], "r");
 		bool has_assign = false;
 		for (auto& s : f["body"])
 			if (s["stmt-type"] == "assign") {

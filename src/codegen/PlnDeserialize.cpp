@@ -97,7 +97,7 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         auto s = make_unique<VarDeclStmt>();
         for (auto& jv : j["vars"]) {
             VarEntry ve;
-            ve.varName  = jv["var-name"];
+            ve.varName  = jv["name"];
             ve.typeName = jv["var-type"]["type-name"];
             if (jv.contains("init")) {
                 ve.init = deserializeExpr(jv["init"]);

@@ -1,7 +1,7 @@
-Palan SA JSON Specification
-============================
+Palan Semantic Analyzer JSON Specification
+==========================================
 
-ver. 0.1.3
+ver. 0.1.4
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -12,12 +12,27 @@ Root
 ----
 - original\* - original source file path
 - str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
-- statements\* - Statement list
+- functions\* - Processed Palan function list (empty array when no functions defined)
+- statements\* - Top-level statement list
 
 String literal table entry
 --------------------------
 - label\* - Assembly label string (e.g. ".str0")
 - value\* - String value
+
+Function model (sa.json)
+------------------------
+Same structure as the Palan function definition in ASTSpec.md, with `body` replaced by
+SA-annotated statements.
+
+- name\* - Function name string
+- func-type\* - "palan"
+- parameters - Parameter list (Palan parameter: name, var-type)
+- ret-type - Return variable type (single-return functions only)
+- rets - Return value list (multi-return functions only)
+- body\* - SA-annotated statement list (same rules as top-level statements below)
+
+Note: cinclude statements are not present in function bodies (they are top-level only).
 
 Statement model
 ---------------
@@ -25,19 +40,32 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
 - cinclude statements are consumed by SA and not emitted
 - var-type resolved on id expressions (see Expression model below)
+- assign and return statements are emitted as-is with SA-annotated expressions
+
+Additional statement kinds emitted by SA:
+
+- **assign** - assignment statement
+  - stmt-type\*: "assign"
+  - name\*: target variable name string
+  - value\*: SA-annotated source expression (may be wrapped in convert node)
+
+- **return** - return statement
+  - stmt-type\*: "return"
+  - values: SA-annotated return expression list (omitted for bare `return;`)
 
 Expression model
 ----------------
 Same structure as AST expressions (see ASTSpec.md) with the following additions:
 
 - value-type - Resolved Variable type object (same structure as var-type in ASTSpec.md).
-  Present on all expression kinds except call.
+  Present on all expression kinds except bare call with no return type.
   - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
     defaults to int64 when no expected type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
   - id: same object as var-type
   - add: promoted type of left and right operands (see Promotion rules);
     the narrower operand is wrapped in a convert node if types differ
+  - call: present when the function has a return type (ret-type in its definition)
 
 SA-only expression kinds (not present in AST JSON):
 
@@ -74,7 +102,9 @@ Additional fields per expression kind:
 
 - lit-str expression: value replaced by label (assembly label string, e.g. ".str0")
 - id expression: var-type added (Variable type object from ASTSpec.md)
-- call expression: func-type\* added ("c" for C functions)
+- call expression:
+  - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions
+  - value-type added when the function has a return type (ret-type in its definition)
 
 Promotion rules
 ---------------

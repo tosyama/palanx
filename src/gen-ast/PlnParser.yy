@@ -350,14 +350,14 @@ var_declarations: var_declaration
 var_declaration: var_type move_owner_r var_prefix ID var_postfix
 	{
 		if (!$2 && $3.empty() && !$5)
-			$$ = {{"var-name", $4}, {"var-type", {{"type-kind", "prim"}, {"type-name", $1}}}};
+			$$ = {{"name", $4}, {"var-type", {{"type-kind", "prim"}, {"type-name", $1}}}};
 		else
 			$$ = {{"not-impl", true}};
 	}
 	| var_type var_prefix ID var_postfix '=' expression
 	{
 		if (!$1.empty() && $2.empty() && !$4) {
-			$$ = { {"var-name", $3},
+			$$ = { {"name", $3},
 			       {"var-type", {{"type-kind", "prim"}, {"type-name", $1}}},
 			       {"init",     $6} };
 		} else {

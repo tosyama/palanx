@@ -63,7 +63,7 @@ TEST(sa, var_decl_emitted) {
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "var-decl") continue;
 		for (auto& v : stmt["vars"]) {
-			if (v["var-name"] == "x" && v["var-type"]["type-name"] == "int64") {
+			if (v["name"] == "x" && v["var-type"]["type-name"] == "int64") {
 				ASSERT_EQ(v["init"]["expr-type"], "lit-int");
 				ASSERT_EQ(v["init"]["value"],     "10");
 				found = true;
@@ -106,7 +106,7 @@ TEST(sa, convert_node_widening) {
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "var-decl") continue;
 		for (auto& v : stmt["vars"]) {
-			if (v["var-name"] != "y") continue;
+			if (v["name"] != "y") continue;
 			auto& init = v["init"];
 			ASSERT_EQ(init["expr-type"],              "convert");
 			ASSERT_EQ(init["from-type"]["type-name"], "int32");
@@ -158,7 +158,7 @@ TEST(sa, int32_id_value_type) {
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "var-decl") continue;
 		for (auto& v : stmt["vars"]) {
-			if (v["var-name"] != "y") continue;
+			if (v["name"] != "y") continue;
 			auto& src = v["init"]["src"];
 			ASSERT_EQ(src["expr-type"],              "id");
 			ASSERT_EQ(src["name"],                   "x");
@@ -252,7 +252,7 @@ TEST(sa, c_func_return_type_as_value_type) {
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "var-decl") continue;
 		for (auto& var : stmt["vars"]) {
-			if (var["var-name"] != "x") continue;
+			if (var["name"] != "x") continue;
 			// init should be a convert node (int32 -> int64) wrapping the call
 			auto& init = var["init"];
 			ASSERT_EQ(init["expr-type"], "convert");
@@ -336,4 +336,98 @@ TEST(sa, cinclude_not_in_output) {
 	for (auto& stmt : jout["statements"]) {
 		ASSERT_NE(stmt["stmt-type"], "cinclude");
 	}
+}
+
+TEST(sa, func_registered_in_sa) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/009_func_def_basic.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_TRUE(jout.contains("functions"));
+	ASSERT_EQ(jout["functions"].size(), 1u);
+
+	auto& f = jout["functions"][0];
+	ASSERT_EQ(f["name"], "add");
+	ASSERT_EQ(f["parameters"].size(), 2u);
+	ASSERT_EQ(f["parameters"][0]["name"], "a");
+	ASSERT_EQ(f["parameters"][0]["var-type"]["type-name"], "int32");
+	ASSERT_EQ(f["ret-type"]["type-name"], "int32");
+}
+
+TEST(sa, func_params_accessible) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/010_func_params_as_vars.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["functions"].size(), 1u);
+
+	auto& body = jout["functions"][0]["body"];
+	ASSERT_GE(body.size(), 1u);
+	// return stmt contains an id node for x with value-type int64
+	auto& ret = body[0];
+	ASSERT_EQ(ret["stmt-type"], "return");
+	auto& val = ret["values"][0];
+	ASSERT_EQ(val["expr-type"], "id");
+	ASSERT_EQ(val["name"], "x");
+	ASSERT_EQ(val["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, func_assign_emitted) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/011_func_assign_stmt.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["functions"].size(), 1u);
+
+	bool found = false;
+	for (auto& stmt : jout["functions"][0]["body"]) {
+		if (stmt["stmt-type"] != "assign") continue;
+		ASSERT_EQ(stmt["name"], "q");
+		ASSERT_EQ(stmt["value"]["expr-type"], "id");
+		ASSERT_EQ(stmt["value"]["name"], "a");
+		found = true;
+	}
+	ASSERT_TRUE(found);
+}
+
+TEST(sa, func_return_widening) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/012_func_return_widening.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["functions"].size(), 1u);
+
+	auto& body = jout["functions"][0]["body"];
+	ASSERT_GE(body.size(), 1u);
+	auto& ret = body[0];
+	ASSERT_EQ(ret["stmt-type"], "return");
+	auto& val = ret["values"][0];
+	// int32 x returned as int64 -> convert node
+	ASSERT_EQ(val["expr-type"],              "convert");
+	ASSERT_EQ(val["from-type"]["type-name"],  "int32");
+	ASSERT_EQ(val["value-type"]["type-name"], "int64");
+	ASSERT_EQ(val["src"]["expr-type"],        "id");
+	ASSERT_EQ(val["src"]["name"],             "x");
+}
+
+TEST(sa, palan_call_resolved) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/013_palan_call.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	// add(1,2) is passed as an arg to printf — look inside printf's args
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& outer = stmt["body"];
+		if (!outer.contains("args")) continue;
+		for (auto& arg : outer["args"]) {
+			if (arg["expr-type"] != "call" || arg["name"] != "add") continue;
+			ASSERT_EQ(arg["func-type"], "palan");
+			ASSERT_EQ(arg["value-type"]["type-name"], "int32");
+			found = true;
+		}
+	}
+	ASSERT_TRUE(found);
 }

@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
- 
-ver. 0.1.3
+
+ver. 0.1.4
 
 \* - Required
 
@@ -23,32 +23,44 @@ Export declaration list
 
 AST model
 ---------
-- functions - Function difinition model list
+- functions - Function definition model list (Palan user-defined functions)
 - statements - Statement model list
 
 Function definition model
 -------------------------
 - name\* - Function name string
-- parameters - Parameter list
 - func-type\* - Function type string: "palan" "c"
-  1. palan - Palan function (TBD)
-    - rets - Return value list
-  2. c - C function prototype
-    - ret-type\* - Return variable type
 - loc - Location Array
 
-Parameter
----------
-- name\* - Parameter name string
+  1. **palan** - Palan user-defined function
+     - parameters - Parameter list (Palan parameter, see below)
+     - ret-type - Return variable type (single-return functions only; omitted for void and multi-return)
+     - rets - Return value list (multi-return functions only; omitted for single-return and void)
+     - body\* - Statement model list (function body)
+
+  2. **c** - C function prototype (from `cinclude`)
+     - parameters - Parameter list (C parameter, see below)
+     - ret-type\* - Return variable type
+
+Palan Parameter
+---------------
+Used in Palan function `parameters` and `rets`.
+
+- name\* - Variable name string
 - var-type\* - Variable type
 
-Parameter (Variable length)
--------------------------
-- name\* - "..." string
+C Parameter
+-----------
+Used in C function `parameters`.
 
-Return value
-------------
-- name\* - Return value name string (Anonymous if empty string)
+- name\* - Parameter name string (or "..." for variadic sentinel)
+- var-type - Variable type (omitted for variadic sentinel "...")
+
+Return value (rets entry)
+-------------------------
+Same structure as Palan Parameter.
+
+- name\* - Return value name string
 - var-type\* - Variable type
 
 Variable type
@@ -85,7 +97,7 @@ Note: C `restrict` qualifier is not represented in the AST (optimization hint on
 
 Statement model
 ---------------
-- stmt-type - Statement type: "import" "cinclude" "expr" "var-decl"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return"
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
@@ -99,9 +111,14 @@ Statement model
     - body\* - Expression model
   4. var-decl - variable declaration statement
     - vars\* - Variable declaration list
-      - var-name\* - Variable name string
+      - name\* - Variable name string
       - var-type\* - Variable type
       - init - Initializer expression model (omitted if no initializer)
+  5. assign - assignment statement (`expr -> var`)
+    - name\* - Target variable name string
+    - value\* - Source expression model
+  6. return - return statement
+    - values - Return expression list (omitted for bare `return;`)
 
 Expression model
 ----------------
@@ -136,5 +153,4 @@ Location Array
 - 4\* - End column integer
 
 (TBD)
-
 
