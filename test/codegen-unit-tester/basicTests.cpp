@@ -13,6 +13,7 @@ static const PhysRegs testPhys = {
 // int64 variable → 8-byte slot at -8(%rbp), frameSize 8
 TEST(regalloc, stack_int64) {
     VFunc func;
+    func.isEntry = true;
     func.instrs.push_back(InitVar{0, VRegType::Int64, 0});
 
     auto r = allocateRegisters(func, testPhys);
@@ -26,6 +27,7 @@ TEST(regalloc, stack_int64) {
 // int32 variable → 4-byte slot at -4(%rbp), frameSize 8 (alignUp(4,8))
 TEST(regalloc, stack_int32) {
     VFunc func;
+    func.isEntry = true;
     func.instrs.push_back(InitVar{0, VRegType::Int32, 0});
 
     auto r = allocateRegisters(func, testPhys);
@@ -39,6 +41,7 @@ TEST(regalloc, stack_int32) {
 // int32 then int64 → int64 aligned to 8-byte boundary; padding between them
 TEST(regalloc, stack_mixed_alignment) {
     VFunc func;
+    func.isEntry = true;
     func.instrs.push_back(InitVar{0, VRegType::Int32, 0});  // offset -4
     func.instrs.push_back(InitVar{1, VRegType::Int64, 0});  // alignUp(4,8)=8, offset -16
 
@@ -52,6 +55,7 @@ TEST(regalloc, stack_mixed_alignment) {
 // Two int64 variables → frameSize bumped to keep 16-byte call alignment
 TEST(regalloc, stack_frame_alignment) {
     VFunc func;
+    func.isEntry = true;
     func.instrs.push_back(InitVar{0, VRegType::Int64, 0});  // offset -8
     func.instrs.push_back(InitVar{1, VRegType::Int64, 0});  // offset -16
 
@@ -107,6 +111,7 @@ TEST(regalloc, dead_vreg_not_allocated) {
 TEST(regalloc, callee_saved_spill_to_stack) {
     // testPhys has only 1 callee-saved (%rbx); second vreg needing callee-saved spills.
     VFunc func;
+    func.isEntry = true;
     func.instrs.push_back(MovImm{0, VRegType::Ptr64, 0});   // r0 def at 0
     func.instrs.push_back(MovImm{1, VRegType::Int32, 42});  // r1 def at 1
     func.instrs.push_back(CallC{"foo", {}});                 // idx 2: intervening call

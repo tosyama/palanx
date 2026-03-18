@@ -175,6 +175,7 @@ VProg PlnVCodeGen::generate(const Module& module)
         lowerStmt(*stmt, startFunc);
     }
     leaveVarScope();
+    startFunc.isEntry = true;
     startFunc.instrs.push_back(ExitCode{0});
     prog.funcs.push_back(move(startFunc));
 

@@ -2,6 +2,8 @@
 #include <fstream>
 #include <sstream>
 #include "../test-base/testBase.h"
+#include "../../src/codegen/PlnVProg.h"
+#include "../../src/codegen/PlnRegAlloc.h"
 
 using namespace std;
 
@@ -165,6 +167,38 @@ TEST(codegen, cast_narrowing_int64_to_int32) {
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("movl "), string::npos);   // narrowing uses movl
     ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, callpln_retpln_regalloc) {
+    static const PhysRegs testPhysRegs = {
+        {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"},  // intArgs
+        {},                                                // floatArgs
+        {"%rbx", "%r12", "%r13", "%r14", "%r15"},         // calleeSaved
+    };
+
+    // Simulate: caller calls add(v0=1, v1=2) -> v2, then returns v2
+    VFunc f;
+    f.name    = "caller";
+    f.isEntry = false;
+    f.instrs.push_back(MovImm{0, VRegType::Int32, 1});
+    f.instrs.push_back(MovImm{1, VRegType::Int32, 2});
+    f.instrs.push_back(CallPln{"add", {0, 1}, {2}, {VRegType::Int32}});
+    f.instrs.push_back(RetPln{{2}, {VRegType::Int32}});
+
+    RegAllocResult ra = allocateRegisters(f, testPhysRegs);
+    const RegMap& rm  = ra.regMap;
+
+    // v0 and v1 should be assigned to arg registers (rdi, rsi)
+    ASSERT_TRUE(rm.count(0));
+    EXPECT_EQ(rm.at(0).base, "%rdi");
+    ASSERT_TRUE(rm.count(1));
+    EXPECT_EQ(rm.at(1).base, "%rsi");
+
+    // v2 is defined by CallPln and used by RetPln — must be allocated
+    ASSERT_TRUE(rm.count(2));
+
+    // frame size for non-entry must be a multiple of 16
+    EXPECT_EQ(ra.frameSize % 16, 0);
 }
 
 TEST(codegen, helloworld_asm_output) {

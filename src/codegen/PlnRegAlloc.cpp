@@ -48,6 +48,18 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 meta[c->dst].def_idx = i;
                 meta[c->dst].type    = c->retType;
             }
+        } else if (auto* c = get_if<CallPln>(&instr)) {
+            call_indices.push_back(i);
+            for (int j = 0; j < (int)c->args.size(); j++)
+                meta[c->args[j]].call_uses.push_back({i, j});
+            for (int k = 0; k < (int)c->dsts.size(); k++) {
+                meta[c->dsts[k]].def_idx = i;
+                meta[c->dsts[k]].type    = c->retTypes[k];
+            }
+        } else if (auto* r = get_if<RetPln>(&instr)) {
+            for (int k = 0; k < (int)r->rets.size(); k++)
+                meta[r->rets[k]].last_any_use =
+                    max(meta[r->rets[k]].last_any_use, i);
         }
     }
 
@@ -118,11 +130,17 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
     }
 
-    // Align frame size to 16 bytes.
-    // After pushq %rbp the stack is offset by 8, so we need frameSize ≡ 8 (mod 16)
-    // to keep rsp 16-byte aligned before each call.
+    // Align frame size for ABI compliance.
+    // _start (isEntry): entered with RSP 16-byte aligned; pushq %rbp shifts by 8,
+    //   so frameSize must be ≡ 8 (mod 16) when non-zero.
+    // Regular Palan function: call pushes 8-byte return address, then pushq %rbp
+    //   restores 16-byte alignment, so frameSize must be a multiple of 16.
     int frameSize = alignUp(stack_bytes, 8);
-    if (frameSize > 0 && frameSize % 16 == 0) frameSize += 8;
+    if (func.isEntry) {
+        if (frameSize > 0 && frameSize % 16 == 0) frameSize += 8;
+    } else {
+        frameSize = alignUp(frameSize, 16);
+    }
 
     return {result, frameSize};
 }
