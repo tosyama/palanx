@@ -138,7 +138,7 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 const PhysLoc& dst_loc = rm.at(c->dst);
                 BOOST_ASSERT(!dst_loc.isStack());
                 string dst_reg = sizedRegName(dst_loc.base, c->to);
-                emitConvert(dst_reg, srcOperand(rm.at(c->src)), c->from, c->to);
+                emitConvert(dst_reg, rm.at(c->src), c->from, c->to);
             } else if (auto* i = std::get_if<CallC>(&instr)) {
                 for (int j = 0; j < (int)i->args.size(); j++) {
                     const PhysLoc& src_loc = rm.at(i->args[j]);
@@ -148,6 +148,13 @@ void PlnX86CodeGen::emit(const VProg& prog)
                         out << "\t" << movInstrForType(src_loc.type) << " " << src << ", " << dst << "\n";
                 }
                 emitCallC(i->name);
+                if (i->dst != -1 && rm.count(i->dst)) {
+                    const PhysLoc& dst_loc = rm.at(i->dst);
+                    string dst_reg = srcOperand(dst_loc);
+                    string rax     = sizedRegName("%rax", i->retType);
+                    if (dst_reg != rax)
+                        out << "\t" << movInstrForType(i->retType) << " " << rax << ", " << dst_reg << "\n";
+                }
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
                 emitExit(i->code);
             }
@@ -196,15 +203,28 @@ void PlnX86CodeGen::emitMovImm(const string& reg, VRegType type, long long value
     out << "\t" << movInstrForType(type) << " $" << value << ", " << reg << "\n";
 }
 
-void PlnX86CodeGen::emitConvert(const string& dst, const string& src, VRegType from, VRegType to)
+void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType from, VRegType to)
 {
+    // Stack is a memory ref; register is sized by the requested type.
+    auto srcAt = [&](VRegType t) -> string {
+        if (src.isStack()) return std::to_string(src.stackOffset) + "(%rbp)";
+        return sizedRegName(src.base, t);
+    };
+
     // Signed integer widening (movsx family)
-    if (from == VRegType::Int8  && to == VRegType::Int16) { out << "\tmovsbw " << src << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int8  && to == VRegType::Int32) { out << "\tmovsbl " << src << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int8  && to == VRegType::Int64) { out << "\tmovsbq " << src << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int16 && to == VRegType::Int32) { out << "\tmovswl " << src << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int16 && to == VRegType::Int64) { out << "\tmovswq " << src << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int32 && to == VRegType::Int64) { out << "\tmovslq " << src << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int8  && to == VRegType::Int16) { out << "\tmovsbw " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int8  && to == VRegType::Int32) { out << "\tmovsbl " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int8  && to == VRegType::Int64) { out << "\tmovsbq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int16 && to == VRegType::Int32) { out << "\tmovswl " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int16 && to == VRegType::Int64) { out << "\tmovswq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int32 && to == VRegType::Int64) { out << "\tmovslq " << srcAt(from) << ", " << dst << "\n"; return; }
+    // Narrowing: reference lower bits of the source register (or same memory ref)
+    if (from == VRegType::Int64 && to == VRegType::Int32) { out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int64 && to == VRegType::Int16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int64 && to == VRegType::Int8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int32 && to == VRegType::Int16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int32 && to == VRegType::Int8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int16 && to == VRegType::Int8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
     BOOST_ASSERT(false);  // unsupported conversion
 }
 

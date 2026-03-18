@@ -7,17 +7,6 @@
 
 using namespace std;
 
-static const map<string,int> typeRankTable = {
-	{"int8",1},{"int16",2},{"int32",3},{"int64",4},
-	{"uint8",1},{"uint16",2},{"uint32",3},{"uint64",4}
-};
-
-static int typeRank(const json& t) {
-	if (!t.contains("type-kind") || t["type-kind"] != "prim") return -1;
-	auto it = typeRankTable.find(t["type-name"].get<string>());
-	return it != typeRankTable.end() ? it->second : -1;
-}
-
 static json wrapConvert(const json& expr, const json& to_type) {
 	return {
 		{"expr-type",  "convert"},
@@ -27,11 +16,16 @@ static json wrapConvert(const json& expr, const json& to_type) {
 	};
 }
 
-static json promoteType(const json& a, const json& b) {
-	int ra = typeRank(a), rb = typeRank(b);
-	if (ra < 0) return b;
-	if (rb < 0) return a;
-	return ra >= rb ? a : b;
+static const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
+{
+	if (t->kind != PlnType::Kind::Prim) return t;
+	const auto* p = static_cast<const PrimType*>(t);
+	using N = PrimType::Name;
+	switch (p->name) {
+		case N::Int8:  case N::Int16:  return reg.prim(N::Int32);
+		case N::Uint8: case N::Uint16: return reg.prim(N::Uint32);
+		default: return t;
+	}
 }
 
 PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
@@ -93,16 +87,16 @@ void PlnSemanticAnalyzer::sa_statements(const json &stmts)
 	}
 }
 
-json PlnSemanticAnalyzer::sa_expression(const json &expr, const json* expected_type)
+json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expectedType)
 {
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
 
 	if (expr_type == "lit-int") {
-		if (expected_type && typeRank(*expected_type) > 0)
-			sa_expr["value-type"] = *expected_type;
+		if (expectedType && expectedType->kind == PlnType::Kind::Prim)
+			sa_expr["value-type"] = registry_.toJson(expectedType);
 		else
-			sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int64"}};
+			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
 
 	} else if (expr_type == "lit-str") {
 		string value = expr["value"];
@@ -125,21 +119,77 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const json* expected_t
 	} else if (expr_type == "add") {
 		json left  = sa_expression(expr["left"]);
 		json right = sa_expression(expr["right"]);
-		json promoted = promoteType(left["value-type"].get<json>(), right["value-type"].get<json>());
-		if (left["value-type"]  != promoted) left  = wrapConvert(left,  promoted);
-		if (right["value-type"] != promoted) right = wrapConvert(right, promoted);
+		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
+		const PlnType* rightType = registry_.fromJson(right["value-type"]);
+		const PlnType* promoted;
+		if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
+			promoted = rightType;
+			left = wrapConvert(left, registry_.toJson(promoted));
+		} else if (typeCompat(rightType, leftType, registry_) == TypeCompat::ImplicitWiden) {
+			promoted = leftType;
+			right = wrapConvert(right, registry_.toJson(promoted));
+		} else {
+			promoted = leftType;
+		}
 		sa_expr["left"]       = left;
 		sa_expr["right"]      = right;
-		sa_expr["value-type"] = promoted;
+		sa_expr["value-type"] = registry_.toJson(promoted);
+
+	} else if (expr_type == "cast") {
+		const PlnType* target  = registry_.fromJson(expr["target-type"]);
+		json src               = sa_expression(expr["src"]);
+		const PlnType* srcType = registry_.fromJson(src["value-type"]);
+		TypeCompat compat      = typeCompat(srcType, target, registry_);
+		if (compat == TypeCompat::Identical) {
+			return src;
+		} else if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast) {
+			return wrapConvert(src, registry_.toJson(target));
+		} else {
+			BOOST_ASSERT(false);  // Incompatible
+		}
 
 	} else if (expr_type == "call") {
-		if (findCFunction(expr["name"])) {
+		const json* cfunc = findCFunction(expr["name"]);
+		if (cfunc) {
 			sa_expr["func-type"] = "c";
+			if (cfunc->contains("ret-type"))
+				sa_expr["value-type"] = (*cfunc)["ret-type"];
 		}
 		if (expr.contains("args")) {
 			sa_expr["args"] = json::array();
+
+			// Determine fixed param count and variadic flag
+			size_t fixedCount = 0;
+			bool isVariadic = false;
+			if (cfunc && cfunc->contains("parameters")) {
+				for (auto& p : (*cfunc)["parameters"]) {
+					if (p.contains("name") && p["name"] == "...") isVariadic = true;
+					else fixedCount++;
+				}
+			}
+
+			size_t argIdx = 0;
 			for (auto& arg : expr["args"]) {
-				sa_expr["args"].push_back(sa_expression(arg));
+				json saArg = sa_expression(arg);
+				if (saArg.contains("value-type")) {
+					const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+					if (cfunc && cfunc->contains("parameters") && argIdx < fixedCount) {
+						// Fixed parameter: type check
+						const PlnType* toType = registry_.fromJson(
+							(*cfunc)["parameters"][argIdx]["var-type"]);
+						TypeCompat compat = typeCompat(fromType, toType, registry_);
+						if (compat == TypeCompat::ImplicitWiden)
+							saArg = wrapConvert(saArg, registry_.toJson(toType));
+						// else: Identical or Incompatible (e.g. ptr types) — pass through as-is
+					} else if (isVariadic) {
+						// Variadic argument: caller promotion
+						const PlnType* promoted = variadicPromote(fromType, registry_);
+						if (promoted != fromType)
+							saArg = wrapConvert(saArg, registry_.toJson(promoted));
+					}
+				}
+				sa_expr["args"].push_back(saArg);
+				argIdx++;
 			}
 		}
 	}
@@ -164,19 +214,19 @@ void PlnSemanticAnalyzer::sa_var_decl(const json &stmt)
 
 		json sa_var = var;
 		if (var.contains("init")) {
-			json init = sa_expression(var["init"], &var["var-type"]);
+			const PlnType* toType = registry_.fromJson(var["var-type"]);
+			json init = sa_expression(var["init"], toType);
 			const json& var_type = var["var-type"];
 			if (init.contains("value-type") && init["value-type"] != var_type) {
-				int from_rank = typeRank(init["value-type"]);
-				int to_rank   = typeRank(var_type);
-				if (from_rank > 0 && to_rank > 0) {
-					if (from_rank < to_rank) {
-						init = wrapConvert(init, var_type);
-					} else {
-						string et = init["expr-type"];
-						BOOST_ASSERT(et == "lit-int" || et == "lit-uint");  // narrowing only from literal
-					}
+				const PlnType* fromType = registry_.fromJson(init["value-type"]);
+				TypeCompat compat = typeCompat(fromType, toType, registry_);
+				if (compat == TypeCompat::ImplicitWiden) {
+					init = wrapConvert(init, var_type);
+				} else if (compat == TypeCompat::ExplicitCast) {
+					string et = init["expr-type"];
+					BOOST_ASSERT(et == "lit-int" || et == "lit-uint");  // narrowing only from literal
 				}
+				// Incompatible: no action (ptr types pass through as-is)
 			}
 			sa_var["init"] = init;
 		}

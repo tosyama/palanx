@@ -1,0 +1,33 @@
+{
+  "original": "/test/cast_narrowing.pa",
+  "str-literals": [{ "label": ".str0", "value": "%d\n" }],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [{
+        "var-name": "x",
+        "var-type": {"type-kind": "prim", "type-name": "int64"},
+        "init": {"expr-type": "lit-int", "value": "100", "value-type": {"type-kind": "prim", "type-name": "int64"}}
+      }]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call", "func-type": "c", "name": "printf",
+        "args": [
+          {"expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}},
+          {
+            "expr-type": "convert",
+            "value-type": {"type-kind": "prim", "type-name": "int32"},
+            "from-type":  {"type-kind": "prim", "type-name": "int64"},
+            "src": {
+              "expr-type": "id", "name": "x",
+              "var-type":   {"type-kind": "prim", "type-name": "int64"},
+              "value-type": {"type-kind": "prim", "type-name": "int64"}
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

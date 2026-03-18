@@ -1,0 +1,22 @@
+{
+  "original": "/test/ccall_as_expr.pa",
+  "str-literals": [{ "label": ".str0", "value": "%d\n" }],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call", "func-type": "c", "name": "printf",
+        "args": [
+          {"expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}},
+          {
+            "expr-type": "call", "func-type": "c", "name": "abs",
+            "value-type": {"type-kind": "prim", "type-name": "int32"},
+            "args": [
+              {"expr-type": "lit-int", "value": "-5", "value-type": {"type-kind": "prim", "type-name": "int32"}}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

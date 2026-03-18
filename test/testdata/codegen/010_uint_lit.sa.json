@@ -1,0 +1,16 @@
+{
+  "original": "/test/uint_lit.pa",
+  "str-literals": [{ "label": ".str0", "value": "%llu\n" }],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call", "func-type": "c", "name": "printf",
+        "args": [
+          {"expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}},
+          {"expr-type": "lit-uint", "value": "42"}
+        ]
+      }
+    }
+  ]
+}

@@ -7,6 +7,7 @@
 #include <map>
 #include <vector>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
+#include "PlnType.h"
 
 using namespace std;
 
@@ -18,6 +19,7 @@ class PlnSemanticAnalyzer {
 	string c2astPath;
 	string inputFilePath;
 	json sa;
+	PlnTypeRegistry registry_;
 	vector<map<string, json>> cFunctionScopes;
 	map<string, string> strLiteralLabels;  // value -> label
 	map<string, json> varSymbolTable;      // var name -> var-type
@@ -29,7 +31,7 @@ class PlnSemanticAnalyzer {
 	void sa_statements(const json &stmts);
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
-	json sa_expression(const json &expr, const json* expected_type = nullptr);
+	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	void sa_expression_stmt(const json &stmt);
 	void sa_var_decl(const json &stmt);
 

@@ -128,6 +128,45 @@ TEST(codegen, addition_int32) {
     ASSERT_NE(asm_text.find("call printf"),  string::npos);
 }
 
+TEST(codegen, uint_lit) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/010_uint_lit.sa.json";
+    string asmf = "out/010_uint_lit.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movq $42,"), string::npos);  // lit-uint emits Int64 movq
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, ccall_as_expr) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/011_ccall_as_expr.sa.json";
+    string asmf = "out/011_ccall_as_expr.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("call abs"),    string::npos);  // inner CCCall emitted
+    ASSERT_NE(asm_text.find("call printf"), string::npos);  // outer call emitted
+}
+
+TEST(codegen, cast_narrowing_int64_to_int32) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/009_cast_narrowing.sa.json";
+    string asmf = "out/009_cast_narrowing.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movl "), string::npos);   // narrowing uses movl
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";

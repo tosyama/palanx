@@ -38,7 +38,14 @@ class PlnLexer;
 
 %code
 {
+	#include <set>
 	#include "PlnLexer.h"
+
+	static std::set<std::string> typeNames = {
+		"int8",  "int16",  "int32",  "int64",
+		"uint8", "uint16", "uint32", "uint64",
+		"flo32", "flo64"
+	};
 
 	int yylex(
 		palan::PlnParser::value_type* yylval,
@@ -447,8 +454,17 @@ tapple_inner: expression
 
 func_call: term '(' arguments ')'
 	{
-		if ($1.value("expr-type", "") == "id") {
-			$$ = {{"expr-type", "call"}, {"name", $1["name"]}, {"args", move($3)}};
+		string name = $1.value("name", "");
+		if (typeNames.count(name)) {
+			if ($3.size() == 1) {
+				$$ = {{"expr-type",   "cast"},
+				      {"target-type", {{"type-kind", "prim"}, {"type-name", name}}},
+				      {"src",         $3[0]}};
+			} else {
+				$$ = {{"expr-type", "not-impl"}};
+			}
+		} else if ($1.value("expr-type", "") == "id") {
+			$$ = {{"expr-type", "call"}, {"name", name}, {"args", move($3)}};
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
 		}

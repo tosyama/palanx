@@ -1,7 +1,7 @@
 Palan SA JSON Specification
 ============================
 
-ver. 0.1.2
+ver. 0.1.3
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -41,14 +41,16 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
 
 SA-only expression kinds (not present in AST JSON):
 
-- convert - Implicit type widening inserted by SA. Wraps an expression whose
-  value-type is narrower than the required type.
+- convert - Type conversion inserted by SA. Wraps an expression whose value-type
+  differs from the required type. Used for both implicit widening and explicit casts
+  (narrowing, signed↔unsigned). The `cast` AST node is consumed by SA and replaced
+  by `convert` (or removed if Identical); it does not appear in sa.json.
   - expr-type\*: "convert"
-  - value-type\*: target Variable type object (the wider type)
-  - from-type\*: source Variable type object (the narrower type)
+  - value-type\*: target Variable type object
+  - from-type\*: source Variable type object
   - src\*: inner expression being converted
 
-  Example: `int64 y = x;` where x is int32
+  Example: `int64 y = x;` where x is int32 (implicit widening)
   ```json
   {
     "expr-type":  "convert",
@@ -58,8 +60,15 @@ SA-only expression kinds (not present in AST JSON):
   }
   ```
 
-  Narrowing (wider → narrower) is a compile-time error except when the source
-  is an integer literal (lit-int / lit-uint).
+  Example: `int32(x)` where x is int64 (explicit narrowing cast)
+  ```json
+  {
+    "expr-type":  "convert",
+    "value-type": {"type-kind": "prim", "type-name": "int32"},
+    "from-type":  {"type-kind": "prim", "type-name": "int64"},
+    "src": {"expr-type": "id", "name": "x", ...}
+  }
+  ```
 
 Additional fields per expression kind:
 
@@ -77,5 +86,24 @@ Integer types are ranked by bit width. The higher-ranked type wins.
 - Rank 4: int64, uint64
 
 If one operand type is not in the table, the other operand's type is used as-is.
+
+typeCompat rules
+----------------
+`typeCompat(from, to)` returns one of: `Identical`, `ImplicitWiden`, `ExplicitCast`, `Incompatible`.
+
+| from \ to            | same type  | wider, same group | narrower or diff group (prim) | pointer | other |
+|----------------------|------------|-------------------|-------------------------------|---------|-------|
+| same prim type       | Identical  | —                 | —                             | —       | —     |
+| signed int           | Identical  | ImplicitWiden     | ExplicitCast                  | Incompat| Incompat|
+| unsigned int         | Identical  | ImplicitWiden     | ExplicitCast                  | Incompat| Incompat|
+| float                | Identical  | ImplicitWiden     | ExplicitCast                  | Incompat| Incompat|
+| pointer (same base)  | —          | —                 | —                             | Identical | Incompat|
+| pointer (diff base)  | —          | —                 | —                             | Incompatible | — |
+
+Notes:
+- Signed and unsigned are different groups; `int32 → uint32` requires `ExplicitCast`.
+- `ExplicitCast` is only permitted at a `cast` expression site (`type-name(expr)`).
+  Using it implicitly (e.g. assigning int64 to int32 directly) is a compile error.
+- Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32.
 
 (TBD)

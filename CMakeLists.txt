@@ -24,6 +24,7 @@ add_subdirectory(test/c2ast-tester)
 
 add_subdirectory(src/semantic-anlyzr)
 add_subdirectory(test/sa-tester)
+add_subdirectory(test/sa-unit-tester)
 
 add_subdirectory(src/codegen)
 add_subdirectory(test/codegen-tester)
