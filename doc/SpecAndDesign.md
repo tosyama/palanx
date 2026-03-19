@@ -6,18 +6,26 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-03-18)
-version: 0.1.4
-- This iteration goal is to add support for user-defined Palan functions, including function definitions,
-  calls, return values (single and multiple), named return variables, and recursion.
-- The `func` keyword introduces function definitions with typed parameters and return values.
-- Multiple return values are supported; callers receive them via tuple-style declaration:
-  `(int64 q, int64 r) = divmod(a, b);`
-- Named return variables act as local variables and are returned by a bare `return;` statement.
-- The calling convention follows x86-64 System V ABI for arguments (rdi/rsi/rdx/rcx/r8/r9),
-  with a single return value in rax and multiple return values in rdi/rsi/rdx/...
-- `return` is not permitted at the top-level (`_start`); use `exit()` instead.
-- A language reference document (`doc/PalanReference.md`) is introduced in this iteration.
+### 2.1 Iteration Goal (2026-03-19)
+version: 0.1.5
+- This iteration introduces block scoping via `{ }` block statements, usable at both the
+  top level and inside functions.
+- Variables and Palan functions declared inside a block are not visible outside it.
+  Shadowing of variables and Palan function names is prohibited (compile error).
+- C functions from `cinclude` and future `import` functions allow shadowing, for compatibility
+  with C headers that may declare conflicting names across scopes.
+- The SA scope management is unified into four scope stacks: variables, C functions,
+  Palan functions, and a reserved import stack. All four are pushed and popped together
+  at each scope boundary.
+- Top-level `cinclude` C functions remain visible inside all Palan function bodies
+  (the module scope is the outermost layer of the stack).
+- Palan function definitions inside a block are scoped to that block. Their definitions
+  are embedded in the block body in the AST (not in `ast["ast"]["functions"]`), while
+  the SA outputs all functions — both module-level and block-local — to the flat
+  `sa["functions"]` list for codegen.
+- `BlockEnter` / `BlockLeave` IR nodes are added to VProg. The register allocator
+  reuses stack slots released at block exit via a free pool, reducing frame size.
+- This iteration serves as the foundation for `if` / `while` control flow and `import`.
 
 ## 3. Command-line Tools' Responsibilities and Design
 
