@@ -20,15 +20,25 @@ class PlnSemanticAnalyzer {
 	string inputFilePath;
 	json sa;
 	PlnTypeRegistry registry_;
-	vector<map<string, json>> cFunctionScopes;
 	map<string, string> strLiteralLabels;  // value -> label
-	map<string, json> varSymbolTable;      // var name -> var-type
-	map<string, json> plnFuncTable_;       // Palan function table (name -> AST func node)
 	const json*       currentFunc_ = nullptr;  // null = _start level
 
-	void pushScope();
-	void popScope();
-	const json* findCFunction(const string& name) const;
+	vector<map<string, json>> varScopes;
+	vector<map<string, json>> cFuncScopes;
+	vector<map<string, json>> plnFuncScopes;
+	vector<map<string, json>> importScopes;
+
+	void enterScope();
+	void leaveScope();
+
+	void        declareVar(const string& name, const json& type);
+	const json* findVar(const string& name) const;
+
+	void        registerCFunc(const string& name, const json& def);
+	const json* findCFunc(const string& name) const;
+
+	void        registerPlnFunc(const string& name, const json& def);
+	const json* findPlnFunc(const string& name) const;
 
 	json sa_statements(const json& stmts);
 	void sa_import(const json &stmt);
