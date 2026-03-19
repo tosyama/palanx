@@ -27,7 +27,8 @@ using RegMap = map<VReg, PhysLoc>;
 
 struct RegAllocResult {
     RegMap regMap;
-    int    frameSize;  // bytes to reserve on stack (0 if no spills/callee-saves needed)
+    int    frameSize;          // bytes to reserve on stack (0 if no spills/callee-saves needed)
+    vector<string> usedCalleeSaved;  // callee-saved regs used, in allocation order
 };
 
 // Physical register lists (architecture-specific, passed in by caller)

@@ -1,0 +1,12 @@
+func add(int32 a, int32 b) -> int32 {
+    return a + b;
+}
+
+func greet(int64 x) {
+    return;
+}
+
+func divmod(int64 a, int64 b) -> int64 q, int64 r {
+    a -> q;
+    return;
+}

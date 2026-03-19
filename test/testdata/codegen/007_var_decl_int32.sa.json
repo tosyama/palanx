@@ -8,7 +8,7 @@
       "stmt-type": "var-decl",
       "vars": [
         {
-          "var-name": "x",
+          "name": "x",
           "var-type": { "type-kind": "prim", "type-name": "int32" },
           "init": { "expr-type": "lit-int", "value": "10", "value-type": {"type-kind": "prim", "type-name": "int32"} }
         }

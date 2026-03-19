@@ -47,6 +47,66 @@ TEST(build_mgr, cast_explicit) {
 	ASSERT_EQ(output, "100\n");
 }
 
+TEST(build_mgr, user_func_simple) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/008_user_func_simple.pa");
+	ASSERT_EQ(output, "7\n");
+}
+
+TEST(build_mgr, assign_stmt) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/009_assign.pa");
+	ASSERT_EQ(output, "42\n");
+}
+
+TEST(build_mgr, named_ret_narrowing) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/010_named_ret_narrowing.pa");
+	ASSERT_EQ(output, "15\n");
+}
+
+TEST(build_mgr, named_ret_double_assign) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/011_named_ret_double_assign.pa");
+	ASSERT_EQ(output, "16\n");
+}
+
+TEST(build_mgr, return_narrowing) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/012_return_narrowing.pa");
+	ASSERT_EQ(output, "99\n");
+}
+
+TEST(build_mgr, multiret) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/013_multiret.pa");
+	ASSERT_EQ(output, "3 5\n");
+}
+
+TEST(build_mgr, type_inherit_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/014_type_inherit_decl.pa");
+	ASSERT_EQ(output, "5 10\n");
+}
+
+TEST(build_mgr, type_inherit_tapple) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/015_type_inherit_tapple.pa");
+	ASSERT_EQ(output, "3 5\n");
+}
+
+TEST(build_mgr, multiret_implicit_return) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/017_multiret_implicit_return.pa");
+	ASSERT_EQ(output, "3 5\n");
+}
+
+TEST(build_mgr, palan_call_as_stmt) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/016_palan_call_as_stmt.pa");
+	ASSERT_EQ(output, "hello\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

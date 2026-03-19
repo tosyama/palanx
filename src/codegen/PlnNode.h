@@ -79,14 +79,21 @@ struct CCCallExpr : Expr {
 struct PlnCallExpr : Expr {
     PlnCallExpr() : Expr(ExprKind::PlnCall) {}
     string name;
+    bool     hasRet  = false;
+    VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
 };
+
+struct VarDef { string name; VRegType type; };
 
 // -------- Statements --------
 
 enum class StmtKind {
     Expr,
     VarDecl,
+    Assign,
+    Return,
+    TappleDecl,
 };
 
 struct Stmt {
@@ -112,6 +119,25 @@ struct VarDeclStmt : Stmt {
     vector<VarEntry> vars;
 };
 
+struct AssignStmt : Stmt {
+    AssignStmt() : Stmt(StmtKind::Assign) {}
+    string           name;   // destination variable name
+    unique_ptr<Expr> value;
+};
+
+struct ReturnStmt : Stmt {
+    ReturnStmt() : Stmt(StmtKind::Return) {}
+    vector<unique_ptr<Expr>> values;  // empty for bare return
+};
+
+struct TappleDeclStmt : Stmt {
+    TappleDeclStmt() : Stmt(StmtKind::TappleDecl) {}
+    vector<VarDef>           vars;
+    string                   funcName;
+    vector<unique_ptr<Expr>> args;
+    vector<VRegType>         retTypes;
+};
+
 // -------- Module --------
 
 struct StrLiteralDef {
@@ -119,8 +145,19 @@ struct StrLiteralDef {
     string value;
 };
 
+struct PlnFunc {
+    string             name;
+    vector<VarDef>     params;
+    bool               hasRetType = false;
+    VRegType           retType    = VRegType::Int64;
+    string             retVarName;   // single named return variable; empty if none
+    vector<VarDef>     retVars;      // multiple named return variables (size>=2)
+    vector<unique_ptr<Stmt>> body;
+};
+
 struct Module {
     string original;
-    vector<StrLiteralDef> strLiterals;
+    vector<StrLiteralDef>    strLiterals;
+    vector<PlnFunc>          functions;
     vector<unique_ptr<Stmt>> statements;
 };

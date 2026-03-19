@@ -71,11 +71,13 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         } else {
             auto e = make_unique<PlnCallExpr>();
             e->name = j["name"];
-            if (j.contains("args")) {
-                for (auto& arg : j["args"]) {
-                    e->args.push_back(deserializeExpr(arg));
-                }
+            if (j.contains("value-type")) {
+                e->hasRet  = true;
+                e->retType = toVRegType(j["value-type"]);
             }
+            if (j.contains("args"))
+                for (auto& arg : j["args"])
+                    e->args.push_back(deserializeExpr(arg));
             return e;
         }
     }
@@ -97,7 +99,7 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         auto s = make_unique<VarDeclStmt>();
         for (auto& jv : j["vars"]) {
             VarEntry ve;
-            ve.varName  = jv["var-name"];
+            ve.varName  = jv["name"];
             ve.typeName = jv["var-type"]["type-name"];
             if (jv.contains("init")) {
                 ve.init = deserializeExpr(jv["init"]);
@@ -106,12 +108,48 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         }
         return s;
     }
+    if (stmt_type == "assign") {
+        auto s = make_unique<AssignStmt>();
+        s->name  = j["name"];
+        s->value = deserializeExpr(j["value"]);
+        return s;
+    }
+    if (stmt_type == "return") {
+        auto s = make_unique<ReturnStmt>();
+        if (j.contains("values"))
+            for (auto& v : j["values"])
+                s->values.push_back(deserializeExpr(v));
+        return s;
+    }
+    if (stmt_type == "tapple-decl") {
+        auto s = make_unique<TappleDeclStmt>();
+        s->funcName = j["value"]["name"];
+        for (auto& jv : j["vars"])
+            s->vars.push_back({jv["var-name"], toVRegType(jv["var-type"])});
+        if (j["value"].contains("args"))
+            for (auto& arg : j["value"]["args"])
+                s->args.push_back(deserializeExpr(arg));
+        for (auto& vt : j["value"]["value-types"])
+            s->retTypes.push_back(toVRegType(vt));
+        return s;
+    }
     if (stmt_type == "not-impl") {
         return nullptr;
     }
 
     BOOST_ASSERT(false);
     return nullptr;
+}
+
+static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr)
+{
+    vector<unique_ptr<Stmt>> result;
+    for (auto& j : arr) {
+        auto stmt = deserializeStmt(j);
+        if (stmt)
+            result.push_back(move(stmt));
+    }
+    return result;
 }
 
 Module deserialize(const json& sa)
@@ -125,13 +163,29 @@ Module deserialize(const json& sa)
         }
     }
 
-    if (sa.contains("statements")) {
-        for (auto& j : sa["statements"]) {
-            auto stmt = deserializeStmt(j);
-            if (stmt) {
-                mod.statements.push_back(move(stmt));
+    if (sa.contains("functions")) {
+        for (auto& jf : sa["functions"]) {
+            PlnFunc pf;
+            pf.name = jf["name"];
+            for (auto& jp : jf["parameters"])
+                pf.params.push_back({jp["name"], toVRegType(jp["var-type"])});
+            if (jf.contains("ret-type")) {
+                pf.hasRetType = true;
+                pf.retType    = toVRegType(jf["ret-type"]);
             }
+            if (jf.contains("rets") && jf["rets"].size() == 1) {
+                pf.retVarName = jf["rets"][0]["name"];
+            } else if (jf.contains("rets") && jf["rets"].size() >= 2) {
+                for (auto& r : jf["rets"])
+                    pf.retVars.push_back({r["name"], toVRegType(r["var-type"])});
+            }
+            pf.body = deserializeStatements(jf["body"]);
+            mod.functions.push_back(move(pf));
         }
     }
+
+    if (sa.contains("statements"))
+        mod.statements = deserializeStatements(sa["statements"]);
+
     return mod;
 }

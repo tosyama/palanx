@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+
+func narrow(int64 x) -> int32 {
+    return x;
+}
+
+printf("%d\n", narrow(99));

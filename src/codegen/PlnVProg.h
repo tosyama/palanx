@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <variant>
+#include <utility>
 
 using std::string;
 using std::vector;
@@ -32,9 +33,12 @@ struct InitVar  { VReg dst; VRegType type; long long imm; };      // variable in
 struct Add      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs + rhs
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 struct CallC    { string name; vector<VReg> args; VReg dst = -1; VRegType retType = VRegType::Int64; };
+struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
+struct RetPln   { vector<VReg> rets; vector<VRegType> types; };
 struct ExitCode { int code; };
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Convert, CallC, ExitCode>;
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Convert,
+                             CallC, CallPln, RetPln, ExitCode>;
 
 // -------- Program structure --------
 
@@ -44,8 +48,10 @@ struct VStringLiteral {
 };
 
 struct VFunc {
-    string name;
+    string         name;
     vector<VInstr> instrs;
+    bool           isEntry = false;  // true only for _start
+    vector<std::pair<VReg, VRegType>> params;  // (vreg, type) in arg order
 };
 
 struct VProg {

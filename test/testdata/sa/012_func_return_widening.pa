@@ -1,0 +1,3 @@
+func widen(int32 x) -> int64 {
+    return x;
+}

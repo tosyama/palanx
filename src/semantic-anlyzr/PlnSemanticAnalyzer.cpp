@@ -55,10 +55,26 @@ const json* PlnSemanticAnalyzer::findCFunction(const string& name) const
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
-	sa["original"] = ast["original"];
-	sa["str-literals"] = json::array();
+	sa["original"]      = ast["original"];
+	sa["str-literals"]  = json::array();
+	sa["functions"]     = json::array();
 	pushScope();
-	sa_statements(ast["ast"]["statements"]);
+	// 1. Pre-register Palan functions so calls can resolve them
+	if (ast["ast"].contains("functions"))
+		for (auto& f : ast["ast"]["functions"]) {
+			plnFuncTable_[f["name"]] = f;
+			// Single named return: synthesize ret-type for call resolution
+			if (!f.contains("ret-type") && f.contains("rets") && f["rets"].size() == 1)
+				plnFuncTable_[f["name"]]["ret-type"] = f["rets"][0]["var-type"];
+		}
+	// 2. Pre-process top-level cinclude statements so C functions are visible in Palan function bodies
+	for (auto& stmt : ast["ast"]["statements"])
+		if (stmt["stmt-type"] == "cinclude") sa_cinclude(stmt);
+	// 3. Process each function body
+	if (ast["ast"].contains("functions"))
+		sa_functions(ast["ast"]["functions"]);
+	// 4. Process top-level statements
+	sa["statements"] = sa_statements(ast["ast"]["statements"]);
 	popScope();
 }
 
@@ -67,24 +83,22 @@ const json& PlnSemanticAnalyzer::result()
 	return sa;
 }
 
-void PlnSemanticAnalyzer::sa_statements(const json &stmts)
+json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 {
-	for (auto& stmt: stmts) {
-		string stmt_type = stmt["stmt-type"];
-		if (stmt_type == "import") {
-			sa_import(stmt);
-		} else if (stmt_type == "cinclude") {
-			sa_cinclude(stmt);
-		} else if (stmt_type == "expr") {
-			sa_expression_stmt(stmt);
-		} else if (stmt_type == "var-decl") {
-			sa_var_decl(stmt);
-		} else if (stmt_type == "not-impl") {
-			sa["statements"].push_back(stmt);
-		} else {
-			BOOST_ASSERT(false);
-		}
+	json result = json::array();
+	for (auto& stmt : stmts) {
+		string t = stmt["stmt-type"];
+		if      (t == "import")   sa_import(stmt);
+		else if (t == "cinclude") sa_cinclude(stmt);
+		else if (t == "expr")     result.push_back(sa_expression_stmt(stmt));
+		else if (t == "var-decl") result.push_back(sa_var_decl(stmt));
+		else if (t == "assign")   result.push_back(sa_assign_stmt(stmt));
+		else if (t == "return")      result.push_back(sa_return_stmt(stmt));
+		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
+		else if (t == "not-impl")    result.push_back(stmt);
+		else BOOST_ASSERT(false);
 	}
+	return result;
 }
 
 json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expectedType)
@@ -149,40 +163,46 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		}
 
 	} else if (expr_type == "call") {
+		const json* funcParams = nullptr;
+		bool isVariadic = false;
+
 		const json* cfunc = findCFunction(expr["name"]);
 		if (cfunc) {
 			sa_expr["func-type"] = "c";
 			if (cfunc->contains("ret-type"))
 				sa_expr["value-type"] = (*cfunc)["ret-type"];
+			if (cfunc->contains("parameters")) {
+				funcParams = &(*cfunc)["parameters"];
+				for (auto& p : *funcParams)
+					if (p.value("name", "") == "...") { isVariadic = true; break; }
+			}
+		} else {
+			auto pit = plnFuncTable_.find(expr["name"].get<string>());
+			if (pit != plnFuncTable_.end()) {
+				const json& pFunc = pit->second;
+				sa_expr["func-type"] = "palan";
+				if (pFunc.contains("ret-type"))
+					sa_expr["value-type"] = pFunc["ret-type"];
+				if (pFunc.contains("parameters"))
+					funcParams = &pFunc["parameters"];
+			} else {
+				BOOST_ASSERT(false);  // undefined function call
+			}
 		}
+
 		if (expr.contains("args")) {
 			sa_expr["args"] = json::array();
-
-			// Determine fixed param count and variadic flag
-			size_t fixedCount = 0;
-			bool isVariadic = false;
-			if (cfunc && cfunc->contains("parameters")) {
-				for (auto& p : (*cfunc)["parameters"]) {
-					if (p.contains("name") && p["name"] == "...") isVariadic = true;
-					else fixedCount++;
-				}
-			}
-
+			size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
 			size_t argIdx = 0;
 			for (auto& arg : expr["args"]) {
 				json saArg = sa_expression(arg);
 				if (saArg.contains("value-type")) {
 					const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-					if (cfunc && cfunc->contains("parameters") && argIdx < fixedCount) {
-						// Fixed parameter: type check
-						const PlnType* toType = registry_.fromJson(
-							(*cfunc)["parameters"][argIdx]["var-type"]);
-						TypeCompat compat = typeCompat(fromType, toType, registry_);
-						if (compat == TypeCompat::ImplicitWiden)
+					if (funcParams && argIdx < fixedCount) {
+						const PlnType* toType = registry_.fromJson((*funcParams)[argIdx]["var-type"]);
+						if (typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 							saArg = wrapConvert(saArg, registry_.toJson(toType));
-						// else: Identical or Incompatible (e.g. ptr types) — pass through as-is
 					} else if (isVariadic) {
-						// Variadic argument: caller promotion
 						const PlnType* promoted = variadicPromote(fromType, registry_);
 						if (promoted != fromType)
 							saArg = wrapConvert(saArg, registry_.toJson(promoted));
@@ -196,20 +216,19 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 	return sa_expr;
 }
 
-void PlnSemanticAnalyzer::sa_expression_stmt(const json &stmt)
+json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
-	json sa_stmt = {
+	return {
 		{"stmt-type", "expr"},
 		{"body", sa_expression(stmt["body"])}
 	};
-	sa["statements"].push_back(sa_stmt);
 }
 
-void PlnSemanticAnalyzer::sa_var_decl(const json &stmt)
+json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
 	for (auto& var : stmt["vars"]) {
-		string name = var["var-name"];
+		string name = var["name"];
 		varSymbolTable[name] = var["var-type"];
 
 		json sa_var = var;
@@ -232,7 +251,112 @@ void PlnSemanticAnalyzer::sa_var_decl(const json &stmt)
 		}
 		sa_stmt["vars"].push_back(sa_var);
 	}
-	sa["statements"].push_back(sa_stmt);
+	return sa_stmt;
+}
+
+void PlnSemanticAnalyzer::sa_functions(const json& funcs)
+{
+	for (auto& f : funcs) sa_function(f);
+}
+
+void PlnSemanticAnalyzer::sa_function(const json& funcDef)
+{
+	// Save top-level var table and use function scope instead
+	auto savedVars = varSymbolTable;
+	varSymbolTable.clear();
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"])
+			varSymbolTable[p["name"]] = p["var-type"];
+	if (funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"])
+			varSymbolTable[r["name"]] = r["var-type"];
+
+	currentFunc_ = &plnFuncTable_[funcDef["name"]];
+
+	json saFunc = funcDef;
+	// Single named return: add ret-type so codegen knows the return type
+	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
+		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
+	saFunc["body"] = sa_statements(funcDef["body"]);
+
+	varSymbolTable = savedVars;
+	currentFunc_   = nullptr;
+
+	sa["functions"].push_back(saFunc);
+}
+
+json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
+{
+	string name = stmt["name"];
+	auto it = varSymbolTable.find(name);
+	BOOST_ASSERT(it != varSymbolTable.end());
+	const PlnType* toType = registry_.fromJson(it->second);
+	json value = sa_expression(stmt["value"], toType);
+	if (value.contains("value-type")) {
+		const PlnType* fromType = registry_.fromJson(value["value-type"]);
+		TypeCompat compat = typeCompat(fromType, toType, registry_);
+		if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
+			value = wrapConvert(value, registry_.toJson(toType));
+	}
+	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
+}
+
+json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
+{
+	BOOST_ASSERT(currentFunc_ != nullptr);
+	bool hasRets   = currentFunc_->contains("rets");
+	bool hasRetType = currentFunc_->contains("ret-type");
+	bool hasValues = stmt.contains("values");
+
+	if (hasRets) {
+		// Multiple return values: bare return only
+		BOOST_ASSERT(!hasValues);
+		return {{"stmt-type", "return"}};
+	}
+	if (hasRetType) {
+		// Single return value: exactly one expression required
+		BOOST_ASSERT(hasValues && stmt["values"].size() == 1);
+		const PlnType* toType = registry_.fromJson((*currentFunc_)["ret-type"]);
+		json value = sa_expression(stmt["values"][0], toType);
+		if (value.contains("value-type")) {
+			const PlnType* fromType = registry_.fromJson(value["value-type"]);
+			TypeCompat compat = typeCompat(fromType, toType, registry_);
+			if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
+				value = wrapConvert(value, registry_.toJson(toType));
+		}
+		return {{"stmt-type", "return"}, {"values", json::array({value})}};
+	}
+	// Void function: bare return only
+	BOOST_ASSERT(!hasValues);
+	return {{"stmt-type", "return"}};
+}
+
+json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
+{
+	const json& callExpr = stmt["value"];
+	const string& fname = callExpr["name"].get<string>();
+
+	// Resolve function — fall back to not-impl if not a known multi-return Palan func
+	auto pit = plnFuncTable_.find(fname);
+	BOOST_ASSERT(pit != plnFuncTable_.end());          // undefined function
+	const json& pFunc = pit->second;
+	BOOST_ASSERT(pFunc.contains("rets") && pFunc["rets"].size() >= 2);  // not multi-return
+	BOOST_ASSERT(stmt["vars"].size() == pFunc["rets"].size());           // var count mismatch
+
+	// Process the call expression via sa_expression (resolves func-type, annotates args)
+	json saCall = sa_expression(callExpr);
+
+	// Add multi-return value-types from the function's rets
+	json valueTypes = json::array();
+	for (auto& r : pFunc["rets"])
+		valueTypes.push_back(r["var-type"]);
+	saCall["value-types"] = valueTypes;
+
+	// Register declared variables in the symbol table
+	for (size_t i = 0; i < stmt["vars"].size(); i++)
+		varSymbolTable[stmt["vars"][i]["var-name"].get<string>()] = pFunc["rets"][i]["var-type"];
+
+	return {{"stmt-type", "tapple-decl"}, {"vars", stmt["vars"]}, {"value", saCall}};
 }
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)

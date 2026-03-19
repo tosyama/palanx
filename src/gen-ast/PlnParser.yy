@@ -137,8 +137,13 @@ class PlnLexer;
 %type <vector<json>>	arguments
 %type <string>	var_type var_prefix
 %type <bool>	var_postfix
-%type <json>	var_declaration
+%type <json>	var_declaration inherit_var_decl
 %type <vector<json>>	var_declarations
+%type <json>	func_def return_def
+%type <json>	return
+%type <vector<json>>	block paramaters expressions
+%type <bool>	move_owner_r
+%type <json>	tapple_decl tapple_decl_inner
 
 %left ARROW DBL_ARROW
 %left '<' '>' OPE_LE OPE_GE
@@ -151,6 +156,8 @@ class PlnLexer;
 %%
 module: statements
 	{
+		if (!ast["ast"].contains("functions"))
+			ast["ast"]["functions"] = json::array();
 		ast["ast"]["statements"] = move($1);
 	}
 	;
@@ -160,7 +167,8 @@ statements: /* empty */
 	| statements statement
 	{
 		$$ = move($1);
-		$$.emplace_back($2);
+		if ($2.value("stmt-type", "") != "func-def")
+			$$.emplace_back(move($2));
 	}
 	;
 
@@ -186,14 +194,20 @@ statement: import ';'
 	}
 	| var_declarations ';'
 	{
-		bool all_ok = true;
-		for (auto& v : $1) {
-			if (v.count("not-impl")) { all_ok = false; break; }
-		}
-		if (all_ok) {
-			$$ = {{"stmt-type", "var-decl"}, {"vars", move($1)}};
+		// Detect a tapple-decl emitted by var_declaration
+		if ($1.size() == 1 && $1[0].value("stmt-type", "") == "tapple-decl") {
+			$$ = move($1[0]);
 		} else {
-			$$ = {{"stmt-type", "not-impl"}};
+			bool all_ok = true;
+			for (auto& v : $1) {
+				if (v.count("not-impl") || v.value("stmt-type","") == "tapple-decl"
+					|| v.value("inherit-type", false)) { all_ok = false; break; }
+			}
+			if (all_ok) {
+				$$ = {{"stmt-type", "var-decl"}, {"vars", move($1)}};
+			} else {
+				$$ = {{"stmt-type", "not-impl"}};
+			}
 		}
 	}
 	| const_decl ';'
@@ -213,7 +227,13 @@ statement: import ';'
 	}
 	| expression ';'
 	{
-		if ($1.value("expr-type", "") != "not-impl") {
+		string et = $1.value("expr-type", "");
+		if (et == "assign-expr") {
+			if ($1["value"].value("expr-type", "") != "not-impl")
+				$$ = {{"stmt-type", "assign"}, {"name", $1["name"]}, {"value", move($1["value"])}};
+			else
+				$$ = {{"stmt-type", "not-impl"}};
+		} else if (et != "not-impl") {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
 		} else {
 			$$ = {{"stmt-type", "not-impl"}};
@@ -221,8 +241,9 @@ statement: import ';'
 	}
 	| func_def
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		if (!$1.count("not-impl"))
+			ast["ast"]["functions"].push_back(move($1));
+		$$ = {{"stmt-type", "func-def"}};
 	}
 	| construct_def 
 	{
@@ -231,8 +252,16 @@ statement: import ';'
 	}
 	| return ';'
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		$$ = {{"stmt-type", "return"}};
+		if ($1.contains("values")) {
+			bool all_ok = true;
+			for (auto& v : $1["values"])
+				if (v.value("expr-type", "") == "not-impl") { all_ok = false; break; }
+			if (all_ok)
+				$$["values"] = move($1["values"]);
+			else
+				$$ = {{"stmt-type", "not-impl"}};
+		}
 	}
 	| for_loop
 	{
@@ -316,20 +345,45 @@ cinclude: KW_CINCLUDE import_path import_as
 	;
 
 block: '{' statements '}'
+	{ $$ = move($2); }
 	;
 
 var_declarations: var_declaration
 	{ $$ = { $1 }; }
-	| var_declarations ',' var_declaration
+	| var_declarations ',' var_declaration   %dprec 1
 	{ $$ = move($1); $$.push_back($3); }
+	| var_declarations ',' inherit_var_decl  %dprec 2
+	{
+		$$ = move($1);
+		json next = move($3);
+		for (int i = (int)$$.size() - 1; i >= 0; i--) {
+			if ($$[i].contains("var-type")) {
+				next["var-type"] = $$[i]["var-type"];
+				next.erase("inherit-type");
+				break;
+			}
+		}
+		$$.push_back(next);
+	}
+	;
+
+inherit_var_decl: ID
+	{ $$ = {{"name", $1}, {"inherit-type", true}}; }
+	| ID '=' expression
+	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}}; }
 	;
 
 var_declaration: var_type move_owner_r var_prefix ID var_postfix
-	{ $$ = {{"not-impl", true}}; }
+	{
+		if (!$2 && $3.empty() && !$5)
+			$$ = {{"name", $4}, {"var-type", {{"type-kind", "prim"}, {"type-name", $1}}}};
+		else
+			$$ = {{"not-impl", true}};
+	}
 	| var_type var_prefix ID var_postfix '=' expression
 	{
 		if (!$1.empty() && $2.empty() && !$4) {
-			$$ = { {"var-name", $3},
+			$$ = { {"name", $3},
 			       {"var-type", {{"type-kind", "prim"}, {"type-name", $1}}},
 			       {"init",     $6} };
 		} else {
@@ -339,16 +393,39 @@ var_declaration: var_type move_owner_r var_prefix ID var_postfix
 	| var_prefix ID var_postfix '=' expression
 	{ $$ = {{"not-impl", true}}; }
 	| tapple_decl '=' expression
-	{ $$ = {{"not-impl", true}}; }
+	{
+		if ($1.is_array() && $3.value("expr-type","") == "call")
+			$$ = {{"stmt-type", "tapple-decl"}, {"vars", $1}, {"value", $3}};
+		else
+			$$ = {{"not-impl", true}};
+	}
 	;
 
 tapple_decl: '(' tapple_decl_inner ')'
+	{ $$ = $2; }
 	;
 
-tapple_decl_inner: var_type vars
+tapple_decl_inner: var_type ID var_postfix
+	{ $$ = json::array();
+	  $$.push_back({{"var-name", $2}, {"var-type", {{"type-kind","prim"},{"type-name",$1}}}}); }
 	| KW_VOID
-	| tapple_decl_inner ',' var_type vars
+	{ $$ = json::array(); }
+	| tapple_decl_inner ',' var_type ID var_postfix
+	{ $$ = move($1);
+	  $$.push_back({{"var-name", $4}, {"var-type", {{"type-kind","prim"},{"type-name",$3}}}}); }
 	| tapple_decl_inner ',' KW_VOID
+	{ $$ = move($1); }
+	| tapple_decl_inner ',' ID var_postfix
+	{ $$ = move($1);
+	  if (!$4) {
+	      json vtype;
+	      for (int i = (int)$$.size() - 1; i >= 0; i--) {
+	          if ($$[i].contains("var-type")) { vtype = $$[i]["var-type"]; break; }
+	      }
+	      if (!vtype.is_null())
+	          $$.push_back({{"var-name", $3}, {"var-type", vtype}});
+	  }
+	}
 	;
 
 const_decl: KW_CONST ID '=' expression
@@ -423,7 +500,12 @@ expression: term
 	| expression '>' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression ARROW expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{
+		if ($3.value("expr-type", "") == "id")
+			$$ = {{"expr-type", "assign-expr"}, {"name", $3["name"]}, {"value", move($1)}};
+		else
+			$$ = {{"expr-type", "not-impl"}};
+	}
 	| expression DBL_ARROW expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| noname_func
@@ -498,14 +580,42 @@ dict_items: ID ':' expression
 	;
 
 func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block
-	;
+	{
+		bool all_ok = true;
+		for (auto& p : $5)
+			if (p.count("not-impl")) { all_ok = false; break; }
+		if (all_ok) {
+			$$ = {{"name", $3}, {"func-type", "palan"}, {"body", move($8)}, {"parameters", move($5)}};
+			if ($7.contains("rets"))
+				$$["rets"] = move($7["rets"]);
+			else if ($7.contains("ret-type"))
+				$$["ret-type"] = move($7["ret-type"]);
+		} else {
+			$$ = {{"not-impl", true}};
+		}
+	}
 
-paramaters: /* empty */ | var_declarations
+paramaters: /* empty */
+	{ }
+	| var_declarations
+	{ $$ = move($1); }
 	;
 
 return_def: /* empty */
+	{ }
 	| ARROW var_declarations
+	{
+		bool all_ok = true;
+		for (auto& v : $2)
+			if (v.count("not-impl") || v.value("inherit-type", false)) { all_ok = false; break; }
+		if (all_ok)
+			$$["rets"] = move($2);
+	}
 	| ARROW var_type
+	{
+		if (!$2.empty())
+			$$["ret-type"] = {{"type-kind", "prim"}, {"type-name", $2}};
+	}
 	;
 
 noname_func: KW_FUNC '(' paramaters ')'
@@ -516,7 +626,9 @@ construct_def: do_export KW_CONSTRUCT var_type '(' paramaters ')' block
 	;
 
 return: KW_RETURN
+	{ }
 	| KW_RETURN expressions
+	{ $$["values"] = move($2); }
 	;
 
 for_loop: KW_FOR ID ':' expression block
@@ -534,7 +646,9 @@ else_stmt: /* empty */
 	;
 
 expressions: expression
+	{ $$.push_back(move($1)); }
 	| expressions ',' expression
+	{ $$ = move($1); $$.push_back(move($3)); }
 	;
 
 var_type: ID
@@ -553,7 +667,8 @@ vars: ID var_postfix
 do_export: /* empty */ | KW_EXPORT
 	;
 
-move_owner_r:	/* empty */ | DBL_GRTR
+move_owner_r: /* empty */ { $$ = false; }
+	| DBL_GRTR            { $$ = true; }
 	;
 
 var_prefix:	/* empty */ { $$ = ""; }

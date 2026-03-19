@@ -2,6 +2,8 @@
 #include <fstream>
 #include <sstream>
 #include "../test-base/testBase.h"
+#include "../../src/codegen/PlnVProg.h"
+#include "../../src/codegen/PlnRegAlloc.h"
 
 using namespace std;
 
@@ -165,6 +167,127 @@ TEST(codegen, cast_narrowing_int64_to_int32) {
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("movl "), string::npos);   // narrowing uses movl
     ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, callpln_retpln_regalloc) {
+    static const PhysRegs testPhysRegs = {
+        {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"},  // intArgs
+        {},                                                // floatArgs
+        {"%rbx", "%r12", "%r13", "%r14", "%r15"},         // calleeSaved
+    };
+
+    // Simulate: caller calls add(v0=1, v1=2) -> v2, then returns v2
+    VFunc f;
+    f.name    = "caller";
+    f.isEntry = false;
+    f.instrs.push_back(MovImm{0, VRegType::Int32, 1});
+    f.instrs.push_back(MovImm{1, VRegType::Int32, 2});
+    f.instrs.push_back(CallPln{"add", {0, 1}, {2}, {VRegType::Int32}});
+    f.instrs.push_back(RetPln{{2}, {VRegType::Int32}});
+
+    RegAllocResult ra = allocateRegisters(f, testPhysRegs);
+    const RegMap& rm  = ra.regMap;
+
+    // v0 and v1 should be assigned to arg registers (rdi, rsi)
+    ASSERT_TRUE(rm.count(0));
+    EXPECT_EQ(rm.at(0).base, "%rdi");
+    ASSERT_TRUE(rm.count(1));
+    EXPECT_EQ(rm.at(1).base, "%rsi");
+
+    // v2 is defined by CallPln and used by RetPln — must be allocated
+    ASSERT_TRUE(rm.count(2));
+
+    // frame size for non-entry must be a multiple of 16
+    EXPECT_EQ(ra.frameSize % 16, 0);
+}
+
+TEST(codegen, palan_func_simple) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/012_palan_func_simple.sa.json";
+    string asmf = "out/012_palan_func_simple.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("add:"),        string::npos);  // function label emitted
+    ASSERT_NE(asm_text.find("call add"),    string::npos);  // caller invokes add
+    ASSERT_NE(asm_text.find("ret"),         string::npos);  // ret instruction present
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, assign_stmt) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/013_assign.sa.json";
+    string asmf = "out/013_assign.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("passthrough:"),  string::npos);  // function label emitted
+    ASSERT_NE(asm_text.find("call passthrough"), string::npos);  // caller invokes passthrough
+    ASSERT_NE(asm_text.find("movl $0,"),      string::npos);  // dead InitVar for y still emitted
+    ASSERT_NE(asm_text.find("ret"),           string::npos);
+    ASSERT_NE(asm_text.find("call printf"),   string::npos);
+}
+
+// Regression: named return with narrowing (Int64 -> Int32) must insert a Convert in
+// sa_assign_stmt, and callee-saved registers used inside the function must be saved and
+// restored in the prologue/epilogue.
+TEST(codegen, named_ret_narrowing) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/014_named_ret_narrowing.sa.json";
+    string asmf = "out/014_named_ret_narrowing.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("test:"),          string::npos);  // function label
+    ASSERT_NE(asm_text.find("call test"),       string::npos);  // caller invokes test
+    // Callee-saved register %rbx must be saved in prologue and restored before ret
+    ASSERT_NE(asm_text.find("movq %rbx, -8(%rbp)"),   string::npos);  // save
+    ASSERT_NE(asm_text.find("movq -8(%rbp), %rbx"),   string::npos);  // restore
+    ASSERT_NE(asm_text.find("ret"),            string::npos);
+}
+
+// Regression: when callee-saved registers are exhausted by temporaries, an Add result is
+// spilled to a stack slot; X86CodeGen must emit a memory-destination Add instruction.
+TEST(codegen, named_ret_double_assign) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/015_named_ret_double_assign.sa.json";
+    string asmf = "out/015_named_ret_double_assign.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("test:"),        string::npos);
+    ASSERT_NE(asm_text.find("call test"),    string::npos);
+    // All 5 callee-saved registers must be saved/restored
+    ASSERT_NE(asm_text.find("movq %rbx, -8(%rbp)"),   string::npos);
+    ASSERT_NE(asm_text.find("movq -8(%rbp), %rbx"),   string::npos);
+    ASSERT_NE(asm_text.find("movq %r15, -40(%rbp)"),  string::npos);
+    ASSERT_NE(asm_text.find("movq -40(%rbp), %r15"),  string::npos);
+    // Add with memory destination: the spilled Add result is stored directly to stack
+    ASSERT_NE(asm_text.find("addq %r15, -56(%rbp)"),  string::npos);
+    ASSERT_NE(asm_text.find("ret"),          string::npos);
+}
+
+TEST(codegen, multiret) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/016_multiret.sa.json";
+    string asmf = "out/016_multiret.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("sumsOf:"),       string::npos);  // function label
+    ASSERT_NE(asm_text.find("call sumsOf"),   string::npos);  // caller invokes sumsOf
+    ASSERT_NE(asm_text.find("ret"),           string::npos);  // ret instruction
+    ASSERT_NE(asm_text.find("call printf"),   string::npos);
 }
 
 TEST(codegen, helloworld_asm_output) {

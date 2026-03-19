@@ -1,0 +1,6 @@
+func sumsOf(int64 a, int64 b) -> int64 s, int64 d {
+    a + b -> s;
+    a - b -> d;
+    return;
+}
+(int64 s, int64 d) = sumsOf(10, 3);

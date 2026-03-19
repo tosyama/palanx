@@ -19,13 +19,13 @@ TEST(gen_ast, basic_tests) {
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
-	ASSERT_EQ(jout["ast"]["statements"].size(), 21);
+	ASSERT_EQ(jout["ast"]["statements"].size(), 19);
 //	cout << output << endl;
-	
+
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/100_quicksort.pa");
 	ASSERT_TRUE(checkerr(output));
 	jout = json::parse(output);
-	ASSERT_EQ(jout["ast"]["statements"].size(), 8);
+	ASSERT_EQ(jout["ast"]["statements"].size(), 6);
 
 	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -86,7 +86,7 @@ TEST(gen_ast, var_decl_int32) {
 	for (auto& stmt : jout["ast"]["statements"]) {
 		if (stmt["stmt-type"] != "var-decl") continue;
 		for (auto& v : stmt["vars"]) {
-			if (v["var-name"] == "x") {
+			if (v["name"] == "x") {
 				ASSERT_EQ(v["var-type"]["type-kind"], "prim");
 				ASSERT_EQ(v["var-type"]["type-name"], "int32");
 				found = true;
@@ -135,6 +135,54 @@ TEST(gen_ast, cast_compound_expr) {
 		break;
 	}
 	ASSERT_TRUE(found);
+}
+
+TEST(gen_ast, func_def) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/005_func_def.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	ASSERT_EQ(jout["ast"]["statements"].size(), 0);
+	ASSERT_EQ(jout["ast"]["functions"].size(), 3);
+
+	// add: parameters, ret-type, return stmt
+	bool found_add = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "add") continue;
+		ASSERT_EQ(f["func-type"], "palan");
+		ASSERT_EQ(f["parameters"].size(), 2u);
+		ASSERT_EQ(f["parameters"][0]["name"], "a");
+		ASSERT_EQ(f["parameters"][0]["var-type"]["type-name"], "int32");
+		ASSERT_TRUE(f.contains("ret-type"));
+		ASSERT_EQ(f["ret-type"]["type-name"], "int32");
+		bool has_return = false;
+		for (auto& s : f["body"])
+			if (s["stmt-type"] == "return") { has_return = true; }
+		ASSERT_TRUE(has_return);
+		found_add = true;
+	}
+	ASSERT_TRUE(found_add);
+
+	// divmod: rets, assign stmt, bare return
+	bool found_divmod = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "divmod") continue;
+		ASSERT_FALSE(f.contains("ret-type"));
+		ASSERT_TRUE(f.contains("rets"));
+		ASSERT_EQ(f["rets"].size(), 2u);
+		ASSERT_EQ(f["rets"][0]["name"], "q");
+		ASSERT_EQ(f["rets"][1]["name"], "r");
+		bool has_assign = false;
+		for (auto& s : f["body"])
+			if (s["stmt-type"] == "assign") {
+				ASSERT_EQ(s["name"], "q");
+				has_assign = true;
+			}
+		ASSERT_TRUE(has_assign);
+		found_divmod = true;
+	}
+	ASSERT_TRUE(found_divmod);
 }
 
 TEST(gen_ast, cli_tests) {
