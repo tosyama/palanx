@@ -141,7 +141,8 @@ class PlnLexer;
 %type <vector<json>>	var_declarations
 %type <json>	func_def return_def
 %type <json>	return
-%type <vector<json>>	block paramaters expressions
+%type <vector<json>>	block paramaters expressions block_statements standalone_block
+%type <json>	statement_or_funcdef
 %type <bool>	move_owner_r
 %type <json>	tapple_decl tapple_decl_inner
 
@@ -187,11 +188,8 @@ statement: import ';'
 			$$["functions"] = move(c_ast["ast"]["functions"]);
 		}
 	}
-	| block
-	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
-	}
+	| standalone_block
+		{ $$ = {{"stmt-type", "block"}, {"body", move($1)}}; }
 	| var_declarations ';'
 	{
 		// Detect a tapple-decl emitted by var_declaration
@@ -345,6 +343,29 @@ cinclude: KW_CINCLUDE import_path import_as
 	;
 
 block: '{' statements '}'
+	{ $$ = move($2); }
+	;
+
+block_statements: /* empty */
+	{ }
+	| block_statements statement_or_funcdef
+	{
+		$$ = move($1);
+		$$.emplace_back(move($2));
+	}
+	;
+
+statement_or_funcdef: statement    %dprec 1
+	{ $$ = move($1); }
+	| func_def                     %dprec 2
+	{
+		$$ = {{"stmt-type", "func-def"}};
+		for (auto& [k, v] : $1.items())
+			$$[k] = move(v);
+	}
+	;
+
+standalone_block: '{' block_statements '}'
 	{ $$ = move($2); }
 	;
 

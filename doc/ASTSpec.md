@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.4
+ver. 0.1.5
 
 \* - Required
 
@@ -97,7 +97,7 @@ Note: C `restrict` qualifier is not represented in the AST (optimization hint on
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block" "func-def"
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
@@ -122,6 +122,12 @@ Statement model
   7. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function)
+  8. block - standalone block statement (`{ ... }`)
+    - body\* - Statement model list (may contain func-def entries; see below)
+  9. func-def - function definition embedded in a block body
+    - Same fields as the Palan function definition model (name, func-type, parameters, ret-type/rets, body)
+    - Only appears as a statement inside a `block` body, never at the top-level statements array
+    - The enclosing `ast["ast"]["functions"]` array is not affected; the definition is local to the block
 
 Expression model
 ----------------

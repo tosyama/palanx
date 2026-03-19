@@ -185,6 +185,35 @@ TEST(gen_ast, func_def) {
 	ASSERT_TRUE(found_divmod);
 }
 
+TEST(gen_ast, block_stmt) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/006_block.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// top-level: statements has 1 block, functions has outer
+	ASSERT_EQ(jout["ast"]["statements"].size(), 1);
+	ASSERT_EQ(jout["ast"]["functions"].size(), 1);
+
+	// block stmt structure
+	const auto& blk = jout["ast"]["statements"][0];
+	ASSERT_EQ(blk["stmt-type"], "block");
+	ASSERT_EQ(blk["body"].size(), 2);  // var-decl + assign
+
+	// outer function body contains one block
+	const auto& outerFunc = jout["ast"]["functions"][0];
+	ASSERT_EQ(outerFunc["name"], "outer");
+	const auto& outerBody = outerFunc["body"];
+	ASSERT_EQ(outerBody.size(), 1);
+	ASSERT_EQ(outerBody[0]["stmt-type"], "block");
+
+	// inner func-def is embedded in block body, not in ast["ast"]["functions"]
+	const auto& innerBlock = outerBody[0]["body"];
+	ASSERT_EQ(innerBlock[0]["stmt-type"], "func-def");
+	ASSERT_EQ(innerBlock[0]["name"], "inner");
+	ASSERT_EQ(jout["ast"]["functions"].size(), 1);  // outer only
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");
