@@ -182,6 +182,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 					sa_expr["value-type"] = pFunc["ret-type"];
 				if (pFunc.contains("parameters"))
 					funcParams = &pFunc["parameters"];
+			} else {
+				BOOST_ASSERT(false);  // undefined function call
 			}
 		}
 
@@ -333,10 +335,10 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 
 	// Resolve function — fall back to not-impl if not a known multi-return Palan func
 	auto pit = plnFuncTable_.find(fname);
-	if (pit == plnFuncTable_.end()) return {{"stmt-type", "not-impl"}};
+	BOOST_ASSERT(pit != plnFuncTable_.end());          // undefined function
 	const json& pFunc = pit->second;
-	if (!pFunc.contains("rets") || pFunc["rets"].size() < 2) return {{"stmt-type", "not-impl"}};
-	if (stmt["vars"].size() != pFunc["rets"].size()) return {{"stmt-type", "not-impl"}};
+	BOOST_ASSERT(pFunc.contains("rets") && pFunc["rets"].size() >= 2);  // not multi-return
+	BOOST_ASSERT(stmt["vars"].size() == pFunc["rets"].size());           // var count mismatch
 
 	// Process the call expression via sa_expression (resolves func-type, annotates args)
 	json saCall = sa_expression(callExpr);
