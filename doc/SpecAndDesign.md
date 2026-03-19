@@ -17,7 +17,7 @@ version: 0.1.4
 - The calling convention follows x86-64 System V ABI for arguments (rdi/rsi/rdx/rcx/r8/r9),
   with a single return value in rax and multiple return values in rdi/rsi/rdx/...
 - `return` is not permitted at the top-level (`_start`); use `exit()` instead.
-- A language reference document (`doc/LangRef.md`) is introduced in this iteration.
+- A language reference document (`doc/PalanReference.md`) is introduced in this iteration.
 
 ## 3. Command-line Tools' Responsibilities and Design
 

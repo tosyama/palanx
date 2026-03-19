@@ -431,3 +431,44 @@ TEST(sa, palan_call_resolved) {
 	}
 	ASSERT_TRUE(found);
 }
+
+TEST(sa, func_multiret_tapple) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/014_func_multiret_tapple.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "tapple-decl") continue;
+		auto& val = stmt["value"];
+		ASSERT_EQ(val["expr-type"], "call");
+		ASSERT_EQ(val["func-type"], "palan");
+		ASSERT_EQ(val["value-types"].size(), 2u);
+		ASSERT_EQ(val["value-types"][0]["type-name"], "int64");
+		ASSERT_EQ(val["value-types"][1]["type-name"], "int64");
+		ASSERT_EQ(stmt["vars"].size(), 2u);
+		found = true;
+	}
+	ASSERT_TRUE(found);
+}
+
+TEST(sa, func_recursive) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/015_func_recursive.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["functions"].size(), 1u);
+
+	// The return value inside recurse's body must resolve to a palan call
+	bool found = false;
+	for (auto& stmt : jout["functions"][0]["body"]) {
+		if (stmt["stmt-type"] != "return") continue;
+		auto& val = stmt["values"][0];
+		ASSERT_EQ(val["expr-type"], "call");
+		ASSERT_EQ(val["name"],      "recurse");
+		ASSERT_EQ(val["func-type"], "palan");
+		found = true;
+	}
+	ASSERT_TRUE(found);
+}

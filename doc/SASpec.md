@@ -53,6 +53,11 @@ Additional statement kinds emitted by SA:
   - stmt-type\*: "return"
   - values: SA-annotated return expression list (omitted for bare `return;`)
 
+- **tapple-decl** - tuple-style multiple return value declaration
+  - stmt-type\*: "tapple-decl"
+  - vars\*: variable list (name, var-type per entry; types resolved by SA from function rets)
+  - value\*: SA-annotated call expression (func-type: "palan"; carries value-types field)
+
 Expression model
 ----------------
 Same structure as AST expressions (see ASTSpec.md) with the following additions:
@@ -104,7 +109,9 @@ Additional fields per expression kind:
 - id expression: var-type added (Variable type object from ASTSpec.md)
 - call expression:
   - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions
-  - value-type added when the function has a return type (ret-type in its definition)
+  - value-type added when the function has a single return type (ret-type in its definition)
+  - value-types added when the function has multiple return values (rets in its definition);
+    array of Variable type objects in declaration order
 
 Promotion rules
 ---------------

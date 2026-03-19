@@ -97,7 +97,7 @@ Note: C `restrict` qualifier is not represented in the AST (optimization hint on
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl"
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
@@ -119,6 +119,9 @@ Statement model
     - value\* - Source expression model
   6. return - return statement
     - values - Return expression list (omitted for bare `return;`)
+  7. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
+    - vars\* - Variable declaration list (name, var-type per entry)
+    - value\* - Call expression model (must be a call to a multi-return Palan function)
 
 Expression model
 ----------------
