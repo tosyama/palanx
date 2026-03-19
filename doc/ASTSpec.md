@@ -33,13 +33,13 @@ Function definition model
 - loc - Location Array
 
   1. **palan** - Palan user-defined function
-     - parameters - Parameter list (Palan parameter, see below)
+     - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters)
      - ret-type - Return variable type (single-return functions only; omitted for void and multi-return)
      - rets - Return value list (multi-return functions only; omitted for single-return and void)
      - body\* - Statement model list (function body)
 
   2. **c** - C function prototype (from `cinclude`)
-     - parameters - Parameter list (C parameter, see below)
+     - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)
      - ret-type\* - Return variable type
 
 Palan Parameter

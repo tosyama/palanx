@@ -585,9 +585,7 @@ func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block
 		for (auto& p : $5)
 			if (p.count("not-impl")) { all_ok = false; break; }
 		if (all_ok) {
-			$$ = {{"name", $3}, {"func-type", "palan"}, {"body", move($8)}};
-			if (!$5.empty())
-				$$["parameters"] = move($5);
+			$$ = {{"name", $3}, {"func-type", "palan"}, {"body", move($8)}, {"parameters", move($5)}};
 			if ($7.contains("rets"))
 				$$["rets"] = move($7["rets"]);
 			else if ($7.contains("ret-type"))

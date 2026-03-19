@@ -27,7 +27,7 @@ SA-annotated statements.
 
 - name\* - Function name string
 - func-type\* - "palan"
-- parameters - Parameter list (Palan parameter: name, var-type)
+- parameters\* - Parameter list (Palan parameter: name, var-type; empty array when no parameters)
 - ret-type - Return variable type (single-return functions only)
 - rets - Return value list (multi-return functions only)
 - body\* - SA-annotated statement list (same rules as top-level statements below)

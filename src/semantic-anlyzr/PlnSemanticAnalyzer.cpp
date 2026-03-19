@@ -67,10 +67,13 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 			if (!f.contains("ret-type") && f.contains("rets") && f["rets"].size() == 1)
 				plnFuncTable_[f["name"]]["ret-type"] = f["rets"][0]["var-type"];
 		}
-	// 2. Process each function body
+	// 2. Pre-process top-level cinclude statements so C functions are visible in Palan function bodies
+	for (auto& stmt : ast["ast"]["statements"])
+		if (stmt["stmt-type"] == "cinclude") sa_cinclude(stmt);
+	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);
-	// 3. Process top-level statements
+	// 4. Process top-level statements
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
 	popScope();
 }

@@ -95,6 +95,12 @@ TEST(build_mgr, type_inherit_tapple) {
 	ASSERT_EQ(output, "3 5\n");
 }
 
+TEST(build_mgr, palan_call_as_stmt) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/016_palan_call_as_stmt.pa");
+	ASSERT_EQ(output, "hello\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
