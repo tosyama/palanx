@@ -192,22 +192,43 @@ void PlnX86CodeGen::emit(const VProg& prog)
                         out << "\t" << movInstrForType(src.type) << " " << s << ", " << d << "\n";
                 }
                 out << "\tcall " << c->name << "\n";
-                // Move return value from %rax to destination.
+                // Move return value(s) to destination(s).
                 if (c->dsts.size() == 1 && rm.count(c->dsts[0])) {
+                    // Single return: copy from %rax
                     const PhysLoc& dst = rm.at(c->dsts[0]);
                     string rax = sizedRegName("%rax", c->retTypes[0]);
                     string d   = srcOperand(dst);
                     if (rax != d)
                         out << "\t" << movInstrForType(c->retTypes[0]) << " " << rax << ", " << d << "\n";
+                } else if (c->dsts.size() > 1) {
+                    // Multi-return: copy from intArgs[j] in reverse order to avoid overwrite
+                    for (int j = (int)c->dsts.size() - 1; j >= 0; j--) {
+                        if (!rm.count(c->dsts[j])) continue;
+                        const PhysLoc& dst = rm.at(c->dsts[j]);
+                        string src_reg = sizedRegName(x86PhysRegs.intArgs[j], c->retTypes[j]);
+                        string d = srcOperand(dst);
+                        if (src_reg != d)
+                            out << "\t" << movInstrForType(c->retTypes[j]) << " " << src_reg << ", " << d << "\n";
+                    }
                 }
             } else if (auto* r = std::get_if<RetPln>(&instr)) {
-                // Move return value into %rax (single return value).
+                // Move return value(s) to return registers.
                 if (r->rets.size() == 1) {
+                    // Single return: copy to %rax
                     const PhysLoc& src = rm.at(r->rets[0]);
                     string s   = srcOperand(src);
                     string rax = sizedRegName("%rax", r->types[0]);
                     if (s != rax)
                         out << "\t" << movInstrForType(r->types[0]) << " " << s << ", " << rax << "\n";
+                } else if (r->rets.size() > 1) {
+                    // Multi-return: copy to intArgs[j] in forward order
+                    for (int j = 0; j < (int)r->rets.size(); j++) {
+                        const PhysLoc& src = rm.at(r->rets[j]);
+                        string s = srcOperand(src);
+                        string dst_reg = sizedRegName(x86PhysRegs.intArgs[j], r->types[j]);
+                        if (s != dst_reg)
+                            out << "\t" << movInstrForType(r->types[j]) << " " << s << ", " << dst_reg << "\n";
+                    }
                 }
                 // Restore callee-saved registers in reverse order before returning
                 for (int i = (int)ra.usedCalleeSaved.size() - 1; i >= 0; i--)

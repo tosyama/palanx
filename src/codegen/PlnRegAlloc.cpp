@@ -108,15 +108,23 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
     };
 
+    // Count how many vregs are return values (to detect multi-return)
+    int numRetValues = 0;
+    for (auto& [vreg, m] : meta)
+        if (m.isRetValue) numRetValues++;
+
     for (auto& [vreg, m] : meta) {
         if (result.count(vreg)) continue;  // already bound (e.g., param pre-binding)
 
         if (m.call_uses.empty()) {
             if (m.isVar) {
                 allocStackSlot(vreg, m.type);
-            } else if (m.isRetValue) {
-                // Return value: bind directly to %rax to avoid callee-saved pollution.
+            } else if (m.isRetValue && numRetValues == 1) {
+                // Single return value: bind directly to %rax to avoid callee-saved pollution.
                 result[vreg] = PhysLoc{"%rax", m.type};
+            } else if (m.isRetValue) {
+                // Multi-return value: use callee-saved so each survives until RetPln.
+                allocCalleeSavedOrStack(vreg, m.type);
             } else if (m.last_any_use >= 0) {
                 // Used only as Add operand (not directly by any call)
                 allocCalleeSavedOrStack(vreg, m.type);

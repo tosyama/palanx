@@ -90,8 +90,9 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "expr")     result.push_back(sa_expression_stmt(stmt));
 		else if (t == "var-decl") result.push_back(sa_var_decl(stmt));
 		else if (t == "assign")   result.push_back(sa_assign_stmt(stmt));
-		else if (t == "return")   result.push_back(sa_return_stmt(stmt));
-		else if (t == "not-impl") result.push_back(stmt);
+		else if (t == "return")      result.push_back(sa_return_stmt(stmt));
+		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
+		else if (t == "not-impl")    result.push_back(stmt);
 		else BOOST_ASSERT(false);
 	}
 	return result;
@@ -323,6 +324,34 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 	// Void function: bare return only
 	BOOST_ASSERT(!hasValues);
 	return {{"stmt-type", "return"}};
+}
+
+json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
+{
+	const json& callExpr = stmt["value"];
+	const string& fname = callExpr["name"].get<string>();
+
+	// Resolve function — fall back to not-impl if not a known multi-return Palan func
+	auto pit = plnFuncTable_.find(fname);
+	if (pit == plnFuncTable_.end()) return {{"stmt-type", "not-impl"}};
+	const json& pFunc = pit->second;
+	if (!pFunc.contains("rets") || pFunc["rets"].size() < 2) return {{"stmt-type", "not-impl"}};
+	if (stmt["vars"].size() != pFunc["rets"].size()) return {{"stmt-type", "not-impl"}};
+
+	// Process the call expression via sa_expression (resolves func-type, annotates args)
+	json saCall = sa_expression(callExpr);
+
+	// Add multi-return value-types from the function's rets
+	json valueTypes = json::array();
+	for (auto& r : pFunc["rets"])
+		valueTypes.push_back(r["var-type"]);
+	saCall["value-types"] = valueTypes;
+
+	// Register declared variables in the symbol table
+	for (size_t i = 0; i < stmt["vars"].size(); i++)
+		varSymbolTable[stmt["vars"][i]["var-name"].get<string>()] = pFunc["rets"][i]["var-type"];
+
+	return {{"stmt-type", "tapple-decl"}, {"vars", stmt["vars"]}, {"value", saCall}};
 }
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)

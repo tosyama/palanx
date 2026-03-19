@@ -275,6 +275,21 @@ TEST(codegen, named_ret_double_assign) {
     ASSERT_NE(asm_text.find("ret"),          string::npos);
 }
 
+TEST(codegen, multiret) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/016_multiret.sa.json";
+    string asmf = "out/016_multiret.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("sumsOf:"),       string::npos);  // function label
+    ASSERT_NE(asm_text.find("call sumsOf"),   string::npos);  // caller invokes sumsOf
+    ASSERT_NE(asm_text.find("ret"),           string::npos);  // ret instruction
+    ASSERT_NE(asm_text.find("call printf"),   string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";

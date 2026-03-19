@@ -121,6 +121,18 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
                 s->values.push_back(deserializeExpr(v));
         return s;
     }
+    if (stmt_type == "tapple-decl") {
+        auto s = make_unique<TappleDeclStmt>();
+        s->funcName = j["value"]["name"];
+        for (auto& jv : j["vars"])
+            s->vars.push_back({jv["var-name"], toVRegType(jv["var-type"])});
+        if (j["value"].contains("args"))
+            for (auto& arg : j["value"]["args"])
+                s->args.push_back(deserializeExpr(arg));
+        for (auto& vt : j["value"]["value-types"])
+            s->retTypes.push_back(toVRegType(vt));
+        return s;
+    }
     if (stmt_type == "not-impl") {
         return nullptr;
     }
@@ -161,8 +173,12 @@ Module deserialize(const json& sa)
                 pf.hasRetType = true;
                 pf.retType    = toVRegType(jf["ret-type"]);
             }
-            if (jf.contains("rets") && jf["rets"].size() == 1)
+            if (jf.contains("rets") && jf["rets"].size() == 1) {
                 pf.retVarName = jf["rets"][0]["name"];
+            } else if (jf.contains("rets") && jf["rets"].size() >= 2) {
+                for (auto& r : jf["rets"])
+                    pf.retVars.push_back({r["name"], toVRegType(r["var-type"])});
+            }
             pf.body = deserializeStatements(jf["body"]);
             mod.functions.push_back(move(pf));
         }

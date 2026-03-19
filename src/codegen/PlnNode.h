@@ -84,6 +84,8 @@ struct PlnCallExpr : Expr {
     vector<unique_ptr<Expr>> args;
 };
 
+struct VarDef { string name; VRegType type; };
+
 // -------- Statements --------
 
 enum class StmtKind {
@@ -91,6 +93,7 @@ enum class StmtKind {
     VarDecl,
     Assign,
     Return,
+    TappleDecl,
 };
 
 struct Stmt {
@@ -127,6 +130,14 @@ struct ReturnStmt : Stmt {
     vector<unique_ptr<Expr>> values;  // empty for bare return
 };
 
+struct TappleDeclStmt : Stmt {
+    TappleDeclStmt() : Stmt(StmtKind::TappleDecl) {}
+    vector<VarDef>           vars;
+    string                   funcName;
+    vector<unique_ptr<Expr>> args;
+    vector<VRegType>         retTypes;
+};
+
 // -------- Module --------
 
 struct StrLiteralDef {
@@ -134,14 +145,13 @@ struct StrLiteralDef {
     string value;
 };
 
-struct VarDef { string name; VRegType type; };
-
 struct PlnFunc {
     string             name;
     vector<VarDef>     params;
     bool               hasRetType = false;
     VRegType           retType    = VRegType::Int64;
-    string             retVarName;  // named return variable; empty if none
+    string             retVarName;   // single named return variable; empty if none
+    vector<VarDef>     retVars;      // multiple named return variables (size>=2)
     vector<unique_ptr<Stmt>> body;
 };
 

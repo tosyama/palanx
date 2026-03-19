@@ -37,6 +37,7 @@ class PlnVCodeGen {
     void lowerReturnStmt(const ReturnStmt& stmt, VFunc& func);
     void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
+    void lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func);
 
 public:
     VProg generate(const Module& module);

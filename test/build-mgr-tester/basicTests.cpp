@@ -77,6 +77,24 @@ TEST(build_mgr, return_narrowing) {
 	ASSERT_EQ(output, "99\n");
 }
 
+TEST(build_mgr, multiret) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/013_multiret.pa");
+	ASSERT_EQ(output, "3 5\n");
+}
+
+TEST(build_mgr, type_inherit_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/014_type_inherit_decl.pa");
+	ASSERT_EQ(output, "5 10\n");
+}
+
+TEST(build_mgr, type_inherit_tapple) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/015_type_inherit_tapple.pa");
+	ASSERT_EQ(output, "3 5\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
