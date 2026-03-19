@@ -147,7 +147,8 @@ TEST(regalloc, convert_src_uses_callee_saved) {
     // r1: call_use, no intervening call → arg register %rdi
     ASSERT_FALSE(r.regMap.at(1).isStack());
     EXPECT_EQ(r.regMap.at(1).base, "%rdi");
-    EXPECT_EQ(r.frameSize, 0);
+    // k=1 callee-saved used → save area = 8 bytes → frameSize = alignUp(8,16) = 16
+    EXPECT_EQ(r.frameSize, 16);
 }
 
 // -------- Efficiency cases --------
@@ -176,7 +177,8 @@ TEST(regalloc, initvar_with_intervening_call_gets_callee_saved) {
 
     ASSERT_FALSE(r.regMap.at(0).isStack());
     EXPECT_EQ(r.regMap.at(0).base, "%rbx");
-    EXPECT_EQ(r.frameSize, 0);
+    // k=1 callee-saved used → save area = 8 bytes → frameSize = alignUp(8,16) = 16
+    EXPECT_EQ(r.frameSize, 16);
 }
 
 // Add result used directly by call → gets arg register; Add operands go to stack

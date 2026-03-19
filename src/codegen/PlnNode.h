@@ -79,6 +79,8 @@ struct CCCallExpr : Expr {
 struct PlnCallExpr : Expr {
     PlnCallExpr() : Expr(ExprKind::PlnCall) {}
     string name;
+    bool     hasRet  = false;
+    VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
 };
 
@@ -87,6 +89,8 @@ struct PlnCallExpr : Expr {
 enum class StmtKind {
     Expr,
     VarDecl,
+    Assign,
+    Return,
 };
 
 struct Stmt {
@@ -112,6 +116,17 @@ struct VarDeclStmt : Stmt {
     vector<VarEntry> vars;
 };
 
+struct AssignStmt : Stmt {
+    AssignStmt() : Stmt(StmtKind::Assign) {}
+    string           name;   // destination variable name
+    unique_ptr<Expr> value;
+};
+
+struct ReturnStmt : Stmt {
+    ReturnStmt() : Stmt(StmtKind::Return) {}
+    vector<unique_ptr<Expr>> values;  // empty for bare return
+};
+
 // -------- Module --------
 
 struct StrLiteralDef {
@@ -119,8 +134,20 @@ struct StrLiteralDef {
     string value;
 };
 
+struct VarDef { string name; VRegType type; };
+
+struct PlnFunc {
+    string             name;
+    vector<VarDef>     params;
+    bool               hasRetType = false;
+    VRegType           retType    = VRegType::Int64;
+    string             retVarName;  // named return variable; empty if none
+    vector<unique_ptr<Stmt>> body;
+};
+
 struct Module {
     string original;
-    vector<StrLiteralDef> strLiterals;
+    vector<StrLiteralDef>    strLiterals;
+    vector<PlnFunc>          functions;
     vector<unique_ptr<Stmt>> statements;
 };

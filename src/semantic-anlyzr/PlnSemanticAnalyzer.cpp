@@ -61,8 +61,12 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	pushScope();
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
-		for (auto& f : ast["ast"]["functions"])
+		for (auto& f : ast["ast"]["functions"]) {
 			plnFuncTable_[f["name"]] = f;
+			// Single named return: synthesize ret-type for call resolution
+			if (!f.contains("ret-type") && f.contains("rets") && f["rets"].size() == 1)
+				plnFuncTable_[f["name"]]["ret-type"] = f["rets"][0]["var-type"];
+		}
 	// 2. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);
@@ -263,7 +267,10 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	currentFunc_ = &plnFuncTable_[funcDef["name"]];
 
-	json saFunc    = funcDef;
+	json saFunc = funcDef;
+	// Single named return: add ret-type so codegen knows the return type
+	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
+		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
 	saFunc["body"] = sa_statements(funcDef["body"]);
 
 	varSymbolTable = savedVars;
@@ -281,7 +288,8 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	json value = sa_expression(stmt["value"], toType);
 	if (value.contains("value-type")) {
 		const PlnType* fromType = registry_.fromJson(value["value-type"]);
-		if (typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
+		TypeCompat compat = typeCompat(fromType, toType, registry_);
+		if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 			value = wrapConvert(value, registry_.toJson(toType));
 	}
 	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
@@ -306,7 +314,8 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		json value = sa_expression(stmt["values"][0], toType);
 		if (value.contains("value-type")) {
 			const PlnType* fromType = registry_.fromJson(value["value-type"]);
-			if (typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
+			TypeCompat compat = typeCompat(fromType, toType, registry_);
+			if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 				value = wrapConvert(value, registry_.toJson(toType));
 		}
 		return {{"stmt-type", "return"}, {"values", json::array({value})}};

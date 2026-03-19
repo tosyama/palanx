@@ -201,6 +201,80 @@ TEST(codegen, callpln_retpln_regalloc) {
     EXPECT_EQ(ra.frameSize % 16, 0);
 }
 
+TEST(codegen, palan_func_simple) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/012_palan_func_simple.sa.json";
+    string asmf = "out/012_palan_func_simple.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("add:"),        string::npos);  // function label emitted
+    ASSERT_NE(asm_text.find("call add"),    string::npos);  // caller invokes add
+    ASSERT_NE(asm_text.find("ret"),         string::npos);  // ret instruction present
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, assign_stmt) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/013_assign.sa.json";
+    string asmf = "out/013_assign.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("passthrough:"),  string::npos);  // function label emitted
+    ASSERT_NE(asm_text.find("call passthrough"), string::npos);  // caller invokes passthrough
+    ASSERT_NE(asm_text.find("movl $0,"),      string::npos);  // dead InitVar for y still emitted
+    ASSERT_NE(asm_text.find("ret"),           string::npos);
+    ASSERT_NE(asm_text.find("call printf"),   string::npos);
+}
+
+// Regression: named return with narrowing (Int64 -> Int32) must insert a Convert in
+// sa_assign_stmt, and callee-saved registers used inside the function must be saved and
+// restored in the prologue/epilogue.
+TEST(codegen, named_ret_narrowing) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/014_named_ret_narrowing.sa.json";
+    string asmf = "out/014_named_ret_narrowing.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("test:"),          string::npos);  // function label
+    ASSERT_NE(asm_text.find("call test"),       string::npos);  // caller invokes test
+    // Callee-saved register %rbx must be saved in prologue and restored before ret
+    ASSERT_NE(asm_text.find("movq %rbx, -8(%rbp)"),   string::npos);  // save
+    ASSERT_NE(asm_text.find("movq -8(%rbp), %rbx"),   string::npos);  // restore
+    ASSERT_NE(asm_text.find("ret"),            string::npos);
+}
+
+// Regression: when callee-saved registers are exhausted by temporaries, an Add result is
+// spilled to a stack slot; X86CodeGen must emit a memory-destination Add instruction.
+TEST(codegen, named_ret_double_assign) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/015_named_ret_double_assign.sa.json";
+    string asmf = "out/015_named_ret_double_assign.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("test:"),        string::npos);
+    ASSERT_NE(asm_text.find("call test"),    string::npos);
+    // All 5 callee-saved registers must be saved/restored
+    ASSERT_NE(asm_text.find("movq %rbx, -8(%rbp)"),   string::npos);
+    ASSERT_NE(asm_text.find("movq -8(%rbp), %rbx"),   string::npos);
+    ASSERT_NE(asm_text.find("movq %r15, -40(%rbp)"),  string::npos);
+    ASSERT_NE(asm_text.find("movq -40(%rbp), %r15"),  string::npos);
+    // Add with memory destination: the spilled Add result is stored directly to stack
+    ASSERT_NE(asm_text.find("addq %r15, -56(%rbp)"),  string::npos);
+    ASSERT_NE(asm_text.find("ret"),          string::npos);
+}
+
 TEST(codegen, helloworld_asm_output) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/001_helloworld.sa.json";

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <variant>
+#include <utility>
 
 using std::string;
 using std::vector;
@@ -50,6 +51,7 @@ struct VFunc {
     string         name;
     vector<VInstr> instrs;
     bool           isEntry = false;  // true only for _start
+    vector<std::pair<VReg, VRegType>> params;  // (vreg, type) in arg order
 };
 
 struct VProg {

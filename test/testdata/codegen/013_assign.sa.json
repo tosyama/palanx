@@ -1,0 +1,55 @@
+{
+  "original": "/test/assign.pa",
+  "str-literals": [{ "label": ".str0", "value": "%d\n" }],
+  "functions": [
+    {
+      "name": "passthrough",
+      "parameters": [
+        { "name": "x", "var-type": { "type-kind": "prim", "type-name": "int32" } }
+      ],
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            {
+              "name": "y",
+              "var-type": { "type-kind": "prim", "type-name": "int32" },
+              "init": { "expr-type": "lit-int", "value": "0", "value-type": { "type-kind": "prim", "type-name": "int32" } }
+            }
+          ]
+        },
+        {
+          "stmt-type": "assign",
+          "name": "y",
+          "value": { "expr-type": "id", "name": "x" }
+        },
+        {
+          "stmt-type": "return",
+          "values": [
+            { "expr-type": "id", "name": "y" }
+          ]
+        }
+      ]
+    }
+  ],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call", "func-type": "c", "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0",
+            "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } } },
+          {
+            "expr-type": "call", "func-type": "pln", "name": "passthrough",
+            "value-type": { "type-kind": "prim", "type-name": "int32" },
+            "args": [
+              { "expr-type": "lit-int", "value": "42", "value-type": { "type-kind": "prim", "type-name": "int32" } }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+
+func test(int64 x) -> int32 a {
+    5 + x -> a;
+}
+
+printf("%d\n", test(10));

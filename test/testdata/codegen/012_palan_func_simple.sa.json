@@ -1,0 +1,47 @@
+{
+  "original": "/test/palan_func_simple.pa",
+  "str-literals": [{ "label": ".str0", "value": "%d\n" }],
+  "functions": [
+    {
+      "name": "add",
+      "parameters": [
+        { "name": "a", "var-type": { "type-kind": "prim", "type-name": "int32" } },
+        { "name": "b", "var-type": { "type-kind": "prim", "type-name": "int32" } }
+      ],
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "body": [
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "add",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "left":  { "expr-type": "id", "name": "a" },
+              "right": { "expr-type": "id", "name": "b" }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call", "func-type": "c", "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0",
+            "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } } },
+          {
+            "expr-type": "call", "func-type": "pln", "name": "add",
+            "value-type": { "type-kind": "prim", "type-name": "int32" },
+            "args": [
+              { "expr-type": "lit-int", "value": "3", "value-type": { "type-kind": "prim", "type-name": "int32" } },
+              { "expr-type": "lit-int", "value": "4", "value-type": { "type-kind": "prim", "type-name": "int32" } }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
