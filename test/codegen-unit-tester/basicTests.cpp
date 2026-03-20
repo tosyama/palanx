@@ -215,6 +215,50 @@ TEST(regalloc, convert_result_as_arg_register) {
     EXPECT_EQ(r.regMap.at(1).base, "%rdi");
 }
 
+// -------- Block scope slot reuse --------
+
+// Sequential blocks with same-size vars → second block reuses first block's stack slot
+TEST(regalloc, block_reuse_same_size) {
+    VFunc func;
+    func.isEntry = true;
+    // block 1: v0 (Int64) allocated, then freed
+    func.instrs.push_back(BlockEnter{});
+    func.instrs.push_back(InitVar{0, VRegType::Int64, 0});
+    func.instrs.push_back(BlockLeave{{0}});
+    // block 2: v1 (Int64) should reuse v0's slot
+    func.instrs.push_back(BlockEnter{});
+    func.instrs.push_back(InitVar{1, VRegType::Int64, 0});
+    func.instrs.push_back(BlockLeave{{1}});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    ASSERT_TRUE(r.regMap.at(0).isStack());
+    ASSERT_TRUE(r.regMap.at(1).isStack());
+    EXPECT_EQ(r.regMap.at(0).stackOffset, r.regMap.at(1).stackOffset);
+    // Only one slot allocated — frameSize should reflect a single Int64 slot
+    EXPECT_EQ(r.frameSize, 8);
+}
+
+// Sequential blocks with different-size vars → slots must NOT be shared
+TEST(regalloc, block_reuse_size_mismatch) {
+    VFunc func;
+    func.isEntry = true;
+    // block 1: v0 (Int32)
+    func.instrs.push_back(BlockEnter{});
+    func.instrs.push_back(InitVar{0, VRegType::Int32, 0});
+    func.instrs.push_back(BlockLeave{{0}});
+    // block 2: v1 (Int64) — different size, must not reuse v0's slot
+    func.instrs.push_back(BlockEnter{});
+    func.instrs.push_back(InitVar{1, VRegType::Int64, 0});
+    func.instrs.push_back(BlockLeave{{1}});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    ASSERT_TRUE(r.regMap.at(0).isStack());
+    ASSERT_TRUE(r.regMap.at(1).isStack());
+    EXPECT_NE(r.regMap.at(0).stackOffset, r.regMap.at(1).stackOffset);
+}
+
 // Value defined before a call and used after it → needs callee-saved register
 TEST(regalloc, callee_saved_across_call) {
     VFunc func;

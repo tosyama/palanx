@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+
+int64 x = 1;
+{
+    int64 a = 2;
+    {
+        int64 b = 3;
+        printf("%ld %ld %ld\n", x, a, b);
+    }
+    printf("%ld %ld\n", x, a);
+}
+printf("%ld\n", x);

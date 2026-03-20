@@ -28,6 +28,7 @@ class PlnVCodeGen {
     VReg allocVReg();
 
     const PlnFunc* currentPlnFunc_ = nullptr;  // set while lowering a Palan function body
+    vector<vector<VReg>> blockVarStack_;
 
     VReg lowerExpr(const Expr& expr, VFunc& func);
     void lowerStmt(const Stmt& stmt, VFunc& func);
@@ -38,6 +39,7 @@ class PlnVCodeGen {
     void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
     void lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func);
+    void lowerBlockStmt(const BlockStmt& stmt, VFunc& func);
 
 public:
     VProg generate(const Module& module);

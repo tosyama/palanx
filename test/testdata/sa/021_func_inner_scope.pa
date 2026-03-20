@@ -1,0 +1,7 @@
+func outer(int64 x) -> int64 {
+    func inner(int64 n) -> int64 { return n + n; }
+    return inner(x);
+}
+func caller(int64 x) -> int64 {
+    return inner(x);
+}

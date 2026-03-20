@@ -1,0 +1,13 @@
+{
+    int32 x;
+    x = 1;
+}
+
+func outer(int32 a) -> int32 {
+    {
+        func inner(int32 b) -> int32 {
+            return b + 1;
+        }
+        return inner(a);
+    }
+}

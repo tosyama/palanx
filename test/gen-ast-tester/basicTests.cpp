@@ -157,7 +157,7 @@ TEST(gen_ast, func_def) {
 		ASSERT_TRUE(f.contains("ret-type"));
 		ASSERT_EQ(f["ret-type"]["type-name"], "int32");
 		bool has_return = false;
-		for (auto& s : f["body"])
+		for (auto& s : f["block"]["body"])
 			if (s["stmt-type"] == "return") { has_return = true; }
 		ASSERT_TRUE(has_return);
 		found_add = true;
@@ -174,7 +174,7 @@ TEST(gen_ast, func_def) {
 		ASSERT_EQ(f["rets"][0]["name"], "q");
 		ASSERT_EQ(f["rets"][1]["name"], "r");
 		bool has_assign = false;
-		for (auto& s : f["body"])
+		for (auto& s : f["block"]["body"])
 			if (s["stmt-type"] == "assign") {
 				ASSERT_EQ(s["name"], "q");
 				has_assign = true;
@@ -183,6 +183,36 @@ TEST(gen_ast, func_def) {
 		found_divmod = true;
 	}
 	ASSERT_TRUE(found_divmod);
+}
+
+TEST(gen_ast, block_stmt) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/006_block.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// top-level: statements has 1 block, functions has outer only
+	ASSERT_EQ(jout["ast"]["statements"].size(), 1);
+	ASSERT_EQ(jout["ast"]["functions"].size(), 1);
+
+	// block stmt structure: top-level block has functions=[] and body=[var-decl, assign]
+	const auto& blk = jout["ast"]["statements"][0];
+	ASSERT_EQ(blk["stmt-type"], "block");
+	ASSERT_EQ(blk["body"].size(), 2);  // var-decl + assign
+	ASSERT_EQ(blk["functions"].size(), 0);
+
+	// outer function block contains one block in body
+	const auto& outerFunc = jout["ast"]["functions"][0];
+	ASSERT_EQ(outerFunc["name"], "outer");
+	const auto& outerBody = outerFunc["block"]["body"];
+	ASSERT_EQ(outerBody.size(), 1);
+	ASSERT_EQ(outerBody[0]["stmt-type"], "block");
+
+	// inner func-def is in block.functions, body has the return stmt
+	ASSERT_EQ(outerBody[0]["functions"].size(), 1);
+	ASSERT_EQ(outerBody[0]["functions"][0]["name"], "inner");
+	ASSERT_EQ(outerBody[0]["body"].size(), 1);
+	ASSERT_EQ(outerBody[0]["body"][0]["stmt-type"], "return");
 }
 
 TEST(gen_ast, cli_tests) {

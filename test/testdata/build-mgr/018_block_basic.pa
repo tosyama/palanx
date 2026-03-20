@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+int64 x = 10;
+{
+    int64 y = 20;
+    printf("%ld %ld\n", x, y);
+}
+printf("%ld\n", x);

@@ -100,7 +100,8 @@ void PlnX86CodeGen::emit(const VProg& prog)
 
     emitSection(".text");
     for (auto& func : prog.funcs) {
-        emitGlobal(func.name);
+        if (func.isEntry)
+            emitGlobal(func.name);
         emitLabel(func.name);
 
         RegAllocResult ra = allocateRegisters(func, x86PhysRegs);
@@ -237,6 +238,10 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 out << "\tret\n";
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
                 emitExit(i->code);
+            } else if (std::get_if<BlockEnter>(&instr)) {
+                // no-op
+            } else if (std::get_if<BlockLeave>(&instr)) {
+                // no-op
             }
         }
     }

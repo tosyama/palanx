@@ -141,7 +141,9 @@ class PlnLexer;
 %type <vector<json>>	var_declarations
 %type <json>	func_def return_def
 %type <json>	return
-%type <vector<json>>	block paramaters expressions
+%type <vector<json>>	block paramaters expressions block_statements
+%type <json>	block_obj standalone_block block_body_items
+%type <json>	statement_or_funcdef
 %type <bool>	move_owner_r
 %type <json>	tapple_decl tapple_decl_inner
 
@@ -187,11 +189,8 @@ statement: import ';'
 			$$["functions"] = move(c_ast["ast"]["functions"]);
 		}
 	}
-	| block
-	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
-	}
+	| standalone_block
+		{ $$ = move($1); }
 	| var_declarations ';'
 	{
 		// Detect a tapple-decl emitted by var_declaration
@@ -346,6 +345,48 @@ cinclude: KW_CINCLUDE import_path import_as
 
 block: '{' statements '}'
 	{ $$ = move($2); }
+	;
+
+block_statements: /* empty */
+	{ }
+	| block_statements statement_or_funcdef
+	{
+		$$ = move($1);
+		$$.emplace_back(move($2));
+	}
+	;
+
+statement_or_funcdef: statement    %dprec 1
+	{ $$ = move($1); }
+	| func_def                     %dprec 2
+	{
+		$$ = {{"stmt-type", "func-def"}};
+		for (auto& [k, v] : $1.items())
+			$$[k] = move(v);
+	}
+	;
+
+block_body_items: /* empty */
+	{ $$ = {{"functions", json::array()}, {"body", json::array()}}; }
+	| block_body_items statement_or_funcdef
+	{
+		$$ = move($1);
+		json item = move($2);
+		if (item.value("stmt-type", "") == "func-def") {
+			item.erase("stmt-type");
+			$$["functions"].push_back(move(item));
+		} else {
+			$$["body"].push_back(move(item));
+		}
+	}
+	;
+
+block_obj: '{' block_body_items '}'
+	{ $$ = move($2); }
+	;
+
+standalone_block: block_obj
+	{ json blk = move($1); blk["stmt-type"] = "block"; $$ = move(blk); }
 	;
 
 var_declarations: var_declaration
@@ -579,13 +620,13 @@ dict_items: ID ':' expression
 	| dict_items ',' ID ':' expression
 	;
 
-func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block
+func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj
 	{
 		bool all_ok = true;
 		for (auto& p : $5)
 			if (p.count("not-impl")) { all_ok = false; break; }
 		if (all_ok) {
-			$$ = {{"name", $3}, {"func-type", "palan"}, {"body", move($8)}, {"parameters", move($5)}};
+			$$ = {{"name", $3}, {"func-type", "palan"}, {"block", move($8)}, {"parameters", move($5)}};
 			if ($7.contains("rets"))
 				$$["rets"] = move($7["rets"]);
 			else if ($7.contains("ret-type"))

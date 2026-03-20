@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+{
+    func double_val(int64 n) -> int64 {
+        return n + n;
+    }
+    printf("%ld\n", double_val(3));
+}
