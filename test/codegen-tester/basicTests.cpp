@@ -308,3 +308,20 @@ TEST(codegen, helloworld_asm_output) {
     ASSERT_NE(asm_text.find("call printf"),    string::npos);
     ASSERT_NE(asm_text.find("call exit"),      string::npos);
 }
+
+TEST(codegen, block_stmt) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/017_block.sa.json";
+    string asmf = "out/017_block.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // block generates valid asm: printf call and exit
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+    ASSERT_NE(asm_text.find("call exit"),   string::npos);
+    // no extra block-related assembly instructions leaked
+    ASSERT_EQ(asm_text.find("BlockEnter"),  string::npos);
+    ASSERT_EQ(asm_text.find("BlockLeave"),  string::npos);
+}

@@ -237,6 +237,10 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 out << "\tret\n";
             } else if (auto* i = std::get_if<ExitCode>(&instr)) {
                 emitExit(i->code);
+            } else if (std::get_if<BlockEnter>(&instr)) {
+                // no-op
+            } else if (std::get_if<BlockLeave>(&instr)) {
+                // no-op
             }
         }
     }

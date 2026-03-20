@@ -36,9 +36,12 @@ struct CallC    { string name; vector<VReg> args; VReg dst = -1; VRegType retTyp
 struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
 struct RetPln   { vector<VReg> rets; vector<VRegType> types; };
 struct ExitCode { int code; };
+struct BlockEnter {};
+struct BlockLeave { vector<VReg> expiredVars; };
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Convert,
-                             CallC, CallPln, RetPln, ExitCode>;
+                             CallC, CallPln, RetPln, ExitCode,
+                             BlockEnter, BlockLeave>;
 
 // -------- Program structure --------
 

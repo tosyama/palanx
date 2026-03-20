@@ -94,6 +94,7 @@ enum class StmtKind {
     Assign,
     Return,
     TappleDecl,
+    Block,
 };
 
 struct Stmt {
@@ -136,6 +137,11 @@ struct TappleDeclStmt : Stmt {
     string                   funcName;
     vector<unique_ptr<Expr>> args;
     vector<VRegType>         retTypes;
+};
+
+struct BlockStmt : Stmt {
+    BlockStmt() : Stmt(StmtKind::Block) {}
+    vector<unique_ptr<Stmt>> body;
 };
 
 // -------- Module --------

@@ -86,6 +86,8 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     return nullptr;
 }
 
+static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr);  // forward declaration
+
 static unique_ptr<Stmt> deserializeStmt(const json& j)
 {
     string stmt_type = j["stmt-type"];
@@ -131,6 +133,11 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
                 s->args.push_back(deserializeExpr(arg));
         for (auto& vt : j["value"]["value-types"])
             s->retTypes.push_back(toVRegType(vt));
+        return s;
+    }
+    if (stmt_type == "block") {
+        auto s = make_unique<BlockStmt>();
+        s->body = deserializeStatements(j["body"]);
         return s;
     }
     if (stmt_type == "not-impl") {

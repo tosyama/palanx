@@ -199,6 +199,8 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                 auto& e = static_cast<const IntLitExpr&>(*ve.init);
                 r = allocVReg();
                 func.instrs.push_back(InitVar{r, e.type, stoll(e.value)});
+                if (!blockVarStack_.empty())
+                    blockVarStack_.back().push_back(r);
             } else {
                 r = lowerExpr(*ve.init, func);
             }
@@ -207,6 +209,21 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
         }
         declareVar(ve.varName, r);
     }
+}
+
+void PlnVCodeGen::lowerBlockStmt(const BlockStmt& stmt, VFunc& func)
+{
+    func.instrs.push_back(BlockEnter{});
+    enterVarScope();
+    blockVarStack_.push_back({});
+
+    for (auto& s : stmt.body)
+        lowerStmt(*s, func);
+
+    vector<VReg> expired = move(blockVarStack_.back());
+    blockVarStack_.pop_back();
+    leaveVarScope();
+    func.instrs.push_back(BlockLeave{move(expired)});
 }
 
 void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
@@ -226,6 +243,9 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
             return;
         case StmtKind::TappleDecl:
             lowerTappleDeclStmt(static_cast<const TappleDeclStmt&>(stmt), func);
+            return;
+        case StmtKind::Block:
+            lowerBlockStmt(static_cast<const BlockStmt&>(stmt), func);
             return;
     }
     BOOST_ASSERT(false);
