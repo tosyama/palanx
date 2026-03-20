@@ -496,6 +496,18 @@ TEST(sa, block_scope) {
 	}
 }
 
+TEST(sa, block_cinclude_scope) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/020_block_cinclude_scope.pa");
+	ASSERT_TRUE(jout.is_object());
+	// block is emitted with body
+	ASSERT_EQ(jout["statements"].size(), 1u);
+	ASSERT_EQ(jout["statements"][0]["stmt-type"], "block");
+	// printf inside block resolved as C function
+	ASSERT_EQ(jout["statements"][0]["body"][0]["stmt-type"], "expr");
+	ASSERT_EQ(jout["statements"][0]["body"][0]["body"]["func-type"], "c");
+}
+
 TEST(sa, block_func_def) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/017_block_func_def.pa");

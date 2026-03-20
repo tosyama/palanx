@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.4
+**Version:** v0.1.5
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -46,7 +46,8 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 7. [Function Definitions](#7-function-definitions)
 8. [Receiving Multiple Return Values](#8-receiving-multiple-return-values)
 9. [C Library Integration](#9-c-library-integration)
-10. [Program Structure](#10-program-structure)
+10. [Block Statements](#10-block-statements)
+11. [Program Structure](#11-program-structure)
 
 ---
 
@@ -243,7 +244,29 @@ printf("%ld\n", x);      // call C function
 
 ---
 
-## 10. Program Structure
+## 10. Block Statements
+
+A block `{ ... }` creates a new scope. Variables and functions declared inside are not visible after the closing brace.
+
+```palan
+int64 x = 10;
+{
+    int64 y = 20;      // y visible only inside this block
+    printf("%ld\n", y);
+}
+// y is no longer visible here
+printf("%ld\n", x);   // x is still visible
+```
+
+Shadowing — declaring a variable or Palan function with the same name as one in an outer scope — is a compile error.
+
+Palan function definitions inside a block are block-scoped and support forward references within the same block.
+
+`cinclude` inside a block makes the imported C functions available only within that block. Shadowing of C function names is allowed.
+
+---
+
+## 11. Program Structure
 
 ```palan
 cinclude <stdio.h>;

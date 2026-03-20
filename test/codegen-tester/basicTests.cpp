@@ -271,7 +271,9 @@ TEST(codegen, named_ret_double_assign) {
     ASSERT_NE(asm_text.find("movq %r15, -40(%rbp)"),  string::npos);
     ASSERT_NE(asm_text.find("movq -40(%rbp), %r15"),  string::npos);
     // Add with memory destination: the spilled Add result is stored directly to stack
-    ASSERT_NE(asm_text.find("addq %r15, -56(%rbp)"),  string::npos);
+    // Note: isVar slots are now allocated in Pass B (after Pass A non-var spills),
+    // so the spill offset is -48 instead of -56.
+    ASSERT_NE(asm_text.find("addq %r15, -48(%rbp)"),  string::npos);
     ASSERT_NE(asm_text.find("ret"),          string::npos);
 }
 

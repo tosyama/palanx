@@ -107,6 +107,36 @@ TEST(build_mgr, palan_call_as_stmt) {
 	ASSERT_EQ(output, "hello\n");
 }
 
+TEST(build_mgr, block_basic) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/018_block_basic.pa");
+	ASSERT_EQ(output, "10 20\n10\n");
+}
+
+TEST(build_mgr, block_in_func) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/019_block_in_func.pa");
+	ASSERT_EQ(output, "6\n");
+}
+
+TEST(build_mgr, block_cinclude) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/020_block_cinclude.pa");
+	ASSERT_EQ(output, "hello from block\n");
+}
+
+TEST(build_mgr, block_func_def) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/021_block_func_def.pa");
+	ASSERT_EQ(output, "14\n");
+}
+
+TEST(build_mgr, block_nested) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/022_block_nested.pa");
+	ASSERT_EQ(output, "1 2 3\n1 2\n1\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

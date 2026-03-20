@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.4
+ver. 0.1.5
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -41,6 +41,19 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 - cinclude statements are consumed by SA and not emitted
 - var-type resolved on id expressions (see Expression model below)
 - assign and return statements are emitted as-is with SA-annotated expressions
+
+- **block** - standalone block statement
+  - stmt-type\*: "block"
+  - body\*: statement list (cinclude consumed; func-def hoisted to sa["functions"])
+
+  Scope rules:
+  - Variables and Palan functions declared inside a block are not visible outside.
+  - Shadowing of variables or Palan function names across any scope boundary is
+    a compile error (BOOST_ASSERT).
+  - C functions from cinclude inside a block are visible only until the end of that
+    block. Shadowing of C function names is permitted.
+  - Palan function definitions inside a block are pre-registered (pass 1) to
+    support forward references within the same block.
 
 Additional statement kinds emitted by SA:
 

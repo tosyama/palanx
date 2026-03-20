@@ -115,11 +115,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
     for (auto& [vreg, m] : meta) {
         if (result.count(vreg)) continue;  // already bound (e.g., param pre-binding)
+        if (m.isVar && m.call_uses.empty()) continue;  // Pass B handles stack-only isVar
 
         if (m.call_uses.empty()) {
-            if (m.isVar) {
-                allocStackSlot(vreg, m.type);
-            } else if (m.isRetValue && numRetValues == 1) {
+            if (m.isRetValue && numRetValues == 1) {
                 // Single return value: bind directly to %rax to avoid callee-saved pollution.
                 result[vreg] = PhysLoc{"%rax", m.type};
             } else if (m.isRetValue) {
@@ -153,6 +152,32 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             int arg_pos = m.call_uses.front().second;
             BOOST_ASSERT(arg_pos < (int)phys.intArgs.size());
             result[vreg] = PhysLoc{phys.intArgs[arg_pos], m.type};
+        }
+    }
+
+    // Pass B: assign stack slots to InitVar VRegs in instruction order,
+    // reusing freed slots via freePool.
+    {
+        map<int, vector<int>> freePool;  // size(bytes) -> available offsets
+
+        for (auto& instr : func.instrs) {
+            if (auto* v = std::get_if<InitVar>(&instr)) {
+                if (result.count(v->dst)) continue;  // already handled in Pass A (had call uses)
+                int sz     = sizeOfType(v->type);
+                auto& pool = freePool[sz];
+                if (!pool.empty()) {
+                    int off = pool.back();
+                    pool.pop_back();
+                    result[v->dst] = PhysLoc{"", v->type, off};
+                } else {
+                    allocStackSlot(v->dst, v->type);
+                }
+            } else if (auto* bl = std::get_if<BlockLeave>(&instr)) {
+                for (VReg vr : bl->expiredVars) {
+                    if (result.count(vr) && result[vr].isStack())
+                        freePool[sizeOfType(result[vr].type)].push_back(result[vr].stackOffset);
+                }
+            }
         }
     }
 

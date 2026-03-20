@@ -36,7 +36,7 @@ Function definition model
      - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters)
      - ret-type - Return variable type (single-return functions only; omitted for void and multi-return)
      - rets - Return value list (multi-return functions only; omitted for single-return and void)
-     - body\* - Statement model list (function body)
+     - block\* - Block object (function body; see Block object below)
 
   2. **c** - C function prototype (from `cinclude`)
      - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)
@@ -95,9 +95,16 @@ Variable type
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
 
+Block object
+------------
+Used in `func-def` bodies and standalone block statements.
+
+- functions\* - Palan function definition list local to this block (may be empty array)
+- body\* - Statement model list (does not contain func-def entries)
+
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block" "func-def"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block"
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
@@ -123,11 +130,8 @@ Statement model
     - vars\* - Variable declaration list (name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function)
   8. block - standalone block statement (`{ ... }`)
-    - body\* - Statement model list (may contain func-def entries; see below)
-  9. func-def - function definition embedded in a block body
-    - Same fields as the Palan function definition model (name, func-type, parameters, ret-type/rets, body)
-    - Only appears as a statement inside a `block` body, never at the top-level statements array
-    - The enclosing `ast["ast"]["functions"]` array is not affected; the definition is local to the block
+    - functions\* - Palan function definition list local to this block (may be empty array)
+    - body\* - Statement model list (does not contain func-def entries)
 
 Expression model
 ----------------

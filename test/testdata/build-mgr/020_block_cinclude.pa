@@ -1,0 +1,4 @@
+{
+    cinclude <stdio.h>;
+    printf("%s\n", "hello from block");
+}

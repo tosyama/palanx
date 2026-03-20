@@ -140,7 +140,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "return")      result.push_back(sa_return_stmt(stmt));
 		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
 		else if (t == "not-impl")    result.push_back(stmt);
-		else if (t == "func-def") { /* skip: processed in pass 1 of sa_block */ }
+		else if (t == "func-def") { BOOST_ASSERT(false); }  // func-defs must not appear in body
 		else if (t == "block")    result.push_back(sa_block(stmt));
 		else BOOST_ASSERT(false);
 	}
@@ -308,17 +308,15 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 {
 	enterScope();
 
-	// pass 1: register block-local func-defs (forward reference support)
-	for (auto& s : stmt["body"])
-		if (s.value("stmt-type", "") == "func-def")
-			registerPlnFunc(s["name"], s);
+	// pre-register block-local func-defs (forward reference support)
+	for (auto& f : stmt.value("functions", json::array()))
+		registerPlnFunc(f["name"], f);
 
-	// pass 1b: analyze block-local func bodies -> appended to sa["functions"]
-	for (auto& s : stmt["body"])
-		if (s.value("stmt-type", "") == "func-def")
-			sa_function(s);
+	// analyze block-local func bodies -> appended to sa["functions"]
+	for (auto& f : stmt.value("functions", json::array()))
+		sa_function(f);
 
-	// pass 2: analyze remaining statements (func-def skipped in sa_statements)
+	// analyze body statements (no func-defs)
 	json body = sa_statements(stmt["body"]);
 
 	leaveScope();
@@ -341,11 +339,22 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	currentFunc_ = findPlnFunc(funcDef["name"]);
 	enterScope();  // push cFuncScopes/plnFuncScopes/importScopes frame
 
+	const json& blk = funcDef["block"];
+
+	// pre-register inner func-defs (visible only within this function)
+	for (auto& f : blk.value("functions", json::array()))
+		registerPlnFunc(f["name"], f);
+
+	// analyze inner func bodies -> appended to sa["functions"]
+	for (auto& f : blk.value("functions", json::array()))
+		sa_function(f);
+
 	json saFunc = funcDef;
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
-	saFunc["body"] = sa_statements(funcDef["body"]);
+	saFunc["body"] = sa_statements(blk["body"]);
+	saFunc.erase("block");
 
 	leaveScope();
 	varScopes    = savedVarScopes;

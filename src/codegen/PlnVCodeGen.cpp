@@ -125,7 +125,15 @@ void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
 {
     VReg src = lowerExpr(*stmt.value, func);
-    varScopes.back()[stmt.name] = src;  // rebind: subsequent uses refer to src
+    // Rebind in the scope where the variable was declared (not necessarily innermost).
+    for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
+        auto f = it->find(stmt.name);
+        if (f != it->end()) {
+            f->second = src;
+            return;
+        }
+    }
+    BOOST_ASSERT(false);  // variable not found
 }
 
 void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
