@@ -147,6 +147,9 @@ Design:
  - Normal Palan functions use standard frame setup (pushq %rbp / movq %rsp, %rbp / subq $N, %rsp)
    with frameSize rounded to a multiple of 16, and epilogue `leave; ret`.
  - The `_start` entry point uses `call exit` as its epilogue; `return` statements are rejected by palan-sa.
+ - Symbol visibility: only the `_start` entry point is emitted with `.globl`. All other Palan functions
+   are local symbols (no `.globl`), equivalent to `static` in C. Future `export` declarations
+   will add `.globl` for explicitly exported functions.
 
  String literals are collected by palan-sa into the `str-literals` table in sa.json,
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
