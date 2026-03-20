@@ -472,3 +472,53 @@ TEST(sa, func_recursive) {
 	}
 	ASSERT_TRUE(found);
 }
+
+TEST(sa, block_scope) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/016_block_scope.pa");
+
+	// block statement emitted in sa["statements"]
+	bool found = false;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "block") { found = true; break; }
+	ASSERT_TRUE(found);
+
+	// block body has var-decl for y and expr for printf
+	for (auto& s : jout["statements"]) {
+		if (s["stmt-type"] != "block") continue;
+		bool has_decl = false, has_expr = false;
+		for (auto& bs : s["body"]) {
+			if (bs["stmt-type"] == "var-decl") has_decl = true;
+			if (bs["stmt-type"] == "expr")     has_expr = true;
+		}
+		ASSERT_TRUE(has_decl);
+		ASSERT_TRUE(has_expr);
+	}
+}
+
+TEST(sa, block_func_def) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/017_block_func_def.pa");
+
+	// double_val is in sa["functions"]
+	bool found_func = false;
+	for (auto& f : jout["functions"])
+		if (f["name"] == "double_val") { found_func = true; break; }
+	ASSERT_TRUE(found_func);
+
+	// block body does NOT contain func-def (it's been processed out)
+	for (auto& s : jout["statements"]) {
+		if (s["stmt-type"] != "block") continue;
+		for (auto& bs : s["body"])
+			ASSERT_NE(bs["stmt-type"], "func-def");
+	}
+
+	// block body contains the printf call as expr
+	bool found_call = false;
+	for (auto& s : jout["statements"]) {
+		if (s["stmt-type"] != "block") continue;
+		for (auto& bs : s["body"])
+			if (bs["stmt-type"] == "expr") { found_call = true; break; }
+	}
+	ASSERT_TRUE(found_call);
+}

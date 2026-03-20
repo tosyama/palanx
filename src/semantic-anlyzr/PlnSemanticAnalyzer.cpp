@@ -140,6 +140,8 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "return")      result.push_back(sa_return_stmt(stmt));
 		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
 		else if (t == "not-impl")    result.push_back(stmt);
+		else if (t == "func-def") { /* skip: processed in pass 1 of sa_block */ }
+		else if (t == "block")    result.push_back(sa_block(stmt));
 		else BOOST_ASSERT(false);
 	}
 	return result;
@@ -302,10 +304,32 @@ void PlnSemanticAnalyzer::sa_functions(const json& funcs)
 	for (auto& f : funcs) sa_function(f);
 }
 
+json PlnSemanticAnalyzer::sa_block(const json& stmt)
+{
+	enterScope();
+
+	// pass 1: register block-local func-defs (forward reference support)
+	for (auto& s : stmt["body"])
+		if (s.value("stmt-type", "") == "func-def")
+			registerPlnFunc(s["name"], s);
+
+	// pass 1b: analyze block-local func bodies -> appended to sa["functions"]
+	for (auto& s : stmt["body"])
+		if (s.value("stmt-type", "") == "func-def")
+			sa_function(s);
+
+	// pass 2: analyze remaining statements (func-def skipped in sa_statements)
+	json body = sa_statements(stmt["body"]);
+
+	leaveScope();
+	return {{"stmt-type", "block"}, {"body", move(body)}};
+}
+
 void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 {
 	// Save var scopes and use a fresh function scope instead
 	auto savedVarScopes = varScopes;
+	auto savedCurrentFunc = currentFunc_;
 	varScopes = {{}};
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
@@ -325,7 +349,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	leaveScope();
 	varScopes    = savedVarScopes;
-	currentFunc_ = nullptr;
+	currentFunc_ = savedCurrentFunc;
 
 	sa["functions"].push_back(saFunc);
 }
