@@ -6,26 +6,23 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-03-19)
-version: 0.1.5
-- This iteration introduces block scoping via `{ }` block statements, usable at both the
-  top level and inside functions.
-- Variables and Palan functions declared inside a block are not visible outside it.
-  Shadowing of variables and Palan function names is prohibited (compile error).
-- C functions from `cinclude` and future `import` functions allow shadowing, for compatibility
-  with C headers that may declare conflicting names across scopes.
-- The SA scope management is unified into four scope stacks: variables, C functions,
-  Palan functions, and a reserved import stack. All four are pushed and popped together
-  at each scope boundary.
-- Top-level `cinclude` C functions remain visible inside all Palan function bodies
-  (the module scope is the outermost layer of the stack).
-- Palan function definitions inside a block are scoped to that block. Their definitions
-  are embedded in the block body in the AST (not in `ast["ast"]["functions"]`), while
-  the SA outputs all functions — both module-level and block-local — to the flat
-  `sa["functions"]` list for codegen.
-- `BlockEnter` / `BlockLeave` IR nodes are added to VProg. The register allocator
-  reuses stack slots released at block exit via a free pool, reducing frame size.
-- This iteration serves as the foundation for `if` / `while` control flow and `import`.
+### 2.1 Iteration Goal (2026-03-21)
+version: 0.1.6
+- This iteration implements `import "path.pa";` so that exported functions from another
+  Palan source file can be called from the importing file, including from within Palan functions.
+- `export func` declarations emit `"export": true` in ast.json and sa.json, and cause
+  palan-codegen to emit `.globl <funcname>` for the symbol, making it visible to the linker.
+- palan-sa reads the imported file's ast.json and registers its exported functions into
+  the current scope, enabling type-checked calls from top-level statements and Palan functions.
+- palan-sa processes top-level statements (including `cinclude` and `import`) before function
+  bodies, so that imported symbols are visible inside Palan functions regardless of declaration
+  order. Within top-level statements, `cinclude` and `import` are order-dependent: symbols are
+  visible from the declaration point onward (consistent with the language reference).
+- Library files (function definitions only, no top-level statements) do not emit
+  `.globl _start`, preventing duplicate global symbols when linked with the main file.
+- Selective import (`import foo from "lib.pa"`), aliases, and cyclic import detection
+  are deferred to future iterations.
+
 
 ## 3. Command-line Tools' Responsibilities and Design
 
