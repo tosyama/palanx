@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.5
+ver. 0.1.6
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -39,6 +39,8 @@ Statement model
 Same structure as AST statements (see ASTSpec.md) with the following differences:
 
 - cinclude statements are consumed by SA and not emitted
+- import statements are consumed by SA and not emitted; imported functions are
+  registered in the current scope and become callable from the point of import
 - var-type resolved on id expressions (see Expression model below)
 - assign and return statements are emitted as-is with SA-annotated expressions
 
