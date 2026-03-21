@@ -144,7 +144,7 @@ class PlnLexer;
 %type <vector<json>>	block paramaters expressions block_statements
 %type <json>	block_obj standalone_block block_body_items
 %type <json>	statement_or_funcdef
-%type <bool>	move_owner_r
+%type <bool>	move_owner_r do_export
 %type <json>	tapple_decl tapple_decl_inner
 
 %left ARROW DBL_ARROW
@@ -631,6 +631,12 @@ func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj
 				$$["rets"] = move($7["rets"]);
 			else if ($7.contains("ret-type"))
 				$$["ret-type"] = move($7["ret-type"]);
+			if ($1) {
+				$$["export"] = true;
+				json sig = $$;
+				sig.erase("block");
+				ast["export"].push_back(move(sig));
+			}
 		} else {
 			$$ = {{"not-impl", true}};
 		}
@@ -705,7 +711,8 @@ vars: ID var_postfix
 	| vars ',' ID var_postfix
 	;
 
-do_export: /* empty */ | KW_EXPORT
+do_export: /* empty */ { $$ = false; }
+	| KW_EXPORT        { $$ = true; }
 	;
 
 move_owner_r: /* empty */ { $$ = false; }
