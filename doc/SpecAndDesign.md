@@ -31,6 +31,7 @@ version: 0.1.6
 Responsibility:
   The tool is responsible for orchestrating the compilation process.
 
+```
 Usage: palan [options] <source files>
  options:
    -o, --output <file path> Specify output file path. If not specified, the binary is
@@ -38,6 +39,7 @@ Usage: palan [options] <source files>
    -c, --clean              Clean build artifacts
    -h, --help               Display help information
    -v, --version            Display version information
+```
 
 Design:
  The build manager searches for specified Palan source files and generates the output file paths for the AST generator.
@@ -57,12 +59,14 @@ Design:
 Responsibility:
   The tool generates the Abstract Syntax Tree (AST) from Palan source code.
 
+```
 Usage: palan-gen-ast [options] <source file>
  options:
    -o, --output <file path> Specify output AST file path. If not specified, standard output is used.
    -i, --indent             Generate indented (pretty-printed) JSON output
    -h, --help               Display help information
    -v, --version            Display version information
+```
 
 Design:
  The AST generator reads the Palan source file, parses it according to the language grammar,
@@ -77,6 +81,7 @@ Design:
 Responsibility:
   The tool translates C header files into AST nodes compatible with Palan.
 
+```
 Usage: palan-c2ast [options] <C header file>
  options:
    -o, --output <file path> Specify output AST file path. If not specified, standard output is used.
@@ -86,6 +91,7 @@ Usage: palan-c2ast [options] <C header file>
    -s, --sysheader          Specify when input C header file is a system header
    -i, --indent             Generate indented (pretty-printed) JSON output
    -v, --version            Display version information
+```
 
 Design:
  The C-to-AST translator reads the specified C header file, parses it using a C parser,
@@ -100,11 +106,13 @@ Design:
 Responsibility:
   The tool performs semantic analysis on the generated AST and checks type correctness and scope rules.
 
+```
 Usage: palan-sa [options] <AST file>
  options:
-   -o, --output <file path> Specify output analyzed AST file path. If not specified, defaults to `<source>.sa.json`.
+   -o, --output <file path> Specify output analyzed AST file path. If not specified, defaults to <source>.sa.json.
    -h, --help               Display help information
    -v, --version            Display version information
+```
 
 Design:
  The semantic analyzer reads the ast.json file and builds a new sa.json independently.
@@ -123,11 +131,14 @@ Design:
 Responsibility:
   The tool generates x86-64 assembly from the analyzed AST (sa.json).
 
+```
 Usage: palan-codegen [options] <SA file>
  options:
-   -o, --output <file path> Specify output assembly file path. If not specified, defaults to `<source>.s`.
+   -o, --output <file path> Specify output assembly file path. If not specified, defaults to <source>.s.
+   --no-entry               Suppress _start generation (use for library files)
    -h, --help               Display help information
    -v, --version            Display version information
+```
 
 Design:
  The code generator reads sa.json and emits x86-64 AT&T syntax assembly for use with `as`.
@@ -144,9 +155,8 @@ Design:
  - Normal Palan functions use standard frame setup (pushq %rbp / movq %rsp, %rbp / subq $N, %rsp)
    with frameSize rounded to a multiple of 16, and epilogue `leave; ret`.
  - The `_start` entry point uses `call exit` as its epilogue; `return` statements are rejected by palan-sa.
- - Symbol visibility: only the `_start` entry point is emitted with `.globl`. All other Palan functions
-   are local symbols (no `.globl`), equivalent to `static` in C. Future `export` declarations
-   will add `.globl` for explicitly exported functions.
+ - Symbol visibility: `_start` and `export func` functions are emitted with `.globl`. All other Palan
+   functions are local symbols (no `.globl`), equivalent to `static` in C.
 
  String literals are collected by palan-sa into the `str-literals` table in sa.json,
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
