@@ -26,9 +26,18 @@ struct PhysLoc {
 using RegMap = map<VReg, PhysLoc>;
 
 struct RegAllocResult {
+    // Parameter remapped from its argument register to a callee-saved register or stack slot.
+    // X86CodeGen emits a move from srcArgReg to dst at function entry.
+    struct ParamCopy {
+        string   srcArgReg;  // 64-bit argument register base name (e.g. "%rsi")
+        PhysLoc  dst;
+        VRegType type;
+    };
+
     RegMap regMap;
     int    frameSize;          // bytes to reserve on stack (0 if no spills/callee-saves needed)
-    vector<string> usedCalleeSaved;  // callee-saved regs used, in allocation order
+    vector<string>    usedCalleeSaved;  // callee-saved regs used, in allocation order
+    vector<ParamCopy> paramCopies;      // params moved from arg regs due to call-crossing
 };
 
 // Physical register lists (architecture-specific, passed in by caller)

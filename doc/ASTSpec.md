@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.5
+ver. 0.1.6
 
 \* - Required
 
@@ -19,7 +19,14 @@ Import file list
 
 Export declaration list
 -------------------------
-(TBD)
+Each entry is a Function definition model (see below) for an `export func` declaration,
+with the `block` field omitted (signature only).
+
+- name\* - Function name string
+- func-type\* - Function type string: "palan"
+- parameters\* - Parameter list
+- ret-type - Return variable type (single-return; omitted for void and multi-return)
+- rets - Return value list (multi-return; omitted for single-return and void)
 
 AST model
 ---------
@@ -33,6 +40,7 @@ Function definition model
 - loc - Location Array
 
   1. **palan** - Palan user-defined function
+     - export - Boolean, true if declared with `export` keyword (omitted when false)
      - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters)
      - ret-type - Return variable type (single-return functions only; omitted for void and multi-return)
      - rets - Return value list (multi-return functions only; omitted for single-return and void)

@@ -71,13 +71,6 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     // Step 2: Assign physical registers or stack slots.
     RegMap result;
 
-    // Pre-bind parameters to intArgs registers.
-    for (int j = 0; j < (int)func.params.size(); j++) {
-        auto [vreg, type] = func.params[j];
-        BOOST_ASSERT(j < (int)phys.intArgs.size());
-        result[vreg] = PhysLoc{phys.intArgs[j], type};
-    }
-
     int callee_idx  = 0;
     int stack_bytes = 0;  // bytes consumed below %rbp so far
 
@@ -107,6 +100,35 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             allocStackSlot(vreg, type);
         }
     };
+
+    // Pre-bind parameters to intArgs registers.
+    // If a parameter's live range crosses a call, move it to a callee-saved
+    // register so it survives the call (caller-saved arg regs are clobbered).
+    vector<tuple<string, VReg, VRegType>> pendingParamCopies;
+    for (int j = 0; j < (int)func.params.size(); j++) {
+        auto [vreg, type] = func.params[j];
+        BOOST_ASSERT(j < (int)phys.intArgs.size());
+
+        const VRegMeta& m = meta[vreg];
+        int last_use = m.last_any_use;
+        for (auto& [ci, pos] : m.call_uses)
+            last_use = max(last_use, ci);
+
+        bool crosses_call = false;
+        for (int c_idx : call_indices) {
+            if (c_idx < last_use) {
+                crosses_call = true;
+                break;
+            }
+        }
+
+        if (crosses_call) {
+            allocCalleeSavedOrStack(vreg, type);
+            pendingParamCopies.push_back({phys.intArgs[j], vreg, type});
+        } else {
+            result[vreg] = PhysLoc{phys.intArgs[j], type};
+        }
+    }
 
     // Count how many vregs are return values (to detect multi-return)
     int numRetValues = 0;
@@ -210,5 +232,9 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     for (int i = 0; i < k; i++)
         usedCallee.push_back(phys.calleeSaved[i]);
 
-    return {result, frameSize, usedCallee};
+    vector<RegAllocResult::ParamCopy> paramCopies;
+    for (auto& [argReg, vreg, ptype] : pendingParamCopies)
+        paramCopies.push_back({argReg, result[vreg], ptype});
+
+    return {result, frameSize, usedCallee, paramCopies};
 }

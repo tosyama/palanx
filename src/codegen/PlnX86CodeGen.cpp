@@ -123,6 +123,13 @@ void PlnX86CodeGen::emit(const VProg& prog)
             // Save callee-saved registers into reserved frame slots (top of frame)
             for (int i = 0; i < (int)ra.usedCalleeSaved.size(); i++)
                 out << "\tmovq " << ra.usedCalleeSaved[i] << ", " << -(i + 1) * 8 << "(%rbp)\n";
+            // Copy parameters remapped from argument registers to their allocated locations
+            for (auto& pc : ra.paramCopies) {
+                string src = sizedRegName(pc.srcArgReg, pc.type);
+                string dst = srcOperand(pc.dst);
+                if (src != dst)
+                    out << "\t" << movInstrForType(pc.type) << " " << src << ", " << dst << "\n";
+            }
         }
 
         for (auto& instr : func.instrs) {
