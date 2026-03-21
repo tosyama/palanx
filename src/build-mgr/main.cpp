@@ -141,7 +141,10 @@ int main(int argc, char* argv[])
 		string obj_file = base + ".o";
 
 		// palan-codegen
-		string codegencmd = exec_path + "/palan-codegen " + sa_file;
+		bool is_entry = (i == 0);
+		string codegencmd = exec_path + "/palan-codegen";
+		if (!is_entry) codegencmd += " --no-entry";
+		codegencmd += " " + sa_file;
 		ret = system(codegencmd.c_str());
 		if (WIFEXITED(ret)) {
 			ret = WEXITSTATUS(ret);
