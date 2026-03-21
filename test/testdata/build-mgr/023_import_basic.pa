@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+import "lib_add.pa";
+
+printf("%d\n", add(3, 4));

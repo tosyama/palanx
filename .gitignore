@@ -2,6 +2,6 @@ build/
 build-cov/
 localtickets/
 a.out
-test.pa
+/test*.pa
 .exrc
 *.gcov

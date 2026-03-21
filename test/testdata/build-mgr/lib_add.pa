@@ -1,0 +1,9 @@
+import "lib_double.pa";
+
+export func add(int32 a, int32 b) -> int32 {
+    return a + b;
+}
+
+export func add_doubled(int32 a, int32 b) -> int32 {
+    return double_val(a) + b;
+}

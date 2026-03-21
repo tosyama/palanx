@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.5
+**Version:** v0.1.6
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -47,7 +47,8 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 8. [Receiving Multiple Return Values](#8-receiving-multiple-return-values)
 9. [C Library Integration](#9-c-library-integration)
 10. [Block Statements](#10-block-statements)
-11. [Program Structure](#11-program-structure)
+11. [Modules (import / export)](#11-modules-import--export)
+12. [Program Structure](#12-program-structure)
 
 ---
 
@@ -162,6 +163,7 @@ printf("%ld\n", x);        // expression statement (function call)
 return;                    // return from function (no value)
 return expr;               // return with single value
 (int64 a, b) = foo();      // tapple declaration (receive multiple return values)
+import "lib.pa";           // import Palan source file (see §11)
 ```
 
 ---
@@ -169,6 +171,7 @@ return expr;               // return with single value
 ## 7. Function Definitions
 
 Functions are defined with the `func` keyword. Return values are declared after `->`.
+The optional `export` keyword makes the function callable from other Palan files that import this file (see §11).
 
 ### No Return Value
 
@@ -266,7 +269,38 @@ Palan function definitions inside a block are block-scoped and support forward r
 
 ---
 
-## 11. Program Structure
+## 11. Modules (import / export)
+
+Palan supports multi-file compilation. Functions declared with `export` are visible to other files that `import` the declaring file.
+
+### Exporting a function
+
+```palan
+// lib_add.pa
+export func add(int32 a, int32 b) -> int32 {
+    return a + b;
+}
+```
+
+Functions without `export` are file-private and not accessible from other files.
+
+### Importing a file
+
+```palan
+// main.pa
+cinclude <stdio.h>;
+import "lib_add.pa";
+
+printf("%d\n", add(3, 4));   // 7
+```
+
+- The path in `import` is relative to the importing file.
+- Imported functions are visible from the `import` statement to the end of the enclosing scope.
+- Circular imports (A imports B and B imports A) are supported.
+
+---
+
+## 12. Program Structure
 
 ```palan
 cinclude <stdio.h>;

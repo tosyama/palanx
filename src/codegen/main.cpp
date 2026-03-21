@@ -20,24 +20,30 @@ using json = nlohmann::json;
 int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
-		{ "help",   no_argument,       NULL, 'h' },
-		{ "output", required_argument, NULL, 'o' },
+		{ "help",     no_argument,       NULL, 'h' },
+		{ "output",   required_argument, NULL, 'o' },
+		{ "no-entry", no_argument,       NULL, 'n' },
 		{ 0 }
 	};
 
 	int opt, option_index = 0;
 	char *output_file = NULL;
+	bool no_entry = false;
 
-	while (0 < (opt = getopt_long(argc, argv, "ho:", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "ho:n", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
 				cout << "Usage: palan-codegen [options] <SA file>" << endl;
 				cout << " options:" << endl;
 				cout << "   -o, --output <file>  Output assembly file path" << endl;
+				cout << "   -n, --no-entry       Do not emit .globl for _start" << endl;
 				cout << "   -h, --help           Display help information" << endl;
 				return 0;
 			case 'o':
 				output_file = optarg;
+				break;
+			case 'n':
+				no_entry = true;
 				break;
 			default:
 				break;
@@ -80,7 +86,7 @@ int main(int argc, char* argv[])
 	Module module = deserialize(sa);
 
 	PlnVCodeGen vgen;
-	VProg vprog = vgen.generate(module);
+	VProg vprog = vgen.generate(module, no_entry);
 
 	PlnX86CodeGen codegen(asmfile);
 	codegen.emit(vprog);

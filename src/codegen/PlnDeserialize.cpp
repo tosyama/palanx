@@ -186,6 +186,7 @@ Module deserialize(const json& sa)
                 for (auto& r : jf["rets"])
                     pf.retVars.push_back({r["name"], toVRegType(r["var-type"])});
             }
+            pf.isExport = jf.value("export", false);
             pf.body = deserializeStatements(jf["body"]);
             mod.functions.push_back(move(pf));
         }

@@ -106,8 +106,10 @@ test/
 ├── testdata/        Test input files (numbered sequentially per tool)
 └── test-base/       Shared test helpers (execTestCommand, cleanTestEnv)
 doc/
-├── SpecAndDesign.md Language spec and toolchain design
-└── ASTSpec.md       JSON AST / sa.json format specification
+├── SpecAndDesign.md  Language spec and toolchain design
+├── ASTSpec.md        JSON AST format specification (palan-gen-ast output)
+├── SASpec.md         SA JSON format specification (palan-sa output)
+├── PalanReference.md Palan language reference manual
 localtickets/        Local task management (Markdown, not tracked by git)
 ```
 

@@ -1,0 +1,5 @@
+import "lib_add.pa";
+
+export func double_val(int32 x) -> int32 {
+    return add(x, x);
+}

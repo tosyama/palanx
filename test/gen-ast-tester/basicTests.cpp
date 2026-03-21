@@ -215,6 +215,35 @@ TEST(gen_ast, block_stmt) {
 	ASSERT_EQ(outerBody[0]["body"][0]["stmt-type"], "return");
 }
 
+TEST(gen_ast, export_func) {
+	cleanTestEnv();
+	string output = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/007_export_func.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// root "export" array check (SA reads this)
+	ASSERT_TRUE(jout.contains("export"));
+	ASSERT_EQ(jout["export"].size(), 1u);
+	ASSERT_EQ(jout["export"][0]["name"], "add");
+	ASSERT_FALSE(jout["export"][0].contains("block"));  // block is excluded
+
+	// ast["ast"]["functions"] export flag check
+	bool found_export = false, found_noexport = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] == "add") {
+			ASSERT_TRUE(f.value("export", false));
+			found_export = true;
+		}
+		if (f["name"] == "noexport") {
+			ASSERT_FALSE(f.value("export", false));
+			found_noexport = true;
+		}
+	}
+	ASSERT_TRUE(found_export);
+	ASSERT_TRUE(found_noexport);
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");

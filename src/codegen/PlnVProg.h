@@ -53,7 +53,8 @@ struct VStringLiteral {
 struct VFunc {
     string         name;
     vector<VInstr> instrs;
-    bool           isEntry = false;  // true only for _start
+    bool           isEntry  = false;  // true only for _start
+    bool           isExport = false;  // true for export func
     vector<std::pair<VReg, VRegType>> params;  // (vreg, type) in arg order
 };
 

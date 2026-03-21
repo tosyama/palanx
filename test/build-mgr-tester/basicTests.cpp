@@ -137,6 +137,20 @@ TEST(build_mgr, block_nested) {
 	ASSERT_EQ(output, "1 2 3\n1 2\n1\n");
 }
 
+TEST(build_mgr, import_basic) {
+	cleanTestEnv();
+	string output = execTestCommand(
+		"bin/palan ../test/testdata/build-mgr/023_import_basic.pa");
+	ASSERT_EQ(output, "7\n");
+}
+
+TEST(build_mgr, import_mutual) {
+	cleanTestEnv();
+	string output = execTestCommand(
+		"bin/palan ../test/testdata/build-mgr/024_import_mutual.pa");
+	ASSERT_EQ(output, "10\n13\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

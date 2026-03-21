@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+import "lib_double.pa";
+import "lib_add.pa";
+
+printf("%d\n", double_val(5));
+printf("%d\n", add_doubled(5, 3));
