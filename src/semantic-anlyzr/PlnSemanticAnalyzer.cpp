@@ -111,14 +111,12 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 			registerPlnFunc(funcEntry["name"], funcEntry);
 		}
-	// 2. Pre-process top-level cinclude statements so C functions are visible in Palan function bodies
-	for (auto& stmt : ast["ast"]["statements"])
-		if (stmt["stmt-type"] == "cinclude") sa_cinclude(stmt);
+	// 2. Process top-level statements (cinclude/import registered here,
+	//    visible in Palan function bodies processed next)
+	sa["statements"] = sa_statements(ast["ast"]["statements"]);
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);
-	// 4. Process top-level statements
-	sa["statements"] = sa_statements(ast["ast"]["statements"]);
 	leaveScope();
 }
 
@@ -309,8 +307,10 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 	enterScope();
 
 	// pre-register block-local func-defs (forward reference support)
-	for (auto& f : stmt.value("functions", json::array()))
+	for (auto& f : stmt.value("functions", json::array())) {
+		BOOST_ASSERT(!f.value("export", false));  // export inside block is invalid
 		registerPlnFunc(f["name"], f);
+	}
 
 	// analyze block-local func bodies -> appended to sa["functions"]
 	for (auto& f : stmt.value("functions", json::array()))
@@ -342,8 +342,10 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	const json& blk = funcDef["block"];
 
 	// pre-register inner func-defs (visible only within this function)
-	for (auto& f : blk.value("functions", json::array()))
+	for (auto& f : blk.value("functions", json::array())) {
+		BOOST_ASSERT(!f.value("export", false));  // export inside function is invalid
 		registerPlnFunc(f["name"], f);
+	}
 
 	// analyze inner func bodies -> appended to sa["functions"]
 	for (auto& f : blk.value("functions", json::array()))
@@ -453,23 +455,27 @@ bool is_absolute(filesystem::path &path)
 	return false;
 }
 
-void PlnSemanticAnalyzer::sa_import(const json &stmt)
+void PlnSemanticAnalyzer::sa_import(const json& stmt)
 {
 	filesystem::path imp_path = stmt["path"];
-	if (stmt["path-type"] == "src") {
-		if (!is_absolute(imp_path)) {
-			imp_path = basePath + '/' + imp_path.string();
-		}
-	}
+	if (stmt["path-type"] == "src" && !is_absolute(imp_path))
+		imp_path = basePath + '/' + imp_path.string();
 
-	if (imp_path.string().ends_with(".pa")) {
-		imp_path += ".ast.json";
+	if (!imp_path.string().ends_with(".pa")) return;
+	imp_path += ".ast.json";
 
-		ifstream astfile(imp_path.string());
-		json ast = json::parse(astfile);
-		if (!ast["export"].is_null()) {
-			BOOST_ASSERT(false);
-		}
+	ifstream astfile(imp_path.string());
+	if (!astfile.is_open()) { BOOST_ASSERT(false); }
+	json imp_ast = json::parse(astfile);
+
+	if (!imp_ast.contains("export")) return;
+	for (auto& f : imp_ast["export"]) {
+		if (findPlnFunc(f["name"].get<string>())) continue;
+		json funcEntry = f;
+		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets")
+				&& funcEntry["rets"].size() == 1)
+			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+		registerPlnFunc(funcEntry["name"], funcEntry);
 	}
 }
 
