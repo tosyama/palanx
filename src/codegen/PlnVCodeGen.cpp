@@ -261,7 +261,7 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 
 // -------- Entry point --------
 
-VProg PlnVCodeGen::generate(const Module& module)
+VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
 {
     VProg prog;
 
@@ -273,6 +273,7 @@ VProg PlnVCodeGen::generate(const Module& module)
     for (auto& pf : module.functions) {
         VFunc vf;
         vf.name = pf.name;
+        vf.isExport = pf.isExport;
         enterVarScope();
         for (auto& p : pf.params) {
             VReg r = allocVReg();
@@ -323,7 +324,7 @@ VProg PlnVCodeGen::generate(const Module& module)
     for (auto& stmt : module.statements)
         lowerStmt(*stmt, startFunc);
     leaveVarScope();
-    startFunc.isEntry = true;
+    startFunc.isEntry = !noEntry;
     startFunc.instrs.push_back(ExitCode{0});
     prog.funcs.push_back(move(startFunc));
 

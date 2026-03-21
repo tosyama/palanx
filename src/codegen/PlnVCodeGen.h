@@ -42,5 +42,5 @@ class PlnVCodeGen {
     void lowerBlockStmt(const BlockStmt& stmt, VFunc& func);
 
 public:
-    VProg generate(const Module& module);
+    VProg generate(const Module& module, bool noEntry = false);
 };

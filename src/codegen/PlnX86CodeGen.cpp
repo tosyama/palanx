@@ -100,7 +100,7 @@ void PlnX86CodeGen::emit(const VProg& prog)
 
     emitSection(".text");
     for (auto& func : prog.funcs) {
-        if (func.isEntry)
+        if (func.isEntry || func.isExport)
             emitGlobal(func.name);
         emitLabel(func.name);
 

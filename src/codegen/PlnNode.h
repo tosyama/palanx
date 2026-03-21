@@ -159,6 +159,7 @@ struct PlnFunc {
     string             retVarName;   // single named return variable; empty if none
     vector<VarDef>     retVars;      // multiple named return variables (size>=2)
     vector<unique_ptr<Stmt>> body;
+    bool               isExport = false;
 };
 
 struct Module {
