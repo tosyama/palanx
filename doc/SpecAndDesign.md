@@ -7,21 +7,14 @@ This document specifies the goals, scope, architecture, and requirements for the
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
 ### 2.1 Iteration Goal (2026-03-21)
-version: 0.1.6
-- This iteration implements `import "path.pa";` so that exported functions from another
-  Palan source file can be called from the importing file, including from within Palan functions.
-- `export func` declarations emit `"export": true` in ast.json and sa.json, and cause
-  palan-codegen to emit `.globl <funcname>` for the symbol, making it visible to the linker.
-- palan-sa reads the imported file's ast.json and registers its exported functions into
-  the current scope, enabling type-checked calls from top-level statements and Palan functions.
-- palan-sa processes top-level statements (including `cinclude` and `import`) before function
-  bodies, so that imported symbols are visible inside Palan functions regardless of declaration
-  order. Within top-level statements, `cinclude` and `import` are order-dependent: symbols are
-  visible from the declaration point onward (consistent with the language reference).
-- Library files (function definitions only, no top-level statements) do not emit
-  `.globl _start`, preventing duplicate global symbols when linked with the main file.
-- Selective import (`import foo from "lib.pa"`), aliases, and cyclic import detection
-  are deferred to future iterations.
+version: 0.1.7
+- This iteration reduces test pipeline invocations by merging small test files into grouped
+  scenarios using block scoping `{ }`, targeting build-mgr-tester primarily.
+- `BOOST_ASSERT` calls that represent user-facing errors are replaced with proper error messages
+  (stderr) and exit code 1, using a per-tool message class pattern based on `PlnGenAstMessage`.
+- New message classes: `PlnSaMessage` (palan-sa) and `PlnCodegenMessage` (palan-codegen).
+- build-mgr error messages replace existing placeholder `cerr` outputs.
+- palan-c2ast is out of scope for this iteration.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
