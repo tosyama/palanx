@@ -3,6 +3,12 @@
 
 using namespace std;
 
+TEST(sa_error, no_input_file) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-sa");
+	ASSERT_NE(out.find("no input file"), string::npos);
+}
+
 TEST(sa_error, block_shadow_var) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";

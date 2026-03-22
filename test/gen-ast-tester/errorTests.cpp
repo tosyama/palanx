@@ -20,6 +20,13 @@ TEST(gen_ast_error, could_not_open_file) {
 	ASSERT_NE(out.find("Could not open file"), string::npos);
 }
 
+TEST(gen_ast_error, could_not_open_output_file) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa -o /nonexistent/dir/out.json");
+	ASSERT_NE(out.find("Could not open output file"), string::npos);
+}
+
 TEST(gen_ast_error, syntax_error_with_loc) {
 	cleanTestEnv();
 	string out = execTestCommand(
