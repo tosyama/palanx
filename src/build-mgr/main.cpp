@@ -10,8 +10,8 @@
 #include <algorithm>
 #include <getopt.h>
 #include <filesystem>
-#include <boost/assert.hpp>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
+#include "PlnBuildMgrMessage.h"
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -22,9 +22,10 @@ static string getPalanDirPath();
 int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
-		{ "help",   no_argument,       NULL, 'h' },
-		{ "clean",  no_argument,       NULL, 'c' },
-		{ "output", required_argument, NULL, 'o' },
+		{ "help",    no_argument,       NULL, 'h' },
+		{ "version", no_argument,       NULL, 'v' },
+		{ "clean",   no_argument,       NULL, 'c' },
+		{ "output",  required_argument, NULL, 'o' },
 		{ 0 }
 	};
 
@@ -33,10 +34,13 @@ int main(int argc, char* argv[])
 	string binary_name = "a.out";
 	bool output_specified = false;
 
-	while (0 < (opt = getopt_long(argc, argv, "hco:", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "hvco:", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
-				cout << "help" << endl;
+				cout << PlnBuildMgrMessage::getMessage(M_Help) << endl;
+				return 0;
+			case 'v':
+				cout << PlnBuildMgrMessage::getMessage(M_Version) << endl;
 				return 0;
 			case 'c':
 				do_clean = true;
@@ -59,8 +63,7 @@ int main(int argc, char* argv[])
 	}
 
 	if ((argc-optind) != 1) {
-		// TODO: Error Message
-		cerr << "build-mgr err1" << endl;
+		cerr << PlnBuildMgrMessage::getMessage(E_WrongNumberOfArgs) << endl;
 		return 1;
 	}
 
@@ -75,9 +78,7 @@ int main(int argc, char* argv[])
 	for (int i=0; i<target_files.size(); i++) {
 		fs::path input_file = target_files[i];
 		if (!fs::exists(input_file)) {
-			// TODO: Error Message
-			cerr << "build-mgr err2" << endl;
-			cerr << input_file << endl;
+			cerr << PlnBuildMgrMessage::getMessage(E_CouldNotOpenFile, input_file.string()) << endl;
 			return 1;
 		}
 
@@ -198,8 +199,7 @@ string getPalanDirPath()
 	
 	if (fs::exists(palan_path)) {
 		if (!fs::is_directory(palan_path)) {
-			// TODO: Error Message
-			cerr << "err" << endl;
+			cerr << PlnBuildMgrMessage::getMessage(E_PalanDirNotDirectory, palan_path) << endl;
 			return "";
 		}
 	}
