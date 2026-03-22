@@ -9,15 +9,17 @@
 #include <filesystem>
 #include <getopt.h>
 #include "PlnSemanticAnalyzer.h"
+#include "PlnSaMessage.h"
 
 namespace fs = std::filesystem;
 
 int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
-		{ "help", no_argument, NULL, 'h' },
-		{ "output", no_argument, NULL, 'o' },
-		{ "indent", no_argument, NULL, 'i' },
+		{ "help",    no_argument,       NULL, 'h' },
+		{ "version", no_argument,       NULL, 'v' },
+		{ "output",  required_argument, NULL, 'o' },
+		{ "indent",  no_argument,       NULL, 'i' },
 		{ 0 }
 	};
 
@@ -25,10 +27,13 @@ int main(int argc, char* argv[])
 	char *output_file = NULL;
 	bool do_indent = false;
 
-	while (0 < (opt = getopt_long(argc, argv, "ho:i", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "hvo:i", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
-				cout << "help" << endl;
+				cout << PlnSaMessage::getMessage(M_Help) << endl;
+				return 0;
+			case 'v':
+				cout << PlnSaMessage::getMessage(M_Version) << endl;
 				return 0;
 			case 'o':
 				output_file = optarg;
@@ -39,11 +44,10 @@ int main(int argc, char* argv[])
 			default:
 				break;
 		}
-	} 
+	}
 
 	if ((argc-optind) != 1) {
-		// TODO: Error Message
-		cerr << "err" << endl;
+		cerr << PlnSaMessage::getMessage(E_NoInputFile) << endl;
 		return 1;
 	}
 

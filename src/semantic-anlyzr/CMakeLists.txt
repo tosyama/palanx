@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 add_executable(palan-sa
 	main.cpp
 	PlnSemanticAnalyzer.cpp
+	PlnSaMessage.cpp
 	PlnType.cpp
 )
 
