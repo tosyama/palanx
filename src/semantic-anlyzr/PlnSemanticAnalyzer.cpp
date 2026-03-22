@@ -309,7 +309,10 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 	// pre-register block-local func-defs (forward reference support)
 	for (auto& f : stmt.value("functions", json::array())) {
 		BOOST_ASSERT(!f.value("export", false));  // export inside block is invalid
-		registerPlnFunc(f["name"], f);
+		json funcEntry = f;
+		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
+			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+		registerPlnFunc(funcEntry["name"], funcEntry);
 	}
 
 	// analyze block-local func bodies -> appended to sa["functions"]
@@ -344,7 +347,10 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	// pre-register inner func-defs (visible only within this function)
 	for (auto& f : blk.value("functions", json::array())) {
 		BOOST_ASSERT(!f.value("export", false));  // export inside function is invalid
-		registerPlnFunc(f["name"], f);
+		json funcEntry = f;
+		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
+			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+		registerPlnFunc(funcEntry["name"], funcEntry);
 	}
 
 	// analyze inner func bodies -> appended to sa["functions"]

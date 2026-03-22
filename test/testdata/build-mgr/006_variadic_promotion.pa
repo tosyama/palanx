@@ -1,3 +1,0 @@
-cinclude <stdio.h>;
-int16 x = 42;
-printf("%d\n", x);

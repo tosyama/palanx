@@ -1,0 +1,40 @@
+cinclude <stdio.h>;
+
+// 002: var_decl
+{
+    int64 x = 10;
+    printf("%lld\n", x);
+}
+
+// 003: addition
+{
+    int64 x = 10;
+    int64 y = 20;
+    printf("%lld\n", x + y);
+}
+
+// 004: int32_widening
+{
+    int32 x = 10;
+    int64 y = x;
+    printf("%lld\n", y);
+}
+
+// 005: cast_explicit
+{
+    int64 x = 100;
+    printf("%d\n", int32(x));
+}
+
+// 006: variadic_promotion
+{
+    int16 x = 42;
+    printf("%d\n", x);
+}
+
+// 007: cast_narrowing_int16_int8
+{
+    int64 a = 100;
+    int32 b = 50;
+    printf("%hd %hhd %hd %hhd\n", int16(a), int8(a), int16(b), int8(b));
+}

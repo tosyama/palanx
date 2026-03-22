@@ -1,3 +1,0 @@
-cinclude <stdio.h>;
-int32 x = 5, y = 10;
-printf("%d %d\n", x, y);

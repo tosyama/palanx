@@ -1,0 +1,90 @@
+cinclude <stdio.h>;
+
+// 008: user_func_simple
+{
+    func add(int32 a, int32 b) -> int32 {
+        return a + b;
+    }
+    printf("%d\n", add(3, 4));
+}
+
+// 009: assign
+{
+    func passthrough(int32 x) -> int32 {
+        int32 y = 0;
+        x -> y;
+        return y;
+    }
+    printf("%d\n", passthrough(42));
+}
+
+// 010: named_ret_narrowing
+{
+    func named_ret_narrowing(int64 x) -> int32 a {
+        5 + x -> a;
+    }
+    printf("%d\n", named_ret_narrowing(10));
+}
+
+// 011: named_ret_double_assign
+{
+    func named_ret_double_assign(int64 x) -> int32 a {
+        5 + x -> a;
+        a + 1 -> a;
+    }
+    printf("%d\n", named_ret_double_assign(10));
+}
+
+// 012: return_narrowing
+{
+    func narrow(int64 x) -> int32 {
+        return x;
+    }
+    printf("%d\n", narrow(99));
+}
+
+// 013: multiret
+{
+    func multiret(int64 a, int64 b, int64 c) -> int64 ab, int64 bc {
+        a + b -> ab;
+        b + c -> bc;
+        return;
+    }
+    (int64 ab, int64 bc) = multiret(1, 2, 3);
+    printf("%ld %ld\n", ab, bc);
+}
+
+// 014: type_inherit_decl
+{
+    int32 x = 5, y = 10;
+    printf("%d %d\n", x, y);
+}
+
+// 015: type_inherit_tapple
+{
+    func type_inherit_tapple(int64 a, int64 b, int64 c) -> int64 ab, int64 bc {
+        a + b -> ab;
+        b + c -> bc;
+        return;
+    }
+    (int64 ab, bc) = type_inherit_tapple(1, 2, 3);
+    printf("%ld %ld\n", ab, bc);
+}
+
+// 016: palan_call_as_stmt
+{
+    func greet() {
+        printf("hello\n");
+    }
+    greet();
+}
+
+// 017: multiret_implicit_return
+{
+    func multiret_implicit(int64 a, int64 b, int64 c) -> int64 ab, int64 bc {
+        a + b -> ab;
+        b + c -> bc;
+    }
+    (int64 ab, int64 bc) = multiret_implicit(1, 2, 3);
+    printf("%ld %ld\n", ab, bc);
+}

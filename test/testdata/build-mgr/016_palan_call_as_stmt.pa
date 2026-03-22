@@ -1,7 +1,0 @@
-cinclude <stdio.h>;
-
-func greet() {
-	printf("hello\n");
-}
-
-greet();
