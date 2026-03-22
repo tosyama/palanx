@@ -1,3 +1,0 @@
-func recurse(int64 n) -> int64 {
-    return recurse(n);
-}
