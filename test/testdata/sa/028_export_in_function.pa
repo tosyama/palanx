@@ -1,0 +1,4 @@
+func outer() {
+    export func inner() { }
+}
+outer();

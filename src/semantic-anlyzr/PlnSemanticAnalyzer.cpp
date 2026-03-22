@@ -226,7 +226,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			return wrapConvert(src, registry_.toJson(target));
 		} else {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
-				src["value-type"]["type-name"].get<string>(),
+				src["value-type"].value("type-name", src["value-type"]["type-kind"].get<string>()),
 				expr["target-type"]["type-name"].get<string>()) << endl;
 			exit(1);
 		}
