@@ -754,6 +754,6 @@ emitable_exp: /* empty */ | expression
 
 void palan::PlnParser::error(const location_type& l, const string& m)
 {
-	cerr << l.begin.line << ":" << l.begin.column << "-" << l.end.line << ":" << l.end.column << m << endl;
+	cerr << lexer.inputFile << ":" << l.begin.line << ":" << l.begin.column << ": error: " << m << endl;
 }
 

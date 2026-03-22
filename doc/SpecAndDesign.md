@@ -298,3 +298,14 @@ related output files will be stored under `~/.palan/work/home/user/project/`.
 - palan (build manager):
   - Assembles `.s` files with `as` and links with `ld` to produce the final executable (default: `a.out`).
 
+### 5.3 Error Output Format
+
+All tools write error messages to **stderr** and exit with code **1** on error.
+
+| Tool | Error format |
+|------|-------------|
+| palan-gen-ast | `<source_file>:<line>:<col>: error: <message>` (parse errors); `<message>` (CLI errors) |
+| palan-sa | `<source_file>:<line>:<col>: error: <message>` |
+| palan-codegen | `<message>` |
+| palan (build-mgr) | `<message>` |
+
