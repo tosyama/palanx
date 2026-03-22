@@ -10,7 +10,10 @@ using std::string;
 
 enum PlnMessageCode {
 	M_Help,
-	E_CouldNotOpenFile,	// filename
+	M_Version,
+	E_CouldNotOpenFile,		// filename
+	E_CouldNotOpenOutputFile,	// filename
+	E_NoInputFile,
 };
 
 class PlnGenAstMessage

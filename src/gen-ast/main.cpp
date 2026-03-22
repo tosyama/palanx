@@ -23,6 +23,7 @@ int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
 		{ "help", no_argument, NULL, 'h' },
+		{ "version", no_argument, NULL, 'v' },
 		{ "output", required_argument, NULL, 'o' },
 		{ "indent", no_argument, NULL, 'i' },
 		{ 0 }
@@ -32,10 +33,13 @@ int main(int argc, char* argv[])
 	char *output_file = NULL;
 	bool do_indent = false;
 
-	while (0 < (opt = getopt_long(argc, argv, "ho:i", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "hvo:i", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
 				cout << PlnGenAstMessage::getMessage(M_Help) << endl;
+				return 0;
+			case 'v':
+				cout << PlnGenAstMessage::getMessage(M_Version) << endl;
 				return 0;
 			case 'o':
 				output_file = optarg;
@@ -46,10 +50,10 @@ int main(int argc, char* argv[])
 			default:
 				break;
 		}
-	} 
+	}
 
 	if ((argc-optind) != 1) {
-		cerr << "err1" << endl;
+		cerr << PlnGenAstMessage::getMessage(E_NoInputFile) << endl;
 		return 1;
 	}
 	
@@ -69,7 +73,7 @@ int main(int argc, char* argv[])
 			if (output_file) {
 				ofstream of(output_file);
 				if (!of) {
-					cerr << "err2";
+					cerr << PlnGenAstMessage::getMessage(E_CouldNotOpenOutputFile, output_file) << endl;
 					return 1;
 				}
 				of << out_str;
@@ -77,7 +81,6 @@ int main(int argc, char* argv[])
 				cout << out_str;
 			}
 		} else { // 1: parse err, 2: memory err
-			cerr << "err3" << endl;
 			return 1;
 		}
 

@@ -1,3 +1,0 @@
-func identity(int64 x) -> int64 {
-    return x;
-}

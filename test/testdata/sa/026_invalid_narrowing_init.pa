@@ -1,2 +1,2 @@
 int64 x = 100;
-int32(x);
+int8 y = x;

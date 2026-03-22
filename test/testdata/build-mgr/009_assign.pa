@@ -1,9 +1,0 @@
-cinclude <stdio.h>;
-
-func passthrough(int32 x) -> int32 {
-    int32 y = 0;
-    x -> y;
-    return y;
-}
-
-printf("%d\n", passthrough(42));

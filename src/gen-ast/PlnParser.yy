@@ -91,6 +91,9 @@ class PlnLexer;
 		}
 		return parsed;
 	}
+
+#define LOC(J, L)       J["loc"] = { (int)L.begin.line, (int)L.begin.column, (int)L.end.line, (int)L.end.column }
+#define LOC_BE(J, B, E) J["loc"] = { (int)B.begin.line, (int)B.begin.column, (int)E.end.line, (int)E.end.column }
 }
 
 %locations
@@ -141,7 +144,7 @@ class PlnLexer;
 %type <vector<json>>	var_declarations
 %type <json>	func_def return_def
 %type <json>	return
-%type <vector<json>>	block paramaters expressions block_statements
+%type <vector<json>>	block paramaters expressions
 %type <json>	block_obj standalone_block block_body_items
 %type <json>	statement_or_funcdef
 %type <bool>	move_owner_r do_export
@@ -178,6 +181,7 @@ statement: import ';'
 	{
 		$$ = move($1);
 		$$["stmt-type"] = "import";
+		LOC($$, @$);
 	}
 	| cinclude ';'
 	{
@@ -188,6 +192,7 @@ statement: import ';'
 		if (c_ast.is_object() && c_ast.contains("ast")) {
 			$$["functions"] = move(c_ast["ast"]["functions"]);
 		}
+		LOC($$, @$);
 	}
 	| standalone_block
 		{ $$ = move($1); }
@@ -196,6 +201,7 @@ statement: import ';'
 		// Detect a tapple-decl emitted by var_declaration
 		if ($1.size() == 1 && $1[0].value("stmt-type", "") == "tapple-decl") {
 			$$ = move($1[0]);
+			LOC($$, @$);
 		} else {
 			bool all_ok = true;
 			for (auto& v : $1) {
@@ -204,6 +210,7 @@ statement: import ';'
 			}
 			if (all_ok) {
 				$$ = {{"stmt-type", "var-decl"}, {"vars", move($1)}};
+				LOC($$, @$);
 			} else {
 				$$ = {{"stmt-type", "not-impl"}};
 			}
@@ -228,12 +235,15 @@ statement: import ';'
 	{
 		string et = $1.value("expr-type", "");
 		if (et == "assign-expr") {
-			if ($1["value"].value("expr-type", "") != "not-impl")
+			if ($1["value"].value("expr-type", "") != "not-impl") {
 				$$ = {{"stmt-type", "assign"}, {"name", $1["name"]}, {"value", move($1["value"])}};
-			else
+				LOC($$, @$);
+			} else {
 				$$ = {{"stmt-type", "not-impl"}};
+			}
 		} else if (et != "not-impl") {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
+			LOC($$, @$);
 		} else {
 			$$ = {{"stmt-type", "not-impl"}};
 		}
@@ -256,10 +266,14 @@ statement: import ';'
 			bool all_ok = true;
 			for (auto& v : $1["values"])
 				if (v.value("expr-type", "") == "not-impl") { all_ok = false; break; }
-			if (all_ok)
+			if (all_ok) {
 				$$["values"] = move($1["values"]);
-			else
+				LOC($$, @$);
+			} else {
 				$$ = {{"stmt-type", "not-impl"}};
+			}
+		} else {
+			LOC($$, @$);
 		}
 	}
 	| for_loop
@@ -347,15 +361,6 @@ block: '{' statements '}'
 	{ $$ = move($2); }
 	;
 
-block_statements: /* empty */
-	{ }
-	| block_statements statement_or_funcdef
-	{
-		$$ = move($1);
-		$$.emplace_back(move($2));
-	}
-	;
-
 statement_or_funcdef: statement    %dprec 1
 	{ $$ = move($1); }
 	| func_def                     %dprec 2
@@ -386,7 +391,7 @@ block_obj: '{' block_body_items '}'
 	;
 
 standalone_block: block_obj
-	{ json blk = move($1); blk["stmt-type"] = "block"; $$ = move(blk); }
+	{ json blk = move($1); blk["stmt-type"] = "block"; $$ = move(blk); LOC($$, @$); }
 	;
 
 var_declarations: var_declaration
@@ -519,7 +524,7 @@ expression: term
 	| dict_desc
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '+' expression
-	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; }
+	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '-' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '*' expression
@@ -542,10 +547,12 @@ expression: term
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression ARROW expression
 	{
-		if ($3.value("expr-type", "") == "id")
+		if ($3.value("expr-type", "") == "id") {
 			$$ = {{"expr-type", "assign-expr"}, {"name", $3["name"]}, {"value", move($1)}};
-		else
+			LOC($$, @$);
+		} else {
 			$$ = {{"expr-type", "not-impl"}};
+		}
 	}
 	| expression DBL_ARROW expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
@@ -554,13 +561,13 @@ expression: term
 	;
 
 term: INT
-	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}}; }
+	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}}; LOC($$, @$); }
 	| UINT
-	{ $$ = {{"expr-type", "lit-uint"}, {"value", move($1)}}; }
+	{ $$ = {{"expr-type", "lit-uint"}, {"value", move($1)}}; LOC($$, @$); }
 	| STRING
-	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; }
+	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; LOC($$, @$); }
 	| ID
-	{ $$ = {{"expr-type", "id"}, {"name", move($1)}}; }
+	{ $$ = {{"expr-type", "id"}, {"name", move($1)}}; LOC($$, @$); }
 	| '(' tapple_inner ')'
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| term '.' ID
@@ -583,11 +590,13 @@ func_call: term '(' arguments ')'
 				$$ = {{"expr-type",   "cast"},
 				      {"target-type", {{"type-kind", "prim"}, {"type-name", name}}},
 				      {"src",         $3[0]}};
+				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
 			}
 		} else if ($1.value("expr-type", "") == "id") {
 			$$ = {{"expr-type", "call"}, {"name", name}, {"args", move($3)}};
+			LOC($$, @$);
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
 		}
@@ -631,6 +640,7 @@ func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj
 				$$["rets"] = move($7["rets"]);
 			else if ($7.contains("ret-type"))
 				$$["ret-type"] = move($7["ret-type"]);
+			LOC($$, @$);
 			if ($1) {
 				$$["export"] = true;
 				json sig = $$;
@@ -707,9 +717,6 @@ var_type: ID
 temp_ids: ID | temp_ids ',' ID
 	;
 
-vars: ID var_postfix
-	| vars ',' ID var_postfix
-	;
 
 do_export: /* empty */ { $$ = false; }
 	| KW_EXPORT        { $$ = true; }
@@ -747,6 +754,6 @@ emitable_exp: /* empty */ | expression
 
 void palan::PlnParser::error(const location_type& l, const string& m)
 {
-	cerr << l.begin.line << ":" << l.begin.column << "-" << l.end.line << ":" << l.end.column << m << endl;
+	cerr << lexer.inputFile << ":" << l.begin.line << ":" << l.begin.column << ": error: " << m << endl;
 }
 

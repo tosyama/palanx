@@ -1,4 +1,0 @@
-func divmod(int64 a, int64 b) -> int64 q, int64 r {
-    a -> q;
-    return;
-}

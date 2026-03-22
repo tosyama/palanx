@@ -20,24 +20,6 @@ TEST(gen_ast, basic_tests) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	ASSERT_EQ(jout["ast"]["statements"].size(), 19);
-//	cout << output << endl;
-
-	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/100_quicksort.pa");
-	ASSERT_TRUE(checkerr(output));
-	jout = json::parse(output);
-	ASSERT_EQ(jout["ast"]["statements"].size(), 6);
-
-	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
-	ASSERT_TRUE(checkerr(output));
-	jout = json::parse(output);
-	ASSERT_EQ(jout["ast"]["statements"].size(), 12);
-}
-
-TEST(gen_ast, cinclude_functions_in_ast) {
-	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
-	ASSERT_TRUE(checkerr(output));
-	json jout = json::parse(output);
 
 	bool found_printf = false;
 	for (auto& stmt : jout["ast"]["statements"]) {
@@ -51,6 +33,16 @@ TEST(gen_ast, cinclude_functions_in_ast) {
 		if (found_printf) break;
 	}
 	ASSERT_TRUE(found_printf);
+
+	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/100_quicksort.pa");
+	ASSERT_TRUE(checkerr(output));
+	jout = json::parse(output);
+	ASSERT_EQ(jout["ast"]["statements"].size(), 6);
+
+	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
+	ASSERT_TRUE(checkerr(output));
+	jout = json::parse(output);
+	ASSERT_EQ(jout["ast"]["statements"].size(), 12);
 }
 
 TEST(gen_ast, addition) {
@@ -96,45 +88,38 @@ TEST(gen_ast, var_decl_int32) {
 	ASSERT_TRUE(found);
 }
 
-TEST(gen_ast, cast_node) {
+TEST(gen_ast, cast) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/003_cast_syntax.pa");
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/101_cast.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
-	bool found = false;
+	// cast_node: int32(x) — cast of an identifier
+	bool found_simple = false;
 	for (auto& stmt : jout["ast"]["statements"]) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& expr = stmt["body"];
-		if (expr["expr-type"] != "cast") continue;
-		ASSERT_EQ(expr["target-type"]["type-name"], "int32");
+		if (expr["expr-type"] != "cast" || expr["target-type"]["type-name"] != "int32") continue;
 		ASSERT_EQ(expr["src"]["expr-type"], "id");
 		ASSERT_EQ(expr["src"]["name"], "x");
-		found = true;
+		found_simple = true;
 		break;
 	}
-	ASSERT_TRUE(found);
-}
+	ASSERT_TRUE(found_simple);
 
-TEST(gen_ast, cast_compound_expr) {
-	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/004_cast_compound.pa");
-	ASSERT_TRUE(checkerr(output));
-	json jout = json::parse(output);
-
-	bool found = false;
+	// cast_compound_expr: uint64(y+z) — cast of a compound expression
+	bool found_compound = false;
 	for (auto& stmt : jout["ast"]["statements"]) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& expr = stmt["body"];
-		if (expr["expr-type"] != "cast") continue;
-		ASSERT_EQ(expr["target-type"]["type-name"], "uint64");
+		if (expr["expr-type"] != "cast" || expr["target-type"]["type-name"] != "uint64") continue;
 		ASSERT_EQ(expr["src"]["expr-type"], "add");
 		ASSERT_EQ(expr["src"]["left"]["expr-type"],  "id");
 		ASSERT_EQ(expr["src"]["right"]["expr-type"], "id");
-		found = true;
+		found_compound = true;
 		break;
 	}
-	ASSERT_TRUE(found);
+	ASSERT_TRUE(found_compound);
 }
 
 TEST(gen_ast, func_def) {

@@ -1,0 +1,51 @@
+cinclude <stdio.h>;
+
+// 018: block_basic
+{
+    int64 x = 10;
+    {
+        int64 y = 20;
+        printf("%ld %ld\n", x, y);
+    }
+    printf("%ld\n", x);
+}
+
+// 019: block_in_func
+{
+    func compute(int64 n) -> int64 {
+        int64 result = n;
+        {
+            int64 tmp = n + 1;
+            tmp -> result;
+        }
+        return result;
+    }
+    printf("%ld\n", compute(5));
+}
+
+// 020: block_cinclude (cinclude already at top level)
+{
+    printf("%s\n", "hello from block");
+}
+
+// 021: block_func_def (func defined after call - forward decl)
+{
+    printf("%ld\n", double_val(7));
+    func double_val(int64 n) -> int64 {
+        return n + n;
+    }
+}
+
+// 022: block_nested
+{
+    int64 x = 1;
+    {
+        int64 a = 2;
+        {
+            int64 b = 3;
+            printf("%ld %ld %ld\n", x, a, b);
+        }
+        printf("%ld %ld\n", x, a);
+    }
+    printf("%ld\n", x);
+}

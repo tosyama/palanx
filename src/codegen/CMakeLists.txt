@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 add_executable(palan-codegen
 	main.cpp
+	PlnCodegenMessage.cpp
 	PlnDeserialize.cpp
 	PlnVCodeGen.cpp
 	PlnRegAlloc.cpp
