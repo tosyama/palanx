@@ -1,5 +1,9 @@
 #include "PlnDeserialize.h"
+#include "PlnCodegenMessage.h"
 #include <boost/assert.hpp>
+#include <iostream>
+using std::cerr;
+using std::endl;
 
 using namespace std;
 
@@ -10,8 +14,8 @@ static VRegType toVRegType(const json& vt) {
     if (name == "int16") return VRegType::Int16;
     if (name == "int32") return VRegType::Int32;
     if (name == "int64") return VRegType::Int64;
-    BOOST_ASSERT(false);
-    return VRegType::Int64;
+    cerr << PlnCodegenMessage::getMessage(E_UnknownType, name) << endl;
+    exit(1);
 }
 
 static unique_ptr<Expr> deserializeExpr(const json& j)
@@ -82,8 +86,8 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         }
     }
 
-    BOOST_ASSERT(false);
-    return nullptr;
+    cerr << PlnCodegenMessage::getMessage(E_UnknownExprType, j["expr-type"].get<string>()) << endl;
+    exit(1);
 }
 
 static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr);  // forward declaration
@@ -144,8 +148,8 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         return nullptr;
     }
 
-    BOOST_ASSERT(false);
-    return nullptr;
+    cerr << PlnCodegenMessage::getMessage(E_UnknownStmtType, stmt_type) << endl;
+    exit(1);
 }
 
 static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr)

@@ -12,6 +12,7 @@
 #include "PlnDeserialize.h"
 #include "PlnVCodeGen.h"
 #include "PlnX86CodeGen.h"
+#include "PlnCodegenMessage.h"
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -21,6 +22,7 @@ int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
 		{ "help",     no_argument,       NULL, 'h' },
+		{ "version",  no_argument,       NULL, 'v' },
 		{ "output",   required_argument, NULL, 'o' },
 		{ "no-entry", no_argument,       NULL, 'n' },
 		{ 0 }
@@ -30,14 +32,13 @@ int main(int argc, char* argv[])
 	char *output_file = NULL;
 	bool no_entry = false;
 
-	while (0 < (opt = getopt_long(argc, argv, "ho:n", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "hvo:n", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
-				cout << "Usage: palan-codegen [options] <SA file>" << endl;
-				cout << " options:" << endl;
-				cout << "   -o, --output <file>  Output assembly file path" << endl;
-				cout << "   -n, --no-entry       Do not emit .globl for _start" << endl;
-				cout << "   -h, --help           Display help information" << endl;
+				cout << PlnCodegenMessage::getMessage(M_Help) << endl;
+				return 0;
+			case 'v':
+				cout << PlnCodegenMessage::getMessage(M_Version) << endl;
 				return 0;
 			case 'o':
 				output_file = optarg;
