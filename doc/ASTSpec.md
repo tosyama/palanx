@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.6
+ver. 0.1.7
 
 \* - Required
 
@@ -37,7 +37,7 @@ Function definition model
 -------------------------
 - name\* - Function name string
 - func-type\* - Function type string: "palan" "c"
-- loc - Location Array
+- loc\* - Location Array (palan only)
 
   1. **palan** - Palan user-defined function
      - export - Boolean, true if declared with `export` keyword (omitted when false)
@@ -113,6 +113,7 @@ Used in `func-def` bodies and standalone block statements.
 Statement model
 ---------------
 - stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block"
+- loc\* - Location Array (omitted for "not-impl")
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
@@ -144,6 +145,7 @@ Statement model
 Expression model
 ----------------
 - expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "add" "call" "cast"
+- loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token)
@@ -167,11 +169,8 @@ Note: sa.json extends this format with additional fields and expression kinds. S
 
 Location Array
 -----------------
-- 0\* - Source file ID integer
-- 1\* - Begin line integer
-- 2\* - Begin column integer
-- 3\* - End line integer
-- 4\* - End column integer
-
-(TBD)
+- 0\* - Begin line integer
+- 1\* - Begin column integer
+- 2\* - End line integer
+- 3\* - End column integer
 

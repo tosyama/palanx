@@ -31,13 +31,15 @@ class PlnSemanticAnalyzer {
 	void enterScope();
 	void leaveScope();
 
-	void        declareVar(const string& name, const json& type);
+	string locPrefix(const json& node) const;
+
+	void        declareVar(const string& name, const json& type, const json* loc_node = nullptr);
 	const json* findVar(const string& name) const;
 
 	void        registerCFunc(const string& name, const json& def);
 	const json* findCFunc(const string& name) const;
 
-	void        registerPlnFunc(const string& name, const json& def);
+	void        registerPlnFunc(const string& name, const json& def, const json* loc_node = nullptr);
 	const json* findPlnFunc(const string& name) const;
 
 	json sa_statements(const json& stmts);

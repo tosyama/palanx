@@ -49,11 +49,20 @@ void PlnSemanticAnalyzer::leaveScope()
 	importScopes.pop_back();
 }
 
-void PlnSemanticAnalyzer::declareVar(const string& name, const json& type)
+string PlnSemanticAnalyzer::locPrefix(const json& node) const
+{
+	if (node.contains("loc") && node["loc"].is_array() && node["loc"].size() >= 2)
+		return inputFilePath + ":" + to_string(node["loc"][0].get<int>())
+		       + ":" + to_string(node["loc"][1].get<int>()) + ": error: ";
+	return "";
+}
+
+void PlnSemanticAnalyzer::declareVar(const string& name, const json& type, const json* loc_node)
 {
 	for (auto& scope : varScopes)
 		if (scope.count(name)) {
-			cerr << PlnSaMessage::getMessage(E_DuplicateVarDecl, name) << endl;
+			cerr << locPrefix(loc_node ? *loc_node : json{})
+			     << PlnSaMessage::getMessage(E_DuplicateVarDecl, name) << endl;
 			exit(1);
 		}
 	varScopes.back()[name] = type;
@@ -82,11 +91,12 @@ const json* PlnSemanticAnalyzer::findCFunc(const string& name) const
 	return nullptr;
 }
 
-void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def)
+void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json* loc_node)
 {
 	for (auto& scope : plnFuncScopes)
 		if (scope.count(name)) {
-			cerr << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
+			cerr << locPrefix(loc_node ? *loc_node : json{})
+			     << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
 			exit(1);
 		}
 	plnFuncScopes.back()[name] = def;
@@ -145,12 +155,12 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
 		else if (t == "not-impl")    result.push_back(stmt);
 		else if (t == "func-def") {
-			cerr << PlnSaMessage::getMessage(E_InternalError, "1") << endl;
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_InternalError, "1") << endl;
 			exit(1);
 		}
 		else if (t == "block")    result.push_back(sa_block(stmt));
 		else {
-			cerr << PlnSaMessage::getMessage(E_InternalError, "2") << endl;
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_InternalError, "2") << endl;
 			exit(1);
 		}
 	}
@@ -215,7 +225,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		} else if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast) {
 			return wrapConvert(src, registry_.toJson(target));
 		} else {
-			cerr << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
 				src["value-type"]["type-name"].get<string>(),
 				expr["target-type"]["type-name"].get<string>()) << endl;
 			exit(1);
@@ -244,7 +254,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 				if (pFunc->contains("parameters"))
 					funcParams = &(*pFunc)["parameters"];
 			} else {
-				cerr << PlnSaMessage::getMessage(E_UndefinedFunction,
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedFunction,
 					expr["name"].get<string>()) << endl;
 				exit(1);
 			}
@@ -289,7 +299,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
-		declareVar(name, var["var-type"]);
+		declareVar(name, var["var-type"], &stmt);
 
 		json sa_var = var;
 		if (var.contains("init")) {
@@ -304,7 +314,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 				} else if (compat == TypeCompat::ExplicitCast) {
 					string et = init["expr-type"];
 					if (et != "lit-int" && et != "lit-uint") {
-						cerr << PlnSaMessage::getMessage(E_InvalidNarrowingInit) << endl;
+						cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_InvalidNarrowingInit) << endl;
 						exit(1);
 					}
 				}
@@ -329,13 +339,13 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 	// pre-register block-local func-defs (forward reference support)
 	for (auto& f : stmt.value("functions", json::array())) {
 		if (f.value("export", false)) {
-			cerr << PlnSaMessage::getMessage(E_ExportInBlock, f["name"].get<string>()) << endl;
+			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInBlock, f["name"].get<string>()) << endl;
 			exit(1);
 		}
 		json funcEntry = f;
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		registerPlnFunc(funcEntry["name"], funcEntry);
+		registerPlnFunc(funcEntry["name"], funcEntry, &f);
 	}
 
 	// analyze block-local func bodies -> appended to sa["functions"]
@@ -357,10 +367,10 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	varScopes = {{}};
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], p["var-type"]);
+			declareVar(p["name"], p["var-type"], &funcDef);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
-			declareVar(r["name"], r["var-type"]);
+			declareVar(r["name"], r["var-type"], &funcDef);
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
 	enterScope();  // push cFuncScopes/plnFuncScopes/importScopes frame
@@ -370,13 +380,13 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	// pre-register inner func-defs (visible only within this function)
 	for (auto& f : blk.value("functions", json::array())) {
 		if (f.value("export", false)) {
-			cerr << PlnSaMessage::getMessage(E_ExportInFunction, f["name"].get<string>()) << endl;
+			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInFunction, f["name"].get<string>()) << endl;
 			exit(1);
 		}
 		json funcEntry = f;
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		registerPlnFunc(funcEntry["name"], funcEntry);
+		registerPlnFunc(funcEntry["name"], funcEntry, &f);
 	}
 
 	// analyze inner func bodies -> appended to sa["functions"]
@@ -402,7 +412,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	string name = stmt["name"];
 	const json* varType = findVar(name);
 	if (varType == nullptr) {
-		cerr << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 		exit(1);
 	}
 	const PlnType* toType = registry_.fromJson(*varType);
@@ -419,7 +429,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 {
 	if (currentFunc_ == nullptr) {
-		cerr << PlnSaMessage::getMessage(E_ReturnOutsideFunction) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ReturnOutsideFunction) << endl;
 		exit(1);
 	}
 	bool hasRets   = currentFunc_->contains("rets");
@@ -429,7 +439,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 	if (hasRets) {
 		// Multiple return values: bare return only
 		if (hasValues) {
-			cerr << PlnSaMessage::getMessage(E_MultiRetBareReturn) << endl;
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_MultiRetBareReturn) << endl;
 			exit(1);
 		}
 		return {{"stmt-type", "return"}};
@@ -437,7 +447,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 	if (hasRetType) {
 		// Single return value: exactly one expression required
 		if (!hasValues || stmt["values"].size() != 1) {
-			cerr << PlnSaMessage::getMessage(E_SingleRetOneExpr) << endl;
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_SingleRetOneExpr) << endl;
 			exit(1);
 		}
 		const PlnType* toType = registry_.fromJson((*currentFunc_)["ret-type"]);
@@ -452,7 +462,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 	}
 	// Void function: bare return only
 	if (hasValues) {
-		cerr << PlnSaMessage::getMessage(E_VoidBareReturn) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidBareReturn) << endl;
 		exit(1);
 	}
 	return {{"stmt-type", "return"}};
@@ -466,15 +476,15 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 	// Resolve function — fall back to not-impl if not a known multi-return Palan func
 	const json* pFunc = findPlnFunc(fname);
 	if (pFunc == nullptr) {
-		cerr << PlnSaMessage::getMessage(E_TupleUndefinedFunction, fname) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleUndefinedFunction, fname) << endl;
 		exit(1);
 	}
 	if (!pFunc->contains("rets") || (*pFunc)["rets"].size() < 2) {
-		cerr << PlnSaMessage::getMessage(E_TupleNeedsMultiRet, fname) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleNeedsMultiRet, fname) << endl;
 		exit(1);
 	}
 	if (stmt["vars"].size() != (*pFunc)["rets"].size()) {
-		cerr << PlnSaMessage::getMessage(E_TupleVarCountMismatch, fname) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleVarCountMismatch, fname) << endl;
 		exit(1);
 	}
 
@@ -522,7 +532,7 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 
 	ifstream astfile(imp_path.string());
 	if (!astfile.is_open()) {
-		cerr << PlnSaMessage::getMessage(E_ImportFileNotFound, imp_path.string()) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, imp_path.string()) << endl;
 		exit(1);
 	}
 	json imp_ast = json::parse(astfile);
