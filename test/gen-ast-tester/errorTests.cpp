@@ -19,3 +19,11 @@ TEST(gen_ast_error, could_not_open_file) {
 	string out = execTestCommand("bin/palan-gen-ast no_such_file.pa");
 	ASSERT_NE(out.find("Could not open file"), string::npos);
 }
+
+TEST(gen_ast_error, syntax_error_with_loc) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_001_syntax_error.pa");
+	ASSERT_NE(out.find(":1:"), string::npos);   // loc format
+	ASSERT_NE(out.find("error:"), string::npos);
+}
