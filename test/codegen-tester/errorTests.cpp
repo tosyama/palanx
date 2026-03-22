@@ -8,6 +8,18 @@
 
 using namespace std;
 
+TEST(codegen_error, help) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-codegen --help");
+	ASSERT_NE(out.find("Usage: palan-codegen"), string::npos);
+}
+
+TEST(codegen_error, version) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-codegen --version");
+	ASSERT_NE(out.find("palan-codegen"), string::npos);
+}
+
 TEST(codegen_error, no_input_file) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan-codegen");

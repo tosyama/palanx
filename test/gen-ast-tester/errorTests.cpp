@@ -8,6 +8,18 @@
 
 using namespace std;
 
+TEST(gen_ast_error, help) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-gen-ast --help");
+	ASSERT_NE(out.find("Usage: palan-gen-ast"), string::npos);
+}
+
+TEST(gen_ast_error, version) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-gen-ast --version");
+	ASSERT_NE(out.find("palan-gen-ast"), string::npos);
+}
+
 TEST(gen_ast_error, no_input_file) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan-gen-ast");

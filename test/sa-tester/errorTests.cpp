@@ -3,6 +3,18 @@
 
 using namespace std;
 
+TEST(sa_error, help) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-sa --help");
+	ASSERT_NE(out.find("Usage: palan-sa"), string::npos);
+}
+
+TEST(sa_error, version) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-sa --version");
+	ASSERT_NE(out.find("palan-sa"), string::npos);
+}
+
 TEST(sa_error, no_input_file) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan-sa");

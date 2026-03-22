@@ -8,6 +8,18 @@
 
 using namespace std;
 
+TEST(build_mgr_error, help) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan --help");
+	ASSERT_NE(out.find("Usage: palan"), string::npos);
+}
+
+TEST(build_mgr_error, version) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan --version");
+	ASSERT_NE(out.find("palan"), string::npos);
+}
+
 TEST(build_mgr_error, wrong_number_of_args) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan");
