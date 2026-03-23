@@ -6,15 +6,15 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-03-21)
-version: 0.1.7
-- This iteration reduces test pipeline invocations by merging small test files into grouped
-  scenarios using block scoping `{ }`, targeting build-mgr-tester primarily.
-- `BOOST_ASSERT` calls that represent user-facing errors are replaced with proper error messages
-  (stderr) and exit code 1, using a per-tool message class pattern based on `PlnGenAstMessage`.
-- New message classes: `PlnSaMessage` (palan-sa) and `PlnCodegenMessage` (palan-codegen).
-- build-mgr error messages replace existing placeholder `cerr` outputs.
-- palan-c2ast is out of scope for this iteration.
+### 2.1 Iteration Goal (2026-03-23)
+version: 0.1.8
+- This iteration adds proper error message handling to palan-c2ast, which was out of scope in v0.1.7.
+- A new `PlnC2AstMessage` class is introduced, following the per-tool message class pattern established in v0.1.7.
+- CLI errors in main.cpp (no input file, --help, --version) are replaced with proper messages.
+- `BOOST_ASSERT` calls in CPreprocessor.cpp that represent user-facing errors are replaced with
+  `throw runtime_error` (caught in main.cpp) with `file:line: error:` formatted messages.
+- `BOOST_ASSERT` calls annotated `// output warning` are replaced with `cerr` warnings that allow
+  processing to continue.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
@@ -308,4 +308,5 @@ All tools write error messages to **stderr** and exit with code **1** on error.
 | palan-sa | `<source_file>:<line>:<col>: error: <message>` |
 | palan-codegen | `<message>` |
 | palan (build-mgr) | `<message>` |
+| palan-c2ast | `<source_file>:<line>:<col>: error: <message>` (preprocessor errors); `<message>` (CLI errors) |
 
