@@ -13,6 +13,7 @@ using namespace std;
 #include "CLexer.h"
 #include "CPreprocessor.h"
 #include "CParser.h"
+#include "PlnC2AstMessage.h"
 
 void CParser::debug_token(const CToken* token)
 {
@@ -1036,8 +1037,10 @@ int CParser::parse(json &ast, const vector<CToken*> &tokens)
 			// parsed declaration and function definition
 			
 		} else {
-			cout << "Unhandled token: ";
-			debug_token(tokens[index]);
+			CLexer* err_lexer = lexers[tokens[index]->lexer_no];
+			CToken0& err_t0 = err_lexer->tokens[tokens[index]->token0_no];
+			cerr << err_lexer->infile.fname << ":" << err_t0.line_no << ":" << err_t0.pos + 1
+				<< ": error: " << PlnC2AstMessage::getMessage(E_UnhandledToken) << endl;
 			return 1;
 		}
 	}

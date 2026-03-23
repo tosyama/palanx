@@ -42,6 +42,68 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 		case E_MalformedMacroArgList:
 			return "malformed macro argument list";
 
+		case E_UnhandledToken:
+			return "unexpected token";
+
+		case W_ExtraTokensAfterDirective:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "extra tokens at end of '#" + arg1 + "' directive";
+
+		case E_InvalidDirective:
+			return "invalid preprocessing directive";
+
+		case E_MacroNameNotIdentifier:
+			return "macro name must be an identifier";
+
+		case E_ElifWithoutIf:
+			return "#elif without #if";
+
+		case E_ElifAfterElse:
+			return "#elif after #else";
+
+		case E_ElseWithoutIf:
+			return "#else without #if";
+
+		case E_EndifWithoutIf:
+			return "#endif without #if";
+
+		case E_ElseAfterElse:
+			return "#else after #else";
+
+		case E_IncludeNotFound:
+			BOOST_ASSERT(arg1 != "\x01");
+			return arg1 + ": No such file or directory";
+
+		case E_IncludeExpectsFilename:
+			return "#include expects \"FILENAME\" or <FILENAME>";
+
+		case E_IfExprUnexpectedEnd:
+			return "unexpected end of expression";
+
+		case E_IfExprExtraTokens:
+			return "unexpected token in expression";
+
+		case E_IfExprMissingColon:
+			return "missing ':' in conditional expression";
+
+		case E_IfExprMissingParen:
+			return "missing ')' in expression";
+
+		case E_IfExprInvalidToken:
+			return "expression is not valid";
+
+		case E_MacroPasteAtStart:
+			return "'##' cannot appear at start of macro expansion";
+
+		case E_MacroPasteAtEnd:
+			return "'##' cannot appear at end of macro expansion";
+
+		case E_MacroPasteInvalidToken:
+			return "pasting does not give a valid token";
+
+		case E_MacroStringifyInvalidToken:
+			return "invalid token in stringification";
+
 		default:
 			BOOST_ASSERT(false);
 	}

@@ -15,6 +15,30 @@ enum PlnC2AstMessageCode {
 	E_ErrorDirective,		// arg1: message text from #error directive
 	E_InvalidDefinedSyntax,
 	E_MalformedMacroArgList,
+	E_UnhandledToken,
+	W_ExtraTokensAfterDirective,	// arg1: directive name (undef/ifdef/else/endif)
+	// Group A: directive errors
+	E_InvalidDirective,
+	E_MacroNameNotIdentifier,
+	E_ElifWithoutIf,
+	E_ElifAfterElse,
+	E_ElseWithoutIf,
+	E_EndifWithoutIf,
+	E_ElseAfterElse,
+	// Group B: #include errors
+	E_IncludeNotFound,				// arg1: filename
+	E_IncludeExpectsFilename,
+	// Group C: #if expression errors
+	E_IfExprUnexpectedEnd,
+	E_IfExprExtraTokens,
+	E_IfExprMissingColon,
+	E_IfExprMissingParen,
+	E_IfExprInvalidToken,
+	// Group D: macro expansion errors
+	E_MacroPasteAtStart,
+	E_MacroPasteAtEnd,
+	E_MacroPasteInvalidToken,
+	E_MacroStringifyInvalidToken,
 };
 
 class PlnC2AstMessage
