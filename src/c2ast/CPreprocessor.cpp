@@ -6,6 +6,7 @@
 #include <fstream>
 #include <algorithm>
 #include <boost/assert.hpp>
+#include "PlnC2AstMessage.h"
 
 using namespace std;
 #include "CFileInfo.h"
@@ -148,8 +149,14 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 					cerr << lexer.infile.fname << ":" << t0->line_no
 						<< ": warning: " << msg << endl;
 				} else if (directive == "error") {
-					cout << "Error at " << lexer.infile.fname << ":" << t0->line_no << endl;
-					BOOST_ASSERT(false);	// error
+					string msg = "";
+					while (!token0s[n].is_eol) {
+						n = next_pos(token0s, n);
+						msg += lexer.get_str(&token0s[n]) + " ";
+					}
+					cerr << lexer.infile.fname << ":" << t0->line_no << ":" << t0->pos + 1
+						<< ": error: " << PlnC2AstMessage::getMessage(E_ErrorDirective, msg) << endl;
+					throw runtime_error("");
 				} else {
 					cerr << lexer.infile.fname << ":" << t0->line_no
 						<< ": warning: unsupported directive '#" << directive << "', ignored" << endl;
@@ -292,8 +299,12 @@ vector<CToken*> CPreprocessor::scan_macro(list<CToken*> &unprocessed_tokens, boo
 				// expect '(' ID ')' or ID
 				CToken* id_token = get_defined_id_token(unprocessed_tokens);
 				if (!id_token) {
+					CLexer &err_lexer = *lexers[t->lexer_no];
+					CToken0 &err_t0 = err_lexer.tokens[t->token0_no];
+					cerr << err_lexer.infile.fname << ":" << err_t0.line_no << ":" << err_t0.pos + 1
+						<< ": error: " << PlnC2AstMessage::getMessage(E_InvalidDefinedSyntax) << endl;
 					delete t;
-					BOOST_ASSERT(false);	// syntax error
+					throw runtime_error("");
 				}
 
 				CMacro* dm = macro_exists(*id_token->info.id);
@@ -730,15 +741,21 @@ int parse_params(vector<string>& params, CLexer& lexer, int n)
 					break;
 
 				} else {
-					BOOST_ASSERT(false);	// error
+					cerr << lexer.infile.fname << ":" << t_next.line_no << ":" << t_next.pos + 1
+						<< ": error: " << PlnC2AstMessage::getMessage(E_MalformedMacroArgList) << endl;
+					throw runtime_error("");
 				}
 			} else {
-				BOOST_ASSERT(false);	// error
+				cerr << lexer.infile.fname << ":" << t_next.line_no << ":" << t_next.pos + 1
+					<< ": error: " << PlnC2AstMessage::getMessage(E_MalformedMacroArgList) << endl;
+				throw runtime_error("");
 			}
 		} else if (t.type == TT0_PUNCTUATOR && lexer.get_ch(&t) == ')') {
 			break;
 		} else {
-			BOOST_ASSERT(false);	// error
+			cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
+				<< ": error: " << PlnC2AstMessage::getMessage(E_MalformedMacroArgList) << endl;
+			throw runtime_error("");
 		}
 	}
 

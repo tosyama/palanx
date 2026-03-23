@@ -32,6 +32,16 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 		case E_NoInputFile:
 			return "palan-c2ast: no input file";
 
+		case E_ErrorDirective:
+			BOOST_ASSERT(arg1 != "\x01");
+			return arg1;
+
+		case E_InvalidDefinedSyntax:
+			return "invalid syntax in 'defined'";
+
+		case E_MalformedMacroArgList:
+			return "malformed macro argument list";
+
 		default:
 			BOOST_ASSERT(false);
 	}
