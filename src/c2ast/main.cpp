@@ -20,6 +20,7 @@ namespace fs = std::filesystem;
 #include "CLexer.h"
 #include "CPreprocessor.h"
 #include "CParser.h"
+#include "PlnC2AstMessage.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 using json = nlohmann::json;
 
@@ -42,13 +43,14 @@ static vector<string> split(const string &str, const string &delim)
 int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
-		{ "help", no_argument, NULL, 'h' },
-		{ "indent", no_argument, NULL, 'i' },
-		{ "path", required_argument, NULL, 'p' },
-		{ "curdir", required_argument, NULL, 'c' },
-		{ "output", required_argument, NULL, 'o' },
-		{ "sysheader", no_argument, NULL, 's' },
-		{ "dump-preprocessed", no_argument, NULL, 'd' },
+		{ "help",               no_argument,       NULL, 'h' },
+		{ "version",            no_argument,       NULL, 'v' },
+		{ "indent",             no_argument,       NULL, 'i' },
+		{ "path",               required_argument, NULL, 'p' },
+		{ "curdir",             required_argument, NULL, 'c' },
+		{ "output",             required_argument, NULL, 'o' },
+		{ "sysheader",          no_argument,       NULL, 's' },
+		{ "dump-preprocessed",  no_argument,       NULL, 'd' },
 		{ 0 }
 	};
 
@@ -61,10 +63,13 @@ int main(int argc, char* argv[])
 	string current_directory = "";
 	string target = "x86_64-linux-gnu";
 
-	while (0 < (opt = getopt_long(argc, argv, "ho:ip:c:sd", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "hvo:ip:c:sd", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
-				cout << "Help (not Inplemented.)" << endl;
+				cout << PlnC2AstMessage::getMessage(M_Help) << endl;
+				return 0;
+			case 'v':
+				cout << PlnC2AstMessage::getMessage(M_Version) << endl;
 				return 0;
 			case 'o':
 				output_file = optarg;
@@ -74,7 +79,7 @@ int main(int argc, char* argv[])
 				break;
 			case 'p': // search path
 				search_paths.push_back(optarg);
-				break;			
+				break;
 			case 'c': // current directory
 				current_directory = optarg;
 				break;
@@ -88,14 +93,14 @@ int main(int argc, char* argv[])
 			default:
 				break;
 		}
-	} 
+	}
 
 	if ((argc-optind) != 1) {
-		cerr << "errx " << argc << ":" << optind << endl;
+		cerr << PlnC2AstMessage::getMessage(E_NoInputFile) << endl;
 		return 1;
 	}
 
-	// Add serach latest gcc include path from /usr/lib/gcc/{target}/{version}/include
+	// Add search latest gcc include path from /usr/lib/gcc/{target}/{version}/include
 	if (search_paths.size() == 0) {
 		int gcc_major = -1;
 		int gcc_minor = -1;
@@ -132,7 +137,7 @@ int main(int argc, char* argv[])
 				}
 			}
 		}
-		
+
 		if (gcc_major >= 0) {
 			string gcc_latest = gcc_path.string() + "/" + to_string(gcc_major);
 			if (gcc_minor >= 0) {
@@ -143,57 +148,62 @@ int main(int argc, char* argv[])
 			}
 
 			search_paths.push_back(gcc_latest + "/include");
-		}	
+		}
 	}
 
-	string input_file = argv[optind];
-	{
-		vector<CMacro*> macros;
-		vector<string> include_paths = {
-			"/usr/include",
-			"/usr/local/include",
-		};
+	try {
+		string input_file = argv[optind];
+		{
+			vector<CMacro*> macros;
+			vector<string> include_paths = {
+				"/usr/include",
+				"/usr/local/include",
+			};
 
-		include_paths.push_back("/usr/include/" + target);
+			include_paths.push_back("/usr/include/" + target);
 
-		for (auto& p: search_paths) {
-			include_paths.push_back(p);
-		}
-
-		fs::path exec_file_path = fs::canonical("/proc/self/exe");
-		string exec_path = exec_file_path.parent_path().string();
-		CPreprocessor cpp(macros, include_paths);
-		string predefined_path = exec_path + "/c2ast/predefined.h";
-		cpp.loadPredefined(predefined_path);
-
-		if (is_sys_header) {
-			input_file = CFileInfo::searchFilePath(input_file, include_paths);
-		}
-
-		cpp.preprocess(input_file);
-
-		if (do_dump_preprocessed) {
-			cpp.dumpPreprocessed(cout);
-
-		} else {
-			CParser cparser(cpp.top_tokens, cpp.lexers);
-			json ast;
-			ast["original"] = input_file;
-			int ret = cparser.parse(ast);
-			if (ret) return ret;
-
-			ostream* out = &cout;
-			ofstream outfile;
-			if (output_file) {
-				outfile.open(output_file);
-				out = &outfile;
+			for (auto& p: search_paths) {
+				include_paths.push_back(p);
 			}
-			if (do_indent) {
-				*out << ast.dump(2) << endl;
+
+			fs::path exec_file_path = fs::canonical("/proc/self/exe");
+			string exec_path = exec_file_path.parent_path().string();
+			CPreprocessor cpp(macros, include_paths);
+			string predefined_path = exec_path + "/c2ast/predefined.h";
+			cpp.loadPredefined(predefined_path);
+
+			if (is_sys_header) {
+				input_file = CFileInfo::searchFilePath(input_file, include_paths);
+			}
+
+			cpp.preprocess(input_file);
+
+			if (do_dump_preprocessed) {
+				cpp.dumpPreprocessed(cout);
+
 			} else {
-				*out << ast.dump() << endl;
+				CParser cparser(cpp.top_tokens, cpp.lexers);
+				json ast;
+				ast["original"] = input_file;
+				int ret = cparser.parse(ast);
+				if (ret) return ret;
+
+				ostream* out = &cout;
+				ofstream outfile;
+				if (output_file) {
+					outfile.open(output_file);
+					out = &outfile;
+				}
+				if (do_indent) {
+					*out << ast.dump(2) << endl;
+				} else {
+					*out << ast.dump() << endl;
+				}
 			}
 		}
+	} catch (runtime_error& e) {
+		if (e.what()[0]) cerr << e.what() << endl;
+		return 1;
 	}
 
 	return 0;
