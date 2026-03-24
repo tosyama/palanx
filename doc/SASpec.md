@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.6
+ver. 0.1.9
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -57,6 +57,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Palan function definitions inside a block are pre-registered (pass 1) to
     support forward references within the same block.
 
+- **if** - if / if-else statement
+  - stmt-type\*: "if"
+  - cond\*: SA-annotated condition expression (value-type present; integer expected)
+  - then\*: then-block (same structure as block stmt body in ASTSpec.md)
+  - else: else-block or nested if statement (omitted when absent)
+
 Additional statement kinds emitted by SA:
 
 - **assign** - assignment statement
@@ -85,6 +91,9 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   - id: same object as var-type
   - add: promoted type of left and right operands (see Promotion rules);
     the narrower operand is wrapped in a convert node if types differ
+  - sub: same promotion rules as add
+  - cmp: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
+    left and right operands are promoted by the same rules as add
   - call: present when the function has a return type (ret-type in its definition)
 
 SA-only expression kinds (not present in AST JSON):
