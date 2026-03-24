@@ -11,10 +11,15 @@ version: 0.1.8
 - This iteration adds proper error message handling to palan-c2ast, which was out of scope in v0.1.7.
 - A new `PlnC2AstMessage` class is introduced, following the per-tool message class pattern established in v0.1.7.
 - CLI errors in main.cpp (no input file, --help, --version) are replaced with proper messages.
-- `BOOST_ASSERT` calls in CPreprocessor.cpp that represent user-facing errors are replaced with
-  `throw runtime_error` (caught in main.cpp) with `file:line: error:` formatted messages.
-- `BOOST_ASSERT` calls annotated `// output warning` are replaced with `cerr` warnings that allow
-  processing to continue.
+- All user-facing `BOOST_ASSERT(false)` calls in CPreprocessor.cpp are replaced with `cerr` +
+  `throw runtime_error` (caught in main.cpp) with `file:line:col: error:` formatted messages.
+  This includes `#error` directives, `#include` file-not-found, directive syntax errors (`#define`/
+  `#ifdef` without identifier, unmatched `#else`/`#elif`/`#endif`), `#if` expression errors,
+  and macro expansion errors (`##` at start/end, invalid token paste/stringify).
+- `BOOST_ASSERT` calls annotated `// output warning` are replaced with `cerr` warnings
+  (`file:line:col: warning:`) that allow processing to continue.
+- CParser "Unhandled token" output is replaced with proper `cerr` error using `PlnC2AstMessage`.
+- Error tests for palan-c2ast are added to c2ast-tester (errorTests.cpp).
 
 
 ## 3. Command-line Tools' Responsibilities and Design

@@ -163,3 +163,57 @@ TEST(c2ast, include_macro_bracket) {
     output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/009_include_macro_bracket.h");
     ASSERT_TRUE(output.find("int printf(const char") != string::npos);
 }
+
+TEST(c2ast, struct_enum_typedef) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/013_struct_enum.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    // get_color() returns typedef enum Color
+    {
+        json* f = find_func("get_color");
+        ASSERT_NE(f, nullptr);
+        ASSERT_EQ((*f)["ret-type"]["type-kind"], "user");
+        ASSERT_EQ((*f)["ret-type"]["type-name"], "Color");
+    }
+
+    // make_point() returns typedef struct Point
+    {
+        json* f = find_func("make_point");
+        ASSERT_NE(f, nullptr);
+        ASSERT_EQ((*f)["ret-type"]["type-kind"], "user");
+        ASSERT_EQ((*f)["ret-type"]["type-name"], "Point");
+    }
+
+    // point_sum() takes Point param
+    {
+        json* f = find_func("point_sum");
+        ASSERT_NE(f, nullptr);
+        auto& p0vt = (*f)["parameters"][0]["var-type"];
+        ASSERT_EQ(p0vt["type-kind"], "user");
+        ASSERT_EQ(p0vt["type-name"], "Point");
+    }
+}
+
+TEST(c2ast, time_h_struct_pointer) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s time.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    // gmtime returns struct tm* (anonymous struct pointer)
+    json* gmtime = nullptr;
+    for (auto& f : functions)
+        if (f["name"] == "gmtime") { gmtime = &f; break; }
+    ASSERT_NE(gmtime, nullptr);
+    auto& ret = (*gmtime)["ret-type"];
+    ASSERT_EQ(ret["type-kind"], "pntr");
+    ASSERT_EQ(ret["base-type"]["type-kind"], "strct");
+}
