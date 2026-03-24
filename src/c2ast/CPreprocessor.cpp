@@ -154,9 +154,8 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 						n = next_pos(token0s, n);
 						msg += lexer.get_str(&token0s[n]) + " ";
 					}
-					cerr << lexer.infile.fname << ":" << t0->line_no << ":" << t0->pos + 1
-						<< ": error: " << PlnC2AstMessage::getMessage(E_ErrorDirective, msg) << endl;
-					throw runtime_error("");
+					throw CPreprocessError(PlnC2AstMessage::getMessage(E_ErrorDirective, msg),
+						lexer.no, (int)(t0 - &token0s[0]));
 				} else {
 					cerr << lexer.infile.fname << ":" << t0->line_no
 						<< ": warning: unsupported directive '#" << directive << "', ignored" << endl;
@@ -164,9 +163,8 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 				}
 
 			} else {
-				cerr << lexer.infile.fname << ":" << t0->line_no << ":" << t0->pos + 1
-					<< ": error: " << PlnC2AstMessage::getMessage(E_InvalidDirective) << endl;
-				throw runtime_error("");
+				throw CPreprocessError(PlnC2AstMessage::getMessage(E_InvalidDirective),
+					lexer.no, (int)(t0 - &token0s[0]));
 			}
 
 		} else {
@@ -301,12 +299,11 @@ vector<CToken*> CPreprocessor::scan_macro(list<CToken*> &unprocessed_tokens, boo
 				// expect '(' ID ')' or ID
 				CToken* id_token = get_defined_id_token(unprocessed_tokens);
 				if (!id_token) {
-					CLexer &err_lexer = *lexers[t->lexer_no];
-					CToken0 &err_t0 = err_lexer.tokens[t->token0_no];
-					cerr << err_lexer.infile.fname << ":" << err_t0.line_no << ":" << err_t0.pos + 1
-						<< ": error: " << PlnC2AstMessage::getMessage(E_InvalidDefinedSyntax) << endl;
+					int err_lexer_no = t->lexer_no;
+					int err_token0_no = t->token0_no;
 					delete t;
-					throw runtime_error("");
+					throw CPreprocessError(PlnC2AstMessage::getMessage(E_InvalidDefinedSyntax),
+						err_lexer_no, err_token0_no);
 				}
 
 				CMacro* dm = macro_exists(*id_token->info.id);
@@ -370,13 +367,9 @@ static string token_paste_str(CToken* t, const vector<CLexer*>& lexers)
 		case TT_KEYWORD: return CLexer::keywords[t->info.keyword];
 		case TT_PP_NUMBER: return *t->info.str;
 		case TT_PUNCTUATOR: return punc_to_str(t->info.punc);
-		default: {
-			CLexer* el = lexers[t->lexer_no];
-			CToken0& et0 = el->tokens[t->token0_no];
-			cerr << el->infile.fname << ":" << et0.line_no << ":" << et0.pos + 1
-				<< ": error: " << PlnC2AstMessage::getMessage(E_MacroPasteInvalidToken) << endl;
-			throw runtime_error("");
-		}
+		default:
+			throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroPasteInvalidToken),
+				t->lexer_no, t->token0_no);
 	}
 }
 
@@ -407,13 +400,9 @@ static string stringify_arg(const list<CToken*>& arg, const vector<CLexer*>& lex
 				case TT_KEYWORD:    result += CLexer::keywords[t->info.keyword]; break;
 				case TT_PP_NUMBER:  result += *t->info.str; break;
 				case TT_PUNCTUATOR: result += punc_to_str(t->info.punc); break;
-				default: {
-					CLexer* el = lexers[t->lexer_no];
-					CToken0& et0 = el->tokens[t->token0_no];
-					cerr << el->infile.fname << ":" << et0.line_no << ":" << et0.pos + 1
-						<< ": error: " << PlnC2AstMessage::getMessage(E_MacroStringifyInvalidToken) << endl;
-					throw runtime_error("");
-				}
+				default:
+					throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroStringifyInvalidToken),
+						t->lexer_no, t->token0_no);
 			}
 		}
 	}
@@ -452,23 +441,16 @@ bool process_paste(vector<CToken*>& body_tokens, const vector<string>& params, c
 {
 	if (body_tokens.size() >= 3) {
 		if (body_tokens[0]->type == TT_PUNCTUATOR && body_tokens[0]->info.punc == '##') {
-			CToken* t0 = body_tokens[0];
-			CLexer* el = lexers[t0->lexer_no];
-			CToken0& et0 = el->tokens[t0->token0_no];
-			cerr << el->infile.fname << ":" << et0.line_no << ":" << et0.pos + 1
-				<< ": error: " << PlnC2AstMessage::getMessage(E_MacroPasteAtStart) << endl;
-			throw runtime_error("");
+			throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroPasteAtStart),
+				body_tokens[0]->lexer_no, body_tokens[0]->token0_no);
 		}
 
 		for (int n=1; n < (int)body_tokens.size(); n++) {
 			CToken *t = body_tokens[n];
 			if (t->type == TT_PUNCTUATOR && t->info.punc == '##') {
 				if (n == (int)body_tokens.size() - 1) {
-					CLexer* el = lexers[t->lexer_no];
-					CToken0& et0 = el->tokens[t->token0_no];
-					cerr << el->infile.fname << ":" << et0.line_no << ":" << et0.pos + 1
-						<< ": error: " << PlnC2AstMessage::getMessage(E_MacroPasteAtEnd) << endl;
-					throw runtime_error("");
+					throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroPasteAtEnd),
+						t->lexer_no, t->token0_no);
 				}
 				CToken *t_prev = body_tokens[n-1];
 				CToken *t_next = body_tokens[n+1];
@@ -643,17 +625,15 @@ int process_include(CPreprocessor& cpp, CLexer& lexer, int n, vector<CToken*>* t
 			}
 		} else {
 			for (CToken* t : expanded) delete t;
-			cerr << lexer.infile.fname << ":" << fname_t.line_no << ":" << fname_t.pos + 1
-				<< ": error: " << PlnC2AstMessage::getMessage(E_IncludeExpectsFilename) << endl;
-			throw runtime_error("");
+			throw CPreprocessError(PlnC2AstMessage::getMessage(E_IncludeExpectsFilename),
+				lexer.no, (int)(&fname_t - &token0s[0]));
 		}
 		for (CToken* t : expanded) delete t;
 
 		string foundpath = CFileInfo::getFilePath(inc_path, lexer.infile.fname, cpp.include_paths);
 		if (foundpath == "") {
-			cerr << lexer.infile.fname << ":" << fname_t.line_no << ":" << fname_t.pos + 1
-				<< ": error: " << PlnC2AstMessage::getMessage(E_IncludeNotFound, inc_path) << endl;
-			throw runtime_error("");
+			throw CPreprocessError(PlnC2AstMessage::getMessage(E_IncludeNotFound, inc_path),
+				lexer.no, (int)(&fname_t - &token0s[0]));
 		}
 		tokens->push_back(new CToken(TT_INCLUDE, lexer.no, start));
 		if (cpp.once_included.count(foundpath) == 0) {
@@ -665,9 +645,8 @@ int process_include(CPreprocessor& cpp, CLexer& lexer, int n, vector<CToken*>* t
 	string foundpath = CFileInfo::getFilePath(inc_path, lexer.infile.fname, cpp.include_paths);
 
 	if (foundpath == "") {
-		cerr << lexer.infile.fname << ":" << fname_t.line_no << ":" << fname_t.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_IncludeNotFound, inc_path) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_IncludeNotFound, inc_path),
+			lexer.no, (int)(&fname_t - &token0s[0]));
 	}
 
 	tokens->push_back(new CToken(TT_INCLUDE, lexer.no, start));
@@ -678,9 +657,8 @@ int process_include(CPreprocessor& cpp, CLexer& lexer, int n, vector<CToken*>* t
 	if (!fname_t.is_eol) {
 		n = next_pos(token0s, n);
 		if (!token0s[n].type == TT0_COMMENT || !token0s[n].is_eol) {
-			cerr << lexer.infile.fname << ":" << token0s[n].line_no << ":" << token0s[n].pos + 1
-				<< ": error: " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "include") << endl;
-			throw runtime_error("");
+			throw CPreprocessError("extra tokens at end of '#include' directive",
+				lexer.no, n);
 		}
 	}
 
@@ -701,9 +679,8 @@ int process_define(CPreprocessor& cpp, CLexer& lexer, int n)
 	CToken0 &t = token0s[n];
 
 	if (t.type != TT0_ID) {
-		cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_MacroNameNotIdentifier) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroNameNotIdentifier),
+			lexer.no, n);
 	}
 	string macro_name = lexer.get_str(&t);
 	delete_macro(cpp.macros, macro_name);
@@ -773,21 +750,18 @@ int parse_params(vector<string>& params, CLexer& lexer, int n)
 					break;
 
 				} else {
-					cerr << lexer.infile.fname << ":" << t_next.line_no << ":" << t_next.pos + 1
-						<< ": error: " << PlnC2AstMessage::getMessage(E_MalformedMacroArgList) << endl;
-					throw runtime_error("");
+					throw CPreprocessError(PlnC2AstMessage::getMessage(E_MalformedMacroArgList),
+						lexer.no, n);
 				}
 			} else {
-				cerr << lexer.infile.fname << ":" << t_next.line_no << ":" << t_next.pos + 1
-					<< ": error: " << PlnC2AstMessage::getMessage(E_MalformedMacroArgList) << endl;
-				throw runtime_error("");
+				throw CPreprocessError(PlnC2AstMessage::getMessage(E_MalformedMacroArgList),
+					lexer.no, n);
 			}
 		} else if (t.type == TT0_PUNCTUATOR && lexer.get_ch(&t) == ')') {
 			break;
 		} else {
-			cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
-				<< ": error: " << PlnC2AstMessage::getMessage(E_MalformedMacroArgList) << endl;
-			throw runtime_error("");
+			throw CPreprocessError(PlnC2AstMessage::getMessage(E_MalformedMacroArgList),
+				lexer.no, n);
 		}
 	}
 
@@ -822,9 +796,8 @@ int process_undef(CPreprocessor& cpp, CLexer& lexer, int n)
 	CToken0 &t = token0s[n];
 
 	if (t.type != TT0_ID) {
-		cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_MacroNameNotIdentifier) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroNameNotIdentifier),
+			lexer.no, n);
 	}
 
 	string macro_name = lexer.get_str(&t);
@@ -834,7 +807,7 @@ int process_undef(CPreprocessor& cpp, CLexer& lexer, int n)
 		n = next_pos(token0s, n);
 		if (token0s[n].type != TT0_COMMENT) {
 			cerr << lexer.infile.fname << ":" << token0s[n].line_no << ":" << token0s[n].pos + 1
-				<< ": warning: " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "undef") << endl;
+				<< ": " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "undef") << endl;
 		}
 	}
 
@@ -916,8 +889,7 @@ static bool consume(vector<CToken*> &tokens, int &n, int ch);
 
 #define END_CHECK	{ \
 	if (n >= (int)tokens.size()) { \
-		cerr << ": error: " << PlnC2AstMessage::getMessage(E_IfExprUnexpectedEnd) << endl; \
-		throw runtime_error(""); \
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_IfExprUnexpectedEnd)); \
 	} \
 }
 #define CONSUME(ch)	consume(tokens, n, (ch))
@@ -927,11 +899,8 @@ bool evaluate_condition(vector<CToken*> &tokens, const vector<CLexer*> &lexers)
 	int n = 0;
 	int x = expr(tokens, n, lexers);
 	if (n < (int)tokens.size()) {
-		CLexer* el = lexers[tokens[n]->lexer_no];
-		CToken0& et0 = el->tokens[tokens[n]->token0_no];
-		cerr << el->infile.fname << ":" << et0.line_no << ":" << et0.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_IfExprExtraTokens) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_IfExprExtraTokens),
+			tokens[n]->lexer_no, tokens[n]->token0_no);
 	}
 	return x != 0;
 }
@@ -942,11 +911,8 @@ long expr(vector<CToken*> &tokens, int &n, const vector<CLexer*> &lexers)
 	if (CONSUME('?')) {
 		int y = expr(tokens, n, lexers);
 		if (!CONSUME(':')) {
-			CLexer* el = lexers[tokens[n]->lexer_no];
-			CToken0& et0 = el->tokens[tokens[n]->token0_no];
-			cerr << el->infile.fname << ":" << et0.line_no << ":" << et0.pos + 1
-				<< ": error: " << PlnC2AstMessage::getMessage(E_IfExprMissingColon) << endl;
-			throw runtime_error("");
+			throw CPreprocessError(PlnC2AstMessage::getMessage(E_IfExprMissingColon),
+				tokens[n]->lexer_no, tokens[n]->token0_no);
 		}
 		int z = expr(tokens, n, lexers);
 		return x ? y : z;
@@ -1140,11 +1106,8 @@ long primary(vector<CToken*> &tokens, int &n, const vector<CLexer*> &lexers)
 		x = expr(tokens, n, lexers);
 		if (!CONSUME(')')) {
 			int pos = n > 0 ? n - 1 : 0;
-			CLexer* el = lexers[tokens[pos]->lexer_no];
-			CToken0& et0 = el->tokens[tokens[pos]->token0_no];
-			cerr << el->infile.fname << ":" << et0.line_no << ":" << et0.pos + 1
-				<< ": error: " << PlnC2AstMessage::getMessage(E_IfExprMissingParen) << endl;
-			throw runtime_error("");
+			throw CPreprocessError(PlnC2AstMessage::getMessage(E_IfExprMissingParen),
+				tokens[pos]->lexer_no, tokens[pos]->token0_no);
 		}
 		return x;
 	}
@@ -1173,11 +1136,8 @@ long primary(vector<CToken*> &tokens, int &n, const vector<CLexer*> &lexers)
 	} else if (tt == TT_ID) {
 		x = 0;
 	} else {
-		CLexer* el = lexers[t->lexer_no];
-		CToken0& et0 = el->tokens[t->token0_no];
-		cerr << el->infile.fname << ":" << et0.line_no << ":" << et0.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_IfExprInvalidToken) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_IfExprInvalidToken),
+			t->lexer_no, t->token0_no);
 	}
 
 	n++;
@@ -1208,9 +1168,8 @@ int process_ifdef(vector<IfInfo>& ifstack, CPreprocessor& cpp, CLexer& lexer, in
 	
 	CToken0 &t = token0s[n];
 	if (t.type != TT0_ID) {
-		cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_MacroNameNotIdentifier) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroNameNotIdentifier),
+			lexer.no, n);
 	}
 
 	string macro_name = lexer.get_str(&t);
@@ -1226,7 +1185,7 @@ int process_ifdef(vector<IfInfo>& ifstack, CPreprocessor& cpp, CLexer& lexer, in
 		n = next_pos(token0s, n);
 		if (token0s[n].type != TT0_COMMENT) {
 			cerr << lexer.infile.fname << ":" << token0s[n].line_no << ":" << token0s[n].pos + 1
-				<< ": warning: " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "ifdef") << endl;
+				<< ": " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "ifdef") << endl;
 		}
 	}
 
@@ -1240,10 +1199,8 @@ int process_ifdef(vector<IfInfo>& ifstack, CPreprocessor& cpp, CLexer& lexer, in
 int process_elif(vector<IfInfo> &ifstack, CPreprocessor &cpp, CLexer& lexer, int n)
 {
 	if (!ifstack.size()) {
-		CToken0& t = lexer.tokens[n];
-		cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_ElifWithoutIf) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_ElifWithoutIf),
+			lexer.no, n);
 	}
 
 	if (ifstack.back().is_fulfilled) {
@@ -1251,10 +1208,8 @@ int process_elif(vector<IfInfo> &ifstack, CPreprocessor &cpp, CLexer& lexer, int
 	}
 
 	if (ifstack.back().is_else) {
-		CToken0& t = lexer.tokens[n];
-		cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_ElifAfterElse) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_ElifAfterElse),
+			lexer.no, n);
 	}
 
 	ifstack.pop_back();
@@ -1264,10 +1219,8 @@ int process_elif(vector<IfInfo> &ifstack, CPreprocessor &cpp, CLexer& lexer, int
 int process_else(vector<IfInfo> &ifstack, CLexer& lexer, int n)
 {
 	if (!ifstack.size()) {
-		CToken0& t = lexer.tokens[n];
-		cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_ElseWithoutIf) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_ElseWithoutIf),
+			lexer.no, n);
 	}
 
 	vector<CToken0> &token0s = lexer.tokens;
@@ -1275,7 +1228,7 @@ int process_else(vector<IfInfo> &ifstack, CLexer& lexer, int n)
 		n = next_pos(token0s, n);
 		if (token0s[n].type != TT0_COMMENT) {
 			cerr << lexer.infile.fname << ":" << token0s[n].line_no << ":" << token0s[n].pos + 1
-				<< ": warning: " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "else") << endl;
+				<< ": " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "else") << endl;
 		}
 	}
 
@@ -1293,10 +1246,8 @@ int process_else(vector<IfInfo> &ifstack, CLexer& lexer, int n)
 int process_endif(vector<IfInfo> &ifstack, CLexer& lexer, int n)
 {
 	if (!ifstack.size()) {
-		CToken0& t = lexer.tokens[n];
-		cerr << lexer.infile.fname << ":" << t.line_no << ":" << t.pos + 1
-			<< ": error: " << PlnC2AstMessage::getMessage(E_EndifWithoutIf) << endl;
-		throw runtime_error("");
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_EndifWithoutIf),
+			lexer.no, n);
 	}
 
 	ifstack.pop_back();
@@ -1306,7 +1257,7 @@ int process_endif(vector<IfInfo> &ifstack, CLexer& lexer, int n)
 		n = next_pos(token0s, n);
 		if (token0s[n].type != TT0_COMMENT) {
 			cerr << lexer.infile.fname << ":" << token0s[n].line_no << ":" << token0s[n].pos + 1
-				<< ": warning: " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "endif") << endl;
+				<< ": " << PlnC2AstMessage::getMessage(W_ExtraTokensAfterDirective, "endif") << endl;
 		}
 	}
 
@@ -1353,9 +1304,8 @@ int skip_to_nextif(vector<IfInfo>& ifstack, CLexer& lexer, int n)
 		} else if (directive == "elif"
 				|| directive == "else") {
 			if (ifstack.back().is_else) {
-				cerr << lexer.infile.fname << ":" << t->line_no << ":" << t->pos + 1
-					<< ": error: " << PlnC2AstMessage::getMessage(E_ElseAfterElse) << endl;
-				throw runtime_error("");
+				throw CPreprocessError(PlnC2AstMessage::getMessage(E_ElseAfterElse),
+					lexer.no, m);
 			}
 			if (ifstack.back().is_fulfilled) {
 				n = m+1;
@@ -1392,18 +1342,18 @@ void CPreprocessor::outputError(const CPreprocessError& err)
 		CLexer &lexer = *lexers[err.lexer_no];
 		CToken0 &t = lexer.tokens[err.token0_start];
 		string& line = lexer.infile.lines[t.line_no-1];
-		cout << lexer.infile.fname << ":"
-			<< t.line_no << ":" << t.pos+1 << ": "
+		cerr << lexer.infile.fname << ":"
+			<< t.line_no << ":" << t.pos+1 << ": error: "
 			<< err.what() << endl;
-		cout << line << endl;
+		cerr << line << endl;
 
 		for (int i=0; i<t.pos; i++) {
-			cout << ' ';
+			cerr << ' ';
 		}
-		cout << '^' << endl;
+		cerr << '^' << endl;
 
 	} else {
-		cout << err.what() << endl;
+		cerr << "error: " << err.what() << endl;
 	}
 }
 

@@ -47,7 +47,7 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 
 		case W_ExtraTokensAfterDirective:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "extra tokens at end of '#" + arg1 + "' directive";
+			return "warning: extra tokens at end of '#" + arg1 + "' directive";
 
 		case E_InvalidDirective:
 			return "invalid preprocessing directive";

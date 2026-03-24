@@ -176,6 +176,7 @@ int main(int argc, char* argv[])
 				input_file = CFileInfo::searchFilePath(input_file, include_paths);
 			}
 
+		try {
 			cpp.preprocess(input_file);
 
 			if (do_dump_preprocessed) {
@@ -200,6 +201,10 @@ int main(int argc, char* argv[])
 					*out << ast.dump() << endl;
 				}
 			}
+		} catch (CPreprocessError& e) {
+			cpp.outputError(e);
+			return 1;
+		}
 		}
 	} catch (runtime_error& e) {
 		if (e.what()[0]) cerr << e.what() << endl;
