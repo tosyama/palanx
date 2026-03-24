@@ -820,20 +820,18 @@ static bool evaluate_condition(vector<CToken*> &tokens, const vector<CLexer*> &l
 int process_if(vector<IfInfo> &ifstack, CPreprocessor& cpp, CLexer& lexer, int n)
 {
 	vector<CToken0> &token0s = lexer.tokens;
-	is_not_eol(token0s[n]);
 
 	ifstack.emplace_back(&token0s[n]);
 	list<CToken*> unprocessed_tokens;
 	vector<CToken*> condition_tokens;
 
-	do {
+	while (!token0s[n].is_eol) {
 		n++;
 		CToken *t = lexer.createToken(n);
 		if (t) {
 			unprocessed_tokens.push_back(t);
 		}
-
-	} while (!token0s[n].is_eol);
+	}
 
 	condition_tokens = cpp.scan_macro(unprocessed_tokens, true);
 
@@ -911,8 +909,9 @@ long expr(vector<CToken*> &tokens, int &n, const vector<CLexer*> &lexers)
 	if (CONSUME('?')) {
 		int y = expr(tokens, n, lexers);
 		if (!CONSUME(':')) {
+			int pos = n < (int)tokens.size() ? n : n-1;
 			throw CPreprocessError(PlnC2AstMessage::getMessage(E_IfExprMissingColon),
-				tokens[n]->lexer_no, tokens[n]->token0_no);
+				tokens[pos]->lexer_no, tokens[pos]->token0_no);
 		}
 		int z = expr(tokens, n, lexers);
 		return x ? y : z;

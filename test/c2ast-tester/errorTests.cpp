@@ -83,3 +83,54 @@ TEST(c2ast_error, warning_extra_tokens_after_directive) {
 	ASSERT_NE(out.find("warning:"), string::npos);
 	ASSERT_EQ(out.find("error:"), string::npos);
 }
+
+// --- Additional preprocessor error messages ---
+
+TEST(c2ast_error, invalid_defined_syntax) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_008_invalid_defined.h");
+	ASSERT_NE(out.find("invalid syntax in 'defined'"), string::npos);
+}
+
+TEST(c2ast_error, elif_without_if) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_009_elif_without_if.h");
+	ASSERT_NE(out.find("#elif without #if"), string::npos);
+}
+
+TEST(c2ast_error, else_after_else) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_010_else_after_else.h");
+	ASSERT_NE(out.find("#else after #else"), string::npos);
+}
+
+TEST(c2ast_error, malformed_macro_args) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_011_malformed_macro_args.h");
+	ASSERT_NE(out.find("malformed macro argument list"), string::npos);
+}
+
+TEST(c2ast_error, if_missing_colon) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_012_if_missing_colon.h");
+	ASSERT_NE(out.find("missing ':' in conditional expression"), string::npos);
+}
+
+TEST(c2ast_error, if_invalid_token) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_013_if_invalid_token.h");
+	ASSERT_NE(out.find("expression is not valid"), string::npos);
+}
+
+TEST(c2ast_error, if_expr_unexpected_end) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_014_if_expr_end.h");
+	ASSERT_NE(out.find("unexpected end of expression"), string::npos);
+}

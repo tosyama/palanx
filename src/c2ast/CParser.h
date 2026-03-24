@@ -37,7 +37,7 @@ class CParser {
 	bool assignment_expression(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool expression(json &ast, const vector<CToken*> &tokens, int &result_index);
 
-	void debug_token(const CToken* token);
+	// void debug_token(const CToken* token);
 
 public:
 	CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexers);

@@ -15,53 +15,51 @@ using namespace std;
 #include "CParser.h"
 #include "PlnC2AstMessage.h"
 
-void CParser::debug_token(const CToken* token)
-{
-	CLexer* lexer = lexers[token->lexer_no];
-	CToken0& token0 = lexer->tokens[token->token0_no];
-	cout << lexer->infile.fname << ":" << token0.line_no << ":" << token0.pos+1 << ": ";
-
-	switch (token->type) {
-		case TT_ID:
-			cout << "ID ";
-			cout << *(token->info.id) << endl;
-			break;
-		case TT_KEYWORD:
-			cout << "KEYWORD ";
-			switch (token->info.keyword) {
-				case TK_TYPEDEF:
-					cout << "TYPEDEF" << endl;
-					break;
-				case TK_STRUCT:
-					cout << "STRUCT" << endl;
-					break;
-				default:
-					cout << "UNKNOWN_KEYWORD" << token->info.keyword << endl;
-					break;
-			}
-			break;
-		case TT_PUNCTUATOR:
-			{
-				cout << "PUNCTUATOR ";
-				char c0 = token->info.punc & 0xFF;
-				char c1 = (token->info.punc >> 8) & 0xFF;
-				if (c1) cout << c1;
-				cout << c0 << endl;
-				break;
-			}
-		case TT_INCLUDE:
-		{
-			cout << "INCLUDE " << endl; 
-			break;
-		}
-		default:
-			cout << "OTHER ";
-			cout << token->type << endl;
-			break;
-	}
-
-
-}
+// void CParser::debug_token(const CToken* token)
+// {
+// 	CLexer* lexer = lexers[token->lexer_no];
+// 	CToken0& token0 = lexer->tokens[token->token0_no];
+// 	cout << lexer->infile.fname << ":" << token0.line_no << ":" << token0.pos+1 << ": ";
+//
+// 	switch (token->type) {
+// 		case TT_ID:
+// 			cout << "ID ";
+// 			cout << *(token->info.id) << endl;
+// 			break;
+// 		case TT_KEYWORD:
+// 			cout << "KEYWORD ";
+// 			switch (token->info.keyword) {
+// 				case TK_TYPEDEF:
+// 					cout << "TYPEDEF" << endl;
+// 					break;
+// 				case TK_STRUCT:
+// 					cout << "STRUCT" << endl;
+// 					break;
+// 				default:
+// 					cout << "UNKNOWN_KEYWORD" << token->info.keyword << endl;
+// 					break;
+// 			}
+// 			break;
+// 		case TT_PUNCTUATOR:
+// 			{
+// 				cout << "PUNCTUATOR ";
+// 				char c0 = token->info.punc & 0xFF;
+// 				char c1 = (token->info.punc >> 8) & 0xFF;
+// 				if (c1) cout << c1;
+// 				cout << c0 << endl;
+// 				break;
+// 			}
+// 		case TT_INCLUDE:
+// 		{
+// 			cout << "INCLUDE " << endl;
+// 			break;
+// 		}
+// 		default:
+// 			cout << "OTHER ";
+// 			cout << token->type << endl;
+// 			break;
+// 	}
+// }
 
 CParser::CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexers)
 	: top_tokens(top_tokens), lexers(lexers)
@@ -437,7 +435,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 		json param = {{"var-type", local.value("var-type", json{})}};
 		if (!declarator(param, tokens, index, false)) {
 			if (!declarator(param, tokens, index, true)) { // abstract declarator
-				debug_token(tokens[index]);
+				// debug_token(tokens[index]);
 				return false;
 			}
 		}
@@ -449,7 +447,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 				json param2 = {{"var-type", local2.value("var-type", json{})}};
 				if (!declarator(param2, tokens, index, false)) {
 					if (!declarator(param2, tokens, index, true)) { // abstract declarator
-						debug_token(tokens[index]);
+						// debug_token(tokens[index]);
 						return false;
 					}
 				}
@@ -459,7 +457,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 				EXPECT_PUNC(')');
 				index--;	// backtrack for ')'
 			} else {
-				debug_token(tokens[index]);
+				// debug_token(tokens[index]);
 				return false;
 			}
 		}
@@ -478,7 +476,7 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 		if (CONSUME_PUNC('[')) {
 			constant_expression(decl, tokens, index);
 			if (!CONSUME_PUNC(']')) {
-				debug_token(tokens[index]);
+				// debug_token(tokens[index]);
 				return false;
 			}
 
