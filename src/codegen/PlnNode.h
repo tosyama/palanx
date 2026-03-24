@@ -21,6 +21,7 @@ enum class ExprKind {
     UintLit,
     Id,
     Add,
+    Sub,
     Convert,
     CCCall,
     PlnCall,
@@ -56,6 +57,13 @@ struct IdExpr : Expr {
 
 struct AddExpr : Expr {
     AddExpr() : Expr(ExprKind::Add) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct SubExpr : Expr {
+    SubExpr() : Expr(ExprKind::Sub) {}
     unique_ptr<Expr> left;
     unique_ptr<Expr> right;
     VRegType type = VRegType::Int64;

@@ -23,6 +23,15 @@ static const char* addInstrForType(VRegType type) {
     }
 }
 
+static const char* subInstrForType(VRegType type) {
+    switch (type) {
+        case VRegType::Int8:  return "subb";
+        case VRegType::Int16: return "subw";
+        case VRegType::Int32: return "subl";
+        default:              return "subq";
+    }
+}
+
 // Derive the sized register name from the 64-bit base name and VRegType.
 // Classic registers (%rax/%rbx/...): drop 'r' prefix for 32-bit, use bare name for 16/8-bit.
 // Extended registers (%r8-%r15): append 'd'/'w'/'b' suffix.
@@ -161,6 +170,20 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     string dst_mem = srcOperand(dst_loc);
                     out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << dst_mem << "\n";
                     out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << dst_mem << "\n";
+                }
+            } else if (auto* s = std::get_if<Sub>(&instr)) {
+                if (!rm.count(s->dst)) continue;  // dead: result never used
+                const PhysLoc& dst_loc = rm.at(s->dst);
+                const PhysLoc& lhs_loc = rm.at(s->lhs);
+                if (!dst_loc.isStack()) {
+                    string dst_reg = sizedRegName(dst_loc.base, s->type);
+                    out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
+                    out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << dst_reg << "\n";
+                } else {
+                    BOOST_ASSERT(!lhs_loc.isStack());
+                    string dst_mem = srcOperand(dst_loc);
+                    out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << dst_mem << "\n";
+                    out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << dst_mem << "\n";
                 }
             } else if (auto* c = std::get_if<Convert>(&instr)) {
                 if (!rm.count(c->dst)) continue;  // dead

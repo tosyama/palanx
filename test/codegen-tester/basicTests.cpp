@@ -78,8 +78,9 @@ TEST(codegen, addition) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    ASSERT_NE(asm_text.find("movq"),       string::npos);
-    ASSERT_NE(asm_text.find("addq"),       string::npos);
+    ASSERT_NE(asm_text.find("movq"),        string::npos);
+    ASSERT_NE(asm_text.find("addq"),        string::npos);
+    ASSERT_NE(asm_text.find("subq"),        string::npos);
     ASSERT_NE(asm_text.find("call printf"), string::npos);
 }
 

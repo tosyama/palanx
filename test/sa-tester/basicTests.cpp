@@ -78,25 +78,34 @@ TEST(sa, addition_sa) {
 
 	ASSERT_TRUE(jout.is_object());
 
-	bool found = false;
+	bool found_add = false;
+	bool found_sub = false;
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& body = stmt["body"];
 		if (body["expr-type"] == "call" && body["name"] == "printf") {
 			for (auto& arg : body["args"]) {
-				if (arg["expr-type"] != "add") continue;
-				// addition: id nodes present
-				ASSERT_EQ(arg["left"]["expr-type"],  "id");
-				ASSERT_EQ(arg["right"]["expr-type"], "id");
-				// value_type_on_expressions: value-type annotated
-				ASSERT_EQ(arg["value-type"]["type-name"],          "int64");
-				ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
-				ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
-				found = true;
+				if (arg["expr-type"] == "add") {
+					ASSERT_EQ(arg["left"]["expr-type"],  "id");
+					ASSERT_EQ(arg["right"]["expr-type"], "id");
+					ASSERT_EQ(arg["value-type"]["type-name"],          "int64");
+					ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
+					ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
+					found_add = true;
+				}
+				if (arg["expr-type"] == "sub") {
+					ASSERT_EQ(arg["left"]["expr-type"],  "id");
+					ASSERT_EQ(arg["right"]["expr-type"], "id");
+					ASSERT_EQ(arg["value-type"]["type-name"],          "int64");
+					ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
+					ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
+					found_sub = true;
+				}
 			}
 		}
 	}
-	ASSERT_TRUE(found);
+	ASSERT_TRUE(found_add);
+	ASSERT_TRUE(found_sub);
 }
 
 TEST(sa, convert_widening_sa) {

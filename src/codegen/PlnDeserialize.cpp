@@ -57,6 +57,13 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
+    if (expr_type == "sub") {
+        auto e = make_unique<SubExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
     if (expr_type == "call") {
         string func_type = j.value("func-type", "");
         if (func_type == "c") {

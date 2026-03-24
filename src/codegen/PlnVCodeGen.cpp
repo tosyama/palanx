@@ -79,6 +79,14 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Add{dst, l, r, e.type});
             return dst;
         }
+        case ExprKind::Sub: {
+            auto& e  = static_cast<const SubExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Sub{dst, l, r, e.type});
+            return dst;
+        }
         case ExprKind::CCCall: {
             auto& e = static_cast<const CCCallExpr&>(expr);
             BOOST_ASSERT(e.hasRet);

@@ -31,6 +31,7 @@ struct LeaLabel { VReg dst; VRegType type; string label; };       // dst = addre
 struct MovImm   { VReg dst; VRegType type; long long value; };    // dst = immediate integer
 struct InitVar  { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
 struct Add      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs + rhs
+struct Sub      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs - rhs
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 struct CallC    { string name; vector<VReg> args; VReg dst = -1; VRegType retType = VRegType::Int64; };
 struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
@@ -39,7 +40,7 @@ struct ExitCode { int code; };
 struct BlockEnter {};
 struct BlockLeave { vector<VReg> expiredVars; };
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Convert,
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Sub, Convert,
                              CallC, CallPln, RetPln, ExitCode,
                              BlockEnter, BlockLeave>;
 

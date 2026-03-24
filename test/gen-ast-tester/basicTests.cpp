@@ -51,7 +51,8 @@ TEST(gen_ast, addition) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
-	bool found = false;
+	bool found_add = false;
+	bool found_sub = false;
 	for (auto& stmt : jout["ast"]["statements"]) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& body = stmt["body"];
@@ -60,12 +61,18 @@ TEST(gen_ast, addition) {
 				if (arg["expr-type"] == "add") {
 					ASSERT_EQ(arg["left"]["expr-type"],  "id");
 					ASSERT_EQ(arg["right"]["expr-type"], "id");
-					found = true;
+					found_add = true;
+				}
+				if (arg["expr-type"] == "sub") {
+					ASSERT_EQ(arg["left"]["expr-type"],  "id");
+					ASSERT_EQ(arg["right"]["expr-type"], "id");
+					found_sub = true;
 				}
 			}
 		}
 	}
-	ASSERT_TRUE(found);
+	ASSERT_TRUE(found_add);
+	ASSERT_TRUE(found_sub);
 }
 
 TEST(gen_ast, var_decl_int32) {

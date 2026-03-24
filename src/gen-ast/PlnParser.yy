@@ -526,7 +526,7 @@ expression: term
 	| expression '+' expression
 	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '-' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "sub"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '*' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '/' expression
