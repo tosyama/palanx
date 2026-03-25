@@ -43,6 +43,12 @@ TEST(build_mgr, import_mutual) {
 	ASSERT_EQ(output, "10\n13\n");
 }
 
+TEST(build_mgr, fibonacci) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/006_fibonacci.pa");
+	ASSERT_EQ(output, "55\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

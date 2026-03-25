@@ -40,10 +40,14 @@ struct RetPln   { vector<VReg> rets; vector<VRegType> types; };
 struct ExitCode { int code; };
 struct BlockEnter {};
 struct BlockLeave { vector<VReg> expiredVars; };
+struct Label      { string name; };                              // name:
+struct Jmp        { string label; };                             // jmp label
+struct CondJmp    { string label; VReg cond; bool jumpIfZero; }; // testl+je/jne
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Sub, Cmp, Convert,
                              CallC, CallPln, RetPln, ExitCode,
-                             BlockEnter, BlockLeave>;
+                             BlockEnter, BlockLeave,
+                             Label, Jmp, CondJmp>;
 
 // -------- Program structure --------
 

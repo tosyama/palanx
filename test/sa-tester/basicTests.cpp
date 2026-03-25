@@ -455,6 +455,41 @@ TEST(sa, block_cinclude_scope) {
 	ASSERT_EQ(jout["statements"][0]["body"][0]["body"]["func-type"], "c");
 }
 
+TEST(sa, if_stmt_sa) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/036_if_stmt.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	bool found_if = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "if") continue;
+		found_if = true;
+		// cond is a cmp expression with value-type int32
+		ASSERT_EQ(stmt["cond"]["expr-type"], "cmp");
+		ASSERT_EQ(stmt["cond"]["value-type"]["type-name"], "int32");
+		// then block contains a printf call
+		ASSERT_EQ(stmt["then"]["stmt-type"], "block");
+		ASSERT_FALSE(stmt.contains("else"));
+	}
+	ASSERT_TRUE(found_if);
+}
+
+TEST(sa, if_else_stmt_sa) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/037_if_else_stmt.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	bool found_if = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "if") continue;
+		found_if = true;
+		ASSERT_EQ(stmt["then"]["stmt-type"], "block");
+		ASSERT_TRUE(stmt.contains("else"));
+		ASSERT_EQ(stmt["else"]["stmt-type"], "block");
+	}
+	ASSERT_TRUE(found_if);
+}
+
 TEST(sa, block_func_def) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/017_block_func_def.pa");

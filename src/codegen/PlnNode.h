@@ -112,6 +112,7 @@ enum class StmtKind {
     Return,
     TappleDecl,
     Block,
+    If,
 };
 
 struct Stmt {
@@ -159,6 +160,13 @@ struct TappleDeclStmt : Stmt {
 struct BlockStmt : Stmt {
     BlockStmt() : Stmt(StmtKind::Block) {}
     vector<unique_ptr<Stmt>> body;
+};
+
+struct IfStmt : Stmt {
+    IfStmt() : Stmt(StmtKind::If) {}
+    unique_ptr<Expr> cond;
+    unique_ptr<Stmt> thenStmt;  // always BlockStmt
+    unique_ptr<Stmt> elseStmt;  // nullptr | BlockStmt | IfStmt (else-if chain)
 };
 
 // -------- Module --------

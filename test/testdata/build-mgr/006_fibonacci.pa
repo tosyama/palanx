@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+
+func fib(int64 n) -> int64 {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+printf("%ld\n", fib(10));

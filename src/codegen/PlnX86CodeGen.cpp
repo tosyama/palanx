@@ -166,7 +166,11 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 emitLeaLabel(sizedRegName(loc.base, loc.type), i->label);
             } else if (auto* i = std::get_if<MovImm>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
-                emitMovImm(sizedRegName(loc.base, i->type), i->type, i->value);
+                if (loc.isStack()) {
+                    out << "\t" << movInstrForType(i->type) << " $" << i->value << ", " << srcOperand(loc) << "\n";
+                } else {
+                    emitMovImm(sizedRegName(loc.base, i->type), i->type, i->value);
+                }
             } else if (auto* i = std::get_if<InitVar>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
                 if (loc.isStack()) {
@@ -183,12 +187,12 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
                     out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
                 } else {
-                    // Spilled dst: use memory destination (x86 allows reg/imm src with mem dst).
-                    // lhs must be in a register so mov-to-mem is valid.
-                    BOOST_ASSERT(!lhs_loc.isStack());
+                    // Spilled dst: route through scratch %rax to avoid mem-mem.
+                    string scratch = sizedRegName("%rax", a->type);
                     string dst_mem = srcOperand(dst_loc);
-                    out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << dst_mem << "\n";
-                    out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << dst_mem << "\n";
+                    out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+                    out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << scratch << "\n";
+                    out << "\t" << movInstrForType(a->type) << " " << scratch << ", " << dst_mem << "\n";
                 }
             } else if (auto* s = std::get_if<Sub>(&instr)) {
                 if (!rm.count(s->dst)) continue;  // dead: result never used
@@ -199,10 +203,12 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
                     out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << dst_reg << "\n";
                 } else {
-                    BOOST_ASSERT(!lhs_loc.isStack());
+                    // Spilled dst: route through scratch %rax to avoid mem-mem.
+                    string scratch = sizedRegName("%rax", s->type);
                     string dst_mem = srcOperand(dst_loc);
-                    out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << dst_mem << "\n";
-                    out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << dst_mem << "\n";
+                    out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+                    out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << scratch << "\n";
+                    out << "\t" << movInstrForType(s->type) << " " << scratch << ", " << dst_mem << "\n";
                 }
             } else if (auto* cm = std::get_if<Cmp>(&instr)) {
                 if (!rm.count(cm->dst)) continue;  // dead
@@ -318,6 +324,21 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 // no-op
             } else if (std::get_if<BlockLeave>(&instr)) {
                 // no-op
+            } else if (auto* l = std::get_if<Label>(&instr)) {
+                out << l->name << ":\n";
+            } else if (auto* j = std::get_if<Jmp>(&instr)) {
+                out << "\tjmp " << j->label << "\n";
+            } else if (auto* cj = std::get_if<CondJmp>(&instr)) {
+                const PhysLoc& loc = rm.at(cj->cond);
+                string cond_reg;
+                if (loc.isStack()) {
+                    out << "\tmovl " << srcOperand(loc) << ", %eax\n";
+                    cond_reg = "%eax";
+                } else {
+                    cond_reg = sizedRegName(loc.base, VRegType::Int32);
+                }
+                out << "\ttestl " << cond_reg << ", " << cond_reg << "\n";
+                out << (cj->jumpIfZero ? "\tje " : "\tjne ") << cj->label << "\n";
             }
         }
     }

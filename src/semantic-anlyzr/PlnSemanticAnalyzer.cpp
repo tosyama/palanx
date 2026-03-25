@@ -153,6 +153,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "assign")   result.push_back(sa_assign_stmt(stmt));
 		else if (t == "return")      result.push_back(sa_return_stmt(stmt));
 		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
+		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
 		else if (t == "not-impl")    result.push_back(stmt);
 		else if (t == "func-def") {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_InternalError, "1") << endl;
@@ -391,6 +392,24 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 
 	leaveScope();
 	return {{"stmt-type", "block"}, {"body", move(body)}};
+}
+
+json PlnSemanticAnalyzer::sa_if_stmt(const json& stmt)
+{
+	json result;
+	result["stmt-type"] = "if";
+	result["cond"] = sa_expression(stmt["cond"]);
+	result["then"] = sa_block(stmt["then"]);
+	if (stmt.contains("else")) {
+		const json& els = stmt["else"];
+		if (els["stmt-type"] == "if")
+			result["else"] = sa_if_stmt(els);
+		else
+			result["else"] = sa_block(els);
+	}
+	if (stmt.contains("loc"))
+		result["loc"] = stmt["loc"];
+	return result;
 }
 
 void PlnSemanticAnalyzer::sa_function(const json& funcDef)

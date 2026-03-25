@@ -160,6 +160,23 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         s->body = deserializeStatements(j["body"]);
         return s;
     }
+    if (stmt_type == "if") {
+        auto s = make_unique<IfStmt>();
+        s->cond = deserializeExpr(j["cond"]);
+        auto tb = make_unique<BlockStmt>();
+        tb->body = deserializeStatements(j["then"]["body"]);
+        s->thenStmt = move(tb);
+        if (j.contains("else")) {
+            if (j["else"]["stmt-type"] == "if") {
+                s->elseStmt = deserializeStmt(j["else"]);
+            } else {
+                auto eb = make_unique<BlockStmt>();
+                eb->body = deserializeStatements(j["else"]["body"]);
+                s->elseStmt = move(eb);
+            }
+        }
+        return s;
+    }
     if (stmt_type == "not-impl") {
         return nullptr;
     }

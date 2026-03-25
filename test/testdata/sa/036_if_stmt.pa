@@ -1,0 +1,5 @@
+cinclude <stdio.h>;
+int64 x = 3;
+if x < 5 {
+    printf("yes\n");
+}

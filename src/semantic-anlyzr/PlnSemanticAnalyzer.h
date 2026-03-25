@@ -54,6 +54,7 @@ class PlnSemanticAnalyzer {
 	json sa_return_stmt(const json& stmt);
 	json sa_tapple_decl(const json& stmt);
 	json sa_block(const json& stmt);
+	json sa_if_stmt(const json& stmt);
 
 public:
 	PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path);

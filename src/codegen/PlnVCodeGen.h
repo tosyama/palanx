@@ -16,6 +16,7 @@ using std::vector;
 
 class PlnVCodeGen {
     int nextVReg = 0;
+    int labelCounter_ = 0;  // unique label index for control-flow labels
 
     // Variable symbol table: scoped stack of name -> VReg mappings.
     // enterVarScope/leaveVarScope push/pop; findVar searches from innermost.
@@ -40,6 +41,7 @@ class PlnVCodeGen {
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
     void lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func);
     void lowerBlockStmt(const BlockStmt& stmt, VFunc& func);
+    void lowerIfStmt(const IfStmt& stmt, VFunc& func);
 
 public:
     VProg generate(const Module& module, bool noEntry = false);

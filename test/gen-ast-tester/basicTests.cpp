@@ -261,6 +261,44 @@ TEST(gen_ast, export_func) {
 	ASSERT_TRUE(found_noexport);
 }
 
+TEST(gen_ast, if_stmt) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/008_if_stmt.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// clamp function: body has 2 stmts (if + return)
+	bool found_clamp = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "clamp") continue;
+		found_clamp = true;
+		const auto& body = f["block"]["body"];
+		ASSERT_EQ(body.size(), 2u);
+		const auto& if_node = body[0];
+		ASSERT_EQ(if_node["stmt-type"], "if");
+		ASSERT_EQ(if_node["cond"]["expr-type"], "cmp");
+		ASSERT_EQ(if_node["cond"]["op"], "<");
+		ASSERT_TRUE(if_node.contains("then"));
+		ASSERT_FALSE(if_node.contains("else"));
+	}
+	ASSERT_TRUE(found_clamp);
+
+	// sign function: if-else
+	bool found_sign = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "sign") continue;
+		found_sign = true;
+		const auto& body = f["block"]["body"];
+		ASSERT_EQ(body.size(), 2u);
+		const auto& if_node = body[0];
+		ASSERT_EQ(if_node["stmt-type"], "if");
+		ASSERT_TRUE(if_node.contains("then"));
+		ASSERT_TRUE(if_node.contains("else"));
+		ASSERT_EQ(if_node["else"]["stmt-type"], "block");
+	}
+	ASSERT_TRUE(found_sign);
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");

@@ -287,10 +287,9 @@ TEST(codegen, named_ret_double_assign) {
     ASSERT_NE(asm_text.find("movq -8(%rbp), %rbx"),   string::npos);
     ASSERT_NE(asm_text.find("movq %r15, -40(%rbp)"),  string::npos);
     ASSERT_NE(asm_text.find("movq -40(%rbp), %r15"),  string::npos);
-    // Add with memory destination: the spilled Add result is stored directly to stack
-    // Note: isVar slots are now allocated in Pass B (after Pass A non-var spills),
-    // so the spill offset is -48 instead of -56.
-    ASSERT_NE(asm_text.find("addq %r15, -48(%rbp)"),  string::npos);
+    // Add with spilled dst: routed through scratch %rax to avoid mem-mem.
+    ASSERT_NE(asm_text.find("addq %r15, %rax"),       string::npos);
+    ASSERT_NE(asm_text.find("movq %rax, -48(%rbp)"),  string::npos);
     ASSERT_NE(asm_text.find("ret"),          string::npos);
 }
 
@@ -343,4 +342,41 @@ TEST(codegen, block_stmt) {
     // no extra block-related assembly instructions leaked
     ASSERT_EQ(asm_text.find("BlockEnter"),  string::npos);
     ASSERT_EQ(asm_text.find("BlockLeave"),  string::npos);
+}
+
+TEST(codegen, if_stmt) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/019_if_stmt.sa.json";
+    string asmf = "out/019_if_stmt.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // condition: testl + je to end label
+    ASSERT_NE(asm_text.find("testl"),       string::npos);
+    ASSERT_NE(asm_text.find("je "),         string::npos);
+    ASSERT_NE(asm_text.find(".Lif0_end:"),  string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+    // no else: no jmp instruction
+    ASSERT_EQ(asm_text.find("\tjmp "),      string::npos);
+}
+
+TEST(codegen, if_else_stmt) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/020_if_else_stmt.sa.json";
+    string asmf = "out/020_if_else_stmt.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // conditional jump to else label
+    ASSERT_NE(asm_text.find("testl"),            string::npos);
+    ASSERT_NE(asm_text.find("je "),              string::npos);
+    ASSERT_NE(asm_text.find(".Lif0_else:"),      string::npos);
+    ASSERT_NE(asm_text.find(".Lif0_end:"),       string::npos);
+    // unconditional jmp to end after then-block
+    ASSERT_NE(asm_text.find("\tjmp .Lif0_end"),  string::npos);
+    ASSERT_NE(asm_text.find("call printf"),      string::npos);
 }
