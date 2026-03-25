@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.8
+**Version:** v0.1.9
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -147,9 +147,13 @@ int32 a = 5, b = 10;   // type inheritance: b is also int32
 | String literal | `"..."` | `"hello\n"` |
 | Identifier | `name` | `x` |
 | Addition | `expr + expr` | `a + b` |
+| Subtraction | `expr - expr` | `a - b` |
+| Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
 | Explicit cast | `type(expr)` | `int32(x)` |
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
+
+Comparison operators produce `int32` (1 if true, 0 if false). Both operands are widened to the same type before comparison.
 
 The assignment expression `expr -> var` evaluates `expr`, stores it in `var`, and the result is the stored value.
 
