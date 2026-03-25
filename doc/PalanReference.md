@@ -46,9 +46,10 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 7. [Function Definitions](#7-function-definitions)
 8. [Receiving Multiple Return Values](#8-receiving-multiple-return-values)
 9. [C Library Integration](#9-c-library-integration)
-10. [Block Statements](#10-block-statements)
-11. [Modules (import / export)](#11-modules-import--export)
-12. [Program Structure](#12-program-structure)
+10. [If / If-Else Statements](#10-if--if-else-statements)
+11. [Block Statements](#11-block-statements)
+12. [Modules (import / export)](#12-modules-import--export)
+13. [Program Structure](#13-program-structure)
 
 ---
 
@@ -163,7 +164,9 @@ printf("%ld\n", x);        // expression statement (function call)
 return;                    // return from function (no value)
 return expr;               // return with single value
 (int64 a, b) = foo();      // tapple declaration (receive multiple return values)
-import "lib.pa";           // import Palan source file (see §11)
+import "lib.pa";           // import Palan source file (see §12)
+if expr { ... }            // conditional (see §10)
+if expr { ... } else { ... }  // conditional with else (see §10)
 ```
 
 ---
@@ -171,7 +174,7 @@ import "lib.pa";           // import Palan source file (see §11)
 ## 7. Function Definitions
 
 Functions are defined with the `func` keyword. Return values are declared after `->`.
-The optional `export` keyword makes the function callable from other Palan files that import this file (see §11).
+The optional `export` keyword makes the function callable from other Palan files that import this file (see §12).
 
 ### No Return Value
 
@@ -247,7 +250,44 @@ printf("%ld\n", x);      // call C function
 
 ---
 
-## 10. Block Statements
+## 10. If / If-Else Statements
+
+An `if` statement conditionally executes a block. The condition expression must be an integer type; zero is false, non-zero is true.
+
+```palan
+if x < 0 {
+    printf("negative\n");
+}
+```
+
+An optional `else` branch executes when the condition is false:
+
+```palan
+if x < 0 {
+    printf("negative\n");
+} else {
+    printf("non-negative\n");
+}
+```
+
+`else if` chains are supported:
+
+```palan
+if x < 0 {
+    printf("negative\n");
+} else if x == 0 {
+    printf("zero\n");
+} else {
+    printf("positive\n");
+}
+```
+
+- The condition can be any expression that produces an integer value (comparison, variable, call, etc.).
+- The `then` and `else` bodies are block statements and create their own scope.
+
+---
+
+## 11. Block Statements
 
 A block `{ ... }` creates a new scope. Variables and functions declared inside are not visible after the closing brace.
 
@@ -269,7 +309,7 @@ Palan function definitions inside a block are block-scoped and support forward r
 
 ---
 
-## 11. Modules (import / export)
+## 12. Modules (import / export)
 
 Palan supports multi-file compilation. Functions declared with `export` are visible to other files that `import` the declaring file.
 
@@ -300,7 +340,7 @@ printf("%d\n", add(3, 4));   // 7
 
 ---
 
-## 12. Program Structure
+## 13. Program Structure
 
 ```palan
 cinclude <stdio.h>;
