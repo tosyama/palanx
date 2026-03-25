@@ -1,0 +1,59 @@
+{
+  "original": "/test/comparison.pa",
+  "str-literals": [
+    { "label": ".str0", "value": "%d\n" }
+  ],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "x",
+          "var-type": { "type-kind": "prim", "type-name": "int64" },
+          "init": { "expr-type": "lit-int", "value": "3", "value-type": {"type-kind": "prim", "type-name": "int64"} }
+        },
+        {
+          "name": "y",
+          "var-type": { "type-kind": "prim", "type-name": "int64" },
+          "init": { "expr-type": "lit-int", "value": "5", "value-type": {"type-kind": "prim", "type-name": "int64"} }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}} },
+          {
+            "expr-type": "cmp",
+            "op": "<",
+            "value-type": {"type-kind": "prim", "type-name": "int32"},
+            "left":  { "expr-type": "id", "name": "x", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} },
+            "right": { "expr-type": "id", "name": "y", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} }
+          }
+        ]
+      }
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}} },
+          {
+            "expr-type": "cmp",
+            "op": "==",
+            "value-type": {"type-kind": "prim", "type-name": "int32"},
+            "left":  { "expr-type": "id", "name": "x", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} },
+            "right": { "expr-type": "id", "name": "y", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} }
+          }
+        ]
+      }
+    }
+  ]
+}

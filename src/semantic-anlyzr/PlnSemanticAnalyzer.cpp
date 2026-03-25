@@ -234,6 +234,21 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		sa_expr["right"]      = right;
 		sa_expr["value-type"] = registry_.toJson(promoted);
 
+	} else if (expr_type == "cmp") {
+		json left  = sa_expression(expr["left"]);
+		json right = sa_expression(expr["right"]);
+		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
+		const PlnType* rightType = registry_.fromJson(right["value-type"]);
+		if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
+			left = wrapConvert(left, registry_.toJson(rightType));
+		} else if (typeCompat(rightType, leftType, registry_) == TypeCompat::ImplicitWiden) {
+			right = wrapConvert(right, registry_.toJson(leftType));
+		}
+		sa_expr["op"]         = expr["op"];
+		sa_expr["left"]       = left;
+		sa_expr["right"]      = right;
+		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int32"}};
+
 	} else if (expr_type == "cast") {
 		const PlnType* target  = registry_.fromJson(expr["target-type"]);
 		json src               = sa_expression(expr["src"]);

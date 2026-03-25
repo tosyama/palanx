@@ -130,6 +130,8 @@ class PlnLexer;
 %token DBL_ARROW	"->>"
 %token AT_EXCL	"@!"
 %token DBL_PLUS	"++"
+%token OPE_EQ	"=="
+%token OPE_NE	"!="
 
 %type <vector<json>>	statements
 %type <json>	statement
@@ -151,6 +153,7 @@ class PlnLexer;
 %type <json>	tapple_decl tapple_decl_inner
 
 %left ARROW DBL_ARROW
+%left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
 %left '*' '/' '%' '&' '|'
@@ -538,13 +541,17 @@ expression: term
 	| expression '|' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression OPE_LE expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "cmp"}, {"op", "<="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression OPE_GE expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "cmp"}, {"op", ">="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '<' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "cmp"}, {"op", "<"},  {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '>' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "cmp"}, {"op", ">"},  {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression OPE_EQ expression
+	{ $$ = {{"expr-type", "cmp"}, {"op", "=="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression OPE_NE expression
+	{ $$ = {{"expr-type", "cmp"}, {"op", "!="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression ARROW expression
 	{
 		if ($3.value("expr-type", "") == "id") {

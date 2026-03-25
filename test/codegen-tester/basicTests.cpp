@@ -84,6 +84,22 @@ TEST(codegen, addition) {
     ASSERT_NE(asm_text.find("call printf"), string::npos);
 }
 
+TEST(codegen, comparison) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/018_comparison.sa.json";
+    string asmf = "out/018_comparison.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("cmpq"),        string::npos);
+    ASSERT_NE(asm_text.find("setl"),        string::npos);
+    ASSERT_NE(asm_text.find("sete"),        string::npos);
+    ASSERT_NE(asm_text.find("movzbl"),      string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
 TEST(codegen, convert_int32_to_int64) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/006_convert.sa.json";

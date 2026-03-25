@@ -75,6 +75,31 @@ TEST(gen_ast, addition) {
 	ASSERT_TRUE(found_sub);
 }
 
+TEST(gen_ast, comparison) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/005_comparison.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_lt = false;
+	bool found_eq = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] == "call" && body["name"] == "printf") {
+			for (auto& arg : body["args"]) {
+				if (arg["expr-type"] != "cmp") continue;
+				ASSERT_EQ(arg["left"]["expr-type"],  "id");
+				ASSERT_EQ(arg["right"]["expr-type"], "id");
+				if (arg["op"] == "<")  found_lt = true;
+				if (arg["op"] == "==") found_eq = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_lt);
+	ASSERT_TRUE(found_eq);
+}
+
 TEST(gen_ast, var_decl_int32) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/004_int32_widening.pa");

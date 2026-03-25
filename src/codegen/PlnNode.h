@@ -22,6 +22,7 @@ enum class ExprKind {
     Id,
     Add,
     Sub,
+    Cmp,
     Convert,
     CCCall,
     PlnCall,
@@ -67,6 +68,14 @@ struct SubExpr : Expr {
     unique_ptr<Expr> left;
     unique_ptr<Expr> right;
     VRegType type = VRegType::Int64;
+};
+
+struct CmpExpr : Expr {
+    CmpExpr() : Expr(ExprKind::Cmp) {}
+    string           op;           // "<", "<=", ">", ">=", "==", "!="
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType operandType = VRegType::Int64;  // type of lhs/rhs operands
 };
 
 struct ConvertExpr : Expr {

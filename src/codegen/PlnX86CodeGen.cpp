@@ -32,6 +32,25 @@ static const char* subInstrForType(VRegType type) {
     }
 }
 
+static const char* cmpInstrForType(VRegType type) {
+    switch (type) {
+        case VRegType::Int8:  return "cmpb";
+        case VRegType::Int16: return "cmpw";
+        case VRegType::Int32: return "cmpl";
+        default:              return "cmpq";
+    }
+}
+
+static const char* setCCForOp(const string& op) {
+    if (op == "<")  return "setl";
+    if (op == "<=") return "setle";
+    if (op == ">")  return "setg";
+    if (op == ">=") return "setge";
+    if (op == "==") return "sete";
+    if (op == "!=") return "setne";
+    BOOST_ASSERT(false); return "";
+}
+
 // Derive the sized register name from the 64-bit base name and VRegType.
 // Classic registers (%rax/%rbx/...): drop 'r' prefix for 32-bit, use bare name for 16/8-bit.
 // Extended registers (%r8-%r15): append 'd'/'w'/'b' suffix.
@@ -184,6 +203,33 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     string dst_mem = srcOperand(dst_loc);
                     out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << dst_mem << "\n";
                     out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << dst_mem << "\n";
+                }
+            } else if (auto* cm = std::get_if<Cmp>(&instr)) {
+                if (!rm.count(cm->dst)) continue;  // dead
+                const PhysLoc& dst_loc  = rm.at(cm->dst);
+                const PhysLoc& lhs_loc  = rm.at(cm->lhs);
+                // cmpX %rhs, lhs  →  flags = lhs - rhs
+                // x86 disallows two memory operands: load lhs into scratch if spilled
+                string lhs_operand;
+                if (lhs_loc.isStack()) {
+                    string scratch = sizedRegName("%rax", cm->type);
+                    out << "\t" << movInstrForType(cm->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+                    lhs_operand = scratch;
+                } else {
+                    lhs_operand = srcOperand(lhs_loc);
+                }
+                out << "\t" << cmpInstrForType(cm->type)
+                    << " " << srcOperand(rm.at(cm->rhs))
+                    << ", " << lhs_operand << "\n";
+                if (!dst_loc.isStack()) {
+                    string dst_byte = sizedRegName(dst_loc.base, VRegType::Int8);
+                    string dst_32   = sizedRegName(dst_loc.base, VRegType::Int32);
+                    out << "\t" << setCCForOp(cm->op) << " " << dst_byte << "\n";
+                    out << "\tmovzbl " << dst_byte << ", " << dst_32 << "\n";
+                } else {
+                    out << "\t" << setCCForOp(cm->op) << " %al\n";
+                    out << "\tmovzbl %al, %eax\n";
+                    out << "\tmovl %eax, " << srcOperand(dst_loc) << "\n";
                 }
             } else if (auto* c = std::get_if<Convert>(&instr)) {
                 if (!rm.count(c->dst)) continue;  // dead

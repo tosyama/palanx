@@ -108,6 +108,32 @@ TEST(sa, addition_sa) {
 	ASSERT_TRUE(found_sub);
 }
 
+TEST(sa, comparison_sa) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/build-mgr/005_comparison.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found_lt = false;
+	bool found_eq = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] == "call" && body["name"] == "printf") {
+			for (auto& arg : body["args"]) {
+				if (arg["expr-type"] != "cmp") continue;
+				ASSERT_EQ(arg["value-type"]["type-name"], "int32");
+				ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
+				ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
+				if (arg["op"] == "<")  found_lt = true;
+				if (arg["op"] == "==") found_eq = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_lt);
+	ASSERT_TRUE(found_eq);
+}
+
 TEST(sa, convert_widening_sa) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/001_convert_widening.pa");
