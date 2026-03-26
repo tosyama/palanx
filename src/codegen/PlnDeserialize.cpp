@@ -57,6 +57,22 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
+    if (expr_type == "sub") {
+        auto e = make_unique<SubExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
+    if (expr_type == "cmp") {
+        auto e = make_unique<CmpExpr>();
+        e->op    = j["op"];
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        e->operandType = j["left"].contains("value-type")
+                         ? toVRegType(j["left"]["value-type"]) : VRegType::Int64;
+        return e;
+    }
     if (expr_type == "call") {
         string func_type = j.value("func-type", "");
         if (func_type == "c") {
@@ -142,6 +158,23 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     if (stmt_type == "block") {
         auto s = make_unique<BlockStmt>();
         s->body = deserializeStatements(j["body"]);
+        return s;
+    }
+    if (stmt_type == "if") {
+        auto s = make_unique<IfStmt>();
+        s->cond = deserializeExpr(j["cond"]);
+        auto tb = make_unique<BlockStmt>();
+        tb->body = deserializeStatements(j["then"]["body"]);
+        s->thenStmt = move(tb);
+        if (j.contains("else")) {
+            if (j["else"]["stmt-type"] == "if") {
+                s->elseStmt = deserializeStmt(j["else"]);
+            } else {
+                auto eb = make_unique<BlockStmt>();
+                eb->body = deserializeStatements(j["else"]["body"]);
+                s->elseStmt = move(eb);
+            }
+        }
         return s;
     }
     if (stmt_type == "not-impl") {

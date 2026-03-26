@@ -31,6 +31,8 @@ struct LeaLabel { VReg dst; VRegType type; string label; };       // dst = addre
 struct MovImm   { VReg dst; VRegType type; long long value; };    // dst = immediate integer
 struct InitVar  { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
 struct Add      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs + rhs
+struct Sub      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs - rhs
+struct Cmp      { VReg dst; string op; VReg lhs; VReg rhs; VRegType type; }; // dst (int32) = (lhs op rhs) ? 1 : 0
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 struct CallC    { string name; vector<VReg> args; VReg dst = -1; VRegType retType = VRegType::Int64; };
 struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
@@ -38,10 +40,14 @@ struct RetPln   { vector<VReg> rets; vector<VRegType> types; };
 struct ExitCode { int code; };
 struct BlockEnter {};
 struct BlockLeave { vector<VReg> expiredVars; };
+struct Label      { string name; };                              // name:
+struct Jmp        { string label; };                             // jmp label
+struct CondJmp    { string label; VReg cond; bool jumpIfZero; }; // testl+je/jne
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Convert,
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Sub, Cmp, Convert,
                              CallC, CallPln, RetPln, ExitCode,
-                             BlockEnter, BlockLeave>;
+                             BlockEnter, BlockLeave,
+                             Label, Jmp, CondJmp>;
 
 // -------- Program structure --------
 

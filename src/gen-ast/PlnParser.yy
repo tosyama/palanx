@@ -130,6 +130,8 @@ class PlnLexer;
 %token DBL_ARROW	"->>"
 %token AT_EXCL	"@!"
 %token DBL_PLUS	"++"
+%token OPE_EQ	"=="
+%token OPE_NE	"!="
 
 %type <vector<json>>	statements
 %type <json>	statement
@@ -149,8 +151,10 @@ class PlnLexer;
 %type <json>	statement_or_funcdef
 %type <bool>	move_owner_r do_export
 %type <json>	tapple_decl tapple_decl_inner
+%type <json>	if_stmt else_stmt
 
 %left ARROW DBL_ARROW
+%left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
 %left '*' '/' '%' '&' '|'
@@ -288,8 +292,7 @@ statement: import ';'
 	}
 	| if_stmt
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		$$ = move($1);
 	}
 	| term DBL_PLUS ';'
 	{
@@ -526,7 +529,7 @@ expression: term
 	| expression '+' expression
 	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '-' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "sub"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '*' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '/' expression
@@ -538,13 +541,17 @@ expression: term
 	| expression '|' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression OPE_LE expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "cmp"}, {"op", "<="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression OPE_GE expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "cmp"}, {"op", ">="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '<' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "cmp"}, {"op", "<"},  {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '>' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "cmp"}, {"op", ">"},  {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression OPE_EQ expression
+	{ $$ = {{"expr-type", "cmp"}, {"op", "=="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression OPE_NE expression
+	{ $$ = {{"expr-type", "cmp"}, {"op", "!="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression ARROW expression
 	{
 		if ($3.value("expr-type", "") == "id") {
@@ -695,11 +702,20 @@ while_loop: KW_WHILE expression block
 	;
 
 if_stmt: KW_IF expression block else_stmt
+	{
+		json then_block = {{"stmt-type", "block"}, {"body", move($3)}};
+		$$ = {{"stmt-type", "if"}, {"cond", $2}, {"then", move(then_block)}};
+		if (!$4.is_null()) $$["else"] = move($4);
+		LOC($$, @$);
+	}
 	;
 
 else_stmt: /* empty */
+	{ $$ = json{}; }
 	| KW_ELSE block
+	{ $$ = {{"stmt-type", "block"}, {"body", move($2)}}; }
 	| KW_ELSE if_stmt
+	{ $$ = move($2); }
 	;
 
 expressions: expression

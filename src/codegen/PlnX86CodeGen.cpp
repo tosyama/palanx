@@ -23,6 +23,34 @@ static const char* addInstrForType(VRegType type) {
     }
 }
 
+static const char* subInstrForType(VRegType type) {
+    switch (type) {
+        case VRegType::Int8:  return "subb";
+        case VRegType::Int16: return "subw";
+        case VRegType::Int32: return "subl";
+        default:              return "subq";
+    }
+}
+
+static const char* cmpInstrForType(VRegType type) {
+    switch (type) {
+        case VRegType::Int8:  return "cmpb";
+        case VRegType::Int16: return "cmpw";
+        case VRegType::Int32: return "cmpl";
+        default:              return "cmpq";
+    }
+}
+
+static const char* setCCForOp(const string& op) {
+    if (op == "<")  return "setl";
+    if (op == "<=") return "setle";
+    if (op == ">")  return "setg";
+    if (op == ">=") return "setge";
+    if (op == "==") return "sete";
+    if (op == "!=") return "setne";
+    BOOST_ASSERT(false); return "";
+}
+
 // Derive the sized register name from the 64-bit base name and VRegType.
 // Classic registers (%rax/%rbx/...): drop 'r' prefix for 32-bit, use bare name for 16/8-bit.
 // Extended registers (%r8-%r15): append 'd'/'w'/'b' suffix.
@@ -138,7 +166,11 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 emitLeaLabel(sizedRegName(loc.base, loc.type), i->label);
             } else if (auto* i = std::get_if<MovImm>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
-                emitMovImm(sizedRegName(loc.base, i->type), i->type, i->value);
+                if (loc.isStack()) {
+                    out << "\t" << movInstrForType(i->type) << " $" << i->value << ", " << srcOperand(loc) << "\n";
+                } else {
+                    emitMovImm(sizedRegName(loc.base, i->type), i->type, i->value);
+                }
             } else if (auto* i = std::get_if<InitVar>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
                 if (loc.isStack()) {
@@ -155,12 +187,55 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
                     out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
                 } else {
-                    // Spilled dst: use memory destination (x86 allows reg/imm src with mem dst).
-                    // lhs must be in a register so mov-to-mem is valid.
-                    BOOST_ASSERT(!lhs_loc.isStack());
+                    // Spilled dst: route through scratch %rax to avoid mem-mem.
+                    string scratch = sizedRegName("%rax", a->type);
                     string dst_mem = srcOperand(dst_loc);
-                    out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << dst_mem << "\n";
-                    out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << dst_mem << "\n";
+                    out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+                    out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << scratch << "\n";
+                    out << "\t" << movInstrForType(a->type) << " " << scratch << ", " << dst_mem << "\n";
+                }
+            } else if (auto* s = std::get_if<Sub>(&instr)) {
+                if (!rm.count(s->dst)) continue;  // dead: result never used
+                const PhysLoc& dst_loc = rm.at(s->dst);
+                const PhysLoc& lhs_loc = rm.at(s->lhs);
+                if (!dst_loc.isStack()) {
+                    string dst_reg = sizedRegName(dst_loc.base, s->type);
+                    out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
+                    out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << dst_reg << "\n";
+                } else {
+                    // Spilled dst: route through scratch %rax to avoid mem-mem.
+                    string scratch = sizedRegName("%rax", s->type);
+                    string dst_mem = srcOperand(dst_loc);
+                    out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+                    out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << scratch << "\n";
+                    out << "\t" << movInstrForType(s->type) << " " << scratch << ", " << dst_mem << "\n";
+                }
+            } else if (auto* cm = std::get_if<Cmp>(&instr)) {
+                if (!rm.count(cm->dst)) continue;  // dead
+                const PhysLoc& dst_loc  = rm.at(cm->dst);
+                const PhysLoc& lhs_loc  = rm.at(cm->lhs);
+                // cmpX %rhs, lhs  →  flags = lhs - rhs
+                // x86 disallows two memory operands: load lhs into scratch if spilled
+                string lhs_operand;
+                if (lhs_loc.isStack()) {
+                    string scratch = sizedRegName("%rax", cm->type);
+                    out << "\t" << movInstrForType(cm->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+                    lhs_operand = scratch;
+                } else {
+                    lhs_operand = srcOperand(lhs_loc);
+                }
+                out << "\t" << cmpInstrForType(cm->type)
+                    << " " << srcOperand(rm.at(cm->rhs))
+                    << ", " << lhs_operand << "\n";
+                if (!dst_loc.isStack()) {
+                    string dst_byte = sizedRegName(dst_loc.base, VRegType::Int8);
+                    string dst_32   = sizedRegName(dst_loc.base, VRegType::Int32);
+                    out << "\t" << setCCForOp(cm->op) << " " << dst_byte << "\n";
+                    out << "\tmovzbl " << dst_byte << ", " << dst_32 << "\n";
+                } else {
+                    out << "\t" << setCCForOp(cm->op) << " %al\n";
+                    out << "\tmovzbl %al, %eax\n";
+                    out << "\tmovl %eax, " << srcOperand(dst_loc) << "\n";
                 }
             } else if (auto* c = std::get_if<Convert>(&instr)) {
                 if (!rm.count(c->dst)) continue;  // dead
@@ -249,6 +324,21 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 // no-op
             } else if (std::get_if<BlockLeave>(&instr)) {
                 // no-op
+            } else if (auto* l = std::get_if<Label>(&instr)) {
+                out << l->name << ":\n";
+            } else if (auto* j = std::get_if<Jmp>(&instr)) {
+                out << "\tjmp " << j->label << "\n";
+            } else if (auto* cj = std::get_if<CondJmp>(&instr)) {
+                const PhysLoc& loc = rm.at(cj->cond);
+                string cond_reg;
+                if (loc.isStack()) {
+                    out << "\tmovl " << srcOperand(loc) << ", %eax\n";
+                    cond_reg = "%eax";
+                } else {
+                    cond_reg = sizedRegName(loc.base, VRegType::Int32);
+                }
+                out << "\ttestl " << cond_reg << ", " << cond_reg << "\n";
+                out << (cj->jumpIfZero ? "\tje " : "\tjne ") << cj->label << "\n";
             }
         }
     }

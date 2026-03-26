@@ -50,7 +50,9 @@ enum {
 	ARROW =	PlnParser::token::ARROW,
 	DBL_ARROW =	PlnParser::token::DBL_ARROW,
 	AT_EXCL =	PlnParser::token::AT_EXCL,
-	DBL_PLUS =	PlnParser::token::DBL_PLUS
+	DBL_PLUS =	PlnParser::token::DBL_PLUS,
+	OPE_EQ =	PlnParser::token::OPE_EQ,
+	OPE_NE =	PlnParser::token::OPE_NE
 };
 
 static string& unescape(string& str);
@@ -142,6 +144,8 @@ COMMENT1	\/\/[^\n]*\n
 <*>"->>"	{ return DBL_ARROW; }
 <*>"@!"	{ return AT_EXCL; }
 <*>"++"	{ return DBL_PLUS; }
+<*>"=="	{ return OPE_EQ; }
+<*>"!="	{ return OPE_NE; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
 <*><<EOF>>	{ return 0; }

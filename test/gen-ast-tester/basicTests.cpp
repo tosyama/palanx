@@ -51,7 +51,8 @@ TEST(gen_ast, addition) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
-	bool found = false;
+	bool found_add = false;
+	bool found_sub = false;
 	for (auto& stmt : jout["ast"]["statements"]) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& body = stmt["body"];
@@ -60,12 +61,43 @@ TEST(gen_ast, addition) {
 				if (arg["expr-type"] == "add") {
 					ASSERT_EQ(arg["left"]["expr-type"],  "id");
 					ASSERT_EQ(arg["right"]["expr-type"], "id");
-					found = true;
+					found_add = true;
+				}
+				if (arg["expr-type"] == "sub") {
+					ASSERT_EQ(arg["left"]["expr-type"],  "id");
+					ASSERT_EQ(arg["right"]["expr-type"], "id");
+					found_sub = true;
 				}
 			}
 		}
 	}
-	ASSERT_TRUE(found);
+	ASSERT_TRUE(found_add);
+	ASSERT_TRUE(found_sub);
+}
+
+TEST(gen_ast, comparison) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/005_comparison.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_lt = false;
+	bool found_eq = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] == "call" && body["name"] == "printf") {
+			for (auto& arg : body["args"]) {
+				if (arg["expr-type"] != "cmp") continue;
+				ASSERT_EQ(arg["left"]["expr-type"],  "id");
+				ASSERT_EQ(arg["right"]["expr-type"], "id");
+				if (arg["op"] == "<")  found_lt = true;
+				if (arg["op"] == "==") found_eq = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_lt);
+	ASSERT_TRUE(found_eq);
 }
 
 TEST(gen_ast, var_decl_int32) {
@@ -227,6 +259,44 @@ TEST(gen_ast, export_func) {
 	}
 	ASSERT_TRUE(found_export);
 	ASSERT_TRUE(found_noexport);
+}
+
+TEST(gen_ast, if_stmt) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/008_if_stmt.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// clamp function: body has 2 stmts (if + return)
+	bool found_clamp = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "clamp") continue;
+		found_clamp = true;
+		const auto& body = f["block"]["body"];
+		ASSERT_EQ(body.size(), 2u);
+		const auto& if_node = body[0];
+		ASSERT_EQ(if_node["stmt-type"], "if");
+		ASSERT_EQ(if_node["cond"]["expr-type"], "cmp");
+		ASSERT_EQ(if_node["cond"]["op"], "<");
+		ASSERT_TRUE(if_node.contains("then"));
+		ASSERT_FALSE(if_node.contains("else"));
+	}
+	ASSERT_TRUE(found_clamp);
+
+	// sign function: if-else
+	bool found_sign = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "sign") continue;
+		found_sign = true;
+		const auto& body = f["block"]["body"];
+		ASSERT_EQ(body.size(), 2u);
+		const auto& if_node = body[0];
+		ASSERT_EQ(if_node["stmt-type"], "if");
+		ASSERT_TRUE(if_node.contains("then"));
+		ASSERT_TRUE(if_node.contains("else"));
+		ASSERT_EQ(if_node["else"]["stmt-type"], "block");
+	}
+	ASSERT_TRUE(found_sign);
 }
 
 TEST(gen_ast, cli_tests) {

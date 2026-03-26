@@ -79,6 +79,22 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Add{dst, l, r, e.type});
             return dst;
         }
+        case ExprKind::Sub: {
+            auto& e  = static_cast<const SubExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Sub{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::Cmp: {
+            auto& e  = static_cast<const CmpExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Cmp{dst, e.op, l, r, e.operandType});
+            return dst;
+        }
         case ExprKind::CCCall: {
             auto& e = static_cast<const CCCallExpr&>(expr);
             BOOST_ASSERT(e.hasRet);
@@ -234,6 +250,28 @@ void PlnVCodeGen::lowerBlockStmt(const BlockStmt& stmt, VFunc& func)
     func.instrs.push_back(BlockLeave{move(expired)});
 }
 
+void PlnVCodeGen::lowerIfStmt(const IfStmt& stmt, VFunc& func)
+{
+    int    idx      = labelCounter_++;
+    string endLabel = ".Lif" + to_string(idx) + "_end";
+
+    VReg cond = lowerExpr(*stmt.cond, func);
+
+    if (stmt.elseStmt) {
+        string elseLabel = ".Lif" + to_string(idx) + "_else";
+        func.instrs.push_back(CondJmp{elseLabel, cond, true});
+        lowerStmt(*stmt.thenStmt, func);
+        func.instrs.push_back(Jmp{endLabel});
+        func.instrs.push_back(Label{elseLabel});
+        lowerStmt(*stmt.elseStmt, func);
+    } else {
+        func.instrs.push_back(CondJmp{endLabel, cond, true});
+        lowerStmt(*stmt.thenStmt, func);
+    }
+
+    func.instrs.push_back(Label{endLabel});
+}
+
 void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 {
     switch (stmt.kind) {
@@ -254,6 +292,9 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
             return;
         case StmtKind::Block:
             lowerBlockStmt(static_cast<const BlockStmt&>(stmt), func);
+            return;
+        case StmtKind::If:
+            lowerIfStmt(static_cast<const IfStmt&>(stmt), func);
             return;
     }
     BOOST_ASSERT(false);

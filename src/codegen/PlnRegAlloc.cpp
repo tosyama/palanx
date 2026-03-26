@@ -41,6 +41,16 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             meta[a->dst].type    = a->type;
             meta[a->lhs].last_any_use = max(meta[a->lhs].last_any_use, i);
             meta[a->rhs].last_any_use = max(meta[a->rhs].last_any_use, i);
+        } else if (auto* s = get_if<Sub>(&instr)) {
+            meta[s->dst].def_idx = i;
+            meta[s->dst].type    = s->type;
+            meta[s->lhs].last_any_use = max(meta[s->lhs].last_any_use, i);
+            meta[s->rhs].last_any_use = max(meta[s->rhs].last_any_use, i);
+        } else if (auto* cm = get_if<Cmp>(&instr)) {
+            meta[cm->dst].def_idx = i;
+            meta[cm->dst].type    = VRegType::Int32;
+            meta[cm->lhs].last_any_use = max(meta[cm->lhs].last_any_use, i);
+            meta[cm->rhs].last_any_use = max(meta[cm->rhs].last_any_use, i);
         } else if (auto* c = get_if<CallC>(&instr)) {
             call_indices.push_back(i);
             for (int j = 0; j < (int)c->args.size(); j++) {
@@ -65,6 +75,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 meta[r->rets[k]].isRetValue = true;
                 meta[r->rets[k]].retIdx     = k;
             }
+        } else if (auto* cj = get_if<CondJmp>(&instr)) {
+            meta[cj->cond].last_any_use = max(meta[cj->cond].last_any_use, i);
         }
     }
 

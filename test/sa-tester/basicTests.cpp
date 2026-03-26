@@ -78,25 +78,60 @@ TEST(sa, addition_sa) {
 
 	ASSERT_TRUE(jout.is_object());
 
-	bool found = false;
+	bool found_add = false;
+	bool found_sub = false;
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& body = stmt["body"];
 		if (body["expr-type"] == "call" && body["name"] == "printf") {
 			for (auto& arg : body["args"]) {
-				if (arg["expr-type"] != "add") continue;
-				// addition: id nodes present
-				ASSERT_EQ(arg["left"]["expr-type"],  "id");
-				ASSERT_EQ(arg["right"]["expr-type"], "id");
-				// value_type_on_expressions: value-type annotated
-				ASSERT_EQ(arg["value-type"]["type-name"],          "int64");
-				ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
-				ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
-				found = true;
+				if (arg["expr-type"] == "add") {
+					ASSERT_EQ(arg["left"]["expr-type"],  "id");
+					ASSERT_EQ(arg["right"]["expr-type"], "id");
+					ASSERT_EQ(arg["value-type"]["type-name"],          "int64");
+					ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
+					ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
+					found_add = true;
+				}
+				if (arg["expr-type"] == "sub") {
+					ASSERT_EQ(arg["left"]["expr-type"],  "id");
+					ASSERT_EQ(arg["right"]["expr-type"], "id");
+					ASSERT_EQ(arg["value-type"]["type-name"],          "int64");
+					ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
+					ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
+					found_sub = true;
+				}
 			}
 		}
 	}
-	ASSERT_TRUE(found);
+	ASSERT_TRUE(found_add);
+	ASSERT_TRUE(found_sub);
+}
+
+TEST(sa, comparison_sa) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/build-mgr/005_comparison.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	bool found_lt = false;
+	bool found_eq = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] == "call" && body["name"] == "printf") {
+			for (auto& arg : body["args"]) {
+				if (arg["expr-type"] != "cmp") continue;
+				ASSERT_EQ(arg["value-type"]["type-name"], "int32");
+				ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
+				ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
+				if (arg["op"] == "<")  found_lt = true;
+				if (arg["op"] == "==") found_eq = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_lt);
+	ASSERT_TRUE(found_eq);
 }
 
 TEST(sa, convert_widening_sa) {
@@ -418,6 +453,41 @@ TEST(sa, block_cinclude_scope) {
 	// printf inside block resolved as C function
 	ASSERT_EQ(jout["statements"][0]["body"][0]["stmt-type"], "expr");
 	ASSERT_EQ(jout["statements"][0]["body"][0]["body"]["func-type"], "c");
+}
+
+TEST(sa, if_stmt_sa) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/036_if_stmt.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	bool found_if = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "if") continue;
+		found_if = true;
+		// cond is a cmp expression with value-type int32
+		ASSERT_EQ(stmt["cond"]["expr-type"], "cmp");
+		ASSERT_EQ(stmt["cond"]["value-type"]["type-name"], "int32");
+		// then block contains a printf call
+		ASSERT_EQ(stmt["then"]["stmt-type"], "block");
+		ASSERT_FALSE(stmt.contains("else"));
+	}
+	ASSERT_TRUE(found_if);
+}
+
+TEST(sa, if_else_stmt_sa) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/037_if_else_stmt.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	bool found_if = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "if") continue;
+		found_if = true;
+		ASSERT_EQ(stmt["then"]["stmt-type"], "block");
+		ASSERT_TRUE(stmt.contains("else"));
+		ASSERT_EQ(stmt["else"]["stmt-type"], "block");
+	}
+	ASSERT_TRUE(found_if);
 }
 
 TEST(sa, block_func_def) {

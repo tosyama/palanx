@@ -14,7 +14,7 @@ TEST(build_mgr, helloworld) {
 TEST(build_mgr, basic_expr) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/101_basic_expr.pa");
-	ASSERT_EQ(output, "10\n30\n10\n100\n42\n100 100 50 50\n");
+	ASSERT_EQ(output, "10\n30\n10\n100\n42\n100 100 50 50\n7\n1 1 0\n0 0 1\n");
 }
 
 TEST(build_mgr, func_def) {
@@ -41,6 +41,12 @@ TEST(build_mgr, import_mutual) {
 	string output = execTestCommand(
 		"bin/palan ../test/testdata/build-mgr/024_import_mutual.pa");
 	ASSERT_EQ(output, "10\n13\n");
+}
+
+TEST(build_mgr, fibonacci) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/006_fibonacci.pa");
+	ASSERT_EQ(output, "55\n");
 }
 
 TEST(build_mgr, clean) {

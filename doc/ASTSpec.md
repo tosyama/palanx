@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.7
+ver. 0.1.9
 
 \* - Required
 
@@ -112,7 +112,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block" "if"
 - loc\* - Location Array (omitted for "not-impl")
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -141,10 +141,14 @@ Statement model
   8. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
+  9. if - if / if-else statement
+    - cond\* - Condition expression model
+    - then\* - Then-block object (block statement body)
+    - else - Else-block object or nested if statement (omitted when absent)
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "add" "call" "cast"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "add" "sub" "cmp" "call" "cast"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -157,10 +161,17 @@ Expression model
   5. add - Binary addition
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  6. call - Function call expression
+  6. sub - Binary subtraction
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  7. cmp - Comparison expression (result: 0 or 1 as int32)
+    - op\*    - Operator string: "<" "<=" ">" ">=" "==" "!="
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  8. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
-  7. cast - Explicit type cast expression (`type-name(expr)` syntax)
+  9. cast - Explicit type cast expression (`type-name(expr)` syntax)
     - target-type\* - Target Variable type object
     - src\* - Source expression model
 

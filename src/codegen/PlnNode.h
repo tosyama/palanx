@@ -21,6 +21,8 @@ enum class ExprKind {
     UintLit,
     Id,
     Add,
+    Sub,
+    Cmp,
     Convert,
     CCCall,
     PlnCall,
@@ -61,6 +63,21 @@ struct AddExpr : Expr {
     VRegType type = VRegType::Int64;
 };
 
+struct SubExpr : Expr {
+    SubExpr() : Expr(ExprKind::Sub) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct CmpExpr : Expr {
+    CmpExpr() : Expr(ExprKind::Cmp) {}
+    string           op;           // "<", "<=", ">", ">=", "==", "!="
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType operandType = VRegType::Int64;  // type of lhs/rhs operands
+};
+
 struct ConvertExpr : Expr {
     ConvertExpr() : Expr(ExprKind::Convert) {}
     VRegType         from;
@@ -95,6 +112,7 @@ enum class StmtKind {
     Return,
     TappleDecl,
     Block,
+    If,
 };
 
 struct Stmt {
@@ -142,6 +160,13 @@ struct TappleDeclStmt : Stmt {
 struct BlockStmt : Stmt {
     BlockStmt() : Stmt(StmtKind::Block) {}
     vector<unique_ptr<Stmt>> body;
+};
+
+struct IfStmt : Stmt {
+    IfStmt() : Stmt(StmtKind::If) {}
+    unique_ptr<Expr> cond;
+    unique_ptr<Stmt> thenStmt;  // always BlockStmt
+    unique_ptr<Stmt> elseStmt;  // nullptr | BlockStmt | IfStmt (else-if chain)
 };
 
 // -------- Module --------
