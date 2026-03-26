@@ -6,13 +6,37 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-03-24)
-version: 0.1.9
-- This iteration implements the language features required to run a recursive Fibonacci program.
-- Subtraction operator `-` is added (gen-ast → sa → codegen full pipeline).
-- Comparison operators `<`, `<=`, `>`, `>=`, `==`, `!=` are added (same pipeline).
-- `if` / `if-else` statements are added (same pipeline).
-- A Fibonacci sample (`fib(10) == 55`) is verified by an end-to-end build-mgr test.
+### 2.1 Iteration Goal (2026-03-26)
+version: 0.1.10
+- This iteration implements the language features required to run an abs/gcd/lcm sample with a multi-argument printf.
+- Unary minus `-expr` is added (gen-ast → sa → codegen full pipeline).
+- Arithmetic operators `*`, `/`, `%` are added (same pipeline).
+- Stack-based argument passing (7th argument and beyond) is supported for function calls.
+- The following sample is verified by an end-to-end build-mgr test:
+
+```palan
+cinclude <stdio.h>;
+
+func abs(int64 x) -> int64 {
+    if x < 0 { return -x; }
+    return x;
+}
+
+func gcd(int64 a, int64 b) -> int64 {
+    if b == 0 { return a; }
+    return gcd(b, a % b);
+}
+
+func lcm(int64 a, int64 b) -> int64 {
+    return a / gcd(a, b) * b;
+}
+
+printf("abs=%ld gcd=%ld lcm=%ld abs=%ld gcd=%ld lcm=%ld\n",
+    abs(-42), gcd(12, 8), lcm(4, 6),
+    abs(-7),  gcd(48, 18), lcm(6, 10));
+```
+
+Expected output: `abs=42 gcd=4 lcm=12 abs=7 gcd=6 lcm=30`
 
 
 ## 3. Command-line Tools' Responsibilities and Design
