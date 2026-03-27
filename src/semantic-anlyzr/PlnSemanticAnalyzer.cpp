@@ -197,26 +197,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			sa_expr["value-type"] = *varType;
 		}
 
-	} else if (expr_type == "add") {
-		json left  = sa_expression(expr["left"]);
-		json right = sa_expression(expr["right"]);
-		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
-		const PlnType* rightType = registry_.fromJson(right["value-type"]);
-		const PlnType* promoted;
-		if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
-			promoted = rightType;
-			left = wrapConvert(left, registry_.toJson(promoted));
-		} else if (typeCompat(rightType, leftType, registry_) == TypeCompat::ImplicitWiden) {
-			promoted = leftType;
-			right = wrapConvert(right, registry_.toJson(promoted));
-		} else {
-			promoted = leftType;
-		}
-		sa_expr["left"]       = left;
-		sa_expr["right"]      = right;
-		sa_expr["value-type"] = registry_.toJson(promoted);
-
-	} else if (expr_type == "sub") {
+	} else if (expr_type == "add" || expr_type == "sub") {
 		json left  = sa_expression(expr["left"]);
 		json right = sa_expression(expr["right"]);
 		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
