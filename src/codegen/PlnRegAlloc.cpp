@@ -46,6 +46,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             meta[s->dst].type    = s->type;
             meta[s->lhs].last_any_use = max(meta[s->lhs].last_any_use, i);
             meta[s->rhs].last_any_use = max(meta[s->rhs].last_any_use, i);
+        } else if (auto* n = get_if<Neg>(&instr)) {
+            meta[n->dst].def_idx = i;
+            meta[n->dst].type    = n->type;
+            meta[n->src].last_any_use = max(meta[n->src].last_any_use, i);
         } else if (auto* cm = get_if<Cmp>(&instr)) {
             meta[cm->dst].def_idx = i;
             meta[cm->dst].type    = VRegType::Int32;

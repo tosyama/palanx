@@ -64,6 +64,12 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
+    if (expr_type == "neg") {
+        auto e     = make_unique<NegExpr>();
+        e->operand = deserializeExpr(j["operand"]);
+        e->type    = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
     if (expr_type == "cmp") {
         auto e = make_unique<CmpExpr>();
         e->op    = j["op"];

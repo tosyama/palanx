@@ -158,6 +158,7 @@ class PlnLexer;
 %left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
 %left '*' '/' '%' '&' '|'
+%right UNARY_MINUS
 %left '.'
 
 %start module
@@ -530,6 +531,8 @@ expression: term
 	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '-' expression
 	{ $$ = {{"expr-type", "sub"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| '-' expression %prec UNARY_MINUS
+	{ $$ = {{"expr-type", "neg"}, {"operand", $2}}; LOC($$, @$); }
 	| expression '*' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '/' expression

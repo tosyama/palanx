@@ -32,6 +32,15 @@ static const char* subInstrForType(VRegType type) {
     }
 }
 
+static const char* negInstrForType(VRegType type) {
+    switch (type) {
+        case VRegType::Int8:  return "negb";
+        case VRegType::Int16: return "negw";
+        case VRegType::Int32: return "negl";
+        default:              return "negq";
+    }
+}
+
 static const char* cmpInstrForType(VRegType type) {
     switch (type) {
         case VRegType::Int8:  return "cmpb";
@@ -209,6 +218,22 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
                     out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << scratch << "\n";
                     out << "\t" << movInstrForType(s->type) << " " << scratch << ", " << dst_mem << "\n";
+                }
+            } else if (auto* n = std::get_if<Neg>(&instr)) {
+                if (!rm.count(n->dst)) continue;  // dead: result never used
+                const PhysLoc& src_loc = rm.at(n->src);
+                const PhysLoc& dst_loc = rm.at(n->dst);
+                if (!dst_loc.isStack()) {
+                    string dst_reg = sizedRegName(dst_loc.base, n->type);
+                    out << "\t" << movInstrForType(n->type) << " " << srcOperand(src_loc) << ", " << dst_reg << "\n";
+                    out << "\t" << negInstrForType(n->type) << " " << dst_reg << "\n";
+                } else {
+                    // Spilled dst: route through scratch %rax to avoid mem-mem.
+                    string scratch = sizedRegName("%rax", n->type);
+                    string dst_mem = srcOperand(dst_loc);
+                    out << "\t" << movInstrForType(n->type) << " " << srcOperand(src_loc) << ", " << scratch << "\n";
+                    out << "\t" << negInstrForType(n->type) << " " << scratch << "\n";
+                    out << "\t" << movInstrForType(n->type) << " " << scratch << ", " << dst_mem << "\n";
                 }
             } else if (auto* cm = std::get_if<Cmp>(&instr)) {
                 if (!rm.count(cm->dst)) continue;  // dead

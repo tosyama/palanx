@@ -235,6 +235,11 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		sa_expr["right"]      = right;
 		sa_expr["value-type"] = registry_.toJson(promoted);
 
+	} else if (expr_type == "neg") {
+		json operand = sa_expression(expr["operand"]);
+		sa_expr["operand"]    = operand;
+		sa_expr["value-type"] = operand["value-type"];
+
 	} else if (expr_type == "cmp") {
 		json left  = sa_expression(expr["left"]);
 		json right = sa_expression(expr["right"]);

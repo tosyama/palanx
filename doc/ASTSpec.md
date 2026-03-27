@@ -164,18 +164,20 @@ Expression model
   6. sub - Binary subtraction
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  7. cmp - Comparison expression (result: 0 or 1 as int32)
+  7. neg - Unary negation
+    - operand\* - Operand expression model
+  8. cmp - Comparison expression (result: 0 or 1 as int32)
     - op\*    - Operator string: "<" "<=" ">" ">=" "==" "!="
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  8. call - Function call expression
+  9. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
-  9. cast - Explicit type cast expression (`type-name(expr)` syntax)
+  10. cast - Explicit type cast expression (`type-name(expr)` syntax)
     - target-type\* - Target Variable type object
     - src\* - Source expression model
 
-Note: Negative integer literals are represented as a unary minus expression (TBD).
+Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.
 
 Location Array

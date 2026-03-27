@@ -75,6 +75,28 @@ TEST(gen_ast, addition) {
 	ASSERT_TRUE(found_sub);
 }
 
+TEST(gen_ast, unary_minus) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/007_unary_minus.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// -42 in printf args should produce neg expr-type
+	bool found_neg = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] != "call" || body["name"] != "printf") continue;
+		for (auto& arg : body["args"]) {
+			if (arg["expr-type"] == "neg") {
+				ASSERT_TRUE(arg.contains("operand"));
+				found_neg = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_neg);
+}
+
 TEST(gen_ast, comparison) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/005_comparison.pa");

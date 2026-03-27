@@ -22,6 +22,7 @@ enum class ExprKind {
     Id,
     Add,
     Sub,
+    Neg,
     Cmp,
     Convert,
     CCCall,
@@ -67,6 +68,12 @@ struct SubExpr : Expr {
     SubExpr() : Expr(ExprKind::Sub) {}
     unique_ptr<Expr> left;
     unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct NegExpr : Expr {
+    NegExpr() : Expr(ExprKind::Neg) {}
+    unique_ptr<Expr> operand;
     VRegType type = VRegType::Int64;
 };
 

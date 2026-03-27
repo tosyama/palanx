@@ -380,3 +380,16 @@ TEST(codegen, if_else_stmt) {
     ASSERT_NE(asm_text.find("\tjmp .Lif0_end"),  string::npos);
     ASSERT_NE(asm_text.find("call printf"),      string::npos);
 }
+
+TEST(codegen, unary_minus) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/021_unary_minus.sa.json";
+    string asmf = "out/021_unary_minus.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("negq"),        string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
