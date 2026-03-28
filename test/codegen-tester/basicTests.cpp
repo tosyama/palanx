@@ -393,3 +393,69 @@ TEST(codegen, unary_minus) {
     ASSERT_NE(asm_text.find("negq"),        string::npos);
     ASSERT_NE(asm_text.find("call printf"), string::npos);
 }
+
+TEST(codegen, sub_int32) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/022_sub_int32.sa.json";
+    string asmf = "out/022_sub_int32.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("subl"),        string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, mul_int32) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/023_mul_int32.sa.json";
+    string asmf = "out/023_mul_int32.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("imull"),       string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, neg_int32) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/024_neg_int32.sa.json";
+    string asmf = "out/024_neg_int32.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("negl"),        string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, cmp_int32) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/025_cmp_int32.sa.json";
+    string asmf = "out/025_cmp_int32.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("cmpl"),        string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, div_rhs_in_rax) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/026_div_rhs_in_rax.sa.json";
+    string asmf = "out/026_div_rhs_in_rax.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // rhs of div is in %rax (named return value), must be saved to %r10 before idivq
+    ASSERT_NE(asm_text.find("movq %rax, %r10"), string::npos);
+    ASSERT_NE(asm_text.find("idivq %r10"),      string::npos);
+}
