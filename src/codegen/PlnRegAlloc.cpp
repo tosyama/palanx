@@ -46,6 +46,21 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             meta[s->dst].type    = s->type;
             meta[s->lhs].last_any_use = max(meta[s->lhs].last_any_use, i);
             meta[s->rhs].last_any_use = max(meta[s->rhs].last_any_use, i);
+        } else if (auto* m = get_if<Mul>(&instr)) {
+            meta[m->dst].def_idx = i;
+            meta[m->dst].type    = m->type;
+            meta[m->lhs].last_any_use = max(meta[m->lhs].last_any_use, i);
+            meta[m->rhs].last_any_use = max(meta[m->rhs].last_any_use, i);
+        } else if (auto* d = get_if<Div>(&instr)) {
+            meta[d->dst].def_idx = i;
+            meta[d->dst].type    = d->type;
+            meta[d->lhs].last_any_use = max(meta[d->lhs].last_any_use, i);
+            meta[d->rhs].last_any_use = max(meta[d->rhs].last_any_use, i);
+        } else if (auto* md = get_if<Mod>(&instr)) {
+            meta[md->dst].def_idx = i;
+            meta[md->dst].type    = md->type;
+            meta[md->lhs].last_any_use = max(meta[md->lhs].last_any_use, i);
+            meta[md->rhs].last_any_use = max(meta[md->rhs].last_any_use, i);
         } else if (auto* n = get_if<Neg>(&instr)) {
             meta[n->dst].def_idx = i;
             meta[n->dst].type    = n->type;
@@ -189,7 +204,32 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         } else {
             int arg_pos = m.call_uses.front().second;
             BOOST_ASSERT(arg_pos < (int)phys.intArgs.size());
-            result[vreg] = PhysLoc{phys.intArgs[arg_pos], m.type};
+            // If another vreg mapped to the desired register is still live at this vreg's
+            // definition point, we'd clobber it.  Detect this and use callee-saved instead.
+            // (e.g. Mod dst and the rhs param both want %rsi, but rhs is still live at Mod.)
+            const string& desired = phys.intArgs[arg_pos];
+            bool conflict = false;
+            for (auto& [vr, loc] : result) {
+                if (loc.isStack() || loc.base != desired) continue;
+                // Check if vr is live at m.def_idx.
+                // Params have def_idx=-1 (never set by an instruction); treat them as
+                // defined at 0 (live from function entry).
+                const VRegMeta& um = meta[vr];
+                int u_def = (um.def_idx < 0) ? 0 : um.def_idx;
+                if (u_def > m.def_idx) continue;
+                int u_last = um.last_any_use;
+                for (auto& [ci, pos] : um.call_uses)
+                    u_last = max(u_last, ci);
+                // Strict ">": if u_last == m.def_idx the existing VReg's last use is the
+                // same instruction as m's definition (e.g. call args die when the call
+                // produces its result), so no real conflict.
+                if (u_last > m.def_idx) { conflict = true; break; }
+            }
+            if (conflict) {
+                allocCalleeSavedOrStack(vreg, m.type);
+            } else {
+                result[vreg] = PhysLoc{desired, m.type};
+            }
         }
     }
 

@@ -32,6 +32,15 @@ static const char* subInstrForType(VRegType type) {
     }
 }
 
+// imulb has no 2-operand form; Int8 multiplication is not supported here.
+static const char* imulInstrForType(VRegType type) {
+    switch (type) {
+        case VRegType::Int16: return "imulw";
+        case VRegType::Int32: return "imull";
+        default:              return "imulq";
+    }
+}
+
 static const char* negInstrForType(VRegType type) {
     switch (type) {
         case VRegType::Int8:  return "negb";
@@ -172,7 +181,13 @@ void PlnX86CodeGen::emit(const VProg& prog)
         for (auto& instr : func.instrs) {
             if (auto* i = std::get_if<LeaLabel>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
-                emitLeaLabel(sizedRegName(loc.base, loc.type), i->label);
+                if (!loc.isStack()) {
+                    emitLeaLabel(sizedRegName(loc.base, loc.type), i->label);
+                } else {
+                    // Spilled dst: load address into scratch %rax then store to stack.
+                    out << "\tleaq " << i->label << "(%rip), %rax\n";
+                    out << "\tmovq %rax, " << srcOperand(loc) << "\n";
+                }
             } else if (auto* i = std::get_if<MovImm>(&instr)) {
                 const PhysLoc& loc = rm.at(i->dst);
                 if (loc.isStack()) {
@@ -219,6 +234,56 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << scratch << "\n";
                     out << "\t" << movInstrForType(s->type) << " " << scratch << ", " << dst_mem << "\n";
                 }
+            } else if (auto* m = std::get_if<Mul>(&instr)) {
+                if (!rm.count(m->dst)) continue;  // dead: result never used
+                const PhysLoc& dst_loc = rm.at(m->dst);
+                const PhysLoc& lhs_loc = rm.at(m->lhs);
+                if (!dst_loc.isStack()) {
+                    string dst_reg = sizedRegName(dst_loc.base, m->type);
+                    out << "\t" << movInstrForType(m->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
+                    out << "\t" << imulInstrForType(m->type) << " " << srcOperand(rm.at(m->rhs)) << ", " << dst_reg << "\n";
+                } else {
+                    // Spilled dst: route through scratch %rax to avoid mem-mem.
+                    string scratch = sizedRegName("%rax", m->type);
+                    string dst_mem = srcOperand(dst_loc);
+                    out << "\t" << movInstrForType(m->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+                    out << "\t" << imulInstrForType(m->type) << " " << srcOperand(rm.at(m->rhs)) << ", " << scratch << "\n";
+                    out << "\t" << movInstrForType(m->type) << " " << scratch << ", " << dst_mem << "\n";
+                }
+            } else if (auto* dv = std::get_if<Div>(&instr)) {
+                if (!rm.count(dv->dst)) continue;  // dead: result never used
+                const PhysLoc& lhs_loc = rm.at(dv->lhs);
+                const PhysLoc& rhs_loc = rm.at(dv->rhs);
+                const PhysLoc& dst_loc = rm.at(dv->dst);
+                // idivq clobbers %rax and %rdx; save rhs if it lives in either.
+                string rhs_src = srcOperand(rhs_loc);
+                if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
+                    out << "\tmovq " << rhs_src << ", %r10\n";
+                    rhs_src = "%r10";
+                }
+                out << "\tmovq " << srcOperand(lhs_loc) << ", %rax\n";
+                out << "\tcqto\n";
+                out << "\tidivq " << rhs_src << "\n";
+                string dst_str = srcOperand(dst_loc);
+                if (dst_str != "%rax")
+                    out << "\tmovq %rax, " << dst_str << "\n";
+            } else if (auto* md = std::get_if<Mod>(&instr)) {
+                if (!rm.count(md->dst)) continue;  // dead: result never used
+                const PhysLoc& lhs_loc = rm.at(md->lhs);
+                const PhysLoc& rhs_loc = rm.at(md->rhs);
+                const PhysLoc& dst_loc = rm.at(md->dst);
+                // idivq clobbers %rax and %rdx; save rhs if it lives in either.
+                string rhs_src = srcOperand(rhs_loc);
+                if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
+                    out << "\tmovq " << rhs_src << ", %r10\n";
+                    rhs_src = "%r10";
+                }
+                out << "\tmovq " << srcOperand(lhs_loc) << ", %rax\n";
+                out << "\tcqto\n";
+                out << "\tidivq " << rhs_src << "\n";
+                string dst_str = srcOperand(dst_loc);
+                if (dst_str != "%rdx")
+                    out << "\tmovq %rdx, " << dst_str << "\n";
             } else if (auto* n = std::get_if<Neg>(&instr)) {
                 if (!rm.count(n->dst)) continue;  // dead: result never used
                 const PhysLoc& src_loc = rm.at(n->src);

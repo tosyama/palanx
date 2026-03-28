@@ -534,11 +534,11 @@ expression: term
 	| '-' expression %prec UNARY_MINUS
 	{ $$ = {{"expr-type", "neg"}, {"operand", $2}}; LOC($$, @$); }
 	| expression '*' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "mul"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '/' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "div"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '%' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "mod"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '&' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '|' expression

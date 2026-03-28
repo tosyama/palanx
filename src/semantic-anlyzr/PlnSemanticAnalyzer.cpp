@@ -197,7 +197,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			sa_expr["value-type"] = *varType;
 		}
 
-	} else if (expr_type == "add" || expr_type == "sub") {
+	} else if (expr_type == "add" || expr_type == "sub"
+	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod") {
 		json left  = sa_expression(expr["left"]);
 		json right = sa_expression(expr["right"]);
 		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
