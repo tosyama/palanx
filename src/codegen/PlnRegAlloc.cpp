@@ -18,7 +18,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     };
     map<VReg, VRegMeta> meta;
 
-    vector<int> call_indices;  // instruction indices of all CallC
+    vector<int> call_indices;    // instruction indices of all CallC/CallPln
+    vector<int> divmod_indices;  // instruction indices of all Div/Mod (%rax/%rdx clobbered)
 
     for (int i = 0; i < (int)func.instrs.size(); i++) {
         auto& instr = func.instrs[i];
@@ -52,11 +53,13 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             meta[m->lhs].last_any_use = max(meta[m->lhs].last_any_use, i);
             meta[m->rhs].last_any_use = max(meta[m->rhs].last_any_use, i);
         } else if (auto* d = get_if<Div>(&instr)) {
+            divmod_indices.push_back(i);
             meta[d->dst].def_idx = i;
             meta[d->dst].type    = d->type;
             meta[d->lhs].last_any_use = max(meta[d->lhs].last_any_use, i);
             meta[d->rhs].last_any_use = max(meta[d->rhs].last_any_use, i);
         } else if (auto* md = get_if<Mod>(&instr)) {
+            divmod_indices.push_back(i);
             meta[md->dst].def_idx = i;
             meta[md->dst].type    = md->type;
             meta[md->lhs].last_any_use = max(meta[md->lhs].last_any_use, i);
@@ -238,6 +241,19 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 // same instruction as m's definition (e.g. call args die when the call
                 // produces its result), so no real conflict.
                 if (u_last > m.def_idx) { conflict = true; break; }
+            }
+            // %rax and %rdx are clobbered by every Div/Mod instruction (idivq uses
+            // %rdx:%rax as dividend and overwrites both).  If this vreg's live range
+            // spans any Div/Mod, avoid assigning it to those registers.
+            if (!conflict && (desired == "%rdx" || desired == "%rax")) {
+                int live_start = m.def_idx < 0 ? 0 : m.def_idx;
+                int live_end   = m.call_uses.front().first;
+                for (int dm : divmod_indices) {
+                    if (dm > live_start && dm < live_end) {
+                        conflict = true;
+                        break;
+                    }
+                }
             }
             if (conflict) {
                 allocCalleeSavedOrStack(vreg, m.type);
