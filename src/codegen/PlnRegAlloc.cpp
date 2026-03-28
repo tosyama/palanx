@@ -280,7 +280,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     if (!func.isEntry && k > 0) {
         int save_area = k * 8;
         for (auto& [vreg, loc] : result) {
-            if (loc.isStack())
+            if (loc.isStack() && loc.stackOffset < 0)
                 loc.stackOffset -= save_area;
         }
         stack_bytes += save_area;
