@@ -340,14 +340,34 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     emitConvert(dst_reg, rm.at(c->src), c->from, c->to);
                 }
             } else if (auto* i = std::get_if<CallC>(&instr)) {
-                for (int j = 0; j < (int)i->args.size(); j++) {
+                int n_regs = (int)x86PhysRegs.intArgs.size();
+                for (int j = 0; j < (int)i->args.size() && j < n_regs; j++) {
                     const PhysLoc& src_loc = rm.at(i->args[j]);
                     string src = srcOperand(src_loc);
                     string dst = sizedRegName(x86PhysRegs.intArgs[j], src_loc.type);
                     if (src != dst)
                         out << "\t" << movInstrForType(src_loc.type) << " " << src << ", " << dst << "\n";
                 }
+                int n_stack = (int)i->args.size() - n_regs;
+                int stack_space = 0;
+                if (n_stack > 0) {
+                    stack_space = ((n_stack * 8) + 15) & ~15;
+                    out << "\tsubq $" << stack_space << ", %rsp\n";
+                    for (int j = n_regs; j < (int)i->args.size(); j++) {
+                        int offset = (j - n_regs) * 8;
+                        const PhysLoc& src_loc = rm.at(i->args[j]);
+                        if (src_loc.isStack()) {
+                            out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
+                            out << "\tmovq %r10, " << offset << "(%rsp)\n";
+                        } else {
+                            out << "\tmovq " << srcOperand(src_loc)
+                                << ", " << offset << "(%rsp)\n";
+                        }
+                    }
+                }
                 emitCallC(i->name);
+                if (stack_space > 0)
+                    out << "\taddq $" << stack_space << ", %rsp\n";
                 if (i->dst != -1 && rm.count(i->dst)) {
                     const PhysLoc& dst_loc = rm.at(i->dst);
                     string dst_reg = srcOperand(dst_loc);
@@ -356,15 +376,35 @@ void PlnX86CodeGen::emit(const VProg& prog)
                         out << "\t" << movInstrForType(i->retType) << " " << rax << ", " << dst_reg << "\n";
                 }
             } else if (auto* c = std::get_if<CallPln>(&instr)) {
+                int n_regs = (int)x86PhysRegs.intArgs.size();
                 // Move arguments into intArgs registers.
-                for (int j = 0; j < (int)c->args.size(); j++) {
+                for (int j = 0; j < (int)c->args.size() && j < n_regs; j++) {
                     const PhysLoc& src = rm.at(c->args[j]);
                     string s = srcOperand(src);
                     string d = sizedRegName(x86PhysRegs.intArgs[j], src.type);
                     if (s != d)
                         out << "\t" << movInstrForType(src.type) << " " << s << ", " << d << "\n";
                 }
+                int n_stack = (int)c->args.size() - n_regs;
+                int stack_space = 0;
+                if (n_stack > 0) {
+                    stack_space = ((n_stack * 8) + 15) & ~15;
+                    out << "\tsubq $" << stack_space << ", %rsp\n";
+                    for (int j = n_regs; j < (int)c->args.size(); j++) {
+                        int offset = (j - n_regs) * 8;
+                        const PhysLoc& src_loc = rm.at(c->args[j]);
+                        if (src_loc.isStack()) {
+                            out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
+                            out << "\tmovq %r10, " << offset << "(%rsp)\n";
+                        } else {
+                            out << "\tmovq " << srcOperand(src_loc)
+                                << ", " << offset << "(%rsp)\n";
+                        }
+                    }
+                }
                 out << "\tcall " << c->name << "\n";
+                if (stack_space > 0)
+                    out << "\taddq $" << stack_space << ", %rsp\n";
                 // Move return value(s) to destination(s).
                 if (c->dsts.size() == 1 && rm.count(c->dsts[0])) {
                     // Single return: copy from %rax

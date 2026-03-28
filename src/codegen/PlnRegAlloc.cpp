@@ -73,7 +73,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         } else if (auto* c = get_if<CallC>(&instr)) {
             call_indices.push_back(i);
             for (int j = 0; j < (int)c->args.size(); j++) {
-                meta[c->args[j]].call_uses.push_back({i, j});
+                if (j < (int)phys.intArgs.size())
+                    meta[c->args[j]].call_uses.push_back({i, j});
+                else
+                    meta[c->args[j]].last_any_use = max(meta[c->args[j]].last_any_use, i);
             }
             if (c->dst != -1) {
                 meta[c->dst].def_idx = i;
@@ -81,8 +84,12 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             }
         } else if (auto* c = get_if<CallPln>(&instr)) {
             call_indices.push_back(i);
-            for (int j = 0; j < (int)c->args.size(); j++)
-                meta[c->args[j]].call_uses.push_back({i, j});
+            for (int j = 0; j < (int)c->args.size(); j++) {
+                if (j < (int)phys.intArgs.size())
+                    meta[c->args[j]].call_uses.push_back({i, j});
+                else
+                    meta[c->args[j]].last_any_use = max(meta[c->args[j]].last_any_use, i);
+            }
             for (int k = 0; k < (int)c->dsts.size(); k++) {
                 meta[c->dsts[k]].def_idx = i;
                 meta[c->dsts[k]].type    = c->retTypes[k];
@@ -138,7 +145,14 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     vector<tuple<string, VReg, VRegType>> pendingParamCopies;
     for (int j = 0; j < (int)func.params.size(); j++) {
         auto [vreg, type] = func.params[j];
-        BOOST_ASSERT(j < (int)phys.intArgs.size());
+
+        if (j >= (int)phys.intArgs.size()) {
+            // Stack parameter: passed by caller above %rbp → 16(%rbp), 24(%rbp), ...
+            // The caller's stack is stable across all calls within this function.
+            int offset = (j - (int)phys.intArgs.size() + 2) * 8;
+            result[vreg] = PhysLoc{"", type, offset};
+            continue;
+        }
 
         const VRegMeta& m = meta[vreg];
         int last_use = m.last_any_use;
