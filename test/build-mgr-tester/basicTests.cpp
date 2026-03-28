@@ -49,6 +49,12 @@ TEST(build_mgr, fibonacci) {
 	ASSERT_EQ(output, "55\n");
 }
 
+TEST(build_mgr, abs_gcd_lcm) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/007_abs_gcd_lcm.pa");
+	ASSERT_EQ(output, "abs=42 gcd=4 lcm=12 abs=7 gcd=6 lcm=30\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
