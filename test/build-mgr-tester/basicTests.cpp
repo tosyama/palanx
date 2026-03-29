@@ -55,6 +55,13 @@ TEST(build_mgr, abs_gcd_lcm) {
 	ASSERT_EQ(output, "abs=42 gcd=4 lcm=12 abs=7 gcd=6 lcm=30\n");
 }
 
+TEST(build_mgr, register_spill) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/008_register_spill.pa");
+	// Sub/Mul/Neg/Cmp dst spilled to stack when all callee-saved regs exhausted
+	ASSERT_EQ(output, "12\n26\n2\n9\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
