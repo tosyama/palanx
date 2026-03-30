@@ -62,6 +62,20 @@ TEST(build_mgr, register_spill) {
 	ASSERT_EQ(output, "12\n26\n2\n9\n");
 }
 
+TEST(build_mgr, seven_param_palan_func) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/009_seven_param_palan_func.pa");
+	// 7th param passes on stack (RegAlloc lines 94, 155-158; X86CodeGen stack-arg path)
+	ASSERT_EQ(output, "28\n");
+}
+
+TEST(build_mgr, divmod_rdx_conflict) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/010_divmod_rdx_conflict.pa");
+	// vreg desired for %rdx whose live range spans a Div → conflict → callee-saved (RegAlloc lines 252-254)
+	ASSERT_EQ(output, "17\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
