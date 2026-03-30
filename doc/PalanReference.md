@@ -148,10 +148,18 @@ int32 a = 5, b = 10;   // type inheritance: b is also int32
 | Identifier | `name` | `x` |
 | Addition | `expr + expr` | `a + b` |
 | Subtraction | `expr - expr` | `a - b` |
+| Multiplication | `expr * expr` | `a * b` |
+| Division | `expr / expr` | `a / b` |
+| Modulo | `expr % expr` | `a % b` |
+| Unary minus | `-expr` | `-x` |
+| Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
 | Explicit cast | `type(expr)` | `int32(x)` |
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
+
+Operator precedence (high to low): unary minus, `* / %`, `+ -`, comparisons, `->`.
+All binary operators are left-associative.
 
 Comparison operators produce `int32` (1 if true, 0 if false). Both operands are widened to the same type before comparison.
 

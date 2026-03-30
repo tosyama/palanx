@@ -1,0 +1,54 @@
+cinclude <stdio.h>;
+
+// Register spill tests for PlnX86CodeGen spill paths.
+//
+// Each function declares 3 "a + N" var-decls (each producing 2 VRegs:
+// MovImm result + Add result).  With 2 params pre-bound to arg registers,
+// those 6 VRegs exhaust all 5 callee-saved registers (%rbx, %r12..%r15),
+// forcing the Sub / Mul / Neg / Cmp dst VReg to be allocated on the stack.
+// This exercises the spill-path branches in PlnX86CodeGen.
+
+// Sub dst on stack (lines 231-236 in PlnX86CodeGen)
+func test_sub_spill(int64 a, int64 b) -> int64 {
+    int64 v1 = a + 1;
+    int64 v2 = a + 2;
+    int64 v3 = a + 3;
+    int64 s = v1 - v2;
+    return s + v3;
+}
+
+// Mul dst on stack (lines 247-252)
+func test_mul_spill(int64 a, int64 b) -> int64 {
+    int64 v1 = a + 1;
+    int64 v2 = a + 2;
+    int64 v3 = a + 3;
+    int64 m = v1 * v2;
+    return m + v3;
+}
+
+// Neg dst on stack (lines 297-302)
+func test_neg_spill(int64 a, int64 b) -> int64 {
+    int64 v1 = a + 1;
+    int64 v2 = a + 2;
+    int64 v3 = a + 3;
+    int64 n = -v1;
+    return n + v3;
+}
+
+// Cmp dst on stack (lines 326-328) + Convert dst on stack (lines 335-337)
+func test_cmp_spill(int64 a, int64 b) -> int64 {
+    int64 v1 = a + 1;
+    int64 v2 = a + 2;
+    int64 v3 = a + 3;
+    int32 c = v1 < v2;
+    return v3 + c;
+}
+
+// test_sub_spill(10, 0): v1=11 v2=12 v3=13  s=11-12=-1  -1+13=12
+printf("%lld\n", test_sub_spill(10, 0));
+// test_mul_spill(3, 0):  v1=4  v2=5  v3=6   m=4*5=20    20+6=26
+printf("%lld\n", test_mul_spill(3, 0));
+// test_neg_spill(5, 0):  v1=6  v2=7  v3=8   n=-6        -6+8=2
+printf("%lld\n", test_neg_spill(5, 0));
+// test_cmp_spill(5, 0):  v1=6  v2=7  v3=8   c=1         8+1=9
+printf("%lld\n", test_cmp_spill(5, 0));

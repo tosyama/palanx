@@ -22,6 +22,10 @@ enum class ExprKind {
     Id,
     Add,
     Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
     Cmp,
     Convert,
     CCCall,
@@ -67,6 +71,33 @@ struct SubExpr : Expr {
     SubExpr() : Expr(ExprKind::Sub) {}
     unique_ptr<Expr> left;
     unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct MulExpr : Expr {
+    MulExpr() : Expr(ExprKind::Mul) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct DivExpr : Expr {
+    DivExpr() : Expr(ExprKind::Div) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct ModExpr : Expr {
+    ModExpr() : Expr(ExprKind::Mod) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct NegExpr : Expr {
+    NegExpr() : Expr(ExprKind::Neg) {}
+    unique_ptr<Expr> operand;
     VRegType type = VRegType::Int64;
 };
 

@@ -195,11 +195,27 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		if (varType != nullptr) {
 			sa_expr["var-type"]   = *varType;
 			sa_expr["value-type"] = *varType;
+		} else {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
+			exit(1);
 		}
 
-	} else if (expr_type == "add") {
-		json left  = sa_expression(expr["left"]);
-		json right = sa_expression(expr["right"]);
+	} else if (expr_type == "add" || expr_type == "sub"
+	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod") {
+		// First pass: propagate expectedType so that lit-int leaves can adopt the
+		// context type (e.g. both sides of `(4+4)` in `int32 x = (4+4)` → int32).
+		json left  = sa_expression(expr["left"],  expectedType);
+		json right = sa_expression(expr["right"], expectedType);
+		// Second pass: if one side is a lit-int and the other has a concrete type
+		// (from a variable), re-type the literal to match — this takes precedence
+		// over expectedType (e.g. `int64_var + 4` keeps int64, not expectedType).
+		if (expr["left"]["expr-type"] == "lit-int" && right.contains("value-type")) {
+			const PlnType* hint = registry_.fromJson(right["value-type"]);
+			left = sa_expression(expr["left"], hint);
+		} else if (expr["right"]["expr-type"] == "lit-int" && left.contains("value-type")) {
+			const PlnType* hint = registry_.fromJson(left["value-type"]);
+			right = sa_expression(expr["right"], hint);
+		}
 		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 		const PlnType* rightType = registry_.fromJson(right["value-type"]);
 		const PlnType* promoted;
@@ -216,24 +232,10 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		sa_expr["right"]      = right;
 		sa_expr["value-type"] = registry_.toJson(promoted);
 
-	} else if (expr_type == "sub") {
-		json left  = sa_expression(expr["left"]);
-		json right = sa_expression(expr["right"]);
-		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
-		const PlnType* rightType = registry_.fromJson(right["value-type"]);
-		const PlnType* promoted;
-		if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
-			promoted = rightType;
-			left = wrapConvert(left, registry_.toJson(promoted));
-		} else if (typeCompat(rightType, leftType, registry_) == TypeCompat::ImplicitWiden) {
-			promoted = leftType;
-			right = wrapConvert(right, registry_.toJson(promoted));
-		} else {
-			promoted = leftType;
-		}
-		sa_expr["left"]       = left;
-		sa_expr["right"]      = right;
-		sa_expr["value-type"] = registry_.toJson(promoted);
+	} else if (expr_type == "neg") {
+		json operand = sa_expression(expr["operand"]);
+		sa_expr["operand"]    = operand;
+		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "cmp") {
 		json left  = sa_expression(expr["left"]);
@@ -334,10 +336,12 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
-		declareVar(name, var["var-type"], &stmt);
 
 		json sa_var = var;
 		if (var.contains("init")) {
+			// Evaluate init before declaring the variable so that the variable
+			// itself is not in scope during its own initializer (e.g. `int32 z = z+1`
+			// should be an error, not silently read uninitialized z).
 			const PlnType* toType = registry_.fromJson(var["var-type"]);
 			json init = sa_expression(var["init"], toType);
 			const json& var_type = var["var-type"];
@@ -357,6 +361,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			}
 			sa_var["init"] = init;
 		}
+		declareVar(name, var["var-type"], &stmt);
 		sa_stmt["vars"].push_back(sa_var);
 	}
 	return sa_stmt;

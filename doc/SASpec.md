@@ -92,6 +92,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   - add: promoted type of left and right operands (see Promotion rules);
     the narrower operand is wrapped in a convert node if types differ
   - sub: same promotion rules as add
+  - neg: same type as operand (no promotion)
   - cmp: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
     left and right operands are promoted by the same rules as add
   - call: present when the function has a return type (ret-type in its definition)

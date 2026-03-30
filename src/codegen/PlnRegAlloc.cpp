@@ -18,7 +18,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     };
     map<VReg, VRegMeta> meta;
 
-    vector<int> call_indices;  // instruction indices of all CallC
+    vector<int> call_indices;    // instruction indices of all CallC/CallPln
+    vector<int> divmod_indices;  // instruction indices of all Div/Mod (%rax/%rdx clobbered)
 
     for (int i = 0; i < (int)func.instrs.size(); i++) {
         auto& instr = func.instrs[i];
@@ -46,6 +47,27 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             meta[s->dst].type    = s->type;
             meta[s->lhs].last_any_use = max(meta[s->lhs].last_any_use, i);
             meta[s->rhs].last_any_use = max(meta[s->rhs].last_any_use, i);
+        } else if (auto* m = get_if<Mul>(&instr)) {
+            meta[m->dst].def_idx = i;
+            meta[m->dst].type    = m->type;
+            meta[m->lhs].last_any_use = max(meta[m->lhs].last_any_use, i);
+            meta[m->rhs].last_any_use = max(meta[m->rhs].last_any_use, i);
+        } else if (auto* d = get_if<Div>(&instr)) {
+            divmod_indices.push_back(i);
+            meta[d->dst].def_idx = i;
+            meta[d->dst].type    = d->type;
+            meta[d->lhs].last_any_use = max(meta[d->lhs].last_any_use, i);
+            meta[d->rhs].last_any_use = max(meta[d->rhs].last_any_use, i);
+        } else if (auto* md = get_if<Mod>(&instr)) {
+            divmod_indices.push_back(i);
+            meta[md->dst].def_idx = i;
+            meta[md->dst].type    = md->type;
+            meta[md->lhs].last_any_use = max(meta[md->lhs].last_any_use, i);
+            meta[md->rhs].last_any_use = max(meta[md->rhs].last_any_use, i);
+        } else if (auto* n = get_if<Neg>(&instr)) {
+            meta[n->dst].def_idx = i;
+            meta[n->dst].type    = n->type;
+            meta[n->src].last_any_use = max(meta[n->src].last_any_use, i);
         } else if (auto* cm = get_if<Cmp>(&instr)) {
             meta[cm->dst].def_idx = i;
             meta[cm->dst].type    = VRegType::Int32;
@@ -54,7 +76,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         } else if (auto* c = get_if<CallC>(&instr)) {
             call_indices.push_back(i);
             for (int j = 0; j < (int)c->args.size(); j++) {
-                meta[c->args[j]].call_uses.push_back({i, j});
+                if (j < (int)phys.intArgs.size())
+                    meta[c->args[j]].call_uses.push_back({i, j});
+                else
+                    meta[c->args[j]].last_any_use = max(meta[c->args[j]].last_any_use, i);
             }
             if (c->dst != -1) {
                 meta[c->dst].def_idx = i;
@@ -62,8 +87,12 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             }
         } else if (auto* c = get_if<CallPln>(&instr)) {
             call_indices.push_back(i);
-            for (int j = 0; j < (int)c->args.size(); j++)
-                meta[c->args[j]].call_uses.push_back({i, j});
+            for (int j = 0; j < (int)c->args.size(); j++) {
+                if (j < (int)phys.intArgs.size())
+                    meta[c->args[j]].call_uses.push_back({i, j});
+                else
+                    meta[c->args[j]].last_any_use = max(meta[c->args[j]].last_any_use, i);
+            }
             for (int k = 0; k < (int)c->dsts.size(); k++) {
                 meta[c->dsts[k]].def_idx = i;
                 meta[c->dsts[k]].type    = c->retTypes[k];
@@ -119,7 +148,14 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     vector<tuple<string, VReg, VRegType>> pendingParamCopies;
     for (int j = 0; j < (int)func.params.size(); j++) {
         auto [vreg, type] = func.params[j];
-        BOOST_ASSERT(j < (int)phys.intArgs.size());
+
+        if (j >= (int)phys.intArgs.size()) {
+            // Stack parameter: passed by caller above %rbp → 16(%rbp), 24(%rbp), ...
+            // The caller's stack is stable across all calls within this function.
+            int offset = (j - (int)phys.intArgs.size() + 2) * 8;
+            result[vreg] = PhysLoc{"", type, offset};
+            continue;
+        }
 
         const VRegMeta& m = meta[vreg];
         int last_use = m.last_any_use;
@@ -185,7 +221,45 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         } else {
             int arg_pos = m.call_uses.front().second;
             BOOST_ASSERT(arg_pos < (int)phys.intArgs.size());
-            result[vreg] = PhysLoc{phys.intArgs[arg_pos], m.type};
+            // If another vreg mapped to the desired register is still live at this vreg's
+            // definition point, we'd clobber it.  Detect this and use callee-saved instead.
+            // (e.g. Mod dst and the rhs param both want %rsi, but rhs is still live at Mod.)
+            const string& desired = phys.intArgs[arg_pos];
+            bool conflict = false;
+            for (auto& [vr, loc] : result) {
+                if (loc.isStack() || loc.base != desired) continue;
+                // Check if vr is live at m.def_idx.
+                // Params have def_idx=-1 (never set by an instruction); treat them as
+                // defined at 0 (live from function entry).
+                const VRegMeta& um = meta[vr];
+                int u_def = (um.def_idx < 0) ? 0 : um.def_idx;
+                if (u_def > m.def_idx) continue;
+                int u_last = um.last_any_use;
+                for (auto& [ci, pos] : um.call_uses)
+                    u_last = max(u_last, ci);
+                // Strict ">": if u_last == m.def_idx the existing VReg's last use is the
+                // same instruction as m's definition (e.g. call args die when the call
+                // produces its result), so no real conflict.
+                if (u_last > m.def_idx) { conflict = true; break; }
+            }
+            // %rax and %rdx are clobbered by every Div/Mod instruction (idivq uses
+            // %rdx:%rax as dividend and overwrites both).  If this vreg's live range
+            // spans any Div/Mod, avoid assigning it to those registers.
+            if (!conflict && (desired == "%rdx" || desired == "%rax")) {
+                int live_start = m.def_idx < 0 ? 0 : m.def_idx;
+                int live_end   = m.call_uses.front().first;
+                for (int dm : divmod_indices) {
+                    if (dm > live_start && dm < live_end) {
+                        conflict = true;
+                        break;
+                    }
+                }
+            }
+            if (conflict) {
+                allocCalleeSavedOrStack(vreg, m.type);
+            } else {
+                result[vreg] = PhysLoc{desired, m.type};
+            }
         }
     }
 
@@ -222,7 +296,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     if (!func.isEntry && k > 0) {
         int save_area = k * 8;
         for (auto& [vreg, loc] : result) {
-            if (loc.isStack())
+            if (loc.isStack() && loc.stackOffset < 0)
                 loc.stackOffset -= save_area;
         }
         stack_bytes += save_area;

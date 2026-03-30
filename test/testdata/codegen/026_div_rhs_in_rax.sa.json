@@ -1,0 +1,106 @@
+{
+  "original": "/test/div_rhs_in_rax.pa",
+  "str-literals": [
+    { "label": ".str0", "value": "%ld\n" }
+  ],
+  "functions": [
+    {
+      "name": "tricky",
+      "func-type": "palan",
+      "parameters": [
+        { "name": "a", "var-type": { "type-kind": "prim", "type-name": "int64" } },
+        { "name": "b", "var-type": { "type-kind": "prim", "type-name": "int64" } }
+      ],
+      "ret-type": { "type-kind": "prim", "type-name": "int64" },
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            {
+              "name": "r",
+              "var-type": { "type-kind": "prim", "type-name": "int64" },
+              "init": {
+                "expr-type": "add",
+                "value-type": { "type-kind": "prim", "type-name": "int64" },
+                "left":  { "expr-type": "id", "name": "a",
+                           "var-type": { "type-kind": "prim", "type-name": "int64" },
+                           "value-type": { "type-kind": "prim", "type-name": "int64" } },
+                "right": { "expr-type": "id", "name": "b",
+                           "var-type": { "type-kind": "prim", "type-name": "int64" },
+                           "value-type": { "type-kind": "prim", "type-name": "int64" } }
+              }
+            }
+          ]
+        },
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            {
+              "name": "q",
+              "var-type": { "type-kind": "prim", "type-name": "int64" },
+              "init": {
+                "expr-type": "div",
+                "value-type": { "type-kind": "prim", "type-name": "int64" },
+                "left":  { "expr-type": "id", "name": "a",
+                           "var-type": { "type-kind": "prim", "type-name": "int64" },
+                           "value-type": { "type-kind": "prim", "type-name": "int64" } },
+                "right": { "expr-type": "id", "name": "r",
+                           "var-type": { "type-kind": "prim", "type-name": "int64" },
+                           "value-type": { "type-kind": "prim", "type-name": "int64" } }
+              }
+            }
+          ]
+        },
+        {
+          "stmt-type": "expr",
+          "body": {
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "printf",
+            "args": [
+              { "expr-type": "lit-str", "label": ".str0",
+                "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } } },
+              { "expr-type": "id", "name": "q",
+                "var-type": { "type-kind": "prim", "type-name": "int64" },
+                "value-type": { "type-kind": "prim", "type-name": "int64" } }
+            ]
+          }
+        },
+        {
+          "stmt-type": "return",
+          "values": [
+            { "expr-type": "id", "name": "r",
+              "var-type": { "type-kind": "prim", "type-name": "int64" },
+              "value-type": { "type-kind": "prim", "type-name": "int64" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0",
+            "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } } },
+          {
+            "expr-type": "call",
+            "func-type": "pln",
+            "name": "tricky",
+            "value-type": { "type-kind": "prim", "type-name": "int64" },
+            "args": [
+              { "expr-type": "lit-int", "value": "10",
+                "value-type": { "type-kind": "prim", "type-name": "int64" } },
+              { "expr-type": "lit-int", "value": "2",
+                "value-type": { "type-kind": "prim", "type-name": "int64" } }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

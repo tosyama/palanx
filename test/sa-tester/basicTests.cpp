@@ -516,3 +516,25 @@ TEST(sa, block_func_def) {
 	}
 	ASSERT_TRUE(found_call);
 }
+
+TEST(sa, unary_minus) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/038_unary_minus.pa");
+
+	// Second var-decl: y = -x  should have neg init with value-type int64
+	bool found_neg = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (!v.contains("init")) continue;
+			auto& init = v["init"];
+			if (init["expr-type"] == "neg") {
+				ASSERT_TRUE(init.contains("operand"));
+				ASSERT_EQ(init["value-type"]["type-name"], "int64");
+				ASSERT_EQ(init["operand"]["expr-type"], "id");
+				found_neg = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_neg);
+}

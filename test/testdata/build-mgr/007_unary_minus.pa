@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+
+func abs(int64 x) -> int64 {
+	if x < 0 { return -x; }
+	return x;
+}
+
+printf("%ld %ld\n", -42, abs(-7));

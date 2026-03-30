@@ -150,7 +150,7 @@ class PlnLexer;
 %type <json>	block_obj standalone_block block_body_items
 %type <json>	statement_or_funcdef
 %type <bool>	move_owner_r do_export
-%type <json>	tapple_decl tapple_decl_inner
+%type <json>	tapple_decl tapple_decl_inner tapple_inner
 %type <json>	if_stmt else_stmt
 
 %left ARROW DBL_ARROW
@@ -158,6 +158,7 @@ class PlnLexer;
 %left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
 %left '*' '/' '%' '&' '|'
+%right UNARY_MINUS
 %left '.'
 
 %start module
@@ -530,12 +531,14 @@ expression: term
 	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '-' expression
 	{ $$ = {{"expr-type", "sub"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| '-' expression %prec UNARY_MINUS
+	{ $$ = {{"expr-type", "neg"}, {"operand", $2}}; LOC($$, @$); }
 	| expression '*' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "mul"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '/' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "div"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '%' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "mod"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '&' expression
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '|' expression
@@ -576,7 +579,14 @@ term: INT
 	| ID
 	{ $$ = {{"expr-type", "id"}, {"name", move($1)}}; LOC($$, @$); }
 	| '(' tapple_inner ')'
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{
+		// Single-expression grouping (e.g. -(2+3)): pass the inner expression through.
+		// Multi-expression tapple (e.g. (a, b)): not yet supported.
+		if ($2.count("not-impl"))
+			$$ = {{"expr-type", "not-impl"}};
+		else
+			$$ = $2;
+	}
 	| term '.' ID
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| term array_desc
@@ -584,9 +594,13 @@ term: INT
 	;
 
 tapple_inner: expression
+	{ $$ = $1; }
 	| '-'
+	{ $$ = {{"not-impl", true}}; }
 	| tapple_inner ',' expression
+	{ $$ = {{"not-impl", true}}; }
 	| tapple_inner ',' '-'
+	{ $$ = {{"not-impl", true}}; }
 	;
 
 func_call: term '(' arguments ')'

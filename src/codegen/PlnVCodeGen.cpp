@@ -87,6 +87,37 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Sub{dst, l, r, e.type});
             return dst;
         }
+        case ExprKind::Mul: {
+            auto& e  = static_cast<const MulExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Mul{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::Div: {
+            auto& e  = static_cast<const DivExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Div{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::Mod: {
+            auto& e  = static_cast<const ModExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Mod{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::Neg: {
+            auto& e  = static_cast<const NegExpr&>(expr);
+            VReg src = lowerExpr(*e.operand, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Neg{dst, src, e.type});
+            return dst;
+        }
         case ExprKind::Cmp: {
             auto& e  = static_cast<const CmpExpr&>(expr);
             VReg l   = lowerExpr(*e.left, func);
