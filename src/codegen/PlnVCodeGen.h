@@ -42,6 +42,7 @@ class PlnVCodeGen {
     void lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func);
     void lowerBlockStmt(const BlockStmt& stmt, VFunc& func);
     void lowerIfStmt(const IfStmt& stmt, VFunc& func);
+    void lowerWhileStmt(const WhileStmt& stmt, VFunc& func);
 
 public:
     VProg generate(const Module& module, bool noEntry = false);

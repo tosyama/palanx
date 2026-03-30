@@ -151,7 +151,7 @@ class PlnLexer;
 %type <json>	statement_or_funcdef
 %type <bool>	move_owner_r do_export
 %type <json>	tapple_decl tapple_decl_inner tapple_inner
-%type <json>	if_stmt else_stmt
+%type <json>	if_stmt else_stmt while_loop
 
 %left ARROW DBL_ARROW
 %left OPE_EQ OPE_NE
@@ -288,8 +288,7 @@ statement: import ';'
 	}
 	| while_loop
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		$$ = move($1);
 	}
 	| if_stmt
 	{
@@ -713,6 +712,10 @@ for_loop: KW_FOR ID ':' expression block
 	;
 
 while_loop: KW_WHILE expression block
+	{
+		$$ = {{"stmt-type", "while"}, {"cond", $2}, {"body", move($3)}};
+		LOC($$, @$);
+	}
 	;
 
 if_stmt: KW_IF expression block else_stmt

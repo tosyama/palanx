@@ -459,3 +459,23 @@ TEST(codegen, div_rhs_in_rax) {
     ASSERT_NE(asm_text.find("movq %rax, %r10"), string::npos);
     ASSERT_NE(asm_text.find("idivq %r10"),      string::npos);
 }
+
+TEST(codegen, while_loop) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/027_while_loop.sa.json";
+    string asmf = "out/027_while_loop.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // while loop: start/end labels
+    ASSERT_NE(asm_text.find(".Lwhile0_start:"),      string::npos);
+    ASSERT_NE(asm_text.find(".Lwhile0_end:"),        string::npos);
+    // condition test and conditional jump to end
+    ASSERT_NE(asm_text.find("testl"),                string::npos);
+    ASSERT_NE(asm_text.find("je "),                  string::npos);
+    // unconditional back-jump to start
+    ASSERT_NE(asm_text.find("\tjmp .Lwhile0_start"), string::npos);
+    ASSERT_NE(asm_text.find("call printf"),          string::npos);
+}

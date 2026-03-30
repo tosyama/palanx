@@ -303,6 +303,20 @@ void PlnVCodeGen::lowerIfStmt(const IfStmt& stmt, VFunc& func)
     func.instrs.push_back(Label{endLabel});
 }
 
+void PlnVCodeGen::lowerWhileStmt(const WhileStmt& stmt, VFunc& func)
+{
+    int    idx        = labelCounter_++;
+    string startLabel = ".Lwhile" + to_string(idx) + "_start";
+    string endLabel   = ".Lwhile" + to_string(idx) + "_end";
+
+    func.instrs.push_back(Label{startLabel});
+    VReg cond = lowerExpr(*stmt.cond, func);
+    func.instrs.push_back(CondJmp{endLabel, cond, true});  // jump to end if cond == 0
+    lowerStmt(*stmt.body, func);
+    func.instrs.push_back(Jmp{startLabel});
+    func.instrs.push_back(Label{endLabel});
+}
+
 void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 {
     switch (stmt.kind) {
@@ -326,6 +340,9 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
             return;
         case StmtKind::If:
             lowerIfStmt(static_cast<const IfStmt&>(stmt), func);
+            return;
+        case StmtKind::While:
+            lowerWhileStmt(static_cast<const WhileStmt&>(stmt), func);
             return;
     }
     BOOST_ASSERT(false);

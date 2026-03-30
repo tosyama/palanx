@@ -144,6 +144,7 @@ enum class StmtKind {
     TappleDecl,
     Block,
     If,
+    While,
 };
 
 struct Stmt {
@@ -198,6 +199,12 @@ struct IfStmt : Stmt {
     unique_ptr<Expr> cond;
     unique_ptr<Stmt> thenStmt;  // always BlockStmt
     unique_ptr<Stmt> elseStmt;  // nullptr | BlockStmt | IfStmt (else-if chain)
+};
+
+struct WhileStmt : Stmt {
+    WhileStmt() : Stmt(StmtKind::While) {}
+    unique_ptr<Expr> cond;
+    unique_ptr<Stmt> body;  // always BlockStmt
 };
 
 // -------- Module --------

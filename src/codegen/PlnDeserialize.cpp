@@ -204,6 +204,14 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         }
         return s;
     }
+    if (stmt_type == "while") {
+        auto s = make_unique<WhileStmt>();
+        s->cond = deserializeExpr(j["cond"]);
+        auto body = make_unique<BlockStmt>();
+        body->body = deserializeStatements(j["body"]);
+        s->body = move(body);
+        return s;
+    }
     if (stmt_type == "not-impl") {
         return nullptr;
     }

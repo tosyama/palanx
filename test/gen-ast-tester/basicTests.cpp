@@ -321,6 +321,29 @@ TEST(gen_ast, if_stmt) {
 	ASSERT_TRUE(found_sign);
 }
 
+TEST(gen_ast, while_loop) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/009_while_loop.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_countdown = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "countDown") continue;
+		found_countdown = true;
+		const auto& body = f["block"]["body"];
+		ASSERT_GE(body.size(), 1u);
+		const auto& wh = body[0];
+		ASSERT_EQ(wh["stmt-type"], "while");
+		ASSERT_EQ(wh["cond"]["expr-type"], "cmp");
+		ASSERT_EQ(wh["cond"]["op"], ">");
+		ASSERT_TRUE(wh.contains("body"));
+		ASSERT_EQ(wh["body"].size(), 1u);
+		ASSERT_EQ(wh["body"][0]["stmt-type"], "assign");
+	}
+	ASSERT_TRUE(found_countdown);
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");
