@@ -11,8 +11,11 @@ make
 # Clean build artifacts
 make clean
 
-# Generate coverage report (HTML + lcov.info in build/)
-make coverage
+# Generate coverage report (lcov.info in build-cov/)
+make coverage           # full — all tests (incremental: build-cov/ persists)
+make coverage-codegen   # codegen only (faster)
+make coverage-sa        # semantic analyzer only (faster)
+make coverage-reset     # full clean rebuild of build-cov/
 ```
 
 **Dependencies:** g++ (C++20), CMake 3.16+, Flex, Bison 3.8+, libboost-dev, libfl-dev, lcov

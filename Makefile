@@ -14,18 +14,36 @@ build/CMakeCache.txt:
 	cd build && cmake -DCMAKE_BUILD_TYPE=Debug ..
 clean:
 	rm -r build
-coverage:
-	rm -rf build
-	mkdir build
-	cd build && cmake -DOUTPUT_COVERAGE=ON ..
-	cmake --build build
-	cd build && bin/c2ast-tester
-	cd build && bin/gen-ast-tester
-	cd build && bin/sa-tester
-	cd build && bin/codegen-tester
-	cd build && bin/build-mgr-tester
-	cd build && lcov -c -d . -b src -o all.info --rc branch_coverage=1 --ignore-errors mismatch
-	cd build && lcov -e all.info '*/palanx/src/*' -o lcov.info --rc branch_coverage=1
-	cd build && lcov -r lcov.info '*/PlnLexer.cpp' '*/PlnParser.cpp' '*/PlnParser.h' '*/location.hh' -o lcov.info --rc branch_coverage=1
+coverage: build-cov/CMakeCache.txt
+	find build-cov -name "*.gcda" -delete 2>/dev/null; true
+	cmake --build build-cov
+	cd build-cov && bin/c2ast-tester
+	cd build-cov && bin/gen-ast-tester
+	cd build-cov && bin/sa-tester
+	cd build-cov && bin/codegen-tester
+	cd build-cov && bin/build-mgr-tester
+	cd build-cov && lcov -c -d . -b src -o all.info --rc branch_coverage=1 --ignore-errors mismatch
+	cd build-cov && lcov -e all.info '*/palanx/src/*' -o lcov.info --rc branch_coverage=1
+	cd build-cov && lcov -r lcov.info '*/PlnLexer.cpp' '*/PlnParser.cpp' '*/PlnParser.h' '*/location.hh' -o lcov.info --rc branch_coverage=1
+build-cov/CMakeCache.txt:
+	mkdir -p build-cov
+	cd build-cov && cmake -DOUTPUT_COVERAGE=ON ..
+coverage-reset:
+	rm -rf build-cov
+coverage-codegen: build-cov/CMakeCache.txt
+	find build-cov -name "*.gcda" -delete 2>/dev/null; true
+	cmake --build build-cov
+	cd build-cov && bin/codegen-tester
+	cd build-cov && bin/build-mgr-tester
+	cd build-cov && lcov -c -d . -b src -o all.info --rc branch_coverage=1 --ignore-errors mismatch
+	cd build-cov && lcov -e all.info '*/palanx/src/codegen/*' -o lcov.info --rc branch_coverage=1
+	cd build-cov && lcov -r lcov.info '*/PlnParser.cpp' '*/PlnParser.h' '*/location.hh' -o lcov.info --rc branch_coverage=1
+coverage-sa: build-cov/CMakeCache.txt
+	find build-cov -name "*.gcda" -delete 2>/dev/null; true
+	cmake --build build-cov
+	cd build-cov && bin/sa-tester
+	cd build-cov && bin/sa-unit-tester
+	cd build-cov && lcov -c -d . -b src -o all.info --rc branch_coverage=1 --ignore-errors mismatch
+	cd build-cov && lcov -e all.info '*/palanx/src/semantic-anlyzr/*' -o lcov.info --rc branch_coverage=1
 
 
