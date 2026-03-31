@@ -479,3 +479,25 @@ TEST(codegen, while_loop) {
     ASSERT_NE(asm_text.find("\tjmp .Lwhile0_start"), string::npos);
     ASSERT_NE(asm_text.find("call printf"),          string::npos);
 }
+
+TEST(codegen, void_func) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/028_void_func.sa.json";
+    string asmf = "out/028_void_func.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // void function: label present, leave+ret emitted
+    ASSERT_NE(asm_text.find("greet:"),   string::npos);
+    ASSERT_NE(asm_text.find("leave"),    string::npos);
+    ASSERT_NE(asm_text.find("\tret"),    string::npos);
+    // caller: call instruction present, but no movq %rax after it
+    ASSERT_NE(asm_text.find("call greet"), string::npos);
+    // no return-value move: greet returns void so %rax is not copied anywhere
+    size_t call_pos = asm_text.find("call greet");
+    ASSERT_NE(call_pos, string::npos);
+    string after_call = asm_text.substr(call_pos + string("call greet").size(), 30);
+    ASSERT_EQ(after_call.find("movq %rax"), string::npos);
+}

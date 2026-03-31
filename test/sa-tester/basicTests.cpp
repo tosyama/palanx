@@ -559,3 +559,31 @@ TEST(sa, while_stmt) {
 	}
 	ASSERT_TRUE(found_while);
 }
+
+TEST(sa, void_func) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/040_void_func.pa");
+
+	ASSERT_TRUE(jout.is_object());
+
+	// greet function: no ret-type, body has bare return
+	ASSERT_EQ(jout["functions"].size(), 1u);
+	const json& greet = jout["functions"][0];
+	ASSERT_EQ(greet["name"], "greet");
+	ASSERT_FALSE(greet.contains("ret-type"));
+	ASSERT_FALSE(greet.contains("rets"));
+	ASSERT_EQ(greet["body"][0]["stmt-type"], "return");
+	ASSERT_FALSE(greet["body"][0].contains("values"));
+
+	// greet() called as expr stmt: no value-type on the call
+	bool found_call = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		auto& body = stmt["body"];
+		if (body["expr-type"] != "call" || body["name"] != "greet") continue;
+		ASSERT_EQ(body["func-type"], "palan");
+		ASSERT_FALSE(body.contains("value-type"));
+		found_call = true;
+	}
+	ASSERT_TRUE(found_call);
+}

@@ -172,11 +172,16 @@ void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
 {
     VReg src = lowerExpr(*stmt.value, func);
-    // Rebind in the scope where the variable was declared (not necessarily innermost).
+    // Find the variable's canonical VReg and emit a Mov to update it in place.
+    // This keeps the VReg identity stable so that backward references — most
+    // importantly, while-loop condition VInstrs that captured the VReg before the
+    // loop body ran — always see the current value after each iteration.
     for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
         auto f = it->find(stmt.name);
         if (f != it->end()) {
-            f->second = src;
+            VReg old_vreg = f->second;
+            if (old_vreg != src)
+                func.instrs.push_back(Mov{old_vreg, src, stmt.type});
             return;
         }
     }

@@ -160,6 +160,8 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     if (stmt_type == "assign") {
         auto s = make_unique<AssignStmt>();
         s->name  = j["name"];
+        s->type  = j["value"].contains("value-type") ? toVRegType(j["value"]["value-type"])
+                                                      : VRegType::Int64;
         s->value = deserializeExpr(j["value"]);
         return s;
     }

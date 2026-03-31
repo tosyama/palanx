@@ -20,6 +20,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
     vector<int> call_indices;    // instruction indices of all CallC/CallPln
     vector<int> divmod_indices;  // instruction indices of all Div/Mod (%rax/%rdx clobbered)
+    map<string, int> label_idx;  // label name → instruction index (for loop detection)
 
     for (int i = 0; i < (int)func.instrs.size(); i++) {
         auto& instr = func.instrs[i];
@@ -106,6 +107,24 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             }
         } else if (auto* cj = get_if<CondJmp>(&instr)) {
             meta[cj->cond].last_any_use = max(meta[cj->cond].last_any_use, i);
+        } else if (auto* lbl = get_if<Label>(&instr)) {
+            label_idx[lbl->name] = i;
+        } else if (auto* mv = get_if<Mov>(&instr)) {
+            // Mov copies src into dst (the variable's canonical VReg).
+            // dst is always isVar (allocated by Pass B); only src needs tracking here.
+            meta[mv->src].last_any_use = max(meta[mv->src].last_any_use, i);
+        }
+    }
+
+    // Collect loop regions: backward jumps define [loop_start_label_idx, jmp_idx].
+    // A parameter used inside a loop that also contains a call effectively crosses
+    // that call (next iteration re-executes the use after the call).
+    vector<pair<int,int>> loop_regions;
+    for (int i = 0; i < (int)func.instrs.size(); i++) {
+        if (auto* j = get_if<Jmp>(&func.instrs[i])) {
+            auto it = label_idx.find(j->label);
+            if (it != label_idx.end() && it->second < i)
+                loop_regions.push_back({it->second, i});
         }
     }
 
@@ -169,6 +188,25 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 break;
             }
         }
+        // Loop check: if a use and a call both appear in the same loop body,
+        // the backward jump causes re-execution of the use after the call.
+        if (!crosses_call) {
+            for (auto& [ls, le] : loop_regions) {
+                bool use_in_loop = (m.last_any_use >= ls && m.last_any_use <= le);
+                if (!use_in_loop) {
+                    for (auto& [ci, pos] : m.call_uses)
+                        if (ci >= ls && ci <= le) { use_in_loop = true; break; }
+                }
+                if (!use_in_loop) continue;
+                for (int c_idx : call_indices) {
+                    if (c_idx >= ls && c_idx <= le) {
+                        crosses_call = true;
+                        break;
+                    }
+                }
+                if (crosses_call) break;
+            }
+        }
 
         if (crosses_call) {
             allocCalleeSavedOrStack(vreg, type);
@@ -185,7 +223,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
     for (auto& [vreg, m] : meta) {
         if (result.count(vreg)) continue;  // already bound (e.g., param pre-binding)
-        if (m.isVar && m.call_uses.empty()) continue;  // Pass B handles stack-only isVar
+        if (m.isVar) continue;  // Pass B always allocates isVar to stack
 
         if (m.call_uses.empty()) {
             if (m.isRetValue && numRetValues == 1) {

@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+
+func print_range(int64 n) {
+    int64 i = 1;
+    while i <= n {
+        printf("%ld\n", i);
+        i + 1 -> i;
+    }
+}
+
+print_range(3);

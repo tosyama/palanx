@@ -345,8 +345,12 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			// should be an error, not silently read uninitialized z).
 			const PlnType* toType = registry_.fromJson(var["var-type"]);
 			json init = sa_expression(var["init"], toType);
+			if (!init.contains("value-type")) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+				exit(1);
+			}
 			const json& var_type = var["var-type"];
-			if (init.contains("value-type") && init["value-type"] != var_type) {
+			if (init["value-type"] != var_type) {
 				const PlnType* fromType = registry_.fromJson(init["value-type"]);
 				TypeCompat compat = typeCompat(fromType, toType, registry_);
 				if (compat == TypeCompat::ImplicitWiden) {
@@ -489,12 +493,14 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	}
 	const PlnType* toType = registry_.fromJson(*varType);
 	json value = sa_expression(stmt["value"], toType);
-	if (value.contains("value-type")) {
-		const PlnType* fromType = registry_.fromJson(value["value-type"]);
-		TypeCompat compat = typeCompat(fromType, toType, registry_);
-		if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-			value = wrapConvert(value, registry_.toJson(toType));
+	if (!value.contains("value-type")) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+		exit(1);
 	}
+	const PlnType* fromType = registry_.fromJson(value["value-type"]);
+	TypeCompat compat = typeCompat(fromType, toType, registry_);
+	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
+		value = wrapConvert(value, registry_.toJson(toType));
 	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
 }
 

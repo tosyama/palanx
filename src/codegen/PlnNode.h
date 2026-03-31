@@ -172,7 +172,8 @@ struct VarDeclStmt : Stmt {
 
 struct AssignStmt : Stmt {
     AssignStmt() : Stmt(StmtKind::Assign) {}
-    string           name;   // destination variable name
+    string           name;                       // destination variable name
+    VRegType         type = VRegType::Int64;     // type of the assigned value
     unique_ptr<Expr> value;
 };
 

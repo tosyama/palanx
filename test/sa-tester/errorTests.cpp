@@ -176,3 +176,12 @@ TEST(sa_error, import_file_not_found) {
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("Could not open import file"), string::npos);
 }
+
+TEST(sa_error, void_call_as_expr) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_040_void_call_as_expr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("Void function call cannot be used as a value"), string::npos);
+}

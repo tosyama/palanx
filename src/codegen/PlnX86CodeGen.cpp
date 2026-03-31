@@ -469,6 +469,25 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 }
                 out << "\ttestl " << cond_reg << ", " << cond_reg << "\n";
                 out << (cj->jumpIfZero ? "\tje " : "\tjne ") << cj->label << "\n";
+            } else if (auto* mv = std::get_if<Mov>(&instr)) {
+                // Copy src into dst (variable's canonical stack slot or register).
+                if (!rm.count(mv->dst) || !rm.count(mv->src)) continue;
+                const PhysLoc& dst_loc = rm.at(mv->dst);
+                const PhysLoc& src_loc = rm.at(mv->src);
+                string s = srcOperand(src_loc);
+                string d = srcOperand(dst_loc);
+                if (s == d) continue;  // same location: no-op
+                if (!dst_loc.isStack()) {
+                    string dst_reg = sizedRegName(dst_loc.base, mv->type);
+                    out << "\t" << movInstrForType(mv->type) << " " << s << ", " << dst_reg << "\n";
+                } else if (!src_loc.isStack()) {
+                    out << "\t" << movInstrForType(mv->type) << " " << s << ", " << d << "\n";
+                } else {
+                    // Both on stack: route through scratch %rax.
+                    string scratch = sizedRegName("%rax", mv->type);
+                    out << "\t" << movInstrForType(mv->type) << " " << s << ", " << scratch << "\n";
+                    out << "\t" << movInstrForType(mv->type) << " " << scratch << ", " << d << "\n";
+                }
             }
         }
     }

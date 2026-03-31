@@ -1,0 +1,4 @@
+func greet(int64 n) {
+    return;
+}
+greet(1);
