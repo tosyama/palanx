@@ -480,6 +480,19 @@ TEST(codegen, while_loop) {
     ASSERT_NE(asm_text.find("call printf"),          string::npos);
 }
 
+TEST(codegen, int8_var) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/029_int8_var.sa.json";
+    string asmf = "out/029_int8_var.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Int8 variable → 1-byte stack slot: movb instruction and -1(%rbp) offset
+    ASSERT_NE(asm_text.find("movb $5, -1(%rbp)"), string::npos);
+}
+
 TEST(codegen, void_func) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/028_void_func.sa.json";
