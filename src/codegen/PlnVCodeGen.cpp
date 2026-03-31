@@ -172,11 +172,16 @@ void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
 {
     VReg src = lowerExpr(*stmt.value, func);
-    // Rebind in the scope where the variable was declared (not necessarily innermost).
+    // Find the variable's canonical VReg and emit a Mov to update it in place.
+    // This keeps the VReg identity stable so that backward references — most
+    // importantly, while-loop condition VInstrs that captured the VReg before the
+    // loop body ran — always see the current value after each iteration.
     for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
         auto f = it->find(stmt.name);
         if (f != it->end()) {
-            f->second = src;
+            VReg old_vreg = f->second;
+            if (old_vreg != src)
+                func.instrs.push_back(Mov{old_vreg, src, stmt.type});
             return;
         }
     }
@@ -303,6 +308,20 @@ void PlnVCodeGen::lowerIfStmt(const IfStmt& stmt, VFunc& func)
     func.instrs.push_back(Label{endLabel});
 }
 
+void PlnVCodeGen::lowerWhileStmt(const WhileStmt& stmt, VFunc& func)
+{
+    int    idx        = labelCounter_++;
+    string startLabel = ".Lwhile" + to_string(idx) + "_start";
+    string endLabel   = ".Lwhile" + to_string(idx) + "_end";
+
+    func.instrs.push_back(Label{startLabel});
+    VReg cond = lowerExpr(*stmt.cond, func);
+    func.instrs.push_back(CondJmp{endLabel, cond, true});  // jump to end if cond == 0
+    lowerStmt(*stmt.body, func);
+    func.instrs.push_back(Jmp{startLabel});
+    func.instrs.push_back(Label{endLabel});
+}
+
 void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 {
     switch (stmt.kind) {
@@ -326,6 +345,9 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
             return;
         case StmtKind::If:
             lowerIfStmt(static_cast<const IfStmt&>(stmt), func);
+            return;
+        case StmtKind::While:
+            lowerWhileStmt(static_cast<const WhileStmt&>(stmt), func);
             return;
     }
     BOOST_ASSERT(false);

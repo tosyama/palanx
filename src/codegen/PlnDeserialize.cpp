@@ -160,6 +160,8 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     if (stmt_type == "assign") {
         auto s = make_unique<AssignStmt>();
         s->name  = j["name"];
+        s->type  = j["value"].contains("value-type") ? toVRegType(j["value"]["value-type"])
+                                                      : VRegType::Int64;
         s->value = deserializeExpr(j["value"]);
         return s;
     }
@@ -202,6 +204,14 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
                 s->elseStmt = move(eb);
             }
         }
+        return s;
+    }
+    if (stmt_type == "while") {
+        auto s = make_unique<WhileStmt>();
+        s->cond = deserializeExpr(j["cond"]);
+        auto body = make_unique<BlockStmt>();
+        body->body = deserializeStatements(j["body"]);
+        s->body = move(body);
         return s;
     }
     if (stmt_type == "not-impl") {

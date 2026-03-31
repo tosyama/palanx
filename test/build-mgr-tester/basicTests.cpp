@@ -76,6 +76,35 @@ TEST(build_mgr, divmod_rdx_conflict) {
 	ASSERT_EQ(output, "17\n");
 }
 
+TEST(build_mgr, param_loop_call_arg) {
+	cleanTestEnv();
+	// Parameter n is used only as call arg inside loop (not Cmp operand).
+	// Covers RegAlloc lines 172-173: call_uses loop-region check for params.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/014_param_loop_call_arg.pa");
+	ASSERT_EQ(output, "42\n42\n42\n");
+}
+
+TEST(build_mgr, rdx_divmod_conflict) {
+	cleanTestEnv();
+	// r (CallPln result, desired %rdx) spans a Div before use as 3rd printf arg.
+	// Covers RegAlloc lines 265-267: divmod conflict detection forces callee-saved.
+	// Without the fix, idivq would clobber %rdx (remainder=1), giving "3 1" instead of "3 10".
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/015_rdx_divmod_conflict.pa");
+	ASSERT_EQ(output, "3 10\n");
+}
+
+TEST(build_mgr, collatz) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/012_collatz.pa");
+	ASSERT_EQ(output, "collatz(27) = 111\ncollatz(871) = 178\n");
+}
+
+TEST(build_mgr, fizzbuzz) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/013_fizzbuzz.pa");
+	ASSERT_EQ(output, "1\n2\nFizz\n4\nBuzz\nFizz\n7\n8\nFizz\nBuzz\n11\nFizz\n13\n14\nFizzBuzz\n16\n17\nFizz\n19\nBuzz\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

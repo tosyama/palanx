@@ -1,0 +1,50 @@
+{
+  "original": "/test/while_loop.pa",
+  "str-literals": [
+    { "label": ".str0", "value": "%lld\n" }
+  ],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "i",
+          "var-type": { "type-kind": "prim", "type-name": "int64" },
+          "init": { "expr-type": "lit-int", "value": "0", "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        }
+      ]
+    },
+    {
+      "stmt-type": "while",
+      "cond": {
+        "expr-type": "cmp",
+        "op": "<",
+        "value-type": { "type-kind": "prim", "type-name": "int32" },
+        "left":  { "expr-type": "id", "name": "i", "var-type": { "type-kind": "prim", "type-name": "int64" }, "value-type": { "type-kind": "prim", "type-name": "int64" } },
+        "right": { "expr-type": "lit-int", "value": "3", "value-type": { "type-kind": "prim", "type-name": "int64" } }
+      },
+      "body": [
+        {
+          "stmt-type": "assign",
+          "name": "i",
+          "value": {
+            "expr-type": "add",
+            "value-type": { "type-kind": "prim", "type-name": "int64" },
+            "left":  { "expr-type": "id", "name": "i", "var-type": { "type-kind": "prim", "type-name": "int64" }, "value-type": { "type-kind": "prim", "type-name": "int64" } },
+            "right": { "expr-type": "lit-int", "value": "1", "value-type": { "type-kind": "prim", "type-name": "int64" } }
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call", "func-type": "c", "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0", "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } } },
+          { "expr-type": "id", "name": "i", "var-type": { "type-kind": "prim", "type-name": "int64" }, "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        ]
+      }
+    }
+  ]
+}

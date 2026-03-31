@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+
+// r is the result of get_val() (non-isVar VReg, desired for %rdx as 3rd arg of printf).
+// A Div instruction appears between r's definition and its use as 3rd printf arg.
+// Without the divmod conflict check (RegAlloc lines 265-267), idivq would clobber
+// %rdx with the remainder (10%3=1), producing wrong output "3 1" instead of "3 10".
+func get_val() -> int64 { return 10; }
+
+int64 r = get_val();
+int64 q = r / 3;
+printf("%ld %ld\n", q, r);

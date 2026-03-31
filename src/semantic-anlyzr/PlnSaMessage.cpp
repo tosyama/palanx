@@ -70,6 +70,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_VoidBareReturn:
 			return "Void function requires bare 'return;' statement.";
 
+		case E_VoidCallUsedAsValue:
+			return "Void function call cannot be used as a value.";
+
 		case E_TupleUndefinedFunction:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Undefined function '" + arg1 + "'.";

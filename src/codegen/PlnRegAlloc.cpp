@@ -4,6 +4,11 @@
 
 using namespace std;
 
+// Visitor helper: overloaded{f1, f2, ...} dispatches std::visit to the matching overload.
+// All VInstr types must be handled; omitting one causes a compile error.
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
 RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 {
     // Step 1: Collect VReg metadata.
@@ -11,101 +16,90 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         VRegType type         = VRegType::Int64;
         int      def_idx      = -1;
         bool     isVar        = false;   // true if defined by InitVar (variable)
-        int      last_any_use = -1;      // last use by Add (non-call) instructions
+        int      last_any_use = -1;      // last use by non-call-argument instructions
         vector<pair<int,int>> call_uses; // (call_instr_idx, arg_position)
         bool     isRetValue   = false;   // true if used by RetPln
-        int      retIdx       = 0;       // position in RetPln rets[]
     };
     map<VReg, VRegMeta> meta;
 
     vector<int> call_indices;    // instruction indices of all CallC/CallPln
     vector<int> divmod_indices;  // instruction indices of all Div/Mod (%rax/%rdx clobbered)
+    map<string, int> label_idx;  // label name → instruction index (for loop detection)
 
     for (int i = 0; i < (int)func.instrs.size(); i++) {
         auto& instr = func.instrs[i];
-        if (auto* l = get_if<LeaLabel>(&instr)) {
-            meta[l->dst].def_idx = i;
-            meta[l->dst].type    = l->type;
-        } else if (auto* m = get_if<MovImm>(&instr)) {
-            meta[m->dst].def_idx = i;
-            meta[m->dst].type    = m->type;
-        } else if (auto* v = get_if<InitVar>(&instr)) {
-            meta[v->dst].def_idx = i;
-            meta[v->dst].type    = v->type;
-            meta[v->dst].isVar   = true;
-        } else if (auto* c = get_if<Convert>(&instr)) {
-            meta[c->dst].def_idx = i;
-            meta[c->dst].type    = c->to;
-            meta[c->src].last_any_use = max(meta[c->src].last_any_use, i);
-        } else if (auto* a = get_if<Add>(&instr)) {
-            meta[a->dst].def_idx = i;
-            meta[a->dst].type    = a->type;
-            meta[a->lhs].last_any_use = max(meta[a->lhs].last_any_use, i);
-            meta[a->rhs].last_any_use = max(meta[a->rhs].last_any_use, i);
-        } else if (auto* s = get_if<Sub>(&instr)) {
-            meta[s->dst].def_idx = i;
-            meta[s->dst].type    = s->type;
-            meta[s->lhs].last_any_use = max(meta[s->lhs].last_any_use, i);
-            meta[s->rhs].last_any_use = max(meta[s->rhs].last_any_use, i);
-        } else if (auto* m = get_if<Mul>(&instr)) {
-            meta[m->dst].def_idx = i;
-            meta[m->dst].type    = m->type;
-            meta[m->lhs].last_any_use = max(meta[m->lhs].last_any_use, i);
-            meta[m->rhs].last_any_use = max(meta[m->rhs].last_any_use, i);
-        } else if (auto* d = get_if<Div>(&instr)) {
-            divmod_indices.push_back(i);
-            meta[d->dst].def_idx = i;
-            meta[d->dst].type    = d->type;
-            meta[d->lhs].last_any_use = max(meta[d->lhs].last_any_use, i);
-            meta[d->rhs].last_any_use = max(meta[d->rhs].last_any_use, i);
-        } else if (auto* md = get_if<Mod>(&instr)) {
-            divmod_indices.push_back(i);
-            meta[md->dst].def_idx = i;
-            meta[md->dst].type    = md->type;
-            meta[md->lhs].last_any_use = max(meta[md->lhs].last_any_use, i);
-            meta[md->rhs].last_any_use = max(meta[md->rhs].last_any_use, i);
-        } else if (auto* n = get_if<Neg>(&instr)) {
-            meta[n->dst].def_idx = i;
-            meta[n->dst].type    = n->type;
-            meta[n->src].last_any_use = max(meta[n->src].last_any_use, i);
-        } else if (auto* cm = get_if<Cmp>(&instr)) {
-            meta[cm->dst].def_idx = i;
-            meta[cm->dst].type    = VRegType::Int32;
-            meta[cm->lhs].last_any_use = max(meta[cm->lhs].last_any_use, i);
-            meta[cm->rhs].last_any_use = max(meta[cm->rhs].last_any_use, i);
-        } else if (auto* c = get_if<CallC>(&instr)) {
-            call_indices.push_back(i);
-            for (int j = 0; j < (int)c->args.size(); j++) {
+
+        auto setDef = [&](VReg dst, VRegType type) {
+            meta[dst].def_idx = i;
+            meta[dst].type    = type;
+        };
+        auto addUse = [&](VReg vreg) {
+            meta[vreg].last_any_use = max(meta[vreg].last_any_use, i);
+        };
+        auto setBinOp = [&](VReg dst, VReg lhs, VReg rhs, VRegType type) {
+            setDef(dst, type);
+            addUse(lhs);
+            addUse(rhs);
+        };
+        auto addCallArgs = [&](const vector<VReg>& args) {
+            for (int j = 0; j < (int)args.size(); j++) {
                 if (j < (int)phys.intArgs.size())
-                    meta[c->args[j]].call_uses.push_back({i, j});
+                    meta[args[j]].call_uses.push_back({i, j});
                 else
-                    meta[c->args[j]].last_any_use = max(meta[c->args[j]].last_any_use, i);
+                    addUse(args[j]);
             }
-            if (c->dst != -1) {
-                meta[c->dst].def_idx = i;
-                meta[c->dst].type    = c->retType;
-            }
-        } else if (auto* c = get_if<CallPln>(&instr)) {
-            call_indices.push_back(i);
-            for (int j = 0; j < (int)c->args.size(); j++) {
-                if (j < (int)phys.intArgs.size())
-                    meta[c->args[j]].call_uses.push_back({i, j});
-                else
-                    meta[c->args[j]].last_any_use = max(meta[c->args[j]].last_any_use, i);
-            }
-            for (int k = 0; k < (int)c->dsts.size(); k++) {
-                meta[c->dsts[k]].def_idx = i;
-                meta[c->dsts[k]].type    = c->retTypes[k];
-            }
-        } else if (auto* r = get_if<RetPln>(&instr)) {
-            for (int k = 0; k < (int)r->rets.size(); k++) {
-                meta[r->rets[k]].last_any_use =
-                    max(meta[r->rets[k]].last_any_use, i);
-                meta[r->rets[k]].isRetValue = true;
-                meta[r->rets[k]].retIdx     = k;
-            }
-        } else if (auto* cj = get_if<CondJmp>(&instr)) {
-            meta[cj->cond].last_any_use = max(meta[cj->cond].last_any_use, i);
+        };
+
+        std::visit(overloaded{
+            [&](const LeaLabel& l) { setDef(l.dst, l.type); },
+            [&](const MovImm& m)   { setDef(m.dst, m.type); },
+            [&](const InitVar& v)  { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
+            [&](const Add& a)      { setBinOp(a.dst, a.lhs, a.rhs, a.type); },
+            [&](const Sub& s)      { setBinOp(s.dst, s.lhs, s.rhs, s.type); },
+            [&](const Mul& m)      { setBinOp(m.dst, m.lhs, m.rhs, m.type); },
+            [&](const Div& d)      { divmod_indices.push_back(i); setBinOp(d.dst, d.lhs, d.rhs, d.type); },
+            [&](const Mod& m)      { divmod_indices.push_back(i); setBinOp(m.dst, m.lhs, m.rhs, m.type); },
+            [&](const Neg& n)      { setDef(n.dst, n.type); addUse(n.src); },
+            [&](const Cmp& c)      { setDef(c.dst, VRegType::Int32); addUse(c.lhs); addUse(c.rhs); },
+            [&](const Convert& c)  { setDef(c.dst, c.to); addUse(c.src); },
+            [&](const CallC& c) {
+                call_indices.push_back(i);
+                addCallArgs(c.args);
+                if (c.dst != -1) setDef(c.dst, c.retType);
+            },
+            [&](const CallPln& c) {
+                call_indices.push_back(i);
+                addCallArgs(c.args);
+                for (int k = 0; k < (int)c.dsts.size(); k++)
+                    setDef(c.dsts[k], c.retTypes[k]);
+            },
+            [&](const RetPln& r) {
+                for (VReg vr : r.rets) {
+                    addUse(vr);
+                    meta[vr].isRetValue = true;
+                }
+            },
+            [&](const CondJmp& cj) { addUse(cj.cond); },
+            [&](const Label& lbl)  { label_idx[lbl.name] = i; },
+            // Mov copies src into dst (the variable's canonical VReg).
+            // dst is always isVar (allocated by Pass B); only src needs tracking here.
+            [&](const Mov& mv)     { addUse(mv.src); },
+            [&](const ExitCode&)   {},
+            [&](const BlockEnter&) {},
+            [&](const BlockLeave&) {},
+            [&](const Jmp&)        {},
+        }, instr);
+    }
+
+    // Collect loop regions: backward jumps define [loop_start_label_idx, jmp_idx].
+    // A parameter used inside a loop that also contains a call effectively crosses
+    // that call (next iteration re-executes the use after the call).
+    vector<pair<int,int>> loop_regions;
+    for (int i = 0; i < (int)func.instrs.size(); i++) {
+        if (auto* j = get_if<Jmp>(&func.instrs[i])) {
+            auto it = label_idx.find(j->label);
+            if (it != label_idx.end() && it->second < i)
+                loop_regions.push_back({it->second, i});
         }
     }
 
@@ -169,6 +163,25 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 break;
             }
         }
+        // Loop check: if a use and a call both appear in the same loop body,
+        // the backward jump causes re-execution of the use after the call.
+        if (!crosses_call) {
+            for (auto& [ls, le] : loop_regions) {
+                bool use_in_loop = (m.last_any_use >= ls && m.last_any_use <= le);
+                if (!use_in_loop) {
+                    for (auto& [ci, pos] : m.call_uses)
+                        if (ci >= ls && ci <= le) { use_in_loop = true; break; }
+                }
+                if (!use_in_loop) continue;
+                for (int c_idx : call_indices) {
+                    if (c_idx >= ls && c_idx <= le) {
+                        crosses_call = true;
+                        break;
+                    }
+                }
+                if (crosses_call) break;
+            }
+        }
 
         if (crosses_call) {
             allocCalleeSavedOrStack(vreg, type);
@@ -185,7 +198,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
     for (auto& [vreg, m] : meta) {
         if (result.count(vreg)) continue;  // already bound (e.g., param pre-binding)
-        if (m.isVar && m.call_uses.empty()) continue;  // Pass B handles stack-only isVar
+        if (m.isVar) continue;  // Pass B always allocates isVar to stack
 
         if (m.call_uses.empty()) {
             if (m.isRetValue && numRetValues == 1) {

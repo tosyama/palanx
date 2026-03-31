@@ -1,0 +1,3 @@
+func greet() {
+}
+int64 x = greet();

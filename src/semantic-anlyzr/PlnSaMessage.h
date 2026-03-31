@@ -23,6 +23,7 @@ enum PlnSaMessageCode {
 	E_MultiRetBareReturn,
 	E_SingleRetOneExpr,
 	E_VoidBareReturn,
+	E_VoidCallUsedAsValue,
 	E_TupleUndefinedFunction,	// arg1: function name
 	E_TupleNeedsMultiRet,		// arg1: function name
 	E_TupleVarCountMismatch,	// arg1: function name

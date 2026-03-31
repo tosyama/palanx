@@ -63,6 +63,11 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - then\*: then-block (same structure as block stmt body in ASTSpec.md)
   - else: else-block or nested if statement (omitted when absent)
 
+- **while** - while loop statement
+  - stmt-type\*: "while"
+  - cond\*: SA-annotated condition expression (value-type present; integer expected)
+  - body\*: SA-annotated statement list (raw array; variables declared inside are scoped to the loop body)
+
 Additional statement kinds emitted by SA:
 
 - **assign** - assignment statement

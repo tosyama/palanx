@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.9
+**Version:** v0.1.11
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -50,6 +50,7 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 11. [Block Statements](#11-block-statements)
 12. [Modules (import / export)](#12-modules-import--export)
 13. [Program Structure](#13-program-structure)
+14. [While Loops](#14-while-loops)
 
 ---
 
@@ -364,4 +365,39 @@ printf("%lld\n", x);
 - Top-level statements execute as the `_start` entry point.
 - User-defined functions can be placed before or after top-level statements.
 - `return` is not valid at top-level. To exit early, call `exit()` from `<stdlib.h>`.
+
+---
+
+## 14. While Loops
+
+`while cond { body }` repeats `body` as long as `cond` is non-zero.
+
+```palan
+cinclude <stdio.h>;
+
+int64 i = 1;
+while i <= 5 {
+    printf("%ld\n", i);
+    i + 1 -> i;
+}
+```
+
+The condition is evaluated before each iteration. The loop exits when the condition is zero (false).
+
+```palan
+cinclude <stdio.h>;
+
+func fizzbuzz(int64 n) {
+    int64 i = 1;
+    while i <= n {
+        if i % 15 == 0 { printf("FizzBuzz\n"); }
+        else if i % 3 == 0 { printf("Fizz\n"); }
+        else if i % 5 == 0 { printf("Buzz\n"); }
+        else { printf("%ld\n", i); }
+        i + 1 -> i;
+    }
+}
+
+fizzbuzz(20);
+```
 

@@ -154,20 +154,21 @@ TEST(regalloc, convert_src_uses_callee_saved) {
 // -------- Efficiency cases --------
 
 // InitVar with a direct call use bypasses isVar→stack rule → gets arg register (no stack needed)
-TEST(regalloc, initvar_direct_call_use_gets_arg_register) {
+// InitVar (isVar) always goes to stack regardless of call uses — callers load from stack
+TEST(regalloc, initvar_direct_call_use_always_stack) {
     VFunc func;
     func.instrs.push_back(InitVar{0, VRegType::Int64, 10});
     func.instrs.push_back(CallC{"foo", {0}});
 
     auto r = allocateRegisters(func, testPhys);
 
-    ASSERT_FALSE(r.regMap.at(0).isStack());
-    EXPECT_EQ(r.regMap.at(0).base, "%rdi");
-    EXPECT_EQ(r.frameSize, 0);
+    ASSERT_TRUE(r.regMap.at(0).isStack());
+    // Stack layout: 8-byte slot for r0 → frameSize = alignUp(8,16) = 16
+    EXPECT_EQ(r.frameSize, 16);
 }
 
-// InitVar with intervening call → takes callee-saved path (not forced to stack by isVar)
-TEST(regalloc, initvar_with_intervening_call_gets_callee_saved) {
+// InitVar with intervening call → still on stack (isVar always stack-allocated)
+TEST(regalloc, initvar_with_intervening_call_always_stack) {
     VFunc func;
     func.instrs.push_back(InitVar{0, VRegType::Int64, 10});  // r0 def at 0
     func.instrs.push_back(CallC{"foo", {}});                  // idx 1: intervening
@@ -175,9 +176,7 @@ TEST(regalloc, initvar_with_intervening_call_gets_callee_saved) {
 
     auto r = allocateRegisters(func, testPhys);
 
-    ASSERT_FALSE(r.regMap.at(0).isStack());
-    EXPECT_EQ(r.regMap.at(0).base, "%rbx");
-    // k=1 callee-saved used → save area = 8 bytes → frameSize = alignUp(8,16) = 16
+    ASSERT_TRUE(r.regMap.at(0).isStack());
     EXPECT_EQ(r.frameSize, 16);
 }
 

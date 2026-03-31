@@ -1,0 +1,26 @@
+{
+  "original": "/test/void_func.pa",
+  "str-literals": [],
+  "functions": [
+    {
+      "name": "greet",
+      "parameters": [
+        { "name": "n", "var-type": { "type-kind": "prim", "type-name": "int64" } }
+      ],
+      "body": [
+        { "stmt-type": "return" }
+      ]
+    }
+  ],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call", "func-type": "palan", "name": "greet",
+        "args": [
+          { "expr-type": "lit-int", "value": "1", "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        ]
+      }
+    }
+  ]
+}
