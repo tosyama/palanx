@@ -1,0 +1,6 @@
+int64 i = 0;
+while i < 10 {
+    i + 1 -> i;
+    if i == 3 { break }
+    if i == 7 { continue }
+}

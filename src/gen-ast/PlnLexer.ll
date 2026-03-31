@@ -44,6 +44,8 @@ enum {
 	KW_WHILE =	PlnParser::token::KW_WHILE,
 	KW_IF = PlnParser::token::KW_IF,
 	KW_ELSE = PlnParser::token::KW_ELSE,
+	KW_BREAK = PlnParser::token::KW_BREAK,
+	KW_CONTINUE = PlnParser::token::KW_CONTINUE,
 	OPE_LE =	PlnParser::token::OPE_LE,
 	OPE_GE =	PlnParser::token::OPE_GE,
 	DBL_GRTR =	PlnParser::token::DBL_GRTR,
@@ -125,6 +127,8 @@ COMMENT1	\/\/[^\n]*\n
 <*>"while" { return KW_WHILE; }
 <*>"if" { return KW_IF; }
 <*>"else" { return KW_ELSE; }
+<*>"break" { return KW_BREAK; }
+<*>"continue" { return KW_CONTINUE; }
 <*>{ID} {
 		string id = yytext;
 		lval.build<string>() = move(id);

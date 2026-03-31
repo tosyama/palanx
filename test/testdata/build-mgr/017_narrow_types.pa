@@ -1,0 +1,29 @@
+cinclude <stdio.h>;
+
+// var-decl without init
+int64 x;
+0 -> x;
+printf("%ld\n", x);
+
+// int8 arithmetic: add, sub, neg, cmp
+int8 a = 10;
+int8 b = 3;
+int8 c = a + b;
+int8 d = a - b;
+int8 e = -b;
+int32 lt = a < b;
+printf("%d %d %d %d\n", int32(c), int32(d), int32(e), lt);
+
+// int16 arithmetic: add, sub
+int16 p = 100;
+int16 q = 7;
+int16 r = p + q;
+int16 s = p - q;
+printf("%d %d\n", int32(r), int32(s));
+
+// named single return with explicit bare return
+func get_answer() -> int32 v {
+    42 -> v;
+    return
+}
+printf("%d\n", get_answer());

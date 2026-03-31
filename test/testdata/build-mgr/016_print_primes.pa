@@ -1,0 +1,31 @@
+cinclude <stdio.h>;
+
+func print_primes(int64 limit) {
+    int64 n = 2;
+    while n <= limit {
+        int64 i = 2;
+        int64 is_prime = 1;
+        while i * i <= n {
+            if n % i == 0 {
+                0 -> is_prime;
+                break
+            }
+            i + 1 -> i;
+        }
+        if is_prime == 1 { printf("%ld\n", n); }
+        n + 1 -> n;
+    }
+}
+
+func print_nonmult3(int64 limit) {
+    int64 i = 0;
+    while i < limit {
+        i + 1 -> i;
+        if i % 3 == 0 { continue }
+        printf("%ld\n", i);
+    }
+}
+
+print_primes(20);
+printf("---\n");
+print_nonmult3(10);

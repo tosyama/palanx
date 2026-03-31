@@ -22,6 +22,7 @@ class PlnSemanticAnalyzer {
 	PlnTypeRegistry registry_;
 	map<string, string> strLiteralLabels;  // value -> label
 	const json*       currentFunc_ = nullptr;  // null = _start level
+	int               loopDepth_   = 0;        // nesting depth of while loops
 
 	vector<map<string, json>> varScopes;
 	vector<map<string, json>> cFuncScopes;
@@ -56,6 +57,8 @@ class PlnSemanticAnalyzer {
 	json sa_block(const json& stmt);
 	json sa_if_stmt(const json& stmt);
 	json sa_while_stmt(const json& stmt);
+	json sa_break_stmt(const json& stmt);
+	json sa_continue_stmt(const json& stmt);
 
 public:
 	PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path);

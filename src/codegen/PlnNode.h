@@ -145,6 +145,8 @@ enum class StmtKind {
     Block,
     If,
     While,
+    Break,
+    Continue,
 };
 
 struct Stmt {
@@ -206,6 +208,14 @@ struct WhileStmt : Stmt {
     WhileStmt() : Stmt(StmtKind::While) {}
     unique_ptr<Expr> cond;
     unique_ptr<Stmt> body;  // always BlockStmt
+};
+
+struct BreakStmt : Stmt {
+    BreakStmt() : Stmt(StmtKind::Break) {}
+};
+
+struct ContinueStmt : Stmt {
+    ContinueStmt() : Stmt(StmtKind::Continue) {}
 };
 
 // -------- Module --------
