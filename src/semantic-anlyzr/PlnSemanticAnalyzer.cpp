@@ -155,6 +155,8 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
 		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
 		else if (t == "while")    result.push_back(sa_while_stmt(stmt));
+		else if (t == "break")    result.push_back(sa_break_stmt(stmt));
+		else if (t == "continue") result.push_back(sa_continue_stmt(stmt));
 		else if (t == "not-impl")    result.push_back(stmt);
 		else if (t == "func-def") {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_InternalError, "1") << endl;
@@ -428,11 +430,31 @@ json PlnSemanticAnalyzer::sa_while_stmt(const json& stmt)
 	result["stmt-type"] = "while";
 	result["cond"] = sa_expression(stmt["cond"]);
 	enterScope();
+	loopDepth_++;
 	result["body"] = sa_statements(stmt["body"]);
+	loopDepth_--;
 	leaveScope();
 	if (stmt.contains("loc"))
 		result["loc"] = stmt["loc"];
 	return result;
+}
+
+json PlnSemanticAnalyzer::sa_break_stmt(const json& stmt)
+{
+	if (loopDepth_ == 0) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_BreakOutsideLoop) << endl;
+		exit(1);
+	}
+	return {{"stmt-type", "break"}};
+}
+
+json PlnSemanticAnalyzer::sa_continue_stmt(const json& stmt)
+{
+	if (loopDepth_ == 0) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ContinueOutsideLoop) << endl;
+		exit(1);
+	}
+	return {{"stmt-type", "continue"}};
 }
 
 void PlnSemanticAnalyzer::sa_function(const json& funcDef)

@@ -314,12 +314,26 @@ void PlnVCodeGen::lowerWhileStmt(const WhileStmt& stmt, VFunc& func)
     string startLabel = ".Lwhile" + to_string(idx) + "_start";
     string endLabel   = ".Lwhile" + to_string(idx) + "_end";
 
+    loopStack_.push_back({startLabel, endLabel});
     func.instrs.push_back(Label{startLabel});
     VReg cond = lowerExpr(*stmt.cond, func);
     func.instrs.push_back(CondJmp{endLabel, cond, true});  // jump to end if cond == 0
     lowerStmt(*stmt.body, func);
     func.instrs.push_back(Jmp{startLabel});
     func.instrs.push_back(Label{endLabel});
+    loopStack_.pop_back();
+}
+
+void PlnVCodeGen::lowerBreakStmt(VFunc& func)
+{
+    BOOST_ASSERT(!loopStack_.empty());
+    func.instrs.push_back(Jmp{loopStack_.back().end});
+}
+
+void PlnVCodeGen::lowerContinueStmt(VFunc& func)
+{
+    BOOST_ASSERT(!loopStack_.empty());
+    func.instrs.push_back(Jmp{loopStack_.back().start});
 }
 
 void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
@@ -348,6 +362,12 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
             return;
         case StmtKind::While:
             lowerWhileStmt(static_cast<const WhileStmt&>(stmt), func);
+            return;
+        case StmtKind::Break:
+            lowerBreakStmt(func);
+            return;
+        case StmtKind::Continue:
+            lowerContinueStmt(func);
             return;
     }
     BOOST_ASSERT(false);

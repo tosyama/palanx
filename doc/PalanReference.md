@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.11
+**Version:** v0.1.12
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -399,5 +399,65 @@ func fizzbuzz(int64 n) {
 }
 
 fizzbuzz(20);
+```
+
+---
+
+## 15. break / continue
+
+`break` exits the innermost `while` loop immediately. `continue` skips the rest of the loop body and jumps to the next iteration's condition check. Both are only valid inside a `while` loop; using them outside a loop is a compile error.
+
+```palan
+cinclude <stdio.h>;
+
+func print_primes(int64 limit) {
+    int64 n = 2;
+    while n <= limit {
+        int64 i = 2;
+        int64 is_prime = 1;
+        while i * i <= n {
+            if n % i == 0 {
+                0 -> is_prime;
+                break
+            }
+            i + 1 -> i;
+        }
+        if is_prime == 1 { printf("%ld\n", n); }
+        n + 1 -> n;
+    }
+}
+
+func print_nonmult3(int64 limit) {
+    int64 i = 0;
+    while i < limit {
+        i + 1 -> i;
+        if i % 3 == 0 { continue }
+        printf("%ld\n", i);
+    }
+}
+
+print_primes(20);
+printf("---\n");
+print_nonmult3(10);
+```
+
+---
+
+## 16. Optional Semicolons
+
+The semicolon at the end of the last statement in a block (or at top level) may be omitted. Statements ending with `}` (`if`, `while`, standalone block) never require a trailing semicolon. Other statements require a semicolon when followed by another statement.
+
+```palan
+int64 x = 5;
+int64 y = x + 1     // semicolon optional here (last statement)
+```
+
+```palan
+cinclude <stdio.h>;
+int64 i = 0;
+while i < 3 {
+    i + 1 -> i;
+    printf("%ld\n", i)   // semicolon optional at end of block body
+}
 ```
 

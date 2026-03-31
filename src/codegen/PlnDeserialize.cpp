@@ -214,6 +214,12 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         s->body = move(body);
         return s;
     }
+    if (stmt_type == "break") {
+        return make_unique<BreakStmt>();
+    }
+    if (stmt_type == "continue") {
+        return make_unique<ContinueStmt>();
+    }
     if (stmt_type == "not-impl") {
         return nullptr;
     }

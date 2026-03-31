@@ -185,3 +185,23 @@ TEST(sa_error, void_call_as_expr) {
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("Void function call cannot be used as a value"), string::npos);
 }
+
+TEST(sa_error, break_outside_loop) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_041_break_outside_loop.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":1:"), string::npos);  // loc format
+	ASSERT_NE(sa.find("Break statement outside of loop"), string::npos);
+}
+
+TEST(sa_error, continue_outside_loop) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_042_continue_outside_loop.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":1:"), string::npos);  // loc format
+	ASSERT_NE(sa.find("Continue statement outside of loop"), string::npos);
+}

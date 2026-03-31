@@ -123,6 +123,8 @@ class PlnLexer;
 %token KW_WHILE	"while"
 %token KW_IF	"if"
 %token KW_ELSE	"else"
+%token KW_BREAK	"break"
+%token KW_CONTINUE	"continue"
 %token OPE_LE	"<="
 %token OPE_GE	">="
 %token DBL_GRTR	">>"
@@ -134,7 +136,9 @@ class PlnLexer;
 %token OPE_NE	"!="
 
 %type <vector<json>>	statements
-%type <json>	statement
+%type <json>	block_stmt expr_stmt
+%type <vector<json>>	stmt_list_e stmt_list_b
+%type <json>	body_list_e body_list_b
 %type <json>	import cinclude import_path
 %type <vector<string>>	import_ids
 %type <string>	import_as
@@ -148,7 +152,6 @@ class PlnLexer;
 %type <json>	return
 %type <vector<json>>	block paramaters expressions
 %type <json>	block_obj standalone_block block_body_items
-%type <json>	statement_or_funcdef
 %type <bool>	move_owner_r do_export
 %type <json>	tapple_decl tapple_decl_inner tapple_inner
 %type <json>	if_stmt else_stmt while_loop
@@ -174,21 +177,33 @@ module: statements
 
 statements: /* empty */
 	{ }
-	| statements statement
-	{
-		$$ = move($1);
-		if ($2.value("stmt-type", "") != "func-def")
-			$$.emplace_back(move($2));
-	}
+	| stmt_list_e
+	{ $$ = move($1); }
+	| stmt_list_b
+	{ $$ = move($1); }
+	| stmt_list_e ';'
+	{ $$ = move($1); }
 	;
 
-statement: import ';'
+block_stmt: standalone_block
+	{ $$ = move($1); }
+	| construct_def
+	{ $$ = {{"stmt-type", "not-impl"}}; }
+	| for_loop
+	{ $$ = {{"stmt-type", "not-impl"}}; }
+	| while_loop
+	{ $$ = move($1); }
+	| if_stmt
+	{ $$ = move($1); }
+	;
+
+expr_stmt: import
 	{
 		$$ = move($1);
 		$$["stmt-type"] = "import";
 		LOC($$, @$);
 	}
-	| cinclude ';'
+	| cinclude
 	{
 		$$ = move($1);
 		$$["stmt-type"] = "cinclude";
@@ -199,9 +214,7 @@ statement: import ';'
 		}
 		LOC($$, @$);
 	}
-	| standalone_block
-		{ $$ = move($1); }
-	| var_declarations ';'
+	| var_declarations
 	{
 		// Detect a tapple-decl emitted by var_declaration
 		if ($1.size() == 1 && $1[0].value("stmt-type", "") == "tapple-decl") {
@@ -221,22 +234,13 @@ statement: import ';'
 			}
 		}
 	}
-	| const_decl ';'
-	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
-	}
-	| type_decl ';'
-	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
-	}
-	| interface_decl ';'
-	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
-	}
-	| expression ';'
+	| const_decl
+	{ $$ = {{"stmt-type", "not-impl"}}; }
+	| type_decl
+	{ $$ = {{"stmt-type", "not-impl"}}; }
+	| interface_decl
+	{ $$ = {{"stmt-type", "not-impl"}}; }
+	| expression
 	{
 		string et = $1.value("expr-type", "");
 		if (et == "assign-expr") {
@@ -253,18 +257,7 @@ statement: import ';'
 			$$ = {{"stmt-type", "not-impl"}};
 		}
 	}
-	| func_def
-	{
-		if (!$1.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($1));
-		$$ = {{"stmt-type", "func-def"}};
-	}
-	| construct_def 
-	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
-	}
-	| return ';'
+	| return
 	{
 		$$ = {{"stmt-type", "return"}};
 		if ($1.contains("values")) {
@@ -281,23 +274,54 @@ statement: import ';'
 			LOC($$, @$);
 		}
 	}
-	| for_loop
+	| term DBL_PLUS
+	{ $$ = {{"stmt-type", "not-impl"}}; }
+	| KW_BREAK
+	{ $$ = {{"stmt-type", "break"}}; LOC($$, @$); }
+	| KW_CONTINUE
+	{ $$ = {{"stmt-type", "continue"}}; LOC($$, @$); }
+	;
+
+stmt_list_e: expr_stmt
+	{ $$.push_back(move($1)); }
+	| stmt_list_b expr_stmt
+	{ $$ = move($1); $$.push_back(move($2)); }
+	| stmt_list_b ';' expr_stmt
+	{ $$ = move($1); $$.push_back(move($3)); }
+	| stmt_list_e ';' expr_stmt
+	{ $$ = move($1); $$.push_back(move($3)); }
+	;
+
+stmt_list_b: block_stmt
+	{ $$.push_back(move($1)); }
+	| func_def
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		if (!$1.count("not-impl"))
+			ast["ast"]["functions"].push_back(move($1));
 	}
-	| while_loop
+	| stmt_list_b block_stmt
+	{ $$ = move($1); $$.push_back(move($2)); }
+	| stmt_list_b func_def
 	{
 		$$ = move($1);
+		if (!$2.count("not-impl"))
+			ast["ast"]["functions"].push_back(move($2));
 	}
-	| if_stmt
+	| stmt_list_b ';' block_stmt
+	{ $$ = move($1); $$.push_back(move($3)); }
+	| stmt_list_b ';' func_def
 	{
 		$$ = move($1);
+		if (!$3.count("not-impl"))
+			ast["ast"]["functions"].push_back(move($3));
 	}
-	| term DBL_PLUS ';'
+	| stmt_list_e ';' block_stmt
+	{ $$ = move($1); $$.push_back(move($3)); }
+	| stmt_list_e ';' func_def
 	{
-		json temp = {{"stmt-type", "not-impl"}};
-		$$ = move(temp);
+		$$ = move($1);
+		if (!$3.count("not-impl"))
+			ast["ast"]["functions"].push_back(move($3));
 	}
 	;
 
@@ -364,29 +388,82 @@ block: '{' statements '}'
 	{ $$ = move($2); }
 	;
 
-statement_or_funcdef: statement    %dprec 1
-	{ $$ = move($1); }
-	| func_def                     %dprec 2
+body_list_e: expr_stmt
 	{
-		$$ = {{"stmt-type", "func-def"}};
-		for (auto& [k, v] : $1.items())
-			$$[k] = move(v);
+		$$ = {{"functions", json::array()}, {"body", json::array()}};
+		$$["body"].push_back(move($1));
+	}
+	| body_list_b expr_stmt
+	{
+		$$ = move($1);
+		$$["body"].push_back(move($2));
+	}
+	| body_list_b ';' expr_stmt
+	{
+		$$ = move($1);
+		$$["body"].push_back(move($3));
+	}
+	| body_list_e ';' expr_stmt
+	{
+		$$ = move($1);
+		$$["body"].push_back(move($3));
+	}
+	;
+
+body_list_b: block_stmt
+	{
+		$$ = {{"functions", json::array()}, {"body", json::array()}};
+		$$["body"].push_back(move($1));
+	}
+	| func_def
+	{
+		$$ = {{"functions", json::array()}, {"body", json::array()}};
+		if (!$1.count("not-impl"))
+			$$["functions"].push_back(move($1));
+	}
+	| body_list_b block_stmt
+	{
+		$$ = move($1);
+		$$["body"].push_back(move($2));
+	}
+	| body_list_b func_def
+	{
+		$$ = move($1);
+		if (!$2.count("not-impl"))
+			$$["functions"].push_back(move($2));
+	}
+	| body_list_b ';' block_stmt
+	{
+		$$ = move($1);
+		$$["body"].push_back(move($3));
+	}
+	| body_list_b ';' func_def
+	{
+		$$ = move($1);
+		if (!$3.count("not-impl"))
+			$$["functions"].push_back(move($3));
+	}
+	| body_list_e ';' block_stmt
+	{
+		$$ = move($1);
+		$$["body"].push_back(move($3));
+	}
+	| body_list_e ';' func_def
+	{
+		$$ = move($1);
+		if (!$3.count("not-impl"))
+			$$["functions"].push_back(move($3));
 	}
 	;
 
 block_body_items: /* empty */
 	{ $$ = {{"functions", json::array()}, {"body", json::array()}}; }
-	| block_body_items statement_or_funcdef
-	{
-		$$ = move($1);
-		json item = move($2);
-		if (item.value("stmt-type", "") == "func-def") {
-			item.erase("stmt-type");
-			$$["functions"].push_back(move(item));
-		} else {
-			$$["body"].push_back(move(item));
-		}
-	}
+	| body_list_e
+	{ $$ = move($1); }
+	| body_list_b
+	{ $$ = move($1); }
+	| body_list_e ';'
+	{ $$ = move($1); }
 	;
 
 block_obj: '{' block_body_items '}'

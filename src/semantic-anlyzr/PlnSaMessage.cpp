@@ -96,6 +96,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Internal error: " + arg1;
 
+		case E_BreakOutsideLoop:
+			return "Break statement outside of loop.";
+
+		case E_ContinueOutsideLoop:
+			return "Continue statement outside of loop.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

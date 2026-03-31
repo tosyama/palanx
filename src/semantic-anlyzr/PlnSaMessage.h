@@ -30,6 +30,8 @@ enum PlnSaMessageCode {
 	E_ImportFileNotFound,		// arg1: file path
 	E_NoInputFile,
 	E_InternalError,			// arg1: error code
+	E_BreakOutsideLoop,
+	E_ContinueOutsideLoop,
 };
 
 class PlnSaMessage

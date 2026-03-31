@@ -31,6 +31,9 @@ class PlnVCodeGen {
     const PlnFunc* currentPlnFunc_ = nullptr;  // set while lowering a Palan function body
     vector<vector<VReg>> blockVarStack_;
 
+    struct LoopLabels { string start; string end; };
+    vector<LoopLabels> loopStack_;  // push/pop in lowerWhileStmt
+
     VReg lowerExpr(const Expr& expr, VFunc& func);
     void lowerStmt(const Stmt& stmt, VFunc& func);
     void lowerExprStmt(const ExprStmt& stmt, VFunc& func);
@@ -43,6 +46,8 @@ class PlnVCodeGen {
     void lowerBlockStmt(const BlockStmt& stmt, VFunc& func);
     void lowerIfStmt(const IfStmt& stmt, VFunc& func);
     void lowerWhileStmt(const WhileStmt& stmt, VFunc& func);
+    void lowerBreakStmt(VFunc& func);
+    void lowerContinueStmt(VFunc& func);
 
 public:
     VProg generate(const Module& module, bool noEntry = false);

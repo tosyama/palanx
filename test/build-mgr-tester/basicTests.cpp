@@ -105,6 +105,20 @@ TEST(build_mgr, fizzbuzz) {
 	ASSERT_EQ(output, "1\n2\nFizz\n4\nBuzz\nFizz\n7\n8\nFizz\nBuzz\n11\nFizz\n13\n14\nFizzBuzz\n16\n17\nFizz\n19\nBuzz\n");
 }
 
+TEST(build_mgr, narrow_types) {
+	cleanTestEnv();
+	// Covers: var-decl without init, int8/int16 arithmetic (add/sub/neg/cmp),
+	// named single-return function with explicit bare return.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/017_narrow_types.pa");
+	ASSERT_EQ(output, "0\n13 7 -3 0\n107 93\n42\n");
+}
+
+TEST(build_mgr, print_primes) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/016_print_primes.pa");
+	ASSERT_EQ(output, "2\n3\n5\n7\n11\n13\n17\n19\n---\n1\n2\n4\n5\n7\n8\n10\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

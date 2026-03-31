@@ -344,6 +344,70 @@ TEST(gen_ast, while_loop) {
 	ASSERT_TRUE(found_countdown);
 }
 
+TEST(gen_ast, stmt_list_patterns) {
+	cleanTestEnv();
+	// Covers stmt_list_b/body_list_b grammar rules added for optional semicolon:
+	// B;E and B;func_def at top-level, and B B / B;B / B func_def / B;func_def inside blocks.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/012_stmt_list_patterns.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// top-level: x var-decl and two if stmts plus helper/outer functions
+	ASSERT_GE(jout["ast"]["statements"].size(), 1u);
+	ASSERT_GE(jout["ast"]["functions"].size(), 2u);  // helper + outer
+
+	// outer function has multiple statements (while/if mix)
+	bool found_outer = false;
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "outer") continue;
+		found_outer = true;
+		ASSERT_GE(f["block"]["body"].size(), 4u);
+		// block-local inner funcs declared inside outer
+		ASSERT_GE(f["block"]["functions"].size(), 2u);
+	}
+	ASSERT_TRUE(found_outer);
+}
+
+TEST(gen_ast, break_continue) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/011_break_continue.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// while body: if-break, if-continue
+	const auto& stmts = jout["ast"]["statements"];
+	bool found_break = false;
+	bool found_continue = false;
+	for (auto& stmt : stmts) {
+		if (stmt["stmt-type"] != "while") continue;
+		for (auto& s : stmt["body"]) {
+			if (s["stmt-type"] != "if") continue;
+			for (auto& b : s["then"]["body"]) {
+				if (b["stmt-type"] == "break")    found_break    = true;
+				if (b["stmt-type"] == "continue") found_continue = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_break);
+	ASSERT_TRUE(found_continue);
+}
+
+TEST(gen_ast, optional_semicolon) {
+	cleanTestEnv();
+	// Last statement in a block can omit the semicolon.
+	// The AST output should be identical to the version with semicolon.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/010_optional_semicolon.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	// cinclude + 2 var-decls (x and y); y has no trailing ';'
+	ASSERT_EQ(jout["ast"]["statements"].size(), 3u);
+	const auto& y_decl = jout["ast"]["statements"][2];
+	ASSERT_EQ(y_decl["stmt-type"], "var-decl");
+	ASSERT_EQ(y_decl["vars"][0]["name"], "y");
+	ASSERT_EQ(y_decl["vars"][0]["init"]["expr-type"], "add");
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");
