@@ -6,56 +6,64 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-03-30)
-version: 0.1.11
-- This iteration implements `while` loops and void functions (no return value).
-- The following two samples are verified by end-to-end build-mgr tests.
-
-#### Collatz sequence
+### 2.1 Iteration Goal (2026-03-31)
+version: 0.1.12
+- This iteration implements `break` and `continue` statements for `while` loops.
+- The following sample is verified by an end-to-end build-mgr test.
 
 ```palan
 cinclude <stdio.h>;
 
-func collatz_steps(int64 n) -> int64 {
-    int64 steps = 0;
-    while n != 1 {
-        if n % 2 == 0 { n / 2 -> n; }
-        else { n * 3 + 1 -> n; }
-        steps + 1 -> steps;
+func print_primes(int64 limit) {
+    int64 n = 2;
+    while n <= limit {
+        int64 i = 2;
+        int64 is_prime = 1;
+        while i * i <= n {
+            if n % i == 0 {
+                is_prime = 0;
+                break;
+            }
+            i + 1 -> i;
+        }
+        if is_prime == 1 { printf("%ld\n", n); }
+        n + 1 -> n;
     }
-    return steps;
 }
 
-printf("collatz(27) = %ld\n", collatz_steps(27));
-printf("collatz(871) = %ld\n", collatz_steps(871));
+func print_nonmult3(int64 limit) {
+    int64 i = 0;
+    while i < limit {
+        i + 1 -> i;
+        if i % 3 == 0 { continue; }
+        printf("%ld\n", i);
+    }
+}
+
+print_primes(20);
+printf("---\n");
+print_nonmult3(10);
 ```
 
 Expected output:
 ```
-collatz(27) = 111
-collatz(871) = 178
+2
+3
+5
+7
+11
+13
+17
+19
+---
+1
+2
+4
+5
+7
+8
+10
 ```
-
-#### FizzBuzz (void function)
-
-```palan
-cinclude <stdio.h>;
-
-func fizzbuzz(int64 n) {
-    int64 i = 1;
-    while i <= n {
-        if i % 15 == 0 { printf("FizzBuzz\n"); }
-        else if i % 3 == 0 { printf("Fizz\n"); }
-        else if i % 5 == 0 { printf("Buzz\n"); }
-        else { printf("%ld\n", i); }
-        i + 1 -> i;
-    }
-}
-
-fizzbuzz(20);
-```
-
-Expected output: FizzBuzz for 1–20
 
 
 ## 3. Command-line Tools' Responsibilities and Design
