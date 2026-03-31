@@ -76,6 +76,18 @@ TEST(build_mgr, divmod_rdx_conflict) {
 	ASSERT_EQ(output, "17\n");
 }
 
+TEST(build_mgr, collatz) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/012_collatz.pa");
+	ASSERT_EQ(output, "collatz(27) = 111\ncollatz(871) = 178\n");
+}
+
+TEST(build_mgr, fizzbuzz) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/013_fizzbuzz.pa");
+	ASSERT_EQ(output, "1\n2\nFizz\n4\nBuzz\nFizz\n7\n8\nFizz\nBuzz\n11\nFizz\n13\n14\nFizzBuzz\n16\n17\nFizz\n19\nBuzz\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
