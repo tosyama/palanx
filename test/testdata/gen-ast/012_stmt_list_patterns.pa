@@ -1,0 +1,34 @@
+// Covers stmt_list_b/body_list_b grammar rules.
+
+// stmt_list_b ';' expr_stmt: top-level B ';' E
+if 1 < 2 { };
+int64 x = 5;
+
+// stmt_list_b ';' block_stmt: top-level B ';' B
+if 1 < 2 { };
+if 1 < 2 { }
+
+// stmt_list_b ';' func_def: top-level B ';' func_def
+if 1 < 2 { };
+func helper() {
+}
+
+// body_list_b expr_stmt (no ';'): B immediately followed by E inside block
+// body_list_b ';' expr_stmt: B ';' E inside block
+// body_list_b block_stmt (no ';'): two block stmts without ';'
+// body_list_b ';' block_stmt: two block stmts with ';'
+// body_list_b func_def: func_def after block_stmt in block
+// body_list_b ';' func_def: block_stmt ';' func_def in block
+func outer() {
+    int64 i = 0;
+    while i < 1 { i + 1 -> i; }
+    if i == 1 { }
+    while i < 2 { i + 1 -> i; };
+    if i == 2 { }
+    while i < 3 { i + 1 -> i; }
+    func inner1() { }
+    while i < 4 { i + 1 -> i; };
+    func inner2() { }
+    while i < 5 { i + 1 -> i; };
+    0 -> x
+}
