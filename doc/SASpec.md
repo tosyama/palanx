@@ -68,6 +68,14 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - cond\*: SA-annotated condition expression (value-type present; integer expected)
   - body\*: SA-annotated statement list (raw array; variables declared inside are scoped to the loop body)
 
+- **break** - exit the innermost while loop
+  - stmt-type\*: "break"
+  - (no additional fields; SA validates that break appears inside a while loop)
+
+- **continue** - skip to next iteration of innermost while loop
+  - stmt-type\*: "continue"
+  - (no additional fields; SA validates that continue appears inside a while loop)
+
 Additional statement kinds emitted by SA:
 
 - **assign** - assignment statement

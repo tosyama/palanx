@@ -112,7 +112,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block" "if" "while"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
 - loc\* - Location Array (omitted for "not-impl")
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -148,6 +148,8 @@ Statement model
   10. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
+  11. break - exit the innermost while loop (no additional fields)
+  12. continue - skip to next iteration of innermost while loop (no additional fields)
 
 Expression model
 ----------------
