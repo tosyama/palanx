@@ -42,11 +42,24 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             addUse(rhs);
         };
         auto addCallArgs = [&](const vector<VReg>& args) {
-            for (int j = 0; j < (int)args.size(); j++) {
-                if (j < (int)phys.intArgs.size())
-                    meta[args[j]].call_uses.push_back({i, j});
-                else
-                    addUse(args[j]);
+            int int_idx = 0;
+            for (auto vr : args) {
+                // NOTE: meta only contains VRegs defined by instructions (setDef).
+                // Palan function parameters live in func.params, not meta, so they
+                // default to Int64 here.  When float parameters are implemented,
+                // parameter VRegs must be pre-registered in meta with their actual type.
+                VRegType t = meta.count(vr) ? meta[vr].type : VRegType::Int64;
+                bool is_flt = (t == VRegType::Float32 || t == VRegType::Float64);
+                if (is_flt) {
+                    // Float args go to XMM registers, not intArgs. Track only liveness.
+                    addUse(vr);
+                } else {
+                    if (int_idx < (int)phys.intArgs.size())
+                        meta[vr].call_uses.push_back({i, int_idx});
+                    else
+                        addUse(vr);
+                    int_idx++;
+                }
             }
         };
 
@@ -131,7 +144,9 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     };
 
     auto allocCalleeSavedOrStack = [&](VReg vreg, VRegType type) {
-        if (callee_idx < (int)phys.calleeSaved.size()) {
+        // Float VRegs cannot use integer callee-saved registers; always spill to stack.
+        bool is_flt = (type == VRegType::Float32 || type == VRegType::Float64);
+        if (!is_flt && callee_idx < (int)phys.calleeSaved.size()) {
             result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], type};
         } else {
             allocStackSlot(vreg, type);

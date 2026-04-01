@@ -1,0 +1,64 @@
+{
+    "functions": [],
+    "original": "031_float_arg.pa",
+    "statements": [
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "expr-type": "lit-flo",
+                        "value": "3.14",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" }
+                    },
+                    "name": "x",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" }
+                }
+            ]
+        },
+        {
+            "stmt-type": "expr",
+            "body": {
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "printf",
+                "args": [
+                    {
+                        "expr-type": "lit-str",
+                        "label": ".str0",
+                        "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } }
+                    },
+                    {
+                        "expr-type": "id",
+                        "name": "x",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" },
+                        "var-type": { "type-kind": "prim", "type-name": "flo64" }
+                    }
+                ]
+            }
+        },
+        {
+            "stmt-type": "expr",
+            "body": {
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "printf",
+                "args": [
+                    {
+                        "expr-type": "lit-str",
+                        "label": ".str0",
+                        "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } }
+                    },
+                    {
+                        "expr-type": "lit-flo",
+                        "value": "1.5",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" }
+                    }
+                ]
+            }
+        }
+    ],
+    "str-literals": [
+        { "label": ".str0", "value": "%f\n" }
+    ]
+}

@@ -532,3 +532,59 @@ TEST(codegen, float_var_decl) {
     // flo32 load/store
     ASSERT_NE(asm_text.find("movss"), string::npos);
 }
+
+TEST(codegen, float_arg) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/031_float_arg.sa.json";
+    string asmf = "out/031_float_arg.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // float constant in .rodata (variable and literal)
+    ASSERT_NE(asm_text.find(".double 3.14"), string::npos);
+    ASSERT_NE(asm_text.find(".double 1.5"),  string::npos);
+    // float arg loaded into xmm0
+    ASSERT_NE(asm_text.find("%xmm0"), string::npos);
+    // al set to 1 (one float XMM arg)
+    ASSERT_NE(asm_text.find("movl $1, %eax"), string::npos);
+}
+
+TEST(codegen, float_mixed_args) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/032_float_mixed_args.sa.json";
+    string asmf = "out/032_float_mixed_args.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // int args go to integer registers, float arg goes to xmm0
+    ASSERT_NE(asm_text.find("%rsi"), string::npos);   // first int arg (a)
+    ASSERT_NE(asm_text.find("%rdx"), string::npos);   // second int arg (b)
+    ASSERT_NE(asm_text.find("%xmm0"), string::npos);  // float arg (x)
+    // al = 1 (one float XMM arg)
+    ASSERT_NE(asm_text.find("movl $1, %eax"), string::npos);
+}
+
+TEST(codegen, uint_convert) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/033_uint_convert.sa.json";
+    string asmf = "out/033_uint_convert.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // uint8 var init: 1-byte slot
+    ASSERT_NE(asm_text.find("movb $5,"), string::npos);
+    // uint8 → uint32 widening: zero-extend byte to long
+    ASSERT_NE(asm_text.find("movzbl"), string::npos);
+    // uint8 → flo64: zero-extend to 64-bit then convert
+    ASSERT_NE(asm_text.find("movzbq"), string::npos);
+    // uint16 → flo64: zero-extend word to 64-bit then convert
+    ASSERT_NE(asm_text.find("movzwq"), string::npos);
+    // uint8/uint16/uint32 → flo64: cvtsi2sdq %rax used in all three paths
+    ASSERT_NE(asm_text.find("cvtsi2sdq %rax,"), string::npos);
+}

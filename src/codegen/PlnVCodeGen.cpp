@@ -126,6 +126,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Cmp{dst, e.op, l, r, e.operandType});
             return dst;
         }
+        case ExprKind::FloLit: {
+            auto& e = static_cast<const FloLitExpr&>(expr);
+            string label = addFloatLiteral(e.value, e.type);
+            VReg r = allocVReg();
+            func.instrs.push_back(InitVarF{r, e.type, label});
+            return r;
+        }
         case ExprKind::CCCall: {
             auto& e = static_cast<const CCCallExpr&>(expr);
             BOOST_ASSERT(e.hasRet);

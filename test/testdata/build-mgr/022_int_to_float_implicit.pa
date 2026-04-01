@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+
+int32 a = 7;
+int64 b = -100;
+flo64 x = a;
+flo64 y = b;
+printf("%f\n", x);
+printf("%f\n", y);

@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+
+flo64 x = 3.14;
+flo64 y = 2.0;
+printf("%f\n", x);
+printf("%.1f\n", y);
+printf("%f\n", 1.5);

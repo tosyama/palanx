@@ -1,0 +1,13 @@
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+
+// C function returning flo64: store in variable
+flo64 a = atof("1.5");
+printf("%f\n", a);
+
+// C function returning flo64: use directly as printf arg
+printf("%f\n", atof("2.25"));
+
+// C function returning flo32
+flo32 b = strtof("0.5", int64(0));
+printf("%f\n", b);

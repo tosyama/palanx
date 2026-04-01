@@ -2,14 +2,19 @@
 #include <boost/assert.hpp>
 #include <cctype>
 #include <array>
+#include <iostream>
+#include <cstdlib>
 
 using namespace std;
 
 static const char* movInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int8:    return "movb";
-        case VRegType::Int16:   return "movw";
-        case VRegType::Int32:   return "movl";
+        case VRegType::Int8:
+        case VRegType::Uint8:   return "movb";
+        case VRegType::Int16:
+        case VRegType::Uint16:  return "movw";
+        case VRegType::Int32:
+        case VRegType::Uint32:  return "movl";
         case VRegType::Float32: return "movss";
         case VRegType::Float64: return "movsd";
         default:                return "movq";
@@ -86,10 +91,14 @@ static string sizedRegName(const string& base, VRegType type)
         string stem = base.substr(1);  // "r8", "r10", ...
         switch (type) {
             case VRegType::Ptr64:
-            case VRegType::Int64:  return base;
-            case VRegType::Int32:  return "%" + stem + "d";
-            case VRegType::Int16:  return "%" + stem + "w";
-            case VRegType::Int8:   return "%" + stem + "b";
+            case VRegType::Int64:
+            case VRegType::Uint64: return base;
+            case VRegType::Int32:
+            case VRegType::Uint32: return "%" + stem + "d";
+            case VRegType::Int16:
+            case VRegType::Uint16: return "%" + stem + "w";
+            case VRegType::Int8:
+            case VRegType::Uint8:  return "%" + stem + "b";
             default:               return base;
         }
     }
@@ -109,10 +118,14 @@ static string sizedRegName(const string& base, VRegType type)
     if (it != classic.end()) {
         switch (type) {
             case VRegType::Ptr64:
-            case VRegType::Int64:  return it->second[0];
-            case VRegType::Int32:  return it->second[1];
-            case VRegType::Int16:  return it->second[2];
-            case VRegType::Int8:   return it->second[3];
+            case VRegType::Int64:
+            case VRegType::Uint64: return it->second[0];
+            case VRegType::Int32:
+            case VRegType::Uint32: return it->second[1];
+            case VRegType::Int16:
+            case VRegType::Uint16: return it->second[2];
+            case VRegType::Int8:
+            case VRegType::Uint8:  return it->second[3];
             default:               return base;
         }
     }
@@ -348,50 +361,96 @@ void PlnX86CodeGen::emit(const VProg& prog)
             } else if (auto* c = std::get_if<Convert>(&instr)) {
                 if (!rm.count(c->dst)) continue;  // dead
                 const PhysLoc& dst_loc = rm.at(c->dst);
+                bool dst_is_float = (c->to == VRegType::Float32 || c->to == VRegType::Float64);
                 if (dst_loc.isStack()) {
-                    // Spilled dst: convert into %rax scratch, then store to stack slot.
-                    string scratch = sizedRegName("%rax", c->to);
+                    // Spilled dst: convert into scratch register, then store to stack slot.
+                    // Float results use %xmm8 as scratch; integer results use %rax.
+                    // NOTE: %xmm8 is safe only because all float VRegs are currently
+                    // stack-allocated (no xmm register allocator).  If XMM registers are
+                    // ever assigned to live float VRegs, %xmm8 must be chosen more carefully
+                    // (e.g. pick a register not live at this instruction).
+                    string scratch = dst_is_float ? "%xmm8" : sizedRegName("%rax", c->to);
                     emitConvert(scratch, rm.at(c->src), c->from, c->to);
                     out << "\t" << movInstrForType(c->to) << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
                 } else {
-                    string dst_reg = sizedRegName(dst_loc.base, c->to);
+                    string dst_reg = dst_is_float ? dst_loc.base : sizedRegName(dst_loc.base, c->to);
                     emitConvert(dst_reg, rm.at(c->src), c->from, c->to);
                 }
             } else if (auto* i = std::get_if<CallC>(&instr)) {
-                int n_regs = (int)x86PhysRegs.intArgs.size();
-                for (int j = 0; j < (int)i->args.size() && j < n_regs; j++) {
-                    const PhysLoc& src_loc = rm.at(i->args[j]);
-                    string src = srcOperand(src_loc);
-                    string dst = sizedRegName(x86PhysRegs.intArgs[j], src_loc.type);
-                    if (src != dst)
-                        out << "\t" << movInstrForType(src_loc.type) << " " << src << ", " << dst << "\n";
+                int n_int_regs = (int)x86PhysRegs.intArgs.size();
+                int n_flt_regs = (int)x86PhysRegs.floatArgs.size();
+                // Count overflow args (int > 6 or float > 8) to pre-allocate stack space.
+                int n_stack = 0, int_count = 0, flt_count = 0;
+                for (auto vr : i->args) {
+                    const PhysLoc& s = rm.at(vr);
+                    bool is_flt = (s.type == VRegType::Float32 || s.type == VRegType::Float64);
+                    if (is_flt) {
+                        if (flt_count >= n_flt_regs) n_stack++;
+                        flt_count++;
+                    } else {
+                        if (int_count >= n_int_regs) n_stack++;
+                        int_count++;
+                    }
                 }
-                int n_stack = (int)i->args.size() - n_regs;
                 int stack_space = 0;
                 if (n_stack > 0) {
                     stack_space = ((n_stack * 8) + 15) & ~15;
                     out << "\tsubq $" << stack_space << ", %rsp\n";
-                    for (int j = n_regs; j < (int)i->args.size(); j++) {
-                        int offset = (j - n_regs) * 8;
-                        const PhysLoc& src_loc = rm.at(i->args[j]);
-                        if (src_loc.isStack()) {
-                            out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
-                            out << "\tmovq %r10, " << offset << "(%rsp)\n";
+                }
+                int int_idx = 0, flt_idx = 0, stack_idx = 0;
+                for (auto vr : i->args) {
+                    const PhysLoc& src_loc = rm.at(vr);
+                    bool is_flt = (src_loc.type == VRegType::Float32 || src_loc.type == VRegType::Float64);
+                    if (is_flt && flt_idx < n_flt_regs) {
+                        string xmm = x86PhysRegs.floatArgs[flt_idx++];
+                        string s = srcOperand(src_loc);
+                        if (s != xmm)
+                            out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << xmm << "\n";
+                    } else if (!is_flt && int_idx < n_int_regs) {
+                        string dst = sizedRegName(x86PhysRegs.intArgs[int_idx++], src_loc.type);
+                        string s = srcOperand(src_loc);
+                        if (s != dst)
+                            out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << dst << "\n";
+                    } else {
+                        // Overflow to stack: both int and float use 8 bytes per slot.
+                        int offset = stack_idx++ * 8;
+                        if (is_flt) {
+                            flt_idx++;
+                            const char* mov = movInstrForType(src_loc.type);
+                            if (src_loc.isStack()) {
+                                // %xmm8 is safe as scratch here for the same reason as in
+                                // the Convert block: all float VRegs are currently stack-allocated.
+                                out << "\t" << mov << " " << srcOperand(src_loc) << ", %xmm8\n";
+                                out << "\t" << mov << " %xmm8, " << offset << "(%rsp)\n";
+                            } else {
+                                out << "\t" << mov << " " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
+                            }
                         } else {
-                            out << "\tmovq " << srcOperand(src_loc)
-                                << ", " << offset << "(%rsp)\n";
+                            int_idx++;
+                            if (src_loc.isStack()) {
+                                out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
+                                out << "\tmovq %r10, " << offset << "(%rsp)\n";
+                            } else {
+                                out << "\tmovq " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
+                            }
                         }
                     }
                 }
-                emitCallC(i->name);
+                emitCallC(i->name, flt_idx);
                 if (stack_space > 0)
                     out << "\taddq $" << stack_space << ", %rsp\n";
                 if (i->dst != -1 && rm.count(i->dst)) {
                     const PhysLoc& dst_loc = rm.at(i->dst);
-                    string dst_reg = srcOperand(dst_loc);
-                    string rax     = sizedRegName("%rax", i->retType);
-                    if (dst_reg != rax)
-                        out << "\t" << movInstrForType(i->retType) << " " << rax << ", " << dst_reg << "\n";
+                    bool ret_is_float = (i->retType == VRegType::Float32 ||
+                                         i->retType == VRegType::Float64);
+                    // Float return value is in %xmm0; integer return value is in %rax.
+                    string ret_reg = ret_is_float ? "%xmm0" : sizedRegName("%rax", i->retType);
+                    string dst_reg = ret_is_float ? dst_loc.isStack()
+                                                        ? srcOperand(dst_loc)
+                                                        : dst_loc.base
+                                                  : srcOperand(dst_loc);
+                    if (dst_reg != ret_reg)
+                        out << "\t" << movInstrForType(i->retType) << " " << ret_reg << ", " << dst_reg << "\n";
                 }
             } else if (auto* c = std::get_if<CallPln>(&instr)) {
                 int n_regs = (int)x86PhysRegs.intArgs.size();
@@ -579,13 +638,78 @@ void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType 
     if (from == VRegType::Float64 && to == VRegType::Int32) { out << "\tcvttsd2sil " << srcAt(from) << ", " << dst << "\n"; return; }
     if (from == VRegType::Float32 && to == VRegType::Int64) { out << "\tcvttss2siq " << srcAt(from) << ", " << dst << "\n"; return; }
     if (from == VRegType::Float32 && to == VRegType::Int32) { out << "\tcvttss2sil " << srcAt(from) << ", " << dst << "\n"; return; }
-    BOOST_ASSERT(false);  // unsupported conversion
+    // Float precision conversion
+    if (from == VRegType::Float32 && to == VRegType::Float64) { out << "\tcvtss2sd "  << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Float64 && to == VRegType::Float32) { out << "\tcvtsd2ss "  << srcAt(from) << ", " << dst << "\n"; return; }
+    // Integer to float conversion
+    if (from == VRegType::Int32 && to == VRegType::Float64) { out << "\tcvtsi2sdl " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int64 && to == VRegType::Float64) { out << "\tcvtsi2sdq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int32 && to == VRegType::Float32) { out << "\tcvtsi2ssl " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int64 && to == VRegType::Float32) { out << "\tcvtsi2ssq " << srcAt(from) << ", " << dst << "\n"; return; }
+    // Smaller signed integers: sign-extend to 64-bit via %rax, then convert.
+    if ((from == VRegType::Int8 || from == VRegType::Int16) &&
+        (to == VRegType::Float32 || to == VRegType::Float64)) {
+        const char* sx  = (from == VRegType::Int8) ? "movsbq" : "movswq";
+        const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
+        out << "\t" << sx << " " << srcAt(from) << ", %rax\n";
+        out << "\t" << cvt << " %rax, " << dst << "\n";
+        return;
+    }
+    // Unsigned integer widening (movzx family — zero-extend)
+    if (from == VRegType::Uint8  && to == VRegType::Uint16) { out << "\tmovzbw " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint8  && to == VRegType::Uint32) { out << "\tmovzbl " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint8  && to == VRegType::Uint64) { out << "\tmovzbq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint16 && to == VRegType::Uint32) { out << "\tmovzwl " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint16 && to == VRegType::Uint64) { out << "\tmovzwq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint32 && to == VRegType::Uint64) {
+        // movl to 32-bit register implicitly zero-extends the upper 32 bits of the 64-bit register.
+        out << "\tmovl " << srcAt(from) << ", " << sizedRegName(dst, VRegType::Int32) << "\n"; return;
+    }
+    // Unsigned narrowing (truncation): reference low bits of the source
+    if (from == VRegType::Uint64 && to == VRegType::Uint32) { out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint64 && to == VRegType::Uint16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint64 && to == VRegType::Uint8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint32 && to == VRegType::Uint16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint32 && to == VRegType::Uint8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint16 && to == VRegType::Uint8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
+    // Unsigned integer to float conversion (uint8/16/32 fit in int64, so cvtsi2s*q is correct after zero-extension)
+    if (from == VRegType::Uint8 && (to == VRegType::Float32 || to == VRegType::Float64)) {
+        const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
+        out << "\tmovzbq " << srcAt(from) << ", %rax\n";
+        out << "\t" << cvt << " %rax, " << dst << "\n";
+        return;
+    }
+    if (from == VRegType::Uint16 && (to == VRegType::Float32 || to == VRegType::Float64)) {
+        const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
+        out << "\tmovzwq " << srcAt(from) << ", %rax\n";
+        out << "\t" << cvt << " %rax, " << dst << "\n";
+        return;
+    }
+    if (from == VRegType::Uint32 && (to == VRegType::Float32 || to == VRegType::Float64)) {
+        // movl zero-extends uint32 into %rax; result fits in int64, so cvtsi2s*q is correct.
+        const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
+        out << "\tmovl " << srcAt(from) << ", %eax\n";
+        out << "\t" << cvt << " %rax, " << dst << "\n";
+        return;
+    }
+    if (from == VRegType::Uint64 && (to == VRegType::Float32 || to == VRegType::Float64)) {
+        // uint64-to-float requires a branch-based sequence that cannot be emitted inline here.
+        // Lower this conversion in PlnVCodeGen using Label/CondJmp/Jmp instructions.
+        std::cerr << "PlnX86CodeGen: uint64-to-float must be lowered in PlnVCodeGen\n";
+        std::abort();
+    }
+    // Abort unconditionally — do not rely on BOOST_ASSERT which is a no-op in release builds.
+    std::cerr << "PlnX86CodeGen: unsupported conversion\n";
+    std::abort();
 }
 
-void PlnX86CodeGen::emitCallC(const string& name)
+void PlnX86CodeGen::emitCallC(const string& name, int nFloatArgs)
 {
-    // For variadic C functions, al = number of floating-point args (0 here)
-    out << "\txorl %eax, %eax\n";
+    // For variadic C functions, al = number of XMM registers used for float args.
+    if (nFloatArgs == 0)
+        out << "\txorl %eax, %eax\n";
+    else
+        out << "\tmovl $" << nFloatArgs << ", %eax\n";
     out << "\tcall " << name << "\n";
 }
 

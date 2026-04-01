@@ -126,6 +126,39 @@ TEST(build_mgr, float_basics) {
 	ASSERT_EQ(output, "3\n2\n");
 }
 
+TEST(build_mgr, float_printf) {
+	cleanTestEnv();
+	// flo64 variable and float literal as printf args
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/019_float_printf.pa");
+	ASSERT_EQ(output, "3.140000\n2.0\n1.500000\n");
+}
+
+TEST(build_mgr, float_mixed_args) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/020_float_mixed_args.pa");
+	// Case 1: interleaved int/float args (all registers)
+	// Case 2: int overflow to stack, float in xmm
+	// Case 3: float overflow to stack (9 floats)
+	ASSERT_EQ(output,
+		"10 3.500000 20\n"
+		"1 2 3 4 5 6 7 0.500000\n"
+		"1.000000 2.000000 3.000000 4.000000 5.000000 6.000000 7.000000 8.000000 9.000000\n");
+}
+
+TEST(build_mgr, c_float_return) {
+	cleanTestEnv();
+	// C function returning flo64/flo32: stored in var and used directly as arg
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/021_c_float_return.pa");
+	ASSERT_EQ(output, "1.500000\n2.250000\n0.500000\n");
+}
+
+TEST(build_mgr, int_to_float_implicit) {
+	cleanTestEnv();
+	// int32/int64 variables assigned to flo64 without explicit cast
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/022_int_to_float_implicit.pa");
+	ASSERT_EQ(output, "7.000000\n-100.000000\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

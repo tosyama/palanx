@@ -14,6 +14,10 @@ static VRegType toVRegType(const json& vt) {
     if (name == "int16")  return VRegType::Int16;
     if (name == "int32")  return VRegType::Int32;
     if (name == "int64")  return VRegType::Int64;
+    if (name == "uint8")  return VRegType::Uint8;
+    if (name == "uint16") return VRegType::Uint16;
+    if (name == "uint32") return VRegType::Uint32;
+    if (name == "uint64") return VRegType::Uint64;
     if (name == "flo32")  return VRegType::Float32;
     if (name == "flo64")  return VRegType::Float64;
     cerr << PlnCodegenMessage::getMessage(E_UnknownType, name) << endl;

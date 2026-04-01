@@ -22,8 +22,9 @@ static const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 	const auto* p = static_cast<const PrimType*>(t);
 	using N = PrimType::Name;
 	switch (p->name) {
-		case N::Int8:  case N::Int16:  return reg.prim(N::Int32);
-		case N::Uint8: case N::Uint16: return reg.prim(N::Uint32);
+		case N::Int8:   case N::Int16:  return reg.prim(N::Int32);
+		case N::Uint8:  case N::Uint16: return reg.prim(N::Uint32);
+		case N::Float32:                return reg.prim(N::Float64);
 		default: return t;
 	}
 }
