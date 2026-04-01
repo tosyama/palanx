@@ -461,3 +461,40 @@ while i < 3 {
 }
 ```
 
+## 17. Floating-Point Types
+
+Palan supports 32-bit and 64-bit IEEE 754 floating-point types:
+
+| Type    | Width  | C equivalent |
+|---------|--------|--------------|
+| `flo32` | 32-bit | `float`      |
+| `flo64` | 64-bit | `double`     |
+
+### Declaration and Initialization
+
+Float variables are declared like integer variables. The literal format requires digits on both sides of the decimal point.
+
+```palan
+flo64 pi = 3.14159;
+flo32 half = 0.5;
+flo64 zero;           // uninitialized (zero on most platforms)
+```
+
+Float literals adopt the declared variable's type. A `flo32` variable initialized with `1.5` stores the value as a 32-bit float; a `flo64` variable stores it as a 64-bit double.
+
+Integer literals can also initialize float variables:
+
+```palan
+flo64 n = 5;    // stored as 5.0
+```
+
+### Explicit Cast to Integer
+
+Use `int64(x)` or `int32(x)` to convert a float to an integer (truncation toward zero):
+
+```palan
+cinclude <stdio.h>;
+flo64 pi = 3.14159;
+printf("%ld\n", int64(pi));   // prints 3
+```
+

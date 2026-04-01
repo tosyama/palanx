@@ -274,3 +274,31 @@ TEST(regalloc, callee_saved_across_call) {
     ASSERT_FALSE(r.regMap.at(1).isStack());
     EXPECT_EQ(r.regMap.at(1).base, "%rsi");
 }
+
+// flo64 variable → 8-byte slot at -8(%rbp)
+TEST(regalloc, stack_float64) {
+    VFunc func;
+    func.isEntry = true;
+    func.instrs.push_back(InitVarF{0, VRegType::Float64, ".LF0"});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    ASSERT_TRUE(r.regMap.at(0).isStack());
+    EXPECT_EQ(r.regMap.at(0).stackOffset, -8);
+    EXPECT_EQ(r.regMap.at(0).type,        VRegType::Float64);
+    EXPECT_EQ(r.frameSize, 8);
+}
+
+// flo32 variable → 4-byte slot at -4(%rbp)
+TEST(regalloc, stack_float32) {
+    VFunc func;
+    func.isEntry = true;
+    func.instrs.push_back(InitVarF{0, VRegType::Float32, ".LF0"});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    ASSERT_TRUE(r.regMap.at(0).isStack());
+    EXPECT_EQ(r.regMap.at(0).stackOffset, -4);
+    EXPECT_EQ(r.regMap.at(0).type,        VRegType::Float32);
+    EXPECT_EQ(r.frameSize, 8);
+}

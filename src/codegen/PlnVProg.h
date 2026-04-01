@@ -27,9 +27,10 @@ enum class VRegType {
 
 // -------- Virtual instructions --------
 
-struct LeaLabel { VReg dst; VRegType type; string label; };       // dst = address of label
-struct MovImm   { VReg dst; VRegType type; long long value; };    // dst = immediate integer
-struct InitVar  { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
+struct LeaLabel  { VReg dst; VRegType type; string label; };       // dst = address of label
+struct MovImm    { VReg dst; VRegType type; long long value; };    // dst = immediate integer
+struct InitVar   { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
+struct InitVarF  { VReg dst; VRegType type; string label; };       // variable init: dst_vreg = float at label
 struct Add      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs + rhs
 struct Sub      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs - rhs
 struct Mul      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs * rhs
@@ -49,7 +50,7 @@ struct Jmp        { string label; };                             // jmp label
 struct CondJmp    { string label; VReg cond; bool jumpIfZero; }; // testl+je/jne
 struct Mov        { VReg dst; VReg src; VRegType type; };        // dst = src (variable update)
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, Add, Sub, Mul, Div, Mod, Neg, Cmp, Convert,
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg, Cmp, Convert,
                              CallC, CallPln, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov>;
@@ -61,6 +62,12 @@ struct VStringLiteral {
     string value;
 };
 
+struct VFloatLiteral {
+    string   label;
+    string   value;   // decimal string e.g. "3.14"
+    VRegType type;    // Float32 or Float64
+};
+
 struct VFunc {
     string         name;
     vector<VInstr> instrs;
@@ -70,6 +77,7 @@ struct VFunc {
 };
 
 struct VProg {
-    vector<VStringLiteral> data;   // .rodata
-    vector<VFunc>          funcs;  // .text
+    vector<VStringLiteral> data;       // .rodata string literals
+    vector<VFloatLiteral>  floatData;  // .rodata float literals
+    vector<VFunc>          funcs;      // .text
 };

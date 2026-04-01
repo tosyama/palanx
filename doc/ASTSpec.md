@@ -78,7 +78,7 @@ Variable type
   1. prim - Primitive type
     - type-name\* - Type name string
       - Integer: "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64"
-      - Float: "flt32" "flt64"
+      - Float: "flo32" "flo64"
       - Other: "void"
   2. pntr - Pointer type
     - base-type\* - Base variable type
@@ -153,7 +153,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "id" "add" "sub" "cmp" "call" "cast"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -161,24 +161,26 @@ Expression model
     - value\* - Decimal string (e.g. "10")
   3. lit-uint - Unsigned integer literal (corresponds to UINT token)
     - value\* - Decimal string (e.g. "10")
-  4. id - Identifier (variable reference)
+  4. lit-flo - Floating-point literal (corresponds to FLO token; format: digits.digits)
+    - value\* - Decimal string (e.g. "3.14")
+  5. id - Identifier (variable reference)
     - name\* - Identifier name string
-  5. add - Binary addition
+  6. add - Binary addition
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  6. sub - Binary subtraction
+  7. sub - Binary subtraction
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  7. neg - Unary negation
+  8. neg - Unary negation
     - operand\* - Operand expression model
-  8. cmp - Comparison expression (result: 0 or 1 as int32)
+  9. cmp - Comparison expression (result: 0 or 1 as int32)
     - op\*    - Operator string: "<" "<=" ">" ">=" "==" "!="
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  9. call - Function call expression
+  10. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
-  10. cast - Explicit type cast expression (`type-name(expr)` syntax)
+  11. cast - Explicit type cast expression (`type-name(expr)` syntax)
     - target-type\* - Target Variable type object
     - src\* - Source expression model
 

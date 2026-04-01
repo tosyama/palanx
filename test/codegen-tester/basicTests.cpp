@@ -514,3 +514,21 @@ TEST(codegen, void_func) {
     string after_call = asm_text.substr(call_pos + string("call greet").size(), 30);
     ASSERT_EQ(after_call.find("movq %rax"), string::npos);
 }
+
+TEST(codegen, float_var_decl) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/030_float_var_decl.sa.json";
+    string asmf = "out/030_float_var_decl.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // float constants in .rodata
+    ASSERT_NE(asm_text.find(".double 3.14"), string::npos);
+    ASSERT_NE(asm_text.find(".float 1.5"),   string::npos);
+    // flo64 load/store
+    ASSERT_NE(asm_text.find("movsd"), string::npos);
+    // flo32 load/store
+    ASSERT_NE(asm_text.find("movss"), string::npos);
+}

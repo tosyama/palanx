@@ -19,6 +19,7 @@ enum class ExprKind {
     StrLit,
     IntLit,
     UintLit,
+    FloLit,
     Id,
     Add,
     Sub,
@@ -53,6 +54,12 @@ struct IntLitExpr : Expr {
 struct UintLitExpr : Expr {
     UintLitExpr() : Expr(ExprKind::UintLit) {}
     string value;  // decimal string
+};
+
+struct FloLitExpr : Expr {
+    FloLitExpr() : Expr(ExprKind::FloLit) {}
+    string   value;  // decimal string e.g. "3.14"
+    VRegType type = VRegType::Float64;
 };
 
 struct IdExpr : Expr {

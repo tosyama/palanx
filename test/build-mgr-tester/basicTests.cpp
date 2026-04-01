@@ -119,6 +119,13 @@ TEST(build_mgr, print_primes) {
 	ASSERT_EQ(output, "2\n3\n5\n7\n11\n13\n17\n19\n---\n1\n2\n4\n5\n7\n8\n10\n");
 }
 
+TEST(build_mgr, float_basics) {
+	cleanTestEnv();
+	// flo64 var-decl/init, float-to-int cast for output
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/018_float_basics.pa");
+	ASSERT_EQ(output, "3\n2\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

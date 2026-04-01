@@ -51,9 +51,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         };
 
         std::visit(overloaded{
-            [&](const LeaLabel& l) { setDef(l.dst, l.type); },
-            [&](const MovImm& m)   { setDef(m.dst, m.type); },
-            [&](const InitVar& v)  { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
+            [&](const LeaLabel& l)  { setDef(l.dst, l.type); },
+            [&](const MovImm& m)    { setDef(m.dst, m.type); },
+            [&](const InitVar& v)   { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
+            [&](const InitVarF& v)  { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
             [&](const Add& a)      { setBinOp(a.dst, a.lhs, a.rhs, a.type); },
             [&](const Sub& s)      { setBinOp(s.dst, s.lhs, s.rhs, s.type); },
             [&](const Mul& m)      { setBinOp(m.dst, m.lhs, m.rhs, m.type); },
@@ -111,10 +112,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
     static auto sizeOfType = [](VRegType type) -> int {
         switch (type) {
-            case VRegType::Int8:  return 1;
-            case VRegType::Int16: return 2;
-            case VRegType::Int32: return 4;
-            default:              return 8;  // Int64, Ptr64
+            case VRegType::Int8:   return 1;
+            case VRegType::Int16:  return 2;
+            case VRegType::Int32:  return 4;
+            case VRegType::Float32: return 4;
+            default:               return 8;  // Int64, Ptr64, Float64
         }
     };
 
@@ -282,17 +284,22 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         map<int, vector<int>> freePool;  // size(bytes) -> available offsets
 
         for (auto& instr : func.instrs) {
-            if (auto* v = std::get_if<InitVar>(&instr)) {
-                if (result.count(v->dst)) continue;  // already handled in Pass A (had call uses)
-                int sz     = sizeOfType(v->type);
+            auto allocInitVar = [&](VReg dst, VRegType type) {
+                if (result.count(dst)) return;  // already handled in Pass A
+                int sz     = sizeOfType(type);
                 auto& pool = freePool[sz];
                 if (!pool.empty()) {
                     int off = pool.back();
                     pool.pop_back();
-                    result[v->dst] = PhysLoc{"", v->type, off};
+                    result[dst] = PhysLoc{"", type, off};
                 } else {
-                    allocStackSlot(v->dst, v->type);
+                    allocStackSlot(dst, type);
                 }
+            };
+            if (auto* v = std::get_if<InitVar>(&instr)) {
+                allocInitVar(v->dst, v->type);
+            } else if (auto* v = std::get_if<InitVarF>(&instr)) {
+                allocInitVar(v->dst, v->type);
             } else if (auto* bl = std::get_if<BlockLeave>(&instr)) {
                 for (VReg vr : bl->expiredVars) {
                     if (result.count(vr) && result[vr].isStack())

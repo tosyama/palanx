@@ -16,7 +16,9 @@ using std::vector;
 
 class PlnVCodeGen {
     int nextVReg = 0;
-    int labelCounter_ = 0;  // unique label index for control-flow labels
+    int labelCounter_ = 0;       // unique label index for control-flow labels
+    int floatLabelCounter_ = 0;  // unique label index for float literals
+    VProg* prog_ = nullptr;      // set during generate(); used to push float literals
 
     // Variable symbol table: scoped stack of name -> VReg mappings.
     // enterVarScope/leaveVarScope push/pop; findVar searches from innermost.
@@ -34,6 +36,7 @@ class PlnVCodeGen {
     struct LoopLabels { string start; string end; };
     vector<LoopLabels> loopStack_;  // push/pop in lowerWhileStmt
 
+    string addFloatLiteral(const string& value, VRegType type);
     VReg lowerExpr(const Expr& expr, VFunc& func);
     void lowerStmt(const Stmt& stmt, VFunc& func);
     void lowerExprStmt(const ExprStmt& stmt, VFunc& func);

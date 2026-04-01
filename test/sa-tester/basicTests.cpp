@@ -587,3 +587,30 @@ TEST(sa, void_func) {
 	}
 	ASSERT_TRUE(found_call);
 }
+
+TEST(sa, float_var_decl) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/041_float_var_decl.pa");
+
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"].size(), 3u);
+
+	// flo64 x = 3.14 → lit-flo adopts flo64 type
+	const auto& x = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(x["name"], "x");
+	ASSERT_EQ(x["var-type"]["type-name"], "flo64");
+	ASSERT_EQ(x["init"]["expr-type"], "lit-flo");
+	ASSERT_EQ(x["init"]["value-type"]["type-name"], "flo64");
+
+	// flo32 y = 1.5 → lit-flo adopts flo32 type
+	const auto& y = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(y["name"], "y");
+	ASSERT_EQ(y["var-type"]["type-name"], "flo32");
+	ASSERT_EQ(y["init"]["value-type"]["type-name"], "flo32");
+
+	// flo64 z (no init)
+	const auto& z = jout["statements"][2]["vars"][0];
+	ASSERT_EQ(z["name"], "z");
+	ASSERT_EQ(z["var-type"]["type-name"], "flo64");
+	ASSERT_FALSE(z.contains("init"));
+}

@@ -44,6 +44,7 @@ enum {
 	KW_WHILE =	PlnParser::token::KW_WHILE,
 	KW_IF = PlnParser::token::KW_IF,
 	KW_ELSE = PlnParser::token::KW_ELSE,
+	FLO =	PlnParser::token::FLO,
 	KW_BREAK = PlnParser::token::KW_BREAK,
 	KW_CONTINUE = PlnParser::token::KW_CONTINUE,
 	OPE_LE =	PlnParser::token::OPE_LE,
@@ -76,6 +77,7 @@ PlnLexer::PlnLexer(const string& input_file)
 
 DIGIT	[0-9]+
 UDIGIT	[0-9]+"u"
+FLOAT	[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?
 ID	[a-zA-Z_][0-9a-zA-Z_]*
 DEMILITER	"{"|"}"|"("|")"|"["|"]"|","|";"|":"|"="|"+"|"-"|"*"|"/"|"%"|"<"|">"|"!"|"?"|"&"|"@"|"."|"$"|"#"
 STRING	"\""(\\.|\\\n|[^\\\"])*"\""
@@ -89,6 +91,10 @@ COMMENT1	\/\/[^\n]*\n
 	loc.step();
 %}
 
+<*>{FLOAT} {
+		lval.build<string>() = yytext;
+		return FLO;
+	}
 <*>{DIGIT} {
 		lval.build<string>() = yytext;
 		return INT;

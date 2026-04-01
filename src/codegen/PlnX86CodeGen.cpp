@@ -7,10 +7,12 @@ using namespace std;
 
 static const char* movInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int8:  return "movb";
-        case VRegType::Int16: return "movw";
-        case VRegType::Int32: return "movl";
-        default:              return "movq";
+        case VRegType::Int8:    return "movb";
+        case VRegType::Int16:   return "movw";
+        case VRegType::Int32:   return "movl";
+        case VRegType::Float32: return "movss";
+        case VRegType::Float64: return "movsd";
+        default:                return "movq";
     }
 }
 
@@ -137,10 +139,16 @@ static const PhysRegs x86PhysRegs = {
 
 void PlnX86CodeGen::emit(const VProg& prog)
 {
-    if (!prog.data.empty()) {
+    if (!prog.data.empty() || !prog.floatData.empty()) {
         emitSection(".rodata");
-        for (auto& d : prog.data) {
+        for (auto& d : prog.data)
             emitStringLiteral(d.label, d.value);
+        for (auto& f : prog.floatData) {
+            emitLabel(f.label);
+            if (f.type == VRegType::Float32)
+                out << "\t.float " << f.value << "\n";
+            else
+                out << "\t.double " << f.value << "\n";
         }
     }
 
@@ -201,6 +209,16 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     out << "\t" << movInstrForType(i->type) << " $" << i->imm << ", " << loc.stackOffset << "(%rbp)\n";
                 } else {
                     out << "\t" << movInstrForType(i->type) << " $" << i->imm << ", " << sizedRegName(loc.base, i->type) << "\n";
+                }
+            } else if (auto* i = std::get_if<InitVarF>(&instr)) {
+                const PhysLoc& loc = rm.at(i->dst);
+                const char* mov = movInstrForType(i->type);
+                if (loc.isStack()) {
+                    // Load float constant into %xmm0 scratch, then store to stack slot.
+                    out << "\t" << mov << " " << i->label << "(%rip), %xmm0\n";
+                    out << "\t" << mov << " %xmm0, " << loc.stackOffset << "(%rbp)\n";
+                } else {
+                    out << "\t" << mov << " " << i->label << "(%rip), " << loc.base << "\n";
                 }
             } else if (auto* a = std::get_if<Add>(&instr)) {
                 if (!rm.count(a->dst)) continue;  // dead: result never used
@@ -556,6 +574,11 @@ void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType 
     if (from == VRegType::Int32 && to == VRegType::Int16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
     if (from == VRegType::Int32 && to == VRegType::Int8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
     if (from == VRegType::Int16 && to == VRegType::Int8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
+    // Float to integer conversion (truncation toward zero)
+    if (from == VRegType::Float64 && to == VRegType::Int64) { out << "\tcvttsd2siq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Float64 && to == VRegType::Int32) { out << "\tcvttsd2sil " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Float32 && to == VRegType::Int64) { out << "\tcvttss2siq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Float32 && to == VRegType::Int32) { out << "\tcvttss2sil " << srcAt(from) << ", " << dst << "\n"; return; }
     BOOST_ASSERT(false);  // unsupported conversion
 }
 

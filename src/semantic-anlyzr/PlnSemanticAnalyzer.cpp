@@ -182,6 +182,17 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		else
 			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
 
+	} else if (expr_type == "lit-flo") {
+		if (expectedType && expectedType->kind == PlnType::Kind::Prim) {
+			auto pn = static_cast<const PrimType*>(expectedType)->name;
+			if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64)
+				sa_expr["value-type"] = registry_.toJson(expectedType);
+			else
+				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Float64));
+		} else {
+			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Float64));
+		}
+
 	} else if (expr_type == "lit-str") {
 		string value = expr["value"];
 		if (!strLiteralLabels.count(value)) {
