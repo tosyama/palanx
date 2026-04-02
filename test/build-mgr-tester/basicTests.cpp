@@ -159,6 +159,27 @@ TEST(build_mgr, int_to_float_implicit) {
 	ASSERT_EQ(output, "7.000000\n-100.000000\n");
 }
 
+TEST(build_mgr, int_convert_extra) {
+	cleanTestEnv();
+	// int8/16 widening and int32/16->int8 narrowing
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/023_int_convert_extra.pa");
+	ASSERT_EQ(output, "100 100 300 -56 44\n");
+}
+
+TEST(build_mgr, float32_convert) {
+	cleanTestEnv();
+	// flo64<->flo32, flo32->int, int->flo32, int8/16->flo32/64
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/024_float32_convert.pa");
+	ASSERT_EQ(output, "3 3 3\n10.000000 5.000000 12.000000\n5.000000\n42.000000\n");
+}
+
+TEST(build_mgr, uint_convert) {
+	cleanTestEnv();
+	// uint widening/narrowing and uint->float implicit
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/025_uint_convert.pa");
+	ASSERT_EQ(output, "200 200 200\n200\n200.000000 200.000000\n300.000000 70000.000000\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

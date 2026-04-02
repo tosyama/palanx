@@ -1,0 +1,22 @@
+cinclude <stdio.h>;
+
+flo64 pi = 3.7;
+flo32 h = flo32(pi);  // flo64 -> flo32
+int32 m = int32(h);   // flo32 -> int32: truncate toward zero -> 3
+int64 n = int64(h);   // flo32 -> int64: 3
+int32 x = int32(pi);  // flo64 -> int32: 3
+printf("%d %ld %d\n", m, n, x);
+
+int64 y = 10;
+flo32 r = flo32(y);  // int64 -> flo32
+int8 a = 5;
+flo32 s = a;         // int8 -> flo32 implicit
+flo64 t = a;         // int8 -> flo64 implicit
+int16 bv = 12;
+flo32 u = bv;        // int16 -> flo32 implicit
+printf("%f %f %f\n", r, s, u);
+printf("%f\n", t);
+
+int32 p = 42;
+flo32 q = p;         // int32 -> flo32 implicit
+printf("%f\n", q);

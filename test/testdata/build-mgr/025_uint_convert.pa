@@ -1,0 +1,24 @@
+cinclude <stdio.h>;
+
+// uint widening
+uint8 a = 200;
+uint16 b = a;   // uint8 -> uint16
+uint32 c = b;   // uint16 -> uint32
+uint64 d = c;   // uint32 -> uint64
+
+// uint narrowing
+uint8 e = uint8(d);   // uint64 -> uint8: 200
+uint16 f = uint16(d); // uint64 -> uint16: 200
+
+printf("%d %d %d\n", b, c, e);
+printf("%d\n", f);
+
+// uint -> float
+flo64 x = a;  // uint8 -> flo64 implicit
+flo32 y = a;  // uint8 -> flo32 implicit
+uint16 g = 300;
+flo64 z = g;  // uint16 -> flo64 implicit
+uint32 h = 70000;
+flo64 w = h;  // uint32 -> flo64 implicit
+printf("%f %f\n", x, y);
+printf("%f %f\n", z, w);

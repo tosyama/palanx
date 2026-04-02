@@ -620,32 +620,76 @@ void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType 
     };
 
     // Signed integer widening (movsx family)
-    if (from == VRegType::Int8  && to == VRegType::Int16) { out << "\tmovsbw " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int8  && to == VRegType::Int32) { out << "\tmovsbl " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int8  && to == VRegType::Int64) { out << "\tmovsbq " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int16 && to == VRegType::Int32) { out << "\tmovswl " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int16 && to == VRegType::Int64) { out << "\tmovswq " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int32 && to == VRegType::Int64) { out << "\tmovslq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int8  && to == VRegType::Int16) {
+        out << "\tmovsbw " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int8  && to == VRegType::Int32) {
+        out << "\tmovsbl " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int8  && to == VRegType::Int64) {
+        out << "\tmovsbq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int16 && to == VRegType::Int32) {
+        out << "\tmovswl " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int16 && to == VRegType::Int64) {
+        out << "\tmovswq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int32 && to == VRegType::Int64) {
+        out << "\tmovslq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
     // Narrowing: reference lower bits of the source register (or same memory ref)
-    if (from == VRegType::Int64 && to == VRegType::Int32) { out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int64 && to == VRegType::Int16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int64 && to == VRegType::Int8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int32 && to == VRegType::Int16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int32 && to == VRegType::Int8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int16 && to == VRegType::Int8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int64 && to == VRegType::Int32) {
+        out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int64 && to == VRegType::Int16) {
+        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int64 && to == VRegType::Int8) {
+        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int32 && to == VRegType::Int16) {
+        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int32 && to == VRegType::Int8) {
+        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int16 && to == VRegType::Int8) {
+        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
+    }
     // Float to integer conversion (truncation toward zero)
-    if (from == VRegType::Float64 && to == VRegType::Int64) { out << "\tcvttsd2siq " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Float64 && to == VRegType::Int32) { out << "\tcvttsd2sil " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Float32 && to == VRegType::Int64) { out << "\tcvttss2siq " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Float32 && to == VRegType::Int32) { out << "\tcvttss2sil " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Float64 && to == VRegType::Int64) {
+        out << "\tcvttsd2siq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Float64 && to == VRegType::Int32) {
+        out << "\tcvttsd2sil " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Float32 && to == VRegType::Int64) {
+        out << "\tcvttss2siq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Float32 && to == VRegType::Int32) {
+        out << "\tcvttss2sil " << srcAt(from) << ", " << dst << "\n"; return;
+    }
     // Float precision conversion
-    if (from == VRegType::Float32 && to == VRegType::Float64) { out << "\tcvtss2sd "  << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Float64 && to == VRegType::Float32) { out << "\tcvtsd2ss "  << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Float32 && to == VRegType::Float64) {
+        out << "\tcvtss2sd " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Float64 && to == VRegType::Float32) {
+        out << "\tcvtsd2ss " << srcAt(from) << ", " << dst << "\n"; return;
+    }
     // Integer to float conversion
-    if (from == VRegType::Int32 && to == VRegType::Float64) { out << "\tcvtsi2sdl " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int64 && to == VRegType::Float64) { out << "\tcvtsi2sdq " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int32 && to == VRegType::Float32) { out << "\tcvtsi2ssl " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Int64 && to == VRegType::Float32) { out << "\tcvtsi2ssq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Int32 && to == VRegType::Float64) {
+        out << "\tcvtsi2sdl " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int64 && to == VRegType::Float64) {
+        out << "\tcvtsi2sdq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int32 && to == VRegType::Float32) {
+        out << "\tcvtsi2ssl " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Int64 && to == VRegType::Float32) {
+        out << "\tcvtsi2ssq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
     // Smaller signed integers: sign-extend to 64-bit via %rax, then convert.
     if ((from == VRegType::Int8 || from == VRegType::Int16) &&
         (to == VRegType::Float32 || to == VRegType::Float64)) {
@@ -656,22 +700,44 @@ void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType 
         return;
     }
     // Unsigned integer widening (movzx family — zero-extend)
-    if (from == VRegType::Uint8  && to == VRegType::Uint16) { out << "\tmovzbw " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint8  && to == VRegType::Uint32) { out << "\tmovzbl " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint8  && to == VRegType::Uint64) { out << "\tmovzbq " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint16 && to == VRegType::Uint32) { out << "\tmovzwl " << srcAt(from) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint16 && to == VRegType::Uint64) { out << "\tmovzwq " << srcAt(from) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint8  && to == VRegType::Uint16) {
+        out << "\tmovzbw " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint8  && to == VRegType::Uint32) {
+        out << "\tmovzbl " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint8  && to == VRegType::Uint64) {
+        out << "\tmovzbq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint16 && to == VRegType::Uint32) {
+        out << "\tmovzwl " << srcAt(from) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint16 && to == VRegType::Uint64) {
+        out << "\tmovzwq " << srcAt(from) << ", " << dst << "\n"; return;
+    }
     if (from == VRegType::Uint32 && to == VRegType::Uint64) {
         // movl to 32-bit register implicitly zero-extends the upper 32 bits of the 64-bit register.
         out << "\tmovl " << srcAt(from) << ", " << sizedRegName(dst, VRegType::Int32) << "\n"; return;
     }
     // Unsigned narrowing (truncation): reference low bits of the source
-    if (from == VRegType::Uint64 && to == VRegType::Uint32) { out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint64 && to == VRegType::Uint16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint64 && to == VRegType::Uint8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint32 && to == VRegType::Uint16) { out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint32 && to == VRegType::Uint8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
-    if (from == VRegType::Uint16 && to == VRegType::Uint8)  { out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return; }
+    if (from == VRegType::Uint64 && to == VRegType::Uint32) {
+        out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint64 && to == VRegType::Uint16) {
+        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint64 && to == VRegType::Uint8) {
+        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint32 && to == VRegType::Uint16) {
+        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint32 && to == VRegType::Uint8) {
+        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
+    }
+    if (from == VRegType::Uint16 && to == VRegType::Uint8) {
+        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
+    }
     // Unsigned integer to float conversion (uint8/16/32 fit in int64, so cvtsi2s*q is correct after zero-extension)
     if (from == VRegType::Uint8 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";

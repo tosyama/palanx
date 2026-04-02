@@ -588,3 +588,70 @@ TEST(codegen, uint_convert) {
     // uint8/uint16/uint32 → flo64: cvtsi2sdq %rax used in all three paths
     ASSERT_NE(asm_text.find("cvtsi2sdq %rax,"), string::npos);
 }
+
+TEST(codegen, int_convert_extra) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/034_int_convert_extra.sa.json";
+    string asmf = "out/034_int_convert_extra.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // int8 → int16: sign-extend byte to word
+    ASSERT_NE(asm_text.find("movsbw"), string::npos);
+    // int8 → int64: sign-extend byte to quad
+    ASSERT_NE(asm_text.find("movsbq"), string::npos);
+    // int16 → int64: sign-extend word to quad
+    ASSERT_NE(asm_text.find("movswq"), string::npos);
+    // int32 → int8: narrowing (low byte only)
+    ASSERT_NE(asm_text.find("movb"), string::npos);
+}
+
+TEST(codegen, float32_convert) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/035_float32_convert.sa.json";
+    string asmf = "out/035_float32_convert.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // flo64 → flo32
+    ASSERT_NE(asm_text.find("cvtsd2ss"), string::npos);
+    // flo32 → int32
+    ASSERT_NE(asm_text.find("cvttss2sil"), string::npos);
+    // flo32 → int64
+    ASSERT_NE(asm_text.find("cvttss2siq"), string::npos);
+    // flo64 → int32
+    ASSERT_NE(asm_text.find("cvttsd2sil"), string::npos);
+    // int32 → flo32
+    ASSERT_NE(asm_text.find("cvtsi2ssl"), string::npos);
+    // int64 → flo32
+    ASSERT_NE(asm_text.find("cvtsi2ssq"), string::npos);
+    // int8/int16 → float: sign-extend via %rax then convert
+    ASSERT_NE(asm_text.find("movsbq"), string::npos);   // int8 path
+    ASSERT_NE(asm_text.find("movswq"), string::npos);   // int16 path
+}
+
+TEST(codegen, uint_widen_narrow) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/036_uint_widen_narrow.sa.json";
+    string asmf = "out/036_uint_widen_narrow.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // uint8 → uint16: zero-extend byte to word
+    ASSERT_NE(asm_text.find("movzbw"), string::npos);
+    // uint8 → uint64: zero-extend byte to quad
+    ASSERT_NE(asm_text.find("movzbq"), string::npos);
+    // uint16 → uint32: zero-extend word to long
+    ASSERT_NE(asm_text.find("movzwl"), string::npos);
+    // uint16 → uint64: zero-extend word to quad
+    ASSERT_NE(asm_text.find("movzwq"), string::npos);
+    // uint32 → uint64: movl zero-extends implicitly
+    // (uint8/16/32 → flo32): cvtsi2ssq %rax
+    ASSERT_NE(asm_text.find("cvtsi2ssq %rax,"), string::npos);
+}
