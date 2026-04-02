@@ -121,9 +121,9 @@ TEST(build_mgr, print_primes) {
 
 TEST(build_mgr, float_basics) {
 	cleanTestEnv();
-	// flo64 var-decl/init, float-to-int cast for output
+	// flo64/flo32 var-decl/init (float and int literals), float-to-int cast for output
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/018_float_basics.pa");
-	ASSERT_EQ(output, "3\n2\n");
+	ASSERT_EQ(output, "3\n2\n5\n3\n");
 }
 
 TEST(build_mgr, float_printf) {

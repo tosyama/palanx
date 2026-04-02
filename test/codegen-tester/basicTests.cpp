@@ -531,6 +531,9 @@ TEST(codegen, float_var_decl) {
     ASSERT_NE(asm_text.find("movsd"), string::npos);
     // flo32 load/store
     ASSERT_NE(asm_text.find("movss"), string::npos);
+    // int literal adopted float type: emitted as float constant in .rodata
+    ASSERT_NE(asm_text.find(".double 5"), string::npos);
+    ASSERT_NE(asm_text.find(".float 3"),  string::npos);
 }
 
 TEST(codegen, float_arg) {
