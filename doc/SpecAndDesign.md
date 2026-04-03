@@ -6,25 +6,30 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-04-01)
-version: 0.1.13
-- This iteration adds `flo32` and `flo64` type support: variable declaration and initialization with float literals.
-- Float-to-integer explicit cast (`int64(x)`) is also supported to enable testable output.
-- The following sample is verified by an end-to-end build-mgr test.
+### 2.1 Iteration Goal (2026-04-03)
+version: 0.1.14
+- This iteration adds arithmetic operators (`+`, `-`, `*`, `/`) for `flo32` and `flo64` types.
+- The following sample computes sqrt(2) via Newton's method, exercising float arithmetic, if, and while.
 
 ```palan
 cinclude <stdio.h>;
 
-flo64 pi = 3.0;
-flo64 e = 2.71828;
-printf("%ld\n", int64(pi));
-printf("%ld\n", int64(e));
+flo64 x = 2.0;
+flo64 guess = 1.0;
+flo64 eps = 0.000001;
+flo64 diff = guess * guess - x;
+if diff < 0.0 { diff = -diff; }
+while diff > eps {
+    guess = (guess + x / guess) / 2.0;
+    diff = guess * guess - x;
+    if diff < 0.0 { diff = -diff; }
+}
+printf("sqrt(2) = %f\n", guess);
 ```
 
 Expected output:
 ```
-3
-2
+sqrt(2) = 1.414214
 ```
 
 
