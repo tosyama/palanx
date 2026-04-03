@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.9
+ver. 0.1.13
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -100,6 +100,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   Present on all expression kinds except bare call with no return type.
   - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
     defaults to int64 when no expected type is available
+  - lit-flo: adopts flo32 or flo64 when used in a float-typed context (e.g. `flo32 y = 1.5;` → flo32);
+    defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
   - id: same object as var-type
   - add: promoted type of left and right operands (see Promotion rules);

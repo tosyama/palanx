@@ -123,6 +123,9 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
 
         int gf = primGroup(pf->name);
         int gt = primGroup(pt->name);
+        // Integer (signed or unsigned) → float: implicit widening allowed.
+        // Float → integer and cross-signedness require explicit cast.
+        if ((gf == 0 || gf == 1) && gt == 2) return TypeCompat::ImplicitWiden;
         if (gf != gt) return TypeCompat::ExplicitCast;
 
         int rf = primRank(pf->name);

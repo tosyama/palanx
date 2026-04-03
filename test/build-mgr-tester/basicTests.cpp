@@ -119,6 +119,67 @@ TEST(build_mgr, print_primes) {
 	ASSERT_EQ(output, "2\n3\n5\n7\n11\n13\n17\n19\n---\n1\n2\n4\n5\n7\n8\n10\n");
 }
 
+TEST(build_mgr, float_basics) {
+	cleanTestEnv();
+	// flo64/flo32 var-decl/init (float and int literals), float-to-int cast for output
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/018_float_basics.pa");
+	ASSERT_EQ(output, "3\n2\n5\n3\n");
+}
+
+TEST(build_mgr, float_printf) {
+	cleanTestEnv();
+	// flo64 variable and float literal as printf args
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/019_float_printf.pa");
+	ASSERT_EQ(output, "3.140000\n2.0\n1.500000\n");
+}
+
+TEST(build_mgr, float_mixed_args) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/020_float_mixed_args.pa");
+	// Case 1: interleaved int/float args (all registers)
+	// Case 2: int overflow to stack, float in xmm
+	// Case 3: float overflow to stack (9 floats)
+	ASSERT_EQ(output,
+		"10 3.500000 20\n"
+		"1 2 3 4 5 6 7 0.500000\n"
+		"1.000000 2.000000 3.000000 4.000000 5.000000 6.000000 7.000000 8.000000 9.000000\n");
+}
+
+TEST(build_mgr, c_float_return) {
+	cleanTestEnv();
+	// C function returning flo64/flo32: stored in var and used directly as arg
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/021_c_float_return.pa");
+	ASSERT_EQ(output, "1.500000\n2.250000\n0.500000\n");
+}
+
+TEST(build_mgr, int_to_float_implicit) {
+	cleanTestEnv();
+	// int32/int64 variables assigned to flo64 without explicit cast
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/022_int_to_float_implicit.pa");
+	ASSERT_EQ(output, "7.000000\n-100.000000\n");
+}
+
+TEST(build_mgr, int_convert_extra) {
+	cleanTestEnv();
+	// int8/16 widening and int32/16->int8 narrowing
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/023_int_convert_extra.pa");
+	ASSERT_EQ(output, "100 100 300 -56 44\n");
+}
+
+TEST(build_mgr, float32_convert) {
+	cleanTestEnv();
+	// flo64<->flo32, flo32->int, int->flo32, int8/16->flo32/64
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/024_float32_convert.pa");
+	ASSERT_EQ(output, "3 3 3\n10.000000 5.000000 12.000000\n5.000000\n42.000000\n");
+}
+
+TEST(build_mgr, uint_convert) {
+	cleanTestEnv();
+	// uint widening/narrowing and uint->float implicit
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/025_uint_convert.pa");
+	ASSERT_EQ(output, "200 200 200\n200\n200.000000 200.000000\n300.000000 70000.000000\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

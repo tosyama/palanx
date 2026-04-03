@@ -1,0 +1,83 @@
+{
+    "functions": [],
+    "original": "034_int_convert_extra.pa",
+    "statements": [
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "a",
+            "var-type": { "type-kind": "prim", "type-name": "int8" },
+            "init": { "expr-type": "lit-int", "value": "5",
+                      "value-type": { "type-kind": "prim", "type-name": "int8" } }
+        }]},
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "b",
+            "var-type": { "type-kind": "prim", "type-name": "int16" },
+            "init": { "expr-type": "lit-int", "value": "0",
+                      "value-type": { "type-kind": "prim", "type-name": "int16" } }
+        }]},
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "c",
+            "var-type": { "type-kind": "prim", "type-name": "int64" },
+            "init": { "expr-type": "lit-int", "value": "0",
+                      "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        }]},
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "d",
+            "var-type": { "type-kind": "prim", "type-name": "int32" },
+            "init": { "expr-type": "lit-int", "value": "100",
+                      "value-type": { "type-kind": "prim", "type-name": "int32" } }
+        }]},
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "e",
+            "var-type": { "type-kind": "prim", "type-name": "int8" },
+            "init": { "expr-type": "lit-int", "value": "0",
+                      "value-type": { "type-kind": "prim", "type-name": "int8" } }
+        }]},
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "f",
+            "var-type": { "type-kind": "prim", "type-name": "int16" },
+            "init": { "expr-type": "lit-int", "value": "300",
+                      "value-type": { "type-kind": "prim", "type-name": "int16" } }
+        }]},
+        { "stmt-type": "assign", "name": "b",
+          "value": { "expr-type": "convert",
+            "from-type": { "type-kind": "prim", "type-name": "int8" },
+            "value-type": { "type-kind": "prim", "type-name": "int16" },
+            "src": { "expr-type": "id", "name": "a",
+                     "value-type": { "type-kind": "prim", "type-name": "int8" } }
+          }
+        },
+        { "stmt-type": "assign", "name": "c",
+          "value": { "expr-type": "convert",
+            "from-type": { "type-kind": "prim", "type-name": "int8" },
+            "value-type": { "type-kind": "prim", "type-name": "int64" },
+            "src": { "expr-type": "id", "name": "a",
+                     "value-type": { "type-kind": "prim", "type-name": "int8" } }
+          }
+        },
+        { "stmt-type": "assign", "name": "c",
+          "value": { "expr-type": "convert",
+            "from-type": { "type-kind": "prim", "type-name": "int16" },
+            "value-type": { "type-kind": "prim", "type-name": "int64" },
+            "src": { "expr-type": "id", "name": "f",
+                     "value-type": { "type-kind": "prim", "type-name": "int16" } }
+          }
+        },
+        { "stmt-type": "assign", "name": "e",
+          "value": { "expr-type": "convert",
+            "from-type": { "type-kind": "prim", "type-name": "int32" },
+            "value-type": { "type-kind": "prim", "type-name": "int8" },
+            "src": { "expr-type": "id", "name": "d",
+                     "value-type": { "type-kind": "prim", "type-name": "int32" } }
+          }
+        },
+        { "stmt-type": "assign", "name": "e",
+          "value": { "expr-type": "convert",
+            "from-type": { "type-kind": "prim", "type-name": "int16" },
+            "value-type": { "type-kind": "prim", "type-name": "int8" },
+            "src": { "expr-type": "id", "name": "f",
+                     "value-type": { "type-kind": "prim", "type-name": "int16" } }
+          }
+        }
+    ],
+    "str-literals": []
+}

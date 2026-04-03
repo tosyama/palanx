@@ -22,8 +22,9 @@ static const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 	const auto* p = static_cast<const PrimType*>(t);
 	using N = PrimType::Name;
 	switch (p->name) {
-		case N::Int8:  case N::Int16:  return reg.prim(N::Int32);
-		case N::Uint8: case N::Uint16: return reg.prim(N::Uint32);
+		case N::Int8:   case N::Int16:  return reg.prim(N::Int32);
+		case N::Uint8:  case N::Uint16: return reg.prim(N::Uint32);
+		case N::Float32:                return reg.prim(N::Float64);
 		default: return t;
 	}
 }
@@ -181,6 +182,17 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			sa_expr["value-type"] = registry_.toJson(expectedType);
 		else
 			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
+
+	} else if (expr_type == "lit-flo") {
+		if (expectedType && expectedType->kind == PlnType::Kind::Prim) {
+			auto pn = static_cast<const PrimType*>(expectedType)->name;
+			if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64)
+				sa_expr["value-type"] = registry_.toJson(expectedType);
+			else
+				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Float64));
+		} else {
+			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Float64));
+		}
 
 	} else if (expr_type == "lit-str") {
 		string value = expr["value"];

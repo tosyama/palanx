@@ -103,6 +103,7 @@ class PlnLexer;
 
 %token <string>	INT	"integer"
 %token <string>	UINT	"unsigned integer"
+%token <string>	FLO	"float"
 %token <string>	STRING	"string"
 %token <string>	ID	"identifier"
 %token <string>	PATH	"path"
@@ -650,6 +651,8 @@ term: INT
 	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}}; LOC($$, @$); }
 	| UINT
 	{ $$ = {{"expr-type", "lit-uint"}, {"value", move($1)}}; LOC($$, @$); }
+	| FLO
+	{ $$ = {{"expr-type", "lit-flo"}, {"value", move($1)}}; LOC($$, @$); }
 	| STRING
 	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; LOC($$, @$); }
 	| ID

@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+
+int8 a = 100;
+int16 b = a;       // int8 -> int16 widening
+int64 c = a;       // int8 -> int64 widening
+int16 f = 300;
+int64 g = f;       // int16 -> int64 widening
+int32 d = 200;
+int8 e = int8(d);  // int32 -> int8 narrowing: 200 -> -56
+int8 h = int8(f);  // int16 -> int8 narrowing: 300 -> 44
+printf("%d %ld %ld %d %d\n", b, c, g, e, h);

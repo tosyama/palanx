@@ -408,6 +408,30 @@ TEST(gen_ast, optional_semicolon) {
 	ASSERT_EQ(y_decl["vars"][0]["init"]["expr-type"], "add");
 }
 
+TEST(gen_ast, float_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/013_float_literal.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	ASSERT_EQ(jout["ast"]["statements"].size(), 2u);
+
+	// flo64 x = 3.14
+	const auto& x_decl = jout["ast"]["statements"][0];
+	ASSERT_EQ(x_decl["stmt-type"], "var-decl");
+	ASSERT_EQ(x_decl["vars"][0]["name"], "x");
+	ASSERT_EQ(x_decl["vars"][0]["var-type"]["type-name"], "flo64");
+	ASSERT_EQ(x_decl["vars"][0]["init"]["expr-type"], "lit-flo");
+	ASSERT_EQ(x_decl["vars"][0]["init"]["value"], "3.14");
+
+	// flo32 y = 1.5
+	const auto& y_decl = jout["ast"]["statements"][1];
+	ASSERT_EQ(y_decl["vars"][0]["name"], "y");
+	ASSERT_EQ(y_decl["vars"][0]["var-type"]["type-name"], "flo32");
+	ASSERT_EQ(y_decl["vars"][0]["init"]["expr-type"], "lit-flo");
+	ASSERT_EQ(y_decl["vars"][0]["init"]["value"], "1.5");
+}
+
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast -h");

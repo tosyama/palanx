@@ -10,10 +10,16 @@ using namespace std;
 static VRegType toVRegType(const json& vt) {
     if (vt["type-kind"] == "pntr") return VRegType::Ptr64;
     string name = vt["type-name"].get<string>();
-    if (name == "int8")  return VRegType::Int8;
-    if (name == "int16") return VRegType::Int16;
-    if (name == "int32") return VRegType::Int32;
-    if (name == "int64") return VRegType::Int64;
+    if (name == "int8")   return VRegType::Int8;
+    if (name == "int16")  return VRegType::Int16;
+    if (name == "int32")  return VRegType::Int32;
+    if (name == "int64")  return VRegType::Int64;
+    if (name == "uint8")  return VRegType::Uint8;
+    if (name == "uint16") return VRegType::Uint16;
+    if (name == "uint32") return VRegType::Uint32;
+    if (name == "uint64") return VRegType::Uint64;
+    if (name == "flo32")  return VRegType::Float32;
+    if (name == "flo64")  return VRegType::Float64;
     cerr << PlnCodegenMessage::getMessage(E_UnknownType, name) << endl;
     exit(1);
 }
@@ -36,6 +42,12 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     if (expr_type == "lit-uint") {
         auto e = make_unique<UintLitExpr>();
         e->value = j["value"];
+        return e;
+    }
+    if (expr_type == "lit-flo") {
+        auto e = make_unique<FloLitExpr>();
+        e->value = j["value"];
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Float64;
         return e;
     }
     if (expr_type == "id") {

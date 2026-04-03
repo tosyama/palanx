@@ -126,6 +126,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Cmp{dst, e.op, l, r, e.operandType});
             return dst;
         }
+        case ExprKind::FloLit: {
+            auto& e = static_cast<const FloLitExpr&>(expr);
+            string label = addFloatLiteral(e.value, e.type);
+            VReg r = allocVReg();
+            func.instrs.push_back(InitVarF{r, e.type, label});
+            return r;
+        }
         case ExprKind::CCCall: {
             auto& e = static_cast<const CCCallExpr&>(expr);
             BOOST_ASSERT(e.hasRet);
@@ -250,17 +257,41 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
     }
 }
 
+// Return a float literal label, adding the literal to prog_.floatData.
+string PlnVCodeGen::addFloatLiteral(const string& value, VRegType type)
+{
+    string label = ".LF" + to_string(floatLabelCounter_++);
+    prog_->floatData.push_back(VFloatLiteral{label, value, type});
+    return label;
+}
+
 void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
 {
     for (auto& ve : stmt.vars) {
         VReg r;
         if (ve.init) {
-            if (ve.init->kind == ExprKind::IntLit) {
-                auto& e = static_cast<const IntLitExpr&>(*ve.init);
+            if (ve.init->kind == ExprKind::FloLit) {
+                auto& e = static_cast<const FloLitExpr&>(*ve.init);
+                string label = addFloatLiteral(e.value, e.type);
                 r = allocVReg();
-                func.instrs.push_back(InitVar{r, e.type, stoll(e.value)});
+                func.instrs.push_back(InitVarF{r, e.type, label});
                 if (!blockVarStack_.empty())
                     blockVarStack_.back().push_back(r);
+            } else if (ve.init->kind == ExprKind::IntLit) {
+                auto& e = static_cast<const IntLitExpr&>(*ve.init);
+                if (e.type == VRegType::Float32 || e.type == VRegType::Float64) {
+                    // Int literal adopted float type (e.g. flo64 x = 5)
+                    string label = addFloatLiteral(e.value, e.type);
+                    r = allocVReg();
+                    func.instrs.push_back(InitVarF{r, e.type, label});
+                    if (!blockVarStack_.empty())
+                        blockVarStack_.back().push_back(r);
+                } else {
+                    r = allocVReg();
+                    func.instrs.push_back(InitVar{r, e.type, stoll(e.value)});
+                    if (!blockVarStack_.empty())
+                        blockVarStack_.back().push_back(r);
+                }
             } else {
                 r = lowerExpr(*ve.init, func);
             }
@@ -378,6 +409,7 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
 {
     VProg prog;
+    prog_ = &prog;
 
     // Populate .rodata entries
     for (auto& d : module.strLiterals)

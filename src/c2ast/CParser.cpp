@@ -391,8 +391,8 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	if (unsigned_int(tokens, index))   { set_prim("uint32"); result_index = index; return true; }
 	if (signed_int(tokens, index))     { set_prim("int32");  result_index = index; return true; }
 
-	if (CONSUME_KW(TK_DOUBLE)) { set_prim("flt64"); result_index = index; return true; }
-	if (CONSUME_KW(TK_FLOAT))  { set_prim("flt32"); result_index = index; return true; }
+	if (CONSUME_KW(TK_DOUBLE)) { set_prim("flo64"); result_index = index; return true; }
+	if (CONSUME_KW(TK_FLOAT))  { set_prim("flo32"); result_index = index; return true; }
 
 	if (CONSUME_KW(TK_STRUCT)) {
 		if (struct_union_definition(ast, tokens, index)) {

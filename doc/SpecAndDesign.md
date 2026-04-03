@@ -6,63 +6,25 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-03-31)
-version: 0.1.12
-- This iteration implements `break` and `continue` statements for `while` loops.
+### 2.1 Iteration Goal (2026-04-01)
+version: 0.1.13
+- This iteration adds `flo32` and `flo64` type support: variable declaration and initialization with float literals.
+- Float-to-integer explicit cast (`int64(x)`) is also supported to enable testable output.
 - The following sample is verified by an end-to-end build-mgr test.
 
 ```palan
 cinclude <stdio.h>;
 
-func print_primes(int64 limit) {
-    int64 n = 2;
-    while n <= limit {
-        int64 i = 2;
-        int64 is_prime = 1;
-        while i * i <= n {
-            if n % i == 0 {
-                is_prime = 0;
-                break;
-            }
-            i + 1 -> i;
-        }
-        if is_prime == 1 { printf("%ld\n", n); }
-        n + 1 -> n;
-    }
-}
-
-func print_nonmult3(int64 limit) {
-    int64 i = 0;
-    while i < limit {
-        i + 1 -> i;
-        if i % 3 == 0 { continue; }
-        printf("%ld\n", i);
-    }
-}
-
-print_primes(20);
-printf("---\n");
-print_nonmult3(10);
+flo64 pi = 3.0;
+flo64 e = 2.71828;
+printf("%ld\n", int64(pi));
+printf("%ld\n", int64(e));
 ```
 
 Expected output:
 ```
-2
 3
-5
-7
-11
-13
-17
-19
----
-1
 2
-4
-5
-7
-8
-10
 ```
 
 

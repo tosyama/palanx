@@ -1,0 +1,63 @@
+{
+    "functions": [],
+    "original": "030_float_var_decl.pa",
+    "statements": [
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "expr-type": "lit-flo",
+                        "value": "3.14",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" }
+                    },
+                    "name": "x",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "expr-type": "lit-flo",
+                        "value": "1.5",
+                        "value-type": { "type-kind": "prim", "type-name": "flo32" }
+                    },
+                    "name": "y",
+                    "var-type": { "type-kind": "prim", "type-name": "flo32" }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "expr-type": "lit-int",
+                        "value": "5",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" }
+                    },
+                    "name": "z",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "expr-type": "lit-int",
+                        "value": "3",
+                        "value-type": { "type-kind": "prim", "type-name": "flo32" }
+                    },
+                    "name": "w",
+                    "var-type": { "type-kind": "prim", "type-name": "flo32" }
+                }
+            ]
+        }
+    ],
+    "str-literals": []
+}

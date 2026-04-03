@@ -42,18 +42,32 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             addUse(rhs);
         };
         auto addCallArgs = [&](const vector<VReg>& args) {
-            for (int j = 0; j < (int)args.size(); j++) {
-                if (j < (int)phys.intArgs.size())
-                    meta[args[j]].call_uses.push_back({i, j});
-                else
-                    addUse(args[j]);
+            int int_idx = 0;
+            for (auto vr : args) {
+                // NOTE: meta only contains VRegs defined by instructions (setDef).
+                // Palan function parameters live in func.params, not meta, so they
+                // default to Int64 here.  When float parameters are implemented,
+                // parameter VRegs must be pre-registered in meta with their actual type.
+                VRegType t = meta.count(vr) ? meta[vr].type : VRegType::Int64;
+                bool is_flt = (t == VRegType::Float32 || t == VRegType::Float64);
+                if (is_flt) {
+                    // Float args go to XMM registers, not intArgs. Track only liveness.
+                    addUse(vr);
+                } else {
+                    if (int_idx < (int)phys.intArgs.size())
+                        meta[vr].call_uses.push_back({i, int_idx});
+                    else
+                        addUse(vr);
+                    int_idx++;
+                }
             }
         };
 
         std::visit(overloaded{
-            [&](const LeaLabel& l) { setDef(l.dst, l.type); },
-            [&](const MovImm& m)   { setDef(m.dst, m.type); },
-            [&](const InitVar& v)  { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
+            [&](const LeaLabel& l)  { setDef(l.dst, l.type); },
+            [&](const MovImm& m)    { setDef(m.dst, m.type); },
+            [&](const InitVar& v)   { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
+            [&](const InitVarF& v)  { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
             [&](const Add& a)      { setBinOp(a.dst, a.lhs, a.rhs, a.type); },
             [&](const Sub& s)      { setBinOp(s.dst, s.lhs, s.rhs, s.type); },
             [&](const Mul& m)      { setBinOp(m.dst, m.lhs, m.rhs, m.type); },
@@ -111,10 +125,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
     static auto sizeOfType = [](VRegType type) -> int {
         switch (type) {
-            case VRegType::Int8:  return 1;
-            case VRegType::Int16: return 2;
-            case VRegType::Int32: return 4;
-            default:              return 8;  // Int64, Ptr64
+            case VRegType::Int8:   return 1;
+            case VRegType::Int16:  return 2;
+            case VRegType::Int32:  return 4;
+            case VRegType::Float32: return 4;
+            default:               return 8;  // Int64, Ptr64, Float64
         }
     };
 
@@ -129,7 +144,9 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     };
 
     auto allocCalleeSavedOrStack = [&](VReg vreg, VRegType type) {
-        if (callee_idx < (int)phys.calleeSaved.size()) {
+        // Float VRegs cannot use integer callee-saved registers; always spill to stack.
+        bool is_flt = (type == VRegType::Float32 || type == VRegType::Float64);
+        if (!is_flt && callee_idx < (int)phys.calleeSaved.size()) {
             result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], type};
         } else {
             allocStackSlot(vreg, type);
@@ -282,17 +299,22 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         map<int, vector<int>> freePool;  // size(bytes) -> available offsets
 
         for (auto& instr : func.instrs) {
-            if (auto* v = std::get_if<InitVar>(&instr)) {
-                if (result.count(v->dst)) continue;  // already handled in Pass A (had call uses)
-                int sz     = sizeOfType(v->type);
+            auto allocInitVar = [&](VReg dst, VRegType type) {
+                if (result.count(dst)) return;  // already handled in Pass A
+                int sz     = sizeOfType(type);
                 auto& pool = freePool[sz];
                 if (!pool.empty()) {
                     int off = pool.back();
                     pool.pop_back();
-                    result[v->dst] = PhysLoc{"", v->type, off};
+                    result[dst] = PhysLoc{"", type, off};
                 } else {
-                    allocStackSlot(v->dst, v->type);
+                    allocStackSlot(dst, type);
                 }
+            };
+            if (auto* v = std::get_if<InitVar>(&instr)) {
+                allocInitVar(v->dst, v->type);
+            } else if (auto* v = std::get_if<InitVarF>(&instr)) {
+                allocInitVar(v->dst, v->type);
             } else if (auto* bl = std::get_if<BlockLeave>(&instr)) {
                 for (VReg vr : bl->expiredVars) {
                     if (result.count(vr) && result[vr].isStack())

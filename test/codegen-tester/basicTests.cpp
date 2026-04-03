@@ -514,3 +514,147 @@ TEST(codegen, void_func) {
     string after_call = asm_text.substr(call_pos + string("call greet").size(), 30);
     ASSERT_EQ(after_call.find("movq %rax"), string::npos);
 }
+
+TEST(codegen, float_var_decl) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/030_float_var_decl.sa.json";
+    string asmf = "out/030_float_var_decl.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // float constants in .rodata
+    ASSERT_NE(asm_text.find(".double 3.14"), string::npos);
+    ASSERT_NE(asm_text.find(".float 1.5"),   string::npos);
+    // flo64 load/store
+    ASSERT_NE(asm_text.find("movsd"), string::npos);
+    // flo32 load/store
+    ASSERT_NE(asm_text.find("movss"), string::npos);
+    // int literal adopted float type: emitted as float constant in .rodata
+    ASSERT_NE(asm_text.find(".double 5"), string::npos);
+    ASSERT_NE(asm_text.find(".float 3"),  string::npos);
+}
+
+TEST(codegen, float_arg) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/031_float_arg.sa.json";
+    string asmf = "out/031_float_arg.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // float constant in .rodata (variable and literal)
+    ASSERT_NE(asm_text.find(".double 3.14"), string::npos);
+    ASSERT_NE(asm_text.find(".double 1.5"),  string::npos);
+    // float arg loaded into xmm0
+    ASSERT_NE(asm_text.find("%xmm0"), string::npos);
+    // al set to 1 (one float XMM arg)
+    ASSERT_NE(asm_text.find("movl $1, %eax"), string::npos);
+}
+
+TEST(codegen, float_mixed_args) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/032_float_mixed_args.sa.json";
+    string asmf = "out/032_float_mixed_args.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // int args go to integer registers, float arg goes to xmm0
+    ASSERT_NE(asm_text.find("%rsi"), string::npos);   // first int arg (a)
+    ASSERT_NE(asm_text.find("%rdx"), string::npos);   // second int arg (b)
+    ASSERT_NE(asm_text.find("%xmm0"), string::npos);  // float arg (x)
+    // al = 1 (one float XMM arg)
+    ASSERT_NE(asm_text.find("movl $1, %eax"), string::npos);
+}
+
+TEST(codegen, uint_convert) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/033_uint_convert.sa.json";
+    string asmf = "out/033_uint_convert.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // uint8 var init: 1-byte slot
+    ASSERT_NE(asm_text.find("movb $5,"), string::npos);
+    // uint8 → uint32 widening: zero-extend byte to long
+    ASSERT_NE(asm_text.find("movzbl"), string::npos);
+    // uint8 → flo64: zero-extend to 64-bit then convert
+    ASSERT_NE(asm_text.find("movzbq"), string::npos);
+    // uint16 → flo64: zero-extend word to 64-bit then convert
+    ASSERT_NE(asm_text.find("movzwq"), string::npos);
+    // uint8/uint16/uint32 → flo64: cvtsi2sdq %rax used in all three paths
+    ASSERT_NE(asm_text.find("cvtsi2sdq %rax,"), string::npos);
+}
+
+TEST(codegen, int_convert_extra) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/034_int_convert_extra.sa.json";
+    string asmf = "out/034_int_convert_extra.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // int8 → int16: sign-extend byte to word
+    ASSERT_NE(asm_text.find("movsbw"), string::npos);
+    // int8 → int64: sign-extend byte to quad
+    ASSERT_NE(asm_text.find("movsbq"), string::npos);
+    // int16 → int64: sign-extend word to quad
+    ASSERT_NE(asm_text.find("movswq"), string::npos);
+    // int32 → int8: narrowing (low byte only)
+    ASSERT_NE(asm_text.find("movb"), string::npos);
+}
+
+TEST(codegen, float32_convert) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/035_float32_convert.sa.json";
+    string asmf = "out/035_float32_convert.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // flo64 → flo32
+    ASSERT_NE(asm_text.find("cvtsd2ss"), string::npos);
+    // flo32 → int32
+    ASSERT_NE(asm_text.find("cvttss2sil"), string::npos);
+    // flo32 → int64
+    ASSERT_NE(asm_text.find("cvttss2siq"), string::npos);
+    // flo64 → int32
+    ASSERT_NE(asm_text.find("cvttsd2sil"), string::npos);
+    // int32 → flo32
+    ASSERT_NE(asm_text.find("cvtsi2ssl"), string::npos);
+    // int64 → flo32
+    ASSERT_NE(asm_text.find("cvtsi2ssq"), string::npos);
+    // int8/int16 → float: sign-extend via %rax then convert
+    ASSERT_NE(asm_text.find("movsbq"), string::npos);   // int8 path
+    ASSERT_NE(asm_text.find("movswq"), string::npos);   // int16 path
+}
+
+TEST(codegen, uint_widen_narrow) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/036_uint_widen_narrow.sa.json";
+    string asmf = "out/036_uint_widen_narrow.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // uint8 → uint16: zero-extend byte to word
+    ASSERT_NE(asm_text.find("movzbw"), string::npos);
+    // uint8 → uint64: zero-extend byte to quad
+    ASSERT_NE(asm_text.find("movzbq"), string::npos);
+    // uint16 → uint32: zero-extend word to long
+    ASSERT_NE(asm_text.find("movzwl"), string::npos);
+    // uint16 → uint64: zero-extend word to quad
+    ASSERT_NE(asm_text.find("movzwq"), string::npos);
+    // uint32 → uint64: movl zero-extends implicitly
+    // (uint8/16/32 → flo32): cvtsi2ssq %rax
+    ASSERT_NE(asm_text.find("cvtsi2ssq %rax,"), string::npos);
+}

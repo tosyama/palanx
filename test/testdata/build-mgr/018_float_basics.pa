@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+
+flo64 pi = 3.0;
+flo64 e = 2.71828;
+flo64 x = 5;
+flo32 y = 3;
+printf("%ld\n", int64(pi));
+printf("%ld\n", int64(e));
+printf("%ld\n", int64(x));
+printf("%ld\n", int64(y));
