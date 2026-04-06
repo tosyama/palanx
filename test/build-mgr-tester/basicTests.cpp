@@ -180,6 +180,13 @@ TEST(build_mgr, uint_convert) {
 	ASSERT_EQ(output, "200 200 200\n200\n200.000000 200.000000\n300.000000 70000.000000\n");
 }
 
+TEST(build_mgr, float_arith) {
+	cleanTestEnv();
+	// flo64 and flo32 arithmetic: +, -, *, /
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/026_float_arith.pa");
+	ASSERT_EQ(output, "5.000000 1.000000 6.000000 1.500000\n5.000000 1.000000 6.000000 1.500000\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

@@ -1,0 +1,207 @@
+{
+    "functions": [],
+    "original": "037_float_arith.pa",
+    "str-literals": [
+        { "label": ".str0", "value": "%f %f %f %f\n" }
+    ],
+    "statements": [
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "a",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" },
+                    "init": { "expr-type": "lit-flo", "value": "3.0", "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "b",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" },
+                    "init": { "expr-type": "lit-flo", "value": "2.0", "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "c",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" },
+                    "init": {
+                        "expr-type": "add",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" },
+                        "left":  { "expr-type": "id", "name": "a", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } },
+                        "right": { "expr-type": "id", "name": "b", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "d",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" },
+                    "init": {
+                        "expr-type": "sub",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" },
+                        "left":  { "expr-type": "id", "name": "a", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } },
+                        "right": { "expr-type": "id", "name": "b", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "e",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" },
+                    "init": {
+                        "expr-type": "mul",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" },
+                        "left":  { "expr-type": "id", "name": "a", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } },
+                        "right": { "expr-type": "id", "name": "b", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "f",
+                    "var-type": { "type-kind": "prim", "type-name": "flo64" },
+                    "init": {
+                        "expr-type": "div",
+                        "value-type": { "type-kind": "prim", "type-name": "flo64" },
+                        "left":  { "expr-type": "id", "name": "a", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } },
+                        "right": { "expr-type": "id", "name": "b", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "expr",
+            "body": {
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "printf",
+                "args": [
+                    {
+                        "expr-type": "lit-str",
+                        "label": ".str0",
+                        "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } }
+                    },
+                    { "expr-type": "id", "name": "c", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } },
+                    { "expr-type": "id", "name": "d", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } },
+                    { "expr-type": "id", "name": "e", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } },
+                    { "expr-type": "id", "name": "f", "var-type": { "type-kind": "prim", "type-name": "flo64" }, "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+                ]
+            }
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "p",
+                    "var-type": { "type-kind": "prim", "type-name": "flo32" },
+                    "init": { "expr-type": "lit-flo", "value": "3.0", "value-type": { "type-kind": "prim", "type-name": "flo32" } }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "q",
+                    "var-type": { "type-kind": "prim", "type-name": "flo32" },
+                    "init": { "expr-type": "lit-flo", "value": "2.0", "value-type": { "type-kind": "prim", "type-name": "flo32" } }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "r",
+                    "var-type": { "type-kind": "prim", "type-name": "flo32" },
+                    "init": {
+                        "expr-type": "add",
+                        "value-type": { "type-kind": "prim", "type-name": "flo32" },
+                        "left":  { "expr-type": "id", "name": "p", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } },
+                        "right": { "expr-type": "id", "name": "q", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } }
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "s",
+                    "var-type": { "type-kind": "prim", "type-name": "flo32" },
+                    "init": {
+                        "expr-type": "sub",
+                        "value-type": { "type-kind": "prim", "type-name": "flo32" },
+                        "left":  { "expr-type": "id", "name": "p", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } },
+                        "right": { "expr-type": "id", "name": "q", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } }
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "t",
+                    "var-type": { "type-kind": "prim", "type-name": "flo32" },
+                    "init": {
+                        "expr-type": "mul",
+                        "value-type": { "type-kind": "prim", "type-name": "flo32" },
+                        "left":  { "expr-type": "id", "name": "p", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } },
+                        "right": { "expr-type": "id", "name": "q", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } }
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "u",
+                    "var-type": { "type-kind": "prim", "type-name": "flo32" },
+                    "init": {
+                        "expr-type": "div",
+                        "value-type": { "type-kind": "prim", "type-name": "flo32" },
+                        "left":  { "expr-type": "id", "name": "p", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } },
+                        "right": { "expr-type": "id", "name": "q", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } }
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "expr",
+            "body": {
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "printf",
+                "args": [
+                    {
+                        "expr-type": "lit-str",
+                        "label": ".str0",
+                        "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } }
+                    },
+                    { "expr-type": "id", "name": "r", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } },
+                    { "expr-type": "id", "name": "s", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } },
+                    { "expr-type": "id", "name": "t", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } },
+                    { "expr-type": "id", "name": "u", "var-type": { "type-kind": "prim", "type-name": "flo32" }, "value-type": { "type-kind": "prim", "type-name": "flo32" } }
+                ]
+            }
+        }
+    ]
+}

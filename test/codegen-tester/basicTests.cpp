@@ -658,3 +658,22 @@ TEST(codegen, uint_widen_narrow) {
     // (uint8/16/32 → flo32): cvtsi2ssq %rax
     ASSERT_NE(asm_text.find("cvtsi2ssq %rax,"), string::npos);
 }
+
+TEST(codegen, float_arith) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/037_float_arith.sa.json";
+    string asmf = "out/037_float_arith.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("addsd"), string::npos);
+    ASSERT_NE(asm_text.find("subsd"), string::npos);
+    ASSERT_NE(asm_text.find("mulsd"), string::npos);
+    ASSERT_NE(asm_text.find("divsd"), string::npos);
+    ASSERT_NE(asm_text.find("addss"), string::npos);
+    ASSERT_NE(asm_text.find("subss"), string::npos);
+    ASSERT_NE(asm_text.find("mulss"), string::npos);
+    ASSERT_NE(asm_text.find("divss"), string::npos);
+}

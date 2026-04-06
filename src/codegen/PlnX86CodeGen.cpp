@@ -21,30 +21,40 @@ static const char* movInstrForType(VRegType type) {
     }
 }
 
+static bool isFloat(VRegType t) {
+    return t == VRegType::Float32 || t == VRegType::Float64;
+}
+
 static const char* addInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int8:  return "addb";
-        case VRegType::Int16: return "addw";
-        case VRegType::Int32: return "addl";
-        default:              return "addq";
+        case VRegType::Int8:    return "addb";
+        case VRegType::Int16:   return "addw";
+        case VRegType::Int32:   return "addl";
+        case VRegType::Float32: return "addss";
+        case VRegType::Float64: return "addsd";
+        default:                return "addq";
     }
 }
 
 static const char* subInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int8:  return "subb";
-        case VRegType::Int16: return "subw";
-        case VRegType::Int32: return "subl";
-        default:              return "subq";
+        case VRegType::Int8:    return "subb";
+        case VRegType::Int16:   return "subw";
+        case VRegType::Int32:   return "subl";
+        case VRegType::Float32: return "subss";
+        case VRegType::Float64: return "subsd";
+        default:                return "subq";
     }
 }
 
 // imulb has no 2-operand form; Int8 multiplication is not supported here.
-static const char* imulInstrForType(VRegType type) {
+static const char* mulInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int16: return "imulw";
-        case VRegType::Int32: return "imull";
-        default:              return "imulq";
+        case VRegType::Int16:   return "imulw";
+        case VRegType::Int32:   return "imull";
+        case VRegType::Float32: return "mulss";
+        case VRegType::Float64: return "mulsd";
+        default:                return "imulq";
     }
 }
 
@@ -242,8 +252,8 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
                     out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
                 } else {
-                    // Spilled dst: route through scratch %rax to avoid mem-mem.
-                    string scratch = sizedRegName("%rax", a->type);
+                    // Spilled dst: route through scratch to avoid mem-mem.
+                    string scratch = isFloat(a->type) ? "%xmm8" : sizedRegName("%rax", a->type);
                     string dst_mem = srcOperand(dst_loc);
                     out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
                     out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << scratch << "\n";
@@ -258,8 +268,8 @@ void PlnX86CodeGen::emit(const VProg& prog)
                     out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
                     out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << dst_reg << "\n";
                 } else {
-                    // Spilled dst: route through scratch %rax to avoid mem-mem.
-                    string scratch = sizedRegName("%rax", s->type);
+                    // Spilled dst: route through scratch to avoid mem-mem.
+                    string scratch = isFloat(s->type) ? "%xmm8" : sizedRegName("%rax", s->type);
                     string dst_mem = srcOperand(dst_loc);
                     out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
                     out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << scratch << "\n";
@@ -272,13 +282,13 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 if (!dst_loc.isStack()) {
                     string dst_reg = sizedRegName(dst_loc.base, m->type);
                     out << "\t" << movInstrForType(m->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
-                    out << "\t" << imulInstrForType(m->type) << " " << srcOperand(rm.at(m->rhs)) << ", " << dst_reg << "\n";
+                    out << "\t" << mulInstrForType(m->type) << " " << srcOperand(rm.at(m->rhs)) << ", " << dst_reg << "\n";
                 } else {
-                    // Spilled dst: route through scratch %rax to avoid mem-mem.
-                    string scratch = sizedRegName("%rax", m->type);
+                    // Spilled dst: route through scratch to avoid mem-mem.
+                    string scratch = isFloat(m->type) ? "%xmm8" : sizedRegName("%rax", m->type);
                     string dst_mem = srcOperand(dst_loc);
                     out << "\t" << movInstrForType(m->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
-                    out << "\t" << imulInstrForType(m->type) << " " << srcOperand(rm.at(m->rhs)) << ", " << scratch << "\n";
+                    out << "\t" << mulInstrForType(m->type) << " " << srcOperand(rm.at(m->rhs)) << ", " << scratch << "\n";
                     out << "\t" << movInstrForType(m->type) << " " << scratch << ", " << dst_mem << "\n";
                 }
             } else if (auto* dv = std::get_if<Div>(&instr)) {
@@ -286,6 +296,13 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 const PhysLoc& lhs_loc = rm.at(dv->lhs);
                 const PhysLoc& rhs_loc = rm.at(dv->rhs);
                 const PhysLoc& dst_loc = rm.at(dv->dst);
+                if (isFloat(dv->type)) {
+                    const char* mov = movInstrForType(dv->type);
+                    const char* div = dv->type == VRegType::Float32 ? "divss" : "divsd";
+                    out << "\t" << mov << " " << srcOperand(lhs_loc) << ", %xmm8\n";
+                    out << "\t" << div << " " << srcOperand(rhs_loc) << ", %xmm8\n";
+                    out << "\t" << mov << " %xmm8, " << srcOperand(dst_loc) << "\n";
+                } else {
                 // idivq clobbers %rax and %rdx; save rhs if it lives in either.
                 string rhs_src = srcOperand(rhs_loc);
                 if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
@@ -298,6 +315,7 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 string dst_str = srcOperand(dst_loc);
                 if (dst_str != "%rax")
                     out << "\tmovq %rax, " << dst_str << "\n";
+                }
             } else if (auto* md = std::get_if<Mod>(&instr)) {
                 if (!rm.count(md->dst)) continue;  // dead: result never used
                 const PhysLoc& lhs_loc = rm.at(md->lhs);
