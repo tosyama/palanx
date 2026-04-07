@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+
+flo64 a = 3.0;
+flo64 b = 5.0;
+printf("%d\n", a < b);
+printf("%d\n", a > b);
+printf("%d\n", a == b);

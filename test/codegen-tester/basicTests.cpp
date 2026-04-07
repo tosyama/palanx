@@ -677,3 +677,17 @@ TEST(codegen, float_arith) {
     ASSERT_NE(asm_text.find("mulss"), string::npos);
     ASSERT_NE(asm_text.find("divss"), string::npos);
 }
+
+TEST(codegen, float_cmp) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/038_float_cmp.sa.json";
+    string asmf = "out/038_float_cmp.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("ucomisd"), string::npos);
+    ASSERT_NE(asm_text.find("setb"),    string::npos);  // <
+    ASSERT_NE(asm_text.find("sete"),    string::npos);  // ==
+}

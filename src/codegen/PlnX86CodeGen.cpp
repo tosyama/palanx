@@ -69,20 +69,31 @@ static const char* negInstrForType(VRegType type) {
 
 static const char* cmpInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int8:  return "cmpb";
-        case VRegType::Int16: return "cmpw";
-        case VRegType::Int32: return "cmpl";
-        default:              return "cmpq";
+        case VRegType::Int8:    return "cmpb";
+        case VRegType::Int16:   return "cmpw";
+        case VRegType::Int32:   return "cmpl";
+        case VRegType::Float32: return "ucomiss";
+        case VRegType::Float64: return "ucomisd";
+        default:                return "cmpq";
     }
 }
 
-static const char* setCCForOp(const string& op) {
-    if (op == "<")  return "setl";
-    if (op == "<=") return "setle";
-    if (op == ">")  return "setg";
-    if (op == ">=") return "setge";
-    if (op == "==") return "sete";
-    if (op == "!=") return "setne";
+static const char* setCCForOp(const string& op, bool isFloat) {
+    if (isFloat) {
+        if (op == "<")  return "setb";
+        if (op == "<=") return "setbe";
+        if (op == ">")  return "seta";
+        if (op == ">=") return "setae";
+        if (op == "==") return "sete";
+        if (op == "!=") return "setne";
+    } else {
+        if (op == "<")  return "setl";
+        if (op == "<=") return "setle";
+        if (op == ">")  return "setg";
+        if (op == ">=") return "setge";
+        if (op == "==") return "sete";
+        if (op == "!=") return "setne";
+    }
     BOOST_ASSERT(false); return "";
 }
 
@@ -357,7 +368,7 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 // x86 disallows two memory operands: load lhs into scratch if spilled
                 string lhs_operand;
                 if (lhs_loc.isStack()) {
-                    string scratch = sizedRegName("%rax", cm->type);
+                    string scratch = isFloat(cm->type) ? "%xmm8" : sizedRegName("%rax", cm->type);
                     out << "\t" << movInstrForType(cm->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
                     lhs_operand = scratch;
                 } else {
@@ -369,10 +380,10 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 if (!dst_loc.isStack()) {
                     string dst_byte = sizedRegName(dst_loc.base, VRegType::Int8);
                     string dst_32   = sizedRegName(dst_loc.base, VRegType::Int32);
-                    out << "\t" << setCCForOp(cm->op) << " " << dst_byte << "\n";
+                    out << "\t" << setCCForOp(cm->op, isFloat(cm->type)) << " " << dst_byte << "\n";
                     out << "\tmovzbl " << dst_byte << ", " << dst_32 << "\n";
                 } else {
-                    out << "\t" << setCCForOp(cm->op) << " %al\n";
+                    out << "\t" << setCCForOp(cm->op, isFloat(cm->type)) << " %al\n";
                     out << "\tmovzbl %al, %eax\n";
                     out << "\tmovl %eax, " << srcOperand(dst_loc) << "\n";
                 }

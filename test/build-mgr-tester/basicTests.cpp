@@ -187,6 +187,13 @@ TEST(build_mgr, float_arith) {
 	ASSERT_EQ(output, "5.000000 1.000000 6.000000 1.500000\n5.000000 1.000000 6.000000 1.500000\n");
 }
 
+TEST(build_mgr, float_cmp) {
+	cleanTestEnv();
+	// flo64 comparison: <, >, ==
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/027_float_cmp.pa");
+	ASSERT_EQ(output, "1\n0\n0\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
