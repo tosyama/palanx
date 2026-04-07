@@ -173,8 +173,20 @@ static const PhysRegs x86PhysRegs = {
 
 void PlnX86CodeGen::emit(const VProg& prog)
 {
-    if (!prog.data.empty() || !prog.floatData.empty()) {
+    bool needsF32Neg = false, needsF64Neg = false;
+    for (auto& func : prog.funcs)
+        for (auto& instr : func.instrs)
+            if (auto* n = std::get_if<Neg>(&instr)) {
+                if (n->type == VRegType::Float32) needsF32Neg = true;
+                if (n->type == VRegType::Float64) needsF64Neg = true;
+            }
+
+    if (!prog.data.empty() || !prog.floatData.empty() || needsF32Neg || needsF64Neg) {
         emitSection(".rodata");
+        if (needsF32Neg)
+            out << ".neg_mask_f32:\n\t.long 0x80000000\n";
+        if (needsF64Neg)
+            out << ".neg_mask_f64:\n\t.quad 0x8000000000000000\n";
         for (auto& d : prog.data)
             emitStringLiteral(d.label, d.value);
         for (auto& f : prog.floatData) {
@@ -348,7 +360,15 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 if (!rm.count(n->dst)) continue;  // dead: result never used
                 const PhysLoc& src_loc = rm.at(n->src);
                 const PhysLoc& dst_loc = rm.at(n->dst);
-                if (!dst_loc.isStack()) {
+                if (isFloat(n->type)) {
+                    // float neg: flip sign bit via xorps/xorpd with mask in .rodata
+                    const char* mov  = movInstrForType(n->type);
+                    const char* xorI = (n->type == VRegType::Float32) ? "xorps" : "xorpd";
+                    const char* mask = (n->type == VRegType::Float32) ? ".neg_mask_f32" : ".neg_mask_f64";
+                    out << "\t" << mov  << " " << srcOperand(src_loc) << ", %xmm8\n";
+                    out << "\t" << xorI << " " << mask << "(%rip), %xmm8\n";
+                    out << "\t" << mov  << " %xmm8, " << srcOperand(dst_loc) << "\n";
+                } else if (!dst_loc.isStack()) {
                     string dst_reg = sizedRegName(dst_loc.base, n->type);
                     out << "\t" << movInstrForType(n->type) << " " << srcOperand(src_loc) << ", " << dst_reg << "\n";
                     out << "\t" << negInstrForType(n->type) << " " << dst_reg << "\n";
@@ -589,8 +609,8 @@ void PlnX86CodeGen::emit(const VProg& prog)
                 } else if (!src_loc.isStack()) {
                     out << "\t" << movInstrForType(mv->type) << " " << s << ", " << d << "\n";
                 } else {
-                    // Both on stack: route through scratch %rax.
-                    string scratch = sizedRegName("%rax", mv->type);
+                    // Both on stack: route through scratch register.
+                    string scratch = isFloat(mv->type) ? "%xmm8" : sizedRegName("%rax", mv->type);
                     out << "\t" << movInstrForType(mv->type) << " " << s << ", " << scratch << "\n";
                     out << "\t" << movInstrForType(mv->type) << " " << scratch << ", " << d << "\n";
                 }

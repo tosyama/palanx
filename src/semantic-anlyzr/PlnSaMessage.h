@@ -32,6 +32,7 @@ enum PlnSaMessageCode {
 	E_InternalError,			// arg1: error code
 	E_BreakOutsideLoop,
 	E_ContinueOutsideLoop,
+	E_FloatModulo,
 };
 
 class PlnSaMessage

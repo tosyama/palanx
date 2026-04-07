@@ -194,6 +194,13 @@ TEST(build_mgr, float_cmp) {
 	ASSERT_EQ(output, "1\n0\n0\n");
 }
 
+TEST(build_mgr, float_neg) {
+	cleanTestEnv();
+	// flo64 unary negation: literal neg and variable neg via ->
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/028_float_neg.pa");
+	ASSERT_EQ(output, "-3.500000\n-2.000000\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

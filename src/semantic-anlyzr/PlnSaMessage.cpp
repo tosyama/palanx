@@ -102,6 +102,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_ContinueOutsideLoop:
 			return "Continue statement outside of loop.";
 
+		case E_FloatModulo:
+			return "'%' operator is not supported for float types.";
+
 		default:
 			BOOST_ASSERT(false);
 	}
