@@ -691,3 +691,18 @@ TEST(codegen, float_cmp) {
     ASSERT_NE(asm_text.find("setb"),    string::npos);  // <
     ASSERT_NE(asm_text.find("sete"),    string::npos);  // ==
 }
+
+TEST(codegen, float_neg) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/039_float_neg.sa.json";
+    string asmf = "out/039_float_neg.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("xorpd"), string::npos);  // flo64 neg
+    ASSERT_NE(asm_text.find("xorps"), string::npos);  // flo32 neg
+    ASSERT_NE(asm_text.find(".neg_mask_f64"), string::npos);
+    ASSERT_NE(asm_text.find(".neg_mask_f32"), string::npos);
+}

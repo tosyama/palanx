@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+
+flo64 x = 3.0;
+int32 n = 2;
+printf("%f\n", x + n);
+
+int64 m = 10;
+printf("%f\n", x * m);
+
+flo32 y = 2.0;
+printf("%f\n", y + n);

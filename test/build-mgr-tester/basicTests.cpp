@@ -201,6 +201,20 @@ TEST(build_mgr, float_neg) {
 	ASSERT_EQ(output, "-3.500000\n-2.000000\n");
 }
 
+TEST(build_mgr, float_newton) {
+	cleanTestEnv();
+	// Newton's method sqrt(2) using float arith, neg, if, while
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/029_float_newton.pa");
+	ASSERT_EQ(output, "sqrt(2) = 1.414214\n");
+}
+
+TEST(build_mgr, float_int_mixed) {
+	cleanTestEnv();
+	// int/float mixed arithmetic: int is implicitly widened to float
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/030_float_int_mixed.pa");
+	ASSERT_EQ(output, "5.000000\n30.000000\n4.000000\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
