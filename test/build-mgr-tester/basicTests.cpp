@@ -215,6 +215,13 @@ TEST(build_mgr, float_int_mixed) {
 	ASSERT_EQ(output, "5.000000\n30.000000\n4.000000\n");
 }
 
+TEST(build_mgr, float32_cmp) {
+	cleanTestEnv();
+	// flo32 comparison: !=, ==, <, > (exercises ucomiss and setne)
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/031_float32_cmp.pa");
+	ASSERT_EQ(output, "1\n0\n1\n0\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

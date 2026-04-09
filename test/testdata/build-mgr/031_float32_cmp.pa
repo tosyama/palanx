@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+
+flo32 a = 1.0;
+flo32 b = 2.0;
+printf("%d\n", a != b);
+printf("%d\n", a == b);
+printf("%d\n", a < b);
+printf("%d\n", a > b);
