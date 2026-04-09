@@ -107,10 +107,10 @@ TEST(build_mgr, fizzbuzz) {
 
 TEST(build_mgr, narrow_types) {
 	cleanTestEnv();
-	// Covers: var-decl without init, int8/int16 arithmetic (add/sub/neg/cmp),
+	// Covers: var-decl without init, int8/int16 arithmetic (add/sub/mul/neg/cmp),
 	// named single-return function with explicit bare return.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/017_narrow_types.pa");
-	ASSERT_EQ(output, "0\n13 7 -3 0\n107 93\n42\n");
+	ASSERT_EQ(output, "0\n13 7 -3 0\n107 93 700 -7 0\n42\n");
 }
 
 TEST(build_mgr, print_primes) {
