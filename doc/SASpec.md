@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.13
+ver. 0.1.14
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -163,6 +163,15 @@ Integer types are ranked by bit width. The higher-ranked type wins.
 - Rank 4: int64, uint64
 
 If one operand type is not in the table, the other operand's type is used as-is.
+
+Float promotion rules:
+
+- `flo32 op flo64` → flo32 is implicitly widened to flo64; result is flo64
+- `int op flo32` → int is implicitly widened to flo32; result is flo32
+- `int op flo64` → int is implicitly widened to flo64; result is flo64
+- `flo32 op int` / `flo64 op int` → symmetric with the above
+
+The `%` (mod) operator on float operands is a compile error (SA emits an error and aborts).
 
 typeCompat rules
 ----------------
