@@ -116,6 +116,8 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             VReg src = lowerExpr(*e.operand, func);
             VReg dst = allocVReg();
             func.instrs.push_back(Neg{dst, src, e.type});
+            if (e.type == VRegType::Float32) prog_->needsF32Neg = true;
+            if (e.type == VRegType::Float64) prog_->needsF64Neg = true;
             return dst;
         }
         case ExprKind::Cmp: {
