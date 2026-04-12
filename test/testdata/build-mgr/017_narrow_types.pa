@@ -14,12 +14,15 @@ int8 e = -b;
 int32 lt = a < b;
 printf("%d %d %d %d\n", int32(c), int32(d), int32(e), lt);
 
-// int16 arithmetic: add, sub
+// int16 arithmetic: add, sub, mul, neg, cmp
 int16 p = 100;
 int16 q = 7;
 int16 r = p + q;
 int16 s = p - q;
-printf("%d %d\n", int32(r), int32(s));
+int16 t = p * q;
+int16 u = -q;
+int32 lt16 = p < q;
+printf("%d %d %d %d %d\n", int32(r), int32(s), int32(t), int32(u), lt16);
 
 // named single return with explicit bare return
 func get_answer() -> int32 v {

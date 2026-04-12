@@ -21,30 +21,40 @@ static const char* movInstrForType(VRegType type) {
     }
 }
 
+static bool isFloat(VRegType t) {
+    return t == VRegType::Float32 || t == VRegType::Float64;
+}
+
 static const char* addInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int8:  return "addb";
-        case VRegType::Int16: return "addw";
-        case VRegType::Int32: return "addl";
-        default:              return "addq";
+        case VRegType::Int8:    return "addb";
+        case VRegType::Int16:   return "addw";
+        case VRegType::Int32:   return "addl";
+        case VRegType::Float32: return "addss";
+        case VRegType::Float64: return "addsd";
+        default:                return "addq";
     }
 }
 
 static const char* subInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int8:  return "subb";
-        case VRegType::Int16: return "subw";
-        case VRegType::Int32: return "subl";
-        default:              return "subq";
+        case VRegType::Int8:    return "subb";
+        case VRegType::Int16:   return "subw";
+        case VRegType::Int32:   return "subl";
+        case VRegType::Float32: return "subss";
+        case VRegType::Float64: return "subsd";
+        default:                return "subq";
     }
 }
 
 // imulb has no 2-operand form; Int8 multiplication is not supported here.
-static const char* imulInstrForType(VRegType type) {
+static const char* mulInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int16: return "imulw";
-        case VRegType::Int32: return "imull";
-        default:              return "imulq";
+        case VRegType::Int16:   return "imulw";
+        case VRegType::Int32:   return "imull";
+        case VRegType::Float32: return "mulss";
+        case VRegType::Float64: return "mulsd";
+        default:                return "imulq";
     }
 }
 
@@ -59,20 +69,31 @@ static const char* negInstrForType(VRegType type) {
 
 static const char* cmpInstrForType(VRegType type) {
     switch (type) {
-        case VRegType::Int8:  return "cmpb";
-        case VRegType::Int16: return "cmpw";
-        case VRegType::Int32: return "cmpl";
-        default:              return "cmpq";
+        case VRegType::Int8:    return "cmpb";
+        case VRegType::Int16:   return "cmpw";
+        case VRegType::Int32:   return "cmpl";
+        case VRegType::Float32: return "ucomiss";
+        case VRegType::Float64: return "ucomisd";
+        default:                return "cmpq";
     }
 }
 
-static const char* setCCForOp(const string& op) {
-    if (op == "<")  return "setl";
-    if (op == "<=") return "setle";
-    if (op == ">")  return "setg";
-    if (op == ">=") return "setge";
-    if (op == "==") return "sete";
-    if (op == "!=") return "setne";
+static const char* setCCForOp(const string& op, bool isFloat) {
+    if (isFloat) {
+        if (op == "<")  return "setb";
+        if (op == "<=") return "setbe";
+        if (op == ">")  return "seta";
+        if (op == ">=") return "setae";
+        if (op == "==") return "sete";
+        if (op == "!=") return "setne";
+    } else {
+        if (op == "<")  return "setl";
+        if (op == "<=") return "setle";
+        if (op == ">")  return "setg";
+        if (op == ">=") return "setge";
+        if (op == "==") return "sete";
+        if (op == "!=") return "setne";
+    }
     BOOST_ASSERT(false); return "";
 }
 
@@ -152,8 +173,12 @@ static const PhysRegs x86PhysRegs = {
 
 void PlnX86CodeGen::emit(const VProg& prog)
 {
-    if (!prog.data.empty() || !prog.floatData.empty()) {
+    if (!prog.data.empty() || !prog.floatData.empty() || prog.needsF32Neg || prog.needsF64Neg) {
         emitSection(".rodata");
+        if (prog.needsF32Neg)
+            out << ".neg_mask_f32:\n\t.long 0x80000000\n";
+        if (prog.needsF64Neg)
+            out << ".neg_mask_f64:\n\t.quad 0x8000000000000000\n";
         for (auto& d : prog.data)
             emitStringLiteral(d.label, d.value);
         for (auto& f : prog.floatData) {
@@ -174,399 +199,431 @@ void PlnX86CodeGen::emit(const VProg& prog)
         RegAllocResult ra = allocateRegisters(func, x86PhysRegs);
         const RegMap& rm  = ra.regMap;
 
-        if (func.isEntry) {
-            // _start: set up frame only when stack space is needed
-            if (ra.frameSize > 0) {
-                out << "\tpushq %rbp\n";
-                out << "\tmovq %rsp, %rbp\n";
-                out << "\tsubq $" << ra.frameSize << ", %rsp\n";
-            }
-        } else {
-            // Regular Palan function: always save %rbp for leave/ret
-            out << "\tpushq %rbp\n";
-            out << "\tmovq %rsp, %rbp\n";
-            if (ra.frameSize > 0)
-                out << "\tsubq $" << ra.frameSize << ", %rsp\n";
-            // Save callee-saved registers into reserved frame slots (top of frame)
-            for (int i = 0; i < (int)ra.usedCalleeSaved.size(); i++)
-                out << "\tmovq " << ra.usedCalleeSaved[i] << ", " << -(i + 1) * 8 << "(%rbp)\n";
-            // Copy parameters remapped from argument registers to their allocated locations
-            for (auto& pc : ra.paramCopies) {
-                string src = sizedRegName(pc.srcArgReg, pc.type);
-                string dst = srcOperand(pc.dst);
-                if (src != dst)
-                    out << "\t" << movInstrForType(pc.type) << " " << src << ", " << dst << "\n";
-            }
-        }
+        emitFuncPrologue(func, ra, rm);
 
         for (auto& instr : func.instrs) {
-            if (auto* i = std::get_if<LeaLabel>(&instr)) {
-                const PhysLoc& loc = rm.at(i->dst);
-                if (!loc.isStack()) {
-                    emitLeaLabel(sizedRegName(loc.base, loc.type), i->label);
+            if      (auto* i  = std::get_if<LeaLabel> (&instr)) emitInstrLeaLabel(*i, rm);
+            else if (auto* i  = std::get_if<MovImm>   (&instr)) emitInstrMovImm(*i, rm);
+            else if (auto* i  = std::get_if<InitVar>  (&instr)) emitInstrInitVar(*i, rm);
+            else if (auto* i  = std::get_if<InitVarF> (&instr)) emitInstrInitVarF(*i, rm);
+            else if (auto* a  = std::get_if<Add>      (&instr)) emitBinArith(addInstrForType(a->type), a->dst, a->lhs, a->rhs, a->type, rm);
+            else if (auto* s  = std::get_if<Sub>      (&instr)) emitBinArith(subInstrForType(s->type), s->dst, s->lhs, s->rhs, s->type, rm);
+            else if (auto* m  = std::get_if<Mul>      (&instr)) emitBinArith(mulInstrForType(m->type), m->dst, m->lhs, m->rhs, m->type, rm);
+            else if (auto* i  = std::get_if<Div>      (&instr)) emitInstrDiv(*i, rm);
+            else if (auto* i  = std::get_if<Mod>      (&instr)) emitInstrMod(*i, rm);
+            else if (auto* i  = std::get_if<Neg>      (&instr)) emitInstrNeg(*i, rm);
+            else if (auto* i  = std::get_if<Cmp>      (&instr)) emitInstrCmp(*i, rm);
+            else if (auto* i  = std::get_if<Convert>  (&instr)) emitInstrConvert(*i, rm);
+            else if (auto* i  = std::get_if<CallC>    (&instr)) emitInstrCallC(*i, rm);
+            else if (auto* i  = std::get_if<CallPln>  (&instr)) emitInstrCallPln(*i, rm);
+            else if (auto* i  = std::get_if<RetPln>   (&instr)) emitInstrRetPln(*i, rm, ra.usedCalleeSaved);
+            else if (auto* i  = std::get_if<ExitCode> (&instr)) emitExit(i->code);
+            else if (auto* l  = std::get_if<Label>    (&instr)) out << l->name << ":\n";
+            else if (auto* j  = std::get_if<Jmp>      (&instr)) out << "\tjmp " << j->label << "\n";
+            else if (auto* i  = std::get_if<CondJmp>  (&instr)) emitInstrCondJmp(*i, rm);
+            else if (auto* i  = std::get_if<Mov>      (&instr)) emitInstrMov(*i, rm);
+            // BlockEnter and BlockLeave are no-ops
+        }
+    }
+}
+
+void PlnX86CodeGen::emitFuncPrologue(const VFunc& func, const RegAllocResult& ra, const RegMap& rm)
+{
+    if (func.isEntry) {
+        // _start: set up frame only when stack space is needed
+        if (ra.frameSize > 0) {
+            out << "\tpushq %rbp\n";
+            out << "\tmovq %rsp, %rbp\n";
+            out << "\tsubq $" << ra.frameSize << ", %rsp\n";
+        }
+    } else {
+        // Regular Palan function: always save %rbp for leave/ret
+        out << "\tpushq %rbp\n";
+        out << "\tmovq %rsp, %rbp\n";
+        if (ra.frameSize > 0)
+            out << "\tsubq $" << ra.frameSize << ", %rsp\n";
+        // Save callee-saved registers into reserved frame slots (top of frame)
+        for (int i = 0; i < (int)ra.usedCalleeSaved.size(); i++)
+            out << "\tmovq " << ra.usedCalleeSaved[i] << ", " << -(i + 1) * 8 << "(%rbp)\n";
+        // Copy parameters remapped from argument registers to their allocated locations
+        for (auto& pc : ra.paramCopies) {
+            string src = sizedRegName(pc.srcArgReg, pc.type);
+            string dst = srcOperand(pc.dst);
+            if (src != dst)
+                out << "\t" << movInstrForType(pc.type) << " " << src << ", " << dst << "\n";
+        }
+    }
+}
+
+void PlnX86CodeGen::emitBinArith(const char* op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm)
+{
+    if (!rm.count(dst)) return;  // dead: result never used
+    const PhysLoc& dst_loc = rm.at(dst);
+    const PhysLoc& lhs_loc = rm.at(lhs);
+    const char* mov = movInstrForType(type);
+    if (!dst_loc.isStack()) {
+        string dst_reg = sizedRegName(dst_loc.base, type);
+        out << "\t" << mov << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
+        out << "\t" << op  << " " << srcOperand(rm.at(rhs)) << ", " << dst_reg << "\n";
+    } else {
+        // Spilled dst: route through scratch to avoid mem-mem.
+        string scratch = isFloat(type) ? "%xmm8" : sizedRegName("%rax", type);
+        out << "\t" << mov << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+        out << "\t" << op  << " " << srcOperand(rm.at(rhs)) << ", " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrLeaLabel(const LeaLabel& i, const RegMap& rm)
+{
+    const PhysLoc& loc = rm.at(i.dst);
+    if (!loc.isStack()) {
+        emitLeaLabel(sizedRegName(loc.base, loc.type), i.label);
+    } else {
+        // Spilled dst: load address into scratch %rax then store to stack.
+        out << "\tleaq " << i.label << "(%rip), %rax\n";
+        out << "\tmovq %rax, " << srcOperand(loc) << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrMovImm(const MovImm& i, const RegMap& rm)
+{
+    const PhysLoc& loc = rm.at(i.dst);
+    if (loc.isStack()) {
+        out << "\t" << movInstrForType(i.type) << " $" << i.value << ", " << srcOperand(loc) << "\n";
+    } else {
+        emitMovImm(sizedRegName(loc.base, i.type), i.type, i.value);
+    }
+}
+
+void PlnX86CodeGen::emitInstrInitVar(const InitVar& i, const RegMap& rm)
+{
+    const PhysLoc& loc = rm.at(i.dst);
+    if (loc.isStack()) {
+        out << "\t" << movInstrForType(i.type) << " $" << i.imm << ", " << loc.stackOffset << "(%rbp)\n";
+    } else {
+        out << "\t" << movInstrForType(i.type) << " $" << i.imm << ", " << sizedRegName(loc.base, i.type) << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrInitVarF(const InitVarF& i, const RegMap& rm)
+{
+    const PhysLoc& loc = rm.at(i.dst);
+    const char* mov = movInstrForType(i.type);
+    if (loc.isStack()) {
+        // Load float constant into %xmm0 scratch, then store to stack slot.
+        out << "\t" << mov << " " << i.label << "(%rip), %xmm0\n";
+        out << "\t" << mov << " %xmm0, " << loc.stackOffset << "(%rbp)\n";
+    } else {
+        out << "\t" << mov << " " << i.label << "(%rip), " << loc.base << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrDiv(const Div& dv, const RegMap& rm)
+{
+    if (!rm.count(dv.dst)) return;  // dead: result never used
+    const PhysLoc& lhs_loc = rm.at(dv.lhs);
+    const PhysLoc& rhs_loc = rm.at(dv.rhs);
+    const PhysLoc& dst_loc = rm.at(dv.dst);
+    if (isFloat(dv.type)) {
+        const char* mov = movInstrForType(dv.type);
+        const char* div = dv.type == VRegType::Float32 ? "divss" : "divsd";
+        out << "\t" << mov << " " << srcOperand(lhs_loc) << ", %xmm8\n";
+        out << "\t" << div << " " << srcOperand(rhs_loc) << ", %xmm8\n";
+        out << "\t" << mov << " %xmm8, " << srcOperand(dst_loc) << "\n";
+    } else {
+        // idivq clobbers %rax and %rdx; save rhs if it lives in either.
+        string rhs_src = srcOperand(rhs_loc);
+        if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
+            out << "\tmovq " << rhs_src << ", %r10\n";
+            rhs_src = "%r10";
+        }
+        out << "\tmovq " << srcOperand(lhs_loc) << ", %rax\n";
+        out << "\tcqto\n";
+        out << "\tidivq " << rhs_src << "\n";
+        string dst_str = srcOperand(dst_loc);
+        if (dst_str != "%rax")
+            out << "\tmovq %rax, " << dst_str << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrMod(const Mod& md, const RegMap& rm)
+{
+    if (!rm.count(md.dst)) return;  // dead: result never used
+    const PhysLoc& lhs_loc = rm.at(md.lhs);
+    const PhysLoc& rhs_loc = rm.at(md.rhs);
+    const PhysLoc& dst_loc = rm.at(md.dst);
+    // idivq clobbers %rax and %rdx; save rhs if it lives in either.
+    string rhs_src = srcOperand(rhs_loc);
+    if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
+        out << "\tmovq " << rhs_src << ", %r10\n";
+        rhs_src = "%r10";
+    }
+    out << "\tmovq " << srcOperand(lhs_loc) << ", %rax\n";
+    out << "\tcqto\n";
+    out << "\tidivq " << rhs_src << "\n";
+    string dst_str = srcOperand(dst_loc);
+    if (dst_str != "%rdx")
+        out << "\tmovq %rdx, " << dst_str << "\n";
+}
+
+void PlnX86CodeGen::emitInstrNeg(const Neg& n, const RegMap& rm)
+{
+    if (!rm.count(n.dst)) return;  // dead: result never used
+    const PhysLoc& src_loc = rm.at(n.src);
+    const PhysLoc& dst_loc = rm.at(n.dst);
+    if (isFloat(n.type)) {
+        // float neg: flip sign bit via xorps/xorpd with mask in .rodata
+        const char* mov  = movInstrForType(n.type);
+        const char* xorI = (n.type == VRegType::Float32) ? "xorps" : "xorpd";
+        const char* mask = (n.type == VRegType::Float32) ? ".neg_mask_f32" : ".neg_mask_f64";
+        out << "\t" << mov  << " " << srcOperand(src_loc) << ", %xmm8\n";
+        out << "\t" << xorI << " " << mask << "(%rip), %xmm8\n";
+        out << "\t" << mov  << " %xmm8, " << srcOperand(dst_loc) << "\n";
+    } else if (!dst_loc.isStack()) {
+        string dst_reg = sizedRegName(dst_loc.base, n.type);
+        out << "\t" << movInstrForType(n.type) << " " << srcOperand(src_loc) << ", " << dst_reg << "\n";
+        out << "\t" << negInstrForType(n.type) << " " << dst_reg << "\n";
+    } else {
+        // Spilled dst: route through scratch %rax to avoid mem-mem.
+        string scratch = sizedRegName("%rax", n.type);
+        out << "\t" << movInstrForType(n.type) << " " << srcOperand(src_loc) << ", " << scratch << "\n";
+        out << "\t" << negInstrForType(n.type) << " " << scratch << "\n";
+        out << "\t" << movInstrForType(n.type) << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrCmp(const Cmp& cm, const RegMap& rm)
+{
+    if (!rm.count(cm.dst)) return;  // dead
+    const PhysLoc& dst_loc = rm.at(cm.dst);
+    const PhysLoc& lhs_loc = rm.at(cm.lhs);
+    // cmpX %rhs, lhs  →  flags = lhs - rhs
+    // x86 disallows two memory operands: load lhs into scratch if spilled
+    string lhs_operand;
+    if (lhs_loc.isStack()) {
+        string scratch = isFloat(cm.type) ? "%xmm8" : sizedRegName("%rax", cm.type);
+        out << "\t" << movInstrForType(cm.type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
+        lhs_operand = scratch;
+    } else {
+        lhs_operand = srcOperand(lhs_loc);
+    }
+    out << "\t" << cmpInstrForType(cm.type) << " " << srcOperand(rm.at(cm.rhs)) << ", " << lhs_operand << "\n";
+    if (!dst_loc.isStack()) {
+        string dst_byte = sizedRegName(dst_loc.base, VRegType::Int8);
+        string dst_32   = sizedRegName(dst_loc.base, VRegType::Int32);
+        out << "\t" << setCCForOp(cm.op, isFloat(cm.type)) << " " << dst_byte << "\n";
+        out << "\tmovzbl " << dst_byte << ", " << dst_32 << "\n";
+    } else {
+        out << "\t" << setCCForOp(cm.op, isFloat(cm.type)) << " %al\n";
+        out << "\tmovzbl %al, %eax\n";
+        out << "\tmovl %eax, " << srcOperand(dst_loc) << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrConvert(const Convert& c, const RegMap& rm)
+{
+    if (!rm.count(c.dst)) return;  // dead
+    const PhysLoc& dst_loc = rm.at(c.dst);
+    bool dst_is_float = (c.to == VRegType::Float32 || c.to == VRegType::Float64);
+    if (dst_loc.isStack()) {
+        // Spilled dst: convert into scratch register, then store to stack slot.
+        // Float results use %xmm8 as scratch; integer results use %rax.
+        // NOTE: %xmm8 is safe only because all float VRegs are currently
+        // stack-allocated (no xmm register allocator).  If XMM registers are
+        // ever assigned to live float VRegs, %xmm8 must be chosen more carefully
+        // (e.g. pick a register not live at this instruction).
+        string scratch = dst_is_float ? "%xmm8" : sizedRegName("%rax", c.to);
+        emitConvert(scratch, rm.at(c.src), c.from, c.to);
+        out << "\t" << movInstrForType(c.to) << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
+    } else {
+        string dst_reg = dst_is_float ? dst_loc.base : sizedRegName(dst_loc.base, c.to);
+        emitConvert(dst_reg, rm.at(c.src), c.from, c.to);
+    }
+}
+
+void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
+{
+    int n_int_regs = (int)x86PhysRegs.intArgs.size();
+    int n_flt_regs = (int)x86PhysRegs.floatArgs.size();
+    // Count overflow args (int > 6 or float > 8) to pre-allocate stack space.
+    int n_stack = 0, int_count = 0, flt_count = 0;
+    for (auto vr : i.args) {
+        const PhysLoc& s = rm.at(vr);
+        bool is_flt = (s.type == VRegType::Float32 || s.type == VRegType::Float64);
+        if (is_flt) { if (flt_count >= n_flt_regs) n_stack++; flt_count++; }
+        else         { if (int_count >= n_int_regs) n_stack++; int_count++; }
+    }
+    int stack_space = 0;
+    if (n_stack > 0) {
+        stack_space = ((n_stack * 8) + 15) & ~15;
+        out << "\tsubq $" << stack_space << ", %rsp\n";
+    }
+    int int_idx = 0, flt_idx = 0, stack_idx = 0;
+    for (auto vr : i.args) {
+        const PhysLoc& src_loc = rm.at(vr);
+        bool is_flt = (src_loc.type == VRegType::Float32 || src_loc.type == VRegType::Float64);
+        if (is_flt && flt_idx < n_flt_regs) {
+            string xmm = x86PhysRegs.floatArgs[flt_idx++];
+            string s = srcOperand(src_loc);
+            if (s != xmm)
+                out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << xmm << "\n";
+        } else if (!is_flt && int_idx < n_int_regs) {
+            string dst = sizedRegName(x86PhysRegs.intArgs[int_idx++], src_loc.type);
+            string s = srcOperand(src_loc);
+            if (s != dst)
+                out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << dst << "\n";
+        } else {
+            // Overflow to stack: both int and float use 8 bytes per slot.
+            int offset = stack_idx++ * 8;
+            if (is_flt) {
+                flt_idx++;
+                const char* mov = movInstrForType(src_loc.type);
+                if (src_loc.isStack()) {
+                    // %xmm8 is safe as scratch here for the same reason as in
+                    // emitInstrConvert: all float VRegs are currently stack-allocated.
+                    out << "\t" << mov << " " << srcOperand(src_loc) << ", %xmm8\n";
+                    out << "\t" << mov << " %xmm8, " << offset << "(%rsp)\n";
                 } else {
-                    // Spilled dst: load address into scratch %rax then store to stack.
-                    out << "\tleaq " << i->label << "(%rip), %rax\n";
-                    out << "\tmovq %rax, " << srcOperand(loc) << "\n";
+                    out << "\t" << mov << " " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
                 }
-            } else if (auto* i = std::get_if<MovImm>(&instr)) {
-                const PhysLoc& loc = rm.at(i->dst);
-                if (loc.isStack()) {
-                    out << "\t" << movInstrForType(i->type) << " $" << i->value << ", " << srcOperand(loc) << "\n";
+            } else {
+                int_idx++;
+                if (src_loc.isStack()) {
+                    out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
+                    out << "\tmovq %r10, " << offset << "(%rsp)\n";
                 } else {
-                    emitMovImm(sizedRegName(loc.base, i->type), i->type, i->value);
-                }
-            } else if (auto* i = std::get_if<InitVar>(&instr)) {
-                const PhysLoc& loc = rm.at(i->dst);
-                if (loc.isStack()) {
-                    out << "\t" << movInstrForType(i->type) << " $" << i->imm << ", " << loc.stackOffset << "(%rbp)\n";
-                } else {
-                    out << "\t" << movInstrForType(i->type) << " $" << i->imm << ", " << sizedRegName(loc.base, i->type) << "\n";
-                }
-            } else if (auto* i = std::get_if<InitVarF>(&instr)) {
-                const PhysLoc& loc = rm.at(i->dst);
-                const char* mov = movInstrForType(i->type);
-                if (loc.isStack()) {
-                    // Load float constant into %xmm0 scratch, then store to stack slot.
-                    out << "\t" << mov << " " << i->label << "(%rip), %xmm0\n";
-                    out << "\t" << mov << " %xmm0, " << loc.stackOffset << "(%rbp)\n";
-                } else {
-                    out << "\t" << mov << " " << i->label << "(%rip), " << loc.base << "\n";
-                }
-            } else if (auto* a = std::get_if<Add>(&instr)) {
-                if (!rm.count(a->dst)) continue;  // dead: result never used
-                const PhysLoc& dst_loc = rm.at(a->dst);
-                const PhysLoc& lhs_loc = rm.at(a->lhs);
-                if (!dst_loc.isStack()) {
-                    string dst_reg = sizedRegName(dst_loc.base, a->type);
-                    out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
-                    out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << dst_reg << "\n";
-                } else {
-                    // Spilled dst: route through scratch %rax to avoid mem-mem.
-                    string scratch = sizedRegName("%rax", a->type);
-                    string dst_mem = srcOperand(dst_loc);
-                    out << "\t" << movInstrForType(a->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
-                    out << "\t" << addInstrForType(a->type) << " " << srcOperand(rm.at(a->rhs)) << ", " << scratch << "\n";
-                    out << "\t" << movInstrForType(a->type) << " " << scratch << ", " << dst_mem << "\n";
-                }
-            } else if (auto* s = std::get_if<Sub>(&instr)) {
-                if (!rm.count(s->dst)) continue;  // dead: result never used
-                const PhysLoc& dst_loc = rm.at(s->dst);
-                const PhysLoc& lhs_loc = rm.at(s->lhs);
-                if (!dst_loc.isStack()) {
-                    string dst_reg = sizedRegName(dst_loc.base, s->type);
-                    out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
-                    out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << dst_reg << "\n";
-                } else {
-                    // Spilled dst: route through scratch %rax to avoid mem-mem.
-                    string scratch = sizedRegName("%rax", s->type);
-                    string dst_mem = srcOperand(dst_loc);
-                    out << "\t" << movInstrForType(s->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
-                    out << "\t" << subInstrForType(s->type) << " " << srcOperand(rm.at(s->rhs)) << ", " << scratch << "\n";
-                    out << "\t" << movInstrForType(s->type) << " " << scratch << ", " << dst_mem << "\n";
-                }
-            } else if (auto* m = std::get_if<Mul>(&instr)) {
-                if (!rm.count(m->dst)) continue;  // dead: result never used
-                const PhysLoc& dst_loc = rm.at(m->dst);
-                const PhysLoc& lhs_loc = rm.at(m->lhs);
-                if (!dst_loc.isStack()) {
-                    string dst_reg = sizedRegName(dst_loc.base, m->type);
-                    out << "\t" << movInstrForType(m->type) << " " << srcOperand(lhs_loc) << ", " << dst_reg << "\n";
-                    out << "\t" << imulInstrForType(m->type) << " " << srcOperand(rm.at(m->rhs)) << ", " << dst_reg << "\n";
-                } else {
-                    // Spilled dst: route through scratch %rax to avoid mem-mem.
-                    string scratch = sizedRegName("%rax", m->type);
-                    string dst_mem = srcOperand(dst_loc);
-                    out << "\t" << movInstrForType(m->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
-                    out << "\t" << imulInstrForType(m->type) << " " << srcOperand(rm.at(m->rhs)) << ", " << scratch << "\n";
-                    out << "\t" << movInstrForType(m->type) << " " << scratch << ", " << dst_mem << "\n";
-                }
-            } else if (auto* dv = std::get_if<Div>(&instr)) {
-                if (!rm.count(dv->dst)) continue;  // dead: result never used
-                const PhysLoc& lhs_loc = rm.at(dv->lhs);
-                const PhysLoc& rhs_loc = rm.at(dv->rhs);
-                const PhysLoc& dst_loc = rm.at(dv->dst);
-                // idivq clobbers %rax and %rdx; save rhs if it lives in either.
-                string rhs_src = srcOperand(rhs_loc);
-                if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
-                    out << "\tmovq " << rhs_src << ", %r10\n";
-                    rhs_src = "%r10";
-                }
-                out << "\tmovq " << srcOperand(lhs_loc) << ", %rax\n";
-                out << "\tcqto\n";
-                out << "\tidivq " << rhs_src << "\n";
-                string dst_str = srcOperand(dst_loc);
-                if (dst_str != "%rax")
-                    out << "\tmovq %rax, " << dst_str << "\n";
-            } else if (auto* md = std::get_if<Mod>(&instr)) {
-                if (!rm.count(md->dst)) continue;  // dead: result never used
-                const PhysLoc& lhs_loc = rm.at(md->lhs);
-                const PhysLoc& rhs_loc = rm.at(md->rhs);
-                const PhysLoc& dst_loc = rm.at(md->dst);
-                // idivq clobbers %rax and %rdx; save rhs if it lives in either.
-                string rhs_src = srcOperand(rhs_loc);
-                if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
-                    out << "\tmovq " << rhs_src << ", %r10\n";
-                    rhs_src = "%r10";
-                }
-                out << "\tmovq " << srcOperand(lhs_loc) << ", %rax\n";
-                out << "\tcqto\n";
-                out << "\tidivq " << rhs_src << "\n";
-                string dst_str = srcOperand(dst_loc);
-                if (dst_str != "%rdx")
-                    out << "\tmovq %rdx, " << dst_str << "\n";
-            } else if (auto* n = std::get_if<Neg>(&instr)) {
-                if (!rm.count(n->dst)) continue;  // dead: result never used
-                const PhysLoc& src_loc = rm.at(n->src);
-                const PhysLoc& dst_loc = rm.at(n->dst);
-                if (!dst_loc.isStack()) {
-                    string dst_reg = sizedRegName(dst_loc.base, n->type);
-                    out << "\t" << movInstrForType(n->type) << " " << srcOperand(src_loc) << ", " << dst_reg << "\n";
-                    out << "\t" << negInstrForType(n->type) << " " << dst_reg << "\n";
-                } else {
-                    // Spilled dst: route through scratch %rax to avoid mem-mem.
-                    string scratch = sizedRegName("%rax", n->type);
-                    string dst_mem = srcOperand(dst_loc);
-                    out << "\t" << movInstrForType(n->type) << " " << srcOperand(src_loc) << ", " << scratch << "\n";
-                    out << "\t" << negInstrForType(n->type) << " " << scratch << "\n";
-                    out << "\t" << movInstrForType(n->type) << " " << scratch << ", " << dst_mem << "\n";
-                }
-            } else if (auto* cm = std::get_if<Cmp>(&instr)) {
-                if (!rm.count(cm->dst)) continue;  // dead
-                const PhysLoc& dst_loc  = rm.at(cm->dst);
-                const PhysLoc& lhs_loc  = rm.at(cm->lhs);
-                // cmpX %rhs, lhs  →  flags = lhs - rhs
-                // x86 disallows two memory operands: load lhs into scratch if spilled
-                string lhs_operand;
-                if (lhs_loc.isStack()) {
-                    string scratch = sizedRegName("%rax", cm->type);
-                    out << "\t" << movInstrForType(cm->type) << " " << srcOperand(lhs_loc) << ", " << scratch << "\n";
-                    lhs_operand = scratch;
-                } else {
-                    lhs_operand = srcOperand(lhs_loc);
-                }
-                out << "\t" << cmpInstrForType(cm->type)
-                    << " " << srcOperand(rm.at(cm->rhs))
-                    << ", " << lhs_operand << "\n";
-                if (!dst_loc.isStack()) {
-                    string dst_byte = sizedRegName(dst_loc.base, VRegType::Int8);
-                    string dst_32   = sizedRegName(dst_loc.base, VRegType::Int32);
-                    out << "\t" << setCCForOp(cm->op) << " " << dst_byte << "\n";
-                    out << "\tmovzbl " << dst_byte << ", " << dst_32 << "\n";
-                } else {
-                    out << "\t" << setCCForOp(cm->op) << " %al\n";
-                    out << "\tmovzbl %al, %eax\n";
-                    out << "\tmovl %eax, " << srcOperand(dst_loc) << "\n";
-                }
-            } else if (auto* c = std::get_if<Convert>(&instr)) {
-                if (!rm.count(c->dst)) continue;  // dead
-                const PhysLoc& dst_loc = rm.at(c->dst);
-                bool dst_is_float = (c->to == VRegType::Float32 || c->to == VRegType::Float64);
-                if (dst_loc.isStack()) {
-                    // Spilled dst: convert into scratch register, then store to stack slot.
-                    // Float results use %xmm8 as scratch; integer results use %rax.
-                    // NOTE: %xmm8 is safe only because all float VRegs are currently
-                    // stack-allocated (no xmm register allocator).  If XMM registers are
-                    // ever assigned to live float VRegs, %xmm8 must be chosen more carefully
-                    // (e.g. pick a register not live at this instruction).
-                    string scratch = dst_is_float ? "%xmm8" : sizedRegName("%rax", c->to);
-                    emitConvert(scratch, rm.at(c->src), c->from, c->to);
-                    out << "\t" << movInstrForType(c->to) << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
-                } else {
-                    string dst_reg = dst_is_float ? dst_loc.base : sizedRegName(dst_loc.base, c->to);
-                    emitConvert(dst_reg, rm.at(c->src), c->from, c->to);
-                }
-            } else if (auto* i = std::get_if<CallC>(&instr)) {
-                int n_int_regs = (int)x86PhysRegs.intArgs.size();
-                int n_flt_regs = (int)x86PhysRegs.floatArgs.size();
-                // Count overflow args (int > 6 or float > 8) to pre-allocate stack space.
-                int n_stack = 0, int_count = 0, flt_count = 0;
-                for (auto vr : i->args) {
-                    const PhysLoc& s = rm.at(vr);
-                    bool is_flt = (s.type == VRegType::Float32 || s.type == VRegType::Float64);
-                    if (is_flt) {
-                        if (flt_count >= n_flt_regs) n_stack++;
-                        flt_count++;
-                    } else {
-                        if (int_count >= n_int_regs) n_stack++;
-                        int_count++;
-                    }
-                }
-                int stack_space = 0;
-                if (n_stack > 0) {
-                    stack_space = ((n_stack * 8) + 15) & ~15;
-                    out << "\tsubq $" << stack_space << ", %rsp\n";
-                }
-                int int_idx = 0, flt_idx = 0, stack_idx = 0;
-                for (auto vr : i->args) {
-                    const PhysLoc& src_loc = rm.at(vr);
-                    bool is_flt = (src_loc.type == VRegType::Float32 || src_loc.type == VRegType::Float64);
-                    if (is_flt && flt_idx < n_flt_regs) {
-                        string xmm = x86PhysRegs.floatArgs[flt_idx++];
-                        string s = srcOperand(src_loc);
-                        if (s != xmm)
-                            out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << xmm << "\n";
-                    } else if (!is_flt && int_idx < n_int_regs) {
-                        string dst = sizedRegName(x86PhysRegs.intArgs[int_idx++], src_loc.type);
-                        string s = srcOperand(src_loc);
-                        if (s != dst)
-                            out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << dst << "\n";
-                    } else {
-                        // Overflow to stack: both int and float use 8 bytes per slot.
-                        int offset = stack_idx++ * 8;
-                        if (is_flt) {
-                            flt_idx++;
-                            const char* mov = movInstrForType(src_loc.type);
-                            if (src_loc.isStack()) {
-                                // %xmm8 is safe as scratch here for the same reason as in
-                                // the Convert block: all float VRegs are currently stack-allocated.
-                                out << "\t" << mov << " " << srcOperand(src_loc) << ", %xmm8\n";
-                                out << "\t" << mov << " %xmm8, " << offset << "(%rsp)\n";
-                            } else {
-                                out << "\t" << mov << " " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
-                            }
-                        } else {
-                            int_idx++;
-                            if (src_loc.isStack()) {
-                                out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
-                                out << "\tmovq %r10, " << offset << "(%rsp)\n";
-                            } else {
-                                out << "\tmovq " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
-                            }
-                        }
-                    }
-                }
-                emitCallC(i->name, flt_idx);
-                if (stack_space > 0)
-                    out << "\taddq $" << stack_space << ", %rsp\n";
-                if (i->dst != -1 && rm.count(i->dst)) {
-                    const PhysLoc& dst_loc = rm.at(i->dst);
-                    bool ret_is_float = (i->retType == VRegType::Float32 ||
-                                         i->retType == VRegType::Float64);
-                    // Float return value is in %xmm0; integer return value is in %rax.
-                    string ret_reg = ret_is_float ? "%xmm0" : sizedRegName("%rax", i->retType);
-                    string dst_reg = ret_is_float ? dst_loc.isStack()
-                                                        ? srcOperand(dst_loc)
-                                                        : dst_loc.base
-                                                  : srcOperand(dst_loc);
-                    if (dst_reg != ret_reg)
-                        out << "\t" << movInstrForType(i->retType) << " " << ret_reg << ", " << dst_reg << "\n";
-                }
-            } else if (auto* c = std::get_if<CallPln>(&instr)) {
-                int n_regs = (int)x86PhysRegs.intArgs.size();
-                // Move arguments into intArgs registers.
-                for (int j = 0; j < (int)c->args.size() && j < n_regs; j++) {
-                    const PhysLoc& src = rm.at(c->args[j]);
-                    string s = srcOperand(src);
-                    string d = sizedRegName(x86PhysRegs.intArgs[j], src.type);
-                    if (s != d)
-                        out << "\t" << movInstrForType(src.type) << " " << s << ", " << d << "\n";
-                }
-                int n_stack = (int)c->args.size() - n_regs;
-                int stack_space = 0;
-                if (n_stack > 0) {
-                    stack_space = ((n_stack * 8) + 15) & ~15;
-                    out << "\tsubq $" << stack_space << ", %rsp\n";
-                    for (int j = n_regs; j < (int)c->args.size(); j++) {
-                        int offset = (j - n_regs) * 8;
-                        const PhysLoc& src_loc = rm.at(c->args[j]);
-                        if (src_loc.isStack()) {
-                            out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
-                            out << "\tmovq %r10, " << offset << "(%rsp)\n";
-                        } else {
-                            out << "\tmovq " << srcOperand(src_loc)
-                                << ", " << offset << "(%rsp)\n";
-                        }
-                    }
-                }
-                out << "\tcall " << c->name << "\n";
-                if (stack_space > 0)
-                    out << "\taddq $" << stack_space << ", %rsp\n";
-                // Move return value(s) to destination(s).
-                if (c->dsts.size() == 1 && rm.count(c->dsts[0])) {
-                    // Single return: copy from %rax
-                    const PhysLoc& dst = rm.at(c->dsts[0]);
-                    string rax = sizedRegName("%rax", c->retTypes[0]);
-                    string d   = srcOperand(dst);
-                    if (rax != d)
-                        out << "\t" << movInstrForType(c->retTypes[0]) << " " << rax << ", " << d << "\n";
-                } else if (c->dsts.size() > 1) {
-                    // Multi-return: copy from intArgs[j] in reverse order to avoid overwrite
-                    for (int j = (int)c->dsts.size() - 1; j >= 0; j--) {
-                        if (!rm.count(c->dsts[j])) continue;
-                        const PhysLoc& dst = rm.at(c->dsts[j]);
-                        string src_reg = sizedRegName(x86PhysRegs.intArgs[j], c->retTypes[j]);
-                        string d = srcOperand(dst);
-                        if (src_reg != d)
-                            out << "\t" << movInstrForType(c->retTypes[j]) << " " << src_reg << ", " << d << "\n";
-                    }
-                }
-            } else if (auto* r = std::get_if<RetPln>(&instr)) {
-                // Move return value(s) to return registers.
-                if (r->rets.size() == 1) {
-                    // Single return: copy to %rax
-                    const PhysLoc& src = rm.at(r->rets[0]);
-                    string s   = srcOperand(src);
-                    string rax = sizedRegName("%rax", r->types[0]);
-                    if (s != rax)
-                        out << "\t" << movInstrForType(r->types[0]) << " " << s << ", " << rax << "\n";
-                } else if (r->rets.size() > 1) {
-                    // Multi-return: copy to intArgs[j] in forward order
-                    for (int j = 0; j < (int)r->rets.size(); j++) {
-                        const PhysLoc& src = rm.at(r->rets[j]);
-                        string s = srcOperand(src);
-                        string dst_reg = sizedRegName(x86PhysRegs.intArgs[j], r->types[j]);
-                        if (s != dst_reg)
-                            out << "\t" << movInstrForType(r->types[j]) << " " << s << ", " << dst_reg << "\n";
-                    }
-                }
-                // Restore callee-saved registers in reverse order before returning
-                for (int i = (int)ra.usedCalleeSaved.size() - 1; i >= 0; i--)
-                    out << "\tmovq " << -(i + 1) * 8 << "(%rbp), " << ra.usedCalleeSaved[i] << "\n";
-                out << "\tleave\n";
-                out << "\tret\n";
-            } else if (auto* i = std::get_if<ExitCode>(&instr)) {
-                emitExit(i->code);
-            } else if (std::get_if<BlockEnter>(&instr)) {
-                // no-op
-            } else if (std::get_if<BlockLeave>(&instr)) {
-                // no-op
-            } else if (auto* l = std::get_if<Label>(&instr)) {
-                out << l->name << ":\n";
-            } else if (auto* j = std::get_if<Jmp>(&instr)) {
-                out << "\tjmp " << j->label << "\n";
-            } else if (auto* cj = std::get_if<CondJmp>(&instr)) {
-                const PhysLoc& loc = rm.at(cj->cond);
-                string cond_reg;
-                if (loc.isStack()) {
-                    out << "\tmovl " << srcOperand(loc) << ", %eax\n";
-                    cond_reg = "%eax";
-                } else {
-                    cond_reg = sizedRegName(loc.base, VRegType::Int32);
-                }
-                out << "\ttestl " << cond_reg << ", " << cond_reg << "\n";
-                out << (cj->jumpIfZero ? "\tje " : "\tjne ") << cj->label << "\n";
-            } else if (auto* mv = std::get_if<Mov>(&instr)) {
-                // Copy src into dst (variable's canonical stack slot or register).
-                if (!rm.count(mv->dst) || !rm.count(mv->src)) continue;
-                const PhysLoc& dst_loc = rm.at(mv->dst);
-                const PhysLoc& src_loc = rm.at(mv->src);
-                string s = srcOperand(src_loc);
-                string d = srcOperand(dst_loc);
-                if (s == d) continue;  // same location: no-op
-                if (!dst_loc.isStack()) {
-                    string dst_reg = sizedRegName(dst_loc.base, mv->type);
-                    out << "\t" << movInstrForType(mv->type) << " " << s << ", " << dst_reg << "\n";
-                } else if (!src_loc.isStack()) {
-                    out << "\t" << movInstrForType(mv->type) << " " << s << ", " << d << "\n";
-                } else {
-                    // Both on stack: route through scratch %rax.
-                    string scratch = sizedRegName("%rax", mv->type);
-                    out << "\t" << movInstrForType(mv->type) << " " << s << ", " << scratch << "\n";
-                    out << "\t" << movInstrForType(mv->type) << " " << scratch << ", " << d << "\n";
+                    out << "\tmovq " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
                 }
             }
         }
+    }
+    emitCallC(i.name, flt_idx);
+    if (stack_space > 0)
+        out << "\taddq $" << stack_space << ", %rsp\n";
+    if (i.dst != -1 && rm.count(i.dst)) {
+        const PhysLoc& dst_loc = rm.at(i.dst);
+        bool ret_is_float = (i.retType == VRegType::Float32 || i.retType == VRegType::Float64);
+        // Float return value is in %xmm0; integer return value is in %rax.
+        string ret_reg = ret_is_float ? "%xmm0" : sizedRegName("%rax", i.retType);
+        string dst_reg = ret_is_float ? (dst_loc.isStack() ? srcOperand(dst_loc) : dst_loc.base)
+                                      : srcOperand(dst_loc);
+        if (dst_reg != ret_reg)
+            out << "\t" << movInstrForType(i.retType) << " " << ret_reg << ", " << dst_reg << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
+{
+    int n_regs = (int)x86PhysRegs.intArgs.size();
+    // Move arguments into intArgs registers.
+    for (int j = 0; j < (int)c.args.size() && j < n_regs; j++) {
+        const PhysLoc& src = rm.at(c.args[j]);
+        string s = srcOperand(src);
+        string d = sizedRegName(x86PhysRegs.intArgs[j], src.type);
+        if (s != d)
+            out << "\t" << movInstrForType(src.type) << " " << s << ", " << d << "\n";
+    }
+    int n_stack = (int)c.args.size() - n_regs;
+    int stack_space = 0;
+    if (n_stack > 0) {
+        stack_space = ((n_stack * 8) + 15) & ~15;
+        out << "\tsubq $" << stack_space << ", %rsp\n";
+        for (int j = n_regs; j < (int)c.args.size(); j++) {
+            int offset = (j - n_regs) * 8;
+            const PhysLoc& src_loc = rm.at(c.args[j]);
+            if (src_loc.isStack()) {
+                out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
+                out << "\tmovq %r10, " << offset << "(%rsp)\n";
+            } else {
+                out << "\tmovq " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
+            }
+        }
+    }
+    out << "\tcall " << c.name << "\n";
+    if (stack_space > 0)
+        out << "\taddq $" << stack_space << ", %rsp\n";
+    // Move return value(s) to destination(s).
+    if (c.dsts.size() == 1 && rm.count(c.dsts[0])) {
+        // Single return: copy from %rax
+        const PhysLoc& dst = rm.at(c.dsts[0]);
+        string rax = sizedRegName("%rax", c.retTypes[0]);
+        string d   = srcOperand(dst);
+        if (rax != d)
+            out << "\t" << movInstrForType(c.retTypes[0]) << " " << rax << ", " << d << "\n";
+    } else if (c.dsts.size() > 1) {
+        // Multi-return: copy from intArgs[j] in reverse order to avoid overwrite
+        for (int j = (int)c.dsts.size() - 1; j >= 0; j--) {
+            if (!rm.count(c.dsts[j])) continue;
+            const PhysLoc& dst = rm.at(c.dsts[j]);
+            string src_reg = sizedRegName(x86PhysRegs.intArgs[j], c.retTypes[j]);
+            string d = srcOperand(dst);
+            if (src_reg != d)
+                out << "\t" << movInstrForType(c.retTypes[j]) << " " << src_reg << ", " << d << "\n";
+        }
+    }
+}
+
+void PlnX86CodeGen::emitInstrRetPln(const RetPln& r, const RegMap& rm, const vector<string>& usedCalleeSaved)
+{
+    // Move return value(s) to return registers.
+    if (r.rets.size() == 1) {
+        // Single return: copy to %rax
+        const PhysLoc& src = rm.at(r.rets[0]);
+        string s   = srcOperand(src);
+        string rax = sizedRegName("%rax", r.types[0]);
+        if (s != rax)
+            out << "\t" << movInstrForType(r.types[0]) << " " << s << ", " << rax << "\n";
+    } else if (r.rets.size() > 1) {
+        // Multi-return: copy to intArgs[j] in forward order
+        for (int j = 0; j < (int)r.rets.size(); j++) {
+            const PhysLoc& src = rm.at(r.rets[j]);
+            string s = srcOperand(src);
+            string dst_reg = sizedRegName(x86PhysRegs.intArgs[j], r.types[j]);
+            if (s != dst_reg)
+                out << "\t" << movInstrForType(r.types[j]) << " " << s << ", " << dst_reg << "\n";
+        }
+    }
+    // Restore callee-saved registers in reverse order before returning
+    for (int i = (int)usedCalleeSaved.size() - 1; i >= 0; i--)
+        out << "\tmovq " << -(i + 1) * 8 << "(%rbp), " << usedCalleeSaved[i] << "\n";
+    out << "\tleave\n";
+    out << "\tret\n";
+}
+
+void PlnX86CodeGen::emitInstrCondJmp(const CondJmp& cj, const RegMap& rm)
+{
+    const PhysLoc& loc = rm.at(cj.cond);
+    string cond_reg;
+    if (loc.isStack()) {
+        out << "\tmovl " << srcOperand(loc) << ", %eax\n";
+        cond_reg = "%eax";
+    } else {
+        cond_reg = sizedRegName(loc.base, VRegType::Int32);
+    }
+    out << "\ttestl " << cond_reg << ", " << cond_reg << "\n";
+    out << (cj.jumpIfZero ? "\tje " : "\tjne ") << cj.label << "\n";
+}
+
+void PlnX86CodeGen::emitInstrMov(const Mov& mv, const RegMap& rm)
+{
+    // Copy src into dst (variable's canonical stack slot or register).
+    if (!rm.count(mv.dst) || !rm.count(mv.src)) return;
+    const PhysLoc& dst_loc = rm.at(mv.dst);
+    const PhysLoc& src_loc = rm.at(mv.src);
+    string s = srcOperand(src_loc);
+    string d = srcOperand(dst_loc);
+    if (s == d) return;  // same location: no-op
+    if (!dst_loc.isStack()) {
+        string dst_reg = sizedRegName(dst_loc.base, mv.type);
+        out << "\t" << movInstrForType(mv.type) << " " << s << ", " << dst_reg << "\n";
+    } else if (!src_loc.isStack()) {
+        out << "\t" << movInstrForType(mv.type) << " " << s << ", " << d << "\n";
+    } else {
+        // Both on stack: route through scratch register.
+        string scratch = isFloat(mv.type) ? "%xmm8" : sizedRegName("%rax", mv.type);
+        out << "\t" << movInstrForType(mv.type) << " " << s << ", " << scratch << "\n";
+        out << "\t" << movInstrForType(mv.type) << " " << scratch << ", " << d << "\n";
     }
 }
 

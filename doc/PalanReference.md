@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.13
+**Version:** v0.1.14
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -488,6 +488,49 @@ Integer literals can also initialize float variables:
 flo64 n = 5;    // stored as 5.0
 ```
 
+### Arithmetic Operators
+
+`+`, `-`, `*`, `/` work on `flo32` and `flo64` operands and produce a float result.
+
+```palan
+flo64 a = 3.0, b = 2.0;
+flo64 sum = a + b;    // 5.0
+flo64 diff = a - b;   // 1.0
+flo64 prod = a * b;   // 6.0
+flo64 quot = a / b;   // 1.5
+```
+
+The `%` (modulo) operator is **not** supported on float types; using it is a compile error.
+
+### Comparison Operators
+
+All six comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) work on float operands and produce `int32` (1 if true, 0 if false), the same as integer comparisons.
+
+```palan
+flo64 x = 1.5;
+if x > 1.0 { printf("big\n"); }
+```
+
+### Unary Minus
+
+`-expr` negates a float value.
+
+```palan
+flo64 v = 3.14;
+-v -> v;   // v is now -3.14
+```
+
+### Type Promotion
+
+When operands have different float widths, the narrower type is implicitly widened:
+
+- `flo32 op flo64` → both become `flo64`; result is `flo64`
+
+When one operand is an integer and the other is a float, the integer is implicitly widened to the float type:
+
+- `int op flo32` → int widened to `flo32`; result is `flo32`
+- `int op flo64` → int widened to `flo64`; result is `flo64`
+
 ### Explicit Cast to Integer
 
 Use `int64(x)` or `int32(x)` to convert a float to an integer (truncation toward zero):
@@ -497,4 +540,24 @@ cinclude <stdio.h>;
 flo64 pi = 3.14159;
 printf("%ld\n", int64(pi));   // prints 3
 ```
+
+### Example — Newton's Method
+
+```palan
+cinclude <stdio.h>;
+
+flo64 x = 2.0;
+flo64 guess = 1.0;
+flo64 eps = 0.000001;
+flo64 diff = guess * guess - x;
+if diff < 0.0 { -diff -> diff; }
+while diff > eps {
+    (guess + x / guess) / 2.0 -> guess;
+    guess * guess - x -> diff;
+    if diff < 0.0 { -diff -> diff; }
+}
+printf("sqrt(2) = %f\n", guess);
+```
+
+Expected output: `sqrt(2) = 1.414214`
 

@@ -243,6 +243,14 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		} else {
 			promoted = leftType;
 		}
+		if (expr_type == "mod" && promoted->kind == PlnType::Kind::Prim) {
+			auto pn = static_cast<const PrimType*>(promoted)->name;
+			if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64) {
+				cerr << locPrefix(expr)
+				     << PlnSaMessage::getMessage(E_FloatModulo) << endl;
+				exit(1);
+			}
+		}
 		sa_expr["left"]       = left;
 		sa_expr["right"]      = right;
 		sa_expr["value-type"] = registry_.toJson(promoted);

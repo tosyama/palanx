@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+flo64 x = -3.5;
+printf("%f\n", x);
+flo64 y = 2.0;
+-y -> y;
+printf("%f\n", y);

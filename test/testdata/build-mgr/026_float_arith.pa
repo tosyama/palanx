@@ -1,0 +1,17 @@
+cinclude <stdio.h>;
+
+flo64 a = 3.0;
+flo64 b = 2.0;
+flo64 c = a + b;
+flo64 d = a - b;
+flo64 e = a * b;
+flo64 f = a / b;
+printf("%f %f %f %f\n", c, d, e, f);
+
+flo32 p = 3.0;
+flo32 q = 2.0;
+flo32 r = p + q;
+flo32 s = p - q;
+flo32 t = p * q;
+flo32 u = p / q;
+printf("%f %f %f %f\n", r, s, t, u);

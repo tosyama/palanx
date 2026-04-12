@@ -107,10 +107,10 @@ TEST(build_mgr, fizzbuzz) {
 
 TEST(build_mgr, narrow_types) {
 	cleanTestEnv();
-	// Covers: var-decl without init, int8/int16 arithmetic (add/sub/neg/cmp),
+	// Covers: var-decl without init, int8/int16 arithmetic (add/sub/mul/neg/cmp),
 	// named single-return function with explicit bare return.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/017_narrow_types.pa");
-	ASSERT_EQ(output, "0\n13 7 -3 0\n107 93\n42\n");
+	ASSERT_EQ(output, "0\n13 7 -3 0\n107 93 700 -7 0\n42\n");
 }
 
 TEST(build_mgr, print_primes) {
@@ -178,6 +178,48 @@ TEST(build_mgr, uint_convert) {
 	// uint widening/narrowing and uint->float implicit
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/025_uint_convert.pa");
 	ASSERT_EQ(output, "200 200 200\n200\n200.000000 200.000000\n300.000000 70000.000000\n");
+}
+
+TEST(build_mgr, float_arith) {
+	cleanTestEnv();
+	// flo64 and flo32 arithmetic: +, -, *, /
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/026_float_arith.pa");
+	ASSERT_EQ(output, "5.000000 1.000000 6.000000 1.500000\n5.000000 1.000000 6.000000 1.500000\n");
+}
+
+TEST(build_mgr, float_cmp) {
+	cleanTestEnv();
+	// flo64 comparison: <, >, ==
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/027_float_cmp.pa");
+	ASSERT_EQ(output, "1\n0\n0\n");
+}
+
+TEST(build_mgr, float_neg) {
+	cleanTestEnv();
+	// flo64 unary negation: literal neg and variable neg via ->
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/028_float_neg.pa");
+	ASSERT_EQ(output, "-3.500000\n-2.000000\n");
+}
+
+TEST(build_mgr, float_newton) {
+	cleanTestEnv();
+	// Newton's method sqrt(2) using float arith, neg, if, while
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/029_float_newton.pa");
+	ASSERT_EQ(output, "sqrt(2) = 1.414214\n");
+}
+
+TEST(build_mgr, float_int_mixed) {
+	cleanTestEnv();
+	// int/float mixed arithmetic: int is implicitly widened to float
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/030_float_int_mixed.pa");
+	ASSERT_EQ(output, "5.000000\n30.000000\n4.000000\n");
+}
+
+TEST(build_mgr, float32_cmp) {
+	cleanTestEnv();
+	// flo32 comparison: !=, ==, <, > (exercises ucomiss and setne)
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/031_float32_cmp.pa");
+	ASSERT_EQ(output, "1\n0\n1\n0\n");
 }
 
 TEST(build_mgr, clean) {

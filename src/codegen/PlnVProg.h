@@ -84,4 +84,6 @@ struct VProg {
     vector<VStringLiteral> data;       // .rodata string literals
     vector<VFloatLiteral>  floatData;  // .rodata float literals
     vector<VFunc>          funcs;      // .text
+    bool needsF32Neg = false;          // true if any Neg{Float32} instruction exists
+    bool needsF64Neg = false;          // true if any Neg{Float64} instruction exists
 };

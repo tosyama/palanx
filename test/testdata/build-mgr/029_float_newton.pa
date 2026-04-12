@@ -1,0 +1,13 @@
+cinclude <stdio.h>;
+
+flo64 x = 2.0;
+flo64 guess = 1.0;
+flo64 eps = 0.000001;
+flo64 diff = guess * guess - x;
+if diff < 0.0 { -diff -> diff; }
+while diff > eps {
+    (guess + x / guess) / 2.0 -> guess;
+    guess * guess - x -> diff;
+    if diff < 0.0 { -diff -> diff; }
+}
+printf("sqrt(2) = %f\n", guess);

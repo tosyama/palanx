@@ -658,3 +658,51 @@ TEST(codegen, uint_widen_narrow) {
     // (uint8/16/32 → flo32): cvtsi2ssq %rax
     ASSERT_NE(asm_text.find("cvtsi2ssq %rax,"), string::npos);
 }
+
+TEST(codegen, float_arith) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/037_float_arith.sa.json";
+    string asmf = "out/037_float_arith.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("addsd"), string::npos);
+    ASSERT_NE(asm_text.find("subsd"), string::npos);
+    ASSERT_NE(asm_text.find("mulsd"), string::npos);
+    ASSERT_NE(asm_text.find("divsd"), string::npos);
+    ASSERT_NE(asm_text.find("addss"), string::npos);
+    ASSERT_NE(asm_text.find("subss"), string::npos);
+    ASSERT_NE(asm_text.find("mulss"), string::npos);
+    ASSERT_NE(asm_text.find("divss"), string::npos);
+}
+
+TEST(codegen, float_cmp) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/038_float_cmp.sa.json";
+    string asmf = "out/038_float_cmp.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("ucomisd"), string::npos);
+    ASSERT_NE(asm_text.find("setb"),    string::npos);  // <
+    ASSERT_NE(asm_text.find("sete"),    string::npos);  // ==
+}
+
+TEST(codegen, float_neg) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/039_float_neg.sa.json";
+    string asmf = "out/039_float_neg.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("xorpd"), string::npos);  // flo64 neg
+    ASSERT_NE(asm_text.find("xorps"), string::npos);  // flo32 neg
+    ASSERT_NE(asm_text.find(".neg_mask_f64"), string::npos);
+    ASSERT_NE(asm_text.find(".neg_mask_f32"), string::npos);
+}
