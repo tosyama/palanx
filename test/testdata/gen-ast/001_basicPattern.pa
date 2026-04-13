@@ -11,52 +11,52 @@ int32 a=10, (int32 a1, a2) = myFunc(x-3);
 (var z, zz) = myFunc(x);
 (int32 z1, int64 z2) = myFunc(x);
 (void, int64 zzz) = myFunc(x);
- 
+
 myFunc(x) -> (z,-);
- 
+
 export type MyType {
  	int64 y;
- 	MyType @next;
+ 	@MyType next;
 };
 
 export interface IMyObjStorage<Item> {
-	func size(IMyObjStorage<Item> @self) -> int32 {
+	func size(@IMyObjStorage<Item> self) -> int32 {
 		return 0;
 	}
 
-	func add_item(IMyObjStorage<Item> @!self, Item >>item);
+	func add_item(@!IMyObjStorage<Item> self, Item >>item);
 };
 
 type MyTypeStorage : MyObjStorage<MyType> as A {
-	MyType storage[+];
+	[+]MyType storage;
 
-	func A.size(MyTypeStorage @self) -> int32 {
+	func A.size(@MyTypeStorage self) -> int32 {
 		return self.storage.size();
 	}
 
-	func A.add_item(MyTypeStrage @!self, MyType >>item) {
+	func A.add_item(@!MyTypeStrage self, MyType >>item) {
 		self.storage.add(item>>);
 	}
 };
 
 type myInt = int64;
 type XType;
- 
-(MyType t, MyType z[x,z+3]) = myFuncZ();
- 
+
+([x]MyType t, [x]MyType z) = myFuncZ();
+
 func myFunc(int32 size)
  	-> int32 z, int64 zz
 {
- 	flo64 my_arr[size+1,3];
- 	flo32 $farr[] = [12,34][56,78];
+ 	[size+1]flo64 my_arr;
+ 	[]$flo32 farr = [12,34][56,78];
  	MyType mt = {y:2, next:null};
- 	MyType mt2[]$[]$=[[{y:2, next:null}]];
-	MyType @mt3[]@ = [{y: 3, next:{y:4, next: null}}];
- 
+ 	[]$[]$MyType mt2=[[{y:2, next:null}]];
+	@[]MyType mt3 = [{y: 3, next:{y:4, next: null}}];
+
 	return 3, 4;
 }
 
-export func myFuncZ(int64 x=3, int32 z[]=[3,2])
+export func myFuncZ(int64 x=3, []int32 z=[3,2])
 {
 }
 
@@ -64,6 +64,6 @@ callback = func (int32 x) {
 		return x+1;
 	};
 
-construct int64(MyType@ t) {
+construct int64(@MyType t) {
 	return t.y;
 }
