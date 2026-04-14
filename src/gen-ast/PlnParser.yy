@@ -501,7 +501,12 @@ inherit_var_decl: ID
 
 var_declaration: type_expr move_owner_r ID
 	{
-		if (!$2 && $1.value("type-kind","") == "prim")
+		string tk = $1.value("type-kind","");
+		bool is_valid_arr = tk == "arr"
+			&& $1.value("specifier","") == "raw"
+			&& !$1["size-expr"].is_null()
+			&& $1["base-type"].value("type-kind","") == "prim";
+		if (!$2 && (tk == "prim" || is_valid_arr))
 			$$ = {{"name", $3}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};
@@ -826,15 +831,17 @@ type_expr: ID
 	| '$' type_expr
 	{ $$ = {{"type-kind","embed"},{"base-type",move($2)}}; }
 	| '[' expression ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"size-expr",move($2)},{"base-type",move($4)}}; }
+	{ $$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",move($2)},{"base-type",move($4)}}; }
 	| '[' ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"size-expr",nullptr},{"base-type",move($3)}}; }
+	{ $$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"base-type",move($3)}}; }
 	| '[' '#' ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"size-expr",nullptr},{"base-type",move($4)}}; }
+	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",nullptr},{"base-type",move($4)}}; }
 	| '[' '#' expression ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"size-expr",move($3)},{"base-type",move($5)}}; }
+	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",move($3)},{"base-type",move($5)}}; }
 	| '[' '+' ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"size-expr",nullptr},{"base-type",move($4)}}; }
+	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr},{"base-type",move($4)}}; }
+	| '[' '+' expression ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",move($3)},{"base-type",move($5)}}; }
 	;
 
 temp_ids: ID | temp_ids ',' ID

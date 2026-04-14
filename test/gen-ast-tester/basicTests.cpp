@@ -443,3 +443,36 @@ TEST(gen_ast, cli_tests) {
 	output = execTestCommand("bin/palan-gen-ast -i ../test/testdata/gen-ast/001_basicPattern.pa -o out/001ast.json");
 	ASSERT_EQ(output, "");
 }
+
+TEST(gen_ast, array_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/014_array_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	ASSERT_EQ(jout["ast"]["statements"].size(), 3);
+
+	bool found_buf = false, found_arr = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (v["name"] == "buf") {
+				ASSERT_EQ(v["var-type"]["type-kind"], "arr");
+				ASSERT_EQ(v["var-type"]["size-expr"]["expr-type"], "lit-int");
+				ASSERT_EQ(v["var-type"]["size-expr"]["value"], "64");
+				ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "prim");
+				ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "uint8");
+				found_buf = true;
+			}
+			if (v["name"] == "arr") {
+				ASSERT_EQ(v["var-type"]["type-kind"], "arr");
+				ASSERT_EQ(v["var-type"]["size-expr"]["expr-type"], "id");
+				ASSERT_EQ(v["var-type"]["size-expr"]["name"], "n");
+				ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "prim");
+				ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "int64");
+				found_arr = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_buf);
+	ASSERT_TRUE(found_arr);
+}

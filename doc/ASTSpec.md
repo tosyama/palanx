@@ -84,7 +84,16 @@ Variable type
     - base-type\* - Base variable type
   3. arr - Array type
     - base-type\* - Base variable type
-    - size-expr - Array size expression model (null if unspecified with `[]` or `[#]`)
+    - specifier\* - Array kind string:
+      - "raw"      — `[expr]type` or `[]type`    raw heap array (C-array equivalent, no count stored)
+      - "fixed"    — `[#expr]type` or `[#]type`  heap array with element count in memory header
+      - "variable" — `[+expr]type` or `[+]type`  variable-size array (size-expr = initial capacity)
+    - size-expr - Array size expression model
+      - non-null: size/capacity determined by this expression
+      - null semantics differ by specifier:
+        - "raw"      (`[]type`)  — initialization required; element count determined by SA from initializer
+        - "fixed"    (`[#]type`) — initialization required; element count determined by SA from initializer
+        - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
   4. embed - Directly embedded memory type (`$T`)
     - base-type\* - Base variable type
   5. strct - Struct type
