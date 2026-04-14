@@ -635,3 +635,66 @@ TEST(sa, int_to_float_implicit) {
 	ASSERT_EQ(x["init"]["src"]["expr-type"], "id");
 	ASSERT_EQ(x["init"]["src"]["name"], "n");
 }
+
+TEST(sa, array_top_level_malloc) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/043_array_top_level.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	bool found_buf = false, found_arr = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (v["name"] == "buf") {
+				// arr → pntr/uint8
+				ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+				ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "uint8");
+				// init = malloc(64)
+				ASSERT_EQ(v["init"]["expr-type"], "call");
+				ASSERT_EQ(v["init"]["name"], "malloc");
+				ASSERT_EQ(v["init"]["func-type"], "c");
+				ASSERT_EQ(v["init"]["args"][0]["value"], "64");
+				found_buf = true;
+			}
+			if (v["name"] == "arr") {
+				// arr → pntr/int64
+				ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+				ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "int64");
+				// init = malloc(n * 8)
+				ASSERT_EQ(v["init"]["expr-type"], "call");
+				ASSERT_EQ(v["init"]["name"], "malloc");
+				ASSERT_EQ(v["init"]["args"][0]["expr-type"], "mul");
+				ASSERT_EQ(v["init"]["args"][0]["left"]["name"], "n");
+				ASSERT_EQ(v["init"]["args"][0]["right"]["value"], "8");
+				found_arr = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_buf);
+	ASSERT_TRUE(found_arr);
+	// Top-level: no free() stmt in top-level statements
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		ASSERT_NE(stmt["body"].value("name", ""), "free");
+	}
+}
+
+TEST(sa, array_func_scope_free) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/044_array_scope_free.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_FALSE(jout["functions"].empty());
+
+	auto& body = jout["functions"][0]["body"];
+	ASSERT_GE(body.size(), 2u);
+	// body[0]: var-decl with pntr type and malloc init
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "buf");
+	ASSERT_EQ(body[0]["vars"][0]["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "malloc");
+	// body.back(): free(buf)
+	auto& last = body.back();
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"], "free");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "buf");
+}

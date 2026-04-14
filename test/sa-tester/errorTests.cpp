@@ -214,3 +214,13 @@ TEST(sa_error, float_modulo) {
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("'%' operator is not supported for float types"), string::npos);
 }
+
+TEST(sa_error, array_size_not_integer) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_044_array_size_float.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");  // SA must fail
+	ASSERT_NE(sa.find("integer"), string::npos);
+}

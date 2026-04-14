@@ -1,0 +1,4 @@
+func test() {
+    [64]uint8 buf;
+}
+test();

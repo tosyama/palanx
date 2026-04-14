@@ -63,6 +63,28 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - then\*: then-block (same structure as block stmt body in ASTSpec.md)
   - else: else-block or nested if statement (omitted when absent)
 
+- **var-decl** (array transformation) - Array variable declarations are transformed by SA:
+  A `var-decl` with `arr` type-kind (`specifier: "raw"`, non-null `size-expr`, prim `base-type`)
+  is rewritten as a `var-decl` with `pntr` type and a synthesized `malloc` call as init:
+  - `var-type`: changed from `arr` to `pntr` (pointer to the element type)
+  - `init`: `{"expr-type":"call","name":"malloc","func-type":"c","args":[<size_bytes>],"value-type":<pntr_type>}`
+    where `size_bytes` = `size-expr` (when elem_size == 1) or `mul(size-expr, lit-uint(elem_size))` otherwise
+  - The variable is registered in scope with `pntr` type
+  - The `size-expr` must evaluate to an integer type; a float size is a compile error
+
+  Scope-exit cleanup:
+  - At the end of each block/while/function body containing array var-decls, SA appends
+    `free()` expression statements in reverse declaration order for that scope's arrays.
+  - Top-level (global scope) arrays are NOT freed (OS reclaims at process exit).
+
+  Early-exit cleanup:
+  - `return`: free calls are prepended for all array vars in all active function-level scopes
+    (innermost-first, reverse declaration order).
+  - `break`/`continue`: free calls are prepended for arrays in all scopes within the current
+    while loop body (including any nested blocks active at that point).
+  - Prepended frees before `break`/`continue`/`return` may leave unreachable free calls at the
+    normal scope-exit point; this is harmless (dead code, never executed at runtime).
+
 - **while** - while loop statement
   - stmt-type\*: "while"
   - cond\*: SA-annotated condition expression (value-type present; integer expected)
