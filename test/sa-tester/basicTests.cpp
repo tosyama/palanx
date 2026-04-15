@@ -699,6 +699,74 @@ TEST(sa, array_func_scope_free) {
 	ASSERT_EQ(last["body"]["args"][0]["name"], "buf");
 }
 
+TEST(sa, array_while_break_free) {
+	// while loop with array + break: SA must insert free(buf) before break
+	// and at end of while body.  Covers collectFreeStmts path for break.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/046_array_while_break.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Find the while statement
+	json* while_stmt = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "while") { while_stmt = &s; break; }
+	ASSERT_NE(while_stmt, nullptr);
+
+	auto& body = (*while_stmt)["body"];
+	// body[0]: var-decl buf = malloc(64)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "buf");
+	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "malloc");
+
+	// body.back(): free(buf) at end of while body (normal iteration exit)
+	ASSERT_EQ(body.back()["stmt-type"], "expr");
+	ASSERT_EQ(body.back()["body"]["name"], "free");
+	ASSERT_EQ(body.back()["body"]["args"][0]["name"], "buf");
+
+	// Find if stmt and verify free(buf) is inserted before break in then block
+	json* if_stmt = nullptr;
+	for (auto& s : body)
+		if (s["stmt-type"] == "if") { if_stmt = &s; break; }
+	ASSERT_NE(if_stmt, nullptr);
+	auto& then_body = (*if_stmt)["then"]["body"];
+	ASSERT_GE(then_body.size(), 2u);
+	ASSERT_EQ(then_body[0]["stmt-type"], "expr");
+	ASSERT_EQ(then_body[0]["body"]["name"], "free");
+	ASSERT_EQ(then_body[1]["stmt-type"], "break");
+}
+
+TEST(sa, array_while_continue_free) {
+	// while loop with array + continue: SA must insert free(buf) before continue
+	// and at end of while body.  Covers collectFreeStmts path for continue.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/047_array_while_continue.pa");
+	ASSERT_TRUE(jout.is_object());
+	json* while_stmt = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "while") { while_stmt = &s; break; }
+	ASSERT_NE(while_stmt, nullptr);
+
+	auto& body = (*while_stmt)["body"];
+	// body[0]: var-decl buf = malloc(64)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "buf");
+
+	// body.back(): free(buf) at end of while body
+	ASSERT_EQ(body.back()["stmt-type"], "expr");
+	ASSERT_EQ(body.back()["body"]["name"], "free");
+	ASSERT_EQ(body.back()["body"]["args"][0]["name"], "buf");
+
+	// Find if stmt and verify free(buf) is inserted before continue in then block
+	json* if_stmt = nullptr;
+	for (auto& s : body)
+		if (s["stmt-type"] == "if") { if_stmt = &s; break; }
+	ASSERT_NE(if_stmt, nullptr);
+	auto& then_body = (*if_stmt)["then"]["body"];
+	ASSERT_GE(then_body.size(), 2u);
+	ASSERT_EQ(then_body[0]["stmt-type"], "expr");
+	ASSERT_EQ(then_body[0]["body"]["name"], "free");
+	ASSERT_EQ(then_body[1]["stmt-type"], "continue");
+}
+
 TEST(sa, array_multi_var_shared_size) {
 	// [4]int32 a, b; — two vars share one size temp var (__arr_sz_0)
 	// Covers: elem_size > 1 (mul) path and vars.size() > 1 path.

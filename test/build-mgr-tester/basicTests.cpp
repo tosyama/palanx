@@ -261,6 +261,24 @@ TEST(build_mgr, array_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, array_multi_var) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/034_array_multi_var.pa");
+	ASSERT_EQ(output, "hello world\n");
+}
+
+TEST(build_mgr, array_while_break) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/035_array_while_break.pa");
+	ASSERT_EQ(output, "0\n1\n");
+}
+
+TEST(build_mgr, array_while_continue) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/036_array_while_continue.pa");
+	ASSERT_EQ(output, "1\n3\n5\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

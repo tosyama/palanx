@@ -1,0 +1,9 @@
+cinclude <stdio.h>;
+int64 i = 0;
+while i < 5 {
+    [64]uint8 buf;
+    if i == 2 { break }
+    sprintf(buf, "%ld\n", i);
+    printf("%s", buf);
+    i + 1 -> i;
+}

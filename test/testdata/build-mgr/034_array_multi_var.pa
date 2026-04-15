@@ -1,0 +1,5 @@
+cinclude <stdio.h>;
+[64]uint8 a, b;
+sprintf(a, "hello");
+sprintf(b, "world");
+printf("%s %s\n", a, b);
