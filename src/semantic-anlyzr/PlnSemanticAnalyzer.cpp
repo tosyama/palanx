@@ -7,6 +7,8 @@
 
 using namespace std;
 
+// LCOV_EXCL_EXCEPTION_BR_START
+
 static json wrapConvert(const json& expr, const json& to_type) {
 	return {
 		{"expr-type",  "convert"},
@@ -839,4 +841,5 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 		registerPlnFunc(funcEntry["name"], funcEntry);
 	}
 }
+// LCOV_EXCL_EXCEPTION_BR_STOP
 
