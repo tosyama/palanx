@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.14
+**Version:** v0.1.15
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -51,6 +51,10 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 12. [Modules (import / export)](#12-modules-import--export)
 13. [Program Structure](#13-program-structure)
 14. [While Loops](#14-while-loops)
+15. [break / continue](#15-break--continue)
+16. [Optional Semicolons](#16-optional-semicolons)
+17. [Floating-Point Types](#17-floating-point-types)
+18. [Arrays](#18-arrays)
 
 ---
 
@@ -561,3 +565,49 @@ printf("sqrt(2) = %f\n", guess);
 
 Expected output: `sqrt(2) = 1.414214`
 
+---
+
+## 18. Arrays
+
+A 1D array is declared with `[size-expr]type name`. The element count is given as an integer expression before the type.
+
+```palan
+[64]uint8 buf;
+```
+
+### Heap Allocation and Automatic Cleanup
+
+Array variables are heap-allocated (via `malloc`) when the declaration is reached. At the end of the enclosing scope, the array is automatically freed (via `free`). No manual memory management is required.
+
+```palan
+cinclude <stdio.h>;
+
+{
+    [64]uint8 buf;            // malloc(64) called here
+    sprintf(buf, "hello\n");
+    printf("%s", buf);
+}                             // free(buf) called here automatically
+```
+
+### Passing to C Functions
+
+An array variable is passed to C functions as a pointer to its first element, matching the C `uint8 *` / `char *` convention.
+
+```palan
+cinclude <stdio.h>;
+
+[64]uint8 buf;
+sprintf(buf, "Hello, array! %d\n", 2025);
+printf("%s", buf);
+```
+
+Expected output:
+```
+Hello, array! 2025
+```
+
+### Limitations (current version)
+
+- Element access (`arr[i]`) is not yet supported; arrays are passed to C functions as opaque pointers.
+- Only `raw` arrays with a constant size expression and a primitive element type are implemented.
+- Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
