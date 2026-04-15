@@ -698,3 +698,36 @@ TEST(sa, array_func_scope_free) {
 	ASSERT_EQ(last["body"]["name"], "free");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "buf");
 }
+
+TEST(sa, array_multi_var_shared_size) {
+	// [4]int32 a, b; — two vars share one size temp var (__arr_sz_0)
+	// Covers: elem_size > 1 (mul) path and vars.size() > 1 path.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/045_array_multi_var.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto& stmts = jout["statements"];
+	// Expect two var-decl statements: [0] temp size var, [1] a and b
+	ASSERT_GE(stmts.size(), 2u);
+
+	// stmts[0]: __arr_sz_0 = 4 * 4 (mul of count and elem_size)
+	ASSERT_EQ(stmts[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[0]["vars"].size(), 1u);
+	auto& sz_var = stmts[0]["vars"][0];
+	ASSERT_EQ(sz_var["name"], "__arr_sz_0");
+	ASSERT_EQ(sz_var["var-type"]["type-name"], "uint64");
+	ASSERT_EQ(sz_var["init"]["expr-type"], "mul");
+	ASSERT_EQ(sz_var["init"]["left"]["value"], "4");   // count
+	ASSERT_EQ(sz_var["init"]["right"]["value"], "4");  // elem_size of int32
+
+	// stmts[1]: a and b, each malloc(__arr_sz_0)
+	ASSERT_EQ(stmts[1]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[1]["vars"].size(), 2u);
+	for (auto& v : stmts[1]["vars"]) {
+		ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+		ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "int32");
+		ASSERT_EQ(v["init"]["expr-type"], "call");
+		ASSERT_EQ(v["init"]["name"], "malloc");
+		ASSERT_EQ(v["init"]["args"][0]["expr-type"], "id");
+		ASSERT_EQ(v["init"]["args"][0]["name"], "__arr_sz_0");
+	}
+}
