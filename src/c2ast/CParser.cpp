@@ -732,10 +732,19 @@ bool CParser::postfix_expression(json &ast, const vector<CToken*> &tokens, int &
 
 bool CParser::unary_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
-	// TODO: prefix increment and decrement, unary &, unary *, unary + and -, bitwise NOT, logical NOT
+	// TODO: prefix increment and decrement, unary &, unary *, bitwise NOT, logical NOT
 	int index = result_index;
 
 	if (postfix_expression(ast, tokens, index)) {
+		result_index = index;
+		return true;
+	}
+
+	// Unary + and - (e.g. enum initializers like MCHECK_DISABLED = -1)
+	if (CONSUME_PUNC('+') || CONSUME_PUNC('-')) {
+		if (!cast_expression(ast, tokens, index)) {
+			return false;
+		}
 		result_index = index;
 		return true;
 	}

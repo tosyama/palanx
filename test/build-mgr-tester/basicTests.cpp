@@ -222,6 +222,45 @@ TEST(build_mgr, float32_cmp) {
 	ASSERT_EQ(output, "1\n0\n1\n0\n");
 }
 
+TEST(build_mgr, array_sprintf) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/032_array_sprintf.pa");
+	ASSERT_EQ(output, "Hello, array! 2025\n");
+}
+
+TEST(build_mgr, array_mtrace) {
+	cleanTestEnv();
+	// Step 1: compile without LD_PRELOAD
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_array_mtrace_bin "
+		"../test/testdata/build-mgr/033_array_mtrace.pa"), "");
+
+	// Step 2: run the compiled binary with mtrace instrumentation
+	string traceFile = "/tmp/palan_array_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_array_mtrace_bin");
+
+	// Step 3: count alloc/free events and verify balance.
+	// Skip allocations from shared libraries (e.g. libc stdio internal buffers)
+	// since those are not freed within the mtrace window.
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 1) << "expected 1 malloc for [64]uint8 buf, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

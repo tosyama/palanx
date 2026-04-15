@@ -355,7 +355,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		const json* cfunc = findCFunc(expr["name"]);
 		if (cfunc) {
 			sa_expr["func-type"] = "c";
-			if (cfunc->contains("ret-type"))
+			if (cfunc->contains("ret-type")
+					&& (*cfunc)["ret-type"].value("type-name", "") != "void")
 				sa_expr["value-type"] = (*cfunc)["ret-type"];
 			if (cfunc->contains("parameters")) {
 				funcParams = &(*cfunc)["parameters"];
