@@ -34,6 +34,8 @@ class PlnSemanticAnalyzer {
 	vector<vector<pair<string,json>>> arrayScopeVars_;
 	// Stack of while-body scope indices (for break/continue cleanup)
 	vector<size_t> whileScopeStack_;
+	// Counter for generating unique temporary variable names
+	int tempVarCounter_ = 0;
 
 	void enterScope();
 	void leaveScope();
@@ -55,7 +57,7 @@ class PlnSemanticAnalyzer {
 	void sa_cinclude(const json &stmt);
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expression_stmt(const json& stmt);
-	json sa_var_decl(const json& stmt);
+	json sa_var_decl(const json& stmt);  // returns array of statements
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);
 	json sa_assign_stmt(const json& stmt);

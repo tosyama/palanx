@@ -189,7 +189,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		if      (t == "import")   sa_import(stmt);
 		else if (t == "cinclude") sa_cinclude(stmt);
 		else if (t == "expr")     result.push_back(sa_expression_stmt(stmt));
-		else if (t == "var-decl") result.push_back(sa_var_decl(stmt));
+		else if (t == "var-decl") { for (auto& s : sa_var_decl(stmt)) result.push_back(s); }
 		else if (t == "assign")   result.push_back(sa_assign_stmt(stmt));
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
@@ -415,18 +415,20 @@ json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
-	for (auto& var : stmt["vars"]) {
-		string name = var["name"];
-		const json& vtype = var["var-type"];
+
+	if (!stmt["vars"].empty()) {
+		const json& vtype = stmt["vars"][0]["var-type"];
 		string tk = vtype.value("type-kind", "");
 
 		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
-			// Array var-decl: transform to pntr var-decl + malloc init
+			// Array var-decl: transform to pntr var-decl + malloc init.
+			// All vars in the declaration share the same var-type, so compute
+			// size-in-bytes only once.
 			const json& base_type = vtype["base-type"];
 			string base_name = base_type.value("type-name", "");
 			int elem_size = elemSizeBytes(base_name);
 
-			// SA-annotate the count expression
+			// SA-annotate the count expression (once for all vars)
 			const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
 			json sa_count = sa_expression(vtype["size-expr"], uint64Type);
 
@@ -444,34 +446,61 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			}
 
 			// Build size-in-bytes expression
+			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 			json size_bytes;
 			if (elem_size == 1) {
 				size_bytes = sa_count;
 			} else {
 				json elem_lit = {
 					{"expr-type", "lit-uint"}, {"value", to_string(elem_size)},
-					{"value-type", {{"type-kind","prim"},{"type-name","uint64"}}}
+					{"value-type", uint64_type}
 				};
 				size_bytes = {
-					{"expr-type", "mul"},
-					{"value-type", {{"type-kind","prim"},{"type-name","uint64"}}},
+					{"expr-type", "mul"}, {"value-type", uint64_type},
 					{"left", sa_count}, {"right", elem_lit}
 				};
 			}
 
 			json pntr_type = {{"type-kind","pntr"},{"base-type",base_type}};
-			json malloc_call = {
-				{"expr-type", "call"}, {"name", "malloc"}, {"func-type", "c"},
-				{"args", json::array({size_bytes})}, {"value-type", pntr_type}
-			};
 
-			declareVar(name, pntr_type, &stmt);
-			arrayScopeVars_.back().push_back({name, pntr_type});
+			// For multiple vars: emit a temp uint64 var holding size_bytes so it
+			// is evaluated only once at runtime.  For a single var, inline it.
+			json result = json::array();
+			json size_arg;
+			if (stmt["vars"].size() > 1) {
+				string sz_name = "__arr_sz_" + to_string(tempVarCounter_++);
+				declareVar(sz_name, uint64_type, &stmt);
+				json sz_decl = {
+					{"stmt-type", "var-decl"},
+					{"vars", json::array({{{"name", sz_name}, {"var-type", uint64_type}, {"init", size_bytes}}})}
+				};
+				result.push_back(sz_decl);
+				size_arg = {
+					{"expr-type", "id"}, {"name", sz_name},
+					{"var-type", uint64_type}, {"value-type", uint64_type}
+				};
+			} else {
+				size_arg = size_bytes;
+			}
 
-			sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",malloc_call}});
-			continue;
+			for (auto& var : stmt["vars"]) {
+				string name = var["name"];
+				json malloc_call = {
+					{"expr-type", "call"}, {"name", "malloc"}, {"func-type", "c"},
+					{"args", json::array({size_arg})}, {"value-type", pntr_type}
+				};
+				declareVar(name, pntr_type, &stmt);
+				arrayScopeVars_.back().push_back({name, pntr_type});
+				sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",malloc_call}});
+			}
+
+			result.push_back(sa_stmt);
+			return result;
 		}
+	}
 
+	for (auto& var : stmt["vars"]) {
+		string name = var["name"];
 		json sa_var = var;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
@@ -503,7 +532,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		declareVar(name, var["var-type"], &stmt);
 		sa_stmt["vars"].push_back(sa_var);
 	}
-	return sa_stmt;
+	return json::array({sa_stmt});
 }
 
 void PlnSemanticAnalyzer::sa_functions(const json& funcs)
