@@ -406,7 +406,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		}
 	}
 	return sa_expr;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
@@ -537,7 +537,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		sa_stmt["vars"].push_back(sa_var);
 	}
 	return json::array({sa_stmt});
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::sa_functions(const json& funcs)
 {
@@ -720,7 +720,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 		value = wrapConvert(value, registry_.toJson(toType));
 	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 {
@@ -762,7 +762,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		exit(1);
 	}
 	return {{"stmt-type", "return"}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 {
@@ -798,7 +798,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		declareVar(stmt["vars"][i]["var-name"].get<string>(), (*pFunc)["rets"][i]["var-type"]);
 
 	return {{"stmt-type", "tapple-decl"}, {"vars", stmt["vars"]}, {"value", saCall}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
