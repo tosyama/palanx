@@ -145,8 +145,7 @@ class PlnLexer;
 %type <string>	import_as
 %type <json>	expression func_call term
 %type <vector<json>>	arguments
-%type <string>	var_type var_prefix
-%type <bool>	var_postfix
+%type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
 %type <vector<json>>	var_declarations
 %type <json>	func_def return_def
@@ -500,24 +499,26 @@ inherit_var_decl: ID
 	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}}; }
 	;
 
-var_declaration: var_type move_owner_r var_prefix ID var_postfix
+var_declaration: type_expr move_owner_r ID
 	{
-		if (!$2 && $3.empty() && !$5)
-			$$ = {{"name", $4}, {"var-type", {{"type-kind", "prim"}, {"type-name", $1}}}};
+		string tk = $1.value("type-kind","");
+		bool is_valid_arr = tk == "arr"
+			&& $1.value("specifier","") == "raw"
+			&& !$1["size-expr"].is_null()
+			&& $1["base-type"].value("type-kind","") == "prim";
+		if (!$2 && (tk == "prim" || is_valid_arr))
+			$$ = {{"name", $3}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};
 	}
-	| var_type var_prefix ID var_postfix '=' expression
+	| type_expr ID '=' expression
 	{
-		if (!$1.empty() && $2.empty() && !$4) {
-			$$ = { {"name", $3},
-			       {"var-type", {{"type-kind", "prim"}, {"type-name", $1}}},
-			       {"init",     $6} };
-		} else {
+		if ($1.value("type-kind","") == "prim")
+			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}};
+		else
 			$$ = {{"not-impl", true}};
-		}
 	}
-	| var_prefix ID var_postfix '=' expression
+	| ID '=' expression
 	{ $$ = {{"not-impl", true}}; }
 	| tapple_decl '=' expression
 	{
@@ -532,26 +533,24 @@ tapple_decl: '(' tapple_decl_inner ')'
 	{ $$ = $2; }
 	;
 
-tapple_decl_inner: var_type ID var_postfix
+tapple_decl_inner: type_expr ID
 	{ $$ = json::array();
-	  $$.push_back({{"var-name", $2}, {"var-type", {{"type-kind","prim"},{"type-name",$1}}}}); }
+	  $$.push_back({{"var-name", $2}, {"var-type", move($1)}}); }
 	| KW_VOID
 	{ $$ = json::array(); }
-	| tapple_decl_inner ',' var_type ID var_postfix
+	| tapple_decl_inner ',' type_expr ID
 	{ $$ = move($1);
-	  $$.push_back({{"var-name", $4}, {"var-type", {{"type-kind","prim"},{"type-name",$3}}}}); }
+	  $$.push_back({{"var-name", $4}, {"var-type", move($3)}}); }
 	| tapple_decl_inner ',' KW_VOID
 	{ $$ = move($1); }
-	| tapple_decl_inner ',' ID var_postfix
+	| tapple_decl_inner ',' ID   %dprec 1
 	{ $$ = move($1);
-	  if (!$4) {
-	      json vtype;
-	      for (int i = (int)$$.size() - 1; i >= 0; i--) {
-	          if ($$[i].contains("var-type")) { vtype = $$[i]["var-type"]; break; }
-	      }
-	      if (!vtype.is_null())
-	          $$.push_back({{"var-name", $3}, {"var-type", vtype}});
+	  json vtype;
+	  for (int i = (int)$$.size() - 1; i >= 0; i--) {
+	      if ($$[i].contains("var-type")) { vtype = $$[i]["var-type"]; break; }
 	  }
+	  if (!vtype.is_null())
+	      $$.push_back({{"var-name", $3}, {"var-type", vtype}});
 	}
 	;
 
@@ -559,8 +558,8 @@ const_decl: KW_CONST ID '=' expression
 	;
 
 type_decl: do_export KW_TYPE ID implememts '{' type_members '}'
-	| do_export KW_TYPE ID '=' var_type 
-	| do_export KW_TYPE ID 
+	| do_export KW_TYPE ID '=' type_expr
+	| do_export KW_TYPE ID
 	;
 
 implememts: /* empty */
@@ -571,8 +570,8 @@ implements_types: implements_type
 	| implements_types ',' implements_type
 	;
 
-implements_type: var_type
-	| var_type KW_AS ID
+implements_type: type_expr
+	| type_expr KW_AS ID
 	;
 
 type_members: type_member
@@ -768,10 +767,10 @@ return_def: /* empty */
 		if (all_ok)
 			$$["rets"] = move($2);
 	}
-	| ARROW var_type
+	| ARROW type_expr
 	{
-		if (!$2.empty())
-			$$["ret-type"] = {{"type-kind", "prim"}, {"type-name", $2}};
+		if ($2.value("type-kind","") == "prim")
+			$$["ret-type"] = move($2);
 	}
 	;
 
@@ -779,7 +778,7 @@ noname_func: KW_FUNC '(' paramaters ')'
 	return_def block
 	;
 
-construct_def: do_export KW_CONSTRUCT var_type '(' paramaters ')' block
+construct_def: do_export KW_CONSTRUCT type_expr '(' paramaters ')' block
 	;
 
 return: KW_RETURN
@@ -821,10 +820,28 @@ expressions: expression
 	{ $$ = move($1); $$.push_back(move($3)); }
 	;
 
-var_type: ID
-	{ $$ = $1; }
+type_expr: ID
+	{ $$ = {{"type-kind","prim"},{"type-name",move($1)}}; }
 	| ID '<' temp_ids '>'
-	{ $$ = ""; }
+	{ $$ = {{"not-impl",true}}; }
+	| '@' type_expr
+	{ $$ = {{"type-kind","pntr"},{"base-type",move($2)}}; }
+	| AT_EXCL type_expr
+	{ $$ = {{"type-kind","pntr"},{"mutable",true},{"base-type",move($2)}}; }
+	| '$' type_expr
+	{ $$ = {{"type-kind","embed"},{"base-type",move($2)}}; }
+	| '[' expression ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",move($2)},{"base-type",move($4)}}; }
+	| '[' ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"base-type",move($3)}}; }
+	| '[' '#' ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",nullptr},{"base-type",move($4)}}; }
+	| '[' '#' expression ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",move($3)},{"base-type",move($5)}}; }
+	| '[' '+' ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr},{"base-type",move($4)}}; }
+	| '[' '+' expression ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",move($3)},{"base-type",move($5)}}; }
 	;
 
 temp_ids: ID | temp_ids ',' ID
@@ -837,30 +854,6 @@ do_export: /* empty */ { $$ = false; }
 
 move_owner_r: /* empty */ { $$ = false; }
 	| DBL_GRTR            { $$ = true; }
-	;
-
-var_prefix:	/* empty */ { $$ = ""; }
-	| '@'      { $$ = "@"; }
-	| '$'      { $$ = "$"; }
-	| AT_EXCL  { $$ = "@!"; }
-	;
-
-var_postfix: /* empty */   { $$ = false; }
-	| array_postfix        { $$ = true; }
-	;
-
-array_postfix: '[' array_type emitable_exps ']' var_prefix
-	| array_postfix '[' array_type emitable_exps ']' var_prefix
-	;
-
-array_type: /* empty */ | '#' | '+'
-	;
-
-emitable_exps: emitable_exp
-	| emitable_exps ',' emitable_exp
-	;
-
-emitable_exp: /* empty */ | expression
 	;
 
 %%

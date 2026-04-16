@@ -1,0 +1,9 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+mtrace();
+{
+    [64]uint8 buf;
+    sprintf(buf, "leak check\n");
+    printf("%s", buf);
+}
+muntrace();

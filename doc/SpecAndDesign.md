@@ -6,30 +6,24 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-04-03)
-version: 0.1.14
-- This iteration adds arithmetic operators (`+`, `-`, `*`, `/`) for `flo32` and `flo64` types.
-- The following sample computes sqrt(2) via Newton's method, exercising float arithmetic, if, and while.
+### 2.1 Iteration Goal (2026-04-12)
+version: 0.1.15
+- This iteration adds 1D array types with heap allocation and automatic scope-based cleanup.
+- Array variables are declared as `[expr]type arr`, heap-allocated via malloc,
+  and automatically freed when the enclosing scope exits.
+- Arrays can be passed as pointers to C functions.
 
 ```palan
 cinclude <stdio.h>;
 
-flo64 x = 2.0;
-flo64 guess = 1.0;
-flo64 eps = 0.000001;
-flo64 diff = guess * guess - x;
-if diff < 0.0 { -diff -> diff; }
-while diff > eps {
-    (guess + x / guess) / 2.0 -> guess;
-    guess * guess - x -> diff;
-    if diff < 0.0 { -diff -> diff; }
-}
-printf("sqrt(2) = %f\n", guess);
+[64]uint8 buf;
+sprintf(buf, "Hello, array! %d\n", 2025);
+printf("%s", buf);
 ```
 
 Expected output:
 ```
-sqrt(2) = 1.414214
+Hello, array! 2025
 ```
 
 

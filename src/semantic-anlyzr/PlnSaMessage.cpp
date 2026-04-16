@@ -105,6 +105,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_FloatModulo:
 			return "'%' operator is not supported for float types.";
 
+		case E_ArraySizeNotInteger:
+			return "Array size expression must be an integer type.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

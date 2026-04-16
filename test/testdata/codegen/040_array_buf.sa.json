@@ -1,0 +1,55 @@
+{
+    "functions": [
+        {
+            "name": "test_array",
+            "parameters": [],
+            "body": [
+                {
+                    "stmt-type": "var-decl",
+                    "vars": [
+                        {
+                            "name": "buf",
+                            "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } },
+                            "init": {
+                                "expr-type": "call",
+                                "func-type": "c",
+                                "name": "malloc",
+                                "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } },
+                                "args": [
+                                    { "expr-type": "lit-int", "value": "64", "value-type": { "type-kind": "prim", "type-name": "int64" } }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "stmt-type": "expr",
+                    "body": {
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "free",
+                        "args": [
+                            {
+                                "expr-type": "id",
+                                "name": "buf",
+                                "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } },
+                                "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ],
+    "original": "040_array_buf.pa",
+    "str-literals": [],
+    "statements": [
+        {
+            "stmt-type": "expr",
+            "body": {
+                "expr-type": "call",
+                "name": "test_array"
+            }
+        }
+    ]
+}

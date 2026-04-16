@@ -21,16 +21,25 @@ class PlnSemanticAnalyzer {
 	json sa;
 	PlnTypeRegistry registry_;
 	map<string, string> strLiteralLabels;  // value -> label
-	const json*       currentFunc_ = nullptr;  // null = _start level
-	int               loopDepth_   = 0;        // nesting depth of while loops
+	const json*       currentFunc_    = nullptr;  // null = _start level
+	int               loopDepth_     = 0;        // nesting depth of while loops
+	size_t            funcBodyScopeIdx_ = 0;     // 0 = top-level (no function)
 
 	vector<map<string, json>> varScopes;
 	vector<map<string, json>> cFuncScopes;
 	vector<map<string, json>> plnFuncScopes;
 	vector<map<string, json>> importScopes;
 
+	// Array variable tracking per scope (parallel to varScopes)
+	vector<vector<pair<string,json>>> arrayScopeVars_;
+	// Stack of while-body scope indices (for break/continue cleanup)
+	vector<size_t> whileScopeStack_;
+	// Counter for generating unique temporary variable names
+	int tempVarCounter_ = 0;
+
 	void enterScope();
 	void leaveScope();
+	json collectFreeStmts(size_t from_idx, size_t to_idx);
 
 	string locPrefix(const json& node) const;
 
@@ -48,7 +57,7 @@ class PlnSemanticAnalyzer {
 	void sa_cinclude(const json &stmt);
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expression_stmt(const json& stmt);
-	json sa_var_decl(const json& stmt);
+	json sa_var_decl(const json& stmt);  // returns array of statements
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);
 	json sa_assign_stmt(const json& stmt);

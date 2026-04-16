@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+[64]uint8 buf;
+sprintf(buf, "Hello, array! %d\n", 2025);
+printf("%s", buf);

@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.13
+ver. 0.1.15
 
 \* - Required
 
@@ -84,20 +84,31 @@ Variable type
     - base-type\* - Base variable type
   3. arr - Array type
     - base-type\* - Base variable type
-    - size - Array size integer, null - unspecified
-  4. strct - Struct type
+    - specifier\* - Array kind string:
+      - "raw"      — `[expr]type` or `[]type`    raw heap array (C-array equivalent, no count stored)
+      - "fixed"    — `[#expr]type` or `[#]type`  heap array with element count in memory header
+      - "variable" — `[+expr]type` or `[+]type`  variable-size array (size-expr = initial capacity)
+    - size-expr - Array size expression model
+      - non-null: size/capacity determined by this expression
+      - null semantics differ by specifier:
+        - "raw"      (`[]type`)  — initialization required; element count determined by SA from initializer
+        - "fixed"    (`[#]type`) — initialization required; element count determined by SA from initializer
+        - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
+  4. embed - Directly embedded memory type (`$T`)
+    - base-type\* - Base variable type
+  5. strct - Struct type
     - name - Struct name string
     - fields - Field list
-  5. union - Union type (TBD)
+  6. union - Union type (TBD)
     - name - Union name string
     - fields - Field list
-  6. enum - Enum type (TBD)
+  7. enum - Enum type (TBD)
     - name - Enum name string
     - enumerators - Enumerator list
-  7. func - Function type
+  8. func - Function type
     - parameters - Parameter list
     - ret-type\* - Return variable type
-  8. user - User defined type
+  9. user - User defined type
     - type-name\* - Type name string
     - base-type\* - Base variable type
 

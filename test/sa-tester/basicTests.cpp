@@ -635,3 +635,167 @@ TEST(sa, int_to_float_implicit) {
 	ASSERT_EQ(x["init"]["src"]["expr-type"], "id");
 	ASSERT_EQ(x["init"]["src"]["name"], "n");
 }
+
+TEST(sa, array_top_level_malloc) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/043_array_top_level.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	bool found_buf = false, found_arr = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		for (auto& v : stmt["vars"]) {
+			if (v["name"] == "buf") {
+				// arr → pntr/uint8
+				ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+				ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "uint8");
+				// init = malloc(64)
+				ASSERT_EQ(v["init"]["expr-type"], "call");
+				ASSERT_EQ(v["init"]["name"], "malloc");
+				ASSERT_EQ(v["init"]["func-type"], "c");
+				ASSERT_EQ(v["init"]["args"][0]["value"], "64");
+				found_buf = true;
+			}
+			if (v["name"] == "arr") {
+				// arr → pntr/int64
+				ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+				ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "int64");
+				// init = malloc(n * 8)
+				ASSERT_EQ(v["init"]["expr-type"], "call");
+				ASSERT_EQ(v["init"]["name"], "malloc");
+				ASSERT_EQ(v["init"]["args"][0]["expr-type"], "mul");
+				ASSERT_EQ(v["init"]["args"][0]["left"]["name"], "n");
+				ASSERT_EQ(v["init"]["args"][0]["right"]["value"], "8");
+				found_arr = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_buf);
+	ASSERT_TRUE(found_arr);
+	// Top-level: no free() stmt in top-level statements
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		ASSERT_NE(stmt["body"].value("name", ""), "free");
+	}
+}
+
+TEST(sa, array_func_scope_free) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/044_array_scope_free.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_FALSE(jout["functions"].empty());
+
+	auto& body = jout["functions"][0]["body"];
+	ASSERT_GE(body.size(), 2u);
+	// body[0]: var-decl with pntr type and malloc init
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "buf");
+	ASSERT_EQ(body[0]["vars"][0]["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "malloc");
+	// body.back(): free(buf)
+	auto& last = body.back();
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"], "free");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "buf");
+}
+
+TEST(sa, array_while_break_free) {
+	// while loop with array + break: SA must insert free(buf) before break
+	// and at end of while body.  Covers collectFreeStmts path for break.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/046_array_while_break.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Find the while statement
+	json* while_stmt = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "while") { while_stmt = &s; break; }
+	ASSERT_NE(while_stmt, nullptr);
+
+	auto& body = (*while_stmt)["body"];
+	// body[0]: var-decl buf = malloc(64)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "buf");
+	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "malloc");
+
+	// body.back(): free(buf) at end of while body (normal iteration exit)
+	ASSERT_EQ(body.back()["stmt-type"], "expr");
+	ASSERT_EQ(body.back()["body"]["name"], "free");
+	ASSERT_EQ(body.back()["body"]["args"][0]["name"], "buf");
+
+	// Find if stmt and verify free(buf) is inserted before break in then block
+	json* if_stmt = nullptr;
+	for (auto& s : body)
+		if (s["stmt-type"] == "if") { if_stmt = &s; break; }
+	ASSERT_NE(if_stmt, nullptr);
+	auto& then_body = (*if_stmt)["then"]["body"];
+	ASSERT_GE(then_body.size(), 2u);
+	ASSERT_EQ(then_body[0]["stmt-type"], "expr");
+	ASSERT_EQ(then_body[0]["body"]["name"], "free");
+	ASSERT_EQ(then_body[1]["stmt-type"], "break");
+}
+
+TEST(sa, array_while_continue_free) {
+	// while loop with array + continue: SA must insert free(buf) before continue
+	// and at end of while body.  Covers collectFreeStmts path for continue.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/047_array_while_continue.pa");
+	ASSERT_TRUE(jout.is_object());
+	json* while_stmt = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "while") { while_stmt = &s; break; }
+	ASSERT_NE(while_stmt, nullptr);
+
+	auto& body = (*while_stmt)["body"];
+	// body[0]: var-decl buf = malloc(64)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "buf");
+
+	// body.back(): free(buf) at end of while body
+	ASSERT_EQ(body.back()["stmt-type"], "expr");
+	ASSERT_EQ(body.back()["body"]["name"], "free");
+	ASSERT_EQ(body.back()["body"]["args"][0]["name"], "buf");
+
+	// Find if stmt and verify free(buf) is inserted before continue in then block
+	json* if_stmt = nullptr;
+	for (auto& s : body)
+		if (s["stmt-type"] == "if") { if_stmt = &s; break; }
+	ASSERT_NE(if_stmt, nullptr);
+	auto& then_body = (*if_stmt)["then"]["body"];
+	ASSERT_GE(then_body.size(), 2u);
+	ASSERT_EQ(then_body[0]["stmt-type"], "expr");
+	ASSERT_EQ(then_body[0]["body"]["name"], "free");
+	ASSERT_EQ(then_body[1]["stmt-type"], "continue");
+}
+
+TEST(sa, array_multi_var_shared_size) {
+	// [4]int32 a, b; — two vars share one size temp var (__arr_sz_0)
+	// Covers: elem_size > 1 (mul) path and vars.size() > 1 path.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/045_array_multi_var.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto& stmts = jout["statements"];
+	// Expect two var-decl statements: [0] temp size var, [1] a and b
+	ASSERT_GE(stmts.size(), 2u);
+
+	// stmts[0]: __arr_sz_0 = 4 * 4 (mul of count and elem_size)
+	ASSERT_EQ(stmts[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[0]["vars"].size(), 1u);
+	auto& sz_var = stmts[0]["vars"][0];
+	ASSERT_EQ(sz_var["name"], "__arr_sz_0");
+	ASSERT_EQ(sz_var["var-type"]["type-name"], "uint64");
+	ASSERT_EQ(sz_var["init"]["expr-type"], "mul");
+	ASSERT_EQ(sz_var["init"]["left"]["value"], "4");   // count
+	ASSERT_EQ(sz_var["init"]["right"]["value"], "4");  // elem_size of int32
+
+	// stmts[1]: a and b, each malloc(__arr_sz_0)
+	ASSERT_EQ(stmts[1]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[1]["vars"].size(), 2u);
+	for (auto& v : stmts[1]["vars"]) {
+		ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+		ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "int32");
+		ASSERT_EQ(v["init"]["expr-type"], "call");
+		ASSERT_EQ(v["init"]["name"], "malloc");
+		ASSERT_EQ(v["init"]["args"][0]["expr-type"], "id");
+		ASSERT_EQ(v["init"]["args"][0]["name"], "__arr_sz_0");
+	}
+}

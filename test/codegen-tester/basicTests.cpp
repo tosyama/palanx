@@ -706,3 +706,20 @@ TEST(codegen, float_neg) {
     ASSERT_NE(asm_text.find(".neg_mask_f64"), string::npos);
     ASSERT_NE(asm_text.find(".neg_mask_f32"), string::npos);
 }
+
+TEST(codegen, array_buf) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/040_array_buf.sa.json";
+    string asmf = "out/040_array_buf.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("call malloc"), string::npos);
+    ASSERT_NE(asm_text.find("call free"),   string::npos);
+    // Ptr64 return value stored with movq
+    ASSERT_NE(asm_text.find("movq %rax,"),  string::npos);
+    // Ptr64 argument passed in %rdi
+    ASSERT_NE(asm_text.find("%rdi"),        string::npos);
+}
