@@ -8,12 +8,14 @@
 using namespace std;
 
 static json wrapConvert(const json& expr, const json& to_type) {
+	// LCOV_EXCL_EXCEPTION_BR_START
 	return {
 		{"expr-type",  "convert"},
 		{"value-type", to_type},
 		{"from-type",  expr["value-type"]},
 		{"src",        expr}
 	};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 }
 
 // Returns element byte size for a primitive type name; -1 if unknown
@@ -29,6 +31,7 @@ static int elemSizeBytes(const string& typeName)
 // Builds a synthetic free() expression statement for the named pointer variable
 static json makeFreeStmt(const string& name, const json& pntrType)
 {
+	// LCOV_EXCL_EXCEPTION_BR_START
 	return {
 		{"stmt-type", "expr"},
 		{"body", {
@@ -39,6 +42,7 @@ static json makeFreeStmt(const string& name, const json& pntrType)
 			}})}
 		}}
 	};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 }
 
 // Collect free() stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
