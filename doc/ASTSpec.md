@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.15
+ver. 0.1.16
 
 \* - Required
 
@@ -123,7 +123,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
 - loc\* - Location Array (omitted for "not-impl")
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -144,27 +144,30 @@ Statement model
   5. assign - assignment statement (`expr -> var`)
     - name\* - Target variable name string
     - value\* - Source expression model
-  6. return - return statement
+  6. arr-assign - array element assignment statement (`expr -> arr[i]`)
+    - target\* - arr-index expression model (see Expression model §12)
+    - value\* - Source expression model
+  7. return - return statement
     - values - Return expression list (omitted for bare `return;`)
-  7. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
+  8. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function)
-  8. block - standalone block statement (`{ ... }`)
+  9. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
-  9. if - if / if-else statement
+  10. if - if / if-else statement
     - cond\* - Condition expression model
     - then\* - Then-block object (block statement body)
     - else - Else-block object or nested if statement (omitted when absent)
-  10. while - while loop statement
+  11. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  11. break - exit the innermost while loop (no additional fields)
-  12. continue - skip to next iteration of innermost while loop (no additional fields)
+  12. break - exit the innermost while loop (no additional fields)
+  13. continue - skip to next iteration of innermost while loop (no additional fields)
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -194,6 +197,10 @@ Expression model
   11. cast - Explicit type cast expression (`type-name(expr)` syntax)
     - target-type\* - Target Variable type object
     - src\* - Source expression model
+  12. arr-index - Array element access (`arr[i]`)
+    - array\* - Array expression model
+    - index\* - Index expression model
+    (elem-size is added by SA; not present in AST)
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

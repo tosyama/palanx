@@ -143,7 +143,7 @@ class PlnLexer;
 %type <json>	import cinclude import_path
 %type <vector<string>>	import_ids
 %type <string>	import_as
-%type <json>	expression func_call term
+%type <json>	expression func_call term store_loc
 %type <vector<json>>	arguments
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
@@ -250,6 +250,9 @@ expr_stmt: import
 			} else {
 				$$ = {{"stmt-type", "not-impl"}};
 			}
+		} else if (et == "arr-assign-expr") {
+			$$ = {{"stmt-type", "arr-assign"}, {"target", move($1["target"])}, {"value", move($1["value"])}};
+			LOC($$, @$);
 		} else if (et != "not-impl") {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
 			LOC($$, @$);
@@ -631,10 +634,17 @@ expression: term
 	{ $$ = {{"expr-type", "cmp"}, {"op", "=="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression OPE_NE expression
 	{ $$ = {{"expr-type", "cmp"}, {"op", "!="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
-	| expression ARROW expression
+	| expression ARROW store_loc
 	{
-		if ($3.value("expr-type", "") == "id") {
-			$$ = {{"expr-type", "assign-expr"}, {"name", $3["name"]}, {"value", move($1)}};
+		if ($3.value("kind", "") == "var") {
+			$$ = {{"expr-type", "assign-expr"}, {"name", move($3["name"])}, {"value", move($1)}};
+			LOC($$, @$);
+		} else if ($3.value("kind", "") == "arr-index") {
+			json arr_node = {{"expr-type", "arr-index"},
+							 {"array", move($3["array"])},
+							 {"index", move($3["index"])}};
+			LOC(arr_node, @3);
+			$$ = {{"expr-type", "arr-assign-expr"}, {"target", move(arr_node)}, {"value", move($1)}};
 			LOC($$, @$);
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
@@ -667,8 +677,11 @@ term: INT
 	}
 	| term '.' ID
 	{ $$ = {{"expr-type", "not-impl"}}; }
-	| term array_desc
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	| term '[' expression ']'
+	{
+		$$ = {{"expr-type", "arr-index"}, {"array", move($1)}, {"index", move($3)}};
+		LOC($$, @$);
+	}
 	;
 
 tapple_inner: expression
@@ -726,6 +739,21 @@ dict_desc: '{' dict_items '}'
 
 dict_items: ID ':' expression
 	| dict_items ',' ID ':' expression
+	;
+
+store_loc
+	: ID
+	{ $$ = {{"kind", "var"}, {"name", move($1)}}; }
+	| ID '[' expression ']'
+	{
+		json id_node = {{"expr-type", "id"}, {"name", move($1)}};
+		LOC(id_node, @1);
+		$$ = {{"kind", "arr-index"}, {"array", move(id_node)}, {"index", move($3)}};
+	}
+	| '(' tapple_inner ')'
+	{ $$ = {{"kind", "not-impl"}}; }
+	| func_call
+	{ $$ = {{"kind", "not-impl"}}; }
 	;
 
 func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj

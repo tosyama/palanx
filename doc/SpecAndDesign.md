@@ -6,24 +6,44 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-04-12)
-version: 0.1.15
-- This iteration adds 1D array types with heap allocation and automatic scope-based cleanup.
-- Array variables are declared as `[expr]type arr`, heap-allocated via malloc,
-  and automatically freed when the enclosing scope exits.
-- Arrays can be passed as pointers to C functions.
+### 2.1 Iteration Goal (2026-04-17)
+version: 0.1.16
+- This iteration adds array element access: `arr[i]` for reading and `val -> arr[i]` for writing.
+- Element size is represented as an expression node (literal for primitive element types),
+  laying the groundwork for future complex element types (nested arrays, structs)
+  whose sizes may require runtime computation via a temporary variable.
+- Scope: raw arrays with primitive element types only.
 
 ```palan
 cinclude <stdio.h>;
 
-[64]uint8 buf;
-sprintf(buf, "Hello, array! %d\n", 2025);
-printf("%s", buf);
+[10]int64 fib;
+1 -> fib[0];
+1 -> fib[1];
+int64 i = 2;
+while i < 10 {
+    fib[i-1] + fib[i-2] -> fib[i];
+    i + 1 -> i;
+}
+i = 0;
+while i < 10 {
+    printf("%lld\n", fib[i]);
+    i + 1 -> i;
+}
 ```
 
 Expected output:
 ```
-Hello, array! 2025
+1
+1
+2
+3
+5
+8
+13
+21
+34
+55
 ```
 
 
@@ -166,135 +186,62 @@ Design:
  and referenced via `leaq label(%rip), %rdi` (RIP-relative addressing).
 
 
-## 4. Usage Examples
+### 3.6 Array Allocator Generation (Future Design)
 
-### 4.1 Hello World
+For complex array element types (nested arrays, structs with array fields), a simple `malloc` call
+is insufficient — recursive allocation and deallocation loops are required.
 
-```
-cinclude <stdio.h>;
-printf("Hello World!\n");
-```
+**Design decision:** palan-sa auto-generates allocator and free functions for complex array shapes,
+and the build manager aggregates them across modules.
 
-```bash
-bin/palan hello.pa
-# Hello World!
-```
+#### Allocator function model
 
-### 4.2 Integer Variables and Arithmetic
+Allocator functions are keyed by the **structural shape** of the element type, with all sizes
+stripped out and passed as arguments. This avoids per-size function proliferation.
 
-```
-cinclude <stdio.h>;
-int64 x = 10;
-int64 y = 20;
-printf("%lld\n", x + y);
-```
+Examples:
+- `[n]int32`         — primitive element; direct `malloc(n * 4)`, no generated function needed
+- `[m][n]int64`      — shape `arr(arr(int64))` → `__alloc__2d_int64(outer, inner)`
+- `[l][m][n]int64`   — shape `arr(arr(arr(int64)))` → `__alloc__3d_int64(d1, d2, d3)`
+- `[n]MyStruct`      — shape `arr(MyStruct)` → `__alloc__arr_MyStruct(count)`
 
-```bash
-bin/palan add.pa
-# 30
-```
+Each shape maps to exactly one allocator function and one free function.
 
-### 4.3 Integer Type Widening
+#### Cross-module deduplication (build manager aggregation)
 
-```
-cinclude <stdio.h>;
-int32 x = 10;
-int64 y = x;
-printf("%lld\n", y);
-```
+When multiple source files require allocators for the same shape, generating the function
+independently in each module would cause duplicate symbol errors at link time.
 
-```bash
-bin/palan widening.pa
-# 10
-```
+To avoid this, palan-sa does **not** emit allocator function bodies into sa.json directly.
+Instead, it records the required allocator shapes in a dedicated `alloc-shapes` metadata
+section of sa.json. The build manager collects `alloc-shapes` from all sa.json files,
+deduplicates by shape key, generates a single allocator source file, compiles it once,
+and links it with all modules.
 
-`int32` values are implicitly widened to `int64` when assigned to a wider variable.
-palan-sa inserts an explicit `convert` node in sa.json; palan-codegen lowers it to `movslq` (sign-extend 32→64).
+This follows the same pattern as the existing `str-literals` table: SA collects metadata,
+codegen (or build manager) handles the actual emission.
 
-### 4.4 Explicit Type Cast
+#### Allocation strategy selection (palan-sa)
 
-Narrowing conversions and signed↔unsigned conversions require an explicit cast:
+palan-sa determines the allocation strategy per element type:
 
 ```
-cinclude <stdio.h>;
-int64 x = 100;
-printf("%d\n", int32(x));
+allocKind(elem_type):
+  prim or pntr  → Direct: malloc(count * sizeof(elem))
+  arr or struct → Generated: call __alloc_<shape>(counts...)
 ```
 
-```bash
-bin/palan cast.pa
-# 100
-```
+For generated allocators, SA records the shape in `alloc-shapes` and emits a call to the
+corresponding function name. The function body is produced by the build manager step.
 
-The cast expression `int32(x)` instructs palan-sa to insert a `convert` node that
-truncates the 64-bit value to 32 bits. Implicit narrowing (without a cast) is a compile error.
-
-### 4.5 User-defined Function
-
-```
-cinclude <stdio.h>;
-
-func add(int32 a, int32 b) -> int32 {
-    return a + b;
-}
-
-printf("%d\n", add(3, 4));
-```
-
-```bash
-bin/palan func.pa
-# 7
-```
-
-Named return variables can also be used. The function assigns the result via `->` and returns
-with a bare `return;`:
-
-```
-cinclude <stdio.h>;
-
-func increment(int64 n) -> int64 result {
-    n + 1 -> result;
-    return;
-}
-
-printf("%lld\n", increment(41));
-```
-
-```bash
-bin/palan increment.pa
-# 42
-```
-
-### 4.6 Multiple Return Values
-
-```
-cinclude <stdio.h>;
-
-func sumsOf(int64 a, int64 b, int64 c) -> int64 ab, int64 bc {
-    return a + b, b + c;
-}
-
-(int64 ab, int64 bc) = sumsOf(1, 2, 3);
-printf("%ld %ld\n", ab, bc);
-```
-
-```bash
-bin/palan multiret.pa
-# 3 5
-```
-
-Multiple return values are declared in the function signature with names and types.
-The caller receives them via a tuple-style declaration `(type name, ...) = call(...)`.
-`return expr, expr, ...` returns values positionally matching the declared return variables.
-
-## 5. Working Directory and Output Files
-### 5.1 Working Directory
+## 4. Working Directory and Output Files
+### 4.1 Working Directory
 The working directory for all command-line tools is `~/.palan/work/` by default.
 And the original source file absolute path is mirrored under the working directory.
 For example, if the source file is located at `/home/user/project/main.pa`,
 related output files will be stored under `~/.palan/work/home/user/project/`.
 
-### 5.2 Output Files
+### 4.2 Output Files
 - palan-gen-ast:
   - Output AST file: `<source file path>.ast.json`
     e.g., for source file `main.pa`, the output AST file will be `main.pa.ast.json`
@@ -308,7 +255,7 @@ related output files will be stored under `~/.palan/work/home/user/project/`.
 - palan (build manager):
   - Assembles `.s` files with `as` and links with `ld` to produce the final executable (default: `a.out`).
 
-### 5.3 Error Output Format
+### 4.3 Error Output Format
 
 All tools write error messages to **stderr** and exit with code **1** on error.
 
