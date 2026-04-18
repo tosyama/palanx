@@ -224,3 +224,13 @@ TEST(sa_error, array_size_not_integer) {
 	ASSERT_NE(sa, "");  // SA must fail
 	ASSERT_NE(sa.find("integer"), string::npos);
 }
+
+TEST(sa_error, arr_index_float_idx) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_045_arr_index_float_idx.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");  // SA must fail
+	ASSERT_NE(sa.find("Array index expression must be an integer type"), string::npos);
+}

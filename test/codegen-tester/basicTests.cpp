@@ -723,3 +723,18 @@ TEST(codegen, array_buf) {
     // Ptr64 argument passed in %rdi
     ASSERT_NE(asm_text.find("%rdi"),        string::npos);
 }
+
+TEST(codegen, arr_rw) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/041_arr_rw.sa.json";
+    string asmf = "out/041_arr_rw.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // arr-index read: DerefLoad emits movl (addr), dst
+    ASSERT_NE(asm_text.find("movl (%r"), string::npos);
+    // arr-assign write: DerefStore emits movl src, (addr)
+    ASSERT_NE(asm_text.find(", (%r"),    string::npos);
+}

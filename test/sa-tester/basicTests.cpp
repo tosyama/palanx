@@ -767,6 +767,47 @@ TEST(sa, array_while_continue_free) {
 	ASSERT_EQ(then_body[1]["stmt-type"], "continue");
 }
 
+TEST(sa, arr_index_elem_type) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/048_arr_index_elem_type.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements: [0] var-decl a (malloc), [1] var-decl i, [2] expr(a[i])
+	ASSERT_GE(jout["statements"].size(), 3u);
+	const auto& expr_stmt = jout["statements"][2];
+	ASSERT_EQ(expr_stmt["stmt-type"], "expr");
+
+	const auto& body = expr_stmt["body"];
+	ASSERT_EQ(body["expr-type"],                    "arr-index");
+	ASSERT_EQ(body["value-type"]["type-name"],       "int32");
+	ASSERT_EQ(body["elem-size"]["expr-type"],        "lit-uint");
+	ASSERT_EQ(body["elem-size"]["value"],            "4");
+	ASSERT_EQ(body["array"]["name"],                 "a");
+	ASSERT_EQ(body["array"]["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(body["index"]["name"],                 "i");
+}
+
+TEST(sa, arr_assign_convert) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/049_arr_assign_convert.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements: [0] var-decl a, [1] var-decl x, [2] var-decl i, [3] arr-assign
+	ASSERT_GE(jout["statements"].size(), 4u);
+	const auto& stmt = jout["statements"][3];
+	ASSERT_EQ(stmt["stmt-type"], "arr-assign");
+
+	// target is arr-index with value-type int64
+	ASSERT_EQ(stmt["target"]["expr-type"],           "arr-index");
+	ASSERT_EQ(stmt["target"]["value-type"]["type-name"], "int64");
+
+	// value is wrapped in convert: int32 -> int64
+	ASSERT_EQ(stmt["value"]["expr-type"],              "convert");
+	ASSERT_EQ(stmt["value"]["from-type"]["type-name"], "int32");
+	ASSERT_EQ(stmt["value"]["value-type"]["type-name"], "int64");
+	ASSERT_EQ(stmt["value"]["src"]["name"],            "x");
+}
+
 TEST(sa, array_multi_var_shared_size) {
 	// [4]int32 a, b; — two vars share one size temp var (__arr_sz_0)
 	// Covers: elem_size > 1 (mul) path and vars.size() > 1 path.

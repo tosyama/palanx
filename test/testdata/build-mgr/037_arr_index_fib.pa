@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+
+[10]int64 fib;
+1 -> fib[0];
+1 -> fib[1];
+int64 i = 2;
+while i < 10 {
+    fib[i-1] + fib[i-2] -> fib[i];
+    i + 1 -> i;
+}
+0 -> i;
+while i < 10 {
+    printf("%lld\n", fib[i]);
+    i + 1 -> i;
+}

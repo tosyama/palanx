@@ -25,7 +25,7 @@ while i < 10 {
     fib[i-1] + fib[i-2] -> fib[i];
     i + 1 -> i;
 }
-i = 0;
+0 -> i;
 while i < 10 {
     printf("%lld\n", fib[i]);
     i + 1 -> i;
