@@ -1,0 +1,4 @@
+func noop() { return; }
+[5]int64 arr;
+int64 i = 0;
+noop() -> arr[i];
