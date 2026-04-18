@@ -61,6 +61,7 @@ class PlnSemanticAnalyzer {
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);
 	json sa_assign_stmt(const json& stmt);
+	json sa_arr_assign_stmt(const json& stmt);
 	json sa_return_stmt(const json& stmt);
 	json sa_tapple_decl(const json& stmt);
 	json sa_block(const json& stmt);

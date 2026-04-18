@@ -105,6 +105,11 @@ Additional statement kinds emitted by SA:
   - name\*: target variable name string
   - value\*: SA-annotated source expression (may be wrapped in convert node)
 
+- **arr-assign** - array element assignment (`val -> arr[i]`)
+  - stmt-type\*: "arr-assign"
+  - target\*: SA-annotated arr-index expression (see Expression model below)
+  - value\*: SA-annotated source expression (may be wrapped in convert node to match elem type)
+
 - **return** - return statement
   - stmt-type\*: "return"
   - values: SA-annotated return expression list (omitted for bare `return;`)
@@ -162,6 +167,32 @@ SA-only expression kinds (not present in AST JSON):
     "value-type": {"type-kind": "prim", "type-name": "int32"},
     "from-type":  {"type-kind": "prim", "type-name": "int64"},
     "src": {"expr-type": "id", "name": "x", ...}
+  }
+  ```
+
+SA-only expression kinds (added to AST nodes):
+
+- **arr-index** - Array element access (`arr[i]`). The AST node gains three SA-added fields:
+  - value-type\*: element type (the `base-type` of the array's `pntr` value-type)
+  - elem-size\*: `lit-uint` node whose `value` is the element byte size (1, 2, 4, or 8)
+  - array\*: SA-annotated array expression (value-type must be `pntr`)
+  - index\*: SA-annotated index expression (must not be float; integer types only)
+
+  Validation:
+  - If the array operand's value-type is not `pntr` → compile error (E_NotArrayType)
+  - If the index expression resolves to flo32 or flo64 → compile error (E_ArrayIndexNotInteger)
+
+  Example: `a[i]` where `[5]int32 a`:
+  ```json
+  {
+    "expr-type": "arr-index",
+    "value-type": {"type-kind": "prim", "type-name": "int32"},
+    "array": {"expr-type": "id", "name": "a",
+              "var-type":   {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int32"}},
+              "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int32"}}},
+    "index":    {"expr-type": "id", "name": "i", "value-type": {"type-kind": "prim", "type-name": "int64"}, ...},
+    "elem-size": {"expr-type": "lit-uint", "value": "4",
+                  "value-type": {"type-kind": "prim", "type-name": "uint64"}}
   }
   ```
 

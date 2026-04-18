@@ -34,6 +34,8 @@ enum PlnSaMessageCode {
 	E_ContinueOutsideLoop,
 	E_FloatModulo,
 	E_ArraySizeNotInteger,
+	E_ArrayIndexNotInteger,
+	E_NotArrayType,
 };
 
 class PlnSaMessage

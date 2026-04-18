@@ -141,6 +141,15 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         }
     }
 
+    if (expr_type == "arr-index") {
+        auto e = make_unique<ArrIndexExpr>();
+        e->array = deserializeExpr(j["array"]);
+        e->index = deserializeExpr(j["index"]);
+        e->scale = stoi(j["elem-size"]["value"].get<string>());
+        e->type  = toVRegType(j["value-type"]);
+        return e;
+    }
+
     cerr << PlnCodegenMessage::getMessage(E_UnknownExprType, j["expr-type"].get<string>()) << endl;
     exit(1);
 }
@@ -231,6 +240,16 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     }
     if (stmt_type == "continue") {
         return make_unique<ContinueStmt>();
+    }
+    if (stmt_type == "arr-assign") {
+        auto s = make_unique<ArrAssignStmt>();
+        const json& target = j["target"];
+        s->array = deserializeExpr(target["array"]);
+        s->index = deserializeExpr(target["index"]);
+        s->scale = stoi(target["elem-size"]["value"].get<string>());
+        s->type  = toVRegType(target["value-type"]);
+        s->value = deserializeExpr(j["value"]);
+        return s;
     }
     if (stmt_type == "not-impl") {
         return nullptr;

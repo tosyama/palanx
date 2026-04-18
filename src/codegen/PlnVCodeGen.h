@@ -42,6 +42,9 @@ class PlnVCodeGen {
     void lowerExprStmt(const ExprStmt& stmt, VFunc& func);
     void lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func);
     void lowerAssignStmt(const AssignStmt& stmt, VFunc& func);
+    VReg computeArrAddr(VReg base, VReg idx, int scale, VFunc& func);
+    VReg lowerArrIndexExpr(const ArrIndexExpr& expr, VFunc& func);
+    void lowerArrAssignStmt(const ArrAssignStmt& stmt, VFunc& func);
     void lowerReturnStmt(const ReturnStmt& stmt, VFunc& func);
     void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);

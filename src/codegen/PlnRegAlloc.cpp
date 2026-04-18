@@ -97,7 +97,9 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const Label& lbl)  { label_idx[lbl.name] = i; },
             // Mov copies src into dst (the variable's canonical VReg).
             // dst is always isVar (allocated by Pass B); only src needs tracking here.
-            [&](const Mov& mv)     { addUse(mv.src); },
+            [&](const Mov& mv)        { addUse(mv.src); },
+            [&](const DerefLoad& dl)  { setDef(dl.dst, dl.type); addUse(dl.addr); },
+            [&](const DerefStore& ds) { addUse(ds.addr); addUse(ds.src); },
             [&](const ExitCode&)   {},
             [&](const BlockEnter&) {},
             [&](const BlockLeave&) {},

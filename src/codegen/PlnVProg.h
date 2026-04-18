@@ -53,11 +53,13 @@ struct Label      { string name; };                              // name:
 struct Jmp        { string label; };                             // jmp label
 struct CondJmp    { string label; VReg cond; bool jumpIfZero; }; // testl+je/jne
 struct Mov        { VReg dst; VReg src; VRegType type; };        // dst = src (variable update)
+struct DerefLoad  { VReg dst; VReg addr; VRegType type; };      // dst = *addr
+struct DerefStore { VReg addr; VReg src; VRegType type; };      // *addr = src
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg, Cmp, Convert,
                              CallC, CallPln, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
-                             Label, Jmp, CondJmp, Mov>;
+                             Label, Jmp, CondJmp, Mov, DerefLoad, DerefStore>;
 
 // -------- Program structure --------
 
