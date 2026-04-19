@@ -194,7 +194,8 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "cinclude") sa_cinclude(stmt);
 		else if (t == "expr")     result.push_back(sa_expression_stmt(stmt));
 		else if (t == "var-decl") { for (auto& s : sa_var_decl(stmt)) result.push_back(s); }
-		else if (t == "assign")   result.push_back(sa_assign_stmt(stmt));
+		else if (t == "assign")     result.push_back(sa_assign_stmt(stmt));
+		else if (t == "arr-assign") result.push_back(sa_arr_assign_stmt(stmt));
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
 				json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
@@ -404,6 +405,38 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 				argIdx++;
 			}
 		}
+
+	} else if (expr_type == "arr-index") {
+		json sa_array = sa_expression(expr["array"]);
+		const json& array_type = sa_array["value-type"];
+		if (array_type.value("type-kind", "") != "pntr") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_NotArrayType) << endl;
+			exit(1);
+		}
+		const json& elem_type = array_type["base-type"];
+
+		json sa_index = sa_expression(expr["index"]);
+		const PlnType* idxType = registry_.fromJson(sa_index["value-type"]);
+		if (idxType->kind == PlnType::Kind::Prim) {
+			auto pn = static_cast<const PrimType*>(idxType)->name;
+			if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrayIndexNotInteger) << endl;
+				exit(1);
+			}
+		}
+
+		int sz = elemSizeBytes(elem_type.value("type-name", ""));
+		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+		json elem_size_node = {
+			{"expr-type", "lit-uint"},
+			{"value", to_string(sz)},
+			{"value-type", uint64_type}
+		};
+
+		sa_expr["array"]      = sa_array;
+		sa_expr["index"]      = sa_index;
+		sa_expr["elem-size"]  = elem_size_node;
+		sa_expr["value-type"] = elem_type;
 	}
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -720,6 +753,22 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 		value = wrapConvert(value, registry_.toJson(toType));
 	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
+{
+	json sa_target = sa_expression(stmt["target"]);
+	const PlnType* toType = registry_.fromJson(sa_target["value-type"]);
+	json sa_value = sa_expression(stmt["value"], toType);
+	if (!sa_value.contains("value-type")) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+		exit(1);
+	}
+	const PlnType* fromType = registry_.fromJson(sa_value["value-type"]);
+	TypeCompat compat = typeCompat(fromType, toType, registry_);
+	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
+		sa_value = wrapConvert(sa_value, registry_.toJson(toType));
+	return {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)

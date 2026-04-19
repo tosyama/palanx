@@ -476,3 +476,55 @@ TEST(gen_ast, array_decl) {
 	ASSERT_TRUE(found_buf);
 	ASSERT_TRUE(found_arr);
 }
+
+TEST(gen_ast, arr_index_expr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/015_arr_index_expr.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	// statements: var-decl, expr(a[0]), expr(a[i+1])
+	ASSERT_EQ(jout["ast"]["statements"].size(), 3);
+
+	// a[0]: expr stmt with arr-index body
+	const auto& s1 = jout["ast"]["statements"][1];
+	ASSERT_EQ(s1["stmt-type"], "expr");
+	ASSERT_EQ(s1["body"]["expr-type"], "arr-index");
+	ASSERT_EQ(s1["body"]["array"]["expr-type"], "id");
+	ASSERT_EQ(s1["body"]["array"]["name"], "a");
+	ASSERT_EQ(s1["body"]["index"]["expr-type"], "lit-int");
+	ASSERT_EQ(s1["body"]["index"]["value"], "0");
+
+	// a[i+1]: arr-index with add expression as index
+	const auto& s2 = jout["ast"]["statements"][2];
+	ASSERT_EQ(s2["stmt-type"], "expr");
+	ASSERT_EQ(s2["body"]["expr-type"], "arr-index");
+	ASSERT_EQ(s2["body"]["index"]["expr-type"], "add");
+}
+
+TEST(gen_ast, arr_assign_stmt) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/016_arr_assign_stmt.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	// statements: var-decl, arr-assign(1->a[0]), arr-assign(x->a[i])
+	ASSERT_EQ(jout["ast"]["statements"].size(), 3);
+
+	// 1 -> a[0]
+	const auto& s1 = jout["ast"]["statements"][1];
+	ASSERT_EQ(s1["stmt-type"], "arr-assign");
+	ASSERT_EQ(s1["target"]["expr-type"], "arr-index");
+	ASSERT_EQ(s1["target"]["array"]["name"], "a");
+	ASSERT_EQ(s1["target"]["index"]["expr-type"], "lit-int");
+	ASSERT_EQ(s1["target"]["index"]["value"], "0");
+	ASSERT_EQ(s1["value"]["expr-type"], "lit-int");
+	ASSERT_EQ(s1["value"]["value"], "1");
+
+	// x -> a[i]
+	const auto& s2 = jout["ast"]["statements"][2];
+	ASSERT_EQ(s2["stmt-type"], "arr-assign");
+	ASSERT_EQ(s2["target"]["array"]["name"], "a");
+	ASSERT_EQ(s2["target"]["index"]["expr-type"], "id");
+	ASSERT_EQ(s2["target"]["index"]["name"], "i");
+	ASSERT_EQ(s2["value"]["expr-type"], "id");
+	ASSERT_EQ(s2["value"]["name"], "x");
+}

@@ -31,6 +31,7 @@ enum class ExprKind {
     Convert,
     CCCall,
     PlnCall,
+    ArrIndex,
 };
 
 struct Expr {
@@ -154,6 +155,7 @@ enum class StmtKind {
     While,
     Break,
     Continue,
+    ArrAssign,
 };
 
 struct Stmt {
@@ -223,6 +225,23 @@ struct BreakStmt : Stmt {
 
 struct ContinueStmt : Stmt {
     ContinueStmt() : Stmt(StmtKind::Continue) {}
+};
+
+struct ArrIndexExpr : Expr {
+    explicit ArrIndexExpr() : Expr(ExprKind::ArrIndex), scale(4), type(VRegType::Int64) {}
+    unique_ptr<Expr> array;   // Ptr64 expression (heap pointer)
+    unique_ptr<Expr> index;   // integer index expression
+    int scale;                 // element byte size: 1, 2, 4, or 8
+    VRegType type;             // element type
+};
+
+struct ArrAssignStmt : Stmt {
+    explicit ArrAssignStmt() : Stmt(StmtKind::ArrAssign) {}
+    unique_ptr<Expr> array;
+    unique_ptr<Expr> index;
+    int scale;
+    VRegType type;
+    unique_ptr<Expr> value;
 };
 
 // -------- Module --------

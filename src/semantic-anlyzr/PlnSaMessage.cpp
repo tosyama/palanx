@@ -108,6 +108,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_ArraySizeNotInteger:
 			return "Array size expression must be an integer type.";
 
+		case E_ArrayIndexNotInteger:
+			return "Array index expression must be an integer type.";
+
+		case E_NotArrayType:
+			return "Expression is not an array (pointer) type.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

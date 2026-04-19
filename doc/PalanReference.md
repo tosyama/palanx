@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.15
+**Version:** v0.1.16
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -606,8 +606,43 @@ Expected output:
 Hello, array! 2025
 ```
 
+### Element Access
+
+Individual elements are read with `arr[i]` and written with `val -> arr[i]`. The index must be an integer type.
+
+```palan
+cinclude <stdio.h>;
+
+[10]int64 fib;
+1 -> fib[0];
+1 -> fib[1];
+int64 i = 2;
+while i < 10 {
+    fib[i-1] + fib[i-2] -> fib[i];
+    i + 1 -> i;
+}
+0 -> i;
+while i < 10 {
+    printf("%lld\n", fib[i]);
+    i + 1 -> i;
+}
+```
+
+Expected output:
+```
+1
+1
+2
+3
+5
+8
+13
+21
+34
+55
+```
+
 ### Limitations (current version)
 
-- Element access (`arr[i]`) is not yet supported; arrays are passed to C functions as opaque pointers.
 - Only `raw` arrays with a constant size expression and a primitive element type are implemented.
 - Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).

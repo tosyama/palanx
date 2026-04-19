@@ -222,6 +222,8 @@ void PlnX86CodeGen::emit(const VProg& prog)
             else if (auto* j  = std::get_if<Jmp>      (&instr)) out << "\tjmp " << j->label << "\n";
             else if (auto* i  = std::get_if<CondJmp>  (&instr)) emitInstrCondJmp(*i, rm);
             else if (auto* i  = std::get_if<Mov>      (&instr)) emitInstrMov(*i, rm);
+            else if (auto* i  = std::get_if<DerefLoad> (&instr)) emitInstrDerefLoad(*i, rm);
+            else if (auto* i  = std::get_if<DerefStore>(&instr)) emitInstrDerefStore(*i, rm);
             // BlockEnter and BlockLeave are no-ops
         }
     }
@@ -624,6 +626,57 @@ void PlnX86CodeGen::emitInstrMov(const Mov& mv, const RegMap& rm)
         string scratch = isFloat(mv.type) ? "%xmm8" : sizedRegName("%rax", mv.type);
         out << "\t" << movInstrForType(mv.type) << " " << s << ", " << scratch << "\n";
         out << "\t" << movInstrForType(mv.type) << " " << scratch << ", " << d << "\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrDerefLoad(const DerefLoad& dl, const RegMap& rm)
+{
+    if (!rm.count(dl.dst) || !rm.count(dl.addr)) return;
+    const PhysLoc& addr_loc = rm.at(dl.addr);
+    const PhysLoc& dst_loc  = rm.at(dl.dst);
+    const char*    mov      = movInstrForType(dl.type);
+
+    string addr_reg;
+    if (!addr_loc.isStack()) {
+        addr_reg = addr_loc.base;
+    } else {
+        out << "\tmovq " << addr_loc.stackOffset << "(%rbp), %r10\n";
+        addr_reg = "%r10";
+    }
+
+    if (!dst_loc.isStack()) {
+        out << "\t" << mov << " (" << addr_reg << "), "
+            << sizedRegName(dst_loc.base, dl.type) << "\n";
+    } else {
+        string scratch = isFloat(dl.type) ? "%xmm8" : sizedRegName("%rax", dl.type);
+        out << "\t" << mov << " (" << addr_reg << "), " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", "
+            << dst_loc.stackOffset << "(%rbp)\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrDerefStore(const DerefStore& ds, const RegMap& rm)
+{
+    if (!rm.count(ds.src) || !rm.count(ds.addr)) return;
+    const PhysLoc& addr_loc = rm.at(ds.addr);
+    const PhysLoc& src_loc  = rm.at(ds.src);
+    const char*    mov      = movInstrForType(ds.type);
+
+    string addr_reg;
+    if (!addr_loc.isStack()) {
+        addr_reg = addr_loc.base;
+    } else {
+        out << "\tmovq " << addr_loc.stackOffset << "(%rbp), %r10\n";
+        addr_reg = "%r10";
+    }
+
+    if (!src_loc.isStack()) {
+        out << "\t" << mov << " " << sizedRegName(src_loc.base, ds.type)
+            << ", (" << addr_reg << ")\n";
+    } else {
+        string scratch = isFloat(ds.type) ? "%xmm8" : sizedRegName("%rax", ds.type);
+        out << "\t" << mov << " " << src_loc.stackOffset << "(%rbp), " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", (" << addr_reg << ")\n";
     }
 }
 

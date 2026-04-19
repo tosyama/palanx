@@ -279,6 +279,12 @@ TEST(build_mgr, array_while_continue) {
 	ASSERT_EQ(output, "1\n3\n5\n");
 }
 
+TEST(build_mgr, arr_index_fib) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/037_arr_index_fib.pa");
+	ASSERT_EQ(output, "1\n1\n2\n3\n5\n8\n13\n21\n34\n55\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

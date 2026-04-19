@@ -723,3 +723,47 @@ TEST(codegen, array_buf) {
     // Ptr64 argument passed in %rdi
     ASSERT_NE(asm_text.find("%rdi"),        string::npos);
 }
+
+TEST(codegen, arr_rw) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/041_arr_rw.sa.json";
+    string asmf = "out/041_arr_rw.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // arr-index read: DerefLoad emits movl (addr), dst
+    ASSERT_NE(asm_text.find("movl (%r"), string::npos);
+    // arr-assign write: DerefStore emits movl src, (addr)
+    ASSERT_NE(asm_text.find(", (%r"),    string::npos);
+}
+
+TEST(codegen, deref_load_reg_addr) {
+    // Exercises emitInstrDerefLoad when addr is in a physical register (not stack).
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/042_deref_load_reg.sa.json";
+    string asmf = "out/042_deref_load_reg.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // DerefLoad with register addr: movl (%rNN), %eax
+    ASSERT_NE(asm_text.find("movl (%r"), string::npos);
+}
+
+TEST(codegen, deref_store_reg_src) {
+    // Exercises emitInstrDerefStore when src is in a physical register (not stack).
+    // Uses scale=1 (uint8) to keep vreg count low so src stays in a callee-saved register.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/042_arr_rw_scale1.sa.json";
+    string asmf = "out/042_arr_rw_scale1.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // DerefStore with register src: movb %rNNb, (addr) — not scratch %al
+    ASSERT_NE(asm_text.find("movb %r"), string::npos);
+}
