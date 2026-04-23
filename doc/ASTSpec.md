@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.16
+ver. 0.1.17
 
 \* - Required
 
@@ -82,6 +82,7 @@ Variable type
       - Other: "void"
   2. pntr - Pointer type
     - base-type\* - Base variable type
+    - mutable - Boolean, true if writable array pointer slot (`@!` syntax); omitted when false
   3. arr - Array type
     - base-type\* - Base variable type
     - specifier\* - Array kind string:
@@ -144,9 +145,10 @@ Statement model
   5. assign - assignment statement (`expr -> var`)
     - name\* - Target variable name string
     - value\* - Source expression model
-  6. arr-assign - array element assignment statement (`expr -> arr[i]`)
+  6. arr-assign - array element assignment statement (`expr -> arr[i]` or `expr ->> arr[i]`)
     - target\* - arr-index expression model (see Expression model §12)
     - value\* - Source expression model
+    - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
   7. return - return statement
     - values - Return expression list (omitted for bare `return;`)
   8. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)

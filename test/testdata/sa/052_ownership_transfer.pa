@@ -1,0 +1,20 @@
+cinclude <stdlib.h>;
+
+func testOwnedReturn() -> []int32 {
+    [5]int32 arr;
+    return arr;
+}
+
+func testTransfer(int64 i) {
+    [3]int32 inner;
+    [5]@![]int32 outer;
+    inner ->> outer[i];
+    testOwnedReturn();
+    return;
+}
+
+func testFreePtr(int64 i) {
+    [5]@![]int32 outer;
+    free(outer[i]);
+    return;
+}

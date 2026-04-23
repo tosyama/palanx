@@ -6,44 +6,41 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-04-17)
-version: 0.1.16
-- This iteration adds array element access: `arr[i]` for reading and `val -> arr[i]` for writing.
-- Element size is represented as an expression node (literal for primitive element types),
-  laying the groundwork for future complex element types (nested arrays, structs)
-  whose sizes may require runtime computation via a temporary variable.
-- Scope: raw arrays with primitive element types only.
+### 2.1 Iteration Goal (2026-04-20)
+version: 0.1.17
+- This iteration introduces the foundational language features required to write allocator functions
+  for multi-dimensional arrays in Palan source.
+- `[]T` and `[][]T` as function return and parameter types (SA: `pntr(T)` / `pntr(pntr(T))`),
+  with no ownership tracking.
+- `[n]@![]T` variable declaration: an array of writable array-pointer slots
+  (direct `malloc(n * 8)`, elem-size=8, SA type: `pntr(pntr(T))`).
+- Type compatibility: `[n]@![]T` ↔ `[][]T`; `[n]T` assignable to `@![]T` element.
+- `->>` ownership-transfer syntax in arr-assign: removes the source from SA free-tracking.
+- `return expr`: implicitly removes the returned variable from SA free-tracking (ownership passes to caller).
+- `free()` accepts `[]T` arguments (`pntr(T)`).
+
+The goal is that the following allocator source compiles without SA errors:
 
 ```palan
-cinclude <stdio.h>;
-
-[10]int64 fib;
-1 -> fib[0];
-1 -> fib[1];
-int64 i = 2;
-while i < 10 {
-    fib[i-1] + fib[i-2] -> fib[i];
-    i + 1 -> i;
+export func __pln_alloc_arr_arr_int32(int64 d0, int64 d1) -> [][]int32 {
+    [d0]@![]int32 outer;
+    int64 i = 0;
+    while i < d0 {
+        [d1]int32 inner;
+        inner ->> outer[i];
+        i + 1 -> i;
+    }
+    return outer;
 }
-0 -> i;
-while i < 10 {
-    printf("%lld\n", fib[i]);
-    i + 1 -> i;
+export func __pln_free_arr_arr_int32([][]int32 outer, int64 d0) {
+    int64 i = 0;
+    while i < d0 {
+        free(outer[i]);
+        i + 1 -> i;
+    }
+    free(outer);
+    return;
 }
-```
-
-Expected output:
-```
-1
-1
-2
-3
-5
-8
-13
-21
-34
-55
 ```
 
 
@@ -199,11 +196,57 @@ and the build manager aggregates them across modules.
 Allocator functions are keyed by the **structural shape** of the element type, with all sizes
 stripped out and passed as arguments. This avoids per-size function proliferation.
 
-Examples:
-- `[n]int32`         — primitive element; direct `malloc(n * 4)`, no generated function needed
-- `[m][n]int64`      — shape `arr(arr(int64))` → `__alloc__2d_int64(outer, inner)`
-- `[l][m][n]int64`   — shape `arr(arr(arr(int64)))` → `__alloc__3d_int64(d1, d2, d3)`
-- `[n]MyStruct`      — shape `arr(MyStruct)` → `__alloc__arr_MyStruct(count)`
+##### Shape key
+
+The shape key encodes the full structural type path from outermost to innermost using `_` as
+separator. Constructor tokens (`arr`, `ptr`, `emb`) appear first; the leaf type name is always last.
+
+**Encoding rules:**
+1. Each type constructor contributes one token: `arr`, `ptr`, or `emb`
+2. The leaf type name (primitive or user-defined) is appended last
+3. Underscores within user-defined type names are escaped to `__`
+   (constructor tokens never contain underscores, so no escaping is needed for them)
+
+**Decoding rule:** scan left to right splitting on `_`; a `__` sequence is an escaped `_`
+within the current token, not a separator. The last token is always the leaf type name.
+
+| Palan type           | Shape notation         | Shape key              |
+|----------------------|------------------------|------------------------|
+| `[n]int32`           | `arr(int32)`           | — (no allocator; direct malloc) |
+| `[m][n]int64`        | `arr(arr(int64))`      | `arr_arr_int64`        |
+| `[l][m][n]int64`     | `arr(arr(arr(int64)))` | `arr_arr_arr_int64`    |
+| `[n]MyStruct`        | `arr(MyStruct)`        | `arr_MyStruct`         |
+| `[m][n]MyStruct`     | `arr(arr(MyStruct))`   | `arr_arr_MyStruct`     |
+| `[n]arr`             | `arr(arr)`             | `arr_arr`              |
+| `[n]my_type`         | `arr(my_type)`         | `arr_my__type`         |
+| `[m]$my_type`        | `arr(emb(my_type))`    | `arr_emb_my__type`     |
+
+##### Function naming convention
+
+- Alloc: `__pln_alloc_<shape-key>`
+- Free:  `__pln_free_<shape-key>`
+
+The `__pln_` prefix reserves the symbol as a Palan internal (double-underscore per C standard,
+`pln` namespace to avoid collision with other tools or libraries).
+
+##### Signatures
+
+Alloc takes one `int64_t` argument per dimension (outermost to innermost) and returns `void*`:
+
+```c
+void* __pln_alloc_arr_arr_int64(int64_t d0, int64_t d1);
+void* __pln_alloc_arr_arr_arr_int64(int64_t d0, int64_t d1, int64_t d2);
+void* __pln_alloc_arr_MyStruct(int64_t d0);
+```
+
+Free takes the array pointer (`void*`) plus all dimensions **except the innermost**
+(the innermost size is not needed because `free` does not require it):
+
+```c
+void __pln_free_arr_arr_int64(void* arr, int64_t d0);
+void __pln_free_arr_arr_arr_int64(void* arr, int64_t d0, int64_t d1);
+void __pln_free_arr_MyStruct(void* arr, int64_t d0);
+```
 
 Each shape maps to exactly one allocator function and one free function.
 
@@ -234,14 +277,38 @@ allocKind(elem_type):
 For generated allocators, SA records the shape in `alloc-shapes` and emits a call to the
 corresponding function name. The function body is produced by the build manager step.
 
-## 4. Working Directory and Output Files
-### 4.1 Working Directory
+## 4. Expression Value Categories
+
+Every expression in Palan has a **value category** that determines ownership semantics.
+palan-sa annotates expressions with their category and uses it to drive free-tracking decisions.
+
+| Category | Description | Examples |
+|----------|-------------|---------|
+| `owned`    | A named variable with ownership; SA tracks it for free at scope end | `[n]T` variable, `[n]@![]T` variable |
+| `expiring` | An owned value being relinquished; must be consumed exactly once | return value of a function whose return type is a tracked array type; result of `->>` |
+| `transient` | A plain temporary with no ownership; no tracking needed | integer literal, arithmetic result, `prim` function return value |
+
+### Rules
+
+- Assigning an `expiring` value to a variable → the variable becomes `owned`, SA adds it to free-tracking.
+- Passing an `expiring` value as a function argument → the callee takes ownership (parameter becomes `owned`).
+- An unused `expiring` value → freed at the end of the statement (or immediately after use).
+- `return expr` where `expr` is `owned` → SA removes it from free-tracking (no free emitted); the caller is responsible for freeing.
+- `val ->> target` (ownership-transfer arr-assign) → SA emits `val = NULL` after the transfer; the scope-end `free(val)` becomes `free(NULL)` which is a no-op.
+
+### SA determination of expiring
+
+A function call expression is `expiring` if the function's return type is a tracked array type
+(`[]T`, `[][]T`, or any unsized array type). Otherwise it is `transient`.
+
+## 5. Working Directory and Output Files
+### 5.1 Working Directory
 The working directory for all command-line tools is `~/.palan/work/` by default.
 And the original source file absolute path is mirrored under the working directory.
 For example, if the source file is located at `/home/user/project/main.pa`,
 related output files will be stored under `~/.palan/work/home/user/project/`.
 
-### 4.2 Output Files
+### 5.2 Output Files
 - palan-gen-ast:
   - Output AST file: `<source file path>.ast.json`
     e.g., for source file `main.pa`, the output AST file will be `main.pa.ast.json`
@@ -255,7 +322,7 @@ related output files will be stored under `~/.palan/work/home/user/project/`.
 - palan (build manager):
   - Assembles `.s` files with `as` and links with `ld` to produce the final executable (default: `a.out`).
 
-### 4.3 Error Output Format
+### 5.3 Error Output Format
 
 All tools write error messages to **stderr** and exit with code **1** on error.
 

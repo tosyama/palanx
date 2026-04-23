@@ -36,6 +36,7 @@ enum PlnSaMessageCode {
 	E_ArraySizeNotInteger,
 	E_ArrayIndexNotInteger,
 	E_NotArrayType,
+	E_UnsizedArrVarDecl,
 };
 
 class PlnSaMessage

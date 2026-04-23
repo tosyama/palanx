@@ -1,0 +1,23 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+
+func fill_and_sum(int64 rows, int64 cols) -> int64 {
+	[rows]@![]int32 outer;
+	int64 i = 0;
+	while i < rows {
+		[cols]int32 inner;
+		int32(i) -> inner[0];
+		inner ->> outer[i];
+		i + 1 -> i;
+	}
+	int64 sum = 0;
+	0 -> i;
+	while i < rows {
+		sum + outer[i][0] -> sum;
+		free(outer[i]);
+		i + 1 -> i;
+	}
+	return sum;
+}
+
+printf("%lld\n", fill_and_sum(4, 3));

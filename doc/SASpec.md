@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.16
+ver. 0.1.17
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -34,6 +34,10 @@ SA-annotated statements.
 
 Note: cinclude statements are not present in function bodies (they are top-level only).
 
+Note: `[]T` (unsized array type) in `ret-type` or parameter `var-type` is resolved by SA to
+`pntr(T)` with no ownership tracking. `[][]T` becomes `pntr(pntr(T))`.
+These types are valid only in function signatures; using `[]T` in a `var-decl` is a compile error.
+
 Statement model
 ---------------
 Same structure as AST statements (see ASTSpec.md) with the following differences:
@@ -64,13 +68,21 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - else: else-block or nested if statement (omitted when absent)
 
 - **var-decl** (array transformation) - Array variable declarations are transformed by SA:
-  A `var-decl` with `arr` type-kind (`specifier: "raw"`, non-null `size-expr`, prim `base-type`)
-  is rewritten as a `var-decl` with `pntr` type and a synthesized `malloc` call as init:
+
+  **`[n]T` (raw array):** A `var-decl` with `arr` type-kind (`specifier: "raw"`, non-null `size-expr`,
+  prim `base-type`) is rewritten as a `var-decl` with `pntr` type and a synthesized `malloc` call as init:
   - `var-type`: changed from `arr` to `pntr` (pointer to the element type)
   - `init`: `{"expr-type":"call","name":"malloc","func-type":"c","args":[<size_bytes>],"value-type":<pntr_type>}`
     where `size_bytes` = `size-expr` (when elem_size == 1) or `mul(size-expr, lit-uint(elem_size))` otherwise
   - The variable is registered in scope with `pntr` type
   - The `size-expr` must evaluate to an integer type; a float size is a compile error
+
+  **`[n]@![]T` (array of pointer slots):** A `var-decl` with `arr` type-kind where `base-type` is
+  `pntr(mutable=true, base=arr(T))` is also transformed:
+  - `var-type`: changed to `pntr(pntr(T))` (pointer to pointer)
+  - `init`: `malloc(size-expr * 8)` (each slot is a pointer; elem-size is always 8)
+  - The outer array is freed at scope exit. Inner arrays (stored in slots) must be freed
+    explicitly or transferred via `->>` before scope exit.
 
   Scope-exit cleanup:
   - At the end of each block/while/function body containing array var-decls, SA appends
@@ -105,14 +117,22 @@ Additional statement kinds emitted by SA:
   - name\*: target variable name string
   - value\*: SA-annotated source expression (may be wrapped in convert node)
 
-- **arr-assign** - array element assignment (`val -> arr[i]`)
+- **arr-assign** - array element assignment (`val -> arr[i]` or `val ->> arr[i]`)
   - stmt-type\*: "arr-assign"
   - target\*: SA-annotated arr-index expression (see Expression model below)
   - value\*: SA-annotated source expression (may be wrapped in convert node to match elem type)
 
+  When `ownership-transfer: true` (`->>` syntax): SA emits an additional `assign` statement
+  immediately after the arr-assign that sets the source variable to NULL. The variable remains
+  in `arrayScopeVars_` and receives `free(NULL)` at scope exit (C standard guarantees no-op).
+
 - **return** - return statement
   - stmt-type\*: "return"
   - values: SA-annotated return expression list (omitted for bare `return;`)
+
+  Ownership transfer on return: if the returned expression is an `id` whose variable is in
+  `arrayScopeVars_`, SA removes it from the free-tracking set before emitting scope-exit
+  cleanup. The caller receives ownership of the returned pointer.
 
 - **tapple-decl** - tuple-style multiple return value declaration
   - stmt-type\*: "tapple-decl"
@@ -137,7 +157,9 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   - neg: same type as operand (no promotion)
   - cmp: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
     left and right operands are promoted by the same rules as add
-  - call: present when the function has a return type (ret-type in its definition)
+  - call: present when the function has a return type (ret-type in its definition).
+    When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
+    for freeing the returned pointer (expiring ownership).
 
 SA-only expression kinds (not present in AST JSON):
 
@@ -237,6 +259,7 @@ typeCompat rules
 | unsigned int         | Identical  | ImplicitWiden     | ExplicitCast                  | Incompat| Incompat|
 | float                | Identical  | ImplicitWiden     | ExplicitCast                  | Incompat| Incompat|
 | pointer (same base)  | —          | —                 | —                             | Identical | Incompat|
+| pointer (same base, mutable diff) | — | —            | —                             | Identical | — |
 | pointer (diff base)  | —          | —                 | —                             | Incompatible | — |
 
 Notes:
@@ -244,5 +267,7 @@ Notes:
 - `ExplicitCast` is only permitted at a `cast` expression site (`type-name(expr)`).
   Using it implicitly (e.g. assigning int64 to int32 directly) is a compile error.
 - Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32.
+- `pntr(T)` and `pntr(T, mutable=true)` are treated as `Identical`; base-type match is sufficient
+  for arr-assign target type checking.
 
 (TBD)

@@ -840,3 +840,137 @@ TEST(sa, array_multi_var_shared_size) {
 		ASSERT_EQ(v["init"]["args"][0]["name"], "__arr_sz_0");
 	}
 }
+
+TEST(sa, unsized_arr_sig) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/050_unsized_arr_sig.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	auto findFunc = [&](const string& name) -> const json* {
+		for (auto& f : jout["functions"])
+			if (f["name"] == name) return &f;
+		return nullptr;
+	};
+
+	// getArr: []int32 return type → pntr(int32)
+	const json* getArr = findFunc("getArr");
+	ASSERT_NE(getArr, nullptr);
+	ASSERT_EQ((*getArr)["ret-type"]["type-kind"], "pntr");
+	ASSERT_EQ((*getArr)["ret-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ((*getArr)["ret-type"]["base-type"]["type-name"], "int32");
+
+	// sumArr: []int32 parameter → pntr(int32)
+	const json* sumArr = findFunc("sumArr");
+	ASSERT_NE(sumArr, nullptr);
+	ASSERT_EQ((*sumArr)["parameters"][0]["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ((*sumArr)["parameters"][0]["var-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ((*sumArr)["parameters"][0]["var-type"]["base-type"]["type-name"], "int32");
+
+	// getNestedArr: [][]int32 return type → pntr(pntr(int32))
+	const json* getNestedArr = findFunc("getNestedArr");
+	ASSERT_NE(getNestedArr, nullptr);
+	ASSERT_EQ((*getNestedArr)["ret-type"]["type-kind"], "pntr");
+	ASSERT_EQ((*getNestedArr)["ret-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ((*getNestedArr)["ret-type"]["base-type"]["base-type"]["type-name"], "int32");
+}
+
+TEST(sa, pntr_arr_decl) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/051_pntr_arr_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[0]: var-decl ptrs → pntr(pntr(int32)), malloc(5 * 8)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	const auto& var = body[0]["vars"][0];
+	ASSERT_EQ(var["name"], "ptrs");
+	ASSERT_EQ(var["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(var["var-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(var["var-type"]["base-type"]["base-type"]["type-name"], "int32");
+
+	// malloc(5 * 8)
+	ASSERT_EQ(var["init"]["name"], "malloc");
+	ASSERT_EQ(var["init"]["args"][0]["expr-type"], "mul");
+	ASSERT_EQ(var["init"]["args"][0]["left"]["value"], "5");
+	ASSERT_EQ(var["init"]["args"][0]["right"]["value"], "8");
+
+	// body[1]: expr ptrs[i] — arr-index with elem-size=8, value-type=pntr(int32)
+	ASSERT_EQ(body[1]["stmt-type"], "expr");
+	const auto& idx = body[1]["body"];
+	ASSERT_EQ(idx["expr-type"], "arr-index");
+	ASSERT_EQ(idx["elem-size"]["value"], "8");
+	ASSERT_EQ(idx["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(idx["value-type"]["base-type"]["type-name"], "int32");
+
+	// body.back(): free(ptrs) at scope end
+	ASSERT_EQ(body.back()["stmt-type"], "expr");
+	ASSERT_EQ(body.back()["body"]["name"], "free");
+	ASSERT_EQ(body.back()["body"]["args"][0]["name"], "ptrs");
+}
+
+TEST(sa, ownership_transfer) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/052_ownership_transfer.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// functions[0]: testOwnedReturn() -> []int32
+	{
+		const auto& body = jout["functions"][0]["body"];
+		// body[0]: var-decl arr
+		ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+		ASSERT_EQ(body[0]["vars"][0]["name"], "arr");
+		// body[1]: return arr — no free(arr) before return
+		ASSERT_EQ(body[1]["stmt-type"], "return");
+		ASSERT_EQ(body[1]["values"][0]["name"], "arr");
+		ASSERT_EQ(body.size(), 2u);
+	}
+
+	// functions[1]: testTransfer(int64 i)
+	{
+		const auto& body = jout["functions"][1]["body"];
+		// body[0]: var-decl inner — pntr(int32)
+		ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+		ASSERT_EQ(body[0]["vars"][0]["name"], "inner");
+		// body[1]: var-decl outer — pntr(pntr(int32))
+		ASSERT_EQ(body[1]["stmt-type"], "var-decl");
+		ASSERT_EQ(body[1]["vars"][0]["name"], "outer");
+		// body[2]: arr-assign with ownership-transfer: true
+		ASSERT_EQ(body[2]["stmt-type"], "arr-assign");
+		ASSERT_EQ(body[2].value("ownership-transfer", false), true);
+		// body[3]: null-assign for inner (inner = 0)
+		ASSERT_EQ(body[3]["stmt-type"], "assign");
+		ASSERT_EQ(body[3]["name"], "inner");
+		ASSERT_EQ(body[3]["value"]["expr-type"], "lit-int");
+		ASSERT_EQ(body[3]["value"]["value"], "0");
+		ASSERT_EQ(body[3]["value"]["value-type"]["type-kind"], "pntr");
+		// body[4]: testOwnedReturn() call with category: "expiring"
+		ASSERT_EQ(body[4]["stmt-type"], "expr");
+		ASSERT_EQ(body[4]["body"]["name"], "testOwnedReturn");
+		ASSERT_EQ(body[4]["body"]["category"], "expiring");
+		// body[5..6]: free(outer), free(inner) before return
+		ASSERT_EQ(body[5]["stmt-type"], "expr");
+		ASSERT_EQ(body[5]["body"]["name"], "free");
+		ASSERT_EQ(body[6]["stmt-type"], "expr");
+		ASSERT_EQ(body[6]["body"]["name"], "free");
+		// body[7]: return
+		ASSERT_EQ(body[7]["stmt-type"], "return");
+	}
+
+	// functions[2]: testFreePtr(int64 i)
+	{
+		const auto& body = jout["functions"][2]["body"];
+		// body[0]: var-decl outer
+		ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+		// body[1]: user-written free(outer[i]) — arg is arr-index
+		ASSERT_EQ(body[1]["stmt-type"], "expr");
+		ASSERT_EQ(body[1]["body"]["name"], "free");
+		ASSERT_EQ(body[1]["body"]["args"][0]["expr-type"], "arr-index");
+		// body[2]: SA-generated free(outer) at return
+		ASSERT_EQ(body[2]["stmt-type"], "expr");
+		ASSERT_EQ(body[2]["body"]["name"], "free");
+		ASSERT_EQ(body[2]["body"]["args"][0]["name"], "outer");
+		// body[3]: return
+		ASSERT_EQ(body[3]["stmt-type"], "return");
+	}
+}
