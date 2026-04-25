@@ -285,6 +285,13 @@ TEST(build_mgr, arr_index_fib) {
 	ASSERT_EQ(output, "1\n1\n2\n3\n5\n8\n13\n21\n34\n55\n");
 }
 
+TEST(build_mgr, ptr_arr_transfer) {
+	cleanTestEnv();
+
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/038_ptr_arr_transfer.pa");
+	ASSERT_EQ(output, "6\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

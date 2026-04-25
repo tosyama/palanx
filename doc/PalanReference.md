@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.16
+**Version:** v0.1.17
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -642,7 +642,61 @@ Expected output:
 55
 ```
 
+### Unsized Array Types in Function Signatures
+
+`[]T` and `[][]T` can be used as parameter types and return types in function declarations.
+The semantic analyzer resolves them to pointer types (`pntr(T)` and `pntr(pntr(T))`) with no
+ownership tracking. The caller is responsible for managing the lifetime of the returned pointer.
+
+```palan
+func sum_arr([]int32 a, int64 n) -> int64 {
+    int64 s = 0;
+    int64 i = 0;
+    while i < n {
+        s + a[i] -> s;
+        i + 1 -> i;
+    }
+    return s;
+}
+```
+
+Using `[]T` in a variable declaration is a compile error.
+
+### Array of Pointer Slots (`[n]@![]T`)
+
+`[n]@![]T` declares an array of `n` writable pointer slots, each capable of holding a `[]T`
+pointer. The outer array is heap-allocated (`malloc(n * 8)`) and automatically freed at scope
+exit. The inner arrays stored in each slot must be freed explicitly or transferred via `->>`.
+
+```palan
+int64 rows = 4;
+[rows]@![]int32 ptrs;   // malloc(rows * 8) — outer array
+// ... store inner arrays into ptrs[i] ...
+// free(ptrs) emitted automatically at scope exit
+```
+
+### Ownership Transfer (`->>`)
+
+`val ->> arr[i]` transfers ownership of `val` into the array slot `arr[i]`. The semantic
+analyzer emits a null assignment (`NULL -> val`) immediately after the store, so that the
+automatic `free(val)` at scope exit becomes `free(NULL)` — a no-op by C standard.
+
+```palan
+int64 n = 3;
+[n]int32 inner;          // inner: owned, will be freed automatically
+int64 m = 2;
+[m]@![]int32 outer;      // outer: owns the slot array
+
+inner ->> outer[0];      // transfers inner into outer[0]; inner is set to NULL
+// free(inner) at scope exit → free(NULL) = no-op
+// free(outer) at scope exit frees the slot array (inner arrays must be freed separately)
+```
+
+`return` on a tracked array variable also transfers ownership: the variable is removed from
+free-tracking and the caller receives the pointer.
+
 ### Limitations (current version)
 
-- Only `raw` arrays with a constant size expression and a primitive element type are implemented.
 - Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
+- Multi-dimensional array declarations (`[m][n]T mat`) and chained element access (`mat[i][j]`) are not yet implemented.
+- Boundary checking is not performed.

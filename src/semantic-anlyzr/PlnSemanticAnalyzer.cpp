@@ -121,6 +121,23 @@ const json* PlnSemanticAnalyzer::findVar(const string& name) const
 	return nullptr;
 }
 
+bool PlnSemanticAnalyzer::isInArrayScope(const string& name) const
+{
+	for (auto& scope : arrayScopeVars_)
+		for (auto& [n, _] : scope)
+			if (n == name) return true;
+	return false;
+}
+
+void PlnSemanticAnalyzer::removeFromArrayScope(const string& name)
+{
+	for (auto& scope : arrayScopeVars_) {
+		auto it = find_if(scope.begin(), scope.end(),
+			[&](const pair<string,json>& p){ return p.first == name; });
+		if (it != scope.end()) { scope.erase(it); return; }
+	}
+}
+
 void PlnSemanticAnalyzer::registerCFunc(const string& name, const json& def)
 {
 	cFuncScopes.back()[name] = def;  // shadow allowed
@@ -155,6 +172,27 @@ const json* PlnSemanticAnalyzer::findPlnFunc(const string& name) const
 	return nullptr;
 }
 
+static json unsizedArrToPntr(const json& type) {
+	if (type.value("type-kind","") == "arr"
+		&& type.value("specifier","") == "raw"
+		&& type["size-expr"].is_null())
+		return {{"type-kind","pntr"},{"base-type", unsizedArrToPntr(type["base-type"])}};
+	return type;
+}
+
+static void normalizeUnsizedArrSig(json& funcDef) {
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"])
+			if (p.contains("var-type"))
+				p["var-type"] = unsizedArrToPntr(p["var-type"]);
+	if (funcDef.contains("ret-type"))
+		funcDef["ret-type"] = unsizedArrToPntr(funcDef["ret-type"]);
+	if (funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"])
+			if (r.contains("var-type"))
+				r["var-type"] = unsizedArrToPntr(r["var-type"]);
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
@@ -167,6 +205,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 		for (auto& f : ast["ast"]["functions"]) {
 			// Single named return: synthesize ret-type for call resolution
 			json funcEntry = f;
+			normalizeUnsizedArrSig(funcEntry);
 			if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 			registerPlnFunc(funcEntry["name"], funcEntry);
@@ -195,9 +234,12 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "expr")     result.push_back(sa_expression_stmt(stmt));
 		else if (t == "var-decl") { for (auto& s : sa_var_decl(stmt)) result.push_back(s); }
 		else if (t == "assign")     result.push_back(sa_assign_stmt(stmt));
-		else if (t == "arr-assign") result.push_back(sa_arr_assign_stmt(stmt));
+		else if (t == "arr-assign") { for (auto& s : sa_arr_assign_stmt(stmt)) result.push_back(s); }
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
+				if (stmt.contains("values") && stmt["values"].size() == 1
+						&& stmt["values"][0].value("expr-type","") == "id")
+					removeFromArrayScope(stmt["values"][0]["name"].get<string>());
 				json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
 				for (auto& s : frees) result.push_back(s);
 			}
@@ -272,6 +314,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		if (varType != nullptr) {
 			sa_expr["var-type"]   = *varType;
 			sa_expr["value-type"] = *varType;
+			if (isInArrayScope(expr["name"].get<string>()))
+				sa_expr["category"] = "owned";
 		} else {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
 			exit(1);
@@ -279,43 +323,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 
 	} else if (expr_type == "add" || expr_type == "sub"
 	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod") {
-		// First pass: propagate expectedType so that lit-int leaves can adopt the
-		// context type (e.g. both sides of `(4+4)` in `int32 x = (4+4)` → int32).
-		json left  = sa_expression(expr["left"],  expectedType);
-		json right = sa_expression(expr["right"], expectedType);
-		// Second pass: if one side is a lit-int and the other has a concrete type
-		// (from a variable), re-type the literal to match — this takes precedence
-		// over expectedType (e.g. `int64_var + 4` keeps int64, not expectedType).
-		if (expr["left"]["expr-type"] == "lit-int" && right.contains("value-type")) {
-			const PlnType* hint = registry_.fromJson(right["value-type"]);
-			left = sa_expression(expr["left"], hint);
-		} else if (expr["right"]["expr-type"] == "lit-int" && left.contains("value-type")) {
-			const PlnType* hint = registry_.fromJson(left["value-type"]);
-			right = sa_expression(expr["right"], hint);
-		}
-		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
-		const PlnType* rightType = registry_.fromJson(right["value-type"]);
-		const PlnType* promoted;
-		if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
-			promoted = rightType;
-			left = wrapConvert(left, registry_.toJson(promoted));
-		} else if (typeCompat(rightType, leftType, registry_) == TypeCompat::ImplicitWiden) {
-			promoted = leftType;
-			right = wrapConvert(right, registry_.toJson(promoted));
-		} else {
-			promoted = leftType;
-		}
-		if (expr_type == "mod" && promoted->kind == PlnType::Kind::Prim) {
-			auto pn = static_cast<const PrimType*>(promoted)->name;
-			if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64) {
-				cerr << locPrefix(expr)
-				     << PlnSaMessage::getMessage(E_FloatModulo) << endl;
-				exit(1);
-			}
-		}
-		sa_expr["left"]       = left;
-		sa_expr["right"]      = right;
-		sa_expr["value-type"] = registry_.toJson(promoted);
+		return sa_expr_arith(expr, expectedType);
 
 	} else if (expr_type == "neg") {
 		json operand = sa_expression(expr["operand"]);
@@ -354,90 +362,150 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		}
 
 	} else if (expr_type == "call") {
-		const json* funcParams = nullptr;
-		bool isVariadic = false;
-
-		const json* cfunc = findCFunc(expr["name"]);
-		if (cfunc) {
-			sa_expr["func-type"] = "c";
-			if (cfunc->contains("ret-type")
-					&& (*cfunc)["ret-type"].value("type-name", "") != "void")
-				sa_expr["value-type"] = (*cfunc)["ret-type"];
-			if (cfunc->contains("parameters")) {
-				funcParams = &(*cfunc)["parameters"];
-				for (auto& p : *funcParams)
-					if (p.value("name", "") == "...") { isVariadic = true; break; }
-			}
-		} else {
-			const json* pFunc = findPlnFunc(expr["name"].get<string>());
-			if (pFunc != nullptr) {
-				sa_expr["func-type"] = "palan";
-				if (pFunc->contains("ret-type"))
-					sa_expr["value-type"] = (*pFunc)["ret-type"];
-				if (pFunc->contains("parameters"))
-					funcParams = &(*pFunc)["parameters"];
-			} else {
-				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedFunction,
-					expr["name"].get<string>()) << endl;
-				exit(1);
-			}
-		}
-
-		if (expr.contains("args")) {
-			sa_expr["args"] = json::array();
-			size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
-			size_t argIdx = 0;
-			for (auto& arg : expr["args"]) {
-				json saArg = sa_expression(arg);
-				if (saArg.contains("value-type")) {
-					const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-					if (funcParams && argIdx < fixedCount) {
-						const PlnType* toType = registry_.fromJson((*funcParams)[argIdx]["var-type"]);
-						if (typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
-							saArg = wrapConvert(saArg, registry_.toJson(toType));
-					} else if (isVariadic) {
-						const PlnType* promoted = variadicPromote(fromType, registry_);
-						if (promoted != fromType)
-							saArg = wrapConvert(saArg, registry_.toJson(promoted));
-					}
-				}
-				sa_expr["args"].push_back(saArg);
-				argIdx++;
-			}
-		}
+		return sa_expr_call(expr);
 
 	} else if (expr_type == "arr-index") {
-		json sa_array = sa_expression(expr["array"]);
-		const json& array_type = sa_array["value-type"];
-		if (array_type.value("type-kind", "") != "pntr") {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_NotArrayType) << endl;
+		return sa_expr_arr_index(expr);
+	}
+	return sa_expr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expectedType)
+{
+	json sa_expr = expr;
+	string expr_type = expr["expr-type"];
+
+	// First pass: propagate expectedType so that lit-int leaves can adopt the
+	// context type (e.g. both sides of `(4+4)` in `int32 x = (4+4)` → int32).
+	json left  = sa_expression(expr["left"],  expectedType);
+	json right = sa_expression(expr["right"], expectedType);
+	// Second pass: if one side is a lit-int and the other has a concrete type
+	// (from a variable), re-type the literal to match — this takes precedence
+	// over expectedType (e.g. `int64_var + 4` keeps int64, not expectedType).
+	if (expr["left"]["expr-type"] == "lit-int" && right.contains("value-type")) {
+		left = sa_expression(expr["left"], registry_.fromJson(right["value-type"]));
+	} else if (expr["right"]["expr-type"] == "lit-int" && left.contains("value-type")) {
+		right = sa_expression(expr["right"], registry_.fromJson(left["value-type"]));
+	}
+	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
+	const PlnType* rightType = registry_.fromJson(right["value-type"]);
+	const PlnType* promoted;
+	if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
+		promoted = rightType;
+		left = wrapConvert(left, registry_.toJson(promoted));
+	} else if (typeCompat(rightType, leftType, registry_) == TypeCompat::ImplicitWiden) {
+		promoted = leftType;
+		right = wrapConvert(right, registry_.toJson(promoted));
+	} else {
+		promoted = leftType;
+	}
+	if (expr_type == "mod" && promoted->kind == PlnType::Kind::Prim) {
+		auto pn = static_cast<const PrimType*>(promoted)->name;
+		if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_FloatModulo) << endl;
 			exit(1);
 		}
-		const json& elem_type = array_type["base-type"];
-
-		json sa_index = sa_expression(expr["index"]);
-		const PlnType* idxType = registry_.fromJson(sa_index["value-type"]);
-		if (idxType->kind == PlnType::Kind::Prim) {
-			auto pn = static_cast<const PrimType*>(idxType)->name;
-			if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64) {
-				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrayIndexNotInteger) << endl;
-				exit(1);
-			}
-		}
-
-		int sz = elemSizeBytes(elem_type.value("type-name", ""));
-		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-		json elem_size_node = {
-			{"expr-type", "lit-uint"},
-			{"value", to_string(sz)},
-			{"value-type", uint64_type}
-		};
-
-		sa_expr["array"]      = sa_array;
-		sa_expr["index"]      = sa_index;
-		sa_expr["elem-size"]  = elem_size_node;
-		sa_expr["value-type"] = elem_type;
 	}
+	sa_expr["left"]       = left;
+	sa_expr["right"]      = right;
+	sa_expr["value-type"] = registry_.toJson(promoted);
+	return sa_expr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
+{
+	json sa_expr = expr;
+	const json* funcParams = nullptr;
+	bool isVariadic = false;
+
+	const json* cfunc = findCFunc(expr["name"]);
+	if (cfunc) {
+		sa_expr["func-type"] = "c";
+		if (cfunc->contains("ret-type")
+				&& (*cfunc)["ret-type"].value("type-name", "") != "void")
+			sa_expr["value-type"] = (*cfunc)["ret-type"];
+		if (cfunc->contains("parameters")) {
+			funcParams = &(*cfunc)["parameters"];
+			for (auto& p : *funcParams)
+				if (p.value("name", "") == "...") { isVariadic = true; break; }
+		}
+	} else {
+		const json* pFunc = findPlnFunc(expr["name"].get<string>());
+		if (pFunc != nullptr) {
+			sa_expr["func-type"] = "palan";
+			if (pFunc->contains("ret-type"))
+				sa_expr["value-type"] = (*pFunc)["ret-type"];
+			if (pFunc->contains("parameters"))
+				funcParams = &(*pFunc)["parameters"];
+		} else {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedFunction,
+				expr["name"].get<string>()) << endl;
+			exit(1);
+		}
+	}
+
+	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
+		sa_expr["category"] = "expiring";
+
+	if (expr.contains("args")) {
+		sa_expr["args"] = json::array();
+		size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
+		size_t argIdx = 0;
+		for (auto& arg : expr["args"]) {
+			json saArg = sa_expression(arg);
+			if (saArg.contains("value-type")) {
+				const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+				if (funcParams && argIdx < fixedCount) {
+					const PlnType* toType = nullptr;
+					try { toType = registry_.fromJson((*funcParams)[argIdx]["var-type"]); }
+					catch (const std::runtime_error&) {}
+					if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
+						saArg = wrapConvert(saArg, registry_.toJson(toType));
+				} else if (isVariadic) {
+					const PlnType* promoted = variadicPromote(fromType, registry_);
+					if (promoted != fromType)
+						saArg = wrapConvert(saArg, registry_.toJson(promoted));
+				}
+			}
+			sa_expr["args"].push_back(saArg);
+			argIdx++;
+		}
+	}
+	return sa_expr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
+{
+	json sa_expr = expr;
+	json sa_array = sa_expression(expr["array"]);
+	const json& array_type = sa_array["value-type"];
+	if (array_type.value("type-kind", "") != "pntr") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_NotArrayType) << endl;
+		exit(1);
+	}
+	const json& elem_type = array_type["base-type"];
+
+	json sa_index = sa_expression(expr["index"]);
+	const PlnType* idxType = registry_.fromJson(sa_index["value-type"]);
+	if (idxType->kind == PlnType::Kind::Prim) {
+		auto pn = static_cast<const PrimType*>(idxType)->name;
+		if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrayIndexNotInteger) << endl;
+			exit(1);
+		}
+	}
+
+	int sz = (elem_type.value("type-kind","") == "pntr") ? 8
+		: elemSizeBytes(elem_type.value("type-name",""));
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	json elem_size_node = {
+		{"expr-type", "lit-uint"}, {"value", to_string(sz)}, {"value-type", uint64_type}
+	};
+
+	sa_expr["array"]      = sa_array;
+	sa_expr["index"]      = sa_index;
+	sa_expr["elem-size"]  = elem_size_node;
+	sa_expr["value-type"] = elem_type;
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -451,91 +519,19 @@ json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
-	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
-
 	if (!stmt["vars"].empty()) {
 		const json& vtype = stmt["vars"][0]["var-type"];
 		string tk = vtype.value("type-kind", "");
 
-		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
-			// Array var-decl: transform to pntr var-decl + malloc init.
-			// All vars in the declaration share the same var-type, so compute
-			// size-in-bytes only once.
-			const json& base_type = vtype["base-type"];
-			string base_name = base_type.value("type-name", "");
-			int elem_size = elemSizeBytes(base_name);
-
-			// SA-annotate the count expression (once for all vars)
-			const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
-			json sa_count = sa_expression(vtype["size-expr"], uint64Type);
-
-			// Validate: array size must be an integer type
-			if (sa_count.contains("value-type")) {
-				const PlnType* cntType = registry_.fromJson(sa_count["value-type"]);
-				bool is_int = cntType->kind == PlnType::Kind::Prim
-					&& static_cast<const PrimType*>(cntType)->name != PrimType::Name::Float32
-					&& static_cast<const PrimType*>(cntType)->name != PrimType::Name::Float64;
-				if (!is_int) {
-					cerr << locPrefix(stmt)
-					     << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
-					exit(1);
-				}
-			}
-
-			// Build size-in-bytes expression
-			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-			json size_bytes;
-			if (elem_size == 1) {
-				size_bytes = sa_count;
-			} else {
-				json elem_lit = {
-					{"expr-type", "lit-uint"}, {"value", to_string(elem_size)},
-					{"value-type", uint64_type}
-				};
-				size_bytes = {
-					{"expr-type", "mul"}, {"value-type", uint64_type},
-					{"left", sa_count}, {"right", elem_lit}
-				};
-			}
-
-			json pntr_type = {{"type-kind","pntr"},{"base-type",base_type}};
-
-			// For multiple vars: emit a temp uint64 var holding size_bytes so it
-			// is evaluated only once at runtime.  For a single var, inline it.
-			json result = json::array();
-			json size_arg;
-			if (stmt["vars"].size() > 1) {
-				string sz_name = "__arr_sz_" + to_string(tempVarCounter_++);
-				declareVar(sz_name, uint64_type, &stmt);
-				json sz_decl = {
-					{"stmt-type", "var-decl"},
-					{"vars", json::array({{{"name", sz_name}, {"var-type", uint64_type}, {"init", size_bytes}}})}
-				};
-				result.push_back(sz_decl);
-				size_arg = {
-					{"expr-type", "id"}, {"name", sz_name},
-					{"var-type", uint64_type}, {"value-type", uint64_type}
-				};
-			} else {
-				size_arg = size_bytes;
-			}
-
-			for (auto& var : stmt["vars"]) {
-				string name = var["name"];
-				json malloc_call = {
-					{"expr-type", "call"}, {"name", "malloc"}, {"func-type", "c"},
-					{"args", json::array({size_arg})}, {"value-type", pntr_type}
-				};
-				declareVar(name, pntr_type, &stmt);
-				arrayScopeVars_.back().push_back({name, pntr_type});
-				sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",malloc_call}});
-			}
-
-			result.push_back(sa_stmt);
-			return result;
+		if (tk == "arr" && vtype.value("specifier", "") == "raw" && vtype["size-expr"].is_null()) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
+			exit(1);
 		}
+		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null())
+			return sa_arr_var_decl(stmt);
 	}
 
+	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
@@ -570,6 +566,88 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		sa_stmt["vars"].push_back(sa_var);
 	}
 	return json::array({sa_stmt});
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
+{
+	// Array var-decl: transform to pntr var-decl + malloc init.
+	// All vars in the declaration share the same var-type, so compute
+	// size-in-bytes only once.
+	const json& vtype = stmt["vars"][0]["var-type"];
+	const json& base_type = vtype["base-type"];
+	int elem_size;
+	json sa_elem_type;
+	if (base_type.value("type-kind","") == "pntr") {
+		// [n]@![]T: elem is mutable pntr to unsized arr → size = 8, SA elem = pntr(T)
+		elem_size = 8;
+		sa_elem_type = unsizedArrToPntr(base_type["base-type"]);
+	} else {
+		elem_size = elemSizeBytes(base_type.value("type-name",""));
+		sa_elem_type = base_type;
+	}
+
+	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
+	json sa_count = sa_expression(vtype["size-expr"], uint64Type);
+
+	if (sa_count.contains("value-type")) {
+		const PlnType* cntType = registry_.fromJson(sa_count["value-type"]);
+		bool is_int = cntType->kind == PlnType::Kind::Prim
+			&& static_cast<const PrimType*>(cntType)->name != PrimType::Name::Float32
+			&& static_cast<const PrimType*>(cntType)->name != PrimType::Name::Float64;
+		if (!is_int) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
+			exit(1);
+		}
+	}
+
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	json size_bytes;
+	if (elem_size == 1) {
+		size_bytes = sa_count;
+	} else {
+		json elem_lit = {
+			{"expr-type", "lit-uint"}, {"value", to_string(elem_size)}, {"value-type", uint64_type}
+		};
+		size_bytes = {
+			{"expr-type", "mul"}, {"value-type", uint64_type},
+			{"left", sa_count}, {"right", elem_lit}
+		};
+	}
+
+	json pntr_type = {{"type-kind","pntr"},{"base-type",sa_elem_type}};
+
+	// For multiple vars: emit a temp uint64 var holding size_bytes so it
+	// is evaluated only once at runtime.  For a single var, inline it.
+	json result = json::array();
+	json size_arg;
+	if (stmt["vars"].size() > 1) {
+		string sz_name = "__arr_sz_" + to_string(tempVarCounter_++);
+		declareVar(sz_name, uint64_type, &stmt);
+		result.push_back({
+			{"stmt-type", "var-decl"},
+			{"vars", json::array({{{"name", sz_name}, {"var-type", uint64_type}, {"init", size_bytes}}})}
+		});
+		size_arg = {
+			{"expr-type", "id"}, {"name", sz_name},
+			{"var-type", uint64_type}, {"value-type", uint64_type}
+		};
+	} else {
+		size_arg = size_bytes;
+	}
+
+	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
+	for (auto& var : stmt["vars"]) {
+		string name = var["name"];
+		json malloc_call = {
+			{"expr-type", "call"}, {"name", "malloc"}, {"func-type", "c"},
+			{"args", json::array({size_arg})}, {"value-type", pntr_type}
+		};
+		declareVar(name, pntr_type, &stmt);
+		arrayScopeVars_.back().push_back({name, pntr_type});
+		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",malloc_call}});
+	}
+	result.push_back(sa_stmt);
+	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::sa_functions(const json& funcs)
@@ -684,10 +762,10 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], p["var-type"], &funcDef);
+			declareVar(p["name"], unsizedArrToPntr(p["var-type"]), &funcDef);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
-			declareVar(r["name"], r["var-type"], &funcDef);
+			declareVar(r["name"], unsizedArrToPntr(r["var-type"]), &funcDef);
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
 	enterScope();  // push scope[1] = function body
@@ -702,6 +780,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 			exit(1);
 		}
 		json funcEntry = f;
+		normalizeUnsizedArrSig(funcEntry);
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
@@ -712,6 +791,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		sa_function(f);
 
 	json saFunc = funcDef;
+	normalizeUnsizedArrSig(saFunc);
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
@@ -768,7 +848,23 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	TypeCompat compat = typeCompat(fromType, toType, registry_);
 	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 		sa_value = wrapConvert(sa_value, registry_.toJson(toType));
-	return {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
+
+	json arr_assign = {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
+	if (!stmt.value("ownership-transfer", false))
+		return json::array({arr_assign});
+
+	arr_assign["ownership-transfer"] = true;
+	json result = json::array({arr_assign});
+
+	// Null out the source variable so free(NULL) at scope end is a no-op.
+	if (sa_value.value("expr-type","") == "id" && sa_value.contains("value-type")) {
+		result.push_back({
+			{"stmt-type", "assign"},
+			{"name", sa_value["name"]},
+			{"value", {{"expr-type","lit-int"},{"value","0"},{"value-type",sa_value["value-type"]}}}
+		});
+	}
+	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)

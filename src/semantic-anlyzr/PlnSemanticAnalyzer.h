@@ -45,6 +45,8 @@ class PlnSemanticAnalyzer {
 
 	void        declareVar(const string& name, const json& type, const json* loc_node = nullptr);
 	const json* findVar(const string& name) const;
+	bool        isInArrayScope(const string& name) const;
+	void        removeFromArrayScope(const string& name);
 
 	void        registerCFunc(const string& name, const json& def);
 	const json* findCFunc(const string& name) const;
@@ -56,12 +58,16 @@ class PlnSemanticAnalyzer {
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
+	json sa_expr_arith(const json& expr, const PlnType* expectedType);
+	json sa_expr_call(const json& expr);
+	json sa_expr_arr_index(const json& expr);
 	json sa_expression_stmt(const json& stmt);
-	json sa_var_decl(const json& stmt);  // returns array of statements
+	json sa_var_decl(const json& stmt);    // returns array of statements
+	json sa_arr_var_decl(const json& stmt); // returns array of statements
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);
 	json sa_assign_stmt(const json& stmt);
-	json sa_arr_assign_stmt(const json& stmt);
+	json sa_arr_assign_stmt(const json& stmt);  // returns json::array()
 	json sa_return_stmt(const json& stmt);
 	json sa_tapple_decl(const json& stmt);
 	json sa_block(const json& stmt);

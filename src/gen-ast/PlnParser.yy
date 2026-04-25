@@ -252,6 +252,7 @@ expr_stmt: import
 			}
 		} else if (et == "arr-assign-expr") {
 			$$ = {{"stmt-type", "arr-assign"}, {"target", move($1["target"])}, {"value", move($1["value"])}};
+			if ($1.value("ownership-transfer", false)) $$["ownership-transfer"] = true;
 			LOC($$, @$);
 		} else if (et != "not-impl") {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
@@ -509,7 +510,21 @@ var_declaration: type_expr move_owner_r ID
 			&& $1.value("specifier","") == "raw"
 			&& !$1["size-expr"].is_null()
 			&& $1["base-type"].value("type-kind","") == "prim";
-		if (!$2 && (tk == "prim" || is_valid_arr))
+		bool is_unsized_arr = tk == "arr"
+			&& $1.value("specifier","") == "raw"
+			&& $1["size-expr"].is_null();
+		bool is_pntr_arr = false;
+		if (tk == "arr" && $1.value("specifier","") == "raw" && !$1["size-expr"].is_null()) {
+			const json& bt = $1["base-type"];
+			if (bt.value("type-kind","") == "pntr" && bt.value("mutable",false) == true
+				&& bt.contains("base-type")) {
+				const json& ibt = bt["base-type"];
+				is_pntr_arr = ibt.value("type-kind","") == "arr"
+					&& ibt.value("specifier","") == "raw"
+					&& ibt.contains("size-expr") && ibt["size-expr"].is_null();
+			}
+		}
+		if (!$2 && (tk == "prim" || is_valid_arr || is_unsized_arr || is_pntr_arr))
 			$$ = {{"name", $3}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};
@@ -650,8 +665,20 @@ expression: term
 			$$ = {{"expr-type", "not-impl"}};
 		}
 	}
-	| expression DBL_ARROW expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	| expression DBL_ARROW store_loc
+	{
+		if ($3.value("kind", "") == "arr-index") {
+			json arr_node = {{"expr-type", "arr-index"},
+							 {"array", move($3["array"])},
+							 {"index", move($3["index"])}};
+			LOC(arr_node, @3);
+			$$ = {{"expr-type", "arr-assign-expr"}, {"ownership-transfer", true},
+				  {"target", move(arr_node)}, {"value", move($1)}};
+			LOC($$, @$);
+		} else {
+			$$ = {{"expr-type", "not-impl"}};
+		}
+	}
 	| noname_func
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	;
@@ -797,7 +824,11 @@ return_def: /* empty */
 	}
 	| ARROW type_expr
 	{
-		if ($2.value("type-kind","") == "prim")
+		string tk2 = $2.value("type-kind","");
+		bool is_unsized_arr2 = tk2 == "arr"
+			&& $2.value("specifier","") == "raw"
+			&& $2["size-expr"].is_null();
+		if (tk2 == "prim" || is_unsized_arr2)
 			$$["ret-type"] = move($2);
 	}
 	;

@@ -114,6 +114,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_NotArrayType:
 			return "Expression is not an array (pointer) type.";
 
+		case E_UnsizedArrVarDecl:
+			return "Unsized array type cannot be used in variable declaration.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

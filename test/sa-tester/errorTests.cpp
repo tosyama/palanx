@@ -254,3 +254,13 @@ TEST(sa_error, arr_assign_void) {
 	ASSERT_NE(sa, "");  // SA must fail
 	ASSERT_NE(sa.find("Void function call cannot be used as a value"), string::npos);
 }
+
+TEST(sa_error, unsized_arr_var_decl) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_048_unsized_arr_var.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");  // SA must fail
+	ASSERT_NE(sa.find("Unsized array type cannot be used in variable declaration"), string::npos);
+}
