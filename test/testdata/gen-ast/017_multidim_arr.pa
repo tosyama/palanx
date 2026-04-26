@@ -1,0 +1,4 @@
+int64 m = 2;
+int64 n = 3;
+[m][n]int32 mat;
+int32(1) -> mat[0][1];

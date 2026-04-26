@@ -528,3 +528,35 @@ TEST(gen_ast, arr_assign_stmt) {
 	ASSERT_EQ(s2["value"]["expr-type"], "id");
 	ASSERT_EQ(s2["value"]["name"], "x");
 }
+
+TEST(gen_ast, multidim_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/017_multidim_arr.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);  // m-decl, n-decl, mat-decl, arr-assign
+
+	// var-decl: [m][n]int32 mat
+	const auto& mat_decl = stmts[2];
+	ASSERT_EQ(mat_decl["stmt-type"], "var-decl");
+	const auto& vt = mat_decl["vars"][0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "arr");
+	ASSERT_EQ(vt["specifier"], "raw");
+	ASSERT_FALSE(vt["size-expr"].is_null());
+	const auto& inner = vt["base-type"];
+	ASSERT_EQ(inner["type-kind"], "arr");
+	ASSERT_EQ(inner["specifier"], "raw");
+	ASSERT_FALSE(inner["size-expr"].is_null());
+	ASSERT_EQ(inner["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(inner["base-type"]["type-name"], "int32");
+
+	// arr-assign: int32(1) -> mat[0][1]  (chained store_loc)
+	const auto& assign = stmts[3];
+	ASSERT_EQ(assign["stmt-type"], "arr-assign");
+	const auto& target = assign["target"];
+	ASSERT_EQ(target["expr-type"], "arr-index");           // outer index [1]
+	ASSERT_EQ(target["array"]["expr-type"], "arr-index");  // inner index [0]
+	ASSERT_EQ(target["array"]["array"]["expr-type"], "id");
+	ASSERT_EQ(target["array"]["array"]["name"], "mat");
+}

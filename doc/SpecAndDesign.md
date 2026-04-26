@@ -6,41 +6,35 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-04-20)
-version: 0.1.17
-- This iteration introduces the foundational language features required to write allocator functions
-  for multi-dimensional arrays in Palan source.
-- `[]T` and `[][]T` as function return and parameter types (SA: `pntr(T)` / `pntr(pntr(T))`),
-  with no ownership tracking.
-- `[n]@![]T` variable declaration: an array of writable array-pointer slots
-  (direct `malloc(n * 8)`, elem-size=8, SA type: `pntr(pntr(T))`).
-- Type compatibility: `[n]@![]T` ↔ `[][]T`; `[n]T` assignable to `@![]T` element.
-- `->>` ownership-transfer syntax in arr-assign: removes the source from SA free-tracking.
-- `return expr`: implicitly removes the returned variable from SA free-tracking (ownership passes to caller).
-- `free()` accepts `[]T` arguments (`pntr(T)`).
+### 2.1 Iteration Goal (2026-04-25)
+version: 0.1.18
+- This iteration enables `[m][n]T` two-dimensional array declaration, `mat[i][j]` read/write,
+  and automatic allocator generation by the build manager.
+- `[m][n]T` variable declaration (2D only, leaf must be a primitive type).
+- `val -> mat[i][j]` write via chained store_loc in gen-ast.
+- SA: collects `alloc-shapes` metadata and emits allocator call + scope-exit free call.
+- build-mgr: auto-generates `__pln_alloc_*` / `__pln_free_*` Palan source, compiles, and links.
 
-The goal is that the following allocator source compiles without SA errors:
+The goal is that the following program produces correct output:
 
 ```palan
-export func __pln_alloc_arr_arr_int32(int64 d0, int64 d1) -> [][]int32 {
-    [d0]@![]int32 outer;
-    int64 i = 0;
-    while i < d0 {
-        [d1]int32 inner;
-        inner ->> outer[i];
-        i + 1 -> i;
-    }
-    return outer;
-}
-export func __pln_free_arr_arr_int32([][]int32 outer, int64 d0) {
-    int64 i = 0;
-    while i < d0 {
-        free(outer[i]);
-        i + 1 -> i;
-    }
-    free(outer);
-    return;
-}
+cinclude <stdio.h>;
+
+int64 rows = 2;
+int64 cols = 3;
+[rows][cols]int32 mat;
+
+int32(1) -> mat[0][0]; int32(2) -> mat[0][1]; int32(3) -> mat[0][2];
+int32(4) -> mat[1][0]; int32(5) -> mat[1][1]; int32(6) -> mat[1][2];
+
+printf("%d %d %d\n", mat[0][0], mat[0][1], mat[0][2]);
+printf("%d %d %d\n", mat[1][0], mat[1][1], mat[1][2]);
+```
+
+Expected output:
+```
+1 2 3
+4 5 6
 ```
 
 
