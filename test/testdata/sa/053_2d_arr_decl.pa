@@ -1,0 +1,5 @@
+func f() {
+    int64 rows = 2;
+    int64 cols = 3;
+    [rows][cols]int32 mat;
+}

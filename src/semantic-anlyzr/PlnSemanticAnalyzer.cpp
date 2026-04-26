@@ -52,7 +52,7 @@ json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx)
 	for (size_t i = to_idx; i > from_idx; --i) {
 		auto& scope = arrayScopeVars_[i - 1];
 		for (auto it = scope.rbegin(); it != scope.rend(); ++it)
-			result.push_back(makeFreeStmt(it->first, it->second));
+			result.push_back(it->second);
 	}
 	return result;
 }
@@ -199,6 +199,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	sa["original"]      = ast["original"];
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
+	sa["alloc-shapes"]  = json::array();
 	enterScope();
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
@@ -575,6 +576,81 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	// size-in-bytes only once.
 	const json& vtype = stmt["vars"][0]["var-type"];
 	const json& base_type = vtype["base-type"];
+
+	// 2D array: [m][n]T → pntr(pntr(T)) with __pln_alloc_arr_arr_T init
+	if (base_type.value("type-kind","") == "arr") {
+		const json& leaf_type = base_type["base-type"];
+		string leaf_name = leaf_type.value("type-name","");
+		string shape_key = "arr_arr_" + leaf_name;
+
+		// Register shape in sa["alloc-shapes"] (deduplicated by shape-key)
+		bool found = false;
+		for (auto& s : sa["alloc-shapes"])
+			if (s["shape-key"] == shape_key) { found = true; break; }
+		if (!found)
+			sa["alloc-shapes"].push_back({
+				{"shape-key", shape_key}, {"leaf-type", leaf_name}, {"depth", 2}
+			});
+
+		string alloc_func = "__pln_alloc_" + shape_key;
+		string free_func  = "__pln_free_"  + shape_key;
+
+		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+		json pntr_type = {{"type-kind","pntr"},{"base-type",{
+			{"type-kind","pntr"},{"base-type",leaf_type}
+		}}};
+		const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
+
+		auto checkIntSize = [&](const json& sz) {
+			if (!sz.contains("value-type")) return;
+			const PlnType* t = registry_.fromJson(sz["value-type"]);
+			bool is_int = t->kind == PlnType::Kind::Prim
+				&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float32
+				&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float64;
+			if (!is_int) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
+				exit(1);
+			}
+		};
+
+		json result = json::array();
+		for (auto& var : stmt["vars"]) {
+			string name = var["name"];
+			string d0_name = "__" + name + "_d0";
+
+			json d0_expr = sa_expression(vtype["size-expr"], uint64Type);
+			checkIntSize(d0_expr);
+			json n_expr  = sa_expression(base_type["size-expr"], uint64Type);
+			checkIntSize(n_expr);
+
+			json d0_id = {{"expr-type","id"},{"name",d0_name},
+			              {"var-type",uint64_type},{"value-type",uint64_type}};
+			json mat_id = {{"expr-type","id"},{"name",name},
+			               {"var-type",pntr_type},{"value-type",pntr_type}};
+
+			declareVar(d0_name, uint64_type, &stmt);
+			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+				{"name",d0_name},{"var-type",uint64_type},{"init",d0_expr}
+			}})}});
+
+			json alloc_call = {
+				{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
+				{"args",json::array({d0_id, n_expr})}, {"value-type",pntr_type}
+			};
+			json free_stmt_json = {{"stmt-type","expr"},{"body",{
+				{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
+				{"args",json::array({mat_id, d0_id})}
+			}}};
+
+			declareVar(name, pntr_type, &stmt);
+			arrayScopeVars_.back().push_back({name, free_stmt_json});
+			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+				{"name",name},{"var-type",pntr_type},{"init",alloc_call}
+			}})}});
+		}
+		return result;
+	} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 	int elem_size;
 	json sa_elem_type;
 	if (base_type.value("type-kind","") == "pntr") {
@@ -643,7 +719,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			{"args", json::array({size_arg})}, {"value-type", pntr_type}
 		};
 		declareVar(name, pntr_type, &stmt);
-		arrayScopeVars_.back().push_back({name, pntr_type});
+		arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",malloc_call}});
 	}
 	result.push_back(sa_stmt);

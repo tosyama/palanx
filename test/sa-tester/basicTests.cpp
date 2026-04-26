@@ -974,3 +974,49 @@ TEST(sa, ownership_transfer) {
 		ASSERT_EQ(body[3]["stmt-type"], "return");
 	}
 }
+
+TEST(sa, 2d_arr_decl) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/053_2d_arr_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// alloc-shapes: one entry for arr_arr_int32
+	ASSERT_TRUE(jout.contains("alloc-shapes"));
+	ASSERT_EQ(jout["alloc-shapes"].size(), 1u);
+	auto& shape = jout["alloc-shapes"][0];
+	ASSERT_EQ(shape["shape-key"], "arr_arr_int32");
+	ASSERT_EQ(shape["leaf-type"], "int32");
+	ASSERT_EQ(shape["depth"], 2);
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[0]: rows var-decl, body[1]: cols var-decl
+	// body[2]: __mat_d0 = rows (uint64 temp for outer dimension)
+	ASSERT_EQ(body[2]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[2]["vars"][0]["name"], "__mat_d0");
+	ASSERT_EQ(body[2]["vars"][0]["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(body[2]["vars"][0]["var-type"]["type-name"], "uint64");
+	ASSERT_EQ(body[2]["vars"][0]["init"]["name"], "rows");
+
+	// body[3]: mat = __pln_alloc_arr_arr_int32(__mat_d0, cols)
+	ASSERT_EQ(body[3]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[3]["vars"][0]["name"], "mat");
+	ASSERT_EQ(body[3]["vars"][0]["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(body[3]["vars"][0]["var-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(body[3]["vars"][0]["var-type"]["base-type"]["base-type"]["type-name"], "int32");
+	auto& init = body[3]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "call");
+	ASSERT_EQ(init["name"], "__pln_alloc_arr_arr_int32");
+	ASSERT_EQ(init["func-type"], "palan");
+	ASSERT_EQ(init["args"][0]["name"], "__mat_d0");
+	ASSERT_EQ(init["args"][1]["name"], "cols");
+
+	// body.back(): __pln_free_arr_arr_int32(mat, __mat_d0) at scope exit
+	auto& last = body.back();
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"], "__pln_free_arr_arr_int32");
+	ASSERT_EQ(last["body"]["func-type"], "palan");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "mat");
+	ASSERT_EQ(last["body"]["args"][1]["name"], "__mat_d0");
+}
