@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.17
+ver. 0.1.18
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -14,6 +14,12 @@ Root
 - str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
 - functions\* - Processed Palan function list (empty array when no functions defined)
 - statements\* - Top-level statement list
+- alloc-shapes\* - List of unique array shape descriptors collected from var-decls.
+  Empty array when no multi-dimensional arrays are declared.
+  Each entry:
+  - shape-key\* - Shape key string (e.g. "arr\_arr\_int32")
+  - leaf-type\* - Innermost element type name (e.g. "int32")
+  - depth\* - Nesting depth integer (currently always 2 for `[m][n]T`)
 
 String literal table entry
 --------------------------
@@ -83,6 +89,16 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - `init`: `malloc(size-expr * 8)` (each slot is a pointer; elem-size is always 8)
   - The outer array is freed at scope exit. Inner arrays (stored in slots) must be freed
     explicitly or transferred via `->>` before scope exit.
+
+  **`[m][n]T` (2D array):** A `var-decl` with `arr` type-kind where `base-type` is itself an
+  `arr(prim T)` is transformed to a 2D allocation:
+  - A temp var `__<name>_d0` (uint64) is prepended, capturing the outer dimension expression.
+  - `var-type`: changed to `pntr(pntr(T))`
+  - `init`: palan call to `__pln_alloc_arr_arr_<leaf>(__<name>_d0, <inner-dim-expr>)`
+  - A shape entry `{"shape-key": "arr\_arr\_<leaf>", "leaf-type": "<leaf>", "depth": 2}` is added
+    to the root `alloc-shapes` array (deduplicated by shape-key across all var-decls).
+  - Scope-exit free: palan call stmt `__pln_free_arr_arr_<leaf>(<name>, __<name>_d0)`.
+  - build-mgr auto-generates the allocator/free Palan source from `alloc-shapes` and links it.
 
   Scope-exit cleanup:
   - At the end of each block/while/function body containing array var-decls, SA appends

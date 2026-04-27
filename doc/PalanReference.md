@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.17
+**Version:** v0.1.18
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -695,8 +695,29 @@ inner ->> outer[0];      // transfers inner into outer[0]; inner is set to NULL
 `return` on a tracked array variable also transfers ownership: the variable is removed from
 free-tracking and the caller receives the pointer.
 
+### Two-Dimensional Arrays (`[m][n]T`)
+
+`[m][n]T` declares a two-dimensional array with `m` rows and `n` columns, where `T` must be a
+primitive type. The outer array is heap-allocated; each row is independently heap-allocated by
+the auto-generated allocator.
+
+```palan
+int64 rows = 2;
+int64 cols = 3;
+[rows][cols]int32 mat;
+```
+
+**Element access:**
+- Read:  `mat[i][j]`
+- Write: `val -> mat[i][j]`
+
+Both row and column indices must be integer types.
+
+**Memory management:** The compiler automatically generates `__pln_alloc_arr_arr_<leaf>` and
+`__pln_free_arr_arr_<leaf>` functions (via build-mgr) and inserts the allocation call at
+declaration and the free call at scope exit. No manual memory management is required.
+
 ### Limitations (current version)
 
 - Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
-- Multi-dimensional array declarations (`[m][n]T mat`) and chained element access (`mat[i][j]`) are not yet implemented.
 - Boundary checking is not performed.
