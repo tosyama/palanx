@@ -199,29 +199,12 @@ void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
     BOOST_ASSERT(false);  // variable not found
 }
 
-VReg PlnVCodeGen::computeArrAddr(VReg base, VReg idx, int scale, VFunc& func)
-{
-    VReg scaled_idx;
-    if (scale == 1) {
-        scaled_idx = idx;
-    } else {
-        VReg scale_r = allocVReg();
-        func.instrs.push_back(MovImm{scale_r, VRegType::Int64, scale});
-        scaled_idx = allocVReg();
-        func.instrs.push_back(Mul{scaled_idx, idx, scale_r, VRegType::Int64});
-    }
-    VReg addr = allocVReg();
-    func.instrs.push_back(Add{addr, base, scaled_idx, VRegType::Ptr64});
-    return addr;
-}
-
 VReg PlnVCodeGen::lowerArrIndexExpr(const ArrIndexExpr& e, VFunc& func)
 {
     VReg base = lowerExpr(*e.array, func);
     VReg idx  = lowerExpr(*e.index, func);
-    VReg addr = computeArrAddr(base, idx, e.scale, func);
     VReg dst  = allocVReg();
-    func.instrs.push_back(DerefLoad{dst, addr, e.type});
+    func.instrs.push_back(DerefLoadIdx{dst, base, idx, e.scale, e.type});
     return dst;
 }
 
@@ -229,9 +212,8 @@ void PlnVCodeGen::lowerArrAssignStmt(const ArrAssignStmt& s, VFunc& func)
 {
     VReg base = lowerExpr(*s.array, func);
     VReg idx  = lowerExpr(*s.index, func);
-    VReg addr = computeArrAddr(base, idx, s.scale, func);
     VReg src  = lowerExpr(*s.value, func);
-    func.instrs.push_back(DerefStore{addr, src, s.type});
+    func.instrs.push_back(DerefStoreIdx{base, idx, s.scale, src, s.type});
 }
 
 void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)

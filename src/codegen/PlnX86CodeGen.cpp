@@ -222,8 +222,10 @@ void PlnX86CodeGen::emit(const VProg& prog)
             else if (auto* j  = std::get_if<Jmp>      (&instr)) out << "\tjmp " << j->label << "\n";
             else if (auto* i  = std::get_if<CondJmp>  (&instr)) emitInstrCondJmp(*i, rm);
             else if (auto* i  = std::get_if<Mov>      (&instr)) emitInstrMov(*i, rm);
-            else if (auto* i  = std::get_if<DerefLoad> (&instr)) emitInstrDerefLoad(*i, rm);
-            else if (auto* i  = std::get_if<DerefStore>(&instr)) emitInstrDerefStore(*i, rm);
+            else if (auto* i  = std::get_if<DerefLoad>    (&instr)) emitInstrDerefLoad(*i, rm);
+            else if (auto* i  = std::get_if<DerefStore>   (&instr)) emitInstrDerefStore(*i, rm);
+            else if (auto* i  = std::get_if<DerefLoadIdx> (&instr)) emitInstrDerefLoadIdx(*i, rm);
+            else if (auto* i  = std::get_if<DerefStoreIdx>(&instr)) emitInstrDerefStoreIdx(*i, rm);
             // BlockEnter and BlockLeave are no-ops
         }
     }
@@ -677,6 +679,77 @@ void PlnX86CodeGen::emitInstrDerefStore(const DerefStore& ds, const RegMap& rm)
         string scratch = isFloat(ds.type) ? "%xmm8" : sizedRegName("%rax", ds.type);
         out << "\t" << mov << " " << src_loc.stackOffset << "(%rbp), " << scratch << "\n";
         out << "\t" << mov << " " << scratch << ", (" << addr_reg << ")\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrDerefLoadIdx(const DerefLoadIdx& dl, const RegMap& rm)
+{
+    if (!rm.count(dl.dst) || !rm.count(dl.base) || !rm.count(dl.idx)) return;
+    const PhysLoc& base_loc = rm.at(dl.base);
+    const PhysLoc& idx_loc  = rm.at(dl.idx);
+    const PhysLoc& dst_loc  = rm.at(dl.dst);
+    const char*    mov      = movInstrForType(dl.type);
+
+    string base_reg;
+    if (!base_loc.isStack()) {
+        base_reg = base_loc.base;
+    } else {
+        out << "\tmovq " << base_loc.stackOffset << "(%rbp), %r10\n";
+        base_reg = "%r10";
+    }
+
+    string idx_reg;
+    if (!idx_loc.isStack()) {
+        idx_reg = idx_loc.base;
+    } else {
+        out << "\tmovq " << idx_loc.stackOffset << "(%rbp), %r11\n";
+        idx_reg = "%r11";
+    }
+
+    string addr = "(" + base_reg + ", " + idx_reg + ", " + std::to_string(dl.scale) + ")";
+    if (!dst_loc.isStack()) {
+        out << "\t" << mov << " " << addr << ", "
+            << sizedRegName(dst_loc.base, dl.type) << "\n";
+    } else {
+        string scratch = isFloat(dl.type) ? "%xmm8" : sizedRegName("%rax", dl.type);
+        out << "\t" << mov << " " << addr << ", " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", "
+            << dst_loc.stackOffset << "(%rbp)\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrDerefStoreIdx(const DerefStoreIdx& ds, const RegMap& rm)
+{
+    if (!rm.count(ds.base) || !rm.count(ds.idx) || !rm.count(ds.src)) return;
+    const PhysLoc& base_loc = rm.at(ds.base);
+    const PhysLoc& idx_loc  = rm.at(ds.idx);
+    const PhysLoc& src_loc  = rm.at(ds.src);
+    const char*    mov      = movInstrForType(ds.type);
+
+    string base_reg;
+    if (!base_loc.isStack()) {
+        base_reg = base_loc.base;
+    } else {
+        out << "\tmovq " << base_loc.stackOffset << "(%rbp), %r10\n";
+        base_reg = "%r10";
+    }
+
+    string idx_reg;
+    if (!idx_loc.isStack()) {
+        idx_reg = idx_loc.base;
+    } else {
+        out << "\tmovq " << idx_loc.stackOffset << "(%rbp), %r11\n";
+        idx_reg = "%r11";
+    }
+
+    string addr = "(" + base_reg + ", " + idx_reg + ", " + std::to_string(ds.scale) + ")";
+    if (!src_loc.isStack()) {
+        out << "\t" << mov << " " << sizedRegName(src_loc.base, ds.type)
+            << ", " << addr << "\n";
+    } else {
+        string scratch = isFloat(ds.type) ? "%xmm8" : sizedRegName("%rax", ds.type);
+        out << "\t" << mov << " " << src_loc.stackOffset << "(%rbp), " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", " << addr << "\n";
     }
 }
 

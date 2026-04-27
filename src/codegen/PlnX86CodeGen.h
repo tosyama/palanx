@@ -45,6 +45,8 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrMov(const Mov& i, const RegMap& rm);
     void emitInstrDerefLoad(const DerefLoad& dl, const RegMap& rm);
     void emitInstrDerefStore(const DerefStore& ds, const RegMap& rm);
+    void emitInstrDerefLoadIdx(const DerefLoadIdx& dl, const RegMap& rm);
+    void emitInstrDerefStoreIdx(const DerefStoreIdx& ds, const RegMap& rm);
 
 public:
     explicit PlnX86CodeGen(std::ostream& out) : out(out) {}
