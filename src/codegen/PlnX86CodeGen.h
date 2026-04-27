@@ -43,8 +43,6 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrRetPln(const RetPln& i, const RegMap& rm, const vector<string>& usedCalleeSaved);
     void emitInstrCondJmp(const CondJmp& i, const RegMap& rm);
     void emitInstrMov(const Mov& i, const RegMap& rm);
-    void emitInstrDerefLoad(const DerefLoad& dl, const RegMap& rm);
-    void emitInstrDerefStore(const DerefStore& ds, const RegMap& rm);
     void emitInstrDerefLoadIdx(const DerefLoadIdx& dl, const RegMap& rm);
     void emitInstrDerefStoreIdx(const DerefStoreIdx& ds, const RegMap& rm);
 
