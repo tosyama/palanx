@@ -7,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include <getopt.h>
 #include <filesystem>
@@ -165,6 +166,79 @@ int main(int argc, char* argv[])
 		}
 
 		obj_files.push_back(obj_file);
+	}
+
+	// Collect alloc-shapes from all sa.json files, deduplicated by shape-key
+	{
+		set<string> seen_shapes;
+		vector<json> collected_shapes;
+		for (auto& ast_file : ast_files) {
+			string base = ast_file.substr(0, ast_file.size() - 9);
+			ifstream f(base + ".sa.json");
+			json sa = json::parse(f);
+			if (!sa.contains("alloc-shapes")) continue;
+			for (auto& shape : sa["alloc-shapes"]) {
+				string key = shape["shape-key"];
+				if (seen_shapes.insert(key).second)
+					collected_shapes.push_back(shape);
+			}
+		}
+
+		if (!collected_shapes.empty()) {
+			string workdir = fs::path(ast_files[0]).parent_path().string();
+			string alloc_pa  = workdir + "/__allocators.pa";
+			string alloc_ast = alloc_pa + ".ast.json";
+			string alloc_sa  = alloc_pa + ".sa.json";
+			string alloc_s   = alloc_pa + ".s";
+			string alloc_o   = alloc_pa + ".o";
+
+			{
+				ofstream out(alloc_pa);
+				out << "cinclude <stdlib.h>;\n";
+				for (auto& shape : collected_shapes) {
+					string leaf = shape["leaf-type"];
+					out << "\nexport func __pln_alloc_arr_arr_" << leaf
+					    << "(int64 d0, int64 d1) -> [][]" << leaf << " {\n"
+					    << "    [d0]@![]" << leaf << " outer;\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < d0 {\n"
+					    << "        [d1]" << leaf << " inner;\n"
+					    << "        inner ->> outer[i];\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
+					    << "    return outer;\n"
+					    << "}\n"
+					    << "export func __pln_free_arr_arr_" << leaf
+					    << "([][]" << leaf << " outer, int64 d0) {\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < d0 {\n"
+					    << "        free(outer[i]);\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
+					    << "    free(outer);\n"
+					    << "    return;\n"
+					    << "}\n";
+				}
+			}
+
+			auto runCmd = [](const string& cmd) -> int {
+				int r = system(cmd.c_str());
+				if (WIFEXITED(r)) return WEXITSTATUS(r);
+				return -1;
+			};
+
+			int ret;
+			ret = runCmd(exec_path + "/palan-gen-ast " + alloc_pa + " -o " + alloc_ast);
+			if (ret) return ret;
+			ret = runCmd(exec_path + "/palan-sa " + alloc_ast);
+			if (ret) return ret;
+			ret = runCmd(exec_path + "/palan-codegen --no-entry " + alloc_sa);
+			if (ret) return ret;
+			ret = runCmd("as " + alloc_s + " -o " + alloc_o);
+			if (ret) return ret;
+
+			obj_files.push_back(alloc_o);
+		}
 	}
 
 	// ld — link all object files into the final binary

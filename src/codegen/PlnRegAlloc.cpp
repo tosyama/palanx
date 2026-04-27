@@ -221,8 +221,23 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
         if (m.call_uses.empty()) {
             if (m.isRetValue && numRetValues == 1) {
-                // Single return value: bind directly to %rax to avoid callee-saved pollution.
-                result[vreg] = PhysLoc{"%rax", m.type};
+                // Single return value: bind to %rax, but if it's defined by a call and another
+                // call clobbers %rax before the last use, spill to callee-saved instead.
+                bool def_is_call = (find(call_indices.begin(), call_indices.end(), m.def_idx) != call_indices.end());
+                bool crosses_call = false;
+                if (def_is_call) {
+                    for (int c_idx : call_indices) {
+                        if (c_idx > m.def_idx && c_idx < m.last_any_use) {
+                            crosses_call = true;
+                            break;
+                        }
+                    }
+                }
+                if (!crosses_call) {
+                    result[vreg] = PhysLoc{"%rax", m.type};
+                } else {
+                    allocCalleeSavedOrStack(vreg, m.type);
+                }
             } else if (m.isRetValue) {
                 // Multi-return value: use callee-saved so each survives until RetPln.
                 allocCalleeSavedOrStack(vreg, m.type);
