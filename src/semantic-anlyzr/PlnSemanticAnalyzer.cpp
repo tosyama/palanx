@@ -178,7 +178,7 @@ static json unsizedArrToPntr(const json& type) {
 		&& type["size-expr"].is_null())
 		return {{"type-kind","pntr"},{"base-type", unsizedArrToPntr(type["base-type"])}};
 	return type;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 static void normalizeUnsizedArrSig(json& funcDef) {
 	if (funcDef.contains("parameters"))
@@ -516,7 +516,7 @@ json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 		{"stmt-type", "expr"},
 		{"body", sa_expression(stmt["body"])}
 	};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
@@ -761,7 +761,7 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 
 	leaveScope();
 	return {{"stmt-type", "block"}, {"body", move(body)}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_if_stmt(const json& stmt)
 {
@@ -814,7 +814,7 @@ json PlnSemanticAnalyzer::sa_break_stmt(const json& stmt)
 		exit(1);
 	}
 	return {{"stmt-type", "break"}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_continue_stmt(const json& stmt)
 {
@@ -823,7 +823,7 @@ json PlnSemanticAnalyzer::sa_continue_stmt(const json& stmt)
 		exit(1);
 	}
 	return {{"stmt-type", "continue"}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 {
