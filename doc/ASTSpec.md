@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.17
+ver. 0.1.18
 
 \* - Required
 
@@ -95,6 +95,9 @@ Variable type
         - "raw"      (`[]type`)  — initialization required; element count determined by SA from initializer
         - "fixed"    (`[#]type`) — initialization required; element count determined by SA from initializer
         - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
+    Note: For `[m][n]T` (2D array), the outer arr's `base-type` is itself an `arr` type
+    (`specifier: "raw"`, leaf `base-type` is a prim type). SA transforms this nested arr
+    into a `pntr(pntr(T))` var-decl with auto-generated allocator calls (see SASpec.md).
   4. embed - Directly embedded memory type (`$T`)
     - base-type\* - Base variable type
   5. strct - Struct type

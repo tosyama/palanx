@@ -524,7 +524,14 @@ var_declaration: type_expr move_owner_r ID
 					&& ibt.contains("size-expr") && ibt["size-expr"].is_null();
 			}
 		}
-		if (!$2 && (tk == "prim" || is_valid_arr || is_unsized_arr || is_pntr_arr))
+		bool is_multidim_arr = tk == "arr"
+			&& $1.value("specifier","") == "raw"
+			&& !$1["size-expr"].is_null()
+			&& $1["base-type"].value("type-kind","") == "arr"
+			&& $1["base-type"].value("specifier","") == "raw"
+			&& !$1["base-type"]["size-expr"].is_null()
+			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
+		if (!$2 && (tk == "prim" || is_valid_arr || is_unsized_arr || is_pntr_arr || is_multidim_arr))
 			$$ = {{"name", $3}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};
@@ -771,11 +778,22 @@ dict_items: ID ':' expression
 store_loc
 	: ID
 	{ $$ = {{"kind", "var"}, {"name", move($1)}}; }
-	| ID '[' expression ']'
+	| store_loc '[' expression ']'
 	{
-		json id_node = {{"expr-type", "id"}, {"name", move($1)}};
-		LOC(id_node, @1);
-		$$ = {{"kind", "arr-index"}, {"array", move(id_node)}, {"index", move($3)}};
+		json array_expr;
+		if ($1["kind"] == "var") {
+			array_expr = {{"expr-type", "id"}, {"name", $1["name"]}};
+			LOC(array_expr, @1);
+		} else {
+			array_expr = {
+				{"expr-type", "arr-index"},
+				{"array", $1["array"]},
+				{"index", $1["index"]}
+			};
+			if ($1.contains("loc")) array_expr["loc"] = $1["loc"];
+		}
+		$$ = {{"kind", "arr-index"}, {"array", move(array_expr)}, {"index", move($3)}};
+		LOC($$, @$);
 	}
 	| '(' tapple_inner ')'
 	{ $$ = {{"kind", "not-impl"}}; }

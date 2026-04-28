@@ -292,6 +292,12 @@ TEST(build_mgr, ptr_arr_transfer) {
 	ASSERT_EQ(output, "6\n");
 }
 
+TEST(build_mgr, 2d_array) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/039_2d_array.pa");
+	ASSERT_EQ(output, "1 2 3\n4 5 6\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

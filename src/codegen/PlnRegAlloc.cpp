@@ -98,8 +98,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // Mov copies src into dst (the variable's canonical VReg).
             // dst is always isVar (allocated by Pass B); only src needs tracking here.
             [&](const Mov& mv)        { addUse(mv.src); },
-            [&](const DerefLoad& dl)  { setDef(dl.dst, dl.type); addUse(dl.addr); },
-            [&](const DerefStore& ds) { addUse(ds.addr); addUse(ds.src); },
+            [&](const DerefLoadIdx& dl)  { setDef(dl.dst, dl.type); addUse(dl.base); addUse(dl.idx); },
+            [&](const DerefStoreIdx& ds) { addUse(ds.base); addUse(ds.idx); addUse(ds.src); },
             [&](const ExitCode&)   {},
             [&](const BlockEnter&) {},
             [&](const BlockLeave&) {},
@@ -145,13 +145,47 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         result[vreg] = PhysLoc{"", type, -stack_bytes};
     };
 
+    // For temporary VRegs (non-variable, non-return-value, no call args): reuse an expired
+    // stack slot of the same size if one exists, otherwise allocate a fresh slot.
+    auto allocTempStackSlot = [&](VReg vreg, VRegType type, int def_idx) {
+        int sz = sizeOfType(type);
+        auto getEnd = [&](VReg vr) -> int {
+            int e = meta[vr].last_any_use;
+            for (auto& [ci, pos] : meta[vr].call_uses) e = std::max(e, ci);
+            return e;
+        };
+        // Build the maximum lifetime-end per local stack slot of matching size.
+        // A slot may be shared by multiple VRegs (due to earlier reuse), so we
+        // must ensure ALL current occupants have expired before reusing the slot.
+        map<int, int> slot_end;  // stackOffset → max vr_end of all VRegs at that offset
+        for (auto& [vr, loc] : result) {
+            if (!loc.isStack() || loc.stackOffset >= 0) continue;  // skip non-local
+            if (sizeOfType(meta[vr].type) != sz) continue;
+            int e = getEnd(vr);
+            auto [it, inserted] = slot_end.emplace(loc.stackOffset, e);
+            if (!inserted) it->second = std::max(it->second, e);
+        }
+        for (auto& [offset, max_end] : slot_end) {
+            if (max_end < def_idx) {
+                result[vreg] = PhysLoc{"", type, offset};
+                return;
+            }
+        }
+        allocStackSlot(vreg, type);
+    };
+
     auto allocCalleeSavedOrStack = [&](VReg vreg, VRegType type) {
         // Float VRegs cannot use integer callee-saved registers; always spill to stack.
         bool is_flt = (type == VRegType::Float32 || type == VRegType::Float64);
         if (!is_flt && callee_idx < (int)phys.calleeSaved.size()) {
             result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], type};
         } else {
-            allocStackSlot(vreg, type);
+            const VRegMeta& vm = meta[vreg];
+            if (!vm.isVar && !vm.isRetValue && vm.call_uses.empty()) {
+                allocTempStackSlot(vreg, type, vm.def_idx);
+            } else {
+                allocStackSlot(vreg, type);
+            }
         }
     };
 
@@ -221,8 +255,23 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
         if (m.call_uses.empty()) {
             if (m.isRetValue && numRetValues == 1) {
-                // Single return value: bind directly to %rax to avoid callee-saved pollution.
-                result[vreg] = PhysLoc{"%rax", m.type};
+                // Single return value: bind to %rax, but if it's defined by a call and another
+                // call clobbers %rax before the last use, spill to callee-saved instead.
+                bool def_is_call = (find(call_indices.begin(), call_indices.end(), m.def_idx) != call_indices.end());
+                bool crosses_call = false;
+                if (def_is_call) {
+                    for (int c_idx : call_indices) {
+                        if (c_idx > m.def_idx && c_idx < m.last_any_use) {
+                            crosses_call = true;
+                            break;
+                        }
+                    }
+                }
+                if (!crosses_call) {
+                    result[vreg] = PhysLoc{"%rax", m.type};
+                } else {
+                    allocCalleeSavedOrStack(vreg, m.type);
+                }
             } else if (m.isRetValue) {
                 // Multi-return value: use callee-saved so each survives until RetPln.
                 allocCalleeSavedOrStack(vreg, m.type);
