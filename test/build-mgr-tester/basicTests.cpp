@@ -298,6 +298,12 @@ TEST(build_mgr, 2d_array) {
 	ASSERT_EQ(output, "1 2 3\n4 5 6\n");
 }
 
+TEST(build_mgr, int32_index) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/041_int32_index.pa");
+	ASSERT_EQ(output, "30\n10\n20\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

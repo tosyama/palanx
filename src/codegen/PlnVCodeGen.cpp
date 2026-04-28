@@ -204,7 +204,7 @@ VReg PlnVCodeGen::lowerArrIndexExpr(const ArrIndexExpr& e, VFunc& func)
     VReg base = lowerExpr(*e.array, func);
     VReg idx  = lowerExpr(*e.index, func);
     VReg dst  = allocVReg();
-    func.instrs.push_back(DerefLoadIdx{dst, base, idx, e.scale, e.type});
+    func.instrs.push_back(DerefLoadIdx{dst, base, idx, e.scale, e.type, e.idx_type});
     return dst;
 }
 
@@ -213,7 +213,7 @@ void PlnVCodeGen::lowerArrAssignStmt(const ArrAssignStmt& s, VFunc& func)
     VReg base = lowerExpr(*s.array, func);
     VReg idx  = lowerExpr(*s.index, func);
     VReg src  = lowerExpr(*s.value, func);
-    func.instrs.push_back(DerefStoreIdx{base, idx, s.scale, src, s.type});
+    func.instrs.push_back(DerefStoreIdx{base, idx, s.scale, src, s.type, s.idx_type});
 }
 
 void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)

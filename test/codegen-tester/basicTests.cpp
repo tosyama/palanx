@@ -767,3 +767,16 @@ TEST(codegen, deref_store_reg_src) {
     // DerefStore with register src: movb %rNNb, (addr) — not scratch %al
     ASSERT_NE(asm_text.find("movb %r"), string::npos);
 }
+
+TEST(codegen, deref_idx_int32_extend) {
+    // Verifies that int32 index is sign-extended (movslq) rather than zero-loaded (movq).
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/043_deref_idx_int32.sa.json";
+    string asmf = "out/043_deref_idx_int32.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movslq"), string::npos);
+}
