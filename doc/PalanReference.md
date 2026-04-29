@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.18
+**Version:** v0.1.19
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -161,12 +161,20 @@ int32 a = 5, b = 10;   // type inheritance: b is also int32
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
 | Explicit cast | `type(expr)` | `int32(x)` |
+| Logical AND | `expr && expr` | `a && b` |
+| Logical OR | `expr \|\| expr` | `a \|\| b` |
+| Logical NOT | `!expr` | `!x` |
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
 
-Operator precedence (high to low): unary minus, `* / %`, `+ -`, comparisons, `->`.
+Operator precedence (high to low): unary minus / `!`, `* / %`, `+ -`, comparisons, `&&`, `||`, `->`.
 All binary operators are left-associative.
 
 Comparison operators produce `int32` (1 if true, 0 if false). Both operands are widened to the same type before comparison.
+
+Logical operators `&&` and `||` use **short-circuit evaluation**: the right operand is not
+evaluated if the result is already determined by the left operand. Both operands must be
+integer types (float operands are a compile error). The result is always `int32` (1 if true,
+0 if false).
 
 The assignment expression `expr -> var` evaluates `expr`, stores it in `var`, and the result is the stored value.
 

@@ -304,6 +304,12 @@ TEST(build_mgr, int32_index) {
 	ASSERT_EQ(output, "30\n10\n20\n");
 }
 
+TEST(build_mgr, logical_ops) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/040_logical_ops.pa");
+	ASSERT_EQ(output, "1\n0\n1\n1\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+
+func is_leap_year(int64 year) -> int32 {
+    return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+}
+
+printf("%d\n", is_leap_year(2024));
+printf("%d\n", is_leap_year(1900));
+printf("%d\n", is_leap_year(2000));
+printf("%d\n", !is_leap_year(2023));
