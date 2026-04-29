@@ -32,6 +32,9 @@ enum class ExprKind {
     CCCall,
     PlnCall,
     ArrIndex,
+    LogicalNot,
+    LogicalAnd,
+    LogicalOr,
 };
 
 struct Expr {
@@ -234,6 +237,23 @@ struct ArrIndexExpr : Expr {
     int scale;                 // element byte size: 1, 2, 4, or 8
     VRegType type;             // element type
     VRegType idx_type;         // index expression type
+};
+
+struct LogicalNotExpr : Expr {
+    LogicalNotExpr() : Expr(ExprKind::LogicalNot) {}
+    unique_ptr<Expr> operand;
+};
+
+struct LogicalAndExpr : Expr {
+    LogicalAndExpr() : Expr(ExprKind::LogicalAnd) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+};
+
+struct LogicalOrExpr : Expr {
+    LogicalOrExpr() : Expr(ExprKind::LogicalOr) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
 };
 
 struct ArrAssignStmt : Stmt {

@@ -780,3 +780,46 @@ TEST(codegen, deref_idx_int32_extend) {
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("movslq"), string::npos);
 }
+
+TEST(codegen, logical_ops) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/044_logical_ops.sa.json";
+    string asmf = "out/044_logical_ops.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // logical-and: short-circuit label and conditional jump
+    ASSERT_NE(asm_text.find(".Lland0_end:"),    string::npos);
+    ASSERT_NE(asm_text.find("je .Lland0_end"),  string::npos);
+    // logical-or: short-circuit labels and jumps
+    ASSERT_NE(asm_text.find(".Llor1_true:"),    string::npos);
+    ASSERT_NE(asm_text.find(".Llor1_end:"),     string::npos);
+    ASSERT_NE(asm_text.find("jne .Llor1_true"), string::npos);
+    // logical-not: short-circuit label and conditional jump
+    ASSERT_NE(asm_text.find(".Lnot2_end:"),     string::npos);
+    ASSERT_NE(asm_text.find("je .Lnot2_end"),   string::npos);
+}
+
+TEST(codegen, if_not) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/045_if_not.sa.json";
+    string asmf = "out/045_if_not.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // No intermediate .Lnot* label: LogicalNot must not be materialized
+    ASSERT_EQ(asm_text.find(".Lnot"),            string::npos);
+
+    // if (!x): condition inverted → jne (not je) to if end label
+    ASSERT_NE(asm_text.find("jne .Lif0_end"),    string::npos);
+    ASSERT_EQ(asm_text.find("je .Lif0_end"),     string::npos);
+
+    // while (!x): condition inverted → jne to while end label
+    ASSERT_NE(asm_text.find("jne .Lwhile1_end"), string::npos);
+    ASSERT_NE(asm_text.find(".Lwhile1_start:"),  string::npos);
+}

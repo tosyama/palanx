@@ -49,6 +49,7 @@ class PlnVCodeGen {
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
     void lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func);
     void lowerBlockStmt(const BlockStmt& stmt, VFunc& func);
+    std::pair<VReg, bool> lowerBranchCond(const Expr& expr, VFunc& func);
     void lowerIfStmt(const IfStmt& stmt, VFunc& func);
     void lowerWhileStmt(const WhileStmt& stmt, VFunc& func);
     void lowerBreakStmt(VFunc& func);

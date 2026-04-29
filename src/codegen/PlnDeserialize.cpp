@@ -141,6 +141,24 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         }
     }
 
+    if (expr_type == "logical-not") {
+        auto e = make_unique<LogicalNotExpr>();
+        e->operand = deserializeExpr(j["operand"]);
+        return e;
+    }
+    if (expr_type == "logical-and") {
+        auto e = make_unique<LogicalAndExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        return e;
+    }
+    if (expr_type == "logical-or") {
+        auto e = make_unique<LogicalOrExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        return e;
+    }
+
     if (expr_type == "arr-index") {
         auto e = make_unique<ArrIndexExpr>();
         e->array    = deserializeExpr(j["array"]);
