@@ -402,13 +402,58 @@ void PlnVCodeGen::lowerBlockStmt(const BlockStmt& stmt, VFunc& func)
     func.instrs.push_back(BlockLeave{move(expired)});
 }
 
-pair<VReg, bool> PlnVCodeGen::lowerBranchCond(const Expr& expr, VFunc& func)
+void PlnVCodeGen::lowerBranchCond(const Expr& expr, VFunc& func, const string& falseLabel)
 {
     if (expr.kind == ExprKind::LogicalNot) {
         auto& e = static_cast<const LogicalNotExpr&>(expr);
-        return {lowerExpr(*e.operand, func), false};  // jumpIfZero=false → jne
+        VReg cond = lowerExpr(*e.operand, func);
+        func.instrs.push_back(CondJmp{falseLabel, cond, false});  // jne
+        return;
     }
-    return {lowerExpr(expr, func), true};             // jumpIfZero=true  → je
+    if (expr.kind == ExprKind::LogicalAnd) {
+        auto& e = static_cast<const LogicalAndExpr&>(expr);
+        lowerBranchCond(*e.left,  func, falseLabel);
+        lowerBranchCond(*e.right, func, falseLabel);
+        return;
+    }
+    if (expr.kind == ExprKind::LogicalOr) {
+        auto& e = static_cast<const LogicalOrExpr&>(expr);
+        int idx = labelCounter_++;
+        string skipLabel = ".Llor" + to_string(idx) + "_skip";
+        lowerBranchCondTrue(*e.left, func, skipLabel);   // left true → skip right check
+        lowerBranchCond(*e.right, func, falseLabel);     // right false → jump to falseLabel
+        func.instrs.push_back(Label{skipLabel});
+        return;
+    }
+    VReg cond = lowerExpr(expr, func);
+    func.instrs.push_back(CondJmp{falseLabel, cond, true});  // je
+}
+
+void PlnVCodeGen::lowerBranchCondTrue(const Expr& expr, VFunc& func, const string& trueLabel)
+{
+    if (expr.kind == ExprKind::LogicalNot) {
+        auto& e = static_cast<const LogicalNotExpr&>(expr);
+        VReg cond = lowerExpr(*e.operand, func);
+        func.instrs.push_back(CondJmp{trueLabel, cond, true});   // je: !x true when x==0
+        return;
+    }
+    if (expr.kind == ExprKind::LogicalOr) {
+        auto& e = static_cast<const LogicalOrExpr&>(expr);
+        lowerBranchCondTrue(*e.left,  func, trueLabel);
+        lowerBranchCondTrue(*e.right, func, trueLabel);
+        return;
+    }
+    if (expr.kind == ExprKind::LogicalAnd) {
+        auto& e = static_cast<const LogicalAndExpr&>(expr);
+        int idx = labelCounter_++;
+        string skipLabel = ".Land" + to_string(idx) + "_skip";
+        lowerBranchCond(*e.left, func, skipLabel);       // left false → skip right check
+        lowerBranchCondTrue(*e.right, func, trueLabel);  // right true → jump to trueLabel
+        func.instrs.push_back(Label{skipLabel});
+        return;
+    }
+    VReg cond = lowerExpr(expr, func);
+    func.instrs.push_back(CondJmp{trueLabel, cond, false});  // jne: jump when non-zero
 }
 
 void PlnVCodeGen::lowerIfStmt(const IfStmt& stmt, VFunc& func)
@@ -416,17 +461,15 @@ void PlnVCodeGen::lowerIfStmt(const IfStmt& stmt, VFunc& func)
     int    idx      = labelCounter_++;
     string endLabel = ".Lif" + to_string(idx) + "_end";
 
-    auto [cond, jumpIfZero] = lowerBranchCond(*stmt.cond, func);
-
     if (stmt.elseStmt) {
         string elseLabel = ".Lif" + to_string(idx) + "_else";
-        func.instrs.push_back(CondJmp{elseLabel, cond, jumpIfZero});
+        lowerBranchCond(*stmt.cond, func, elseLabel);
         lowerStmt(*stmt.thenStmt, func);
         func.instrs.push_back(Jmp{endLabel});
         func.instrs.push_back(Label{elseLabel});
         lowerStmt(*stmt.elseStmt, func);
     } else {
-        func.instrs.push_back(CondJmp{endLabel, cond, jumpIfZero});
+        lowerBranchCond(*stmt.cond, func, endLabel);
         lowerStmt(*stmt.thenStmt, func);
     }
 
@@ -441,8 +484,7 @@ void PlnVCodeGen::lowerWhileStmt(const WhileStmt& stmt, VFunc& func)
 
     loopStack_.push_back({startLabel, endLabel});
     func.instrs.push_back(Label{startLabel});
-    auto [cond, jumpIfZero] = lowerBranchCond(*stmt.cond, func);
-    func.instrs.push_back(CondJmp{endLabel, cond, jumpIfZero});
+    lowerBranchCond(*stmt.cond, func, endLabel);
     lowerStmt(*stmt.body, func);
     func.instrs.push_back(Jmp{startLabel});
     func.instrs.push_back(Label{endLabel});

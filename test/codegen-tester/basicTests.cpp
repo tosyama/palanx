@@ -823,3 +823,46 @@ TEST(codegen, if_not) {
     ASSERT_NE(asm_text.find("jne .Lwhile1_end"), string::npos);
     ASSERT_NE(asm_text.find(".Lwhile1_start:"),  string::npos);
 }
+
+TEST(codegen, if_and) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/046_if_and.sa.json";
+    string asmf = "out/046_if_and.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // No .Lland* label: LogicalAnd must not be materialized in branch context
+    ASSERT_EQ(asm_text.find(".Lland"), string::npos);
+
+    // if (a && b): both operands jump directly to if end label
+    ASSERT_NE(asm_text.find("je .Lif0_end"),      string::npos);
+
+    // while (a && b): both operands jump directly to while end label
+    ASSERT_NE(asm_text.find("je .Lwhile1_end"),   string::npos);
+    ASSERT_NE(asm_text.find(".Lwhile1_start:"),   string::npos);
+}
+
+TEST(codegen, if_or) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/047_if_or.sa.json";
+    string asmf = "out/047_if_or.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // No _true: label: LogicalOr must not be materialized in branch context
+    ASSERT_EQ(asm_text.find("_true:"),          string::npos);
+
+    // if (a || b): left true → jne to skip label; right false → je to if end
+    ASSERT_NE(asm_text.find("jne .Llor"),       string::npos);
+    ASSERT_NE(asm_text.find("je .Lif0_end"),    string::npos);
+
+    // while (a || b): right false → je to while end
+    ASSERT_NE(asm_text.find("je .Lwhile2_end"), string::npos);
+    ASSERT_NE(asm_text.find(".Lwhile2_start:"), string::npos);
+}
