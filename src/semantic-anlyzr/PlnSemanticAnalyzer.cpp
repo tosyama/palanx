@@ -346,6 +346,36 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		sa_expr["right"]      = right;
 		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int32"}};
 
+	} else if (expr_type == "logical-and" || expr_type == "logical-or") {
+		json left  = sa_expression(expr["left"]);
+		json right = sa_expression(expr["right"]);
+		for (const json* op : {&left, &right}) {
+			const PlnType* t = registry_.fromJson((*op)["value-type"]);
+			bool isFloat = t->kind == PlnType::Kind::Prim &&
+				(static_cast<const PrimType*>(t)->name == PrimType::Name::Float32 ||
+				 static_cast<const PrimType*>(t)->name == PrimType::Name::Float64);
+			if (t->kind != PlnType::Kind::Prim || isFloat) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_LogicalOpNotInteger) << endl;
+				exit(1);
+			}
+		}
+		sa_expr["left"]       = left;
+		sa_expr["right"]      = right;
+		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int32"}};
+
+	} else if (expr_type == "logical-not") {
+		json operand = sa_expression(expr["operand"]);
+		const PlnType* t = registry_.fromJson(operand["value-type"]);
+		bool isFloat = t->kind == PlnType::Kind::Prim &&
+			(static_cast<const PrimType*>(t)->name == PrimType::Name::Float32 ||
+			 static_cast<const PrimType*>(t)->name == PrimType::Name::Float64);
+		if (t->kind != PlnType::Kind::Prim || isFloat) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_LogicalOpNotInteger) << endl;
+			exit(1);
+		}
+		sa_expr["operand"]    = operand;
+		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int32"}};
+
 	} else if (expr_type == "cast") {
 		const PlnType* target  = registry_.fromJson(expr["target-type"]);
 		json src               = sa_expression(expr["src"]);
