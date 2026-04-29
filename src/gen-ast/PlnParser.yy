@@ -135,6 +135,8 @@ class PlnLexer;
 %token DBL_PLUS	"++"
 %token OPE_EQ	"=="
 %token OPE_NE	"!="
+%token OPE_AND	"&&"
+%token OPE_OR	"||"
 
 %type <vector<json>>	statements
 %type <json>	block_stmt expr_stmt
@@ -157,11 +159,13 @@ class PlnLexer;
 %type <json>	if_stmt else_stmt while_loop
 
 %left ARROW DBL_ARROW
+%left OPE_OR
+%left OPE_AND
 %left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
 %left '*' '/' '%' '&' '|'
-%right UNARY_MINUS
+%right UNARY_MINUS '!'
 %left '.'
 
 %start module
@@ -656,6 +660,12 @@ expression: term
 	{ $$ = {{"expr-type", "cmp"}, {"op", "=="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression OPE_NE expression
 	{ $$ = {{"expr-type", "cmp"}, {"op", "!="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression OPE_AND expression
+	{ $$ = {{"expr-type", "logical-and"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression OPE_OR expression
+	{ $$ = {{"expr-type", "logical-or"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| '!' expression
+	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); }
 	| expression ARROW store_loc
 	{
 		if ($3.value("kind", "") == "var") {
