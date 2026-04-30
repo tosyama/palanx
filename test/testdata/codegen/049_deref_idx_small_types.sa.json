@@ -1,0 +1,285 @@
+{
+  "original": "/test/deref_idx_small_types.pa",
+  "str-literals": [],
+  "functions": [
+    {
+      "name": "f_int8_reg",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+        { "name": "i",   "var-type": { "type-kind": "prim", "type-name": "int8" } }
+      ],
+      "body": [
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "int8" },
+                         "value-type": { "type-kind": "prim", "type-name": "int8" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "f_int8_slot",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } }
+      ],
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            { "name": "i", "var-type": { "type-kind": "prim", "type-name": "int8" },
+              "init": { "expr-type": "lit-int", "value": "0",
+                        "value-type": { "type-kind": "prim", "type-name": "int8" } } }
+          ]
+        },
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "int8" },
+                         "value-type": { "type-kind": "prim", "type-name": "int8" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "f_int16_reg",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+        { "name": "i",   "var-type": { "type-kind": "prim", "type-name": "int16" } }
+      ],
+      "body": [
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "int16" },
+                         "value-type": { "type-kind": "prim", "type-name": "int16" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "f_int16_slot",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } }
+      ],
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            { "name": "i", "var-type": { "type-kind": "prim", "type-name": "int16" },
+              "init": { "expr-type": "lit-int", "value": "0",
+                        "value-type": { "type-kind": "prim", "type-name": "int16" } } }
+          ]
+        },
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "int16" },
+                         "value-type": { "type-kind": "prim", "type-name": "int16" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "f_uint8_reg",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+        { "name": "i",   "var-type": { "type-kind": "prim", "type-name": "uint8" } }
+      ],
+      "body": [
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "uint8" },
+                         "value-type": { "type-kind": "prim", "type-name": "uint8" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "f_uint8_slot",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } }
+      ],
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            { "name": "i", "var-type": { "type-kind": "prim", "type-name": "uint8" },
+              "init": { "expr-type": "lit-int", "value": "0",
+                        "value-type": { "type-kind": "prim", "type-name": "uint8" } } }
+          ]
+        },
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "uint8" },
+                         "value-type": { "type-kind": "prim", "type-name": "uint8" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "f_uint16_reg",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+        { "name": "i",   "var-type": { "type-kind": "prim", "type-name": "uint16" } }
+      ],
+      "body": [
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "uint16" },
+                         "value-type": { "type-kind": "prim", "type-name": "uint16" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "f_uint16_slot",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } }
+      ],
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            { "name": "i", "var-type": { "type-kind": "prim", "type-name": "uint16" },
+              "init": { "expr-type": "lit-int", "value": "0",
+                        "value-type": { "type-kind": "prim", "type-name": "uint16" } } }
+          ]
+        },
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "uint16" },
+                         "value-type": { "type-kind": "prim", "type-name": "uint16" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "f_uint32_slot",
+      "ret-type": { "type-kind": "prim", "type-name": "int32" },
+      "parameters": [
+        { "name": "arr", "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } }
+      ],
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            { "name": "i", "var-type": { "type-kind": "prim", "type-name": "uint32" },
+              "init": { "expr-type": "lit-int", "value": "0",
+                        "value-type": { "type-kind": "prim", "type-name": "uint32" } } }
+          ]
+        },
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "arr-index",
+              "value-type": { "type-kind": "prim", "type-name": "int32" },
+              "array": { "expr-type": "id", "name": "arr",
+                         "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } },
+                         "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "int32" } } },
+              "index": { "expr-type": "id", "name": "i",
+                         "var-type":   { "type-kind": "prim", "type-name": "uint32" },
+                         "value-type": { "type-kind": "prim", "type-name": "uint32" } },
+              "elem-size": { "expr-type": "lit-uint", "value": "4",
+                             "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "statements": []
+}

@@ -890,3 +890,33 @@ TEST(codegen, if_or_complex) {
     ASSERT_NE(asm_text.find("jne .Llor5_skip"), string::npos);
     ASSERT_NE(asm_text.find("je .Lif4_end"),    string::npos);
 }
+
+TEST(codegen, deref_idx_small_types) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/049_deref_idx_small_types.sa.json";
+    string asmf = "out/049_deref_idx_small_types.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // Int8 reg: sign-extend from byte register
+    ASSERT_NE(asm_text.find("movsbq %sil, %r11"),     string::npos);
+    // Int8 slot: sign-extend from stack slot
+    ASSERT_NE(asm_text.find("movsbq -1(%rbp), %r11"), string::npos);
+    // Int16 reg: sign-extend from word register
+    ASSERT_NE(asm_text.find("movswq %si, %r11"),      string::npos);
+    // Int16 slot: sign-extend from stack slot
+    ASSERT_NE(asm_text.find("movswq -2(%rbp), %r11"), string::npos);
+    // Uint8 reg: zero-extend from byte register
+    ASSERT_NE(asm_text.find("movzbl %sil, %r11d"),    string::npos);
+    // Uint8 slot: zero-extend from stack slot
+    ASSERT_NE(asm_text.find("movzbl -8(%rbp), %r11d"), string::npos);
+    // Uint16 reg: zero-extend from word register
+    ASSERT_NE(asm_text.find("movzwl %si, %r11d"),     string::npos);
+    // Uint16 slot: zero-extend from stack slot
+    ASSERT_NE(asm_text.find("movzwl -8(%rbp), %r11d"), string::npos);
+    // Uint32 slot: zero-extend by movl from stack slot (upper 32 bits cleared by x86-64 movl)
+    ASSERT_NE(asm_text.find("movl -8(%rbp), %r11d"),  string::npos);
+}
