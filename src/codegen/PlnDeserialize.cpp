@@ -141,12 +141,31 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         }
     }
 
+    if (expr_type == "logical-not") {
+        auto e = make_unique<LogicalNotExpr>();
+        e->operand = deserializeExpr(j["operand"]);
+        return e;
+    }
+    if (expr_type == "logical-and") {
+        auto e = make_unique<LogicalAndExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        return e;
+    }
+    if (expr_type == "logical-or") {
+        auto e = make_unique<LogicalOrExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        return e;
+    }
+
     if (expr_type == "arr-index") {
         auto e = make_unique<ArrIndexExpr>();
-        e->array = deserializeExpr(j["array"]);
-        e->index = deserializeExpr(j["index"]);
-        e->scale = stoi(j["elem-size"]["value"].get<string>());
-        e->type  = toVRegType(j["value-type"]);
+        e->array    = deserializeExpr(j["array"]);
+        e->index    = deserializeExpr(j["index"]);
+        e->scale    = stoi(j["elem-size"]["value"].get<string>());
+        e->type     = toVRegType(j["value-type"]);
+        e->idx_type = toVRegType(j["index"]["value-type"]);
         return e;
     }
 
@@ -244,11 +263,12 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     if (stmt_type == "arr-assign") {
         auto s = make_unique<ArrAssignStmt>();
         const json& target = j["target"];
-        s->array = deserializeExpr(target["array"]);
-        s->index = deserializeExpr(target["index"]);
-        s->scale = stoi(target["elem-size"]["value"].get<string>());
-        s->type  = toVRegType(target["value-type"]);
-        s->value = deserializeExpr(j["value"]);
+        s->array    = deserializeExpr(target["array"]);
+        s->index    = deserializeExpr(target["index"]);
+        s->scale    = stoi(target["elem-size"]["value"].get<string>());
+        s->type     = toVRegType(target["value-type"]);
+        s->idx_type = toVRegType(target["index"]["value-type"]);
+        s->value    = deserializeExpr(j["value"]);
         return s;
     }
     if (stmt_type == "not-impl") {

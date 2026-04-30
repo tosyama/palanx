@@ -53,8 +53,8 @@ struct Label      { string name; };                              // name:
 struct Jmp        { string label; };                             // jmp label
 struct CondJmp    { string label; VReg cond; bool jumpIfZero; }; // testl+je/jne
 struct Mov        { VReg dst; VReg src; VRegType type; };        // dst = src (variable update)
-struct DerefLoadIdx  { VReg dst; VReg base; VReg idx; int scale; VRegType type; };  // dst = base[idx*scale]
-struct DerefStoreIdx { VReg base; VReg idx; int scale; VReg src; VRegType type; };  // base[idx*scale] = src
+struct DerefLoadIdx  { VReg dst; VReg base; VReg idx; int scale; VRegType type; VRegType idx_type; };  // dst = base[idx*scale]
+struct DerefStoreIdx { VReg base; VReg idx; int scale; VReg src; VRegType type; VRegType idx_type; };  // base[idx*scale] = src
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg, Cmp, Convert,
                              CallC, CallPln, RetPln, ExitCode,

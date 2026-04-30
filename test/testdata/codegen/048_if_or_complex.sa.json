@@ -1,0 +1,89 @@
+{
+  "original": "/test/if_or_complex.pa",
+  "str-literals": [],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "a",
+          "var-type": { "type-kind": "prim", "type-name": "int64" },
+          "init": { "expr-type": "lit-int", "value": "1",
+                    "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        },
+        {
+          "name": "b",
+          "var-type": { "type-kind": "prim", "type-name": "int64" },
+          "init": { "expr-type": "lit-int", "value": "0",
+                    "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        },
+        {
+          "name": "c",
+          "var-type": { "type-kind": "prim", "type-name": "int64" },
+          "init": { "expr-type": "lit-int", "value": "1",
+                    "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        }
+      ]
+    },
+    {
+      "stmt-type": "if",
+      "cond": {
+        "expr-type": "logical-or",
+        "value-type": { "type-kind": "prim", "type-name": "int32" },
+        "left": {
+          "expr-type": "logical-not",
+          "value-type": { "type-kind": "prim", "type-name": "int32" },
+          "operand": { "expr-type": "id", "name": "a",
+                       "var-type":   { "type-kind": "prim", "type-name": "int64" },
+                       "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        },
+        "right": { "expr-type": "id", "name": "b",
+                   "var-type":   { "type-kind": "prim", "type-name": "int64" },
+                   "value-type": { "type-kind": "prim", "type-name": "int64" } }
+      },
+      "then": { "stmt-type": "block", "body": [] }
+    },
+    {
+      "stmt-type": "if",
+      "cond": {
+        "expr-type": "logical-or",
+        "value-type": { "type-kind": "prim", "type-name": "int32" },
+        "left": {
+          "expr-type": "logical-or",
+          "value-type": { "type-kind": "prim", "type-name": "int32" },
+          "left":  { "expr-type": "id", "name": "a",
+                     "var-type":   { "type-kind": "prim", "type-name": "int64" },
+                     "value-type": { "type-kind": "prim", "type-name": "int64" } },
+          "right": { "expr-type": "id", "name": "b",
+                     "var-type":   { "type-kind": "prim", "type-name": "int64" },
+                     "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        },
+        "right": { "expr-type": "id", "name": "c",
+                   "var-type":   { "type-kind": "prim", "type-name": "int64" },
+                   "value-type": { "type-kind": "prim", "type-name": "int64" } }
+      },
+      "then": { "stmt-type": "block", "body": [] }
+    },
+    {
+      "stmt-type": "if",
+      "cond": {
+        "expr-type": "logical-or",
+        "value-type": { "type-kind": "prim", "type-name": "int32" },
+        "left": {
+          "expr-type": "logical-and",
+          "value-type": { "type-kind": "prim", "type-name": "int32" },
+          "left":  { "expr-type": "id", "name": "a",
+                     "var-type":   { "type-kind": "prim", "type-name": "int64" },
+                     "value-type": { "type-kind": "prim", "type-name": "int64" } },
+          "right": { "expr-type": "id", "name": "b",
+                     "var-type":   { "type-kind": "prim", "type-name": "int64" },
+                     "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        },
+        "right": { "expr-type": "id", "name": "c",
+                   "var-type":   { "type-kind": "prim", "type-name": "int64" },
+                   "value-type": { "type-kind": "prim", "type-name": "int64" } }
+      },
+      "then": { "stmt-type": "block", "body": [] }
+    }
+  ]
+}

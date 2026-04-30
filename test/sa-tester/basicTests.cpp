@@ -1020,3 +1020,42 @@ TEST(sa, 2d_arr_decl) {
 	ASSERT_EQ(last["body"]["args"][0]["name"], "mat");
 	ASSERT_EQ(last["body"]["args"][1]["name"], "__mat_d0");
 }
+
+TEST(sa, logical_ops) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/054_logical_ops.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// [0] int64 a, [1] int64 b, [2] int32 c, [3] a&&b, [4] a||b, [5] !a, [6] a&&b||!a, [7] a&&int32(c)
+	ASSERT_GE(stmts.size(), 8u);
+
+	// a && b  →  value-type int32
+	const auto& land = stmts[3]["body"];
+	ASSERT_EQ(land["expr-type"],               "logical-and");
+	ASSERT_EQ(land["value-type"]["type-name"], "int32");
+	ASSERT_EQ(land["left"]["name"],            "a");
+	ASSERT_EQ(land["right"]["name"],           "b");
+
+	// a || b  →  value-type int32
+	const auto& lor = stmts[4]["body"];
+	ASSERT_EQ(lor["expr-type"],               "logical-or");
+	ASSERT_EQ(lor["value-type"]["type-name"], "int32");
+
+	// !a  →  value-type int32
+	const auto& lnot = stmts[5]["body"];
+	ASSERT_EQ(lnot["expr-type"],               "logical-not");
+	ASSERT_EQ(lnot["value-type"]["type-name"], "int32");
+	ASSERT_EQ(lnot["operand"]["name"],         "a");
+
+	// a && b || !a  →  (a&&b) || (!a)
+	const auto& mixed = stmts[6]["body"];
+	ASSERT_EQ(mixed["expr-type"],                  "logical-or");
+	ASSERT_EQ(mixed["value-type"]["type-name"],    "int32");
+	ASSERT_EQ(mixed["left"]["expr-type"],          "logical-and");
+	ASSERT_EQ(mixed["right"]["expr-type"],         "logical-not");
+
+	// a && int32(c)  →  convert wraps c, value-type int32
+	const auto& with_cast = stmts[7]["body"];
+	ASSERT_EQ(with_cast["expr-type"],               "logical-and");
+	ASSERT_EQ(with_cast["value-type"]["type-name"], "int32");
+}

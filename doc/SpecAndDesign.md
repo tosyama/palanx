@@ -6,35 +6,37 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-04-25)
-version: 0.1.18
-- This iteration enables `[m][n]T` two-dimensional array declaration, `mat[i][j]` read/write,
-  and automatic allocator generation by the build manager.
-- `[m][n]T` variable declaration (2D only, leaf must be a primitive type).
-- `val -> mat[i][j]` write via chained store_loc in gen-ast.
-- SA: collects `alloc-shapes` metadata and emits allocator call + scope-exit free call.
-- build-mgr: auto-generates `__pln_alloc_*` / `__pln_free_*` Palan source, compiles, and links.
+### 2.1 Iteration Goal (2026-04-28)
+version: 0.1.19
+- This iteration adds logical operators (`&&`, `||`, `!`) with short-circuit evaluation,
+  and fixes array index sign/zero-extension for all integer types narrower than 64-bit.
+- gen-ast: `&&`, `||`, `!` tokens and AST nodes (`logical-and`, `logical-or`, `logical-not`).
+- SA: type-check logical expressions (integer operands only); annotate `value-type: int32`.
+- codegen: short-circuit evaluation for `&&`/`||` via `CondJmp`; `!` via `Cmp` against zero.
+- codegen (bug fix): `emitInstrDerefLoadIdx`/`emitInstrDerefStoreIdx` emit correct sign/zero-extension
+  instruction for all integer index types (int8/16/32 → sign-extend; uint8/16/32 → zero-extend).
 
 The goal is that the following program produces correct output:
 
 ```palan
 cinclude <stdio.h>;
 
-int64 rows = 2;
-int64 cols = 3;
-[rows][cols]int32 mat;
+func is_leap_year(int64 year) -> int32 {
+    return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+}
 
-int32(1) -> mat[0][0]; int32(2) -> mat[0][1]; int32(3) -> mat[0][2];
-int32(4) -> mat[1][0]; int32(5) -> mat[1][1]; int32(6) -> mat[1][2];
-
-printf("%d %d %d\n", mat[0][0], mat[0][1], mat[0][2]);
-printf("%d %d %d\n", mat[1][0], mat[1][1], mat[1][2]);
+printf("%d\n", is_leap_year(2024));   // 1
+printf("%d\n", is_leap_year(1900));   // 0
+printf("%d\n", is_leap_year(2000));   // 1
+printf("%d\n", !is_leap_year(2023));  // 1
 ```
 
 Expected output:
 ```
-1 2 3
-4 5 6
+1
+0
+1
+1
 ```
 
 

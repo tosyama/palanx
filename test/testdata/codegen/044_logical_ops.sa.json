@@ -1,0 +1,73 @@
+{
+  "original": "/test/logical_ops.pa",
+  "str-literals": [
+    { "label": ".str0", "value": "%d\n" }
+  ],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "a",
+          "var-type": { "type-kind": "prim", "type-name": "int64" },
+          "init": { "expr-type": "lit-int", "value": "1", "value-type": {"type-kind": "prim", "type-name": "int64"} }
+        },
+        {
+          "name": "b",
+          "var-type": { "type-kind": "prim", "type-name": "int64" },
+          "init": { "expr-type": "lit-int", "value": "0", "value-type": {"type-kind": "prim", "type-name": "int64"} }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}} },
+          {
+            "expr-type": "logical-and",
+            "value-type": {"type-kind": "prim", "type-name": "int32"},
+            "left":  { "expr-type": "id", "name": "a", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} },
+            "right": { "expr-type": "id", "name": "b", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} }
+          }
+        ]
+      }
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}} },
+          {
+            "expr-type": "logical-or",
+            "value-type": {"type-kind": "prim", "type-name": "int32"},
+            "left":  { "expr-type": "id", "name": "a", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} },
+            "right": { "expr-type": "id", "name": "b", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} }
+          }
+        ]
+      }
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}} },
+          {
+            "expr-type": "logical-not",
+            "value-type": {"type-kind": "prim", "type-name": "int32"},
+            "operand": { "expr-type": "id", "name": "a", "var-type": {"type-kind": "prim", "type-name": "int64"}, "value-type": {"type-kind": "prim", "type-name": "int64"} }
+          }
+        ]
+      }
+    }
+  ]
+}

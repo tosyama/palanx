@@ -55,7 +55,9 @@ enum {
 	AT_EXCL =	PlnParser::token::AT_EXCL,
 	DBL_PLUS =	PlnParser::token::DBL_PLUS,
 	OPE_EQ =	PlnParser::token::OPE_EQ,
-	OPE_NE =	PlnParser::token::OPE_NE
+	OPE_NE =	PlnParser::token::OPE_NE,
+	OPE_AND =	PlnParser::token::OPE_AND,
+	OPE_OR =	PlnParser::token::OPE_OR
 };
 
 static string& unescape(string& str);
@@ -156,6 +158,8 @@ COMMENT1	\/\/[^\n]*\n
 <*>"++"	{ return DBL_PLUS; }
 <*>"=="	{ return OPE_EQ; }
 <*>"!="	{ return OPE_NE; }
+<*>"&&"	{ return OPE_AND; }
+<*>"||"	{ return OPE_OR; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
 <*><<EOF>>	{ return 0; }

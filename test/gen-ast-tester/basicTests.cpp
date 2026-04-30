@@ -560,3 +560,36 @@ TEST(gen_ast, multidim_arr) {
 	ASSERT_EQ(target["array"]["array"]["expr-type"], "id");
 	ASSERT_EQ(target["array"]["array"]["name"], "mat");
 }
+
+TEST(gen_ast, logical_ops) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/018_logical_ops.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 6);  // 2 var-decls + 4 expr-stmts
+
+	// a && b
+	ASSERT_EQ(stmts[2]["stmt-type"], "expr");
+	const auto& land = stmts[2]["body"];
+	ASSERT_EQ(land["expr-type"], "logical-and");
+	ASSERT_EQ(land["left"]["name"],  "a");
+	ASSERT_EQ(land["right"]["name"], "b");
+
+	// a || b
+	const auto& lor = stmts[3]["body"];
+	ASSERT_EQ(lor["expr-type"], "logical-or");
+	ASSERT_EQ(lor["left"]["name"],  "a");
+	ASSERT_EQ(lor["right"]["name"], "b");
+
+	// !a
+	const auto& lnot = stmts[4]["body"];
+	ASSERT_EQ(lnot["expr-type"], "logical-not");
+	ASSERT_EQ(lnot["operand"]["name"], "a");
+
+	// a && b || !a  →  (a && b) || (!a)  (&& binds tighter than ||)
+	const auto& mixed = stmts[5]["body"];
+	ASSERT_EQ(mixed["expr-type"], "logical-or");
+	ASSERT_EQ(mixed["left"]["expr-type"],  "logical-and");
+	ASSERT_EQ(mixed["right"]["expr-type"], "logical-not");
+}

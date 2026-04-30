@@ -117,6 +117,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_UnsizedArrVarDecl:
 			return "Unsized array type cannot be used in variable declaration.";
 
+		case E_LogicalOpNotInteger:
+			return "Logical operator operand must be an integer type.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

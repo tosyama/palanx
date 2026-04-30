@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.18
+ver. 0.1.19
 
 \* - Required
 
@@ -172,7 +172,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "logical-and" "logical-or" "logical-not"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -206,6 +206,14 @@ Expression model
     - array\* - Array expression model
     - index\* - Index expression model
     (elem-size is added by SA; not present in AST)
+  13. logical-and - Short-circuit logical AND (`a && b`; result: int32, 0 or 1)
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  14. logical-or - Short-circuit logical OR (`a || b`; result: int32, 0 or 1)
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  15. logical-not - Logical NOT (`!a`; result: int32, 0 or 1)
+    - operand\* - Operand expression model
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

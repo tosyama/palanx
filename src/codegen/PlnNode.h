@@ -32,6 +32,9 @@ enum class ExprKind {
     CCCall,
     PlnCall,
     ArrIndex,
+    LogicalNot,
+    LogicalAnd,
+    LogicalOr,
 };
 
 struct Expr {
@@ -228,11 +231,29 @@ struct ContinueStmt : Stmt {
 };
 
 struct ArrIndexExpr : Expr {
-    explicit ArrIndexExpr() : Expr(ExprKind::ArrIndex), scale(4), type(VRegType::Int64) {}
+    explicit ArrIndexExpr() : Expr(ExprKind::ArrIndex), scale(4), type(VRegType::Int64), idx_type(VRegType::Int64) {}
     unique_ptr<Expr> array;   // Ptr64 expression (heap pointer)
     unique_ptr<Expr> index;   // integer index expression
     int scale;                 // element byte size: 1, 2, 4, or 8
     VRegType type;             // element type
+    VRegType idx_type;         // index expression type
+};
+
+struct LogicalNotExpr : Expr {
+    LogicalNotExpr() : Expr(ExprKind::LogicalNot) {}
+    unique_ptr<Expr> operand;
+};
+
+struct LogicalAndExpr : Expr {
+    LogicalAndExpr() : Expr(ExprKind::LogicalAnd) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+};
+
+struct LogicalOrExpr : Expr {
+    LogicalOrExpr() : Expr(ExprKind::LogicalOr) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
 };
 
 struct ArrAssignStmt : Stmt {
@@ -241,6 +262,7 @@ struct ArrAssignStmt : Stmt {
     unique_ptr<Expr> index;
     int scale;
     VRegType type;
+    VRegType idx_type = VRegType::Int64;  // index expression type
     unique_ptr<Expr> value;
 };
 

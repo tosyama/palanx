@@ -155,6 +155,70 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(CallPln{e.name, move(args), {dst}, {e.retType}});
             return dst;
         }
+        case ExprKind::LogicalNot: {
+            auto& e = static_cast<const LogicalNotExpr&>(expr);
+            int idx = labelCounter_++;
+            string endLabel = ".Lnot" + to_string(idx) + "_end";
+
+            VReg dst = allocVReg();
+            func.instrs.push_back(InitVar{dst, VRegType::Int32, 1});  // assume true
+
+            VReg src = lowerExpr(*e.operand, func);
+            func.instrs.push_back(CondJmp{endLabel, src, true});  // operand==0 → keep 1
+
+            VReg zero = allocVReg();
+            func.instrs.push_back(MovImm{zero, VRegType::Int32, 0});
+            func.instrs.push_back(Mov{dst, zero, VRegType::Int32});
+
+            func.instrs.push_back(Label{endLabel});
+            return dst;
+        }
+        case ExprKind::LogicalAnd: {
+            auto& e = static_cast<const LogicalAndExpr&>(expr);
+            int idx = labelCounter_++;
+            string endLabel = ".Lland" + to_string(idx) + "_end";
+
+            VReg dst = allocVReg();
+            func.instrs.push_back(InitVar{dst, VRegType::Int32, 0});
+
+            VReg l = lowerExpr(*e.left, func);
+            func.instrs.push_back(CondJmp{endLabel, l, true});   // l==0 → skip
+
+            VReg r = lowerExpr(*e.right, func);
+            func.instrs.push_back(CondJmp{endLabel, r, true});   // r==0 → skip
+
+            VReg one = allocVReg();
+            func.instrs.push_back(MovImm{one, VRegType::Int32, 1});
+            func.instrs.push_back(Mov{dst, one, VRegType::Int32});
+
+            func.instrs.push_back(Label{endLabel});
+            return dst;
+        }
+        case ExprKind::LogicalOr: {
+            auto& e = static_cast<const LogicalOrExpr&>(expr);
+            int idx = labelCounter_++;
+            string trueLabel = ".Llor" + to_string(idx) + "_true";
+            string endLabel  = ".Llor" + to_string(idx) + "_end";
+
+            VReg dst = allocVReg();
+            func.instrs.push_back(InitVar{dst, VRegType::Int32, 0});
+
+            VReg l = lowerExpr(*e.left, func);
+            func.instrs.push_back(CondJmp{trueLabel, l, false});  // l!=0 → true
+
+            VReg r = lowerExpr(*e.right, func);
+            func.instrs.push_back(CondJmp{trueLabel, r, false});  // r!=0 → true
+
+            func.instrs.push_back(Jmp{endLabel});
+
+            func.instrs.push_back(Label{trueLabel});
+            VReg one = allocVReg();
+            func.instrs.push_back(MovImm{one, VRegType::Int32, 1});
+            func.instrs.push_back(Mov{dst, one, VRegType::Int32});
+
+            func.instrs.push_back(Label{endLabel});
+            return dst;
+        }
         case ExprKind::ArrIndex:
             return lowerArrIndexExpr(static_cast<const ArrIndexExpr&>(expr), func);
         default:
@@ -204,7 +268,7 @@ VReg PlnVCodeGen::lowerArrIndexExpr(const ArrIndexExpr& e, VFunc& func)
     VReg base = lowerExpr(*e.array, func);
     VReg idx  = lowerExpr(*e.index, func);
     VReg dst  = allocVReg();
-    func.instrs.push_back(DerefLoadIdx{dst, base, idx, e.scale, e.type});
+    func.instrs.push_back(DerefLoadIdx{dst, base, idx, e.scale, e.type, e.idx_type});
     return dst;
 }
 
@@ -213,7 +277,7 @@ void PlnVCodeGen::lowerArrAssignStmt(const ArrAssignStmt& s, VFunc& func)
     VReg base = lowerExpr(*s.array, func);
     VReg idx  = lowerExpr(*s.index, func);
     VReg src  = lowerExpr(*s.value, func);
-    func.instrs.push_back(DerefStoreIdx{base, idx, s.scale, src, s.type});
+    func.instrs.push_back(DerefStoreIdx{base, idx, s.scale, src, s.type, s.idx_type});
 }
 
 void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
@@ -338,22 +402,74 @@ void PlnVCodeGen::lowerBlockStmt(const BlockStmt& stmt, VFunc& func)
     func.instrs.push_back(BlockLeave{move(expired)});
 }
 
+void PlnVCodeGen::lowerBranchCond(const Expr& expr, VFunc& func, const string& falseLabel)
+{
+    if (expr.kind == ExprKind::LogicalNot) {
+        auto& e = static_cast<const LogicalNotExpr&>(expr);
+        VReg cond = lowerExpr(*e.operand, func);
+        func.instrs.push_back(CondJmp{falseLabel, cond, false});  // jne
+        return;
+    }
+    if (expr.kind == ExprKind::LogicalAnd) {
+        auto& e = static_cast<const LogicalAndExpr&>(expr);
+        lowerBranchCond(*e.left,  func, falseLabel);
+        lowerBranchCond(*e.right, func, falseLabel);
+        return;
+    }
+    if (expr.kind == ExprKind::LogicalOr) {
+        auto& e = static_cast<const LogicalOrExpr&>(expr);
+        int idx = labelCounter_++;
+        string skipLabel = ".Llor" + to_string(idx) + "_skip";
+        lowerBranchCondTrue(*e.left, func, skipLabel);   // left true → skip right check
+        lowerBranchCond(*e.right, func, falseLabel);     // right false → jump to falseLabel
+        func.instrs.push_back(Label{skipLabel});
+        return;
+    }
+    VReg cond = lowerExpr(expr, func);
+    func.instrs.push_back(CondJmp{falseLabel, cond, true});  // je
+}
+
+void PlnVCodeGen::lowerBranchCondTrue(const Expr& expr, VFunc& func, const string& trueLabel)
+{
+    if (expr.kind == ExprKind::LogicalNot) {
+        auto& e = static_cast<const LogicalNotExpr&>(expr);
+        VReg cond = lowerExpr(*e.operand, func);
+        func.instrs.push_back(CondJmp{trueLabel, cond, true});   // je: !x true when x==0
+        return;
+    }
+    if (expr.kind == ExprKind::LogicalOr) {
+        auto& e = static_cast<const LogicalOrExpr&>(expr);
+        lowerBranchCondTrue(*e.left,  func, trueLabel);
+        lowerBranchCondTrue(*e.right, func, trueLabel);
+        return;
+    }
+    if (expr.kind == ExprKind::LogicalAnd) {
+        auto& e = static_cast<const LogicalAndExpr&>(expr);
+        int idx = labelCounter_++;
+        string skipLabel = ".Land" + to_string(idx) + "_skip";
+        lowerBranchCond(*e.left, func, skipLabel);       // left false → skip right check
+        lowerBranchCondTrue(*e.right, func, trueLabel);  // right true → jump to trueLabel
+        func.instrs.push_back(Label{skipLabel});
+        return;
+    }
+    VReg cond = lowerExpr(expr, func);
+    func.instrs.push_back(CondJmp{trueLabel, cond, false});  // jne: jump when non-zero
+}
+
 void PlnVCodeGen::lowerIfStmt(const IfStmt& stmt, VFunc& func)
 {
     int    idx      = labelCounter_++;
     string endLabel = ".Lif" + to_string(idx) + "_end";
 
-    VReg cond = lowerExpr(*stmt.cond, func);
-
     if (stmt.elseStmt) {
         string elseLabel = ".Lif" + to_string(idx) + "_else";
-        func.instrs.push_back(CondJmp{elseLabel, cond, true});
+        lowerBranchCond(*stmt.cond, func, elseLabel);
         lowerStmt(*stmt.thenStmt, func);
         func.instrs.push_back(Jmp{endLabel});
         func.instrs.push_back(Label{elseLabel});
         lowerStmt(*stmt.elseStmt, func);
     } else {
-        func.instrs.push_back(CondJmp{endLabel, cond, true});
+        lowerBranchCond(*stmt.cond, func, endLabel);
         lowerStmt(*stmt.thenStmt, func);
     }
 
@@ -368,8 +484,7 @@ void PlnVCodeGen::lowerWhileStmt(const WhileStmt& stmt, VFunc& func)
 
     loopStack_.push_back({startLabel, endLabel});
     func.instrs.push_back(Label{startLabel});
-    VReg cond = lowerExpr(*stmt.cond, func);
-    func.instrs.push_back(CondJmp{endLabel, cond, true});  // jump to end if cond == 0
+    lowerBranchCond(*stmt.cond, func, endLabel);
     lowerStmt(*stmt.body, func);
     func.instrs.push_back(Jmp{startLabel});
     func.instrs.push_back(Label{endLabel});

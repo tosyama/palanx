@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.18
+ver. 0.1.19
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -173,6 +173,10 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   - neg: same type as operand (no promotion)
   - cmp: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
     left and right operands are promoted by the same rules as add
+  - logical-and: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
+    both operands must be integer types (flo32/flo64 operands are a compile error)
+  - logical-or: same as logical-and
+  - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
   - call: present when the function has a return type (ret-type in its definition).
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).

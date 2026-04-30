@@ -264,3 +264,13 @@ TEST(sa_error, unsized_arr_var_decl) {
 	ASSERT_NE(sa, "");  // SA must fail
 	ASSERT_NE(sa.find("Unsized array type cannot be used in variable declaration"), string::npos);
 }
+
+TEST(sa_error, float_logical_op) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_049_float_logical_op.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Logical operator operand must be an integer type"), string::npos);
+}

@@ -629,6 +629,36 @@ void PlnX86CodeGen::emitInstrMov(const Mov& mv, const RegMap& rm)
     }
 }
 
+// Emits sign/zero-extend instruction to load index into %r11.
+// For Int64/Uint64/Ptr64/Uint32 in a physical register, returns the register directly (no instruction).
+static string loadIdxR11(ostream& out, VRegType idx_type, const PhysLoc& loc)
+{
+    if (loc.isStack()) {
+        string slot = std::to_string(loc.stackOffset) + "(%rbp)";
+        switch (idx_type) {
+            case VRegType::Int8:   out << "\tmovsbq " << slot << ", %r11\n"; break;
+            case VRegType::Int16:  out << "\tmovswq " << slot << ", %r11\n"; break;
+            case VRegType::Int32:  out << "\tmovslq " << slot << ", %r11\n"; break;
+            case VRegType::Uint8:  out << "\tmovzbl " << slot << ", %r11d\n"; break;
+            case VRegType::Uint16: out << "\tmovzwl " << slot << ", %r11d\n"; break;
+            case VRegType::Uint32: out << "\tmovl "   << slot << ", %r11d\n"; break;
+            default:               out << "\tmovq "   << slot << ", %r11\n"; break;
+        }
+        return "%r11";
+    }
+    const string& reg = loc.base;
+    switch (idx_type) {
+        case VRegType::Int8:   out << "\tmovsbq " << sizedRegName(reg, VRegType::Int8)   << ", %r11\n";  break;
+        case VRegType::Int16:  out << "\tmovswq " << sizedRegName(reg, VRegType::Int16)  << ", %r11\n";  break;
+        case VRegType::Int32:  out << "\tmovslq " << sizedRegName(reg, VRegType::Int32)  << ", %r11\n";  break;
+        case VRegType::Uint8:  out << "\tmovzbl " << sizedRegName(reg, VRegType::Uint8)  << ", %r11d\n"; break;
+        case VRegType::Uint16: out << "\tmovzwl " << sizedRegName(reg, VRegType::Uint16) << ", %r11d\n"; break;
+        default:
+            return reg;  // Uint32/Int64/Uint64/Ptr64: x86-64 guarantees upper bits valid
+    }
+    return "%r11";
+}
+
 void PlnX86CodeGen::emitInstrDerefLoadIdx(const DerefLoadIdx& dl, const RegMap& rm)
 {
     if (!rm.count(dl.dst) || !rm.count(dl.base) || !rm.count(dl.idx)) return;
@@ -645,13 +675,7 @@ void PlnX86CodeGen::emitInstrDerefLoadIdx(const DerefLoadIdx& dl, const RegMap& 
         base_reg = "%r10";
     }
 
-    string idx_reg;
-    if (!idx_loc.isStack()) {
-        idx_reg = idx_loc.base;
-    } else {
-        out << "\tmovq " << idx_loc.stackOffset << "(%rbp), %r11\n";
-        idx_reg = "%r11";
-    }
+    string idx_reg = loadIdxR11(out, dl.idx_type, idx_loc);
 
     string addr = "(" + base_reg + ", " + idx_reg + ", " + std::to_string(dl.scale) + ")";
     if (!dst_loc.isStack()) {
@@ -681,13 +705,7 @@ void PlnX86CodeGen::emitInstrDerefStoreIdx(const DerefStoreIdx& ds, const RegMap
         base_reg = "%r10";
     }
 
-    string idx_reg;
-    if (!idx_loc.isStack()) {
-        idx_reg = idx_loc.base;
-    } else {
-        out << "\tmovq " << idx_loc.stackOffset << "(%rbp), %r11\n";
-        idx_reg = "%r11";
-    }
+    string idx_reg = loadIdxR11(out, ds.idx_type, idx_loc);
 
     string addr = "(" + base_reg + ", " + idx_reg + ", " + std::to_string(ds.scale) + ")";
     if (!src_loc.isStack()) {

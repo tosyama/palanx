@@ -767,3 +767,156 @@ TEST(codegen, deref_store_reg_src) {
     // DerefStore with register src: movb %rNNb, (addr) — not scratch %al
     ASSERT_NE(asm_text.find("movb %r"), string::npos);
 }
+
+TEST(codegen, deref_idx_int32_extend) {
+    // Verifies that int32 index is sign-extended (movslq) rather than zero-loaded (movq).
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/043_deref_idx_int32.sa.json";
+    string asmf = "out/043_deref_idx_int32.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movslq"), string::npos);
+}
+
+TEST(codegen, logical_ops) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/044_logical_ops.sa.json";
+    string asmf = "out/044_logical_ops.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // logical-and: short-circuit label and conditional jump
+    ASSERT_NE(asm_text.find(".Lland0_end:"),    string::npos);
+    ASSERT_NE(asm_text.find("je .Lland0_end"),  string::npos);
+    // logical-or: short-circuit labels and jumps
+    ASSERT_NE(asm_text.find(".Llor1_true:"),    string::npos);
+    ASSERT_NE(asm_text.find(".Llor1_end:"),     string::npos);
+    ASSERT_NE(asm_text.find("jne .Llor1_true"), string::npos);
+    // logical-not: short-circuit label and conditional jump
+    ASSERT_NE(asm_text.find(".Lnot2_end:"),     string::npos);
+    ASSERT_NE(asm_text.find("je .Lnot2_end"),   string::npos);
+}
+
+TEST(codegen, if_not) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/045_if_not.sa.json";
+    string asmf = "out/045_if_not.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // No intermediate .Lnot* label: LogicalNot must not be materialized
+    ASSERT_EQ(asm_text.find(".Lnot"),            string::npos);
+
+    // if (!x): condition inverted → jne (not je) to if end label
+    ASSERT_NE(asm_text.find("jne .Lif0_end"),    string::npos);
+    ASSERT_EQ(asm_text.find("je .Lif0_end"),     string::npos);
+
+    // while (!x): condition inverted → jne to while end label
+    ASSERT_NE(asm_text.find("jne .Lwhile1_end"), string::npos);
+    ASSERT_NE(asm_text.find(".Lwhile1_start:"),  string::npos);
+}
+
+TEST(codegen, if_and) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/046_if_and.sa.json";
+    string asmf = "out/046_if_and.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // No .Lland* label: LogicalAnd must not be materialized in branch context
+    ASSERT_EQ(asm_text.find(".Lland"), string::npos);
+
+    // if (a && b): both operands jump directly to if end label
+    ASSERT_NE(asm_text.find("je .Lif0_end"),      string::npos);
+
+    // while (a && b): both operands jump directly to while end label
+    ASSERT_NE(asm_text.find("je .Lwhile1_end"),   string::npos);
+    ASSERT_NE(asm_text.find(".Lwhile1_start:"),   string::npos);
+}
+
+TEST(codegen, if_or) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/047_if_or.sa.json";
+    string asmf = "out/047_if_or.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // No _true: label: LogicalOr must not be materialized in branch context
+    ASSERT_EQ(asm_text.find("_true:"),          string::npos);
+
+    // if (a || b): left true → jne to skip label; right false → je to if end
+    ASSERT_NE(asm_text.find("jne .Llor"),       string::npos);
+    ASSERT_NE(asm_text.find("je .Lif0_end"),    string::npos);
+
+    // while (a || b): right false → je to while end
+    ASSERT_NE(asm_text.find("je .Lwhile2_end"), string::npos);
+    ASSERT_NE(asm_text.find(".Lwhile2_start:"), string::npos);
+}
+
+TEST(codegen, if_or_complex) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/048_if_or_complex.sa.json";
+    string asmf = "out/048_if_or_complex.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // if (!a || b): lowerBranchCondTrue(LogicalNot) → je to lor skip label
+    ASSERT_NE(asm_text.find("je .Llor1_skip"),  string::npos);
+    ASSERT_NE(asm_text.find("je .Lif0_end"),    string::npos);
+
+    // if ((a || b) || c): lowerBranchCondTrue(LogicalOr) → two jne to lor skip label
+    ASSERT_NE(asm_text.find("jne .Llor3_skip"), string::npos);
+    ASSERT_NE(asm_text.find("je .Lif2_end"),    string::npos);
+
+    // if ((a && b) || c): lowerBranchCondTrue(LogicalAnd) → .Land inner skip label
+    ASSERT_NE(asm_text.find(".Land6_skip:"),    string::npos);
+    ASSERT_NE(asm_text.find("jne .Llor5_skip"), string::npos);
+    ASSERT_NE(asm_text.find("je .Lif4_end"),    string::npos);
+}
+
+TEST(codegen, deref_idx_small_types) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/049_deref_idx_small_types.sa.json";
+    string asmf = "out/049_deref_idx_small_types.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // Int8 reg: sign-extend from byte register
+    ASSERT_NE(asm_text.find("movsbq %sil, %r11"),     string::npos);
+    // Int8 slot: sign-extend from stack slot
+    ASSERT_NE(asm_text.find("movsbq -1(%rbp), %r11"), string::npos);
+    // Int16 reg: sign-extend from word register
+    ASSERT_NE(asm_text.find("movswq %si, %r11"),      string::npos);
+    // Int16 slot: sign-extend from stack slot
+    ASSERT_NE(asm_text.find("movswq -2(%rbp), %r11"), string::npos);
+    // Uint8 reg: zero-extend from byte register
+    ASSERT_NE(asm_text.find("movzbl %sil, %r11d"),    string::npos);
+    // Uint8 slot: zero-extend from stack slot
+    ASSERT_NE(asm_text.find("movzbl -8(%rbp), %r11d"), string::npos);
+    // Uint16 reg: zero-extend from word register
+    ASSERT_NE(asm_text.find("movzwl %si, %r11d"),     string::npos);
+    // Uint16 slot: zero-extend from stack slot
+    ASSERT_NE(asm_text.find("movzwl -8(%rbp), %r11d"), string::npos);
+    // Uint32 slot: zero-extend by movl from stack slot (upper 32 bits cleared by x86-64 movl)
+    ASSERT_NE(asm_text.find("movl -8(%rbp), %r11d"),  string::npos);
+}
