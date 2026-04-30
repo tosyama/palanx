@@ -866,3 +866,27 @@ TEST(codegen, if_or) {
     ASSERT_NE(asm_text.find("je .Lwhile2_end"), string::npos);
     ASSERT_NE(asm_text.find(".Lwhile2_start:"), string::npos);
 }
+
+TEST(codegen, if_or_complex) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/048_if_or_complex.sa.json";
+    string asmf = "out/048_if_or_complex.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+
+    // if (!a || b): lowerBranchCondTrue(LogicalNot) → je to lor skip label
+    ASSERT_NE(asm_text.find("je .Llor1_skip"),  string::npos);
+    ASSERT_NE(asm_text.find("je .Lif0_end"),    string::npos);
+
+    // if ((a || b) || c): lowerBranchCondTrue(LogicalOr) → two jne to lor skip label
+    ASSERT_NE(asm_text.find("jne .Llor3_skip"), string::npos);
+    ASSERT_NE(asm_text.find("je .Lif2_end"),    string::npos);
+
+    // if ((a && b) || c): lowerBranchCondTrue(LogicalAnd) → .Land inner skip label
+    ASSERT_NE(asm_text.find(".Land6_skip:"),    string::npos);
+    ASSERT_NE(asm_text.find("jne .Llor5_skip"), string::npos);
+    ASSERT_NE(asm_text.find("je .Lif4_end"),    string::npos);
+}
