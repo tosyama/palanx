@@ -1,0 +1,2 @@
+int64 rows = 3;
+[rows]$[4]int32 mat;

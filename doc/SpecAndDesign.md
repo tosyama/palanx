@@ -6,37 +6,39 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-04-28)
-version: 0.1.19
-- This iteration adds logical operators (`&&`, `||`, `!`) with short-circuit evaluation,
-  and fixes array index sign/zero-extension for all integer types narrower than 64-bit.
-- gen-ast: `&&`, `||`, `!` tokens and AST nodes (`logical-and`, `logical-or`, `logical-not`).
-- SA: type-check logical expressions (integer operands only); annotate `value-type: int32`.
-- codegen: short-circuit evaluation for `&&`/`||` via `CondJmp`; `!` via `Cmp` against zero.
-- codegen (bug fix): `emitInstrDerefLoadIdx`/`emitInstrDerefStoreIdx` emit correct sign/zero-extension
-  instruction for all integer index types (int8/16/32 → sign-extend; uint8/16/32 → zero-extend).
+### 2.1 Iteration Goal (2026-04-30)
+version: 0.1.20
+- This iteration adds 2D contiguous array support (`[n]$[m]T`), equivalent to a C-style 2D array.
+- Syntax: `[n]$[m]T` declares a 2D array allocated as a single contiguous block of `n*m*sizeof(T)` bytes.
+- Element access: `arr[i][j]` read and write.
+- Row access: `arr[i]` returns a transient (non-owning) `[]T` pointer to the i-th row.
+- Function parameters: `[]$[m]T` with a fixed inner dimension is valid; `[]$[]T` (unknown inner dimension) is a compile error.
+- Allocation: single `malloc(n * m * sizeof(T))`; freed automatically at scope end.
 
 The goal is that the following program produces correct output:
 
 ```palan
 cinclude <stdio.h>;
 
-func is_leap_year(int64 year) -> int32 {
-    return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+func row_sum([]$[4]int32 mat, int64 r) -> int32 {
+    return mat[r][0] + mat[r][1] + mat[r][2] + mat[r][3];
 }
 
-printf("%d\n", is_leap_year(2024));   // 1
-printf("%d\n", is_leap_year(1900));   // 0
-printf("%d\n", is_leap_year(2000));   // 1
-printf("%d\n", !is_leap_year(2023));  // 1
+int64 rows = 3;
+[rows]$[4]int32 mat;
+int32(1) -> mat[0][0]; int32(2) -> mat[0][1]; int32(3) -> mat[0][2]; int32(4) -> mat[0][3];
+int32(5) -> mat[1][0]; int32(6) -> mat[1][1]; int32(7) -> mat[1][2]; int32(8) -> mat[1][3];
+
+printf("%d\n", mat[0][0]);
+printf("%d\n", row_sum(mat, 0));
+printf("%d\n", row_sum(mat, 1));
 ```
 
 Expected output:
 ```
 1
-0
-1
-1
+10
+26
 ```
 
 
