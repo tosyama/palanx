@@ -1,0 +1,9 @@
+func process([]$[4]int32 mat, int64 n) -> int32 {
+    return 0;
+}
+
+func caller(int64 n) {
+    [n]$[8]int32 mat;
+    process(mat, n);
+    return;
+}

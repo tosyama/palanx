@@ -120,6 +120,14 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_LogicalOpNotInteger:
 			return "Logical operator operand must be an integer type.";
 
+		case E_EmbeddedArrUnsizedInner:
+			return "Embedded array parameter must have a fixed inner dimension (use []$[n]T).";
+
+		case E_EmbeddedArrInnerSizeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "Embedded array inner size mismatch: expected " + arg1 + ", got " + arg2 + ".";
+
 		default:
 			BOOST_ASSERT(false);
 	}

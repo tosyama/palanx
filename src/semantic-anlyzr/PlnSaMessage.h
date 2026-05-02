@@ -38,6 +38,8 @@ enum PlnSaMessageCode {
 	E_NotArrayType,
 	E_UnsizedArrVarDecl,
 	E_LogicalOpNotInteger,
+	E_EmbeddedArrUnsizedInner,		// []$[]T in parameter: inner dimension must be fixed
+	E_EmbeddedArrInnerSizeMismatch,	// arg1: expected inner-size, arg2: actual
 };
 
 class PlnSaMessage
