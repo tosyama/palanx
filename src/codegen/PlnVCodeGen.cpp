@@ -268,7 +268,23 @@ VReg PlnVCodeGen::lowerArrIndexExpr(const ArrIndexExpr& e, VFunc& func)
     VReg base = lowerExpr(*e.array, func);
     VReg idx  = lowerExpr(*e.index, func);
     VReg dst  = allocVReg();
-    func.instrs.push_back(DerefLoadIdx{dst, base, idx, e.scale, e.type, e.idx_type});
+
+    if (e.scale_expr) {
+        // Variable inner dim: runtime stride = scale_expr (e.g. __mat_d1 * sizeof(T))
+        VReg stride = lowerExpr(*e.scale_expr, func);
+        VReg offset = allocVReg();
+        func.instrs.push_back(Mul{offset, idx, stride, VRegType::Uint64});
+        if (e.addrOnly)
+            func.instrs.push_back(Add{dst, base, offset, VRegType::Ptr64});
+        else
+            func.instrs.push_back(DerefLoadIdx{dst, base, offset, 1, e.type, VRegType::Uint64});
+    } else if (e.addrOnly) {
+        // Constant-stride row access on embedded 2D array: compute address without dereference.
+        func.instrs.push_back(CalcAddrIdx{dst, base, idx, e.scale, e.idx_type});
+    } else {
+        // Ordinary element access (1D or 2D element via row pointer).
+        func.instrs.push_back(DerefLoadIdx{dst, base, idx, e.scale, e.type, e.idx_type});
+    }
     return dst;
 }
 

@@ -163,7 +163,14 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         auto e = make_unique<ArrIndexExpr>();
         e->array    = deserializeExpr(j["array"]);
         e->index    = deserializeExpr(j["index"]);
-        e->scale    = stoi(j["elem-size"]["value"].get<string>());
+        const json& es = j["elem-size"];
+        if (es.value("expr-type", "") == "lit-uint") {
+            e->scale = stoi(es["value"].get<string>());
+        } else {
+            e->scale_expr = deserializeExpr(es);  // variable inner dim: mul expression
+        }
+        // Row access on embedded 2D array: compute address, do not dereference.
+        e->addrOnly = j["array"]["value-type"].value("embedded", false);
         e->type     = toVRegType(j["value-type"]);
         e->idx_type = toVRegType(j["index"]["value-type"]);
         return e;
