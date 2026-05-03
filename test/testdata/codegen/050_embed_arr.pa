@@ -1,0 +1,8 @@
+func write_elem([]$[4]int32 mat, int64 r, int64 c, int32 v) {
+    v -> mat[r][c];
+    return;
+}
+
+func read_elem([]$[4]int32 mat, int64 r, int64 c) -> int32 {
+    return mat[r][c];
+}

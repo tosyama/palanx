@@ -1,0 +1,7 @@
+func f([]$[4]int32 mat) {}
+func caller(int64 n) {
+    int64 cols = 5;
+    [n]$[cols]int32 mat;
+    f(mat);
+    return;
+}

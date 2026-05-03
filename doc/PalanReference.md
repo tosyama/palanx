@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.19
+**Version:** v0.1.20
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -724,6 +724,39 @@ Both row and column indices must be integer types.
 **Memory management:** The compiler automatically generates `__pln_alloc_arr_arr_<leaf>` and
 `__pln_free_arr_arr_<leaf>` functions (via build-mgr) and inserts the allocation call at
 declaration and the free call at scope exit. No manual memory management is required.
+
+### Contiguous Two-Dimensional Arrays (`[n]$[m]T`)
+
+`[n]$[m]T` declares a contiguous 2D array where all `n × m` elements occupy a single
+heap-allocated block (`malloc(n * m * sizeof(T))`). Unlike `[n][n]T`, only one allocation and
+one free are needed. The inner dimension `m` can be a compile-time constant or a runtime
+variable expression.
+
+```palan
+int64 rows = 3;
+[rows]$[4]int32 mat;   // malloc(rows * 4 * sizeof(int32)) = malloc(rows * 16)
+```
+
+**Element access:**
+- Read:  `mat[i][j]`
+- Write: `val -> mat[i][j]`
+
+Both indices must be integer types.
+
+**Row access:** `mat[i]` yields a transient `[]T` pointer to the start of row `i`. This
+pointer is non-owning and must not be freed.
+
+```palan
+func row_sum([]$[4]int32 mat, int64 r) -> int32 {
+    return mat[r][0] + mat[r][1] + mat[r][2] + mat[r][3];
+}
+```
+
+**Function parameters:** Declare as `[]$[m]T` with a fixed inner dimension `m`. The compiler
+rejects calls where the argument's inner dimension is variable or does not match `m`.
+
+**Memory management:** A single `malloc` is called at declaration and a single `free` is
+inserted at scope exit. No helper functions are generated.
 
 ### Limitations (current version)
 

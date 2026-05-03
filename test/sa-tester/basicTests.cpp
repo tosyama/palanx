@@ -1133,3 +1133,40 @@ TEST(sa, embed_arr_decl_variable_inner) {
 	ASSERT_EQ(last_g["body"]["name"], "free");
 	ASSERT_EQ(last_g["body"]["args"][0]["name"], "mat");
 }
+
+TEST(sa, embed_arr_func_param) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/056_embed_arr_func_param.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_GE(jout["functions"].size(), 2u);
+
+	// func process: first param is pntr, embedded:true, inner-size:4
+	const auto& params = jout["functions"][0]["parameters"];
+	ASSERT_EQ(params[0]["name"], "mat");
+	const auto& mat_vt = params[0]["var-type"];
+	ASSERT_EQ(mat_vt["type-kind"], "pntr");
+	ASSERT_TRUE(mat_vt.value("embedded", false));
+	ASSERT_EQ(mat_vt["inner-size"], 4);
+	ASSERT_EQ(mat_vt["base-type"]["type-name"], "int32");
+
+	// return mat[0][0]: nested arr-index, outer elem-size=16, inner elem-size=4
+	const auto& ret = jout["functions"][0]["body"][0];
+	ASSERT_EQ(ret["stmt-type"], "return");
+	const auto& outer_idx = ret["values"][0];
+	ASSERT_EQ(outer_idx["expr-type"], "arr-index");
+	ASSERT_EQ(outer_idx["elem-size"]["value"], "4");
+	ASSERT_EQ(outer_idx["array"]["expr-type"], "arr-index");
+	ASSERT_EQ(outer_idx["array"]["elem-size"]["value"], "16");
+
+	// func caller: call to process succeeds (no error)
+	const auto& caller_body = jout["functions"][1]["body"];
+	bool found_call = false;
+	for (const auto& stmt : caller_body) {
+		if (stmt["stmt-type"] == "expr" && stmt["body"]["expr-type"] == "call"
+				&& stmt["body"]["name"] == "process") {
+			found_call = true;
+			break;
+		}
+	}
+	ASSERT_TRUE(found_call);
+}

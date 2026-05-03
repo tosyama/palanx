@@ -920,3 +920,20 @@ TEST(codegen, deref_idx_small_types) {
     // Uint32 slot: zero-extend by movl from stack slot (upper 32 bits cleared by x86-64 movl)
     ASSERT_NE(asm_text.find("movl -8(%rbp), %r11d"),  string::npos);
 }
+
+TEST(codegen, embed_arr) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/050_embed_arr.sa.json";
+    string asmf = "out/050_embed_arr.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Row stride multiply: inner-size(4) * sizeof(int32)(4) = 16
+    ASSERT_NE(asm_text.find("imulq $16"), string::npos);
+    // Element read: DerefLoad with scale-4 indexed addressing
+    ASSERT_NE(asm_text.find("movl (%r"),  string::npos);
+    // Element write: DerefStore with scale-4 indexed addressing
+    ASSERT_NE(asm_text.find(", (%r"),     string::npos);
+}
