@@ -853,7 +853,9 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 	string leaf_name = leaf_type.value("type-name","");
 	int elem_size = elemSizeBytes(leaf_name);
 
+	// LCOV_EXCL_EXCEPTION_BR_START
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
 
 	auto checkIntSize = [&](const json& sz) {
@@ -886,6 +888,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 		if (inner_is_const) {
 			int64_t m_val = stoll(inner_sz["value"].get<string>());
 			int64_t stride = m_val * elem_size;
+			// LCOV_EXCL_EXCEPTION_BR_START
 			pntr_type = {{"type-kind","pntr"},{"embedded",true},
 			             {"inner-size",m_val},{"base-type",leaf_type}};
 			json stride_lit = {
@@ -895,8 +898,10 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 				{"expr-type","mul"},{"value-type",uint64_type},
 				{"left",sa_outer},{"right",stride_lit}
 			};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 		} else {
 			string d1_name = "__" + name + "_d1";
+			// LCOV_EXCL_EXCEPTION_BR_START
 			pntr_type = {{"type-kind","pntr"},{"embedded",true},{"base-type",leaf_type}};
 
 			json d1_id = {{"expr-type","id"},{"name",d1_name},
@@ -912,22 +917,29 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 				{"expr-type","mul"},{"value-type",uint64_type},
 				{"left",sa_outer},{"right",d1_times_elem}
 			};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 
 			declareVar(d1_name, uint64_type, &stmt);
+			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 				{"name",d1_name},{"var-type",uint64_type},{"init",sa_inner}
 			}})}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
 
+		// LCOV_EXCL_EXCEPTION_BR_START
 		json malloc_call = {
 			{"expr-type","call"},{"name","malloc"},{"func-type","c"},
 			{"args",json::array({size_arg})},{"value-type",pntr_type}
 		};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 		declareVar(name, pntr_type, &stmt);
 		arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
+		// LCOV_EXCL_EXCEPTION_BR_START
 		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 			{"name",name},{"var-type",pntr_type},{"init",malloc_call}
 		}})}});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
