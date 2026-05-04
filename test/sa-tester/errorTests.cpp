@@ -306,3 +306,13 @@ TEST(sa_error, embed_arr_variable_inner_arg) {
 	ASSERT_NE(sa.find("variable"), string::npos);
 }
 
+TEST(sa_error, embed_arr_float_size) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_053_embed_arr_float_size.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Array size expression must be an integer type"), string::npos);
+}
+

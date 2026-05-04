@@ -1,0 +1,4 @@
+func f(int64 n, int64 cols) -> int32 {
+    [n]$[cols]int32 mat;
+    return mat[0][0];
+}

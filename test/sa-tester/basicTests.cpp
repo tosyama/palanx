@@ -1170,3 +1170,29 @@ TEST(sa, embed_arr_func_param) {
 	}
 	ASSERT_TRUE(found_call);
 }
+
+TEST(sa, embed_arr_var_row_access) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/057_embed_arr_var_row.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[0]: hidden var __mat_d1 = cols (inner dimension)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "__mat_d1");
+	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "cols");
+
+	// body[1]: mat = malloc(n * (__mat_d1 * 4)), no inner-size field
+	ASSERT_EQ(body[1]["vars"][0]["name"], "mat");
+	ASSERT_FALSE(body[1]["vars"][0]["var-type"].contains("inner-size"));
+
+	// body[3]: return mat[0][0] — inner arr-index (row access) has mul elem-size
+	const auto& ret_val = body[3]["values"][0];
+	ASSERT_EQ(ret_val["expr-type"], "arr-index");
+	const auto& row_idx = ret_val["array"];
+	ASSERT_EQ(row_idx["expr-type"], "arr-index");
+	ASSERT_EQ(row_idx["elem-size"]["expr-type"],    "mul");
+	ASSERT_EQ(row_idx["elem-size"]["left"]["name"], "__mat_d1");
+	ASSERT_EQ(row_idx["elem-size"]["right"]["value"], "4");
+}
