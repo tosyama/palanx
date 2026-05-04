@@ -192,19 +192,6 @@ static json unsizedArrToPntr(const json& type) {
 			pntr["base-type"] = embed_bt.value("base-type", json{});
 			return pntr;
 		}
-		// []$[m]T with embedded:true on outer arr (alternative representation)
-		if (type.value("embedded", false)) {
-			const auto& inner = type["base-type"];
-			json pntr = {{"type-kind","pntr"},{"embedded",true}};
-			if (inner.value("type-kind","") == "arr" && !inner["size-expr"].is_null()) {
-				const auto& sz = inner["size-expr"];
-				string et = sz.value("expr-type","");
-				if (et == "lit-int" || et == "lit-uint")
-					pntr["inner-size"] = stoll(sz["value"].get<string>());
-			}
-			pntr["base-type"] = inner.contains("base-type") ? inner["base-type"] : json{};
-			return pntr;
-		}
 		return {{"type-kind","pntr"},{"base-type", unsizedArrToPntr(type["base-type"])}};
 	}
 	return type;
