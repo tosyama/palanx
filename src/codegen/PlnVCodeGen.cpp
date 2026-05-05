@@ -125,7 +125,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(Cmp{dst, e.op, l, r, e.operandType});
+            func.instrs.push_back(Cmp{dst, e.op, l, r, e.operandType}); // LCOV_EXCL_EXCEPTION_BR_LINE
             return dst;
         }
         case ExprKind::FloLit: {
@@ -142,7 +142,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             for (auto& arg : e.args)
                 args.push_back(lowerExpr(*arg, func));
             VReg dst = allocVReg();
-            func.instrs.push_back(CallC{e.name, move(args), dst, e.retType});
+            func.instrs.push_back(CallC{e.name, move(args), dst, e.retType}); // LCOV_EXCL_EXCEPTION_BR_LINE
             return dst;
         }
         case ExprKind::PlnCall: {
@@ -152,7 +152,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             for (auto& a : e.args)
                 args.push_back(lowerExpr(*a, func));
             VReg dst = allocVReg();
-            func.instrs.push_back(CallPln{e.name, move(args), {dst}, {e.retType}});
+            func.instrs.push_back(CallPln{e.name, move(args), {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
             return dst;
         }
         case ExprKind::LogicalNot: {
@@ -164,7 +164,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(InitVar{dst, VRegType::Int32, 1});  // assume true
 
             VReg src = lowerExpr(*e.operand, func);
-            func.instrs.push_back(CondJmp{endLabel, src, true});  // operand==0 → keep 1
+            func.instrs.push_back(CondJmp{endLabel, src, true});  // operand==0 → keep 1 // LCOV_EXCL_EXCEPTION_BR_LINE
 
             VReg zero = allocVReg();
             func.instrs.push_back(MovImm{zero, VRegType::Int32, 0});
@@ -182,10 +182,10 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(InitVar{dst, VRegType::Int32, 0});
 
             VReg l = lowerExpr(*e.left, func);
-            func.instrs.push_back(CondJmp{endLabel, l, true});   // l==0 → skip
+            func.instrs.push_back(CondJmp{endLabel, l, true});   // l==0 → skip // LCOV_EXCL_EXCEPTION_BR_LINE
 
             VReg r = lowerExpr(*e.right, func);
-            func.instrs.push_back(CondJmp{endLabel, r, true});   // r==0 → skip
+            func.instrs.push_back(CondJmp{endLabel, r, true});   // r==0 → skip // LCOV_EXCL_EXCEPTION_BR_LINE
 
             VReg one = allocVReg();
             func.instrs.push_back(MovImm{one, VRegType::Int32, 1});
@@ -204,10 +204,10 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(InitVar{dst, VRegType::Int32, 0});
 
             VReg l = lowerExpr(*e.left, func);
-            func.instrs.push_back(CondJmp{trueLabel, l, false});  // l!=0 → true
+            func.instrs.push_back(CondJmp{trueLabel, l, false});  // l!=0 → true // LCOV_EXCL_EXCEPTION_BR_LINE
 
             VReg r = lowerExpr(*e.right, func);
-            func.instrs.push_back(CondJmp{trueLabel, r, false});  // r!=0 → true
+            func.instrs.push_back(CondJmp{trueLabel, r, false});  // r!=0 → true // LCOV_EXCL_EXCEPTION_BR_LINE
 
             func.instrs.push_back(Jmp{endLabel});
 
@@ -233,7 +233,7 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
     for (auto& arg : expr.args) {
         args.push_back(lowerExpr(*arg, func));
     }
-    func.instrs.push_back(CallC{expr.name, move(args), /*dst=*/-1});
+    func.instrs.push_back(CallC{expr.name, move(args), /*dst=*/-1}); // LCOV_EXCL_EXCEPTION_BR_LINE
 }
 
 void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
@@ -241,7 +241,7 @@ void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
     vector<VReg> args;
     for (auto& a : expr.args)
         args.push_back(lowerExpr(*a, func));
-    func.instrs.push_back(CallPln{expr.name, move(args), {}, {}});
+    func.instrs.push_back(CallPln{expr.name, move(args), {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 }
 
 void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
@@ -307,7 +307,7 @@ void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
             rets.push_back(findVar(rv.name));
             types.push_back(rv.type);
         }
-        func.instrs.push_back(RetPln{rets, types});
+        func.instrs.push_back(RetPln{rets, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
         return;
     }
     if (!currentPlnFunc_ || !currentPlnFunc_->hasRetType) {
@@ -318,12 +318,12 @@ void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
         // Explicit return with value
         BOOST_ASSERT(stmt.values.size() == 1);
         VReg r = lowerExpr(*stmt.values[0], func);
-        func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}});
+        func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
     } else {
         // Bare return: return named variable's current value
         BOOST_ASSERT(!currentPlnFunc_->retVarName.empty());
         VReg r = findVar(currentPlnFunc_->retVarName);
-        func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}});
+        func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
     }
 }
 
@@ -341,7 +341,7 @@ void PlnVCodeGen::lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func)
         types.push_back(stmt.retTypes[j]);
         declareVar(stmt.vars[j].name, r);
     }
-    func.instrs.push_back(CallPln{stmt.funcName, move(args), move(dsts), move(types)});
+    func.instrs.push_back(CallPln{stmt.funcName, move(args), move(dsts), move(types)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 }
 
 void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
@@ -362,7 +362,7 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
 string PlnVCodeGen::addFloatLiteral(const string& value, VRegType type)
 {
     string label = ".LF" + to_string(floatLabelCounter_++);
-    prog_->floatData.push_back(VFloatLiteral{label, value, type});
+    prog_->floatData.push_back(VFloatLiteral{label, value, type}); // LCOV_EXCL_EXCEPTION_BR_LINE
     return label;
 }
 
@@ -423,7 +423,7 @@ void PlnVCodeGen::lowerBranchCond(const Expr& expr, VFunc& func, const string& f
     if (expr.kind == ExprKind::LogicalNot) {
         auto& e = static_cast<const LogicalNotExpr&>(expr);
         VReg cond = lowerExpr(*e.operand, func);
-        func.instrs.push_back(CondJmp{falseLabel, cond, false});  // jne
+        func.instrs.push_back(CondJmp{falseLabel, cond, false});  // jne // LCOV_EXCL_EXCEPTION_BR_LINE
         return;
     }
     if (expr.kind == ExprKind::LogicalAnd) {
@@ -442,7 +442,7 @@ void PlnVCodeGen::lowerBranchCond(const Expr& expr, VFunc& func, const string& f
         return;
     }
     VReg cond = lowerExpr(expr, func);
-    func.instrs.push_back(CondJmp{falseLabel, cond, true});  // je
+    func.instrs.push_back(CondJmp{falseLabel, cond, true});  // je // LCOV_EXCL_EXCEPTION_BR_LINE
 }
 
 void PlnVCodeGen::lowerBranchCondTrue(const Expr& expr, VFunc& func, const string& trueLabel)
@@ -450,7 +450,7 @@ void PlnVCodeGen::lowerBranchCondTrue(const Expr& expr, VFunc& func, const strin
     if (expr.kind == ExprKind::LogicalNot) {
         auto& e = static_cast<const LogicalNotExpr&>(expr);
         VReg cond = lowerExpr(*e.operand, func);
-        func.instrs.push_back(CondJmp{trueLabel, cond, true});   // je: !x true when x==0
+        func.instrs.push_back(CondJmp{trueLabel, cond, true});   // je: !x true when x==0 // LCOV_EXCL_EXCEPTION_BR_LINE
         return;
     }
     if (expr.kind == ExprKind::LogicalOr) {
@@ -469,7 +469,7 @@ void PlnVCodeGen::lowerBranchCondTrue(const Expr& expr, VFunc& func, const strin
         return;
     }
     VReg cond = lowerExpr(expr, func);
-    func.instrs.push_back(CondJmp{trueLabel, cond, false});  // jne: jump when non-zero
+    func.instrs.push_back(CondJmp{trueLabel, cond, false});  // jne: jump when non-zero // LCOV_EXCL_EXCEPTION_BR_LINE
 }
 
 void PlnVCodeGen::lowerIfStmt(const IfStmt& stmt, VFunc& func)
@@ -568,7 +568,7 @@ VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
 
     // Populate .rodata entries
     for (auto& d : module.strLiterals)
-        prog.data.push_back(VStringLiteral{d.label, d.value});
+        prog.data.push_back(VStringLiteral{d.label, d.value}); // LCOV_EXCL_EXCEPTION_BR_LINE
 
     // Lower Palan user-defined functions before _start
     for (auto& pf : module.functions) {
@@ -606,10 +606,10 @@ VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
                     rets.push_back(findVar(rv.name));
                     types.push_back(rv.type);
                 }
-                vf.instrs.push_back(RetPln{rets, types});
+                vf.instrs.push_back(RetPln{rets, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
             } else if (pf.hasRetType && !pf.retVarName.empty()) {
                 VReg r = findVar(pf.retVarName);
-                vf.instrs.push_back(RetPln{{r}, {pf.retType}});
+                vf.instrs.push_back(RetPln{{r}, {pf.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
             } else {
                 vf.instrs.push_back(RetPln{{}, {}});
             }
