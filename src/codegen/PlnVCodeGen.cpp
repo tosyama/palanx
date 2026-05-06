@@ -273,7 +273,14 @@ VReg PlnVCodeGen::lowerArrIndexExpr(const ArrIndexExpr& e, VFunc& func)
         // Variable inner dim: runtime stride = scale_expr (e.g. __mat_d1 * sizeof(T))
         VReg stride = lowerExpr(*e.scale_expr, func);
         VReg offset = allocVReg();
-        func.instrs.push_back(Mul{offset, idx, stride, VRegType::Uint64});
+        // Widen idx to Int64 before the 64-bit multiply; a narrower spilled vreg
+        // would be read as 8 bytes by emitBinArith, corrupting the result.
+        VReg idx64 = idx;
+        if (e.idx_type != VRegType::Int64 && e.idx_type != VRegType::Uint64) {
+            idx64 = allocVReg();
+            func.instrs.push_back(Convert{idx64, idx, e.idx_type, VRegType::Int64});
+        }
+        func.instrs.push_back(Mul{offset, idx64, stride, VRegType::Uint64});
         if (e.addrOnly)
             func.instrs.push_back(Add{dst, base, offset, VRegType::Ptr64});
         else

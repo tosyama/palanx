@@ -316,6 +316,13 @@ TEST(build_mgr, embed_arr) {
 	ASSERT_EQ(output, "1\n10\n26\n");
 }
 
+TEST(build_mgr, embed_arr_int32_idx) {
+	cleanTestEnv();
+	// int32 expression as outer row index on the scale_expr path (variable inner dim)
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/043_embed_arr_int32_idx.pa");
+	ASSERT_EQ(output, "20\n30\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
