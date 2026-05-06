@@ -95,24 +95,27 @@ Variable type
         - "raw"      (`[]type`)  — initialization required; element count determined by SA from initializer
         - "fixed"    (`[#]type`) — initialization required; element count determined by SA from initializer
         - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
-    Note: For `[m][n]T` (2D array), the outer arr's `base-type` is itself an `arr` type
-    (`specifier: "raw"`, leaf `base-type` is a prim type). SA transforms this nested arr
+    - embedded - Boolean, true for contiguous 2D array (`[n]$[m]T` syntax); omitted when false
+    Note: For `[m][n]T` (2D array via pointer-of-pointers), the outer arr's `base-type` is itself an
+    `arr` type (`specifier: "raw"`, leaf `base-type` is a prim type). SA transforms this nested arr
     into a `pntr(pntr(T))` var-decl with auto-generated allocator calls (see SASpec.md).
-  4. embed - Directly embedded memory type (`$T`)
-    - base-type\* - Base variable type
-  5. strct - Struct type
+    Note: For `[n]$[m]T` (contiguous 2D array), the outer arr has `embedded: true` and its `base-type`
+    is an inner `arr`. SA allocates the entire grid as a single malloc of n*m elements.
+    Note: The `$` token is only valid in the `[n]$[m]T` form; other uses (e.g. standalone `$T`) are
+    rejected by var_declaration and produce no supported AST node.
+  4. strct - Struct type
     - name - Struct name string
     - fields - Field list
-  6. union - Union type (TBD)
+  5. union - Union type (TBD)
     - name - Union name string
     - fields - Field list
-  7. enum - Enum type (TBD)
+  6. enum - Enum type (TBD)
     - name - Enum name string
     - enumerators - Enumerator list
-  8. func - Function type
+  7. func - Function type
     - parameters - Parameter list
     - ret-type\* - Return variable type
-  9. user - User defined type
+  8. user - User defined type
     - type-name\* - Type name string
     - base-type\* - Base variable type
 

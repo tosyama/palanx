@@ -1059,3 +1059,140 @@ TEST(sa, logical_ops) {
 	ASSERT_EQ(with_cast["expr-type"],               "logical-and");
 	ASSERT_EQ(with_cast["value-type"]["type-name"], "int32");
 }
+
+TEST(sa, embed_arr_decl_const_inner) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/055_embed_arr_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// alloc-shapes must be empty (embedded arrays use stdlib malloc/free)
+	ASSERT_TRUE(jout["alloc-shapes"].empty());
+
+	// func f: single body stmt + free at scope end
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body_f = jout["functions"][0]["body"];
+
+	// body[0]: mat = malloc(rows * 16)
+	ASSERT_EQ(body_f[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body_f[0]["vars"][0]["name"], "mat");
+	const auto& mat_vtype = body_f[0]["vars"][0]["var-type"];
+	ASSERT_EQ(mat_vtype["type-kind"],   "pntr");
+	ASSERT_TRUE(mat_vtype.value("embedded", false));
+	ASSERT_EQ(mat_vtype["inner-size"],  4);
+	ASSERT_EQ(mat_vtype["base-type"]["type-name"], "int32");
+
+	const auto& init = body_f[0]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "call");
+	ASSERT_EQ(init["name"],      "malloc");
+	ASSERT_EQ(init["args"][0]["expr-type"],  "mul");
+	ASSERT_EQ(init["args"][0]["right"]["value"], "16");
+
+	// body[1]: return; body[2]: free(mat)  (or body.back() == free)
+	const auto& last_f = body_f.back();
+	ASSERT_EQ(last_f["stmt-type"], "expr");
+	ASSERT_EQ(last_f["body"]["name"], "free");
+	ASSERT_EQ(last_f["body"]["args"][0]["name"], "mat");
+}
+
+TEST(sa, embed_arr_decl_variable_inner) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/055_embed_arr_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_GE(jout["functions"].size(), 2u);
+
+	const auto& body_g = jout["functions"][1]["body"];
+
+	// body[0]: __mat_d1 = cols (uint64 hidden var for inner dimension)
+	ASSERT_EQ(body_g[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body_g[0]["vars"][0]["name"], "__mat_d1");
+	ASSERT_EQ(body_g[0]["vars"][0]["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(body_g[0]["vars"][0]["var-type"]["type-name"], "uint64");
+	ASSERT_EQ(body_g[0]["vars"][0]["init"]["name"], "cols");
+
+	// body[1]: mat = malloc(rows * (__mat_d1 * 4))  — var-type has no inner-size
+	ASSERT_EQ(body_g[1]["stmt-type"], "var-decl");
+	ASSERT_EQ(body_g[1]["vars"][0]["name"], "mat");
+	const auto& mat_vtype_g = body_g[1]["vars"][0]["var-type"];
+	ASSERT_EQ(mat_vtype_g["type-kind"], "pntr");
+	ASSERT_TRUE(mat_vtype_g.value("embedded", false));
+	ASSERT_FALSE(mat_vtype_g.contains("inner-size"));
+	ASSERT_EQ(mat_vtype_g["base-type"]["type-name"], "int32");
+
+	const auto& init_g = body_g[1]["vars"][0]["init"];
+	ASSERT_EQ(init_g["expr-type"], "call");
+	ASSERT_EQ(init_g["name"],      "malloc");
+	// args[0]: mul(rows, mul(__mat_d1, lit-uint(4)))
+	ASSERT_EQ(init_g["args"][0]["expr-type"], "mul");
+	ASSERT_EQ(init_g["args"][0]["right"]["expr-type"], "mul");
+	ASSERT_EQ(init_g["args"][0]["right"]["left"]["name"], "__mat_d1");
+	ASSERT_EQ(init_g["args"][0]["right"]["right"]["value"], "4");
+
+	// body.back(): free(mat)
+	const auto& last_g = body_g.back();
+	ASSERT_EQ(last_g["stmt-type"], "expr");
+	ASSERT_EQ(last_g["body"]["name"], "free");
+	ASSERT_EQ(last_g["body"]["args"][0]["name"], "mat");
+}
+
+TEST(sa, embed_arr_func_param) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/056_embed_arr_func_param.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_GE(jout["functions"].size(), 2u);
+
+	// func process: first param is pntr, embedded:true, inner-size:4
+	const auto& params = jout["functions"][0]["parameters"];
+	ASSERT_EQ(params[0]["name"], "mat");
+	const auto& mat_vt = params[0]["var-type"];
+	ASSERT_EQ(mat_vt["type-kind"], "pntr");
+	ASSERT_TRUE(mat_vt.value("embedded", false));
+	ASSERT_EQ(mat_vt["inner-size"], 4);
+	ASSERT_EQ(mat_vt["base-type"]["type-name"], "int32");
+
+	// return mat[0][0]: nested arr-index, outer elem-size=16, inner elem-size=4
+	const auto& ret = jout["functions"][0]["body"][0];
+	ASSERT_EQ(ret["stmt-type"], "return");
+	const auto& outer_idx = ret["values"][0];
+	ASSERT_EQ(outer_idx["expr-type"], "arr-index");
+	ASSERT_EQ(outer_idx["elem-size"]["value"], "4");
+	ASSERT_EQ(outer_idx["array"]["expr-type"], "arr-index");
+	ASSERT_EQ(outer_idx["array"]["elem-size"]["value"], "16");
+
+	// func caller: call to process succeeds (no error)
+	const auto& caller_body = jout["functions"][1]["body"];
+	bool found_call = false;
+	for (const auto& stmt : caller_body) {
+		if (stmt["stmt-type"] == "expr" && stmt["body"]["expr-type"] == "call"
+				&& stmt["body"]["name"] == "process") {
+			found_call = true;
+			break;
+		}
+	}
+	ASSERT_TRUE(found_call);
+}
+
+TEST(sa, embed_arr_var_row_access) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/057_embed_arr_var_row.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[0]: hidden var __mat_d1 = cols (inner dimension)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "__mat_d1");
+	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "cols");
+
+	// body[1]: mat = malloc(n * (__mat_d1 * 4)), no inner-size field
+	ASSERT_EQ(body[1]["vars"][0]["name"], "mat");
+	ASSERT_FALSE(body[1]["vars"][0]["var-type"].contains("inner-size"));
+
+	// body[3]: return mat[0][0] — inner arr-index (row access) has mul elem-size
+	const auto& ret_val = body[3]["values"][0];
+	ASSERT_EQ(ret_val["expr-type"], "arr-index");
+	const auto& row_idx = ret_val["array"];
+	ASSERT_EQ(row_idx["expr-type"], "arr-index");
+	ASSERT_EQ(row_idx["elem-size"]["expr-type"],    "mul");
+	ASSERT_EQ(row_idx["elem-size"]["left"]["name"], "__mat_d1");
+	ASSERT_EQ(row_idx["elem-size"]["right"]["value"], "4");
+}

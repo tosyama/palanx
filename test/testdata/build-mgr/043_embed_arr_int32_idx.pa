@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+
+int64 rows = 3;
+int64 cols = 4;
+[rows]$[cols]int32 mat;
+int32(10) -> mat[0][0];
+int32(20) -> mat[1][0];
+int32(30) -> mat[2][0];
+
+int32 r = int32(1);
+printf("%d\n", mat[r][0]);
+printf("%d\n", mat[int32(2)][0]);

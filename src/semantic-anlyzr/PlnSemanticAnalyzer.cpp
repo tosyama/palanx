@@ -175,8 +175,25 @@ const json* PlnSemanticAnalyzer::findPlnFunc(const string& name) const
 static json unsizedArrToPntr(const json& type) {
 	if (type.value("type-kind","") == "arr"
 		&& type.value("specifier","") == "raw"
-		&& type["size-expr"].is_null())
+		&& type["size-expr"].is_null()) {
+		// []$[m]T parameter form: arr with embed base-type (from gen-ast)
+		if (type["base-type"].value("type-kind","") == "embed") {
+			// base-type is {type-kind:"embed", base-type: {arr, size-expr:m, base-type:T}}
+			const auto& embed_bt = type["base-type"]["base-type"];  // [m]T part
+			json pntr = {{"type-kind","pntr"},{"embedded",true}};
+			if (embed_bt.value("type-kind","") == "arr" && !embed_bt["size-expr"].is_null()) {
+				const auto& sz = embed_bt["size-expr"];
+				string et = sz.value("expr-type","");
+				if (et == "lit-int" || et == "lit-uint")
+					pntr["inner-size"] = stoll(sz["value"].get<string>());
+				// Variable inner-size: no inner-size field; validateEmbeddedParams catches it
+			}
+			// []$[]T or []$[var]T: no inner-size → validateEmbeddedParams reports error
+			pntr["base-type"] = embed_bt.value("base-type", json{});
+			return pntr;
+		}
 		return {{"type-kind","pntr"},{"base-type", unsizedArrToPntr(type["base-type"])}};
+	}
 	return type;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -193,6 +210,20 @@ static void normalizeUnsizedArrSig(json& funcDef) {
 				r["var-type"] = unsizedArrToPntr(r["var-type"]);
 }
 
+void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
+{
+	if (!funcDef.contains("parameters")) return;
+	for (auto& p : funcDef["parameters"]) {
+		if (!p.contains("var-type")) continue;
+		const auto& vt = p["var-type"];
+		if (vt.value("embedded", false) && !vt.contains("inner-size")) {
+			cerr << locPrefix(funcDef)
+			     << PlnSaMessage::getMessage(E_EmbeddedArrUnsizedInner) << endl;
+			exit(1);
+		}
+	}
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
@@ -207,6 +238,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 			// Single named return: synthesize ret-type for call resolution
 			json funcEntry = f;
 			normalizeUnsizedArrSig(funcEntry);
+			validateEmbeddedParams(funcEntry);
 			if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 			registerPlnFunc(funcEntry["name"], funcEntry);
@@ -487,8 +519,26 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 			if (saArg.contains("value-type")) {
 				const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 				if (funcParams && argIdx < fixedCount) {
+					const json& paramVT = (*funcParams)[argIdx]["var-type"];
+					if (paramVT.value("embedded", false)) {
+						const json& argVT = saArg["value-type"];
+						bool argEmbedded = argVT.value("embedded", false);
+						bool paramHasSize = paramVT.contains("inner-size");
+						bool argHasSize   = argVT.contains("inner-size");
+						if (!argEmbedded || !argHasSize || !paramHasSize
+							|| paramVT["inner-size"] != argVT["inner-size"]) {
+							string expected = paramHasSize
+								? to_string(paramVT["inner-size"].get<int64_t>()) : "?";
+							string actual = (argEmbedded && argHasSize)
+								? to_string(argVT["inner-size"].get<int64_t>()) : "variable";
+							cerr << locPrefix(expr)
+							     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
+							            expected, actual) << endl;
+							exit(1);
+						}
+					}
 					const PlnType* toType = nullptr;
-					try { toType = registry_.fromJson((*funcParams)[argIdx]["var-type"]); }
+					try { toType = registry_.fromJson(paramVT); }
 					catch (const std::runtime_error&) {}
 					if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 						saArg = wrapConvert(saArg, registry_.toJson(toType));
@@ -526,9 +576,41 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		}
 	}
 
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+
+	if (array_type.value("embedded", false)) {
+		// Embedded 2D array row access: mat[i] → pntr(T), non-owning
+		// elem-size = stride = inner-size * sizeof(T)  (or __name_d1 * sizeof(T) if variable)
+		int elem_sz = elemSizeBytes(elem_type.value("type-name",""));
+		json row_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
+		json elem_size_node;
+
+		if (array_type.contains("inner-size")) {
+			int64_t stride = array_type["inner-size"].get<int64_t>() * elem_sz;
+			elem_size_node = {
+				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
+			};
+		} else {
+			string arr_name = sa_array["name"].get<string>();
+			json d1_id = {{"expr-type","id"},{"name","__"+arr_name+"_d1"},
+			              {"var-type",uint64_type},{"value-type",uint64_type}};
+			json sz_lit = {
+				{"expr-type","lit-uint"},{"value",to_string(elem_sz)},{"value-type",uint64_type}
+			};
+			elem_size_node = {
+				{"expr-type","mul"},{"value-type",uint64_type},
+				{"left",d1_id},{"right",sz_lit}
+			};
+		}
+		sa_expr["array"]      = sa_array;
+		sa_expr["index"]      = sa_index;
+		sa_expr["elem-size"]  = elem_size_node;
+		sa_expr["value-type"] = row_pntr;
+		return sa_expr;
+	}
+
 	int sz = (elem_type.value("type-kind","") == "pntr") ? 8
 		: elemSizeBytes(elem_type.value("type-name",""));
-	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 	json elem_size_node = {
 		{"expr-type", "lit-uint"}, {"value", to_string(sz)}, {"value-type", uint64_type}
 	};
@@ -558,6 +640,10 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
 			exit(1);
 		}
+		if (tk == "arr" && vtype.value("specifier", "") == "raw"
+				&& !vtype["size-expr"].is_null()
+				&& vtype.value("embedded", false))
+			return sa_embed_arr_var_decl(stmt);
 		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null())
 			return sa_arr_var_decl(stmt);
 	}
@@ -756,6 +842,108 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
+{
+	// [n]$[m]T: contiguous 2D array — single malloc(n * stride), free at scope exit
+	const json& vtype     = stmt["vars"][0]["var-type"];
+	const json& inner_arr = vtype["base-type"];   // [m]T part
+	const json& leaf_type = inner_arr["base-type"]; // T (prim)
+	const json& inner_sz  = inner_arr["size-expr"]; // m AST node
+
+	string leaf_name = leaf_type.value("type-name","");
+	int elem_size = elemSizeBytes(leaf_name);
+
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
+
+	auto checkIntSize = [&](const json& sz) {
+		if (!sz.contains("value-type")) return;
+		const PlnType* t = registry_.fromJson(sz["value-type"]);
+		bool is_int = t->kind == PlnType::Kind::Prim
+			&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float32
+			&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float64;
+		if (!is_int) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
+			exit(1);
+		}
+	};
+
+	bool inner_is_const = inner_sz.value("expr-type","") == "lit-int"
+	                   || inner_sz.value("expr-type","") == "lit-uint";
+
+	json result = json::array();
+	for (auto& var : stmt["vars"]) {
+		string name = var["name"];
+
+		json sa_outer = sa_expression(vtype["size-expr"], uint64Type); // n
+		checkIntSize(sa_outer);
+		json sa_inner = sa_expression(inner_sz, uint64Type);            // m
+		checkIntSize(sa_inner);
+
+		json pntr_type;
+		json size_arg;
+
+		if (inner_is_const) {
+			int64_t m_val = stoll(inner_sz["value"].get<string>());
+			int64_t stride = m_val * elem_size;
+			// LCOV_EXCL_EXCEPTION_BR_START
+			pntr_type = {{"type-kind","pntr"},{"embedded",true},
+			             {"inner-size",m_val},{"base-type",leaf_type}};
+			json stride_lit = {
+				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
+			};
+			size_arg = {
+				{"expr-type","mul"},{"value-type",uint64_type},
+				{"left",sa_outer},{"right",stride_lit}
+			};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+		} else {
+			string d1_name = "__" + name + "_d1";
+			// LCOV_EXCL_EXCEPTION_BR_START
+			pntr_type = {{"type-kind","pntr"},{"embedded",true},{"base-type",leaf_type}};
+
+			json d1_id = {{"expr-type","id"},{"name",d1_name},
+			              {"var-type",uint64_type},{"value-type",uint64_type}};
+			json elem_lit = {
+				{"expr-type","lit-uint"},{"value",to_string(elem_size)},{"value-type",uint64_type}
+			};
+			json d1_times_elem = {
+				{"expr-type","mul"},{"value-type",uint64_type},
+				{"left",d1_id},{"right",elem_lit}
+			};
+			size_arg = {
+				{"expr-type","mul"},{"value-type",uint64_type},
+				{"left",sa_outer},{"right",d1_times_elem}
+			};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+
+			declareVar(d1_name, uint64_type, &stmt);
+			// LCOV_EXCL_EXCEPTION_BR_START
+			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+				{"name",d1_name},{"var-type",uint64_type},{"init",sa_inner}
+			}})}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+		}
+
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json malloc_call = {
+			{"expr-type","call"},{"name","malloc"},{"func-type","c"},
+			{"args",json::array({size_arg})},{"value-type",pntr_type}
+		};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+		declareVar(name, pntr_type, &stmt);
+		arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
+		// LCOV_EXCL_EXCEPTION_BR_START
+		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+			{"name",name},{"var-type",pntr_type},{"init",malloc_call}
+		}})}});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 void PlnSemanticAnalyzer::sa_functions(const json& funcs)
 {
 	for (auto& f : funcs) sa_function(f);
@@ -772,6 +960,8 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 			exit(1);
 		}
 		json funcEntry = f;
+		normalizeUnsizedArrSig(funcEntry);
+		validateEmbeddedParams(funcEntry);
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
@@ -887,6 +1077,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		}
 		json funcEntry = f;
 		normalizeUnsizedArrSig(funcEntry);
+		validateEmbeddedParams(funcEntry);
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
@@ -898,6 +1089,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	json saFunc = funcDef;
 	normalizeUnsizedArrSig(saFunc);
+	validateEmbeddedParams(saFunc);
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];

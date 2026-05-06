@@ -64,6 +64,8 @@ class PlnSemanticAnalyzer {
 	json sa_expression_stmt(const json& stmt);
 	json sa_var_decl(const json& stmt);    // returns array of statements
 	json sa_arr_var_decl(const json& stmt); // returns array of statements
+	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
+	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);
 	json sa_assign_stmt(const json& stmt);

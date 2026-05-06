@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.19
+ver. 0.1.20
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -99,6 +99,39 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     to the root `alloc-shapes` array (deduplicated by shape-key across all var-decls).
   - Scope-exit free: palan call stmt `__pln_free_arr_arr_<leaf>(<name>, __<name>_d0)`.
   - build-mgr auto-generates the allocator/free Palan source from `alloc-shapes` and links it.
+
+  **`[n]$[m]T` (contiguous 2D array):** A `var-decl` with outer `arr` type-kind where
+  `embedded: true` and `base-type` is an inner `arr(prim T)` is transformed to a single
+  contiguous allocation:
+  - `var-type`: changed to `pntr(T, embedded:true [, inner-size:m])`:
+    - `embedded`: always `true`
+    - `inner-size`: present when `m` is a compile-time constant; absent when `m` is a runtime variable
+    - `base-type`: leaf element type `T`
+  - When `m` is a constant (e.g. `[n]$[4]int32`):
+    - `init`: C call `malloc(mul(<n-expr>, lit-uint(m * sizeof(T))))`
+  - When `m` is a variable (e.g. `[n]$[cols]int32`):
+    - A temp var `__<name>_d1` (uint64) is prepended, capturing the inner dimension expression.
+    - `init`: C call `malloc(mul(<n-expr>, mul(__<name>_d1, lit-uint(sizeof(T)))))`
+  - Scope-exit free: C call `free(<name>)` (no custom allocator; no `alloc-shapes` entry needed).
+  - `n` (row count) is not stored; only `m` (inner dimension) needs to be retained for row indexing.
+
+  **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
+  `pntr(T, embedded:true, inner-size:m)` type as the sized form. The inner dimension `m`
+  must be a compile-time constant literal; `[]$[]T` or `[]$[var]T` in a parameter is a
+  compile error (`E_EmbeddedArrUnsizedInner`).
+
+  **`arr-index` on embedded array (row access):** When the array expression has an embedded
+  pntr type (`embedded:true`), `arr[i]` is treated as a row access:
+  - `value-type`: `pntr(T)` — a non-owning transient row pointer (no `embedded` flag)
+  - `elem-size`: the row stride in bytes:
+    - Constant `inner-size`: `lit-uint(inner-size * sizeof(T))`
+    - Variable m: `mul(__<name>_d1, lit-uint(sizeof(T)))`
+  The subsequent `arr[i][j]` operates on the resulting plain `pntr(T)` with elem-size `sizeof(T)`.
+
+  **Function call type compatibility for embedded args:** When an argument is passed to a
+  parameter of type `pntr(T, embedded:true, inner-size:m)`, SA checks (at the raw JSON level):
+  - The argument's `value-type` must also have `embedded:true` and `inner-size:k` where `k == m`.
+  - Mismatch (or variable inner-size in the argument) is a compile error (`E_EmbeddedArrInnerSizeMismatch`).
 
   Scope-exit cleanup:
   - At the end of each block/while/function body containing array var-decls, SA appends

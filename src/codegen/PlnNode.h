@@ -232,11 +232,13 @@ struct ContinueStmt : Stmt {
 
 struct ArrIndexExpr : Expr {
     explicit ArrIndexExpr() : Expr(ExprKind::ArrIndex), scale(4), type(VRegType::Int64), idx_type(VRegType::Int64) {}
-    unique_ptr<Expr> array;   // Ptr64 expression (heap pointer)
-    unique_ptr<Expr> index;   // integer index expression
-    int scale;                 // element byte size: 1, 2, 4, or 8
-    VRegType type;             // element type
-    VRegType idx_type;         // index expression type
+    unique_ptr<Expr> array;      // Ptr64 expression (heap pointer)
+    unique_ptr<Expr> index;      // integer index expression
+    int scale;                    // element byte size or constant stride
+    unique_ptr<Expr> scale_expr; // non-null when inner dim is a runtime variable
+    bool addrOnly = false;        // true for embedded 2D row access (compute address, no dereference)
+    VRegType type;                // element type (Ptr64 for row access)
+    VRegType idx_type;            // index expression type
 };
 
 struct LogicalNotExpr : Expr {

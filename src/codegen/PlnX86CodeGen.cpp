@@ -224,6 +224,7 @@ void PlnX86CodeGen::emit(const VProg& prog)
             else if (auto* i  = std::get_if<Mov>      (&instr)) emitInstrMov(*i, rm);
             else if (auto* i  = std::get_if<DerefLoadIdx> (&instr)) emitInstrDerefLoadIdx(*i, rm);
             else if (auto* i  = std::get_if<DerefStoreIdx>(&instr)) emitInstrDerefStoreIdx(*i, rm);
+            else if (auto* c  = std::get_if<CalcAddrIdx>  (&instr)) emitInstrCalcAddrIdx(*c, rm);
             // BlockEnter and BlockLeave are no-ops
         }
     }
@@ -716,6 +717,34 @@ void PlnX86CodeGen::emitInstrDerefStoreIdx(const DerefStoreIdx& ds, const RegMap
         out << "\t" << mov << " " << src_loc.stackOffset << "(%rbp), " << scratch << "\n";
         out << "\t" << mov << " " << scratch << ", " << addr << "\n";
     }
+}
+
+void PlnX86CodeGen::emitInstrCalcAddrIdx(const CalcAddrIdx& ca, const RegMap& rm)
+{
+    if (!rm.count(ca.dst) || !rm.count(ca.base) || !rm.count(ca.idx)) return;
+    const PhysLoc& base_loc = rm.at(ca.base);
+    const PhysLoc& idx_loc  = rm.at(ca.idx);
+    const PhysLoc& dst_loc  = rm.at(ca.dst);
+
+    string base_reg;
+    if (!base_loc.isStack()) {
+        base_reg = base_loc.base;
+    } else {
+        out << "\tmovq " << base_loc.stackOffset << "(%rbp), %r10\n";
+        base_reg = "%r10";
+    }
+
+    // Sign/zero-extend index into idx_reg (%r11 or original register for 64-bit types).
+    string idx_reg = loadIdxR11(out, ca.idx_type, idx_loc);
+
+    // SIB byte only allows scale 1/2/4/8; use imulq for arbitrary strides (e.g. 16).
+    out << "\timulq $" << ca.scale << ", " << idx_reg << ", %r11\n";
+    out << "\taddq " << base_reg << ", %r11\n";
+
+    if (!dst_loc.isStack())
+        out << "\tmovq %r11, " << dst_loc.base << "\n";
+    else
+        out << "\tmovq %r11, " << dst_loc.stackOffset << "(%rbp)\n";
 }
 
 void PlnX86CodeGen::emitSection(const string& name)

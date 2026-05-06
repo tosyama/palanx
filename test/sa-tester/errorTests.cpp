@@ -177,6 +177,26 @@ TEST(sa_error, import_file_not_found) {
 	ASSERT_NE(sa.find("Could not open import file"), string::npos);
 }
 
+TEST(sa_error, embed_arr_unsized_inner) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_050_embed_arr_unsized_inner.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("inner dimension"), string::npos);
+}
+
+TEST(sa_error, embed_arr_inner_size_mismatch) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_051_embed_arr_inner_size_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("mismatch"), string::npos);
+}
+
 TEST(sa_error, void_call_as_expr) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -274,3 +294,25 @@ TEST(sa_error, float_logical_op) {
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Logical operator operand must be an integer type"), string::npos);
 }
+
+TEST(sa_error, embed_arr_variable_inner_arg) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_052_embed_arr_variable_inner_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("mismatch"), string::npos);
+	ASSERT_NE(sa.find("variable"), string::npos);
+}
+
+TEST(sa_error, embed_arr_float_size) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_053_embed_arr_float_size.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Array size expression must be an integer type"), string::npos);
+}
+

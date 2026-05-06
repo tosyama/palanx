@@ -561,6 +561,30 @@ TEST(gen_ast, multidim_arr) {
 	ASSERT_EQ(target["array"]["array"]["name"], "mat");
 }
 
+TEST(gen_ast, embed_arr_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/019_embed_arr_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);  // rows-decl, mat-decl
+
+	// var-decl: [rows]$[4]int32 mat
+	const auto& mat_decl = stmts[1];
+	ASSERT_EQ(mat_decl["stmt-type"], "var-decl");
+	const auto& vt = mat_decl["vars"][0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "arr");
+	ASSERT_EQ(vt["specifier"], "raw");
+	ASSERT_FALSE(vt["size-expr"].is_null());
+	ASSERT_TRUE(vt.value("embedded", false));
+	const auto& inner = vt["base-type"];
+	ASSERT_EQ(inner["type-kind"], "arr");
+	ASSERT_EQ(inner["specifier"], "raw");
+	ASSERT_FALSE(inner["size-expr"].is_null());
+	ASSERT_EQ(inner["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(inner["base-type"]["type-name"], "int32");
+}
+
 TEST(gen_ast, logical_ops) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/018_logical_ops.pa");

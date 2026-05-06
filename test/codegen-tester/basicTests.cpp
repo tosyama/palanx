@@ -920,3 +920,55 @@ TEST(codegen, deref_idx_small_types) {
     // Uint32 slot: zero-extend by movl from stack slot (upper 32 bits cleared by x86-64 movl)
     ASSERT_NE(asm_text.find("movl -8(%rbp), %r11d"),  string::npos);
 }
+
+TEST(codegen, embed_arr) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/050_embed_arr.sa.json";
+    string asmf = "out/050_embed_arr.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Row stride multiply: inner-size(4) * sizeof(int32)(4) = 16
+    ASSERT_NE(asm_text.find("imulq $16"), string::npos);
+    // Element read: DerefLoad with scale-4 indexed addressing
+    ASSERT_NE(asm_text.find("movl (%r"),  string::npos);
+    // Element write: DerefStore with scale-4 indexed addressing
+    ASSERT_NE(asm_text.find(", (%r"),     string::npos);
+}
+
+TEST(codegen, embed_arr_var_row) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/051_embed_arr_var_row.sa.json";
+    string asmf = "out/051_embed_arr_var_row.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Variable-stride row access: runtime multiply (register × register, not immediate)
+    // scale_expr path: Mul{offset, idx, stride} → imulq with register/memory operand
+    ASSERT_NE(asm_text.find("imulq %r"),   string::npos);
+    // Address calculation: Add{dst, base, offset} → addq for addrOnly row pointer
+    ASSERT_NE(asm_text.find("addq "),      string::npos);
+    // Element load: DerefLoadIdx with constant scale-4
+    ASSERT_NE(asm_text.find("movl (%r"),   string::npos);
+}
+
+TEST(codegen, float_in_block) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/052_float_in_block.sa.json";
+    string asmf = "out/052_float_in_block.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // FloLit inside block: blockVarStack_ tracks this VReg for scope cleanup
+    ASSERT_NE(asm_text.find(".double 3.14"), string::npos);
+    // IntLit-as-float inside block (flo64 y = 2): blockVarStack_ tracks this too
+    ASSERT_NE(asm_text.find(".double 2"),    string::npos);
+    // Both float vars allocated on stack
+    ASSERT_NE(asm_text.find("movsd"),        string::npos);
+}

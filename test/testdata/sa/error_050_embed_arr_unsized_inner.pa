@@ -1,0 +1,3 @@
+func bad([]$[]int32 mat) -> int32 {
+    return 0;
+}
