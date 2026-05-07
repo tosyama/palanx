@@ -217,6 +217,11 @@ Expression model
     - right\* - Right operand expression model
   15. logical-not - Logical NOT (`!a`; result: int32, 0 or 1)
     - operand\* - Operand expression model
+  16. member-call - Qualified function call (`L.f(args)` syntax; consumed by SA, not emitted to sa.json)
+    - object\* - Object expression (typically `id` for module alias; SA rejects non-`id` in v0.1.21)
+    - method\* - Method/function name string
+    - args - Argument expression list
+    Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

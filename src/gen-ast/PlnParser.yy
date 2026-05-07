@@ -746,24 +746,29 @@ tapple_inner: expression
 	{ $$ = {{"not-impl", true}}; }
 	;
 
-func_call: term '(' arguments ')'
+func_call: ID '(' arguments ')'
 	{
-		string name = $1.value("name", "");
-		if (typeNames.count(name)) {
+		if (typeNames.count($1)) {
 			if ($3.size() == 1) {
 				$$ = {{"expr-type",   "cast"},
-				      {"target-type", {{"type-kind", "prim"}, {"type-name", name}}},
+				      {"target-type", {{"type-kind", "prim"}, {"type-name", move($1)}}},
 				      {"src",         $3[0]}};
 				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
 			}
-		} else if ($1.value("expr-type", "") == "id") {
-			$$ = {{"expr-type", "call"}, {"name", name}, {"args", move($3)}};
-			LOC($$, @$);
 		} else {
-			$$ = {{"expr-type", "not-impl"}};
+			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", move($3)}};
+			LOC($$, @$);
 		}
+	}
+	| expression '.' ID '(' arguments ')'
+	{
+		$$ = {{"expr-type", "member-call"},
+		      {"object", move($1)},
+		      {"method", move($3)},
+		      {"args", move($5)}};
+		LOC($$, @$);
 	}
 	;
 

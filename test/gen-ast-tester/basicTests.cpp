@@ -636,3 +636,26 @@ TEST(gen_ast, uint_literal) {
 	ASSERT_EQ(init["expr-type"], "lit-uint");
 	ASSERT_EQ(init["value"], "18446744073709551615");
 }
+
+TEST(gen_ast, member_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/021_member_call.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	// M.f(1, 2) → member-call
+	const auto& mc = stmts[0]["body"];
+	ASSERT_EQ(mc["expr-type"], "member-call");
+	ASSERT_EQ(mc["object"]["expr-type"], "id");
+	ASSERT_EQ(mc["object"]["name"], "M");
+	ASSERT_EQ(mc["method"], "f");
+	ASSERT_EQ(mc["args"].size(), 2);
+
+	// f(1, 2) → call (unchanged)
+	const auto& c = stmts[1]["body"];
+	ASSERT_EQ(c["expr-type"], "call");
+	ASSERT_EQ(c["name"], "f");
+	ASSERT_EQ(c["args"].size(), 2);
+}
