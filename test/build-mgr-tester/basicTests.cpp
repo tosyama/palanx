@@ -323,6 +323,12 @@ TEST(build_mgr, embed_arr_int32_idx) {
 	ASSERT_EQ(output, "20\n30\n");
 }
 
+TEST(build_mgr, uint_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/044_uint_literal.pa");
+	ASSERT_EQ(output, "18446744073709551615\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

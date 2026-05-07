@@ -617,3 +617,22 @@ TEST(gen_ast, logical_ops) {
 	ASSERT_EQ(mixed["left"]["expr-type"],  "logical-and");
 	ASSERT_EQ(mixed["right"]["expr-type"], "logical-not");
 }
+
+TEST(gen_ast, uint_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/020_uint_literal.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	const auto& decl = stmts[0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& var = decl["vars"][0];
+	ASSERT_EQ(var["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(var["var-type"]["type-name"], "uint64");
+
+	const auto& init = var["init"];
+	ASSERT_EQ(init["expr-type"], "lit-uint");
+	ASSERT_EQ(init["value"], "18446744073709551615");
+}

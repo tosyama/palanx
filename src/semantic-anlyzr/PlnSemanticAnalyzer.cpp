@@ -320,6 +320,18 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		else
 			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
 
+	} else if (expr_type == "lit-uint") {
+		if (expectedType && expectedType->kind == PlnType::Kind::Prim) {
+			auto pn = static_cast<const PrimType*>(expectedType)->name;
+			if (pn == PrimType::Name::Uint8  || pn == PrimType::Name::Uint16 ||
+			    pn == PrimType::Name::Uint32 || pn == PrimType::Name::Uint64)
+				sa_expr["value-type"] = registry_.toJson(expectedType);
+			else
+				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Uint64));
+		} else {
+			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Uint64));
+		}
+
 	} else if (expr_type == "lit-flo") {
 		if (expectedType && expectedType->kind == PlnType::Kind::Prim) {
 			auto pn = static_cast<const PrimType*>(expectedType)->name;
