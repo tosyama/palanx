@@ -1,0 +1,5 @@
+cinclude <stdio.h>;
+{
+    import "lib_math.pa";
+    printf("%ld\n", square(2));
+}
