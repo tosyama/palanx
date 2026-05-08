@@ -1196,3 +1196,73 @@ TEST(sa, embed_arr_var_row_access) {
 	ASSERT_EQ(row_idx["elem-size"]["left"]["name"], "__mat_d1");
 	ASSERT_EQ(row_idx["elem-size"]["right"]["value"], "4");
 }
+
+static void genLibSaImport()
+{
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+}
+
+TEST(sa, import_unqualified)
+{
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/058_import_unqualified.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& init = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "call");
+	ASSERT_EQ(init["func-type"], "palan");
+	ASSERT_EQ(init["name"], "square");
+}
+
+TEST(sa, import_block_scope)
+{
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/059_import_block_scope.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto& block = jout["statements"][0];
+	ASSERT_EQ(block["stmt-type"], "block");
+	const auto& inner = block["body"][0];
+	ASSERT_EQ(inner["stmt-type"], "var-decl");
+	ASSERT_EQ(inner["vars"][0]["init"]["func-type"], "palan");
+}
+
+TEST(sa, import_selective)
+{
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/060_import_selective.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& init = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(init["func-type"], "palan");
+	ASSERT_EQ(init["name"], "square");
+}
+
+TEST(sa, import_alias)
+{
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/061_import_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& a_init = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(a_init["expr-type"], "call");
+	ASSERT_EQ(a_init["func-type"], "palan");
+	ASSERT_EQ(a_init["name"], "square");
+	const auto& b_init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(b_init["func-type"], "palan");
+	ASSERT_EQ(b_init["name"], "cube");
+}
+
+TEST(sa, import_alias_tapple)
+{
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/062_import_alias_tapple.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto& tapple = jout["statements"][0];
+	ASSERT_EQ(tapple["stmt-type"], "tapple-decl");
+	ASSERT_EQ(tapple["value"]["expr-type"], "call");
+	ASSERT_EQ(tapple["value"]["func-type"], "palan");
+	ASSERT_EQ(tapple["value"]["name"], "divmod");
+	ASSERT_EQ(tapple["value"]["value-types"].size(), 2u);
+}

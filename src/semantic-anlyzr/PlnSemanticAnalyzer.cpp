@@ -2,6 +2,7 @@
 #include <fstream>
 #include <filesystem>
 #include <map>
+#include <set>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 
@@ -168,6 +169,30 @@ const json* PlnSemanticAnalyzer::findPlnFunc(const string& name) const
 	for (auto it = plnFuncScopes.rbegin(); it != plnFuncScopes.rend(); ++it) {
 		auto f = it->find(name);
 		if (f != it->end()) return &f->second;
+	}
+	return nullptr;
+}
+
+const json* PlnSemanticAnalyzer::findImportFunc(const string& fname) const
+{
+	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it) {
+		auto alias_it = it->find("");
+		if (alias_it == it->end()) continue;
+		auto f_it = alias_it->second.find(fname);
+		if (f_it != alias_it->second.end())
+			return &f_it->second;
+	}
+	return nullptr;
+}
+
+const json* PlnSemanticAnalyzer::findImportFuncByAlias(const string& alias, const string& fname) const
+{
+	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it) {
+		auto alias_it = it->find(alias);
+		if (alias_it == it->end()) continue;
+		auto f_it = alias_it->second.find(fname);
+		if (f_it != alias_it->second.end())
+			return &f_it->second;
 	}
 	return nullptr;
 }
@@ -439,6 +464,9 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 	} else if (expr_type == "call") {
 		return sa_expr_call(expr);
 
+	} else if (expr_type == "member-call") {
+		return sa_expr_member_call(expr);
+
 	} else if (expr_type == "arr-index") {
 		return sa_expr_arr_index(expr);
 	}
@@ -505,7 +533,15 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 				if (p.value("name", "") == "...") { isVariadic = true; break; }
 		}
 	} else {
-		const json* pFunc = findPlnFunc(expr["name"].get<string>());
+		const string& callName = expr["name"].get<string>();
+		const json* pFunc = findPlnFunc(callName);
+		if (pFunc == nullptr) {
+			pFunc = findImportFunc(callName);
+			if (pFunc != nullptr && pFunc->empty()) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AmbiguousCall, callName) << endl;
+				exit(1);
+			}
+		}
 		if (pFunc != nullptr) {
 			sa_expr["func-type"] = "palan";
 			if (pFunc->contains("ret-type"))
@@ -513,8 +549,13 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 			if (pFunc->contains("parameters"))
 				funcParams = &(*pFunc)["parameters"];
 		} else {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedFunction,
-				expr["name"].get<string>()) << endl;
+			for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
+				for (auto& [als, bucket] : *it)
+					if (als != "" && bucket.count(callName)) {
+						cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnqualifiedAliasCall, callName) << endl;
+						exit(1);
+					}
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedFunction, callName) << endl;
 			exit(1);
 		}
 	}
@@ -631,6 +672,59 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 	sa_expr["index"]      = sa_index;
 	sa_expr["elem-size"]  = elem_size_node;
 	sa_expr["value-type"] = elem_type;
+	return sa_expr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
+{
+	const string& alias = expr["object"]["name"].get<string>();
+	const string& method = expr["method"].get<string>();
+
+	bool aliasFound = false;
+	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
+		if (it->count(alias)) { aliasFound = true; break; }
+	if (!aliasFound) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownAlias, alias) << endl;
+		exit(1);
+	}
+
+	const json* pFunc = findImportFuncByAlias(alias, method);
+	if (pFunc == nullptr) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedFunction, method) << endl;
+		exit(1);
+	}
+
+	json sa_expr = expr;
+	sa_expr["expr-type"] = "call";
+	sa_expr["name"] = method;
+	sa_expr.erase("object");
+	sa_expr.erase("method");
+	sa_expr["func-type"] = "palan";
+	if (pFunc->contains("ret-type"))
+		sa_expr["value-type"] = (*pFunc)["ret-type"];
+
+	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
+		sa_expr["category"] = "expiring";
+
+	const json* funcParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
+	if (expr.contains("args")) {
+		sa_expr["args"] = json::array();
+		size_t fixedCount = funcParams ? funcParams->size() : 0;
+		size_t argIdx = 0;
+		for (auto& arg : expr["args"]) {
+			json saArg = sa_expression(arg);
+			if (saArg.contains("value-type") && funcParams && argIdx < fixedCount) {
+				const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+				const PlnType* toType = nullptr;
+				try { toType = registry_.fromJson((*funcParams)[argIdx]["var-type"]); }
+				catch (const std::runtime_error&) {}
+				if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
+					saArg = wrapConvert(saArg, registry_.toJson(toType));
+			}
+			sa_expr["args"].push_back(saArg);
+			argIdx++;
+		}
+	}
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -1222,10 +1316,32 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 {
 	const json& callExpr = stmt["value"];
-	const string& fname = callExpr["name"].get<string>();
+	const json* pFunc = nullptr;
+	string fname;
 
-	// Resolve function — fall back to not-impl if not a known multi-return Palan func
-	const json* pFunc = findPlnFunc(fname);
+	if (callExpr["expr-type"] == "member-call") {
+		const string& alias = callExpr["object"]["name"].get<string>();
+		fname = callExpr["method"].get<string>();
+		bool aliasFound = false;
+		for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
+			if (it->count(alias)) { aliasFound = true; break; }
+		if (!aliasFound) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownAlias, alias) << endl;
+			exit(1);
+		}
+		pFunc = findImportFuncByAlias(alias, fname);
+	} else {
+		fname = callExpr["name"].get<string>();
+		pFunc = findPlnFunc(fname);
+		if (pFunc == nullptr) {
+			pFunc = findImportFunc(fname);
+			if (pFunc != nullptr && pFunc->empty()) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AmbiguousCall, fname) << endl;
+				exit(1);
+			}
+		}
+	}
+
 	if (pFunc == nullptr) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleUndefinedFunction, fname) << endl;
 		exit(1);
@@ -1289,13 +1405,35 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 	json imp_ast = json::parse(astfile);
 
 	if (!imp_ast.contains("export")) return;
+
+	string alias = stmt.value("alias", "");
+	bool hasAlias = !alias.empty();
+
+	set<string> targets;
+	bool selective = stmt.contains("targets");
+	if (selective)
+		for (auto& t : stmt["targets"])
+			targets.insert(t.get<string>());
+
+	auto& currentScope = importScopes.back();
+
 	for (auto& f : imp_ast["export"]) {
-		if (findPlnFunc(f["name"].get<string>())) continue;
+		string fname = f["name"].get<string>();
+		if (selective && !targets.count(fname)) continue;
+
 		json funcEntry = f;
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets")
 				&& funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		registerPlnFunc(funcEntry["name"], funcEntry);
+
+		if (hasAlias) {
+			currentScope[alias][fname] = funcEntry;
+		} else {
+			if (currentScope[""].count(fname))
+				currentScope[""][fname] = json{};  // ambiguous sentinel
+			else
+				currentScope[""][fname] = funcEntry;
+		}
 	}
 }
 

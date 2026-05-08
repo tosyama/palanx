@@ -1,0 +1,2 @@
+import square from "lib_sa_import.pa";
+int64 r = square(4);

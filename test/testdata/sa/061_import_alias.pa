@@ -1,0 +1,3 @@
+import "lib_sa_import.pa" as M;
+int64 a = M.square(3);
+int64 b = M.cube(2);

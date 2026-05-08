@@ -1,0 +1,2 @@
+import "lib_sa_import.pa" as M;
+(int64 q, r) = M.divmod(10, 3);

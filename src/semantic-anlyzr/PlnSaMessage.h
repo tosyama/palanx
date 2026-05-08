@@ -40,6 +40,9 @@ enum PlnSaMessageCode {
 	E_LogicalOpNotInteger,
 	E_EmbeddedArrUnsizedInner,		// []$[]T in parameter: inner dimension must be fixed
 	E_EmbeddedArrInnerSizeMismatch,	// arg1: expected inner-size, arg2: actual
+	E_AmbiguousCall,			// arg1: function name
+	E_UnknownAlias,				// arg1: alias name
+	E_UnqualifiedAliasCall,			// arg1: function name
 };
 
 class PlnSaMessage

@@ -316,3 +316,43 @@ TEST(sa_error, embed_arr_float_size) {
 	ASSERT_NE(sa.find("Array size expression must be an integer type"), string::npos);
 }
 
+TEST(sa_error, unqualified_alias_call)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_054_unqualified_alias_call.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("requires a module alias qualifier"), string::npos);
+}
+
+TEST(sa_error, ambiguous_call)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import2.pa -o out/lib_sa_import2.pa.ast.json");
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_055_ambiguous_call.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("Ambiguous function call"), string::npos);
+}
+
+TEST(sa_error, unknown_alias)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_056_unknown_alias.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("Unknown module alias"), string::npos);
+}
+
+TEST(sa_error, import_block_scope_out)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_057_import_block_scope_out.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("Undefined function"), string::npos);
+}
+
