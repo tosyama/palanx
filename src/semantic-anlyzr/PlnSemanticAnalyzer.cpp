@@ -694,22 +694,36 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 		exit(1);
 	}
 
+	bool isCFunc = pFunc->value("_c-func", false);
+
 	json sa_expr = expr;
 	sa_expr["expr-type"] = "call";
 	sa_expr["name"] = method;
 	sa_expr.erase("object");
 	sa_expr.erase("method");
-	sa_expr["func-type"] = "palan";
-	if (pFunc->contains("ret-type"))
-		sa_expr["value-type"] = (*pFunc)["ret-type"];
+	sa_expr["func-type"] = isCFunc ? "c" : "palan";
+
+	if (isCFunc) {
+		if (pFunc->contains("ret-type")
+				&& (*pFunc)["ret-type"].value("type-name", "") != "void")
+			sa_expr["value-type"] = (*pFunc)["ret-type"];
+	} else {
+		if (pFunc->contains("ret-type"))
+			sa_expr["value-type"] = (*pFunc)["ret-type"];
+	}
 
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
 
 	const json* funcParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
+	bool isVariadic = false;
+	if (isCFunc && funcParams)
+		for (auto& p : *funcParams)
+			if (p.value("name", "") == "...") { isVariadic = true; break; }
+
 	if (expr.contains("args")) {
 		sa_expr["args"] = json::array();
-		size_t fixedCount = funcParams ? funcParams->size() : 0;
+		size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
 		size_t argIdx = 0;
 		for (auto& arg : expr["args"]) {
 			json saArg = sa_expression(arg);
@@ -1373,7 +1387,18 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
-	if (stmt.contains("functions")) {
+	if (!stmt.contains("functions")) return;
+
+	if (stmt.contains("alias")) {
+		const string& alias = stmt["alias"].get<string>();
+		auto& currentScope = importScopes.back();
+		for (auto& f : stmt["functions"]) {
+			string fname = f["name"].get<string>();
+			json entry = f;
+			entry["_c-func"] = true;
+			currentScope[alias][fname] = entry;
+		}
+	} else {
 		for (auto& f : stmt["functions"]) {
 			registerCFunc(f["name"], f);
 		}

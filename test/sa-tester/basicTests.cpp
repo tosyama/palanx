@@ -1266,3 +1266,16 @@ TEST(sa, import_alias_tapple)
 	ASSERT_EQ(tapple["value"]["name"], "divmod");
 	ASSERT_EQ(tapple["value"]["value-types"].size(), 2u);
 }
+
+TEST(sa, cinclude_alias)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/063_cinclude_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmt = jout["statements"][0];
+	ASSERT_EQ(stmt["stmt-type"], "expr");
+	const auto& call = stmt["body"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["func-type"], "c");
+	ASSERT_EQ(call["name"], "printf");
+}

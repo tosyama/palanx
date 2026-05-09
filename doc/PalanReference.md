@@ -266,12 +266,16 @@ printf("%ld %ld\n", ab, bc);
 ## 9. C Library Integration
 
 ```palan
-cinclude <stdio.h>;      // system header
-cinclude "myheader.h";   // local header
-printf("%ld\n", x);      // call C function
+cinclude <stdio.h>;          // system header — functions visible as unqualified calls
+cinclude "myheader.h";       // local header
+printf("%ld\n", x);          // call C function directly
+
+cinclude <stdio.h> as S;     // alias — functions accessible only as S.xxx()
+S.printf("%d\n", 42);        // qualified call
 ```
 
 - `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
+- With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
 
 ---
 

@@ -356,3 +356,12 @@ TEST(sa_error, import_block_scope_out)
 	ASSERT_NE(sa.find("Undefined function"), string::npos);
 }
 
+TEST(sa_error, cinclude_unqualified_alias)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_058_cinclude_unqualified_alias.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("requires a module alias qualifier"), string::npos);
+}
+

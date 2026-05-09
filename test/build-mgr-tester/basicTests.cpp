@@ -353,6 +353,12 @@ TEST(build_mgr, selective_alias_import) {
 	ASSERT_EQ(output, "25\n");
 }
 
+TEST(build_mgr, cinclude_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/049_cinclude_alias.pa");
+	ASSERT_EQ(output, "42\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
