@@ -365,3 +365,14 @@ TEST(sa_error, cinclude_unqualified_alias)
 	ASSERT_NE(sa.find("requires a module alias qualifier"), string::npos);
 }
 
+TEST(sa_error, float_logical_not)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_059_float_logical_not.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Logical operator operand must be an integer type"), string::npos);
+}
+

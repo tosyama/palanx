@@ -1279,3 +1279,90 @@ TEST(sa, cinclude_alias)
 	ASSERT_EQ(call["func-type"], "c");
 	ASSERT_EQ(call["name"], "printf");
 }
+
+TEST(sa, lit_uint_typed)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/064_lit_uint_typed.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// uint32 x = 5u → lit-uint adopts uint32 from expectedType
+	const auto& x = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(x["name"], "x");
+	ASSERT_EQ(x["init"]["expr-type"], "lit-uint");
+	ASSERT_EQ(x["init"]["value-type"]["type-name"], "uint32");
+
+	// uint8 y = 3u → lit-uint adopts uint8 from expectedType
+	const auto& y = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(y["name"], "y");
+	ASSERT_EQ(y["init"]["value-type"]["type-name"], "uint8");
+}
+
+TEST(sa, lit_flo_variadic_arg)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/065_lit_flo_variadic.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// 3.14 passed to printf (variadic, no expectedType) → value-type defaults to flo64
+	bool found = false;
+	for (auto& stmt : jout["statements"]) {
+		if (stmt["stmt-type"] != "expr") continue;
+		const auto& call = stmt["body"];
+		if (call["name"] != "printf") continue;
+		for (const auto& arg : call["args"]) {
+			if (arg["expr-type"] != "lit-flo") continue;
+			ASSERT_EQ(arg["value-type"]["type-name"], "flo64");
+			found = true;
+		}
+	}
+	ASSERT_TRUE(found);
+}
+
+TEST(sa, cmp_mixed_int_widening)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/066_cmp_mixed_int.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// int32 x = a(int32) < b(int64) → left(a) wrapped in convert
+	const auto& x_cmp = jout["statements"][2]["vars"][0]["init"];
+	ASSERT_EQ(x_cmp["expr-type"], "cmp");
+	ASSERT_EQ(x_cmp["left"]["expr-type"],              "convert");
+	ASSERT_EQ(x_cmp["left"]["value-type"]["type-name"], "int64");
+
+	// int32 y = b(int64) < a(int32) → right(a) wrapped in convert
+	const auto& y_cmp = jout["statements"][3]["vars"][0]["init"];
+	ASSERT_EQ(y_cmp["expr-type"], "cmp");
+	ASSERT_EQ(y_cmp["right"]["expr-type"],              "convert");
+	ASSERT_EQ(y_cmp["right"]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, arith_right_widen)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/067_arith_right_widen.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// int64 c = a(int64) + b(int32) → right(b) wrapped in convert to int64
+	const auto& add = jout["statements"][2]["vars"][0]["init"];
+	ASSERT_EQ(add["expr-type"], "add");
+	ASSERT_EQ(add["left"]["expr-type"],               "id");
+	ASSERT_EQ(add["left"]["value-type"]["type-name"],  "int64");
+	ASSERT_EQ(add["right"]["expr-type"],               "convert");
+	ASSERT_EQ(add["right"]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, arith_lit_retypes_to_right)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/068_arith_lit_retypes.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// int64 c = 4 + b(int64) → lit-int on left retypes to int64 via second pass
+	const auto& add = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(add["expr-type"], "add");
+	ASSERT_EQ(add["left"]["expr-type"],               "lit-int");
+	ASSERT_EQ(add["left"]["value-type"]["type-name"],  "int64");
+	ASSERT_EQ(add["right"]["value-type"]["type-name"], "int64");
+}
