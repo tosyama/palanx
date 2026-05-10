@@ -41,7 +41,7 @@ cd build && bin/sa-tester --gtest_filter=sa.call_c_function_annotated
 ```bash
 cd build && bin/palan-c2ast -ds stdio.h                        # Parse system header to AST
 cd build && bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa
-cd build && bin/palan ../test/testdata/build-mgr/001_helloworld.pa && ./a.out
+cd build && bin/palan ../test/testdata/build-mgr/001_helloworld.pa
 ```
 
 ## Architecture
@@ -95,7 +95,13 @@ src/
 │   ├── PlnLexer.ll      Flex lexer rules
 │   └── PlnParser.yy     Bison grammar rules
 ├── semantic-anlyzr/ palan-sa — semantic analyzer
-│   └── PlnSemanticAnalyzer.*
+│   ├── PlnSemanticAnalyzer.*
+│   ├── PlnSaDecl.cpp
+│   ├── PlnSaStmt.cpp
+│   ├── PlnSaExpr.cpp
+│   ├── PlnSaMessage.*
+│   ├── PlnSaInternal.h
+│   └── PlnType.*
 ├── codegen/         palan-codegen — x86-64 code generator
 │   ├── PlnNode.h        AST node types (Module, Stmt, Expr variants)
 │   ├── PlnVProg.h       VReg / VInstr / VProg IR definitions
