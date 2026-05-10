@@ -323,6 +323,42 @@ TEST(build_mgr, embed_arr_int32_idx) {
 	ASSERT_EQ(output, "20\n30\n");
 }
 
+TEST(build_mgr, uint_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/044_uint_literal.pa");
+	ASSERT_EQ(output, "18446744073709551615\n");
+}
+
+TEST(build_mgr, block_import) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/045_block_import.pa");
+	ASSERT_EQ(output, "4\n");
+}
+
+TEST(build_mgr, selective_import) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/046_selective_import.pa");
+	ASSERT_EQ(output, "16\n");
+}
+
+TEST(build_mgr, alias_import) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/047_alias_import.pa");
+	ASSERT_EQ(output, "9\n8\n");
+}
+
+TEST(build_mgr, selective_alias_import) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/048_selective_alias_import.pa");
+	ASSERT_EQ(output, "25\n");
+}
+
+TEST(build_mgr, cinclude_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/049_cinclude_alias.pa");
+	ASSERT_EQ(output, "42\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

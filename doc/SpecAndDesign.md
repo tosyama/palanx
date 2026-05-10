@@ -6,39 +6,57 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-04-30)
-version: 0.1.20
-- This iteration adds 2D contiguous array support (`[n]$[m]T`), equivalent to a C-style 2D array.
-- Syntax: `[n]$[m]T` declares a 2D array allocated as a single contiguous block of `n*m*sizeof(T)` bytes.
-- Element access: `arr[i][j]` read and write.
-- Row access: `arr[i]` returns a transient (non-owning) `[]T` pointer to the i-th row.
-- Function parameters: `[]$[m]T` with a fixed inner dimension is valid; `[]$[]T` (unknown inner dimension) is a compile error.
-- Allocation: single `malloc(n * m * sizeof(T))`; freed automatically at scope end.
+### 2.1 Iteration Goal (2026-05-06)
+version: 0.1.21
+- This iteration completes import scoping and fixes unsigned integer literal syntax.
 
-The goal is that the following program produces correct output:
+**Import scope (selective import and alias)**
+- `import { f1, f2 } from "lib.pa"` — import only the listed names; other exported symbols are not visible.
+- `import "lib.pa" as L` — make exported symbols accessible as `L.f1()` etc. (namespace prefix).
+- `import { f1 } from "lib.pa" as L` — selective + alias combined; `L.f1()` only.
+- `importScopes` in the SA is currently a stub; this iteration wires it up so that scoped and selective imports are properly resolved.
+
+Design decisions for import scoping:
+1. **Namespace separator and AST node**: `.` is used as the separator (e.g., `L.f()`). The call is represented as a new `member-call` expr-type with an `object` expression and a `method` name, rather than adding a `qualifier` string to the existing `call` node. This design is forward-compatible with future struct method calls (`obj.method(args)`), which will use the same `member-call` node; the SA distinguishes module alias from struct variable by inspecting what `object` resolves to. The parser already uses `%glr-parser`, so `expr '.' ID '(' ... ')'` does not cause shift-reduce conflicts (GLR explores both paths; since `.` is unused elsewhere, only the member-call path succeeds). The grammar therefore uses `expr` as the object, making chained calls like `getObj().method()` syntactically valid from the start; in v0.1.21 the SA rejects non-`id` objects until struct support is added. The `member-call` AST node is consumed by SA and emitted as a regular `call` node in sa.json; no codegen changes are required.
+2. **Unqualified access after alias import**: Forbidden. `import "lib.pa" as L` makes symbols accessible only as `L.f()`, not as `f()` directly.
+3. **Selective + alias combination**: Allowed. `import { f1 } from "lib.pa" as L` makes only `L.f1()` visible.
+4. **Name collision on unqualified import**: Deferred to call time. Importing the same name from two modules is not an error at the import statement; an "ambiguous call" error is emitted only when the conflicting name is called.
+5. **`importScopes` structure**: All imports (with or without alias) are stored in `importScopes` (a scoped stack of `alias → name → funcDef` maps). Unqualified imports use the empty string `""` as the alias key. Locally-defined functions remain in `plnFuncScopes` (no change). Call resolution checks `plnFuncScopes` first, then `importScopes`.
+
+**Issue #5 — unsigned integer literal suffix `u`**
+- `123u` is currently a syntax error (lexer has no action rule for `UDIGIT`).
+- Add a Flex rule in `PlnLexer.ll` so that `123u` is tokenized as `UINT` and parsed as a `lit-uint` expression with `uint64` type.
+
+The goal is that the following programs produce correct output:
 
 ```palan
+// lib_math.pa
+export func square(int64 x) -> int64 { return x * x; }
+export func cube(int64 x)   -> int64 { return x * x * x; }
+```
+
+```palan
+// main.pa — selective import
 cinclude <stdio.h>;
+import { square } from "lib_math.pa";
 
-func row_sum([]$[4]int32 mat, int64 r) -> int32 {
-    return mat[r][0] + mat[r][1] + mat[r][2] + mat[r][3];
-}
-
-int64 rows = 3;
-[rows]$[4]int32 mat;
-int32(1) -> mat[0][0]; int32(2) -> mat[0][1]; int32(3) -> mat[0][2]; int32(4) -> mat[0][3];
-int32(5) -> mat[1][0]; int32(6) -> mat[1][1]; int32(7) -> mat[1][2]; int32(8) -> mat[1][3];
-
-printf("%d\n", mat[0][0]);
-printf("%d\n", row_sum(mat, 0));
-printf("%d\n", row_sum(mat, 1));
+printf("%ld\n", square(4));   // 16  (cube is not visible)
 ```
 
-Expected output:
+```palan
+// main2.pa — alias import
+cinclude <stdio.h>;
+import "lib_math.pa" as M;
+
+printf("%ld\n", M.square(3));  // 9
+printf("%ld\n", M.cube(2));    // 8
 ```
-1
-10
-26
+
+```palan
+// main3.pa — uint literal
+cinclude <stdio.h>;
+uint64 x = 18446744073709551615u;
+printf("%llu\n", x);           // 18446744073709551615
 ```
 
 
@@ -144,6 +162,20 @@ Design:
  (e.g., int32 value used in an int64 context), palan-sa inserts a `convert` expression node into sa.json.
  Explicit casts (`type-name(expr)`) allow narrowing and signed↔unsigned conversions; palan-sa resolves
  the `cast` AST node to a `convert` node (or removes it for identical types) and emits `convert` to sa.json.
+
+Import resolution:
+ Imported functions are stored in `importScopes`, a scope stack parallel to `plnFuncScopes`.
+ Each entry maps an alias name (or `""` for unqualified imports) to a `name → funcDef` map.
+ - `import "lib.pa"` and `import { f } from "lib.pa"` → stored under alias `""`.
+ - `import "lib.pa" as L` and `import { f } from "lib.pa" as L` → stored under alias `"L"`.
+ Unqualified call `f()`: resolved by searching `plnFuncScopes` first, then `importScopes[""]`.
+   If the same name appears in `importScopes[""]` from multiple imports, an ambiguous-call error is emitted at the call site.
+ Qualified call `L.f()` (AST node: `member-call` with `object: id("L")`, `method: "f"`):
+   resolved by searching `importScopes["L"]` for name `f`.
+   If `L` is not a known alias, an error is emitted.
+ Alias-imported symbols are not accessible without the qualifier.
+ The `member-call` node is also used for future struct method calls (`obj.method(args)`);
+   the SA distinguishes the two cases by checking whether `object` resolves to a module alias or a typed variable.
 
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:

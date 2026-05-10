@@ -1,0 +1,5 @@
+{
+    import "lib_sa_import.pa";
+    int64 inner = square(2);
+}
+int64 r = square(3);

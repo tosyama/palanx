@@ -28,7 +28,8 @@ class PlnSemanticAnalyzer {
 	vector<map<string, json>> varScopes;
 	vector<map<string, json>> cFuncScopes;
 	vector<map<string, json>> plnFuncScopes;
-	vector<map<string, json>> importScopes;
+	// scope stack: alias("" = unqualified) → funcname → funcDef (empty json{} = ambiguous sentinel)
+	vector<map<string, map<string, json>>> importScopes;
 
 	// Array variable tracking per scope (parallel to varScopes)
 	vector<vector<pair<string,json>>> arrayScopeVars_;
@@ -53,6 +54,8 @@ class PlnSemanticAnalyzer {
 
 	void        registerPlnFunc(const string& name, const json& def, const json* loc_node = nullptr);
 	const json* findPlnFunc(const string& name) const;
+	const json* findImportFunc(const string& fname) const;
+	const json* findImportFuncByAlias(const string& alias, const string& fname) const;
 
 	json sa_statements(const json& stmts);
 	void sa_import(const json &stmt);
@@ -60,6 +63,7 @@ class PlnSemanticAnalyzer {
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	json sa_expr_call(const json& expr);
+	json sa_expr_member_call(const json& expr);
 	json sa_expr_arr_index(const json& expr);
 	json sa_expression_stmt(const json& stmt);
 	json sa_var_decl(const json& stmt);    // returns array of statements

@@ -196,6 +196,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   Present on all expression kinds except bare call with no return type.
   - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
     defaults to int64 when no expected type is available
+  - lit-uint: adopts the expected uint type when in a uint-typed context (e.g. `uint32 x = 1u;` → uint32);
+    defaults to uint64 when no expected uint type is available
   - lit-flo: adopts flo32 or flo64 when used in a float-typed context (e.g. `flo32 y = 1.5;` → flo32);
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}

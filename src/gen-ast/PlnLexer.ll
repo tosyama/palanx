@@ -97,6 +97,10 @@ COMMENT1	\/\/[^\n]*\n
 		lval.build<string>() = yytext;
 		return FLO;
 	}
+<*>{UDIGIT} {
+		lval.build<string>() = string(yytext, yyleng-1);
+		return UINT;
+	}
 <*>{DIGIT} {
 		lval.build<string>() = yytext;
 		return INT;

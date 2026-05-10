@@ -266,12 +266,16 @@ printf("%ld %ld\n", ab, bc);
 ## 9. C Library Integration
 
 ```palan
-cinclude <stdio.h>;      // system header
-cinclude "myheader.h";   // local header
-printf("%ld\n", x);      // call C function
+cinclude <stdio.h>;          // system header — functions visible as unqualified calls
+cinclude "myheader.h";       // local header
+printf("%ld\n", x);          // call C function directly
+
+cinclude <stdio.h> as S;     // alias — functions accessible only as S.xxx()
+S.printf("%d\n", 42);        // qualified call
 ```
 
 - `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
+- With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
 
 ---
 
@@ -361,7 +365,46 @@ printf("%d\n", add(3, 4));   // 7
 
 - The path in `import` is relative to the importing file.
 - Imported functions are visible from the `import` statement to the end of the enclosing scope.
+- Block-scoped `import` (inside `{ }`) makes the imported functions visible only within that block.
 - Circular imports (A imports B and B imports A) are supported.
+
+### Selective import
+
+Import only named functions from a file:
+
+```palan
+cinclude <stdio.h>;
+import square from "lib_math.pa";
+
+printf("%ld\n", square(4));   // 16  (cube is not imported)
+```
+
+Multiple names can be listed with commas: `import square, cube from "lib_math.pa"`.
+
+### Alias import
+
+Import all exports under a namespace prefix to avoid name conflicts:
+
+```palan
+cinclude <stdio.h>;
+import "lib_math.pa" as L;
+
+printf("%ld\n", L.square(3));  // 9
+printf("%ld\n", L.cube(2));    // 8
+```
+
+- All calls must use the `L.f()` qualified form. Unqualified `square()` is a compile error.
+
+### Selective alias import
+
+Import specific functions under a namespace prefix:
+
+```palan
+cinclude <stdio.h>;
+import square from "lib_math.pa" as L;
+
+printf("%ld\n", L.square(5));  // 25
+```
 
 ---
 

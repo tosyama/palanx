@@ -31,3 +31,21 @@ TEST(build_mgr_error, could_not_open_file) {
 	string out = execTestCommand("bin/palan no_such_file.pa");
 	ASSERT_NE(out.find("could not open file"), string::npos);
 }
+
+TEST(build_mgr_error, block_import_scope_out) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_045_block_import_scope.pa");
+	ASSERT_NE(out.find("Undefined function"), string::npos);
+}
+
+TEST(build_mgr_error, unqualified_alias_call) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_046_unqualified_alias.pa");
+	ASSERT_NE(out.find("requires a module alias qualifier"), string::npos);
+}
+
+TEST(build_mgr_error, ambiguous_call) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_047_ambiguous_call.pa");
+	ASSERT_NE(out.find("Ambiguous function call"), string::npos);
+}

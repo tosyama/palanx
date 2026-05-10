@@ -128,6 +128,18 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "Embedded array inner size mismatch: expected " + arg1 + ", got " + arg2 + ".";
 
+		case E_AmbiguousCall:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Ambiguous function call '" + arg1 + "': imported from multiple modules.";
+
+		case E_UnknownAlias:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Unknown module alias '" + arg1 + "'.";
+
+		case E_UnqualifiedAliasCall:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Function '" + arg1 + "' requires a module alias qualifier.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

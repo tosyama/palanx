@@ -1,0 +1,3 @@
+import "lib_sa_import.pa";
+import "lib_sa_import2.pa";
+int64 r = square(3);

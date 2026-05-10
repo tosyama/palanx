@@ -1,0 +1,4 @@
+int32 a = 5;
+int64 b = 10;
+int32 x = a < b;
+int32 y = b < a;

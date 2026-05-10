@@ -1,0 +1,2 @@
+export func square(int64 x) -> int64 { return x * x; }
+export func cube(int64 x)   -> int64 { return x * x * x; }

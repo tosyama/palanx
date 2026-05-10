@@ -1,0 +1,3 @@
+cinclude <stdio.h>;
+import square from "lib_math.pa" as L;
+printf("%ld\n", L.square(5));
