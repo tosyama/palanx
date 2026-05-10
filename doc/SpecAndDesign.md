@@ -163,20 +163,6 @@ Design:
  Explicit casts (`type-name(expr)`) allow narrowing and signed↔unsigned conversions; palan-sa resolves
  the `cast` AST node to a `convert` node (or removes it for identical types) and emits `convert` to sa.json.
 
-Import resolution:
- Imported functions are stored in `importScopes`, a scope stack parallel to `plnFuncScopes`.
- Each entry maps an alias name (or `""` for unqualified imports) to a `name → funcDef` map.
- - `import "lib.pa"` and `import { f } from "lib.pa"` → stored under alias `""`.
- - `import "lib.pa" as L` and `import { f } from "lib.pa" as L` → stored under alias `"L"`.
- Unqualified call `f()`: resolved by searching `plnFuncScopes` first, then `importScopes[""]`.
-   If the same name appears in `importScopes[""]` from multiple imports, an ambiguous-call error is emitted at the call site.
- Qualified call `L.f()` (AST node: `member-call` with `object: id("L")`, `method: "f"`):
-   resolved by searching `importScopes["L"]` for name `f`.
-   If `L` is not a known alias, an error is emitted.
- Alias-imported symbols are not accessible without the qualifier.
- The `member-call` node is also used for future struct method calls (`obj.method(args)`);
-   the SA distinguishes the two cases by checking whether `object` resolves to a module alias or a typed variable.
-
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:
   The tool generates x86-64 assembly from the analyzed AST (sa.json).
