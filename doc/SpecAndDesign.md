@@ -6,57 +6,58 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-05-06)
-version: 0.1.21
-- This iteration completes import scoping and fixes unsigned integer literal syntax.
+### 2.1 Iteration Goal (2026-05-11)
+version: 0.1.22
+- This iteration introduces basic struct types with heap allocation and C ABI-compatible field layout.
 
-**Import scope (selective import and alias)**
-- `import { f1, f2 } from "lib.pa"` — import only the listed names; other exported symbols are not visible.
-- `import "lib.pa" as L` — make exported symbols accessible as `L.f1()` etc. (namespace prefix).
-- `import { f1 } from "lib.pa" as L` — selective + alias combined; `L.f1()` only.
-- `importScopes` in the SA is currently a stub; this iteration wires it up so that scoped and selective imports are properly resolved.
+**Struct types**
+- `type Name { field_decl... }` — defines a struct type with integer and float fields only (no nested structs, no arrays).
+- `Name p;` — heap-allocates a zero-initialized struct (`calloc(1, sizeof(Name))`); automatically freed at scope exit.
+- `value -> p.field` — writes to a struct field.
+- `p.field` — reads a struct field (rvalue).
 
-Design decisions for import scoping:
-1. **Namespace separator and AST node**: `.` is used as the separator (e.g., `L.f()`). The call is represented as a new `member-call` expr-type with an `object` expression and a `method` name, rather than adding a `qualifier` string to the existing `call` node. This design is forward-compatible with future struct method calls (`obj.method(args)`), which will use the same `member-call` node; the SA distinguishes module alias from struct variable by inspecting what `object` resolves to. The parser already uses `%glr-parser`, so `expr '.' ID '(' ... ')'` does not cause shift-reduce conflicts (GLR explores both paths; since `.` is unused elsewhere, only the member-call path succeeds). The grammar therefore uses `expr` as the object, making chained calls like `getObj().method()` syntactically valid from the start; in v0.1.21 the SA rejects non-`id` objects until struct support is added. The `member-call` AST node is consumed by SA and emitted as a regular `call` node in sa.json; no codegen changes are required.
-2. **Unqualified access after alias import**: Forbidden. `import "lib.pa" as L` makes symbols accessible only as `L.f()`, not as `f()` directly.
-3. **Selective + alias combination**: Allowed. `import { f1 } from "lib.pa" as L` makes only `L.f1()` visible.
-4. **Name collision on unqualified import**: Deferred to call time. Importing the same name from two modules is not an error at the import statement; an "ambiguous call" error is emitted only when the conflicting name is called.
-5. **`importScopes` structure**: All imports (with or without alias) are stored in `importScopes` (a scoped stack of `alias → name → funcDef` maps). Unqualified imports use the empty string `""` as the alias key. Locally-defined functions remain in `plnFuncScopes` (no change). Call resolution checks `plnFuncScopes` first, then `importScopes`.
-
-**Issue #5 — unsigned integer literal suffix `u`**
-- `123u` is currently a syntax error (lexer has no action rule for `UDIGIT`).
-- Add a Flex rule in `PlnLexer.ll` so that `123u` is tokenized as `UINT` and parsed as a `lit-uint` expression with `uint64` type.
+Design decisions:
+1. **Keyword**: `type` (existing `KW_TYPE`) is used rather than introducing a new `struct` keyword.
+2. **Memory model**: heap allocation via `calloc(1, size)` for zero initialization; auto-freed via the existing `arrayScopeVars_` mechanism, identical to array variables.
+3. **C ABI layout**: each field is placed at the next offset that is a multiple of the field's natural alignment (`align == size` for primitives). The total struct size is rounded up to the alignment of the largest field. This matches the System V AMD64 ABI struct layout.
+4. **Field access IR**: two new virtual instructions — `DerefLoad { dst, ptr, offset, type }` and `DerefStore { ptr, offset, src, type }` — map directly to the x86 `offset(%reg)` addressing mode.
+5. **Variable type in SA**: a struct variable is represented as `{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Name"}}`, consistent with how array variables are `pntr` to their element type.
+6. **Struct definition in SA**: `struct-def` AST nodes are consumed by the SA (registered in `structDefs_`) and not emitted to sa.json, identical to how `cinclude` nodes are consumed.
+7. **Scope**: function parameters/returns of struct type, nested structs, export of struct types, and array-of-struct are deferred to a later iteration.
 
 The goal is that the following programs produce correct output:
 
 ```palan
-// lib_math.pa
-export func square(int64 x) -> int64 { return x * x; }
-export func cube(int64 x)   -> int64 { return x * x * x; }
+// basic struct
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; }
+
+Point p;
+10 -> p.x;
+20 -> p.y;
+printf("%ld %ld\n", p.x, p.y);   // 10 20
 ```
 
 ```palan
-// main.pa — selective import
+// C ABI layout: int32 a at offset 0, int64 b at offset 8 (4 bytes padding)
 cinclude <stdio.h>;
-import { square } from "lib_math.pa";
+type Mixed { int32 a; int64 b; }
 
-printf("%ld\n", square(4));   // 16  (cube is not visible)
+Mixed m;
+42 -> m.a;
+100 -> m.b;
+printf("%d %ld\n", m.a, m.b);   // 42 100
 ```
 
 ```palan
-// main2.pa — alias import
+// float fields
 cinclude <stdio.h>;
-import "lib_math.pa" as M;
+type Vec2 { flo64 x; flo64 y; }
 
-printf("%ld\n", M.square(3));  // 9
-printf("%ld\n", M.cube(2));    // 8
-```
-
-```palan
-// main3.pa — uint literal
-cinclude <stdio.h>;
-uint64 x = 18446744073709551615u;
-printf("%llu\n", x);           // 18446744073709551615
+Vec2 v;
+1.5 -> v.x;
+2.5 -> v.y;
+printf("%f %f\n", v.x, v.y);   // 1.500000 2.500000
 ```
 
 
