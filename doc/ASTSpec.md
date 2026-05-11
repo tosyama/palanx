@@ -130,7 +130,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
 - loc\* - Location Array (omitted for "not-impl")
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -155,27 +155,36 @@ Statement model
     - target\* - arr-index expression model (see Expression model §12)
     - value\* - Source expression model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
-  7. return - return statement
+  7. struct-def - struct type definition (`type Name { field_decl... }`; consumed by SA, not emitted to sa.json)
+    - name\* - Struct name string
+    - fields\* - Field list (each entry: `name`, `var-type`)
+      - name\* - Field name string
+      - var-type\* - Field type (same Variable type object format)
+  8. field-assign - struct field assignment (`value -> obj.field`)
+    - object\* - Base store_loc (kind: "var")
+    - field\*  - Field name string
+    - value\*  - Source expression model
+  9. return - return statement
     - values - Return expression list (omitted for bare `return;`)
-  8. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
+  10. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function)
-  9. block - standalone block statement (`{ ... }`)
+  11. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
-  10. if - if / if-else statement
+  12. if - if / if-else statement
     - cond\* - Condition expression model
     - then\* - Then-block object (block statement body)
     - else - Else-block object or nested if statement (omitted when absent)
-  11. while - while loop statement
+  13. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  12. break - exit the innermost while loop (no additional fields)
-  13. continue - skip to next iteration of innermost while loop (no additional fields)
+  14. break - exit the innermost while loop (no additional fields)
+  15. continue - skip to next iteration of innermost while loop (no additional fields)
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "logical-and" "logical-or" "logical-not"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -217,7 +226,10 @@ Expression model
     - right\* - Right operand expression model
   15. logical-not - Logical NOT (`!a`; result: int32, 0 or 1)
     - operand\* - Operand expression model
-  16. member-call - Qualified function call (`L.f(args)` syntax; consumed by SA, not emitted to sa.json)
+  16. field-access - Struct field read (`obj.field` rvalue)
+    - object\* - Object expression model (typically `id`)
+    - field\*  - Field name string
+  17. member-call - Qualified function call (`L.f(args)` syntax; consumed by SA, not emitted to sa.json)
     - object\* - Object expression (typically `id` for module alias; SA rejects non-`id` in v0.1.21)
     - method\* - Method/function name string
     - args - Argument expression list
