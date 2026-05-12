@@ -1366,3 +1366,82 @@ TEST(sa, arith_lit_retypes_to_right)
 	ASSERT_EQ(add["left"]["value-type"]["type-name"],  "int64");
 	ASSERT_EQ(add["right"]["value-type"]["type-name"], "int64");
 }
+
+TEST(sa, struct_def)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/069_struct_def.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// struct-def is consumed; first stmt is var-decl for p
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	// init: calloc(1, 16)
+	ASSERT_EQ(v["init"]["expr-type"], "call");
+	ASSERT_EQ(v["init"]["name"],      "calloc");
+	ASSERT_EQ(v["init"]["func-type"], "c");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
+TEST(sa, field_assign)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/070_field_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements[1]: 10 -> p.x
+	const auto& fa1 = jout["statements"][1];
+	ASSERT_EQ(fa1["stmt-type"],                  "field-assign");
+	ASSERT_EQ(fa1["var"],                         "p");
+	ASSERT_EQ(fa1["offset"],                      0);
+	ASSERT_EQ(fa1["value-type"]["type-name"],     "int64");
+	ASSERT_EQ(fa1["value"]["value"],              "10");
+
+	// statements[2]: 20 -> p.y
+	const auto& fa2 = jout["statements"][2];
+	ASSERT_EQ(fa2["stmt-type"],                  "field-assign");
+	ASSERT_EQ(fa2["var"],                         "p");
+	ASSERT_EQ(fa2["offset"],                      8);
+	ASSERT_EQ(fa2["value-type"]["type-name"],     "int64");
+	ASSERT_EQ(fa2["value"]["value"],              "20");
+}
+
+TEST(sa, field_access)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/071_field_access.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements[2]: int64 v = p.x
+	const auto& fa = jout["statements"][2]["vars"][0]["init"];
+	ASSERT_EQ(fa["expr-type"],              "field-access");
+	ASSERT_EQ(fa["var"],                     "p");
+	ASSERT_EQ(fa["offset"],                  0);
+	ASSERT_EQ(fa["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, struct_c_abi)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/072_struct_c_abi.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// var-decl for m: calloc(1, 16) — int32 a@0(4B) + pad(4B) + int64 b@8(8B) = 16B
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "16");
+
+	// 10 -> m.a: offset=0, int32
+	const auto& fa1 = jout["statements"][1];
+	ASSERT_EQ(fa1["offset"],                  0);
+	ASSERT_EQ(fa1["value-type"]["type-name"], "int32");
+
+	// 20 -> m.b: offset=8, int64
+	const auto& fa2 = jout["statements"][2];
+	ASSERT_EQ(fa2["offset"],                  8);
+	ASSERT_EQ(fa2["value-type"]["type-name"], "int64");
+}

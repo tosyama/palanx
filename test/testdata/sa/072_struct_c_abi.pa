@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+type Mixed { int32 a; int64 b; };
+Mixed m;
+10 -> m.a;
+20 -> m.b;

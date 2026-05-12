@@ -325,4 +325,70 @@ Notes:
 - `pntr(T)` and `pntr(T, mutable=true)` are treated as `Identical`; base-type match is sufficient
   for arr-assign target type checking.
 
+Struct types
+------------
+`type Name { field_decl... }` defines a struct type. The SA processes `struct-def` nodes and
+registers the type in its internal registry; the node is consumed and does not appear in sa.json.
+
+### C ABI layout
+
+Fields are placed at offsets aligned to their natural size (same as `sizeof`):
+
+```
+offset = 0
+for each field:
+    align = elemSizeBytes(field.type)   // size == align for all primitive types
+    offset = alignUp(offset, align)
+    field.offset = offset
+    offset += align
+maxAlign = max of all field alignments
+totalSize = alignUp(offset, maxAlign)
+```
+
+Example: `type Mixed { int32 a; int64 b; }` → a@0 (4B), 4B padding, b@8 (8B), total=16B.
+
+### struct variable declaration → sa.json
+
+`type Point { int64 x; int64 y; }` followed by `Point p;` produces:
+
+```json
+{"stmt-type":"var-decl","vars":[{
+  "name":"p",
+  "var-type":{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Point"}},
+  "init":{"expr-type":"call","name":"calloc","func-type":"c",
+          "args":[{"expr-type":"lit-int","value":"1",
+                   "value-type":{"type-kind":"prim","type-name":"uint64"}},
+                  {"expr-type":"lit-int","value":"16",
+                   "value-type":{"type-kind":"prim","type-name":"uint64"}}],
+          "value-type":{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Point"}}}
+}]}
+```
+
+Struct variables are registered in `arrayScopeVars_` and a `free()` statement is auto-inserted
+at scope exit (same mechanism as heap-allocated arrays).
+
+### field-assign statement → sa.json
+
+`10 -> p.x` produces:
+
+```json
+{"stmt-type":"field-assign",
+ "var":"p",
+ "offset":0,
+ "value-type":{"type-kind":"prim","type-name":"int64"},
+ "value":{"expr-type":"lit-int","value":"10",
+          "value-type":{"type-kind":"prim","type-name":"int64"}}}
+```
+
+### field-access expression → sa.json
+
+`p.x` (rvalue) produces:
+
+```json
+{"expr-type":"field-access",
+ "var":"p",
+ "offset":0,
+ "value-type":{"type-kind":"prim","type-name":"int64"}}
+```
+
 (TBD)
