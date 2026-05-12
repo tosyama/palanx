@@ -32,6 +32,7 @@ enum class ExprKind {
     CCCall,
     PlnCall,
     ArrIndex,
+    FieldAccess,
     LogicalNot,
     LogicalAnd,
     LogicalOr,
@@ -159,6 +160,7 @@ enum class StmtKind {
     Break,
     Continue,
     ArrAssign,
+    FieldAssign,
 };
 
 struct Stmt {
@@ -265,6 +267,21 @@ struct ArrAssignStmt : Stmt {
     int scale;
     VRegType type;
     VRegType idx_type = VRegType::Int64;  // index expression type
+    unique_ptr<Expr> value;
+};
+
+struct FieldAccessExpr : Expr {
+    FieldAccessExpr() : Expr(ExprKind::FieldAccess) {}
+    string   varName;
+    int      offset;
+    VRegType type;
+};
+
+struct FieldAssignStmt : Stmt {
+    FieldAssignStmt() : Stmt(StmtKind::FieldAssign) {}
+    string           varName;
+    int              offset;
+    VRegType         type;
     unique_ptr<Expr> value;
 };
 

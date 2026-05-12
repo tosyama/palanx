@@ -972,3 +972,20 @@ TEST(codegen, float_in_block) {
     // Both float vars allocated on stack
     ASSERT_NE(asm_text.find("movsd"),        string::npos);
 }
+
+TEST(codegen, field_access) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/053_field_access.sa.json";
+    string asmf = "out/053_field_access.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // DerefStore offset=0: movq ..., (%rXX)
+    ASSERT_NE(asm_text.find(", (%r"),  string::npos);
+    // DerefStore/DerefLoad offset=8: 8(%rXX)
+    ASSERT_NE(asm_text.find("8(%r"),   string::npos);
+    // DerefLoad offset=0: movq (%rXX), ...
+    ASSERT_NE(asm_text.find("(%r"),    string::npos);
+}

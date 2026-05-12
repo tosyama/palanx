@@ -1,0 +1,73 @@
+{
+    "functions": [],
+    "original": "053_field_access.pa",
+    "str-literals": [
+        { "label": ".Ls0", "value": "%ld %ld\n" }
+    ],
+    "statements": [
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "p",
+                    "var-type": { "type-kind": "pntr", "base-type": { "type-kind": "struct", "type-name": "Point" } },
+                    "init": {
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "calloc",
+                        "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "struct", "type-name": "Point" } },
+                        "args": [
+                            { "expr-type": "lit-uint", "value": "1",  "value-type": { "type-kind": "prim", "type-name": "uint64" } },
+                            { "expr-type": "lit-uint", "value": "16", "value-type": { "type-kind": "prim", "type-name": "uint64" } }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "field-assign",
+            "var": "p",
+            "offset": 0,
+            "value-type": { "type-kind": "prim", "type-name": "int64" },
+            "value": { "expr-type": "lit-int", "value": "10", "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        },
+        {
+            "stmt-type": "field-assign",
+            "var": "p",
+            "offset": 8,
+            "value-type": { "type-kind": "prim", "type-name": "int64" },
+            "value": { "expr-type": "lit-int", "value": "20", "value-type": { "type-kind": "prim", "type-name": "int64" } }
+        },
+        {
+            "stmt-type": "expr",
+            "body": {
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "printf",
+                "value-type": { "type-kind": "prim", "type-name": "int32" },
+                "args": [
+                    { "expr-type": "id", "name": ".Ls0", "var-type": { "type-kind": "prim", "type-name": "uint8" }, "value-type": { "type-kind": "prim", "type-name": "uint8" } },
+                    { "expr-type": "field-access", "var": "p", "offset": 0, "value-type": { "type-kind": "prim", "type-name": "int64" } },
+                    { "expr-type": "field-access", "var": "p", "offset": 8, "value-type": { "type-kind": "prim", "type-name": "int64" } }
+                ]
+            }
+        },
+        {
+            "stmt-type": "expr",
+            "body": {
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "free",
+                "value-type": { "type-kind": "prim", "type-name": "int32" },
+                "args": [
+                    {
+                        "expr-type": "id",
+                        "name": "p",
+                        "var-type":   { "type-kind": "pntr", "base-type": { "type-kind": "struct", "type-name": "Point" } },
+                        "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "struct", "type-name": "Point" } }
+                    }
+                ]
+            }
+        }
+    ]
+}

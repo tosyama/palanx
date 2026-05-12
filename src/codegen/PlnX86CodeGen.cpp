@@ -225,6 +225,8 @@ void PlnX86CodeGen::emit(const VProg& prog)
             else if (auto* i  = std::get_if<DerefLoadIdx> (&instr)) emitInstrDerefLoadIdx(*i, rm);
             else if (auto* i  = std::get_if<DerefStoreIdx>(&instr)) emitInstrDerefStoreIdx(*i, rm);
             else if (auto* c  = std::get_if<CalcAddrIdx>  (&instr)) emitInstrCalcAddrIdx(*c, rm);
+            else if (auto* i  = std::get_if<DerefLoad>    (&instr)) emitInstrDerefLoad(*i,  rm);
+            else if (auto* i  = std::get_if<DerefStore>   (&instr)) emitInstrDerefStore(*i, rm);
             // BlockEnter and BlockLeave are no-ops
         }
     }
@@ -745,6 +747,63 @@ void PlnX86CodeGen::emitInstrCalcAddrIdx(const CalcAddrIdx& ca, const RegMap& rm
         out << "\tmovq %r11, " << dst_loc.base << "\n";
     else
         out << "\tmovq %r11, " << dst_loc.stackOffset << "(%rbp)\n";
+}
+
+void PlnX86CodeGen::emitInstrDerefLoad(const DerefLoad& dl, const RegMap& rm)
+{
+    if (!rm.count(dl.dst) || !rm.count(dl.ptr)) return;
+    const PhysLoc& ptr_loc = rm.at(dl.ptr);
+    const PhysLoc& dst_loc = rm.at(dl.dst);
+    const char* mov = movInstrForType(dl.type);
+
+    string ptr_reg;
+    if (!ptr_loc.isStack()) {
+        ptr_reg = ptr_loc.base;
+    } else {
+        out << "\tmovq " << ptr_loc.stackOffset << "(%rbp), %r10\n";
+        ptr_reg = "%r10";
+    }
+
+    string addr = (dl.offset ? std::to_string(dl.offset) : "") + "(" + ptr_reg + ")";
+
+    if (!dst_loc.isStack()) {
+        out << "\t" << mov << " " << addr << ", "
+            << sizedRegName(dst_loc.base, dl.type) << "\n";
+    } else {
+        bool isFloat = (dl.type == VRegType::Float32 || dl.type == VRegType::Float64);
+        string scratch = isFloat ? "%xmm8" : sizedRegName("%rax", dl.type);
+        out << "\t" << mov << " " << addr << ", " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", "
+            << dst_loc.stackOffset << "(%rbp)\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrDerefStore(const DerefStore& ds, const RegMap& rm)
+{
+    if (!rm.count(ds.ptr) || !rm.count(ds.src)) return;
+    const PhysLoc& ptr_loc = rm.at(ds.ptr);
+    const PhysLoc& src_loc = rm.at(ds.src);
+    const char* mov = movInstrForType(ds.type);
+
+    string ptr_reg;
+    if (!ptr_loc.isStack()) {
+        ptr_reg = ptr_loc.base;
+    } else {
+        out << "\tmovq " << ptr_loc.stackOffset << "(%rbp), %r10\n";
+        ptr_reg = "%r10";
+    }
+
+    string addr = (ds.offset ? std::to_string(ds.offset) : "") + "(" + ptr_reg + ")";
+
+    if (!src_loc.isStack()) {
+        out << "\t" << mov << " " << sizedRegName(src_loc.base, ds.type)
+            << ", " << addr << "\n";
+    } else {
+        bool isFloat = (ds.type == VRegType::Float32 || ds.type == VRegType::Float64);
+        string scratch = isFloat ? "%xmm8" : sizedRegName("%rax", ds.type);
+        out << "\t" << mov << " " << src_loc.stackOffset << "(%rbp), " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", " << addr << "\n";
+    }
 }
 
 void PlnX86CodeGen::emitSection(const string& name)

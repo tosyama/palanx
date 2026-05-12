@@ -56,11 +56,14 @@ struct Mov        { VReg dst; VReg src; VRegType type; };        // dst = src (v
 struct DerefLoadIdx  { VReg dst; VReg base; VReg idx; int scale; VRegType type; VRegType idx_type; };  // dst = base[idx*scale]
 struct DerefStoreIdx { VReg base; VReg idx; int scale; VReg src; VRegType type; VRegType idx_type; };  // base[idx*scale] = src
 struct CalcAddrIdx   { VReg dst; VReg base; VReg idx; int scale; VRegType idx_type; };                 // dst = base + idx*scale (no dereference)
+struct DerefLoad     { VReg dst; VReg ptr; int offset; VRegType type; };                               // dst = *(ptr+offset)
+struct DerefStore    { VReg ptr; int offset; VReg src;  VRegType type; };                              // *(ptr+offset) = src
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg, Cmp, Convert,
                              CallC, CallPln, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
-                             Label, Jmp, CondJmp, Mov, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx>;
+                             Label, Jmp, CondJmp, Mov, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
+                             DerefLoad, DerefStore>;
 
 // -------- Program structure --------
 

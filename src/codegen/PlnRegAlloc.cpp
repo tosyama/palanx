@@ -101,6 +101,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const DerefLoadIdx& dl)  { setDef(dl.dst, dl.type); addUse(dl.base); addUse(dl.idx); },
             [&](const DerefStoreIdx& ds) { addUse(ds.base); addUse(ds.idx); addUse(ds.src); },
             [&](const CalcAddrIdx& ca)   { setDef(ca.dst, VRegType::Ptr64); addUse(ca.base); addUse(ca.idx); },
+            [&](const DerefLoad&  dl)    { setDef(dl.dst, dl.type); addUse(dl.ptr); },
+            [&](const DerefStore& ds)    { addUse(ds.ptr); addUse(ds.src); },
             [&](const ExitCode&)   {},
             [&](const BlockEnter&) {},
             [&](const BlockLeave&) {},
