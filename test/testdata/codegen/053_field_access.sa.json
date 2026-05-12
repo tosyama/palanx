@@ -46,7 +46,7 @@
                 "name": "printf",
                 "value-type": { "type-kind": "prim", "type-name": "int32" },
                 "args": [
-                    { "expr-type": "id", "name": ".Ls0", "var-type": { "type-kind": "prim", "type-name": "uint8" }, "value-type": { "type-kind": "prim", "type-name": "uint8" } },
+                    { "expr-type": "lit-str", "label": ".Ls0", "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } } },
                     { "expr-type": "field-access", "var": "p", "offset": 0, "value-type": { "type-kind": "prim", "type-name": "int64" } },
                     { "expr-type": "field-access", "var": "p", "offset": 8, "value-type": { "type-kind": "prim", "type-name": "int64" } }
                 ]
