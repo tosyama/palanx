@@ -27,13 +27,3 @@ e.g. How should `[]int32(x)` or similar constructs be written?
 ## 4. Top-Level Code and Modules
 
 **Summary:** The behavior is undefined when top-level executable code exists in both the entry file and an imported module. It is unclear how multiple top-level code blocks should be ordered and executed.
-
----
-
-## 5. Unsigned Integer Literal Suffix (`u`) Not Implemented
-
-**Summary:** The lexer defines `UDIGIT = [0-9]+"u"` and the parser has a `UINT` token and `lit-uint` expression type, but no Flex action rule returns `UINT`. As a result, `123u` syntax is not recognized — `u` is tokenized as a separate identifier and causes a syntax error.
-
-The `uint64` type itself is supported for variable declarations and arithmetic, but there is no way to write a `uint64` literal that exceeds `int64` max (`9223372036854775807`) in source code.
-
-**To fix:** Add `<*>{UDIGIT} { lval.build<string>() = string(yytext, yyleng-1); return UINT; }` to `PlnLexer.ll` (stripping the `u` suffix from the stored value).
