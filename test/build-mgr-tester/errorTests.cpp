@@ -49,3 +49,15 @@ TEST(build_mgr_error, ambiguous_call) {
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_047_ambiguous_call.pa");
 	ASSERT_NE(out.find("Ambiguous function call"), string::npos);
 }
+
+TEST(build_mgr_error, unknown_struct_type) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_048_unknown_struct.pa");
+	ASSERT_NE(out.find("unknown struct type"), string::npos);
+}
+
+TEST(build_mgr_error, unknown_field) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_049_unknown_field.pa");
+	ASSERT_NE(out.find("has no field"), string::npos);
+}

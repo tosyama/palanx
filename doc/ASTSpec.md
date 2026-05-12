@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.19
+ver. 0.1.22
 
 \* - Required
 
@@ -230,7 +230,7 @@ Expression model
     - object\* - Object expression model (typically `id`)
     - field\*  - Field name string
   17. member-call - Qualified function call (`L.f(args)` syntax; consumed by SA, not emitted to sa.json)
-    - object\* - Object expression (typically `id` for module alias; SA rejects non-`id` in v0.1.21)
+    - object\* - Object expression (typically `id` for module alias; SA rejects non-`id` in v0.1.22)
     - method\* - Method/function name string
     - args - Argument expression list
     Note: SA resolves `member-call` and emits a regular `call` node in sa.json.

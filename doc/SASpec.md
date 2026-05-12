@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.20
+ver. 0.1.22
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -391,4 +391,4 @@ at scope exit (same mechanism as heap-allocated arrays).
  "value-type":{"type-kind":"prim","type-name":"int64"}}
 ```
 
-(TBD)
+

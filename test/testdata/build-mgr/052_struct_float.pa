@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+type Pt2 { flo64 x; flo64 y; };
+
+Pt2 v;
+1.5 -> v.x;
+2.5 -> v.y;
+printf("%g %g\n", v.x, v.y);
