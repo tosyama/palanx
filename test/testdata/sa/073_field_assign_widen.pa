@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+type Box { int64 val; };
+Box b;
+int32 v = 7;
+v -> b.val;
+printf("%ld\n", b.val);

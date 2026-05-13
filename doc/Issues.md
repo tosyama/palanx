@@ -27,3 +27,9 @@ e.g. How should `[]int32(x)` or similar constructs be written?
 ## 4. Top-Level Code and Modules
 
 **Summary:** The behavior is undefined when top-level executable code exists in both the entry file and an imported module. It is unclear how multiple top-level code blocks should be ordered and executed.
+
+---
+
+## 5. `type` Definition Scope
+
+**Summary:** `type` definitions are currently registered globally regardless of where they appear in the source. They should follow the same scope rules as variable declarations — visible only from the point of definition to the end of the enclosing scope.

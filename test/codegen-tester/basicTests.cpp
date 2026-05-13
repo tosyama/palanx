@@ -989,3 +989,22 @@ TEST(codegen, field_access) {
     // DerefLoad offset=0: movq (%rXX), ...
     ASSERT_NE(asm_text.find("(%r"),    string::npos);
 }
+
+// Six struct pointers exhaust the 5 callee-saved registers, forcing p6 to spill to
+// the stack. DerefStore and DerefLoad on p6 exercise the ptr_loc.isStack() paths.
+TEST(codegen, deref_stack_spill) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/054_deref_stack_spill.sa.json";
+    string asmf = "out/054_deref_stack_spill.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // p6 pointer is stack-spilled: emitted as movq N(%rbp), %r10 before dereference
+    ASSERT_NE(asm_text.find("(%rbp), %r10"), string::npos);
+    // DerefStore via spilled pointer: movq ..., (%r10)
+    ASSERT_NE(asm_text.find(", (%r10)"),     string::npos);
+    // DerefLoad via spilled pointer: movq (%r10), ...
+    ASSERT_NE(asm_text.find("(%r10),"),      string::npos);
+}

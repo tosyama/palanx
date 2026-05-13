@@ -1,0 +1,6 @@
+cinclude <stdlib.h>;
+func void_func() {
+}
+type Point { int64 x; int64 y; };
+Point p;
+void_func() -> p.x;

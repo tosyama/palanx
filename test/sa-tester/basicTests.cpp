@@ -1445,3 +1445,18 @@ TEST(sa, struct_c_abi)
 	ASSERT_EQ(fa2["offset"],                  8);
 	ASSERT_EQ(fa2["value-type"]["type-name"], "int64");
 }
+
+TEST(sa, field_assign_widen)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/073_field_assign_widen.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements[2]: v -> b.val  (int32 widened to int64)
+	// SA wraps the value in a convert expression
+	const auto& fa = jout["statements"][2];
+	ASSERT_EQ(fa["stmt-type"],              "field-assign");
+	ASSERT_EQ(fa["value-type"]["type-name"], "int64");
+	ASSERT_EQ(fa["value"]["expr-type"],      "convert");
+	ASSERT_EQ(fa["value"]["value-type"]["type-name"], "int64");
+}
