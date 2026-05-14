@@ -972,3 +972,114 @@ TEST(codegen, float_in_block) {
     // Both float vars allocated on stack
     ASSERT_NE(asm_text.find("movsd"),        string::npos);
 }
+
+TEST(codegen, field_access) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/053_field_access.sa.json";
+    string asmf = "out/053_field_access.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // DerefStore offset=0: movq ..., (%rXX)
+    ASSERT_NE(asm_text.find(", (%r"),  string::npos);
+    // DerefStore/DerefLoad offset=8: 8(%rXX)
+    ASSERT_NE(asm_text.find("8(%r"),   string::npos);
+    // DerefLoad offset=0: movq (%rXX), ...
+    ASSERT_NE(asm_text.find("(%r"),    string::npos);
+}
+
+// Verify that Mixed { int32 a; int64 b; } is laid out with C ABI offsets:
+//   a at offset 0  (int32 → movl, no numeric prefix)
+//   b at offset 8  (int64 → movq, 4-byte padding proven by offset 8 not 4)
+//   total size 16  (calloc second arg = $16)
+TEST(codegen, struct_c_abi_layout) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/055_struct_c_abi_layout.sa.json";
+    string asmf = "out/055_struct_c_abi_layout.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Struct size: calloc(1, 16) — $16 passed as second argument
+    ASSERT_NE(asm_text.find("$16,"),   string::npos);
+    // Field a (int32) at offset 0: movl instruction with no numeric offset prefix
+    ASSERT_NE(asm_text.find("movl"),   string::npos);
+    ASSERT_NE(asm_text.find(", (%r"),  string::npos);  // write: movl src, (%rXX)
+    ASSERT_NE(asm_text.find("(%r"),    string::npos);  // read:  movl (%rXX), dst
+    // Field b (int64) at offset 8: movq instruction — proves 4-byte padding between a and b
+    ASSERT_NE(asm_text.find("8(%r"),   string::npos);
+}
+
+// Verify that Trailing { int64 a; int32 b; } has trailing padding:
+//   a at offset 0  (int64 → movq)
+//   b at offset 8  (int32 → movl)
+//   total size 16  (not 12 — 4 trailing bytes pad to max-align multiple)
+TEST(codegen, struct_trailing_pad) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/056_struct_trailing_pad.sa.json";
+    string asmf = "out/056_struct_trailing_pad.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Struct size = 16, not 12: trailing 4-byte pad aligns to max-align (8)
+    ASSERT_NE(asm_text.find("$16,"),   string::npos);
+    ASSERT_EQ(asm_text.find("$12,"),   string::npos);
+    // Field a (int64) at offset 0: movq with no numeric prefix
+    ASSERT_NE(asm_text.find("movq"),   string::npos);
+    ASSERT_NE(asm_text.find(", (%r"),  string::npos);
+    // Field b (int32) at offset 8: movl — proves b is NOT at offset 4
+    ASSERT_NE(asm_text.find("movl"),   string::npos);
+    ASSERT_NE(asm_text.find("8(%r"),   string::npos);
+    ASSERT_EQ(asm_text.find("4(%r"),   string::npos);
+}
+
+// Verify that Multi { int8 a; int32 b; int64 c; } has two padding gaps:
+//   a at offset 0  (int8  → movb)
+//   b at offset 4  (int32 → movl)  — 3-byte pad after a
+//   c at offset 8  (int64 → movq)
+//   total size 16
+TEST(codegen, struct_multi_pad) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/057_struct_multi_pad.sa.json";
+    string asmf = "out/057_struct_multi_pad.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Struct size = 16
+    ASSERT_NE(asm_text.find("$16,"),  string::npos);
+    // Field a (int8) at offset 0: movb with no numeric prefix
+    ASSERT_NE(asm_text.find("movb"),  string::npos);
+    ASSERT_NE(asm_text.find("(%r"),   string::npos);
+    // Field b (int32) at offset 4: movl — proves 3-byte pad inserted after int8
+    ASSERT_NE(asm_text.find("movl"),  string::npos);
+    ASSERT_NE(asm_text.find("4(%r"),  string::npos);
+    // Field c (int64) at offset 8: movq
+    ASSERT_NE(asm_text.find("movq"),  string::npos);
+    ASSERT_NE(asm_text.find("8(%r"),  string::npos);
+}
+
+// Six struct pointers exhaust the 5 callee-saved registers, forcing p6 to spill to
+// the stack. DerefStore and DerefLoad on p6 exercise the ptr_loc.isStack() paths.
+TEST(codegen, deref_stack_spill) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/054_deref_stack_spill.sa.json";
+    string asmf = "out/054_deref_stack_spill.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // p6 pointer is stack-spilled: emitted as movq N(%rbp), %r10 before dereference
+    ASSERT_NE(asm_text.find("(%rbp), %r10"), string::npos);
+    // DerefStore via spilled pointer: movq ..., (%r10)
+    ASSERT_NE(asm_text.find(", (%r10)"),     string::npos);
+    // DerefLoad via spilled pointer: movq (%r10), ...
+    ASSERT_NE(asm_text.find("(%r10),"),      string::npos);
+}

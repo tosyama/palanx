@@ -4,6 +4,7 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <iostream>
+#include <algorithm>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -18,7 +19,9 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "expr")     result.push_back(sa_expression_stmt(stmt));
 		else if (t == "var-decl") { for (auto& s : sa_var_decl(stmt)) result.push_back(s); }
 		else if (t == "assign")     result.push_back(sa_assign_stmt(stmt));
-		else if (t == "arr-assign") { for (auto& s : sa_arr_assign_stmt(stmt)) result.push_back(s); }
+		else if (t == "arr-assign")   { for (auto& s : sa_arr_assign_stmt(stmt)) result.push_back(s); }
+		else if (t == "struct-def")   sa_struct_def(stmt);
+		else if (t == "field-assign") result.push_back(sa_field_assign(stmt));
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
 				if (stmt.contains("values") && stmt["values"].size() == 1
@@ -379,4 +382,46 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		declareVar(stmt["vars"][i]["var-name"].get<string>(), (*pFunc)["rets"][i]["var-type"]);
 
 	return {{"stmt-type", "tapple-decl"}, {"vars", stmt["vars"]}, {"value", saCall}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
+{
+	string varName   = stmt["object"]["name"].get<string>();
+	string fieldName = stmt["field"].get<string>();
+	const json* varType = findVar(varName);
+	if (varType == nullptr) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
+		exit(1);
+	}
+	if (varType->value("type-kind","") != "pntr"
+			|| (*varType)["base-type"].value("type-kind","") != "struct") {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+		exit(1);
+	}
+	string structName = (*varType)["base-type"]["type-name"].get<string>();
+	const StructDef& def = structDefs_[structName];
+	auto it = find_if(def.fields.begin(), def.fields.end(),
+	                  [&](const FieldLayout& f){ return f.name == fieldName; });
+	if (it == def.fields.end()) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName) << endl;
+		exit(1);
+	}
+	json fieldType = {{"type-kind","prim"},{"type-name",it->typeName}};
+	const PlnType* toType = registry_.fromJson(fieldType);
+	json value = sa_expression(stmt["value"], toType);
+	if (!value.contains("value-type")) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+		exit(1);
+	}
+	const PlnType* fromType = registry_.fromJson(value["value-type"]);
+	TypeCompat compat = typeCompat(fromType, toType, registry_);
+	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
+		value = wrapConvert(value, fieldType);
+	// LCOV_EXCL_EXCEPTION_BR_START
+	return {{"stmt-type","field-assign"},
+	        {"var", varName},
+	        {"offset", it->offset},
+	        {"value-type", fieldType},
+	        {"value", move(value)}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE

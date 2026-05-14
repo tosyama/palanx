@@ -1,0 +1,3 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+printf("%ld\n", q.x);

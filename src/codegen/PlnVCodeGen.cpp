@@ -221,6 +221,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::ArrIndex:
             return lowerArrIndexExpr(static_cast<const ArrIndexExpr&>(expr), func);
+        case ExprKind::FieldAccess: {
+            auto& e   = static_cast<const FieldAccessExpr&>(expr);
+            VReg  ptr = findVar(e.varName);
+            VReg  dst = allocVReg();
+            func.instrs.push_back(DerefLoad{dst, ptr, e.offset, e.type});
+            return dst;
+        }
         default:
             BOOST_ASSERT(false);
             return -1;
@@ -562,6 +569,13 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
         case StmtKind::ArrAssign:
             lowerArrAssignStmt(static_cast<const ArrAssignStmt&>(stmt), func);
             return;
+        case StmtKind::FieldAssign: {
+            auto& s   = static_cast<const FieldAssignStmt&>(stmt);
+            VReg  src = lowerExpr(*s.value, func);
+            VReg  ptr = findVar(s.varName);
+            func.instrs.push_back(DerefStore{ptr, s.offset, src, s.type});
+            return;
+        }
     }
     BOOST_ASSERT(false);
 }

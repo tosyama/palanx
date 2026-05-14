@@ -157,6 +157,8 @@ class PlnLexer;
 %type <bool>	move_owner_r do_export
 %type <json>	tapple_decl tapple_decl_inner tapple_inner
 %type <json>	if_stmt else_stmt while_loop
+%type <json>		type_decl type_member
+%type <vector<json>>	type_members
 
 %left ARROW DBL_ARROW
 %left OPE_OR
@@ -241,7 +243,14 @@ expr_stmt: import
 	| const_decl
 	{ $$ = {{"stmt-type", "not-impl"}}; }
 	| type_decl
-	{ $$ = {{"stmt-type", "not-impl"}}; }
+	{
+		if ($1.contains("name")) {
+			$$ = {{"stmt-type", "struct-def"}, {"name", $1["name"]}, {"fields", move($1["fields"])}};
+			LOC($$, @$);
+		} else {
+			$$ = {{"stmt-type", "not-impl"}};
+		}
+	}
 	| interface_decl
 	{ $$ = {{"stmt-type", "not-impl"}}; }
 	| expression
@@ -257,6 +266,11 @@ expr_stmt: import
 		} else if (et == "arr-assign-expr") {
 			$$ = {{"stmt-type", "arr-assign"}, {"target", move($1["target"])}, {"value", move($1["value"])}};
 			if ($1.value("ownership-transfer", false)) $$["ownership-transfer"] = true;
+			LOC($$, @$);
+		} else if (et == "field-assign-expr") {
+			$$ = {{"stmt-type", "field-assign"},
+				  {"object", move($1["base"])}, {"field", move($1["field"])},
+				  {"value", move($1["value"])}};
 			LOC($$, @$);
 		} else if (et != "not-impl") {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
@@ -596,8 +610,11 @@ const_decl: KW_CONST ID '=' expression
 	;
 
 type_decl: do_export KW_TYPE ID implememts '{' type_members '}'
+	{ $$ = {{"name", $3}, {"fields", move($6)}}; LOC($$, @$); }
 	| do_export KW_TYPE ID '=' type_expr
+	{ $$ = json{}; }
 	| do_export KW_TYPE ID
+	{ $$ = json{}; }
 	;
 
 implememts: /* empty */
@@ -613,11 +630,21 @@ implements_type: type_expr
 	;
 
 type_members: type_member
+	{
+		$$ = json::array();
+		if (!$1.value("not-impl", false)) $$.push_back(move($1));
+	}
 	| type_members type_member
+	{
+		$$ = move($1);
+		if (!$2.value("not-impl", false)) $$.push_back(move($2));
+	}
 	;
 
 type_member: var_declaration ';'
+	{ $$ = move($1); }
 	| KW_FUNC long_func_name '(' paramaters ')' return_def block
+	{ $$ = {{"not-impl", true}}; }
 	;
 
 long_func_name: ID
@@ -687,6 +714,11 @@ expression: term
 			LOC(arr_node, @3);
 			$$ = {{"expr-type", "arr-assign-expr"}, {"target", move(arr_node)}, {"value", move($1)}};
 			LOC($$, @$);
+		} else if ($3.value("kind", "") == "field") {
+			$$ = {{"expr-type", "field-assign-expr"},
+				  {"base", move($3["base"])}, {"field", move($3["field"])},
+				  {"value", move($1)}};
+			LOC($$, @$);
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
 		}
@@ -729,7 +761,7 @@ term: INT
 			$$ = $2;
 	}
 	| term '.' ID
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "field-access"}, {"object", move($1)}, {"field", move($3)}}; LOC($$, @$); }
 	| term '[' expression ']'
 	{
 		$$ = {{"expr-type", "arr-index"}, {"array", move($1)}, {"index", move($3)}};
@@ -819,6 +851,8 @@ store_loc
 		$$ = {{"kind", "arr-index"}, {"array", move(array_expr)}, {"index", move($3)}};
 		LOC($$, @$);
 	}
+	| store_loc '.' ID
+	{ $$ = {{"kind", "field"}, {"base", move($1)}, {"field", move($3)}}; }
 	| '(' tapple_inner ')'
 	{ $$ = {{"kind", "not-impl"}}; }
 	| func_call

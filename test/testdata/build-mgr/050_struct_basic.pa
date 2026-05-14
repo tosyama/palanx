@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+
+Point p;
+10 -> p.x;
+20 -> p.y;
+printf("%ld %ld\n", p.x, p.y);

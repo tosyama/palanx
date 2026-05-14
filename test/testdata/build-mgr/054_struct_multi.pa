@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+
+Point a;
+Point b;
+1 -> a.x;
+2 -> a.y;
+3 -> b.x;
+4 -> b.y;
+printf("%ld %ld %ld %ld\n", a.x, a.y, b.x, b.y);

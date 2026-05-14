@@ -13,6 +13,20 @@ using namespace std;
 
 using json = nlohmann::json;
 
+struct FieldLayout {
+	string name;
+	string typeName;  // "int64", "flo32", etc.
+	int offset;       // byte offset from struct start (C ABI aligned)
+	int size;         // field size in bytes
+};
+
+struct StructDef {
+	string name;
+	vector<FieldLayout> fields;
+	int totalSize;
+	int maxAlign;
+};
+
 class PlnSemanticAnalyzer {
 	string basePath;
 	string astFileName;
@@ -37,6 +51,8 @@ class PlnSemanticAnalyzer {
 	vector<size_t> whileScopeStack_;
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
+	// Registered struct type definitions
+	map<string, StructDef> structDefs_;
 
 	void enterScope();
 	void leaveScope();
@@ -66,9 +82,12 @@ class PlnSemanticAnalyzer {
 	json sa_expr_member_call(const json& expr);
 	json sa_expr_arr_index(const json& expr);
 	json sa_expression_stmt(const json& stmt);
-	json sa_var_decl(const json& stmt);    // returns array of statements
-	json sa_arr_var_decl(const json& stmt); // returns array of statements
+	json sa_var_decl(const json& stmt);           // returns array of statements
+	json sa_arr_var_decl(const json& stmt);       // returns array of statements
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
+	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
+	json sa_struct_var_decl(const json& stmt);    // returns array of statements
+	json sa_field_assign(const json& stmt);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);

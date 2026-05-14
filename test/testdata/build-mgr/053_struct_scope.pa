@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+type Box { int64 val; };
+
+{
+    Box b;
+    42 -> b.val;
+    printf("%ld\n", b.val);
+}

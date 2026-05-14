@@ -4,9 +4,30 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <iostream>
+#include <algorithm>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
+
+static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1); }
+
+static StructDef buildStructDef(const string& name, const json& fields)
+{
+	StructDef def;
+	def.name = name;
+	int offset = 0, maxAlign = 1;
+	for (auto& f : fields) {
+		string typeName = f["var-type"]["type-name"].get<string>();
+		int sz = elemSizeBytes(typeName);
+		offset = alignUp(offset, sz);
+		def.fields.push_back({f["name"].get<string>(), typeName, offset, sz});
+		offset += sz;
+		maxAlign = max(maxAlign, sz);
+	}
+	def.totalSize = alignUp(offset, maxAlign);
+	def.maxAlign  = maxAlign;
+	return def;
+}
 
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
@@ -32,6 +53,15 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			return sa_embed_arr_var_decl(stmt);
 		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null())
 			return sa_arr_var_decl(stmt);
+		if (tk == "prim") {
+			string tname = vtype.value("type-name", "");
+			if (structDefs_.count(tname))
+				return sa_struct_var_decl(stmt);
+			if (elemSizeBytes(tname) < 0) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+				exit(1);
+			}
+		}
 	}
 
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
@@ -327,5 +357,46 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 		}})}});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 	}
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
+{
+	string name = stmt["name"].get<string>();
+	for (auto& f : stmt["fields"]) {
+		const json& vtype = f["var-type"];
+		if (vtype.value("type-kind","") != "prim" || elemSizeBytes(vtype.value("type-name","")) < 0) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_NonPrimStructField) << endl;
+			exit(1);
+		}
+	}
+	structDefs_[name] = buildStructDef(name, stmt["fields"]);
+	return json::array();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
+{
+	const string& structName = stmt["vars"][0]["var-type"]["type-name"].get<string>();
+	const StructDef& def = structDefs_[structName];
+	json pntr_type = {{"type-kind","pntr"},
+	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
+	                 {"value-type",uint64_type}};
+	json one_arg  = {{"expr-type","lit-int"},{"value","1"},{"value-type",uint64_type}};
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json calloc_call = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},
+	                    {"args",json::array({one_arg, size_arg})},
+	                    {"value-type",pntr_type}};
+	json result = json::array();
+	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
+	for (auto& var : stmt["vars"]) {
+		string name = var["name"].get<string>();
+		declareVar(name, pntr_type, &stmt);
+		arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
+		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",calloc_call}});
+	}
+	result.push_back(sa_stmt);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE

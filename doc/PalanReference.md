@@ -805,3 +805,24 @@ inserted at scope exit. No helper functions are generated.
 
 - Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
 - Boundary checking is not performed.
+
+## 19. Struct Types
+
+Define a struct type with `type`:
+
+```palan
+type Point { int64 x; int64 y; }
+```
+
+Declare a variable, assign fields, and read fields:
+
+```palan
+Point p;
+10 -> p.x;
+20 -> p.y;
+printf("%ld %ld\n", p.x, p.y);   // 10 20
+```
+
+- **Memory management**: heap-allocated via `calloc(1, sizeof(Name))` (zero-initialized); automatically freed at scope exit.
+- **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
+- **Field types**: integer and float primitives only (v0.1.22); nested structs and array fields are not supported.

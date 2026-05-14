@@ -659,3 +659,48 @@ TEST(gen_ast, member_call) {
 	ASSERT_EQ(c["name"], "f");
 	ASSERT_EQ(c["args"].size(), 2);
 }
+
+TEST(gen_ast, struct_def) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/022_struct_def.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// type Point { int64 x; int64 y; } → struct-def
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["stmt-type"], "struct-def");
+	ASSERT_EQ(s["name"], "Point");
+	ASSERT_EQ(s["fields"].size(), 2);
+	ASSERT_EQ(s["fields"][0]["name"], "x");
+	ASSERT_EQ(s["fields"][0]["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(s["fields"][0]["var-type"]["type-name"], "int64");
+	ASSERT_EQ(s["fields"][1]["name"], "y");
+	ASSERT_EQ(s["fields"][1]["var-type"]["type-name"], "int64");
+}
+
+TEST(gen_ast, field_access) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/023_field_access.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	// p.x → field-access expr
+	const auto& fa = stmts[0]["body"];
+	ASSERT_EQ(fa["expr-type"], "field-access");
+	ASSERT_EQ(fa["object"]["expr-type"], "id");
+	ASSERT_EQ(fa["object"]["name"], "p");
+	ASSERT_EQ(fa["field"], "x");
+
+	// 10 -> p.x → field-assign
+	const auto& as = stmts[1];
+	ASSERT_EQ(as["stmt-type"], "field-assign");
+	ASSERT_EQ(as["object"]["kind"], "var");
+	ASSERT_EQ(as["object"]["name"], "p");
+	ASSERT_EQ(as["field"], "x");
+	ASSERT_EQ(as["value"]["expr-type"], "lit-int");
+	ASSERT_EQ(as["value"]["value"], "10");
+}

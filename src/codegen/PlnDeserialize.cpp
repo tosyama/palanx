@@ -176,6 +176,14 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         return e;
     }
 
+    if (expr_type == "field-access") {
+        auto e = make_unique<FieldAccessExpr>();
+        e->varName = j["var"];
+        e->offset  = j["offset"];
+        e->type    = toVRegType(j["value-type"]);
+        return e;
+    }
+
     cerr << PlnCodegenMessage::getMessage(E_UnknownExprType, j["expr-type"].get<string>()) << endl;
     exit(1);
 }
@@ -276,6 +284,14 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         s->type     = toVRegType(target["value-type"]);
         s->idx_type = toVRegType(target["index"]["value-type"]);
         s->value    = deserializeExpr(j["value"]);
+        return s;
+    }
+    if (stmt_type == "field-assign") {
+        auto s = make_unique<FieldAssignStmt>();
+        s->varName = j["var"];
+        s->offset  = j["offset"];
+        s->type    = toVRegType(j["value-type"]);
+        s->value   = deserializeExpr(j["value"]);
         return s;
     }
     if (stmt_type == "not-impl") {

@@ -4,6 +4,7 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <iostream>
+#include <algorithm>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -140,6 +141,34 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 
 	} else if (expr_type == "member-call") {
 		return sa_expr_member_call(expr);
+
+	} else if (expr_type == "field-access") {
+		string varName   = expr["object"]["name"].get<string>();
+		string fieldName = expr["field"].get<string>();
+		const json* varType = findVar(varName);
+		if (varType == nullptr) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
+			exit(1);
+		}
+		if (varType->value("type-kind","") != "pntr"
+				|| (*varType)["base-type"].value("type-kind","") != "struct") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+			exit(1);
+		}
+		string structName = (*varType)["base-type"]["type-name"].get<string>();
+		const StructDef& def = structDefs_[structName];
+		auto it = find_if(def.fields.begin(), def.fields.end(),
+		                  [&](const FieldLayout& f){ return f.name == fieldName; });
+		if (it == def.fields.end()) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName) << endl;
+			exit(1);
+		}
+		// LCOV_EXCL_EXCEPTION_BR_START
+		return {{"expr-type","field-access"},
+		        {"var", varName},
+		        {"offset", it->offset},
+		        {"value-type",{{"type-kind","prim"},{"type-name",it->typeName}}}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 
 	} else if (expr_type == "arr-index") {
 		return sa_expr_arr_index(expr);

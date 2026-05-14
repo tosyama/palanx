@@ -30,10 +30,6 @@ e.g. How should `[]int32(x)` or similar constructs be written?
 
 ---
 
-## 5. Unsigned Integer Literal Suffix (`u`) Not Implemented
+## 5. `type` Definition Scope
 
-**Summary:** The lexer defines `UDIGIT = [0-9]+"u"` and the parser has a `UINT` token and `lit-uint` expression type, but no Flex action rule returns `UINT`. As a result, `123u` syntax is not recognized — `u` is tokenized as a separate identifier and causes a syntax error.
-
-The `uint64` type itself is supported for variable declarations and arithmetic, but there is no way to write a `uint64` literal that exceeds `int64` max (`9223372036854775807`) in source code.
-
-**To fix:** Add `<*>{UDIGIT} { lval.build<string>() = string(yytext, yyleng-1); return UINT; }` to `PlnLexer.ll` (stripping the `u` suffix from the stored value).
+**Summary:** `type` definitions are currently registered globally regardless of where they appear in the source. They should follow the same scope rules as variable declarations — visible only from the point of definition to the end of the enclosing scope.

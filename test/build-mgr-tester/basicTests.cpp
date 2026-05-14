@@ -359,6 +359,36 @@ TEST(build_mgr, cinclude_alias) {
 	ASSERT_EQ(output, "42\n");
 }
 
+TEST(build_mgr, struct_basic) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/050_struct_basic.pa");
+	ASSERT_EQ(output, "10 20\n");
+}
+
+TEST(build_mgr, struct_c_abi) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/051_struct_c_abi.pa");
+	ASSERT_EQ(output, "42 100\n");
+}
+
+TEST(build_mgr, struct_float) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/052_struct_float.pa");
+	ASSERT_EQ(output, "1.5 2.5\n");
+}
+
+TEST(build_mgr, struct_scope) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/053_struct_scope.pa");
+	ASSERT_EQ(output, "42\n");
+}
+
+TEST(build_mgr, struct_multi) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/054_struct_multi.pa");
+	ASSERT_EQ(output, "1 2 3 4\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
