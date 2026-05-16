@@ -11,18 +11,74 @@
 
 static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1); }
 
-static StructDef buildStructDef(const string& name, const json& fields)
+static StructDef buildStructDef(const string& name,
+                                const json& fields,
+                                const map<string, StructDef>& structDefs)
 {
 	StructDef def;
 	def.name = name;
 	int offset = 0, maxAlign = 1;
 	for (auto& f : fields) {
-		string typeName = f["var-type"]["type-name"].get<string>();
-		int sz = elemSizeBytes(typeName);
-		offset = alignUp(offset, sz);
-		def.fields.push_back({f["name"].get<string>(), typeName, offset, sz});
-		offset += sz;
-		maxAlign = max(maxAlign, sz);
+		const json& vtype = f["var-type"];
+		string tk = vtype.value("type-kind", "");
+		string fieldName = f["name"].get<string>();
+
+		if (tk == "prim") {
+			string tname = vtype["type-name"].get<string>();
+			if (structDefs.count(tname)) {
+				int sz = 8, align = 8;
+				offset = alignUp(offset, align);
+				def.fields.push_back({.name=fieldName, .typeKind="struct-ptr",
+				                      .typeName=tname, .isMutable=false,
+				                      .offset=offset, .size=sz});
+				offset += sz;
+				maxAlign = max(maxAlign, align);
+				def.hasOwnedStructFields = true;
+			} else {
+				int sz = elemSizeBytes(tname);
+				if (sz < 0) {
+					cerr << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+					exit(1);
+				}
+				offset = alignUp(offset, sz);
+				def.fields.push_back({.name=fieldName, .typeKind="prim",
+				                      .typeName=tname, .isMutable=false,
+				                      .offset=offset, .size=sz});
+				offset += sz;
+				maxAlign = max(maxAlign, sz);
+			}
+		} else if (tk == "embed") {
+			string structName = vtype["base-type"]["type-name"].get<string>();
+			if (structName == name) {
+				cerr << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;
+				exit(1);
+			}
+			if (!structDefs.count(structName)) {
+				cerr << PlnSaMessage::getMessage(E_UnknownStructType, structName) << endl;
+				exit(1);
+			}
+			const StructDef& sub = structDefs.at(structName);
+			int align = sub.maxAlign;
+			offset = alignUp(offset, align);
+			def.fields.push_back({.name=fieldName, .typeKind="embed",
+			                      .typeName=structName, .isMutable=false,
+			                      .offset=offset, .size=sub.totalSize});
+			offset += sub.totalSize;
+			maxAlign = max(maxAlign, align);
+		} else if (tk == "pntr") {
+			int sz = 8, align = 8;
+			string baseName = vtype["base-type"].value("type-name", "");
+			bool isMut = vtype.value("mutable", false);
+			offset = alignUp(offset, align);
+			def.fields.push_back({.name=fieldName, .typeKind="raw-ptr",
+			                      .typeName=baseName, .isMutable=isMut,
+			                      .offset=offset, .size=sz});
+			offset += sz;
+			maxAlign = max(maxAlign, align);
+		} else {
+			cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+			exit(1);
+		}
 	}
 	def.totalSize = alignUp(offset, maxAlign);
 	def.maxAlign  = maxAlign;
@@ -363,14 +419,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	for (auto& f : stmt["fields"]) {
-		const json& vtype = f["var-type"];
-		if (vtype.value("type-kind","") != "prim" || elemSizeBytes(vtype.value("type-name","")) < 0) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_NonPrimStructField) << endl;
-			exit(1);
-		}
-	}
-	structDefs_[name] = buildStructDef(name, stmt["fields"]);
+	structDefs_[name] = buildStructDef(name, stmt["fields"], structDefs_);
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

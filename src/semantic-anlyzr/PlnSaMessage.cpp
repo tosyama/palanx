@@ -149,8 +149,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "struct '" + arg1 + "' has no field '" + arg2 + "'.";
 
-		case E_NonPrimStructField:
-			return "struct field type must be integer or float.";
+		case E_UnsupportedStructFieldType:
+			return "unsupported struct field type.";
+
+		case E_RecursiveStruct:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "struct '" + arg1 + "' recursively contains itself.";
 
 		case E_FieldAccessOnNonStruct:
 			return "field access on non-struct variable.";

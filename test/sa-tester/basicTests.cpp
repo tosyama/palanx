@@ -1460,3 +1460,42 @@ TEST(sa, field_assign_widen)
 	ASSERT_EQ(fa["value"]["expr-type"],      "convert");
 	ASSERT_EQ(fa["value"]["value-type"]["type-name"], "int64");
 }
+
+TEST(sa, embed_struct_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/074_embed_struct_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Line { $Point a; $Point b; } — totalSize = 16+16 = 32
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "l");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "32");
+}
+
+TEST(sa, owned_struct_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/075_owned_struct_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Rect { Point tl; Point br; } — each struct-ptr = 8, totalSize = 16
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "r");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
+TEST(sa, raw_ptr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/076_raw_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Node { int64 val; @Node next; } — int64(8) + ptr(8) = 16
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "n");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}

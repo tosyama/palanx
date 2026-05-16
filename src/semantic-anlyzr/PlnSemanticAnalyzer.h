@@ -15,16 +15,19 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeName;  // "int64", "flo32", etc.
-	int offset;       // byte offset from struct start (C ABI aligned)
-	int size;         // field size in bytes
+	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr"
+	string typeName;   // prim type name, embed/struct-ptr struct name, raw-ptr base type name
+	bool   isMutable;  // raw-ptr only: @T=false, @!T=true
+	int    offset;     // byte offset from struct start (C ABI aligned)
+	int    size;       // prim: type size, embed: sub-struct totalSize, struct-ptr/raw-ptr: 8
 };
 
 struct StructDef {
 	string name;
 	vector<FieldLayout> fields;
-	int totalSize;
-	int maxAlign;
+	int  totalSize;
+	int  maxAlign;
+	bool hasOwnedStructFields = false;
 };
 
 class PlnSemanticAnalyzer {

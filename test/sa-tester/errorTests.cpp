@@ -406,7 +406,18 @@ TEST(sa_error, non_prim_struct_field)
 		"bin/palan-gen-ast ../test/testdata/sa/error_062_non_prim_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("struct field type must be integer or float"), string::npos);
+	ASSERT_NE(sa.find("unsupported struct field type"), string::npos);
+}
+
+TEST(sa_error, recursive_struct)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_069_recursive_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("recursively contains itself"), string::npos);
 }
 
 TEST(sa_error, field_assign_undef_var)
