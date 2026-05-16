@@ -641,8 +641,8 @@ type_members: type_member
 	}
 	;
 
-type_member: var_declaration ';'
-	{ $$ = move($1); }
+type_member: type_expr ID ';'
+	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; }
 	| KW_FUNC long_func_name '(' paramaters ')' return_def block
 	{ $$ = {{"not-impl", true}}; }
 	;

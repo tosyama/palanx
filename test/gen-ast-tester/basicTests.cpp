@@ -704,3 +704,89 @@ TEST(gen_ast, field_access) {
 	ASSERT_EQ(as["value"]["expr-type"], "lit-int");
 	ASSERT_EQ(as["value"]["value"], "10");
 }
+
+TEST(gen_ast, embed_struct_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/024_embed_struct_field.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	// type Point { int64 x; int64 y; } — first struct parses correctly
+	ASSERT_EQ(stmts[0]["name"], "Point");
+	ASSERT_EQ(stmts[0]["fields"].size(), 2);
+
+	// type Line { $Point a; $Point b; }
+	const auto& s = stmts[1];
+	ASSERT_EQ(s["stmt-type"], "struct-def");
+	ASSERT_EQ(s["name"], "Line");
+	ASSERT_EQ(s["fields"].size(), 2);
+	ASSERT_EQ(s["fields"][0]["name"], "a");
+	ASSERT_EQ(s["fields"][0]["var-type"]["type-kind"], "embed");
+	ASSERT_EQ(s["fields"][0]["var-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(s["fields"][0]["var-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(s["fields"][1]["name"], "b");
+	ASSERT_EQ(s["fields"][1]["var-type"]["type-kind"], "embed");
+	ASSERT_EQ(s["fields"][1]["var-type"]["base-type"]["type-name"], "Point");
+}
+
+TEST(gen_ast, owned_struct_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/025_owned_struct_field.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	// type Point { int64 x; int64 y; } — first struct parses correctly
+	ASSERT_EQ(stmts[0]["name"], "Point");
+	ASSERT_EQ(stmts[0]["fields"].size(), 2);
+
+	// type Rect { Point tl; Point br; }
+	const auto& s = stmts[1];
+	ASSERT_EQ(s["stmt-type"], "struct-def");
+	ASSERT_EQ(s["name"], "Rect");
+	ASSERT_EQ(s["fields"].size(), 2);
+	ASSERT_EQ(s["fields"][0]["name"], "tl");
+	ASSERT_EQ(s["fields"][0]["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(s["fields"][0]["var-type"]["type-name"], "Point");
+	ASSERT_EQ(s["fields"][1]["name"], "br");
+	ASSERT_EQ(s["fields"][1]["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(s["fields"][1]["var-type"]["type-name"], "Point");
+}
+
+TEST(gen_ast, ptr_struct_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/026_ptr_struct_field.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// type Node { int64 val; @Node next; }
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["fields"].size(), 2);
+	ASSERT_EQ(s["fields"][1]["name"], "next");
+	ASSERT_EQ(s["fields"][1]["var-type"]["type-kind"], "pntr");
+	ASSERT_FALSE(s["fields"][1]["var-type"].value("mutable", false));
+	ASSERT_EQ(s["fields"][1]["var-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(s["fields"][1]["var-type"]["base-type"]["type-name"], "Node");
+}
+
+TEST(gen_ast, mutable_ptr_struct_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/027_mutable_ptr_struct_field.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// type Node { int64 val; @!Node next; }
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["fields"].size(), 2);
+	ASSERT_EQ(s["fields"][1]["name"], "next");
+	ASSERT_EQ(s["fields"][1]["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(s["fields"][1]["var-type"]["mutable"], true);
+	ASSERT_EQ(s["fields"][1]["var-type"]["base-type"]["type-name"], "Node");
+}

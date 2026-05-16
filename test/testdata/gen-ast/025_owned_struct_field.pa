@@ -1,0 +1,2 @@
+type Point { int64 x; int64 y; };
+type Rect { Point tl; Point br; }

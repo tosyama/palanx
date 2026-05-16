@@ -6,58 +6,65 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-05-11)
-version: 0.1.22
-- This iteration introduces basic struct types with heap allocation and C ABI-compatible field layout.
+### 2.1 Iteration Goal (2026-05-14)
+version: 0.1.23
+- This iteration extends struct field types beyond primitives: inline embedding (`$T`), owned struct pointer (`T`), and non-owning pointer (`@T`). It also introduces struct-type function parameters and return values, and implements the `__pln_alloc_*` / `__pln_free_*` allocator infrastructure.
 
-**Struct types**
-- `type Name { field_decl... }` — defines a struct type with integer and float fields only (no nested structs, no arrays).
-- `Name p;` — heap-allocates a zero-initialized struct (`calloc(1, sizeof(Name))`); automatically freed at scope exit.
-- `value -> p.field` — writes to a struct field.
-- `p.field` — reads a struct field (rvalue).
+**Struct field types**
+- `$T a` — inline embedding; field memory is included in the parent struct's `calloc(1, totalSize)`. C ABI alignment applied.
+- `T a` — owned struct pointer; 8-byte pointer field, auto-allocated via `__pln_alloc_T()` and auto-freed via `__pln_free_T()` at scope exit.
+- `@T a` — non-owning read-only pointer; 8-byte null-initialized field, user manages lifecycle. Field access is read-only (cannot write through it).
+- `@!T a` — non-owning mutable pointer; same as `@T` but allows write-through (`value -> p.a.field`).
 
-Design decisions:
-1. **Keyword**: `type` (existing `KW_TYPE`) is used rather than introducing a new `struct` keyword.
-2. **Memory model**: heap allocation via `calloc(1, size)` for zero initialization; auto-freed via the existing `arrayScopeVars_` mechanism, identical to array variables.
-3. **C ABI layout**: each field is placed at the next offset that is a multiple of the field's natural alignment (`align == size` for primitives). The total struct size is rounded up to the alignment of the largest field. This matches the System V AMD64 ABI struct layout.
-4. **Field access IR**: two new virtual instructions — `DerefLoad { dst, ptr, offset, type }` and `DerefStore { ptr, offset, src, type }` — map directly to the x86 `offset(%reg)` addressing mode.
-5. **Variable type in SA**: a struct variable is represented as `{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Name"}}`, consistent with how array variables are `pntr` to their element type.
-6. **Struct definition in SA**: `struct-def` AST nodes are consumed by the SA (registered in `structDefs_`) and not emitted to sa.json, identical to how `cinclude` nodes are consumed.
-7. **Scope**: function parameters/returns of struct type, nested structs, export of struct types, and array-of-struct are deferred to a later iteration.
+**Field access**
+- `p.a.x` where `a` is `$T`: SA flattens to a single combined offset (no extra dereference).
+- `p.a.x` where `a` is `T` or `@T`: SA emits a `ptr-expr` chain (DerefLoad the pointer, then DerefLoad the sub-field).
+
+**Allocator infrastructure (§3.6)**
+- SA records structs requiring recursive allocation in `alloc-shapes` metadata in sa.json.
+- Build manager generates a Palan source file with `__pln_alloc_*` / `__pln_free_*` functions, compiles it, and links it with the main module.
+
+**Struct-type function parameters and return values**
+- `func f(Point p)` — struct-type parameter; treated as `pntr(struct(Point))` (borrowed, not freed at scope exit).
+- `func f() -> Point p` — named return of struct type; ownership transfers to caller.
+- Inside `__pln_alloc_*` functions: struct variable declarations use simple `calloc(1, totalSize)` only (recursion prevention via `inAllocFunc_` flag).
 
 The goal is that the following programs produce correct output:
 
 ```palan
-// basic struct
+// $T inline embedding
 cinclude <stdio.h>;
 type Point { int64 x; int64 y; }
+type Line  { $Point a; $Point b; }
 
-Point p;
-10 -> p.x;
-20 -> p.y;
-printf("%ld %ld\n", p.x, p.y);   // 10 20
+Line l;
+10 -> l.a.x;  20 -> l.a.y;
+30 -> l.b.x;  40 -> l.b.y;
+printf("%ld %ld %ld %ld\n", l.a.x, l.a.y, l.b.x, l.b.y);  // 10 20 30 40
 ```
 
 ```palan
-// C ABI layout: int32 a at offset 0, int64 b at offset 8 (4 bytes padding)
+// T owned struct pointer (auto-alloc/free)
 cinclude <stdio.h>;
-type Mixed { int32 a; int64 b; }
+type Point { int64 x; int64 y; }
+type Rect  { Point tl; Point br; }
 
-Mixed m;
-42 -> m.a;
-100 -> m.b;
-printf("%d %ld\n", m.a, m.b);   // 42 100
+Rect r;
+10 -> r.tl.x;  20 -> r.tl.y;
+30 -> r.br.x;  40 -> r.br.y;
+printf("%ld %ld %ld %ld\n", r.tl.x, r.tl.y, r.br.x, r.br.y);  // 10 20 30 40
 ```
 
 ```palan
-// float fields
+// @T non-owning pointer
 cinclude <stdio.h>;
-type Vec2 { flo64 x; flo64 y; }
+type Node { int64 val; @Node next; }
 
-Vec2 v;
-1.5 -> v.x;
-2.5 -> v.y;
-printf("%f %f\n", v.x, v.y);   // 1.500000 2.500000
+Node n1;  Node n2;
+42  -> n1.val;
+100 -> n2.val;
+n2 -> n1.next;
+printf("%ld %ld\n", n1.val, n1.next.val);  // 42 100
 ```
 
 
