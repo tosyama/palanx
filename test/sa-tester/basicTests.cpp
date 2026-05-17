@@ -1544,3 +1544,44 @@ TEST(sa, calloc_no_owned)
 	// No struct entries added to alloc-shapes
 	ASSERT_TRUE(jout["alloc-shapes"].empty());
 }
+
+TEST(sa, alloc_func_no_recurse)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/079_alloc_func_no_recurse.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// __pln_alloc_Rect() -> Rect ret { Rect ret; }
+	// inAllocFunc_=true → Rect ret uses calloc(1,16), not __pln_alloc_Rect
+	const auto& f = jout["functions"][0];
+	ASSERT_EQ(f["name"], "__pln_alloc_Rect");
+
+	// ret-type normalized to pntr(struct(Rect))
+	ASSERT_EQ(f["ret-type"]["type-kind"], "pntr");
+	ASSERT_EQ(f["ret-type"]["base-type"]["type-name"], "Rect");
+
+	// body[0] = var-decl for ret with calloc (named return → no free appended)
+	ASSERT_EQ(f["body"].size(), 1u);
+	const auto& var_decl = f["body"][0];
+	ASSERT_EQ(var_decl["stmt-type"], "var-decl");
+	ASSERT_EQ(var_decl["vars"][0]["name"], "ret");
+	ASSERT_EQ(var_decl["vars"][0]["init"]["name"], "calloc");
+	ASSERT_EQ(var_decl["vars"][0]["init"]["func-type"], "c");
+}
+
+TEST(sa, struct_param)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/080_struct_param.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// func __pln_free_Point(Point p) { free(p); }
+	// parameters[0]: Point p → pntr(struct(Point))
+	const auto& f = jout["functions"][0];
+	ASSERT_EQ(f["name"], "__pln_free_Point");
+
+	const auto& param = f["parameters"][0];
+	ASSERT_EQ(param["name"], "p");
+	ASSERT_EQ(param["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(param["var-type"]["base-type"]["type-name"], "Point");
+}

@@ -52,6 +52,14 @@ const PtrType* PlnTypeRegistry::ptr(const PlnType* base)
     return ins->second.get();
 }
 
+const StructType* PlnTypeRegistry::structType(const std::string& name)
+{
+    auto it = structCache_.find(name);
+    if (it != structCache_.end()) return it->second.get();
+    auto [ins, ok] = structCache_.emplace(name, std::make_unique<StructType>(name));
+    return ins->second.get();
+}
+
 const PlnType* PlnTypeRegistry::fromJson(const json& j)
 {
     std::string kind = j.at("type-kind").get<std::string>();
@@ -67,6 +75,9 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
         const PlnType* base = fromJson(j.at("base-type"));
         return ptr(base);
     }
+    if (kind == "struct") {
+        return structType(j.at("type-name").get<std::string>());
+    }
     throw std::runtime_error("unknown type-kind: " + kind);
 }
 
@@ -80,6 +91,10 @@ json PlnTypeRegistry::toJson(const PlnType* t)
     if (t->kind == PlnType::Kind::Ptr) {
         const auto* p = static_cast<const PtrType*>(t);
         return {{"type-kind", "pntr"}, {"base-type", toJson(p->base)}};
+    }
+    if (t->kind == PlnType::Kind::Struct) {
+        const auto* s = static_cast<const StructType*>(t);
+        return {{"type-kind", "struct"}, {"type-name", s->name}};
     }
     throw std::runtime_error("unknown PlnType::Kind");
 }

@@ -34,8 +34,8 @@ The goal is that the following programs produce correct output:
 ```palan
 // $T inline embedding
 cinclude <stdio.h>;
-type Point { int64 x; int64 y; }
-type Line  { $Point a; $Point b; }
+type Point { int64 x; int64 y; };
+type Line  { $Point a; $Point b; };
 
 Line l;
 10 -> l.a.x;  20 -> l.a.y;
@@ -46,8 +46,8 @@ printf("%ld %ld %ld %ld\n", l.a.x, l.a.y, l.b.x, l.b.y);  // 10 20 30 40
 ```palan
 // T owned struct pointer (auto-alloc/free)
 cinclude <stdio.h>;
-type Point { int64 x; int64 y; }
-type Rect  { Point tl; Point br; }
+type Point { int64 x; int64 y; };
+type Rect  { Point tl; Point br; };
 
 Rect r;
 10 -> r.tl.x;  20 -> r.tl.y;
@@ -58,7 +58,7 @@ printf("%ld %ld %ld %ld\n", r.tl.x, r.tl.y, r.br.x, r.br.y);  // 10 20 30 40
 ```palan
 // @T non-owning pointer
 cinclude <stdio.h>;
-type Node { int64 val; @Node next; }
+type Node { int64 val; @Node next; };
 
 Node n1;  Node n2;
 42  -> n1.val;

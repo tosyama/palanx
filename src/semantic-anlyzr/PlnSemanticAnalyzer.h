@@ -55,6 +55,8 @@ class PlnSemanticAnalyzer {
 	vector<size_t> whileScopeStack_;
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
+	// True when analyzing a __pln_alloc_* function body (suppress recursive alloc)
+	bool inAllocFunc_ = false;
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
@@ -93,6 +95,10 @@ class PlnSemanticAnalyzer {
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
 	void recordAllocShape(const string& structName);
+	bool isStructType(const json& type) const;
+	json  toStructPntrType(const json& type) const;
+	bool  isNamedReturnVar(const string& varName) const;
+	void  normalizeStructSig(json& funcDef);
 	json sa_field_assign(const json& stmt);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);

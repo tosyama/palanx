@@ -811,7 +811,7 @@ inserted at scope exit. No helper functions are generated.
 Define a struct type with `type`:
 
 ```palan
-type Point { int64 x; int64 y; }
+type Point { int64 x; int64 y; };
 ```
 
 Declare a variable, assign fields, and read fields:

@@ -439,7 +439,8 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 		json init;
 		json free_stmt;
 
-		if (!def.hasOwnedStructFields) {
+		bool useSimpleCalloc = !def.hasOwnedStructFields || inAllocFunc_;
+		if (useSimpleCalloc) {
 			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 			json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
 			                 {"value-type",uint64_type}};
@@ -457,7 +458,9 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 			free_stmt = makePlanFreeStmt(name, pntr_type, free_fn);
 		}
 
-		arrayScopeVars_.back().push_back({name, free_stmt});
+		bool namedRet = isNamedReturnVar(name);
+		if (!namedRet)
+			arrayScopeVars_.back().push_back({name, free_stmt});
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
 	}
 	result.push_back(sa_stmt);

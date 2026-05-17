@@ -21,7 +21,7 @@ enum class TypeCompat {
 
 // Type base class
 struct PlnType {
-    enum class Kind { Prim, Ptr } kind;
+    enum class Kind { Prim, Ptr, Struct } kind;
     virtual ~PlnType() = default;
 protected:
     PlnType(Kind k) : kind(k) {}
@@ -43,15 +43,23 @@ struct PtrType : PlnType {
     PtrType(const PlnType* b) : PlnType(Kind::Ptr), base(b) {}
 };
 
+// Struct type (opaque; used as base for struct pointer types)
+struct StructType : PlnType {
+    std::string name;
+    StructType(std::string n) : PlnType(Kind::Struct), name(std::move(n)) {}
+};
+
 // Type registry — owns all type instances and interns them
 class PlnTypeRegistry {
-    std::map<PrimType::Name, std::unique_ptr<PrimType>> primCache_;
-    std::map<const PlnType*, std::unique_ptr<PtrType>>  ptrCache_;
+    std::map<PrimType::Name, std::unique_ptr<PrimType>>  primCache_;
+    std::map<const PlnType*, std::unique_ptr<PtrType>>   ptrCache_;
+    std::map<std::string, std::unique_ptr<StructType>>   structCache_;
 public:
-    const PrimType* prim(PrimType::Name name);
-    const PtrType*  ptr(const PlnType* base);
-    const PlnType*  fromJson(const json& j);
-    json            toJson(const PlnType* t);
+    const PrimType*  prim(PrimType::Name name);
+    const PtrType*   ptr(const PlnType* base);
+    const StructType* structType(const std::string& name);
+    const PlnType*   fromJson(const json& j);
+    json             toJson(const PlnType* t);
 };
 
 // Type compatibility check

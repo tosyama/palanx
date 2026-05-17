@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+type Point { int64 x; int64 y; };
+func __pln_free_Point(Point p) {
+    free(p);
+}

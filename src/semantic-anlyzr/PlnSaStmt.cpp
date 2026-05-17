@@ -171,16 +171,21 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	auto savedCurrentFunc    = currentFunc_;
 	auto savedArrayScopeVars = arrayScopeVars_;
 	auto savedFuncBodyIdx    = funcBodyScopeIdx_;
+	bool savedInAllocFunc    = inAllocFunc_;
+
+	string funcName = funcDef["name"].get<string>();
+	inAllocFunc_ = (funcName.rfind("__pln_alloc_", 0) == 0);
 
 	varScopes       = {{}};
 	arrayScopeVars_ = {{}};  // scope[0] = params; no arrays expected here
 
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], unsizedArrToPntr(p["var-type"]), &funcDef);
+			declareVar(p["name"], toStructPntrType(unsizedArrToPntr(p["var-type"])), &funcDef);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
-			declareVar(r["name"], unsizedArrToPntr(r["var-type"]), &funcDef);
+			if (!isStructType(r["var-type"]))
+				declareVar(r["name"], unsizedArrToPntr(r["var-type"]), &funcDef);
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
 	enterScope();  // push scope[1] = function body
@@ -209,6 +214,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	json saFunc = funcDef;
 	normalizeUnsizedArrSig(saFunc);
 	validateEmbeddedParams(saFunc);
+	normalizeStructSig(saFunc);
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
@@ -227,6 +233,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	arrayScopeVars_  = savedArrayScopeVars;
 	funcBodyScopeIdx_ = savedFuncBodyIdx;
 	currentFunc_     = savedCurrentFunc;
+	inAllocFunc_     = savedInAllocFunc;
 
 	sa["functions"].push_back(saFunc);
 }

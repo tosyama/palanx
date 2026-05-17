@@ -201,6 +201,43 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	});
 }
 
+bool PlnSemanticAnalyzer::isStructType(const json& type) const
+{
+	return type.value("type-kind","") == "prim" &&
+	       structDefs_.count(type.value("type-name",""));
+}
+
+json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
+{
+	if (!isStructType(type)) return type;
+	string name = type["type-name"].get<string>();
+	return {{"type-kind","pntr"},
+	        {"base-type",{{"type-kind","struct"},{"type-name",name}}}};
+}
+
+bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
+{
+	if (!currentFunc_ || !currentFunc_->contains("rets")) return false;
+	for (auto& r : (*currentFunc_)["rets"])
+		if (r["name"].get<string>() == varName && isStructType(r["var-type"]))
+			return true;
+	return false;
+}
+
+void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
+{
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"])
+			if (isStructType(p["var-type"]))
+				p["var-type"] = toStructPntrType(p["var-type"]);
+	if (funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"])
+			if (isStructType(r["var-type"]))
+				r["var-type"] = toStructPntrType(r["var-type"]);
+	if (funcDef.contains("ret-type") && isStructType(funcDef["ret-type"]))
+		funcDef["ret-type"] = toStructPntrType(funcDef["ret-type"]);
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
