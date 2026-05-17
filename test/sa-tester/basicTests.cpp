@@ -1480,11 +1480,12 @@ TEST(sa, owned_struct_field)
 	json jout = run_sa("../test/testdata/sa/075_owned_struct_field.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// Rect { Point tl; Point br; } — each struct-ptr = 8, totalSize = 16
+	// Rect { Point tl; Point br; } — hasOwnedStructFields → __pln_alloc_Rect
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
-	ASSERT_EQ(v["init"]["name"], "calloc");
-	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
+	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_TRUE(v["init"]["args"].empty());
 }
 
 TEST(sa, raw_ptr_field)
@@ -1498,4 +1499,48 @@ TEST(sa, raw_ptr_field)
 	ASSERT_EQ(v["name"], "n");
 	ASSERT_EQ(v["init"]["name"], "calloc");
 	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
+TEST(sa, alloc_shape_owned)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/077_alloc_shape_owned.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Rect r; — init uses __pln_alloc_Rect (pln func, no args)
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "r");
+	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
+	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_TRUE(v["init"]["args"].empty());
+
+	// alloc-shapes: Point first (leaf), then Rect (root)
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes.size(), 2u);
+	ASSERT_EQ(shapes[0]["shape-name"], "Point");
+	ASSERT_EQ(shapes[0]["shape-kind"], "struct");
+	ASSERT_EQ(shapes[0]["total-size"], 16);
+	ASSERT_EQ(shapes[0]["owned-fields"].size(), 0u);
+	ASSERT_EQ(shapes[1]["shape-name"], "Rect");
+	ASSERT_EQ(shapes[1]["total-size"], 16);
+	ASSERT_EQ(shapes[1]["owned-fields"].size(), 2u);
+	ASSERT_EQ(shapes[1]["owned-fields"][0]["struct-name"], "Point");
+	ASSERT_EQ(shapes[1]["owned-fields"][0]["needs-alloc"], false);
+	ASSERT_EQ(shapes[1]["owned-fields"][1]["struct-name"], "Point");
+}
+
+TEST(sa, calloc_no_owned)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/078_calloc_no_owned.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Point p; — no owned struct fields → calloc
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+
+	// No struct entries added to alloc-shapes
+	ASSERT_TRUE(jout["alloc-shapes"].empty());
 }

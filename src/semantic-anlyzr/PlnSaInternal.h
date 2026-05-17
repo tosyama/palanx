@@ -49,6 +49,23 @@ inline json makeFreeStmt(const string& name, const json& pntrType)
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
+// Builds a synthetic pln-function free call for the named pointer variable
+// LCOV_EXCL_EXCEPTION_BR_START
+inline json makePlanFreeStmt(const string& varName, const json& varType,
+                              const string& freeFn)
+{
+	json var_id = {{"expr-type","id"},{"name",varName},
+	               {"var-type",varType},{"value-type",varType}};
+	return {
+		{"stmt-type", "expr"},
+		{"body", {
+			{"expr-type","call"},{"name",freeFn},{"func-type","pln"},
+			{"args", json::array({var_id})}
+		}}
+	};
+}
+// LCOV_EXCL_EXCEPTION_BR_STOP
+
 inline const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 {
 	if (t->kind != PlnType::Kind::Prim) return t;

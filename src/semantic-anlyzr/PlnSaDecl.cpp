@@ -429,21 +429,36 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	const StructDef& def = structDefs_[structName];
 	json pntr_type = {{"type-kind","pntr"},
 	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
-	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-	json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
-	                 {"value-type",uint64_type}};
-	json one_arg  = {{"expr-type","lit-int"},{"value","1"},{"value-type",uint64_type}};
-	// LCOV_EXCL_EXCEPTION_BR_START
-	json calloc_call = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},
-	                    {"args",json::array({one_arg, size_arg})},
-	                    {"value-type",pntr_type}};
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
+	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"].get<string>();
 		declareVar(name, pntr_type, &stmt);
-		arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
-		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",calloc_call}});
+
+		json init;
+		json free_stmt;
+
+		if (!def.hasOwnedStructFields) {
+			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+			json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
+			                 {"value-type",uint64_type}};
+			json one_arg  = {{"expr-type","lit-int"},{"value","1"},
+			                 {"value-type",uint64_type}};
+			init = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},
+			        {"args",json::array({one_arg, size_arg})},{"value-type",pntr_type}};
+			free_stmt = makeFreeStmt(name, pntr_type);
+		} else {
+			recordAllocShape(structName);
+			string alloc_fn = "__pln_alloc_" + structName;
+			string free_fn  = "__pln_free_"  + structName;
+			init = {{"expr-type","call"},{"name",alloc_fn},{"func-type","pln"},
+			        {"args",json::array()},{"value-type",pntr_type}};
+			free_stmt = makePlanFreeStmt(name, pntr_type, free_fn);
+		}
+
+		arrayScopeVars_.back().push_back({name, free_stmt});
+		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
 	}
 	result.push_back(sa_stmt);
 	// LCOV_EXCL_EXCEPTION_BR_STOP

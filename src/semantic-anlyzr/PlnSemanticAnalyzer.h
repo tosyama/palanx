@@ -5,6 +5,7 @@
 
 #include <string>
 #include <map>
+#include <set>
 #include <vector>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
@@ -56,6 +57,7 @@ class PlnSemanticAnalyzer {
 	int tempVarCounter_ = 0;
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
+	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
 
 	void enterScope();
 	void leaveScope();
@@ -90,6 +92,7 @@ class PlnSemanticAnalyzer {
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
+	void recordAllocShape(const string& structName);
 	json sa_field_assign(const json& stmt);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);

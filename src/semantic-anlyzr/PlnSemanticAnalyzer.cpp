@@ -163,6 +163,44 @@ void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
 	}
 }
 
+void PlnSemanticAnalyzer::recordAllocShape(const string& name)
+{
+	if (allocShapeNames_.count(name)) return;
+	allocShapeNames_.insert(name);
+
+	const StructDef& def = structDefs_[name];
+	json fields = json::array();
+	for (auto& f : def.fields) {
+		fields.push_back({
+			{"name",      f.name},
+			{"type-kind", f.typeKind},
+			{"type-name", f.typeName},
+			{"offset",    f.offset},
+			{"size",      f.size}
+		});
+	}
+	json owned = json::array();
+	for (auto& f : def.fields) {
+		if (f.typeKind != "struct-ptr") continue;
+		const StructDef& sub = structDefs_[f.typeName];
+		owned.push_back({
+			{"name",              f.name},
+			{"offset",            f.offset},
+			{"struct-name",       f.typeName},
+			{"struct-total-size", sub.totalSize},
+			{"needs-alloc",       sub.hasOwnedStructFields}
+		});
+		recordAllocShape(f.typeName);
+	}
+	sa["alloc-shapes"].push_back({
+		{"shape-kind",   "struct"},
+		{"shape-name",   name},
+		{"total-size",   def.totalSize},
+		{"fields",       move(fields)},
+		{"owned-fields", move(owned)}
+	});
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
