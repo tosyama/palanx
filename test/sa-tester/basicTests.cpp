@@ -1585,3 +1585,84 @@ TEST(sa, struct_param)
 	ASSERT_EQ(param["var-type"]["type-kind"], "pntr");
 	ASSERT_EQ(param["var-type"]["base-type"]["type-name"], "Point");
 }
+
+TEST(sa, embed_field_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/081_embed_field_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// 10 -> l.a.x: $Point a@0, int64 x@0 → flatten: var="l", offset=0
+	const auto& fa1 = jout["statements"][1];
+	ASSERT_EQ(fa1["stmt-type"], "field-assign");
+	ASSERT_EQ(fa1["var"],        "l");
+	ASSERT_EQ(fa1["offset"],     0);
+
+	// 20 -> l.b.y: $Point b@16, int64 y@8 → flatten: var="l", offset=24
+	const auto& fa2 = jout["statements"][2];
+	ASSERT_EQ(fa2["stmt-type"], "field-assign");
+	ASSERT_EQ(fa2["var"],        "l");
+	ASSERT_EQ(fa2["offset"],     24);
+
+	// int64 v = l.a.x: field-access: var="l", offset=0
+	const auto& rd = jout["statements"][3]["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"], "field-access");
+	ASSERT_EQ(rd["var"],        "l");
+	ASSERT_EQ(rd["offset"],     0);
+}
+
+TEST(sa, owned_field_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/082_owned_field_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// 10 -> r.tl.x: Point tl@0, int64 x@0 → ptr-expr={var:"r",offset:0}, offset:0
+	const auto& fa = jout["statements"][1];
+	ASSERT_EQ(fa["stmt-type"],              "field-assign");
+	ASSERT_EQ(fa["offset"],                 0);
+	ASSERT_EQ(fa["ptr-expr"]["var"],         "r");
+	ASSERT_EQ(fa["ptr-expr"]["offset"],      0);
+	ASSERT_EQ(fa["ptr-expr"]["value-type"]["base-type"]["type-name"], "Point");
+
+	// int64 v = r.tl.x: field-access with ptr-expr
+	const auto& rd = jout["statements"][2]["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"],         "field-access");
+	ASSERT_EQ(rd["offset"],             0);
+	ASSERT_EQ(rd["ptr-expr"]["var"],    "r");
+	ASSERT_EQ(rd["ptr-expr"]["offset"], 0);
+}
+
+TEST(sa, ptr_field_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/083_ptr_field_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// int64 v = n.next.val: @Node next@8, int64 val@0
+	// ptr-expr={var:"n",offset:8,mutable:false}, outer offset:0
+	const auto& rd = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"],                "field-access");
+	ASSERT_EQ(rd["offset"],                   0);
+	ASSERT_EQ(rd["ptr-expr"]["var"],           "n");
+	ASSERT_EQ(rd["ptr-expr"]["offset"],        8);
+	ASSERT_EQ(rd["ptr-expr"]["value-type"]["mutable"], false);
+}
+
+TEST(sa, mixed_field_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/084_mixed_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// int64 v = outer.sub.inner.x
+	// Sub sub@0 (struct-ptr) → ptr-expr={var:"outer",offset:0,pntr(struct(Sub))}
+	// $Inner inner@0 (embed, flatten) → outer offset stays 0
+	// int64 x@0 → final offset: 0
+	const auto& rd = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"],          "field-access");
+	ASSERT_EQ(rd["offset"],             0);
+	ASSERT_EQ(rd["ptr-expr"]["var"],    "outer");
+	ASSERT_EQ(rd["ptr-expr"]["offset"], 0);
+	ASSERT_EQ(rd["ptr-expr"]["value-type"]["base-type"]["type-name"], "Sub");
+}

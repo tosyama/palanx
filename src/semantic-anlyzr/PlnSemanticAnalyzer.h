@@ -31,6 +31,14 @@ struct StructDef {
 	bool hasOwnedStructFields = false;
 };
 
+struct FieldChain {
+	bool   isPointerBased;  // false = var+offset (inline chain), true = ptr-expr needed
+	string varName;         // base variable name when !isPointerBased
+	int    offset;          // accumulated byte offset
+	json   ptrExpr;         // partial SA json when isPointerBased
+	string structName;      // struct type currently being resolved
+};
+
 class PlnSemanticAnalyzer {
 	string basePath;
 	string astFileName;
@@ -100,6 +108,8 @@ class PlnSemanticAnalyzer {
 	bool  isNamedReturnVar(const string& varName) const;
 	void  normalizeStructSig(json& funcDef);
 	json sa_field_assign(const json& stmt);
+	FieldChain resolveObjectChain(const json& obj);
+	FieldChain resolveStoreLocChain(const json& loc);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);

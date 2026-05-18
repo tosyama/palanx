@@ -1,0 +1,6 @@
+cinclude <stdlib.h>;
+type Inner { int64 x; };
+type Sub   { $Inner inner; };
+type Outer { Sub sub; };
+Outer outer;
+int64 v = outer.sub.inner.x;

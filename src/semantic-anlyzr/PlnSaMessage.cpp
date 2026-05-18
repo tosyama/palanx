@@ -159,6 +159,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_FieldAccessOnNonStruct:
 			return "field access on non-struct variable.";
 
+		case E_InlineStructAsValue:
+			return "inline struct field cannot be used as a standalone value.";
+
+		case E_WriteToImmutablePtrField:
+			return "cannot write through read-only pointer field '@T'; use '@!T' for mutable.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

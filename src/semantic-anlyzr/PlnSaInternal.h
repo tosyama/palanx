@@ -22,6 +22,19 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
+// LCOV_EXCL_EXCEPTION_BR_START
+inline json fieldValueType(const FieldLayout& f)
+{
+	if (f.typeKind == "prim")
+		return {{"type-kind","prim"},{"type-name",f.typeName}};
+	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
+	json pntr = {{"type-kind","pntr"},{"base-type",bt}};
+	if (f.typeKind == "raw-ptr")
+		pntr["mutable"] = f.isMutable;
+	return pntr;
+}
+// LCOV_EXCL_EXCEPTION_BR_STOP
+
 // Returns element byte size for a primitive type name; -1 if unknown
 inline int elemSizeBytes(const string& typeName)
 {
