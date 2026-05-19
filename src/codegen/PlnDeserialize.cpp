@@ -178,9 +178,12 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
 
     if (expr_type == "field-access") {
         auto e = make_unique<FieldAccessExpr>();
-        e->varName = j["var"];
-        e->offset  = j["offset"];
-        e->type    = toVRegType(j["value-type"]);
+        if (j.contains("ptr-expr"))
+            e->ptrExpr = deserializeExpr(j["ptr-expr"]);
+        else
+            e->varName = j["var"];
+        e->offset = j["offset"];
+        e->type   = toVRegType(j["value-type"]);
         return e;
     }
 
@@ -288,10 +291,13 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     }
     if (stmt_type == "field-assign") {
         auto s = make_unique<FieldAssignStmt>();
-        s->varName = j["var"];
-        s->offset  = j["offset"];
-        s->type    = toVRegType(j["value-type"]);
-        s->value   = deserializeExpr(j["value"]);
+        if (j.contains("ptr-expr"))
+            s->ptrExpr = deserializeExpr(j["ptr-expr"]);
+        else
+            s->varName = j["var"];
+        s->offset = j["offset"];
+        s->type   = toVRegType(j["value-type"]);
+        s->value  = deserializeExpr(j["value"]);
         return s;
     }
     if (stmt_type == "not-impl") {
