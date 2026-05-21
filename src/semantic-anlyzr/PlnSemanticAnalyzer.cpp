@@ -218,9 +218,15 @@ json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
 {
 	if (!currentFunc_ || !currentFunc_->contains("rets")) return false;
-	for (auto& r : (*currentFunc_)["rets"])
-		if (r["name"].get<string>() == varName && isStructType(r["var-type"]))
+	for (auto& r : (*currentFunc_)["rets"]) {
+		if (r["name"].get<string>() != varName) continue;
+		const auto& vt = r["var-type"];
+		if (isStructType(vt)) return true;
+		// Also accept the normalized pntr(struct(Name)) form produced by normalizeStructSig
+		if (vt.value("type-kind","") == "pntr" && vt.contains("base-type") &&
+		    vt["base-type"].value("type-kind","") == "struct")
 			return true;
+	}
 	return false;
 }
 
@@ -260,6 +266,12 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 2. Process top-level statements (cinclude/import registered here,
 	//    visible in Palan function bodies processed next)
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
+	// 2.5. Re-normalize pre-registered Palan function signatures now that struct types are known.
+	//      Step 1 ran before type declarations were processed, so struct-typed params/rets
+	//      were left as prim(Name). Normalize them here so call resolution in step 3 is correct.
+	for (auto& scope : plnFuncScopes)
+		for (auto& [_, entry] : scope)
+			normalizeStructSig(entry);
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);

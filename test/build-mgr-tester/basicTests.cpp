@@ -389,6 +389,18 @@ TEST(build_mgr, struct_multi) {
 	ASSERT_EQ(output, "1 2 3 4\n");
 }
 
+TEST(build_mgr, owned_struct_alloc) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/055_owned_struct_alloc.pa");
+	ASSERT_EQ(output, "10 20 30 40\n");
+}
+
+TEST(build_mgr, nested_owned_struct) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/056_nested_owned_struct.pa");
+	ASSERT_EQ(output, "99\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

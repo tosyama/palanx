@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+type Leaf { int64 v; };
+type Mid  { Leaf f; };
+type Top  { Mid  m; };
+
+Top t;
+99 -> t.m.f.v;
+printf("%ld\n", t.m.f.v);
