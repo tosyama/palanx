@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+type Node { int64 val; @!Node next; };
+
+Node n1;
+Node n2;
+n2 -> n1.next;
+42 -> n1.next.val;
+printf("%ld\n", n2.val);

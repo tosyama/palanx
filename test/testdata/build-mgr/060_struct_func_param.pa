@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+
+func getX(Point p) -> int64 x {
+    p.x -> x;
+}
+
+Point pt;
+42 -> pt.x;
+printf("%ld\n", getX(pt));

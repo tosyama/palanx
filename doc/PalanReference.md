@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.21
+**Version:** v0.1.23
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -823,6 +823,94 @@ Point p;
 printf("%ld %ld\n", p.x, p.y);   // 10 20
 ```
 
-- **Memory management**: heap-allocated via `calloc(1, sizeof(Name))` (zero-initialized); automatically freed at scope exit.
+- **Memory management**: heap-allocated (zero-initialized); automatically freed at scope exit.
 - **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
-- **Field types**: integer and float primitives only (v0.1.22); nested structs and array fields are not supported.
+
+### Field types
+
+Integer and float primitives (`int8`–`int64`, `uint8`–`uint64`, `flo32`, `flo64`) are declared without a prefix:
+
+```palan
+type Point { int64 x; int64 y; };
+```
+
+Struct-type fields are written with a prefix that controls ownership and memory layout:
+
+| Syntax     | Meaning                              | Memory          |
+|------------|--------------------------------------|-----------------|
+| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation | parent calloc   |
+| `T field`  | Owned pointer — 8-byte pointer; T is auto-allocated/freed with parent | `__pln_alloc_T` |
+| `@T field` | Non-owning read-only pointer — 8-byte null pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
+| `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
+
+**`$T` — inline embedding**
+
+```palan
+type Point { int64 x; int64 y; };
+type Line  { $Point a; $Point b; };
+
+Line l;
+10 -> l.a.x;  20 -> l.a.y;
+printf("%ld %ld\n", l.a.x, l.a.y);   // 10 20
+```
+
+`$Point` fields are stored directly inside `Line`'s memory block. No separate allocation.
+
+**`T` — owned struct pointer**
+
+```palan
+type Point { int64 x; int64 y; };
+type Rect  { Point tl; Point br; };
+
+Rect r;
+10 -> r.tl.x;  20 -> r.tl.y;
+printf("%ld %ld\n", r.tl.x, r.tl.y);   // 10 20
+```
+
+`r` and its `tl`/`br` sub-structs are all automatically freed at scope exit.
+
+**`@T` — non-owning read-only pointer**
+
+```palan
+type Node { int64 val; @Node next; };
+
+Node n1;  Node n2;
+42 -> n1.val;  100 -> n2.val;
+n2 -> n1.next;                          // set pointer value: OK
+printf("%ld %ld\n", n1.val, n1.next.val);   // 42 100
+```
+
+`@T` allows reading through the pointer but not writing. Use `@!T` for write-through:
+
+```palan
+type Node { int64 val; @!Node next; };
+
+Node n1;  Node n2;
+n2 -> n1.next;
+42 -> n1.next.val;                      // write through mutable pointer: OK
+printf("%ld\n", n2.val);               // 42
+```
+
+### Struct types in function signatures
+
+A struct-type parameter is passed as a pointer (borrowed, not freed by the callee):
+
+```palan
+func getX(Point p) -> int64 x {
+    p.x -> x;
+}
+```
+
+A named return of struct type transfers ownership to the caller:
+
+```palan
+func makePoint(int64 x, int64 y) -> Point p {
+    Point p;
+    x -> p.x;  y -> p.y;
+}
+```
+
+### Restrictions
+
+- Array-type fields (`[n]T`, etc.) are not supported (planned for v0.1.24).
+- Recursive embedding (`type A { $A a; }`) is a compile error.

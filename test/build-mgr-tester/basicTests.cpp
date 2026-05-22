@@ -401,6 +401,30 @@ TEST(build_mgr, nested_owned_struct) {
 	ASSERT_EQ(output, "99\n");
 }
 
+TEST(build_mgr, embed_struct_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/057_embed_struct_field.pa");
+	ASSERT_EQ(output, "10 20\n");
+}
+
+TEST(build_mgr, ptr_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/058_ptr_field.pa");
+	ASSERT_EQ(output, "42 100\n");
+}
+
+TEST(build_mgr, mutable_ptr_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/059_mutable_ptr_field.pa");
+	ASSERT_EQ(output, "42\n");
+}
+
+TEST(build_mgr, struct_func_param) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/060_struct_func_param.pa");
+	ASSERT_EQ(output, "42\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

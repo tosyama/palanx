@@ -1,0 +1,2 @@
+type B { []int64 arr; };
+B x;
