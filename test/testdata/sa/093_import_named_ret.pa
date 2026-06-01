@@ -1,0 +1,2 @@
+import "lib_sa_named_ret.pa";
+int64 x = getVal();

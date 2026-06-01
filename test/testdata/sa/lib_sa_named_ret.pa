@@ -1,0 +1,4 @@
+export func getVal() -> int64 ret {
+    10 -> ret;
+    return;
+}

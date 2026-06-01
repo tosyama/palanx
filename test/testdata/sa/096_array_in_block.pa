@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+func test() {
+  int64 result = 0;
+  if (1) {
+    [3]int64 arr;
+    10 -> arr[0];
+    arr[0] -> result;
+  }
+  printf("%d\n", result);
+}
+test();

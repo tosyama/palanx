@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+uint8 a;
+uint16 b;
+10 -> a;
+20 -> b;
+printf("%d %d\n", a, b);

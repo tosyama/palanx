@@ -1,0 +1,3 @@
+import "/nonexistent_lib.so";
+cinclude <stdio.h>;
+printf("ok\n");

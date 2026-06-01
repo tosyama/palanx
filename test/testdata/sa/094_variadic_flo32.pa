@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+flo32 x;
+1.5 -> x;
+printf("%f\n", x);

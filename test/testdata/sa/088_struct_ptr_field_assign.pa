@@ -1,0 +1,6 @@
+cinclude <stdlib.h>;
+type A { int64 v; };
+type B { A inner; };
+B b;
+A a;
+a -> b.inner;

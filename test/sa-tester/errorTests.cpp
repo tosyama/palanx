@@ -519,3 +519,43 @@ TEST(sa_error, write_readonly_ptr)
 	ASSERT_NE(sa.find("cannot write through"), string::npos);
 }
 
+TEST(sa_error, struct_field_unknown_type)
+{
+	// type Foo { BadType x; } — prim field with unknown type name
+	// Covers: buildStructDef E_UnknownStructType for prim field (sz < 0 branch)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_073_struct_field_unknown_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+}
+
+TEST(sa_error, embed_unknown_struct)
+{
+	// type Foo { $Unknown a; } — embed field with undefined struct name
+	// Covers: buildStructDef E_UnknownStructType for embed field
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_074_embed_unknown_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+}
+
+TEST(sa_error, alias_unknown_method)
+{
+	// lib.nonexistent() — alias "lib" exists but method not found
+	// Covers: findImportFuncByAlias returning nullptr
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_075_alias_unknown_method.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Undefined function"), string::npos);
+}
+

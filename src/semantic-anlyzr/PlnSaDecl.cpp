@@ -83,7 +83,7 @@ static StructDef buildStructDef(const string& name,
 	def.totalSize = alignUp(offset, maxAlign);
 	def.maxAlign  = maxAlign;
 	return def;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
@@ -217,9 +217,11 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			               {"var-type",pntr_type},{"value-type",pntr_type}};
 
 			declareVar(d0_name, uint64_type, &stmt);
+			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 				{"name",d0_name},{"var-type",uint64_type},{"init",d0_expr}
 			}})}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 
 			json alloc_call = {
 				{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
@@ -232,9 +234,11 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 
 			declareVar(name, pntr_type, &stmt);
 			arrayScopeVars_.back().push_back({name, free_stmt_json});
+			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 				{"name",name},{"var-type",pntr_type},{"init",alloc_call}
 			}})}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
 		return result;
 	} // LCOV_EXCL_EXCEPTION_BR_LINE
