@@ -45,8 +45,11 @@ enum PlnSaMessageCode {
 	E_UnqualifiedAliasCall,			// arg1: function name
 	E_UnknownStructType,			// arg1: struct type name
 	E_UnknownField,				// arg1: struct name, arg2: field name
-	E_NonPrimStructField,
+	E_UnsupportedStructFieldType,
+	E_RecursiveStruct,			// arg1: struct name
 	E_FieldAccessOnNonStruct,
+	E_InlineStructAsValue,
+	E_WriteToImmutablePtrField,
 };
 
 class PlnSaMessage

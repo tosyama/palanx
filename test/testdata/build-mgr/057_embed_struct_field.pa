@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+type Line { $Point a; $Point b; };
+
+Line l;
+10 -> l.a.x;
+20 -> l.a.y;
+printf("%ld %ld\n", l.a.x, l.a.y);

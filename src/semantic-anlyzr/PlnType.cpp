@@ -42,7 +42,7 @@ const PrimType* PlnTypeRegistry::prim(PrimType::Name name)
     if (it != primCache_.end()) return it->second.get();
     auto [ins, ok] = primCache_.emplace(name, std::make_unique<PrimType>(name));
     return ins->second.get();
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 const PtrType* PlnTypeRegistry::ptr(const PlnType* base)
 {
@@ -50,7 +50,15 @@ const PtrType* PlnTypeRegistry::ptr(const PlnType* base)
     if (it != ptrCache_.end()) return it->second.get();
     auto [ins, ok] = ptrCache_.emplace(base, std::make_unique<PtrType>(base));
     return ins->second.get();
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+const StructType* PlnTypeRegistry::structType(const std::string& name)
+{
+    auto it = structCache_.find(name);
+    if (it != structCache_.end()) return it->second.get();
+    auto [ins, ok] = structCache_.emplace(name, std::make_unique<StructType>(name));
+    return ins->second.get();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 const PlnType* PlnTypeRegistry::fromJson(const json& j)
 {
@@ -67,8 +75,11 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
         const PlnType* base = fromJson(j.at("base-type"));
         return ptr(base);
     }
+    if (kind == "struct") {
+        return structType(j.at("type-name").get<std::string>());
+    }
     throw std::runtime_error("unknown type-kind: " + kind);
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnTypeRegistry::toJson(const PlnType* t)
 {
@@ -77,12 +88,18 @@ json PlnTypeRegistry::toJson(const PlnType* t)
         auto& fromEnum = PrimTypeNames::instance().fromEnum;
         return {{"type-kind", "prim"}, {"type-name", fromEnum.at(p->name)}};
     }
+    // LCOV_EXCL_START — Ptr/Struct toJson not reachable from current SA flow
     if (t->kind == PlnType::Kind::Ptr) {
         const auto* p = static_cast<const PtrType*>(t);
         return {{"type-kind", "pntr"}, {"base-type", toJson(p->base)}};
     }
+    if (t->kind == PlnType::Kind::Struct) {
+        const auto* s = static_cast<const StructType*>(t);
+        return {{"type-kind", "struct"}, {"type-name", s->name}};
+    }
     throw std::runtime_error("unknown PlnType::Kind");
-}
+    // LCOV_EXCL_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // typeCompat implementation
 
@@ -95,7 +112,7 @@ static int primGroup(PrimType::Name n)
         case N::Uint8: case N::Uint16: case N::Uint32: case N::Uint64: return 1;
         case N::Float32: case N::Float64:                              return 2;
     }
-    return -1;
+    return -1; // LCOV_EXCL_LINE
 }
 
 static int primRank(PrimType::Name n)
@@ -109,7 +126,7 @@ static int primRank(PrimType::Name n)
         case N::Float32:                 return 1;
         case N::Float64:                 return 2;
     }
-    return -1;
+    return -1; // LCOV_EXCL_LINE
 }
 
 TypeCompat typeCompat(const PlnType* from, const PlnType* to,

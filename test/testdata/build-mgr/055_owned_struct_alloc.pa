@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+type Rect { Point tl; Point br; };
+
+Rect r;
+10 -> r.tl.x;
+20 -> r.tl.y;
+30 -> r.br.x;
+40 -> r.br.y;
+printf("%ld %ld %ld %ld\n", r.tl.x, r.tl.y, r.br.x, r.br.y);

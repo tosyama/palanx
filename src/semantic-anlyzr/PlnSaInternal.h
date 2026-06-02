@@ -22,6 +22,19 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
+// LCOV_EXCL_EXCEPTION_BR_START
+inline json fieldValueType(const FieldLayout& f)
+{
+	if (f.typeKind == "prim")
+		return {{"type-kind","prim"},{"type-name",f.typeName}};
+	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
+	json pntr = {{"type-kind","pntr"},{"base-type",bt}};
+	if (f.typeKind == "raw-ptr")
+		pntr["mutable"] = f.isMutable;
+	return pntr;
+}
+// LCOV_EXCL_EXCEPTION_BR_STOP
+
 // Returns element byte size for a primitive type name; -1 if unknown
 inline int elemSizeBytes(const string& typeName)
 {
@@ -44,6 +57,23 @@ inline json makeFreeStmt(const string& name, const json& pntrType)
 				{"expr-type", "id"}, {"name", name},
 				{"var-type", pntrType}, {"value-type", pntrType}
 			}})}
+		}}
+	};
+}
+// LCOV_EXCL_EXCEPTION_BR_STOP
+
+// Builds a synthetic pln-function free call for the named pointer variable
+// LCOV_EXCL_EXCEPTION_BR_START
+inline json makePlanFreeStmt(const string& varName, const json& varType,
+                              const string& freeFn)
+{
+	json var_id = {{"expr-type","id"},{"name",varName},
+	               {"var-type",varType},{"value-type",varType}};
+	return {
+		{"stmt-type", "expr"},
+		{"body", {
+			{"expr-type","call"},{"name",freeFn},{"func-type","pln"},
+			{"args", json::array({var_id})}
 		}}
 	};
 }

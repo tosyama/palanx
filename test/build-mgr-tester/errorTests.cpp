@@ -61,3 +61,21 @@ TEST(build_mgr_error, unknown_field) {
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_049_unknown_field.pa");
 	ASSERT_NE(out.find("has no field"), string::npos);
 }
+
+TEST(build_mgr_error, recursive_embed) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_050_recursive_embed.pa");
+	ASSERT_NE(out.find("recursively contains itself"), string::npos);
+}
+
+TEST(build_mgr_error, unsupported_field) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_051_unsupported_field.pa");
+	ASSERT_NE(out.find("unsupported struct field type"), string::npos);
+}
+
+TEST(build_mgr_error, inline_as_value) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_052_inline_as_value.pa");
+	ASSERT_NE(out.find("inline struct field cannot be used as a standalone value"), string::npos);
+}

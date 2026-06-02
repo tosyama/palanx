@@ -11,23 +11,79 @@
 
 static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1); }
 
-static StructDef buildStructDef(const string& name, const json& fields)
+static StructDef buildStructDef(const string& name,
+                                const json& fields,
+                                const map<string, StructDef>& structDefs)
 {
 	StructDef def;
 	def.name = name;
 	int offset = 0, maxAlign = 1;
 	for (auto& f : fields) {
-		string typeName = f["var-type"]["type-name"].get<string>();
-		int sz = elemSizeBytes(typeName);
-		offset = alignUp(offset, sz);
-		def.fields.push_back({f["name"].get<string>(), typeName, offset, sz});
-		offset += sz;
-		maxAlign = max(maxAlign, sz);
+		const json& vtype = f["var-type"];
+		string tk = vtype.value("type-kind", "");
+		string fieldName = f["name"].get<string>();
+
+		if (tk == "prim") {
+			string tname = vtype["type-name"].get<string>();
+			if (structDefs.count(tname)) {
+				int sz = 8, align = 8;
+				offset = alignUp(offset, align);
+				def.fields.push_back({.name=fieldName, .typeKind="struct-ptr",
+				                      .typeName=tname, .isMutable=false,
+				                      .offset=offset, .size=sz});
+				offset += sz;
+				maxAlign = max(maxAlign, align);
+				def.hasOwnedStructFields = true;
+			} else {
+				int sz = elemSizeBytes(tname);
+				if (sz < 0) {
+					cerr << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+					exit(1);
+				}
+				offset = alignUp(offset, sz);
+				def.fields.push_back({.name=fieldName, .typeKind="prim",
+				                      .typeName=tname, .isMutable=false,
+				                      .offset=offset, .size=sz});
+				offset += sz;
+				maxAlign = max(maxAlign, sz);
+			}
+		} else if (tk == "embed") {
+			string structName = vtype["base-type"]["type-name"].get<string>();
+			if (structName == name) {
+				cerr << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;
+				exit(1);
+			}
+			if (!structDefs.count(structName)) {
+				cerr << PlnSaMessage::getMessage(E_UnknownStructType, structName) << endl;
+				exit(1);
+			}
+			const StructDef& sub = structDefs.at(structName);
+			int align = sub.maxAlign;
+			offset = alignUp(offset, align);
+			def.fields.push_back({.name=fieldName, .typeKind="embed",
+			                      .typeName=structName, .isMutable=false,
+			                      .offset=offset, .size=sub.totalSize});
+			offset += sub.totalSize;
+			maxAlign = max(maxAlign, align);
+		} else if (tk == "pntr") {
+			int sz = 8, align = 8;
+			string baseName = vtype["base-type"].value("type-name", "");
+			bool isMut = vtype.value("mutable", false);
+			offset = alignUp(offset, align);
+			def.fields.push_back({.name=fieldName, .typeKind="raw-ptr",
+			                      .typeName=baseName, .isMutable=isMut,
+			                      .offset=offset, .size=sz});
+			offset += sz;
+			maxAlign = max(maxAlign, align);
+		} else {
+			cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+			exit(1);
+		}
 	}
 	def.totalSize = alignUp(offset, maxAlign);
 	def.maxAlign  = maxAlign;
 	return def;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
@@ -161,9 +217,11 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			               {"var-type",pntr_type},{"value-type",pntr_type}};
 
 			declareVar(d0_name, uint64_type, &stmt);
+			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 				{"name",d0_name},{"var-type",uint64_type},{"init",d0_expr}
 			}})}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 
 			json alloc_call = {
 				{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
@@ -176,9 +234,11 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 
 			declareVar(name, pntr_type, &stmt);
 			arrayScopeVars_.back().push_back({name, free_stmt_json});
+			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 				{"name",name},{"var-type",pntr_type},{"init",alloc_call}
 			}})}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
 		return result;
 	} // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -363,14 +423,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	for (auto& f : stmt["fields"]) {
-		const json& vtype = f["var-type"];
-		if (vtype.value("type-kind","") != "prim" || elemSizeBytes(vtype.value("type-name","")) < 0) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_NonPrimStructField) << endl;
-			exit(1);
-		}
-	}
-	structDefs_[name] = buildStructDef(name, stmt["fields"]);
+	structDefs_[name] = buildStructDef(name, stmt["fields"], structDefs_);
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -380,21 +433,39 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	const StructDef& def = structDefs_[structName];
 	json pntr_type = {{"type-kind","pntr"},
 	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
-	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-	json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
-	                 {"value-type",uint64_type}};
-	json one_arg  = {{"expr-type","lit-int"},{"value","1"},{"value-type",uint64_type}};
-	// LCOV_EXCL_EXCEPTION_BR_START
-	json calloc_call = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},
-	                    {"args",json::array({one_arg, size_arg})},
-	                    {"value-type",pntr_type}};
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
+	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"].get<string>();
 		declareVar(name, pntr_type, &stmt);
-		arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
-		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",calloc_call}});
+
+		json init;
+		json free_stmt;
+
+		bool useSimpleCalloc = !def.hasOwnedStructFields || inAllocFunc_;
+		if (useSimpleCalloc) {
+			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+			json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
+			                 {"value-type",uint64_type}};
+			json one_arg  = {{"expr-type","lit-int"},{"value","1"},
+			                 {"value-type",uint64_type}};
+			init = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},
+			        {"args",json::array({one_arg, size_arg})},{"value-type",pntr_type}};
+			free_stmt = makeFreeStmt(name, pntr_type);
+		} else {
+			recordAllocShape(structName);
+			string alloc_fn = "__pln_alloc_" + structName;
+			string free_fn  = "__pln_free_"  + structName;
+			init = {{"expr-type","call"},{"name",alloc_fn},{"func-type","pln"},
+			        {"args",json::array()},{"value-type",pntr_type}};
+			free_stmt = makePlanFreeStmt(name, pntr_type, free_fn);
+		}
+
+		bool namedRet = isNamedReturnVar(name);
+		if (!namedRet)
+			arrayScopeVars_.back().push_back({name, free_stmt});
+		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
 	}
 	result.push_back(sa_stmt);
 	// LCOV_EXCL_EXCEPTION_BR_STOP

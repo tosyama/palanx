@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+int32 x;
+1 -> x;
+if x == 1 {
+    printf("one\n");
+} else if x == 2 {
+    printf("two\n");
+}

@@ -168,23 +168,31 @@ int main(int argc, char* argv[])
 		obj_files.push_back(obj_file);
 	}
 
-	// Collect alloc-shapes from all sa.json files, deduplicated by shape-key
+	// Collect alloc-shapes from all sa.json files, deduplicated by key
 	{
 		set<string> seen_shapes;
-		vector<json> collected_shapes;
+		vector<json> arr_shapes;
+		vector<json> struct_shapes;
 		for (auto& ast_file : ast_files) {
 			string base = ast_file.substr(0, ast_file.size() - 9);
 			ifstream f(base + ".sa.json");
 			json sa = json::parse(f);
 			if (!sa.contains("alloc-shapes")) continue;
 			for (auto& shape : sa["alloc-shapes"]) {
-				string key = shape["shape-key"];
-				if (seen_shapes.insert(key).second)
-					collected_shapes.push_back(shape);
+				string key;
+				if (shape.value("shape-kind", "") == "struct")
+					key = "struct:" + shape["shape-name"].get<string>();
+				else
+					key = shape["shape-key"].get<string>();
+				if (!seen_shapes.insert(key).second) continue;
+				if (shape.value("shape-kind", "") == "struct")
+					struct_shapes.push_back(shape);
+				else
+					arr_shapes.push_back(shape);
 			}
 		}
 
-		if (!collected_shapes.empty()) {
+		if (!arr_shapes.empty() || !struct_shapes.empty()) {
 			string workdir = fs::path(ast_files[0]).parent_path().string();
 			string alloc_pa  = workdir + "/__allocators.pa";
 			string alloc_ast = alloc_pa + ".ast.json";
@@ -195,7 +203,54 @@ int main(int argc, char* argv[])
 			{
 				ofstream out(alloc_pa);
 				out << "cinclude <stdlib.h>;\n";
-				for (auto& shape : collected_shapes) {
+
+				// Struct type declarations (leaf-first order from SA)
+				for (auto& shape : struct_shapes) {
+					string name = shape["shape-name"];
+					out << "\ntype " << name << " {";
+					for (auto& f : shape["fields"]) {
+						string kind  = f["type-kind"];
+						string tname = f["type-name"];
+						string fname = f["name"];
+						if (kind == "embed")
+							out << " $" << tname << " " << fname << ";";
+						else if (kind == "raw-ptr")
+							out << " @" << tname << " " << fname << ";";
+						else
+							out << " " << tname << " " << fname << ";";
+					}
+					out << " };\n";
+				}
+
+				// Struct allocator/free functions
+				for (auto& shape : struct_shapes) {
+					string name = shape["shape-name"];
+					auto& owned = shape["owned-fields"];
+
+					out << "\nexport func __pln_alloc_" << name
+					    << "() -> " << name << " p {\n"
+					    << "    " << name << " p;\n";
+					for (auto& of : owned) {
+						string oname = of["name"];
+						string sname = of["struct-name"];
+						out << "    __pln_alloc_" << sname << "() -> p." << oname << ";\n";
+					}
+					out << "}\n";
+
+					out << "export func __pln_free_" << name
+					    << "(" << name << " p) {\n";
+					for (auto& of : owned) {
+						string oname = of["name"];
+						string sname = of["struct-name"];
+						out << "    __pln_free_" << sname << "(p." << oname << ");\n";
+					}
+					out << "    free(p);\n"
+					    << "    return;\n"
+					    << "}\n";
+				}
+
+				// Array allocator/free functions
+				for (auto& shape : arr_shapes) {
 					string leaf = shape["leaf-type"];
 					out << "\nexport func __pln_alloc_arr_arr_" << leaf
 					    << "(int64 d0, int64 d1) -> [][]" << leaf << " {\n"

@@ -1,0 +1,3 @@
+import "lib_no_export.pa";
+cinclude <stdio.h>;
+printf("ok\n");

@@ -5,6 +5,7 @@
 
 #include <string>
 #include <map>
+#include <set>
 #include <vector>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
@@ -15,16 +16,27 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeName;  // "int64", "flo32", etc.
-	int offset;       // byte offset from struct start (C ABI aligned)
-	int size;         // field size in bytes
+	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr"
+	string typeName;   // prim type name, embed/struct-ptr struct name, raw-ptr base type name
+	bool   isMutable;  // raw-ptr only: @T=false, @!T=true
+	int    offset;     // byte offset from struct start (C ABI aligned)
+	int    size;       // prim: type size, embed: sub-struct totalSize, struct-ptr/raw-ptr: 8
 };
 
 struct StructDef {
 	string name;
 	vector<FieldLayout> fields;
-	int totalSize;
-	int maxAlign;
+	int  totalSize;
+	int  maxAlign;
+	bool hasOwnedStructFields = false;
+};
+
+struct FieldChain {
+	bool   isPointerBased;  // false = var+offset (inline chain), true = ptr-expr needed
+	string varName;         // base variable name when !isPointerBased
+	int    offset;          // accumulated byte offset
+	json   ptrExpr;         // partial SA json when isPointerBased
+	string structName;      // struct type currently being resolved
 };
 
 class PlnSemanticAnalyzer {
@@ -51,8 +63,11 @@ class PlnSemanticAnalyzer {
 	vector<size_t> whileScopeStack_;
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
+	// True when analyzing a __pln_alloc_* function body (suppress recursive alloc)
+	bool inAllocFunc_ = false;
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
+	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
 
 	void enterScope();
 	void leaveScope();
@@ -87,7 +102,14 @@ class PlnSemanticAnalyzer {
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
+	void recordAllocShape(const string& structName);
+	bool isStructType(const json& type) const;
+	json  toStructPntrType(const json& type) const;
+	bool  isNamedReturnVar(const string& varName) const;
+	void  normalizeStructSig(json& funcDef);
 	json sa_field_assign(const json& stmt);
+	FieldChain resolveObjectChain(const json& obj);
+	FieldChain resolveStoreLocChain(const json& loc);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);

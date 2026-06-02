@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.22
+ver. 0.1.23
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -14,12 +14,34 @@ Root
 - str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
 - functions\* - Processed Palan function list (empty array when no functions defined)
 - statements\* - Top-level statement list
-- alloc-shapes\* - List of unique array shape descriptors collected from var-decls.
-  Empty array when no multi-dimensional arrays are declared.
-  Each entry:
+- alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
+  Empty array when no qualifying var-decls are present.
+  Two entry kinds:
+
+  **Array entry** (multi-dimensional arrays):
   - shape-key\* - Shape key string (e.g. "arr\_arr\_int32")
   - leaf-type\* - Innermost element type name (e.g. "int32")
   - depth\* - Nesting depth integer (currently always 2 for `[m][n]T`)
+
+  **Struct entry** (structs with owned struct-pointer fields):
+  - shape-kind\* - "struct"
+  - shape-name\* - Struct name string
+  - total-size\* - Total size in bytes (C ABI layout)
+  - fields\* - All field descriptors (prim, embed, struct-ptr, raw-ptr)
+    - name\* - Field name string
+    - type-kind\* - Field type kind string ("prim", "embed", "struct-ptr", "raw-ptr")
+    - type-name\* - Type name string (primitive name or struct name)
+    - offset\* - Byte offset within the struct
+    - size\* - Field size in bytes
+  - owned-fields\* - Fields that require a sub-allocator (type-kind "struct-ptr"); empty array if none
+    - name\* - Field name string
+    - offset\* - Byte offset within the struct
+    - struct-name\* - Sub-struct type name
+    - struct-total-size\* - Sub-struct total size in bytes
+    - needs-alloc\* - Boolean; true if the sub-struct itself has owned-fields requiring `__pln_alloc_*`
+
+  Struct entries are ordered leaf-first (topological order) so build-mgr can generate and compile
+  allocators in dependency order.
 
 String literal table entry
 --------------------------
@@ -369,7 +391,7 @@ at scope exit (same mechanism as heap-allocated arrays).
 
 ### field-assign statement → sa.json
 
-`10 -> p.x` produces:
+`10 -> p.x` (inline or `$T` chain — no pointer indirection) produces:
 
 ```json
 {"stmt-type":"field-assign",
@@ -380,13 +402,50 @@ at scope exit (same mechanism as heap-allocated arrays).
           "value-type":{"type-kind":"prim","type-name":"int64"}}}
 ```
 
+`10 -> r.tl.x` (where `tl` is an owned `Point` — pointer indirection required) uses `ptr-expr`:
+
+```json
+{"stmt-type":"field-assign",
+ "ptr-expr":{"expr-type":"field-access","var":"r","offset":0,
+             "value-type":{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Point"}}},
+ "offset":0,
+ "value-type":{"type-kind":"prim","type-name":"int64"},
+ "value":{"expr-type":"lit-int","value":"10",
+          "value-type":{"type-kind":"prim","type-name":"int64"}}}
+```
+
+`ptr-expr` is present when the field chain passes through an owned (`T`) or non-owning (`@T`/`@!T`)
+struct pointer field. It is an expression that loads the intermediate pointer; `offset` is then applied
+relative to that pointer. When `ptr-expr` is present, `var` is absent; when `var` is present, `ptr-expr`
+is absent.
+
 ### field-access expression → sa.json
 
-`p.x` (rvalue) produces:
+`p.x` (inline or `$T` chain — no pointer indirection) produces:
 
 ```json
 {"expr-type":"field-access",
  "var":"p",
+ "offset":0,
+ "value-type":{"type-kind":"prim","type-name":"int64"}}
+```
+
+`r.tl.x` (where `tl` is an owned `Point`) uses `ptr-expr`:
+
+```json
+{"expr-type":"field-access",
+ "ptr-expr":{"expr-type":"field-access","var":"r","offset":0,
+             "value-type":{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Point"}}},
+ "offset":0,
+ "value-type":{"type-kind":"prim","type-name":"int64"}}
+```
+
+`n1.next.val` (where `next` is a `@Node` non-owning pointer) produces the same `ptr-expr` structure:
+
+```json
+{"expr-type":"field-access",
+ "ptr-expr":{"expr-type":"field-access","var":"n1","offset":8,
+             "value-type":{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Node"}}},
  "offset":0,
  "value-type":{"type-kind":"prim","type-name":"int64"}}
 ```

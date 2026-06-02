@@ -1460,3 +1460,497 @@ TEST(sa, field_assign_widen)
 	ASSERT_EQ(fa["value"]["expr-type"],      "convert");
 	ASSERT_EQ(fa["value"]["value-type"]["type-name"], "int64");
 }
+
+TEST(sa, embed_struct_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/074_embed_struct_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Line { $Point a; $Point b; } — totalSize = 16+16 = 32
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "l");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "32");
+}
+
+TEST(sa, owned_struct_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/075_owned_struct_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Rect { Point tl; Point br; } — hasOwnedStructFields → __pln_alloc_Rect
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "r");
+	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
+	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_TRUE(v["init"]["args"].empty());
+}
+
+TEST(sa, raw_ptr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/076_raw_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Node { int64 val; @Node next; } — int64(8) + ptr(8) = 16
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "n");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
+TEST(sa, alloc_shape_owned)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/077_alloc_shape_owned.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Rect r; — init uses __pln_alloc_Rect (pln func, no args)
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "r");
+	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
+	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_TRUE(v["init"]["args"].empty());
+
+	// alloc-shapes: Point first (leaf), then Rect (root)
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes.size(), 2u);
+	ASSERT_EQ(shapes[0]["shape-name"], "Point");
+	ASSERT_EQ(shapes[0]["shape-kind"], "struct");
+	ASSERT_EQ(shapes[0]["total-size"], 16);
+	ASSERT_EQ(shapes[0]["owned-fields"].size(), 0u);
+	ASSERT_EQ(shapes[1]["shape-name"], "Rect");
+	ASSERT_EQ(shapes[1]["total-size"], 16);
+	ASSERT_EQ(shapes[1]["owned-fields"].size(), 2u);
+	ASSERT_EQ(shapes[1]["owned-fields"][0]["struct-name"], "Point");
+	ASSERT_EQ(shapes[1]["owned-fields"][0]["needs-alloc"], false);
+	ASSERT_EQ(shapes[1]["owned-fields"][1]["struct-name"], "Point");
+}
+
+TEST(sa, calloc_no_owned)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/078_calloc_no_owned.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Point p; — no owned struct fields → calloc
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+
+	// No struct entries added to alloc-shapes
+	ASSERT_TRUE(jout["alloc-shapes"].empty());
+}
+
+TEST(sa, alloc_func_no_recurse)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/079_alloc_func_no_recurse.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// __pln_alloc_Rect() -> Rect ret { Rect ret; }
+	// inAllocFunc_=true → Rect ret uses calloc(1,16), not __pln_alloc_Rect
+	const auto& f = jout["functions"][0];
+	ASSERT_EQ(f["name"], "__pln_alloc_Rect");
+
+	// ret-type normalized to pntr(struct(Rect))
+	ASSERT_EQ(f["ret-type"]["type-kind"], "pntr");
+	ASSERT_EQ(f["ret-type"]["base-type"]["type-name"], "Rect");
+
+	// body[0] = var-decl for ret with calloc (named return → no free appended)
+	ASSERT_EQ(f["body"].size(), 1u);
+	const auto& var_decl = f["body"][0];
+	ASSERT_EQ(var_decl["stmt-type"], "var-decl");
+	ASSERT_EQ(var_decl["vars"][0]["name"], "ret");
+	ASSERT_EQ(var_decl["vars"][0]["init"]["name"], "calloc");
+	ASSERT_EQ(var_decl["vars"][0]["init"]["func-type"], "c");
+}
+
+TEST(sa, struct_param)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/080_struct_param.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// func __pln_free_Point(Point p) { free(p); }
+	// parameters[0]: Point p → pntr(struct(Point))
+	const auto& f = jout["functions"][0];
+	ASSERT_EQ(f["name"], "__pln_free_Point");
+
+	const auto& param = f["parameters"][0];
+	ASSERT_EQ(param["name"], "p");
+	ASSERT_EQ(param["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(param["var-type"]["base-type"]["type-name"], "Point");
+}
+
+TEST(sa, embed_field_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/081_embed_field_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// 10 -> l.a.x: $Point a@0, int64 x@0 → flatten: var="l", offset=0
+	const auto& fa1 = jout["statements"][1];
+	ASSERT_EQ(fa1["stmt-type"], "field-assign");
+	ASSERT_EQ(fa1["var"],        "l");
+	ASSERT_EQ(fa1["offset"],     0);
+
+	// 20 -> l.b.y: $Point b@16, int64 y@8 → flatten: var="l", offset=24
+	const auto& fa2 = jout["statements"][2];
+	ASSERT_EQ(fa2["stmt-type"], "field-assign");
+	ASSERT_EQ(fa2["var"],        "l");
+	ASSERT_EQ(fa2["offset"],     24);
+
+	// int64 v = l.a.x: field-access: var="l", offset=0
+	const auto& rd = jout["statements"][3]["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"], "field-access");
+	ASSERT_EQ(rd["var"],        "l");
+	ASSERT_EQ(rd["offset"],     0);
+}
+
+TEST(sa, owned_field_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/082_owned_field_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// 10 -> r.tl.x: Point tl@0, int64 x@0 → ptr-expr={var:"r",offset:0}, offset:0
+	const auto& fa = jout["statements"][1];
+	ASSERT_EQ(fa["stmt-type"],              "field-assign");
+	ASSERT_EQ(fa["offset"],                 0);
+	ASSERT_EQ(fa["ptr-expr"]["var"],         "r");
+	ASSERT_EQ(fa["ptr-expr"]["offset"],      0);
+	ASSERT_EQ(fa["ptr-expr"]["value-type"]["base-type"]["type-name"], "Point");
+
+	// int64 v = r.tl.x: field-access with ptr-expr
+	const auto& rd = jout["statements"][2]["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"],         "field-access");
+	ASSERT_EQ(rd["offset"],             0);
+	ASSERT_EQ(rd["ptr-expr"]["var"],    "r");
+	ASSERT_EQ(rd["ptr-expr"]["offset"], 0);
+}
+
+TEST(sa, ptr_field_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/083_ptr_field_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// int64 v = n.next.val: @Node next@8, int64 val@0
+	// ptr-expr={var:"n",offset:8,mutable:false}, outer offset:0
+	const auto& rd = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"],                "field-access");
+	ASSERT_EQ(rd["offset"],                   0);
+	ASSERT_EQ(rd["ptr-expr"]["var"],           "n");
+	ASSERT_EQ(rd["ptr-expr"]["offset"],        8);
+	ASSERT_EQ(rd["ptr-expr"]["value-type"]["mutable"], false);
+}
+
+TEST(sa, mixed_field_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/084_mixed_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// int64 v = outer.sub.inner.x
+	// Sub sub@0 (struct-ptr) → ptr-expr={var:"outer",offset:0,pntr(struct(Sub))}
+	// $Inner inner@0 (embed, flatten) → outer offset stays 0
+	// int64 x@0 → final offset: 0
+	const auto& rd = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"],          "field-access");
+	ASSERT_EQ(rd["offset"],             0);
+	ASSERT_EQ(rd["ptr-expr"]["var"],    "outer");
+	ASSERT_EQ(rd["ptr-expr"]["offset"], 0);
+	ASSERT_EQ(rd["ptr-expr"]["value-type"]["base-type"]["type-name"], "Sub");
+}
+
+TEST(sa, flo32_to_flo64_assign)
+{
+	// flo32 x; 0.5->x; flo64 y; x->y;
+	// x->y: typeCompat(flo32,flo64)=ImplicitWiden → sa_assign_stmt wraps in convert
+	// Covers: sa_assign_stmt wrapConvert branch, primRank Float32+Float64
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/085_flo32_to_flo64_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements: [0]=decl x, [1]=assign x=0.5, [2]=decl y, [3]=assign y=x
+	const auto& assign_stmt = jout["statements"][3];
+	ASSERT_EQ(assign_stmt["stmt-type"], "assign");
+	ASSERT_EQ(assign_stmt["name"],      "y");
+	const auto& val = assign_stmt["value"];
+	ASSERT_EQ(val["expr-type"],                  "convert");
+	ASSERT_EQ(val["from-type"]["type-name"],     "flo32");
+	ASSERT_EQ(val["value-type"]["type-name"],    "flo64");
+}
+
+TEST(sa, int8_to_int16_assign)
+{
+	// int8 a; 10->a; int16 b; a->b;
+	// a->b: typeCompat(int8,int16)=ImplicitWiden → convert wrapper
+	// Covers: primRank Int16
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/086_int8_to_int16_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& assign_stmt = jout["statements"][3];
+	ASSERT_EQ(assign_stmt["stmt-type"], "assign");
+	ASSERT_EQ(assign_stmt["name"],      "b");
+	const auto& val = assign_stmt["value"];
+	ASSERT_EQ(val["expr-type"],               "convert");
+	ASSERT_EQ(val["from-type"]["type-name"],  "int8");
+	ASSERT_EQ(val["value-type"]["type-name"], "int16");
+}
+
+TEST(sa, if_else_if_chain)
+{
+	// if x==1 { ... } else if x==2 { ... }
+	// Covers: sa_if_stmt else-if branch (els["stmt-type"] == "if")
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/087_if_else_if.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Find the if statement
+	json* if_stmt = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "if") { if_stmt = &s; break; }
+	ASSERT_NE(if_stmt, nullptr);
+
+	// else clause must be an if statement directly (not a block)
+	ASSERT_TRUE((*if_stmt).contains("else"));
+	ASSERT_EQ((*if_stmt)["else"]["stmt-type"], "if");
+	ASSERT_EQ((*if_stmt)["else"]["cond"]["op"], "==");
+}
+
+TEST(sa, struct_ptr_field_assign)
+{
+	// type A { int64 v; }; type B { A inner; }; B b; A a; a -> b.inner;
+	// field-assign for struct-ptr field → fieldValueType returns pntr type
+	// Covers: fieldValueType struct-ptr branch
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/088_struct_ptr_field_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Find the field-assign statement
+	json* fa = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "field-assign") { fa = &s; break; }
+	ASSERT_NE(fa, nullptr);
+
+	// field "inner" is a struct-ptr → value-type must be pntr(struct(A))
+	ASSERT_EQ((*fa)["value-type"]["type-kind"],                  "pntr");
+	ASSERT_EQ((*fa)["value-type"]["base-type"]["type-kind"],     "struct");
+	ASSERT_EQ((*fa)["value-type"]["base-type"]["type-name"],     "A");
+	// var-based access (b is direct variable)
+	ASSERT_EQ((*fa)["var"],                                      "b");
+	ASSERT_EQ((*fa)["offset"],                                   0);
+}
+
+TEST(sa, raw_ptr_mutable_field_assign)
+{
+	// type Node { int64 val; @!Node next; }; Node n1; Node n2; n2 -> n1.next;
+	// field-assign for raw-ptr mutable field → fieldValueType sets mutable:true
+	// Covers: fieldValueType raw-ptr branch (pntr["mutable"] = isMutable)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/089_raw_ptr_mutable_field_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	json* fa = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "field-assign") { fa = &s; break; }
+	ASSERT_NE(fa, nullptr);
+
+	// field "next" is raw-ptr mutable → value-type must be pntr with mutable:true
+	ASSERT_EQ((*fa)["value-type"]["type-kind"],              "pntr");
+	ASSERT_EQ((*fa)["value-type"]["mutable"],                true);
+	ASSERT_EQ((*fa)["value-type"]["base-type"]["type-name"], "Node");
+}
+
+TEST(sa, deep_ptr_chain_access)
+{
+	// type A{int64 v}; type B{A a}; type C{B b}; C c;
+	// int64 x = c.b.a.v;  — two levels of struct-ptr traversal
+	// Covers: resolveObjectChain when base.isPointerBased=true (nested ptr-expr)
+	// Also: resolveStoreLocChain ptr-based for "10 -> c.b.a.v"
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/090_deep_ptr_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Find the var-decl for x (read chain)
+	const json* x_decl = nullptr;
+	for (auto& s : jout["statements"]) {
+		if (s["stmt-type"] != "var-decl") continue;
+		for (auto& v : s["vars"])
+			if (v["name"] == "x") { x_decl = &v; break; }
+		if (x_decl) break;
+	}
+	ASSERT_NE(x_decl, nullptr);
+
+	// init = field-access with nested ptr-expr (c.b.a.v)
+	const auto& init = (*x_decl)["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["offset"],    0);
+	// ptr-expr points into B.a (second struct-ptr level)
+	const auto& pe1 = init["ptr-expr"];
+	ASSERT_EQ(pe1["expr-type"], "field-access");
+	// pe1 itself has a ptr-expr pointing to C.b (first struct-ptr level)
+	ASSERT_TRUE(pe1.contains("ptr-expr"));
+	const auto& pe2 = pe1["ptr-expr"];
+	ASSERT_EQ(pe2["expr-type"],  "field-access");
+	ASSERT_EQ(pe2["var"],        "c");
+
+	// Find the field-assign "10 -> c.b.a.v" (write chain)
+	json* fa = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "field-assign") { fa = &s; break; }
+	ASSERT_NE(fa, nullptr);
+	// ptr-expr chain must also be nested
+	ASSERT_TRUE((*fa).contains("ptr-expr"));
+	ASSERT_TRUE((*fa)["ptr-expr"].contains("ptr-expr"));
+}
+
+TEST(sa, import_non_pa_ignored)
+{
+	// import "somelib.txt" — non-.pa extension → SA returns early, no error
+	// Covers: imp_path.ends_with(".pa") == false → early return branch
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/091_import_non_pa.pa");
+	ASSERT_TRUE(jout.is_object());
+	// SA must succeed and produce output (import was silently ignored)
+	ASSERT_TRUE(jout.contains("statements"));
+}
+
+static void genLibNoExport()
+{
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_no_export.pa -o out/lib_no_export.pa.ast.json");
+}
+
+TEST(sa, import_no_export_ignored)
+{
+	// lib_no_export.pa has no "export" section → SA returns early after parsing
+	// Covers: imp_ast.contains("export") == false → early return branch
+	cleanTestEnv();
+	genLibNoExport();
+	json jout = run_sa("../test/testdata/sa/092_import_no_export.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_TRUE(jout.contains("statements"));
+}
+
+static void genLibSaNamedRet()
+{
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_named_ret.pa -o out/lib_sa_named_ret.pa.ast.json");
+}
+
+TEST(sa, import_single_named_ret)
+{
+	// lib_sa_named_ret.pa: export func getVal() -> int64 ret { ... }
+	// Single named return in export → SA synthesizes ret-type in import
+	// Covers: funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"] in sa_import
+	cleanTestEnv();
+	genLibSaNamedRet();
+	json jout = run_sa("../test/testdata/sa/093_import_named_ret.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// int64 x = getVal() → call annotated as palan with ret-type int64
+	const auto& init = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"],  "call");
+	ASSERT_EQ(init["func-type"], "palan");
+	ASSERT_EQ(init["name"],       "getVal");
+	ASSERT_EQ(init["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, variadic_flo32_promote)
+{
+	// printf("%f\n", x) where x is flo32 → variadicPromote(flo32) = flo64
+	// Covers: variadicPromote Float32 branch
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/094_variadic_flo32.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Find printf call
+	json* call = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "expr" && s["body"]["name"] == "printf")
+			{ call = &s; break; }
+	ASSERT_NE(call, nullptr);
+
+	// arg[1] (the flo32 var) should be wrapped in convert to flo64
+	const auto& arg = (*call)["body"]["args"][1];
+	ASSERT_EQ(arg["expr-type"],                  "convert");
+	ASSERT_EQ(arg["from-type"]["type-name"],     "flo32");
+	ASSERT_EQ(arg["value-type"]["type-name"],    "flo64");
+}
+
+TEST(sa, variadic_uint8_uint16_promote)
+{
+	// printf with uint8 and uint16 args → variadicPromote to uint32
+	// Covers: variadicPromote Uint8+Uint16 branch
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/095_variadic_uint8_uint16.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	json* call = nullptr;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "expr" && s["body"]["name"] == "printf")
+			{ call = &s; break; }
+	ASSERT_NE(call, nullptr);
+
+	// arg[1] = uint8 a → convert to uint32
+	const auto& arg1 = (*call)["body"]["args"][1];
+	ASSERT_EQ(arg1["expr-type"],               "convert");
+	ASSERT_EQ(arg1["from-type"]["type-name"],  "uint8");
+	ASSERT_EQ(arg1["value-type"]["type-name"], "uint32");
+
+	// arg[2] = uint16 b → convert to uint32
+	const auto& arg2 = (*call)["body"]["args"][2];
+	ASSERT_EQ(arg2["expr-type"],               "convert");
+	ASSERT_EQ(arg2["from-type"]["type-name"],  "uint16");
+	ASSERT_EQ(arg2["value-type"]["type-name"], "uint32");
+}
+
+TEST(sa, array_in_if_block)
+{
+	// Array declared inside an if block: free stmt appended to block body
+	// Covers: sa_block frees loop (PlnSaStmt.cpp line 99)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/096_array_in_block.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Find test() function
+	json* func = nullptr;
+	for (auto& f : jout["functions"])
+		if (f["name"] == "test") { func = &f; break; }
+	ASSERT_NE(func, nullptr);
+
+	// The if stmt is the second statement in the function body
+	const auto& stmts = (*func)["body"];
+	json* ifStmt = nullptr;
+	for (auto& s : stmts)
+		if (s["stmt-type"] == "if") { ifStmt = &const_cast<json&>(s); break; }
+	ASSERT_NE(ifStmt, nullptr);
+
+	// The then block body should end with a free() call for arr
+	const auto& thenBody = (*ifStmt)["then"]["body"];
+	ASSERT_GE(thenBody.size(), 2u);
+	const auto& last = thenBody[thenBody.size() - 1];
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"], "free");
+}
+
+TEST(sa, import_absolute_path)
+{
+	// import "/nonexistent_lib.so" — absolute path, non-.pa extension
+	// Covers: is_absolute() returning true (PlnSemanticAnalyzer.cpp line 308 branch)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/097_import_absolute_path.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Import should be silently ignored; printf call should be present
+	bool found = false;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "expr" && s["body"]["name"] == "printf")
+			{ found = true; break; }
+	ASSERT_TRUE(found);
+}

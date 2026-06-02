@@ -1,0 +1,3 @@
+import "somelib.txt";
+cinclude <stdio.h>;
+printf("ok\n");

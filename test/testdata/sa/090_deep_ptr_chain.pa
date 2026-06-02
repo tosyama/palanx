@@ -1,0 +1,7 @@
+cinclude <stdlib.h>;
+type A { int64 v; };
+type B { A a; };
+type C { B b; };
+C c;
+int64 x = c.b.a.v;
+10 -> c.b.a.v;

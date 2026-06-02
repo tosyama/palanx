@@ -9,6 +9,52 @@
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
 
+FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
+{
+	if (obj.value("expr-type","") == "id") {
+		string varName = obj["name"].get<string>();
+		const json* vt = findVar(varName);
+		if (!vt) {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
+			exit(1);
+		}
+		if (vt->value("type-kind","") != "pntr" || (*vt)["base-type"].value("type-kind","") != "struct") {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+			exit(1);
+		}
+		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
+	}
+	FieldChain base = resolveObjectChain(obj["object"]);
+	string fn = obj["field"].get<string>();
+	const StructDef& def = structDefs_[base.structName];
+	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
+	if (it == def.fields.end()) {
+		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UnknownField, base.structName, fn) << endl;
+		exit(1);
+	}
+	if (it->typeKind == "prim") {
+		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+		exit(1);
+	}
+	if (it->typeKind == "embed") {
+		base.offset += it->offset;
+		base.structName = it->typeName;
+		return base;
+	}
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json pntr_type = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",it->typeName}}}};
+	if (it->typeKind == "raw-ptr") pntr_type["mutable"] = it->isMutable;
+	json ptrNode;
+	if (!base.isPointerBased)
+		ptrNode = {{"expr-type","field-access"},{"var",base.varName},
+		           {"offset",base.offset+it->offset},{"value-type",pntr_type}};
+	else
+		ptrNode = {{"expr-type","field-access"},{"ptr-expr",base.ptrExpr},
+		           {"offset",base.offset+it->offset},{"value-type",pntr_type}};
+	return {true, "", 0, move(ptrNode), it->typeName};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expectedType)
 {
 	json sa_expr = expr;
@@ -143,31 +189,25 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		return sa_expr_member_call(expr);
 
 	} else if (expr_type == "field-access") {
-		string varName   = expr["object"]["name"].get<string>();
-		string fieldName = expr["field"].get<string>();
-		const json* varType = findVar(varName);
-		if (varType == nullptr) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
-			exit(1);
-		}
-		if (varType->value("type-kind","") != "pntr"
-				|| (*varType)["base-type"].value("type-kind","") != "struct") {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
-			exit(1);
-		}
-		string structName = (*varType)["base-type"]["type-name"].get<string>();
-		const StructDef& def = structDefs_[structName];
-		auto it = find_if(def.fields.begin(), def.fields.end(),
-		                  [&](const FieldLayout& f){ return f.name == fieldName; });
+		FieldChain chain = resolveObjectChain(expr["object"]);
+		string fn = expr["field"].get<string>();
+		const StructDef& def = structDefs_[chain.structName];
+		auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
 		if (it == def.fields.end()) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName) << endl;
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn) << endl;
+			exit(1);
+		}
+		if (it->typeKind == "embed") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InlineStructAsValue) << endl;
 			exit(1);
 		}
 		// LCOV_EXCL_EXCEPTION_BR_START
-		return {{"expr-type","field-access"},
-		        {"var", varName},
-		        {"offset", it->offset},
-		        {"value-type",{{"type-kind","prim"},{"type-name",it->typeName}}}};
+		json vt = fieldValueType(*it);
+		int off = chain.offset + it->offset;
+		if (!chain.isPointerBased)
+			return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt}};
+		else
+			return {{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",vt}};
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 
 	} else if (expr_type == "arr-index") {

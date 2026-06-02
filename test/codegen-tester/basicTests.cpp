@@ -990,6 +990,25 @@ TEST(codegen, field_access) {
     ASSERT_NE(asm_text.find("(%r"),    string::npos);
 }
 
+// Verify ptr-expr chained field access: r.tl.x / r.tl.y
+//   r holds a pointer to Point at offset 0 (ptr-expr loads r[0])
+//   ptr-expr field-assign: DerefLoad r[0] → ptr, DerefStore ptr[0]=10, ptr[8]=20
+//   ptr-expr field-access: DerefLoad r[0] → ptr, DerefLoad ptr[0] and ptr[8]
+TEST(codegen, ptr_field_access) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/058_ptr_field_access.sa.json";
+    string asmf = "out/058_ptr_field_access.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Ptr-expr loads tl from r at offset 0: (%rXX) pattern
+    ASSERT_NE(asm_text.find("(%r"),  string::npos);
+    // Field y at offset 8: 8(%rXX) pattern
+    ASSERT_NE(asm_text.find("8(%r"), string::npos);
+}
+
 // Verify that Mixed { int32 a; int64 b; } is laid out with C ABI offsets:
 //   a at offset 0  (int32 → movl, no numeric prefix)
 //   b at offset 8  (int64 → movq, 4-byte padding proven by offset 8 not 4)

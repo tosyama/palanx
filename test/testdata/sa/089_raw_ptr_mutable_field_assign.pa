@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+type Node { int64 val; @!Node next; };
+Node n1;
+Node n2;
+n2 -> n1.next;

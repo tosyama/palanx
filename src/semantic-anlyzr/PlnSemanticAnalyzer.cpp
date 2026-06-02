@@ -163,6 +163,101 @@ void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
 	}
 }
 
+void PlnSemanticAnalyzer::recordAllocShape(const string& name)
+{
+	if (allocShapeNames_.count(name)) return;
+	allocShapeNames_.insert(name);
+
+	const StructDef& def = structDefs_[name];
+	json fields = json::array();
+	for (auto& f : def.fields) {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		fields.push_back({
+			{"name",      f.name},
+			{"type-kind", f.typeKind},
+			{"type-name", f.typeName},
+			{"offset",    f.offset},
+			{"size",      f.size}
+		});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
+	json owned = json::array();
+	for (auto& f : def.fields) {
+		if (f.typeKind != "struct-ptr") continue;
+		const StructDef& sub = structDefs_[f.typeName];
+		// LCOV_EXCL_EXCEPTION_BR_START
+		owned.push_back({
+			{"name",              f.name},
+			{"offset",            f.offset},
+			{"struct-name",       f.typeName},
+			{"struct-total-size", sub.totalSize},
+			{"needs-alloc",       sub.hasOwnedStructFields}
+		});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+		recordAllocShape(f.typeName);
+	}
+	// LCOV_EXCL_EXCEPTION_BR_START
+	sa["alloc-shapes"].push_back({
+		{"shape-kind",   "struct"},
+		{"shape-name",   name},
+		{"total-size",   def.totalSize},
+		{"fields",       move(fields)},
+		{"owned-fields", move(owned)}
+	});
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+bool PlnSemanticAnalyzer::isStructType(const json& type) const
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	return type.value("type-kind","") == "prim" &&
+	       structDefs_.count(type.value("type-name",""));
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+}
+
+json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
+{
+	if (!isStructType(type)) return type;
+	// LCOV_EXCL_EXCEPTION_BR_START
+	string name = type["type-name"].get<string>();
+	return {{"type-kind","pntr"},
+	        {"base-type",{{"type-kind","struct"},{"type-name",name}}}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
+{
+	if (!currentFunc_ || !currentFunc_->contains("rets")) return false;
+	for (auto& r : (*currentFunc_)["rets"]) {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		if (r["name"].get<string>() != varName) continue;
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+		const auto& vt = r["var-type"];
+		if (isStructType(vt)) return true;
+		// Also accept the normalized pntr(struct(Name)) form produced by normalizeStructSig
+		// LCOV_EXCL_EXCEPTION_BR_START
+		if (vt.value("type-kind","") == "pntr" && vt.contains("base-type") &&
+		    vt["base-type"].value("type-kind","") == "struct")
+			return true;
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
+	return false;
+}
+
+void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
+{
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"])
+			if (isStructType(p["var-type"]))
+				p["var-type"] = toStructPntrType(p["var-type"]);
+	if (funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"])
+			if (isStructType(r["var-type"]))
+				r["var-type"] = toStructPntrType(r["var-type"]);
+	if (funcDef.contains("ret-type") && isStructType(funcDef["ret-type"]))
+		funcDef["ret-type"] = toStructPntrType(funcDef["ret-type"]);
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
@@ -185,6 +280,12 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 2. Process top-level statements (cinclude/import registered here,
 	//    visible in Palan function bodies processed next)
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
+	// 2.5. Re-normalize pre-registered Palan function signatures now that struct types are known.
+	//      Step 1 ran before type declarations were processed, so struct-typed params/rets
+	//      were left as prim(Name). Normalize them here so call resolution in step 3 is correct.
+	for (auto& scope : plnFuncScopes)
+		for (auto& [_, entry] : scope)
+			normalizeStructSig(entry);
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);
