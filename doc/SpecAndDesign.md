@@ -6,65 +6,67 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-05-14)
-version: 0.1.23
-- This iteration extends struct field types beyond primitives: inline embedding (`$T`), owned struct pointer (`T`), and non-owning pointer (`@T`). It also introduces struct-type function parameters and return values, and implements the `__pln_alloc_*` / `__pln_free_*` allocator infrastructure.
+### 2.1 Iteration Goal (2026-06-04)
+version: 0.1.24
+- This iteration adds struct-type array variables in four forms: contiguous inline (`[n]$T`), owned pointer array (`[n]T`), and non-owning pointer arrays (`[n]@T`, `[n]@!T`). It also extends element access (`arr[i].field`) to work with struct element types.
 
-**Struct field types**
-- `$T a` — inline embedding; field memory is included in the parent struct's `calloc(1, totalSize)`. C ABI alignment applied.
-- `T a` — owned struct pointer; 8-byte pointer field, auto-allocated via `__pln_alloc_T()` and auto-freed via `__pln_free_T()` at scope exit.
-- `@T a` — non-owning read-only pointer; 8-byte null-initialized field, user manages lifecycle. Field access is read-only (cannot write through it).
-- `@!T a` — non-owning mutable pointer; same as `@T` but allows write-through (`value -> p.a.field`).
+**Array variable forms**
 
-**Field access**
-- `p.a.x` where `a` is `$T`: SA flattens to a single combined offset (no extra dereference).
-- `p.a.x` where `a` is `T` or `@T`: SA emits a `ptr-expr` chain (DerefLoad the pointer, then DerefLoad the sub-field).
+| Declaration | Memory | Scope exit |
+|---|---|---|
+| `[n]$T pts` | `malloc(n * T.totalSize)` — contiguous inline | `free(pts)` |
+| `[n]T pts` | `malloc(n * 8)` pointer slots + each allocated via `__pln_alloc_T()` | `__pln_free_arr_T(pts, n)` |
+| `[n]@T pts` | `malloc(n * 8)` null-initialized pointer slots | `free(pts)` (elements non-owning) |
+| `[n]@!T pts` | same as `@T` | `free(pts)` (mutable write-through) |
 
-**Allocator infrastructure (§3.6)**
-- SA records structs requiring recursive allocation in `alloc-shapes` metadata in sa.json.
-- Build manager generates a Palan source file with `__pln_alloc_*` / `__pln_free_*` functions, compiles it, and links it with the main module.
+**Element access**
+- `pts[i]` returns `pntr(struct(T))` for all four forms.
+- `pts[i].field` — SA extends `resolveObjectChain` to handle `arr-index` as a chain base.
+- `val -> pts[i].field` — write-through; disallowed for `[n]@T` (read-only).
 
-**Struct-type function parameters and return values**
-- `func f(Point p)` — struct-type parameter; treated as `pntr(struct(Point))` (borrowed, not freed at scope exit).
-- `func f() -> Point p` — named return of struct type; ownership transfers to caller.
-- Inside `__pln_alloc_*` functions: struct variable declarations use simple `calloc(1, totalSize)` only (recursion prevention via `inAllocFunc_` flag).
+**Allocator infrastructure**
+- `[n]T pts` registers an `arr_T` shape in `alloc-shapes`.
+- Build manager generates `__pln_alloc_arr_T(int64 n)` / `__pln_free_arr_T([]@!T pts, int64 n)` in Palan (using `[n]@!T` internally), compiles and links alongside the main module.
+
+**Restrictions (planned for later iterations)**
+- `[n]$T` where T has owned sub-struct fields is not supported (requires `arr_emb_T` shape allocator).
+- Struct array fields (`type S { [n]T f; }`) are deferred to a separate iteration.
 
 The goal is that the following programs produce correct output:
 
 ```palan
-// $T inline embedding
+// [n]$T — contiguous inline struct array
 cinclude <stdio.h>;
 type Point { int64 x; int64 y; };
-type Line  { $Point a; $Point b; };
-
-Line l;
-10 -> l.a.x;  20 -> l.a.y;
-30 -> l.b.x;  40 -> l.b.y;
-printf("%ld %ld %ld %ld\n", l.a.x, l.a.y, l.b.x, l.b.y);  // 10 20 30 40
+[4]$Point pts;
+10 -> pts[0].x;  20 -> pts[0].y;
+30 -> pts[1].x;  40 -> pts[1].y;
+printf("%ld %ld %ld %ld\n", pts[0].x, pts[0].y, pts[1].x, pts[1].y);  // 10 20 30 40
 ```
 
 ```palan
-// T owned struct pointer (auto-alloc/free)
+// [n]T — owned pointer array (auto-alloc/free each element)
 cinclude <stdio.h>;
 type Point { int64 x; int64 y; };
-type Rect  { Point tl; Point br; };
-
-Rect r;
-10 -> r.tl.x;  20 -> r.tl.y;
-30 -> r.br.x;  40 -> r.br.y;
-printf("%ld %ld %ld %ld\n", r.tl.x, r.tl.y, r.br.x, r.br.y);  // 10 20 30 40
+[2]Point pts;
+5 -> pts[0].x;  6 -> pts[0].y;
+7 -> pts[1].x;  8 -> pts[1].y;
+printf("%ld %ld %ld %ld\n", pts[0].x, pts[0].y, pts[1].x, pts[1].y);  // 5 6 7 8
 ```
 
 ```palan
-// @T non-owning pointer
+// [n]@T / [n]@!T — non-owning pointer arrays
 cinclude <stdio.h>;
-type Node { int64 val; @Node next; };
+type Point { int64 x; int64 y; };
+Point p;  99 -> p.x;  100 -> p.y;
+[4]@Point rpts;
+p -> rpts[0];
+printf("%ld %ld\n", rpts[0].x, rpts[0].y);   // 99 100
 
-Node n1;  Node n2;
-42  -> n1.val;
-100 -> n2.val;
-n2 -> n1.next;
-printf("%ld %ld\n", n1.val, n1.next.val);  // 42 100
+[4]@!Point wpts;
+p -> wpts[0];
+42 -> wpts[0].x;
+printf("%ld\n", p.x);                          // 42
 ```
 
 
