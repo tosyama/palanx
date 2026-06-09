@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+type Inner { int64 v; };
+type Outer { Inner child; };
+[4]$Outer arr;

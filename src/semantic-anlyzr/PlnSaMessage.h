@@ -50,6 +50,7 @@ enum PlnSaMessageCode {
 	E_FieldAccessOnNonStruct,
 	E_InlineStructAsValue,
 	E_WriteToImmutablePtrField,
+	E_EmbedArrOwnedSubStruct,
 };
 
 class PlnSaMessage

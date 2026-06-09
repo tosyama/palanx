@@ -1954,3 +1954,39 @@ TEST(sa, import_absolute_path)
 			{ found = true; break; }
 	ASSERT_TRUE(found);
 }
+
+TEST(sa, embed_struct_arr_decl)
+{
+	// [4]$Point pts — contiguous 1D struct array: malloc(4 * 16), free at scope exit
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/098_embed_struct_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+	ASSERT_GE(body.size(), 2u);
+
+	// body[0]: pts = malloc(4 * 16)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "pts");
+
+	const auto& vt = body[0]["vars"][0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "pntr");
+	ASSERT_TRUE(vt.value("embedded", false));
+	ASSERT_EQ(vt["stride"], 16);
+	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
+
+	const auto& init = body[0]["vars"][0]["init"];
+	ASSERT_EQ(init["name"],      "malloc");
+	ASSERT_EQ(init["expr-type"], "call");
+	ASSERT_EQ(init["args"][0]["expr-type"],          "mul");
+	ASSERT_EQ(init["args"][0]["right"]["expr-type"], "lit-uint");
+	ASSERT_EQ(init["args"][0]["right"]["value"],     "16");
+
+	// body.back(): free(pts)
+	const auto& last = body.back();
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"], "free");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "pts");
+}

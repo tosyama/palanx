@@ -320,8 +320,52 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 {
+	const json& vtype = stmt["vars"][0]["var-type"];
+	string base_kind = vtype["base-type"].value("type-kind", "");
+
+	// [n]$T: contiguous 1D struct array — single malloc(n * totalSize), free at scope exit
+	if (base_kind == "prim") {
+		string leaf_name = vtype["base-type"].value("type-name", "");
+		if (!structDefs_.count(leaf_name)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
+			exit(1);
+		}
+		const StructDef& def = structDefs_[leaf_name];
+		if (def.hasOwnedStructFields) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
+			exit(1);
+		}
+		int stride = def.totalSize;
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json uint64_type  = {{"type-kind","prim"},{"type-name","uint64"}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+		const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json struct_base = {{"type-kind","struct"},{"type-name",leaf_name}};
+		json pntr_type   = {{"type-kind","pntr"},{"embedded",true},{"stride",stride},{"base-type",struct_base}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+		json result = json::array();
+		for (auto& var : stmt["vars"]) {
+			string name = var["name"];
+			json sa_outer = sa_expression(vtype["size-expr"], uint64Type);
+			// LCOV_EXCL_EXCEPTION_BR_START
+			json stride_lit = {{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}};
+			json size_arg   = {{"expr-type","mul"},{"value-type",uint64_type},{"left",sa_outer},{"right",stride_lit}};
+			json malloc_call = {{"expr-type","call"},{"name","malloc"},{"func-type","c"},
+			                    {"args",json::array({size_arg})},{"value-type",pntr_type}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+			declareVar(name, pntr_type, &stmt);
+			arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
+			// LCOV_EXCL_EXCEPTION_BR_START
+			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+				{"name",name},{"var-type",pntr_type},{"init",malloc_call}
+			}})}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+		}
+		return result;
+	}
+
 	// [n]$[m]T: contiguous 2D array — single malloc(n * stride), free at scope exit
-	const json& vtype     = stmt["vars"][0]["var-type"];
 	const json& inner_arr = vtype["base-type"];   // [m]T part
 	const json& leaf_type = inner_arr["base-type"]; // T (prim)
 	const json& inner_sz  = inner_arr["size-expr"]; // m AST node

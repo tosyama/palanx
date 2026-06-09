@@ -165,6 +165,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_WriteToImmutablePtrField:
 			return "cannot write through read-only pointer field '@T'; use '@!T' for mutable.";
 
+		case E_EmbedArrOwnedSubStruct:
+			return "[n]$T: T has owned sub-struct fields; use [n]T instead.";
+
 		default:
 			BOOST_ASSERT(false);
 	}
