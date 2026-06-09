@@ -542,6 +542,11 @@ var_declaration: type_expr move_owner_r ID
 					&& ibt.contains("size-expr") && ibt["size-expr"].is_null();
 			}
 		}
+		bool is_at_struct_arr = tk == "arr"
+			&& $1.value("specifier","") == "raw"
+			&& !$1["size-expr"].is_null()
+			&& $1["base-type"].value("type-kind","") == "pntr"
+			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
 		bool is_multidim_arr = tk == "arr"
 			&& $1.value("specifier","") == "raw"
 			&& !$1["size-expr"].is_null()
@@ -557,7 +562,7 @@ var_declaration: type_expr move_owner_r ID
 			&& $1["base-type"].value("specifier","") == "raw"
 			&& !$1["base-type"]["size-expr"].is_null()
 			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
-		if (!$2 && (tk == "prim" || is_valid_arr || is_unsized_arr || is_pntr_arr || is_multidim_arr || is_embed_arr))
+		if (!$2 && (tk == "prim" || is_valid_arr || is_unsized_arr || is_pntr_arr || is_at_struct_arr || is_multidim_arr || is_embed_arr))
 			$$ = {{"name", $3}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};

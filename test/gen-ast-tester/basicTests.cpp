@@ -790,3 +790,66 @@ TEST(gen_ast, mutable_ptr_struct_field) {
 	ASSERT_EQ(s["fields"][1]["var-type"]["mutable"], true);
 	ASSERT_EQ(s["fields"][1]["var-type"]["base-type"]["type-name"], "Node");
 }
+
+TEST(gen_ast, arr_at_struct) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/028_arr_at_struct.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	// [4]@Point rpts;
+	const auto& decl = stmts[1];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& vt = decl["vars"][0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "arr");
+	ASSERT_EQ(vt["specifier"], "raw");
+	ASSERT_EQ(vt["size-expr"]["value"], "4");
+	ASSERT_EQ(vt["base-type"]["type-kind"], "pntr");
+	ASSERT_FALSE(vt["base-type"].value("mutable", false));
+	ASSERT_EQ(vt["base-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
+}
+
+TEST(gen_ast, arr_at_bang_struct) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/029_arr_at_bang_struct.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	// [4]@!Point wpts;
+	const auto& decl = stmts[1];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& vt = decl["vars"][0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "arr");
+	ASSERT_EQ(vt["specifier"], "raw");
+	ASSERT_EQ(vt["size-expr"]["value"], "4");
+	ASSERT_EQ(vt["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["mutable"], true);
+	ASSERT_EQ(vt["base-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
+}
+
+TEST(gen_ast, func_arr_at_struct_param) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/030_func_arr_at_struct_param.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& funcs = jout["ast"]["functions"];
+	ASSERT_EQ(funcs.size(), 1);
+
+	// func f([]@!Point pts, int64 n) { }
+	const auto& params = funcs[0]["parameters"];
+	ASSERT_EQ(params.size(), 2);
+	const auto& vt = params[0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "arr");
+	ASSERT_EQ(vt["specifier"], "raw");
+	ASSERT_TRUE(vt["size-expr"].is_null());
+	ASSERT_EQ(vt["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["mutable"], true);
+	ASSERT_EQ(vt["base-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
+}
