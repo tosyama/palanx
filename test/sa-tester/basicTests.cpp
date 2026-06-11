@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <fstream>
+#include <algorithm>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -1989,4 +1990,59 @@ TEST(sa, embed_struct_arr_decl)
 	ASSERT_EQ(last["stmt-type"], "expr");
 	ASSERT_EQ(last["body"]["name"], "free");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "pts");
+}
+
+TEST(sa, owned_struct_arr_decl)
+{
+	// [2]Point pts — owned pointer array: alloc/free via palan functions
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/099_owned_struct_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// alloc-shapes: struct shape for Point, then arr-struct shape for arr_Point
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_GE(shapes.size(), 2u);
+	auto arr_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
+		return s.value("shape-kind","") == "arr-struct";
+	});
+	ASSERT_NE(arr_it, shapes.end());
+	ASSERT_EQ((*arr_it)["shape-key"],   "arr_Point");
+	ASSERT_EQ((*arr_it)["struct-name"], "Point");
+
+	auto struct_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
+		return s.value("shape-kind","") == "struct";
+	});
+	ASSERT_NE(struct_it, shapes.end());
+	ASSERT_EQ((*struct_it)["shape-name"], "Point");
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+	ASSERT_GE(body.size(), 2u);
+
+	// body[0]: __pts_n = 2  (uint64 temp for count)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "__pts_n");
+	ASSERT_EQ(body[0]["vars"][0]["var-type"]["type-name"], "uint64");
+
+	// body[1]: pts = __pln_alloc_arr_Point(__pts_n)
+	ASSERT_EQ(body[1]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[1]["vars"][0]["name"], "pts");
+	const auto& vt = body[1]["vars"][0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
+	const auto& init = body[1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "call");
+	ASSERT_EQ(init["name"],      "__pln_alloc_arr_Point");
+	ASSERT_EQ(init["func-type"], "palan");
+	ASSERT_EQ(init["args"][0]["name"], "__pts_n");
+
+	// body.back(): __pln_free_arr_Point(pts, __pts_n)  at scope exit
+	const auto& last = body.back();
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"],      "__pln_free_arr_Point");
+	ASSERT_EQ(last["body"]["func-type"], "palan");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "pts");
+	ASSERT_EQ(last["body"]["args"][1]["name"], "__pts_n");
 }
