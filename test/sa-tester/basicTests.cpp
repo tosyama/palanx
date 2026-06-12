@@ -2046,3 +2046,69 @@ TEST(sa, owned_struct_arr_decl)
 	ASSERT_EQ(last["body"]["args"][0]["name"], "pts");
 	ASSERT_EQ(last["body"]["args"][1]["name"], "__pts_n");
 }
+
+TEST(sa, at_struct_arr_decl)
+{
+	// [4]@Point rpts — non-owning read-only pointer array: malloc(4 * 8), free at scope exit
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/100_at_struct_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+	ASSERT_GE(body.size(), 2u);
+
+	// body[0]: rpts = malloc(4 * 8)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "rpts");
+
+	const auto& vt = body[0]["vars"][0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "pntr");
+	const auto& elem_vt = vt["base-type"];
+	ASSERT_EQ(elem_vt["type-kind"], "pntr");
+	ASSERT_EQ(elem_vt["mutable"], false);
+	ASSERT_EQ(elem_vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(elem_vt["base-type"]["type-name"], "Point");
+
+	const auto& init = body[0]["vars"][0]["init"];
+	ASSERT_EQ(init["name"],      "malloc");
+	ASSERT_EQ(init["expr-type"], "call");
+	ASSERT_EQ(init["args"][0]["expr-type"],          "mul");
+	ASSERT_EQ(init["args"][0]["right"]["expr-type"], "lit-uint");
+	ASSERT_EQ(init["args"][0]["right"]["value"],     "8");
+
+	// body.back(): free(rpts)
+	const auto& last = body.back();
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"], "free");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "rpts");
+}
+
+TEST(sa, at_bang_struct_arr_decl)
+{
+	// [4]@!Point wpts — non-owning mutable write-through pointer array
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/102_at_bang_struct_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+	ASSERT_GE(body.size(), 2u);
+
+	// body[0]: wpts = malloc(4 * 8)
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(body[0]["vars"][0]["name"], "wpts");
+
+	const auto& vt = body[0]["vars"][0]["var-type"];
+	const auto& elem_vt = vt["base-type"];
+	ASSERT_EQ(elem_vt["type-kind"], "pntr");
+	ASSERT_EQ(elem_vt["mutable"], true);
+	ASSERT_EQ(elem_vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(elem_vt["base-type"]["type-name"], "Point");
+
+	// body.back(): free(wpts)
+	const auto& last = body.back();
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"], "free");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "wpts");
+}
