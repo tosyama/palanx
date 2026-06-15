@@ -24,6 +24,16 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 		}
 		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
 	}
+	if (obj.value("expr-type","") == "arr-index") {
+		json sa_idx = sa_expression(obj);
+		const json& vt = sa_idx["value-type"];
+		if (vt.value("type-kind","") != "pntr" || vt["base-type"].value("type-kind","") != "struct") {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+			exit(1);
+		}
+		string struct_name = vt["base-type"]["type-name"].get<string>();
+		return {true, "", 0, move(sa_idx), struct_name};
+	}
 	FieldChain base = resolveObjectChain(obj["object"]);
 	string fn = obj["field"].get<string>();
 	const StructDef& def = structDefs_[base.structName];

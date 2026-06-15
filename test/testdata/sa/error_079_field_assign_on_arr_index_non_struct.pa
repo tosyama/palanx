@@ -1,0 +1,7 @@
+cinclude <stdlib.h>;
+func test() {
+    [4]int64 arr;
+    10 -> arr[0].x;
+    return;
+}
+test();

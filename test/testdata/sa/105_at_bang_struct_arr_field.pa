@@ -1,0 +1,12 @@
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+func test() {
+    Point p;
+    [4]@!Point wpts;
+    p -> wpts[0];
+    42 -> wpts[0].x;
+    printf("%ld\n", p.x);
+    return;
+}
+test();

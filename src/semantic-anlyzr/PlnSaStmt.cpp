@@ -406,6 +406,23 @@ FieldChain PlnSemanticAnalyzer::resolveStoreLocChain(const json& loc)
 		}
 		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
 	}
+	if (loc.value("kind","") == "arr-index") {
+		json arr_expr = loc;
+		arr_expr["expr-type"] = "arr-index";
+		arr_expr.erase("kind");
+		json sa_idx = sa_expression(arr_expr);
+		const json& vt = sa_idx["value-type"];
+		if (vt.value("type-kind","") != "pntr" || vt["base-type"].value("type-kind","") != "struct") {
+			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+			exit(1);
+		}
+		if (vt.value("mutable", true) == false) {
+			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_WriteToReadOnlyArrElem) << endl;
+			exit(1);
+		}
+		string struct_name = vt["base-type"]["type-name"].get<string>();
+		return {true, "", 0, move(sa_idx), struct_name};
+	}
 	FieldChain base = resolveStoreLocChain(loc["base"]);
 	string fn = loc["field"].get<string>();
 	const StructDef& def = structDefs_[base.structName];

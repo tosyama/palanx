@@ -2152,3 +2152,117 @@ TEST(sa, at_bang_struct_arr_decl)
 	ASSERT_EQ(last["body"]["name"], "free");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "wpts");
 }
+
+TEST(sa, embed_struct_arr_field_access)
+{
+	// [4]$Point pts; 10 -> pts[0].x; 20 -> pts[0].y; printf("%ld %ld\n", pts[0].x, pts[0].y);
+	// Covers: resolveObjectChain / resolveStoreLocChain arr-index base case (embedded struct array)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/103_embed_struct_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[1]: 10 -> pts[0].x — field-assign, ptr-expr = pts[0] (arr-index), offset 0
+	const auto& fa_x = body[1];
+	ASSERT_EQ(fa_x["stmt-type"], "field-assign");
+	ASSERT_EQ(fa_x["offset"], 0);
+	ASSERT_EQ(fa_x["value-type"]["type-name"], "int64");
+	ASSERT_EQ(fa_x["value"]["value"], "10");
+	const auto& pe_x = fa_x["ptr-expr"];
+	ASSERT_EQ(pe_x["expr-type"], "arr-index");
+	ASSERT_EQ(pe_x["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pe_x["value-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(pe_x["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_FALSE(pe_x["value-type"].contains("mutable"));
+	ASSERT_EQ(pe_x["elem-size"]["value"], "16");
+
+	// body[2]: 20 -> pts[0].y — field-assign, offset 8
+	const auto& fa_y = body[2];
+	ASSERT_EQ(fa_y["stmt-type"], "field-assign");
+	ASSERT_EQ(fa_y["offset"], 8);
+	ASSERT_EQ(fa_y["value"]["value"], "20");
+
+	// body[3]: printf("%ld %ld\n", pts[0].x, pts[0].y) — field-access args, ptr-expr = arr-index
+	const auto& args = body[3]["body"]["args"];
+	ASSERT_EQ(args[1]["expr-type"], "field-access");
+	ASSERT_EQ(args[1]["offset"], 0);
+	ASSERT_EQ(args[1]["ptr-expr"]["expr-type"], "arr-index");
+	ASSERT_EQ(args[2]["expr-type"], "field-access");
+	ASSERT_EQ(args[2]["offset"], 8);
+	ASSERT_EQ(args[2]["ptr-expr"]["expr-type"], "arr-index");
+}
+
+TEST(sa, owned_struct_arr_field_access)
+{
+	// [2]Point pts; 5 -> pts[0].x; printf("%ld\n", pts[0].x);
+	// Covers: resolveObjectChain / resolveStoreLocChain arr-index base case (owned pointer array)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/104_owned_struct_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[2]: 5 -> pts[0].x — field-assign, ptr-expr = pts[0] (arr-index), elem-size 8
+	const auto& fa = body[2];
+	ASSERT_EQ(fa["stmt-type"], "field-assign");
+	ASSERT_EQ(fa["offset"], 0);
+	ASSERT_EQ(fa["value-type"]["type-name"], "int64");
+	const auto& pe = fa["ptr-expr"];
+	ASSERT_EQ(pe["expr-type"], "arr-index");
+	ASSERT_EQ(pe["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pe["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_FALSE(pe["value-type"].contains("mutable"));
+	ASSERT_EQ(pe["elem-size"]["value"], "8");
+
+	// body[3]: printf("%ld\n", pts[0].x) — field-access, ptr-expr = arr-index
+	const auto& fa_read = body[3]["body"]["args"][1];
+	ASSERT_EQ(fa_read["expr-type"], "field-access");
+	ASSERT_EQ(fa_read["offset"], 0);
+	ASSERT_EQ(fa_read["ptr-expr"]["expr-type"], "arr-index");
+}
+
+TEST(sa, at_bang_struct_arr_field_write)
+{
+	// Point p; [4]@!Point wpts; p -> wpts[0]; 42 -> wpts[0].x; printf("%ld\n", p.x);
+	// Covers: resolveStoreLocChain arr-index base case, mutable:true (write-through allowed)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/105_at_bang_struct_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[3]: 42 -> wpts[0].x — field-assign, ptr-expr = wpts[0] (arr-index, mutable:true)
+	const auto& fa = body[3];
+	ASSERT_EQ(fa["stmt-type"], "field-assign");
+	ASSERT_EQ(fa["offset"], 0);
+	ASSERT_EQ(fa["value"]["value"], "42");
+	const auto& pe = fa["ptr-expr"];
+	ASSERT_EQ(pe["expr-type"], "arr-index");
+	ASSERT_EQ(pe["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(pe["value-type"]["mutable"], true);
+}
+
+TEST(sa, at_struct_arr_field_read)
+{
+	// Point p; [4]@Point rpts; p -> rpts[0]; printf("%ld\n", rpts[0].x);
+	// Covers: resolveObjectChain arr-index base case, mutable:false (read-only, read allowed)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/106_at_struct_arr_field_read.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[3]: printf("%ld\n", rpts[0].x) — field-access, ptr-expr = rpts[0] (arr-index, mutable:false)
+	const auto& fa = body[3]["body"]["args"][1];
+	ASSERT_EQ(fa["expr-type"], "field-access");
+	ASSERT_EQ(fa["offset"], 0);
+	const auto& pe = fa["ptr-expr"];
+	ASSERT_EQ(pe["expr-type"], "arr-index");
+	ASSERT_EQ(pe["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(pe["value-type"]["mutable"], false);
+}

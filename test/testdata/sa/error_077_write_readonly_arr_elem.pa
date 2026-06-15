@@ -1,0 +1,8 @@
+cinclude <stdlib.h>;
+type Point { int64 x; int64 y; };
+func test() {
+    [4]@Point rpts;
+    42 -> rpts[0].x;
+    return;
+}
+test();
