@@ -107,6 +107,7 @@ class PlnSemanticAnalyzer {
 	bool isStructType(const json& type) const;
 	json  toStructPntrType(const json& type) const;
 	bool  isNamedReturnVar(const string& varName) const;
+	json  deepNormalizePrimToStruct(const json& type) const;
 	void  normalizeStructSig(json& funcDef);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj);

@@ -173,6 +173,7 @@ int main(int argc, char* argv[])
 		set<string> seen_shapes;
 		vector<json> arr_shapes;
 		vector<json> struct_shapes;
+		vector<json> arr_struct_shapes;
 		for (auto& ast_file : ast_files) {
 			string base = ast_file.substr(0, ast_file.size() - 9);
 			ifstream f(base + ".sa.json");
@@ -187,12 +188,14 @@ int main(int argc, char* argv[])
 				if (!seen_shapes.insert(key).second) continue;
 				if (shape.value("shape-kind", "") == "struct")
 					struct_shapes.push_back(shape);
+				else if (shape.value("shape-kind", "") == "arr-struct")
+					arr_struct_shapes.push_back(shape);
 				else
 					arr_shapes.push_back(shape);
 			}
 		}
 
-		if (!arr_shapes.empty() || !struct_shapes.empty()) {
+		if (!arr_shapes.empty() || !struct_shapes.empty() || !arr_struct_shapes.empty()) {
 			string workdir = fs::path(ast_files[0]).parent_path().string();
 			string alloc_pa  = workdir + "/__allocators.pa";
 			string alloc_ast = alloc_pa + ".ast.json";
@@ -245,6 +248,42 @@ int main(int argc, char* argv[])
 						out << "    __pln_free_" << sname << "(p." << oname << ");\n";
 					}
 					out << "    free(p);\n"
+					    << "    return;\n"
+					    << "}\n";
+				}
+
+				// Owned struct array allocator/free functions
+				for (auto& shape : arr_struct_shapes) {
+					string struct_name = shape["struct-name"];
+					string shape_key   = shape["shape-key"];
+
+					bool has_owned = false;
+					for (auto& ss : struct_shapes)
+						if (ss.value("shape-name","") == struct_name && !ss["owned-fields"].empty())
+							{ has_owned = true; break; }
+					string elem_free = has_owned
+						? "__pln_free_" + struct_name + "(pts[i]);"
+						: "free(pts[i]);";
+
+					out << "\nexport func __pln_alloc_" << shape_key
+					    << "(int64 n) -> []@!" << struct_name << " {\n"
+					    << "    [n]@!" << struct_name << " outer;\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < n {\n"
+					    << "        " << struct_name << " p;\n"
+					    << "        p -> outer[i];\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
+					    << "    return outer;\n"
+					    << "}\n"
+					    << "export func __pln_free_" << shape_key
+					    << "([]@!" << struct_name << " pts, int64 n) {\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < n {\n"
+					    << "        " << elem_free << "\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
+					    << "    free(pts);\n"
 					    << "    return;\n"
 					    << "}\n";
 				}

@@ -181,11 +181,11 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], toStructPntrType(unsizedArrToPntr(p["var-type"])), &funcDef);
+			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(unsizedArrToPntr(p["var-type"]))), &funcDef);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
 			if (!isStructType(r["var-type"]))
-				declareVar(r["name"], unsizedArrToPntr(r["var-type"]), &funcDef);
+				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(r["var-type"])), &funcDef);
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
 	enterScope();  // push scope[1] = function body

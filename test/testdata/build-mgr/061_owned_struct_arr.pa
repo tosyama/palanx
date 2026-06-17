@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+[2]Point pts;
+5 -> pts[0].x;  6 -> pts[0].y;
+7 -> pts[1].x;  8 -> pts[1].y;
+printf("%ld %ld %ld %ld\n", pts[0].x, pts[0].y, pts[1].x, pts[1].y);

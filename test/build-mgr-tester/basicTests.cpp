@@ -425,6 +425,12 @@ TEST(build_mgr, struct_func_param) {
 	ASSERT_EQ(output, "42\n");
 }
 
+TEST(build_mgr, owned_struct_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/061_owned_struct_arr.pa");
+	ASSERT_EQ(output, "5 6 7 8\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
