@@ -431,6 +431,24 @@ TEST(build_mgr, owned_struct_arr) {
 	ASSERT_EQ(output, "5 6 7 8\n");
 }
 
+TEST(build_mgr, embed_struct_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/062_embed_struct_arr.pa");
+	ASSERT_EQ(output, "30 40\n");
+}
+
+TEST(build_mgr, at_struct_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/063_at_struct_arr.pa");
+	ASSERT_EQ(output, "99 77\n");
+}
+
+TEST(build_mgr, at_bang_struct_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/064_at_bang_struct_arr.pa");
+	ASSERT_EQ(output, "42 20\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
