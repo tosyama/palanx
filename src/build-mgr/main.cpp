@@ -271,7 +271,7 @@ int main(int argc, char* argv[])
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
 					    << "        " << struct_name << " p;\n"
-					    << "        p -> outer[i];\n"
+					    << "        p ->> outer[i];\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "    return outer;\n"

@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+mtrace();
+{
+    [2]Point pts;
+    5 -> pts[0].x;
+    7 -> pts[1].x;
+    printf("%ld %ld\n", pts[0].x, pts[1].x);
+}
+muntrace();

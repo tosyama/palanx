@@ -1,0 +1,13 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+Point p;
+10 -> p.x;
+mtrace();
+{
+    [4]@!Point wpts;
+    p -> wpts[0];
+    42 -> wpts[0].x;
+    printf("%ld\n", p.x);
+}
+muntrace();
