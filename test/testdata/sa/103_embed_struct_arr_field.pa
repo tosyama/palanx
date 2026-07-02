@@ -1,0 +1,11 @@
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+func test() {
+    [4]$Point pts;
+    10 -> pts[0].x;
+    20 -> pts[0].y;
+    printf("%ld %ld\n", pts[0].x, pts[0].y);
+    return;
+}
+test();

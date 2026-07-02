@@ -244,18 +244,42 @@ bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
 	return false;
 }
 
+json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
+{
+	// Recursively convert prim(Name) → struct(Name) inside pntr chains.
+	// Needed when struct types appear nested in pointer-of-pointer signatures like []@!T.
+	if (type.value("type-kind","") == "pntr") {
+		json t = type;
+		t["base-type"] = deepNormalizePrimToStruct(type["base-type"]);
+		return t;
+	}
+	if (isStructType(type))
+		return {{"type-kind","struct"},{"type-name",type["type-name"]}};
+	return type;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 {
 	if (funcDef.contains("parameters"))
-		for (auto& p : funcDef["parameters"])
+		for (auto& p : funcDef["parameters"]) {
 			if (isStructType(p["var-type"]))
 				p["var-type"] = toStructPntrType(p["var-type"]);
+			else
+				p["var-type"] = deepNormalizePrimToStruct(p["var-type"]);
+		}
 	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"])
+		for (auto& r : funcDef["rets"]) {
 			if (isStructType(r["var-type"]))
 				r["var-type"] = toStructPntrType(r["var-type"]);
-	if (funcDef.contains("ret-type") && isStructType(funcDef["ret-type"]))
-		funcDef["ret-type"] = toStructPntrType(funcDef["ret-type"]);
+			else
+				r["var-type"] = deepNormalizePrimToStruct(r["var-type"]);
+		}
+	if (funcDef.contains("ret-type")) {
+		if (isStructType(funcDef["ret-type"]))
+			funcDef["ret-type"] = toStructPntrType(funcDef["ret-type"]);
+		else
+			funcDef["ret-type"] = deepNormalizePrimToStruct(funcDef["ret-type"]);
+	}
 }
 
 void PlnSemanticAnalyzer::analysis(const json &ast)

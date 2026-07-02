@@ -801,10 +801,53 @@ rejects calls where the argument's inner dimension is variable or does not match
 **Memory management:** A single `malloc` is called at declaration and a single `free` is
 inserted at scope exit. No helper functions are generated.
 
+### Struct Arrays
+
+Palan supports four forms of struct array declarations. All are heap-allocated and automatically freed at scope exit.
+
+| Form | Memory | Element type |
+|---|---|---|
+| `[n]$T pts` | `malloc(n * T.totalSize)` / `free(pts)` | contiguous inline elements |
+| `[n]T pts` | `__pln_alloc_arr_T(n)` / `__pln_free_arr_T(pts, n)` | owned pointers, each element allocated separately |
+| `[n]@T pts` | `malloc(n * 8)`, null-initialized / `free(pts)` | non-owning read-only pointers |
+| `[n]@!T pts` | `malloc(n * 8)`, null-initialized / `free(pts)` | non-owning mutable pointers |
+
+`pts[i]` yields a `T` pointer for all four forms. Fields are accessed with `pts[i].field`.
+
+```palan
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+
+// [n]$T — contiguous inline struct array
+[3]$Point pts;
+10 -> pts[0].x;  20 -> pts[0].y;
+printf("%ld %ld\n", pts[0].x, pts[0].y);  // 10 20
+
+// [n]T — owned pointer array (each element separately allocated)
+[2]Point pts2;
+5 -> pts2[0].x;
+printf("%ld\n", pts2[0].x);  // 5
+
+// [n]@T / [n]@!T — non-owning pointer arrays
+Point p;
+99 -> p.x;
+[4]@Point rpts;    // read-only slots
+p -> rpts[0];
+printf("%ld\n", rpts[0].x);   // 99
+
+[4]@!Point wpts;   // writable slots
+p -> wpts[0];
+42 -> wpts[0].x;
+printf("%ld\n", p.x);         // 42 (write-through via pointer)
+```
+
+**Restriction:** `[n]$T` requires that `T` has no owned sub-struct fields. Use `[n]T` instead when `T` contains owned pointer fields.
+
 ### Limitations (current version)
 
 - Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
 - Boundary checking is not performed.
+- `[n]$T` is not supported when `T` has owned sub-struct fields.
 
 ## 19. Struct Types
 

@@ -24,6 +24,16 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 		}
 		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
 	}
+	if (obj.value("expr-type","") == "arr-index") {
+		json sa_idx = sa_expression(obj);
+		const json& vt = sa_idx["value-type"];
+		if (vt.value("type-kind","") != "pntr" || vt["base-type"].value("type-kind","") != "struct") {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+			exit(1);
+		}
+		string struct_name = vt["base-type"]["type-name"].get<string>();
+		return {true, "", 0, move(sa_idx), struct_name};
+	}
 	FieldChain base = resolveObjectChain(obj["object"]);
 	string fn = obj["field"].get<string>();
 	const StructDef& def = structDefs_[base.structName];
@@ -375,6 +385,21 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 
 	if (array_type.value("embedded", false)) {
+		if (elem_type.value("type-kind", "") == "struct") {
+			// [n]$T contiguous struct array: pts[i] -> pntr(struct(T)), inline address
+			// (stride = T.totalSize, carried on array_type; arr-index itself does not deref)
+			int64_t stride = array_type.value("stride", (int64_t)0);
+			json row_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
+			json elem_size_node = {
+				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
+			};
+			sa_expr["array"]      = sa_array;
+			sa_expr["index"]      = sa_index;
+			sa_expr["elem-size"]  = elem_size_node;
+			sa_expr["value-type"] = row_pntr;
+			return sa_expr;
+		}
+
 		// Embedded 2D array row access: mat[i] → pntr(T), non-owning
 		// elem-size = stride = inner-size * sizeof(T)  (or __name_d1 * sizeof(T) if variable)
 		int elem_sz = elemSizeBytes(elem_type.value("type-name",""));

@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+func test() {
+    [4]int64 arr;
+    printf("%ld\n", arr[0].x);
+    return;
+}
+test();

@@ -295,6 +295,20 @@ SA-only expression kinds (added to AST nodes):
   }
   ```
 
+  **Struct array element access:** When the array element type is `struct(T)`, `arr-index` yields a
+  pointer to the element rather than the element value. The `value-type` and `elem-size` differ by
+  array form:
+
+  | Declaration | value-type | elem-size |
+  |---|---|---|
+  | `[n]$T pts` (contiguous) | `pntr(struct(T))` | `T.totalSize` (e.g. 16 for a two-field int64 struct) |
+  | `[n]T pts` (owned pointers) | `pntr(struct(T))` | `8` (pointer size) |
+  | `[n]@T pts` (read-only) | `pntr(struct(T))` | `8` (pointer size) |
+  | `[n]@!T pts` (mutable) | `pntr(struct(T))` | `8` (pointer size) |
+
+  The returned `pntr(struct(T))` is used as the base for subsequent field access (`pts[i].field`)
+  via `resolveObjectChain`.
+
 Additional fields per expression kind:
 
 - lit-str expression: value replaced by label (assembly label string, e.g. ".str0")

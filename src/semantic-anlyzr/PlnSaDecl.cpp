@@ -107,8 +107,12 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 				&& !vtype["size-expr"].is_null()
 				&& vtype.value("embedded", false))
 			return sa_embed_arr_var_decl(stmt);
-		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null())
+		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
+			const json& base = vtype["base-type"];
+			if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
+				return sa_owned_struct_arr_var_decl(stmt);
 			return sa_arr_var_decl(stmt);
+		}
 		if (tk == "prim") {
 			string tname = vtype.value("type-name", "");
 			if (structDefs_.count(tname))
@@ -246,9 +250,17 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	int elem_size;
 	json sa_elem_type;
 	if (base_type.value("type-kind","") == "pntr") {
-		// [n]@![]T: elem is mutable pntr to unsized arr → size = 8, SA elem = pntr(T)
+		const json& inner = base_type["base-type"];
 		elem_size = 8;
-		sa_elem_type = unsizedArrToPntr(base_type["base-type"]);
+		if (inner.value("type-kind","") == "prim" && structDefs_.count(inner.value("type-name",""))) {
+			// [n]@T / [n]@!T: elem is non-owning pntr to struct → SA elem = pntr(struct(T), mutable:bool)
+			json struct_type = {{"type-kind","struct"},{"type-name",inner["type-name"]}};
+			sa_elem_type = {{"type-kind","pntr"},{"base-type",struct_type},
+			                {"mutable",base_type.value("mutable", false)}};
+		} else {
+			// [n]@![]T: elem is mutable pntr to unsized arr → SA elem = pntr(T)
+			sa_elem_type = unsizedArrToPntr(inner);
+		}
 	} else {
 		elem_size = elemSizeBytes(base_type.value("type-name",""));
 		sa_elem_type = base_type;
@@ -320,8 +332,52 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 {
+	const json& vtype = stmt["vars"][0]["var-type"];
+	string base_kind = vtype["base-type"].value("type-kind", "");
+
+	// [n]$T: contiguous 1D struct array — single malloc(n * totalSize), free at scope exit
+	if (base_kind == "prim") {
+		string leaf_name = vtype["base-type"].value("type-name", "");
+		if (!structDefs_.count(leaf_name)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
+			exit(1);
+		}
+		const StructDef& def = structDefs_[leaf_name];
+		if (def.hasOwnedStructFields) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
+			exit(1);
+		}
+		int stride = def.totalSize;
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json uint64_type  = {{"type-kind","prim"},{"type-name","uint64"}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+		const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json struct_base = {{"type-kind","struct"},{"type-name",leaf_name}};
+		json pntr_type   = {{"type-kind","pntr"},{"embedded",true},{"stride",stride},{"base-type",struct_base}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+		json result = json::array();
+		for (auto& var : stmt["vars"]) {
+			string name = var["name"];
+			json sa_outer = sa_expression(vtype["size-expr"], uint64Type);
+			// LCOV_EXCL_EXCEPTION_BR_START
+			json stride_lit = {{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}};
+			json size_arg   = {{"expr-type","mul"},{"value-type",uint64_type},{"left",sa_outer},{"right",stride_lit}};
+			json malloc_call = {{"expr-type","call"},{"name","malloc"},{"func-type","c"},
+			                    {"args",json::array({size_arg})},{"value-type",pntr_type}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+			declareVar(name, pntr_type, &stmt);
+			arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
+			// LCOV_EXCL_EXCEPTION_BR_START
+			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+				{"name",name},{"var-type",pntr_type},{"init",malloc_call}
+			}})}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+		}
+		return result;
+	}
+
 	// [n]$[m]T: contiguous 2D array — single malloc(n * stride), free at scope exit
-	const json& vtype     = stmt["vars"][0]["var-type"];
 	const json& inner_arr = vtype["base-type"];   // [m]T part
 	const json& leaf_type = inner_arr["base-type"]; // T (prim)
 	const json& inner_sz  = inner_arr["size-expr"]; // m AST node
@@ -469,5 +525,90 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	}
 	result.push_back(sa_stmt);
 	// LCOV_EXCL_EXCEPTION_BR_STOP
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
+{
+	// [n]T (T = struct): owned pointer array.
+	// __pln_alloc_arr_T(n) on declaration, __pln_free_arr_T(pts, n) at scope exit.
+	const json& vtype = stmt["vars"][0]["var-type"];
+	const json& base_type = vtype["base-type"];
+	string struct_name = base_type["type-name"].get<string>();
+
+	string shape_key = "arr_" + struct_name;
+	bool found = false;
+	for (auto& s : sa["alloc-shapes"])
+		if (s.value("shape-key","") == shape_key) { found = true; break; }
+	if (!found) {
+		// struct shape must be present for build-mgr to know the field layout
+		recordAllocShape(struct_name);
+		sa["alloc-shapes"].push_back({
+			{"shape-kind","arr-struct"}, {"shape-key",shape_key}, {"struct-name",struct_name}
+		});
+	}
+
+	string alloc_func = "__pln_alloc_" + shape_key;
+	string free_func  = "__pln_free_"  + shape_key;
+
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	json struct_type = {{"type-kind","struct"},{"type-name",struct_name}};
+	json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
+	json pntr_type   = {{"type-kind","pntr"},{"base-type",elem_pntr}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
+
+	auto checkIntSize = [&](const json& sz) {
+		if (!sz.contains("value-type")) return;
+		const PlnType* t = registry_.fromJson(sz["value-type"]);
+		bool is_int = t->kind == PlnType::Kind::Prim
+			&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float32
+			&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float64;
+		if (!is_int) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
+			exit(1);
+		}
+	};
+
+	json result = json::array();
+	for (auto& var : stmt["vars"]) {
+		string name = var["name"];
+		string n_name = "__" + name + "_n";
+
+		json n_expr = sa_expression(vtype["size-expr"], uint64Type);
+		checkIntSize(n_expr);
+
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json n_id = {{"expr-type","id"},{"name",n_name},
+		             {"var-type",uint64_type},{"value-type",uint64_type}};
+		json arr_id = {{"expr-type","id"},{"name",name},
+		               {"var-type",pntr_type},{"value-type",pntr_type}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+
+		declareVar(n_name, uint64_type, &stmt);
+		// LCOV_EXCL_EXCEPTION_BR_START
+		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+			{"name",n_name},{"var-type",uint64_type},{"init",n_expr}
+		}})}});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+
+		json alloc_call = {
+			{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
+			{"args",json::array({n_id})}, {"value-type",pntr_type}
+		};
+		json free_stmt_json = {{"stmt-type","expr"},{"body",{
+			{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
+			{"args",json::array({arr_id, n_id})}
+		}}};
+
+		declareVar(name, pntr_type, &stmt);
+		arrayScopeVars_.back().push_back({name, free_stmt_json});
+		// LCOV_EXCL_EXCEPTION_BR_START
+		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+			{"name",name},{"var-type",pntr_type},{"init",alloc_call}
+		}})}});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE

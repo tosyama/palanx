@@ -100,12 +100,14 @@ class PlnSemanticAnalyzer {
 	json sa_var_decl(const json& stmt);           // returns array of statements
 	json sa_arr_var_decl(const json& stmt);       // returns array of statements
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
+	json sa_owned_struct_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
 	void recordAllocShape(const string& structName);
 	bool isStructType(const json& type) const;
 	json  toStructPntrType(const json& type) const;
 	bool  isNamedReturnVar(const string& varName) const;
+	json  deepNormalizePrimToStruct(const json& type) const;
 	void  normalizeStructSig(json& funcDef);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj);

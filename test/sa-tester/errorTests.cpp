@@ -559,3 +559,55 @@ TEST(sa_error, alias_unknown_method)
 	ASSERT_NE(sa.find("Undefined function"), string::npos);
 }
 
+TEST(sa_error, embed_arr_owned_sub_struct)
+{
+	// [n]$Outer where Outer has an owned struct-ptr field — should error
+	// Covers: E_EmbedArrOwnedSubStruct in sa_embed_arr_var_decl
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_076_embed_arr_owned_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("owned sub-struct"), string::npos);
+}
+
+TEST(sa_error, write_readonly_arr_elem)
+{
+	// [4]@Point rpts; 42 -> rpts[0].x; — write through read-only pointer array element
+	// Covers: resolveStoreLocChain arr-index base case, mutable:false branch (E_WriteToReadOnlyArrElem)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_077_write_readonly_arr_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("read-only pointer array element"), string::npos);
+}
+
+TEST(sa_error, field_access_on_arr_index_non_struct)
+{
+	// [4]int64 arr; printf("%ld\n", arr[0].x); — arr[i] is not a struct pointer
+	// Covers: resolveObjectChain arr-index base case, non-struct value-type branch (E_FieldAccessOnNonStruct)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_078_field_access_on_arr_index_non_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+
+TEST(sa_error, field_assign_on_arr_index_non_struct)
+{
+	// [4]int64 arr; 10 -> arr[0].x; — arr[i] is not a struct pointer
+	// Covers: resolveStoreLocChain arr-index base case, non-struct value-type branch (E_FieldAccessOnNonStruct)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_079_field_assign_on_arr_index_non_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+
