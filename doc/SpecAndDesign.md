@@ -6,67 +6,90 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-06-04)
-version: 0.1.24
-- This iteration adds struct-type array variables in four forms: contiguous inline (`[n]$T`), owned pointer array (`[n]T`), and non-owning pointer arrays (`[n]@T`, `[n]@!T`). It also extends element access (`arr[i].field`) to work with struct element types.
+### 2.1 Iteration Goal (2026-07-02)
+version: 0.1.25
+- This iteration adds array *fields* in three forms: embedded contiguous array (`[n]$T`), owned pointer array (`[n]T`), and non-owning embedded pointer-slot arrays (`[n]@T`, `[n]@!T`). It is the field-level counterpart of v0.1.24's array-variable work. T may be either a primitive type or a struct name — the same mechanism handles both, mirroring how `sa_embed_arr_var_decl` already branches on leaf kind for array *variables*.
 
-**Array variable forms**
+**Array field forms**
 
-| Declaration | Memory | Scope exit |
+| Declaration | Memory | Parent alloc/free |
 |---|---|---|
-| `[n]$T pts` | `malloc(n * T.totalSize)` — contiguous inline | `free(pts)` |
-| `[n]T pts` | `malloc(n * 8)` pointer slots + each allocated via `__pln_alloc_T()` | `__pln_free_arr_T(pts, n)` |
-| `[n]@T pts` | `malloc(n * 8)` null-initialized pointer slots | `free(pts)` (elements non-owning) |
-| `[n]@!T pts` | same as `@T` | `free(pts)` (mutable write-through) |
+| `[n]$T f` | embedded in parent's calloc block, `n * elemSize(T)` bytes at `f`'s offset (`elemSize` = primitive size or `T.totalSize` for a struct leaf) | none — freed with parent as a whole |
+| `[n]T f` | 8-byte pointer field in parent | struct leaf: parent alloc/free cascades to `__pln_alloc_arr_T(n)` / `__pln_free_arr_T(f, n)` (v0.1.24 infrastructure). primitive leaf: cascades to a small shared-per-primitive-type helper `__pln_alloc_arr_prim_T(n)` / `__pln_free_arr_prim_T(f)` — build-mgr must still generate this helper, since generated Palan source has no syntax for an inline `malloc` assignable directly to a typed field; the helper's body is just a named-return array declaration (`[n]T result; return result;`), no per-element loop |
+| `[n]@T f` / `[n]@!T f` | embedded in parent's calloc block, `n * 8` null-initialized pointer slots | none — freed with parent as a whole (elements non-owning) |
+
+**Constraints**
+- The array size `n` in a field declaration must be a compile-time integer literal (struct layout is static). Non-literal sizes are rejected with a new error.
+- `[n]$T` field: when T is a struct, it must not have owned sub-struct fields (same restriction as the v0.1.24 `[n]$T` array variable); primitive T has no such restriction.
 
 **Element access**
-- `pts[i]` returns `pntr(struct(T))` for all four forms.
-- `pts[i].field` — SA extends `resolveObjectChain` to handle `arr-index` as a chain base.
-- `val -> pts[i].field` — write-through; disallowed for `[n]@T` (read-only).
+- `s.f[i]` returns the primitive value type when T is primitive, or `pntr(struct(T))` when T is a struct, for all three forms — reusing/extending the `resolveObjectChain` / `arr-index` machinery from v0.1.24 to accept a field-chain (not just a plain variable) as the array base.
+- `s.f[i].field` — nested field access through a struct-element array field.
+- `val -> s.f[i]` / `val -> s.f[i].field` — write-through; disallowed for `[n]@T` (read-only), matching the v0.1.24 array-variable rule.
 
 **Allocator infrastructure**
-- `[n]T pts` registers an `arr_T` shape in `alloc-shapes`.
-- Build manager generates `__pln_alloc_arr_T(int64 n)` / `__pln_free_arr_T([]@!T pts, int64 n)` in Palan (using `[n]@!T` internally), compiles and links alongside the main module.
+- `[n]T f` with a struct leaf reuses the `arr_T` alloc-shape / `__pln_alloc_arr_T` / `__pln_free_arr_T` infrastructure introduced in v0.1.24 (IT-2407); the parent struct's own generated allocator calls into it.
+- `[n]T f` with a primitive leaf registers a new, lighter `arr-prim` alloc-shape (keyed by leaf type name, shared across all structs using that primitive) that build-mgr expands into `__pln_alloc_arr_prim_T` / `__pln_free_arr_prim_T` — no per-element loop, unlike the struct-leaf case.
+
+**Known gen-ast gap found during planning**
+- `store_loc '[' expression ']'` only handled a plain variable or an existing `arr-index` base; a field-based base (`s.f[i]` as an assignment target) crashes the parser today (`nlohmann::json` assertion abort on `10 -> s.f[0];`). This must be fixed as part of this iteration to support write-through (`val -> s.f[i]` / `val -> s.f[i].field`); read-side access (`s.f[i]` as an expression) already works unmodified since the general `term` grammar is recursive.
 
 **Restrictions (planned for later iterations)**
-- `[n]$T` where T has owned sub-struct fields is not supported (requires `arr_emb_T` shape allocator).
-- Struct array fields (`type S { [n]T f; }`) are deferred to a separate iteration.
+- Nested/2D array fields are not supported.
 
 The goal is that the following programs produce correct output:
 
 ```palan
-// [n]$T — contiguous inline struct array
+// [n]$T — embedded contiguous array field (struct leaf)
 cinclude <stdio.h>;
 type Point { int64 x; int64 y; };
-[4]$Point pts;
-10 -> pts[0].x;  20 -> pts[0].y;
-30 -> pts[1].x;  40 -> pts[1].y;
-printf("%ld %ld %ld %ld\n", pts[0].x, pts[0].y, pts[1].x, pts[1].y);  // 10 20 30 40
+type Polygon { [4]$Point pts; };
+Polygon poly;
+10 -> poly.pts[0].x;  20 -> poly.pts[0].y;
+30 -> poly.pts[1].x;  40 -> poly.pts[1].y;
+printf("%ld %ld %ld %ld\n", poly.pts[0].x, poly.pts[0].y, poly.pts[1].x, poly.pts[1].y);  // 10 20 30 40
 ```
 
 ```palan
-// [n]T — owned pointer array (auto-alloc/free each element)
+// [n]$T — embedded contiguous array field (primitive leaf)
 cinclude <stdio.h>;
-type Point { int64 x; int64 y; };
-[2]Point pts;
-5 -> pts[0].x;  6 -> pts[0].y;
-7 -> pts[1].x;  8 -> pts[1].y;
-printf("%ld %ld %ld %ld\n", pts[0].x, pts[0].y, pts[1].x, pts[1].y);  // 5 6 7 8
+type Buffer { [4]$int64 data; };
+Buffer buf;
+10 -> buf.data[0];  20 -> buf.data[1];  30 -> buf.data[2];  40 -> buf.data[3];
+printf("%ld %ld %ld %ld\n", buf.data[0], buf.data[1], buf.data[2], buf.data[3]);  // 10 20 30 40
 ```
 
 ```palan
-// [n]@T / [n]@!T — non-owning pointer arrays
+// [n]T — owned pointer array field (auto-alloc/free cascades with parent)
 cinclude <stdio.h>;
 type Point { int64 x; int64 y; };
-Point p;  99 -> p.x;  100 -> p.y;
-[4]@Point rpts;
-p -> rpts[0];
-printf("%ld %ld\n", rpts[0].x, rpts[0].y);   // 99 100
+type Cluster { [2]Point pts; };
+Cluster c;
+5 -> c.pts[0].x;  6 -> c.pts[0].y;
+7 -> c.pts[1].x;  8 -> c.pts[1].y;
+printf("%ld %ld %ld %ld\n", c.pts[0].x, c.pts[0].y, c.pts[1].x, c.pts[1].y);  // 5 6 7 8
+```
 
-[4]@!Point wpts;
-p -> wpts[0];
-42 -> wpts[0].x;
-printf("%ld\n", p.x);                          // 42
+```palan
+// [n]T — owned pointer array field (primitive leaf, inline malloc/free)
+cinclude <stdio.h>;
+type Bucket { [3]int64 vals; };
+Bucket b;
+1 -> b.vals[0];  2 -> b.vals[1];  3 -> b.vals[2];
+printf("%ld %ld %ld\n", b.vals[0], b.vals[1], b.vals[2]);  // 1 2 3
+```
+
+```palan
+// [n]@T / [n]@!T — non-owning embedded pointer-slot array fields
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+type Ring { [4]@!Point nodes; };
+Point p;  99 -> p.x;
+Ring r;
+p -> r.nodes[0];
+printf("%ld\n", r.nodes[0].x);   // 99
+42 -> r.nodes[0].x;               // write-through (mutable)
+printf("%ld\n", p.x);             // 42
 ```
 
 
