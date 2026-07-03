@@ -1,0 +1,2 @@
+cinclude <stdlib.h>;
+type Buf { [1+1]$int64 data; };

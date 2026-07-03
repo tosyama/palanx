@@ -52,6 +52,7 @@ enum PlnSaMessageCode {
 	E_WriteToImmutablePtrField,
 	E_EmbedArrOwnedSubStruct,
 	E_WriteToReadOnlyArrElem,
+	E_ArrFieldSizeNotConstant,
 };
 
 class PlnSaMessage

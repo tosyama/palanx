@@ -611,3 +611,16 @@ TEST(sa_error, field_assign_on_arr_index_non_struct)
 	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
 }
 
+TEST(sa_error, arr_field_size_not_constant)
+{
+	// type Buf { [1+1]$int64 data; }; -- size-expr is not a lit-int/lit-uint literal
+	// Covers: buildStructDef "arr" branch, E_ArrFieldSizeNotConstant
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_080_arr_field_size_not_constant.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("must be a compile-time constant"), string::npos);
+}
+

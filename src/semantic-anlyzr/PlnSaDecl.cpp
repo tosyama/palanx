@@ -75,6 +75,54 @@ static StructDef buildStructDef(const string& name,
 			                      .offset=offset, .size=sz});
 			offset += sz;
 			maxAlign = max(maxAlign, align);
+		} else if (tk == "arr") {
+			const json& size_expr = vtype["size-expr"];
+			if (size_expr.is_null()) {
+				// []T (unsized array) -- not a valid struct field form
+				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+				exit(1);
+			}
+			string set = size_expr.value("expr-type", "");
+			if (set != "lit-int" && set != "lit-uint") {
+				cerr << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant) << endl;
+				exit(1);
+			}
+			int64_t count = stoll(size_expr["value"].get<string>());
+
+			if (!vtype.value("embedded", false)) {
+				// [n]T / [n]@T / [n]@!T -- deferred to IT-2503/2504/2505
+				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+				exit(1);
+			}
+
+			const json& base = vtype["base-type"];
+			string base_kind = base.value("type-kind", "");
+			string leaf_name = base.value("type-name", "");
+
+			int stride = 0;
+			string elemKind;
+			if (base_kind == "prim" && !structDefs.count(leaf_name)) {
+				// primitive leaf (this ticket)
+				stride = elemSizeBytes(leaf_name);
+				if (stride < 0) {
+					cerr << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
+					exit(1);
+				}
+				elemKind = "prim";
+			} else {
+				// struct leaf ([n]$Point) -- deferred to IT-2502
+				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+				exit(1);
+			}
+
+			int align = stride;
+			offset = alignUp(offset, align);
+			def.fields.push_back({.name=fieldName, .typeKind="embed-arr",
+			                      .typeName=leaf_name, .isMutable=false,
+			                      .offset=offset, .size=(int)(count*stride),
+			                      .count=count, .elemKind=elemKind, .stride=stride});
+			offset += count * stride;
+			maxAlign = max(maxAlign, align);
 		} else {
 			cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 			exit(1);

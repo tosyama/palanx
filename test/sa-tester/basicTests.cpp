@@ -2266,3 +2266,20 @@ TEST(sa, at_struct_arr_field_read)
 	ASSERT_EQ(pe["value-type"]["base-type"]["type-name"], "Point");
 	ASSERT_EQ(pe["value-type"]["mutable"], false);
 }
+
+TEST(sa, embed_prim_arr_field)
+{
+	// type Buf { [4]$int64 data; }; Buf buf;
+	// Covers: buildStructDef "arr" branch, embedded primitive-leaf case (embed-arr typeKind)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/107_embed_prim_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Buf buf; -> calloc(1, 32): confirms totalSize == 4*8 == 32 and useSimpleCalloc path
+	// (hasOwnedStructFields stays false for embed-arr-only structs).
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "buf");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "32");
+}

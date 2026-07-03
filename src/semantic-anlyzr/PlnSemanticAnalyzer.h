@@ -16,11 +16,18 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr"
-	string typeName;   // prim type name, embed/struct-ptr struct name, raw-ptr base type name
+	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr" | "embed-arr"
+	string typeName;   // prim type name, embed/struct-ptr struct name, raw-ptr base type name,
+	                    // embed-arr: leaf prim type name (this ticket) or struct name (IT-2502)
 	bool   isMutable;  // raw-ptr only: @T=false, @!T=true
 	int    offset;     // byte offset from struct start (C ABI aligned)
-	int    size;       // prim: type size, embed: sub-struct totalSize, struct-ptr/raw-ptr: 8
+	int    size;       // prim: type size, embed: sub-struct totalSize, struct-ptr/raw-ptr: 8,
+	                    // embed-arr: count*stride
+
+	// Array-field-only members (valid when typeKind == "embed-arr")
+	int64_t count    = 0;   // element count n (compile-time constant)
+	string  elemKind = "";  // "prim" | "struct"
+	int     stride   = 0;   // bytes per element
 };
 
 struct StructDef {
