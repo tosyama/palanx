@@ -624,3 +624,30 @@ TEST(sa_error, arr_field_size_not_constant)
 	ASSERT_NE(sa.find("must be a compile-time constant"), string::npos);
 }
 
+TEST(sa_error, embed_arr_field_owned_substruct)
+{
+	// type Rect { Point tl; Point br; }; type Grid { [2]$Rect cells; };
+	// -- Rect has owned sub-struct fields, so [n]$Rect is not supported.
+	// Covers: buildStructDef "arr" branch, struct-leaf case, E_EmbedArrOwnedSubStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_081_embed_arr_field_owned_substruct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("owned sub-struct"), string::npos);
+}
+
+TEST(sa_error, recursive_arr_field)
+{
+	// type A { [2]$A a; }; -- self-referential embedded array field
+	// Covers: buildStructDef "arr" branch, struct-leaf case, E_RecursiveStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_082_recursive_arr_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("recursively contains itself"), string::npos);
+}
+

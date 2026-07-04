@@ -2283,3 +2283,20 @@ TEST(sa, embed_prim_arr_field)
 	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
 	ASSERT_EQ(v["init"]["args"][1]["value"], "32");
 }
+
+TEST(sa, embed_struct_arr_field)
+{
+	// type Point { int64 x; int64 y; }; type Polygon { [4]$Point pts; }; Polygon poly;
+	// Covers: buildStructDef "arr" branch, embedded struct-leaf case (embed-arr typeKind, elemKind=="struct")
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/108_embed_struct_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Polygon poly; -> calloc(1, 64): confirms totalSize == 4*Point.totalSize(16) == 64
+	// and useSimpleCalloc path (hasOwnedStructFields stays false for embed-arr-only structs).
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "poly");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "64");
+}

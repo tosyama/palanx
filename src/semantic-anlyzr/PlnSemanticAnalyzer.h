@@ -18,7 +18,7 @@ struct FieldLayout {
 	string name;
 	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr" | "embed-arr"
 	string typeName;   // prim type name, embed/struct-ptr struct name, raw-ptr base type name,
-	                    // embed-arr: leaf prim type name (this ticket) or struct name (IT-2502)
+	                    // embed-arr: leaf prim type name or struct name
 	bool   isMutable;  // raw-ptr only: @T=false, @!T=true
 	int    offset;     // byte offset from struct start (C ABI aligned)
 	int    size;       // prim: type size, embed: sub-struct totalSize, struct-ptr/raw-ptr: 8,

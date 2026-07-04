@@ -101,21 +101,35 @@ static StructDef buildStructDef(const string& name,
 
 			int stride = 0;
 			string elemKind;
-			if (base_kind == "prim" && !structDefs.count(leaf_name)) {
-				// primitive leaf (this ticket)
+			int align;
+			if (base_kind == "prim" && leaf_name == name) {
+				cerr << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;
+				exit(1);
+			} else if (base_kind == "prim" && !structDefs.count(leaf_name)) {
+				// primitive leaf
 				stride = elemSizeBytes(leaf_name);
 				if (stride < 0) {
 					cerr << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
 					exit(1);
 				}
 				elemKind = "prim";
+				align = stride;
+			} else if (base_kind == "prim") {
+				// struct leaf ([n]$Point)
+				const StructDef& leafDef = structDefs.at(leaf_name);
+				if (leafDef.hasOwnedStructFields) {
+					cerr << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
+					exit(1);
+				}
+				stride = leafDef.totalSize;
+				elemKind = "struct";
+				align = leafDef.maxAlign;
 			} else {
-				// struct leaf ([n]$Point) -- deferred to IT-2502
+				// base_kind == "arr" ([n]$[m]T nested) -- not supported
 				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 				exit(1);
 			}
 
-			int align = stride;
 			offset = alignUp(offset, align);
 			def.fields.push_back({.name=fieldName, .typeKind="embed-arr",
 			                      .typeName=leaf_name, .isMutable=false,
