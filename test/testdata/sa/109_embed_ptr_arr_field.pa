@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+type Point { int64 x; int64 y; };
+type Ring { [4]@!Point nodes; };
+Ring r;

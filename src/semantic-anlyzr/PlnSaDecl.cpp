@@ -90,9 +90,26 @@ static StructDef buildStructDef(const string& name,
 			int64_t count = stoll(size_expr["value"].get<string>());
 
 			if (!vtype.value("embedded", false)) {
-				// [n]T / [n]@T / [n]@!T -- deferred to IT-2503/2504/2505
-				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
-				exit(1);
+				const json& ptr_wrap = vtype["base-type"];
+				if (ptr_wrap.value("type-kind", "") != "pntr") {
+					// [n]T (owned pointer array) -- deferred to IT-2504/2505
+					cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+					exit(1);
+				}
+				// [n]@T / [n]@!T: embedded array of n non-owning pointer slots (8B each)
+				bool isMut = ptr_wrap.value("mutable", false);
+				string leaf_name = ptr_wrap["base-type"].value("type-name", "");
+				string elemKind = structDefs.count(leaf_name) ? "struct" : "prim";
+
+				int align = 8;
+				offset = alignUp(offset, align);
+				def.fields.push_back({.name=fieldName, .typeKind="embed-ptr-arr",
+				                      .typeName=leaf_name, .isMutable=isMut,
+				                      .offset=offset, .size=(int)(count*8),
+				                      .count=count, .elemKind=elemKind, .stride=8});
+				offset += count * 8;
+				maxAlign = max(maxAlign, align);
+				continue;
 			}
 
 			const json& base = vtype["base-type"];

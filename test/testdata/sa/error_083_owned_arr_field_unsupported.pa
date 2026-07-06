@@ -1,0 +1,2 @@
+cinclude <stdlib.h>;
+type Bucket { [3]int64 vals; };

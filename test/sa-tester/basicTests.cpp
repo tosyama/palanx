@@ -2300,3 +2300,53 @@ TEST(sa, embed_struct_arr_field)
 	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
 	ASSERT_EQ(v["init"]["args"][1]["value"], "64");
 }
+
+TEST(sa, embed_ptr_arr_field)
+{
+	// type Point { int64 x; int64 y; }; type Ring { [4]@!Point nodes; }; Ring r;
+	// Covers: buildStructDef "arr" branch, non-embedded pntr-wrapped base-type case
+	// (embed-ptr-arr typeKind, isMutable==true, elemKind=="struct")
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/109_embed_ptr_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Ring r; -> calloc(1, 32): confirms totalSize == 4*8 == 32 (4 pointer slots)
+	// and useSimpleCalloc path (hasOwnedStructFields stays false for embed-ptr-arr-only structs).
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "r");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "32");
+}
+
+TEST(sa, embed_ptr_arr_field_readonly)
+{
+	// type Point { int64 x; int64 y; }; type Watch { [3]@Point observed; }; Watch w;
+	// Covers: buildStructDef "arr" branch, embed-ptr-arr typeKind, isMutable==false
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/110_embed_ptr_arr_field_readonly.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Watch w; -> calloc(1, 24): confirms totalSize == 3*8 == 24 (3 pointer slots)
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "w");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "24");
+}
+
+TEST(sa, embed_ptr_arr_field_prim_leaf)
+{
+	// type Counter { [2]@!int64 slots; }; Counter c;
+	// Covers: buildStructDef "arr" branch, embed-ptr-arr typeKind, elemKind=="prim"
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/111_embed_ptr_arr_field_prim_leaf.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Counter c; -> calloc(1, 16): confirms totalSize == 2*8 == 16 (2 pointer slots)
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "c");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}

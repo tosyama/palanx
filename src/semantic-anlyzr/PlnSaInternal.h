@@ -33,6 +33,13 @@ inline json fieldValueType(const FieldLayout& f)
 			: json{{"type-kind","prim"},{"type-name",f.typeName}};
 		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"base-type",bt}};
 	}
+	if (f.typeKind == "embed-ptr-arr") {
+		json bt = (f.elemKind == "struct")
+			? json{{"type-kind","struct"},{"type-name",f.typeName}}
+			: json{{"type-kind","prim"},{"type-name",f.typeName}};
+		json elem_pntr = {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
+		return {{"type-kind","pntr"},{"base-type",elem_pntr}};
+	}
 	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
 	json pntr = {{"type-kind","pntr"},{"base-type",bt}};
 	if (f.typeKind == "raw-ptr")

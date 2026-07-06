@@ -651,3 +651,17 @@ TEST(sa_error, recursive_arr_field)
 	ASSERT_NE(sa.find("recursively contains itself"), string::npos);
 }
 
+TEST(sa_error, owned_arr_field_unsupported)
+{
+	// type Bucket { [3]int64 vals; }; -- non-embedded, non-pntr-wrapped arr field
+	// ([n]T owned pointer array), still deferred to IT-2504/2505.
+	// Covers: buildStructDef "arr" branch, non-embedded case, base-type type-kind != "pntr"
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_083_owned_arr_field_unsupported.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unsupported struct field type"), string::npos);
+}
+

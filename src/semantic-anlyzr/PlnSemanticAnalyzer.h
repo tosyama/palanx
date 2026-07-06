@@ -16,15 +16,15 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr" | "embed-arr"
+	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr" | "embed-arr" | "embed-ptr-arr"
 	string typeName;   // prim type name, embed/struct-ptr struct name, raw-ptr base type name,
-	                    // embed-arr: leaf prim type name or struct name
-	bool   isMutable;  // raw-ptr only: @T=false, @!T=true
+	                    // embed-arr/embed-ptr-arr: leaf prim type name or struct name
+	bool   isMutable;  // raw-ptr/embed-ptr-arr: @T=false, @!T=true
 	int    offset;     // byte offset from struct start (C ABI aligned)
 	int    size;       // prim: type size, embed: sub-struct totalSize, struct-ptr/raw-ptr: 8,
-	                    // embed-arr: count*stride
+	                    // embed-arr/embed-ptr-arr: count*stride
 
-	// Array-field-only members (valid when typeKind == "embed-arr")
+	// Array-field-only members (valid when typeKind == "embed-arr" or "embed-ptr-arr")
 	int64_t count    = 0;   // element count n (compile-time constant)
 	string  elemKind = "";  // "prim" | "struct"
 	int     stride   = 0;   // bytes per element
