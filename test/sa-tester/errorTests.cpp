@@ -653,9 +653,9 @@ TEST(sa_error, recursive_arr_field)
 
 TEST(sa_error, owned_arr_field_unsupported)
 {
-	// type Bucket { [3]int64 vals; }; -- non-embedded, non-pntr-wrapped arr field
-	// ([n]T owned pointer array), still deferred to IT-2504/2505.
-	// Covers: buildStructDef "arr" branch, non-embedded case, base-type type-kind != "pntr"
+	// type Cluster { [4]Point pts; }; -- [n]T owned pointer array with a struct leaf,
+	// still deferred to IT-2505 (primitive leaf is supported since IT-2504).
+	// Covers: buildStructDef "arr" branch, non-embedded case, struct-leaf owned pointer array
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(

@@ -449,6 +449,16 @@ TEST(build_mgr, at_bang_struct_arr) {
 	ASSERT_EQ(output, "42 20\n");
 }
 
+TEST(build_mgr, owned_prim_arr_field) {
+	// type Bucket { [3]int64 vals; }; Bucket b;
+	// Declaration-only: proves __pln_alloc_Bucket/__pln_free_Bucket and the shared
+	// __pln_alloc_arr_prim_int64/__pln_free_arr_prim_int64 allocators are generated,
+	// compile, link, and run without crashing. Element access is deferred to IT-2506+.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/069_owned_prim_arr_field.pa");
+	ASSERT_EQ(output, "ok\n");
+}
+
 static pair<int,int> parseMtraceLog(const string& traceFile) {
 	string log = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;

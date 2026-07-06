@@ -2350,3 +2350,44 @@ TEST(sa, embed_ptr_arr_field_prim_leaf)
 	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
 	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
 }
+
+TEST(sa, owned_prim_arr_field)
+{
+	// type Bucket { [3]int64 vals; }; Bucket b;
+	// Covers: buildStructDef "arr" branch, non-embedded non-pntr-wrapped primitive-leaf
+	// case (arr-ptr typeKind, hasOwnedArrayFields), useSimpleCalloc==false path,
+	// recordAllocShape "owned-array-fields" output.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/112_owned_prim_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Bucket b; -> __pln_alloc_Bucket() (not calloc): hasOwnedArrayFields forces
+	// the struct off the simple-calloc path even with no owned-struct fields.
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "b");
+	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Bucket");
+	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_TRUE(v["init"]["args"].empty());
+
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes.size(), 1u);
+	ASSERT_EQ(shapes[0]["shape-name"], "Bucket");
+	ASSERT_EQ(shapes[0]["shape-kind"], "struct");
+	ASSERT_EQ(shapes[0]["total-size"], 8);
+	ASSERT_EQ(shapes[0]["owned-fields"].size(), 0u);
+
+	const auto& fields = shapes[0]["fields"];
+	ASSERT_EQ(fields[0]["name"], "vals");
+	ASSERT_EQ(fields[0]["type-kind"], "arr-ptr");
+	ASSERT_EQ(fields[0]["type-name"], "int64");
+	ASSERT_EQ(fields[0]["count"], 3);
+	ASSERT_EQ(fields[0]["elem-kind"], "prim");
+
+	const auto& ownedArr = shapes[0]["owned-array-fields"];
+	ASSERT_EQ(ownedArr.size(), 1u);
+	ASSERT_EQ(ownedArr[0]["name"], "vals");
+	ASSERT_EQ(ownedArr[0]["offset"], 0);
+	ASSERT_EQ(ownedArr[0]["elem-kind"], "prim");
+	ASSERT_EQ(ownedArr[0]["leaf-name"], "int64");
+	ASSERT_EQ(ownedArr[0]["count"], 3);
+}

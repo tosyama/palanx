@@ -90,26 +90,47 @@ static StructDef buildStructDef(const string& name,
 			int64_t count = stoll(size_expr["value"].get<string>());
 
 			if (!vtype.value("embedded", false)) {
-				const json& ptr_wrap = vtype["base-type"];
-				if (ptr_wrap.value("type-kind", "") != "pntr") {
-					// [n]T (owned pointer array) -- deferred to IT-2504/2505
-					cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
-					exit(1);
-				}
-				// [n]@T / [n]@!T: embedded array of n non-owning pointer slots (8B each)
-				bool isMut = ptr_wrap.value("mutable", false);
-				string leaf_name = ptr_wrap["base-type"].value("type-name", "");
-				string elemKind = structDefs.count(leaf_name) ? "struct" : "prim";
+				const json& base_wrap = vtype["base-type"];
+				string base_kind = base_wrap.value("type-kind", "");
+				if (base_kind == "pntr") {
+					// [n]@T / [n]@!T: embedded array of n non-owning pointer slots (8B each)
+					bool isMut = base_wrap.value("mutable", false);
+					string leaf_name = base_wrap["base-type"].value("type-name", "");
+					string elemKind = structDefs.count(leaf_name) ? "struct" : "prim";
 
-				int align = 8;
-				offset = alignUp(offset, align);
-				def.fields.push_back({.name=fieldName, .typeKind="embed-ptr-arr",
-				                      .typeName=leaf_name, .isMutable=isMut,
-				                      .offset=offset, .size=(int)(count*8),
-				                      .count=count, .elemKind=elemKind, .stride=8});
-				offset += count * 8;
-				maxAlign = max(maxAlign, align);
-				continue;
+					int align = 8;
+					offset = alignUp(offset, align);
+					def.fields.push_back({.name=fieldName, .typeKind="embed-ptr-arr",
+					                      .typeName=leaf_name, .isMutable=isMut,
+					                      .offset=offset, .size=(int)(count*8),
+					                      .count=count, .elemKind=elemKind, .stride=8});
+					offset += count * 8;
+					maxAlign = max(maxAlign, align);
+					continue;
+				}
+				// [n]T: owned pointer array (field is an 8B pointer, cascade alloc/free)
+				string leaf_name = base_wrap.value("type-name", "");
+				if (base_kind == "prim" && !structDefs.count(leaf_name)) {
+					// primitive leaf
+					int stride = elemSizeBytes(leaf_name);
+					if (stride < 0) {
+						cerr << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
+						exit(1);
+					}
+					int align = 8;
+					offset = alignUp(offset, align);
+					def.fields.push_back({.name=fieldName, .typeKind="arr-ptr",
+					                      .typeName=leaf_name, .isMutable=false,
+					                      .offset=offset, .size=8,
+					                      .count=count, .elemKind="prim", .stride=stride});
+					offset += 8;
+					maxAlign = max(maxAlign, align);
+					def.hasOwnedArrayFields = true;
+					continue;
+				}
+				// struct leaf ([n]Point) -- deferred to IT-2505
+				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+				exit(1);
 			}
 
 			const json& base = vtype["base-type"];
@@ -578,7 +599,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 		json init;
 		json free_stmt;
 
-		bool useSimpleCalloc = !def.hasOwnedStructFields || inAllocFunc_;
+		bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inAllocFunc_;
 		if (useSimpleCalloc) {
 			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 			json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},

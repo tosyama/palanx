@@ -172,13 +172,19 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	json fields = json::array();
 	for (auto& f : def.fields) {
 		// LCOV_EXCL_EXCEPTION_BR_START
-		fields.push_back({
+		json fj = {
 			{"name",      f.name},
 			{"type-kind", f.typeKind},
 			{"type-name", f.typeName},
 			{"offset",    f.offset},
 			{"size",      f.size}
-		});
+		};
+		if (f.typeKind == "embed-arr" || f.typeKind == "arr-ptr" || f.typeKind == "embed-ptr-arr") {
+			fj["count"]     = f.count;
+			fj["elem-kind"] = f.elemKind;
+			fj["mutable"]   = f.isMutable;
+		}
+		fields.push_back(move(fj));
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 	}
 	json owned = json::array();
@@ -196,13 +202,27 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 		recordAllocShape(f.typeName);
 	}
+	json ownedArr = json::array();
+	for (auto& f : def.fields) {
+		if (f.typeKind != "arr-ptr") continue;
+		// LCOV_EXCL_EXCEPTION_BR_START
+		ownedArr.push_back({
+			{"name",      f.name},
+			{"offset",    f.offset},
+			{"elem-kind", f.elemKind},
+			{"leaf-name", f.typeName},
+			{"count",     f.count}
+		});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
 	// LCOV_EXCL_EXCEPTION_BR_START
 	sa["alloc-shapes"].push_back({
-		{"shape-kind",   "struct"},
-		{"shape-name",   name},
-		{"total-size",   def.totalSize},
-		{"fields",       move(fields)},
-		{"owned-fields", move(owned)}
+		{"shape-kind",         "struct"},
+		{"shape-name",         name},
+		{"total-size",         def.totalSize},
+		{"fields",             move(fields)},
+		{"owned-fields",       move(owned)},
+		{"owned-array-fields", move(ownedArr)}
 	});
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
