@@ -2391,3 +2391,58 @@ TEST(sa, owned_prim_arr_field)
 	ASSERT_EQ(ownedArr[0]["leaf-name"], "int64");
 	ASSERT_EQ(ownedArr[0]["count"], 3);
 }
+
+TEST(sa, owned_struct_arr_field)
+{
+	// type Point { int64 x; int64 y; }; type Cluster { [4]Point pts; }; Cluster c;
+	// Covers: buildStructDef "arr" branch, non-embedded case, struct-leaf owned
+	// pointer array field (arr-ptr typeKind, elemKind=="struct"), recordAllocShape
+	// registering an "arr-struct" shape (arr_Point) alongside the "struct" shapes.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/113_owned_struct_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Cluster c; -> __pln_alloc_Cluster() (not calloc)
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "c");
+	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Cluster");
+	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_TRUE(v["init"]["args"].empty());
+
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_GE(shapes.size(), 3u);
+
+	auto point_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
+		return s.value("shape-kind","") == "struct" && s.value("shape-name","") == "Point";
+	});
+	ASSERT_NE(point_it, shapes.end());
+
+	auto arr_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
+		return s.value("shape-kind","") == "arr-struct";
+	});
+	ASSERT_NE(arr_it, shapes.end());
+	ASSERT_EQ((*arr_it)["shape-key"],   "arr_Point");
+	ASSERT_EQ((*arr_it)["struct-name"], "Point");
+
+	auto cluster_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
+		return s.value("shape-kind","") == "struct" && s.value("shape-name","") == "Cluster";
+	});
+	ASSERT_NE(cluster_it, shapes.end());
+	ASSERT_EQ((*cluster_it)["total-size"], 8);
+	ASSERT_EQ((*cluster_it)["owned-fields"].size(), 0u);
+
+	const auto& fields = (*cluster_it)["fields"];
+	ASSERT_EQ(fields[0]["name"], "pts");
+	ASSERT_EQ(fields[0]["type-kind"], "arr-ptr");
+	ASSERT_EQ(fields[0]["type-name"], "Point");
+	ASSERT_EQ(fields[0]["count"], 4);
+	ASSERT_EQ(fields[0]["elem-kind"], "struct");
+
+	const auto& ownedArr = (*cluster_it)["owned-array-fields"];
+	ASSERT_EQ(ownedArr.size(), 1u);
+	ASSERT_EQ(ownedArr[0]["name"], "pts");
+	ASSERT_EQ(ownedArr[0]["offset"], 0);
+	ASSERT_EQ(ownedArr[0]["elem-kind"], "struct");
+	ASSERT_EQ(ownedArr[0]["leaf-name"], "Point");
+	ASSERT_EQ(ownedArr[0]["count"], 4);
+}

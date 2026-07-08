@@ -459,6 +459,18 @@ TEST(build_mgr, owned_prim_arr_field) {
 	ASSERT_EQ(output, "ok\n");
 }
 
+TEST(build_mgr, owned_struct_arr_field) {
+	// type Point { int64 x; int64 y; }; type Cluster { [4]Point pts; }; Cluster c;
+	// Declaration-only: proves __pln_alloc_Cluster/__pln_free_Cluster cascade into
+	// the existing __pln_alloc_arr_Point/__pln_free_arr_Point (v0.1.24 IT-2407 asset),
+	// including the forward reference from __pln_alloc_Cluster to __pln_alloc_arr_Point
+	// (which is emitted later in the same generated file). Element access is
+	// deferred to IT-2506+.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/070_owned_struct_arr_field.pa");
+	ASSERT_EQ(output, "ok\n");
+}
+
 static pair<int,int> parseMtraceLog(const string& traceFile) {
 	string log = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;

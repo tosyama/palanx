@@ -128,9 +128,18 @@ static StructDef buildStructDef(const string& name,
 					def.hasOwnedArrayFields = true;
 					continue;
 				}
-				// struct leaf ([n]Point) -- deferred to IT-2505
-				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
-				exit(1);
+				// struct leaf ([n]Point): owned pointer array, cascades to
+				// __pln_alloc_arr_T/__pln_free_arr_T (v0.1.24 IT-2407 asset)
+				int align = 8;
+				offset = alignUp(offset, align);
+				def.fields.push_back({.name=fieldName, .typeKind="arr-ptr",
+				                      .typeName=leaf_name, .isMutable=false,
+				                      .offset=offset, .size=8,
+				                      .count=count, .elemKind="struct", .stride=8});
+				offset += 8;
+				maxAlign = max(maxAlign, align);
+				def.hasOwnedArrayFields = true;
+				continue;
 			}
 
 			const json& base = vtype["base-type"];

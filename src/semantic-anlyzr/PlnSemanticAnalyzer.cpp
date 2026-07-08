@@ -214,6 +214,20 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 			{"count",     f.count}
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
+		if (f.elemKind == "struct") {
+			recordAllocShape(f.typeName);
+			string shape_key = "arr_" + f.typeName;
+			if (!allocShapeNames_.count(shape_key)) {
+				allocShapeNames_.insert(shape_key);
+				// LCOV_EXCL_EXCEPTION_BR_START
+				sa["alloc-shapes"].push_back({
+					{"shape-kind",   "arr-struct"},
+					{"shape-key",    shape_key},
+					{"struct-name",  f.typeName}
+				});
+				// LCOV_EXCL_EXCEPTION_BR_STOP
+			}
+		}
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
 	sa["alloc-shapes"].push_back({

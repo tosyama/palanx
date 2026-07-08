@@ -279,8 +279,11 @@ int main(int argc, char* argv[])
 							string leaf = af["leaf-name"];
 							out << "    __pln_alloc_arr_prim_" << leaf << "(" << count
 							    << ") -> p." << fname << ";\n";
+						} else { // struct leaf
+							string sname = af["leaf-name"];
+							out << "    __pln_alloc_arr_" << sname << "(" << count
+							    << ") -> p." << fname << ";\n";
 						}
-						// elem-kind == "struct" handled by IT-2505
 					}
 					out << "}\n";
 
@@ -291,6 +294,10 @@ int main(int argc, char* argv[])
 						if (af["elem-kind"] == "prim") {
 							string leaf = af["leaf-name"];
 							out << "    __pln_free_arr_prim_" << leaf << "(p." << fname << ");\n";
+						} else { // struct leaf
+							string sname = af["leaf-name"];
+							int64_t count = af["count"].get<int64_t>();
+							out << "    __pln_free_arr_" << sname << "(p." << fname << ", " << count << ");\n";
 						}
 					}
 					for (auto& of : owned) {
