@@ -47,6 +47,28 @@ class PlnLexer;
 		"flo32", "flo64"
 	};
 
+	// Convert a `kind`-tagged store_loc intermediate node into an `expr-type`-tagged
+	// expression node, recursively (needed since a store_loc base can itself be a
+	// field access, e.g. `s.f[0]`).
+	static json storeLocToExpr(const json& loc)
+	{
+		string kind = loc.value("kind", "");
+		json e;
+		if (kind == "var") {
+			e = {{"expr-type", "id"}, {"name", loc["name"]}};
+		} else if (kind == "arr-index") {
+			e = {{"expr-type", "arr-index"},
+			     {"array", loc["array"]}, {"index", loc["index"]}};
+		} else if (kind == "field") {
+			e = {{"expr-type", "field-access"},
+			     {"object", storeLocToExpr(loc["base"])}, {"field", loc["field"]}};
+		} else {
+			e = {{"expr-type", "not-impl"}};
+		}
+		if (loc.contains("loc")) e["loc"] = loc["loc"];
+		return e;
+	}
+
 	int yylex(
 		palan::PlnParser::value_type* yylval,
 		palan::PlnParser::location_type* location,
@@ -838,21 +860,10 @@ dict_items: ID ':' expression
 
 store_loc
 	: ID
-	{ $$ = {{"kind", "var"}, {"name", move($1)}}; }
+	{ $$ = {{"kind", "var"}, {"name", move($1)}}; LOC($$, @$); }
 	| store_loc '[' expression ']'
 	{
-		json array_expr;
-		if ($1["kind"] == "var") {
-			array_expr = {{"expr-type", "id"}, {"name", $1["name"]}};
-			LOC(array_expr, @1);
-		} else {
-			array_expr = {
-				{"expr-type", "arr-index"},
-				{"array", $1["array"]},
-				{"index", $1["index"]}
-			};
-			if ($1.contains("loc")) array_expr["loc"] = $1["loc"];
-		}
+		json array_expr = storeLocToExpr($1);
 		$$ = {{"kind", "arr-index"}, {"array", move(array_expr)}, {"index", move($3)}};
 		LOC($$, @$);
 	}
