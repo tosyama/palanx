@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+type Ring { [4]@!Point nodes; };
+Point p;
+99 -> p.x;
+Ring r;
+p -> r.nodes[0];
+printf("%ld\n", r.nodes[0].x);

@@ -227,6 +227,7 @@ void PlnX86CodeGen::emit(const VProg& prog)
             else if (auto* c  = std::get_if<CalcAddrIdx>  (&instr)) emitInstrCalcAddrIdx(*c, rm);
             else if (auto* i  = std::get_if<DerefLoad>    (&instr)) emitInstrDerefLoad(*i,  rm);
             else if (auto* i  = std::get_if<DerefStore>   (&instr)) emitInstrDerefStore(*i, rm);
+            else if (auto* i  = std::get_if<CalcAddr>     (&instr)) emitInstrCalcAddr(*i, rm);
             // BlockEnter and BlockLeave are no-ops
         }
     }
@@ -775,6 +776,30 @@ void PlnX86CodeGen::emitInstrDerefLoad(const DerefLoad& dl, const RegMap& rm)
         out << "\t" << mov << " " << addr << ", " << scratch << "\n";
         out << "\t" << mov << " " << scratch << ", "
             << dst_loc.stackOffset << "(%rbp)\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrCalcAddr(const CalcAddr& ca, const RegMap& rm)
+{
+    if (!rm.count(ca.dst) || !rm.count(ca.ptr)) return;
+    const PhysLoc& ptr_loc = rm.at(ca.ptr);
+    const PhysLoc& dst_loc = rm.at(ca.dst);
+
+    string ptr_reg;
+    if (!ptr_loc.isStack()) {
+        ptr_reg = ptr_loc.base;
+    } else {
+        out << "\tmovq " << ptr_loc.stackOffset << "(%rbp), %r10\n";
+        ptr_reg = "%r10";
+    }
+
+    string addr = (ca.offset ? std::to_string(ca.offset) : "") + "(" + ptr_reg + ")";
+
+    if (!dst_loc.isStack()) {
+        out << "\tleaq " << addr << ", " << dst_loc.base << "\n";
+    } else {
+        out << "\tleaq " << addr << ", %r11\n";
+        out << "\tmovq %r11, " << dst_loc.stackOffset << "(%rbp)\n";
     }
 }
 

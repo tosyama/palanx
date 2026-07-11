@@ -48,6 +48,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrCalcAddrIdx(const CalcAddrIdx& ca, const RegMap& rm);
     void emitInstrDerefLoad (const DerefLoad&  dl, const RegMap& rm);
     void emitInstrDerefStore(const DerefStore& ds, const RegMap& rm);
+    void emitInstrCalcAddr  (const CalcAddr&   ca, const RegMap& rm);
 
 public:
     explicit PlnX86CodeGen(std::ostream& out) : out(out) {}

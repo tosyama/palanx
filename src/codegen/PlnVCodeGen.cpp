@@ -225,7 +225,10 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             auto& e   = static_cast<const FieldAccessExpr&>(expr);
             VReg  ptr = e.ptrExpr ? lowerExpr(*e.ptrExpr, func) : findVar(e.varName);
             VReg  dst = allocVReg();
-            func.instrs.push_back(DerefLoad{dst, ptr, e.offset, e.type});
+            if (e.addrOnly)
+                func.instrs.push_back(CalcAddr{dst, ptr, e.offset});
+            else
+                func.instrs.push_back(DerefLoad{dst, ptr, e.offset, e.type});
             return dst;
         }
         default:

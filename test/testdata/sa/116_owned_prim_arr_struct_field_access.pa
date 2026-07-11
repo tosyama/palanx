@@ -1,0 +1,10 @@
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+type Bucket { [3]int64 vals; };
+func test() {
+    Bucket b;
+    1 -> b.vals[0];
+    printf("%ld\n", b.vals[0]);
+    return;
+}
+test();

@@ -169,8 +169,13 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         } else {
             e->scale_expr = deserializeExpr(es);  // variable inner dim: mul expression
         }
-        // Row access on embedded 2D array: compute address, do not dereference.
-        e->addrOnly = j["array"]["value-type"].value("embedded", false);
+        // Row access on embedded array (struct-leaf or 2D row): compute address, do
+        // not dereference. Distinguish from a 1D primitive-leaf embedded array field
+        // (IT-2507), whose arr-index result is a scalar (not a pntr) and therefore
+        // needs an actual load.
+        bool arrayEmbedded = j["array"]["value-type"].value("embedded", false);
+        bool resultIsPntr  = j["value-type"].value("type-kind", "") == "pntr";
+        e->addrOnly = arrayEmbedded && resultIsPntr;
         e->type     = toVRegType(j["value-type"]);
         e->idx_type = toVRegType(j["index"]["value-type"]);
         return e;
@@ -182,8 +187,9 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
             e->ptrExpr = deserializeExpr(j["ptr-expr"]);
         else
             e->varName = j["var"];
-        e->offset = j["offset"];
-        e->type   = toVRegType(j["value-type"]);
+        e->offset   = j["offset"];
+        e->type     = toVRegType(j["value-type"]);
+        e->addrOnly = j.value("addr-only", false);
         return e;
     }
 

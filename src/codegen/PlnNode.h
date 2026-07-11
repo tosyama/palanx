@@ -276,6 +276,7 @@ struct FieldAccessExpr : Expr {
     unique_ptr<Expr> ptrExpr;
     int              offset;
     VRegType         type;
+    bool             addrOnly = false;  // true: field data is embedded inline; compute ptr+offset, do not load
 };
 
 struct FieldAssignStmt : Stmt {

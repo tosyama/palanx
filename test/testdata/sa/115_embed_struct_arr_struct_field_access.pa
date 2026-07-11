@@ -1,0 +1,12 @@
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+type Polygon { [4]$Point pts; };
+func test() {
+    Polygon poly;
+    10 -> poly.pts[0].x;
+    20 -> poly.pts[0].y;
+    printf("%ld %ld\n", poly.pts[0].x, poly.pts[0].y);
+    return;
+}
+test();

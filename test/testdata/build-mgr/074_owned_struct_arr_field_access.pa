@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+type Cluster { [4]Point pts; };
+Cluster c;
+5 -> c.pts[0].x;
+6 -> c.pts[1].x;
+printf("%ld %ld\n", c.pts[0].x, c.pts[1].x);

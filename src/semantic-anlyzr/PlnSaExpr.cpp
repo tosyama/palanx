@@ -214,10 +214,14 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json vt = fieldValueType(*it);
 		int off = chain.offset + it->offset;
+		// embed-arr/embed-ptr-arr fields are inline data (no pointer is actually
+		// stored at this offset): the field's "value" is its own address, computed
+		// as ptr+offset, not a load of the memory there.
+		bool addrOnly = (it->typeKind == "embed-arr" || it->typeKind == "embed-ptr-arr");
 		if (!chain.isPointerBased)
-			return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt}};
+			return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
 		else
-			return {{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",vt}};
+			return {{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 
 	} else if (expr_type == "arr-index") {
@@ -397,6 +401,22 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 			sa_expr["index"]      = sa_index;
 			sa_expr["elem-size"]  = elem_size_node;
 			sa_expr["value-type"] = row_pntr;
+			return sa_expr;
+		}
+
+		if (elem_type.value("type-kind", "") == "prim"
+				&& !array_type.contains("inner-size") && array_type.contains("stride")) {
+			// [n]$T embedded array field, primitive leaf (IT-2507): data[i] -> scalar
+			// value (stride carried on array_type distinguishes this from the 2D
+			// inner-size row-access case below).
+			int64_t stride = array_type.value("stride", (int64_t)0);
+			json elem_size_node = {
+				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
+			};
+			sa_expr["array"]      = sa_array;
+			sa_expr["index"]      = sa_index;
+			sa_expr["elem-size"]  = elem_size_node;
+			sa_expr["value-type"] = elem_type;
 			return sa_expr;
 		}
 

@@ -471,6 +471,49 @@ TEST(build_mgr, owned_struct_arr_field) {
 	ASSERT_EQ(output, "ok\n");
 }
 
+TEST(build_mgr, embed_prim_arr_field_access) {
+	// type Buf { [4]$int64 data; }; Buf buf; 10->buf.data[0]; 20->buf.data[1];
+	// New 1D primitive embedded array field element access (IT-2507).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/071_embed_prim_arr_field_access.pa");
+	ASSERT_EQ(output, "10 20\n");
+}
+
+TEST(build_mgr, embed_struct_arr_field_access) {
+	// type Point{...}; type Polygon { [4]$Point pts; }; Polygon poly;
+	// Regression test for the IT-2507 FieldAccessExpr addr-only fix: before the fix
+	// this segfaulted at runtime (DerefLoad read the embedded struct's raw bytes as
+	// if they were a stored pointer, instead of computing poly_ptr+offset).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/072_embed_struct_arr_field_access.pa");
+	ASSERT_EQ(output, "10 20\n");
+}
+
+TEST(build_mgr, owned_prim_arr_field_access) {
+	// type Bucket { [3]int64 vals; }; Bucket b; element read/write access (IT-2507).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/073_owned_prim_arr_field_access.pa");
+	ASSERT_EQ(output, "1 2 3\n");
+}
+
+TEST(build_mgr, owned_struct_arr_field_access) {
+	// type Point{...}; type Cluster { [4]Point pts; }; Cluster c; element access (IT-2507).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/074_owned_struct_arr_field_access.pa");
+	ASSERT_EQ(output, "5 6\n");
+}
+
+TEST(build_mgr, embed_ptr_arr_field_access) {
+	// type Point{...}; type Ring { [4]@!Point nodes; }; store then read through a
+	// non-owning pointer-slot array field.
+	// Regression test for the IT-2507 FieldAccessExpr addr-only fix: before the fix
+	// the write `p -> r.nodes[0];` segfaulted (DerefLoad on the freshly-calloc'd
+	// "nodes" field read back 0, collapsing the store address to NULL).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/075_embed_ptr_arr_field_access.pa");
+	ASSERT_EQ(output, "99\n");
+}
+
 static pair<int,int> parseMtraceLog(const string& traceFile) {
 	string log = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;

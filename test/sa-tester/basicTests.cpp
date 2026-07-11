@@ -2446,3 +2446,171 @@ TEST(sa, owned_struct_arr_field)
 	ASSERT_EQ(ownedArr[0]["leaf-name"], "Point");
 	ASSERT_EQ(ownedArr[0]["count"], 4);
 }
+
+TEST(sa, embed_prim_arr_struct_field_access)
+{
+	// type Buf { [4]$int64 data; }; Buf buf; 10->buf.data[0]; printf(buf.data[0],buf.data[1]);
+	// Covers: sa_expr_arr_index new 1D primitive embedded array field branch (IT-2507).
+	// The "array" (buf.data) must be addr-only (FieldAccessExpr computes ptr+offset,
+	// not a load), and the arr-index result itself must be a plain scalar (not pntr)
+	// so the element is actually loaded (DerefLoadIdx), not just addressed.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/114_embed_prim_arr_struct_field_access.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	const auto& target = body[1]["target"];
+	ASSERT_EQ(target["expr-type"], "arr-index");
+	ASSERT_EQ(target["value-type"]["type-kind"], "prim");
+	ASSERT_EQ(target["value-type"]["type-name"], "int64");
+	ASSERT_EQ(target["elem-size"]["value"], "8");
+
+	const auto& arr = target["array"];
+	ASSERT_EQ(arr["expr-type"], "field-access");
+	ASSERT_EQ(arr["addr-only"], true);
+	ASSERT_EQ(arr["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(arr["value-type"]["embedded"], true);
+	ASSERT_EQ(arr["value-type"]["stride"], 8);
+	ASSERT_EQ(arr["value-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(arr["value-type"]["base-type"]["type-name"], "int64");
+
+	// printf args: buf.data[0], buf.data[1] — both scalar arr-index reads
+	const auto& args = body[3]["body"]["args"];
+	ASSERT_EQ(args[1]["value-type"]["type-kind"], "prim");
+	ASSERT_EQ(args[2]["value-type"]["type-kind"], "prim");
+}
+
+TEST(sa, embed_struct_arr_struct_field_access)
+{
+	// type Point{...}; type Polygon { [4]$Point pts; }; Polygon poly;
+	// 10->poly.pts[0].x; 20->poly.pts[0].y; printf(poly.pts[0].x, poly.pts[0].y);
+	// Covers: FieldAccessExpr addr-only fix for embed-arr struct leaf (previously
+	// segfaulted at runtime — DerefLoad was reading raw struct bytes as a pointer
+	// instead of computing poly_ptr+offset). Field-assign/field-access chain through
+	// the arr-index base (poly.pts[0]) must resolve the same way the existing
+	// variable-level embedded struct array (embed_struct_arr_field_access) does.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/115_embed_struct_arr_struct_field_access.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	const auto& fa_x = body[1];
+	ASSERT_EQ(fa_x["stmt-type"], "field-assign");
+	ASSERT_EQ(fa_x["offset"], 0);
+	const auto& pe_x = fa_x["ptr-expr"];
+	ASSERT_EQ(pe_x["expr-type"], "arr-index");
+	ASSERT_EQ(pe_x["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pe_x["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(pe_x["elem-size"]["value"], "16");
+
+	const auto& arr = pe_x["array"];
+	ASSERT_EQ(arr["expr-type"], "field-access");
+	ASSERT_EQ(arr["addr-only"], true);
+	ASSERT_EQ(arr["value-type"]["embedded"], true);
+	ASSERT_EQ(arr["value-type"]["stride"], 16);
+	ASSERT_EQ(arr["value-type"]["base-type"]["type-kind"], "struct");
+
+	const auto& fa_y = body[2];
+	ASSERT_EQ(fa_y["offset"], 8);
+}
+
+TEST(sa, owned_prim_arr_struct_field_access)
+{
+	// type Bucket { [3]int64 vals; }; Bucket b; 1->b.vals[0]; printf(b.vals[0]);
+	// Covers: fieldValueType arr-ptr primitive-leaf fix — base-type must be
+	// {"type-kind":"prim","type-name":"int64"}, not "struct" (the previous default
+	// branch tagged every arr-ptr leaf as a struct, which happened to be harmless
+	// for codegen by luck but was schema-incorrect).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/116_owned_prim_arr_struct_field_access.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	const auto& target = body[1]["target"];
+	ASSERT_EQ(target["value-type"]["type-kind"], "prim");
+	ASSERT_EQ(target["value-type"]["type-name"], "int64");
+
+	const auto& arr = target["array"];
+	ASSERT_EQ(arr["addr-only"], false);
+	ASSERT_FALSE(arr["value-type"].contains("embedded"));
+	ASSERT_EQ(arr["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(arr["value-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(arr["value-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, owned_struct_arr_struct_field_access)
+{
+	// type Point{...}; type Cluster { [4]Point pts; }; Cluster c;
+	// 5->c.pts[0].x; printf(c.pts[0].x);
+	// Covers: fieldValueType arr-ptr struct-leaf fix — field must be double-wrapped
+	// pntr(pntr(struct)) matching the variable-level owned struct array shape
+	// (sa_owned_struct_arr_var_decl), so pts[i] yields pntr(struct) (a real stored
+	// pointer, loaded via DerefLoadIdx) rather than the bare struct type the old
+	// default branch produced (which broke resolveObjectChain's arr-index case).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/117_owned_struct_arr_struct_field_access.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	const auto& fa = body[1];
+	ASSERT_EQ(fa["stmt-type"], "field-assign");
+	ASSERT_EQ(fa["offset"], 0);
+	const auto& pe = fa["ptr-expr"];
+	ASSERT_EQ(pe["expr-type"], "arr-index");
+	ASSERT_EQ(pe["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pe["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(pe["elem-size"]["value"], "8");
+
+	const auto& arr = pe["array"];
+	ASSERT_EQ(arr["addr-only"], false);
+	ASSERT_FALSE(arr["value-type"].contains("embedded"));
+	ASSERT_EQ(arr["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(arr["value-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(arr["value-type"]["base-type"]["base-type"]["type-name"], "Point");
+}
+
+TEST(sa, embed_ptr_arr_struct_field_access)
+{
+	// type Point{...}; type Ring { [4]@!Point nodes; }; Point p; 99->p.x; Ring r;
+	// p->r.nodes[0]; printf(r.nodes[0].x);
+	// Covers: FieldAccessExpr addr-only fix for embed-ptr-arr (previously segfaulted
+	// on the write `p -> r.nodes[0];` — DerefLoad on the freshly-calloc'd "nodes"
+	// field read back 0 instead of computing r_ptr+offset, so the store target
+	// address collapsed to NULL). Also covers write-through then read-back of the
+	// stored pointer's field.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/118_embed_ptr_arr_struct_field_access.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[3]: p -> r.nodes[0]; — arr-assign, target.array is addr-only (embed-ptr-arr)
+	const auto& target = body[3]["target"];
+	ASSERT_EQ(target["expr-type"], "arr-index");
+	ASSERT_EQ(target["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(target["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(target["value-type"]["mutable"], true);
+
+	const auto& arr = target["array"];
+	ASSERT_EQ(arr["expr-type"], "field-access");
+	ASSERT_EQ(arr["addr-only"], true);
+	ASSERT_FALSE(arr["value-type"].contains("embedded"));
+	ASSERT_EQ(arr["value-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(arr["value-type"]["base-type"]["mutable"], true);
+	ASSERT_EQ(arr["value-type"]["base-type"]["base-type"]["type-name"], "Point");
+
+	// body[4]: printf("%ld\n", r.nodes[0].x) — field-access on the arr-index result
+	const auto& fa_read = body[4]["body"]["args"][1];
+	ASSERT_EQ(fa_read["expr-type"], "field-access");
+	ASSERT_EQ(fa_read["offset"], 0);
+	ASSERT_EQ(fa_read["ptr-expr"]["expr-type"], "arr-index");
+}
