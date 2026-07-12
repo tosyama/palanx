@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+type Buf { [4]$int64 data; };
+func test() {
+    Buf buf;
+    printf("%ld\n", buf.data[0].sub);
+    return;
+}
+test();

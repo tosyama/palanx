@@ -651,3 +651,52 @@ TEST(sa_error, recursive_arr_field)
 	ASSERT_NE(sa.find("recursively contains itself"), string::npos);
 }
 
+TEST(sa_error, write_readonly_arr_field_elem)
+{
+	// type Watch { [3]@Point observed; }; p -> w.observed[0]; 42 -> w.observed[0].x;
+	// -- write-through to a non-mutable embed-ptr-arr struct field element
+	// Covers: IT-2508 — resolveStoreLocChain arr-index base case, mutable:false
+	// branch (E_WriteToReadOnlyArrElem), exercised via a struct field (embed-ptr-arr)
+	// rather than a plain variable array (already covered by write_readonly_arr_elem).
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_083_write_readonly_arr_field_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("read-only pointer array element"), string::npos);
+}
+
+TEST(sa_error, field_access_on_prim_arr_field_elem)
+{
+	// type Buf { [4]$int64 data; }; printf("%ld\n", buf.data[0].sub);
+	// -- data[0] is a primitive embed-arr leaf, not a struct pointer
+	// Covers: IT-2508 — sa_expr_arr_index primitive leaf branch (IT-2507) feeding
+	// into resolveObjectChain's arr-index base case, non-struct value-type branch
+	// (E_FieldAccessOnNonStruct), exercised via an embedded struct field array
+	// rather than a plain variable array (already covered by
+	// field_access_on_arr_index_non_struct).
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_084_field_access_on_prim_arr_field_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+
+TEST(sa_error, field_assign_on_prim_arr_field_elem)
+{
+	// type Buf { [4]$int64 data; }; 10 -> buf.data[0].sub;
+	// -- same as field_access_on_prim_arr_field_elem but through the write side
+	// Covers: IT-2508 — resolveStoreLocChain arr-index base case, non-struct
+	// value-type branch (E_FieldAccessOnNonStruct), via embedded struct field array.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_085_field_assign_on_prim_arr_field_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+

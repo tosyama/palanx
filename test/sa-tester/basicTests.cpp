@@ -2614,3 +2614,34 @@ TEST(sa, embed_ptr_arr_struct_field_access)
 	ASSERT_EQ(fa_read["offset"], 0);
 	ASSERT_EQ(fa_read["ptr-expr"]["expr-type"], "arr-index");
 }
+
+TEST(sa, field_arr_readonly_ptr_slot)
+{
+	// type Point{...}; type Watch { [3]@Point observed; }; Point p; 99->p.x; Watch w;
+	// p->w.observed[0]; printf(w.observed[0].x);
+	// Covers: IT-2508 — same embed-ptr-arr shape as embed_ptr_arr_struct_field_access
+	// (118) but with the non-mutable `@T` slot instead of `@!T`, confirming that
+	// assignment into the pointer slot itself is unaffected by the mutable flag
+	// (only write-through to the pointee's fields is restricted; see
+	// write_readonly_arr_field_elem for the rejected case).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/119_field_arr_readonly_ptr_slot.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_FALSE(jout["functions"].empty());
+	const auto& body = jout["functions"][0]["body"];
+
+	// body[3]: p -> w.observed[0]; — arr-assign is allowed regardless of mutable flag
+	const auto& target = body[3]["target"];
+	ASSERT_EQ(target["expr-type"], "arr-index");
+	ASSERT_EQ(target["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(target["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(target["value-type"]["mutable"], false);
+
+	// body[4]: printf("%ld\n", w.observed[0].x) — read-through is allowed too
+	const auto& fa_read = body[4]["body"]["args"][1];
+	ASSERT_EQ(fa_read["expr-type"], "field-access");
+	ASSERT_EQ(fa_read["offset"], 0);
+	ASSERT_EQ(fa_read["ptr-expr"]["expr-type"], "arr-index");
+	ASSERT_EQ(fa_read["ptr-expr"]["value-type"]["mutable"], false);
+}
