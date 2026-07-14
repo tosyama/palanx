@@ -12,6 +12,7 @@
 #include "PlnDeserialize.h"
 #include "PlnVCodeGen.h"
 #include "PlnX86CodeGen.h"
+#include "PlnRegAlloc.h"
 #include "PlnCodegenMessage.h"
 
 using namespace std;
@@ -89,8 +90,13 @@ int main(int argc, char* argv[])
 	PlnVCodeGen vgen;
 	VProg vprog = vgen.generate(module, no_entry);
 
+	vector<RegAllocResult> allocs;
+	allocs.reserve(vprog.funcs.size());
+	for (auto& func : vprog.funcs)
+		allocs.push_back(allocateRegisters(func, PlnX86CodeGen::x86PhysRegs));
+
 	PlnX86CodeGen codegen(asmfile);
-	codegen.emit(vprog);
+	codegen.emit(vprog, allocs);
 
 	return 0;
 }

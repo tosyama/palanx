@@ -6,11 +6,12 @@
 #pragma once
 #include <string>
 #include "PlnVProg.h"
+#include "PlnRegAlloc.h"
 
 using std::string;
 
 class PlnCodeGen {
 public:
     virtual ~PlnCodeGen() = default;
-    virtual void emit(const VProg& prog) = 0;
+    virtual void emit(const VProg& prog, const vector<RegAllocResult>& allocs) = 0;
 };

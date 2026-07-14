@@ -165,13 +165,13 @@ static string srcOperand(const PhysLoc& loc)
 }
 
 // x86-64 System V ABI physical register lists
-static const PhysRegs x86PhysRegs = {
+const PhysRegs PlnX86CodeGen::x86PhysRegs = {
     { "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9" },
     { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" },
     { "%rbx", "%r12", "%r13", "%r14", "%r15" }
 };
 
-void PlnX86CodeGen::emit(const VProg& prog)
+void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs)
 {
     if (!prog.data.empty() || !prog.floatData.empty() || prog.needsF32Neg || prog.needsF64Neg) {
         emitSection(".rodata");
@@ -191,13 +191,14 @@ void PlnX86CodeGen::emit(const VProg& prog)
     }
 
     emitSection(".text");
-    for (auto& func : prog.funcs) {
+    for (size_t idx = 0; idx < prog.funcs.size(); ++idx) {
+        const VFunc& func = prog.funcs[idx];
+        const RegAllocResult& ra = allocs[idx];
+        const RegMap& rm  = ra.regMap;
+
         if (func.isEntry || func.isExport)
             emitGlobal(func.name);
         emitLabel(func.name);
-
-        RegAllocResult ra = allocateRegisters(func, x86PhysRegs);
-        const RegMap& rm  = ra.regMap;
 
         emitFuncPrologue(func, ra, rm);
 
