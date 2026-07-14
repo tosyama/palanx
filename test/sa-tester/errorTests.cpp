@@ -700,3 +700,45 @@ TEST(sa_error, field_assign_on_prim_arr_field_elem)
 	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
 }
 
+TEST(sa_error, struct_arr_ptr_field_unknown_prim_type)
+{
+	// type T { [4]NoSuchType field; }; -- [n]T owned pointer array, prim leaf unknown
+	// Covers: buildStructDef "arr" branch, non-embedded arr-ptr prim-leaf case,
+	// E_UnknownStructType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_086_arr_ptr_field_unknown_prim_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+}
+
+TEST(sa_error, struct_embed_arr_field_unknown_prim_type)
+{
+	// type T { [4]$NoSuchType field; }; -- [n]$T embed-arr, prim leaf unknown
+	// Covers: buildStructDef "arr" branch, embed-arr prim-leaf case,
+	// E_UnknownStructType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_087_embed_arr_field_unknown_prim_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+}
+
+TEST(sa_error, struct_nested_embed_arr_field_unsupported)
+{
+	// type T { [4]$[2]int64 field; }; -- [n]$[m]T nested embed array, not supported
+	// Covers: buildStructDef "arr" branch, embed-arr leaf-kind chain final else
+	// (base_kind=="arr"), E_UnsupportedStructFieldType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_088_nested_embed_arr_field_unsupported.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unsupported struct field type"), string::npos);
+}
+

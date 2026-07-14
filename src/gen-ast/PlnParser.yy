@@ -63,7 +63,8 @@ class PlnLexer;
 			e = {{"expr-type", "field-access"},
 			     {"object", storeLocToExpr(loc["base"])}, {"field", loc["field"]}};
 		} else {
-			e = {{"expr-type", "not-impl"}};
+			// Unreachable: store_loc productions only ever yield var/arr-index/field.
+			e = {{"expr-type", "not-impl"}}; // LCOV_EXCL_LINE
 		}
 		if (loc.contains("loc")) e["loc"] = loc["loc"];
 		return e;

@@ -723,6 +723,31 @@ TEST(build_mgr, mixed_owned_and_owned_arr_field_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, owned_and_embed_arr_mixed_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_owned_and_embed_arr_mixed_mtrace_bin "
+		"../test/testdata/build-mgr/082_owned_and_embed_arr_mixed_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_owned_and_embed_arr_mixed_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_owned_and_embed_arr_mixed_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Widget { [2]Point owned_pts; [3]int64 owned_vals; [2]int64 owned_more;
+	//          [3]$Point tris; [4]@!Point slots; }:
+	// Widget calloc(1) + owned_pts __pln_alloc_arr_Point(2): ptr-array malloc(1) +
+	// 2 element callocs(2) + owned_vals __pln_alloc_arr_prim_int64 malloc(1) +
+	// owned_more __pln_alloc_arr_prim_int64 malloc(1) (shared allocator, dedup'd) = 6.
+	// tris (embed-arr) and slots (embed-ptr-arr) are embedded in Widget's own
+	// calloc block, so they add no separate allocations.
+	EXPECT_EQ(allocs, 6) << "expected 6 allocs for Widget with mixed owned/embed arr fields, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
