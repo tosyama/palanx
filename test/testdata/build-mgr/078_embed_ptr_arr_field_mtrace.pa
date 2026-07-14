@@ -1,0 +1,13 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+type Ring { [4]@!Point nodes; };
+Point p;
+99 -> p.x;
+mtrace();
+{
+    Ring r;
+    p -> r.nodes[0];
+    printf("%ld\n", r.nodes[0].x);
+}
+muntrace();

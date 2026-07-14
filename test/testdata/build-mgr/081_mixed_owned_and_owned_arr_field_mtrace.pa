@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+type Mixed { Point single; [2]Point arr; };
+mtrace();
+{
+    Mixed m;
+    printf("ok\n");
+}
+muntrace();

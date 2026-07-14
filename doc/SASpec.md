@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.23
+ver. 0.1.25
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -16,32 +16,53 @@ Root
 - statements\* - Top-level statement list
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
-  Two entry kinds:
+  Three entry kinds:
 
   **Array entry** (multi-dimensional arrays):
   - shape-key\* - Shape key string (e.g. "arr\_arr\_int32")
   - leaf-type\* - Innermost element type name (e.g. "int32")
   - depth\* - Nesting depth integer (currently always 2 for `[m][n]T`)
 
-  **Struct entry** (structs with owned struct-pointer fields):
+  **Arr-struct entry** (dependency marker for struct-leaf owned array fields, `[n]T field`
+  where `T` is a struct): emitted so build-mgr generates/compiles the shared
+  `__pln_alloc_arr_T`/`__pln_free_arr_T` pair (reused from the v0.1.24 struct array variable
+  feature) before any struct that has an owned array field of leaf type `T`:
+  - shape-kind\* - "arr-struct"
+  - shape-key\* - Shape key string (e.g. "arr\_Point")
+  - struct-name\* - Leaf struct type name (e.g. "Point")
+
+  **Struct entry** (structs with owned struct-pointer fields and/or array fields):
   - shape-kind\* - "struct"
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
-  - fields\* - All field descriptors (prim, embed, struct-ptr, raw-ptr)
+  - fields\* - All field descriptors (prim, embed, struct-ptr, raw-ptr, embed-arr, arr-ptr, embed-ptr-arr)
     - name\* - Field name string
-    - type-kind\* - Field type kind string ("prim", "embed", "struct-ptr", "raw-ptr")
-    - type-name\* - Type name string (primitive name or struct name)
+    - type-kind\* - Field type kind string ("prim", "embed", "struct-ptr", "raw-ptr", "embed-arr", "arr-ptr", "embed-ptr-arr")
+    - type-name\* - Type name string (primitive name or struct name; for array-kind fields, the leaf element's type name)
     - offset\* - Byte offset within the struct
     - size\* - Field size in bytes
+    - count - Element count integer; present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr"
+    - elem-kind - Leaf kind string ("prim" or "struct"); present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr"
+    - mutable - Boolean; present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr" (meaningful only for "embed-ptr-arr": `@T`=false, `@!T`=true; always false for the other two kinds)
   - owned-fields\* - Fields that require a sub-allocator (type-kind "struct-ptr"); empty array if none
     - name\* - Field name string
     - offset\* - Byte offset within the struct
     - struct-name\* - Sub-struct type name
     - struct-total-size\* - Sub-struct total size in bytes
     - needs-alloc\* - Boolean; true if the sub-struct itself has owned-fields requiring `__pln_alloc_*`
+  - owned-array-fields\* - Fields that require a cascaded array allocator (type-kind "arr-ptr", i.e. `[n]T field`); empty array if none
+    - name\* - Field name string
+    - offset\* - Byte offset within the struct
+    - elem-kind\* - Leaf kind string ("prim" or "struct")
+    - leaf-name\* - Leaf element type name (primitive name or struct name)
+    - count\* - Element count integer
 
-  Struct entries are ordered leaf-first (topological order) so build-mgr can generate and compile
-  allocators in dependency order.
+  Struct entries (and their leaf-first "arr-struct"/struct dependencies) are ordered leaf-first
+  (topological order) so build-mgr can generate and compile allocators in dependency order.
+  Primitive-leaf owned array fields (`elem-kind: "prim"` in `owned-array-fields`) do not get a
+  dedicated SA-emitted shape entry — build-mgr groups and deduplicates them by `leaf-name`
+  directly from `owned-array-fields` when generating the shared
+  `__pln_alloc_arr_prim_*`/`__pln_free_arr_prim_*` pair.
 
 String literal table entry
 --------------------------
