@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+type Bucket { [3]int64 vals; };
+Bucket b;
+printf("ok\n");

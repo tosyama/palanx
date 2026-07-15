@@ -449,6 +449,71 @@ TEST(build_mgr, at_bang_struct_arr) {
 	ASSERT_EQ(output, "42 20\n");
 }
 
+TEST(build_mgr, owned_prim_arr_field) {
+	// type Bucket { [3]int64 vals; }; Bucket b;
+	// Declaration-only: proves __pln_alloc_Bucket/__pln_free_Bucket and the shared
+	// __pln_alloc_arr_prim_int64/__pln_free_arr_prim_int64 allocators are generated,
+	// compile, link, and run without crashing. Element access is deferred to IT-2506+.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/069_owned_prim_arr_field.pa");
+	ASSERT_EQ(output, "ok\n");
+}
+
+TEST(build_mgr, owned_struct_arr_field) {
+	// type Point { int64 x; int64 y; }; type Cluster { [4]Point pts; }; Cluster c;
+	// Declaration-only: proves __pln_alloc_Cluster/__pln_free_Cluster cascade into
+	// the existing __pln_alloc_arr_Point/__pln_free_arr_Point (v0.1.24 IT-2407 asset),
+	// including the forward reference from __pln_alloc_Cluster to __pln_alloc_arr_Point
+	// (which is emitted later in the same generated file). Element access is
+	// deferred to IT-2506+.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/070_owned_struct_arr_field.pa");
+	ASSERT_EQ(output, "ok\n");
+}
+
+TEST(build_mgr, embed_prim_arr_field_access) {
+	// type Buf { [4]$int64 data; }; Buf buf; 10->buf.data[0]; 20->buf.data[1];
+	// New 1D primitive embedded array field element access (IT-2507).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/071_embed_prim_arr_field_access.pa");
+	ASSERT_EQ(output, "10 20\n");
+}
+
+TEST(build_mgr, embed_struct_arr_field_access) {
+	// type Point{...}; type Polygon { [4]$Point pts; }; Polygon poly;
+	// Regression test for the IT-2507 FieldAccessExpr addr-only fix: before the fix
+	// this segfaulted at runtime (DerefLoad read the embedded struct's raw bytes as
+	// if they were a stored pointer, instead of computing poly_ptr+offset).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/072_embed_struct_arr_field_access.pa");
+	ASSERT_EQ(output, "10 20\n");
+}
+
+TEST(build_mgr, owned_prim_arr_field_access) {
+	// type Bucket { [3]int64 vals; }; Bucket b; element read/write access (IT-2507).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/073_owned_prim_arr_field_access.pa");
+	ASSERT_EQ(output, "1 2 3\n");
+}
+
+TEST(build_mgr, owned_struct_arr_field_access) {
+	// type Point{...}; type Cluster { [4]Point pts; }; Cluster c; element access (IT-2507).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/074_owned_struct_arr_field_access.pa");
+	ASSERT_EQ(output, "5 6\n");
+}
+
+TEST(build_mgr, embed_ptr_arr_field_access) {
+	// type Point{...}; type Ring { [4]@!Point nodes; }; store then read through a
+	// non-owning pointer-slot array field.
+	// Regression test for the IT-2507 FieldAccessExpr addr-only fix: before the fix
+	// the write `p -> r.nodes[0];` segfaulted (DerefLoad on the freshly-calloc'd
+	// "nodes" field read back 0, collapsing the store address to NULL).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/075_embed_ptr_arr_field_access.pa");
+	ASSERT_EQ(output, "99\n");
+}
+
 static pair<int,int> parseMtraceLog(const string& traceFile) {
 	string log = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;
@@ -536,6 +601,149 @@ TEST(build_mgr, at_bang_struct_arr_mtrace) {
 	auto [allocs, frees] = parseMtraceLog(traceFile);
 	// [4]@!Point wpts: 1 malloc (ptr array), 1 free; Point p is outside mtrace scope
 	EXPECT_EQ(allocs, 1) << "expected 1 malloc for [4]@!Point wpts, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, embed_prim_arr_field_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_embed_prim_arr_field_mtrace_bin "
+		"../test/testdata/build-mgr/076_embed_prim_arr_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_embed_prim_arr_field_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_embed_prim_arr_field_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Buf { [4]$int64 data; }: 1 calloc (Buf itself; data embedded in same block)
+	EXPECT_EQ(allocs, 1) << "expected 1 alloc for Buf { [4]$int64 data; }, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, embed_struct_arr_field_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_embed_struct_arr_field_mtrace_bin "
+		"../test/testdata/build-mgr/077_embed_struct_arr_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_embed_struct_arr_field_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_embed_struct_arr_field_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Polygon { [4]$Point pts; }: 1 calloc (Polygon itself; pts embedded in same block)
+	EXPECT_EQ(allocs, 1) << "expected 1 alloc for Polygon { [4]$Point pts; }, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, embed_ptr_arr_field_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_embed_ptr_arr_field_mtrace_bin "
+		"../test/testdata/build-mgr/078_embed_ptr_arr_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_embed_ptr_arr_field_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_embed_ptr_arr_field_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Ring { [4]@!Point nodes; }: 1 calloc (Ring itself; nodes are embedded ptr slots);
+	// Point p is outside mtrace scope
+	EXPECT_EQ(allocs, 1) << "expected 1 alloc for Ring { [4]@!Point nodes; }, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, owned_prim_arr_field_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_owned_prim_arr_field_mtrace_bin "
+		"../test/testdata/build-mgr/079_owned_prim_arr_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_owned_prim_arr_field_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_owned_prim_arr_field_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Bucket { [3]int64 vals; }: Bucket calloc(1) + __pln_alloc_arr_prim_int64 malloc(1) = 2
+	EXPECT_EQ(allocs, 2) << "expected 2 allocs for Bucket { [3]int64 vals; }, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, owned_struct_arr_field_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_owned_struct_arr_field_mtrace_bin "
+		"../test/testdata/build-mgr/080_owned_struct_arr_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_owned_struct_arr_field_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_owned_struct_arr_field_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Cluster { [2]Point pts; }: Cluster calloc(1) + __pln_alloc_arr_Point(2):
+	// ptr-array malloc(1) + 2 element callocs = 4
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs for Cluster { [2]Point pts; }, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, mixed_owned_and_owned_arr_field_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_mixed_owned_and_owned_arr_field_mtrace_bin "
+		"../test/testdata/build-mgr/081_mixed_owned_and_owned_arr_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_mixed_owned_and_owned_arr_field_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_mixed_owned_and_owned_arr_field_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Mixed { Point single; [2]Point arr; }: Mixed calloc(1) + single-field
+	// __pln_alloc_Point calloc(1) + arr-field __pln_alloc_arr_Point:
+	// ptr-array malloc(1) + 2 element callocs = 5
+	EXPECT_EQ(allocs, 5) << "expected 5 allocs for Mixed { Point single; [2]Point arr; }, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, owned_and_embed_arr_mixed_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_owned_and_embed_arr_mixed_mtrace_bin "
+		"../test/testdata/build-mgr/082_owned_and_embed_arr_mixed_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_owned_and_embed_arr_mixed_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_owned_and_embed_arr_mixed_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Widget { [2]Point owned_pts; [3]int64 owned_vals; [2]int64 owned_more;
+	//          [3]$Point tris; [4]@!Point slots; }:
+	// Widget calloc(1) + owned_pts __pln_alloc_arr_Point(2): ptr-array malloc(1) +
+	// 2 element callocs(2) + owned_vals __pln_alloc_arr_prim_int64 malloc(1) +
+	// owned_more __pln_alloc_arr_prim_int64 malloc(1) (shared allocator, dedup'd) = 6.
+	// tris (embed-arr) and slots (embed-ptr-arr) are embedded in Widget's own
+	// calloc block, so they add no separate allocations.
+	EXPECT_EQ(allocs, 6) << "expected 6 allocs for Widget with mixed owned/embed arr fields, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }

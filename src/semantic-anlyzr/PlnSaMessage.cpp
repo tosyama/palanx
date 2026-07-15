@@ -171,6 +171,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_WriteToReadOnlyArrElem:
 			return "cannot write through read-only pointer array element; use [n]@!T for mutable.";
 
+		case E_ArrFieldSizeNotConstant:
+			return "struct field array size must be a compile-time constant integer literal.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

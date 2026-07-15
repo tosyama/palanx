@@ -165,13 +165,13 @@ static string srcOperand(const PhysLoc& loc)
 }
 
 // x86-64 System V ABI physical register lists
-static const PhysRegs x86PhysRegs = {
+const PhysRegs PlnX86CodeGen::x86PhysRegs = {
     { "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9" },
     { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" },
     { "%rbx", "%r12", "%r13", "%r14", "%r15" }
 };
 
-void PlnX86CodeGen::emit(const VProg& prog)
+void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs)
 {
     if (!prog.data.empty() || !prog.floatData.empty() || prog.needsF32Neg || prog.needsF64Neg) {
         emitSection(".rodata");
@@ -191,13 +191,14 @@ void PlnX86CodeGen::emit(const VProg& prog)
     }
 
     emitSection(".text");
-    for (auto& func : prog.funcs) {
+    for (size_t idx = 0; idx < prog.funcs.size(); ++idx) {
+        const VFunc& func = prog.funcs[idx];
+        const RegAllocResult& ra = allocs[idx];
+        const RegMap& rm  = ra.regMap;
+
         if (func.isEntry || func.isExport)
             emitGlobal(func.name);
         emitLabel(func.name);
-
-        RegAllocResult ra = allocateRegisters(func, x86PhysRegs);
-        const RegMap& rm  = ra.regMap;
 
         emitFuncPrologue(func, ra, rm);
 
@@ -227,6 +228,7 @@ void PlnX86CodeGen::emit(const VProg& prog)
             else if (auto* c  = std::get_if<CalcAddrIdx>  (&instr)) emitInstrCalcAddrIdx(*c, rm);
             else if (auto* i  = std::get_if<DerefLoad>    (&instr)) emitInstrDerefLoad(*i,  rm);
             else if (auto* i  = std::get_if<DerefStore>   (&instr)) emitInstrDerefStore(*i, rm);
+            else if (auto* i  = std::get_if<CalcAddr>     (&instr)) emitInstrCalcAddr(*i, rm);
             // BlockEnter and BlockLeave are no-ops
         }
     }
@@ -775,6 +777,30 @@ void PlnX86CodeGen::emitInstrDerefLoad(const DerefLoad& dl, const RegMap& rm)
         out << "\t" << mov << " " << addr << ", " << scratch << "\n";
         out << "\t" << mov << " " << scratch << ", "
             << dst_loc.stackOffset << "(%rbp)\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrCalcAddr(const CalcAddr& ca, const RegMap& rm)
+{
+    if (!rm.count(ca.dst) || !rm.count(ca.ptr)) return;
+    const PhysLoc& ptr_loc = rm.at(ca.ptr);
+    const PhysLoc& dst_loc = rm.at(ca.dst);
+
+    string ptr_reg;
+    if (!ptr_loc.isStack()) {
+        ptr_reg = ptr_loc.base;
+    } else {
+        out << "\tmovq " << ptr_loc.stackOffset << "(%rbp), %r10\n";
+        ptr_reg = "%r10";
+    }
+
+    string addr = (ca.offset ? std::to_string(ca.offset) : "") + "(" + ptr_reg + ")";
+
+    if (!dst_loc.isStack()) {
+        out << "\tleaq " << addr << ", " << dst_loc.base << "\n";
+    } else {
+        out << "\tleaq " << addr << ", %r11\n";
+        out << "\tmovq %r11, " << dst_loc.stackOffset << "(%rbp)\n";
     }
 }
 

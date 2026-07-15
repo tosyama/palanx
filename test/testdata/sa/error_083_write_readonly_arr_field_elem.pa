@@ -1,0 +1,11 @@
+cinclude <stdlib.h>;
+type Point { int64 x; int64 y; };
+type Watch { [3]@Point observed; };
+func test() {
+    Point p;
+    Watch w;
+    p -> w.observed[0];
+    42 -> w.observed[0].x;
+    return;
+}
+test();

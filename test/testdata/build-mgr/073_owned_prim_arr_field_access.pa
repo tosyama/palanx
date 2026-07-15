@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+type Bucket { [3]int64 vals; };
+Bucket b;
+1 -> b.vals[0];
+2 -> b.vals[1];
+3 -> b.vals[2];
+printf("%ld %ld %ld\n", b.vals[0], b.vals[1], b.vals[2]);

@@ -1,0 +1,17 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+type Widget {
+    [2]Point owned_pts;
+    [3]int64 owned_vals;
+    [2]int64 owned_more;
+    [3]$Point tris;
+    [4]@!Point slots;
+};
+mtrace();
+{
+    Widget w;
+    5 -> w.tris[0].x;
+    printf("%ld\n", w.tris[0].x);
+}
+muntrace();

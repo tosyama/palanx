@@ -27,6 +27,34 @@ inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
 		return {{"type-kind","prim"},{"type-name",f.typeName}};
+	if (f.typeKind == "embed-arr") {
+		json bt = (f.elemKind == "struct")
+			? json{{"type-kind","struct"},{"type-name",f.typeName}}
+			: json{{"type-kind","prim"},{"type-name",f.typeName}};
+		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"base-type",bt}};
+	}
+	if (f.typeKind == "embed-ptr-arr") {
+		json bt = (f.elemKind == "struct")
+			? json{{"type-kind","struct"},{"type-name",f.typeName}}
+			: json{{"type-kind","prim"},{"type-name",f.typeName}};
+		json elem_pntr = {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
+		return {{"type-kind","pntr"},{"base-type",elem_pntr}};
+	}
+	if (f.typeKind == "arr-ptr") {
+		// Primitive leaf: field is a plain pointer to inline malloc'd values
+		// (pntr(prim)); pts[i] loads the value directly.
+		// Struct leaf: field cascades to __pln_alloc_arr_T, matching the
+		// variable-level owned struct array shape (sa_owned_struct_arr_var_decl) —
+		// a pointer to an array of struct-pointers (pntr(pntr(struct))); pts[i]
+		// loads the i-th element's pointer.
+		if (f.elemKind == "struct") {
+			json struct_type = {{"type-kind","struct"},{"type-name",f.typeName}};
+			json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
+			return {{"type-kind","pntr"},{"base-type",elem_pntr}};
+		}
+		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
+		return {{"type-kind","pntr"},{"base-type",bt}};
+	}
 	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
 	json pntr = {{"type-kind","pntr"},{"base-type",bt}};
 	if (f.typeKind == "raw-ptr")

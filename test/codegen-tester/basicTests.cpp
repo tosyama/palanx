@@ -1102,3 +1102,24 @@ TEST(codegen, deref_stack_spill) {
     // DerefLoad via spilled pointer: movq (%r10), ...
     ASSERT_NE(asm_text.find("(%r10),"),      string::npos);
 }
+
+// Six Widget struct pointers (each holding an embed-arr field, accessed via
+// w.tris[0].x) exhaust the callee-saved registers, forcing one pointer to
+// spill to the stack. w.tris[0] first resolves w.tris (an embed-arr field)
+// through a CalcAddr instruction; with the spilled pointer this exercises
+// emitInstrCalcAddr's ptr_loc.isStack() reload path (movq N(%rbp), %r10)
+// followed by a leaq off the reloaded register, distinguishing it from the
+// deref_stack_spill test's DerefLoad/DerefStore spill patterns above.
+TEST(codegen, calcaddr_stack_spill) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/059_calcaddr_stack_spill.sa.json";
+    string asmf = "out/059_calcaddr_stack_spill.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Spilled ptr reload immediately followed by an address-only leaq (no
+    // dereference), matching emitInstrCalcAddr's stack branch.
+    ASSERT_NE(asm_text.find("(%rbp), %r10\n\tleaq (%r10),"), string::npos);
+}

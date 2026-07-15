@@ -40,6 +40,7 @@ class PlnLexer;
 {
 	#include <set>
 	#include "PlnLexer.h"
+	#include "PlnGenAstInternal.h"
 
 	static std::set<std::string> typeNames = {
 		"int8",  "int16",  "int32",  "int64",
@@ -838,21 +839,10 @@ dict_items: ID ':' expression
 
 store_loc
 	: ID
-	{ $$ = {{"kind", "var"}, {"name", move($1)}}; }
+	{ $$ = {{"kind", "var"}, {"name", move($1)}}; LOC($$, @$); }
 	| store_loc '[' expression ']'
 	{
-		json array_expr;
-		if ($1["kind"] == "var") {
-			array_expr = {{"expr-type", "id"}, {"name", $1["name"]}};
-			LOC(array_expr, @1);
-		} else {
-			array_expr = {
-				{"expr-type", "arr-index"},
-				{"array", $1["array"]},
-				{"index", $1["index"]}
-			};
-			if ($1.contains("loc")) array_expr["loc"] = $1["loc"];
-		}
+		json array_expr = storeLocToExpr($1);
 		$$ = {{"kind", "arr-index"}, {"array", move(array_expr)}, {"index", move($3)}};
 		LOC($$, @$);
 	}

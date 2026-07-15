@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+type Cluster { [2]Point pts; };
+mtrace();
+{
+    Cluster c;
+    5 -> c.pts[0].x;
+    printf("%ld\n", c.pts[0].x);
+}
+muntrace();

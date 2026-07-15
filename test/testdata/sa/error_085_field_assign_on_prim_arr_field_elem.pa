@@ -1,0 +1,8 @@
+cinclude <stdlib.h>;
+type Buf { [4]$int64 data; };
+func test() {
+    Buf buf;
+    10 -> buf.data[0].sub;
+    return;
+}
+test();

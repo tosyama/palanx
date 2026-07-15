@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.23
+**Version:** v0.1.25
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -843,6 +843,10 @@ printf("%ld\n", p.x);         // 42 (write-through via pointer)
 
 **Restriction:** `[n]$T` requires that `T` has no owned sub-struct fields. Use `[n]T` instead when `T` contains owned pointer fields.
 
+Array **fields** (declared inside `type { ... }`, see Section 19) use the same four forms but
+require `n` to be a compile-time integer literal, since struct layout must be statically known.
+Array **variables** (this section) allow non-constant `n`.
+
 ### Limitations (current version)
 
 - Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
@@ -885,6 +889,44 @@ Struct-type fields are written with a prefix that controls ownership and memory 
 | `T field`  | Owned pointer — 8-byte pointer; T is auto-allocated/freed with parent | `__pln_alloc_T` |
 | `@T field` | Non-owning read-only pointer — 8-byte null pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
 | `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
+
+### Array fields
+
+| Syntax        | Meaning                                  | Memory                          |
+|---------------|-------------------------------------------|----------------------------------|
+| `[n]$T field` | Embedded contiguous array                 | parent's block                   |
+| `[n]T field`  | Owned pointer array                       | cascaded alloc/free with parent  |
+| `[n]@T field` | Non-owning read-only pointer-slot array   | parent's block (slots only)      |
+| `[n]@!T field`| Non-owning mutable pointer-slot array     | parent's block (slots only)      |
+
+`T` may be a primitive type or a struct name. `n` must be a compile-time integer literal.
+`field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
+chain.
+
+```palan
+type Point { int64 x; int64 y; };
+
+// [n]$T -- embedded array field (struct leaf)
+type Polygon { [4]$Point pts; };
+Polygon poly;
+10 -> poly.pts[0].x;  20 -> poly.pts[0].y;
+printf("%ld %ld\n", poly.pts[0].x, poly.pts[0].y);  // 10 20
+
+// [n]T -- owned pointer array field (struct leaf, cascades with parent's alloc/free)
+type Cluster { [4]Point pts; };
+Cluster c;
+5 -> c.pts[0].x;
+printf("%ld\n", c.pts[0].x);  // 5
+
+// [n]@T / [n]@!T -- non-owning pointer-slot array field
+type Ring { [4]@!Point nodes; };
+Point p;  99 -> p.x;
+Ring r;
+p -> r.nodes[0];
+printf("%ld\n", r.nodes[0].x);   // 99
+42 -> r.nodes[0].x;              // write-through (mutable only)
+printf("%ld\n", p.x);            // 42
+```
 
 **`$T` — inline embedding**
 
@@ -955,5 +997,5 @@ func makePoint(int64 x, int64 y) -> Point p {
 
 ### Restrictions
 
-- Array-type fields (`[n]T`, etc.) are not supported (planned for v0.1.24).
+- Nested/2D array fields (`[n]$[m]T field`, etc.) are not supported.
 - Recursive embedding (`type A { $A a; }`) is a compile error.

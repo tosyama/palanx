@@ -791,6 +791,72 @@ TEST(gen_ast, mutable_ptr_struct_field) {
 	ASSERT_EQ(s["fields"][1]["var-type"]["base-type"]["type-name"], "Node");
 }
 
+TEST(gen_ast, write_field_arr_index) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/031_write_field_arr_index.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// 10 -> s.f[0]; → arr-assign, target.array is a field-access node (not a crash)
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["stmt-type"], "arr-assign");
+	const auto& target = s["target"];
+	ASSERT_EQ(target["expr-type"], "arr-index");
+	ASSERT_EQ(target["array"]["expr-type"], "field-access");
+	ASSERT_EQ(target["array"]["field"], "f");
+	ASSERT_EQ(target["array"]["object"]["expr-type"], "id");
+	ASSERT_EQ(target["array"]["object"]["name"], "s");
+	ASSERT_EQ(target["index"]["value"], "0");
+}
+
+TEST(gen_ast, write_nested_field_arr_index) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/032_write_nested_field_arr_index.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// 10 -> s.f[0].sub; → field-assign, object is an arr-index (kind-tagged) node
+	// whose array is a field-access node
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["stmt-type"], "field-assign");
+	ASSERT_EQ(s["field"], "sub");
+	const auto& obj = s["object"];
+	ASSERT_EQ(obj["kind"], "arr-index");
+	ASSERT_EQ(obj["array"]["expr-type"], "field-access");
+	ASSERT_EQ(obj["array"]["field"], "f");
+	ASSERT_EQ(obj["array"]["object"]["name"], "s");
+}
+
+TEST(gen_ast, write_arr_index_regression) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/033_write_arr_index_regression.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+
+	// 10 -> pts[0]; → var-based arr-index, unchanged shape
+	ASSERT_EQ(stmts[0]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[0]["target"]["array"]["expr-type"], "id");
+	ASSERT_EQ(stmts[0]["target"]["array"]["name"], "pts");
+
+	// 20 -> pts[0].x; → field-assign over an arr-index object, array unchanged
+	ASSERT_EQ(stmts[1]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[1]["object"]["kind"], "arr-index");
+	ASSERT_EQ(stmts[1]["object"]["array"]["expr-type"], "id");
+	ASSERT_EQ(stmts[1]["object"]["array"]["name"], "pts");
+
+	// 30 -> mat[0][1]; → nested arr-index (2D), unchanged shape
+	ASSERT_EQ(stmts[2]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[2]["target"]["array"]["expr-type"], "arr-index");
+	ASSERT_EQ(stmts[2]["target"]["array"]["array"]["expr-type"], "id");
+	ASSERT_EQ(stmts[2]["target"]["array"]["array"]["name"], "mat");
+}
+
 TEST(gen_ast, arr_at_struct) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/028_arr_at_struct.pa");

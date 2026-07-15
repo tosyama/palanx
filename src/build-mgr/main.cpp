@@ -195,6 +195,17 @@ int main(int argc, char* argv[])
 			}
 		}
 
+		// Derive one shared allocator per leaf primitive type used by "arr-ptr" fields
+		vector<json> arr_prim_shapes;
+		set<string> seenArrPrim;
+		for (auto& shape : struct_shapes)
+			for (auto& af : shape["owned-array-fields"])
+				if (af["elem-kind"] == "prim") {
+					string leaf = af["leaf-name"];
+					if (seenArrPrim.insert(leaf).second)
+						arr_prim_shapes.push_back({{"leaf-type", leaf}});
+				}
+
 		if (!arr_shapes.empty() || !struct_shapes.empty() || !arr_struct_shapes.empty()) {
 			string workdir = fs::path(ast_files[0]).parent_path().string();
 			string alloc_pa  = workdir + "/__allocators.pa";
@@ -219,16 +230,39 @@ int main(int argc, char* argv[])
 							out << " $" << tname << " " << fname << ";";
 						else if (kind == "raw-ptr")
 							out << " @" << tname << " " << fname << ";";
+						else if (kind == "embed-arr")
+							out << " [" << f["count"].get<int64_t>() << "]$" << tname << " " << fname << ";";
+						else if (kind == "arr-ptr")
+							out << " [" << f["count"].get<int64_t>() << "]" << tname << " " << fname << ";";
+						else if (kind == "embed-ptr-arr")
+							out << " [" << f["count"].get<int64_t>() << (f.value("mutable",false) ? "]@!" : "]@")
+							    << tname << " " << fname << ";";
 						else
 							out << " " << tname << " " << fname << ";";
 					}
 					out << " };\n";
 				}
 
+				// arr-prim allocator/free functions (one shared pair per leaf primitive type)
+				for (auto& shape : arr_prim_shapes) {
+					string leaf = shape["leaf-type"];
+					out << "\nexport func __pln_alloc_arr_prim_" << leaf
+					    << "(int64 n) -> []" << leaf << " {\n"
+					    << "    [n]" << leaf << " result;\n"
+					    << "    return result;\n"
+					    << "}\n"
+					    << "export func __pln_free_arr_prim_" << leaf
+					    << "([]" << leaf << " arr) {\n"
+					    << "    free(arr);\n"
+					    << "    return;\n"
+					    << "}\n";
+				}
+
 				// Struct allocator/free functions
 				for (auto& shape : struct_shapes) {
 					string name = shape["shape-name"];
 					auto& owned = shape["owned-fields"];
+					auto& ownedArr = shape["owned-array-fields"];
 
 					out << "\nexport func __pln_alloc_" << name
 					    << "() -> " << name << " p {\n"
@@ -238,10 +272,34 @@ int main(int argc, char* argv[])
 						string sname = of["struct-name"];
 						out << "    __pln_alloc_" << sname << "() -> p." << oname << ";\n";
 					}
+					for (auto& af : ownedArr) {
+						string fname = af["name"];
+						int64_t count = af["count"].get<int64_t>();
+						if (af["elem-kind"] == "prim") {
+							string leaf = af["leaf-name"];
+							out << "    __pln_alloc_arr_prim_" << leaf << "(" << count
+							    << ") -> p." << fname << ";\n";
+						} else { // struct leaf
+							string sname = af["leaf-name"];
+							out << "    __pln_alloc_arr_" << sname << "(" << count
+							    << ") -> p." << fname << ";\n";
+						}
+					}
 					out << "}\n";
 
 					out << "export func __pln_free_" << name
 					    << "(" << name << " p) {\n";
+					for (auto& af : ownedArr) {
+						string fname = af["name"];
+						if (af["elem-kind"] == "prim") {
+							string leaf = af["leaf-name"];
+							out << "    __pln_free_arr_prim_" << leaf << "(p." << fname << ");\n";
+						} else { // struct leaf
+							string sname = af["leaf-name"];
+							int64_t count = af["count"].get<int64_t>();
+							out << "    __pln_free_arr_" << sname << "(p." << fname << ", " << count << ");\n";
+						}
+					}
 					for (auto& of : owned) {
 						string oname = of["name"];
 						string sname = of["struct-name"];

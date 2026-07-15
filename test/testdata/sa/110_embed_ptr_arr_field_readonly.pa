@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+type Point { int64 x; int64 y; };
+type Watch { [3]@Point observed; };
+Watch w;
