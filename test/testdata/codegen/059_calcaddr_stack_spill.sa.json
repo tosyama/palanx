@@ -1,0 +1,757 @@
+{
+    "alloc-shapes": [],
+    "functions": [],
+    "original": "059_calcaddr_stack_spill.pa",
+    "statements": [
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "args": [
+                            {
+                                "expr-type": "lit-int",
+                                "value": "1",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            },
+                            {
+                                "expr-type": "lit-int",
+                                "value": "32",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            }
+                        ],
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "calloc",
+                        "value-type": {
+                            "base-type": {
+                                "type-kind": "struct",
+                                "type-name": "Widget"
+                            },
+                            "type-kind": "pntr"
+                        }
+                    },
+                    "name": "w1",
+                    "var-type": {
+                        "base-type": {
+                            "type-kind": "struct",
+                            "type-name": "Widget"
+                        },
+                        "type-kind": "pntr"
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "args": [
+                            {
+                                "expr-type": "lit-int",
+                                "value": "1",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            },
+                            {
+                                "expr-type": "lit-int",
+                                "value": "32",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            }
+                        ],
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "calloc",
+                        "value-type": {
+                            "base-type": {
+                                "type-kind": "struct",
+                                "type-name": "Widget"
+                            },
+                            "type-kind": "pntr"
+                        }
+                    },
+                    "name": "w2",
+                    "var-type": {
+                        "base-type": {
+                            "type-kind": "struct",
+                            "type-name": "Widget"
+                        },
+                        "type-kind": "pntr"
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "args": [
+                            {
+                                "expr-type": "lit-int",
+                                "value": "1",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            },
+                            {
+                                "expr-type": "lit-int",
+                                "value": "32",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            }
+                        ],
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "calloc",
+                        "value-type": {
+                            "base-type": {
+                                "type-kind": "struct",
+                                "type-name": "Widget"
+                            },
+                            "type-kind": "pntr"
+                        }
+                    },
+                    "name": "w3",
+                    "var-type": {
+                        "base-type": {
+                            "type-kind": "struct",
+                            "type-name": "Widget"
+                        },
+                        "type-kind": "pntr"
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "args": [
+                            {
+                                "expr-type": "lit-int",
+                                "value": "1",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            },
+                            {
+                                "expr-type": "lit-int",
+                                "value": "32",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            }
+                        ],
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "calloc",
+                        "value-type": {
+                            "base-type": {
+                                "type-kind": "struct",
+                                "type-name": "Widget"
+                            },
+                            "type-kind": "pntr"
+                        }
+                    },
+                    "name": "w4",
+                    "var-type": {
+                        "base-type": {
+                            "type-kind": "struct",
+                            "type-name": "Widget"
+                        },
+                        "type-kind": "pntr"
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "args": [
+                            {
+                                "expr-type": "lit-int",
+                                "value": "1",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            },
+                            {
+                                "expr-type": "lit-int",
+                                "value": "32",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            }
+                        ],
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "calloc",
+                        "value-type": {
+                            "base-type": {
+                                "type-kind": "struct",
+                                "type-name": "Widget"
+                            },
+                            "type-kind": "pntr"
+                        }
+                    },
+                    "name": "w5",
+                    "var-type": {
+                        "base-type": {
+                            "type-kind": "struct",
+                            "type-name": "Widget"
+                        },
+                        "type-kind": "pntr"
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "args": [
+                            {
+                                "expr-type": "lit-int",
+                                "value": "1",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            },
+                            {
+                                "expr-type": "lit-int",
+                                "value": "32",
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "uint64"
+                                }
+                            }
+                        ],
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "calloc",
+                        "value-type": {
+                            "base-type": {
+                                "type-kind": "struct",
+                                "type-name": "Widget"
+                            },
+                            "type-kind": "pntr"
+                        }
+                    },
+                    "name": "w6",
+                    "var-type": {
+                        "base-type": {
+                            "type-kind": "struct",
+                            "type-name": "Widget"
+                        },
+                        "type-kind": "pntr"
+                    }
+                }
+            ]
+        },
+        {
+            "body": {
+                "args": [
+                    {
+                        "expr-type": "lit-str",
+                        "label": ".str0",
+                        "loc": [
+                            11,
+                            8,
+                            11,
+                            15
+                        ],
+                        "value-type": {
+                            "base-type": {
+                                "type-kind": "prim",
+                                "type-name": "uint8"
+                            },
+                            "type-kind": "pntr"
+                        }
+                    },
+                    {
+                        "expr-type": "add",
+                        "left": {
+                            "expr-type": "add",
+                            "left": {
+                                "expr-type": "add",
+                                "left": {
+                                    "expr-type": "add",
+                                    "left": {
+                                        "expr-type": "add",
+                                        "left": {
+                                            "addr-only": false,
+                                            "expr-type": "field-access",
+                                            "offset": 0,
+                                            "ptr-expr": {
+                                                "array": {
+                                                    "addr-only": true,
+                                                    "expr-type": "field-access",
+                                                    "offset": 0,
+                                                    "value-type": {
+                                                        "base-type": {
+                                                            "type-kind": "struct",
+                                                            "type-name": "Point"
+                                                        },
+                                                        "embedded": true,
+                                                        "stride": 16,
+                                                        "type-kind": "pntr"
+                                                    },
+                                                    "var": "w1"
+                                                },
+                                                "elem-size": {
+                                                    "expr-type": "lit-uint",
+                                                    "value": "16",
+                                                    "value-type": {
+                                                        "type-kind": "prim",
+                                                        "type-name": "uint64"
+                                                    }
+                                                },
+                                                "expr-type": "arr-index",
+                                                "index": {
+                                                    "expr-type": "lit-int",
+                                                    "loc": [
+                                                        11,
+                                                        25,
+                                                        11,
+                                                        26
+                                                    ],
+                                                    "value": "0",
+                                                    "value-type": {
+                                                        "type-kind": "prim",
+                                                        "type-name": "int64"
+                                                    }
+                                                },
+                                                "loc": [
+                                                    11,
+                                                    17,
+                                                    11,
+                                                    27
+                                                ],
+                                                "value-type": {
+                                                    "base-type": {
+                                                        "type-kind": "struct",
+                                                        "type-name": "Point"
+                                                    },
+                                                    "type-kind": "pntr"
+                                                }
+                                            },
+                                            "value-type": {
+                                                "type-kind": "prim",
+                                                "type-name": "int64"
+                                            }
+                                        },
+                                        "loc": [
+                                            11,
+                                            17,
+                                            11,
+                                            44
+                                        ],
+                                        "right": {
+                                            "addr-only": false,
+                                            "expr-type": "field-access",
+                                            "offset": 0,
+                                            "ptr-expr": {
+                                                "array": {
+                                                    "addr-only": true,
+                                                    "expr-type": "field-access",
+                                                    "offset": 0,
+                                                    "value-type": {
+                                                        "base-type": {
+                                                            "type-kind": "struct",
+                                                            "type-name": "Point"
+                                                        },
+                                                        "embedded": true,
+                                                        "stride": 16,
+                                                        "type-kind": "pntr"
+                                                    },
+                                                    "var": "w2"
+                                                },
+                                                "elem-size": {
+                                                    "expr-type": "lit-uint",
+                                                    "value": "16",
+                                                    "value-type": {
+                                                        "type-kind": "prim",
+                                                        "type-name": "uint64"
+                                                    }
+                                                },
+                                                "expr-type": "arr-index",
+                                                "index": {
+                                                    "expr-type": "lit-int",
+                                                    "loc": [
+                                                        11,
+                                                        40,
+                                                        11,
+                                                        41
+                                                    ],
+                                                    "value": "0",
+                                                    "value-type": {
+                                                        "type-kind": "prim",
+                                                        "type-name": "int64"
+                                                    }
+                                                },
+                                                "loc": [
+                                                    11,
+                                                    32,
+                                                    11,
+                                                    42
+                                                ],
+                                                "value-type": {
+                                                    "base-type": {
+                                                        "type-kind": "struct",
+                                                        "type-name": "Point"
+                                                    },
+                                                    "type-kind": "pntr"
+                                                }
+                                            },
+                                            "value-type": {
+                                                "type-kind": "prim",
+                                                "type-name": "int64"
+                                            }
+                                        },
+                                        "value-type": {
+                                            "type-kind": "prim",
+                                            "type-name": "int64"
+                                        }
+                                    },
+                                    "loc": [
+                                        11,
+                                        17,
+                                        11,
+                                        59
+                                    ],
+                                    "right": {
+                                        "addr-only": false,
+                                        "expr-type": "field-access",
+                                        "offset": 0,
+                                        "ptr-expr": {
+                                            "array": {
+                                                "addr-only": true,
+                                                "expr-type": "field-access",
+                                                "offset": 0,
+                                                "value-type": {
+                                                    "base-type": {
+                                                        "type-kind": "struct",
+                                                        "type-name": "Point"
+                                                    },
+                                                    "embedded": true,
+                                                    "stride": 16,
+                                                    "type-kind": "pntr"
+                                                },
+                                                "var": "w3"
+                                            },
+                                            "elem-size": {
+                                                "expr-type": "lit-uint",
+                                                "value": "16",
+                                                "value-type": {
+                                                    "type-kind": "prim",
+                                                    "type-name": "uint64"
+                                                }
+                                            },
+                                            "expr-type": "arr-index",
+                                            "index": {
+                                                "expr-type": "lit-int",
+                                                "loc": [
+                                                    11,
+                                                    55,
+                                                    11,
+                                                    56
+                                                ],
+                                                "value": "0",
+                                                "value-type": {
+                                                    "type-kind": "prim",
+                                                    "type-name": "int64"
+                                                }
+                                            },
+                                            "loc": [
+                                                11,
+                                                47,
+                                                11,
+                                                57
+                                            ],
+                                            "value-type": {
+                                                "base-type": {
+                                                    "type-kind": "struct",
+                                                    "type-name": "Point"
+                                                },
+                                                "type-kind": "pntr"
+                                            }
+                                        },
+                                        "value-type": {
+                                            "type-kind": "prim",
+                                            "type-name": "int64"
+                                        }
+                                    },
+                                    "value-type": {
+                                        "type-kind": "prim",
+                                        "type-name": "int64"
+                                    }
+                                },
+                                "loc": [
+                                    11,
+                                    17,
+                                    11,
+                                    74
+                                ],
+                                "right": {
+                                    "addr-only": false,
+                                    "expr-type": "field-access",
+                                    "offset": 0,
+                                    "ptr-expr": {
+                                        "array": {
+                                            "addr-only": true,
+                                            "expr-type": "field-access",
+                                            "offset": 0,
+                                            "value-type": {
+                                                "base-type": {
+                                                    "type-kind": "struct",
+                                                    "type-name": "Point"
+                                                },
+                                                "embedded": true,
+                                                "stride": 16,
+                                                "type-kind": "pntr"
+                                            },
+                                            "var": "w4"
+                                        },
+                                        "elem-size": {
+                                            "expr-type": "lit-uint",
+                                            "value": "16",
+                                            "value-type": {
+                                                "type-kind": "prim",
+                                                "type-name": "uint64"
+                                            }
+                                        },
+                                        "expr-type": "arr-index",
+                                        "index": {
+                                            "expr-type": "lit-int",
+                                            "loc": [
+                                                11,
+                                                70,
+                                                11,
+                                                71
+                                            ],
+                                            "value": "0",
+                                            "value-type": {
+                                                "type-kind": "prim",
+                                                "type-name": "int64"
+                                            }
+                                        },
+                                        "loc": [
+                                            11,
+                                            62,
+                                            11,
+                                            72
+                                        ],
+                                        "value-type": {
+                                            "base-type": {
+                                                "type-kind": "struct",
+                                                "type-name": "Point"
+                                            },
+                                            "type-kind": "pntr"
+                                        }
+                                    },
+                                    "value-type": {
+                                        "type-kind": "prim",
+                                        "type-name": "int64"
+                                    }
+                                },
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "int64"
+                                }
+                            },
+                            "loc": [
+                                11,
+                                17,
+                                11,
+                                89
+                            ],
+                            "right": {
+                                "addr-only": false,
+                                "expr-type": "field-access",
+                                "offset": 0,
+                                "ptr-expr": {
+                                    "array": {
+                                        "addr-only": true,
+                                        "expr-type": "field-access",
+                                        "offset": 0,
+                                        "value-type": {
+                                            "base-type": {
+                                                "type-kind": "struct",
+                                                "type-name": "Point"
+                                            },
+                                            "embedded": true,
+                                            "stride": 16,
+                                            "type-kind": "pntr"
+                                        },
+                                        "var": "w5"
+                                    },
+                                    "elem-size": {
+                                        "expr-type": "lit-uint",
+                                        "value": "16",
+                                        "value-type": {
+                                            "type-kind": "prim",
+                                            "type-name": "uint64"
+                                        }
+                                    },
+                                    "expr-type": "arr-index",
+                                    "index": {
+                                        "expr-type": "lit-int",
+                                        "loc": [
+                                            11,
+                                            85,
+                                            11,
+                                            86
+                                        ],
+                                        "value": "0",
+                                        "value-type": {
+                                            "type-kind": "prim",
+                                            "type-name": "int64"
+                                        }
+                                    },
+                                    "loc": [
+                                        11,
+                                        77,
+                                        11,
+                                        87
+                                    ],
+                                    "value-type": {
+                                        "base-type": {
+                                            "type-kind": "struct",
+                                            "type-name": "Point"
+                                        },
+                                        "type-kind": "pntr"
+                                    }
+                                },
+                                "value-type": {
+                                    "type-kind": "prim",
+                                    "type-name": "int64"
+                                }
+                            },
+                            "value-type": {
+                                "type-kind": "prim",
+                                "type-name": "int64"
+                            }
+                        },
+                        "loc": [
+                            11,
+                            17,
+                            11,
+                            104
+                        ],
+                        "right": {
+                            "addr-only": false,
+                            "expr-type": "field-access",
+                            "offset": 0,
+                            "ptr-expr": {
+                                "array": {
+                                    "addr-only": true,
+                                    "expr-type": "field-access",
+                                    "offset": 0,
+                                    "value-type": {
+                                        "base-type": {
+                                            "type-kind": "struct",
+                                            "type-name": "Point"
+                                        },
+                                        "embedded": true,
+                                        "stride": 16,
+                                        "type-kind": "pntr"
+                                    },
+                                    "var": "w6"
+                                },
+                                "elem-size": {
+                                    "expr-type": "lit-uint",
+                                    "value": "16",
+                                    "value-type": {
+                                        "type-kind": "prim",
+                                        "type-name": "uint64"
+                                    }
+                                },
+                                "expr-type": "arr-index",
+                                "index": {
+                                    "expr-type": "lit-int",
+                                    "loc": [
+                                        11,
+                                        100,
+                                        11,
+                                        101
+                                    ],
+                                    "value": "0",
+                                    "value-type": {
+                                        "type-kind": "prim",
+                                        "type-name": "int64"
+                                    }
+                                },
+                                "loc": [
+                                    11,
+                                    92,
+                                    11,
+                                    102
+                                ],
+                                "value-type": {
+                                    "base-type": {
+                                        "type-kind": "struct",
+                                        "type-name": "Point"
+                                    },
+                                    "type-kind": "pntr"
+                                }
+                            },
+                            "value-type": {
+                                "type-kind": "prim",
+                                "type-name": "int64"
+                            }
+                        },
+                        "value-type": {
+                            "type-kind": "prim",
+                            "type-name": "int64"
+                        }
+                    }
+                ],
+                "expr-type": "call",
+                "func-type": "c",
+                "loc": [
+                    11,
+                    1,
+                    11,
+                    105
+                ],
+                "name": "printf",
+                "value-type": {
+                    "type-kind": "prim",
+                    "type-name": "int32"
+                }
+            },
+            "stmt-type": "expr"
+        }
+    ],
+    "str-literals": [
+        {
+            "label": ".str0",
+            "value": "%ld\n"
+        }
+    ]
+}

@@ -40,35 +40,13 @@ class PlnLexer;
 {
 	#include <set>
 	#include "PlnLexer.h"
+	#include "PlnGenAstInternal.h"
 
 	static std::set<std::string> typeNames = {
 		"int8",  "int16",  "int32",  "int64",
 		"uint8", "uint16", "uint32", "uint64",
 		"flo32", "flo64"
 	};
-
-	// Convert a `kind`-tagged store_loc intermediate node into an `expr-type`-tagged
-	// expression node, recursively (needed since a store_loc base can itself be a
-	// field access, e.g. `s.f[0]`).
-	static json storeLocToExpr(const json& loc)
-	{
-		string kind = loc.value("kind", "");
-		json e;
-		if (kind == "var") {
-			e = {{"expr-type", "id"}, {"name", loc["name"]}};
-		} else if (kind == "arr-index") {
-			e = {{"expr-type", "arr-index"},
-			     {"array", loc["array"]}, {"index", loc["index"]}};
-		} else if (kind == "field") {
-			e = {{"expr-type", "field-access"},
-			     {"object", storeLocToExpr(loc["base"])}, {"field", loc["field"]}};
-		} else {
-			// Unreachable: store_loc productions only ever yield var/arr-index/field.
-			e = {{"expr-type", "not-impl"}}; // LCOV_EXCL_LINE
-		}
-		if (loc.contains("loc")) e["loc"] = loc["loc"];
-		return e;
-	}
 
 	int yylex(
 		palan::PlnParser::value_type* yylval,
