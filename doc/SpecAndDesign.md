@@ -6,90 +6,86 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-07-02)
-version: 0.1.25
-- This iteration adds array *fields* in three forms: embedded contiguous array (`[n]$T`), owned pointer array (`[n]T`), and non-owning embedded pointer-slot arrays (`[n]@T`, `[n]@!T`). It is the field-level counterpart of v0.1.24's array-variable work. T may be either a primitive type or a struct name — the same mechanism handles both, mirroring how `sa_embed_arr_var_decl` already branches on leaf kind for array *variables*.
+### 2.1 Iteration Goal (2026-07-18)
+version: 0.1.26
+- This iteration is the first of a planned series of incremental C standard library support iterations, targeting `string.h` and `ctype.h`. **The actual goal of this whole series is not "make these specific functions callable" — it's to use concrete C headers as a forcing function to grow Palan's own C-compatible language surface.** Header support is the vehicle; language-feature growth is the point. Concretely, this means: when a gap traces back to an existing-but-dormant Palan grammar stub, the disposition is to *implement that stub for real*, not to route around it with a narrower, invisible substitute — see gaps 1 and 6 below, both of which land on unimplemented `type`/`const` declaration grammar already present in `PlnParser.yy`. The goal is defined by a **completeness audit**, not by a hand-picked list of convenient functions: every function declared by these two headers (as seen by `palan-c2ast` against this project's real glibc/x86-64 system headers) was enumerated and classified by what Palan capability it needs. Only categories with a concrete, scoped fix are shipped this iteration; every deferred category is listed explicitly with its reason, not silently dropped.
 
-**Array field forms**
+**Definition of done**
 
-| Declaration | Memory | Parent alloc/free |
+A function counts as "supported" only if it (a) is registered end-to-end through the real pipeline (`gen-ast → sa → codegen → execute`, not just inspected via `palan-c2ast` JSON output), and (b) has a `build-mgr` test that exercises real semantics — including the "not found" / boundary case where the function has one (e.g. a `strchr` miss, not just a hit). A header counts as "supported" only when every function in it is accounted for in one of: implemented-and-tested this iteration, or listed in the deferred/excluded tables below with a reason. `ctype.h` in particular currently yields **zero** usable functions (see gap 3) — "supported" for it means going from 0 to the full non-locale public surface, not incremental improvement.
+
+**Gap catalog**
+
+| # | Gap | Root cause | Disposition |
+|---|---|---|---|
+| 1 | No typedef table in c2ast — `size_t` surfaces as opaque `{"type-kind":"user","type-name":"size_t"}` | `CParser.cpp:559-624` consumes and discards `typedef` declarations | **Fix, via a dormant Palan language feature.** Palan's grammar already has a type-alias declaration, `type Name = type_expr;` (`PlnParser.yy:619`), but its action is a no-op stub (`{ $$ = json{}; }` — parses, produces nothing). Implement it for real: a named alias resolving to any `type_expr`, registered so the alias name itself is usable in Palan code and diagnostics. Then have c2ast track `typedef <underlying> <name>;` chains and, when a chain bottoms out in a primitive, have SA register the C typedef as a genuine Palan alias through this same mechanism (`size_t` → a real alias to `uint64`, not an invisible rewrite — a `strlen()` result keeps the name `size_t` in Palan source and error messages). Typedefs that don't bottom out in a primitive (e.g. a struct typedef) stay tagged `"user"`, unchanged from today — still errors if actually used; that's struct-interop work for a later iteration. |
+| 2 | No `void` handling in Palan's type system — `pntr(void)` throws in `fromJson` | `PlnType.cpp` `PrimTypeNames` has no `"void"` entry | **Fix.** Recognize `pntr(void)` as an opaque, sizeless-element pointer, accepted wherever a `pntr(T)` argument is passed and vice versa. No dereference/element-access support needed — pass-through only. |
+| 3 | Relational/equality operators unimplemented in c2ast's constant-expression parser — **blocks 100% of `ctype.h`**, not a partial gap | `CParser.cpp:869-893`, both `relational_expression` and `equality_expression` are stubs marked `// TODO`, falling through without consuming `<`/`>`/`<=`/`>=`/`==`/`!=` | **Fix.** glibc's `<ctype.h>` defines its internal `_IS*` enum via a `_ISbit(bit)` macro expanding to a ternary containing `<`, and the parser aborts entirely at that `enum` (confirmed by minimal repro: `enum{X=0<8};` fails, `enum{X=1<<8};` succeeds). Because the parser aborts the *whole file* on first unparseable construct, every declaration after it — including all of `isalpha`/`isdigit`/etc. — is never reached today. Fix: implement the four relational + two equality operators, same binary-expr AST shape as `shift_expression`. Enum constant *values* stay parsed-and-discarded (`enum_definition` never stores them) — this fix only unblocks parsing, not enum-value usability. |
+| 4 | `char**` (pointer-to-pointer) out-params, needed by `strtok_r`/`strsep` | Palan has no address-of operator (`&` is bitwise-and only) and no confirmed path to construct `pntr(pntr(T))` from a local variable | **Defer.** This is a new language feature (address-of / out-params), not a C-header-binding gap — out of scope for a header-support iteration. The existing `strtof` test's `int64(0)` workaround for its `char**` param is evidence this has never actually worked. |
+| 5 | `locale_t` param on `_l`-suffixed functions | `locale_t` = `typedef struct __locale_struct *locale_t` — an opaque struct pointer; `fromJson` throws on `"strct"`/`"union"`/`"enum"`/`"user"` (`PlnType.cpp:64-77`) the moment such a signature is resolved | **Defer**, same root cause as the planned `time.h`/`struct tm` struct-interop iteration (opaque-type handling in `fromJson`, manual C-binding syntax, `raw-ptr`-to-primitive field bug in `PlnSaInternal.h:58`). Not re-solved here. |
+| 6 | No mechanism to import C constants (`#define`, enum) as Palan values — blocks `NULL`, needed to test the "not found" return of `strchr`/`strstr`/`strpbrk`/`memchr`, and to use `strtok`'s standard multi-call idiom (`strtok(NULL, delim)`) | `palan-c2ast`'s AST has only a `"functions"` section; `NULL` is just `#define NULL ((void*)0)` (confirmed for this target: C mode, not C++/G++) — not special syntax. Separately, Palan's own grammar has a `const_decl: KW_CONST ID '=' expression;` rule that is also unimplemented (no real action). | **Fix, via the dormant `const` declaration.** Implement `const_decl` for real: a named, typed, immutable value usable like any other identifier. c2ast already keeps a macro table (`CPreprocessor.h`: `vector<CMacro*> &macros`, each with `name`/`params`/`body` tokens) and already has a constant-expression parser (`cast_expression` etc.) — reuse both: after preprocessing, walk the macro table, and for each object-like (no-params) macro whose `body` parses as a `constant_expression`, emit it into a new AST `"constants"` section. SA registers these through the newly-implemented `const` mechanism, in parallel with `sa_cinclude`'s existing function registration — so an imported C constant is a first-class Palan `const`, not a special-cased shim. `NULL` (typed `pntr(void)`, implicitly compatible with and `==`/`!=`-comparable against any `pntr(T)` — the same compatibility rule gap 2 already needs) is the concrete instance this iteration needs and tests, but the mechanism itself is general. **Enum-constant export stays out of scope** — unlike gaps 1 and 6's macro-constant path, there is no existing dormant Palan feature it would complete; it would be new design, and no in-scope function requires one (`ctype.h`'s `_IS*` bits are internal/double-underscore-adjacent; callers use the wrapping functions, not the bits). |
+| 7 | Reserved/internal symbols (leading double-underscore) | e.g. `__ctype_b_loc`, `__memcmpeq`, `__strtok_r` | **Excluded from scope**, not a gap — these are implementation-reserved identifiers, not public API, matching how a C caller would treat them. |
+| 8 | Header content visible to `palan-c2ast` depends on feature-test macros (`_GNU_SOURCE` etc.) | c2ast's `predefined.h` defines a fixed default set | **Scope boundary, not a gap.** "Supported" means whatever `palan-c2ast -s <header>` exposes under this project's current `predefined.h`, as audited below — not chasing every possible glibc extension. |
+| 9 | No ownership tracking for C-allocated raw pointers (e.g. `strdup`/`strndup` return heap memory Palan doesn't know needs freeing) | Palan's auto-free machinery only covers `structDefs_`/array allocations, not raw `pntr(prim)` returned from `cinclude`d calls | **Documented accepted limitation**, not a blocker — same manual-free burden C itself has. The user must `cinclude <stdlib.h>;` and call `free()` explicitly. Called out here so it isn't mistaken for an oversight. |
+
+**Full function inventory — `string.h`** (59 declared functions under current `predefined.h`; ✅ = in scope this iteration)
+
+| Category | Disposition | Functions |
 |---|---|---|
-| `[n]$T f` | embedded in parent's calloc block, `n * elemSize(T)` bytes at `f`'s offset (`elemSize` = primitive size or `T.totalSize` for a struct leaf) | none — freed with parent as a whole |
-| `[n]T f` | 8-byte pointer field in parent | struct leaf: parent alloc/free cascades to `__pln_alloc_arr_T(n)` / `__pln_free_arr_T(f, n)` (v0.1.24 infrastructure). primitive leaf: cascades to a small shared-per-primitive-type helper `__pln_alloc_arr_prim_T(n)` / `__pln_free_arr_prim_T(f)` — build-mgr must still generate this helper, since generated Palan source has no syntax for an inline `malloc` assignable directly to a typed field; the helper's body is just a named-return array declaration (`[n]T result; return result;`), no per-element loop |
-| `[n]@T f` / `[n]@!T f` | embedded in parent's calloc block, `n * 8` null-initialized pointer slots | none — freed with parent as a whole (elements non-owning) |
+| A — already resolves to supported types, no new infra | ✅ implement + test | `strcat`, `strcasecmp`, `strcasestr`, `strchr`, `strchrnul`, `strcmp`, `strcoll`, `strcpy`, `strdup`, `strerror`, `strncasecmp`, `strpbrk`, `strrchr`, `strsignal`, `strstr`, `strtok`, `stpcpy`, `index`, `rindex`, `ffs`, `ffsl`, `ffsll` |
+| B — needs gap 1 (size_t) only | ✅ implement + test | `strlen`, `strncpy`, `strncat`, `strncmp`, `strcspn`, `strspn`, `strnlen`, `strndup`, `strxfrm`, `strlcat`, `strlcpy`, `stpncpy` |
+| C — needs gaps 1+2 (size_t + void*) | ✅ implement + test | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `memccpy`, `memmem`, `mempcpy`, `bcmp`, `bcopy`, `bzero`, `explicit_bzero` |
+| D — needs gap 4 (`char**`) | ❌ deferred | `strtok_r`, `strsep` |
+| E — needs gap 5 (`locale_t`) | ❌ deferred | `strcasecmp_l`, `strncasecmp_l`, `strcoll_l`, `strxfrm_l`, `strerror_l` |
+| F — reserved/internal (gap 7) | ❌ excluded | `__memcmpeq`, `__mempcpy`, `__stpcpy`, `__stpncpy`, `__strtok_r`, `__xpg_strerror_r` |
 
-**Constraints**
-- The array size `n` in a field declaration must be a compile-time integer literal (struct layout is static). Non-literal sizes are rejected with a new error.
-- `[n]$T` field: when T is a struct, it must not have owned sub-struct fields (same restriction as the v0.1.24 `[n]$T` array variable); primitive T has no such restriction.
+**Full function inventory — `ctype.h`** (all currently unreachable — gap 3 blocks the whole header)
 
-**Element access**
-- `s.f[i]` returns the primitive value type when T is primitive, or `pntr(struct(T))` when T is a struct, for all three forms — reusing/extending the `resolveObjectChain` / `arr-index` machinery from v0.1.24 to accept a field-chain (not just a plain variable) as the array base.
-- `s.f[i].field` — nested field access through a struct-element array field.
-- `val -> s.f[i]` / `val -> s.f[i].field` — write-through; disallowed for `[n]@T` (read-only), matching the v0.1.24 array-variable rule.
+| Category | Disposition | Functions |
+|---|---|---|
+| A, blocked only by gap 3 | ✅ implement + test (once gap 3 fixed) | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `islower`, `isgraph`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `isblank`, `tolower`, `toupper`, `isctype`, `isascii`, `toascii`, `_toupper`, `_tolower` |
+| E — needs gap 5 (`locale_t`) | ❌ deferred | `isalnum_l`, `isalpha_l`, `iscntrl_l`, `isdigit_l`, `islower_l`, `isgraph_l`, `isprint_l`, `ispunct_l`, `isspace_l`, `isupper_l`, `isxdigit_l`, `isblank_l`, `tolower_l`, `toupper_l`, `__tolower_l`, `__toupper_l` |
+| F — reserved/internal (gap 7) | ❌ excluded | `__ctype_b_loc`, `__ctype_tolower_loc`, `__ctype_toupper_loc` |
 
-**Allocator infrastructure**
-- `[n]T f` with a struct leaf reuses the `arr_T` alloc-shape / `__pln_alloc_arr_T` / `__pln_free_arr_T` infrastructure introduced in v0.1.24 (IT-2407); the parent struct's own generated allocator calls into it.
-- `[n]T f` with a primitive leaf registers a new, lighter `arr-prim` alloc-shape (keyed by leaf type name, shared across all structs using that primitive) that build-mgr expands into `__pln_alloc_arr_prim_T` / `__pln_free_arr_prim_T` — no per-element loop, unlike the struct-leaf case.
+**Explicit non-goals (deferred to later iterations, with reason already stated above)**
+- Struct-by-value or struct-pointer C interop (`time.h`/`struct tm`, `sys/stat.h`, `locale_t`-based `_l` functions) — gap 5.
+- `char**` out-params (`strtok_r`, `strsep`) — gap 4; revisit once/if an address-of operator is designed.
+- Enum-constant export (`ctype.h`'s `_IS*` bits and similar) — gap 6, not needed by any in-scope function.
+- Typedefs that resolve to non-primitive (struct) types.
+- Wide-character (`wctype.h`/`wchar.h`) variants — not audited this iteration.
 
-**Known gen-ast gap found during planning**
-- `store_loc '[' expression ']'` only handled a plain variable or an existing `arr-index` base; a field-based base (`s.f[i]` as an assignment target) crashes the parser today (`nlohmann::json` assertion abort on `10 -> s.f[0];`). This must be fixed as part of this iteration to support write-through (`val -> s.f[i]` / `val -> s.f[i].field`); read-side access (`s.f[i]` as an expression) already works unmodified since the general `term` grammar is recursive.
-
-**Restrictions (planned for later iterations)**
-- Nested/2D array fields are not supported.
-
-The goal is that the following programs produce correct output:
-
-```palan
-// [n]$T — embedded contiguous array field (struct leaf)
-cinclude <stdio.h>;
-type Point { int64 x; int64 y; };
-type Polygon { [4]$Point pts; };
-Polygon poly;
-10 -> poly.pts[0].x;  20 -> poly.pts[0].y;
-30 -> poly.pts[1].x;  40 -> poly.pts[1].y;
-printf("%ld %ld %ld %ld\n", poly.pts[0].x, poly.pts[0].y, poly.pts[1].x, poly.pts[1].y);  // 10 20 30 40
-```
+The goal is that the following program produces correct output:
 
 ```palan
-// [n]$T — embedded contiguous array field (primitive leaf)
+cinclude <string.h>;
+cinclude <ctype.h>;
 cinclude <stdio.h>;
-type Buffer { [4]$int64 data; };
-Buffer buf;
-10 -> buf.data[0];  20 -> buf.data[1];  30 -> buf.data[2];  40 -> buf.data[3];
-printf("%ld %ld %ld %ld\n", buf.data[0], buf.data[1], buf.data[2], buf.data[3]);  // 10 20 30 40
-```
 
-```palan
-// [n]T — owned pointer array field (auto-alloc/free cascades with parent)
-cinclude <stdio.h>;
-type Point { int64 x; int64 y; };
-type Cluster { [2]Point pts; };
-Cluster c;
-5 -> c.pts[0].x;  6 -> c.pts[0].y;
-7 -> c.pts[1].x;  8 -> c.pts[1].y;
-printf("%ld %ld %ld %ld\n", c.pts[0].x, c.pts[0].y, c.pts[1].x, c.pts[1].y);  // 5 6 7 8
-```
+[32]uint8 buf;
+strcpy(buf, "Hello, Palan!");
+size_t n = strlen(buf);                           // gap 1: size_t is a real Palan alias type (-> uint64), not an invisible rewrite
+printf("%s (len=%ld)\n", buf, n);                 // Hello, Palan! (len=13)
 
-```palan
-// [n]T — owned pointer array field (primitive leaf, inline malloc/free)
-cinclude <stdio.h>;
-type Bucket { [3]int64 vals; };
-Bucket b;
-1 -> b.vals[0];  2 -> b.vals[1];  3 -> b.vals[2];
-printf("%ld %ld %ld\n", b.vals[0], b.vals[1], b.vals[2]);  // 1 2 3
-```
+printf("%d\n", strcmp("abc", "abc"));             // 0
+printf("%d\n", strncmp("abcdef", "abcxyz", 3));   // 0
 
-```palan
-// [n]@T / [n]@!T — non-owning embedded pointer-slot array fields
-cinclude <stdio.h>;
-type Point { int64 x; int64 y; };
-type Ring { [4]@!Point nodes; };
-Point p;  99 -> p.x;
-Ring r;
-p -> r.nodes[0];
-printf("%ld\n", r.nodes[0].x);   // 99
-42 -> r.nodes[0].x;               // write-through (mutable)
-printf("%ld\n", p.x);             // 42
+[8]uint8 dst;
+memset(dst, 0, 8);
+memcpy(dst, "abc", 3);
+printf("%s\n", dst);                              // abc
+
+printf("%d %d\n", isalpha(97), isdigit(97));      // 1 0 ('a' = 97)
+printf("%c\n", toupper(97));                      // A
+
+// NULL (gap 6) exercised via the strchr "not found" case and strtok's multi-call idiom
+[16]uint8 line;
+strcpy(line, "a,bb,ccc");
+if (strchr(line, 122) == NULL) {                  // 'z' not present
+    printf("not found\n");                         // not found
+}
+printf("%s\n", strtok(line, ","));                 // a
+printf("%s\n", strtok(NULL, ","));                 // bb
+printf("%s\n", strtok(NULL, ","));                 // ccc
 ```
 
 
