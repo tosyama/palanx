@@ -202,6 +202,26 @@ TEST(c2ast, struct_enum_typedef) {
     }
 }
 
+TEST(c2ast, relational_ops) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/014_relational_ops.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    bool found = false;
+    for (auto& f : functions) if (f["name"] == "f") found = true;
+    ASSERT_TRUE(found);
+}
+
+TEST(c2ast, ctype_h_parses) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s ctype.h");
+    json ast = json::parse(output);
+    auto& fns = ast["ast"]["functions"];
+    bool found = false;
+    for (auto& f : fns) if (f["name"] == "isalpha") found = true;
+    ASSERT_TRUE(found);
+}
+
 TEST(c2ast, time_h_struct_pointer) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast -s time.h");

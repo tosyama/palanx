@@ -868,28 +868,36 @@ bool CParser::shift_expression(json &ast, const vector<CToken*> &tokens, int &re
 
 bool CParser::relational_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
-	// TODO: implement relational operators
 	int index = result_index;
 
-	if (shift_expression(ast, tokens, index)) {
-		result_index = index;
-		return true;
+	if (!shift_expression(ast, tokens, index)) {
+		return false;
+	}
+	if (CONSUME_PUNC('<') || CONSUME_PUNC('>') || CONSUME_PUNC('<=') || CONSUME_PUNC('>=')) {
+		if (!relational_expression(ast, tokens, index)) {
+			return false;
+		}
 	}
 
-	return false;
+	result_index = index;
+	return true;
 }
 
 bool CParser::equality_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
-	// TODO: implement equality operators
 	int index = result_index;
 
-	if (relational_expression(ast, tokens, index)) {
-		result_index = index;
-		return true;
+	if (!relational_expression(ast, tokens, index)) {
+		return false;
+	}
+	if (CONSUME_PUNC('==') || CONSUME_PUNC('!=')) {
+		if (!equality_expression(ast, tokens, index)) {
+			return false;
+		}
 	}
 
-	return false;
+	result_index = index;
+	return true;
 }
 
 bool CParser::and_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
@@ -973,15 +981,25 @@ bool CParser::logical_or_expression(json &ast, const vector<CToken*> &tokens, in
 
 bool CParser::conditional_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
 {
-	// TODO: implement conditional operator
 	int index = result_index;
 
-	if (logical_or_expression(ast, tokens, index)) {
-		result_index = index;
-		return true;
+	if (!logical_or_expression(ast, tokens, index)) {
+		return false;
+	}
+	if (CONSUME_PUNC('?')) {
+		if (!expression(ast, tokens, index)) {
+			return false;
+		}
+		if (!CONSUME_PUNC(':')) {
+			return false;
+		}
+		if (!conditional_expression(ast, tokens, index)) {
+			return false;
+		}
 	}
 
-	return false;
+	result_index = index;
+	return true;
 }
 
 bool CParser::constant_expression(json &ast, const vector<CToken*> &tokens, int &result_index)
