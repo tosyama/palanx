@@ -56,7 +56,7 @@ class PlnLexer;
 		return lexer.yylex(*yylval, *location);
 	}
 
-	static json execute_c2ast(const string& path_type, const string& path)
+	static json execute_c2ast(const string& path_type, const string& path, const string& base_dir)
 	{
 		fs::path exec_file_path = fs::canonical("/proc/self/exe");
 		string exec_path = exec_file_path.parent_path().string();
@@ -66,7 +66,11 @@ class PlnLexer;
 		if (path_type == "inc") {
 			cmd = c2ast_path + " -s " + path;
 		} else {
-			cmd = c2ast_path + " " + path;
+			// Local header path is relative to the including source file, not the process cwd.
+			fs::path resolved = path;
+			if (!resolved.is_absolute())
+				resolved = fs::path(base_dir) / resolved;
+			cmd = c2ast_path + " " + resolved.string();
 		}
 
 		FILE* pipe = popen(cmd.c_str(), "r");
@@ -215,7 +219,8 @@ expr_stmt: import
 		$$ = move($1);
 		$$["stmt-type"] = "cinclude";
 
-		json c_ast = execute_c2ast($$["path-type"], $$["path"]);
+		json c_ast = execute_c2ast($$["path-type"], $$["path"],
+		                          fs::path(lexer.inputFile).parent_path().string());
 		if (c_ast.is_object() && c_ast.contains("ast")) {
 			$$["functions"] = move(c_ast["ast"]["functions"]);
 		}

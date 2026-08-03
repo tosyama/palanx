@@ -935,3 +935,26 @@ TEST(gen_ast, func_arr_at_struct_param) {
 	ASSERT_EQ(vt["base-type"]["base-type"]["type-kind"], "prim");
 	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
 }
+
+TEST(gen_ast, cinclude_local_header) {
+	cleanTestEnv();
+	// bin/palan-gen-ast runs from build/, while the .pa and .h fixtures live under
+	// test/testdata/gen-ast/ - this only passes if the quoted local header path is
+	// resolved relative to the source file, not the process cwd.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/035_cinclude_local_header.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_add_one = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		for (auto& f : stmt["functions"]) {
+			if (f["name"] == "add_one" && f["func-type"] == "c") {
+				found_add_one = true;
+				break;
+			}
+		}
+		if (found_add_one) break;
+	}
+	ASSERT_TRUE(found_add_one);
+}
