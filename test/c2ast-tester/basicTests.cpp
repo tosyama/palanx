@@ -202,6 +202,62 @@ TEST(c2ast, struct_enum_typedef) {
     }
 }
 
+TEST(c2ast, typedef_scalar) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/015_typedef_scalar.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* f = find_func("f");
+    ASSERT_NE(f, nullptr);
+    ASSERT_EQ((*f)["ret-type"]["type-kind"], "prim");
+    ASSERT_EQ((*f)["ret-type"]["type-name"], "uint64");
+    ASSERT_EQ((*f)["ret-type"]["typedef-name"], "my_size_t");
+}
+
+TEST(c2ast, typedef_chain) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/016_typedef_chain.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* g = find_func("g");
+    ASSERT_NE(g, nullptr);
+    ASSERT_EQ((*g)["ret-type"]["type-kind"], "prim");
+    ASSERT_EQ((*g)["ret-type"]["type-name"], "uint64");
+    ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
+}
+
+TEST(c2ast, typedef_struct_unresolved) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/017_typedef_struct_unresolved.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* h = find_func("h");
+    ASSERT_NE(h, nullptr);
+    ASSERT_EQ((*h)["ret-type"]["type-kind"], "user");
+    ASSERT_EQ((*h)["ret-type"]["type-name"], "Point");
+}
+
 TEST(c2ast, relational_ops) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/014_relational_ops.h");

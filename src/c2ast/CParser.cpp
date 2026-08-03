@@ -368,8 +368,15 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	};
 
 	if (CONSUME(TT_ID)) {	// typedef name
-		// TODO: Check defined type
-		ast["var-type"] = {{"type-kind", "user"}, {"type-name", *tokens[index-1]->info.id}};
+		string name = *tokens[index-1]->info.id;
+		auto it = typedefs_.find(name);
+		if (it != typedefs_.end()) {
+			ast["var-type"] = it->second;
+			ast["var-type"]["typedef-name"] = name;
+		} else {
+			ast["var-type"] = {{"type-kind", "user"}, {"type-name", name}};
+		}
+		if (is_const) ast["var-type"]["const"] = true;
 		result_index = index;
 		return true;
 	}
@@ -618,6 +625,18 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 						{"ret-type", move(vt["ret-type"])},
 						{"parameters", move(vt["parameters"])}
 					});
+				} else if (is_typedef) {
+					string tk = vt.value("type-kind", "");
+					if (tk == "prim") {
+						typedefs_[decl["name"].get<string>()] = vt;
+					} else if (tk == "user") {
+						auto it = typedefs_.find(vt["type-name"].get<string>());
+						if (it != typedefs_.end()) {
+							typedefs_[decl["name"].get<string>()] = it->second;
+						}
+					}
+					// strct/union/enum/pntr/func underlying types: not registered,
+					// left as unresolved "user" at reference sites (unchanged behavior)
 				}
 				result_index = index;
 				return true;

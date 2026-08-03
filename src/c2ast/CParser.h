@@ -1,9 +1,12 @@
+#include <string>
+#include <map>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 using json = nlohmann::json;
 
 class CParser {
 	const vector<CToken*> &top_tokens;
 	const vector<CLexer*> &lexers;
+	map<string, json> typedefs_;  // typedef name -> resolved var-type (primitives only)
 
 	int parse(json &ast, const vector<CToken*>& tokens);
 	
