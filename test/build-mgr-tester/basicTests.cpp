@@ -748,6 +748,12 @@ TEST(build_mgr, owned_and_embed_arr_mixed_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, type_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/083_type_alias.pa");
+	ASSERT_EQ(output, "5\n42\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

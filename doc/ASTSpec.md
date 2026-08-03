@@ -134,7 +134,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
 - loc\* - Location Array (omitted for "not-impl")
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -164,27 +164,30 @@ Statement model
     - fields\* - Field list (each entry: `name`, `var-type`)
       - name\* - Field name string
       - var-type\* - Field type (same Variable type object format)
-  8. field-assign - struct field assignment (`value -> obj.field`)
+  8. type-alias - native type alias declaration (`type Name = type_expr;`; consumed by SA, not emitted to sa.json)
+    - name\* - Alias name string
+    - type\* - Aliased type (same Variable type object format)
+  9. field-assign - struct field assignment (`value -> obj.field`)
     - object\* - Base store_loc (kind: "var")
     - field\*  - Field name string
     - value\*  - Source expression model
-  9. return - return statement
+  10. return - return statement
     - values - Return expression list (omitted for bare `return;`)
-  10. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
+  11. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function)
-  11. block - standalone block statement (`{ ... }`)
+  12. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
-  12. if - if / if-else statement
+  13. if - if / if-else statement
     - cond\* - Condition expression model
     - then\* - Then-block object (block statement body)
     - else - Else-block object or nested if statement (omitted when absent)
-  13. while - while loop statement
+  14. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  14. break - exit the innermost while loop (no additional fields)
-  15. continue - skip to next iteration of innermost while loop (no additional fields)
+  15. break - exit the innermost while loop (no additional fields)
+  16. continue - skip to next iteration of innermost while loop (no additional fields)
 
 Expression model
 ----------------

@@ -1390,6 +1390,50 @@ TEST(sa, struct_def)
 	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
 }
 
+TEST(sa, type_alias_var)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/120_type_alias_var.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// type-alias is consumed; first stmt is var-decl for x, resolved to int64
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "x");
+	ASSERT_EQ(v["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(v["var-type"]["type-name"], "int64");
+	ASSERT_EQ(v["init"]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, type_alias_func)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/121_type_alias_func.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const json* doubleFunc = nullptr;
+	for (auto& f : jout["functions"])
+		if (f["name"] == "double") doubleFunc = &f;
+	ASSERT_NE(doubleFunc, nullptr);
+
+	// Count param/ret resolved to uint64, not left as the alias name
+	ASSERT_EQ((*doubleFunc)["parameters"][0]["var-type"]["type-kind"], "prim");
+	ASSERT_EQ((*doubleFunc)["parameters"][0]["var-type"]["type-name"], "uint64");
+	ASSERT_EQ((*doubleFunc)["ret-type"]["type-kind"], "prim");
+	ASSERT_EQ((*doubleFunc)["ret-type"]["type-name"], "uint64");
+
+	// body: n * 2 -> r; assign stmt with mul expression, no crash resolving Count
+	bool found_assign = false;
+	for (auto& stmt : (*doubleFunc)["body"]) {
+		if (stmt["stmt-type"] != "assign") continue;
+		ASSERT_EQ(stmt["name"], "r");
+		ASSERT_EQ(stmt["value"]["value-type"]["type-name"], "uint64");
+		found_assign = true;
+	}
+	ASSERT_TRUE(found_assign);
+}
+
 TEST(sa, field_assign)
 {
 	cleanTestEnv();

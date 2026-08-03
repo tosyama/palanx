@@ -1,0 +1,4 @@
+type Count = uint64;
+func double(Count n) -> Count r {
+	n * 2 -> r;
+}

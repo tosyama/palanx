@@ -245,7 +245,10 @@ expr_stmt: import
 	{ $$ = {{"stmt-type", "not-impl"}}; }
 	| type_decl
 	{
-		if ($1.contains("name")) {
+		if ($1.contains("alias-of")) {
+			$$ = {{"stmt-type", "type-alias"}, {"name", $1["name"]}, {"type", move($1["alias-of"])}};
+			LOC($$, @$);
+		} else if ($1.contains("name")) {
 			$$ = {{"stmt-type", "struct-def"}, {"name", $1["name"]}, {"fields", move($1["fields"])}};
 			LOC($$, @$);
 		} else {
@@ -618,7 +621,7 @@ const_decl: KW_CONST ID '=' expression
 type_decl: do_export KW_TYPE ID implememts '{' type_members '}'
 	{ $$ = {{"name", $3}, {"fields", move($6)}}; LOC($$, @$); }
 	| do_export KW_TYPE ID '=' type_expr
-	{ $$ = json{}; }
+	{ $$ = {{"name", $3}, {"alias-of", move($5)}}; LOC($$, @$); }
 	| do_export KW_TYPE ID
 	{ $$ = json{}; }
 	;

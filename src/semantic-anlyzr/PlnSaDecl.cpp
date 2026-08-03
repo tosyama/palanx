@@ -226,7 +226,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			string tname = vtype.value("type-name", "");
 			if (structDefs_.count(tname))
 				return sa_struct_var_decl(stmt);
-			if (elemSizeBytes(tname) < 0) {
+			if (!typeAliases_.count(tname) && elemSizeBytes(tname) < 0) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 				exit(1);
 			}
@@ -237,22 +237,23 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
+		json varType = resolveTypeAlias(var["var-type"]);
+		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
 			// itself is not in scope during its own initializer (e.g. `int32 z = z+1`
 			// should be an error, not silently read uninitialized z).
-			const PlnType* toType = registry_.fromJson(var["var-type"]);
+			const PlnType* toType = registry_.fromJson(varType);
 			json init = sa_expression(var["init"], toType);
 			if (!init.contains("value-type")) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 				exit(1);
 			}
-			const json& var_type = var["var-type"];
-			if (init["value-type"] != var_type) {
+			if (init["value-type"] != varType) {
 				const PlnType* fromType = registry_.fromJson(init["value-type"]);
 				TypeCompat compat = typeCompat(fromType, toType, registry_);
 				if (compat == TypeCompat::ImplicitWiden) {
-					init = wrapConvert(init, var_type);
+					init = wrapConvert(init, varType);
 				} else if (compat == TypeCompat::ExplicitCast) {
 					string et = init["expr-type"];
 					if (et != "lit-int" && et != "lit-uint") {
@@ -264,7 +265,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			}
 			sa_var["init"] = init;
 		}
-		declareVar(name, var["var-type"], &stmt);
+		declareVar(name, varType, &stmt);
 		sa_stmt["vars"].push_back(sa_var);
 	}
 	return json::array({sa_stmt});
@@ -591,6 +592,28 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 	structDefs_[name] = buildStructDef(name, stmt["fields"], structDefs_);
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)
+{
+	string name = stmt["name"].get<string>();
+	// Resolve one level so chains of aliases (alias-of-alias) collapse to the
+	// base type at registration time; later lookups need only one map access.
+	typeAliases_[name] = resolveTypeAlias(stmt["type"]);
+	return json::array();
+}
+
+json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
+{
+	if (vtype.value("type-kind", "") == "prim") {
+		string tname = vtype.value("type-name", "");
+		if (!structDefs_.count(tname)) {
+			auto it = typeAliases_.find(tname);
+			if (it != typeAliases_.end())
+				return it->second;
+		}
+	}
+	return vtype;
+}
 
 json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 {

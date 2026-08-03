@@ -680,6 +680,22 @@ TEST(gen_ast, struct_def) {
 	ASSERT_EQ(s["fields"][1]["var-type"]["type-name"], "int64");
 }
 
+TEST(gen_ast, type_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/034_type_alias.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// type MyInt = int64; → type-alias
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["stmt-type"], "type-alias");
+	ASSERT_EQ(s["name"], "MyInt");
+	ASSERT_EQ(s["type"]["type-kind"], "prim");
+	ASSERT_EQ(s["type"]["type-name"], "int64");
+}
+
 TEST(gen_ast, field_access) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/023_field_access.pa");
