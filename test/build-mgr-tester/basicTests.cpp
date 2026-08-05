@@ -754,6 +754,12 @@ TEST(build_mgr, type_alias) {
 	ASSERT_EQ(output, "5\n42\n");
 }
 
+TEST(build_mgr, cinclude_typedef_size_t) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/084_cinclude_typedef_size_t.pa");
+	ASSERT_EQ(output, "5\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

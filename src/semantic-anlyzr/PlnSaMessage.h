@@ -53,6 +53,7 @@ enum PlnSaMessageCode {
 	E_EmbedArrOwnedSubStruct,
 	E_WriteToReadOnlyArrElem,
 	E_ArrFieldSizeNotConstant,
+	E_ConflictingTypedef,			// arg1: typedef name
 };
 
 class PlnSaMessage

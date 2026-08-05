@@ -174,6 +174,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_ArrFieldSizeNotConstant:
 			return "struct field array size must be a compile-time constant integer literal.";
 
+		case E_ConflictingTypedef:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Typedef '" + arg1 + "' conflicts with an existing type alias of a different underlying type.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

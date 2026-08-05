@@ -122,6 +122,8 @@ class PlnSemanticAnalyzer {
 	json  resolveTypeAlias(const json& vtype) const;
 	void  normalizeStructSig(json& funcDef);
 	void  resolveFuncSigTypeAliases(json& funcEntry) const;
+	void  registerTypedefAliasInType(json& vtype);
+	void  registerCFuncTypedefAliases(json& funcEntry);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj);
 	FieldChain resolveStoreLocChain(const json& loc);

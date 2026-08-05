@@ -1434,6 +1434,30 @@ TEST(sa, type_alias_func)
 	ASSERT_TRUE(found_assign);
 }
 
+TEST(sa, cinclude_typedef_size_t)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/122_cinclude_typedef_size_t.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// size_t resolved via IT-2604's cinclude typedef bridge to a clean uint64,
+	// with no leftover "typedef-name" bookkeeping key.
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "n");
+	ASSERT_EQ(v["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(v["var-type"]["type-name"], "uint64");
+	ASSERT_FALSE(v["var-type"].contains("typedef-name"));
+
+	// strlen() call's value-type is likewise clean.
+	ASSERT_EQ(v["init"]["expr-type"], "call");
+	ASSERT_EQ(v["init"]["name"], "strlen");
+	ASSERT_EQ(v["init"]["func-type"], "c");
+	ASSERT_EQ(v["init"]["value-type"]["type-name"], "uint64");
+	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
+}
+
 TEST(sa, field_assign)
 {
 	cleanTestEnv();

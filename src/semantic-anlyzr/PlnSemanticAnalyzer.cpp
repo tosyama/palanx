@@ -381,6 +381,47 @@ const json& PlnSemanticAnalyzer::result()
 	return sa;
 }
 
+// Recursively find "typedef-name" hints (added by c2ast for scalar typedefs
+// like size_t) inside a type node, register the underlying primitive into
+// typeAliases_ so Palan code can reference the typedef name via IT-2602's
+// alias mechanism, and strip the hint so it doesn't leak into sa.json (e.g.
+// via sa_expr_call copying a C function's ret-type into a call's value-type).
+void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
+{
+	string tk = vtype.value("type-kind", "");
+	if (tk == "prim" && vtype.contains("typedef-name")) {
+		string aliasName = vtype["typedef-name"].get<string>();
+		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
+		auto it = typeAliases_.find(aliasName);
+		if (it == typeAliases_.end()) {
+			typeAliases_[aliasName] = resolved;
+		} else if (it->second != resolved) {
+			cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
+			exit(1);
+		}
+		vtype.erase("typedef-name");
+	} else if (tk == "pntr" && vtype.contains("base-type")) {
+		registerTypedefAliasInType(vtype["base-type"]);
+	} else if (tk == "func") {
+		if (vtype.contains("ret-type"))
+			registerTypedefAliasInType(vtype["ret-type"]);
+		if (vtype.contains("parameters"))
+			for (auto& p : vtype["parameters"])
+				if (p.contains("var-type"))
+					registerTypedefAliasInType(p["var-type"]);
+	}
+}
+
+void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
+{
+	if (funcEntry.contains("ret-type"))
+		registerTypedefAliasInType(funcEntry["ret-type"]);
+	if (funcEntry.contains("parameters"))
+		for (auto& p : funcEntry["parameters"])
+			if (p.contains("var-type"))
+				registerTypedefAliasInType(p["var-type"]);
+}
+
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
 	if (!stmt.contains("functions")) return;
@@ -391,12 +432,15 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& f : stmt["functions"]) {
 			string fname = f["name"].get<string>();
 			json entry = f;
+			registerCFuncTypedefAliases(entry);
 			entry["_c-func"] = true;
 			currentScope[alias][fname] = entry;
 		}
 	} else {
 		for (auto& f : stmt["functions"]) {
-			registerCFunc(f["name"], f);
+			json entry = f;
+			registerCFuncTypedefAliases(entry);
+			registerCFunc(entry["name"].get<string>(), entry);
 		}
 	}
 }

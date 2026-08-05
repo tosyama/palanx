@@ -742,3 +742,16 @@ TEST(sa_error, struct_nested_embed_arr_field_unsupported)
 	ASSERT_NE(sa.find("unsupported struct field type"), string::npos);
 }
 
+TEST(sa_error, cinclude_typedef_conflict)
+{
+	// type size_t = int32; then cinclude <string.h>; which resolves size_t to uint64
+	// Covers: registerTypedefAliasInType E_ConflictingTypedef branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_089_cinclude_typedef_conflict.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("conflict"), string::npos);
+}
+

@@ -1,0 +1,7 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[16]uint8 buf;
+strcpy(buf, "hello");
+size_t n = strlen(buf);
+printf("%lu\n", n);
