@@ -1,0 +1,4 @@
+cinclude <string.h>;
+[8]uint8 a;
+[8]uint8 b;
+memcpy(a, b, 8);

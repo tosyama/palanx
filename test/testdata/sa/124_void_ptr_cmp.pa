@@ -1,0 +1,4 @@
+cinclude <string.h>;
+[8]uint8 a;
+[8]uint8 b;
+int32 r = (memchr(a, 0, 8) == memchr(b, 0, 8));

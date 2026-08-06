@@ -2713,3 +2713,34 @@ TEST(sa, field_arr_readonly_ptr_slot)
 	ASSERT_EQ(fa_read["ptr-expr"]["expr-type"], "arr-index");
 	ASSERT_EQ(fa_read["ptr-expr"]["value-type"]["mutable"], false);
 }
+
+TEST(sa, void_ptr_compat)
+{
+	// IT-2605: pntr(void) parameters (e.g. memcpy's void* dest/src) must resolve
+	// and accept pntr(T) arguments without SA throwing on the unknown "void" prim.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/123_void_ptr_compat.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][2]["body"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["name"], "memcpy");
+	ASSERT_EQ(call["func-type"], "c");
+}
+
+TEST(sa, void_ptr_cmp)
+{
+	// IT-2605: comparing two pntr(void) results (e.g. memchr() == memchr()) goes
+	// through the "cmp" expr's unguarded fromJson() calls, which previously threw.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/124_void_ptr_cmp.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][2];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "r");
+	ASSERT_EQ(v["var-type"]["type-name"], "int32");
+	ASSERT_EQ(v["init"]["expr-type"], "cmp");
+	ASSERT_EQ(v["init"]["value-type"]["type-name"], "int32");
+}
