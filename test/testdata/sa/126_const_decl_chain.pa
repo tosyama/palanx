@@ -1,0 +1,3 @@
+const A = 10;
+const B = A;
+int64 x = B;

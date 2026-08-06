@@ -2744,3 +2744,29 @@ TEST(sa, void_ptr_cmp)
 	ASSERT_EQ(v["init"]["expr-type"], "cmp");
 	ASSERT_EQ(v["init"]["value-type"]["type-name"], "int32");
 }
+
+TEST(sa, const_decl_basic)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/125_const_decl_basic.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"].size(), 1);
+
+	// const-decl is consumed; first stmt is var-decl for x, init inlined to lit-int 100
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "x");
+	ASSERT_EQ(v["init"]["expr-type"], "lit-int");
+	ASSERT_EQ(v["init"]["value"], "100");
+	ASSERT_EQ(v["init"]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, const_decl_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/126_const_decl_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"].size(), 1);
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["value"], "10");
+}

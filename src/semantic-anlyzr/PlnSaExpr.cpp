@@ -118,8 +118,14 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			if (isInArrayScope(expr["name"].get<string>()))
 				sa_expr["category"] = "owned";
 		} else {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
-			exit(1);
+			auto cit = constDecls_.find(expr["name"].get<string>());
+			if (cit != constDecls_.end()) {
+				sa_expr = cit->second["value"];
+				if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
+			} else {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
+				exit(1);
+			}
 		}
 
 	} else if (expr_type == "add" || expr_type == "sub"

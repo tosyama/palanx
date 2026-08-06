@@ -162,7 +162,7 @@ class PlnLexer;
 %type <bool>	move_owner_r do_export
 %type <json>	tapple_decl tapple_decl_inner tapple_inner
 %type <json>	if_stmt else_stmt while_loop
-%type <json>		type_decl type_member
+%type <json>		type_decl type_member const_decl
 %type <vector<json>>	type_members
 
 %left ARROW DBL_ARROW
@@ -247,7 +247,7 @@ expr_stmt: import
 		}
 	}
 	| const_decl
-	{ $$ = {{"stmt-type", "not-impl"}}; }
+	{ $$ = {{"stmt-type", "const-decl"}, {"name", $1["name"]}, {"value", move($1["value"])}}; LOC($$, @$); }
 	| type_decl
 	{
 		if ($1.contains("alias-of")) {
@@ -621,6 +621,7 @@ tapple_decl_inner: type_expr ID
 	;
 
 const_decl: KW_CONST ID '=' expression
+	{ $$ = {{"name", $2}, {"value", move($4)}}; LOC($$, @$); }
 	;
 
 type_decl: do_export KW_TYPE ID implememts '{' type_members '}'

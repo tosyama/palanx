@@ -78,6 +78,8 @@ class PlnSemanticAnalyzer {
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
 	// Registered type aliases (name -> fully-resolved base type json)
 	map<string, json>      typeAliases_;
+	// Registered const declarations (name -> {"value": <SA'd literal expr>, "value-type": <type>})
+	map<string, json>      constDecls_;
 
 	void enterScope();
 	void leaveScope();
@@ -114,6 +116,7 @@ class PlnSemanticAnalyzer {
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_
+	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_
 	void recordAllocShape(const string& structName);
 	bool isStructType(const json& type) const;
 	json  toStructPntrType(const json& type) const;

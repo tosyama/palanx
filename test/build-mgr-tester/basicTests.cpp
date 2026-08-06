@@ -29,6 +29,12 @@ TEST(build_mgr, block) {
 	ASSERT_EQ(output, "10 20\n10\n6\nhello from block\n14\n1 2 3\n1 2\n1\n");
 }
 
+TEST(build_mgr, const_decl_basic) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/104_const_decl_basic.pa");
+	ASSERT_EQ(output, "100\n101\nhello\n");
+}
+
 TEST(build_mgr, import_basic) {
 	cleanTestEnv();
 	string output = execTestCommand(

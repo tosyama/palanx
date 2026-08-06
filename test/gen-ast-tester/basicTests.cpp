@@ -696,6 +696,22 @@ TEST(gen_ast, type_alias) {
 	ASSERT_EQ(s["type"]["type-name"], "int64");
 }
 
+TEST(gen_ast, const_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/102_const_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// const MAX = 100; → const-decl
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["stmt-type"], "const-decl");
+	ASSERT_EQ(s["name"], "MAX");
+	ASSERT_EQ(s["value"]["expr-type"], "lit-int");
+	ASSERT_EQ(s["value"]["value"], "100");
+}
+
 TEST(gen_ast, field_access) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/023_field_access.pa");

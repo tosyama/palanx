@@ -54,6 +54,7 @@ enum PlnSaMessageCode {
 	E_WriteToReadOnlyArrElem,
 	E_ArrFieldSizeNotConstant,
 	E_ConflictingTypedef,			// arg1: typedef name
+	E_ConstNotCompileTimeValue,		// arg1: const name
 };
 
 class PlnSaMessage

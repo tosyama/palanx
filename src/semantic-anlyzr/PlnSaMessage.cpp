@@ -178,6 +178,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Typedef '" + arg1 + "' conflicts with an existing type alias of a different underlying type.";
 
+		case E_ConstNotCompileTimeValue:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "const '" + arg1 + "' must be initialized with a compile-time constant literal.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

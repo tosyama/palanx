@@ -602,6 +602,19 @@ json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)
 	return json::array();
 }
 
+json PlnSemanticAnalyzer::sa_const_decl(const json& stmt)
+{
+	string name = stmt["name"].get<string>();
+	json value = sa_expression(stmt["value"]);
+	string et = value.value("expr-type", "");
+	if (et != "lit-int" && et != "lit-uint" && et != "lit-flo" && et != "lit-str") {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ConstNotCompileTimeValue, name) << endl;
+		exit(1);
+	}
+	constDecls_[name] = {{"value", value}, {"value-type", value["value-type"]}};
+	return json::array();
+}
+
 json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
 {
 	if (vtype.value("type-kind", "") == "prim") {

@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+const MAX = 100;
+const GREETING = "hello";
+printf("%d\n", MAX);
+printf("%d\n", MAX + 1);
+printf("%s\n", GREETING);
