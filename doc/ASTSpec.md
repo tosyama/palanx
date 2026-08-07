@@ -32,6 +32,7 @@ AST model
 ---------
 - functions - Function definition model list (Palan user-defined functions)
 - statements - Statement model list
+- constants - Constant definition model list (from `cinclude`; object-like `#define` macros recognized as a compile-time constant)
 
 Function definition model
 -------------------------
@@ -49,6 +50,17 @@ Function definition model
   2. **c** - C function prototype (from `cinclude`)
      - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)
      - ret-type\* - Return variable type
+
+Constant definition model
+--------------------------
+An object-like `#define` macro whose body was recognized as one of two forms: a bare
+integer literal (e.g. `#define MAGIC 42`), or a pointer-cast of a bare integer literal
+(e.g. `#define NULL ((void *)0)`). Macros whose body doesn't match either form (function-like
+macros, arithmetic, references to other macros, etc.) are not exported here.
+
+- name\* - Macro name string
+- value\* - Decimal string (e.g. "10")
+- value-type\* - Variable type (see below)
 
 Palan Parameter
 ---------------

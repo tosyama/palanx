@@ -293,3 +293,58 @@ TEST(c2ast, time_h_struct_pointer) {
     ASSERT_EQ(ret["type-kind"], "pntr");
     ASSERT_EQ(ret["base-type"]["type-kind"], "strct");
 }
+
+TEST(c2ast, macro_const_simple) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/018_macro_const_simple.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    json* magic = find_const("MAGIC");
+    ASSERT_NE(magic, nullptr);
+    ASSERT_EQ((*magic)["value"], "42");
+    ASSERT_EQ((*magic)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*magic)["value-type"]["type-name"], "int32");
+
+    // Not a recognized simple constant form: silently skipped, not an error.
+    ASSERT_EQ(find_const("COMPLEX"), nullptr);
+}
+
+TEST(c2ast, macro_const_null) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/019_macro_const_null.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    json* null_const = nullptr;
+    for (auto& c : constants)
+        if (c["name"] == "NULL") { null_const = &c; break; }
+    ASSERT_NE(null_const, nullptr);
+    ASSERT_EQ((*null_const)["value"], "0");
+    ASSERT_EQ((*null_const)["value-type"]["type-kind"], "pntr");
+    ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-kind"], "prim");
+    ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-name"], "void");
+}
+
+TEST(c2ast, string_h_null_constant) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s string.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    // NULL comes from stddef.h, pulled in transitively via string.h.
+    json* null_const = nullptr;
+    for (auto& c : constants)
+        if (c["name"] == "NULL") { null_const = &c; break; }
+    ASSERT_NE(null_const, nullptr);
+    ASSERT_EQ((*null_const)["value"], "0");
+    ASSERT_EQ((*null_const)["value-type"]["type-kind"], "pntr");
+    ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-kind"], "prim");
+    ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-name"], "void");
+}
