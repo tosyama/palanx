@@ -223,6 +223,9 @@ expr_stmt: import
 		                          fs::path(lexer.inputFile).parent_path().string());
 		if (c_ast.is_object() && c_ast.contains("ast")) {
 			$$["functions"] = move(c_ast["ast"]["functions"]);
+			if (c_ast["ast"].contains("constants")) {
+				$$["constants"] = move(c_ast["ast"]["constants"]);
+			}
 		}
 		LOC($$, @$);
 	}

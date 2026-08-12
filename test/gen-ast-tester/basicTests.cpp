@@ -974,3 +974,28 @@ TEST(gen_ast, cinclude_local_header) {
 	}
 	ASSERT_TRUE(found_add_one);
 }
+
+TEST(gen_ast, cinclude_constant) {
+	cleanTestEnv();
+	// IT-2608: c2ast exports object-like macro constants into ast.constants (IT-2607),
+	// but PlnParser.yy's cinclude rule only copied ast.functions into the cinclude stmt.
+	// This verifies the constants array is now copied through as well.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/103_cinclude_constant.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_answer = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		ASSERT_TRUE(stmt.contains("constants"));
+		for (auto& c : stmt["constants"]) {
+			if (c["name"] == "ANSWER") {
+				ASSERT_EQ(c["value"], "42");
+				ASSERT_EQ(c["value-type"]["type-kind"], "prim");
+				ASSERT_EQ(c["value-type"]["type-name"], "int32");
+				found_answer = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_answer);
+}

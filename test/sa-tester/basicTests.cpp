@@ -1458,6 +1458,35 @@ TEST(sa, cinclude_typedef_size_t)
 	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
 }
 
+TEST(sa, cinclude_null_constant)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/127_cinclude_null_compat.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// IT-2608: NULL from cinclude <string.h> (via stddef.h) is registered into
+	// constDecls_ and inlines to a lit-int 0 with pntr(void) value-type, which
+	// IT-2605's typeCompat rule accepts against strchr()'s pntr(int8) return.
+	const auto& ifStmt = jout["statements"][1];
+	ASSERT_EQ(ifStmt["stmt-type"], "if");
+	const auto& cond = ifStmt["cond"];
+	ASSERT_EQ(cond["expr-type"], "cmp");
+	ASSERT_EQ(cond["op"], "==");
+
+	const auto& left = cond["left"];
+	ASSERT_EQ(left["expr-type"], "call");
+	ASSERT_EQ(left["name"], "strchr");
+	ASSERT_EQ(left["func-type"], "c");
+	ASSERT_EQ(left["value-type"]["type-kind"], "pntr");
+
+	const auto& right = cond["right"];
+	ASSERT_EQ(right["expr-type"], "lit-int");
+	ASSERT_EQ(right["value"], "0");
+	ASSERT_EQ(right["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(right["value-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(right["value-type"]["base-type"]["type-name"], "void");
+}
+
 TEST(sa, field_assign)
 {
 	cleanTestEnv();

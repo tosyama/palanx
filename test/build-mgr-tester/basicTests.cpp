@@ -766,6 +766,18 @@ TEST(build_mgr, cinclude_typedef_size_t) {
 	ASSERT_EQ(output, "5\n");
 }
 
+TEST(build_mgr, null_strchr_notfound) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/105_null_strchr_notfound.pa");
+	ASSERT_EQ(output, "not found\n");
+}
+
+TEST(build_mgr, null_strtok_loop) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/106_null_strtok_loop.pa");
+	ASSERT_EQ(output, "a\nbb\nccc\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

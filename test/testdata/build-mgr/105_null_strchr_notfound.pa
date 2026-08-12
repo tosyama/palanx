@@ -1,0 +1,8 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[8]uint8 s;
+strcpy(s, "abc");
+if (strchr(s, 122) == NULL) {
+    printf("not found\n");
+}
