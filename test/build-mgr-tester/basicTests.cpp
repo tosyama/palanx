@@ -778,6 +778,30 @@ TEST(build_mgr, null_strtok_loop) {
 	ASSERT_EQ(output, "a\nbb\nccc\n");
 }
 
+TEST(build_mgr, string_h_cmp) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/107_string_h_cmp.pa");
+	ASSERT_EQ(output, "0\n-1\n0\n-1\n0\n0\n");
+}
+
+TEST(build_mgr, string_h_search) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/108_string_h_search.pa");
+	ASSERT_EQ(output, "llo\nlo\nello\nlo\nllo\no world\nworld\nworld\n");
+}
+
+TEST(build_mgr, string_h_copy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/109_string_h_copy.pa");
+	ASSERT_EQ(output, "foobar\n\nhi\ndup-test\n");
+}
+
+TEST(build_mgr, string_h_misc) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/110_string_h_misc.pa");
+	ASSERT_EQ(output, "Success\nNo such file or directory\nInterrupt\n0\n1\n3\n4\n5\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

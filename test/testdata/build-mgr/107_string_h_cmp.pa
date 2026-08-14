@@ -1,0 +1,9 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+printf("%d\n", strcmp("abc", "abc"));
+printf("%d\n", strcmp("abc", "abd"));
+printf("%d\n", strcasecmp("ABC", "abc"));
+printf("%d\n", strcasecmp("abc", "abd"));
+printf("%d\n", strncasecmp("ABCxyz", "abcqqq", 3));
+printf("%d\n", strcoll("abc", "abc"));
