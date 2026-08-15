@@ -1,0 +1,18 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[16]uint8 buf;
+size_t n = strlcpy(buf, "hello", 16);
+printf("%s %lu\n", buf, n);
+
+[16]uint8 buf2;
+strcpy(buf2, "foo");
+size_t n2 = strlcat(buf2, "bar", 16);
+printf("%s %lu\n", buf2, n2);
+
+[32]uint8 xbuf;
+size_t n3 = strxfrm(xbuf, "hello", 32);
+printf("%lu\n", n3);
+
+printf("%d\n", strncmp("hello", "help", 3));
+printf("%d\n", strncmp("hello", "help", 4));

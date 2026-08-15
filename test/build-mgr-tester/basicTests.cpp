@@ -802,6 +802,24 @@ TEST(build_mgr, string_h_misc) {
 	ASSERT_EQ(output, "Success\nNo such file or directory\nInterrupt\n0\n1\n3\n4\n5\n");
 }
 
+TEST(build_mgr, string_h_len) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/111_string_h_len.pa");
+	ASSERT_EQ(output, "11\n5\n2\n2\n3\n");
+}
+
+TEST(build_mgr, string_h_ncopy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/112_string_h_ncopy.pa");
+	ASSERT_EQ(output, "hi\nfoobar\nhi\ndup\n");
+}
+
+TEST(build_mgr, string_h_lcmp) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/113_string_h_lcmp.pa");
+	ASSERT_EQ(output, "hello 5\nfoobar 6\n5\n0\n-4\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

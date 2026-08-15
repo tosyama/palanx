@@ -1,0 +1,17 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[16]uint8 buf;
+strncpy(buf, "hi", 5);
+printf("%s\n", buf);
+
+[16]uint8 buf2;
+strcpy(buf2, "foo");
+strncat(buf2, "bardog", 3);
+printf("%s\n", buf2);
+
+[16]uint8 buf3;
+stpncpy(buf3, "hi", 5);
+printf("%s\n", buf3);
+
+printf("%s\n", strndup("dup-test-long", 3));
