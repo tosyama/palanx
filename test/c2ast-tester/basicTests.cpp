@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <set>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -273,9 +274,18 @@ TEST(c2ast, ctype_h_parses) {
     string output = execTestCommand("bin/palan-c2ast -s ctype.h");
     json ast = json::parse(output);
     auto& fns = ast["ast"]["functions"];
-    bool found = false;
-    for (auto& f : fns) if (f["name"] == "isalpha") found = true;
-    ASSERT_TRUE(found);
+    std::set<string> names;
+    for (auto& f : fns) names.insert(f["name"].get<string>());
+
+    // isctype is excluded: guarded by #ifdef __USE_GNU in glibc's ctype.h,
+    // which is not among this environment's predefined feature-test macros.
+    static const char* targets[] = {
+        "isalnum", "isalpha", "iscntrl", "isdigit", "islower", "isgraph",
+        "isprint", "ispunct", "isspace", "isupper", "isxdigit", "isblank",
+        "tolower", "toupper", "isascii", "toascii", "_toupper", "_tolower"
+    };
+    for (auto* name : targets)
+        ASSERT_TRUE(names.count(name)) << "missing function: " << name;
 }
 
 TEST(c2ast, time_h_struct_pointer) {

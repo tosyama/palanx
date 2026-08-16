@@ -838,6 +838,12 @@ TEST(build_mgr, string_h_b_null) {
 	ASSERT_EQ(output, "0\n-1\nhello\n0\n0\nmemchr not found\nmemmem not found\n");
 }
 
+TEST(build_mgr, ctype_h_basic) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/117_ctype_h_basic.pa");
+	ASSERT_EQ(output, "8 0\n1024 0\n2 0\n2048 0\n512 0\n256 0\n32768 0\n16384 0\n4 0\n8192 0\n4096 0\n1 0\n1 0\na A\ni\nA a\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
