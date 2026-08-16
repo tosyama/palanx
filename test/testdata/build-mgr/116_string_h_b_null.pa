@@ -1,0 +1,35 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[8]uint8 a;
+[8]uint8 b;
+memset(a, 65, 8);
+memset(b, 65, 8);
+printf("%d\n", bcmp(a, b, 8));
+66 -> b[3];
+printf("%d\n", bcmp(a, b, 8));
+
+[8]uint8 src;
+[8]uint8 dst;
+strcpy(src, "hello");
+bcopy(src, dst, 6);
+printf("%s\n", dst);
+
+[8]uint8 zbuf;
+strcpy(zbuf, "hello");
+bzero(zbuf, 8);
+printf("%d\n", zbuf[0]);
+
+[8]uint8 ezbuf;
+strcpy(ezbuf, "hello");
+explicit_bzero(ezbuf, 8);
+printf("%d\n", ezbuf[0]);
+
+if (memchr(a, 90, 8) == NULL) {
+    printf("memchr not found\n");
+}
+[16]uint8 hay;
+strcpy(hay, "foobar");
+if (memmem(hay, 6, "xyz", 3) == NULL) {
+    printf("memmem not found\n");
+}

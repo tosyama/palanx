@@ -820,6 +820,24 @@ TEST(build_mgr, string_h_lcmp) {
 	ASSERT_EQ(output, "hello 5\nfoobar 6\n5\n0\n-4\n");
 }
 
+TEST(build_mgr, string_h_mem_copy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/114_string_h_mem_copy.pa");
+	ASSERT_EQ(output, "abc\nhello\n0\n-1\n");
+}
+
+TEST(build_mgr, string_h_mem_search) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/115_string_h_mem_search.pa");
+	ASSERT_EQ(output, "llo\nhel\nbarbaz\nab\n");
+}
+
+TEST(build_mgr, string_h_b_null) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/116_string_h_b_null.pa");
+	ASSERT_EQ(output, "0\n-1\nhello\n0\n0\nmemchr not found\nmemmem not found\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
