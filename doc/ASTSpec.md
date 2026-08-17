@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.23
+ver. 0.1.26
 
 \* - Required
 
@@ -137,6 +137,11 @@ Variable type
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
 
+Note: A var-type node originating from a C typedef that resolves to a known type (currently always
+type-kind "prim") may carry an additional `typedef-name` field — the original C typedef identifier
+(e.g. `"size_t"`). This is a c2ast/cinclude-only annotation; SA registers it as a native type alias
+(see PalanReference.md §20 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
+
 Block object
 ------------
 Used in `func-def` bodies and standalone block statements.
@@ -146,7 +151,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
 - loc\* - Location Array (omitted for "not-impl")
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -179,27 +184,30 @@ Statement model
   8. type-alias - native type alias declaration (`type Name = type_expr;`; consumed by SA, not emitted to sa.json)
     - name\* - Alias name string
     - type\* - Aliased type (same Variable type object format)
-  9. field-assign - struct field assignment (`value -> obj.field`)
+  9. const-decl - native constant declaration (`const Name = <literal>;`; consumed by SA, not emitted to sa.json)
+    - name\* - Constant name string
+    - value\* - Literal expression model (lit-int, lit-uint, lit-flo, or lit-str; see Expression model)
+  10. field-assign - struct field assignment (`value -> obj.field`)
     - object\* - Base store_loc (kind: "var")
     - field\*  - Field name string
     - value\*  - Source expression model
-  10. return - return statement
+  11. return - return statement
     - values - Return expression list (omitted for bare `return;`)
-  11. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
+  12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function)
-  12. block - standalone block statement (`{ ... }`)
+  13. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
-  13. if - if / if-else statement
+  14. if - if / if-else statement
     - cond\* - Condition expression model
     - then\* - Then-block object (block statement body)
     - else - Else-block object or nested if statement (omitted when absent)
-  14. while - while loop statement
+  15. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  15. break - exit the innermost while loop (no additional fields)
-  16. continue - skip to next iteration of innermost while loop (no additional fields)
+  16. break - exit the innermost while loop (no additional fields)
+  17. continue - skip to next iteration of innermost while loop (no additional fields)
 
 Expression model
 ----------------

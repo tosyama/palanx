@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.25
+ver. 0.1.26
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -91,9 +91,18 @@ Statement model
 ---------------
 Same structure as AST statements (see ASTSpec.md) with the following differences:
 
-- cinclude statements are consumed by SA and not emitted
+- cinclude statements are consumed by SA and not emitted; any typedef-derived
+  type aliases and object-like-macro constants carried in the header's AST
+  (see ASTSpec.md `typedef-name` and `constants`) are registered into the same
+  alias/const tables described below and likewise never appear in sa.json
 - import statements are consumed by SA and not emitted; imported functions are
   registered in the current scope and become callable from the point of import
+- type-alias statements are consumed by SA and not emitted; the alias is
+  registered and resolved inline at each reference site (see Type Aliases
+  in PalanReference.md)
+- const-decl statements are consumed by SA and not emitted; literal values
+  are inlined at each reference site (see Constant Declarations /
+  Restrictions in PalanReference.md)
 - var-type resolved on id expressions (see Expression model below)
 - assign and return statements are emitted as-is with SA-annotated expressions
 
