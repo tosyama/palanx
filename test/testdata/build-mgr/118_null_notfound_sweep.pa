@@ -1,0 +1,16 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[16]uint8 s;
+strcpy(s, "hello world");
+
+if (strstr(s, "xyz") == NULL) {
+    printf("strstr: not found\n");
+}
+if (strpbrk(s, "xyz") == NULL) {
+    printf("strpbrk: not found\n");
+}
+if (strchrnul(s, 122) != NULL) {
+    printf("strchrnul: not null\n");
+}
+printf("strchrnul: [%s]\n", strchrnul(s, 122));
