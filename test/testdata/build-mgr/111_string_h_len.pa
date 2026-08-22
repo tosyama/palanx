@@ -1,0 +1,8 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+printf("%lu\n", strlen("hello world"));
+printf("%lu\n", strnlen("hello world", 5));
+printf("%lu\n", strnlen("hi", 10));
+printf("%lu\n", strcspn("hello", "lo"));
+printf("%lu\n", strspn("aaabbb", "a"));

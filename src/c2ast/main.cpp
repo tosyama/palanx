@@ -171,6 +171,7 @@ int main(int argc, char* argv[])
 			CPreprocessor cpp(macros, include_paths);
 			string predefined_path = exec_path + "/c2ast/predefined.h";
 			cpp.loadPredefined(predefined_path);
+			set<CMacro*> predefined_macros(macros.begin(), macros.end());
 
 			if (is_sys_header) {
 				input_file = CFileInfo::searchFilePath(input_file, include_paths);
@@ -188,6 +189,12 @@ int main(int argc, char* argv[])
 				ast["original"] = input_file;
 				int ret = cparser.parse(ast);
 				if (ret) return ret;
+
+				vector<CMacro*> user_macros;
+				for (CMacro* m : macros) {
+					if (!predefined_macros.count(m)) user_macros.push_back(m);
+				}
+				cparser.exportMacroConstants(ast, user_macros);
 
 				ostream* out = &cout;
 				ofstream outfile;

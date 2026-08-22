@@ -1,0 +1,13 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[16]uint8 buf;
+strcpy(buf, "foo");
+strcat(buf, "bar");
+printf("%s\n", buf);
+
+[16]uint8 buf2;
+printf("%s\n", stpcpy(buf2, "hi"));
+printf("%s\n", buf2);
+
+printf("%s\n", strdup("dup-test"));

@@ -1,0 +1,2 @@
+cinclude <string.h>;
+size_t n = strlen("hello");

@@ -296,6 +296,7 @@ void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 {
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"]) {
+			p["var-type"] = resolveTypeAlias(p["var-type"]);
 			if (isStructType(p["var-type"]))
 				p["var-type"] = toStructPntrType(p["var-type"]);
 			else
@@ -303,17 +304,34 @@ void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 		}
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"]) {
+			r["var-type"] = resolveTypeAlias(r["var-type"]);
 			if (isStructType(r["var-type"]))
 				r["var-type"] = toStructPntrType(r["var-type"]);
 			else
 				r["var-type"] = deepNormalizePrimToStruct(r["var-type"]);
 		}
 	if (funcDef.contains("ret-type")) {
+		funcDef["ret-type"] = resolveTypeAlias(funcDef["ret-type"]);
 		if (isStructType(funcDef["ret-type"]))
 			funcDef["ret-type"] = toStructPntrType(funcDef["ret-type"]);
 		else
 			funcDef["ret-type"] = deepNormalizePrimToStruct(funcDef["ret-type"]);
 	}
+}
+
+// Resolve alias type-names in a not-yet-registered function signature so
+// call-site type checks done while pre-registering (before the function's
+// own body/normalizeStructSig pass runs) see the underlying primitive type.
+void PlnSemanticAnalyzer::resolveFuncSigTypeAliases(json& funcEntry) const
+{
+	if (funcEntry.contains("parameters"))
+		for (auto& p : funcEntry["parameters"])
+			p["var-type"] = resolveTypeAlias(p["var-type"]);
+	if (funcEntry.contains("rets"))
+		for (auto& r : funcEntry["rets"])
+			r["var-type"] = resolveTypeAlias(r["var-type"]);
+	if (funcEntry.contains("ret-type"))
+		funcEntry["ret-type"] = resolveTypeAlias(funcEntry["ret-type"]);
 }
 
 void PlnSemanticAnalyzer::analysis(const json &ast)
@@ -324,6 +342,13 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
 	enterScope();
+	// 0. Pre-scan top-level type-alias declarations so function signatures
+	//    pre-registered in step 1 (and calls resolved during step 2) see
+	//    fully-resolved primitive types instead of alias names.
+	if (ast["ast"].contains("statements"))
+		for (auto& stmt : ast["ast"]["statements"])
+			if (stmt.value("stmt-type", "") == "type-alias")
+				sa_type_alias(stmt);
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"]) {
@@ -333,6 +358,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 			validateEmbeddedParams(funcEntry);
 			if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+			resolveFuncSigTypeAliases(funcEntry);
 			registerPlnFunc(funcEntry["name"], funcEntry);
 		}
 	// 2. Process top-level statements (cinclude/import registered here,
@@ -355,6 +381,47 @@ const json& PlnSemanticAnalyzer::result()
 	return sa;
 }
 
+// Recursively find "typedef-name" hints (added by c2ast for scalar typedefs
+// like size_t) inside a type node, register the underlying primitive into
+// typeAliases_ so Palan code can reference the typedef name via IT-2602's
+// alias mechanism, and strip the hint so it doesn't leak into sa.json (e.g.
+// via sa_expr_call copying a C function's ret-type into a call's value-type).
+void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
+{
+	string tk = vtype.value("type-kind", "");
+	if (tk == "prim" && vtype.contains("typedef-name")) {
+		string aliasName = vtype["typedef-name"].get<string>();
+		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
+		auto it = typeAliases_.find(aliasName);
+		if (it == typeAliases_.end()) {
+			typeAliases_[aliasName] = resolved;
+		} else if (it->second != resolved) {
+			cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
+			exit(1);
+		}
+		vtype.erase("typedef-name");
+	} else if (tk == "pntr" && vtype.contains("base-type")) {
+		registerTypedefAliasInType(vtype["base-type"]);
+	} else if (tk == "func") {
+		if (vtype.contains("ret-type"))
+			registerTypedefAliasInType(vtype["ret-type"]);
+		if (vtype.contains("parameters"))
+			for (auto& p : vtype["parameters"])
+				if (p.contains("var-type"))
+					registerTypedefAliasInType(p["var-type"]);
+	}
+}
+
+void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
+{
+	if (funcEntry.contains("ret-type"))
+		registerTypedefAliasInType(funcEntry["ret-type"]);
+	if (funcEntry.contains("parameters"))
+		for (auto& p : funcEntry["parameters"])
+			if (p.contains("var-type"))
+				registerTypedefAliasInType(p["var-type"]);
+}
+
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
 	if (!stmt.contains("functions")) return;
@@ -365,12 +432,24 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& f : stmt["functions"]) {
 			string fname = f["name"].get<string>();
 			json entry = f;
+			registerCFuncTypedefAliases(entry);
 			entry["_c-func"] = true;
 			currentScope[alias][fname] = entry;
 		}
 	} else {
 		for (auto& f : stmt["functions"]) {
-			registerCFunc(f["name"], f);
+			json entry = f;
+			registerCFuncTypedefAliases(entry);
+			registerCFunc(entry["name"].get<string>(), entry);
+		}
+	}
+
+	if (stmt.contains("constants")) {
+		for (auto& c : stmt["constants"]) {
+			string name = c["name"].get<string>();
+			if (constDecls_.count(name)) continue;  // first header wins on duplicate macro names
+			constDecls_[name] = {{"value", {{"expr-type","lit-int"},{"value",c["value"]},{"value-type",c["value-type"]}}},
+			                     {"value-type", c["value-type"]}};
 		}
 	}
 }

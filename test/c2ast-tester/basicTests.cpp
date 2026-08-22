@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <set>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -202,6 +203,91 @@ TEST(c2ast, struct_enum_typedef) {
     }
 }
 
+TEST(c2ast, typedef_scalar) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/015_typedef_scalar.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* f = find_func("f");
+    ASSERT_NE(f, nullptr);
+    ASSERT_EQ((*f)["ret-type"]["type-kind"], "prim");
+    ASSERT_EQ((*f)["ret-type"]["type-name"], "uint64");
+    ASSERT_EQ((*f)["ret-type"]["typedef-name"], "my_size_t");
+}
+
+TEST(c2ast, typedef_chain) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/016_typedef_chain.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* g = find_func("g");
+    ASSERT_NE(g, nullptr);
+    ASSERT_EQ((*g)["ret-type"]["type-kind"], "prim");
+    ASSERT_EQ((*g)["ret-type"]["type-name"], "uint64");
+    ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
+}
+
+TEST(c2ast, typedef_struct_unresolved) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/017_typedef_struct_unresolved.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* h = find_func("h");
+    ASSERT_NE(h, nullptr);
+    ASSERT_EQ((*h)["ret-type"]["type-kind"], "user");
+    ASSERT_EQ((*h)["ret-type"]["type-name"], "Point");
+}
+
+TEST(c2ast, relational_ops) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/014_relational_ops.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    bool found = false;
+    for (auto& f : functions) if (f["name"] == "f") found = true;
+    ASSERT_TRUE(found);
+}
+
+TEST(c2ast, ctype_h_parses) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s ctype.h");
+    json ast = json::parse(output);
+    auto& fns = ast["ast"]["functions"];
+    std::set<string> names;
+    for (auto& f : fns) names.insert(f["name"].get<string>());
+
+    // isctype is excluded: guarded by #ifdef __USE_GNU in glibc's ctype.h,
+    // which is not among this environment's predefined feature-test macros.
+    static const char* targets[] = {
+        "isalnum", "isalpha", "iscntrl", "isdigit", "islower", "isgraph",
+        "isprint", "ispunct", "isspace", "isupper", "isxdigit", "isblank",
+        "tolower", "toupper", "isascii", "toascii", "_toupper", "_tolower"
+    };
+    for (auto* name : targets)
+        ASSERT_TRUE(names.count(name)) << "missing function: " << name;
+}
+
 TEST(c2ast, time_h_struct_pointer) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast -s time.h");
@@ -216,4 +302,59 @@ TEST(c2ast, time_h_struct_pointer) {
     auto& ret = (*gmtime)["ret-type"];
     ASSERT_EQ(ret["type-kind"], "pntr");
     ASSERT_EQ(ret["base-type"]["type-kind"], "strct");
+}
+
+TEST(c2ast, macro_const_simple) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/018_macro_const_simple.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    json* magic = find_const("MAGIC");
+    ASSERT_NE(magic, nullptr);
+    ASSERT_EQ((*magic)["value"], "42");
+    ASSERT_EQ((*magic)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*magic)["value-type"]["type-name"], "int32");
+
+    // Not a recognized simple constant form: silently skipped, not an error.
+    ASSERT_EQ(find_const("COMPLEX"), nullptr);
+}
+
+TEST(c2ast, macro_const_null) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/019_macro_const_null.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    json* null_const = nullptr;
+    for (auto& c : constants)
+        if (c["name"] == "NULL") { null_const = &c; break; }
+    ASSERT_NE(null_const, nullptr);
+    ASSERT_EQ((*null_const)["value"], "0");
+    ASSERT_EQ((*null_const)["value-type"]["type-kind"], "pntr");
+    ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-kind"], "prim");
+    ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-name"], "void");
+}
+
+TEST(c2ast, string_h_null_constant) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s string.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    // NULL comes from stddef.h, pulled in transitively via string.h.
+    json* null_const = nullptr;
+    for (auto& c : constants)
+        if (c["name"] == "NULL") { null_const = &c; break; }
+    ASSERT_NE(null_const, nullptr);
+    ASSERT_EQ((*null_const)["value"], "0");
+    ASSERT_EQ((*null_const)["value-type"]["type-kind"], "pntr");
+    ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-kind"], "prim");
+    ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-name"], "void");
 }

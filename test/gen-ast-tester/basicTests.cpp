@@ -680,6 +680,38 @@ TEST(gen_ast, struct_def) {
 	ASSERT_EQ(s["fields"][1]["var-type"]["type-name"], "int64");
 }
 
+TEST(gen_ast, type_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/034_type_alias.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// type MyInt = int64; → type-alias
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["stmt-type"], "type-alias");
+	ASSERT_EQ(s["name"], "MyInt");
+	ASSERT_EQ(s["type"]["type-kind"], "prim");
+	ASSERT_EQ(s["type"]["type-name"], "int64");
+}
+
+TEST(gen_ast, const_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/102_const_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 1);
+
+	// const MAX = 100; → const-decl
+	const auto& s = stmts[0];
+	ASSERT_EQ(s["stmt-type"], "const-decl");
+	ASSERT_EQ(s["name"], "MAX");
+	ASSERT_EQ(s["value"]["expr-type"], "lit-int");
+	ASSERT_EQ(s["value"]["value"], "100");
+}
+
 TEST(gen_ast, field_access) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/023_field_access.pa");
@@ -918,4 +950,52 @@ TEST(gen_ast, func_arr_at_struct_param) {
 	ASSERT_EQ(vt["base-type"]["mutable"], true);
 	ASSERT_EQ(vt["base-type"]["base-type"]["type-kind"], "prim");
 	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
+}
+
+TEST(gen_ast, cinclude_local_header) {
+	cleanTestEnv();
+	// bin/palan-gen-ast runs from build/, while the .pa and .h fixtures live under
+	// test/testdata/gen-ast/ - this only passes if the quoted local header path is
+	// resolved relative to the source file, not the process cwd.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/035_cinclude_local_header.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_add_one = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		for (auto& f : stmt["functions"]) {
+			if (f["name"] == "add_one" && f["func-type"] == "c") {
+				found_add_one = true;
+				break;
+			}
+		}
+		if (found_add_one) break;
+	}
+	ASSERT_TRUE(found_add_one);
+}
+
+TEST(gen_ast, cinclude_constant) {
+	cleanTestEnv();
+	// IT-2608: c2ast exports object-like macro constants into ast.constants (IT-2607),
+	// but PlnParser.yy's cinclude rule only copied ast.functions into the cinclude stmt.
+	// This verifies the constants array is now copied through as well.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/103_cinclude_constant.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_answer = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		ASSERT_TRUE(stmt.contains("constants"));
+		for (auto& c : stmt["constants"]) {
+			if (c["name"] == "ANSWER") {
+				ASSERT_EQ(c["value"], "42");
+				ASSERT_EQ(c["value-type"]["type-kind"], "prim");
+				ASSERT_EQ(c["value-type"]["type-name"], "int32");
+				found_answer = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_answer);
 }

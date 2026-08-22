@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.25
+**Version:** v0.1.26
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -55,6 +55,9 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 16. [Optional Semicolons](#16-optional-semicolons)
 17. [Floating-Point Types](#17-floating-point-types)
 18. [Arrays](#18-arrays)
+19. [Struct Types](#19-struct-types)
+20. [Type Aliases](#20-type-aliases)
+21. [Constant Declarations](#21-constant-declarations)
 
 ---
 
@@ -276,6 +279,31 @@ S.printf("%d\n", 42);        // qualified call
 
 - `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
 - With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
+- C typedefs that resolve to a primitive type are automatically registered as a Palan type alias
+  (see [Type Aliases](#20-type-aliases)) the moment the header is cincluded. For example,
+  `size_t n = strlen(s);` works immediately after `cinclude <string.h>;`, with no explicit alias
+  declaration needed. Typedefs that bottom out in a non-primitive type (struct, union, enum) are not
+  resolved and remain unusable this version.
+- Object-like `#define` macros whose body is a bare integer literal, or a pointer-cast of a bare
+  integer literal (e.g. `#define NULL ((void *)0)`), are automatically imported as a Palan `const`
+  (see [Constant Declarations](#21-constant-declarations)) the moment the header is cincluded. Other
+  macro forms (function-like macros, arithmetic expressions, references to other macros) are silently
+  not imported.
+
+  ```palan
+  cinclude <string.h>;
+  if (strchr(s, 'x') == NULL) {
+      // not found
+  }
+  ```
+
+  `NULL` is a generic pointer value: it is compatible with and can be compared (`==`/`!=`)
+  against any pointer-typed value, including C function return values, `[]T` array
+  pointers, and struct pointer fields.
+- If multiple cincluded headers introduce the same typedef or constant name, the first registration
+  wins (silent deduplication).
+- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported typedefs or constants — they
+  are always registered globally. Only C function calls require the `X.` qualifier.
 
 ---
 
@@ -696,8 +724,9 @@ Expected output:
 ### Unsized Array Types in Function Signatures
 
 `[]T` and `[][]T` can be used as parameter types and return types in function declarations.
-The semantic analyzer resolves them to pointer types (`pntr(T)` and `pntr(pntr(T))`) with no
-ownership tracking. The caller is responsible for managing the lifetime of the returned pointer.
+The semantic analyzer resolves them to plain pointer types with no ownership tracking —
+`[]T` becomes a pointer to `T`, and `[][]T` becomes a pointer to a pointer to `T`. The caller
+is responsible for managing the lifetime of the returned pointer.
 
 ```palan
 func sum_arr([]int32 a, int64 n) -> int64 {
@@ -999,3 +1028,56 @@ func makePoint(int64 x, int64 y) -> Point p {
 
 - Nested/2D array fields (`[n]$[m]T field`, etc.) are not supported.
 - Recursive embedding (`type A { $A a; }`) is a compile error.
+
+---
+
+## 20. Type Aliases
+
+Declare an alias for a primitive type with `type`:
+
+```palan
+type MyInt = int64;
+
+MyInt x = 42;
+
+func addOne(MyInt n) -> MyInt result {
+    n + 1 -> result;
+}
+```
+
+- The alias may be used in variable declarations and function signatures.
+- Only aliasing a primitive type is supported this version.
+
+### Restrictions
+
+- Alias use inside array element types (`[n]MyInt`) is not supported.
+- Alias use inside struct field types is not supported.
+- The alias target being a struct type is not supported — the target must resolve to a primitive.
+- Unlike primitive types' `int64(x)` cast syntax, there is no constructor-cast syntax `MyAlias(x)`.
+
+---
+
+## 21. Constant Declarations
+
+Declare a compile-time constant with `const`:
+
+```palan
+const MaxLen = 256;
+
+[MaxLen]uint8 buf;
+printf("%ld\n", MaxLen);   // 256
+```
+
+- Only a compile-time literal value is accepted — `lit-int`, `lit-uint`, `lit-flo`, or `lit-str` —
+  not an arbitrary compile-time-constant expression (e.g. `const X = 1 + 2;` is not supported).
+- Every reference to the constant is inlined with the literal value; the constant's name does not
+  appear in `sa.json`.
+- A const may reference another const declared earlier (`const B = A;`); this chains naturally
+  through inlining.
+
+### Restrictions
+
+- There is no name-collision check between a const and a variable — a variable declaration of the
+  same name silently shadows a same-named const.
+- A const cannot be used at a point where a function signature is pre-registered, e.g. as an
+  array-size in a parameter type. It is only usable from ordinary statement processing onward.

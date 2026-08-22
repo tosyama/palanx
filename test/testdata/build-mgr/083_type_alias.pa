@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+type MyInt = int64;
+MyInt x = 5;
+printf("%ld\n", x);
+
+type Count = uint64;
+func double(Count n) -> Count r {
+	n * 2 -> r;
+}
+printf("%lu\n", double(21));

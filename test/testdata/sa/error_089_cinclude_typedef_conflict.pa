@@ -1,0 +1,3 @@
+type size_t = int32;
+cinclude <string.h>;
+size_t n = strlen("hello");

@@ -1,0 +1,4 @@
+cinclude <string.h>;
+[8]uint8 s;
+if (strchr(s, 122) == NULL) {
+}

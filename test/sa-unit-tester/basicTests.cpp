@@ -70,6 +70,22 @@ TEST(typecompat, incompatible_ptr_diff_base) {
     EXPECT_EQ(typeCompat(pi32, pi64, reg), TypeCompat::Incompatible);
 }
 
+// -------- typeCompat: pntr(void) (IT-2605) --------
+
+TEST(typecompat, void_ptr_compat_with_typed_ptr) {
+    PlnTypeRegistry reg;
+    const PlnType* pvoid = reg.ptr(reg.prim(N::Void));
+    const PlnType* pi32  = reg.ptr(reg.prim(N::Int32));
+    EXPECT_EQ(typeCompat(pvoid, pi32, reg), TypeCompat::Identical);
+    EXPECT_EQ(typeCompat(pi32, pvoid, reg), TypeCompat::Identical);
+}
+
+TEST(typecompat, void_ptr_compat_with_void_ptr) {
+    PlnTypeRegistry reg;
+    const PlnType* pvoid = reg.ptr(reg.prim(N::Void));
+    EXPECT_EQ(typeCompat(pvoid, pvoid, reg), TypeCompat::Identical);
+}
+
 // -------- PlnTypeRegistry: interning --------
 
 TEST(typecompat, registry_intern_prim) {
@@ -106,4 +122,16 @@ TEST(typecompat, registry_from_json_ptr) {
     ASSERT_EQ(t->kind, PlnType::Kind::Ptr);
     const auto* pt = static_cast<const PtrType*>(t);
     EXPECT_EQ(pt->base, reg.prim(N::Int32));
+}
+
+TEST(typecompat, registry_from_json_void_ptr) {
+    PlnTypeRegistry reg;
+    json j = {
+        {"type-kind", "pntr"},
+        {"base-type", {{"type-kind", "prim"}, {"type-name", "void"}}}
+    };
+    const PlnType* t = reg.fromJson(j);
+    ASSERT_EQ(t->kind, PlnType::Kind::Ptr);
+    const auto* pt = static_cast<const PtrType*>(t);
+    EXPECT_EQ(pt->base, reg.prim(N::Void));
 }

@@ -1,0 +1,19 @@
+cinclude <ctype.h>;
+cinclude <stdio.h>;
+
+printf("%d %d\n", isalnum(97), isalnum(32));
+printf("%d %d\n", isalpha(97), isalpha(49));
+printf("%d %d\n", iscntrl(9), iscntrl(65));
+printf("%d %d\n", isdigit(53), isdigit(97));
+printf("%d %d\n", islower(97), islower(65));
+printf("%d %d\n", isupper(65), isupper(97));
+printf("%d %d\n", isgraph(65), isgraph(32));
+printf("%d %d\n", isprint(65), isprint(9));
+printf("%d %d\n", ispunct(46), ispunct(65));
+printf("%d %d\n", isspace(32), isspace(65));
+printf("%d %d\n", isxdigit(70), isxdigit(71));
+printf("%d %d\n", isblank(32), isblank(65));
+printf("%d %d\n", isascii(65), isascii(200));
+printf("%c %c\n", tolower(65), toupper(97));
+printf("%c\n", toascii(233));
+printf("%c %c\n", _toupper(97), _tolower(65));

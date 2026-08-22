@@ -1,0 +1,12 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+printf("%s\n", strerror(0));
+printf("%s\n", strerror(2));
+printf("%s\n", strsignal(2));
+
+printf("%d\n", ffs(0));
+printf("%d\n", ffs(1));
+printf("%d\n", ffs(12));
+printf("%d\n", ffsl(8));
+printf("%d\n", ffsll(16));

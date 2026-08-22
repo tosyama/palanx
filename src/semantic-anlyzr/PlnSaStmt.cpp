@@ -21,6 +21,8 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "assign")     result.push_back(sa_assign_stmt(stmt));
 		else if (t == "arr-assign")   { for (auto& s : sa_arr_assign_stmt(stmt)) result.push_back(s); }
 		else if (t == "struct-def")   sa_struct_def(stmt);
+		else if (t == "type-alias")   sa_type_alias(stmt);
+		else if (t == "const-decl")   sa_const_decl(stmt);
 		else if (t == "field-assign") result.push_back(sa_field_assign(stmt));
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
@@ -181,11 +183,11 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(unsizedArrToPntr(p["var-type"]))), &funcDef);
+			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(unsizedArrToPntr(resolveTypeAlias(p["var-type"])))), &funcDef);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
-			if (!isStructType(r["var-type"]))
-				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(r["var-type"])), &funcDef);
+			if (!isStructType(resolveTypeAlias(r["var-type"])))
+				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(resolveTypeAlias(r["var-type"]))), &funcDef);
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
 	enterScope();  // push scope[1] = function body
@@ -204,6 +206,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		validateEmbeddedParams(funcEntry);
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+		resolveFuncSigTypeAliases(funcEntry);
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
 	}
 

@@ -1,0 +1,8 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[16]uint8 line;
+strcpy(line, "a,bb,ccc");
+printf("%s\n", strtok(line, ","));
+printf("%s\n", strtok(NULL, ","));
+printf("%s\n", strtok(NULL, ","));

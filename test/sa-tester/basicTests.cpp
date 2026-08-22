@@ -1390,6 +1390,103 @@ TEST(sa, struct_def)
 	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
 }
 
+TEST(sa, type_alias_var)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/120_type_alias_var.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// type-alias is consumed; first stmt is var-decl for x, resolved to int64
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "x");
+	ASSERT_EQ(v["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(v["var-type"]["type-name"], "int64");
+	ASSERT_EQ(v["init"]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, type_alias_func)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/121_type_alias_func.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const json* doubleFunc = nullptr;
+	for (auto& f : jout["functions"])
+		if (f["name"] == "double") doubleFunc = &f;
+	ASSERT_NE(doubleFunc, nullptr);
+
+	// Count param/ret resolved to uint64, not left as the alias name
+	ASSERT_EQ((*doubleFunc)["parameters"][0]["var-type"]["type-kind"], "prim");
+	ASSERT_EQ((*doubleFunc)["parameters"][0]["var-type"]["type-name"], "uint64");
+	ASSERT_EQ((*doubleFunc)["ret-type"]["type-kind"], "prim");
+	ASSERT_EQ((*doubleFunc)["ret-type"]["type-name"], "uint64");
+
+	// body: n * 2 -> r; assign stmt with mul expression, no crash resolving Count
+	bool found_assign = false;
+	for (auto& stmt : (*doubleFunc)["body"]) {
+		if (stmt["stmt-type"] != "assign") continue;
+		ASSERT_EQ(stmt["name"], "r");
+		ASSERT_EQ(stmt["value"]["value-type"]["type-name"], "uint64");
+		found_assign = true;
+	}
+	ASSERT_TRUE(found_assign);
+}
+
+TEST(sa, cinclude_typedef_size_t)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/122_cinclude_typedef_size_t.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// size_t resolved via IT-2604's cinclude typedef bridge to a clean uint64,
+	// with no leftover "typedef-name" bookkeeping key.
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "n");
+	ASSERT_EQ(v["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(v["var-type"]["type-name"], "uint64");
+	ASSERT_FALSE(v["var-type"].contains("typedef-name"));
+
+	// strlen() call's value-type is likewise clean.
+	ASSERT_EQ(v["init"]["expr-type"], "call");
+	ASSERT_EQ(v["init"]["name"], "strlen");
+	ASSERT_EQ(v["init"]["func-type"], "c");
+	ASSERT_EQ(v["init"]["value-type"]["type-name"], "uint64");
+	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
+}
+
+TEST(sa, cinclude_null_constant)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/127_cinclude_null_compat.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// IT-2608: NULL from cinclude <string.h> (via stddef.h) is registered into
+	// constDecls_ and inlines to a lit-int 0 with pntr(void) value-type, which
+	// IT-2605's typeCompat rule accepts against strchr()'s pntr(int8) return.
+	const auto& ifStmt = jout["statements"][1];
+	ASSERT_EQ(ifStmt["stmt-type"], "if");
+	const auto& cond = ifStmt["cond"];
+	ASSERT_EQ(cond["expr-type"], "cmp");
+	ASSERT_EQ(cond["op"], "==");
+
+	const auto& left = cond["left"];
+	ASSERT_EQ(left["expr-type"], "call");
+	ASSERT_EQ(left["name"], "strchr");
+	ASSERT_EQ(left["func-type"], "c");
+	ASSERT_EQ(left["value-type"]["type-kind"], "pntr");
+
+	const auto& right = cond["right"];
+	ASSERT_EQ(right["expr-type"], "lit-int");
+	ASSERT_EQ(right["value"], "0");
+	ASSERT_EQ(right["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(right["value-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(right["value-type"]["base-type"]["type-name"], "void");
+}
+
 TEST(sa, field_assign)
 {
 	cleanTestEnv();
@@ -2644,4 +2741,61 @@ TEST(sa, field_arr_readonly_ptr_slot)
 	ASSERT_EQ(fa_read["offset"], 0);
 	ASSERT_EQ(fa_read["ptr-expr"]["expr-type"], "arr-index");
 	ASSERT_EQ(fa_read["ptr-expr"]["value-type"]["mutable"], false);
+}
+
+TEST(sa, void_ptr_compat)
+{
+	// IT-2605: pntr(void) parameters (e.g. memcpy's void* dest/src) must resolve
+	// and accept pntr(T) arguments without SA throwing on the unknown "void" prim.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/123_void_ptr_compat.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][2]["body"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["name"], "memcpy");
+	ASSERT_EQ(call["func-type"], "c");
+}
+
+TEST(sa, void_ptr_cmp)
+{
+	// IT-2605: comparing two pntr(void) results (e.g. memchr() == memchr()) goes
+	// through the "cmp" expr's unguarded fromJson() calls, which previously threw.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/124_void_ptr_cmp.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][2];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "r");
+	ASSERT_EQ(v["var-type"]["type-name"], "int32");
+	ASSERT_EQ(v["init"]["expr-type"], "cmp");
+	ASSERT_EQ(v["init"]["value-type"]["type-name"], "int32");
+}
+
+TEST(sa, const_decl_basic)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/125_const_decl_basic.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"].size(), 1);
+
+	// const-decl is consumed; first stmt is var-decl for x, init inlined to lit-int 100
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "x");
+	ASSERT_EQ(v["init"]["expr-type"], "lit-int");
+	ASSERT_EQ(v["init"]["value"], "100");
+	ASSERT_EQ(v["init"]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, const_decl_chain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/126_const_decl_chain.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"].size(), 1);
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["value"], "10");
 }

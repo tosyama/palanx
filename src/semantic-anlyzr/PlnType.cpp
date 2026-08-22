@@ -24,6 +24,7 @@ struct PrimTypeNames {
         toEnum["uint64"] = PrimType::Name::Uint64;
         toEnum["flo32"]  = PrimType::Name::Float32;
         toEnum["flo64"]  = PrimType::Name::Float64;
+        toEnum["void"]   = PrimType::Name::Void;
         for (auto& [k, v] : toEnum) fromEnum[v] = k;
     }
 
@@ -155,7 +156,15 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
         // base pointers are interned so pointer equality is sufficient
         const auto* pf = static_cast<const PtrType*>(from);
         const auto* pt = static_cast<const PtrType*>(to);
-        return (pf->base == pt->base) ? TypeCompat::Identical : TypeCompat::Incompatible;
+        if (pf->base == pt->base) return TypeCompat::Identical;
+
+        bool fromIsVoid = pf->base->kind == PlnType::Kind::Prim
+            && static_cast<const PrimType*>(pf->base)->name == PrimType::Name::Void;
+        bool toIsVoid = pt->base->kind == PlnType::Kind::Prim
+            && static_cast<const PrimType*>(pt->base)->name == PrimType::Name::Void;
+        if (fromIsVoid || toIsVoid) return TypeCompat::Identical;  // pntr(void) is bidirectionally compatible with any pntr(T)
+
+        return TypeCompat::Incompatible;
     }
 
     return TypeCompat::Incompatible;

@@ -29,6 +29,12 @@ TEST(build_mgr, block) {
 	ASSERT_EQ(output, "10 20\n10\n6\nhello from block\n14\n1 2 3\n1 2\n1\n");
 }
 
+TEST(build_mgr, const_decl_basic) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/104_const_decl_basic.pa");
+	ASSERT_EQ(output, "100\n101\nhello\n");
+}
+
 TEST(build_mgr, import_basic) {
 	cleanTestEnv();
 	string output = execTestCommand(
@@ -746,6 +752,102 @@ TEST(build_mgr, owned_and_embed_arr_mixed_mtrace) {
 	EXPECT_EQ(allocs, 6) << "expected 6 allocs for Widget with mixed owned/embed arr fields, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, type_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/083_type_alias.pa");
+	ASSERT_EQ(output, "5\n42\n");
+}
+
+TEST(build_mgr, cinclude_typedef_size_t) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/084_cinclude_typedef_size_t.pa");
+	ASSERT_EQ(output, "5\n");
+}
+
+TEST(build_mgr, null_strchr_notfound) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/105_null_strchr_notfound.pa");
+	ASSERT_EQ(output, "not found\n");
+}
+
+TEST(build_mgr, null_strtok_loop) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/106_null_strtok_loop.pa");
+	ASSERT_EQ(output, "a\nbb\nccc\n");
+}
+
+TEST(build_mgr, string_h_cmp) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/107_string_h_cmp.pa");
+	ASSERT_EQ(output, "0\n-1\n0\n-1\n0\n0\n");
+}
+
+TEST(build_mgr, string_h_search) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/108_string_h_search.pa");
+	ASSERT_EQ(output, "llo\nlo\nello\nlo\nllo\no world\nworld\nworld\n");
+}
+
+TEST(build_mgr, string_h_copy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/109_string_h_copy.pa");
+	ASSERT_EQ(output, "foobar\n\nhi\ndup-test\n");
+}
+
+TEST(build_mgr, string_h_misc) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/110_string_h_misc.pa");
+	ASSERT_EQ(output, "Success\nNo such file or directory\nInterrupt\n0\n1\n3\n4\n5\n");
+}
+
+TEST(build_mgr, string_h_len) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/111_string_h_len.pa");
+	ASSERT_EQ(output, "11\n5\n2\n2\n3\n");
+}
+
+TEST(build_mgr, string_h_ncopy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/112_string_h_ncopy.pa");
+	ASSERT_EQ(output, "hi\nfoobar\nhi\ndup\n");
+}
+
+TEST(build_mgr, string_h_lcmp) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/113_string_h_lcmp.pa");
+	ASSERT_EQ(output, "hello 5\nfoobar 6\n5\n0\n-4\n");
+}
+
+TEST(build_mgr, string_h_mem_copy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/114_string_h_mem_copy.pa");
+	ASSERT_EQ(output, "abc\nhello\n0\n-1\n");
+}
+
+TEST(build_mgr, string_h_mem_search) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/115_string_h_mem_search.pa");
+	ASSERT_EQ(output, "llo\nhel\nbarbaz\nab\n");
+}
+
+TEST(build_mgr, string_h_b_null) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/116_string_h_b_null.pa");
+	ASSERT_EQ(output, "0\n-1\nhello\n0\n0\nmemchr not found\nmemmem not found\n");
+}
+
+TEST(build_mgr, ctype_h_basic) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/117_ctype_h_basic.pa");
+	ASSERT_EQ(output, "8 0\n1024 0\n2 0\n2048 0\n512 0\n256 0\n32768 0\n16384 0\n4 0\n8192 0\n4096 0\n1 0\n1 0\na A\ni\nA a\n");
+}
+
+TEST(build_mgr, null_notfound_sweep) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/118_null_notfound_sweep.pa");
+	ASSERT_EQ(output, "strstr: not found\nstrpbrk: not found\nstrchrnul: not null\nstrchrnul: []\n");
 }
 
 TEST(build_mgr, clean) {

@@ -1,0 +1,20 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[8]uint8 dst;
+memset(dst, 0, 8);
+memcpy(dst, "abc", 3);
+printf("%s\n", dst);
+
+[8]uint8 mv;
+strcpy(mv, "hello");
+memmove(mv, mv, 5);
+printf("%s\n", mv);
+
+[8]uint8 a;
+[8]uint8 b;
+memset(a, 65, 8);
+memset(b, 65, 8);
+printf("%d\n", memcmp(a, b, 8));
+66 -> b[3];
+printf("%d\n", memcmp(a, b, 8));

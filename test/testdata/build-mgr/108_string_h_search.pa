@@ -1,0 +1,16 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[8]uint8 s;
+strcpy(s, "hello");
+printf("%s\n", strchr(s, 108));
+printf("%s\n", strrchr(s, 108));
+printf("%s\n", index(s, 101));
+printf("%s\n", rindex(s, 108));
+printf("%s\n", strchrnul(s, 108));
+
+[16]uint8 t;
+strcpy(t, "hello world");
+printf("%s\n", strpbrk(t, "wo"));
+printf("%s\n", strstr(t, "world"));
+printf("%s\n", strcasestr(t, "WORLD"));
