@@ -6,86 +6,72 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-07-18)
-version: 0.1.26
-- This iteration is the first of a planned series of incremental C standard library support iterations, targeting `string.h` and `ctype.h`. **The actual goal of this whole series is not "make these specific functions callable" — it's to use concrete C headers as a forcing function to grow Palan's own C-compatible language surface.** Header support is the vehicle; language-feature growth is the point. Concretely, this means: when a gap traces back to an existing-but-dormant Palan grammar stub, the disposition is to *implement that stub for real*, not to route around it with a narrower, invisible substitute — see gaps 1 and 6 below, both of which land on unimplemented `type`/`const` declaration grammar already present in `PlnParser.yy`. The goal is defined by a **completeness audit**, not by a hand-picked list of convenient functions: every function declared by these two headers (as seen by `palan-c2ast` against this project's real glibc/x86-64 system headers) was enumerated and classified by what Palan capability it needs. Only categories with a concrete, scoped fix are shipped this iteration; every deferred category is listed explicitly with its reason, not silently dropped.
+### 2.1 Iteration Goal (2026-08-24)
+version: 0.1.27
+- This iteration continues the C standard library support series (started in v0.1.26 with `string.h`/`ctype.h`), now targeting `time.h`. **The series' goal is unchanged: header support is the forcing function, language-feature growth is the point.** `time.h`'s defining characteristic versus the previous headers is that essentially its whole useful surface is gated on C **struct-pointer interop** (`struct tm`, `struct timespec`, `struct itimerspec`) — v0.1.26 explicitly flagged this as the next planned struct-interop iteration (its gap 5 note). A pre-implementation audit (this section) found that Palan's existing native-struct machinery (`type Name { ... }`, v0.1.22–v0.1.25: C-ABI layout, heap allocation, borrowed-pointer function params, embedded/owned/non-owning field kinds, struct arrays) is representationally identical to what a `cinclude`d C struct needs — a Palan struct variable's declared type is already `pntr(struct X)` under the hood (`PlnSaExpr.cpp:20`), the same shape a C function returns for `struct tm *`. The gap is entirely on the **import path**: `palan-c2ast` parses and discards struct tag names and field lists (`CParser.cpp:275-317`, `struct_union_definition`), so nothing is there yet for SA to register. Fixing that import path is this iteration's main body of work, following the same discipline as v0.1.26: a completeness audit over every function `time.h` declares, each function classified by what capability it needs, every deferred category listed with its reason.
 
 **Definition of done**
 
-A function counts as "supported" only if it (a) is registered end-to-end through the real pipeline (`gen-ast → sa → codegen → execute`, not just inspected via `palan-c2ast` JSON output), and (b) has a `build-mgr` test that exercises real semantics — including the "not found" / boundary case where the function has one (e.g. a `strchr` miss, not just a hit). A header counts as "supported" only when every function in it is accounted for in one of: implemented-and-tested this iteration, or listed in the deferred/excluded tables below with a reason. `ctype.h` in particular currently yields **zero** usable functions (see gap 3) — "supported" for it means going from 0 to the full non-locale public surface, not incremental improvement.
+Same bar as v0.1.26: a function counts as "supported" only if it is registered end-to-end through the real pipeline (`gen-ast → sa → codegen → execute`) and has a `build-mgr` test exercising real semantics — for struct-typed functions specifically, that means asserting on actual field values read back after the call, not just a successful return code. A struct type counts as "supported" once cinclude-imported structs go through the exact same `structDefs_`/field-layout path as a native `type Name { ... }` — i.e. no parallel/shadow implementation for C-origin structs. `time.h` counts as "supported" once every one of its declared functions is accounted for in the inventory below as implemented-and-tested or deferred-with-reason.
 
 **Gap catalog**
 
 | # | Gap | Root cause | Disposition |
 |---|---|---|---|
-| 1 | No typedef table in c2ast — `size_t` surfaces as opaque `{"type-kind":"user","type-name":"size_t"}` | `CParser.cpp:559-624` consumes and discards `typedef` declarations | **Fix, via a dormant Palan language feature.** Palan's grammar already has a type-alias declaration, `type Name = type_expr;` (`PlnParser.yy:619`), but its action is a no-op stub (`{ $$ = json{}; }` — parses, produces nothing). Implement it for real: a named alias resolving to any `type_expr`, registered so the alias name itself is usable in Palan code and diagnostics. Then have c2ast track `typedef <underlying> <name>;` chains and, when a chain bottoms out in a primitive, have SA register the C typedef as a genuine Palan alias through this same mechanism (`size_t` → a real alias to `uint64`, not an invisible rewrite — a `strlen()` result keeps the name `size_t` in Palan source and error messages). Typedefs that don't bottom out in a primitive (e.g. a struct typedef) stay tagged `"user"`, unchanged from today — still errors if actually used; that's struct-interop work for a later iteration. |
-| 2 | No `void` handling in Palan's type system — `pntr(void)` throws in `fromJson` | `PlnType.cpp` `PrimTypeNames` has no `"void"` entry | **Fix.** Recognize `pntr(void)` as an opaque, sizeless-element pointer, accepted wherever a `pntr(T)` argument is passed and vice versa. No dereference/element-access support needed — pass-through only. |
-| 3 | Relational/equality operators unimplemented in c2ast's constant-expression parser — **blocks 100% of `ctype.h`**, not a partial gap | `CParser.cpp:869-893`, both `relational_expression` and `equality_expression` are stubs marked `// TODO`, falling through without consuming `<`/`>`/`<=`/`>=`/`==`/`!=` | **Fix.** glibc's `<ctype.h>` defines its internal `_IS*` enum via a `_ISbit(bit)` macro expanding to a ternary containing `<`, and the parser aborts entirely at that `enum` (confirmed by minimal repro: `enum{X=0<8};` fails, `enum{X=1<<8};` succeeds). Because the parser aborts the *whole file* on first unparseable construct, every declaration after it — including all of `isalpha`/`isdigit`/etc. — is never reached today. Fix: implement the four relational + two equality operators, same binary-expr AST shape as `shift_expression`. Enum constant *values* stay parsed-and-discarded (`enum_definition` never stores them) — this fix only unblocks parsing, not enum-value usability. |
-| 4 | `char**` (pointer-to-pointer) out-params, needed by `strtok_r`/`strsep` | Palan has no address-of operator (`&` is bitwise-and only) and no confirmed path to construct `pntr(pntr(T))` from a local variable | **Defer.** This is a new language feature (address-of / out-params), not a C-header-binding gap — out of scope for a header-support iteration. The existing `strtof` test's `int64(0)` workaround for its `char**` param is evidence this has never actually worked. |
-| 5 | `locale_t` param on `_l`-suffixed functions | `locale_t` = `typedef struct __locale_struct *locale_t` — an opaque struct pointer; `fromJson` throws on `"strct"`/`"union"`/`"enum"`/`"user"` (`PlnType.cpp:64-77`) the moment such a signature is resolved | **Defer**, same root cause as the planned `time.h`/`struct tm` struct-interop iteration (opaque-type handling in `fromJson`, manual C-binding syntax, `raw-ptr`-to-primitive field bug in `PlnSaInternal.h:58`). Not re-solved here. |
-| 6 | No mechanism to import C constants (`#define`, enum) as Palan values — blocks `NULL`, needed to test the "not found" return of `strchr`/`strstr`/`strpbrk`/`memchr`, and to use `strtok`'s standard multi-call idiom (`strtok(NULL, delim)`) | `palan-c2ast`'s AST has only a `"functions"` section; `NULL` is just `#define NULL ((void*)0)` (confirmed for this target: C mode, not C++/G++) — not special syntax. Separately, Palan's own grammar has a `const_decl: KW_CONST ID '=' expression;` rule that is also unimplemented (no real action). | **Fix, via the dormant `const` declaration.** Implement `const_decl` for real: a named, typed, immutable value usable like any other identifier. c2ast already keeps a macro table (`CPreprocessor.h`: `vector<CMacro*> &macros`, each with `name`/`params`/`body` tokens) and already has a constant-expression parser (`cast_expression` etc.) — reuse both: after preprocessing, walk the macro table, and for each object-like (no-params) macro whose `body` parses as a `constant_expression`, emit it into a new AST `"constants"` section. SA registers these through the newly-implemented `const` mechanism, in parallel with `sa_cinclude`'s existing function registration — so an imported C constant is a first-class Palan `const`, not a special-cased shim. `NULL` (typed `pntr(void)`, implicitly compatible with and `==`/`!=`-comparable against any `pntr(T)` — the same compatibility rule gap 2 already needs) is the concrete instance this iteration needs and tests, but the mechanism itself is general. **Enum-constant export stays out of scope** — unlike gaps 1 and 6's macro-constant path, there is no existing dormant Palan feature it would complete; it would be new design, and no in-scope function requires one (`ctype.h`'s `_IS*` bits are internal/double-underscore-adjacent; callers use the wrapping functions, not the bits). |
-| 7 | Reserved/internal symbols (leading double-underscore) | e.g. `__ctype_b_loc`, `__memcmpeq`, `__strtok_r` | **Excluded from scope**, not a gap — these are implementation-reserved identifiers, not public API, matching how a C caller would treat them. |
-| 8 | Header content visible to `palan-c2ast` depends on feature-test macros (`_GNU_SOURCE` etc.) | c2ast's `predefined.h` defines a fixed default set | **Scope boundary, not a gap.** "Supported" means whatever `palan-c2ast -s <header>` exposes under this project's current `predefined.h`, as audited below — not chasing every possible glibc extension. |
-| 9 | No ownership tracking for C-allocated raw pointers (e.g. `strdup`/`strndup` return heap memory Palan doesn't know needs freeing) | Palan's auto-free machinery only covers `structDefs_`/array allocations, not raw `pntr(prim)` returned from `cinclude`d calls | **Documented accepted limitation**, not a blocker — same manual-free burden C itself has. The user must `cinclude <stdlib.h>;` and call `free()` explicitly. Called out here so it isn't mistaken for an oversight. |
+| 1 | c2ast parses but discards struct tag name and field list | `CParser.cpp:275-317` (`struct_union_definition`) consumes the `{ ... }` body positionally but never writes it into the returned `json`; the caller at `CParser.cpp:407` then emits only `{"type-kind":"strct"}` with no `type-name` and no fields, for both struct *definitions* and bare struct-pointer *references* in signatures | **Fix.** Capture the tag name and an ordered `(name, type)` field list during `struct_union_definition`, and thread `type-name` through onto every `"strct"`-kind reference (so a `struct tm *__tp` parameter names `tm`, not just "some struct"). Emit struct definitions into a new top-level AST section, analogous to how functions are already emitted. |
+| 2 | SA has no path from a `cinclude`d C struct to `structDefs_` | `PlnTypeRegistry::fromJson` (`PlnType.cpp:79-82`) only understands Palan-native `"struct"` type-kind; c2ast's `"strct"` kind hits the `throw` at line 82 the moment any `time.h` function with a struct param/return is resolved | **Fix, by reusing existing dormant capacity rather than building a parallel struct system.** Once gap 1 supplies name+fields, register each cinclude-imported struct into the same `structDefs_`/`FieldLayout` table a native `type Name { ... }` populates (v0.1.22). This is a straight reuse, not new design — it's why `struct itimerspec { struct timespec it_interval; struct timespec it_value; }` needs no special handling: a C struct-typed (non-pointer) field maps directly onto the existing `$T` embedded-field kind (v0.1.23), which is already C-ABI-layout-compatible by construction. It also transparently unlocks *binding a C function's returned struct pointer* to a Palan variable, with no further design needed: `var_declaration` already accepts any `type_expr` (`PlnParser.yy:536,582`), `@T`/`@!T` are already general `type_expr` productions (not struct-field-only), and `PlnSaDecl.cpp:221` already reinterprets a `type-kind:"prim"` name as a struct when it matches a registered `structDefs_` entry — so `@!tm p = gmtime(t);` just works once `tm` is registered, going through the exact same non-owning-pointer path (`@T`/`@!T` are defined as "lifecycle is user-managed", no auto-free — `PalanReference.md` §19) that already fits a glibc-owned static buffer perfectly. |
+| 3 | C-returned/param struct pointers must not be treated as Palan-owned, auto-freed memory | Palan's own struct locals are always heap-allocated via `__pln_alloc_T` and auto-freed at scope exit; a `struct tm *` returned by glibc (static internal buffer) or passed in by the caller is neither | **Fix.** Struct types arriving through a `cinclude` function signature are borrowed pointers, with no auto-free registration. Both directions reuse an existing convention, not new design: a struct passed *into* a C call is an owned Palan-declared local, matching the convention Palan already applies to its own struct-type function parameters ("passed as a pointer, borrowed, not freed by the callee", `PalanReference.md` §19); a struct pointer *returned by* a C call binds into an explicitly non-owning `@T`/`@!T`-typed Palan variable (see gap 2's note) — the ownership-transferring named-return convention (`-> Point p`) is deliberately *not* used here, since that model is wrong for a pointer Palan didn't allocate. |
+| 4 | No address-of operator — blocks any C call needing a pointer to a primitive value the caller doesn't already hold as a pointer (`gmtime`/`gmtime_r`'s `const time_t *`, `clock_getcpuclockid`'s `clockid_t *` out-param) | Carried over from v0.1.26 gap 4; previously deferred as "a new language feature, out of scope for a header-support iteration" | **Fix, minimal scope only — reuse `@`/`@!`, don't borrow C's `&`.** `@T`/`AT_EXCL T` (`@!T`) already exist as `type_expr` productions (`PlnParser.yy:966-972`) meaning "read-only pointer to T" / "mutable pointer to T" respectively (`{"type-kind":"pntr", ...}`, `mutable:true` for `@!`) — this is Palan's own general pointer-type vocabulary, not struct-field-only syntax. Extend `@`/`AT_EXCL` into a matching *expression*-position production, `'@' ID` / `AT_EXCL ID` where `ID` names a local variable of primitive type, yielding a `pntr(T)` (`@`) or mutable `pntr(T)` (`@!`) to that variable's storage. Unlike reusing `&`, neither token has any existing expression-position meaning, so no `%prec` disambiguation against a binary use is needed (contrast with `-`'s existing `UNARY_MINUS` trick) — and the `@`/`@!` split gives the read-only/mutable pointer distinction C's `const T*`/`T*` needs for free, with no new symbol invented. General address-of-anything (struct fields, array elements, temporaries) and a general pointer-dereference operator stay out of scope; this narrow `'@' ID` form is what's needed to pass a primitive local by address into a `cinclude`d C call. |
+| 5 | Incomplete/forward-declared struct type blocks `timer_create` | `time.h` forward-declares `struct sigevent;` with no body in this project's `predefined.h` visibility — no field list exists to capture even with gap 1 fixed | **Defer.** Not a scoped fix — there's nothing to register. `timer_create`/`timer_settime`/`timer_gettime`'s non-`sigevent` neighbors (`timer_delete`, `timer_getoverrun`, and `timer_settime`/`timer_gettime` themselves, which use `struct itimerspec` not `struct sigevent`) are unaffected and stay in scope. |
+| 6 | `locale_t` param on `strftime_l` | `locale_t` = `typedef struct __locale_struct *locale_t`; unlike v0.1.26's assessment, `__locale_struct` technically *does* have a full field list now capturable via gap 1+2 — but its fields reference further incomplete types (`struct __locale_data *`, itself forward-declared only) and internal-only members no caller would touch | **Defer.** Technically reachable but not worth registering; the `_l` locale surface stays out of scope generally, independent of struct-interop capability now existing. Same disposition as v0.1.26 gap 5, refined reasoning. |
+| 7 | `CLOCK_REALTIME`, `CLOCK_MONOTONIC`, `TIMER_ABSTIME`, `TIME_UTC`, etc. | Confirmed (against this project's real `/usr/include/x86_64-linux-gnu/bits/time.h`) to be plain object-like `#define` macros, not enum constants | **Scope boundary, not a gap.** Already covered by v0.1.26's gap-6 `const`-import mechanism — no new work needed; these are exercised in the tests below as ordinary imported constants. |
 
-**Full function inventory — `string.h`** (59 declared functions under current `predefined.h`; ✅ = in scope this iteration)
+**Full function inventory — `time.h`** (30 declared functions under current `predefined.h`; ✅ = in scope this iteration)
 
 | Category | Disposition | Functions |
 |---|---|---|
-| A — already resolves to supported types, no new infra | ✅ implement + test | `strcat`, `strcasecmp`, `strcasestr`, `strchr`, `strchrnul`, `strcmp`, `strcoll`, `strcpy`, `strdup`, `strerror`, `strncasecmp`, `strpbrk`, `strrchr`, `strsignal`, `strstr`, `strtok`, `stpcpy`, `index`, `rindex`, `ffs`, `ffsl`, `ffsll` |
-| B — needs gap 1 (size_t) only | ✅ implement + test | `strlen`, `strncpy`, `strncat`, `strncmp`, `strcspn`, `strspn`, `strnlen`, `strndup`, `strxfrm`, `strlcat`, `strlcpy`, `stpncpy` |
-| C — needs gaps 1+2 (size_t + void*) | ✅ implement + test | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `memccpy`, `memmem`, `mempcpy`, `bcmp`, `bcopy`, `bzero`, `explicit_bzero` |
-| D — needs gap 4 (`char**`) | ❌ deferred | `strtok_r`, `strsep` |
-| E — needs gap 5 (`locale_t`) | ❌ deferred | `strcasecmp_l`, `strncasecmp_l`, `strcoll_l`, `strxfrm_l`, `strerror_l` |
-| F — reserved/internal (gap 7) | ❌ excluded | `__memcmpeq`, `__mempcpy`, `__stpcpy`, `__stpncpy`, `__strtok_r`, `__xpg_strerror_r` |
-
-**Full function inventory — `ctype.h`** (all currently unreachable — gap 3 blocks the whole header)
-
-| Category | Disposition | Functions |
-|---|---|---|
-| A, blocked only by gap 3 | ✅ implement + test (once gap 3 fixed) | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `islower`, `isgraph`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `isblank`, `tolower`, `toupper`, `isctype`, `isascii`, `toascii`, `_toupper`, `_tolower` |
-| E — needs gap 5 (`locale_t`) | ❌ deferred | `isalnum_l`, `isalpha_l`, `iscntrl_l`, `isdigit_l`, `islower_l`, `isgraph_l`, `isprint_l`, `ispunct_l`, `isspace_l`, `isupper_l`, `isxdigit_l`, `isblank_l`, `tolower_l`, `toupper_l`, `__tolower_l`, `__toupper_l` |
-| F — reserved/internal (gap 7) | ❌ excluded | `__ctype_b_loc`, `__ctype_tolower_loc`, `__ctype_toupper_loc` |
+| A — primitive-only, no new infra beyond v0.1.26 | ✅ implement + test | `clock`, `difftime`, `dysize`, `tzset`, `timer_delete`, `timer_getoverrun` |
+| B — needs gaps 1+2+3 (struct-interop, struct always caller-owned/passed-in, no return-binding involved) | ✅ implement + test | `mktime`, `strftime`, `asctime`, `asctime_r`, `timegm`, `timelocal`, `nanosleep`, `clock_getres`, `clock_gettime`, `clock_settime`, `clock_nanosleep`, `timer_settime`, `timer_gettime`, `timespec_get` |
+| C — needs gap 4 (`@`/`@!` address-of) only, no struct involved | ✅ implement + test | `time` (also reachable via `time(NULL)` alone, gap 6 v0.1.26), `ctime` (`@t`), `ctime_r` (`@t`), `clock_getcpuclockid` (`@!clk_id` — mutable out-param) |
+| D — needs gaps 1+2+3+4 together: struct-interop, address-of for the `time_t*` input, *and* binding the returned `struct tm *` into an `@!tm`/`@tm`-typed local (gap 2's note — already-existing non-owning-pointer mechanism, no new design) | ✅ implement + test | `gmtime`, `localtime`, `gmtime_r`, `localtime_r` |
+| E — needs gap 5 (incomplete `struct sigevent`) | ❌ deferred | `timer_create` |
+| F — needs gap 6 (`locale_t`) | ❌ deferred | `strftime_l` |
 
 **Explicit non-goals (deferred to later iterations, with reason already stated above)**
-- Struct-by-value or struct-pointer C interop (`time.h`/`struct tm`, `sys/stat.h`, `locale_t`-based `_l` functions) — gap 5.
-- `char**` out-params (`strtok_r`, `strsep`) — gap 4; revisit once/if an address-of operator is designed.
-- Enum-constant export (`ctype.h`'s `_IS*` bits and similar) — gap 6, not needed by any in-scope function.
-- Typedefs that resolve to non-primitive (struct) types.
-- Wide-character (`wctype.h`/`wchar.h`) variants — not audited this iteration.
+- `timer_create` — gap 5, blocked on `struct sigevent` having no visible definition.
+- `strftime_l` and the rest of the `_l`/`locale_t` surface — gap 6, same as v0.1.26.
+- General address-of (fields, array elements, temporaries) and a general pointer-dereference operator — only the narrow `@ID`/`@!ID` local-primitive-variable form ships this iteration (gap 4).
+- `sys/stat.h` and other struct-heavy headers — not audited this iteration; `time.h` is the vehicle for landing the struct-interop mechanism, not an exhaustive struct-header pass.
 
 The goal is that the following program produces correct output:
 
 ```palan
-cinclude <string.h>;
-cinclude <ctype.h>;
+cinclude <time.h>;
 cinclude <stdio.h>;
 
-[32]uint8 buf;
-strcpy(buf, "Hello, Palan!");
-size_t n = strlen(buf);                           // gap 1: size_t is a real Palan alias type (-> uint64), not an invisible rewrite
-printf("%s (len=%ld)\n", buf, n);                 // Hello, Palan! (len=13)
+time_t t = time(NULL);                    // gap 6 (v0.1.26): NULL already usable where a time_t* out-param is optional
 
-printf("%d\n", strcmp("abc", "abc"));             // 0
-printf("%d\n", strncmp("abcdef", "abcxyz", 3));   // 0
+struct tm tv;
+gmtime_r(@t, tv);                         // gap 4: @t is a read-only pointer to the primitive local t (matches the
+                                            // C signature's `const time_t*`); tv is an owned Palan struct local,
+                                            // passed by (borrowed) pointer like any Palan struct param
+printf("%d-%02d-%02d\n",
+       int32(tv.tm_year) + 1900, int32(tv.tm_mon) + 1, int32(tv.tm_mday));
 
-[8]uint8 dst;
-memset(dst, 0, 8);
-memcpy(dst, "abc", 3);
-printf("%s\n", dst);                              // abc
+@!tm p = gmtime(@t);                      // gap 2/3: p is a non-owning pointer local (no auto-free — matches
+                                            // gmtime's static-buffer return); field access works the same as tv above
+printf("%d\n", int32(p.tm_year) + 1900);
 
-printf("%d %d\n", isalpha(97), isdigit(97));      // 1 0 ('a' = 97)
-printf("%c\n", toupper(97));                      // A
+struct timespec ts;
+clock_gettime(CLOCK_REALTIME, ts);        // CLOCK_REALTIME: a #define macro, already importable as a const (v0.1.26)
+printf("clock_gettime ok: %d\n", ts.tv_sec >= int64(0));
 
-// NULL (gap 6) exercised via the strchr "not found" case and strtok's multi-call idiom
-[16]uint8 line;
-strcpy(line, "a,bb,ccc");
-if (strchr(line, 122) == NULL) {                  // 'z' not present
-    printf("not found\n");                         // not found
-}
-printf("%s\n", strtok(line, ","));                 // a
-printf("%s\n", strtok(NULL, ","));                 // bb
-printf("%s\n", strtok(NULL, ","));                 // ccc
+struct tm mt;
+70  -> mt.tm_year;   // 1970
+0   -> mt.tm_mon;    // January
+1   -> mt.tm_mday;
+0   -> mt.tm_hour;   0 -> mt.tm_min;   0 -> mt.tm_sec;
+printf("%ld\n", mktime(mt));              // 0 (epoch, UTC-equivalent local zone in test env)
 ```
 
 
