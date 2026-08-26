@@ -1,5 +1,6 @@
 #include <string>
 #include <map>
+#include <set>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 using json = nlohmann::json;
 
@@ -7,6 +8,7 @@ class CParser {
 	const vector<CToken*> &top_tokens;
 	const vector<CLexer*> &lexers;
 	map<string, json> typedefs_;  // typedef name -> resolved var-type (primitives only)
+	set<string> definedStructs_;  // struct tag names captured with a full field-bearing definition
 
 	int parse(json &ast, const vector<CToken*>& tokens);
 	

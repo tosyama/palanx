@@ -278,8 +278,9 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 
 	if (CONSUME(TT_ID)) {
 		// struct with tag
+		ast["struct-name"] = *tokens[index-1]->info.id;
 		if (!CONSUME_PUNC('{')) {
-			// struct with tag only
+			// struct with tag only (reference, not definition)
 			result_index = index;
 			return true;
 		}
@@ -288,6 +289,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		EXPECT_PUNC('{');
 	}
 
+	vector<json> fields;
 	do {
 		bool is_const = CONSUME_KW(TK_CONST);
 		bool is_volatile = CONSUME_KW(TK_VOLATILE);
@@ -298,11 +300,13 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 			if (!declarator(field, tokens, index, false)) {
 				return false;
 			}
+			fields.push_back(field);
 			while (CONSUME_PUNC(',')) {
 				json field2 = {{"var-type", base_vt}};
 				if (!declarator(field2, tokens, index, false)) {
 					return false;
 				}
+				fields.push_back(field2);
 			}
 			EXPECT_PUNC(';');
 		} else {
@@ -312,6 +316,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 
 	EXPECT_PUNC('}');
 
+	ast["fields"] = move(fields);
 	result_index = index;
 	return true;
 }
@@ -404,7 +409,12 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_STRUCT)) {
 		if (struct_union_definition(ast, tokens, index)) {
-			ast["var-type"] = {{"type-kind", "strct"}};
+			json vt = {{"type-kind", "strct"}};
+			string tagName = ast.value("struct-name", "");
+			if (!tagName.empty() && definedStructs_.count(tagName)) {
+				vt["type-name"] = tagName;
+			}
+			ast["var-type"] = move(vt);
 			result_index = index;
 			return true;
 		}
@@ -581,6 +591,18 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 		bool is_union_kw = !is_struct_kw && CONSUME_KW(TK_UNION);
 		if (is_struct_kw || is_union_kw) {
 			if (struct_union_definition(ast, tokens, index) && CONSUME_PUNC(';')) {
+				if (is_struct_kw && ast.contains("fields")) {
+					string structName = ast.value("struct-name", "");
+					if (!structName.empty()) {
+						ast["ast"]["structs"].push_back({
+							{"name", structName},
+							{"fields", ast["fields"]}
+						});
+						definedStructs_.insert(structName);
+					}
+				}
+				ast.erase("struct-name");
+				ast.erase("fields");
 				result_index = index;
 				return true;
 			}

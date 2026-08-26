@@ -227,6 +227,61 @@ TEST(c2ast, struct_union_decl_backtrack) {
     ASSERT_EQ((*make_pair)["ret-type"]["type-kind"], "union");
 }
 
+TEST(c2ast, struct_capture) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/021_struct_capture.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+
+    // struct Point { int x; int y; }; is captured with its field list
+    json* point = find_struct("Point");
+    ASSERT_NE(point, nullptr);
+    auto& fields = (*point)["fields"];
+    ASSERT_EQ(fields.size(), 2);
+    ASSERT_EQ(fields[0]["name"], "x");
+    ASSERT_EQ(fields[0]["var-type"]["type-kind"], "prim");
+    ASSERT_EQ(fields[0]["var-type"]["type-name"], "int32");
+    ASSERT_EQ(fields[1]["name"], "y");
+
+    // struct Missing; (forward declaration only) is not registered
+    ASSERT_EQ(find_struct("Missing"), nullptr);
+
+    // make_point()'s return type references the captured struct by name
+    json* make_point = find_func("make_point");
+    ASSERT_NE(make_point, nullptr);
+    ASSERT_EQ((*make_point)["ret-type"]["type-kind"], "strct");
+    ASSERT_EQ((*make_point)["ret-type"]["type-name"], "Point");
+
+    // move_point()'s struct Point* parameter also gets the type-name
+    json* move_point = find_func("move_point");
+    ASSERT_NE(move_point, nullptr);
+    auto& p_vt = (*move_point)["parameters"][0]["var-type"];
+    ASSERT_EQ(p_vt["type-kind"], "pntr");
+    ASSERT_EQ(p_vt["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(p_vt["base-type"]["type-name"], "Point");
+
+    // take_missing()'s struct Missing* parameter stays without a type-name,
+    // since Missing was never captured with a field list.
+    json* take_missing = find_func("take_missing");
+    ASSERT_NE(take_missing, nullptr);
+    auto& m_vt = (*take_missing)["parameters"][0]["var-type"];
+    ASSERT_EQ(m_vt["type-kind"], "pntr");
+    ASSERT_EQ(m_vt["base-type"]["type-kind"], "strct");
+    ASSERT_FALSE(m_vt["base-type"].contains("type-name"));
+}
+
 TEST(c2ast, typedef_scalar) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/015_typedef_scalar.h");
@@ -318,7 +373,9 @@ TEST(c2ast, time_h_struct_pointer) {
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
-    // gmtime returns struct tm* (anonymous struct pointer)
+    // gmtime returns struct tm*, and struct tm is captured (defined earlier
+    // in the header chain via bits/types/struct_tm.h) so the pointer's
+    // base-type carries a type-name back to it.
     json* gmtime = nullptr;
     for (auto& f : functions)
         if (f["name"] == "gmtime") { gmtime = &f; break; }
@@ -326,6 +383,14 @@ TEST(c2ast, time_h_struct_pointer) {
     auto& ret = (*gmtime)["ret-type"];
     ASSERT_EQ(ret["type-kind"], "pntr");
     ASSERT_EQ(ret["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(ret["base-type"]["type-name"], "tm");
+
+    auto& structs = ast["ast"]["structs"];
+    json* tm = nullptr;
+    for (auto& s : structs)
+        if (s["name"] == "tm") { tm = &s; break; }
+    ASSERT_NE(tm, nullptr);
+    ASSERT_GT((*tm)["fields"].size(), 0);
 }
 
 TEST(c2ast, macro_const_simple) {
