@@ -203,6 +203,30 @@ TEST(c2ast, struct_enum_typedef) {
     }
 }
 
+TEST(c2ast, struct_union_decl_backtrack) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/020_struct_decl_backtrack.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    // "struct Point make_point(...)" (no extern) must not be swallowed by the
+    // standalone struct-declaration fast path — it should parse as a function
+    // returning struct Point.
+    json* make_point = find_func("make_point");
+    ASSERT_NE(make_point, nullptr);
+    ASSERT_EQ((*make_point)["ret-type"]["type-kind"], "strct");
+
+    json* make_pair = find_func("make_pair");
+    ASSERT_NE(make_pair, nullptr);
+    ASSERT_EQ((*make_pair)["ret-type"]["type-kind"], "union");
+}
+
 TEST(c2ast, typedef_scalar) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/015_typedef_scalar.h");

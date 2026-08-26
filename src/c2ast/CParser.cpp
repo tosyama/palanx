@@ -576,12 +576,17 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 
 	if (!(is_typedef || is_extern || is_static)) {
 		// just declaration of struct or union
-		if (CONSUME_KW(TK_STRUCT) || CONSUME_KW(TK_UNION)) {
-			if (struct_union_definition(ast, tokens, index)) {
-				EXPECT_PUNC(';');
+		int struct_union_save_index = index;
+		bool is_struct_kw = CONSUME_KW(TK_STRUCT);
+		bool is_union_kw = !is_struct_kw && CONSUME_KW(TK_UNION);
+		if (is_struct_kw || is_union_kw) {
+			if (struct_union_definition(ast, tokens, index) && CONSUME_PUNC(';')) {
 				result_index = index;
 				return true;
 			}
+			// Not a standalone struct/union declaration (e.g. "struct Tag func(...)")
+			// — backtrack and let it fall through to be parsed as a type specifier.
+			index = struct_union_save_index;
 		}
 
 		// just declaration of enum
