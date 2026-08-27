@@ -850,6 +850,34 @@ TEST(build_mgr, null_notfound_sweep) {
 	ASSERT_EQ(output, "strstr: not found\nstrpbrk: not found\nstrchrnul: not null\nstrchrnul: []\n");
 }
 
+TEST(build_mgr, cinclude_struct_arg) {
+	cleanTestEnv();
+	// cinclude'd "tm" resolves through the same structDefs_ path as a native
+	// struct; mktime(t) receives t as a borrowed pointer (IT-2702).
+	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/119_cinclude_struct_arg.pa");
+	ASSERT_EQ(output, "946684800\n");
+}
+
+TEST(build_mgr, cinclude_struct_arg_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_cinclude_struct_arg_mtrace_bin "
+		"../test/testdata/build-mgr/120_cinclude_struct_arg_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_cinclude_struct_arg_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_cinclude_struct_arg_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// tm t: 1 calloc; mktime(t) passes t as a borrowed pointer -- no extra
+	// alloc/free from the C call itself.
+	EXPECT_EQ(allocs, 1) << "expected 1 alloc for tm t, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

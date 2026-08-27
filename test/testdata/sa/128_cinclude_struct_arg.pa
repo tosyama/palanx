@@ -1,0 +1,6 @@
+cinclude "128_cinclude_struct_arg.h";
+
+Point p;
+10 -> p.x;
+20 -> p.y;
+move_point(p, 5, 5);

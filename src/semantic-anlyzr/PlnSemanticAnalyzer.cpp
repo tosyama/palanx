@@ -424,6 +424,13 @@ void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
+	// Struct definitions must be registered before functions: function
+	// signature resolution (via PlnTypeRegistry::fromJson) needs structDefs_
+	// entries to already exist for any struct-pointer parameter/return type.
+	if (stmt.contains("structs"))
+		for (auto& s : stmt["structs"])
+			registerCStruct(s);
+
 	if (!stmt.contains("functions")) return;
 
 	if (stmt.contains("alias")) {
@@ -433,6 +440,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			string fname = f["name"].get<string>();
 			json entry = f;
 			registerCFuncTypedefAliases(entry);
+			normalizeCFuncStructSig(entry);
 			entry["_c-func"] = true;
 			currentScope[alias][fname] = entry;
 		}
@@ -440,6 +448,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& f : stmt["functions"]) {
 			json entry = f;
 			registerCFuncTypedefAliases(entry);
+			normalizeCFuncStructSig(entry);
 			registerCFunc(entry["name"].get<string>(), entry);
 		}
 	}

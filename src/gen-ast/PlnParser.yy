@@ -226,6 +226,9 @@ expr_stmt: import
 			if (c_ast["ast"].contains("constants")) {
 				$$["constants"] = move(c_ast["ast"]["constants"]);
 			}
+			if (c_ast["ast"].contains("structs")) {
+				$$["structs"] = move(c_ast["ast"]["structs"]);
+			}
 		}
 		LOC($$, @$);
 	}

@@ -1458,6 +1458,74 @@ TEST(sa, cinclude_typedef_size_t)
 	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
 }
 
+TEST(sa, cinclude_struct_arg)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/128_cinclude_struct_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Point (cinclude'd via a local header) resolves through the same
+	// structDefs_/calloc path as a native `type Point { ... }` -- IT-2701's
+	// c2ast "structs" capture reaches SA and registers "Point" before the
+	// var-decl below is analyzed.
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+
+	// 10 -> p.x / 20 -> p.y resolve to the same field-assign shape as a
+	// native struct (offsets 0 and 8 for two int64 fields).
+	ASSERT_EQ(jout["statements"][1]["stmt-type"], "field-assign");
+	ASSERT_EQ(jout["statements"][1]["var"], "p");
+	ASSERT_EQ(jout["statements"][1]["offset"], 0);
+	ASSERT_EQ(jout["statements"][2]["stmt-type"], "field-assign");
+	ASSERT_EQ(jout["statements"][2]["var"], "p");
+	ASSERT_EQ(jout["statements"][2]["offset"], 8);
+
+	// move_point(p, 5, 5): p is passed as a plain borrowed pointer -- no
+	// wrapping alloc/copy call is inserted around the "id" arg.
+	const auto& call = jout["statements"][3]["body"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["name"], "move_point");
+	ASSERT_EQ(call["func-type"], "c");
+	const auto& arg0 = call["args"][0];
+	ASSERT_EQ(arg0["expr-type"], "id");
+	ASSERT_EQ(arg0["name"], "p");
+	ASSERT_EQ(arg0["var-type"]["base-type"]["type-name"], "Point");
+}
+
+TEST(sa, cinclude_nested_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/129_cinclude_nested_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// itimerspec { struct timespec it_interval; struct timespec it_value; }:
+	// a C struct-by-value field ("strct", not "pntr") is registered the same
+	// way native $T inline-embedding is -- 2 * (int64 tv_sec + int64 tv_nsec)
+	// = 32 bytes, no owned-pointer indirection.
+	const auto& decl = jout["statements"][0];
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "it");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "32");
+
+	// it.it_interval.tv_sec: it_interval@0, tv_sec@0 -> flattened offset 0
+	ASSERT_EQ(jout["statements"][1]["stmt-type"], "field-assign");
+	ASSERT_EQ(jout["statements"][1]["var"], "it");
+	ASSERT_EQ(jout["statements"][1]["offset"], 0);
+
+	// it.it_value.tv_nsec: it_value@16, tv_nsec@8 -> flattened offset 24
+	ASSERT_EQ(jout["statements"][2]["stmt-type"], "field-assign");
+	ASSERT_EQ(jout["statements"][2]["var"], "it");
+	ASSERT_EQ(jout["statements"][2]["offset"], 24);
+}
+
 TEST(sa, cinclude_null_constant)
 {
 	cleanTestEnv();
