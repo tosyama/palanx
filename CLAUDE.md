@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Development Principles
+
+- When a gap or bug surfaces mid-implementation, fix it at the layer where it structurally belongs, not at the layer where it happened to surface. If two subsystems feed the same internal structure through different paths (e.g. native syntax vs `cinclude`d C declarations), normalize at the point where each path registers/ingests into that structure, so downstream consumers only ever see one canonical shape. Don't add a second case to a shared consumer (type resolution, codegen, etc.) just to tolerate an un-normalized input — that's a symptom of missing normalization upstream, not a fix.
+- Prefer the design that keeps exactly one internal representation for a given concept over one that lets two equivalent representations coexist and pushes the burden of reconciling them onto every consumer.
+- If the properly-scoped fix looks bigger than the ticket at hand, say so and propose it rather than silently taking the smaller patch that only routes around the symptom.
+
 ## Build Commands
 
 ```bash
