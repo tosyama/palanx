@@ -1,0 +1,23 @@
+cinclude <time.h>;
+cinclude <stdio.h>;
+
+tm t;
+70 -> t.tm_year;   // 1970
+0  -> t.tm_mon;    // January
+1  -> t.tm_mday;
+0  -> t.tm_hour;   0 -> t.tm_min;   0 -> t.tm_sec;
+0  -> t.tm_isdst;
+
+printf("%ld\n", mktime(t));      // epoch (run with TZ=UTC, so this is 0)
+printf("%ld\n", timegm(t));      // 0 (UTC, environment-independent)
+printf("%ld\n", timelocal(t));   // 0 (TZ=UTC)
+
+[32]uint8 buf;
+strftime(buf, 32, "%Y-%m-%d", t);
+printf("%s\n", buf);
+
+printf("%s", asctime(t));
+
+[32]uint8 buf2;
+asctime_r(t, buf2);
+printf("%s", buf2);

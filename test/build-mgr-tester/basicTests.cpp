@@ -907,6 +907,16 @@ TEST(build_mgr, time_h_category_a) {
 	ASSERT_EQ(output, "366\n60.000000\n1\n-1\n-1\n");
 }
 
+TEST(build_mgr, time_h_struct_tm) {
+	cleanTestEnv();
+	// IT-2706: time.h Category B (struct tm) -- mktime/timegm/timelocal round
+	// trip on a known epoch, strftime/asctime/asctime_r formatting. mktime
+	// normalizes tm_wday as a side effect, so asctime/asctime_r (called after)
+	// correctly print "Thu".
+	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/125_time_h_struct_tm.pa");
+	ASSERT_EQ(output, "0\n0\n0\n1970-01-01\nThu Jan  1 00:00:00 1970\nThu Jan  1 00:00:00 1970\n");
+}
+
 TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(
