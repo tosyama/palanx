@@ -303,6 +303,16 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                     break;
                 }
             }
+            // Direct assignment to the call's argument register only lives up to
+            // that call: the call itself clobbers all caller-saved registers,
+            // including the very one this vreg would occupy. If the vreg is used
+            // again afterward (e.g. a struct pointer passed as an out-param, then
+            // dereferenced to read a field the call just wrote), that later read
+            // would see whatever the call left behind rather than the original
+            // value, so it must survive in a callee-saved register instead.
+            if (!needs_callee_saved && m.last_any_use > use_idx) {
+                needs_callee_saved = true;
+            }
         }
 
         if (needs_callee_saved) {

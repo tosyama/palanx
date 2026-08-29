@@ -275,6 +275,22 @@ TEST(regalloc, callee_saved_across_call) {
     EXPECT_EQ(r.regMap.at(1).base, "%rsi");
 }
 
+// Value passed as a call argument and dereferenced again afterward (e.g. a
+// struct pointer given to a C out-param call, then read for a field) → the
+// call clobbers its own argument register, so the vreg needs a callee-saved
+// register rather than living directly in the arg register it was passed in.
+TEST(regalloc, callee_saved_call_arg_reused_after_call) {
+    VFunc func;
+    func.instrs.push_back(CallC{"calloc", {}, 0, VRegType::Ptr64});  // r0: def at idx 0
+    func.instrs.push_back(CallC{"clock_gettime", {1, 0}});           // r0 used as arg at idx 1
+    func.instrs.push_back(DerefLoad{2, 0, 0, VRegType::Int64});      // r0 dereferenced at idx 2
+
+    auto r = allocateRegisters(func, testPhys);
+
+    ASSERT_FALSE(r.regMap.at(0).isStack());
+    EXPECT_EQ(r.regMap.at(0).base, "%rbx");
+}
+
 // flo64 variable → 8-byte slot at -8(%rbp)
 TEST(regalloc, stack_float64) {
     VFunc func;

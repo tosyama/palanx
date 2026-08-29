@@ -917,6 +917,18 @@ TEST(build_mgr, time_h_struct_tm) {
 	ASSERT_EQ(output, "0\n0\n0\n1970-01-01\nThu Jan  1 00:00:00 1970\nThu Jan  1 00:00:00 1970\n");
 }
 
+TEST(build_mgr, time_h_struct_timespec) {
+	cleanTestEnv();
+	// IT-2707: time.h Category B (struct timespec/itimerspec) -- clockid_t +
+	// CLOCK_REALTIME/TIME_UTC const import used in real program logic, and
+	// itimerspec's nested timespec embed fields (its.it_value.tv_sec) resolved
+	// through the same embed-field chain native $T structs use. timer_gettime
+	// is called with an invalid handle (timer_create is out of scope) and
+	// expected to fail.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/126_time_h_struct_timespec.pa");
+	ASSERT_EQ(output, "1\n1\n1\n1\n1\n1\n");
+}
+
 TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(
