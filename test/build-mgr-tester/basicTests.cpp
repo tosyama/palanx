@@ -929,6 +929,17 @@ TEST(build_mgr, time_h_struct_timespec) {
 	ASSERT_EQ(output, "1\n1\n1\n1\n1\n1\n");
 }
 
+TEST(build_mgr, time_h_category_c) {
+	cleanTestEnv();
+	// IT-2708: time.h Category C -- time/ctime/ctime_r/clock_getcpuclockid, the
+	// only category depending solely on @ID/@!ID (IT-2704) with no struct
+	// interop. time(NULL)'s live return is only boundary-checked (>= 0); ctime/
+	// ctime_r are exercised against a separately fixed epoch value for a
+	// deterministic assertion.
+	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/127_time_h_category_c.pa");
+	ASSERT_EQ(output, "1\nThu Jan  1 00:00:00 1970\nThu Jan  1 00:00:00 1970\n1\n");
+}
+
 TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(
