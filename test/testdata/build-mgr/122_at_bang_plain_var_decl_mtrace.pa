@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+Point original;
+5 -> original.x;  10 -> original.y;
+mtrace();
+{
+    @!Point view = original;
+    20 -> view.x;
+    printf("%ld %ld\n", original.x, original.y);
+}
+muntrace();

@@ -2867,3 +2867,95 @@ TEST(sa, const_decl_chain)
 	ASSERT_EQ(jout["statements"].size(), 1);
 	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["value"], "10");
 }
+
+TEST(sa, at_bang_plain_var_decl)
+{
+	// IT-2703: `@!Point view = original;` as a plain (non-field) local var decl.
+	// Two gaps had to be closed for this to work:
+	//  1. gen-ast: var_declaration's "type_expr ID '=' expression" alt (PlnParser.yy)
+	//     only whitelisted tk=="prim" for the initializer form; pntr-kind types
+	//     (what `@T`/`@!T` produce) fell through to not-impl. Same for the bare
+	//     no-init decl alt. Widened both whitelists to include tk=="pntr".
+	//  2. SA: deepNormalizePrimToStruct must run on sa_var_decl's generic fallthrough
+	//     path so `view`'s var-type carries base-type.type-kind=="struct" (not "prim"),
+	//     matching what resolveObjectChain/resolveStoreLocChain require for field access.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/130_at_bang_plain_var_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements: [0] type Point is consumed, so:
+	// [0] var-decl original, [1] var-decl view (init=original), [2] field-assign view.x=20, [3] var-decl vx
+	const auto& view_decl = jout["statements"][1];
+	ASSERT_EQ(view_decl["stmt-type"], "var-decl");
+	const auto& v = view_decl["vars"][0];
+	ASSERT_EQ(v["name"], "view");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["mutable"], true);
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	// No allocator call synthesized for a plain @!T decl -- init is just the
+	// pointer value copied from `original` (id expr), not a calloc/__pln_alloc_ call.
+	ASSERT_EQ(v["init"]["expr-type"], "id");
+	ASSERT_EQ(v["init"]["name"], "original");
+
+	const auto& fa = jout["statements"][2];
+	ASSERT_EQ(fa["stmt-type"], "field-assign");
+	ASSERT_EQ(fa["var"], "view");
+	// field "x" is int64, not struct-typed -- writing through it exercises the
+	// pntr(struct)-based field chain resolution, but the field itself stays prim.
+	ASSERT_EQ(fa["value-type"]["type-name"], "int64");
+
+	const auto& vx_decl = jout["statements"][3];
+	ASSERT_EQ(vx_decl["vars"][0]["init"]["expr-type"], "field-access");
+	ASSERT_EQ(vx_decl["vars"][0]["init"]["var"], "view");
+}
+
+TEST(sa, at_plain_var_decl_readonly)
+{
+	// IT-2703: `@Point view = original;` (read-only, non-mutable) plain local var decl.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/131_at_plain_var_decl_readonly.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& view_decl = jout["statements"][1];
+	const auto& v = view_decl["vars"][0];
+	ASSERT_EQ(v["name"], "view");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"].value("mutable", false), false);
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(v["init"]["expr-type"], "id");
+	ASSERT_EQ(v["init"]["name"], "original");
+
+	const auto& vx_decl = jout["statements"][2];
+	ASSERT_EQ(vx_decl["vars"][0]["init"]["expr-type"], "field-access");
+	ASSERT_EQ(vx_decl["vars"][0]["init"]["var"], "view");
+}
+
+TEST(sa, at_bang_bare_decl_then_assign)
+{
+	// IT-2703: `@!Point view;` with no initializer, followed by a plain
+	// arrow-assign (`original -> view;`) -- the other newly-enabled gen-ast
+	// path (bare var_declaration alt widened to accept tk=="pntr").
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/132_at_bang_bare_decl_then_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// [0] var-decl original, [1] var-decl view (no init), [2] assign view=original,
+	// [3] field-assign view.x=20, [4] var-decl vx
+	const auto& view_decl = jout["statements"][1];
+	const auto& v = view_decl["vars"][0];
+	ASSERT_EQ(v["name"], "view");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_FALSE(v.contains("init"));
+
+	const auto& assign = jout["statements"][2];
+	ASSERT_EQ(assign["stmt-type"], "assign");
+	ASSERT_EQ(assign["name"], "view");
+	ASSERT_EQ(assign["value"]["expr-type"], "id");
+	ASSERT_EQ(assign["value"]["name"], "original");
+
+	const auto& fa = jout["statements"][3];
+	ASSERT_EQ(fa["stmt-type"], "field-assign");
+	ASSERT_EQ(fa["var"], "view");
+}

@@ -878,6 +878,35 @@ TEST(build_mgr, cinclude_struct_arg_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, at_bang_plain_var_decl) {
+	cleanTestEnv();
+	// IT-2703: `@!Point view = original;` as a plain (non-field) local var decl.
+	// `view` is a non-owning pointer aliasing `original`'s storage; writing
+	// through `view.x` must be visible via `original.x` (same memory).
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/121_at_bang_plain_var_decl.pa");
+	ASSERT_EQ(output, "20 10\n");
+}
+
+TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_at_bang_plain_var_decl_mtrace_bin "
+		"../test/testdata/build-mgr/122_at_bang_plain_var_decl_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_at_bang_plain_var_decl_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_at_bang_plain_var_decl_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// `@!Point view = original;` declares a plain non-owning pointer var:
+	// no calloc/__pln_alloc_ call, and no auto-free registration at scope end.
+	EXPECT_EQ(allocs, 0) << "expected no alloc for plain @!Point view, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

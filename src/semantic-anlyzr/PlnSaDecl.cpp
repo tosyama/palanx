@@ -237,7 +237,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = resolveTypeAlias(var["var-type"]);
+		json varType = deepNormalizePrimToStruct(resolveTypeAlias(var["var-type"]));
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
