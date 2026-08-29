@@ -940,6 +940,20 @@ TEST(build_mgr, time_h_category_c) {
 	ASSERT_EQ(output, "1\nThu Jan  1 00:00:00 1970\nThu Jan  1 00:00:00 1970\n1\n");
 }
 
+TEST(build_mgr, time_h_category_d) {
+	cleanTestEnv();
+	// IT-2709: time.h Category D -- gmtime/localtime/gmtime_r/localtime_r, the
+	// convergence point of every gap this iteration introduced: @ID (IT-2704)
+	// for the const time_t* input, and binding a cinclude'd struct tm* return
+	// into a non-owning @!tm local (IT-2701/2702/2703). gmtime is UTC and
+	// environment-independent, so also verifies its glibc static-buffer aliasing
+	// (a second call overwrites the first result) to prove @!T is a real
+	// non-owning alias, not a copy; gmtime_r's caller-owned buffer is unaffected.
+	// localtime/localtime_r are timezone-dependent, so get a loose sanity check only.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/128_time_h_category_d.pa");
+	ASSERT_EQ(output, "1970\n2 2\n1970\n1\n1\n");
+}
+
 TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(

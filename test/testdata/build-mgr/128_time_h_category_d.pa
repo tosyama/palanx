@@ -1,0 +1,26 @@
+cinclude <time.h>;
+cinclude <stdio.h>;
+
+// gmtime: static buffer, UTC (environment-independent)
+time_t t = int64(0);      // epoch, 1970-01-01
+@!tm p1 = gmtime(@t);
+printf("%d\n", int32(p1.tm_year) + 1900);   // 1970
+
+time_t t2 = int64(86400); // 1970-01-02, same static buffer as p1
+@!tm p2 = gmtime(@t2);
+// p1 and p2 alias the same static buffer -- p1 is now overwritten too
+printf("%d %d\n", int32(p1.tm_mday), int32(p2.tm_mday));   // 2 2
+
+// gmtime_r: caller-owned buffer, unaffected by the static-buffer aliasing above
+tm tv;
+gmtime_r(@t, tv);
+printf("%d\n", int32(tv.tm_year) + 1900);   // 1970
+
+// localtime/localtime_r: timezone-dependent -- loose sanity check only
+time_t t3 = int64(0);
+@!tm p3 = localtime(@t3);
+printf("%d\n", int32(p3.tm_year) + 1900 >= 1900);
+
+tm tv2;
+localtime_r(@t3, tv2);
+printf("%d\n", int32(tv2.tm_year) + 1900 >= 1900);
