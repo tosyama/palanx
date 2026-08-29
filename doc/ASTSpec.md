@@ -137,10 +137,13 @@ Variable type
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
 
-Note: A var-type node originating from a C typedef that resolves to a known type (currently always
-type-kind "prim") may carry an additional `typedef-name` field — the original C typedef identifier
-(e.g. `"size_t"`). This is a c2ast/cinclude-only annotation; SA registers it as a native type alias
-(see PalanReference.md §20 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
+Note: A var-type node originating from a C typedef that resolves to a known type (type-kind "prim",
+or "pntr" for a pointer-bottomed typedef chain, e.g. `typedef void *timer_t;`) may carry an additional
+`typedef-name` field — the original C typedef identifier (e.g. `"size_t"`). This is a
+c2ast/cinclude-only annotation. For type-kind "prim", SA registers it as a native type alias (see
+PalanReference.md §20 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
+For type-kind "pntr", the field is left in place; it is not registered as an explicit Palan alias
+type name and never reaches sa.json (C function signatures themselves aren't serialized there).
 
 Block object
 ------------

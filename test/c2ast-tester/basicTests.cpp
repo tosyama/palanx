@@ -338,6 +338,26 @@ TEST(c2ast, typedef_struct_unresolved) {
     ASSERT_EQ((*h)["ret-type"]["type-name"], "Point");
 }
 
+TEST(c2ast, typedef_pointer_chain) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/022_typedef_pointer_chain.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* g = find_func("g");
+    ASSERT_NE(g, nullptr);
+    ASSERT_EQ((*g)["ret-type"]["type-kind"], "pntr");
+    ASSERT_EQ((*g)["ret-type"]["base-type"]["type-kind"], "prim");
+    ASSERT_EQ((*g)["ret-type"]["base-type"]["type-name"], "void");
+    ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
+}
+
 TEST(c2ast, relational_ops) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/014_relational_ops.h");

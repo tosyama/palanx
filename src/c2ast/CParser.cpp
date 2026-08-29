@@ -486,7 +486,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 	return false;
 }
 
-bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index)
+bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index, bool is_grouped)
 {
 	int index = result_index;
 
@@ -506,7 +506,12 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 				EXPECT_PUNC(')');
 			}
 			json& vt = decl["var-type"];
-			if (vt.is_object() && vt.value("type-kind", "") == "pntr") {
+			// Only a parenthesized declarator -- e.g. "(*fp)(params)" -- means fp is a
+			// pointer to function. Without is_grouped, vt being "pntr" here just means
+			// the (non-grouped) declarator's own base type is a pointer (e.g. a
+			// pointer-typedef'd return type, as in "level1_t g(void)"), which is a plain
+			// function returning that pointer type, not a function-pointer variable.
+			if (is_grouped && vt.is_object() && vt.value("type-kind", "") == "pntr") {
 				// (*fp)(params) → fp is a pointer to function
 				// Move func inside the pntr, using pntr's base-type as return type.
 				vt = {{"type-kind", "pntr"}, {"base-type",
@@ -551,7 +556,9 @@ bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_
 		return true;
 	}
 
+	bool is_grouped = false;
 	if (CONSUME_PUNC('(')) {
+		is_grouped = true;
 		if (!declarator(decl, tokens, index, is_typeonly))
 			return false;
 		EXPECT_PUNC(')');
@@ -563,7 +570,7 @@ bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_
 		decl["name"] = *tokens[index-1]->info.id;
 	}
 
-	declarator_tail(decl, tokens, index);
+	declarator_tail(decl, tokens, index, is_grouped);
 
 	result_index = index;
 	return true;
@@ -656,7 +663,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 					});
 				} else if (is_typedef) {
 					string tk = vt.value("type-kind", "");
-					if (tk == "prim") {
+					if (tk == "prim" || tk == "pntr") {
 						typedefs_[decl["name"].get<string>()] = vt;
 					} else if (tk == "user") {
 						auto it = typedefs_.find(vt["type-name"].get<string>());
@@ -664,7 +671,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 							typedefs_[decl["name"].get<string>()] = it->second;
 						}
 					}
-					// strct/union/enum/pntr/func underlying types: not registered,
+					// strct/union/enum/func underlying types: not registered,
 					// left as unresolved "user" at reference sites (unchanged behavior)
 				}
 				result_index = index;

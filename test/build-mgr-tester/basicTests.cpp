@@ -897,6 +897,16 @@ TEST(build_mgr, addr_of) {
 	ASSERT_EQ(output, "42\n5\n");
 }
 
+TEST(build_mgr, time_h_category_a) {
+	cleanTestEnv();
+	// IT-2705: time.h Category A -- clock_t/time_t (already flattened by the
+	// v0.1.26 typedef mechanism) and timer_t (a pointer-bottomed typedef chain,
+	// newly flattened by this ticket's c2ast fix) both resolve cleanly, so NULL
+	// type-checks against timer_t via the existing generic-pointer rule.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/124_time_h_category_a.pa");
+	ASSERT_EQ(output, "366\n60.000000\n1\n-1\n-1\n");
+}
+
 TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(

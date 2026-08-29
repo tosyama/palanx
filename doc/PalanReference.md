@@ -282,8 +282,11 @@ S.printf("%d\n", 42);        // qualified call
 - C typedefs that resolve to a primitive type are automatically registered as a Palan type alias
   (see [Type Aliases](#20-type-aliases)) the moment the header is cincluded. For example,
   `size_t n = strlen(s);` works immediately after `cinclude <string.h>;`, with no explicit alias
-  declaration needed. Typedefs that bottom out in a non-primitive type (struct, union, enum) are not
-  resolved and remain unusable this version.
+  declaration needed. Typedefs that bottom out in a pointer type (e.g. `timer_t`, `typedef void
+  *timer_t;`) are also resolved, so such a typedef's name can be used as a C function's parameter
+  or return type (e.g. `timer_delete(timer_t)`), but — unlike primitive-bottomed typedefs — it is
+  not registered as a usable Palan type alias name itself. Typedefs that bottom out in a struct,
+  union, or enum are not resolved and remain unusable this version.
 - Object-like `#define` macros whose body is a bare integer literal, or a pointer-cast of a bare
   integer literal (e.g. `#define NULL ((void *)0)`), are automatically imported as a Palan `const`
   (see [Constant Declarations](#21-constant-declarations)) the moment the header is cincluded. Other

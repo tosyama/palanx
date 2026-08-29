@@ -7,7 +7,7 @@ using json = nlohmann::json;
 class CParser {
 	const vector<CToken*> &top_tokens;
 	const vector<CLexer*> &lexers;
-	map<string, json> typedefs_;  // typedef name -> resolved var-type (primitives only)
+	map<string, json> typedefs_;  // typedef name -> resolved var-type (prim/pntr only)
 	set<string> definedStructs_;  // struct tag names captured with a full field-bearing definition
 
 	int parse(json &ast, const vector<CToken*>& tokens);
@@ -15,7 +15,7 @@ class CParser {
 	bool declaration(json &ast, const vector<CToken*> &tokens, int &index, bool is_top_level);
 	bool declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly);
-	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_grouped = false);
 	bool parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index);
 	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool enum_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
