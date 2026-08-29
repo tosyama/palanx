@@ -74,6 +74,14 @@ const json* PlnSemanticAnalyzer::findVar(const string& name) const
 	return nullptr;
 }
 
+bool PlnSemanticAnalyzer::isLocalVar(const string& name) const
+{
+	for (size_t i = varScopes.size(); i > 0; --i)
+		if (varScopes[i-1].count(name))
+			return (i-1) >= funcBodyScopeIdx_;
+	return false; // LCOV_EXCL_LINE -- callers only invoke this after findVar() succeeded
+}
+
 bool PlnSemanticAnalyzer::isInArrayScope(const string& name) const
 {
 	for (auto& scope : arrayScopeVars_)

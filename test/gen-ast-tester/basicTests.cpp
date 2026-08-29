@@ -618,6 +618,55 @@ TEST(gen_ast, logical_ops) {
 	ASSERT_EQ(mixed["right"]["expr-type"], "logical-not");
 }
 
+TEST(gen_ast, addr_of) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/104_addr_of.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	// @int64 p = @x;
+	const auto& p = stmts[2]["vars"][0];
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_FALSE(p["var-type"].contains("mutable"));
+	const auto& addr_x = p["init"];
+	ASSERT_EQ(addr_x["expr-type"], "addr-of");
+	ASSERT_EQ(addr_x["name"], "x");
+	ASSERT_FALSE(addr_x.contains("mutable"));
+	ASSERT_FALSE(addr_x["loc"].is_null());
+
+	// @!int64 q = @!y;
+	const auto& q = stmts[3]["vars"][0];
+	ASSERT_EQ(q["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(q["var-type"]["mutable"], true);
+	const auto& addr_y = q["init"];
+	ASSERT_EQ(addr_y["expr-type"], "addr-of");
+	ASSERT_EQ(addr_y["name"], "y");
+	ASSERT_EQ(addr_y["mutable"], true);
+}
+
+TEST(gen_ast, addr_of_type_alias_mix) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/105_addr_of_type_alias_mix.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	// type IntPtr = @int64;  (type-position '@', must still resolve as a type)
+	ASSERT_EQ(stmts[0]["stmt-type"], "type-alias");
+	ASSERT_EQ(stmts[0]["type"]["type-kind"], "pntr");
+
+	// @z;
+	ASSERT_EQ(stmts[2]["body"]["expr-type"], "addr-of");
+	ASSERT_EQ(stmts[2]["body"]["name"], "z");
+
+	// @!z;
+	ASSERT_EQ(stmts[3]["body"]["expr-type"], "addr-of");
+	ASSERT_EQ(stmts[3]["body"]["mutable"], true);
+}
+
 TEST(gen_ast, uint_literal) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/020_uint_literal.pa");

@@ -1,0 +1,4 @@
+type IntPtr = @int64;
+int64 z = 7;
+@z;
+@!z;

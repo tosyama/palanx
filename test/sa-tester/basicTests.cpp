@@ -2959,3 +2959,39 @@ TEST(sa, at_bang_bare_decl_then_assign)
 	ASSERT_EQ(fa["stmt-type"], "field-assign");
 	ASSERT_EQ(fa["var"], "view");
 }
+
+TEST(sa, addr_of_readonly_local)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/133_addr_of_readonly_local.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(p["name"], "p");
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_FALSE(p["var-type"].contains("mutable"));
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "int64");
+
+	const auto& init = p["init"];
+	ASSERT_EQ(init["expr-type"], "addr-of");
+	ASSERT_EQ(init["name"], "x");
+	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+	ASSERT_FALSE(init["value-type"].contains("mutable"));
+}
+
+TEST(sa, addr_of_mutable_local)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/134_addr_of_mutable_local.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& q = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(q["name"], "q");
+	ASSERT_EQ(q["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(q["var-type"]["mutable"], true);
+
+	const auto& init = q["init"];
+	ASSERT_EQ(init["expr-type"], "addr-of");
+	ASSERT_EQ(init["name"], "x");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}

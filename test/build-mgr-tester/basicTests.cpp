@@ -887,6 +887,16 @@ TEST(build_mgr, at_bang_plain_var_decl) {
 	ASSERT_EQ(output, "20 10\n");
 }
 
+TEST(build_mgr, addr_of) {
+	cleanTestEnv();
+	// IT-2704: `@ID`/`@!ID` address-of on a local primitive variable, passed as
+	// an out-param pointer to a cincluded C function (memcpy). The second pair
+	// (z = a + b) exercises addr-of on a non-literal-initialized local -- the
+	// general-initializer gap that PlnRegAlloc's isVar-unification design closes.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/123_addr_of.pa");
+	ASSERT_EQ(output, "42\n5\n");
+}
+
 TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(

@@ -264,6 +264,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
+  - addr-of: `{"type-kind": "pntr", "base-type": <named var's prim type>}`, plus
+    `{"mutable": true}` when produced by `@!ID` (omitted, not `false`, for `@ID`).
+    The named variable must be a local variable in the current scope (not a
+    function parameter, not itself a `pntr`/`struct`/`arr` type) — otherwise a
+    compile error (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive).
   - call: present when the function has a return type (ret-type in its definition).
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).

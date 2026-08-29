@@ -724,6 +724,10 @@ expression: term
 	{ $$ = {{"expr-type", "logical-or"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| '!' expression
 	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); }
+	| '@' ID
+	{ $$ = {{"expr-type", "addr-of"}, {"name", move($2)}}; LOC($$, @$); }
+	| AT_EXCL ID
+	{ $$ = {{"expr-type", "addr-of"}, {"name", move($2)}, {"mutable", true}}; LOC($$, @$); }
 	| expression ARROW store_loc
 	{
 		if ($3.value("kind", "") == "var") {

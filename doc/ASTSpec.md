@@ -211,7 +211,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -261,6 +261,9 @@ Expression model
     - method\* - Method/function name string
     - args - Argument expression list
     Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
+  18. addr-of - Address-of a primitive local variable (`@ID` read-only, `@!ID`/`AT_EXCL ID` mutable)
+    - name\* - Variable name string
+    - mutable - `true` if produced by `@!ID`; omitted (not `false`) for `@ID`
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

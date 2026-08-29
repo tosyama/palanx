@@ -55,6 +55,8 @@ enum PlnSaMessageCode {
 	E_ArrFieldSizeNotConstant,
 	E_ConflictingTypedef,			// arg1: typedef name
 	E_ConstNotCompileTimeValue,		// arg1: const name
+	E_AddrOfNotLocalVar,			// arg1: variable name
+	E_AddrOfNotPrimitive,			// arg1: variable name
 };
 
 class PlnSaMessage

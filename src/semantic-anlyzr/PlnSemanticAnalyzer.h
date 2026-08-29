@@ -89,6 +89,7 @@ class PlnSemanticAnalyzer {
 
 	void        declareVar(const string& name, const json& type, const json* loc_node = nullptr);
 	const json* findVar(const string& name) const;
+	bool        isLocalVar(const string& name) const;
 	bool        isInArrayScope(const string& name) const;
 	void        removeFromArrayScope(const string& name);
 

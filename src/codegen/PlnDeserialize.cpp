@@ -55,6 +55,11 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->name = j["name"];
         return e;
     }
+    if (expr_type == "addr-of") {
+        auto e = make_unique<AddrOfExpr>();
+        e->name = j["name"];
+        return e;
+    }
     if (expr_type == "convert") {
         auto e = make_unique<ConvertExpr>();
         e->from = toVRegType(j["from-type"]);

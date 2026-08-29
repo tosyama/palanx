@@ -59,12 +59,13 @@ struct CalcAddrIdx   { VReg dst; VReg base; VReg idx; int scale; VRegType idx_ty
 struct DerefLoad     { VReg dst; VReg ptr; int offset; VRegType type; };                               // dst = *(ptr+offset)
 struct DerefStore    { VReg ptr; int offset; VReg src;  VRegType type; };                              // *(ptr+offset) = src
 struct CalcAddr      { VReg dst; VReg ptr; int offset; };                                              // dst = ptr + offset (no dereference)
+struct LeaLocal      { VReg dst; VReg local; };                                                        // dst = &local (local's own stack slot address)
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg, Cmp, Convert,
                              CallC, CallPln, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
-                             DerefLoad, DerefStore, CalcAddr>;
+                             DerefLoad, DerefStore, CalcAddr, LeaLocal>;
 
 // -------- Program structure --------
 
