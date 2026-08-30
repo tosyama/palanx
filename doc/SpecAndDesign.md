@@ -7,29 +7,96 @@ This document specifies the goals, scope, architecture, and requirements for the
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
 ### 2.1 Iteration Goal (2026-08-30)
-version: 0.1.28 — **not yet decided.**
+version: 0.1.28 — **pointer dereference and general address-of**, together with the
+c2ast ingestion fixes that a `sys/stat.h` audit exposed.
 
-v0.1.27 (`time.h` + C struct interop, `@ID`/`@!ID` address-of) is complete. The next
-iteration's concrete target has not been chosen yet — this section will be rewritten
-with a full pre-implementation audit (following the same discipline as v0.1.26/v0.1.27:
-gap catalog, function inventory, definition of done) once that decision is made in a
-separate conversation.
+v0.1.27 (`time.h` + C struct interop, `@ID`/`@!ID` address-of) left pointers as a
+write-only channel into C: a Palan program could produce an address and hand it to a C
+function, but could not read or write through one itself, and `@`/`@!` were restricted to
+local primitive variables. This iteration closes that hole and makes the read-only/mutable
+distinction actually mean something.
 
-Candidates carried forward from v0.1.27's explicit non-goals:
-- Other struct-heavy C standard library headers (e.g. `sys/stat.h`) — continuing the C
-  standard library support series by applying the struct-interop mechanism `time.h`
-  established to a new header.
-- General address-of/dereference — generalizing the current `@ID`/`@!ID` (local
-  primitive variables only) into struct fields, array elements, and a general
-  pointer-dereference operator.
-- `timer_create` / `struct sigevent` support — the one `time.h` function deferred this
-  iteration for a genuinely new kind of gap (an incomplete/forward-declared-only
-  struct type), rather than the caller-owned-struct-buffer pattern proven for the rest.
-- `strftime_l` / `locale_t` — deferred again, same reasoning as v0.1.26 and v0.1.27.
+The iteration was scoped from a pre-implementation audit of the two leading candidates
+(general address-of/dereference, and `sys/stat.h` as the next struct-heavy header). That
+audit produced three findings that reshaped the plan, recorded here because they are the
+reason the ticket order is what it is.
 
-Whichever is chosen, the series' underlying goal stays the same: header/feature support
-is the forcing function for general C-interop language capability, not per-function
-coverage for its own sake.
+**Audit finding 1 — the codegen IR already has everything.** `PlnVProg.h:56-62` already
+defines `CalcAddr`, `CalcAddrIdx`, `DerefLoad`, `DerefStore` and `LeaLocal`, and both
+`FieldAccessExpr` and `ArrIndexExpr` already carry an `addrOnly` flag (`PlnNode.h:247,285`)
+that SA already emits as `addr-only` (`PlnSaExpr.cpp:246`) for embedded 2D row access and
+embedded array fields. Generalizing address-of is therefore a gen-ast (syntax) and SA
+(type rules) change, with no expected codegen work.
+
+**Audit finding 2 — `p[0]` dereference already works, but unsoundly.** `sa_expr_arr_index`
+requires only that the base's `value-type` be `pntr` (`PlnSaExpr.cpp:399`); a plain
+`@!int64 p` carries none of the array attributes (`embedded`/`stride`/`inner-size`) and so
+falls through to the scalar path (`PlnSaExpr.cpp:479-489`), which emits
+`DerefLoadIdx{base, idx, scale=sizeof(elem)}` — exactly dereference semantics. Both
+`printf("%ld", p[0])` and `99 -> p[0]` were verified to work on the v0.1.27 tree. This is
+an accident of Palan's representation of arrays as `pntr(T)` plus attributes, not a
+designed feature: it is undocumented, untested, and **unsound**, because a read-only `@T`
+pointer accepts a write through `p[0]` just as a mutable `@!T` one does. (Same root cause
+as the note in IT-2026-08-24-2703: `typeCompat` compares interned `PtrType`s and never
+looks at the `mutable` flag.) The dereference work is therefore mostly specification,
+soundness and tests rather than new lowering.
+
+**Audit finding 3 — c2ast discards C array declarators, and that is a memory-safety bug.**
+`declarator_tail` (`CParser.cpp:494-500`) parses `[...]` and throws away both the size and
+the array-ness. Measured on the v0.1.27 tree: in `struct Rec { int id; char name[16];
+long vals[4]; };` the fields `name` and `vals` are registered as a *single* `int8` and a
+*single* `int64`, and in `int f(char buf[32], struct Rec recs[2])` the parameters become
+bare `int8` and bare `strct Rec` instead of the pointers C's array-to-pointer decay
+requires. `struct stat` is hit directly: its trailing `__syscall_slong_t
+__glibc_reserved[3]` becomes one `int64`, so Palan computes `sizeof(struct stat)` as 128
+instead of 144 — a buffer allocated by Palan and handed to `stat()` is overflowed by 16
+bytes. `sys/stat.h` is not merely unsupported today, it is unsafe, so this fix is a
+prerequisite for the header work rather than part of it.
+
+#### Gap catalog
+
+| # | Gap | Plan |
+|---|-----|------|
+| 1 | Native function named returns typed `@T`/`@!T` crash (`unknown prim type-name`, `PlnType.cpp:72`) — the return type never passes through `deepNormalizePrimToStruct` | **Fix (prerequisite bug, own commit)**: normalize at the point where a function's return types are registered, the same ingestion-boundary treatment IT-2026-08-24-2703 applied to `sa_var_decl`. Known since IT-2703; IT-2709 confirmed it is a distinct code path from the `gmtime` binding and left it open |
+| 2 | c2ast discards C array declarators (audit finding 3) | **Fix (prerequisite bug, own commit)**: make `declarator_tail` reflect `[...]` in the type — an array type for struct fields and non-parameter declarators (so layout and total size are right), array-to-pointer decay for parameters. Normalize at the ingestion boundary so `structDefs_` and the function tables only ever see canonical shapes |
+| 3 | Macro constants whose body is another macro name are dropped (`#define S_IFDIR __S_IFDIR` exports `__S_IFDIR` but not `S_IFDIR`) | **Fix (prerequisite bug, own commit)**: `exportMacroConstants` (`CParser.cpp:1191`) feeds the raw macro body to `constant_expression`; expand the body first, then evaluate |
+| 4 | `@T` (read-only) pointers accept writes (audit finding 2) | **Implement**: enforce mutability in SA on the store path, so a write through a non-mutable `pntr` is rejected. Settle the rule for passing a `@T` value to a C parameter that is not `const`-qualified at the same time |
+| 5 | Pointer dereference is undocumented, untested, and unspecified | **Specify**: adopt `p[0]` as the dereference form — it needs no new token, reads the same as C, and reuses the existing `arr-index` path in both directions. Work is SA/build-mgr tests plus a `PalanReference.md` rewrite, not new lowering |
+| 6 | Address-of is limited to whole local primitive variables | **Implement**: extend `@`/`@!` to struct fields (`@p.field`) and array elements (`@arr[i]`), reusing `resolveObjectChain` in SA and the existing `addr-only` / `CalcAddr` / `CalcAddrIdx` machinery in codegen |
+
+#### Non-goals
+
+- `sys/stat.h` function support itself. Gap 2 uses `struct stat` only as its verification
+  subject; binding `stat`/`fstat`/`chmod`/… and their `S_IS*` predicates is the next
+  iteration's work, once the layout it depends on is correct.
+- Function-like macros (`S_ISDIR(m)` and friends). A genuinely new export mechanism, and
+  not needed by anything in this iteration.
+- Address-of on function parameters, and on whole struct or array variables. The latter
+  would produce a pointer to a pointer, which needs the semantics settled first.
+- `timer_create` / `struct sigevent`: still deferred. The type is not merely incomplete —
+  the real definition (`bits/types/sigevent_t.h`) needs anonymous unions, an anonymous
+  nested struct, function-pointer members, and `__sigval_t` (itself a union). That is a
+  large type-system expansion in exchange for one function.
+- `strftime_l` / `locale_t`: deferred again, same reasoning as v0.1.26 and v0.1.27.
+
+#### Definition of done
+
+- A native function may declare a `@T`/`@!T` named return without crashing the analyzer.
+- A cincluded C struct containing array fields has a layout and total size matching the C
+  ABI; `sizeof(struct stat)` is 144, and a Palan-allocated `struct stat` handed to `stat()`
+  is not overflowed (verified under `mtrace`).
+- A C parameter declared as an array is ingested as a pointer.
+- `#define S_IFDIR __S_IFDIR` and equivalents are exported as usable constants.
+- Writing through a `@T` pointer is a compile error; writing through `@!T` works.
+- `p[0]` is documented in `PalanReference.md`, covered by sa-tester and build-mgr-tester
+  cases in both directions, and its read/write asymmetry between `@T` and `@!T` is tested.
+- `@p.field` / `@!p.field` and `@arr[i]` / `@!arr[i]` produce pointers usable as C
+  arguments, and taking such an address neither allocates nor causes a free at scope exit
+  (verified under `mtrace`).
+
+The series' underlying goal is unchanged: header and feature support is the forcing
+function for general C-interop language capability, not per-function coverage for its own
+sake.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
