@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.26
+ver. 0.1.27
 
 \* - Required
 
@@ -62,6 +62,18 @@ macros, arithmetic, references to other macros, etc.) are not exported here.
 - value\* - Decimal string (e.g. "10")
 - value-type\* - Variable type (see below)
 
+Struct definition model
+------------------------
+Captured from `struct Name { field_decl... }` in a `cinclude`d C header (a forward
+declaration with no body, e.g. `struct Missing;`, is not captured — there is no field
+list to register). Attached to the `cinclude` statement model's `structs` field (see
+Statement model below); same field-list shape as the native `struct-def` statement.
+
+- name\* - Struct tag name string
+- fields\* - Field list
+  - name\* - Field name string
+  - var-type\* - Field type (same Variable type object format)
+
 Palan Parameter
 ---------------
 Used in Palan function `parameters` and `rets`.
@@ -119,9 +131,11 @@ Variable type
     - base-type\* - Base variable type of the embedded struct (type-kind "prim" with the struct name)
     Note: Valid only inside `struct-def` field lists. SA resolves the sub-struct layout and folds the
     embedded fields' offsets into the parent struct (no separate pointer).
-  5. strct - Struct type
-    - name - Struct name string
-    - fields - Field list
+  5. strct - Struct type reference (by name), from a C struct-typed parameter/return in a
+     `cinclude`d function signature
+    - type-name - Struct name string; omitted for a reference to a forward-declared-only tag
+      (no captured field list — see Struct definition model above — so the reference cannot
+      be resolved into a registered struct type)
   6. union - Union type (TBD)
     - name - Union name string
     - fields - Field list
@@ -137,10 +151,13 @@ Variable type
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
 
-Note: A var-type node originating from a C typedef that resolves to a known type (currently always
-type-kind "prim") may carry an additional `typedef-name` field — the original C typedef identifier
-(e.g. `"size_t"`). This is a c2ast/cinclude-only annotation; SA registers it as a native type alias
-(see PalanReference.md §20 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
+Note: A var-type node originating from a C typedef that resolves to a known type (type-kind "prim",
+or "pntr" for a pointer-bottomed typedef chain, e.g. `typedef void *timer_t;`) may carry an additional
+`typedef-name` field — the original C typedef identifier (e.g. `"size_t"`). This is a
+c2ast/cinclude-only annotation. For type-kind "prim", SA registers it as a native type alias (see
+PalanReference.md §20 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
+For type-kind "pntr", the field is left in place; it is not registered as an explicit Palan alias
+type name and never reaches sa.json (C function signatures themselves aren't serialized there).
 
 Block object
 ------------
@@ -162,6 +179,8 @@ Statement model
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
     - functions - Function definition model list (C prototypes from the header)
+    - structs - Struct definition model list (see Struct definition model above); omitted
+      when the header defines no capturable structs
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement
@@ -211,7 +230,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -261,6 +280,9 @@ Expression model
     - method\* - Method/function name string
     - args - Argument expression list
     Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
+  18. addr-of - Address-of a primitive local variable (`@ID` read-only, `@!ID`/`AT_EXCL ID` mutable)
+    - name\* - Variable name string
+    - mutable - `true` if produced by `@!ID`; omitted (not `false`) for `@ID`
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

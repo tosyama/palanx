@@ -159,3 +159,39 @@ inline void normalizeUnsizedArrSig(json& funcDef) {
 			if (r.contains("var-type"))
 				r["var-type"] = unsizedArrToPntr(r["var-type"]);
 }
+
+inline json normalizeCStructKind(const json& type);
+
+// c2ast tags a C struct reference "strct" (a syntactic fact -- it saw the
+// `struct` keyword -- available with no linking/resolution performed, since
+// c2ast never sees structDefs_). SA's own canonical post-resolution tag for
+// the same nominal type is "struct" (see PlnSemanticAnalyzer::normalizeStructSig,
+// used for native Palan function signatures). Native functions get rewritten
+// at registration time; this is the same rewrite for cinclude'd C function
+// signatures, so PlnTypeRegistry::fromJson only ever needs to understand the
+// single canonical "struct" tag, never c2ast's raw "strct" one.
+inline json normalizeCStructKind(const json& type) {
+	if (type.value("type-kind","") == "pntr") {
+		json t = type;
+		t["base-type"] = normalizeCStructKind(type["base-type"]);
+		return t;
+	}
+	if (type.value("type-kind","") == "strct") {
+		json t = type;
+		t["type-kind"] = "struct";
+		return t;
+	}
+	return type;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// C function entries (from c2ast) always carry a single "ret-type", never
+// Palan's native multi/named-return "rets" list, so there's no "rets" case
+// to handle here unlike normalizeUnsizedArrSig above.
+inline void normalizeCFuncStructSig(json& funcDef) {
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"])
+			if (p.contains("var-type"))
+				p["var-type"] = normalizeCStructKind(p["var-type"]);
+	if (funcDef.contains("ret-type"))
+		funcDef["ret-type"] = normalizeCStructKind(funcDef["ret-type"]);
+}

@@ -89,6 +89,7 @@ class PlnSemanticAnalyzer {
 
 	void        declareVar(const string& name, const json& type, const json* loc_node = nullptr);
 	const json* findVar(const string& name) const;
+	bool        isLocalVar(const string& name) const;
 	bool        isInArrayScope(const string& name) const;
 	void        removeFromArrayScope(const string& name);
 
@@ -114,6 +115,7 @@ class PlnSemanticAnalyzer {
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_owned_struct_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
+	void registerCStruct(const json& s);          // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_
 	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_

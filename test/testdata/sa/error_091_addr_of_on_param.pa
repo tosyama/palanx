@@ -1,0 +1,4 @@
+func f(int64 n) -> int64 {
+	@n;
+	return n;
+}

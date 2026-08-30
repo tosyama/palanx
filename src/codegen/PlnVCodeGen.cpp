@@ -71,6 +71,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             auto& e = static_cast<const IdExpr&>(expr);
             return findVar(e.name);
         }
+        case ExprKind::AddrOf: {
+            auto& e = static_cast<const AddrOfExpr&>(expr);
+            VReg local = findVar(e.name);
+            VReg dst = allocVReg();
+            func.instrs.push_back(LeaLocal{dst, local});
+            return dst;
+        }
         case ExprKind::Add: {
             auto& e  = static_cast<const AddExpr&>(expr);
             VReg l   = lowerExpr(*e.left, func);

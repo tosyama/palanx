@@ -1,0 +1,5 @@
+cinclude <time.h>;
+
+itimerspec it;
+5 -> it.it_interval.tv_sec;
+9 -> it.it_value.tv_nsec;

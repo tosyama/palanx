@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.26
+ver. 0.1.27
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -264,6 +264,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
+  - addr-of: `{"type-kind": "pntr", "base-type": <named var's prim type>}`, plus
+    `{"mutable": true}` when produced by `@!ID` (omitted, not `false`, for `@ID`).
+    The named variable must be a local variable in the current scope (not a
+    function parameter, not itself a `pntr`/`struct`/`arr` type) — otherwise a
+    compile error (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive).
   - call: present when the function has a return type (ret-type in its definition).
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).
@@ -395,6 +400,12 @@ Struct types
 ------------
 `type Name { field_decl... }` defines a struct type. The SA processes `struct-def` nodes and
 registers the type in its internal registry; the node is consumed and does not appear in sa.json.
+
+A struct captured from a `cinclude`d C header (ASTSpec.md's `cinclude` statement `structs`
+field) registers into this exact same internal registry — there is no separate representation
+for a C-origin struct. Every sa.json shape documented below (C ABI layout, var-decl,
+field-assign, field-access) applies unchanged regardless of whether the struct came from a
+native `type Name {...}` or a `cinclude`d header.
 
 ### C ABI layout
 

@@ -74,6 +74,14 @@ const json* PlnSemanticAnalyzer::findVar(const string& name) const
 	return nullptr;
 }
 
+bool PlnSemanticAnalyzer::isLocalVar(const string& name) const
+{
+	for (size_t i = varScopes.size(); i > 0; --i)
+		if (varScopes[i-1].count(name))
+			return (i-1) >= funcBodyScopeIdx_;
+	return false; // LCOV_EXCL_LINE -- callers only invoke this after findVar() succeeded
+}
+
 bool PlnSemanticAnalyzer::isInArrayScope(const string& name) const
 {
 	for (auto& scope : arrayScopeVars_)
@@ -424,6 +432,13 @@ void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
+	// Struct definitions must be registered before functions: function
+	// signature resolution (via PlnTypeRegistry::fromJson) needs structDefs_
+	// entries to already exist for any struct-pointer parameter/return type.
+	if (stmt.contains("structs"))
+		for (auto& s : stmt["structs"])
+			registerCStruct(s);
+
 	if (!stmt.contains("functions")) return;
 
 	if (stmt.contains("alias")) {
@@ -433,6 +448,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			string fname = f["name"].get<string>();
 			json entry = f;
 			registerCFuncTypedefAliases(entry);
+			normalizeCFuncStructSig(entry);
 			entry["_c-func"] = true;
 			currentScope[alias][fname] = entry;
 		}
@@ -440,6 +456,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& f : stmt["functions"]) {
 			json entry = f;
 			registerCFuncTypedefAliases(entry);
+			normalizeCFuncStructSig(entry);
 			registerCFunc(entry["name"].get<string>(), entry);
 		}
 	}

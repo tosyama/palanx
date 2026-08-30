@@ -1,0 +1,50 @@
+{
+    "alloc-shapes": [],
+    "functions": [],
+    "original": "060_addr_of_forces_stack.pa",
+    "statements": [
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "init": {
+                        "args": [],
+                        "expr-type": "call",
+                        "func-type": "c",
+                        "name": "get_val",
+                        "value-type": {
+                            "type-kind": "prim",
+                            "type-name": "int64"
+                        }
+                    },
+                    "name": "x",
+                    "var-type": {
+                        "type-kind": "prim",
+                        "type-name": "int64"
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "expr",
+            "body": {
+                "args": [
+                    {
+                        "expr-type": "addr-of",
+                        "name": "x",
+                        "value-type": {
+                            "type-kind": "pntr",
+                            "base-type": {
+                                "type-kind": "prim",
+                                "type-name": "int64"
+                            }
+                        }
+                    }
+                ],
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "use_ptr"
+            }
+        }
+    ]
+}

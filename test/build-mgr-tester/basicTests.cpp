@@ -850,6 +850,130 @@ TEST(build_mgr, null_notfound_sweep) {
 	ASSERT_EQ(output, "strstr: not found\nstrpbrk: not found\nstrchrnul: not null\nstrchrnul: []\n");
 }
 
+TEST(build_mgr, cinclude_struct_arg) {
+	cleanTestEnv();
+	// cinclude'd "tm" resolves through the same structDefs_ path as a native
+	// struct; mktime(t) receives t as a borrowed pointer (IT-2702).
+	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/119_cinclude_struct_arg.pa");
+	ASSERT_EQ(output, "946684800\n");
+}
+
+TEST(build_mgr, cinclude_struct_arg_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_cinclude_struct_arg_mtrace_bin "
+		"../test/testdata/build-mgr/120_cinclude_struct_arg_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_cinclude_struct_arg_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_cinclude_struct_arg_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// tm t: 1 calloc; mktime(t) passes t as a borrowed pointer -- no extra
+	// alloc/free from the C call itself.
+	EXPECT_EQ(allocs, 1) << "expected 1 alloc for tm t, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, at_bang_plain_var_decl) {
+	cleanTestEnv();
+	// IT-2703: `@!Point view = original;` as a plain (non-field) local var decl.
+	// `view` is a non-owning pointer aliasing `original`'s storage; writing
+	// through `view.x` must be visible via `original.x` (same memory).
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/121_at_bang_plain_var_decl.pa");
+	ASSERT_EQ(output, "20 10\n");
+}
+
+TEST(build_mgr, addr_of) {
+	cleanTestEnv();
+	// IT-2704: `@ID`/`@!ID` address-of on a local primitive variable, passed as
+	// an out-param pointer to a cincluded C function (memcpy). The second pair
+	// (z = a + b) exercises addr-of on a non-literal-initialized local -- the
+	// general-initializer gap that PlnRegAlloc's isVar-unification design closes.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/123_addr_of.pa");
+	ASSERT_EQ(output, "42\n5\n");
+}
+
+TEST(build_mgr, time_h_category_a) {
+	cleanTestEnv();
+	// IT-2705: time.h Category A -- clock_t/time_t (already flattened by the
+	// v0.1.26 typedef mechanism) and timer_t (a pointer-bottomed typedef chain,
+	// newly flattened by this ticket's c2ast fix) both resolve cleanly, so NULL
+	// type-checks against timer_t via the existing generic-pointer rule.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/124_time_h_category_a.pa");
+	ASSERT_EQ(output, "366\n60.000000\n1\n-1\n-1\n");
+}
+
+TEST(build_mgr, time_h_struct_tm) {
+	cleanTestEnv();
+	// IT-2706: time.h Category B (struct tm) -- mktime/timegm/timelocal round
+	// trip on a known epoch, strftime/asctime/asctime_r formatting. mktime
+	// normalizes tm_wday as a side effect, so asctime/asctime_r (called after)
+	// correctly print "Thu".
+	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/125_time_h_struct_tm.pa");
+	ASSERT_EQ(output, "0\n0\n0\n1970-01-01\nThu Jan  1 00:00:00 1970\nThu Jan  1 00:00:00 1970\n");
+}
+
+TEST(build_mgr, time_h_struct_timespec) {
+	cleanTestEnv();
+	// IT-2707: time.h Category B (struct timespec/itimerspec) -- clockid_t +
+	// CLOCK_REALTIME/TIME_UTC const import used in real program logic, and
+	// itimerspec's nested timespec embed fields (its.it_value.tv_sec) resolved
+	// through the same embed-field chain native $T structs use. timer_gettime
+	// is called with an invalid handle (timer_create is out of scope) and
+	// expected to fail.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/126_time_h_struct_timespec.pa");
+	ASSERT_EQ(output, "1\n1\n1\n1\n1\n1\n");
+}
+
+TEST(build_mgr, time_h_category_c) {
+	cleanTestEnv();
+	// IT-2708: time.h Category C -- time/ctime/ctime_r/clock_getcpuclockid, the
+	// only category depending solely on @ID/@!ID (IT-2704) with no struct
+	// interop. time(NULL)'s live return is only boundary-checked (>= 0); ctime/
+	// ctime_r are exercised against a separately fixed epoch value for a
+	// deterministic assertion.
+	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/127_time_h_category_c.pa");
+	ASSERT_EQ(output, "1\nThu Jan  1 00:00:00 1970\nThu Jan  1 00:00:00 1970\n1\n");
+}
+
+TEST(build_mgr, time_h_category_d) {
+	cleanTestEnv();
+	// IT-2709: time.h Category D -- gmtime/localtime/gmtime_r/localtime_r, the
+	// convergence point of every gap this iteration introduced: @ID (IT-2704)
+	// for the const time_t* input, and binding a cinclude'd struct tm* return
+	// into a non-owning @!tm local (IT-2701/2702/2703). gmtime is UTC and
+	// environment-independent, so also verifies its glibc static-buffer aliasing
+	// (a second call overwrites the first result) to prove @!T is a real
+	// non-owning alias, not a copy; gmtime_r's caller-owned buffer is unaffected.
+	// localtime/localtime_r are timezone-dependent, so get a loose sanity check only.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/128_time_h_category_d.pa");
+	ASSERT_EQ(output, "1970\n2 2\n1970\n1\n1\n");
+}
+
+TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_at_bang_plain_var_decl_mtrace_bin "
+		"../test/testdata/build-mgr/122_at_bang_plain_var_decl_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_at_bang_plain_var_decl_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_at_bang_plain_var_decl_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// `@!Point view = original;` declares a plain non-owning pointer var:
+	// no calloc/__pln_alloc_ call, and no auto-free registration at scope end.
+	EXPECT_EQ(allocs, 0) << "expected no alloc for plain @!Point view, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

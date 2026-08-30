@@ -1,0 +1,42 @@
+{
+    "alloc-shapes": [],
+    "functions": [],
+    "original": "061_addr_of_no_init.pa",
+    "statements": [
+        {
+            "stmt-type": "var-decl",
+            "vars": [
+                {
+                    "name": "x",
+                    "var-type": {
+                        "type-kind": "prim",
+                        "type-name": "int64"
+                    }
+                }
+            ]
+        },
+        {
+            "stmt-type": "expr",
+            "body": {
+                "args": [
+                    {
+                        "expr-type": "addr-of",
+                        "name": "x",
+                        "mutable": true,
+                        "value-type": {
+                            "type-kind": "pntr",
+                            "mutable": true,
+                            "base-type": {
+                                "type-kind": "prim",
+                                "type-name": "int64"
+                            }
+                        }
+                    }
+                ],
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "set_val"
+            }
+        }
+    ]
+}

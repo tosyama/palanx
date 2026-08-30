@@ -128,6 +128,26 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			}
 		}
 
+	} else if (expr_type == "addr-of") {
+		string name = expr["name"].get<string>();
+		bool isMutable = expr.value("mutable", false);
+		const json* varType = findVar(name);
+		if (varType == nullptr) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
+			exit(1);
+		}
+		if (!isLocalVar(name)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
+			exit(1);
+		}
+		if (varType->value("type-kind", "") != "prim") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
+			exit(1);
+		}
+		json pntr_type = {{"type-kind", "pntr"}, {"base-type", *varType}};
+		if (isMutable) pntr_type["mutable"] = true;
+		sa_expr["value-type"] = pntr_type;
+
 	} else if (expr_type == "add" || expr_type == "sub"
 	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod") {
 		return sa_expr_arith(expr, expectedType);

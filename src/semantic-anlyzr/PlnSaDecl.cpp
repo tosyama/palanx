@@ -237,7 +237,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = resolveTypeAlias(var["var-type"]);
+		json varType = deepNormalizePrimToStruct(resolveTypeAlias(var["var-type"]));
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
@@ -591,6 +591,53 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 	string name = stmt["name"].get<string>();
 	structDefs_[name] = buildStructDef(name, stmt["fields"], structDefs_);
 	return json::array();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// c2ast represents a C struct-by-value field (e.g. "struct timespec it_value;"
+// inside "struct itimerspec") as a plain {"type-kind":"strct","type-name":...}
+// var-type, since it has no concept of Palan's $T inline-embedding sugar.
+// Translate it to the "embed" shape buildStructDef expects so nested C structs
+// get folded into the parent's layout the same way native $T fields do.
+static json cFieldVarType(const json& vtype)
+{
+	if (vtype.value("type-kind", "") == "strct" && vtype.contains("type-name")) {
+		return {{"type-kind", "embed"},
+		        {"base-type", {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}}};
+	}
+	return vtype;
+}
+
+// cinclude pulls in every struct a system header defines, including glibc-internal
+// ones (e.g. "__pthread_mutex_s") that use shapes buildStructDef can't lay out
+// (unresolved typedef fields, C bitfields/anonymous unions, ...). Those are never
+// referenced by Palan interop code, so unlike a native `type Name { ... }` field
+// error (a real mistake in the user's own source, worth exit(1)), an unsupported
+// field here just means "don't register this struct" -- same as the tagless/
+// fieldless struct case c2ast already leaves out of the "structs" list.
+static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef>& structDefs,
+                                   const string& ownerName)
+{
+	string tk = vtype.value("type-kind", "");
+	if (tk == "prim")
+		return elemSizeBytes(vtype.value("type-name", "")) >= 0;
+	if (tk == "embed") {
+		string structName = vtype["base-type"].value("type-name", "");
+		return structName != ownerName && structDefs.count(structName);
+	}
+	return tk == "pntr";
+}
+
+void PlnSemanticAnalyzer::registerCStruct(const json& s)
+{
+	string name = s["name"].get<string>();
+	if (structDefs_.count(name)) return;  // first header wins on duplicate struct tags
+	json fields = json::array();
+	for (auto& f : s["fields"]) {
+		json vt = cFieldVarType(f["var-type"]);
+		if (!isSupportedCFieldType(vt, structDefs_, name)) return;  // skip whole struct
+		fields.push_back({{"name", f["name"]}, {"var-type", vt}});
+	}
+	structDefs_[name] = buildStructDef(name, fields, structDefs_);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)

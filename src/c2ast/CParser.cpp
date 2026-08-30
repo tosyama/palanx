@@ -278,8 +278,9 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 
 	if (CONSUME(TT_ID)) {
 		// struct with tag
+		ast["struct-name"] = *tokens[index-1]->info.id;
 		if (!CONSUME_PUNC('{')) {
-			// struct with tag only
+			// struct with tag only (reference, not definition)
 			result_index = index;
 			return true;
 		}
@@ -288,6 +289,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		EXPECT_PUNC('{');
 	}
 
+	vector<json> fields;
 	do {
 		bool is_const = CONSUME_KW(TK_CONST);
 		bool is_volatile = CONSUME_KW(TK_VOLATILE);
@@ -298,11 +300,13 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 			if (!declarator(field, tokens, index, false)) {
 				return false;
 			}
+			fields.push_back(field);
 			while (CONSUME_PUNC(',')) {
 				json field2 = {{"var-type", base_vt}};
 				if (!declarator(field2, tokens, index, false)) {
 					return false;
 				}
+				fields.push_back(field2);
 			}
 			EXPECT_PUNC(';');
 		} else {
@@ -312,6 +316,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 
 	EXPECT_PUNC('}');
 
+	ast["fields"] = move(fields);
 	result_index = index;
 	return true;
 }
@@ -404,7 +409,12 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_STRUCT)) {
 		if (struct_union_definition(ast, tokens, index)) {
-			ast["var-type"] = {{"type-kind", "strct"}};
+			json vt = {{"type-kind", "strct"}};
+			string tagName = ast.value("struct-name", "");
+			if (!tagName.empty() && definedStructs_.count(tagName)) {
+				vt["type-name"] = tagName;
+			}
+			ast["var-type"] = move(vt);
 			result_index = index;
 			return true;
 		}
@@ -476,7 +486,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 	return false;
 }
 
-bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index)
+bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index, bool is_grouped)
 {
 	int index = result_index;
 
@@ -496,7 +506,12 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 				EXPECT_PUNC(')');
 			}
 			json& vt = decl["var-type"];
-			if (vt.is_object() && vt.value("type-kind", "") == "pntr") {
+			// Only a parenthesized declarator -- e.g. "(*fp)(params)" -- means fp is a
+			// pointer to function. Without is_grouped, vt being "pntr" here just means
+			// the (non-grouped) declarator's own base type is a pointer (e.g. a
+			// pointer-typedef'd return type, as in "level1_t g(void)"), which is a plain
+			// function returning that pointer type, not a function-pointer variable.
+			if (is_grouped && vt.is_object() && vt.value("type-kind", "") == "pntr") {
 				// (*fp)(params) → fp is a pointer to function
 				// Move func inside the pntr, using pntr's base-type as return type.
 				vt = {{"type-kind", "pntr"}, {"base-type",
@@ -541,7 +556,9 @@ bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_
 		return true;
 	}
 
+	bool is_grouped = false;
 	if (CONSUME_PUNC('(')) {
+		is_grouped = true;
 		if (!declarator(decl, tokens, index, is_typeonly))
 			return false;
 		EXPECT_PUNC(')');
@@ -553,7 +570,7 @@ bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_
 		decl["name"] = *tokens[index-1]->info.id;
 	}
 
-	declarator_tail(decl, tokens, index);
+	declarator_tail(decl, tokens, index, is_grouped);
 
 	result_index = index;
 	return true;
@@ -576,12 +593,29 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 
 	if (!(is_typedef || is_extern || is_static)) {
 		// just declaration of struct or union
-		if (CONSUME_KW(TK_STRUCT) || CONSUME_KW(TK_UNION)) {
-			if (struct_union_definition(ast, tokens, index)) {
-				EXPECT_PUNC(';');
+		int struct_union_save_index = index;
+		bool is_struct_kw = CONSUME_KW(TK_STRUCT);
+		bool is_union_kw = !is_struct_kw && CONSUME_KW(TK_UNION);
+		if (is_struct_kw || is_union_kw) {
+			if (struct_union_definition(ast, tokens, index) && CONSUME_PUNC(';')) {
+				if (is_struct_kw && ast.contains("fields")) {
+					string structName = ast.value("struct-name", "");
+					if (!structName.empty()) {
+						ast["ast"]["structs"].push_back({
+							{"name", structName},
+							{"fields", ast["fields"]}
+						});
+						definedStructs_.insert(structName);
+					}
+				}
+				ast.erase("struct-name");
+				ast.erase("fields");
 				result_index = index;
 				return true;
 			}
+			// Not a standalone struct/union declaration (e.g. "struct Tag func(...)")
+			// — backtrack and let it fall through to be parsed as a type specifier.
+			index = struct_union_save_index;
 		}
 
 		// just declaration of enum
@@ -629,7 +663,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 					});
 				} else if (is_typedef) {
 					string tk = vt.value("type-kind", "");
-					if (tk == "prim") {
+					if (tk == "prim" || tk == "pntr") {
 						typedefs_[decl["name"].get<string>()] = vt;
 					} else if (tk == "user") {
 						auto it = typedefs_.find(vt["type-name"].get<string>());
@@ -637,7 +671,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 							typedefs_[decl["name"].get<string>()] = it->second;
 						}
 					}
-					// strct/union/enum/pntr/func underlying types: not registered,
+					// strct/union/enum/func underlying types: not registered,
 					// left as unresolved "user" at reference sites (unchanged behavior)
 				}
 				result_index = index;

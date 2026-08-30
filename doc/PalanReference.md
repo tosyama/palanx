@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.26
+**Version:** v0.1.27
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -58,6 +58,7 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 19. [Struct Types](#19-struct-types)
 20. [Type Aliases](#20-type-aliases)
 21. [Constant Declarations](#21-constant-declarations)
+22. [Address-Of Operator](#22-address-of-operator)
 
 ---
 
@@ -282,8 +283,11 @@ S.printf("%d\n", 42);        // qualified call
 - C typedefs that resolve to a primitive type are automatically registered as a Palan type alias
   (see [Type Aliases](#20-type-aliases)) the moment the header is cincluded. For example,
   `size_t n = strlen(s);` works immediately after `cinclude <string.h>;`, with no explicit alias
-  declaration needed. Typedefs that bottom out in a non-primitive type (struct, union, enum) are not
-  resolved and remain unusable this version.
+  declaration needed. Typedefs that bottom out in a pointer type (e.g. `timer_t`, `typedef void
+  *timer_t;`) are also resolved, so such a typedef's name can be used as a C function's parameter
+  or return type (e.g. `timer_delete(timer_t)`), but — unlike primitive-bottomed typedefs — it is
+  not registered as a usable Palan type alias name itself. Typedefs that bottom out in a struct,
+  union, or enum are not resolved and remain unusable this version.
 - Object-like `#define` macros whose body is a bare integer literal, or a pointer-cast of a bare
   integer literal (e.g. `#define NULL ((void *)0)`), are automatically imported as a Palan `const`
   (see [Constant Declarations](#21-constant-declarations)) the moment the header is cincluded. Other
@@ -304,6 +308,27 @@ S.printf("%d\n", 42);        // qualified call
   wins (silent deduplication).
 - Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported typedefs or constants — they
   are always registered globally. Only C function calls require the `X.` qualifier.
+- A C `struct Name { ... }` defined (with a full field list, not just forward-declared) in a
+  cincluded header becomes a usable [struct type](#19-struct-types) under that same name — field
+  access, embedded struct-typed fields, and struct-typed function parameters all work identically
+  to a struct declared natively with `type Name { ... }`. A tag that is only forward-declared in
+  the header (no field list visible) is not usable as a struct type this version.
+- A struct pointer *returned* by a C function should be bound to a non-owning `@T`/`@!T`-typed
+  local variable, not a named return — the pointer may be owned by C (e.g. a static internal
+  buffer), so no automatic freeing is registered for it:
+
+  ```palan
+  cinclude <time.h>;
+  cinclude <stdio.h>;
+
+  time_t t = int64(0);
+  @!tm p = gmtime(@t);                        // non-owning: gmtime owns the storage, not Palan
+  printf("%d\n", int32(p.tm_year) + 1900);    // 1970
+  ```
+
+  A struct passed *into* a C call follows the same convention as a native struct-typed function
+  parameter: it is passed by pointer, borrowed by the callee, and not freed by it (see
+  [Struct types in function signatures](#struct-types-in-function-signatures)).
 
 ---
 
@@ -919,6 +944,22 @@ Struct-type fields are written with a prefix that controls ownership and memory 
 | `@T field` | Non-owning read-only pointer — 8-byte null pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
 | `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
 
+`@T`/`@!T` are general pointer-type expressions, not exclusive to struct fields — they may
+also be used as a plain local variable's declared type, as a non-owning alias into existing
+storage (no allocation, no automatic freeing at scope exit). Field access on such a variable
+works the same as on a struct-field pointer of the same kind:
+
+```palan
+type Point { int64 x; int64 y; };
+
+Point original;
+5 -> original.x;  10 -> original.y;
+
+@!Point view = original;   // non-owning alias — view and original share the same storage
+20 -> view.x;               // write-through
+printf("%ld %ld\n", original.x, original.y);   // 20 10
+```
+
 ### Array fields
 
 | Syntax        | Meaning                                  | Memory                          |
@@ -1081,3 +1122,35 @@ printf("%ld\n", MaxLen);   // 256
   same name silently shadows a same-named const.
 - A const cannot be used at a point where a function signature is pre-registered, e.g. as an
   array-size in a parameter type. It is only usable from ordinary statement processing onward.
+
+---
+
+## 22. Address-Of Operator
+
+Take the address of a local primitive-typed variable with `@` (read-only) or `@!` (mutable):
+
+```palan
+int64 x = 42;
+@!int64 p = @!x;   // p now holds the address of x
+```
+
+- `@ID` yields a read-only pointer to `ID`'s storage; `@!ID` yields a mutable pointer.
+- Scoped to local variables of a primitive type only this version — not usable on function
+  parameters, struct fields, array elements, or general expressions.
+- There is no general pointer-dereference operator, so a value cannot be read or written back
+  through `p` from Palan code itself — the resulting pointer's sole purpose is to be handed to a
+  cincluded C function that expects a pointer parameter, which dereferences it on the C side. It
+  can be used as an input the function reads through (`const T*`), or as an out-param it writes
+  into:
+
+  ```palan
+  cinclude <time.h>;
+  cinclude <stdio.h>;
+
+  time_t t = int64(0);
+  printf("%s", ctime(@t));                      // read-only: ctime takes const time_t*
+
+  int32 clk_id = 0;
+  int32 rc = clock_getcpuclockid(int32(0), @!clk_id);   // mutable out-param
+  printf("%d\n", rc == int32(0));
+  ```

@@ -1123,3 +1123,65 @@ TEST(codegen, calcaddr_stack_spill) {
     // dereference), matching emitInstrCalcAddr's stack branch.
     ASSERT_NE(asm_text.find("(%rbp), %r10\n\tleaq (%r10),"), string::npos);
 }
+
+// `x`'s value is produced by a CallC (get_val()), a general (non-literal)
+// initializer, which is normally free to be register-allocated. Its address is
+// then taken (`@x`) and passed to another CallC (use_ptr). This is the regression
+// test for PlnRegAlloc's isVar-unification design: without forcing address-taken
+// VRegs to a stack slot, x could land in a register and emitInstrLeaLocal would
+// either abort (BOOST_ASSERT) or -- if that guard were missing -- silently emit
+// wrong code. It also exercises PlnX86CodeGen's LeaLocal dispatch line itself:
+// since that dispatch chain is a manual if/else-if (not std::visit), an omitted
+// case would silently drop the instruction rather than fail to build.
+TEST(codegen, addr_of_forces_stack) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/060_addr_of_forces_stack.sa.json";
+    string asmf = "out/060_addr_of_forces_stack.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // x's CallC result is stored to a stack slot immediately (not left in %rax
+    // or moved into a callee-saved register)...
+    ASSERT_NE(asm_text.find("call get_val\n\tmovq %rax, -8(%rbp)\n"), string::npos);
+    // ...and its address is then loaded from that exact stack slot into the
+    // first argument register for use_ptr.
+    ASSERT_NE(asm_text.find("leaq -8(%rbp), %rdi\n"), string::npos);
+}
+
+// `x` is declared with no initializer at all (`int64 x;`), so it is never the
+// dst of any VInstr and has no def_idx -- this is PlnRegAlloc's isVar fallback
+// path (a permanent stack slot with no freePool reuse) for address-taken
+// variables that InitVar/InitVarF/CallC-style def-index tracking never sees.
+TEST(codegen, addr_of_no_init) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/061_addr_of_no_init.sa.json";
+    string asmf = "out/061_addr_of_no_init.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // x gets a stack slot even though it's never written to before its address
+    // is taken and passed to set_val.
+    ASSERT_NE(asm_text.find("leaq -8(%rbp), %rdi\n"), string::npos);
+}
+
+// Twelve addr-of results are all kept live simultaneously as call arguments
+// (six bind directly to argument registers, six more exhaust the five
+// callee-saved registers), forcing the twelfth LeaLocal *destination* itself
+// to spill to a stack slot -- exercises emitInstrLeaLocal's dst_loc.isStack()
+// branch (scratch %r11 + movq), the LeaLocal analog of emitInstrCalcAddr's
+// stack-spill branch covered by calcaddr_stack_spill above.
+TEST(codegen, addr_of_dst_stack_spill) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/062_addr_of_dst_stack_spill.sa.json";
+    string asmf = "out/062_addr_of_dst_stack_spill.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("(%rbp), %r11\n\tmovq %r11, "), string::npos);
+}

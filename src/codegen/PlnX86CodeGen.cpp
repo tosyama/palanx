@@ -229,6 +229,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<DerefLoad>    (&instr)) emitInstrDerefLoad(*i,  rm);
             else if (auto* i  = std::get_if<DerefStore>   (&instr)) emitInstrDerefStore(*i, rm);
             else if (auto* i  = std::get_if<CalcAddr>     (&instr)) emitInstrCalcAddr(*i, rm);
+            else if (auto* i  = std::get_if<LeaLocal>     (&instr)) emitInstrLeaLocal(*i, rm);
             // BlockEnter and BlockLeave are no-ops
         }
     }
@@ -796,6 +797,27 @@ void PlnX86CodeGen::emitInstrCalcAddr(const CalcAddr& ca, const RegMap& rm)
 
     string addr = (ca.offset ? std::to_string(ca.offset) : "") + "(" + ptr_reg + ")";
 
+    if (!dst_loc.isStack()) {
+        out << "\tleaq " << addr << ", " << dst_loc.base << "\n";
+    } else {
+        out << "\tleaq " << addr << ", %r11\n";
+        out << "\tmovq %r11, " << dst_loc.stackOffset << "(%rbp)\n";
+    }
+}
+
+void PlnX86CodeGen::emitInstrLeaLocal(const LeaLocal& ll, const RegMap& rm)
+{
+    if (!rm.count(ll.dst) || !rm.count(ll.local)) return;
+    const PhysLoc& local_loc = rm.at(ll.local);
+    const PhysLoc& dst_loc   = rm.at(ll.dst);
+
+    if (!local_loc.isStack()) {
+        // RegAlloc must force every address-taken local to a stack slot (isVar).
+        std::cerr << "PlnX86CodeGen: address-taken local is not on the stack\n";
+        std::abort();
+    }
+
+    string addr = std::to_string(local_loc.stackOffset) + "(%rbp)";
     if (!dst_loc.isStack()) {
         out << "\tleaq " << addr << ", " << dst_loc.base << "\n";
     } else {

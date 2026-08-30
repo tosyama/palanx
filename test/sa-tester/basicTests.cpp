@@ -1458,6 +1458,74 @@ TEST(sa, cinclude_typedef_size_t)
 	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
 }
 
+TEST(sa, cinclude_struct_arg)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/128_cinclude_struct_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Point (cinclude'd via a local header) resolves through the same
+	// structDefs_/calloc path as a native `type Point { ... }` -- IT-2701's
+	// c2ast "structs" capture reaches SA and registers "Point" before the
+	// var-decl below is analyzed.
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+
+	// 10 -> p.x / 20 -> p.y resolve to the same field-assign shape as a
+	// native struct (offsets 0 and 8 for two int64 fields).
+	ASSERT_EQ(jout["statements"][1]["stmt-type"], "field-assign");
+	ASSERT_EQ(jout["statements"][1]["var"], "p");
+	ASSERT_EQ(jout["statements"][1]["offset"], 0);
+	ASSERT_EQ(jout["statements"][2]["stmt-type"], "field-assign");
+	ASSERT_EQ(jout["statements"][2]["var"], "p");
+	ASSERT_EQ(jout["statements"][2]["offset"], 8);
+
+	// move_point(p, 5, 5): p is passed as a plain borrowed pointer -- no
+	// wrapping alloc/copy call is inserted around the "id" arg.
+	const auto& call = jout["statements"][3]["body"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["name"], "move_point");
+	ASSERT_EQ(call["func-type"], "c");
+	const auto& arg0 = call["args"][0];
+	ASSERT_EQ(arg0["expr-type"], "id");
+	ASSERT_EQ(arg0["name"], "p");
+	ASSERT_EQ(arg0["var-type"]["base-type"]["type-name"], "Point");
+}
+
+TEST(sa, cinclude_nested_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/129_cinclude_nested_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// itimerspec { struct timespec it_interval; struct timespec it_value; }:
+	// a C struct-by-value field ("strct", not "pntr") is registered the same
+	// way native $T inline-embedding is -- 2 * (int64 tv_sec + int64 tv_nsec)
+	// = 32 bytes, no owned-pointer indirection.
+	const auto& decl = jout["statements"][0];
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "it");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "32");
+
+	// it.it_interval.tv_sec: it_interval@0, tv_sec@0 -> flattened offset 0
+	ASSERT_EQ(jout["statements"][1]["stmt-type"], "field-assign");
+	ASSERT_EQ(jout["statements"][1]["var"], "it");
+	ASSERT_EQ(jout["statements"][1]["offset"], 0);
+
+	// it.it_value.tv_nsec: it_value@16, tv_nsec@8 -> flattened offset 24
+	ASSERT_EQ(jout["statements"][2]["stmt-type"], "field-assign");
+	ASSERT_EQ(jout["statements"][2]["var"], "it");
+	ASSERT_EQ(jout["statements"][2]["offset"], 24);
+}
+
 TEST(sa, cinclude_null_constant)
 {
 	cleanTestEnv();
@@ -2798,4 +2866,132 @@ TEST(sa, const_decl_chain)
 	ASSERT_TRUE(jout.is_object());
 	ASSERT_EQ(jout["statements"].size(), 1);
 	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["value"], "10");
+}
+
+TEST(sa, at_bang_plain_var_decl)
+{
+	// IT-2703: `@!Point view = original;` as a plain (non-field) local var decl.
+	// Two gaps had to be closed for this to work:
+	//  1. gen-ast: var_declaration's "type_expr ID '=' expression" alt (PlnParser.yy)
+	//     only whitelisted tk=="prim" for the initializer form; pntr-kind types
+	//     (what `@T`/`@!T` produce) fell through to not-impl. Same for the bare
+	//     no-init decl alt. Widened both whitelists to include tk=="pntr".
+	//  2. SA: deepNormalizePrimToStruct must run on sa_var_decl's generic fallthrough
+	//     path so `view`'s var-type carries base-type.type-kind=="struct" (not "prim"),
+	//     matching what resolveObjectChain/resolveStoreLocChain require for field access.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/130_at_bang_plain_var_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements: [0] type Point is consumed, so:
+	// [0] var-decl original, [1] var-decl view (init=original), [2] field-assign view.x=20, [3] var-decl vx
+	const auto& view_decl = jout["statements"][1];
+	ASSERT_EQ(view_decl["stmt-type"], "var-decl");
+	const auto& v = view_decl["vars"][0];
+	ASSERT_EQ(v["name"], "view");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["mutable"], true);
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	// No allocator call synthesized for a plain @!T decl -- init is just the
+	// pointer value copied from `original` (id expr), not a calloc/__pln_alloc_ call.
+	ASSERT_EQ(v["init"]["expr-type"], "id");
+	ASSERT_EQ(v["init"]["name"], "original");
+
+	const auto& fa = jout["statements"][2];
+	ASSERT_EQ(fa["stmt-type"], "field-assign");
+	ASSERT_EQ(fa["var"], "view");
+	// field "x" is int64, not struct-typed -- writing through it exercises the
+	// pntr(struct)-based field chain resolution, but the field itself stays prim.
+	ASSERT_EQ(fa["value-type"]["type-name"], "int64");
+
+	const auto& vx_decl = jout["statements"][3];
+	ASSERT_EQ(vx_decl["vars"][0]["init"]["expr-type"], "field-access");
+	ASSERT_EQ(vx_decl["vars"][0]["init"]["var"], "view");
+}
+
+TEST(sa, at_plain_var_decl_readonly)
+{
+	// IT-2703: `@Point view = original;` (read-only, non-mutable) plain local var decl.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/131_at_plain_var_decl_readonly.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& view_decl = jout["statements"][1];
+	const auto& v = view_decl["vars"][0];
+	ASSERT_EQ(v["name"], "view");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"].value("mutable", false), false);
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(v["init"]["expr-type"], "id");
+	ASSERT_EQ(v["init"]["name"], "original");
+
+	const auto& vx_decl = jout["statements"][2];
+	ASSERT_EQ(vx_decl["vars"][0]["init"]["expr-type"], "field-access");
+	ASSERT_EQ(vx_decl["vars"][0]["init"]["var"], "view");
+}
+
+TEST(sa, at_bang_bare_decl_then_assign)
+{
+	// IT-2703: `@!Point view;` with no initializer, followed by a plain
+	// arrow-assign (`original -> view;`) -- the other newly-enabled gen-ast
+	// path (bare var_declaration alt widened to accept tk=="pntr").
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/132_at_bang_bare_decl_then_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// [0] var-decl original, [1] var-decl view (no init), [2] assign view=original,
+	// [3] field-assign view.x=20, [4] var-decl vx
+	const auto& view_decl = jout["statements"][1];
+	const auto& v = view_decl["vars"][0];
+	ASSERT_EQ(v["name"], "view");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_FALSE(v.contains("init"));
+
+	const auto& assign = jout["statements"][2];
+	ASSERT_EQ(assign["stmt-type"], "assign");
+	ASSERT_EQ(assign["name"], "view");
+	ASSERT_EQ(assign["value"]["expr-type"], "id");
+	ASSERT_EQ(assign["value"]["name"], "original");
+
+	const auto& fa = jout["statements"][3];
+	ASSERT_EQ(fa["stmt-type"], "field-assign");
+	ASSERT_EQ(fa["var"], "view");
+}
+
+TEST(sa, addr_of_readonly_local)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/133_addr_of_readonly_local.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(p["name"], "p");
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_FALSE(p["var-type"].contains("mutable"));
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "int64");
+
+	const auto& init = p["init"];
+	ASSERT_EQ(init["expr-type"], "addr-of");
+	ASSERT_EQ(init["name"], "x");
+	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+	ASSERT_FALSE(init["value-type"].contains("mutable"));
+}
+
+TEST(sa, addr_of_mutable_local)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/134_addr_of_mutable_local.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& q = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(q["name"], "q");
+	ASSERT_EQ(q["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(q["var-type"]["mutable"], true);
+
+	const auto& init = q["init"];
+	ASSERT_EQ(init["expr-type"], "addr-of");
+	ASSERT_EQ(init["name"], "x");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
 }

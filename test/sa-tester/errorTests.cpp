@@ -768,3 +768,42 @@ TEST(sa_error, const_not_literal)
 	ASSERT_NE(sa.find("must be initialized with a compile-time constant"), string::npos);
 }
 
+TEST(sa_error, addr_of_on_param)
+{
+	// `@n;` where n is a function parameter, not a local variable
+	// Covers: sa_expression addr-of E_AddrOfNotLocalVar branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_091_addr_of_on_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("address-of requires a local variable"), string::npos);
+}
+
+TEST(sa_error, addr_of_on_struct)
+{
+	// `@p;` where p is a struct-typed local variable
+	// Covers: sa_expression addr-of E_AddrOfNotPrimitive branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_092_addr_of_on_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of"), string::npos);
+}
+
+TEST(sa_error, addr_of_undefined)
+{
+	// `@undefined_name;` -- reuses the existing E_UndefinedVariable diagnostic
+	// Covers: sa_expression addr-of not-found branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_093_addr_of_undefined.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Undefined variable"), string::npos);
+}
+

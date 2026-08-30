@@ -1,0 +1,6 @@
+type Point { int64 x; int64 y; };
+Point original;
+@!Point view;
+original -> view;
+20 -> view.x;
+int64 vx = view.x;

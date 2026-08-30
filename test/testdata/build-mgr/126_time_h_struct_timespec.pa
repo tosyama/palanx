@@ -1,0 +1,36 @@
+cinclude <time.h>;
+cinclude <stdio.h>;
+
+// IT-2707: clockid_t typedef + CLOCK_REALTIME const import (v0.1.26 mechanism)
+// used together in real program logic for the first time at build-mgr level.
+timespec ts;
+clock_gettime(CLOCK_REALTIME, ts);
+printf("%d\n", ts.tv_sec >= int64(0));
+
+timespec ts2;
+clock_getres(CLOCK_REALTIME, ts2);
+printf("%d\n", ts2.tv_sec >= int64(0));
+
+timespec ts3;
+timespec_get(ts3, TIME_UTC);
+printf("%d\n", ts3.tv_sec >= int64(0));
+
+// near-zero duration to avoid slowing the test suite
+timespec req;
+0 -> req.tv_sec;   1 -> req.tv_nsec;
+timespec rem;
+printf("%d\n", nanosleep(req, rem) == int32(0));
+
+// itimerspec embeds two timespec fields (it_interval, it_value); this
+// exercises the 2-level embed field chain (its.it_value.tv_sec) through a
+// cinclude'd (non-native) struct for the first time.
+itimerspec its;
+0 -> its.it_interval.tv_sec;   0 -> its.it_interval.tv_nsec;
+1 -> its.it_value.tv_sec;      0 -> its.it_value.tv_nsec;
+printf("%ld\n", its.it_value.tv_sec);
+
+// timer_settime/timer_gettime need a real timer_t handle, but timer_create
+// is out of scope (struct sigevent has no field list) -- exercise the
+// signature with an invalid handle and check for the error return, same
+// pattern as timer_delete/timer_getoverrun in 124_time_h_category_a.pa.
+printf("%d\n", timer_gettime(NULL, its) != int32(0));

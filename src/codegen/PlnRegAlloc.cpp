@@ -104,6 +104,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const DerefLoad&  dl)    { setDef(dl.dst, dl.type); addUse(dl.ptr); },
             [&](const DerefStore& ds)    { addUse(ds.ptr); addUse(ds.src); },
             [&](const CalcAddr&   ca)    { setDef(ca.dst, VRegType::Ptr64); addUse(ca.ptr); },
+            // Taking a local's address forces it to a stable stack slot for the
+            // rest of its lifetime, exactly like an InitVar-declared variable —
+            // reuse the isVar mechanism rather than a second forced-stack path.
+            [&](const LeaLocal&   ll)    { setDef(ll.dst, VRegType::Ptr64); meta[ll.local].isVar = true; addUse(ll.local); },
             [&](const ExitCode&)   {},
             [&](const BlockEnter&) {},
             [&](const BlockLeave&) {},
@@ -299,6 +303,16 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                     break;
                 }
             }
+            // Direct assignment to the call's argument register only lives up to
+            // that call: the call itself clobbers all caller-saved registers,
+            // including the very one this vreg would occupy. If the vreg is used
+            // again afterward (e.g. a struct pointer passed as an out-param, then
+            // dereferenced to read a field the call just wrote), that later read
+            // would see whatever the call left behind rather than the original
+            // value, so it must survive in a callee-saved register instead.
+            if (!needs_callee_saved && m.last_any_use > use_idx) {
+                needs_callee_saved = true;
+            }
         }
 
         if (needs_callee_saved) {
@@ -348,35 +362,54 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
     }
 
-    // Pass B: assign stack slots to InitVar VRegs in instruction order,
-    // reusing freed slots via freePool.
+    // Pass B: assign stack slots to isVar VRegs in instruction-definition order,
+    // reusing freed slots via freePool. isVar is set either by InitVar/InitVarF
+    // (literal-initialized locals) or by LeaLocal (address-taken locals,
+    // regardless of how they were initialized) -- both funnel through this same
+    // forced-stack path rather than each needing their own mechanism.
     {
         map<int, vector<int>> freePool;  // size(bytes) -> available offsets
 
-        for (auto& instr : func.instrs) {
-            auto allocInitVar = [&](VReg dst, VRegType type) {
-                if (result.count(dst)) return;  // already handled in Pass A
-                int sz     = sizeOfType(type);
-                auto& pool = freePool[sz];
-                if (!pool.empty()) {
-                    int off = pool.back();
-                    pool.pop_back();
-                    result[dst] = PhysLoc{"", type, off};
-                } else {
-                    allocStackSlot(dst, type);
-                }
-            };
-            if (auto* v = std::get_if<InitVar>(&instr)) {
-                allocInitVar(v->dst, v->type);
-            } else if (auto* v = std::get_if<InitVarF>(&instr)) {
-                allocInitVar(v->dst, v->type);
-            } else if (auto* bl = std::get_if<BlockLeave>(&instr)) {
+        // Group isVar VRegs by the instruction index that defines them, so they're
+        // allocated in the same order they're created, matching the freePool
+        // release ordering driven by BlockLeave.expiredVars below.
+        map<int, vector<VReg>> varsByDefIdx;
+        for (auto& [vreg, m] : meta)
+            if (m.isVar && m.def_idx >= 0)
+                varsByDefIdx[m.def_idx].push_back(vreg);
+
+        auto allocInitVar = [&](VReg dst, VRegType type) {
+            if (result.count(dst)) return;  // already handled in Pass A
+            int sz     = sizeOfType(type);
+            auto& pool = freePool[sz];
+            if (!pool.empty()) {
+                int off = pool.back();
+                pool.pop_back();
+                result[dst] = PhysLoc{"", type, off};
+            } else {
+                allocStackSlot(dst, type);
+            }
+        };
+
+        for (int i = 0; i < (int)func.instrs.size(); i++) {
+            auto it = varsByDefIdx.find(i);
+            if (it != varsByDefIdx.end())
+                for (VReg vr : it->second)
+                    allocInitVar(vr, meta[vr].type);
+            if (auto* bl = std::get_if<BlockLeave>(&func.instrs[i])) {
                 for (VReg vr : bl->expiredVars) {
                     if (result.count(vr) && result[vr].isStack())
                         freePool[sizeOfType(result[vr].type)].push_back(result[vr].stackOffset);
                 }
             }
         }
+
+        // isVar VRegs with no defining instruction (e.g. `int64 x;` with no
+        // initializer, later addressed via `@x`) never match a def_idx above --
+        // give them a permanent slot (no freePool reuse) as a conservative fallback.
+        for (auto& [vreg, m] : meta)
+            if (m.isVar && m.def_idx == -1 && !result.count(vreg))
+                allocStackSlot(vreg, m.type);
     }
 
     // For non-entry functions, reserve stack slots at the top of the frame to

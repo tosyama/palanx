@@ -1,0 +1,9 @@
+cinclude <time.h>;
+cinclude <stdio.h>;
+
+printf("%d\n", dysize(2024));
+printf("%f\n", difftime(int64(100), int64(40)));
+tzset();
+printf("%d\n", clock() >= int64(0));
+printf("%d\n", timer_delete(NULL));
+printf("%d\n", timer_getoverrun(NULL));

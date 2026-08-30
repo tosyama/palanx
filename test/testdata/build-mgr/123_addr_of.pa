@@ -1,0 +1,14 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+int64 x = 42;
+int64 y = 0;
+memcpy(@!y, @x, 8);
+printf("%ld\n", y);
+
+int64 a = 2;
+int64 b = 3;
+int64 z = a + b;
+int64 zc = 0;
+memcpy(@!zc, @z, 8);
+printf("%ld\n", zc);

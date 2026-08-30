@@ -1,0 +1,41 @@
+{
+    "alloc-shapes": [],
+    "functions": [],
+    "original": "062_addr_of_dst_stack_spill.pa",
+    "statements": [
+        {"stmt-type": "var-decl", "vars": [{"name": "a", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "b", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "c", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "d", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "e", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "f", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "g", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "h", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "i", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "j", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "k", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {"stmt-type": "var-decl", "vars": [{"name": "l", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
+        {
+            "stmt-type": "expr",
+            "body": {
+                "args": [
+                    {"expr-type": "addr-of", "name": "a", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "b", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "c", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "d", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "e", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "f", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "g", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "h", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "i", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "j", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "k", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}},
+                    {"expr-type": "addr-of", "name": "l", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "int64"}}}
+                ],
+                "expr-type": "call",
+                "func-type": "c",
+                "name": "use_many_ptrs"
+            }
+        }
+    ]
+}

@@ -36,6 +36,7 @@ enum class ExprKind {
     LogicalNot,
     LogicalAnd,
     LogicalOr,
+    AddrOf,
 };
 
 struct Expr {
@@ -69,6 +70,11 @@ struct FloLitExpr : Expr {
 
 struct IdExpr : Expr {
     IdExpr() : Expr(ExprKind::Id) {}
+    string name;
+};
+
+struct AddrOfExpr : Expr {
+    AddrOfExpr() : Expr(ExprKind::AddrOf) {}
     string name;
 };
 

@@ -182,6 +182,14 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "const '" + arg1 + "' must be initialized with a compile-time constant literal.";
 
+		case E_AddrOfNotLocalVar:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'@'/'@!' address-of requires a local variable, not a parameter or '" + arg1 + "'.";
+
+		case E_AddrOfNotPrimitive:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot take the address of '" + arg1 + "': address-of is only supported for primitive-typed local variables.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

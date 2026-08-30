@@ -1,0 +1,13 @@
+cinclude <time.h>;
+cinclude <stdio.h>;
+
+tm t;
+100 -> t.tm_year;
+0 -> t.tm_mon;
+1 -> t.tm_mday;
+0 -> t.tm_hour;
+0 -> t.tm_min;
+0 -> t.tm_sec;
+0 -> t.tm_isdst;
+int64 secs = mktime(t);
+printf("%ld\n", secs);

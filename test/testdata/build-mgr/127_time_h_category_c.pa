@@ -1,0 +1,16 @@
+cinclude <time.h>;
+cinclude <stdio.h>;
+
+time_t t = time(NULL);
+printf("%d\n", t >= int64(0));
+
+time_t t2 = int64(0);
+printf("%s", ctime(@t2));
+
+[32]uint8 buf;
+ctime_r(@t2, buf);
+printf("%s", buf);
+
+int32 clk_id = 0;
+int32 rc = clock_getcpuclockid(int32(0), @!clk_id);
+printf("%d\n", rc == int32(0));
