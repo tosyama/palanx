@@ -327,21 +327,6 @@ void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 	}
 }
 
-// Resolve alias type-names in a not-yet-registered function signature so
-// call-site type checks done while pre-registering (before the function's
-// own body/normalizeStructSig pass runs) see the underlying primitive type.
-void PlnSemanticAnalyzer::resolveFuncSigTypeAliases(json& funcEntry) const
-{
-	if (funcEntry.contains("parameters"))
-		for (auto& p : funcEntry["parameters"])
-			p["var-type"] = resolveTypeAlias(p["var-type"]);
-	if (funcEntry.contains("rets"))
-		for (auto& r : funcEntry["rets"])
-			r["var-type"] = resolveTypeAlias(r["var-type"]);
-	if (funcEntry.contains("ret-type"))
-		funcEntry["ret-type"] = resolveTypeAlias(funcEntry["ret-type"]);
-}
-
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
@@ -350,13 +335,18 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
 	enterScope();
-	// 0. Pre-scan top-level type-alias declarations so function signatures
-	//    pre-registered in step 1 (and calls resolved during step 2) see
-	//    fully-resolved primitive types instead of alias names.
+	// 0. Pre-scan top-level type-alias and struct-def declarations so function
+	//    signatures pre-registered in step 1 (and calls resolved during step 2)
+	//    see fully-resolved primitive/struct types instead of alias names or
+	//    unnormalized prim(Name) struct references. Single pass in source order
+	//    so alias-of-struct and struct-embeds-struct forward references resolve
+	//    the same way they would if processed only by step 2.
 	if (ast["ast"].contains("statements"))
-		for (auto& stmt : ast["ast"]["statements"])
-			if (stmt.value("stmt-type", "") == "type-alias")
-				sa_type_alias(stmt);
+		for (auto& stmt : ast["ast"]["statements"]) {
+			string t = stmt.value("stmt-type", "");
+			if      (t == "type-alias") sa_type_alias(stmt);
+			else if (t == "struct-def") sa_struct_def(stmt);
+		}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"]) {
@@ -366,18 +356,14 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 			validateEmbeddedParams(funcEntry);
 			if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-			resolveFuncSigTypeAliases(funcEntry);
+			normalizeStructSig(funcEntry);
 			registerPlnFunc(funcEntry["name"], funcEntry);
 		}
 	// 2. Process top-level statements (cinclude/import registered here,
-	//    visible in Palan function bodies processed next)
+	//    visible in Palan function bodies processed next). type-alias/struct-def
+	//    statements are re-dispatched here too (harmless: both handlers just
+	//    overwrite the same map entry with an identical value).
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
-	// 2.5. Re-normalize pre-registered Palan function signatures now that struct types are known.
-	//      Step 1 ran before type declarations were processed, so struct-typed params/rets
-	//      were left as prim(Name). Normalize them here so call resolution in step 3 is correct.
-	for (auto& scope : plnFuncScopes)
-		for (auto& [_, entry] : scope)
-			normalizeStructSig(entry);
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);

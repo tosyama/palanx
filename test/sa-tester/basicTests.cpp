@@ -1368,6 +1368,73 @@ TEST(sa, arith_lit_retypes_to_right)
 	ASSERT_EQ(add["right"]["value-type"]["type-name"], "int64");
 }
 
+TEST(sa, toplevel_call_named_return_struct)
+{
+	cleanTestEnv();
+	// IT-2801: a top-level statement calling a Palan function with a struct-typed
+	// @!T named return used to see the pre-registered signature before step 2.5's
+	// struct renormalization ran, leaving value-type as unnormalized prim(Point)
+	// and crashing palan-sa. Struct pre-registration now happens in step 0, so
+	// the call resolved here (step 2) must already see the normalized
+	// pntr(struct(Point)) form.
+	json jout = run_sa("../test/testdata/sa/135_toplevel_call_named_return_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements[2] = var-decl for "view" = borrow(original)
+	const auto& decl = jout["statements"][2];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "view");
+	const auto& vt = v["init"]["value-type"];
+	ASSERT_EQ(vt["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
+}
+
+TEST(sa, toplevel_call_plain_return_struct)
+{
+	cleanTestEnv();
+	// IT-2801 regression: same struct pre-registration path, but for a plain
+	// (non-@!) named return `-> Point ret`.
+	json jout = run_sa("../test/testdata/sa/136_toplevel_call_plain_return_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "p2");
+	const auto& vt = v["init"]["value-type"];
+	ASSERT_EQ(vt["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
+}
+
+TEST(sa, toplevel_call_struct_arg)
+{
+	cleanTestEnv();
+	// IT-2801 regression: same struct pre-registration path, but exercising a
+	// struct-typed parameter (not just the return type) in a top-level call.
+	json jout = run_sa("../test/testdata/sa/137_toplevel_call_struct_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Pre-registered signature must have its parameter normalized to pntr(struct(Point)).
+	const auto& params = jout["functions"][0]["parameters"];
+	ASSERT_EQ(params[0]["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(params[0]["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(params[0]["var-type"]["base-type"]["type-name"], "Point");
+
+	// statements[2] = var-decl for "s" = sumX(original); the call's argument
+	// must carry the normalized struct pointer type too.
+	const auto& decl = jout["statements"][2];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "s");
+	const auto& arg_vt = v["init"]["args"][0]["value-type"];
+	ASSERT_EQ(arg_vt["type-kind"], "pntr");
+	ASSERT_EQ(arg_vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(arg_vt["base-type"]["type-name"], "Point");
+}
+
 TEST(sa, struct_def)
 {
 	cleanTestEnv();

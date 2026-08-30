@@ -206,7 +206,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		validateEmbeddedParams(funcEntry);
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		resolveFuncSigTypeAliases(funcEntry);
+		normalizeStructSig(funcEntry);
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
 	}
 

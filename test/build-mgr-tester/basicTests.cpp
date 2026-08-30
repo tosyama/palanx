@@ -887,6 +887,17 @@ TEST(build_mgr, at_bang_plain_var_decl) {
 	ASSERT_EQ(output, "20 10\n");
 }
 
+TEST(build_mgr, toplevel_call_named_return_struct) {
+	cleanTestEnv();
+	// IT-2801: top-level statement calling a Palan function with a struct-typed
+	// @!T named return used to crash palan-sa ("unknown prim type-name: Point")
+	// because the pre-registered signature wasn't struct-normalized yet when the
+	// top-level call resolved. Also confirms write-through via the returned
+	// alias still works when the call itself is at top level.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/129_toplevel_call_named_return_struct.pa");
+	ASSERT_EQ(output, "20\n");
+}
+
 TEST(build_mgr, addr_of) {
 	cleanTestEnv();
 	// IT-2704: `@ID`/`@!ID` address-of on a local primitive variable, passed as
