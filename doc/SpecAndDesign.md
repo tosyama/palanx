@@ -6,73 +6,30 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-08-24)
-version: 0.1.27
-- This iteration continues the C standard library support series (started in v0.1.26 with `string.h`/`ctype.h`), now targeting `time.h`. **The series' goal is unchanged: header support is the forcing function, language-feature growth is the point.** `time.h`'s defining characteristic versus the previous headers is that essentially its whole useful surface is gated on C **struct-pointer interop** (`struct tm`, `struct timespec`, `struct itimerspec`) — v0.1.26 explicitly flagged this as the next planned struct-interop iteration (its gap 5 note). A pre-implementation audit (this section) found that Palan's existing native-struct machinery (`type Name { ... }`, v0.1.22–v0.1.25: C-ABI layout, heap allocation, borrowed-pointer function params, embedded/owned/non-owning field kinds, struct arrays) is representationally identical to what a `cinclude`d C struct needs — a Palan struct variable's declared type is already `pntr(struct X)` under the hood (`PlnSaExpr.cpp:20`), the same shape a C function returns for `struct tm *`. The gap is entirely on the **import path**: `palan-c2ast` parses and discards struct tag names and field lists (`CParser.cpp:275-317`, `struct_union_definition`), so nothing is there yet for SA to register. Fixing that import path is this iteration's main body of work, following the same discipline as v0.1.26: a completeness audit over every function `time.h` declares, each function classified by what capability it needs, every deferred category listed with its reason.
+### 2.1 Iteration Goal (2026-08-30)
+version: 0.1.28 — **not yet decided.**
 
-**Definition of done**
+v0.1.27 (`time.h` + C struct interop, `@ID`/`@!ID` address-of) is complete. The next
+iteration's concrete target has not been chosen yet — this section will be rewritten
+with a full pre-implementation audit (following the same discipline as v0.1.26/v0.1.27:
+gap catalog, function inventory, definition of done) once that decision is made in a
+separate conversation.
 
-Same bar as v0.1.26: a function counts as "supported" only if it is registered end-to-end through the real pipeline (`gen-ast → sa → codegen → execute`) and has a `build-mgr` test exercising real semantics — for struct-typed functions specifically, that means asserting on actual field values read back after the call, not just a successful return code. A struct type counts as "supported" once cinclude-imported structs go through the exact same `structDefs_`/field-layout path as a native `type Name { ... }` — i.e. no parallel/shadow implementation for C-origin structs. `time.h` counts as "supported" once every one of its declared functions is accounted for in the inventory below as implemented-and-tested or deferred-with-reason.
+Candidates carried forward from v0.1.27's explicit non-goals:
+- Other struct-heavy C standard library headers (e.g. `sys/stat.h`) — continuing the C
+  standard library support series by applying the struct-interop mechanism `time.h`
+  established to a new header.
+- General address-of/dereference — generalizing the current `@ID`/`@!ID` (local
+  primitive variables only) into struct fields, array elements, and a general
+  pointer-dereference operator.
+- `timer_create` / `struct sigevent` support — the one `time.h` function deferred this
+  iteration for a genuinely new kind of gap (an incomplete/forward-declared-only
+  struct type), rather than the caller-owned-struct-buffer pattern proven for the rest.
+- `strftime_l` / `locale_t` — deferred again, same reasoning as v0.1.26 and v0.1.27.
 
-**Gap catalog**
-
-| # | Gap | Root cause | Disposition |
-|---|---|---|---|
-| 1 | c2ast parses but discards struct tag name and field list | `CParser.cpp:275-317` (`struct_union_definition`) consumes the `{ ... }` body positionally but never writes it into the returned `json`; the caller at `CParser.cpp:407` then emits only `{"type-kind":"strct"}` with no `type-name` and no fields, for both struct *definitions* and bare struct-pointer *references* in signatures | **Fix.** Capture the tag name and an ordered `(name, type)` field list during `struct_union_definition`, and thread `type-name` through onto every `"strct"`-kind reference (so a `struct tm *__tp` parameter names `tm`, not just "some struct"). Emit struct definitions into a new top-level AST section, analogous to how functions are already emitted. |
-| 2 | SA has no path from a `cinclude`d C struct to `structDefs_` | `PlnTypeRegistry::fromJson` (`PlnType.cpp:79-82`) only understands Palan-native `"struct"` type-kind; c2ast's `"strct"` kind hits the `throw` at line 82 the moment any `time.h` function with a struct param/return is resolved | **Fix, by reusing existing dormant capacity rather than building a parallel struct system.** Once gap 1 supplies name+fields, register each cinclude-imported struct into the same `structDefs_`/`FieldLayout` table a native `type Name { ... }` populates (v0.1.22). This is a straight reuse, not new design — it's why `struct itimerspec { struct timespec it_interval; struct timespec it_value; }` needs no special handling: a C struct-typed (non-pointer) field maps directly onto the existing `$T` embedded-field kind (v0.1.23), which is already C-ABI-layout-compatible by construction. It also transparently unlocks *binding a C function's returned struct pointer* to a Palan variable, with no further design needed: `var_declaration` already accepts any `type_expr` (`PlnParser.yy:536,582`), `@T`/`@!T` are already general `type_expr` productions (not struct-field-only), and `PlnSaDecl.cpp:221` already reinterprets a `type-kind:"prim"` name as a struct when it matches a registered `structDefs_` entry — so `@!tm p = gmtime(t);` just works once `tm` is registered, going through the exact same non-owning-pointer path (`@T`/`@!T` are defined as "lifecycle is user-managed", no auto-free — `PalanReference.md` §19) that already fits a glibc-owned static buffer perfectly. |
-| 3 | C-returned/param struct pointers must not be treated as Palan-owned, auto-freed memory | Palan's own struct locals are always heap-allocated via `__pln_alloc_T` and auto-freed at scope exit; a `struct tm *` returned by glibc (static internal buffer) or passed in by the caller is neither | **Fix.** Struct types arriving through a `cinclude` function signature are borrowed pointers, with no auto-free registration. Both directions reuse an existing convention, not new design: a struct passed *into* a C call is an owned Palan-declared local, matching the convention Palan already applies to its own struct-type function parameters ("passed as a pointer, borrowed, not freed by the callee", `PalanReference.md` §19); a struct pointer *returned by* a C call binds into an explicitly non-owning `@T`/`@!T`-typed Palan variable (see gap 2's note) — the ownership-transferring named-return convention (`-> Point p`) is deliberately *not* used here, since that model is wrong for a pointer Palan didn't allocate. |
-| 4 | No address-of operator — blocks any C call needing a pointer to a primitive value the caller doesn't already hold as a pointer (`gmtime`/`gmtime_r`'s `const time_t *`, `clock_getcpuclockid`'s `clockid_t *` out-param) | Carried over from v0.1.26 gap 4; previously deferred as "a new language feature, out of scope for a header-support iteration" | **Fix, minimal scope only — reuse `@`/`@!`, don't borrow C's `&`.** `@T`/`AT_EXCL T` (`@!T`) already exist as `type_expr` productions (`PlnParser.yy:966-972`) meaning "read-only pointer to T" / "mutable pointer to T" respectively (`{"type-kind":"pntr", ...}`, `mutable:true` for `@!`) — this is Palan's own general pointer-type vocabulary, not struct-field-only syntax. Extend `@`/`AT_EXCL` into a matching *expression*-position production, `'@' ID` / `AT_EXCL ID` where `ID` names a local variable of primitive type, yielding a `pntr(T)` (`@`) or mutable `pntr(T)` (`@!`) to that variable's storage. Unlike reusing `&`, neither token has any existing expression-position meaning, so no `%prec` disambiguation against a binary use is needed (contrast with `-`'s existing `UNARY_MINUS` trick) — and the `@`/`@!` split gives the read-only/mutable pointer distinction C's `const T*`/`T*` needs for free, with no new symbol invented. General address-of-anything (struct fields, array elements, temporaries) and a general pointer-dereference operator stay out of scope; this narrow `'@' ID` form is what's needed to pass a primitive local by address into a `cinclude`d C call. |
-| 5 | Incomplete/forward-declared struct type blocks `timer_create` | `time.h` forward-declares `struct sigevent;` with no body in this project's `predefined.h` visibility — no field list exists to capture even with gap 1 fixed | **Defer.** Not a scoped fix — there's nothing to register. `timer_create`/`timer_settime`/`timer_gettime`'s non-`sigevent` neighbors (`timer_delete`, `timer_getoverrun`, and `timer_settime`/`timer_gettime` themselves, which use `struct itimerspec` not `struct sigevent`) are unaffected and stay in scope. |
-| 6 | `locale_t` param on `strftime_l` | `locale_t` = `typedef struct __locale_struct *locale_t`; unlike v0.1.26's assessment, `__locale_struct` technically *does* have a full field list now capturable via gap 1+2 — but its fields reference further incomplete types (`struct __locale_data *`, itself forward-declared only) and internal-only members no caller would touch | **Defer.** Technically reachable but not worth registering; the `_l` locale surface stays out of scope generally, independent of struct-interop capability now existing. Same disposition as v0.1.26 gap 5, refined reasoning. |
-| 7 | `CLOCK_REALTIME`, `CLOCK_MONOTONIC`, `TIMER_ABSTIME`, `TIME_UTC`, etc. | Confirmed (against this project's real `/usr/include/x86_64-linux-gnu/bits/time.h`) to be plain object-like `#define` macros, not enum constants | **Scope boundary, not a gap.** Already covered by v0.1.26's gap-6 `const`-import mechanism — no new work needed; these are exercised in the tests below as ordinary imported constants. |
-
-**Full function inventory — `time.h`** (30 declared functions under current `predefined.h`; ✅ = in scope this iteration)
-
-| Category | Disposition | Functions |
-|---|---|---|
-| A — primitive-only, no new infra beyond v0.1.26 | ✅ implement + test | `clock`, `difftime`, `dysize`, `tzset`, `timer_delete`, `timer_getoverrun` |
-| B — needs gaps 1+2+3 (struct-interop, struct always caller-owned/passed-in, no return-binding involved) | ✅ implement + test | `mktime`, `strftime`, `asctime`, `asctime_r`, `timegm`, `timelocal`, `nanosleep`, `clock_getres`, `clock_gettime`, `clock_settime`, `clock_nanosleep`, `timer_settime`, `timer_gettime`, `timespec_get` |
-| C — needs gap 4 (`@`/`@!` address-of) only, no struct involved | ✅ implement + test | `time` (also reachable via `time(NULL)` alone, gap 6 v0.1.26), `ctime` (`@t`), `ctime_r` (`@t`), `clock_getcpuclockid` (`@!clk_id` — mutable out-param) |
-| D — needs gaps 1+2+3+4 together: struct-interop, address-of for the `time_t*` input, *and* binding the returned `struct tm *` into an `@!tm`/`@tm`-typed local (gap 2's note — already-existing non-owning-pointer mechanism, no new design) | ✅ implement + test | `gmtime`, `localtime`, `gmtime_r`, `localtime_r` |
-| E — needs gap 5 (incomplete `struct sigevent`) | ❌ deferred | `timer_create` |
-| F — needs gap 6 (`locale_t`) | ❌ deferred | `strftime_l` |
-
-**Explicit non-goals (deferred to later iterations, with reason already stated above)**
-- `timer_create` — gap 5, blocked on `struct sigevent` having no visible definition.
-- `strftime_l` and the rest of the `_l`/`locale_t` surface — gap 6, same as v0.1.26.
-- General address-of (fields, array elements, temporaries) and a general pointer-dereference operator — only the narrow `@ID`/`@!ID` local-primitive-variable form ships this iteration (gap 4).
-- `sys/stat.h` and other struct-heavy headers — not audited this iteration; `time.h` is the vehicle for landing the struct-interop mechanism, not an exhaustive struct-header pass.
-
-The goal is that the following program produces correct output:
-
-```palan
-cinclude <time.h>;
-cinclude <stdio.h>;
-
-time_t t = time(NULL);                    // gap 6 (v0.1.26): NULL already usable where a time_t* out-param is optional
-
-struct tm tv;
-gmtime_r(@t, tv);                         // gap 4: @t is a read-only pointer to the primitive local t (matches the
-                                            // C signature's `const time_t*`); tv is an owned Palan struct local,
-                                            // passed by (borrowed) pointer like any Palan struct param
-printf("%d-%02d-%02d\n",
-       int32(tv.tm_year) + 1900, int32(tv.tm_mon) + 1, int32(tv.tm_mday));
-
-@!tm p = gmtime(@t);                      // gap 2/3: p is a non-owning pointer local (no auto-free — matches
-                                            // gmtime's static-buffer return); field access works the same as tv above
-printf("%d\n", int32(p.tm_year) + 1900);
-
-struct timespec ts;
-clock_gettime(CLOCK_REALTIME, ts);        // CLOCK_REALTIME: a #define macro, already importable as a const (v0.1.26)
-printf("clock_gettime ok: %d\n", ts.tv_sec >= int64(0));
-
-struct tm mt;
-70  -> mt.tm_year;   // 1970
-0   -> mt.tm_mon;    // January
-1   -> mt.tm_mday;
-0   -> mt.tm_hour;   0 -> mt.tm_min;   0 -> mt.tm_sec;
-printf("%ld\n", mktime(mt));              // 0 (epoch, UTC-equivalent local zone in test env)
-```
+Whichever is chosen, the series' underlying goal stays the same: header/feature support
+is the forcing function for general C-interop language capability, not per-function
+coverage for its own sake.
 
 
 ## 3. Command-line Tools' Responsibilities and Design

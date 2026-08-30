@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.26
+ver. 0.1.27
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -400,6 +400,12 @@ Struct types
 ------------
 `type Name { field_decl... }` defines a struct type. The SA processes `struct-def` nodes and
 registers the type in its internal registry; the node is consumed and does not appear in sa.json.
+
+A struct captured from a `cinclude`d C header (ASTSpec.md's `cinclude` statement `structs`
+field) registers into this exact same internal registry — there is no separate representation
+for a C-origin struct. Every sa.json shape documented below (C ABI layout, var-decl,
+field-assign, field-access) applies unchanged regardless of whether the struct came from a
+native `type Name {...}` or a `cinclude`d header.
 
 ### C ABI layout
 
