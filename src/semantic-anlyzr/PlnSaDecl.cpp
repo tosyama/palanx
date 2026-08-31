@@ -604,6 +604,19 @@ static json cFieldVarType(const json& vtype)
 		return {{"type-kind", "embed"},
 		        {"base-type", {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}}};
 	}
+	if (vtype.value("type-kind", "") == "arr" && vtype.contains("base-type")) {
+		json v = vtype;
+		json& bt = v["base-type"];
+		// Inside an array, a struct-by-value leaf ("[n]struct Foo", from C's
+		// "struct Foo arr[n];") is Palan's [n]$Foo / [n]Foo shape, which names the
+		// leaf with a plain prim type-name (buildStructDef's "arr" case looks the
+		// leaf up in structDefs_ by name, not by a distinct "struct" type-kind) --
+		// unlike a scalar struct-by-value field, it is not wrapped in "embed".
+		if (bt.value("type-kind", "") == "strct" && bt.contains("type-name")) {
+			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}};
+		}
+		return v;
+	}
 	return vtype;
 }
 
@@ -623,6 +636,23 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 	if (tk == "embed") {
 		string structName = vtype["base-type"].value("type-name", "");
 		return structName != ownerName && structDefs.count(structName);
+	}
+	if (tk == "arr") {
+		if (!vtype.contains("size-expr") || !vtype.contains("base-type")) return false;
+		const json& size_expr = vtype["size-expr"];
+		if (size_expr.is_null()) return false;  // e.g. "T name[];" -- not a constant size
+		string set = size_expr.value("expr-type", "");
+		if (set != "lit-int" && set != "lit-uint") return false;
+
+		const json& bt = vtype["base-type"];
+		string btk = bt.value("type-kind", "");
+		if (btk == "arr") return false;  // 2D+ array fields: buildStructDef doesn't lay these out
+		if (btk == "pntr") return true;  // [n]@T / [n]@!T slot array
+		if (btk == "prim") {
+			string leaf = bt.value("type-name", "");
+			return elemSizeBytes(leaf) >= 0 || structDefs.count(leaf) > 0;
+		}
+		return false;
 	}
 	return tk == "pntr";
 }

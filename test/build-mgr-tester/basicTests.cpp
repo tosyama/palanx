@@ -985,6 +985,18 @@ TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, cinclude_arr_field_access) {
+	// struct Rec { int id; char name[16]; long vals[4]; }; (cinclude'd) -- IT-2802's
+	// ticket repro: read/write through both the first and last element of a
+	// prim-leaf array field. Before the fix, "char name[16]"/"long vals[4]" each
+	// collapsed to a single scalar field, so vals[3] (the last of 4 int64 slots)
+	// would have read/written 24 bytes past the field's true end -- i.e. past the
+	// end of the whole struct's calloc'd block.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/130_cinclude_arr_field_access.pa");
+	ASSERT_EQ(output, "5 65 90 100 400\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

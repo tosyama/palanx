@@ -3062,3 +3062,58 @@ TEST(sa, addr_of_mutable_local)
 	ASSERT_EQ(init["name"], "x");
 	ASSERT_EQ(init["value-type"]["mutable"], true);
 }
+
+TEST(sa, cinclude_arr_field_prim)
+{
+	// struct BufField { char name[16]; }; (cinclude'd) -- IT-2802: c2ast now reflects
+	// C array declarators as an "arr" var-type instead of discarding them, so this
+	// field reaches buildStructDef's embed-arr/prim-leaf case exactly like a native
+	// `[16]$int8 name;` field would.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/138_cinclude_arr_field_prim.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// BufField b; -> calloc(1, 16): confirms totalSize == 16 (was 8 before IT-2802,
+	// since "char name[16]" collapsed to a single int8 field).
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "b");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
+TEST(sa, cinclude_arr_field_struct)
+{
+	// struct Point { int x; int y; }; struct Poly { struct Point pts[3]; }; (cinclude'd)
+	// -- IT-2802: struct-leaf array field. cFieldVarType normalizes the "strct" leaf
+	// inside the "arr" base-type to "prim" so buildStructDef's structDefs_ lookup
+	// (by type-name, not type-kind) finds "Point" and treats it as an embed-arr
+	// struct leaf, same as a native `[3]$Point pts;` field.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/139_cinclude_arr_field_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Poly p; -> calloc(1, 24): confirms totalSize == 3 * Point.totalSize(8) == 24.
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "24");
+}
+
+TEST(sa, cinclude_struct_stat_size)
+{
+	// cinclude <sys/stat.h>; stat s; -- the memory-safety validation target for
+	// IT-2802: struct stat's trailing "__syscall_slong_t __glibc_reserved[3]" (and
+	// other array fields) used to collapse to single scalars, so Palan's computed
+	// size was 128 instead of the real 144, meaning a Palan-allocated struct stat
+	// passed to stat(2) would overflow by 16 bytes.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/140_cinclude_struct_stat_size.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "s");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "144");
+}

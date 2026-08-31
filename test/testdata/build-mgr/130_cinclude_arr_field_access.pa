@@ -1,0 +1,10 @@
+cinclude "130_cinclude_arr_field_access.h";
+cinclude <stdio.h>;
+
+Rec r;
+5 -> r.id;
+65 -> r.name[0];
+90 -> r.name[15];
+100 -> r.vals[0];
+400 -> r.vals[3];
+printf("%d %d %d %ld %ld\n", r.id, r.name[0], r.name[15], r.vals[0], r.vals[3]);

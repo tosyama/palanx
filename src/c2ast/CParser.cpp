@@ -444,6 +444,17 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	return false;
 }
 
+// C array-parameter decay: "T name[n]...[m]" as a parameter type means "pointer to
+// T[m]..." -- only the outermost dimension decays to a pointer, any inner dimensions
+// stay as the pointee's array type (e.g. "char buf[2][3]" -> pntr(arr(size=3, ...))).
+static void decayArrayParam(json &param)
+{
+	json &vt = param["var-type"];
+	if (vt.value("type-kind", "") == "arr") {
+		vt = {{"type-kind", "pntr"}, {"base-type", vt["base-type"]}};
+	}
+}
+
 bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
@@ -457,6 +468,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 				return false;
 			}
 		}
+		decayArrayParam(param);
 		params.push_back(param);
 
 		while (CONSUME_PUNC(',')) {
@@ -469,6 +481,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 						return false;
 					}
 				}
+				decayArrayParam(param2);
 				params.push_back(param2);
 			} else if (CONSUME_PUNC('...')) {
 				params.push_back({{"name", "..."}});
@@ -486,9 +499,24 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 	return false;
 }
 
+// Wraps decl["var-type"] with pending array dimensions (outermost-first in `dims`),
+// nesting from the innermost (last-parsed) dimension outward so "T m[2][3]" becomes
+// arr(size=2, base=arr(size=3, base=T)) -- matching C array-of-array semantics.
+// embedded:true / specifier:"raw" mark this as inline storage (no separate heap
+// allocation), matching Palan's native [n]$T field vocabulary (ASTSpec.md "arr").
+static void wrapArrayDims(json &var_type, vector<json> &dims)
+{
+	for (int i = (int)dims.size() - 1; i >= 0; --i) {
+		var_type = {{"type-kind", "arr"}, {"base-type", var_type},
+			{"size-expr", dims[i]}, {"embedded", true}, {"specifier", "raw"}};
+	}
+	dims.clear();
+}
+
 bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index, bool is_grouped)
 {
 	int index = result_index;
+	vector<json> dims;   // pending array dimensions, outermost (leftmost) first
 
 	while (true) {
 		if (CONSUME_PUNC('[')) {
@@ -498,8 +526,10 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 				// debug_token(tokens[index]);
 				return false;
 			}
+			dims.push_back(move(arr_size_value));
 
 		} else if (CONSUME_PUNC('(')) {
+			wrapArrayDims(decl["var-type"], dims);
 			vector<json> params;
 			if (!CONSUME_PUNC(')')) {
 				parameter_list(params, tokens, index);
@@ -524,6 +554,7 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 			break;
 		}
 	}
+	wrapArrayDims(decl["var-type"], dims);
 
 	result_index = index;
 	return true;

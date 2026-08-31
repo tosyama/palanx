@@ -467,3 +467,92 @@ TEST(c2ast, string_h_null_constant) {
     ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-kind"], "prim");
     ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-name"], "void");
 }
+
+TEST(c2ast, array_decl) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/023_array_decl.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+    auto find_field = [](json& fields, const string& name) -> json* {
+        for (auto& f : fields)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    // char name[16]; -- 1D array field, prim leaf
+    json* rec = find_struct("Rec");
+    ASSERT_NE(rec, nullptr);
+    json* name_field = find_field((*rec)["fields"], "name");
+    ASSERT_NE(name_field, nullptr);
+    auto& name_vt = (*name_field)["var-type"];
+    ASSERT_EQ(name_vt["type-kind"], "arr");
+    ASSERT_EQ(name_vt["embedded"], true);
+    ASSERT_EQ(name_vt["specifier"], "raw");
+    ASSERT_EQ(name_vt["size-expr"]["expr-type"], "lit-int");
+    ASSERT_EQ(name_vt["size-expr"]["value"], "16");
+    ASSERT_EQ(name_vt["base-type"]["type-kind"], "prim");
+    ASSERT_EQ(name_vt["base-type"]["type-name"], "int8");
+
+    // struct Point pts[3]; -- 1D array field, struct leaf (kept as "strct" -- SA
+    // normalizes this to "prim" at the registration boundary, not c2ast)
+    json* pts_field = find_field((*rec)["fields"], "pts");
+    ASSERT_NE(pts_field, nullptr);
+    auto& pts_vt = (*pts_field)["var-type"];
+    ASSERT_EQ(pts_vt["type-kind"], "arr");
+    ASSERT_EQ(pts_vt["size-expr"]["value"], "3");
+    ASSERT_EQ(pts_vt["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(pts_vt["base-type"]["type-name"], "Point");
+
+    // int cells[2][3]; -- 2D array field, nested arr (outer dim first)
+    json* grid = find_struct("Grid2D");
+    ASSERT_NE(grid, nullptr);
+    json* cells_field = find_field((*grid)["fields"], "cells");
+    ASSERT_NE(cells_field, nullptr);
+    auto& cells_vt = (*cells_field)["var-type"];
+    ASSERT_EQ(cells_vt["type-kind"], "arr");
+    ASSERT_EQ(cells_vt["size-expr"]["value"], "2");
+    auto& cells_inner = cells_vt["base-type"];
+    ASSERT_EQ(cells_inner["type-kind"], "arr");
+    ASSERT_EQ(cells_inner["size-expr"]["value"], "3");
+    ASSERT_EQ(cells_inner["base-type"]["type-name"], "int32");
+
+    // #define N 4; int arr[N]; -- macro-sized array resolves to a literal
+    json* macro_sized = find_struct("MacroSized");
+    ASSERT_NE(macro_sized, nullptr);
+    json* arr_field = find_field((*macro_sized)["fields"], "arr");
+    ASSERT_NE(arr_field, nullptr);
+    ASSERT_EQ((*arr_field)["var-type"]["size-expr"]["value"], "4");
+
+    // int f(char buf[32], struct Rec recs[2]); -- parameter array decay
+    json* f = find_func("f");
+    ASSERT_NE(f, nullptr);
+    auto& buf_vt = (*f)["parameters"][0]["var-type"];
+    ASSERT_EQ(buf_vt["type-kind"], "pntr");
+    ASSERT_EQ(buf_vt["base-type"]["type-kind"], "prim");
+    ASSERT_EQ(buf_vt["base-type"]["type-name"], "int8");
+    auto& recs_vt = (*f)["parameters"][1]["var-type"];
+    ASSERT_EQ(recs_vt["type-kind"], "pntr");
+    ASSERT_EQ(recs_vt["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(recs_vt["base-type"]["type-name"], "Rec");
+
+    // int g(char buf[2][3]); -- only the outer dimension decays
+    json* g = find_func("g");
+    ASSERT_NE(g, nullptr);
+    auto& g_buf_vt = (*g)["parameters"][0]["var-type"];
+    ASSERT_EQ(g_buf_vt["type-kind"], "pntr");
+    ASSERT_EQ(g_buf_vt["base-type"]["type-kind"], "arr");
+    ASSERT_EQ(g_buf_vt["base-type"]["size-expr"]["value"], "3");
+    ASSERT_EQ(g_buf_vt["base-type"]["base-type"]["type-name"], "int8");
+}
