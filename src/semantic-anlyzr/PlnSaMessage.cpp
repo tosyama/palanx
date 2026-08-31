@@ -190,6 +190,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot take the address of '" + arg1 + "': address-of is only supported for primitive-typed local variables.";
 
+		case E_WriteThroughReadOnlyPtr:
+			return "cannot write through read-only pointer '@T'; use '@!T' for mutable.";
+
+		case E_PtrMutabilityUpgrade:
+			return "cannot bind a read-only pointer '@T' to a mutable pointer '@!T'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

@@ -1006,6 +1006,15 @@ TEST(build_mgr, sys_stat_h_s_ifdir_alias) {
 	ASSERT_EQ(output, "dir-mode-ok\n");
 }
 
+TEST(build_mgr, deref_write_mutable_ptr) {
+	// IT-2804: `p[0]` deref write through a mutable `@!T` still works end to
+	// end (regression guard for the new read-only enforcement -- writes
+	// through `@!T` must remain unaffected).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/132_deref_write_mutable_ptr.pa");
+	ASSERT_EQ(output, "99\n99\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

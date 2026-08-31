@@ -263,6 +263,10 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 				}
 				// Incompatible: no action (ptr types pass through as-is)
 			}
+			if (!ptrPermissionOk(init["value-type"], varType)) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+				exit(1);
+			}
 			sa_var["init"] = init;
 		}
 		declareVar(name, varType, &stmt);

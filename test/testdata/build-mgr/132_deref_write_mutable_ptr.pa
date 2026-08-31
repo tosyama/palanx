@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+
+int64 x = 42;
+@!int64 p = @!x;
+99 -> p[0];
+printf("%ld\n", x);
+printf("%ld\n", p[0]);

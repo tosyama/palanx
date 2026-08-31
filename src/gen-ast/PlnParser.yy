@@ -725,7 +725,7 @@ expression: term
 	| '!' expression
 	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); }
 	| '@' ID
-	{ $$ = {{"expr-type", "addr-of"}, {"name", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"name", move($2)}, {"mutable", false}}; LOC($$, @$); }
 	| AT_EXCL ID
 	{ $$ = {{"expr-type", "addr-of"}, {"name", move($2)}, {"mutable", true}}; LOC($$, @$); }
 	| expression ARROW store_loc
@@ -975,7 +975,7 @@ type_expr: ID
 	| ID '<' temp_ids '>'
 	{ $$ = {{"not-impl",true}}; }
 	| '@' type_expr
-	{ $$ = {{"type-kind","pntr"},{"base-type",move($2)}}; }
+	{ $$ = {{"type-kind","pntr"},{"mutable",false},{"base-type",move($2)}}; }
 	| AT_EXCL type_expr
 	{ $$ = {{"type-kind","pntr"},{"mutable",true},{"base-type",move($2)}}; }
 	| '$' type_expr

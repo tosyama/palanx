@@ -264,8 +264,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
-  - addr-of: `{"type-kind": "pntr", "base-type": <named var's prim type>}`, plus
-    `{"mutable": true}` when produced by `@!ID` (omitted, not `false`, for `@ID`).
+  - addr-of: `{"type-kind": "pntr", "mutable": <bool>, "base-type": <named var's prim type>}`.
+    `mutable` is always present: `true` for `@!ID`, `false` for `@ID`. Writing through
+    a `false` (read-only) pointer — via `p[0]` deref or a field access — is a compile
+    error (E_WriteThroughReadOnlyPtr); see typeCompat rules below for how mutability
+    is enforced separately from type compatibility.
     The named variable must be a local variable in the current scope (not a
     function parameter, not itself a `pntr`/`struct`/`arr` type) — otherwise a
     compile error (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive).
@@ -394,7 +397,19 @@ Notes:
   Using it implicitly (e.g. assigning int64 to int32 directly) is a compile error.
 - Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32.
 - `pntr(T)` and `pntr(T, mutable=true)` are treated as `Identical`; base-type match is sufficient
-  for arr-assign target type checking.
+  for arr-assign target type checking. `mutable` is a write-permission attribute, not part of
+  type identity, so `typeCompat` never inspects it.
+- Mutability (read-only `@T` vs. mutable `@!T`) is enforced separately from `typeCompat`, at
+  every point a pointer value is written through or bound to a typed destination:
+  - **Write-through**: `p[0]` deref-write, and field access via a `@T`-typed local variable or
+    struct field, are a compile error (E_WriteThroughReadOnlyPtr / E_WriteToImmutablePtrField /
+    E_WriteToReadOnlyArrElem) when the base pointer is not `mutable`.
+  - **Binding**: assigning, initializing, returning, or passing a `@T` (read-only) value where a
+    `@!T` (mutable) type is expected is a compile error (E_PtrMutabilityUpgrade) — permission
+    can be narrowed (mutable → read-only) but never upgraded. C function arguments are exempt for
+    now (see PalanReference.md §22); Palan function/return signatures are checked.
+  - A missing `mutable` key (SA-synthesized `pntr` types for struct and array variables) means
+    writable — there is no read-only concept for those forms in this iteration.
 
 Struct types
 ------------

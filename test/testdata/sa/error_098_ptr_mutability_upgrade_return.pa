@@ -1,0 +1,8 @@
+type IntPtr = @!int64;
+
+func f() -> IntPtr {
+    int64 x = 1;
+    @int64 p = @x;
+    return p;
+}
+f();

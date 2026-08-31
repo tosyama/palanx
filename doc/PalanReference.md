@@ -1134,7 +1134,9 @@ int64 x = 42;
 @!int64 p = @!x;   // p now holds the address of x
 ```
 
-- `@ID` yields a read-only pointer to `ID`'s storage; `@!ID` yields a mutable pointer.
+- `@ID` yields a read-only pointer to `ID`'s storage; `@!ID` yields a mutable pointer. The
+  compiler enforces this: writing through a `@ID` pointer, or assigning/passing one where a
+  `@!`-typed (mutable) destination is expected, is a compile error.
 - Scoped to local variables of a primitive type only this version — not usable on function
   parameters, struct fields, array elements, or general expressions.
 - There is no general pointer-dereference operator, so a value cannot be read or written back

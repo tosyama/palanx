@@ -108,7 +108,8 @@ Variable type
       - Other: "void"
   2. pntr - Pointer type
     - base-type\* - Base variable type
-    - mutable - Boolean, true if writable pointer (`@!` syntax); omitted when false
+    - mutable\* - Boolean, true for a writable pointer (`@!` syntax), false for a
+      read-only pointer (`@` syntax)
   3. arr - Array type
     - base-type\* - Base variable type
     - specifier\* - Array kind string:
@@ -284,7 +285,7 @@ Expression model
     Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
   18. addr-of - Address-of a primitive local variable (`@ID` read-only, `@!ID`/`AT_EXCL ID` mutable)
     - name\* - Variable name string
-    - mutable - `true` if produced by `@!ID`; omitted (not `false`) for `@ID`
+    - mutable\* - `true` for `@!ID`, `false` for `@ID`
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

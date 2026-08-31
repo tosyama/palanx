@@ -22,6 +22,22 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
+// True if a value may be written through this pointer-typed value-type
+// (i.e. it is not a `@T` read-only pointer). A missing "mutable" key means
+// writable: it is the default for every pntr value-type SA synthesizes for
+// struct/array variables, which carry no read-only concept of their own.
+inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
+
+// True unless binding `from` to `to` would upgrade a read-only pointer to a
+// mutable one (assigning `@T` to a `@!T`-typed destination). Non-pointer
+// types, and narrowing a mutable pointer to read-only, are always fine.
+inline bool ptrPermissionOk(const json& from, const json& to)
+{
+	if (from.value("type-kind","") != "pntr" || to.value("type-kind","") != "pntr")
+		return true;
+	return isWritableThrough(from) || !isWritableThrough(to);
+}
+
 // LCOV_EXCL_EXCEPTION_BR_START
 inline json fieldValueType(const FieldLayout& f)
 {

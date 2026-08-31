@@ -60,7 +60,7 @@ prerequisite for the header work rather than part of it.
 | 1 | Native function named returns typed `@T`/`@!T` crash (`unknown prim type-name`, `PlnType.cpp:72`) — the return type never passes through `deepNormalizePrimToStruct` | **Fix (prerequisite bug, own commit)**: normalize at the point where a function's return types are registered, the same ingestion-boundary treatment IT-2026-08-24-2703 applied to `sa_var_decl`. Known since IT-2703; IT-2709 confirmed it is a distinct code path from the `gmtime` binding and left it open |
 | 2 | c2ast discards C array declarators (audit finding 3) | **Fix (prerequisite bug, own commit)**: make `declarator_tail` reflect `[...]` in the type — an array type for struct fields and non-parameter declarators (so layout and total size are right), array-to-pointer decay for parameters. Normalize at the ingestion boundary so `structDefs_` and the function tables only ever see canonical shapes |
 | 3 | Macro constants whose body is another macro name are dropped (`#define S_IFDIR __S_IFDIR` exports `__S_IFDIR` but not `S_IFDIR`) | **Fix (prerequisite bug, own commit)**: `exportMacroConstants` (`CParser.cpp:1191`) feeds the raw macro body to `constant_expression`; expand the body first, then evaluate |
-| 4 | `@T` (read-only) pointers accept writes (audit finding 2) | **Implement**: enforce mutability in SA on the store path, so a write through a non-mutable `pntr` is rejected. Settle the rule for passing a `@T` value to a C parameter that is not `const`-qualified at the same time |
+| 4 | `@T` (read-only) pointers accept writes (audit finding 2) | **Implement**: enforce mutability in SA on the store path, so a write through a non-mutable `pntr` is rejected, and on every binding site (var-decl, assign, return, field-assign, Palan call arguments) so a `@T` value can never upgrade to `@!T`. The rule for passing a `@T` value to a non-`const`-qualified C parameter is deferred — see Non-goals |
 | 5 | Pointer dereference is undocumented, untested, and unspecified | **Specify**: adopt `p[0]` as the dereference form — it needs no new token, reads the same as C, and reuses the existing `arr-index` path in both directions. Work is SA/build-mgr tests plus a `PalanReference.md` rewrite, not new lowering |
 | 6 | Address-of is limited to whole local primitive variables | **Implement**: extend `@`/`@!` to struct fields (`@p.field`) and array elements (`@arr[i]`), reusing `resolveObjectChain` in SA and the existing `addr-only` / `CalcAddr` / `CalcAddrIdx` machinery in codegen |
 
@@ -78,6 +78,11 @@ prerequisite for the header work rather than part of it.
   nested struct, function-pointer members, and `__sigval_t` (itself a union). That is a
   large type-system expansion in exchange for one function.
 - `strftime_l` / `locale_t`: deferred again, same reasoning as v0.1.26 and v0.1.27.
+- Rejecting `@T` (read-only) passed to a non-`const`-qualified C parameter. c2ast's
+  `const` capture is itself incomplete (struct/union/enum pointee `const` and struct-field
+  `const` are both dropped, `CParser.cpp:294,410-439`), so enforcing this now would produce
+  false positives against `const struct T *` parameters (`asctime`, `strftime`, `nanosleep`).
+  Tracked as its own follow-up: `IT-2026-08-31-c2ast-const-capture.md`.
 
 #### Definition of done
 

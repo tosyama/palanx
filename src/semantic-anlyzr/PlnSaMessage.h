@@ -57,6 +57,8 @@ enum PlnSaMessageCode {
 	E_ConstNotCompileTimeValue,		// arg1: const name
 	E_AddrOfNotLocalVar,			// arg1: variable name
 	E_AddrOfNotPrimitive,			// arg1: variable name
+	E_WriteThroughReadOnlyPtr,
+	E_PtrMutabilityUpgrade,
 };
 
 class PlnSaMessage

@@ -3036,14 +3036,14 @@ TEST(sa, addr_of_readonly_local)
 	const auto& p = jout["statements"][1]["vars"][0];
 	ASSERT_EQ(p["name"], "p");
 	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
-	ASSERT_FALSE(p["var-type"].contains("mutable"));
+	ASSERT_EQ(p["var-type"]["mutable"], false);
 	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "int64");
 
 	const auto& init = p["init"];
 	ASSERT_EQ(init["expr-type"], "addr-of");
 	ASSERT_EQ(init["name"], "x");
 	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
-	ASSERT_FALSE(init["value-type"].contains("mutable"));
+	ASSERT_EQ(init["value-type"]["mutable"], false);
 }
 
 TEST(sa, addr_of_mutable_local)
@@ -3061,6 +3061,34 @@ TEST(sa, addr_of_mutable_local)
 	ASSERT_EQ(init["expr-type"], "addr-of");
 	ASSERT_EQ(init["name"], "x");
 	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, deref_rw_mutable_ptr)
+{
+	// `@!int64 p = @!x; 99 -> p[0]; int64 y = p[0];` -- deref read/write
+	// through a mutable `@!T` is allowed both ways.
+	// Covers: sa_arr_assign_stmt isWritableThrough branch, mutable:true case
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/141_deref_rw_mutable_ptr.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& arr_assign = jout["statements"][2];
+	ASSERT_EQ(arr_assign["stmt-type"], "arr-assign");
+	ASSERT_EQ(arr_assign["target"]["array"]["value-type"]["mutable"], true);
+}
+
+TEST(sa, ptr_mutability_narrowing)
+{
+	// `@!int64 q = @!x; @int64 r = q;` -- binding a mutable pointer to a
+	// read-only-typed destination narrows permission and is allowed.
+	// Covers: sa_var_decl ptrPermissionOk branch, narrowing case (no error)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/142_ptr_mutability_narrowing.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& r = jout["statements"][2]["vars"][0];
+	ASSERT_EQ(r["name"], "r");
+	ASSERT_EQ(r["var-type"]["mutable"], false);
 }
 
 TEST(sa, cinclude_arr_field_prim)

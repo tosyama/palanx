@@ -144,8 +144,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
 			exit(1);
 		}
-		json pntr_type = {{"type-kind", "pntr"}, {"base-type", *varType}};
-		if (isMutable) pntr_type["mutable"] = true;
+		json pntr_type = {{"type-kind", "pntr"}, {"mutable", isMutable}, {"base-type", *varType}};
 		sa_expr["value-type"] = pntr_type;
 
 	} else if (expr_type == "add" || expr_type == "sub"
@@ -378,6 +377,15 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 					catch (const std::runtime_error&) {}
 					if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 						saArg = wrapConvert(saArg, registry_.toJson(toType));
+					// C parameter const-qualification is not yet reliably captured by
+					// c2ast (struct/union/enum pointee const is dropped), so mutability
+					// is only enforced against Palan function signatures here.
+					if (sa_expr["func-type"] == "palan"
+							&& !ptrPermissionOk(saArg["value-type"], paramVT)) {
+						cerr << locPrefix(expr)
+						     << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+						exit(1);
+					}
 				} else if (isVariadic) {
 					const PlnType* promoted = variadicPromote(fromType, registry_);
 					if (promoted != fromType)

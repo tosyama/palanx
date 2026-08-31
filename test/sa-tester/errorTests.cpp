@@ -807,3 +807,116 @@ TEST(sa_error, addr_of_undefined)
 	ASSERT_NE(sa.find("Undefined variable"), string::npos);
 }
 
+TEST(sa_error, write_through_readonly_ptr)
+{
+	// `@int64 p = @x; 99 -> p[0];` -- deref write through a read-only `@T`
+	// Covers: sa_arr_assign_stmt isWritableThrough branch (E_WriteThroughReadOnlyPtr)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_094_write_through_readonly_ptr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
+}
+
+TEST(sa_error, write_readonly_ptr_var_field)
+{
+	// `@Point view = original; 20 -> view.x;` -- field write through a
+	// read-only `@T`-typed plain local variable (not a struct field)
+	// Covers: resolveStoreLocChain kind=="var" isWritableThrough branch
+	// (E_WriteThroughReadOnlyPtr)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_095_write_readonly_ptr_var_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade)
+{
+	// `@int64 p = @x; @!int64 q = p;` -- binding a read-only pointer to a
+	// mutable-typed destination
+	// Covers: sa_var_decl ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_096_ptr_mutability_upgrade.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_assign)
+{
+	// `p -> q;` where p is `@int64` and q is `@!int64` -- plain assign-stmt
+	// upgrade
+	// Covers: sa_assign_stmt ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_097_ptr_mutability_upgrade_assign.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_return)
+{
+	// `func f() -> IntPtr { ...; return p; }` where IntPtr is an alias for
+	// `@!int64` and p is `@int64` -- return-stmt upgrade
+	// Covers: sa_return_stmt ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_098_ptr_mutability_upgrade_return.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_arr_assign)
+{
+	// `view -> wpts[0];` where view is `@Point` and wpts is `[4]@!Point` --
+	// storing a read-only pointer value into a mutable pointer-slot array
+	// element
+	// Covers: sa_arr_assign_stmt ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_099_ptr_mutability_upgrade_arr_assign.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_field_assign)
+{
+	// `ro -> n1.next;` where ro is `@Node` and `next` is a `@!Node` field --
+	// storing a read-only pointer value into a mutable pointer field
+	// Covers: sa_field_assign ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_100_ptr_mutability_upgrade_field_assign.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_call_arg)
+{
+	// `take(ro);` where `take` takes `@!int64` and ro is `@int64` -- passing
+	// a read-only pointer where a Palan function expects a mutable one
+	// Covers: sa_expr_call ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_101_ptr_mutability_upgrade_call_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+

@@ -259,12 +259,20 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	TypeCompat compat = typeCompat(fromType, toType, registry_);
 	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 		value = wrapConvert(value, registry_.toJson(toType));
+	if (!ptrPermissionOk(value["value-type"], *varType)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+		exit(1);
+	}
 	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 {
 	json sa_target = sa_expression(stmt["target"]);
+	if (!isWritableThrough(sa_target["array"]["value-type"])) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+		exit(1);
+	}
 	const PlnType* toType = registry_.fromJson(sa_target["value-type"]);
 	json sa_value = sa_expression(stmt["value"], toType);
 	if (!sa_value.contains("value-type")) {
@@ -275,6 +283,10 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	TypeCompat compat = typeCompat(fromType, toType, registry_);
 	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 		sa_value = wrapConvert(sa_value, registry_.toJson(toType));
+	if (!ptrPermissionOk(sa_value["value-type"], sa_target["value-type"])) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+		exit(1);
+	}
 
 	json arr_assign = {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
 	if (!stmt.value("ownership-transfer", false))
@@ -325,6 +337,10 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 			TypeCompat compat = typeCompat(fromType, toType, registry_);
 			if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 				value = wrapConvert(value, registry_.toJson(toType));
+			if (!ptrPermissionOk(value["value-type"], (*currentFunc_)["ret-type"])) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+				exit(1);
+			}
 		}
 		return {{"stmt-type", "return"}, {"values", json::array({value})}};
 	}
@@ -407,6 +423,10 @@ FieldChain PlnSemanticAnalyzer::resolveStoreLocChain(const json& loc)
 			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
 		}
+		if (!isWritableThrough(*vt)) {
+			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+			exit(1);
+		}
 		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
 	}
 	if (loc.value("kind","") == "arr-index") {
@@ -482,6 +502,10 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 	TypeCompat compat = typeCompat(fromType, toType, registry_);
 	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
 		value = wrapConvert(value, fieldType);
+	if (!ptrPermissionOk(value["value-type"], fieldType)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+		exit(1);
+	}
 	// LCOV_EXCL_EXCEPTION_BR_START
 	int off = chain.offset + it->offset;
 	if (!chain.isPointerBased)

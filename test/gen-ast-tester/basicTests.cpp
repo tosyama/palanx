@@ -629,11 +629,11 @@ TEST(gen_ast, addr_of) {
 	// @int64 p = @x;
 	const auto& p = stmts[2]["vars"][0];
 	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
-	ASSERT_FALSE(p["var-type"].contains("mutable"));
+	ASSERT_EQ(p["var-type"]["mutable"], false);
 	const auto& addr_x = p["init"];
 	ASSERT_EQ(addr_x["expr-type"], "addr-of");
 	ASSERT_EQ(addr_x["name"], "x");
-	ASSERT_FALSE(addr_x.contains("mutable"));
+	ASSERT_EQ(addr_x["mutable"], false);
 	ASSERT_FALSE(addr_x["loc"].is_null());
 
 	// @!int64 q = @!y;
