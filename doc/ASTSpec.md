@@ -53,10 +53,12 @@ Function definition model
 
 Constant definition model
 --------------------------
-An object-like `#define` macro whose body was recognized as one of two forms: a bare
+An object-like `#define` macro whose body, after fully expanding any references to other
+object-like macros (e.g. `#define S_IFDIR __S_IFDIR`), resolves to one of two forms: a bare
 integer literal (e.g. `#define MAGIC 42`), or a pointer-cast of a bare integer literal
-(e.g. `#define NULL ((void *)0)`). Macros whose body doesn't match either form (function-like
-macros, arithmetic, references to other macros, etc.) are not exported here.
+(e.g. `#define NULL ((void *)0)`). Macros whose expanded body doesn't match either form
+(function-like macros referenced without a call, string literals, arithmetic/other expression
+forms, etc.) are not exported here.
 
 - name\* - Macro name string
 - value\* - Decimal string (e.g. "10")

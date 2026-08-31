@@ -451,6 +451,47 @@ TEST(c2ast, macro_const_null) {
     ASSERT_EQ((*null_const)["value-type"]["base-type"]["type-name"], "void");
 }
 
+TEST(c2ast, macro_const_alias_chain) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/024_macro_const_alias.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    for (const string& name : {"A", "B", "C"}) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], "5");
+        ASSERT_EQ((*c)["value-type"]["type-kind"], "prim");
+        ASSERT_EQ((*c)["value-type"]["type-name"], "int32");
+    }
+
+    // Expands to an additive expression, not a recognized constant shape: still skipped.
+    ASSERT_EQ(find_const("D"), nullptr);
+}
+
+TEST(c2ast, sys_stat_h_public_names) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s sys/stat.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    // S_IFDIR is defined as an alias of __S_IFDIR; it must be exported too, not just
+    // the internal name.
+    json* s_ifdir = nullptr;
+    for (auto& c : constants)
+        if (c["name"] == "S_IFDIR") { s_ifdir = &c; break; }
+    ASSERT_NE(s_ifdir, nullptr);
+    ASSERT_EQ((*s_ifdir)["value"], "16384");
+    ASSERT_EQ((*s_ifdir)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*s_ifdir)["value-type"]["type-name"], "int32");
+}
+
 TEST(c2ast, string_h_null_constant) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast -s string.h");

@@ -1219,17 +1219,22 @@ bool CParser::resolveConstValue(const json &node, json &value, json &type)
 	return false;
 }
 
-void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros)
+void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPreprocessor &cpp)
 {
 	for (CMacro* m : macros) {
 		if (m->type != MT_OBJ) continue;
 
+		vector<CToken*> expanded = cpp.expandObjectMacroBody(m);
+
 		json expr_value;
 		int index = 0;
-		if (!constant_expression(expr_value, m->body, index) || index != (int)m->body.size()) continue;
+		bool ok = constant_expression(expr_value, expanded, index) && index == (int)expanded.size();
 
 		json value, type;
-		if (!resolveConstValue(expr_value, value, type)) continue;
+		if (ok) ok = resolveConstValue(expr_value, value, type);
+
+		for (CToken* t : expanded) delete t;
+		if (!ok) continue;
 
 		ast["ast"]["constants"].push_back({
 			{"name", m->name},

@@ -997,6 +997,15 @@ TEST(build_mgr, cinclude_arr_field_access) {
 	ASSERT_EQ(output, "5 65 90 100 400\n");
 }
 
+TEST(build_mgr, sys_stat_h_s_ifdir_alias) {
+	// S_IFDIR is defined as `#define S_IFDIR __S_IFDIR` in sys/stat.h -- IT-2803's
+	// ticket repro: the public alias name must resolve to the same value as the
+	// internal macro it references, not be silently dropped from const-inlining.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/131_sys_stat_s_ifdir.pa");
+	ASSERT_EQ(output, "dir-mode-ok\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

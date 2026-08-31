@@ -4,6 +4,8 @@
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 using json = nlohmann::json;
 
+class CPreprocessor;
+
 class CParser {
 	const vector<CToken*> &top_tokens;
 	const vector<CLexer*> &lexers;
@@ -52,5 +54,5 @@ class CParser {
 public:
 	CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexers);
 	int parse(json &ast);
-	void exportMacroConstants(json &ast, const vector<CMacro*> &macros);
+	void exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPreprocessor &cpp);
 };
