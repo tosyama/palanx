@@ -264,14 +264,37 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
-  - addr-of: `{"type-kind": "pntr", "mutable": <bool>, "base-type": <named var's prim type>}`.
-    `mutable` is always present: `true` for `@!ID`, `false` for `@ID`. Writing through
-    a `false` (read-only) pointer — via `p[0]` deref or a field access — is a compile
-    error (E_WriteThroughReadOnlyPtr); see typeCompat rules below for how mutability
-    is enforced separately from type compatibility.
-    The named variable must be a local variable in the current scope (not a
-    function parameter, not itself a `pntr`/`struct`/`arr` type) — otherwise a
-    compile error (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive).
+  - addr-of: SA dispatches on the AST node's `object` (see ASTSpec.md) and emits one of two
+    shapes, never a hybrid — the `addr-of` expr-type only ever appears for the plain-variable
+    case; a struct-field target lowers to an ordinary `field-access` node instead:
+    - `object.expr-type == "id"` (`@x` / `@!x`): emitted as `{"expr-type":"addr-of","name":<var
+      name>,"mutable":<bool>,"value-type":{"type-kind":"pntr","mutable":<bool>,"base-type":<named
+      var's prim type>}}`. `mutable` is `true` for `@!ID`, `false` for `@ID`. The named variable
+      must be a local variable in the current scope (not a function parameter, not itself a
+      `pntr`/`struct`/`arr` type) — otherwise a compile error (E_AddrOfNotLocalVar /
+      E_AddrOfNotPrimitive).
+    - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
+      `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
+      field-access section below), then re-emitted as `{"expr-type":"field-access","var"|
+      "ptr-expr":…,"offset":<int>,"value-type":{"type-kind":"pntr","mutable":<bool>,"base-type":
+      <field's prim type>},"addr-only":true}` — `addr-only:true` tells codegen to compute the
+      field's address (`CalcAddr`) instead of loading it. The leaf field must be primitive-typed
+      (E_AddrOfNotPrimitive otherwise; embed/owned-pointer/array fields are not addressable this
+      way) and must exist on the resolved struct (E_UnknownField otherwise). Because `@!` requests
+      a *mutable* pointer, resolution runs with the same write-permission checks a store-location
+      chain would (`resolveObjectChain(obj, forWrite=<mutable>)`): a read-only `@T`-typed base
+      variable (E_WriteThroughReadOnlyPtr) or an intermediate read-only raw-ptr field hop
+      (E_WriteToImmutablePtrField) rejects `@!`, so a read-only pointer can never be laundered
+      into a mutable one by taking a field's address instead of writing the field directly.
+    - Any other operand shape (an array element, a call, …) is a compile error
+      (E_AddrOfNotAddressable) — address-of is not general in this version. The grammar
+      accepts `@arr[i]` (its operand parses via the same `store_loc` vocabulary as a field
+      target), but SA rejects it explicitly rather than silently mis-lowering it; array-element
+      address-of is a later iteration's work.
+    `mutable` is always present on the resulting `value-type` regardless of which shape was
+    emitted. Writing through a `false` (read-only) pointer — via `p[0]` deref or a field
+    access — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules below for
+    how mutability is enforced separately from type compatibility.
   - call: present when the function has a return type (ret-type in its definition).
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).
@@ -566,6 +589,17 @@ is absent.
              "value-type":{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Node"}}},
  "offset":0,
  "value-type":{"type-kind":"prim","type-name":"int64"}}
+```
+
+`@!p.x` (address-of on a struct field) produces the same node shape, plus `addr-only:true` and
+a `pntr`-typed `value-type` in place of the field's own type — see the addr-of section above:
+
+```json
+{"expr-type":"field-access",
+ "var":"p",
+ "offset":0,
+ "value-type":{"type-kind":"pntr","mutable":true,"base-type":{"type-kind":"prim","type-name":"int64"}},
+ "addr-only":true}
 ```
 
 

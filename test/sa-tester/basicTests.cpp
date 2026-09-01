@@ -3063,6 +3063,101 @@ TEST(sa, addr_of_mutable_local)
 	ASSERT_EQ(init["value-type"]["mutable"], true);
 }
 
+TEST(sa, addr_of_field_readonly)
+{
+	// `@int64 p = @s.x;` -- IT-2806: address-of on a struct field lowers to
+	// field-access + addr-only:true (CalcAddr in codegen), not an "addr-of"
+	// node -- the field leaf has no local-variable storage of its own.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/147_addr_of_field_readonly.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(p["var-type"]["mutable"], false);
+
+	const auto& init = p["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_EQ(init["var"], "s");
+	ASSERT_EQ(init["offset"], 0);
+	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(init["value-type"]["mutable"], false);
+	ASSERT_EQ(init["value-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, addr_of_field_mutable)
+{
+	// `@!int64 p = @!s.y;` -- mutable counterpart; also exercises the
+	// forWrite=true path through resolveObjectChain's "id" branch, which
+	// must NOT reject it (s itself is a plain mutable struct variable).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/148_addr_of_field_mutable.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_EQ(init["var"], "s");
+	ASSERT_EQ(init["offset"], 8);  // y follows x (int64 x 8 bytes)
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, addr_of_field_nested_embed)
+{
+	// `@!int64 p = @!s.in.v;` where `in` is `$Inner` (inline embed) -- the
+	// embed hop accumulates offset inside resolveObjectChain and the result
+	// is a single field-access node (var:"s"), not a nested ptr-expr chain.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/149_addr_of_field_nested_embed.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_EQ(init["var"], "s");
+	ASSERT_EQ(init["offset"], 16);  // x(8) + y(8)
+	ASSERT_FALSE(init.contains("ptr-expr"));
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, addr_of_field_via_ptr_hop)
+{
+	// `@!int64 p = @!n.next.val;` where `next` is a `@!Node` raw-ptr field --
+	// resolveObjectChain hops through the pointer field, producing a
+	// ptr-expr-based field-access (chain.isPointerBased == true) rather than
+	// a var-based one.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/150_addr_of_field_via_ptr_hop.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_FALSE(init.contains("var"));
+	ASSERT_TRUE(init.contains("ptr-expr"));
+	ASSERT_EQ(init["ptr-expr"]["var"], "n");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, addr_of_field_via_arr_index)
+{
+	// `@!int64 p = @!wpts[0].x;` where `wpts` is `[4]@!Point` (mutable
+	// pointer-slot array) -- the field's object chain hops through an
+	// arr-index node, exercising resolveObjectChain's "arr-index" branch
+	// under forWrite=true (the mutable slot passes the check).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/151_addr_of_field_via_arr_index.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+	const auto& init = body[1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_TRUE(init.contains("ptr-expr"));
+	ASSERT_EQ(init["ptr-expr"]["expr-type"], "arr-index");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
 TEST(sa, deref_rw_mutable_ptr)
 {
 	// `@!int64 p = @!x; 99 -> p[0]; int64 y = p[0];` -- deref read/write

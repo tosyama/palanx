@@ -1,0 +1,6 @@
+type Inner { int64 v; };
+type Point { int64 x; int64 y; Inner in; };
+Point s;
+@int64 rp = @s.x;
+@!int64 wp = @!s.y;
+@!int64 np = @!s.in.v;

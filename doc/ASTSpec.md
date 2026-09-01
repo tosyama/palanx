@@ -283,9 +283,15 @@ Expression model
     - method\* - Method/function name string
     - args - Argument expression list
     Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
-  18. addr-of - Address-of a primitive local variable (`@ID` read-only, `@!ID`/`AT_EXCL ID` mutable)
-    - name\* - Variable name string
-    - mutable\* - `true` for `@!ID`, `false` for `@ID`
+  18. addr-of - Address-of a local variable or a struct field reached from one (`@` read-only,
+      `@!`/`AT_EXCL` mutable). The operand grammar is `store_loc` (the same vocabulary the
+      left side of `->` accepts: a bare identifier, or a `.`-chain of field accesses rooted
+      in one), so `@s.x` and `@!s.in.v` parse; SA decides in sa.json whether the target is
+      addressable (see SASpec.md).
+    - object\* - Operand expression: `id` for a plain variable, `field-access` for a struct
+      field (nested `.` chains produce nested `field-access` objects), or an arbitrary
+      expression node for anything else (SA rejects non-addressable operands)
+    - mutable\* - `true` for `@!`, `false` for `@`
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

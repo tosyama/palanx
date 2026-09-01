@@ -188,7 +188,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_AddrOfNotPrimitive:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot take the address of '" + arg1 + "': address-of is only supported for primitive-typed local variables.";
+			return "cannot take the address of '" + arg1 + "': '@'/'@!' only supports a primitive-typed "
+			       "local variable or a primitive-typed field of a struct it names.";
 
 		case E_WriteThroughReadOnlyPtr:
 			return "cannot write through read-only pointer '@T'; use '@!T' for mutable.";
@@ -198,6 +199,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_AssignToWholeStructElem:
 			return "cannot assign to a struct element as a whole; assign to its fields instead (e.g. 'p[i].field').";
+
+		case E_AddrOfNotAddressable:
+			return "cannot take the address of this expression: '@'/'@!' supports a local variable or a "
+			       "primitive-typed field of a struct it names.";
 
 		default:
 			BOOST_ASSERT(false);

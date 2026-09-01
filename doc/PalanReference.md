@@ -1137,8 +1137,21 @@ int64 x = 42;
 - `@ID` yields a read-only pointer to `ID`'s storage; `@!ID` yields a mutable pointer. The
   compiler enforces this: writing through a `@ID` pointer, or assigning/passing one where a
   `@!`-typed (mutable) destination is expected, is a compile error.
-- Scoped to local variables of a primitive type only this version — not usable on function
-  parameters, struct fields, array elements, or general expressions.
+- `@` also takes the address of a primitive-typed struct field reached from a local variable
+  (`@s.x`, including through a chain of fields — `@!s.inner.x` — and through pointer-typed
+  fields — `@!p.next.val`):
+
+  ```palan
+  type Point { int64 x; int64 y; };
+  Point s;
+  memcpy(@!s.x, @src, 8);   // out-param write into s.x, same as memcpy(@!x, ...) on a plain variable
+  ```
+
+  The same read-only/mutable rule applies at every step of the chain: `@!` on a field reached
+  through a read-only pointer (a `@T`-typed base variable, or a `@T`-typed pointer field along
+  the way) is a compile error, not silently downgraded to a read-only address.
+- Not usable on function parameters, whole struct or array variables (`@s`, `@arr`), array
+  elements (`@arr[i]`), or general expressions this version.
 - The resulting pointer can be handed to a cincluded C function that expects a pointer parameter
   — as an input the function reads through (`const T*`), or as an out-param it writes into:
 

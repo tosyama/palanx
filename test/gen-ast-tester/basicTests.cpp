@@ -632,7 +632,8 @@ TEST(gen_ast, addr_of) {
 	ASSERT_EQ(p["var-type"]["mutable"], false);
 	const auto& addr_x = p["init"];
 	ASSERT_EQ(addr_x["expr-type"], "addr-of");
-	ASSERT_EQ(addr_x["name"], "x");
+	ASSERT_EQ(addr_x["object"]["expr-type"], "id");
+	ASSERT_EQ(addr_x["object"]["name"], "x");
 	ASSERT_EQ(addr_x["mutable"], false);
 	ASSERT_FALSE(addr_x["loc"].is_null());
 
@@ -642,8 +643,43 @@ TEST(gen_ast, addr_of) {
 	ASSERT_EQ(q["var-type"]["mutable"], true);
 	const auto& addr_y = q["init"];
 	ASSERT_EQ(addr_y["expr-type"], "addr-of");
-	ASSERT_EQ(addr_y["name"], "y");
+	ASSERT_EQ(addr_y["object"]["expr-type"], "id");
+	ASSERT_EQ(addr_y["object"]["name"], "y");
 	ASSERT_EQ(addr_y["mutable"], true);
+}
+
+TEST(gen_ast, addr_of_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/106_addr_of_field.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 6);
+
+	// @int64 rp = @s.x;
+	const auto& addr_x = stmts[3]["vars"][0]["init"];
+	ASSERT_EQ(addr_x["expr-type"], "addr-of");
+	ASSERT_EQ(addr_x["mutable"], false);
+	ASSERT_EQ(addr_x["object"]["expr-type"], "field-access");
+	ASSERT_EQ(addr_x["object"]["field"], "x");
+	ASSERT_EQ(addr_x["object"]["object"]["expr-type"], "id");
+	ASSERT_EQ(addr_x["object"]["object"]["name"], "s");
+
+	// @!int64 wp = @!s.y;
+	const auto& addr_y = stmts[4]["vars"][0]["init"];
+	ASSERT_EQ(addr_y["expr-type"], "addr-of");
+	ASSERT_EQ(addr_y["mutable"], true);
+	ASSERT_EQ(addr_y["object"]["field"], "y");
+
+	// @!int64 np = @!s.in.v;  (nested field chain)
+	const auto& addr_v = stmts[5]["vars"][0]["init"];
+	ASSERT_EQ(addr_v["expr-type"], "addr-of");
+	ASSERT_EQ(addr_v["mutable"], true);
+	ASSERT_EQ(addr_v["object"]["expr-type"], "field-access");
+	ASSERT_EQ(addr_v["object"]["field"], "v");
+	ASSERT_EQ(addr_v["object"]["object"]["expr-type"], "field-access");
+	ASSERT_EQ(addr_v["object"]["object"]["field"], "in");
+	ASSERT_EQ(addr_v["object"]["object"]["object"]["name"], "s");
 }
 
 TEST(gen_ast, addr_of_type_alias_mix) {
@@ -660,7 +696,8 @@ TEST(gen_ast, addr_of_type_alias_mix) {
 
 	// @z;
 	ASSERT_EQ(stmts[2]["body"]["expr-type"], "addr-of");
-	ASSERT_EQ(stmts[2]["body"]["name"], "z");
+	ASSERT_EQ(stmts[2]["body"]["object"]["expr-type"], "id");
+	ASSERT_EQ(stmts[2]["body"]["object"]["name"], "z");
 
 	// @!z;
 	ASSERT_EQ(stmts[3]["body"]["expr-type"], "addr-of");

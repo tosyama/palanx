@@ -724,10 +724,10 @@ expression: term
 	{ $$ = {{"expr-type", "logical-or"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| '!' expression
 	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); }
-	| '@' ID
-	{ $$ = {{"expr-type", "addr-of"}, {"name", move($2)}, {"mutable", false}}; LOC($$, @$); }
-	| AT_EXCL ID
-	{ $$ = {{"expr-type", "addr-of"}, {"name", move($2)}, {"mutable", true}}; LOC($$, @$); }
+	| '@' store_loc
+	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", false}}; LOC($$, @$); }
+	| AT_EXCL store_loc
+	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", true}}; LOC($$, @$); }
 	| expression ARROW store_loc
 	{
 		if ($3.value("kind", "") == "var") {
@@ -867,7 +867,7 @@ store_loc
 		LOC($$, @$);
 	}
 	| store_loc '.' ID
-	{ $$ = {{"kind", "field"}, {"base", move($1)}, {"field", move($3)}}; }
+	{ $$ = {{"kind", "field"}, {"base", move($1)}, {"field", move($3)}}; LOC($$, @$); }
 	| '(' tapple_inner ')'
 	{ $$ = {{"kind", "not-impl"}}; }
 	| func_call

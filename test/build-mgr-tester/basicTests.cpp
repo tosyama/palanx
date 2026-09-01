@@ -1042,6 +1042,16 @@ TEST(build_mgr, deref_struct_ptr_field) {
 	ASSERT_EQ(output, "1972\n1\n");
 }
 
+TEST(build_mgr, addr_of_struct_field) {
+	// IT-2806: `@!s.y` / `@!s.in.v` take the address of a struct field
+	// (top-level and nested-embed) and hand it to a cincluded C function
+	// (memcpy) as an out-param; the C-side write is read back via the
+	// ordinary field-access path.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/136_addr_of_struct_field.pa");
+	ASSERT_EQ(output, "99\n7\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

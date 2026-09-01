@@ -807,6 +807,107 @@ TEST(sa_error, addr_of_undefined)
 	ASSERT_NE(sa.find("Undefined variable"), string::npos);
 }
 
+TEST(sa_error, addr_of_field_write_through_readonly)
+{
+	// `@Point p = s; @!int64 q = @!p.x;` -- p is a read-only struct pointer
+	// (@T); taking a mutable address through one of its fields must not
+	// launder read-only into mutable.
+	// Covers: sa_expr_addr_of field-access branch -> resolveObjectChain(forWrite=true)
+	// "id" case -> E_WriteThroughReadOnlyPtr
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_105_addr_of_field_write_through_readonly.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer '@T'"), string::npos);
+}
+
+TEST(sa_error, addr_of_field_immutable_ptr_hop)
+{
+	// `@!int64 p = @!n.next.val;` where `next` is `@Node` (read-only raw-ptr
+	// field) -- the intermediate hop, not just the final field, must be
+	// write-permission checked.
+	// Covers: resolveObjectChain(forWrite=true) field-hop branch -> E_WriteToImmutablePtrField
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_106_addr_of_field_immutable_ptr_hop.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer field '@T'"), string::npos);
+}
+
+TEST(sa_error, addr_of_embed_field)
+{
+	// `@s.in;` where `in` is a struct-typed field (non-primitive leaf) --
+	// address-of on a struct field is limited to primitive-typed fields.
+	// Covers: sa_expr_addr_of field-access branch -> leaf typeKind != "prim" -> E_AddrOfNotPrimitive
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_107_addr_of_embed_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of"), string::npos);
+}
+
+TEST(sa_error, addr_of_unknown_field)
+{
+	// `@s.z;` where Point has no field `z`.
+	// Covers: sa_expr_addr_of field-access branch -> findFieldOrExit -> E_UnknownField
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_108_addr_of_unknown_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("has no field"), string::npos);
+}
+
+TEST(sa_error, addr_of_arr_index_not_addressable)
+{
+	// `@arr[0];` -- array-element address-of is IT-2807's scope, not this
+	// ticket's; the grammar accepts it (store_loc covers arr-index too) but
+	// SA must reject it explicitly rather than silently mis-lowering it.
+	// Covers: sa_expr_addr_of fallback branch -> E_AddrOfNotAddressable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_109_addr_of_arr_index.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of this expression"), string::npos);
+}
+
+TEST(sa_error, addr_of_call_not_addressable)
+{
+	// `@f();` -- a call expression is not an addressable location.
+	// Covers: sa_expr_addr_of fallback branch, "not-impl" object case -> E_AddrOfNotAddressable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_110_addr_of_call.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of this expression"), string::npos);
+}
+
+TEST(sa_error, addr_of_field_readonly_arr_elem)
+{
+	// `@!int64 p = @!rpts[0].x;` where `rpts` is `[4]@Point` (read-only
+	// pointer-slot array) -- the arr-index hop itself is the read-only
+	// element, not just a field along the way.
+	// Covers: resolveObjectChain(forWrite=true) "arr-index" branch -> E_WriteToReadOnlyArrElem
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_111_addr_of_field_readonly_arr_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer array element"), string::npos);
+}
+
 TEST(sa_error, write_through_readonly_ptr)
 {
 	// `@int64 p = @x; 99 -> p[0];` -- deref write through a read-only `@T`

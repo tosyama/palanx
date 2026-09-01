@@ -9,7 +9,7 @@
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
 
-FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
+FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrite)
 {
 	if (obj.value("expr-type","") == "id") {
 		string varName = obj["name"].get<string>();
@@ -22,6 +22,10 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
 		}
+		if (forWrite && !isWritableThrough(*vt)) {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+			exit(1);
+		}
 		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
 	}
 	if (obj.value("expr-type","") == "arr-index") {
@@ -31,10 +35,14 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
 		}
+		if (forWrite && vt.value("mutable", true) == false) {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToReadOnlyArrElem) << endl;
+			exit(1);
+		}
 		string struct_name = vt["base-type"]["type-name"].get<string>();
 		return {true, "", 0, move(sa_idx), struct_name};
 	}
-	FieldChain base = resolveObjectChain(obj["object"]);
+	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
 	const StructDef& def = structDefs_[base.structName];
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
@@ -44,6 +52,10 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 	}
 	if (it->typeKind == "prim") {
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+		exit(1);
+	}
+	if (forWrite && it->typeKind == "raw-ptr" && !it->isMutable) {
+		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToImmutablePtrField) << endl;
 		exit(1);
 	}
 	if (it->typeKind == "embed") {
@@ -63,6 +75,65 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 		           {"offset",base.offset+it->offset},{"value-type",pntr_type}};
 	return {true, "", 0, move(ptrNode), it->typeName};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode)
+{
+	const StructDef& def = structDefs_[structName];
+	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fieldName; });
+	if (it == def.fields.end()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName) << endl;
+		exit(1);
+	}
+	return *it;
+}
+
+json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
+{
+	bool isMutable = expr.value("mutable", false);
+	const json& obj = expr["object"];
+	string obj_type = obj.value("expr-type", "");
+
+	if (obj_type == "id") {
+		string name = obj["name"].get<string>();
+		const json* varType = findVar(name);
+		if (varType == nullptr) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
+			exit(1);
+		}
+		if (!isLocalVar(name)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
+			exit(1);
+		}
+		if (varType->value("type-kind", "") != "prim") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
+			exit(1);
+		}
+		json pntr_type = {{"type-kind", "pntr"}, {"mutable", isMutable}, {"base-type", *varType}};
+		json out = {{"expr-type", "addr-of"}, {"name", name}, {"mutable", isMutable}, {"value-type", pntr_type}};
+		if (expr.contains("loc")) out["loc"] = expr["loc"];
+		return out;
+	}
+
+	if (obj_type == "field-access") {
+		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
+		string fn = obj["field"].get<string>();
+		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
+		if (fld.typeKind != "prim") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
+			exit(1);
+		}
+		json pntr_type = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",fieldValueType(fld)}};
+		int off = chain.offset + fld.offset;
+		json out = chain.isPointerBased
+			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",true}}
+			: json{{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",pntr_type},{"addr-only",true}};
+		if (expr.contains("loc")) out["loc"] = expr["loc"];
+		return out;
+	}
+
+	cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
+	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expectedType)
@@ -129,23 +200,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		}
 
 	} else if (expr_type == "addr-of") {
-		string name = expr["name"].get<string>();
-		bool isMutable = expr.value("mutable", false);
-		const json* varType = findVar(name);
-		if (varType == nullptr) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
-			exit(1);
-		}
-		if (!isLocalVar(name)) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
-			exit(1);
-		}
-		if (varType->value("type-kind", "") != "prim") {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
-			exit(1);
-		}
-		json pntr_type = {{"type-kind", "pntr"}, {"mutable", isMutable}, {"base-type", *varType}};
-		sa_expr["value-type"] = pntr_type;
+		return sa_expr_addr_of(expr);
 
 	} else if (expr_type == "add" || expr_type == "sub"
 	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod") {
@@ -224,25 +279,20 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		return sa_expr_member_call(expr);
 
 	} else if (expr_type == "field-access") {
-		FieldChain chain = resolveObjectChain(expr["object"]);
+		FieldChain chain = resolveObjectChain(expr["object"], /*forWrite=*/false);
 		string fn = expr["field"].get<string>();
-		const StructDef& def = structDefs_[chain.structName];
-		auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
-		if (it == def.fields.end()) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn) << endl;
-			exit(1);
-		}
-		if (it->typeKind == "embed") {
+		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, expr);
+		if (fld.typeKind == "embed") {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InlineStructAsValue) << endl;
 			exit(1);
 		}
 		// LCOV_EXCL_EXCEPTION_BR_START
-		json vt = fieldValueType(*it);
-		int off = chain.offset + it->offset;
+		json vt = fieldValueType(fld);
+		int off = chain.offset + fld.offset;
 		// embed-arr/embed-ptr-arr fields are inline data (no pointer is actually
 		// stored at this offset): the field's "value" is its own address, computed
 		// as ptr+offset, not a load of the memory there.
-		bool addrOnly = (it->typeKind == "embed-arr" || it->typeKind == "embed-ptr-arr");
+		bool addrOnly = (fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr");
 		if (!chain.isPointerBased)
 			return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
 		else
