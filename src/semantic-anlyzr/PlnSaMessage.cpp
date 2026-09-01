@@ -196,6 +196,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_PtrMutabilityUpgrade:
 			return "cannot bind a read-only pointer '@T' to a mutable pointer '@!T'.";
 
+		case E_AssignToWholeStructElem:
+			return "cannot assign to a struct element as a whole; assign to its fields instead (e.g. 'p[i].field').";
+
 		default:
 			BOOST_ASSERT(false);
 	}

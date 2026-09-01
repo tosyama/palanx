@@ -3091,6 +3091,84 @@ TEST(sa, ptr_mutability_narrowing)
 	ASSERT_EQ(r["var-type"]["mutable"], false);
 }
 
+TEST(sa, deref_scalar_widths)
+{
+	// `@!int32 p = @!x; 99 -> p[0]; int32 y = p[0];` -- IT-2805: `p[i]` is
+	// specified as C-equivalent pointer subscript. A scalar element gives a
+	// real load/store (addr-only:false) with elem-size == sizeof(elem).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/143_deref_scalar_widths.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& arr_assign = jout["statements"][2];
+	ASSERT_EQ(arr_assign["stmt-type"], "arr-assign");
+	const auto& target = arr_assign["target"];
+	ASSERT_EQ(target["addr-only"], false);
+	ASSERT_EQ(target["elem-size"]["value"], "4");
+	ASSERT_EQ(target["value-type"]["type-name"], "int32");
+
+	const auto& y = jout["statements"][3]["vars"][0];
+	ASSERT_EQ(y["init"]["addr-only"], false);
+	ASSERT_EQ(y["init"]["elem-size"]["value"], "4");
+}
+
+TEST(sa, deref_var_index)
+{
+	// `p[i]` with a variable index takes the same shape as `p[0]` -- there is
+	// no index==0 special case anywhere in SA.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/144_deref_var_index.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& arr_assign = jout["statements"][4];
+	ASSERT_EQ(arr_assign["stmt-type"], "arr-assign");
+	const auto& target = arr_assign["target"];
+	ASSERT_EQ(target["index"]["expr-type"], "id");
+	ASSERT_EQ(target["index"]["name"], "i");
+	ASSERT_EQ(target["addr-only"], false);
+}
+
+TEST(sa, deref_struct_ptr_field_rw)
+{
+	// `Point pt; 10 -> pt[0].x; int64 v = pt[0].x;` -- IT-2805: a pointer to a
+	// struct dereferences to an address computation (Palan has no
+	// register-sized struct value), so `p[i]` yields pntr(struct) with
+	// addr-only:true and elem-size == sizeof(struct), reachable for both
+	// read (field-access) and write (field-assign) via `p[i].field`.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/145_deref_struct_ptr_field_rw.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& field_assign = jout["statements"][1];
+	ASSERT_EQ(field_assign["stmt-type"], "field-assign");
+	const auto& write_ptr = field_assign["ptr-expr"];
+	ASSERT_EQ(write_ptr["expr-type"], "arr-index");
+	ASSERT_EQ(write_ptr["addr-only"], true);
+	ASSERT_EQ(write_ptr["elem-size"]["value"], "16");
+	ASSERT_EQ(write_ptr["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(write_ptr["value-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(write_ptr["value-type"]["mutable"], true);
+
+	const auto& v = jout["statements"][2]["vars"][0];
+	ASSERT_EQ(v["init"]["expr-type"], "field-access");
+	ASSERT_EQ(v["init"]["ptr-expr"]["addr-only"], true);
+}
+
+TEST(sa, deref_readonly_struct_ptr_field_read)
+{
+	// `@Point ro = pt; int64 v = ro[0].x;` -- IT-2804's read-only enforcement
+	// only blocks writes; reading a field through a read-only struct pointer
+	// via `p[0].field` must still be allowed. Regression guard.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/146_deref_readonly_struct_ptr_field_read.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& v = jout["statements"][2]["vars"][0];
+	const auto& ptr_expr = v["init"]["ptr-expr"];
+	ASSERT_EQ(ptr_expr["addr-only"], true);
+	ASSERT_EQ(ptr_expr["value-type"]["mutable"], false);
+}
+
 TEST(sa, cinclude_arr_field_prim)
 {
 	// struct BufField { char name[16]; }; (cinclude'd) -- IT-2802: c2ast now reflects

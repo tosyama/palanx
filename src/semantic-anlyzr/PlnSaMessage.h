@@ -59,6 +59,7 @@ enum PlnSaMessageCode {
 	E_AddrOfNotPrimitive,			// arg1: variable name
 	E_WriteThroughReadOnlyPtr,
 	E_PtrMutabilityUpgrade,
+	E_AssignToWholeStructElem,
 };
 
 class PlnSaMessage

@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+type Point { int64 x; int64 y; };
+Point pt;
+10 -> pt[0].x;
+int64 v = pt[0].x;

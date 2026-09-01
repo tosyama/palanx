@@ -269,6 +269,14 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 {
 	json sa_target = sa_expression(stmt["target"]);
+	if (sa_target.value("addr-only", false)) {
+		// The element itself is an address computation, not a storage slot (e.g.
+		// `pts[i]` on an embedded `[n]$T` struct array, a 2D row `mat[i]`, or a
+		// `p[i]` dereference whose pointee is a struct) -- there is no pointer
+		// slot at this location to overwrite. Assign to its fields instead.
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AssignToWholeStructElem) << endl;
+		exit(1);
+	}
 	if (!isWritableThrough(sa_target["array"]["value-type"])) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
 		exit(1);

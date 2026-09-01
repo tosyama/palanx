@@ -435,6 +435,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 			sa_expr["index"]      = sa_index;
 			sa_expr["elem-size"]  = elem_size_node;
 			sa_expr["value-type"] = row_pntr;
+			sa_expr["addr-only"]  = true;
 			return sa_expr;
 		}
 
@@ -451,6 +452,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 			sa_expr["index"]      = sa_index;
 			sa_expr["elem-size"]  = elem_size_node;
 			sa_expr["value-type"] = elem_type;
+			sa_expr["addr-only"]  = false;
 			return sa_expr;
 		}
 
@@ -481,11 +483,44 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		sa_expr["index"]      = sa_index;
 		sa_expr["elem-size"]  = elem_size_node;
 		sa_expr["value-type"] = row_pntr;
+		sa_expr["addr-only"]  = true;
+		return sa_expr;
+	}
+
+	if (elem_type.value("type-kind", "") == "struct") {
+		// Pointer dereference `p[i]` where the pointee is a struct: Palan has no
+		// register-sized representation of a struct value (every struct-typed
+		// expression is itself a `pntr(struct)`), so the result is an address
+		// computation -- base + i*sizeof(T) -- not a load. Same rule as the
+		// embedded struct-array row access above; `p[0].field` reaches it via
+		// the field-access chain in resolveObjectChain/resolveStoreLocChain.
+		// elem_type's "struct" type-kind is only ever produced by SA itself
+		// (sa_struct_var_decl, resolveObjectChain/resolveStoreLocChain, or
+		// cinclude struct capture) -- never by gen-ast parsing native syntax,
+		// which has no symbol table and falls back to "prim" for any name it
+		// doesn't recognize (see the sz<0 guard below). Every such producer
+		// already required the name to resolve in structDefs_, so look it up
+		// unguarded here, matching resolveObjectChain's convention.
+		int64_t stride = structDefs_[elem_type["type-name"].get<string>()].totalSize;
+		json elem_pntr = {{"type-kind","pntr"},{"mutable",array_type.value("mutable", true)},
+		                  {"base-type",elem_type}};
+		json elem_size_node = {
+			{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
+		};
+		sa_expr["array"]      = sa_array;
+		sa_expr["index"]      = sa_index;
+		sa_expr["elem-size"]  = elem_size_node;
+		sa_expr["value-type"] = elem_pntr;
+		sa_expr["addr-only"]  = true;
 		return sa_expr;
 	}
 
 	int sz = (elem_type.value("type-kind","") == "pntr") ? 8
 		: elemSizeBytes(elem_type.value("type-name",""));
+	if (sz < 0) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownStructType, elem_type.value("type-name","")) << endl;
+		exit(1);
+	}
 	json elem_size_node = {
 		{"expr-type", "lit-uint"}, {"value", to_string(sz)}, {"value-type", uint64_type}
 	};
@@ -494,6 +529,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 	sa_expr["index"]      = sa_index;
 	sa_expr["elem-size"]  = elem_size_node;
 	sa_expr["value-type"] = elem_type;
+	sa_expr["addr-only"]  = false;
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

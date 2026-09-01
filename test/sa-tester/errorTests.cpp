@@ -920,3 +920,51 @@ TEST(sa_error, ptr_mutability_upgrade_call_arg)
 	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
 }
 
+TEST(sa_error, assign_whole_struct_elem)
+{
+	// `other -> pt[0];` -- `pt[0]` on a struct pointer is an address
+	// computation (addr-only), not a pointer slot; writing the whole element
+	// is rejected. IT-2805: guards the new struct-deref addr-only path.
+	// Covers: sa_arr_assign_stmt addr-only guard (E_AssignToWholeStructElem)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_102_assign_whole_struct_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot assign to a struct element as a whole"), string::npos);
+}
+
+TEST(sa_error, write_readonly_struct_ptr_field)
+{
+	// `42 -> ro[0].x;` where ro is `@Point` -- writing a field through a
+	// read-only struct pointer via `p[i].field` is rejected, same as the
+	// existing `[n]@Point` array-element case.
+	// Covers: resolveStoreLocChain arr-index branch (E_WriteToReadOnlyArrElem)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_103_write_readonly_struct_ptr_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("read-only pointer array element"), string::npos);
+}
+
+TEST(sa_error, deref_unknown_struct_ptr)
+{
+	// `@!Foo p; p[0].bar;` where `Foo` is never declared. gen-ast has no
+	// symbol table, so `Foo` parses as a prim base-type, not a struct one --
+	// IT-2805: sa_expr_arr_index's generic (non-struct) branch must reject
+	// this at the SA boundary instead of letting elemSizeBytes' -1
+	// "unknown type" sentinel leak into elem-size and crash palan-codegen
+	// downstream (layer violation).
+	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownStructType)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_104_deref_unknown_struct_ptr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+}
+

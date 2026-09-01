@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+type Point { int64 x; int64 y; };
+Point pt;
+@Point ro = pt;
+42 -> ro[0].x;

@@ -1015,6 +1015,33 @@ TEST(build_mgr, deref_write_mutable_ptr) {
 	ASSERT_EQ(output, "99\n99\n");
 }
 
+TEST(build_mgr, deref_c_outparam_readback) {
+	// IT-2805: a value a cincluded C function writes through a `@!T`
+	// out-param is now readable from Palan itself via `p[0]` -- v0.1.27
+	// documented this as "C side only"; that limitation is lifted.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/133_deref_c_outparam_readback.pa");
+	ASSERT_EQ(output, "1\n1\n");
+}
+
+TEST(build_mgr, deref_scalar_widths) {
+	// IT-2805: `p[0]` read/write round-trips correctly for every scalar
+	// width and float -- DerefLoadIdx/DerefStoreIdx pick the right
+	// mov instruction and register class for int8/int16/int32/flo64.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/134_deref_scalar_widths.pa");
+	ASSERT_EQ(output, "100\n30000\n2000000000\n3.500000\n");
+}
+
+TEST(build_mgr, deref_struct_ptr_field) {
+	// IT-2805: `p[i]` on a pointer to a struct is an address computation
+	// (Palan has no register-sized struct value), so `p[0].field` reads and
+	// writes through it exactly like `p.field` on the same pointer.
+	cleanTestEnv();
+	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/135_deref_struct_ptr_field.pa");
+	ASSERT_EQ(output, "1972\n1\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

@@ -309,15 +309,55 @@ SA-only expression kinds (not present in AST JSON):
 
 SA-only expression kinds (added to AST nodes):
 
-- **arr-index** - Array element access (`arr[i]`). The AST node gains three SA-added fields:
-  - value-type\*: element type (the `base-type` of the array's `pntr` value-type)
-  - elem-size\*: `lit-uint` node whose `value` is the element byte size (1, 2, 4, or 8)
+- **arr-index** - Array element access (`arr[i]`), and pointer dereference/subscript (`p[i]`) --
+  the same node covers both, since Palan represents an array as a `pntr(T)` plus attributes and a
+  plain pointer as a bare `pntr(T)`. The AST node gains four SA-added fields:
+  - value-type\*: element type (the `base-type` of the array's `pntr` value-type), or
+    `pntr(struct(T))` when the element is a struct (see below)
+  - elem-size\*: `lit-uint` node whose `value` is the element byte size (1, 2, 4, or 8 for a
+    scalar; `T.totalSize` for a struct element), or a `mul` expression for a variable inner
+    dimension (2D embedded array row access with a runtime column count)
+  - addr-only\*: boolean. `true` when the node computes an address (`CalcAddrIdx`) rather than
+    loading a value (`DerefLoadIdx`) — struct-array row access, 2D embedded-array row access, and
+    struct-pointer dereference all set this; a scalar element or a pointer-slot element sets it
+    `false`. Always present; codegen reads it directly and performs no re-derivation.
   - array\*: SA-annotated array expression (value-type must be `pntr`)
   - index\*: SA-annotated index expression (must not be float; integer types only)
 
   Validation:
   - If the array operand's value-type is not `pntr` → compile error (E_NotArrayType)
   - If the index expression resolves to flo32 or flo64 → compile error (E_ArrayIndexNotInteger)
+  - If a non-struct element's byte size cannot be determined → compile error
+    (E_UnknownStructType). Reachable because gen-ast has no symbol table: a name it doesn't
+    recognize as a struct in native syntax (e.g. `@!Foo p;` where `Foo` was never declared)
+    still parses as `{"type-kind":"prim","type-name":"Foo"}`, so this is the first point SA can
+    reject it. This guards the SA/codegen boundary: without it, a name that fails to resolve
+    produces a `-1` size sentinel that would otherwise leak into `elem-size` and only surface as
+    a `palan-codegen` failure later. (The struct-element branch above has no equivalent guard —
+    every `struct`-kind `elem_type` SA constructs already came from a name resolved in its own
+    struct registry.)
+  - As an `arr-assign` target (`v -> arr[i]`), a node with `addr-only:true` is rejected
+    (E_AssignToWholeStructElem) — there is no storage slot at an address-only location to
+    overwrite; assign to its fields instead (`v -> arr[i].field`).
+
+  **Pointer dereference (`p[i]`) on a scalar or pointer element:** when `array`'s `pntr` base-type
+  is a primitive or another `pntr`, `arr-index` is exactly C's pointer subscript: `elem-size` is
+  the element's byte size (8 for a pointer element), `addr-only` is `false`, and `value-type` is
+  the element type. This holds for any index, not just `0` — there is no `i == 0` special case
+  anywhere in SA or codegen; `p[i]` for `i != 0` is ordinary pointer arithmetic, scaled by
+  `elem-size`, with no bounds check (the same as C). `@T` (read-only) permits this only for a
+  read; a write is E_WriteThroughReadOnlyPtr. See PalanReference.md §22.
+
+  **Pointer dereference (`p[i]`) on a struct element:** when `array`'s `pntr` base-type is itself
+  `struct(T)` (i.e. `p` is `@T`/`@!T` where `T` is a struct — not an `[n]$T`/`[n]T`/`[n]@T`/
+  `[n]@!T` array, which are covered by the table below), Palan has no register-sized
+  representation of a struct value: every struct-typed expression is itself a `pntr(struct)`. So
+  `p[i]` is an address computation, not a load: `value-type` is `pntr(struct(T), mutable=<array's
+  mutable>)`, `elem-size` is `T.totalSize`, and `addr-only` is `true`. `mutable` is inherited from
+  `array`'s value-type (defaulting to `true` when absent) so that `p[i].field` write-through is
+  enforced by the existing field-chain rules exactly as for `p.field` on the same `p`. `p[0]` is
+  the degenerate case of this — reachable via the field-access chain (`resolveObjectChain` /
+  `resolveStoreLocChain`), not by loading a struct value.
 
   Example: `a[i]` where `[5]int32 a`:
   ```json
@@ -334,15 +374,23 @@ SA-only expression kinds (added to AST nodes):
   ```
 
   **Struct array element access:** When the array element type is `struct(T)`, `arr-index` yields a
-  pointer to the element rather than the element value. The `value-type` and `elem-size` differ by
-  array form:
+  pointer to the element rather than the element value. The `value-type`, `elem-size`, and
+  `addr-only` differ by array form:
 
-  | Declaration | value-type | elem-size |
-  |---|---|---|
-  | `[n]$T pts` (contiguous) | `pntr(struct(T))` | `T.totalSize` (e.g. 16 for a two-field int64 struct) |
-  | `[n]T pts` (owned pointers) | `pntr(struct(T))` | `8` (pointer size) |
-  | `[n]@T pts` (read-only) | `pntr(struct(T))` | `8` (pointer size) |
-  | `[n]@!T pts` (mutable) | `pntr(struct(T))` | `8` (pointer size) |
+  | Declaration | value-type | elem-size | addr-only |
+  |---|---|---|---|
+  | `[n]$T pts` (contiguous) | `pntr(struct(T))` | `T.totalSize` (e.g. 16 for a two-field int64 struct) | `true` |
+  | `[n]T pts` (owned pointers) | `pntr(struct(T))` | `8` (pointer size) | `false` |
+  | `[n]@T pts` (read-only) | `pntr(struct(T))` | `8` (pointer size) | `false` |
+  | `[n]@!T pts` (mutable) | `pntr(struct(T))` | `8` (pointer size) | `false` |
+  | `@T`/`@!T p` (plain pointer to struct) | `pntr(struct(T))` | `T.totalSize` | `true` |
+
+  The `[n]T`/`[n]@T`/`[n]@!T` rows are pointer-*slot* arrays: `pts[i]` loads/stores the 8-byte
+  pointer value held in the slot, so `addr-only` is `false` and `pts[i]` can appear as an
+  `arr-assign` target (`ptr -> pts[i]`). The `[n]$T` and plain-pointer-to-struct rows have no slot
+  to load — the struct data is either inline (`$T`) or the pointer itself has already been
+  dereferenced one level (`p[i]`) — so `addr-only` is `true` and only field access
+  (`pts[i].field`, `p[i].field`) is valid.
 
   The returned `pntr(struct(T))` is used as the base for subsequent field access (`pts[i].field`)
   via `resolveObjectChain`.

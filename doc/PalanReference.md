@@ -1139,11 +1139,8 @@ int64 x = 42;
   `@!`-typed (mutable) destination is expected, is a compile error.
 - Scoped to local variables of a primitive type only this version — not usable on function
   parameters, struct fields, array elements, or general expressions.
-- There is no general pointer-dereference operator, so a value cannot be read or written back
-  through `p` from Palan code itself — the resulting pointer's sole purpose is to be handed to a
-  cincluded C function that expects a pointer parameter, which dereferences it on the C side. It
-  can be used as an input the function reads through (`const T*`), or as an out-param it writes
-  into:
+- The resulting pointer can be handed to a cincluded C function that expects a pointer parameter
+  — as an input the function reads through (`const T*`), or as an out-param it writes into:
 
   ```palan
   cinclude <time.h>;
@@ -1153,6 +1150,36 @@ int64 x = 42;
   printf("%s", ctime(@t));                      // read-only: ctime takes const time_t*
 
   int32 clk_id = 0;
-  int32 rc = clock_getcpuclockid(int32(0), @!clk_id);   // mutable out-param
+  @!int32 p = @!clk_id;
+  int32 rc = clock_getcpuclockid(int32(0), p);   // mutable out-param
   printf("%d\n", rc == int32(0));
+  printf("%d\n", p[0]);                          // read the C-written value back — see below
+  ```
+- It can also be dereferenced from Palan code itself, using `p[i]` — subscript notation, not a
+  separate operator, since Palan already represents an array as a pointer plus attributes and a
+  plain pointer as a bare pointer. `p[0]` reads or writes the pointee; `@T` (read-only) allows only
+  the read, `@!T` (mutable) allows both — the same rule as writing a struct field through a
+  pointer. `p[i]` for `i != 0` is ordinary C-style pointer arithmetic (the element at `i` element-
+  widths past `p`) with no bounds check — as in C, staying within the bounds of what `p` actually
+  points to is the programmer's responsibility, not something the compiler verifies.
+
+  ```palan
+  int64 x = 42;
+  @!int64 p = @!x;
+  99 -> p[0];        // writes through p — x is now 99
+  int64 y = p[0];     // reads through p — y is 99
+  ```
+
+  When the pointee is itself a struct (`@T`/`@!T` where `T` is a struct type), Palan has no
+  register-sized representation of a struct value — every struct-typed expression is already a
+  pointer — so `p[i]` computes an address rather than loading a value. Access its fields with
+  `p[i].field`, exactly as with `p.field`:
+
+  ```palan
+  cinclude <time.h>;
+
+  time_t t = int64(0);
+  @!tm p = gmtime(@t);
+  1972 -> p[0].tm_year;
+  printf("%d\n", p.tm_year);   // p[0] and p name the same pointee — prints 1972
   ```
