@@ -411,6 +411,76 @@ TEST(c2ast, time_h_struct_pointer) {
         if (s["name"] == "tm") { tm = &s; break; }
     ASSERT_NE(tm, nullptr);
     ASSERT_GT((*tm)["fields"].size(), 0);
+
+    // asctime(const struct tm *tp): pointee const on a struct-typed pointer
+    // parameter must be captured (IT-2026-08-31-c2ast-const-capture).
+    json* asctime = nullptr;
+    for (auto& f : functions)
+        if (f["name"] == "asctime") { asctime = &f; break; }
+    ASSERT_NE(asctime, nullptr);
+    auto& asctime_p0 = (*asctime)["parameters"][0]["var-type"];
+    ASSERT_EQ(asctime_p0["type-kind"], "pntr");
+    ASSERT_EQ(asctime_p0["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(asctime_p0["base-type"]["const"], true);
+}
+
+TEST(c2ast, const_capture) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/025_const_capture.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+    auto find_field = [](json& fields, const string& name) -> json* {
+        for (auto& f : fields)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    // const struct/union/enum *: pointee const lives on base-type, same as
+    // a const-qualified primitive pointee.
+    json* f_struct = find_func("f_struct");
+    ASSERT_NE(f_struct, nullptr);
+    auto& s_vt = (*f_struct)["parameters"][0]["var-type"];
+    ASSERT_EQ(s_vt["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(s_vt["base-type"]["const"], true);
+
+    json* f_union = find_func("f_union");
+    ASSERT_NE(f_union, nullptr);
+    auto& u_vt = (*f_union)["parameters"][0]["var-type"];
+    ASSERT_EQ(u_vt["base-type"]["type-kind"], "union");
+    ASSERT_EQ(u_vt["base-type"]["const"], true);
+
+    json* f_enum = find_func("f_enum");
+    ASSERT_NE(f_enum, nullptr);
+    auto& e_vt = (*f_enum)["parameters"][0]["var-type"];
+    ASSERT_EQ(e_vt["base-type"]["type-kind"], "enum");
+    ASSERT_EQ(e_vt["base-type"]["const"], true);
+
+    // struct fields: "const"/"volatile" must not be pre-consumed and
+    // discarded -- declaration_specifiers() itself captures them, in any
+    // order ("volatile const" as well as the usual "const volatile").
+    json* rec = find_struct("Rec");
+    ASSERT_NE(rec, nullptr);
+    json* a = find_field((*rec)["fields"], "a");
+    ASSERT_NE(a, nullptr);
+    ASSERT_EQ((*a)["var-type"]["const"], true);
+    json* b = find_field((*rec)["fields"], "b");
+    ASSERT_NE(b, nullptr);
+    ASSERT_EQ((*b)["var-type"]["const"], true);
+    json* c = find_field((*rec)["fields"], "c");
+    ASSERT_NE(c, nullptr);
+    ASSERT_FALSE((*c)["var-type"].contains("const"));
 }
 
 TEST(c2ast, macro_const_simple) {

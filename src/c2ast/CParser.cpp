@@ -291,8 +291,9 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 
 	vector<json> fields;
 	do {
-		bool is_const = CONSUME_KW(TK_CONST);
-		bool is_volatile = CONSUME_KW(TK_VOLATILE);
+		// Qualifiers ("const"/"volatile"/"inline") are consumed by
+		// declaration_specifiers() itself (in any order); don't pre-consume them
+		// here, or its "const" capture never sees them.
 		json flocal;
 		if (declaration_specifiers(flocal, tokens, index)) {
 			json base_vt = flocal.value("var-type", json{});
@@ -364,25 +365,38 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 {
 	int index = result_index;
 
-	CONSUME_KW(TK_INLINE);
-	CONSUME_KW(TK_VOLATILE);
-	bool is_const = CONSUME_KW(TK_CONST);
+	// "inline"/"volatile"/"const" may appear in any order (e.g. "const volatile
+	// int", "volatile const int"), so consume them in a loop rather than a fixed
+	// sequence -- a fixed sequence would silently miss "const" in the other order.
+	bool is_const = false;
+	for (;;) {
+		if (CONSUME_KW(TK_INLINE)) continue;
+		if (CONSUME_KW(TK_VOLATILE)) continue;
+		if (CONSUME_KW(TK_CONST)) { is_const = true; continue; }
+		break;
+	}
 
+	// Single point applying `const` to the resolved var-type, so every branch
+	// below (prim/typedef/struct/union/enum) reflects it the same way instead of
+	// each carrying its own copy of "if (is_const) ...".
+	auto set_vt = [&](json vt) {
+		if (is_const) vt["const"] = true;
+		ast["var-type"] = move(vt);
+	};
 	auto set_prim = [&](const char* name) {
-		ast["var-type"] = {{"type-kind", "prim"}, {"type-name", name}};
-		if (is_const) ast["var-type"]["const"] = true;
+		set_vt({{"type-kind", "prim"}, {"type-name", name}});
 	};
 
 	if (CONSUME(TT_ID)) {	// typedef name
 		string name = *tokens[index-1]->info.id;
 		auto it = typedefs_.find(name);
 		if (it != typedefs_.end()) {
-			ast["var-type"] = it->second;
-			ast["var-type"]["typedef-name"] = name;
+			json vt = it->second;
+			vt["typedef-name"] = name;
+			set_vt(move(vt));
 		} else {
-			ast["var-type"] = {{"type-kind", "user"}, {"type-name", name}};
+			set_vt({{"type-kind", "user"}, {"type-name", name}});
 		}
-		if (is_const) ast["var-type"]["const"] = true;
 		result_index = index;
 		return true;
 	}
@@ -414,7 +428,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 			if (!tagName.empty() && definedStructs_.count(tagName)) {
 				vt["type-name"] = tagName;
 			}
-			ast["var-type"] = move(vt);
+			set_vt(move(vt));
 			result_index = index;
 			return true;
 		}
@@ -423,7 +437,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_UNION)) {
 		if (struct_union_definition(ast, tokens, index)) {
-			ast["var-type"] = {{"type-kind", "union"}};
+			set_vt({{"type-kind", "union"}});
 			result_index = index;
 			return true;
 		}
@@ -432,7 +446,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_ENUM)) {
 		if (enum_definition(ast, tokens, index)) {
-			ast["var-type"] = {{"type-kind", "enum"}};
+			set_vt({{"type-kind", "enum"}});
 			result_index = index;
 			return true;
 		}
