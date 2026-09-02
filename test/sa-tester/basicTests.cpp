@@ -3318,3 +3318,20 @@ TEST(sa, cinclude_struct_stat_size)
 	ASSERT_EQ(v["init"]["name"], "calloc");
 	ASSERT_EQ(v["init"]["args"][1]["value"], "144");
 }
+
+TEST(sa, c_const_param_readonly_arg)
+{
+	// `ctime(@t)` -- IT-2026-08-31-c2ast-const-capture: C function arguments are
+	// now checked by ptrPermissionOk() too, so this must keep compiling: ctime's
+	// `const time_t *` parameter normalizes (at the cinclude ingestion boundary,
+	// PlnSaInternal.h normalizeCType) to a mutable:false pntr, matching `@t`'s
+	// own mutable:false. Regression guard for every existing `@x`-into-const-C-arg
+	// call site (ctime/gmtime/localtime/... in the time.h build-mgr tests).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/152_c_const_param_readonly_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["name"], "ctime");
+	ASSERT_EQ(init["args"][0]["value-type"]["mutable"], false);
+}

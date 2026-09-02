@@ -204,6 +204,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "cannot take the address of this expression: '@'/'@!' supports a local variable or a "
 			       "primitive-typed field of a struct it names.";
 
+		case E_ReadOnlyPtrToNonConstCParam:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot pass read-only pointer '@T' to non-const parameter '" + arg2
+			       + "' of C function '" + arg1 + "'; use '@!T' or pass a mutable variable.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

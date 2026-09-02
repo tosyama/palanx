@@ -434,7 +434,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			string fname = f["name"].get<string>();
 			json entry = f;
 			registerCFuncTypedefAliases(entry);
-			normalizeCFuncStructSig(entry);
+			normalizeCFuncSig(entry);
 			entry["_c-func"] = true;
 			currentScope[alias][fname] = entry;
 		}
@@ -442,7 +442,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& f : stmt["functions"]) {
 			json entry = f;
 			registerCFuncTypedefAliases(entry);
-			normalizeCFuncStructSig(entry);
+			normalizeCFuncSig(entry);
 			registerCFunc(entry["name"].get<string>(), entry);
 		}
 	}

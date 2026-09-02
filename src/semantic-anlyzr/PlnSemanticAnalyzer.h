@@ -108,6 +108,8 @@ class PlnSemanticAnalyzer {
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	json sa_expr_call(const json& expr);
 	json sa_expr_member_call(const json& expr);
+	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
+	                           const json& saArg, const json& param, size_t argIdx);
 	json sa_expr_arr_index(const json& expr);
 	json sa_expression_stmt(const json& stmt);
 	json sa_var_decl(const json& stmt);           // returns array of statements

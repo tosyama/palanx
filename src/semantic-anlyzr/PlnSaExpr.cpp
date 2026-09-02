@@ -347,6 +347,32 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// Enforce ptrPermissionOk() at one call argument. `param` is the callee's
+// full parameter entry (var-type plus, for a C function, an optional name --
+// c2ast leaves "name" absent for an abstract declarator, e.g. a prototype
+// with no parameter names). The diagnostic differs by callee kind because the
+// destination vocabulary differs: a Palan parameter's own `@!T` upgrades the
+// existing E_PtrMutabilityUpgrade check every other binding site already uses
+// (var-decl/assign/return/field-assign), while a C parameter's permission
+// comes from const-qualification (folded into `mutable` by normalizeCType at
+// the cinclude ingestion boundary -- see PlnSaInternal.h), so it gets its own
+// message naming the C function and parameter.
+void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& funcName,
+		bool isCFunc, const json& saArg, const json& param, size_t argIdx)
+{
+	if (ptrPermissionOk(saArg["value-type"], param["var-type"]))
+		return;
+	if (isCFunc) {
+		string paramName = param.value("name", "");
+		if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
+		cerr << locPrefix(expr)
+		     << PlnSaMessage::getMessage(E_ReadOnlyPtrToNonConstCParam, funcName, paramName) << endl;
+	} else {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+	}
+	exit(1);
+}
+
 json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	json sa_expr = expr;
@@ -427,15 +453,8 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 					catch (const std::runtime_error&) {}
 					if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 						saArg = wrapConvert(saArg, registry_.toJson(toType));
-					// C parameter const-qualification is not yet reliably captured by
-					// c2ast (struct/union/enum pointee const is dropped), so mutability
-					// is only enforced against Palan function signatures here.
-					if (sa_expr["func-type"] == "palan"
-							&& !ptrPermissionOk(saArg["value-type"], paramVT)) {
-						cerr << locPrefix(expr)
-						     << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
-						exit(1);
-					}
+					checkArgPtrPermission(expr, expr["name"].get<string>(),
+							sa_expr["func-type"] == "c", saArg, (*funcParams)[argIdx], argIdx);
 				} else if (isVariadic) {
 					const PlnType* promoted = variadicPromote(fromType, registry_);
 					if (promoted != fromType)
@@ -642,6 +661,7 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 				catch (const std::runtime_error&) {}
 				if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 					saArg = wrapConvert(saArg, registry_.toJson(toType));
+				checkArgPtrPermission(expr, method, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
 			}
 			sa_expr["args"].push_back(saArg);
 			argIdx++;

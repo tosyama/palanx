@@ -100,7 +100,11 @@ Same structure as Palan Parameter.
 Variable type
 -------------
 - type-kind\* - Type kind string: "prim" "pntr" "arr" "embed" "strct" "union" "enum" "func" "user"
-- const - Boolean, true if const qualified (omitted when false)
+- const - Boolean, true if const qualified (omitted when false). c2ast/cinclude-only: a C
+  pointer's own qualifier (`T * const`) is emitted on the `pntr` node itself; the pointee's
+  qualifier (`const T *`) is emitted on `pntr`'s `base-type`. SA folds pointee `const` into
+  `mutable` (below) on any `pntr` reached from a `cinclude`d function signature, so only
+  `mutable` reaches sa.json for those pointers — see SASpec.md.
   1. prim - Primitive type
     - type-name\* - Type name string
       - Integer: "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64"

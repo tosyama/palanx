@@ -1,0 +1,4 @@
+cinclude <time.h>;
+int32 clk_id = 0;
+@int32 p = @clk_id;
+int32 rc = clock_getcpuclockid(int32(0), p);

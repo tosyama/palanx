@@ -1168,6 +1168,11 @@ int64 x = 42;
   printf("%d\n", rc == int32(0));
   printf("%d\n", p[0]);                          // read the C-written value back — see below
   ```
+
+  The read-only/mutable rule extends to C parameters too: a `@T` (read-only) value may only be
+  passed where the C parameter is `const`-qualified (as `ctime`'s `const time_t*` is above);
+  passing `@T` to a non-`const` parameter — an out-param like `clock_getcpuclockid`'s second
+  argument — is a compile error, same as passing `@T` where a Palan function expects `@!T`.
 - It can also be dereferenced from Palan code itself, using `p[i]` — subscript notation, not a
   separate operator, since Palan already represents an array as a pointer plus attributes and a
   plain pointer as a bare pointer. `p[0]` reads or writes the pointee; `@T` (read-only) allows only

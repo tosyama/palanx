@@ -476,11 +476,19 @@ Notes:
     struct field, are a compile error (E_WriteThroughReadOnlyPtr / E_WriteToImmutablePtrField /
     E_WriteToReadOnlyArrElem) when the base pointer is not `mutable`.
   - **Binding**: assigning, initializing, returning, or passing a `@T` (read-only) value where a
-    `@!T` (mutable) type is expected is a compile error (E_PtrMutabilityUpgrade) — permission
-    can be narrowed (mutable → read-only) but never upgraded. C function arguments are exempt for
-    now (see PalanReference.md §22); Palan function/return signatures are checked.
+    `@!T` (mutable) type is expected is a compile error — permission can be narrowed
+    (mutable → read-only) but never upgraded. Passing to a Palan function parameter or returning
+    from a Palan function uses E_PtrMutabilityUpgrade; passing to a cincluded C function's
+    parameter (including through an aliased `cinclude ... as X;`, via `X.func(...)`) uses
+    E_ReadOnlyPtrToNonConstCParam and names the function and parameter.
   - A missing `mutable` key (SA-synthesized `pntr` types for struct and array variables) means
     writable — there is no read-only concept for those forms in this iteration.
+  - A C parameter or return type's own `mutable` comes from its pointee's `const` qualification
+    (`base-type.const`), folded in by `normalizeCType` at the point a `cinclude`d function
+    signature is registered (`PlnSaInternal.h`) — `const T *` normalizes to `mutable: false`,
+    `T *` to `mutable: true`. This is the same ingestion-boundary treatment struct/array
+    variables get elsewhere: SA's own permission checks only ever need to understand `mutable`,
+    never c2ast's `const` vocabulary.
 
 Struct types
 ------------

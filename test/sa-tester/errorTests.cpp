@@ -1069,3 +1069,52 @@ TEST(sa_error, deref_unknown_struct_ptr)
 	ASSERT_NE(sa.find("unknown struct type"), string::npos);
 }
 
+TEST(sa_error, readonly_ptr_to_nonconst_c_param)
+{
+	// `clock_getcpuclockid(int32(0), p);` where `p` is `@int32` (read-only)
+	// and the C parameter is `clockid_t *` (non-const) -- IT-2026-08-31-c2ast-
+	// const-capture: C function arguments are now checked by
+	// ptrPermissionOk() too, previously exempted (see the removed comment at
+	// sa_expr_call's arg loop).
+	// Covers: sa_expr_call checkArgPtrPermission, C-func branch (E_ReadOnlyPtrToNonConstCParam)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_112_readonly_ptr_to_nonconst_c_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter"), string::npos);
+}
+
+TEST(sa_error, readonly_ptr_to_nonconst_c_param_alias)
+{
+	// Same as readonly_ptr_to_nonconst_c_param but through an aliased
+	// cinclude (`cinclude <time.h> as T; T.clock_getcpuclockid(...)`) --
+	// sa_expr_member_call had no pointer-permission check at all before this
+	// ticket, for either C or Palan callees.
+	// Covers: sa_expr_member_call checkArgPtrPermission, C-func branch (E_ReadOnlyPtrToNonConstCParam)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_113_readonly_ptr_to_nonconst_c_param_alias.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter"), string::npos);
+}
+
+TEST(sa_error, readonly_ptr_to_nonconst_c_param_unnamed)
+{
+	// `tmpnam(s)` -- glibc's stdio.h declares tmpnam's parameter with an
+	// abstract declarator (no name), so c2ast's parameter entry has no
+	// "name" key. checkArgPtrPermission falls back to a 1-based position
+	// ("#1") for the diagnostic in that case.
+	// Covers: checkArgPtrPermission, param.value("name","").empty() branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_114_readonly_ptr_to_nonconst_c_param_unnamed.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter '#1'"), string::npos);
+}
+
