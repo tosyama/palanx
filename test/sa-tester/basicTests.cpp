@@ -2006,7 +2006,7 @@ TEST(sa, deep_ptr_chain_access)
 	// type A{int64 v}; type B{A a}; type C{B b}; C c;
 	// int64 x = c.b.a.v;  — two levels of struct-ptr traversal
 	// Covers: resolveObjectChain when base.isPointerBased=true (nested ptr-expr)
-	// Also: resolveStoreLocChain ptr-based for "10 -> c.b.a.v"
+	// Also: resolveObjectChain(forWrite=true) ptr-based for "10 -> c.b.a.v"
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/090_deep_ptr_chain.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2388,7 +2388,7 @@ TEST(sa, at_bang_struct_arr_decl)
 TEST(sa, embed_struct_arr_field_access)
 {
 	// [4]$Point pts; 10 -> pts[0].x; 20 -> pts[0].y; printf("%ld %ld\n", pts[0].x, pts[0].y);
-	// Covers: resolveObjectChain / resolveStoreLocChain arr-index base case (embedded struct array)
+	// Covers: resolveObjectChain arr-index base case (embedded struct array)
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/103_embed_struct_arr_field.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2429,7 +2429,7 @@ TEST(sa, embed_struct_arr_field_access)
 TEST(sa, owned_struct_arr_field_access)
 {
 	// [2]Point pts; 5 -> pts[0].x; printf("%ld\n", pts[0].x);
-	// Covers: resolveObjectChain / resolveStoreLocChain arr-index base case (owned pointer array)
+	// Covers: resolveObjectChain arr-index base case (owned pointer array)
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/104_owned_struct_arr_field.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2459,7 +2459,7 @@ TEST(sa, owned_struct_arr_field_access)
 TEST(sa, at_bang_struct_arr_field_write)
 {
 	// Point p; [4]@!Point wpts; p -> wpts[0]; 42 -> wpts[0].x; printf("%ld\n", p.x);
-	// Covers: resolveStoreLocChain arr-index base case, mutable:true (write-through allowed)
+	// Covers: resolveObjectChain(forWrite=true) arr-index base case, mutable:true (write-through allowed)
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/105_at_bang_struct_arr_field.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2945,7 +2945,7 @@ TEST(sa, at_bang_plain_var_decl)
 	//     no-init decl alt. Widened both whitelists to include tk=="pntr".
 	//  2. SA: deepNormalizePrimToStruct must run on sa_var_decl's generic fallthrough
 	//     path so `view`'s var-type carries base-type.type-kind=="struct" (not "prim"),
-	//     matching what resolveObjectChain/resolveStoreLocChain require for field access.
+	//     matching what resolveObjectChain requires for field access.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/130_at_bang_plain_var_decl.pa");
 	ASSERT_TRUE(jout.is_object());

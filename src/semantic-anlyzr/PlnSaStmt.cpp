@@ -418,80 +418,9 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 	return {{"stmt-type", "tapple-decl"}, {"vars", stmt["vars"]}, {"value", saCall}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-FieldChain PlnSemanticAnalyzer::resolveStoreLocChain(const json& loc)
-{
-	if (loc.value("kind","") == "var") {
-		string varName = loc["name"].get<string>();
-		const json* vt = findVar(varName);
-		if (!vt) {
-			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
-			exit(1);
-		}
-		if (vt->value("type-kind","") != "pntr" || (*vt)["base-type"].value("type-kind","") != "struct") {
-			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
-			exit(1);
-		}
-		if (!isWritableThrough(*vt)) {
-			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
-			exit(1);
-		}
-		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
-	}
-	if (loc.value("kind","") == "arr-index") {
-		json arr_expr = loc;
-		arr_expr["expr-type"] = "arr-index";
-		arr_expr.erase("kind");
-		json sa_idx = sa_expression(arr_expr);
-		const json& vt = sa_idx["value-type"];
-		if (vt.value("type-kind","") != "pntr" || vt["base-type"].value("type-kind","") != "struct") {
-			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
-			exit(1);
-		}
-		if (vt.value("mutable", true) == false) {
-			cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_WriteToReadOnlyArrElem) << endl;
-			exit(1);
-		}
-		string struct_name = vt["base-type"]["type-name"].get<string>();
-		return {true, "", 0, move(sa_idx), struct_name};
-	}
-	FieldChain base = resolveStoreLocChain(loc["base"]);
-	string fn = loc["field"].get<string>();
-	const StructDef& def = structDefs_[base.structName];
-	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
-	if (it == def.fields.end()) {
-		cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_UnknownField, base.structName, fn) << endl;
-		exit(1);
-	}
-	if (it->typeKind == "prim") {
-		cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
-		exit(1);
-	}
-	if (it->typeKind == "raw-ptr" && !it->isMutable) {
-		cerr << locPrefix(loc) << PlnSaMessage::getMessage(E_WriteToImmutablePtrField) << endl;
-		exit(1);
-	}
-	if (it->typeKind == "embed") {
-		base.offset += it->offset;
-		base.structName = it->typeName;
-		return base;
-	}
-	// LCOV_EXCL_EXCEPTION_BR_START
-	json pntr_type = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",it->typeName}}}};
-	if (it->typeKind == "raw-ptr") pntr_type["mutable"] = it->isMutable;
-	json ptrNode;
-	if (!base.isPointerBased)
-		ptrNode = {{"expr-type","field-access"},{"var",base.varName},
-		           {"offset",base.offset+it->offset},{"value-type",pntr_type}};
-	else
-		ptrNode = {{"expr-type","field-access"},{"ptr-expr",base.ptrExpr},
-		           {"offset",base.offset+it->offset},{"value-type",pntr_type}};
-	return {true, "", 0, move(ptrNode), it->typeName};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-
 json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 {
-	FieldChain chain = resolveStoreLocChain(stmt["object"]);
+	FieldChain chain = resolveObjectChain(stmt["object"], /*forWrite=*/true);
 	string fn = stmt["field"].get<string>();
 	const StructDef& def = structDefs_[chain.structName];
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });

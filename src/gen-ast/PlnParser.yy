@@ -284,7 +284,7 @@ expr_stmt: import
 			LOC($$, @$);
 		} else if (et == "field-assign-expr") {
 			$$ = {{"stmt-type", "field-assign"},
-				  {"object", move($1["base"])}, {"field", move($1["field"])},
+				  {"object", storeLocToExpr($1["base"])}, {"field", move($1["field"])},
 				  {"value", move($1["value"])}};
 			LOC($$, @$);
 		} else if (et != "not-impl") {

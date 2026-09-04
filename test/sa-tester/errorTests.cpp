@@ -575,7 +575,7 @@ TEST(sa_error, embed_arr_owned_sub_struct)
 TEST(sa_error, write_readonly_arr_elem)
 {
 	// [4]@Point rpts; 42 -> rpts[0].x; — write through read-only pointer array element
-	// Covers: resolveStoreLocChain arr-index base case, mutable:false branch (E_WriteToReadOnlyArrElem)
+	// Covers: resolveObjectChain(forWrite=true) arr-index base case, mutable:false branch (E_WriteToReadOnlyArrElem)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -601,7 +601,7 @@ TEST(sa_error, field_access_on_arr_index_non_struct)
 TEST(sa_error, field_assign_on_arr_index_non_struct)
 {
 	// [4]int64 arr; 10 -> arr[0].x; — arr[i] is not a struct pointer
-	// Covers: resolveStoreLocChain arr-index base case, non-struct value-type branch (E_FieldAccessOnNonStruct)
+	// Covers: resolveObjectChain(forWrite=true) arr-index base case, non-struct value-type branch (E_FieldAccessOnNonStruct)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -655,7 +655,7 @@ TEST(sa_error, write_readonly_arr_field_elem)
 {
 	// type Watch { [3]@Point observed; }; p -> w.observed[0]; 42 -> w.observed[0].x;
 	// -- write-through to a non-mutable embed-ptr-arr struct field element
-	// Covers: IT-2508 — resolveStoreLocChain arr-index base case, mutable:false
+	// Covers: IT-2508 — resolveObjectChain(forWrite=true) arr-index base case, mutable:false
 	// branch (E_WriteToReadOnlyArrElem), exercised via a struct field (embed-ptr-arr)
 	// rather than a plain variable array (already covered by write_readonly_arr_elem).
 	cleanTestEnv();
@@ -689,7 +689,7 @@ TEST(sa_error, field_assign_on_prim_arr_field_elem)
 {
 	// type Buf { [4]$int64 data; }; 10 -> buf.data[0].sub;
 	// -- same as field_access_on_prim_arr_field_elem but through the write side
-	// Covers: IT-2508 — resolveStoreLocChain arr-index base case, non-struct
+	// Covers: IT-2508 — resolveObjectChain(forWrite=true) arr-index base case, non-struct
 	// value-type branch (E_FieldAccessOnNonStruct), via embedded struct field array.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -925,7 +925,7 @@ TEST(sa_error, write_readonly_ptr_var_field)
 {
 	// `@Point view = original; 20 -> view.x;` -- field write through a
 	// read-only `@T`-typed plain local variable (not a struct field)
-	// Covers: resolveStoreLocChain kind=="var" isWritableThrough branch
+	// Covers: resolveObjectChain(forWrite=true) "id" isWritableThrough branch
 	// (E_WriteThroughReadOnlyPtr)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1041,7 +1041,7 @@ TEST(sa_error, write_readonly_struct_ptr_field)
 	// `42 -> ro[0].x;` where ro is `@Point` -- writing a field through a
 	// read-only struct pointer via `p[i].field` is rejected, same as the
 	// existing `[n]@Point` array-element case.
-	// Covers: resolveStoreLocChain arr-index branch (E_WriteToReadOnlyArrElem)
+	// Covers: resolveObjectChain(forWrite=true) arr-index branch (E_WriteToReadOnlyArrElem)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(

@@ -562,9 +562,9 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		// expression is itself a `pntr(struct)`), so the result is an address
 		// computation -- base + i*sizeof(T) -- not a load. Same rule as the
 		// embedded struct-array row access above; `p[0].field` reaches it via
-		// the field-access chain in resolveObjectChain/resolveStoreLocChain.
+		// the field-access chain in resolveObjectChain.
 		// elem_type's "struct" type-kind is only ever produced by SA itself
-		// (sa_struct_var_decl, resolveObjectChain/resolveStoreLocChain, or
+		// (sa_struct_var_decl, resolveObjectChain, or
 		// cinclude struct capture) -- never by gen-ast parsing native syntax,
 		// which has no symbol table and falls back to "prim" for any name it
 		// doesn't recognize (see the sz<0 guard below). Every such producer

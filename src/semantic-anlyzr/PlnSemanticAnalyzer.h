@@ -132,7 +132,6 @@ class PlnSemanticAnalyzer {
 	void  registerCFuncTypedefAliases(json& funcEntry);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
-	FieldChain resolveStoreLocChain(const json& loc);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);
 	json sa_expr_addr_of(const json& expr);
 	void validateEmbeddedParams(const json& funcDef);

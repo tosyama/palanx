@@ -214,7 +214,8 @@ Statement model
     - name\* - Constant name string
     - value\* - Literal expression model (lit-int, lit-uint, lit-flo, or lit-str; see Expression model)
   10. field-assign - struct field assignment (`value -> obj.field`)
-    - object\* - Base store_loc (kind: "var")
+    - object\* - Base object expression model: `id` for a plain variable, `arr-index` or
+      `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`)
     - field\*  - Field name string
     - value\*  - Source expression model
   11. return - return statement

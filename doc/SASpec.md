@@ -379,8 +379,8 @@ SA-only expression kinds (added to AST nodes):
   mutable>)`, `elem-size` is `T.totalSize`, and `addr-only` is `true`. `mutable` is inherited from
   `array`'s value-type (defaulting to `true` when absent) so that `p[i].field` write-through is
   enforced by the existing field-chain rules exactly as for `p.field` on the same `p`. `p[0]` is
-  the degenerate case of this — reachable via the field-access chain (`resolveObjectChain` /
-  `resolveStoreLocChain`), not by loading a struct value.
+  the degenerate case of this — reachable via the field-access chain (`resolveObjectChain`),
+  not by loading a struct value.
 
   Example: `a[i]` where `[5]int32 a`:
   ```json

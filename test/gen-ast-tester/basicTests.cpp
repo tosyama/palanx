@@ -816,7 +816,7 @@ TEST(gen_ast, field_access) {
 	// 10 -> p.x → field-assign
 	const auto& as = stmts[1];
 	ASSERT_EQ(as["stmt-type"], "field-assign");
-	ASSERT_EQ(as["object"]["kind"], "var");
+	ASSERT_EQ(as["object"]["expr-type"], "id");
 	ASSERT_EQ(as["object"]["name"], "p");
 	ASSERT_EQ(as["field"], "x");
 	ASSERT_EQ(as["value"]["expr-type"], "lit-int");
@@ -937,13 +937,13 @@ TEST(gen_ast, write_nested_field_arr_index) {
 	const auto& stmts = jout["ast"]["statements"];
 	ASSERT_EQ(stmts.size(), 1);
 
-	// 10 -> s.f[0].sub; → field-assign, object is an arr-index (kind-tagged) node
+	// 10 -> s.f[0].sub; → field-assign, object is an arr-index expr node
 	// whose array is a field-access node
 	const auto& s = stmts[0];
 	ASSERT_EQ(s["stmt-type"], "field-assign");
 	ASSERT_EQ(s["field"], "sub");
 	const auto& obj = s["object"];
-	ASSERT_EQ(obj["kind"], "arr-index");
+	ASSERT_EQ(obj["expr-type"], "arr-index");
 	ASSERT_EQ(obj["array"]["expr-type"], "field-access");
 	ASSERT_EQ(obj["array"]["field"], "f");
 	ASSERT_EQ(obj["array"]["object"]["name"], "s");
@@ -964,7 +964,7 @@ TEST(gen_ast, write_arr_index_regression) {
 
 	// 20 -> pts[0].x; → field-assign over an arr-index object, array unchanged
 	ASSERT_EQ(stmts[1]["stmt-type"], "field-assign");
-	ASSERT_EQ(stmts[1]["object"]["kind"], "arr-index");
+	ASSERT_EQ(stmts[1]["object"]["expr-type"], "arr-index");
 	ASSERT_EQ(stmts[1]["object"]["array"]["expr-type"], "id");
 	ASSERT_EQ(stmts[1]["object"]["array"]["name"], "pts");
 
