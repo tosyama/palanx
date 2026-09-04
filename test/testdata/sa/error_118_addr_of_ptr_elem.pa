@@ -1,0 +1,7 @@
+type Point { int64 x; int64 y; };
+func test() {
+	[4]@!Point wpts;
+	@!Point q = @!wpts[0];
+	return;
+}
+test();

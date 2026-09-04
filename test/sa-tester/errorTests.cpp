@@ -898,21 +898,6 @@ TEST(sa_error, addr_of_unknown_field)
 	ASSERT_NE(sa.find("has no field"), string::npos);
 }
 
-TEST(sa_error, addr_of_arr_index_not_addressable)
-{
-	// `@arr[0];` -- array-element address-of is IT-2807's scope, not this
-	// ticket's; the grammar accepts it (store_loc covers arr-index too) but
-	// SA must reject it explicitly rather than silently mis-lowering it.
-	// Covers: sa_expr_addr_of fallback branch -> E_AddrOfNotAddressable
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_109_addr_of_arr_index.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot take the address of this expression"), string::npos);
-}
-
 TEST(sa_error, addr_of_call_not_addressable)
 {
 	// `@f();` -- a call expression is not an addressable location.
@@ -1149,5 +1134,49 @@ TEST(sa_error, readonly_ptr_to_nonconst_c_param_unnamed)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter '#1'"), string::npos);
+}
+
+TEST(sa_error, addr_of_arr_row_not_addressable)
+{
+	// `@!mat[0]` where `mat` is `[2]$[3]int64` -- the row itself is already
+	// an address computation (embedded 2D row access), not a storage slot.
+	// Covers: sa_expr_addr_of arr-index branch, addr-only(true) input -> E_AddrOfNotPrimitiveElem
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_117_addr_of_arr_row.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of this array element"), string::npos);
+}
+
+TEST(sa_error, addr_of_ptr_elem_not_addressable)
+{
+	// `@!wpts[0]` where `wpts` is `[4]@!Point` (pointer-slot array) -- the
+	// element itself is already a pointer, so taking its address would be
+	// a double indirection; out of scope.
+	// Covers: sa_expr_addr_of arr-index branch, elem value-type type-kind != "prim" -> E_AddrOfNotPrimitiveElem
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_118_addr_of_ptr_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of this array element"), string::npos);
+}
+
+TEST(sa_error, addr_of_readonly_ptr_elem)
+{
+	// `@!p[1]` where `p` is `@int64` (read-only pointer) -- `@!arr[i]` is
+	// "get write permission to arr[i]", so it must be rejected the same way
+	// a plain deref-write through a read-only pointer is.
+	// Covers: sa_expr_addr_of arr-index branch, isMutable && !isWritableThrough -> E_WriteThroughReadOnlyPtr
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_119_addr_of_readonly_ptr_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
 }
 

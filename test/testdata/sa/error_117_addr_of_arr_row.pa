@@ -1,0 +1,8 @@
+cinclude <string.h>;
+func test() {
+	[2]$[3]int64 mat;
+	int64 x = 5;
+	memcpy(@!mat[0], @x, 8);
+	return;
+}
+test();

@@ -3335,3 +3335,67 @@ TEST(sa, c_const_param_readonly_arg)
 	ASSERT_EQ(init["name"], "ctime");
 	ASSERT_EQ(init["args"][0]["value-type"]["mutable"], false);
 }
+
+TEST(sa, addr_of_arr_elem)
+{
+	// IT-2807: `@!arr[2]` / `@arr[1]` on a scalar `[4]int64` array -- the
+	// scalar branch of sa_expr_arr_index (addr-only:false, prim elem) is
+	// the addressable case; addr-of re-tags it addr-only:true and wraps
+	// value-type in pntr(elem, mutable).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/153_addr_of_arr_elem.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+	const auto& p_init = body[1]["vars"][0]["init"];
+	ASSERT_EQ(p_init["expr-type"], "arr-index");
+	ASSERT_EQ(p_init["addr-only"], true);
+	ASSERT_EQ(p_init["array"]["name"], "arr");
+	ASSERT_EQ(p_init["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(p_init["value-type"]["mutable"], true);
+	ASSERT_EQ(p_init["value-type"]["base-type"]["type-name"], "int64");
+
+	const auto& q_init = body[2]["vars"][0]["init"];
+	ASSERT_EQ(q_init["addr-only"], true);
+	ASSERT_EQ(q_init["value-type"]["mutable"], false);
+}
+
+TEST(sa, addr_of_embed_arr_field_elem)
+{
+	// `@!s.data[2]` where `data` is `[4]$int64` (embedded array field,
+	// primitive leaf) -- exercises sa_expr_arr_index's embedded+prim branch
+	// (addr-only:false before addr-of) nested under a field-access array base.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/154_addr_of_embed_arr_field_elem.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+	const auto& arg0 = body[2]["body"]["args"][0];
+	ASSERT_EQ(arg0["expr-type"], "arr-index");
+	ASSERT_EQ(arg0["addr-only"], true);
+	ASSERT_EQ(arg0["array"]["expr-type"], "field-access");
+	ASSERT_EQ(arg0["array"]["var"], "s");
+	ASSERT_EQ(arg0["value-type"]["mutable"], true);
+	ASSERT_EQ(arg0["value-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, addr_of_2d_elem)
+{
+	// `@!mat[0][1]` where `mat` is `[2]$[3]int64` -- the outer arr-index's
+	// array is itself an addr-only arr-index (the 2D row access), but the
+	// outer element (after indexing into the row) is a plain prim scalar,
+	// so addr-of accepts it.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/155_addr_of_2d_elem.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+	const auto& arg0 = body[2]["body"]["args"][0];
+	ASSERT_EQ(arg0["expr-type"], "arr-index");
+	ASSERT_EQ(arg0["addr-only"], true);
+	ASSERT_EQ(arg0["array"]["expr-type"], "arr-index");
+	ASSERT_EQ(arg0["array"]["addr-only"], true);
+	ASSERT_EQ(arg0["array"]["array"]["name"], "mat");
+	ASSERT_EQ(arg0["value-type"]["mutable"], true);
+	ASSERT_EQ(arg0["value-type"]["base-type"]["type-name"], "int64");
+}

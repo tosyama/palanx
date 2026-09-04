@@ -1052,6 +1052,15 @@ TEST(build_mgr, addr_of_struct_field) {
 	ASSERT_EQ(output, "99\n7\n");
 }
 
+TEST(build_mgr, addr_of_arr_elem) {
+	// IT-2807: `@!arr[2]` takes the address of a scalar array element and
+	// hands it to a cincluded C function (memcpy) as an out-param; the
+	// write lands only at that element's offset, not the array start.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/137_addr_of_arr_elem.pa");
+	ASSERT_EQ(output, "0 0 99 0\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

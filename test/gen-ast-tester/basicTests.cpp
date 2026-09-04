@@ -682,6 +682,31 @@ TEST(gen_ast, addr_of_field) {
 	ASSERT_EQ(addr_v["object"]["object"]["object"]["name"], "s");
 }
 
+TEST(gen_ast, addr_of_arr_index) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/107_addr_of_arr_index.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+
+	// @int64 rp = @arr[1];
+	const auto& addr_rp = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(addr_rp["expr-type"], "addr-of");
+	ASSERT_EQ(addr_rp["mutable"], false);
+	ASSERT_EQ(addr_rp["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(addr_rp["object"]["array"]["expr-type"], "id");
+	ASSERT_EQ(addr_rp["object"]["array"]["name"], "arr");
+	ASSERT_EQ(addr_rp["object"]["index"]["value"], "1");
+
+	// @!int64 wp = @!arr[2];
+	const auto& addr_wp = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(addr_wp["expr-type"], "addr-of");
+	ASSERT_EQ(addr_wp["mutable"], true);
+	ASSERT_EQ(addr_wp["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(addr_wp["object"]["index"]["value"], "2");
+}
+
 TEST(gen_ast, addr_of_type_alias_mix) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/105_addr_of_type_alias_mix.pa");

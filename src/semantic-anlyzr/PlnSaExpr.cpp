@@ -139,6 +139,28 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		return out;
 	}
 
+	if (obj_type == "arr-index") {
+		json sa_idx = sa_expr_arr_index(obj);
+		// Reject an element that is already an address computation (embedded
+		// struct-array element, 2D row access, pointer-to-struct dereference)
+		// or a pointer-typed element (would double the indirection) -- '@'
+		// keeps a single meaning ("make a pointer to a storage slot"), so an
+		// element that is already a pointer/address is out of scope.
+		if (sa_idx.value("addr-only", false) || sa_idx["value-type"].value("type-kind","") != "prim") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitiveElem) << endl;
+			exit(1);
+		}
+		if (isMutable && !isWritableThrough(sa_idx["array"]["value-type"])) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+			exit(1);
+		}
+		json pntr_type = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",sa_idx["value-type"]}};
+		sa_idx["addr-only"]  = true;
+		sa_idx["value-type"] = pntr_type;
+		if (expr.contains("loc")) sa_idx["loc"] = expr["loc"];
+		return sa_idx;
+	}
+
 	cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
 	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE

@@ -189,7 +189,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_AddrOfNotPrimitive:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot take the address of '" + arg1 + "': '@'/'@!' only supports a primitive-typed "
-			       "local variable or a primitive-typed field of a struct it names.";
+			       "local variable or a primitive-typed field or array element of a struct/array it names.";
 
 		case E_WriteThroughReadOnlyPtr:
 			return "cannot write through read-only pointer '@T'; use '@!T' for mutable.";
@@ -201,14 +201,19 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "cannot assign to a struct element as a whole; assign to its fields instead (e.g. 'p[i].field').";
 
 		case E_AddrOfNotAddressable:
-			return "cannot take the address of this expression: '@'/'@!' supports a local variable or a "
-			       "primitive-typed field of a struct it names.";
+			return "cannot take the address of this expression: '@'/'@!' supports a local variable, a "
+			       "primitive-typed field of a struct it names, or a primitive-typed array element.";
 
 		case E_ReadOnlyPtrToNonConstCParam:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot pass read-only pointer '@T' to non-const parameter '" + arg2
 			       + "' of C function '" + arg1 + "'; use '@!T' or pass a mutable variable.";
+
+		case E_AddrOfNotPrimitiveElem:
+			return "cannot take the address of this array element: it is not a primitive-typed value "
+			       "(e.g. a struct-array element, a 2D row, or a pointer element) -- '@'/'@!' only "
+			       "supports a primitive-typed array element.";
 
 		default:
 			BOOST_ASSERT(false);

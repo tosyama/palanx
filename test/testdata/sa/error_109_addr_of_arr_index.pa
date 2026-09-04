@@ -1,3 +1,0 @@
-cinclude <stdlib.h>;
-[4]int64 arr;
-@arr[0];
