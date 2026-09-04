@@ -1061,6 +1061,60 @@ TEST(build_mgr, addr_of_arr_elem) {
 	ASSERT_EQ(output, "0 0 99 0\n");
 }
 
+TEST(build_mgr, addr_of_borrow_mtrace) {
+	// IT-2808: taking the address of a struct field (`@!s.x`), an array
+	// element (`@!arr[2]`) and a plain local (`@!v`), then writing through
+	// each via `p[0]` deref, causes no alloc/free of its own -- the address
+	// is a borrow, not a new owned allocation, and the original owners
+	// (Point s, [4]int64 arr) are still freed exactly once each at scope
+	// exit.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_addr_of_borrow_mtrace_bin "
+		"../test/testdata/build-mgr/138_addr_of_borrow_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_addr_of_borrow_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_addr_of_borrow_mtrace_bin");
+	EXPECT_EQ(output, "11 22 33\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Point s: 1 calloc; [4]int64 arr: 1 malloc. Taking @!s.x / @!arr[2] /
+	// @!v and writing through each via p[0] adds no allocation of its own.
+	EXPECT_EQ(allocs, 2) << "expected 2 allocs for Point s + [4]int64 arr, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, addr_of_owned_field_borrow_mtrace) {
+	// IT-2808: same borrow check, but through the cascade alloc/free path --
+	// `@!c.pts[0].x` takes the address of a leaf field inside an owned
+	// struct-array field (Cluster.pts is [2]Point, its own
+	// __pln_alloc_arr_Point/__pln_free_arr_Point pair), and the deref write
+	// through it neither allocates nor disturbs that cascade's free count.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_addr_of_owned_field_borrow_mtrace_bin "
+		"../test/testdata/build-mgr/139_addr_of_owned_field_borrow_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_addr_of_owned_field_borrow_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_addr_of_owned_field_borrow_mtrace_bin");
+	EXPECT_EQ(output, "99\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Cluster c: calloc(1) + __pln_alloc_arr_Point(2): ptr-array malloc(1) +
+	// 2 element callocs = 4 (same shape as owned_struct_arr_field_mtrace).
+	// Taking @!c.pts[0].x adds no allocation of its own.
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs for Cluster c { [2]Point pts; }, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

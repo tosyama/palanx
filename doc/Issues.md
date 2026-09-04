@@ -33,3 +33,23 @@ e.g. How should `[]int32(x)` or similar constructs be written?
 ## 5. `type` Definition Scope
 
 **Summary:** `type` definitions are currently registered globally regardless of where they appear in the source. They should follow the same scope rules as variable declarations — visible only from the point of definition to the end of the enclosing scope.
+
+---
+
+## 6. Borrowed Pointer Lifetimes Are Unchecked
+
+**Summary:** The address-of operators (`@`/`@!`) produce a borrowed pointer that is never allocated and never freed on its own — the object it points into keeps its own ownership and free timing unchanged. There is currently no check that the pointer does not outlive that object. A pointer taken from a struct field or array element inside a block can be assigned to a variable declared outside the block; once the block ends and the owning variable is freed, the outer pointer is left dangling with no diagnostic, e.g.:
+
+```
+type Point { int64 x; int64 y; };
+
+@!int64 p;
+{
+    Point s;
+    5 -> s.x;
+    p = @!s.x;
+}
+printf("%ld\n", p[0]);
+```
+
+Reading through `p` after the block exits reads freed memory (observed to crash reliably in practice). Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today.
