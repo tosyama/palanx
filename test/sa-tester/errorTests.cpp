@@ -611,6 +611,39 @@ TEST(sa_error, field_assign_on_arr_index_non_struct)
 	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
 }
 
+TEST(sa_error, field_assign_on_call_base)
+{
+	// type Point{...}; func f() -> @!Point r {...}; 1 -> f().x; -- the store_loc
+	// grammar's func_call alternative normalizes to an unaddressable "not-impl"
+	// base (see storeLocToExpr), which resolveObjectChain's field-access
+	// recursion must reject explicitly rather than assume a nested object/field
+	// shape (previously an unguarded obj["object"] access aborted on this input).
+	// Covers: resolveObjectChain(forWrite=true) non-field-access base branch (E_FieldAccessOnNonStruct)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_115_field_assign_on_call_base.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+
+TEST(sa_error, field_access_on_tuple_base)
+{
+	// type Point{...}; type Line{$Point a; $Point b;}; int64 v = (1,2).a.x; --
+	// a multi-expression tuple grouping normalizes to "not-impl" (see term's
+	// '(' tapple_inner ')' rule), reached here through a read-side two-level
+	// field-access chain rather than store_loc.
+	// Covers: resolveObjectChain(forWrite=false) non-field-access base branch (E_FieldAccessOnNonStruct)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_116_field_access_on_tuple_base.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+
 TEST(sa_error, arr_field_size_not_constant)
 {
 	// type Buf { [1+1]$int64 data; }; -- size-expr is not a lit-int/lit-uint literal

@@ -42,6 +42,13 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		string struct_name = vt["base-type"]["type-name"].get<string>();
 		return {true, "", 0, move(sa_idx), struct_name};
 	}
+	if (obj.value("expr-type","") != "field-access") {
+		// Reachable via a chain rooted in a non-addressable base: a call/tuple
+		// grouping normalizes to "not-impl" (see storeLocToExpr and term's
+		// '(' tapple_inner ')' rule), which has neither "object" nor "field".
+		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+		exit(1);
+	}
 	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
 	const StructDef& def = structDefs_[base.structName];
