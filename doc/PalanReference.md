@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.27
+**Version:** v0.1.28
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -329,6 +329,14 @@ S.printf("%d\n", 42);        // qualified call
   A struct passed *into* a C call follows the same convention as a native struct-typed function
   parameter: it is passed by pointer, borrowed by the callee, and not freed by it (see
   [Struct types in function signatures](#struct-types-in-function-signatures)).
+- A fixed-size C array field (`char name[16];`) becomes a fixed-size [array field](#array-fields)
+  on the Palan side, laid out inline in the struct exactly like a native `[16]int8 name;` field —
+  element access and taking the address of an element both work. A C function parameter declared
+  as an array (`void take(char buf[32])`) decays to a plain pointer, same as in C — only the
+  outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row. A C
+  struct field with two or more array dimensions (`int cells[2][3];`) is not supported this
+  version — the whole struct type is left unusable ("unknown struct type") rather than just that
+  field.
 
 ---
 
@@ -1150,8 +1158,18 @@ int64 x = 42;
   The same read-only/mutable rule applies at every step of the chain: `@!` on a field reached
   through a read-only pointer (a `@T`-typed base variable, or a `@T`-typed pointer field along
   the way) is a compile error, not silently downgraded to a read-only address.
-- Not usable on function parameters, whole struct or array variables (`@s`, `@arr`), array
-  elements (`@arr[i]`), or general expressions this version.
+- `@` also takes the address of a primitive-typed array element (`@arr[2]`, `@!arr[2]`),
+  including an element of a fixed-size array field (`@!s.data[2]`) and the innermost element of a
+  multi-dimensional array (`@!mat[0][1]`):
+
+  ```palan
+  [4]int64 arr;
+  memcpy(@!arr[2], @src, 8);   // out-param write into arr[2]
+  ```
+
+  The same write-permission rule applies: `@!arr[i]` requires write permission on `arr` itself, so
+  taking a mutable address through a read-only array (or a read-only array field reached through a
+  `@T`-typed pointer) is a compile error.
 - The resulting pointer can be handed to a cincluded C function that expects a pointer parameter
   — as an input the function reads through (`const T*`), or as an out-param it writes into:
 
@@ -1201,3 +1219,22 @@ int64 x = 42;
   1972 -> p[0].tm_year;
   printf("%d\n", p.tm_year);   // p[0] and p name the same pointee — prints 1972
   ```
+- The pointer returned by `@`/`@!` is a borrowed reference: taking it never allocates or frees
+  anything, and the storage it points into keeps its own ownership and free timing unchanged.
+  Nothing checks that the pointer does not outlive that storage — if it escapes the scope that
+  owns the storage (e.g. assigned to a variable declared in an outer block), reading through it
+  after the storage is freed is undefined behavior, not a compile error. See `doc/Issues.md`
+  for a worked example.
+
+### Restrictions
+
+- Not usable on function parameters, or on a whole struct or array variable (`@s`, `@arr`).
+- Not usable when the addressed value is not primitive-typed: a struct-typed field, an
+  embedded-struct-array element (`[n]$T`), a 2D array row (`@mat[i]`), or a pointer-slot array
+  element (`[n]@T`/`[n]@!T`) are all rejected — `@`/`@!` only ever produces a pointer to a single
+  primitive value, never a pointer to an existing pointer or to an aggregate.
+- Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
+  variable, a primitive-typed field reached from one, or a primitive-typed array element reached
+  from one.
+
+---

@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.27
+ver. 0.1.28
 
 \* - Required
 
@@ -68,13 +68,17 @@ Struct definition model
 ------------------------
 Captured from `struct Name { field_decl... }` in a `cinclude`d C header (a forward
 declaration with no body, e.g. `struct Missing;`, is not captured — there is no field
-list to register). Attached to the `cinclude` statement model's `structs` field (see
-Statement model below); same field-list shape as the native `struct-def` statement.
+list to register). palan-c2ast collects every struct it captures from a header into its own
+top-level `ast.structs` list; gen-ast then lifts that list onto the enclosing `cinclude`
+statement's `structs` field (see Statement model below) when merging the header's AST in. Same
+field-list shape as the native `struct-def` statement.
 
 - name\* - Struct tag name string
 - fields\* - Field list
   - name\* - Field name string
-  - var-type\* - Field type (same Variable type object format)
+  - var-type\* - Field type (same Variable type object format; a C array declarator, e.g.
+    `char name[16];`, produces an `arr` type-kind field — see `embedded` above and SASpec.md's
+    C-origin field admission rules for which array shapes SA accepts)
 
 Palan Parameter
 ---------------
@@ -88,7 +92,10 @@ C Parameter
 Used in C function `parameters`.
 
 - name\* - Parameter name string (or "..." for variadic sentinel)
-- var-type - Variable type (omitted for variadic sentinel "...")
+- var-type - Variable type (omitted for variadic sentinel "..."). An array-declared C parameter
+  (`T name[n]`) decays to a plain `pntr` whose `base-type` is the array's own `base-type` — same
+  as C's own array-to-pointer decay, and only the outermost dimension decays: `T name[2][3]`
+  becomes `pntr(arr(base-type: T, size-expr: 3, ...))`, not `pntr(pntr(T))`.
 
 Return value (rets entry)
 -------------------------
@@ -112,8 +119,12 @@ Variable type
       - Other: "void"
   2. pntr - Pointer type
     - base-type\* - Base variable type
-    - mutable\* - Boolean, true for a writable pointer (`@!` syntax), false for a
-      read-only pointer (`@` syntax)
+    - mutable - Boolean, true for a writable pointer (`@!` syntax), false for a read-only
+      pointer (`@` syntax). Native `@`/`@!` syntax always emits this key explicitly (including
+      `false` for `@`); a c2ast-derived `pntr` (a C pointer parameter/return/field) and an
+      SA-synthesized `pntr` (a struct or array variable's own type) never emit it. A missing
+      `mutable` key means writable — see SASpec.md's typeCompat rules for how sa.json settles
+      this for every origin.
   3. arr - Array type
     - base-type\* - Base variable type
     - specifier\* - Array kind string:
@@ -126,7 +137,11 @@ Variable type
         - "raw"      (`[]type`)  — initialization required; element count determined by SA from initializer
         - "fixed"    (`[#]type`) — initialization required; element count determined by SA from initializer
         - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
-    - embedded - Boolean, true for contiguous 2D array (`[n]$[m]T` syntax); omitted when false
+    - embedded - Boolean, true when the array's storage is laid out inline/contiguous rather than
+      as a separately-allocated block; omitted when false. Native syntax sets this only for a
+      contiguous 2D array (`[n]$[m]T`); c2ast sets it on every C array declarator it captures
+      (a struct field or parameter written `T name[n]` in the header), 1D included, since a C
+      array is always inline storage.
     Note: For `[m][n]T` (2D array via pointer-of-pointers), the outer arr's `base-type` is itself an
     `arr` type (`specifier: "raw"`, leaf `base-type` is a prim type). SA transforms this nested arr
     into a `pntr(pntr(T))` var-decl with auto-generated allocator calls (see SASpec.md).
@@ -134,6 +149,11 @@ Variable type
     is an inner `arr`. SA allocates the entire grid as a single malloc of n*m elements.
     Note: The `$` token in `[n]$[m]T` produces an `arr` with `embedded:true`; `$T` standalone (outside
     an array context) produces the `embed` type-kind below.
+    Note: A c2ast-captured C array (`specifier:"raw"`, `embedded:true`) nests the same way a native
+    multi-dimensional array does — `T name[2][3]` produces an outer `arr` (size-expr 2) whose
+    `base-type` is an inner `arr` (size-expr 3). See SASpec.md's C-origin field admission rules for
+    which shapes SA accepts as a struct field (2D+ is not supported there) and the C Parameter
+    section below for how an array-typed parameter decays.
   4. embed - Inline struct embedding (`$T` syntax in struct field declarations)
     - base-type\* - Base variable type of the embedded struct (type-kind "prim" with the struct name)
     Note: Valid only inside `struct-def` field lists. SA resolves the sub-struct layout and folds the
@@ -238,7 +258,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -281,22 +301,31 @@ Expression model
   15. logical-not - Logical NOT (`!a`; result: int32, 0 or 1)
     - operand\* - Operand expression model
   16. field-access - Struct field read (`obj.field` rvalue)
-    - object\* - Object expression model (typically `id`)
+    - object\* - Base object expression model: `id` for a plain variable, or `arr-index`/
+      `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`) — same object vocabulary
+      as field-assign's `object` (see Statement model above)
     - field\*  - Field name string
   17. member-call - Qualified function call (`L.f(args)` syntax; consumed by SA, not emitted to sa.json)
     - object\* - Object expression (typically `id` for module alias; SA rejects non-`id` in v0.1.22)
     - method\* - Method/function name string
     - args - Argument expression list
     Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
-  18. addr-of - Address-of a local variable or a struct field reached from one (`@` read-only,
-      `@!`/`AT_EXCL` mutable). The operand grammar is `store_loc` (the same vocabulary the
-      left side of `->` accepts: a bare identifier, or a `.`-chain of field accesses rooted
-      in one), so `@s.x` and `@!s.in.v` parse; SA decides in sa.json whether the target is
+  18. addr-of - Address-of a local variable, a struct field reached from one, or an array
+      element reached from one (`@` read-only, `@!`/`AT_EXCL` mutable). The operand grammar is
+      `store_loc` — the same vocabulary the left side of `->` accepts (a bare identifier, a
+      `.`-chain of field accesses, a `[expr]` index, or a parenthesized tuple/call) — so `@s.x`,
+      `@!s.in.v`, and `@arr[i]` all parse; SA decides in sa.json whether the target is
       addressable (see SASpec.md).
-    - object\* - Operand expression: `id` for a plain variable, `field-access` for a struct
-      field (nested `.` chains produce nested `field-access` objects), or an arbitrary
-      expression node for anything else (SA rejects non-addressable operands)
+    - object\* - Operand expression, one of exactly four shapes depending on which `store_loc`
+      alternative was used: `id` for a plain variable, `field-access` for a `.`-chain (nested
+      chains produce nested `field-access` objects), `arr-index` for a `[expr]`-indexed target,
+      or `not-impl` for anything else (a tuple grouping or a bare call — these are not
+      addressable, so SA rejects them without needing to inspect their shape further)
     - mutable\* - `true` for `@!`, `false` for `@`
+  19. not-impl - Placeholder for a `store_loc` shape that carries no addressable location (a
+      parenthesized tuple or a bare function call reached via `@`/`@!`, or `field-access`'s
+      chain root when it isn't itself addressable). Carries no fields beyond `expr-type`; SA
+      rejects any expression of this shape.
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

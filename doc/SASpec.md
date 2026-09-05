@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.27
+ver. 0.1.28
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -264,9 +264,9 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
-  - addr-of: SA dispatches on the AST node's `object` (see ASTSpec.md) and emits one of two
-    shapes, never a hybrid — the `addr-of` expr-type only ever appears for the plain-variable
-    case; a struct-field target lowers to an ordinary `field-access` node instead:
+  - addr-of: SA dispatches on the AST node's `object` (see ASTSpec.md) and emits one of three
+    shapes — the `addr-of` expr-type only ever appears for the plain-variable case; a struct-field
+    or array-element target lowers to an ordinary `field-access`/`arr-index` node instead:
     - `object.expr-type == "id"` (`@x` / `@!x`): emitted as `{"expr-type":"addr-of","name":<var
       name>,"mutable":<bool>,"value-type":{"type-kind":"pntr","mutable":<bool>,"base-type":<named
       var's prim type>}}`. `mutable` is `true` for `@!ID`, `false` for `@ID`. The named variable
@@ -286,15 +286,37 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       variable (E_WriteThroughReadOnlyPtr) or an intermediate read-only raw-ptr field hop
       (E_WriteToImmutablePtrField) rejects `@!`, so a read-only pointer can never be laundered
       into a mutable one by taking a field's address instead of writing the field directly.
-    - Any other operand shape (an array element, a call, …) is a compile error
-      (E_AddrOfNotAddressable) — address-of is not general in this version. The grammar
-      accepts `@arr[i]` (its operand parses via the same `store_loc` vocabulary as a field
-      target), but SA rejects it explicitly rather than silently mis-lowering it; array-element
-      address-of is a later iteration's work.
+    - `object.expr-type == "arr-index"` (`@arr[i]` / `@!arr[i]`): resolved via `sa_expr_arr_index`
+      (see the arr-index section below) exactly as an ordinary array-element read would be, then
+      the resulting node is reused as-is with `addr-only` forced to `true` and `value-type`
+      rewrapped as `{"type-kind":"pntr","mutable":<bool>,"base-type":<original element
+      value-type>}` — the node keeps its `expr-type:"arr-index"`, `array`, `index`, `elem-size`,
+      and `loc` keys unchanged (unlike the field-access shape above, no new node is built). Two
+      checks gate this: the resolved element must not already be `addr-only:true` (a struct-array
+      element, a 2D row, or a contiguous-embedded element are all already addresses) and its
+      `value-type.type-kind` must be `"prim"` (a pointer-slot element is not) — either failure is
+      E_AddrOfNotPrimitiveElem. When `mutable` is requested, `isWritableThrough` is additionally
+      checked against the array's own `value-type` — the same rule `sa_arr_assign_stmt` applies to
+      an ordinary `arr[i]` write — so `@!` through a read-only array is E_WriteThroughReadOnlyPtr.
+
+      Example — `@!arr[2]` where `arr` is `[4]int64`:
+      ```json
+      {
+        "addr-only": true,
+        "array": {"expr-type":"id","name":"arr","category":"owned",
+                   "value-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int64"}}},
+        "elem-size": {"expr-type":"lit-uint","value":"8","value-type":{"type-kind":"prim","type-name":"uint64"}},
+        "expr-type": "arr-index",
+        "index": {"expr-type":"lit-int","value":"2","value-type":{"type-kind":"prim","type-name":"int64"}},
+        "value-type": {"type-kind":"pntr","mutable":true,"base-type":{"type-kind":"prim","type-name":"int64"}}
+      }
+      ```
+    - Any other operand shape (a call result, a parenthesized tuple, …) is a compile error
+      (E_AddrOfNotAddressable) — address-of is not general in this version.
     `mutable` is always present on the resulting `value-type` regardless of which shape was
-    emitted. Writing through a `false` (read-only) pointer — via `p[0]` deref or a field
-    access — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules below for
-    how mutability is enforced separately from type compatibility.
+    emitted. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
+    an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules
+    below for how mutability is enforced separately from type compatibility.
   - call: present when the function has a return type (ret-type in its definition).
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).
@@ -501,6 +523,30 @@ for a C-origin struct. Every sa.json shape documented below (C ABI layout, var-d
 field-assign, field-access) applies unchanged regardless of whether the struct came from a
 native `type Name {...}` or a `cinclude`d header.
 
+### C-origin field admission
+
+Before a C-origin field list is registered, each field's `var-type` (ASTSpec.md's c2ast
+representation) is normalized to the same vocabulary a native `struct-def` field would use, then
+checked for support; a field the check rejects causes the *whole* struct to be skipped (it never
+enters the registry, so any later reference to it is E_UnknownStructType) rather than being
+dropped individually:
+
+- A by-value struct leaf (`type-kind:"strct"`, from `struct Foo f;`) is rewritten to
+  `type-kind:"embed"` — same shape a native `$Foo` field produces. A by-value struct leaf inside
+  an array (`struct Foo arr[n];`) is instead rewritten to a plain `prim` type-name leaf, matching
+  the native `[n]$Foo` shape (`buildStructDef`'s array case looks the leaf up in the struct
+  registry by name, not by a distinct type-kind).
+- A `prim` field is supported iff `elemSizeBytes` resolves its type-name.
+- An `embed` field is supported iff its struct name is already registered and is not the
+  enclosing struct itself (no direct self-embedding).
+- An `arr` field (a C array declarator — ASTSpec.md's `embedded:true` array shape) is supported
+  only when its `size-expr` is a literal (a `T name[];` field has no fixed size and is rejected)
+  and its base-type is one of: a pointer (`[n]@T`/`[n]@!T` slot array), a primitive with a known
+  size, or a primitive naming an already-registered struct (`[n]$T`/`[n]T`). **A 2D-or-deeper
+  array field (`int cells[2][3];`, base-type itself `arr`) is not supported** — the whole struct
+  is skipped, so `Sample s;` for a `struct Sample { int cells[2][3]; };` fails with
+  E_UnknownStructType even though `cells` is the only unsupported field.
+
 ### C ABI layout
 
 Fields are placed at offsets aligned to their natural size (same as `sizeof`):
@@ -609,5 +655,18 @@ a `pntr`-typed `value-type` in place of the field's own type — see the addr-of
  "value-type":{"type-kind":"pntr","mutable":true,"base-type":{"type-kind":"prim","type-name":"int64"}},
  "addr-only":true}
 ```
+
+`resolveObjectChain(object, forWrite)` is the single field-chain resolver used by field-access
+reads, field-assign writes, and the addr-of field-access shape alike — `field-assign`'s
+`forWrite` is always `true`; a plain read passes `false`; addr-of passes its own `mutable` flag.
+Besides a plain `id` base, the chain root may also be an `arr-index` node whose element is
+itself a struct pointer (`pts[i].x` where `pts` is `[n]$T`/`[n]T`/`[n]@T`, or `p[i].x` where `p`
+is `@T`/`@!T`) — the index expression is evaluated via `sa_expr_arr_index` first, and the
+write-permission check (E_WriteToReadOnlyArrElem) applies to the array's own mutability exactly
+as it would for a plain `arr[i]` write. Any other chain root — a call result, a parenthesized
+tuple, or anything else that isn't `id`/`arr-index`/`field-access` — normalizes to `"not-impl"`
+at the AST layer (see ASTSpec.md's `not-impl` object shape) and is rejected as
+E_FieldAccessOnNonStruct: a field chain can only be rooted in something that names storage, never
+in the result of evaluating an expression.
 
 
