@@ -997,6 +997,19 @@ TEST(build_mgr, cinclude_arr_field_access) {
 	ASSERT_EQ(output, "5 65 90 100 400\n");
 }
 
+TEST(build_mgr, cinclude_ptr_slot_arr_field) {
+	// struct Point { int x; int y; }; struct Slots { struct Point *pts[4]; long *vals[3]; };
+	// (cinclude'd) -- IT-2026-09-05-cinclude-ptr-slot-array-field: a C struct field
+	// that is an inline array of pointer slots ("T *field[n];") is Palan's
+	// [n]@T / [n]@!T shape (same embed-ptr-arr layout as the native
+	// embed_ptr_arr_field_access test, 075). Storing an address into the slot is
+	// allowed regardless of the slot's read-only "mutable:false" default (only
+	// write-through to the pointee is restricted -- see sa.field_arr_readonly_ptr_slot).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/140_cinclude_ptr_slot_arr_field.pa");
+	ASSERT_EQ(output, "99\n");
+}
+
 TEST(build_mgr, sys_stat_h_s_ifdir_alias) {
 	// S_IFDIR is defined as `#define S_IFDIR __S_IFDIR` in sys/stat.h -- IT-2803's
 	// ticket repro: the public alias name must resolve to the same value as the

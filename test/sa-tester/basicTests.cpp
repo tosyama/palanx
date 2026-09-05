@@ -3302,6 +3302,28 @@ TEST(sa, cinclude_arr_field_struct)
 	ASSERT_EQ(v["init"]["args"][1]["value"], "24");
 }
 
+TEST(sa, cinclude_ptr_slot_arr_field)
+{
+	// struct Point { int x; int y; }; struct Slots { struct Point *pts[4]; long *vals[3]; };
+	// (cinclude'd) -- IT-2026-09-05-cinclude-ptr-slot-array-field: a C struct field
+	// that is an inline array of pointer slots ("T *field[n];") is Palan's
+	// [n]@T / [n]@!T shape. Depends on IT-2026-09-05-c2ast-declarator-precedence:
+	// before that fix, c2ast parsed "T *field[n]" inverted as a single pointer
+	// (pntr(arr(...))), so this field silently registered at the wrong (too small)
+	// size instead of reaching this shape at all.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/156_cinclude_ptr_slot_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Slots s; -> calloc(1, 56): confirms totalSize == 4*8 (pts) + 3*8 (vals) == 56,
+	// not 16 (two 8-byte pointers, the pre-fix misparse).
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "s");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "56");
+}
+
 TEST(sa, cinclude_struct_stat_size)
 {
 	// cinclude <sys/stat.h>; stat s; -- the memory-safety validation target for

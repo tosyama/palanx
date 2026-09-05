@@ -618,6 +618,22 @@ static json cFieldVarType(const json& vtype)
 		// unlike a scalar struct-by-value field, it is not wrapped in "embed".
 		if (bt.value("type-kind", "") == "strct" && bt.contains("type-name")) {
 			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}};
+		} else if (bt.value("type-kind", "") == "pntr") {
+			// An inline array of pointer slots ("T *field[n];" from a C header,
+			// e.g. glibc's "struct __locale_data *__locales[13];") is Palan's
+			// [n]@T / [n]@!T shape. Native syntax never sets "embedded" for it
+			// (PlnParser.yy's '[' type_expr production only sets it for the
+			// '$'-prefixed inline-storage forms), but c2ast sets "embedded" on
+			// every C array declarator (ASTSpec.md "arr") -- normalize it away
+			// here so both sources reach buildStructDef's single embed-ptr-arr
+			// case (PlnSaDecl.cpp buildStructDef, "base_kind == pntr") the same
+			// way, rather than that shared consumer needing a second, cinclude-
+			// only shape to tolerate.
+			v.erase("embedded");
+			json& leaf = bt["base-type"];
+			if (leaf.value("type-kind", "") == "strct" && leaf.contains("type-name")) {
+				leaf = {{"type-kind", "prim"}, {"type-name", leaf["type-name"]}};
+			}
 		}
 		return v;
 	}

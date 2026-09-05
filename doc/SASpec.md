@@ -546,6 +546,16 @@ dropped individually:
   array field (`int cells[2][3];`, base-type itself `arr`) is not supported** — the whole struct
   is skipped, so `Sample s;` for a `struct Sample { int cells[2][3]; };` fails with
   E_UnknownStructType even though `cells` is the only unsupported field.
+  - A pointer base-type (`T *field[n];`, e.g. glibc's `struct __locale_data *__locales[13];`)
+    is Palan's `[n]@T`/`[n]@!T` pointer-slot-array shape. Native syntax never sets `embedded`
+    for this shape (only the `$`-prefixed inline-storage forms do), so the `embedded` key
+    c2ast always stamps on a raw C array declarator is stripped during this same normalization
+    step — both origins reach the struct layout code as the single canonical (no-`embedded`)
+    shape. A by-value struct leaf under the pointer (`struct Foo *field[n];`) is rewritten to a
+    plain `prim` type-name leaf, same as the direct-array case above. The slot's `mutable` flag
+    is left absent (defaults to `false`, i.e. read-only) — C-origin pointer fields have no
+    const/non-const distinction carried this deep, so they are conservatively read-only, same
+    as a scalar C pointer field.
 
 ### C ABI layout
 

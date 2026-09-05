@@ -53,3 +53,9 @@ printf("%ld\n", p[0]);
 ```
 
 Reading through `p` after the block exits reads freed memory (observed to crash reliably in practice). Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today.
+
+---
+
+## 7. C Struct Pointer Fields Are Always Read-Only
+
+**Summary:** A C struct field whose type is a pointer — either a scalar pointer field (`T *field;`, SA's `raw-ptr`) or a pointer-slot array field (`T *field[n];`, SA's `embed-ptr-arr`) — is always registered with `mutable:false`, regardless of whether the C declaration's pointee was `const`-qualified. `normalizeCType` (the single point that folds C's pointee-`const` into SA's `mutable` vocabulary) is applied only to `cinclude`d function signatures, not to struct field types, so a non-const C pointer field (e.g. `struct Foo *next;`) is conservatively treated the same as a const one. Extending `normalizeCType` (or an equivalent) to struct field registration would let non-const C pointer fields be written through, matching their actual C semantics.
