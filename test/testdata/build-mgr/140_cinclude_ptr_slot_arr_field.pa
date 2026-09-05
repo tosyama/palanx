@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+cinclude "140_cinclude_ptr_slot_arr_field.h";
+
+Point p;
+99 -> p.x;
+Slots s;
+p -> s.pts[0];
+printf("%d\n", s.pts[0].x);

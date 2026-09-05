@@ -6,30 +6,39 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-08-30)
-version: 0.1.28 — **not yet decided.**
+### 2.1 Iteration Goal (2026-09-04)
+version: 0.1.29 — **not yet decided.**
 
-v0.1.27 (`time.h` + C struct interop, `@ID`/`@!ID` address-of) is complete. The next
-iteration's concrete target has not been chosen yet — this section will be rewritten
-with a full pre-implementation audit (following the same discipline as v0.1.26/v0.1.27:
-gap catalog, function inventory, definition of done) once that decision is made in a
-separate conversation.
+v0.1.28 (pointer dereference and general address-of) is complete. `@`/`@!` now extend to
+struct fields and array elements (not just local primitives), `p[i]` dereference is
+specified and tested in both directions, and the read-only (`@T`) vs. mutable (`@!T`)
+distinction is enforced by the type system at every write, bind, and C-argument site. Along
+the way, c2ast gained proper handling of C array declarators (struct fields lay out
+correctly; array parameters decay to pointers) and `const` capture on struct/union/enum
+pointees and fields — both prerequisites the address-of/dereference work exposed. The next
+iteration's concrete target has not been chosen yet — this section will be rewritten with a
+full pre-implementation audit (following the same discipline as v0.1.26/v0.1.27/v0.1.28:
+gap catalog, function inventory or design sketch, definition of done) once that decision is
+made in a separate conversation.
 
-Candidates carried forward from v0.1.27's explicit non-goals:
-- Other struct-heavy C standard library headers (e.g. `sys/stat.h`) — continuing the C
-  standard library support series by applying the struct-interop mechanism `time.h`
-  established to a new header.
-- General address-of/dereference — generalizing the current `@ID`/`@!ID` (local
-  primitive variables only) into struct fields, array elements, and a general
-  pointer-dereference operator.
-- `timer_create` / `struct sigevent` support — the one `time.h` function deferred this
-  iteration for a genuinely new kind of gap (an incomplete/forward-declared-only
-  struct type), rather than the caller-owned-struct-buffer pattern proven for the rest.
-- `strftime_l` / `locale_t` — deferred again, same reasoning as v0.1.26 and v0.1.27.
+Candidates, carried forward from v0.1.28's non-goals and known gaps:
+- `sys/stat.h` function support (`stat`/`fstat`/`chmod`/… and the `S_IS*` predicates). The
+  layout prerequisite (c2ast array-field handling) is now in place, making this the most
+  likely next step.
+- Function-like macros (`S_ISDIR(m)` and friends) — needs a genuinely new export mechanism.
+- Address-of on function parameters, and on whole struct or array variables (`@s`, `@arr`)
+  — the latter would produce a pointer to a pointer, which needs the semantics settled first.
+- Borrowed-pointer lifetime checking (see `doc/Issues.md` item 6) — `@`/`@!` pointers can
+  currently outlive the storage they point into with no diagnostic.
+- `timer_create` / `struct sigevent`: still deferred. The real definition
+  (`bits/types/sigevent_t.h`) needs anonymous unions, an anonymous nested struct,
+  function-pointer members, and `__sigval_t` (itself a union) — a large type-system
+  expansion in exchange for one function.
+- `strftime_l` / `locale_t`: deferred again, same reasoning as v0.1.26/v0.1.27/v0.1.28.
 
-Whichever is chosen, the series' underlying goal stays the same: header/feature support
-is the forcing function for general C-interop language capability, not per-function
-coverage for its own sake.
+Whichever is chosen, the series' underlying goal stays the same: header/feature support is
+the forcing function for general C-interop language capability, not per-function coverage
+for its own sake.
 
 
 ## 3. Command-line Tools' Responsibilities and Design

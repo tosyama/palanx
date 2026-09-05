@@ -1,0 +1,21 @@
+cinclude <stdio.h>;
+
+int8 a = 0;
+@!int8 pa = @!a;
+100 -> pa[0];
+printf("%d\n", pa[0]);
+
+int16 b = 0;
+@!int16 pb = @!b;
+30000 -> pb[0];
+printf("%d\n", pb[0]);
+
+int32 c = 0;
+@!int32 pc = @!c;
+2000000000 -> pc[0];
+printf("%d\n", pc[0]);
+
+flo64 d = 0.0;
+@!flo64 pd = @!d;
+3.5 -> pd[0];
+printf("%f\n", pd[0]);

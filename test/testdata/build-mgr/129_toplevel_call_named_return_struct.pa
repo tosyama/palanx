@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+
+func borrow(Point p) -> @!Point r {
+	p -> r;
+}
+
+Point original;
+5 -> original.x;
+@!Point view = borrow(original);
+20 -> view.x;
+printf("%ld\n", original.x);

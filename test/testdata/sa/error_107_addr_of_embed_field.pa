@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+type Inner { int64 v; };
+type Point { int64 x; int64 y; Inner in; };
+Point s;
+@s.in;

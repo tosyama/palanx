@@ -263,6 +263,10 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 				}
 				// Incompatible: no action (ptr types pass through as-is)
 			}
+			if (!ptrPermissionOk(init["value-type"], varType)) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+				exit(1);
+			}
 			sa_var["init"] = init;
 		}
 		declareVar(name, varType, &stmt);
@@ -604,6 +608,35 @@ static json cFieldVarType(const json& vtype)
 		return {{"type-kind", "embed"},
 		        {"base-type", {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}}};
 	}
+	if (vtype.value("type-kind", "") == "arr" && vtype.contains("base-type")) {
+		json v = vtype;
+		json& bt = v["base-type"];
+		// Inside an array, a struct-by-value leaf ("[n]struct Foo", from C's
+		// "struct Foo arr[n];") is Palan's [n]$Foo / [n]Foo shape, which names the
+		// leaf with a plain prim type-name (buildStructDef's "arr" case looks the
+		// leaf up in structDefs_ by name, not by a distinct "struct" type-kind) --
+		// unlike a scalar struct-by-value field, it is not wrapped in "embed".
+		if (bt.value("type-kind", "") == "strct" && bt.contains("type-name")) {
+			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}};
+		} else if (bt.value("type-kind", "") == "pntr") {
+			// An inline array of pointer slots ("T *field[n];" from a C header,
+			// e.g. glibc's "struct __locale_data *__locales[13];") is Palan's
+			// [n]@T / [n]@!T shape. Native syntax never sets "embedded" for it
+			// (PlnParser.yy's '[' type_expr production only sets it for the
+			// '$'-prefixed inline-storage forms), but c2ast sets "embedded" on
+			// every C array declarator (ASTSpec.md "arr") -- normalize it away
+			// here so both sources reach buildStructDef's single embed-ptr-arr
+			// case (PlnSaDecl.cpp buildStructDef, "base_kind == pntr") the same
+			// way, rather than that shared consumer needing a second, cinclude-
+			// only shape to tolerate.
+			v.erase("embedded");
+			json& leaf = bt["base-type"];
+			if (leaf.value("type-kind", "") == "strct" && leaf.contains("type-name")) {
+				leaf = {{"type-kind", "prim"}, {"type-name", leaf["type-name"]}};
+			}
+		}
+		return v;
+	}
 	return vtype;
 }
 
@@ -623,6 +656,23 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 	if (tk == "embed") {
 		string structName = vtype["base-type"].value("type-name", "");
 		return structName != ownerName && structDefs.count(structName);
+	}
+	if (tk == "arr") {
+		if (!vtype.contains("size-expr") || !vtype.contains("base-type")) return false;
+		const json& size_expr = vtype["size-expr"];
+		if (size_expr.is_null()) return false;  // e.g. "T name[];" -- not a constant size
+		string set = size_expr.value("expr-type", "");
+		if (set != "lit-int" && set != "lit-uint") return false;
+
+		const json& bt = vtype["base-type"];
+		string btk = bt.value("type-kind", "");
+		if (btk == "arr") return false;  // 2D+ array fields: buildStructDef doesn't lay these out
+		if (btk == "pntr") return true;  // [n]@T / [n]@!T slot array
+		if (btk == "prim") {
+			string leaf = bt.value("type-name", "");
+			return elemSizeBytes(leaf) >= 0 || structDefs.count(leaf) > 0;
+		}
+		return false;
 	}
 	return tk == "pntr";
 }

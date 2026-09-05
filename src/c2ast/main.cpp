@@ -194,7 +194,7 @@ int main(int argc, char* argv[])
 				for (CMacro* m : macros) {
 					if (!predefined_macros.count(m)) user_macros.push_back(m);
 				}
-				cparser.exportMacroConstants(ast, user_macros);
+				cparser.exportMacroConstants(ast, user_macros, cpp);
 
 				ostream* out = &cout;
 				ofstream outfile;

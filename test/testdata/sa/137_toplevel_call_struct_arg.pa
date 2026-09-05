@@ -1,0 +1,9 @@
+type Point { int64 x; int64 y; };
+
+func sumX(Point p) -> int64 {
+	return p.x;
+}
+
+Point original;
+10 -> original.x;
+int64 s = sumX(original);

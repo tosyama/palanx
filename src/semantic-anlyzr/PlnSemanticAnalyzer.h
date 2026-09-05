@@ -108,6 +108,8 @@ class PlnSemanticAnalyzer {
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	json sa_expr_call(const json& expr);
 	json sa_expr_member_call(const json& expr);
+	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
+	                           const json& saArg, const json& param, size_t argIdx);
 	json sa_expr_arr_index(const json& expr);
 	json sa_expression_stmt(const json& stmt);
 	json sa_var_decl(const json& stmt);           // returns array of statements
@@ -126,12 +128,12 @@ class PlnSemanticAnalyzer {
 	json  deepNormalizePrimToStruct(const json& type) const;
 	json  resolveTypeAlias(const json& vtype) const;
 	void  normalizeStructSig(json& funcDef);
-	void  resolveFuncSigTypeAliases(json& funcEntry) const;
 	void  registerTypedefAliasInType(json& vtype);
 	void  registerCFuncTypedefAliases(json& funcEntry);
 	json sa_field_assign(const json& stmt);
-	FieldChain resolveObjectChain(const json& obj);
-	FieldChain resolveStoreLocChain(const json& loc);
+	FieldChain resolveObjectChain(const json& obj, bool forWrite);
+	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);
+	json sa_expr_addr_of(const json& expr);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);

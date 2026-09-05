@@ -575,7 +575,7 @@ TEST(sa_error, embed_arr_owned_sub_struct)
 TEST(sa_error, write_readonly_arr_elem)
 {
 	// [4]@Point rpts; 42 -> rpts[0].x; — write through read-only pointer array element
-	// Covers: resolveStoreLocChain arr-index base case, mutable:false branch (E_WriteToReadOnlyArrElem)
+	// Covers: resolveObjectChain(forWrite=true) arr-index base case, mutable:false branch (E_WriteToReadOnlyArrElem)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -601,11 +601,44 @@ TEST(sa_error, field_access_on_arr_index_non_struct)
 TEST(sa_error, field_assign_on_arr_index_non_struct)
 {
 	// [4]int64 arr; 10 -> arr[0].x; — arr[i] is not a struct pointer
-	// Covers: resolveStoreLocChain arr-index base case, non-struct value-type branch (E_FieldAccessOnNonStruct)
+	// Covers: resolveObjectChain(forWrite=true) arr-index base case, non-struct value-type branch (E_FieldAccessOnNonStruct)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_079_field_assign_on_arr_index_non_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+
+TEST(sa_error, field_assign_on_call_base)
+{
+	// type Point{...}; func f() -> @!Point r {...}; 1 -> f().x; -- the store_loc
+	// grammar's func_call alternative normalizes to an unaddressable "not-impl"
+	// base (see storeLocToExpr), which resolveObjectChain's field-access
+	// recursion must reject explicitly rather than assume a nested object/field
+	// shape (previously an unguarded obj["object"] access aborted on this input).
+	// Covers: resolveObjectChain(forWrite=true) non-field-access base branch (E_FieldAccessOnNonStruct)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_115_field_assign_on_call_base.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+
+TEST(sa_error, field_access_on_tuple_base)
+{
+	// type Point{...}; type Line{$Point a; $Point b;}; int64 v = (1,2).a.x; --
+	// a multi-expression tuple grouping normalizes to "not-impl" (see term's
+	// '(' tapple_inner ')' rule), reached here through a read-side two-level
+	// field-access chain rather than store_loc.
+	// Covers: resolveObjectChain(forWrite=false) non-field-access base branch (E_FieldAccessOnNonStruct)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_116_field_access_on_tuple_base.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
@@ -655,7 +688,7 @@ TEST(sa_error, write_readonly_arr_field_elem)
 {
 	// type Watch { [3]@Point observed; }; p -> w.observed[0]; 42 -> w.observed[0].x;
 	// -- write-through to a non-mutable embed-ptr-arr struct field element
-	// Covers: IT-2508 — resolveStoreLocChain arr-index base case, mutable:false
+	// Covers: IT-2508 — resolveObjectChain(forWrite=true) arr-index base case, mutable:false
 	// branch (E_WriteToReadOnlyArrElem), exercised via a struct field (embed-ptr-arr)
 	// rather than a plain variable array (already covered by write_readonly_arr_elem).
 	cleanTestEnv();
@@ -689,7 +722,7 @@ TEST(sa_error, field_assign_on_prim_arr_field_elem)
 {
 	// type Buf { [4]$int64 data; }; 10 -> buf.data[0].sub;
 	// -- same as field_access_on_prim_arr_field_elem but through the write side
-	// Covers: IT-2508 — resolveStoreLocChain arr-index base case, non-struct
+	// Covers: IT-2508 — resolveObjectChain(forWrite=true) arr-index base case, non-struct
 	// value-type branch (E_FieldAccessOnNonStruct), via embedded struct field array.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -805,5 +838,345 @@ TEST(sa_error, addr_of_undefined)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Undefined variable"), string::npos);
+}
+
+TEST(sa_error, addr_of_field_write_through_readonly)
+{
+	// `@Point p = s; @!int64 q = @!p.x;` -- p is a read-only struct pointer
+	// (@T); taking a mutable address through one of its fields must not
+	// launder read-only into mutable.
+	// Covers: sa_expr_addr_of field-access branch -> resolveObjectChain(forWrite=true)
+	// "id" case -> E_WriteThroughReadOnlyPtr
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_105_addr_of_field_write_through_readonly.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer '@T'"), string::npos);
+}
+
+TEST(sa_error, addr_of_field_immutable_ptr_hop)
+{
+	// `@!int64 p = @!n.next.val;` where `next` is `@Node` (read-only raw-ptr
+	// field) -- the intermediate hop, not just the final field, must be
+	// write-permission checked.
+	// Covers: resolveObjectChain(forWrite=true) field-hop branch -> E_WriteToImmutablePtrField
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_106_addr_of_field_immutable_ptr_hop.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer field '@T'"), string::npos);
+}
+
+TEST(sa_error, addr_of_embed_field)
+{
+	// `@s.in;` where `in` is a struct-typed field (non-primitive leaf) --
+	// address-of on a struct field is limited to primitive-typed fields.
+	// Covers: sa_expr_addr_of field-access branch -> leaf typeKind != "prim" -> E_AddrOfNotPrimitive
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_107_addr_of_embed_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of"), string::npos);
+}
+
+TEST(sa_error, addr_of_unknown_field)
+{
+	// `@s.z;` where Point has no field `z`.
+	// Covers: sa_expr_addr_of field-access branch -> findFieldOrExit -> E_UnknownField
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_108_addr_of_unknown_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("has no field"), string::npos);
+}
+
+TEST(sa_error, addr_of_call_not_addressable)
+{
+	// `@f();` -- a call expression is not an addressable location.
+	// Covers: sa_expr_addr_of fallback branch, "not-impl" object case -> E_AddrOfNotAddressable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_110_addr_of_call.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of this expression"), string::npos);
+}
+
+TEST(sa_error, addr_of_field_readonly_arr_elem)
+{
+	// `@!int64 p = @!rpts[0].x;` where `rpts` is `[4]@Point` (read-only
+	// pointer-slot array) -- the arr-index hop itself is the read-only
+	// element, not just a field along the way.
+	// Covers: resolveObjectChain(forWrite=true) "arr-index" branch -> E_WriteToReadOnlyArrElem
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_111_addr_of_field_readonly_arr_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer array element"), string::npos);
+}
+
+TEST(sa_error, write_through_readonly_ptr)
+{
+	// `@int64 p = @x; 99 -> p[0];` -- deref write through a read-only `@T`
+	// Covers: sa_arr_assign_stmt isWritableThrough branch (E_WriteThroughReadOnlyPtr)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_094_write_through_readonly_ptr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
+}
+
+TEST(sa_error, write_readonly_ptr_var_field)
+{
+	// `@Point view = original; 20 -> view.x;` -- field write through a
+	// read-only `@T`-typed plain local variable (not a struct field)
+	// Covers: resolveObjectChain(forWrite=true) "id" isWritableThrough branch
+	// (E_WriteThroughReadOnlyPtr)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_095_write_readonly_ptr_var_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade)
+{
+	// `@int64 p = @x; @!int64 q = p;` -- binding a read-only pointer to a
+	// mutable-typed destination
+	// Covers: sa_var_decl ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_096_ptr_mutability_upgrade.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_assign)
+{
+	// `p -> q;` where p is `@int64` and q is `@!int64` -- plain assign-stmt
+	// upgrade
+	// Covers: sa_assign_stmt ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_097_ptr_mutability_upgrade_assign.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_return)
+{
+	// `func f() -> IntPtr { ...; return p; }` where IntPtr is an alias for
+	// `@!int64` and p is `@int64` -- return-stmt upgrade
+	// Covers: sa_return_stmt ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_098_ptr_mutability_upgrade_return.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_arr_assign)
+{
+	// `view -> wpts[0];` where view is `@Point` and wpts is `[4]@!Point` --
+	// storing a read-only pointer value into a mutable pointer-slot array
+	// element
+	// Covers: sa_arr_assign_stmt ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_099_ptr_mutability_upgrade_arr_assign.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_field_assign)
+{
+	// `ro -> n1.next;` where ro is `@Node` and `next` is a `@!Node` field --
+	// storing a read-only pointer value into a mutable pointer field
+	// Covers: sa_field_assign ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_100_ptr_mutability_upgrade_field_assign.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_mutability_upgrade_call_arg)
+{
+	// `take(ro);` where `take` takes `@!int64` and ro is `@int64` -- passing
+	// a read-only pointer where a Palan function expects a mutable one
+	// Covers: sa_expr_call ptrPermissionOk branch (E_PtrMutabilityUpgrade)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_101_ptr_mutability_upgrade_call_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, assign_whole_struct_elem)
+{
+	// `other -> pt[0];` -- `pt[0]` on a struct pointer is an address
+	// computation (addr-only), not a pointer slot; writing the whole element
+	// is rejected. IT-2805: guards the new struct-deref addr-only path.
+	// Covers: sa_arr_assign_stmt addr-only guard (E_AssignToWholeStructElem)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_102_assign_whole_struct_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot assign to a struct element as a whole"), string::npos);
+}
+
+TEST(sa_error, write_readonly_struct_ptr_field)
+{
+	// `42 -> ro[0].x;` where ro is `@Point` -- writing a field through a
+	// read-only struct pointer via `p[i].field` is rejected, same as the
+	// existing `[n]@Point` array-element case.
+	// Covers: resolveObjectChain(forWrite=true) arr-index branch (E_WriteToReadOnlyArrElem)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_103_write_readonly_struct_ptr_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("read-only pointer array element"), string::npos);
+}
+
+TEST(sa_error, deref_unknown_struct_ptr)
+{
+	// `@!Foo p; p[0].bar;` where `Foo` is never declared. gen-ast has no
+	// symbol table, so `Foo` parses as a prim base-type, not a struct one --
+	// IT-2805: sa_expr_arr_index's generic (non-struct) branch must reject
+	// this at the SA boundary instead of letting elemSizeBytes' -1
+	// "unknown type" sentinel leak into elem-size and crash palan-codegen
+	// downstream (layer violation).
+	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownStructType)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_104_deref_unknown_struct_ptr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+}
+
+TEST(sa_error, readonly_ptr_to_nonconst_c_param)
+{
+	// `clock_getcpuclockid(int32(0), p);` where `p` is `@int32` (read-only)
+	// and the C parameter is `clockid_t *` (non-const) -- IT-2026-08-31-c2ast-
+	// const-capture: C function arguments are now checked by
+	// ptrPermissionOk() too, previously exempted (see the removed comment at
+	// sa_expr_call's arg loop).
+	// Covers: sa_expr_call checkArgPtrPermission, C-func branch (E_ReadOnlyPtrToNonConstCParam)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_112_readonly_ptr_to_nonconst_c_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter"), string::npos);
+}
+
+TEST(sa_error, readonly_ptr_to_nonconst_c_param_alias)
+{
+	// Same as readonly_ptr_to_nonconst_c_param but through an aliased
+	// cinclude (`cinclude <time.h> as T; T.clock_getcpuclockid(...)`) --
+	// sa_expr_member_call had no pointer-permission check at all before this
+	// ticket, for either C or Palan callees.
+	// Covers: sa_expr_member_call checkArgPtrPermission, C-func branch (E_ReadOnlyPtrToNonConstCParam)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_113_readonly_ptr_to_nonconst_c_param_alias.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter"), string::npos);
+}
+
+TEST(sa_error, readonly_ptr_to_nonconst_c_param_unnamed)
+{
+	// `tmpnam(s)` -- glibc's stdio.h declares tmpnam's parameter with an
+	// abstract declarator (no name), so c2ast's parameter entry has no
+	// "name" key. checkArgPtrPermission falls back to a 1-based position
+	// ("#1") for the diagnostic in that case.
+	// Covers: checkArgPtrPermission, param.value("name","").empty() branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_114_readonly_ptr_to_nonconst_c_param_unnamed.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter '#1'"), string::npos);
+}
+
+TEST(sa_error, addr_of_arr_row_not_addressable)
+{
+	// `@!mat[0]` where `mat` is `[2]$[3]int64` -- the row itself is already
+	// an address computation (embedded 2D row access), not a storage slot.
+	// Covers: sa_expr_addr_of arr-index branch, addr-only(true) input -> E_AddrOfNotPrimitiveElem
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_117_addr_of_arr_row.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of this array element"), string::npos);
+}
+
+TEST(sa_error, addr_of_ptr_elem_not_addressable)
+{
+	// `@!wpts[0]` where `wpts` is `[4]@!Point` (pointer-slot array) -- the
+	// element itself is already a pointer, so taking its address would be
+	// a double indirection; out of scope.
+	// Covers: sa_expr_addr_of arr-index branch, elem value-type type-kind != "prim" -> E_AddrOfNotPrimitiveElem
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_118_addr_of_ptr_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot take the address of this array element"), string::npos);
+}
+
+TEST(sa_error, addr_of_readonly_ptr_elem)
+{
+	// `@!p[1]` where `p` is `@int64` (read-only pointer) -- `@!arr[i]` is
+	// "get write permission to arr[i]", so it must be rejected the same way
+	// a plain deref-write through a read-only pointer is.
+	// Covers: sa_expr_addr_of arr-index branch, isMutable && !isWritableThrough -> E_WriteThroughReadOnlyPtr
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_119_addr_of_readonly_ptr_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
 }
 
