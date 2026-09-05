@@ -667,3 +667,83 @@ TEST(c2ast, array_decl) {
     ASSERT_EQ(g_buf_vt["base-type"]["size-expr"]["value"], "3");
     ASSERT_EQ(g_buf_vt["base-type"]["base-type"]["type-name"], "int8");
 }
+
+TEST(c2ast, ptr_array_decl) {
+    // Regression guard for IT-2026-09-05-c2ast-declarator-precedence: postfix
+    // suffixes ('[n]', '(params)') must bind tighter than the prefix '*', so
+    // "int *a[3]" (array of pointers) and "int (*a)[3]" (pointer to array) must
+    // NOT come out swapped.
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/026_ptr_array_decl.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+    auto find_field = [](json& fields, const string& name) -> json* {
+        for (auto& f : fields)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* ptr_arr = find_struct("PtrArr");
+    ASSERT_NE(ptr_arr, nullptr);
+
+    // int *ptrs[3]; -- array of 3 pointers to int
+    json* ptrs = find_field((*ptr_arr)["fields"], "ptrs");
+    ASSERT_NE(ptrs, nullptr);
+    auto& ptrs_vt = (*ptrs)["var-type"];
+    ASSERT_EQ(ptrs_vt["type-kind"], "arr");
+    ASSERT_EQ(ptrs_vt["size-expr"]["value"], "3");
+    ASSERT_EQ(ptrs_vt["base-type"]["type-kind"], "pntr");
+    ASSERT_EQ(ptrs_vt["base-type"]["base-type"]["type-name"], "int32");
+
+    // int (*grouped)[3]; -- pointer to an array of 3 ints
+    json* grouped = find_field((*ptr_arr)["fields"], "grouped");
+    ASSERT_NE(grouped, nullptr);
+    auto& grouped_vt = (*grouped)["var-type"];
+    ASSERT_EQ(grouped_vt["type-kind"], "pntr");
+    ASSERT_EQ(grouped_vt["base-type"]["type-kind"], "arr");
+    ASSERT_EQ(grouped_vt["base-type"]["size-expr"]["value"], "3");
+    ASSERT_EQ(grouped_vt["base-type"]["base-type"]["type-name"], "int32");
+
+    // void (*fp)(int); -- pointer to function, no longer needing the removed
+    // is_grouped special case to avoid mis-parsing as a plain function.
+    json* fp = find_field((*ptr_arr)["fields"], "fp");
+    ASSERT_NE(fp, nullptr);
+    auto& fp_vt = (*fp)["var-type"];
+    ASSERT_EQ(fp_vt["type-kind"], "pntr");
+    ASSERT_EQ(fp_vt["base-type"]["type-kind"], "func");
+    ASSERT_EQ(fp_vt["base-type"]["ret-type"]["type-name"], "void");
+
+    // int f(char *argv[]); -- array-of-pointer parameter decay: only the outer
+    // array dimension decays, leaving "pointer to pointer to char".
+    json* f = find_func("f");
+    ASSERT_NE(f, nullptr);
+    auto& argv_vt = (*f)["parameters"][0]["var-type"];
+    ASSERT_EQ(argv_vt["type-kind"], "pntr");
+    ASSERT_EQ(argv_vt["base-type"]["type-kind"], "pntr");
+    ASSERT_EQ(argv_vt["base-type"]["base-type"]["type-name"], "int8");
+
+    // int * const * p; -- const binds to the inner pointer (the one closer to
+    // the base type), matching "p is a non-const pointer to a const pointer
+    // to int".
+    json* qual_ptr = find_struct("QualPtr");
+    ASSERT_NE(qual_ptr, nullptr);
+    json* p = find_field((*qual_ptr)["fields"], "p");
+    ASSERT_NE(p, nullptr);
+    auto& p_vt = (*p)["var-type"];
+    ASSERT_EQ(p_vt["type-kind"], "pntr");
+    ASSERT_FALSE(p_vt.contains("const"));
+    ASSERT_EQ(p_vt["base-type"]["type-kind"], "pntr");
+    ASSERT_EQ(p_vt["base-type"]["const"], true);
+}

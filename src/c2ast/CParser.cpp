@@ -527,7 +527,7 @@ static void wrapArrayDims(json &var_type, vector<json> &dims)
 	dims.clear();
 }
 
-bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index, bool is_grouped)
+bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
 	vector<json> dims;   // pending array dimensions, outermost (leftmost) first
@@ -549,20 +549,7 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 				parameter_list(params, tokens, index);
 				EXPECT_PUNC(')');
 			}
-			json& vt = decl["var-type"];
-			// Only a parenthesized declarator -- e.g. "(*fp)(params)" -- means fp is a
-			// pointer to function. Without is_grouped, vt being "pntr" here just means
-			// the (non-grouped) declarator's own base type is a pointer (e.g. a
-			// pointer-typedef'd return type, as in "level1_t g(void)"), which is a plain
-			// function returning that pointer type, not a function-pointer variable.
-			if (is_grouped && vt.is_object() && vt.value("type-kind", "") == "pntr") {
-				// (*fp)(params) → fp is a pointer to function
-				// Move func inside the pntr, using pntr's base-type as return type.
-				vt = {{"type-kind", "pntr"}, {"base-type",
-					{{"type-kind", "func"}, {"ret-type", vt["base-type"]}, {"parameters", params}}}};
-			} else {
-				vt = {{"type-kind", "func"}, {"ret-type", vt}, {"parameters", params}};
-			}
+			decl["var-type"] = {{"type-kind", "func"}, {"ret-type", decl["var-type"]}, {"parameters", params}};
 
 		} else {
 			break;
@@ -574,48 +561,98 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 	return true;
 }
 
+// Advances `index` from the token just after an already-consumed '(' to the position
+// just after its matching ')', tracking nested parens (a parameter list inside the
+// group, e.g. "(*signal(int))(int)", may itself contain '(' / ')'). Sets `close_index`
+// to the token index of that matching ')' itself, which declarator() uses to confirm a
+// grouped declarator's inner parse consumed exactly up to it (see declarator() below).
+static bool skipToMatchingParen(const vector<CToken*> &tokens, int &index, int &close_index)
+{
+	int depth = 1;
+	while (index < (int)tokens.size()) {
+		CToken* token = tokens[index];
+		if (token->type == TT_PUNCTUATOR) {
+			if (token->info.punc == '(') {
+				depth++;
+			} else if (token->info.punc == ')') {
+				depth--;
+				if (depth == 0) {
+					close_index = index;
+					index++;
+					return true;
+				}
+			}
+		}
+		index++;
+	}
+	return false;
+}
+
 // declarator() parses a declarator, building up decl:
 //   decl["name"]     - declared identifier
-//   decl["var-type"] - complete type (caller initializes with base type from declaration_specifiers;
-//                      declarator wraps with pntr for *, declarator_tail wraps with func/array)
+//   decl["var-type"] - complete type (caller initializes with base type from declaration_specifiers)
+//
+// C declarator precedence: the postfix suffixes '[n]' and '(params)' bind tighter than
+// the prefix '*', so prefix pointers at this level are applied to the base type first
+// (innermost), suffixes then wrap outside them, and a parenthesized inner declarator
+// (a new level) receives the type built so far as ITS base type -- e.g. "int (*a)[3]"
+// wraps int in arr(3) first (the suffix, at this level), then the inner "*a" wraps
+// that in pntr (one level in); "int *a[3]" has no group, so the prefix pntr wraps int
+// directly and the suffix arr(3) wraps outside that, giving arr(3, pntr(int)).
+//
+// This mutates decl["var-type"] before knowing whether the parse will succeed (the
+// prefix '*' loop below writes it immediately), so any failure must roll back to
+// `saved` -- callers such as parameter_list() retry a failed declarator() call on the
+// very same decl object (first as a named declarator, then as an abstract one), and
+// would otherwise see a partially-wrapped type left over from the failed attempt.
 bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_index, bool is_typeonly)
 {
 	int index = result_index;
+	json saved = decl;
 
-	if (CONSUME_PUNC('*')) {
+	while (CONSUME_PUNC('*')) {
 		bool ptr_const = CONSUME_KW(TK_CONST);       // e.g. int * const p
-		bool ptr_volatile = CONSUME_KW(TK_VOLATILE);
-		if (!declarator(decl, tokens, index, is_typeonly))
-			return false;
-		json& vt = decl["var-type"];
-		if (vt.is_object() && vt.value("type-kind", "") == "func") {
-			// char *f(params) → f is a function returning char*
-			// The * modifies the return type, not the function itself.
-			vt["ret-type"] = {{"type-kind", "pntr"}, {"base-type", vt["ret-type"]}};
-			if (ptr_const) vt["ret-type"]["const"] = true;
-		} else {
-			vt = {{"type-kind", "pntr"}, {"base-type", vt}};
-			if (ptr_const) vt["const"] = true;
-		}
-		result_index = index;
-		return true;
+		CONSUME_KW(TK_VOLATILE);
+		decl["var-type"] = {{"type-kind", "pntr"}, {"base-type", move(decl["var-type"])}};
+		if (ptr_const) decl["var-type"]["const"] = true;
 	}
 
-	bool is_grouped = false;
+	int group_index = -1, close_index = -1;
 	if (CONSUME_PUNC('(')) {
-		is_grouped = true;
-		if (!declarator(decl, tokens, index, is_typeonly))
+		group_index = index;
+		if (!skipToMatchingParen(tokens, index, close_index)) {
+			decl = move(saved);
 			return false;
-		EXPECT_PUNC(')');
+		}
 
 	} else if (!is_typeonly) {
 		CONSUME_KW(TK_RESTRICT); // C99 restrict qualifier
-		if (!CONSUME(TT_ID))
+		if (!CONSUME(TT_ID)) {
+			decl = move(saved);
 			return false;
+		}
 		decl["name"] = *tokens[index-1]->info.id;
 	}
 
-	declarator_tail(decl, tokens, index, is_grouped);
+	if (!declarator_tail(decl, tokens, index)) {
+		decl = move(saved);
+		return false;
+	}
+
+	if (group_index >= 0) {
+		// Parse the group's interior as a nested declarator level, now that the type
+		// it should wrap (this level's suffixes, applied above) is in decl["var-type"].
+		// Requiring it to consume exactly up to the already-located close_index (rather
+		// than just trusting its own success) rejects garbage inside the group, e.g.
+		// "int (*x y)" -- and rejects a parameter list mistaken for a group, e.g.
+		// "int(char*)", the same shapes the old EXPECT_PUNC(')')-right-after-recursing
+		// check used to reject.
+		int gi = group_index;
+		if (!declarator(decl, tokens, gi, is_typeonly) || gi != close_index) {
+			decl = move(saved);
+			return false;
+		}
+	}
 
 	result_index = index;
 	return true;

@@ -138,10 +138,10 @@ Variable type
         - "fixed"    (`[#]type`) — initialization required; element count determined by SA from initializer
         - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
     - embedded - Boolean, true when the array's storage is laid out inline/contiguous rather than
-      as a separately-allocated block; omitted when false. Native syntax sets this only for a
-      contiguous 2D array (`[n]$[m]T`); c2ast sets it on every C array declarator it captures
-      (a struct field or parameter written `T name[n]` in the header), 1D included, since a C
-      array is always inline storage.
+      as a separately-allocated block; omitted when false. Native syntax sets this for the
+      `$`-prefixed inline-storage forms, both 1D (`[n]$T`) and a contiguous 2D array (`[n]$[m]T`);
+      c2ast sets it on every C array declarator it captures (a struct field or parameter written
+      `T name[n]` in the header), 1D included, since a C array is always inline storage.
     Note: For `[m][n]T` (2D array via pointer-of-pointers), the outer arr's `base-type` is itself an
     `arr` type (`specifier: "raw"`, leaf `base-type` is a prim type). SA transforms this nested arr
     into a `pntr(pntr(T))` var-decl with auto-generated allocator calls (see SASpec.md).
@@ -154,6 +154,12 @@ Variable type
     `base-type` is an inner `arr` (size-expr 3). See SASpec.md's C-origin field admission rules for
     which shapes SA accepts as a struct field (2D+ is not supported there) and the C Parameter
     section below for how an array-typed parameter decays.
+    Note: c2ast's declarator parser follows normal C precedence — the postfix `[n]` binds tighter
+    than the prefix `*` — so `T *name[n];` (array of `n` pointers to T) captures as an `arr` whose
+    `base-type` is `pntr(T)`, while `T (*name)[n];` (pointer to an array of `n` T) captures as a
+    `pntr` whose `base-type` is `arr(T)`; these are not interchangeable. See SASpec.md's C-origin
+    field admission rules for how the `arr(pntr(T))` form is normalized to Palan's `[n]@T`/`[n]@!T`
+    pointer-slot-array shape at the cinclude ingestion boundary.
   4. embed - Inline struct embedding (`$T` syntax in struct field declarations)
     - base-type\* - Base variable type of the embedded struct (type-kind "prim" with the struct name)
     Note: Valid only inside `struct-def` field lists. SA resolves the sub-struct layout and folds the
