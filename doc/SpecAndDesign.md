@@ -6,39 +6,55 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-04)
-version: 0.1.29 — **not yet decided.**
+### 2.1 Iteration Goal (2026-09-06)
+version: 0.1.29 — stdio.h full support (C global variables + opaque handle types) + sys/stat.h
 
-v0.1.28 (pointer dereference and general address-of) is complete. `@`/`@!` now extend to
-struct fields and array elements (not just local primitives), `p[i]` dereference is
-specified and tested in both directions, and the read-only (`@T`) vs. mutable (`@!T`)
-distinction is enforced by the type system at every write, bind, and C-argument site. Along
-the way, c2ast gained proper handling of C array declarators (struct fields lay out
-correctly; array parameters decay to pointers) and `const` capture on struct/union/enum
-pointees and fields — both prerequisites the address-of/dereference work exposed. The next
-iteration's concrete target has not been chosen yet — this section will be rewritten with a
-full pre-implementation audit (following the same discipline as v0.1.26/v0.1.27/v0.1.28:
-gap catalog, function inventory or design sketch, definition of done) once that decision is
-made in a separate conversation.
+A pre-implementation audit found that stdio.h's file-oriented API is completely unusable
+today, and fails as a compiler abort rather than a diagnostic:
 
-Candidates, carried forward from v0.1.28's non-goals and known gaps:
-- `sys/stat.h` function support (`stat`/`fstat`/`chmod`/… and the `S_IS*` predicates). The
-  layout prerequisite (c2ast array-field handling) is now in place, making this the most
-  likely next step.
-- Function-like macros (`S_ISDIR(m)` and friends) — needs a genuinely new export mechanism.
-- Address-of on function parameters, and on whole struct or array variables (`@s`, `@arr`)
-  — the latter would produce a pointer to a pointer, which needs the semantics settled first.
-- Borrowed-pointer lifetime checking (see `doc/Issues.md` item 6) — `@`/`@!` pointers can
-  currently outlive the storage they point into with no diagnostic.
-- `timer_create` / `struct sigevent`: still deferred. The real definition
-  (`bits/types/sigevent_t.h`) needs anonymous unions, an anonymous nested struct,
-  function-pointer members, and `__sigval_t` (itself a union) — a large type-system
-  expansion in exchange for one function.
-- `strftime_l` / `locale_t`: deferred again, same reasoning as v0.1.26/v0.1.27/v0.1.28.
+```
+cinclude <stdio.h>;
+fprintf(stderr, "hi\n");                → error: Undefined variable 'stderr'.
+@!FILE f = fopen("/tmp/x", "w");        → abort: unknown prim type-name: FILE
+int32 r = fclose(fopen("/tmp/x","w"));  → abort: unknown type-kind: user
+```
 
-Whichever is chosen, the series' underlying goal stays the same: header/feature support is
-the forcing function for general C-interop language capability, not per-function coverage
-for its own sake.
+Two independent gaps cause this: (1) no stage — c2ast, gen-ast, SA, or codegen — has any
+notion of a C `extern` global object, so `stdout`/`stderr`/`stdin` are silently dropped at
+c2ast ingest; (2) `FILE` (a typedef bottoming out in a struct) is never normalized at the
+cinclude ingest boundary, so it reaches `PlnTypeRegistry::fromJson` as an unrecognized
+`user` type-kind and throws unguarded on the argument-expression path.
+
+This iteration makes stdio.h's file API and `stdout`/`stderr`/`stdin` usable, with `FILE`
+represented as an **opaque handle type** (an incomplete type, usable only behind `@T`/`@!T`,
+matching C's own incomplete-type semantics for it) — and, in the latter half, brings
+`sys/stat.h` up to a similar level. A linking-approach spike confirmed that referencing a C
+global via `leaq sym(%rip)` + a `DerefLoad` produces a working `R_X86_64_COPY` relocation
+under the project's existing non-PIE `ld -lc -dynamic-linker` link line — no GOT/PLT/PIE
+handling is needed, and no new x86 emission is required for that path.
+
+The audit also surfaced two prerequisite bugs unrelated to either header, both blocking:
+codegen has no signed↔unsigned integer conversion pairs at all (`emitConvert` aborts on any
+such cast whose result is actually used — dead-code elimination hid this until now), and the
+language has no bitwise operators (`&`/`|` parse but lower to `not-impl`; `^`/`~` aren't even
+lexed) — without which `st_mode & S_IFMT` can't be written, making `sys/stat.h` support
+hollow. Both are fixed first, as their own tickets, before the header work.
+
+Non-goals for this iteration: full `_IO_FILE` layout registration (the opaque handle covers
+every stdio.h entry point without it; full layout would need constant-expression evaluation
+in c2ast, including `sizeof`, which is its own iteration); function-like macros
+(`S_ISDIR(m)` and friends — `S_IFMT`/`S_IFDIR` already export as constants, so
+`(m & S_IFMT) == S_IFDIR` covers the same ground with the new bitwise-AND operator);
+writable C globals or address-of on a C global; shift operators (`>>` collides with the
+existing move-owner operator token); and the long-deferred `timer_create`/`struct sigevent`,
+`strftime_l`/`locale_t`, and borrowed-pointer lifetime checking (`doc/Issues.md` item 6).
+
+Full gap catalog, ingestion-boundary design (where `user`/incomplete-struct normalization
+belongs, C-global scoping and mutability rules, sa.json shapes), and the ticket breakdown
+are in `localtickets/iteration-2026-09-06-v0129-stdio-stat.md`.
+
+The series' underlying goal stays the same: header/feature support is the forcing function
+for general C-interop language capability, not per-function coverage for its own sake.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
