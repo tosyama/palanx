@@ -1185,3 +1185,58 @@ TEST(codegen, addr_of_dst_stack_spill) {
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("(%rbp), %r11\n\tmovq %r11, "), string::npos);
 }
+
+TEST(codegen, sign_cross_widen) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/063_sign_cross_widen.sa.json";
+    string asmf = "out/063_sign_cross_widen.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Widening must extend according to the SOURCE's signedness: unsigned
+    // sources zero-extend even when the destination type is signed.
+    ASSERT_NE(asm_text.find("movzbq"), string::npos);  // uint8 -> int64
+    ASSERT_NE(asm_text.find("movzwq"), string::npos);  // uint16 -> int64
+    ASSERT_EQ(asm_text.find("movsbq"), string::npos);  // must not sign-extend
+    ASSERT_EQ(asm_text.find("movswq"), string::npos);
+    ASSERT_EQ(asm_text.find("movslq"), string::npos);  // uint32 -> int64 must not sign-extend
+}
+
+TEST(codegen, sign_cross_narrow) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/064_sign_cross_narrow.sa.json";
+    string asmf = "out/064_sign_cross_narrow.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Widening must extend according to the SOURCE's signedness: signed
+    // sources sign-extend even when the destination type is unsigned.
+    ASSERT_NE(asm_text.find("movsbq"), string::npos);  // int8 -> uint64
+    ASSERT_NE(asm_text.find("movswl"), string::npos);  // int16 -> uint32
+    ASSERT_EQ(asm_text.find("movzbq"), string::npos);  // must not zero-extend
+    ASSERT_EQ(asm_text.find("movzwl"), string::npos);
+    // Narrowing (int64 -> uint8) and same-width sign reinterpretation
+    // (int32 -> uint32) just reference the low bits; no dedicated mnemonic.
+    ASSERT_NE(asm_text.find("movb"), string::npos);
+    ASSERT_NE(asm_text.find("movl"), string::npos);
+}
+
+TEST(codegen, float_to_uint) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/065_float_to_uint.sa.json";
+    string asmf = "out/065_float_to_uint.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // flo64 -> uint32/uint8: must use the 64-bit form (32-bit form's signed
+    // result cannot represent a uint32 above INT32_MAX).
+    ASSERT_NE(asm_text.find("cvttsd2siq"), string::npos);
+    // flo64 -> int8: signed narrow destinations reuse the 32-bit form.
+    ASSERT_NE(asm_text.find("cvttsd2sil"), string::npos);
+}

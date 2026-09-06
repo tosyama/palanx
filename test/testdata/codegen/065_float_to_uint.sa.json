@@ -1,0 +1,55 @@
+{
+    "functions": [],
+    "original": "065_float_to_uint.pa",
+    "statements": [
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "x",
+            "var-type": { "type-kind": "prim", "type-name": "flo64" },
+            "init": { "expr-type": "lit-flo", "value": "3.9",
+                      "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+        }]},
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "a",
+            "var-type": { "type-kind": "prim", "type-name": "uint32" },
+            "init": { "expr-type": "lit-int", "value": "0",
+                      "value-type": { "type-kind": "prim", "type-name": "uint32" } }
+        }]},
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "b",
+            "var-type": { "type-kind": "prim", "type-name": "uint8" },
+            "init": { "expr-type": "lit-int", "value": "0",
+                      "value-type": { "type-kind": "prim", "type-name": "uint8" } }
+        }]},
+        { "stmt-type": "var-decl", "vars": [{
+            "name": "c",
+            "var-type": { "type-kind": "prim", "type-name": "int8" },
+            "init": { "expr-type": "lit-int", "value": "0",
+                      "value-type": { "type-kind": "prim", "type-name": "int8" } }
+        }]},
+        { "stmt-type": "assign", "name": "a",
+          "value": { "expr-type": "convert",
+            "from-type": { "type-kind": "prim", "type-name": "flo64" },
+            "value-type": { "type-kind": "prim", "type-name": "uint32" },
+            "src": { "expr-type": "id", "name": "x",
+                     "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+          }
+        },
+        { "stmt-type": "assign", "name": "b",
+          "value": { "expr-type": "convert",
+            "from-type": { "type-kind": "prim", "type-name": "flo64" },
+            "value-type": { "type-kind": "prim", "type-name": "uint8" },
+            "src": { "expr-type": "id", "name": "x",
+                     "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+          }
+        },
+        { "stmt-type": "assign", "name": "c",
+          "value": { "expr-type": "convert",
+            "from-type": { "type-kind": "prim", "type-name": "flo64" },
+            "value-type": { "type-kind": "prim", "type-name": "int8" },
+            "src": { "expr-type": "id", "name": "x",
+                     "value-type": { "type-kind": "prim", "type-name": "flo64" } }
+          }
+        }
+    ],
+    "str-literals": []
+}

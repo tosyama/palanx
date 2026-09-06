@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+
+// Regression for IT-2026-09-06-2901: the variable-inner-dim path in
+// PlnVCodeGen::lowerArrIndexExpr (2D contiguous array with a runtime `m`)
+// always converts the row index to Int64 before the stride multiply. A
+// uint32 row index used to hit the same missing Uint32->Int64 branch in
+// emitConvert and abort with rc=134.
+int64 rows = 2;
+int64 cols = 3;
+[rows]$[cols]int32 mat;
+int32(10) -> mat[0][0]; int32(20) -> mat[0][1]; int32(30) -> mat[0][2];
+int32(40) -> mat[1][0]; int32(50) -> mat[1][1]; int32(60) -> mat[1][2];
+
+uint32 i = 1;
+printf("%d %d %d\n", mat[i][0], mat[i][1], mat[i][2]);

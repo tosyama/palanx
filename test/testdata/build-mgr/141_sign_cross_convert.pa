@@ -1,0 +1,78 @@
+cinclude <stdio.h>;
+
+// Regression for IT-2026-09-06-2901: PlnX86CodeGen::emitConvert had no
+// signed<->unsigned branches at all and would abort (rc=134) on any of
+// these. Ticket repro (all previously aborted):
+uint32 ra = 7; int64 rb = int64(ra);
+uint64 rc = 7; int64 rd = int64(rc);
+int64  re = 7; uint64 rf = uint64(re);
+uint8  rg = 7; int32 rh = int32(rg);
+printf("%ld %ld %lu %d\n", rb, rd, rf, rh);
+
+// Full cross-signedness matrix. Sources are all-bits-one (max unsigned /
+// -1 signed) so that a wrong extension direction produces a visibly wrong
+// value instead of silently matching by coincidence.
+uint8  u8  = 255;
+uint16 u16 = 65535;
+uint32 u32 = 4294967295;
+uint64 u64 = 18446744073709551615u;
+int8   s8  = int8(-1);
+int16  s16 = int16(-1);
+int32  s32 = int32(-1);
+int64  s64 = -1;
+
+// Widening, unsigned source -> signed destination: extension must be
+// zero-extend (source signedness wins), so the value stays positive.
+int16 w1 = int16(u8);
+int32 w2 = int32(u8);
+int64 w3 = int64(u8);
+int32 w4 = int32(u16);
+int64 w5 = int64(u16);
+int64 w6 = int64(u32);
+printf("%d %d %ld %d %ld %ld\n", w1, w2, w3, w4, w5, w6);
+
+// Widening, signed source -> unsigned destination: extension must be
+// sign-extend (source signedness wins), so all bits stay set.
+uint16 w7  = uint16(s8);
+uint32 w8  = uint32(s8);
+uint64 w9  = uint64(s8);
+uint32 w10 = uint32(s16);
+uint64 w11 = uint64(s16);
+uint64 w12 = uint64(s32);
+printf("%u %u %lu %u %lu %lu\n", w7, w8, w9, w10, w11, w12);
+
+// Same-width sign reinterpretation, unsigned -> signed: bit pattern
+// unchanged, all-ones reads back as -1.
+int8  r1 = int8(u8);
+int16 r2 = int16(u16);
+int32 r3 = int32(u32);
+int64 r4 = int64(u64);
+printf("%d %d %d %ld\n", r1, r2, r3, r4);
+
+// Same-width sign reinterpretation, signed -> unsigned: bit pattern
+// unchanged, -1 reads back as the destination width's max value.
+uint8  r5 = uint8(s8);
+uint16 r6 = uint16(s16);
+uint32 r7 = uint32(s32);
+uint64 r8 = uint64(s64);
+printf("%u %u %u %lu\n", r5, r6, r7, r8);
+
+// Narrowing, unsigned source -> signed destination: low bits are all
+// ones, so the narrower signed type reads back as -1.
+int8  n1 = int8(u16);
+int8  n2 = int8(u32);
+int8  n3 = int8(u64);
+int16 n4 = int16(u32);
+int16 n5 = int16(u64);
+int32 n6 = int32(u64);
+printf("%d %d %d %d %d %d\n", n1, n2, n3, n4, n5, n6);
+
+// Narrowing, signed source -> unsigned destination: low bits are all
+// ones, so the narrower unsigned type reads back as its max value.
+uint8  n7  = uint8(s16);
+uint8  n8  = uint8(s32);
+uint8  n9  = uint8(s64);
+uint16 n10 = uint16(s32);
+uint16 n11 = uint16(s64);
+uint32 n12 = uint32(s64);
+printf("%u %u %u %u %u %u\n", n7, n8, n9, n10, n11, n12);

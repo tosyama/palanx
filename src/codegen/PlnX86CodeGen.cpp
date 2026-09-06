@@ -25,6 +25,38 @@ static bool isFloat(VRegType t) {
     return t == VRegType::Float32 || t == VRegType::Float64;
 }
 
+static int intWidth(VRegType t) {
+    switch (t) {
+        case VRegType::Int8:  case VRegType::Uint8:  return 1;
+        case VRegType::Int16: case VRegType::Uint16: return 2;
+        case VRegType::Int32: case VRegType::Uint32: return 4;
+        default:                                     return 8;  // Int64, Uint64, Ptr64
+    }
+}
+
+static bool isSignedInt(VRegType t) {
+    switch (t) {
+        case VRegType::Int8: case VRegType::Int16: case VRegType::Int32: case VRegType::Int64:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static const char* widthSuffix(int width) {
+    switch (width) {
+        case 1:  return "b";
+        case 2:  return "w";
+        case 4:  return "l";
+        default: return "q";
+    }
+}
+
+// mov(s|z)<fromSuffix><toSuffix> — e.g. extendMnemonic(true, 1, 8) => "movsbq"
+static string extendMnemonic(bool sourceSigned, int fromWidth, int toWidth) {
+    return string("mov") + (sourceSigned ? "s" : "z") + widthSuffix(fromWidth) + widthSuffix(toWidth);
+}
+
 static const char* addInstrForType(VRegType type) {
     switch (type) {
         case VRegType::Int8:    return "addb";
@@ -441,12 +473,12 @@ void PlnX86CodeGen::emitInstrConvert(const Convert& c, const RegMap& rm)
         // stack-allocated (no xmm register allocator).  If XMM registers are
         // ever assigned to live float VRegs, %xmm8 must be chosen more carefully
         // (e.g. pick a register not live at this instruction).
-        string scratch = dst_is_float ? "%xmm8" : sizedRegName("%rax", c.to);
-        emitConvert(scratch, rm.at(c.src), c.from, c.to);
+        string scratchBase = dst_is_float ? "%xmm8" : "%rax";
+        emitConvert(scratchBase, rm.at(c.src), c.from, c.to);
+        string scratch = dst_is_float ? scratchBase : sizedRegName(scratchBase, c.to);
         out << "\t" << movInstrForType(c.to) << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
     } else {
-        string dst_reg = dst_is_float ? dst_loc.base : sizedRegName(dst_loc.base, c.to);
-        emitConvert(dst_reg, rm.at(c.src), c.from, c.to);
+        emitConvert(dst_loc.base, rm.at(c.src), c.from, c.to);
     }
 }
 
@@ -895,84 +927,77 @@ void PlnX86CodeGen::emitMovImm(const string& reg, VRegType type, long long value
     out << "\t" << movInstrForType(type) << " $" << value << ", " << reg << "\n";
 }
 
-void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType from, VRegType to)
+void PlnX86CodeGen::emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to)
 {
     // Stack is a memory ref; register is sized by the requested type.
     auto srcAt = [&](VRegType t) -> string {
         if (src.isStack()) return std::to_string(src.stackOffset) + "(%rbp)";
         return sizedRegName(src.base, t);
     };
+    // Destination is always a register; XMM register names ignore width.
+    auto dstAt = [&](VRegType t) -> string {
+        if (isFloat(t)) return dstBase;
+        return sizedRegName(dstBase, t);
+    };
 
-    // Signed integer widening (movsx family)
-    if (from == VRegType::Int8  && to == VRegType::Int16) {
-        out << "\tmovsbw " << srcAt(from) << ", " << dst << "\n"; return;
+    // Integer <-> integer, any width and signedness.
+    if (!isFloat(from) && !isFloat(to)) {
+        int fw = intWidth(from), tw = intWidth(to);
+        if (tw <= fw) {
+            // Narrowing, or same-width sign reinterpretation (e.g. int32<->uint32):
+            // the bit pattern is unchanged, so just reference the low bits.
+            out << "\t" << movInstrForType(to) << " " << srcAt(to) << ", " << dstAt(to) << "\n";
+        } else if (fw == 4 && !isSignedInt(from)) {
+            // No movzlq instruction exists: movl into the 32-bit destination
+            // register implicitly zero-extends the upper 32 bits of the 64-bit register.
+            out << "\tmovl " << srcAt(from) << ", " << dstAt(VRegType::Int32) << "\n";
+        } else {
+            // Widening: extend according to the SOURCE's signedness (C semantics).
+            out << "\t" << extendMnemonic(isSignedInt(from), fw, tw)
+                << " " << srcAt(from) << ", " << dstAt(to) << "\n";
+        }
+        return;
     }
-    if (from == VRegType::Int8  && to == VRegType::Int32) {
-        out << "\tmovsbl " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int8  && to == VRegType::Int64) {
-        out << "\tmovsbq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int16 && to == VRegType::Int32) {
-        out << "\tmovswl " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int16 && to == VRegType::Int64) {
-        out << "\tmovswq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int32 && to == VRegType::Int64) {
-        out << "\tmovslq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    // Narrowing: reference lower bits of the source register (or same memory ref)
-    if (from == VRegType::Int64 && to == VRegType::Int32) {
-        out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int64 && to == VRegType::Int16) {
-        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int64 && to == VRegType::Int8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int32 && to == VRegType::Int16) {
-        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int32 && to == VRegType::Int8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int16 && to == VRegType::Int8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
+
     // Float to integer conversion (truncation toward zero)
-    if (from == VRegType::Float64 && to == VRegType::Int64) {
-        out << "\tcvttsd2siq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Float64 && to == VRegType::Int32) {
-        out << "\tcvttsd2sil " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Float32 && to == VRegType::Int64) {
-        out << "\tcvttss2siq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Float32 && to == VRegType::Int32) {
-        out << "\tcvttss2sil " << srcAt(from) << ", " << dst << "\n"; return;
+    if (isFloat(from) && !isFloat(to)) {
+        if (to == VRegType::Uint64) {
+            // Requires a branch-based bias-correction sequence that cannot be
+            // emitted inline here. Lower this conversion in PlnVCodeGen instead.
+            std::cerr << "PlnX86CodeGen: float-to-uint64 conversion must be lowered in PlnVCodeGen\n";
+            std::abort();
+        }
+        // cvtt*2si has only 32-bit and 64-bit integer destination forms.
+        // Uint8/16/32 use the 64-bit form: a uint32 above INT32_MAX would not
+        // fit the signed 32-bit result of the 32-bit form. Int8/16 reuse the
+        // 32-bit form and take their answer from the destination's low bits.
+        bool use64 = (to == VRegType::Int64) || !isSignedInt(to);
+        const char* cvt = (from == VRegType::Float64)
+            ? (use64 ? "cvttsd2siq" : "cvttsd2sil")
+            : (use64 ? "cvttss2siq" : "cvttss2sil");
+        out << "\t" << cvt << " " << srcAt(from) << ", "
+            << dstAt(use64 ? VRegType::Int64 : VRegType::Int32) << "\n";
+        return;
     }
     // Float precision conversion
     if (from == VRegType::Float32 && to == VRegType::Float64) {
-        out << "\tcvtss2sd " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtss2sd " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     if (from == VRegType::Float64 && to == VRegType::Float32) {
-        out << "\tcvtsd2ss " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsd2ss " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     // Integer to float conversion
     if (from == VRegType::Int32 && to == VRegType::Float64) {
-        out << "\tcvtsi2sdl " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsi2sdl " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     if (from == VRegType::Int64 && to == VRegType::Float64) {
-        out << "\tcvtsi2sdq " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsi2sdq " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     if (from == VRegType::Int32 && to == VRegType::Float32) {
-        out << "\tcvtsi2ssl " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsi2ssl " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     if (from == VRegType::Int64 && to == VRegType::Float32) {
-        out << "\tcvtsi2ssq " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsi2ssq " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     // Smaller signed integers: sign-extend to 64-bit via %rax, then convert.
     if ((from == VRegType::Int8 || from == VRegType::Int16) &&
@@ -980,77 +1005,39 @@ void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType 
         const char* sx  = (from == VRegType::Int8) ? "movsbq" : "movswq";
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
         out << "\t" << sx << " " << srcAt(from) << ", %rax\n";
-        out << "\t" << cvt << " %rax, " << dst << "\n";
+        out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
-    }
-    // Unsigned integer widening (movzx family — zero-extend)
-    if (from == VRegType::Uint8  && to == VRegType::Uint16) {
-        out << "\tmovzbw " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint8  && to == VRegType::Uint32) {
-        out << "\tmovzbl " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint8  && to == VRegType::Uint64) {
-        out << "\tmovzbq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint16 && to == VRegType::Uint32) {
-        out << "\tmovzwl " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint16 && to == VRegType::Uint64) {
-        out << "\tmovzwq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint32 && to == VRegType::Uint64) {
-        // movl to 32-bit register implicitly zero-extends the upper 32 bits of the 64-bit register.
-        out << "\tmovl " << srcAt(from) << ", " << sizedRegName(dst, VRegType::Int32) << "\n"; return;
-    }
-    // Unsigned narrowing (truncation): reference low bits of the source
-    if (from == VRegType::Uint64 && to == VRegType::Uint32) {
-        out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint64 && to == VRegType::Uint16) {
-        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint64 && to == VRegType::Uint8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint32 && to == VRegType::Uint16) {
-        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint32 && to == VRegType::Uint8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint16 && to == VRegType::Uint8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
     }
     // Unsigned integer to float conversion (uint8/16/32 fit in int64, so cvtsi2s*q is correct after zero-extension)
     if (from == VRegType::Uint8 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
         out << "\tmovzbq " << srcAt(from) << ", %rax\n";
-        out << "\t" << cvt << " %rax, " << dst << "\n";
+        out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
     }
     if (from == VRegType::Uint16 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
         out << "\tmovzwq " << srcAt(from) << ", %rax\n";
-        out << "\t" << cvt << " %rax, " << dst << "\n";
+        out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
     }
     if (from == VRegType::Uint32 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         // movl zero-extends uint32 into %rax; result fits in int64, so cvtsi2s*q is correct.
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
         out << "\tmovl " << srcAt(from) << ", %eax\n";
-        out << "\t" << cvt << " %rax, " << dst << "\n";
+        out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
     }
     if (from == VRegType::Uint64 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         // uint64-to-float requires a branch-based sequence that cannot be emitted inline here.
         // Lower this conversion in PlnVCodeGen using Label/CondJmp/Jmp instructions.
-        std::cerr << "PlnX86CodeGen: uint64-to-float must be lowered in PlnVCodeGen\n";
+        std::cerr << "PlnX86CodeGen: uint64-to-float conversion must be lowered in PlnVCodeGen\n";
         std::abort();
     }
     // Abort unconditionally — do not rely on BOOST_ASSERT which is a no-op in release builds.
-    std::cerr << "PlnX86CodeGen: unsupported conversion\n";
-    std::abort();
+    // Unreachable: every VRegType pair is handled by the branches above.
+    std::cerr << "PlnX86CodeGen: unsupported conversion\n"; // LCOV_EXCL_LINE
+    std::abort(); // LCOV_EXCL_LINE
 }
 
 void PlnX86CodeGen::emitCallC(const string& name, int nFloatArgs)

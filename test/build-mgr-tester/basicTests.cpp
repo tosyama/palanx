@@ -1128,6 +1128,32 @@ TEST(build_mgr, addr_of_owned_field_borrow_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, sign_cross_convert) {
+	// IT-2026-09-06-2901: PlnX86CodeGen::emitConvert had no signed<->unsigned
+	// branches at all; every case below used to abort with rc=134 instead of
+	// printing. Covers the ticket's repro plus the full cross-signedness
+	// widen/narrow/reinterpret matrix (int8/16/32/64 <-> uint8/16/32/64).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/141_sign_cross_convert.pa");
+	ASSERT_EQ(output,
+		"7 7 7 7\n"
+		"255 255 255 65535 65535 4294967295\n"
+		"65535 4294967295 18446744073709551615 4294967295 18446744073709551615 18446744073709551615\n"
+		"-1 -1 -1 -1\n"
+		"255 65535 4294967295 18446744073709551615\n"
+		"-1 -1 -1 -1 -1 -1\n"
+		"255 255 255 65535 65535 4294967295\n");
+}
+
+TEST(build_mgr, uint_idx_var_stride) {
+	// IT-2026-09-06-2901: a uint32 row index into a [n]$[m]T array with a
+	// runtime inner dimension used to abort in PlnVCodeGen's variable-stride
+	// path (Uint32 -> Int64 convert before the stride multiply).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/142_uint_idx_var_stride.pa");
+	ASSERT_EQ(output, "40 50 60\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
