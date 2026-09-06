@@ -1,0 +1,7 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+[4]int64 arr;
+int64 src = 99;
+memcpy(@!arr[2], @src, 8);
+printf("%ld %ld %ld %ld\n", arr[0], arr[1], arr[2], arr[3]);

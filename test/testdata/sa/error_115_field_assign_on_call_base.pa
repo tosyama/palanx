@@ -1,0 +1,8 @@
+type Point { int64 x; int64 y; };
+
+func f() -> @!Point r {
+    @!Point p;
+    p -> r;
+}
+
+1 -> f().x;

@@ -1,0 +1,6 @@
+int64 x = 1;
+int64 y = 2;
+@!int64 p = @!x;
+int64 i = 0;
+99 -> p[i];
+int64 z = p[i];

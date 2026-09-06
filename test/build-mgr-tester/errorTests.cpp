@@ -79,3 +79,27 @@ TEST(build_mgr_error, inline_as_value) {
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_052_inline_as_value.pa");
 	ASSERT_NE(out.find("inline struct field cannot be used as a standalone value"), string::npos);
 }
+
+TEST(build_mgr_error, cinclude_2d_arr_field) {
+	// struct Grid2D { int cells[2][3]; }; -- a cinclude'd struct with a 2D array
+	// field. buildStructDef has no layout rule for nested "arr" fields (matches
+	// native `[n]$[m]T` struct fields, also unsupported), so IT-2802's
+	// isSupportedCFieldType "arr" branch rejects it up front: the whole struct is
+	// left unregistered (same graceful "don't register this struct" path as any
+	// other cinclude-only construct SA can't lay out), not a hard crash.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_053_cinclude_2d_arr_field.pa");
+	ASSERT_NE(out.find("unknown struct type"), string::npos);
+}
+
+TEST(build_mgr_error, cinclude_arr_field_cast_size) {
+	// struct CastSized { int a[(int)4]; }; -- a cinclude'd array field whose
+	// size-expr resolves to a non-null, non-literal shape ("cast", from c2ast's
+	// constant_expression on "(int)4") rather than "lit-int"/"lit-uint".
+	// isSupportedCFieldType's "arr" branch rejects any size-expr that isn't a
+	// plain literal, so this hits the same graceful skip-the-whole-struct path
+	// as cinclude_2d_arr_field above, not a hard crash.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_054_cinclude_arr_field_cast_size.pa");
+	ASSERT_NE(out.find("unknown struct type"), string::npos);
+}

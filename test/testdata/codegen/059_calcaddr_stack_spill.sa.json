@@ -358,7 +358,8 @@
                                                         "type-name": "Point"
                                                     },
                                                     "type-kind": "pntr"
-                                                }
+                                                },
+                                                "addr-only": true
                                             },
                                             "value-type": {
                                                 "type-kind": "prim",
@@ -426,7 +427,8 @@
                                                         "type-name": "Point"
                                                     },
                                                     "type-kind": "pntr"
-                                                }
+                                                },
+                                                "addr-only": true
                                             },
                                             "value-type": {
                                                 "type-kind": "prim",
@@ -499,7 +501,8 @@
                                                     "type-name": "Point"
                                                 },
                                                 "type-kind": "pntr"
-                                            }
+                                            },
+                                            "addr-only": true
                                         },
                                         "value-type": {
                                             "type-kind": "prim",
@@ -572,7 +575,8 @@
                                                 "type-name": "Point"
                                             },
                                             "type-kind": "pntr"
-                                        }
+                                        },
+                                        "addr-only": true
                                     },
                                     "value-type": {
                                         "type-kind": "prim",
@@ -645,7 +649,8 @@
                                             "type-name": "Point"
                                         },
                                         "type-kind": "pntr"
-                                    }
+                                    },
+                                    "addr-only": true
                                 },
                                 "value-type": {
                                     "type-kind": "prim",
@@ -718,7 +723,8 @@
                                         "type-name": "Point"
                                     },
                                     "type-kind": "pntr"
-                                }
+                                },
+                                "addr-only": true
                             },
                             "value-type": {
                                 "type-kind": "prim",

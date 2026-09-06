@@ -1,0 +1,14 @@
+cinclude <string.h>;
+cinclude <stdio.h>;
+
+type Inner { int64 v; };
+type Point { int64 x; int64 y; $Inner in; };
+
+Point s;
+int64 src = 99;
+memcpy(@!s.y, @src, 8);
+printf("%ld\n", s.y);
+
+int64 nested_src = 7;
+memcpy(@!s.in.v, @nested_src, 8);
+printf("%ld\n", s.in.v);

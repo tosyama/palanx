@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.27
+ver. 0.1.28
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -264,11 +264,59 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
-  - addr-of: `{"type-kind": "pntr", "base-type": <named var's prim type>}`, plus
-    `{"mutable": true}` when produced by `@!ID` (omitted, not `false`, for `@ID`).
-    The named variable must be a local variable in the current scope (not a
-    function parameter, not itself a `pntr`/`struct`/`arr` type) — otherwise a
-    compile error (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive).
+  - addr-of: SA dispatches on the AST node's `object` (see ASTSpec.md) and emits one of three
+    shapes — the `addr-of` expr-type only ever appears for the plain-variable case; a struct-field
+    or array-element target lowers to an ordinary `field-access`/`arr-index` node instead:
+    - `object.expr-type == "id"` (`@x` / `@!x`): emitted as `{"expr-type":"addr-of","name":<var
+      name>,"mutable":<bool>,"value-type":{"type-kind":"pntr","mutable":<bool>,"base-type":<named
+      var's prim type>}}`. `mutable` is `true` for `@!ID`, `false` for `@ID`. The named variable
+      must be a local variable in the current scope (not a function parameter, not itself a
+      `pntr`/`struct`/`arr` type) — otherwise a compile error (E_AddrOfNotLocalVar /
+      E_AddrOfNotPrimitive).
+    - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
+      `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
+      field-access section below), then re-emitted as `{"expr-type":"field-access","var"|
+      "ptr-expr":…,"offset":<int>,"value-type":{"type-kind":"pntr","mutable":<bool>,"base-type":
+      <field's prim type>},"addr-only":true}` — `addr-only:true` tells codegen to compute the
+      field's address (`CalcAddr`) instead of loading it. The leaf field must be primitive-typed
+      (E_AddrOfNotPrimitive otherwise; embed/owned-pointer/array fields are not addressable this
+      way) and must exist on the resolved struct (E_UnknownField otherwise). Because `@!` requests
+      a *mutable* pointer, resolution runs with the same write-permission checks a store-location
+      chain would (`resolveObjectChain(obj, forWrite=<mutable>)`): a read-only `@T`-typed base
+      variable (E_WriteThroughReadOnlyPtr) or an intermediate read-only raw-ptr field hop
+      (E_WriteToImmutablePtrField) rejects `@!`, so a read-only pointer can never be laundered
+      into a mutable one by taking a field's address instead of writing the field directly.
+    - `object.expr-type == "arr-index"` (`@arr[i]` / `@!arr[i]`): resolved via `sa_expr_arr_index`
+      (see the arr-index section below) exactly as an ordinary array-element read would be, then
+      the resulting node is reused as-is with `addr-only` forced to `true` and `value-type`
+      rewrapped as `{"type-kind":"pntr","mutable":<bool>,"base-type":<original element
+      value-type>}` — the node keeps its `expr-type:"arr-index"`, `array`, `index`, `elem-size`,
+      and `loc` keys unchanged (unlike the field-access shape above, no new node is built). Two
+      checks gate this: the resolved element must not already be `addr-only:true` (a struct-array
+      element, a 2D row, or a contiguous-embedded element are all already addresses) and its
+      `value-type.type-kind` must be `"prim"` (a pointer-slot element is not) — either failure is
+      E_AddrOfNotPrimitiveElem. When `mutable` is requested, `isWritableThrough` is additionally
+      checked against the array's own `value-type` — the same rule `sa_arr_assign_stmt` applies to
+      an ordinary `arr[i]` write — so `@!` through a read-only array is E_WriteThroughReadOnlyPtr.
+
+      Example — `@!arr[2]` where `arr` is `[4]int64`:
+      ```json
+      {
+        "addr-only": true,
+        "array": {"expr-type":"id","name":"arr","category":"owned",
+                   "value-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int64"}}},
+        "elem-size": {"expr-type":"lit-uint","value":"8","value-type":{"type-kind":"prim","type-name":"uint64"}},
+        "expr-type": "arr-index",
+        "index": {"expr-type":"lit-int","value":"2","value-type":{"type-kind":"prim","type-name":"int64"}},
+        "value-type": {"type-kind":"pntr","mutable":true,"base-type":{"type-kind":"prim","type-name":"int64"}}
+      }
+      ```
+    - Any other operand shape (a call result, a parenthesized tuple, …) is a compile error
+      (E_AddrOfNotAddressable) — address-of is not general in this version.
+    `mutable` is always present on the resulting `value-type` regardless of which shape was
+    emitted. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
+    an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules
+    below for how mutability is enforced separately from type compatibility.
   - call: present when the function has a return type (ret-type in its definition).
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).
@@ -306,15 +354,55 @@ SA-only expression kinds (not present in AST JSON):
 
 SA-only expression kinds (added to AST nodes):
 
-- **arr-index** - Array element access (`arr[i]`). The AST node gains three SA-added fields:
-  - value-type\*: element type (the `base-type` of the array's `pntr` value-type)
-  - elem-size\*: `lit-uint` node whose `value` is the element byte size (1, 2, 4, or 8)
+- **arr-index** - Array element access (`arr[i]`), and pointer dereference/subscript (`p[i]`) --
+  the same node covers both, since Palan represents an array as a `pntr(T)` plus attributes and a
+  plain pointer as a bare `pntr(T)`. The AST node gains four SA-added fields:
+  - value-type\*: element type (the `base-type` of the array's `pntr` value-type), or
+    `pntr(struct(T))` when the element is a struct (see below)
+  - elem-size\*: `lit-uint` node whose `value` is the element byte size (1, 2, 4, or 8 for a
+    scalar; `T.totalSize` for a struct element), or a `mul` expression for a variable inner
+    dimension (2D embedded array row access with a runtime column count)
+  - addr-only\*: boolean. `true` when the node computes an address (`CalcAddrIdx`) rather than
+    loading a value (`DerefLoadIdx`) — struct-array row access, 2D embedded-array row access, and
+    struct-pointer dereference all set this; a scalar element or a pointer-slot element sets it
+    `false`. Always present; codegen reads it directly and performs no re-derivation.
   - array\*: SA-annotated array expression (value-type must be `pntr`)
   - index\*: SA-annotated index expression (must not be float; integer types only)
 
   Validation:
   - If the array operand's value-type is not `pntr` → compile error (E_NotArrayType)
   - If the index expression resolves to flo32 or flo64 → compile error (E_ArrayIndexNotInteger)
+  - If a non-struct element's byte size cannot be determined → compile error
+    (E_UnknownStructType). Reachable because gen-ast has no symbol table: a name it doesn't
+    recognize as a struct in native syntax (e.g. `@!Foo p;` where `Foo` was never declared)
+    still parses as `{"type-kind":"prim","type-name":"Foo"}`, so this is the first point SA can
+    reject it. This guards the SA/codegen boundary: without it, a name that fails to resolve
+    produces a `-1` size sentinel that would otherwise leak into `elem-size` and only surface as
+    a `palan-codegen` failure later. (The struct-element branch above has no equivalent guard —
+    every `struct`-kind `elem_type` SA constructs already came from a name resolved in its own
+    struct registry.)
+  - As an `arr-assign` target (`v -> arr[i]`), a node with `addr-only:true` is rejected
+    (E_AssignToWholeStructElem) — there is no storage slot at an address-only location to
+    overwrite; assign to its fields instead (`v -> arr[i].field`).
+
+  **Pointer dereference (`p[i]`) on a scalar or pointer element:** when `array`'s `pntr` base-type
+  is a primitive or another `pntr`, `arr-index` is exactly C's pointer subscript: `elem-size` is
+  the element's byte size (8 for a pointer element), `addr-only` is `false`, and `value-type` is
+  the element type. This holds for any index, not just `0` — there is no `i == 0` special case
+  anywhere in SA or codegen; `p[i]` for `i != 0` is ordinary pointer arithmetic, scaled by
+  `elem-size`, with no bounds check (the same as C). `@T` (read-only) permits this only for a
+  read; a write is E_WriteThroughReadOnlyPtr. See PalanReference.md §22.
+
+  **Pointer dereference (`p[i]`) on a struct element:** when `array`'s `pntr` base-type is itself
+  `struct(T)` (i.e. `p` is `@T`/`@!T` where `T` is a struct — not an `[n]$T`/`[n]T`/`[n]@T`/
+  `[n]@!T` array, which are covered by the table below), Palan has no register-sized
+  representation of a struct value: every struct-typed expression is itself a `pntr(struct)`. So
+  `p[i]` is an address computation, not a load: `value-type` is `pntr(struct(T), mutable=<array's
+  mutable>)`, `elem-size` is `T.totalSize`, and `addr-only` is `true`. `mutable` is inherited from
+  `array`'s value-type (defaulting to `true` when absent) so that `p[i].field` write-through is
+  enforced by the existing field-chain rules exactly as for `p.field` on the same `p`. `p[0]` is
+  the degenerate case of this — reachable via the field-access chain (`resolveObjectChain`),
+  not by loading a struct value.
 
   Example: `a[i]` where `[5]int32 a`:
   ```json
@@ -331,15 +419,23 @@ SA-only expression kinds (added to AST nodes):
   ```
 
   **Struct array element access:** When the array element type is `struct(T)`, `arr-index` yields a
-  pointer to the element rather than the element value. The `value-type` and `elem-size` differ by
-  array form:
+  pointer to the element rather than the element value. The `value-type`, `elem-size`, and
+  `addr-only` differ by array form:
 
-  | Declaration | value-type | elem-size |
-  |---|---|---|
-  | `[n]$T pts` (contiguous) | `pntr(struct(T))` | `T.totalSize` (e.g. 16 for a two-field int64 struct) |
-  | `[n]T pts` (owned pointers) | `pntr(struct(T))` | `8` (pointer size) |
-  | `[n]@T pts` (read-only) | `pntr(struct(T))` | `8` (pointer size) |
-  | `[n]@!T pts` (mutable) | `pntr(struct(T))` | `8` (pointer size) |
+  | Declaration | value-type | elem-size | addr-only |
+  |---|---|---|---|
+  | `[n]$T pts` (contiguous) | `pntr(struct(T))` | `T.totalSize` (e.g. 16 for a two-field int64 struct) | `true` |
+  | `[n]T pts` (owned pointers) | `pntr(struct(T))` | `8` (pointer size) | `false` |
+  | `[n]@T pts` (read-only) | `pntr(struct(T))` | `8` (pointer size) | `false` |
+  | `[n]@!T pts` (mutable) | `pntr(struct(T))` | `8` (pointer size) | `false` |
+  | `@T`/`@!T p` (plain pointer to struct) | `pntr(struct(T))` | `T.totalSize` | `true` |
+
+  The `[n]T`/`[n]@T`/`[n]@!T` rows are pointer-*slot* arrays: `pts[i]` loads/stores the 8-byte
+  pointer value held in the slot, so `addr-only` is `false` and `pts[i]` can appear as an
+  `arr-assign` target (`ptr -> pts[i]`). The `[n]$T` and plain-pointer-to-struct rows have no slot
+  to load — the struct data is either inline (`$T`) or the pointer itself has already been
+  dereferenced one level (`p[i]`) — so `addr-only` is `true` and only field access
+  (`pts[i].field`, `p[i].field`) is valid.
 
   The returned `pntr(struct(T))` is used as the base for subsequent field access (`pts[i].field`)
   via `resolveObjectChain`.
@@ -394,7 +490,27 @@ Notes:
   Using it implicitly (e.g. assigning int64 to int32 directly) is a compile error.
 - Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32.
 - `pntr(T)` and `pntr(T, mutable=true)` are treated as `Identical`; base-type match is sufficient
-  for arr-assign target type checking.
+  for arr-assign target type checking. `mutable` is a write-permission attribute, not part of
+  type identity, so `typeCompat` never inspects it.
+- Mutability (read-only `@T` vs. mutable `@!T`) is enforced separately from `typeCompat`, at
+  every point a pointer value is written through or bound to a typed destination:
+  - **Write-through**: `p[0]` deref-write, and field access via a `@T`-typed local variable or
+    struct field, are a compile error (E_WriteThroughReadOnlyPtr / E_WriteToImmutablePtrField /
+    E_WriteToReadOnlyArrElem) when the base pointer is not `mutable`.
+  - **Binding**: assigning, initializing, returning, or passing a `@T` (read-only) value where a
+    `@!T` (mutable) type is expected is a compile error — permission can be narrowed
+    (mutable → read-only) but never upgraded. Passing to a Palan function parameter or returning
+    from a Palan function uses E_PtrMutabilityUpgrade; passing to a cincluded C function's
+    parameter (including through an aliased `cinclude ... as X;`, via `X.func(...)`) uses
+    E_ReadOnlyPtrToNonConstCParam and names the function and parameter.
+  - A missing `mutable` key (SA-synthesized `pntr` types for struct and array variables) means
+    writable — there is no read-only concept for those forms in this iteration.
+  - A C parameter or return type's own `mutable` comes from its pointee's `const` qualification
+    (`base-type.const`), folded in by `normalizeCType` at the point a `cinclude`d function
+    signature is registered (`PlnSaInternal.h`) — `const T *` normalizes to `mutable: false`,
+    `T *` to `mutable: true`. This is the same ingestion-boundary treatment struct/array
+    variables get elsewhere: SA's own permission checks only ever need to understand `mutable`,
+    never c2ast's `const` vocabulary.
 
 Struct types
 ------------
@@ -406,6 +522,40 @@ field) registers into this exact same internal registry — there is no separate
 for a C-origin struct. Every sa.json shape documented below (C ABI layout, var-decl,
 field-assign, field-access) applies unchanged regardless of whether the struct came from a
 native `type Name {...}` or a `cinclude`d header.
+
+### C-origin field admission
+
+Before a C-origin field list is registered, each field's `var-type` (ASTSpec.md's c2ast
+representation) is normalized to the same vocabulary a native `struct-def` field would use, then
+checked for support; a field the check rejects causes the *whole* struct to be skipped (it never
+enters the registry, so any later reference to it is E_UnknownStructType) rather than being
+dropped individually:
+
+- A by-value struct leaf (`type-kind:"strct"`, from `struct Foo f;`) is rewritten to
+  `type-kind:"embed"` — same shape a native `$Foo` field produces. A by-value struct leaf inside
+  an array (`struct Foo arr[n];`) is instead rewritten to a plain `prim` type-name leaf, matching
+  the native `[n]$Foo` shape (`buildStructDef`'s array case looks the leaf up in the struct
+  registry by name, not by a distinct type-kind).
+- A `prim` field is supported iff `elemSizeBytes` resolves its type-name.
+- An `embed` field is supported iff its struct name is already registered and is not the
+  enclosing struct itself (no direct self-embedding).
+- An `arr` field (a C array declarator — ASTSpec.md's `embedded:true` array shape) is supported
+  only when its `size-expr` is a literal (a `T name[];` field has no fixed size and is rejected)
+  and its base-type is one of: a pointer (`[n]@T`/`[n]@!T` slot array), a primitive with a known
+  size, or a primitive naming an already-registered struct (`[n]$T`/`[n]T`). **A 2D-or-deeper
+  array field (`int cells[2][3];`, base-type itself `arr`) is not supported** — the whole struct
+  is skipped, so `Sample s;` for a `struct Sample { int cells[2][3]; };` fails with
+  E_UnknownStructType even though `cells` is the only unsupported field.
+  - A pointer base-type (`T *field[n];`, e.g. glibc's `struct __locale_data *__locales[13];`)
+    is Palan's `[n]@T`/`[n]@!T` pointer-slot-array shape. Native syntax never sets `embedded`
+    for this shape (only the `$`-prefixed inline-storage forms do), so the `embedded` key
+    c2ast always stamps on a raw C array declarator is stripped during this same normalization
+    step — both origins reach the struct layout code as the single canonical (no-`embedded`)
+    shape. A by-value struct leaf under the pointer (`struct Foo *field[n];`) is rewritten to a
+    plain `prim` type-name leaf, same as the direct-array case above. The slot's `mutable` flag
+    is left absent (defaults to `false`, i.e. read-only) — C-origin pointer fields have no
+    const/non-const distinction carried this deep, so they are conservatively read-only, same
+    as a scalar C pointer field.
 
 ### C ABI layout
 
@@ -504,5 +654,29 @@ is absent.
  "offset":0,
  "value-type":{"type-kind":"prim","type-name":"int64"}}
 ```
+
+`@!p.x` (address-of on a struct field) produces the same node shape, plus `addr-only:true` and
+a `pntr`-typed `value-type` in place of the field's own type — see the addr-of section above:
+
+```json
+{"expr-type":"field-access",
+ "var":"p",
+ "offset":0,
+ "value-type":{"type-kind":"pntr","mutable":true,"base-type":{"type-kind":"prim","type-name":"int64"}},
+ "addr-only":true}
+```
+
+`resolveObjectChain(object, forWrite)` is the single field-chain resolver used by field-access
+reads, field-assign writes, and the addr-of field-access shape alike — `field-assign`'s
+`forWrite` is always `true`; a plain read passes `false`; addr-of passes its own `mutable` flag.
+Besides a plain `id` base, the chain root may also be an `arr-index` node whose element is
+itself a struct pointer (`pts[i].x` where `pts` is `[n]$T`/`[n]T`/`[n]@T`, or `p[i].x` where `p`
+is `@T`/`@!T`) — the index expression is evaluated via `sa_expr_arr_index` first, and the
+write-permission check (E_WriteToReadOnlyArrElem) applies to the array's own mutability exactly
+as it would for a plain `arr[i]` write. Any other chain root — a call result, a parenthesized
+tuple, or anything else that isn't `id`/`arr-index`/`field-access` — normalizes to `"not-impl"`
+at the AST layer (see ASTSpec.md's `not-impl` object shape) and is rejected as
+E_FieldAccessOnNonStruct: a field chain can only be rooted in something that names storage, never
+in the result of evaluating an expression.
 
 

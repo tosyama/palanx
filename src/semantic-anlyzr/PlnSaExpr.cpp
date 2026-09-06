@@ -9,7 +9,7 @@
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
 
-FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
+FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrite)
 {
 	if (obj.value("expr-type","") == "id") {
 		string varName = obj["name"].get<string>();
@@ -22,6 +22,10 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
 		}
+		if (forWrite && !isWritableThrough(*vt)) {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+			exit(1);
+		}
 		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
 	}
 	if (obj.value("expr-type","") == "arr-index") {
@@ -31,10 +35,21 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
 		}
+		if (forWrite && vt.value("mutable", true) == false) {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToReadOnlyArrElem) << endl;
+			exit(1);
+		}
 		string struct_name = vt["base-type"]["type-name"].get<string>();
 		return {true, "", 0, move(sa_idx), struct_name};
 	}
-	FieldChain base = resolveObjectChain(obj["object"]);
+	if (obj.value("expr-type","") != "field-access") {
+		// Reachable via a chain rooted in a non-addressable base: a call/tuple
+		// grouping normalizes to "not-impl" (see storeLocToExpr and term's
+		// '(' tapple_inner ')' rule), which has neither "object" nor "field".
+		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+		exit(1);
+	}
+	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
 	const StructDef& def = structDefs_[base.structName];
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
@@ -44,6 +59,10 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 	}
 	if (it->typeKind == "prim") {
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+		exit(1);
+	}
+	if (forWrite && it->typeKind == "raw-ptr" && !it->isMutable) {
+		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToImmutablePtrField) << endl;
 		exit(1);
 	}
 	if (it->typeKind == "embed") {
@@ -63,6 +82,87 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj)
 		           {"offset",base.offset+it->offset},{"value-type",pntr_type}};
 	return {true, "", 0, move(ptrNode), it->typeName};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode)
+{
+	const StructDef& def = structDefs_[structName];
+	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fieldName; });
+	if (it == def.fields.end()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName) << endl;
+		exit(1);
+	}
+	return *it;
+}
+
+json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
+{
+	bool isMutable = expr.value("mutable", false);
+	const json& obj = expr["object"];
+	string obj_type = obj.value("expr-type", "");
+
+	if (obj_type == "id") {
+		string name = obj["name"].get<string>();
+		const json* varType = findVar(name);
+		if (varType == nullptr) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
+			exit(1);
+		}
+		if (!isLocalVar(name)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
+			exit(1);
+		}
+		if (varType->value("type-kind", "") != "prim") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
+			exit(1);
+		}
+		json pntr_type = {{"type-kind", "pntr"}, {"mutable", isMutable}, {"base-type", *varType}};
+		json out = {{"expr-type", "addr-of"}, {"name", name}, {"mutable", isMutable}, {"value-type", pntr_type}};
+		if (expr.contains("loc")) out["loc"] = expr["loc"];
+		return out;
+	}
+
+	if (obj_type == "field-access") {
+		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
+		string fn = obj["field"].get<string>();
+		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
+		if (fld.typeKind != "prim") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
+			exit(1);
+		}
+		json pntr_type = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",fieldValueType(fld)}};
+		int off = chain.offset + fld.offset;
+		json out = chain.isPointerBased
+			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",true}}
+			: json{{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",pntr_type},{"addr-only",true}};
+		if (expr.contains("loc")) out["loc"] = expr["loc"];
+		return out;
+	}
+
+	if (obj_type == "arr-index") {
+		json sa_idx = sa_expr_arr_index(obj);
+		// Reject an element that is already an address computation (embedded
+		// struct-array element, 2D row access, pointer-to-struct dereference)
+		// or a pointer-typed element (would double the indirection) -- '@'
+		// keeps a single meaning ("make a pointer to a storage slot"), so an
+		// element that is already a pointer/address is out of scope.
+		if (sa_idx.value("addr-only", false) || sa_idx["value-type"].value("type-kind","") != "prim") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitiveElem) << endl;
+			exit(1);
+		}
+		if (isMutable && !isWritableThrough(sa_idx["array"]["value-type"])) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+			exit(1);
+		}
+		json pntr_type = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",sa_idx["value-type"]}};
+		sa_idx["addr-only"]  = true;
+		sa_idx["value-type"] = pntr_type;
+		if (expr.contains("loc")) sa_idx["loc"] = expr["loc"];
+		return sa_idx;
+	}
+
+	cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
+	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expectedType)
@@ -129,24 +229,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		}
 
 	} else if (expr_type == "addr-of") {
-		string name = expr["name"].get<string>();
-		bool isMutable = expr.value("mutable", false);
-		const json* varType = findVar(name);
-		if (varType == nullptr) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
-			exit(1);
-		}
-		if (!isLocalVar(name)) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
-			exit(1);
-		}
-		if (varType->value("type-kind", "") != "prim") {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
-			exit(1);
-		}
-		json pntr_type = {{"type-kind", "pntr"}, {"base-type", *varType}};
-		if (isMutable) pntr_type["mutable"] = true;
-		sa_expr["value-type"] = pntr_type;
+		return sa_expr_addr_of(expr);
 
 	} else if (expr_type == "add" || expr_type == "sub"
 	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod") {
@@ -225,25 +308,20 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		return sa_expr_member_call(expr);
 
 	} else if (expr_type == "field-access") {
-		FieldChain chain = resolveObjectChain(expr["object"]);
+		FieldChain chain = resolveObjectChain(expr["object"], /*forWrite=*/false);
 		string fn = expr["field"].get<string>();
-		const StructDef& def = structDefs_[chain.structName];
-		auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
-		if (it == def.fields.end()) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn) << endl;
-			exit(1);
-		}
-		if (it->typeKind == "embed") {
+		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, expr);
+		if (fld.typeKind == "embed") {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InlineStructAsValue) << endl;
 			exit(1);
 		}
 		// LCOV_EXCL_EXCEPTION_BR_START
-		json vt = fieldValueType(*it);
-		int off = chain.offset + it->offset;
+		json vt = fieldValueType(fld);
+		int off = chain.offset + fld.offset;
 		// embed-arr/embed-ptr-arr fields are inline data (no pointer is actually
 		// stored at this offset): the field's "value" is its own address, computed
 		// as ptr+offset, not a load of the memory there.
-		bool addrOnly = (it->typeKind == "embed-arr" || it->typeKind == "embed-ptr-arr");
+		bool addrOnly = (fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr");
 		if (!chain.isPointerBased)
 			return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
 		else
@@ -297,6 +375,32 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	sa_expr["value-type"] = registry_.toJson(promoted);
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Enforce ptrPermissionOk() at one call argument. `param` is the callee's
+// full parameter entry (var-type plus, for a C function, an optional name --
+// c2ast leaves "name" absent for an abstract declarator, e.g. a prototype
+// with no parameter names). The diagnostic differs by callee kind because the
+// destination vocabulary differs: a Palan parameter's own `@!T` upgrades the
+// existing E_PtrMutabilityUpgrade check every other binding site already uses
+// (var-decl/assign/return/field-assign), while a C parameter's permission
+// comes from const-qualification (folded into `mutable` by normalizeCType at
+// the cinclude ingestion boundary -- see PlnSaInternal.h), so it gets its own
+// message naming the C function and parameter.
+void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& funcName,
+		bool isCFunc, const json& saArg, const json& param, size_t argIdx)
+{
+	if (ptrPermissionOk(saArg["value-type"], param["var-type"]))
+		return;
+	if (isCFunc) {
+		string paramName = param.value("name", "");
+		if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
+		cerr << locPrefix(expr)
+		     << PlnSaMessage::getMessage(E_ReadOnlyPtrToNonConstCParam, funcName, paramName) << endl;
+	} else {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+	}
+	exit(1);
+}
 
 json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
@@ -378,6 +482,8 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 					catch (const std::runtime_error&) {}
 					if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 						saArg = wrapConvert(saArg, registry_.toJson(toType));
+					checkArgPtrPermission(expr, expr["name"].get<string>(),
+							sa_expr["func-type"] == "c", saArg, (*funcParams)[argIdx], argIdx);
 				} else if (isVariadic) {
 					const PlnType* promoted = variadicPromote(fromType, registry_);
 					if (promoted != fromType)
@@ -427,6 +533,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 			sa_expr["index"]      = sa_index;
 			sa_expr["elem-size"]  = elem_size_node;
 			sa_expr["value-type"] = row_pntr;
+			sa_expr["addr-only"]  = true;
 			return sa_expr;
 		}
 
@@ -443,6 +550,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 			sa_expr["index"]      = sa_index;
 			sa_expr["elem-size"]  = elem_size_node;
 			sa_expr["value-type"] = elem_type;
+			sa_expr["addr-only"]  = false;
 			return sa_expr;
 		}
 
@@ -473,11 +581,44 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		sa_expr["index"]      = sa_index;
 		sa_expr["elem-size"]  = elem_size_node;
 		sa_expr["value-type"] = row_pntr;
+		sa_expr["addr-only"]  = true;
+		return sa_expr;
+	}
+
+	if (elem_type.value("type-kind", "") == "struct") {
+		// Pointer dereference `p[i]` where the pointee is a struct: Palan has no
+		// register-sized representation of a struct value (every struct-typed
+		// expression is itself a `pntr(struct)`), so the result is an address
+		// computation -- base + i*sizeof(T) -- not a load. Same rule as the
+		// embedded struct-array row access above; `p[0].field` reaches it via
+		// the field-access chain in resolveObjectChain.
+		// elem_type's "struct" type-kind is only ever produced by SA itself
+		// (sa_struct_var_decl, resolveObjectChain, or
+		// cinclude struct capture) -- never by gen-ast parsing native syntax,
+		// which has no symbol table and falls back to "prim" for any name it
+		// doesn't recognize (see the sz<0 guard below). Every such producer
+		// already required the name to resolve in structDefs_, so look it up
+		// unguarded here, matching resolveObjectChain's convention.
+		int64_t stride = structDefs_[elem_type["type-name"].get<string>()].totalSize;
+		json elem_pntr = {{"type-kind","pntr"},{"mutable",array_type.value("mutable", true)},
+		                  {"base-type",elem_type}};
+		json elem_size_node = {
+			{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
+		};
+		sa_expr["array"]      = sa_array;
+		sa_expr["index"]      = sa_index;
+		sa_expr["elem-size"]  = elem_size_node;
+		sa_expr["value-type"] = elem_pntr;
+		sa_expr["addr-only"]  = true;
 		return sa_expr;
 	}
 
 	int sz = (elem_type.value("type-kind","") == "pntr") ? 8
 		: elemSizeBytes(elem_type.value("type-name",""));
+	if (sz < 0) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownStructType, elem_type.value("type-name","")) << endl;
+		exit(1);
+	}
 	json elem_size_node = {
 		{"expr-type", "lit-uint"}, {"value", to_string(sz)}, {"value-type", uint64_type}
 	};
@@ -486,6 +627,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 	sa_expr["index"]      = sa_index;
 	sa_expr["elem-size"]  = elem_size_node;
 	sa_expr["value-type"] = elem_type;
+	sa_expr["addr-only"]  = false;
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -548,6 +690,7 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 				catch (const std::runtime_error&) {}
 				if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 					saArg = wrapConvert(saArg, registry_.toJson(toType));
+				checkArgPtrPermission(expr, method, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
 			}
 			sa_expr["args"].push_back(saArg);
 			argIdx++;

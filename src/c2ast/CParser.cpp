@@ -291,8 +291,9 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 
 	vector<json> fields;
 	do {
-		bool is_const = CONSUME_KW(TK_CONST);
-		bool is_volatile = CONSUME_KW(TK_VOLATILE);
+		// Qualifiers ("const"/"volatile"/"inline") are consumed by
+		// declaration_specifiers() itself (in any order); don't pre-consume them
+		// here, or its "const" capture never sees them.
 		json flocal;
 		if (declaration_specifiers(flocal, tokens, index)) {
 			json base_vt = flocal.value("var-type", json{});
@@ -364,25 +365,38 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 {
 	int index = result_index;
 
-	CONSUME_KW(TK_INLINE);
-	CONSUME_KW(TK_VOLATILE);
-	bool is_const = CONSUME_KW(TK_CONST);
+	// "inline"/"volatile"/"const" may appear in any order (e.g. "const volatile
+	// int", "volatile const int"), so consume them in a loop rather than a fixed
+	// sequence -- a fixed sequence would silently miss "const" in the other order.
+	bool is_const = false;
+	for (;;) {
+		if (CONSUME_KW(TK_INLINE)) continue;
+		if (CONSUME_KW(TK_VOLATILE)) continue;
+		if (CONSUME_KW(TK_CONST)) { is_const = true; continue; }
+		break;
+	}
 
+	// Single point applying `const` to the resolved var-type, so every branch
+	// below (prim/typedef/struct/union/enum) reflects it the same way instead of
+	// each carrying its own copy of "if (is_const) ...".
+	auto set_vt = [&](json vt) {
+		if (is_const) vt["const"] = true;
+		ast["var-type"] = move(vt);
+	};
 	auto set_prim = [&](const char* name) {
-		ast["var-type"] = {{"type-kind", "prim"}, {"type-name", name}};
-		if (is_const) ast["var-type"]["const"] = true;
+		set_vt({{"type-kind", "prim"}, {"type-name", name}});
 	};
 
 	if (CONSUME(TT_ID)) {	// typedef name
 		string name = *tokens[index-1]->info.id;
 		auto it = typedefs_.find(name);
 		if (it != typedefs_.end()) {
-			ast["var-type"] = it->second;
-			ast["var-type"]["typedef-name"] = name;
+			json vt = it->second;
+			vt["typedef-name"] = name;
+			set_vt(move(vt));
 		} else {
-			ast["var-type"] = {{"type-kind", "user"}, {"type-name", name}};
+			set_vt({{"type-kind", "user"}, {"type-name", name}});
 		}
-		if (is_const) ast["var-type"]["const"] = true;
 		result_index = index;
 		return true;
 	}
@@ -414,7 +428,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 			if (!tagName.empty() && definedStructs_.count(tagName)) {
 				vt["type-name"] = tagName;
 			}
-			ast["var-type"] = move(vt);
+			set_vt(move(vt));
 			result_index = index;
 			return true;
 		}
@@ -423,7 +437,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_UNION)) {
 		if (struct_union_definition(ast, tokens, index)) {
-			ast["var-type"] = {{"type-kind", "union"}};
+			set_vt({{"type-kind", "union"}});
 			result_index = index;
 			return true;
 		}
@@ -432,7 +446,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_ENUM)) {
 		if (enum_definition(ast, tokens, index)) {
-			ast["var-type"] = {{"type-kind", "enum"}};
+			set_vt({{"type-kind", "enum"}});
 			result_index = index;
 			return true;
 		}
@@ -442,6 +456,17 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	if (CONSUME_KW(TK_VOID)) { set_prim("void"); result_index = index; return true; }
 
 	return false;
+}
+
+// C array-parameter decay: "T name[n]...[m]" as a parameter type means "pointer to
+// T[m]..." -- only the outermost dimension decays to a pointer, any inner dimensions
+// stay as the pointee's array type (e.g. "char buf[2][3]" -> pntr(arr(size=3, ...))).
+static void decayArrayParam(json &param)
+{
+	json &vt = param["var-type"];
+	if (vt.value("type-kind", "") == "arr") {
+		vt = {{"type-kind", "pntr"}, {"base-type", vt["base-type"]}};
+	}
 }
 
 bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index)
@@ -457,6 +482,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 				return false;
 			}
 		}
+		decayArrayParam(param);
 		params.push_back(param);
 
 		while (CONSUME_PUNC(',')) {
@@ -469,6 +495,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 						return false;
 					}
 				}
+				decayArrayParam(param2);
 				params.push_back(param2);
 			} else if (CONSUME_PUNC('...')) {
 				params.push_back({{"name", "..."}});
@@ -486,9 +513,24 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 	return false;
 }
 
-bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index, bool is_grouped)
+// Wraps decl["var-type"] with pending array dimensions (outermost-first in `dims`),
+// nesting from the innermost (last-parsed) dimension outward so "T m[2][3]" becomes
+// arr(size=2, base=arr(size=3, base=T)) -- matching C array-of-array semantics.
+// embedded:true / specifier:"raw" mark this as inline storage (no separate heap
+// allocation), matching Palan's native [n]$T field vocabulary (ASTSpec.md "arr").
+static void wrapArrayDims(json &var_type, vector<json> &dims)
+{
+	for (int i = (int)dims.size() - 1; i >= 0; --i) {
+		var_type = {{"type-kind", "arr"}, {"base-type", var_type},
+			{"size-expr", dims[i]}, {"embedded", true}, {"specifier", "raw"}};
+	}
+	dims.clear();
+}
+
+bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
+	vector<json> dims;   // pending array dimensions, outermost (leftmost) first
 
 	while (true) {
 		if (CONSUME_PUNC('[')) {
@@ -498,79 +540,119 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 				// debug_token(tokens[index]);
 				return false;
 			}
+			dims.push_back(move(arr_size_value));
 
 		} else if (CONSUME_PUNC('(')) {
+			wrapArrayDims(decl["var-type"], dims);
 			vector<json> params;
 			if (!CONSUME_PUNC(')')) {
 				parameter_list(params, tokens, index);
 				EXPECT_PUNC(')');
 			}
-			json& vt = decl["var-type"];
-			// Only a parenthesized declarator -- e.g. "(*fp)(params)" -- means fp is a
-			// pointer to function. Without is_grouped, vt being "pntr" here just means
-			// the (non-grouped) declarator's own base type is a pointer (e.g. a
-			// pointer-typedef'd return type, as in "level1_t g(void)"), which is a plain
-			// function returning that pointer type, not a function-pointer variable.
-			if (is_grouped && vt.is_object() && vt.value("type-kind", "") == "pntr") {
-				// (*fp)(params) → fp is a pointer to function
-				// Move func inside the pntr, using pntr's base-type as return type.
-				vt = {{"type-kind", "pntr"}, {"base-type",
-					{{"type-kind", "func"}, {"ret-type", vt["base-type"]}, {"parameters", params}}}};
-			} else {
-				vt = {{"type-kind", "func"}, {"ret-type", vt}, {"parameters", params}};
-			}
+			decl["var-type"] = {{"type-kind", "func"}, {"ret-type", decl["var-type"]}, {"parameters", params}};
 
 		} else {
 			break;
 		}
 	}
+	wrapArrayDims(decl["var-type"], dims);
 
 	result_index = index;
 	return true;
 }
 
+// Advances `index` from the token just after an already-consumed '(' to the position
+// just after its matching ')', tracking nested parens (a parameter list inside the
+// group, e.g. "(*signal(int))(int)", may itself contain '(' / ')'). Sets `close_index`
+// to the token index of that matching ')' itself, which declarator() uses to confirm a
+// grouped declarator's inner parse consumed exactly up to it (see declarator() below).
+static bool skipToMatchingParen(const vector<CToken*> &tokens, int &index, int &close_index)
+{
+	int depth = 1;
+	while (index < (int)tokens.size()) {
+		CToken* token = tokens[index];
+		if (token->type == TT_PUNCTUATOR) {
+			if (token->info.punc == '(') {
+				depth++;
+			} else if (token->info.punc == ')') {
+				depth--;
+				if (depth == 0) {
+					close_index = index;
+					index++;
+					return true;
+				}
+			}
+		}
+		index++;
+	}
+	return false;
+}
+
 // declarator() parses a declarator, building up decl:
 //   decl["name"]     - declared identifier
-//   decl["var-type"] - complete type (caller initializes with base type from declaration_specifiers;
-//                      declarator wraps with pntr for *, declarator_tail wraps with func/array)
+//   decl["var-type"] - complete type (caller initializes with base type from declaration_specifiers)
+//
+// C declarator precedence: the postfix suffixes '[n]' and '(params)' bind tighter than
+// the prefix '*', so prefix pointers at this level are applied to the base type first
+// (innermost), suffixes then wrap outside them, and a parenthesized inner declarator
+// (a new level) receives the type built so far as ITS base type -- e.g. "int (*a)[3]"
+// wraps int in arr(3) first (the suffix, at this level), then the inner "*a" wraps
+// that in pntr (one level in); "int *a[3]" has no group, so the prefix pntr wraps int
+// directly and the suffix arr(3) wraps outside that, giving arr(3, pntr(int)).
+//
+// This mutates decl["var-type"] before knowing whether the parse will succeed (the
+// prefix '*' loop below writes it immediately), so any failure must roll back to
+// `saved` -- callers such as parameter_list() retry a failed declarator() call on the
+// very same decl object (first as a named declarator, then as an abstract one), and
+// would otherwise see a partially-wrapped type left over from the failed attempt.
 bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_index, bool is_typeonly)
 {
 	int index = result_index;
+	json saved = decl;
 
-	if (CONSUME_PUNC('*')) {
+	while (CONSUME_PUNC('*')) {
 		bool ptr_const = CONSUME_KW(TK_CONST);       // e.g. int * const p
-		bool ptr_volatile = CONSUME_KW(TK_VOLATILE);
-		if (!declarator(decl, tokens, index, is_typeonly))
-			return false;
-		json& vt = decl["var-type"];
-		if (vt.is_object() && vt.value("type-kind", "") == "func") {
-			// char *f(params) → f is a function returning char*
-			// The * modifies the return type, not the function itself.
-			vt["ret-type"] = {{"type-kind", "pntr"}, {"base-type", vt["ret-type"]}};
-			if (ptr_const) vt["ret-type"]["const"] = true;
-		} else {
-			vt = {{"type-kind", "pntr"}, {"base-type", vt}};
-			if (ptr_const) vt["const"] = true;
-		}
-		result_index = index;
-		return true;
+		CONSUME_KW(TK_VOLATILE);
+		decl["var-type"] = {{"type-kind", "pntr"}, {"base-type", move(decl["var-type"])}};
+		if (ptr_const) decl["var-type"]["const"] = true;
 	}
 
-	bool is_grouped = false;
+	int group_index = -1, close_index = -1;
 	if (CONSUME_PUNC('(')) {
-		is_grouped = true;
-		if (!declarator(decl, tokens, index, is_typeonly))
+		group_index = index;
+		if (!skipToMatchingParen(tokens, index, close_index)) {
+			decl = move(saved);
 			return false;
-		EXPECT_PUNC(')');
+		}
 
 	} else if (!is_typeonly) {
 		CONSUME_KW(TK_RESTRICT); // C99 restrict qualifier
-		if (!CONSUME(TT_ID))
+		if (!CONSUME(TT_ID)) {
+			decl = move(saved);
 			return false;
+		}
 		decl["name"] = *tokens[index-1]->info.id;
 	}
 
-	declarator_tail(decl, tokens, index, is_grouped);
+	if (!declarator_tail(decl, tokens, index)) {
+		decl = move(saved);
+		return false;
+	}
+
+	if (group_index >= 0) {
+		// Parse the group's interior as a nested declarator level, now that the type
+		// it should wrap (this level's suffixes, applied above) is in decl["var-type"].
+		// Requiring it to consume exactly up to the already-located close_index (rather
+		// than just trusting its own success) rejects garbage inside the group, e.g.
+		// "int (*x y)" -- and rejects a parameter list mistaken for a group, e.g.
+		// "int(char*)", the same shapes the old EXPECT_PUNC(')')-right-after-recursing
+		// check used to reject.
+		int gi = group_index;
+		if (!declarator(decl, tokens, gi, is_typeonly) || gi != close_index) {
+			decl = move(saved);
+			return false;
+		}
+	}
 
 	result_index = index;
 	return true;
@@ -1188,17 +1270,22 @@ bool CParser::resolveConstValue(const json &node, json &value, json &type)
 	return false;
 }
 
-void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros)
+void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPreprocessor &cpp)
 {
 	for (CMacro* m : macros) {
 		if (m->type != MT_OBJ) continue;
 
+		vector<CToken*> expanded = cpp.expandObjectMacroBody(m);
+
 		json expr_value;
 		int index = 0;
-		if (!constant_expression(expr_value, m->body, index) || index != (int)m->body.size()) continue;
+		bool ok = constant_expression(expr_value, expanded, index) && index == (int)expanded.size();
 
 		json value, type;
-		if (!resolveConstValue(expr_value, value, type)) continue;
+		if (ok) ok = resolveConstValue(expr_value, value, type);
+
+		for (CToken* t : expanded) delete t;
+		if (!ok) continue;
 
 		ast["ast"]["constants"].push_back({
 			{"name", m->name},

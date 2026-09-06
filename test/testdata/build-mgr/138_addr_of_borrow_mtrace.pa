@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+mtrace();
+{
+    Point s;
+    [4]int64 arr;
+    int64 v = 7;
+    @!int64 pf = @!s.x;
+    @!int64 pe = @!arr[2];
+    @!int64 pv = @!v;
+    11 -> pf[0];  22 -> pe[0];  33 -> pv[0];
+    printf("%ld %ld %ld\n", s.x, arr[2], v);
+}
+muntrace();

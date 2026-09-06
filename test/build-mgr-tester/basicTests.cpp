@@ -887,6 +887,17 @@ TEST(build_mgr, at_bang_plain_var_decl) {
 	ASSERT_EQ(output, "20 10\n");
 }
 
+TEST(build_mgr, toplevel_call_named_return_struct) {
+	cleanTestEnv();
+	// IT-2801: top-level statement calling a Palan function with a struct-typed
+	// @!T named return used to crash palan-sa ("unknown prim type-name: Point")
+	// because the pre-registered signature wasn't struct-normalized yet when the
+	// top-level call resolved. Also confirms write-through via the returned
+	// alias still works when the call itself is at top level.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/129_toplevel_call_named_return_struct.pa");
+	ASSERT_EQ(output, "20\n");
+}
+
 TEST(build_mgr, addr_of) {
 	cleanTestEnv();
 	// IT-2704: `@ID`/`@!ID` address-of on a local primitive variable, passed as
@@ -970,6 +981,149 @@ TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 	// `@!Point view = original;` declares a plain non-owning pointer var:
 	// no calloc/__pln_alloc_ call, and no auto-free registration at scope end.
 	EXPECT_EQ(allocs, 0) << "expected no alloc for plain @!Point view, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, cinclude_arr_field_access) {
+	// struct Rec { int id; char name[16]; long vals[4]; }; (cinclude'd) -- IT-2802's
+	// ticket repro: read/write through both the first and last element of a
+	// prim-leaf array field. Before the fix, "char name[16]"/"long vals[4]" each
+	// collapsed to a single scalar field, so vals[3] (the last of 4 int64 slots)
+	// would have read/written 24 bytes past the field's true end -- i.e. past the
+	// end of the whole struct's calloc'd block.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/130_cinclude_arr_field_access.pa");
+	ASSERT_EQ(output, "5 65 90 100 400\n");
+}
+
+TEST(build_mgr, cinclude_ptr_slot_arr_field) {
+	// struct Point { int x; int y; }; struct Slots { struct Point *pts[4]; long *vals[3]; };
+	// (cinclude'd) -- IT-2026-09-05-cinclude-ptr-slot-array-field: a C struct field
+	// that is an inline array of pointer slots ("T *field[n];") is Palan's
+	// [n]@T / [n]@!T shape (same embed-ptr-arr layout as the native
+	// embed_ptr_arr_field_access test, 075). Storing an address into the slot is
+	// allowed regardless of the slot's read-only "mutable:false" default (only
+	// write-through to the pointee is restricted -- see sa.field_arr_readonly_ptr_slot).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/140_cinclude_ptr_slot_arr_field.pa");
+	ASSERT_EQ(output, "99\n");
+}
+
+TEST(build_mgr, sys_stat_h_s_ifdir_alias) {
+	// S_IFDIR is defined as `#define S_IFDIR __S_IFDIR` in sys/stat.h -- IT-2803's
+	// ticket repro: the public alias name must resolve to the same value as the
+	// internal macro it references, not be silently dropped from const-inlining.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/131_sys_stat_s_ifdir.pa");
+	ASSERT_EQ(output, "dir-mode-ok\n");
+}
+
+TEST(build_mgr, deref_write_mutable_ptr) {
+	// IT-2804: `p[0]` deref write through a mutable `@!T` still works end to
+	// end (regression guard for the new read-only enforcement -- writes
+	// through `@!T` must remain unaffected).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/132_deref_write_mutable_ptr.pa");
+	ASSERT_EQ(output, "99\n99\n");
+}
+
+TEST(build_mgr, deref_c_outparam_readback) {
+	// IT-2805: a value a cincluded C function writes through a `@!T`
+	// out-param is now readable from Palan itself via `p[0]` -- v0.1.27
+	// documented this as "C side only"; that limitation is lifted.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/133_deref_c_outparam_readback.pa");
+	ASSERT_EQ(output, "1\n1\n");
+}
+
+TEST(build_mgr, deref_scalar_widths) {
+	// IT-2805: `p[0]` read/write round-trips correctly for every scalar
+	// width and float -- DerefLoadIdx/DerefStoreIdx pick the right
+	// mov instruction and register class for int8/int16/int32/flo64.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/134_deref_scalar_widths.pa");
+	ASSERT_EQ(output, "100\n30000\n2000000000\n3.500000\n");
+}
+
+TEST(build_mgr, deref_struct_ptr_field) {
+	// IT-2805: `p[i]` on a pointer to a struct is an address computation
+	// (Palan has no register-sized struct value), so `p[0].field` reads and
+	// writes through it exactly like `p.field` on the same pointer.
+	cleanTestEnv();
+	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/135_deref_struct_ptr_field.pa");
+	ASSERT_EQ(output, "1972\n1\n");
+}
+
+TEST(build_mgr, addr_of_struct_field) {
+	// IT-2806: `@!s.y` / `@!s.in.v` take the address of a struct field
+	// (top-level and nested-embed) and hand it to a cincluded C function
+	// (memcpy) as an out-param; the C-side write is read back via the
+	// ordinary field-access path.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/136_addr_of_struct_field.pa");
+	ASSERT_EQ(output, "99\n7\n");
+}
+
+TEST(build_mgr, addr_of_arr_elem) {
+	// IT-2807: `@!arr[2]` takes the address of a scalar array element and
+	// hands it to a cincluded C function (memcpy) as an out-param; the
+	// write lands only at that element's offset, not the array start.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/137_addr_of_arr_elem.pa");
+	ASSERT_EQ(output, "0 0 99 0\n");
+}
+
+TEST(build_mgr, addr_of_borrow_mtrace) {
+	// IT-2808: taking the address of a struct field (`@!s.x`), an array
+	// element (`@!arr[2]`) and a plain local (`@!v`), then writing through
+	// each via `p[0]` deref, causes no alloc/free of its own -- the address
+	// is a borrow, not a new owned allocation, and the original owners
+	// (Point s, [4]int64 arr) are still freed exactly once each at scope
+	// exit.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_addr_of_borrow_mtrace_bin "
+		"../test/testdata/build-mgr/138_addr_of_borrow_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_addr_of_borrow_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_addr_of_borrow_mtrace_bin");
+	EXPECT_EQ(output, "11 22 33\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Point s: 1 calloc; [4]int64 arr: 1 malloc. Taking @!s.x / @!arr[2] /
+	// @!v and writing through each via p[0] adds no allocation of its own.
+	EXPECT_EQ(allocs, 2) << "expected 2 allocs for Point s + [4]int64 arr, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, addr_of_owned_field_borrow_mtrace) {
+	// IT-2808: same borrow check, but through the cascade alloc/free path --
+	// `@!c.pts[0].x` takes the address of a leaf field inside an owned
+	// struct-array field (Cluster.pts is [2]Point, its own
+	// __pln_alloc_arr_Point/__pln_free_arr_Point pair), and the deref write
+	// through it neither allocates nor disturbs that cascade's free count.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_addr_of_owned_field_borrow_mtrace_bin "
+		"../test/testdata/build-mgr/139_addr_of_owned_field_borrow_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_addr_of_owned_field_borrow_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_addr_of_owned_field_borrow_mtrace_bin");
+	EXPECT_EQ(output, "99\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Cluster c: calloc(1) + __pln_alloc_arr_Point(2): ptr-array malloc(1) +
+	// 2 element callocs = 4 (same shape as owned_struct_arr_field_mtrace).
+	// Taking @!c.pts[0].x adds no allocation of its own.
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs for Cluster c { [2]Point pts; }, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }

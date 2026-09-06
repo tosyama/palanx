@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+int8 c = 0;
+@int8 s = @c;
+@int8 r = tmpnam(s);

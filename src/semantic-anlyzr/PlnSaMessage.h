@@ -56,7 +56,13 @@ enum PlnSaMessageCode {
 	E_ConflictingTypedef,			// arg1: typedef name
 	E_ConstNotCompileTimeValue,		// arg1: const name
 	E_AddrOfNotLocalVar,			// arg1: variable name
-	E_AddrOfNotPrimitive,			// arg1: variable name
+	E_AddrOfNotPrimitive,			// arg1: variable or field name
+	E_WriteThroughReadOnlyPtr,
+	E_PtrMutabilityUpgrade,
+	E_AssignToWholeStructElem,
+	E_AddrOfNotAddressable,
+	E_ReadOnlyPtrToNonConstCParam,		// arg1: C function name, arg2: parameter name
+	E_AddrOfNotPrimitiveElem,
 };
 
 class PlnSaMessage

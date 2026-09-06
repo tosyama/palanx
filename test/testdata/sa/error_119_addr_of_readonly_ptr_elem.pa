@@ -1,0 +1,7 @@
+func test() {
+	[4]int64 arr;
+	@int64 p = @arr[0];
+	@!int64 q = @!p[1];
+	return;
+}
+test();

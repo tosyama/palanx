@@ -329,6 +329,21 @@ vector<CToken*> CPreprocessor::scan_macro(list<CToken*> &unprocessed_tokens, boo
 	return result_tokens;
 }
 
+// Expands an object-like macro's own body in isolation (no surrounding token stream),
+// e.g. to resolve `#define S_IFDIR __S_IFDIR` down to a numeric literal for constant
+// export. Copies are seeded into `m`'s own hide set before scanning so self/circular
+// references (`#define X X`, or mutual `A`/`B`) stop cleanly instead of looping.
+vector<CToken*> CPreprocessor::expandObjectMacroBody(CMacro *m)
+{
+	list<CToken*> unprocessed;
+	for (CToken* t : m->body) {
+		CToken* copy = new CToken(*t);
+		copy->add_to_hide_set(m);
+		unprocessed.push_back(copy);
+	}
+	return scan_macro(unprocessed);
+}
+
 vector<CToken*> replace_parameter_tokens(CToken* t, const vector<string>& params, const vector<list<CToken*> >& args)
 {
 	// replace parameter tokens in t and return as vector<CToken*>

@@ -25,8 +25,10 @@ inline json storeLocToExpr(const json& loc)
 		e = {{"expr-type", "field-access"},
 		     {"object", storeLocToExpr(loc["base"])}, {"field", loc["field"]}};
 	} else {
-		// Unreachable: store_loc productions only ever yield var/arr-index/field.
-		e = {{"expr-type", "not-impl"}}; // LCOV_EXCL_LINE
+		// store_loc's tapple/func_call alternatives ("not-impl") reach here e.g.
+		// via '@' store_loc when the operand is a call expression (`@f()`); SA
+		// rejects the resulting addr-of/not-impl object as not addressable.
+		e = {{"expr-type", "not-impl"}};
 	}
 	if (loc.contains("loc")) e["loc"] = loc["loc"];
 	return e;

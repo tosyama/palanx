@@ -1368,6 +1368,73 @@ TEST(sa, arith_lit_retypes_to_right)
 	ASSERT_EQ(add["right"]["value-type"]["type-name"], "int64");
 }
 
+TEST(sa, toplevel_call_named_return_struct)
+{
+	cleanTestEnv();
+	// IT-2801: a top-level statement calling a Palan function with a struct-typed
+	// @!T named return used to see the pre-registered signature before step 2.5's
+	// struct renormalization ran, leaving value-type as unnormalized prim(Point)
+	// and crashing palan-sa. Struct pre-registration now happens in step 0, so
+	// the call resolved here (step 2) must already see the normalized
+	// pntr(struct(Point)) form.
+	json jout = run_sa("../test/testdata/sa/135_toplevel_call_named_return_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// statements[2] = var-decl for "view" = borrow(original)
+	const auto& decl = jout["statements"][2];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "view");
+	const auto& vt = v["init"]["value-type"];
+	ASSERT_EQ(vt["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
+}
+
+TEST(sa, toplevel_call_plain_return_struct)
+{
+	cleanTestEnv();
+	// IT-2801 regression: same struct pre-registration path, but for a plain
+	// (non-@!) named return `-> Point ret`.
+	json jout = run_sa("../test/testdata/sa/136_toplevel_call_plain_return_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "p2");
+	const auto& vt = v["init"]["value-type"];
+	ASSERT_EQ(vt["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
+}
+
+TEST(sa, toplevel_call_struct_arg)
+{
+	cleanTestEnv();
+	// IT-2801 regression: same struct pre-registration path, but exercising a
+	// struct-typed parameter (not just the return type) in a top-level call.
+	json jout = run_sa("../test/testdata/sa/137_toplevel_call_struct_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Pre-registered signature must have its parameter normalized to pntr(struct(Point)).
+	const auto& params = jout["functions"][0]["parameters"];
+	ASSERT_EQ(params[0]["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(params[0]["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(params[0]["var-type"]["base-type"]["type-name"], "Point");
+
+	// statements[2] = var-decl for "s" = sumX(original); the call's argument
+	// must carry the normalized struct pointer type too.
+	const auto& decl = jout["statements"][2];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "s");
+	const auto& arg_vt = v["init"]["args"][0]["value-type"];
+	ASSERT_EQ(arg_vt["type-kind"], "pntr");
+	ASSERT_EQ(arg_vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(arg_vt["base-type"]["type-name"], "Point");
+}
+
 TEST(sa, struct_def)
 {
 	cleanTestEnv();
@@ -1939,7 +2006,7 @@ TEST(sa, deep_ptr_chain_access)
 	// type A{int64 v}; type B{A a}; type C{B b}; C c;
 	// int64 x = c.b.a.v;  — two levels of struct-ptr traversal
 	// Covers: resolveObjectChain when base.isPointerBased=true (nested ptr-expr)
-	// Also: resolveStoreLocChain ptr-based for "10 -> c.b.a.v"
+	// Also: resolveObjectChain(forWrite=true) ptr-based for "10 -> c.b.a.v"
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/090_deep_ptr_chain.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2321,7 +2388,7 @@ TEST(sa, at_bang_struct_arr_decl)
 TEST(sa, embed_struct_arr_field_access)
 {
 	// [4]$Point pts; 10 -> pts[0].x; 20 -> pts[0].y; printf("%ld %ld\n", pts[0].x, pts[0].y);
-	// Covers: resolveObjectChain / resolveStoreLocChain arr-index base case (embedded struct array)
+	// Covers: resolveObjectChain arr-index base case (embedded struct array)
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/103_embed_struct_arr_field.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2362,7 +2429,7 @@ TEST(sa, embed_struct_arr_field_access)
 TEST(sa, owned_struct_arr_field_access)
 {
 	// [2]Point pts; 5 -> pts[0].x; printf("%ld\n", pts[0].x);
-	// Covers: resolveObjectChain / resolveStoreLocChain arr-index base case (owned pointer array)
+	// Covers: resolveObjectChain arr-index base case (owned pointer array)
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/104_owned_struct_arr_field.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2392,7 +2459,7 @@ TEST(sa, owned_struct_arr_field_access)
 TEST(sa, at_bang_struct_arr_field_write)
 {
 	// Point p; [4]@!Point wpts; p -> wpts[0]; 42 -> wpts[0].x; printf("%ld\n", p.x);
-	// Covers: resolveStoreLocChain arr-index base case, mutable:true (write-through allowed)
+	// Covers: resolveObjectChain(forWrite=true) arr-index base case, mutable:true (write-through allowed)
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/105_at_bang_struct_arr_field.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2878,7 +2945,7 @@ TEST(sa, at_bang_plain_var_decl)
 	//     no-init decl alt. Widened both whitelists to include tk=="pntr".
 	//  2. SA: deepNormalizePrimToStruct must run on sa_var_decl's generic fallthrough
 	//     path so `view`'s var-type carries base-type.type-kind=="struct" (not "prim"),
-	//     matching what resolveObjectChain/resolveStoreLocChain require for field access.
+	//     matching what resolveObjectChain requires for field access.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/130_at_bang_plain_var_decl.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -2969,14 +3036,14 @@ TEST(sa, addr_of_readonly_local)
 	const auto& p = jout["statements"][1]["vars"][0];
 	ASSERT_EQ(p["name"], "p");
 	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
-	ASSERT_FALSE(p["var-type"].contains("mutable"));
+	ASSERT_EQ(p["var-type"]["mutable"], false);
 	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "int64");
 
 	const auto& init = p["init"];
 	ASSERT_EQ(init["expr-type"], "addr-of");
 	ASSERT_EQ(init["name"], "x");
 	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
-	ASSERT_FALSE(init["value-type"].contains("mutable"));
+	ASSERT_EQ(init["value-type"]["mutable"], false);
 }
 
 TEST(sa, addr_of_mutable_local)
@@ -2994,4 +3061,363 @@ TEST(sa, addr_of_mutable_local)
 	ASSERT_EQ(init["expr-type"], "addr-of");
 	ASSERT_EQ(init["name"], "x");
 	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, addr_of_field_readonly)
+{
+	// `@int64 p = @s.x;` -- IT-2806: address-of on a struct field lowers to
+	// field-access + addr-only:true (CalcAddr in codegen), not an "addr-of"
+	// node -- the field leaf has no local-variable storage of its own.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/147_addr_of_field_readonly.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(p["var-type"]["mutable"], false);
+
+	const auto& init = p["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_EQ(init["var"], "s");
+	ASSERT_EQ(init["offset"], 0);
+	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(init["value-type"]["mutable"], false);
+	ASSERT_EQ(init["value-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, addr_of_field_mutable)
+{
+	// `@!int64 p = @!s.y;` -- mutable counterpart; also exercises the
+	// forWrite=true path through resolveObjectChain's "id" branch, which
+	// must NOT reject it (s itself is a plain mutable struct variable).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/148_addr_of_field_mutable.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_EQ(init["var"], "s");
+	ASSERT_EQ(init["offset"], 8);  // y follows x (int64 x 8 bytes)
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, addr_of_field_nested_embed)
+{
+	// `@!int64 p = @!s.in.v;` where `in` is `$Inner` (inline embed) -- the
+	// embed hop accumulates offset inside resolveObjectChain and the result
+	// is a single field-access node (var:"s"), not a nested ptr-expr chain.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/149_addr_of_field_nested_embed.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_EQ(init["var"], "s");
+	ASSERT_EQ(init["offset"], 16);  // x(8) + y(8)
+	ASSERT_FALSE(init.contains("ptr-expr"));
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, addr_of_field_via_ptr_hop)
+{
+	// `@!int64 p = @!n.next.val;` where `next` is a `@!Node` raw-ptr field --
+	// resolveObjectChain hops through the pointer field, producing a
+	// ptr-expr-based field-access (chain.isPointerBased == true) rather than
+	// a var-based one.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/150_addr_of_field_via_ptr_hop.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_FALSE(init.contains("var"));
+	ASSERT_TRUE(init.contains("ptr-expr"));
+	ASSERT_EQ(init["ptr-expr"]["var"], "n");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, addr_of_field_via_arr_index)
+{
+	// `@!int64 p = @!wpts[0].x;` where `wpts` is `[4]@!Point` (mutable
+	// pointer-slot array) -- the field's object chain hops through an
+	// arr-index node, exercising resolveObjectChain's "arr-index" branch
+	// under forWrite=true (the mutable slot passes the check).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/151_addr_of_field_via_arr_index.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+	const auto& init = body[1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_TRUE(init.contains("ptr-expr"));
+	ASSERT_EQ(init["ptr-expr"]["expr-type"], "arr-index");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+}
+
+TEST(sa, deref_rw_mutable_ptr)
+{
+	// `@!int64 p = @!x; 99 -> p[0]; int64 y = p[0];` -- deref read/write
+	// through a mutable `@!T` is allowed both ways.
+	// Covers: sa_arr_assign_stmt isWritableThrough branch, mutable:true case
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/141_deref_rw_mutable_ptr.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& arr_assign = jout["statements"][2];
+	ASSERT_EQ(arr_assign["stmt-type"], "arr-assign");
+	ASSERT_EQ(arr_assign["target"]["array"]["value-type"]["mutable"], true);
+}
+
+TEST(sa, ptr_mutability_narrowing)
+{
+	// `@!int64 q = @!x; @int64 r = q;` -- binding a mutable pointer to a
+	// read-only-typed destination narrows permission and is allowed.
+	// Covers: sa_var_decl ptrPermissionOk branch, narrowing case (no error)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/142_ptr_mutability_narrowing.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& r = jout["statements"][2]["vars"][0];
+	ASSERT_EQ(r["name"], "r");
+	ASSERT_EQ(r["var-type"]["mutable"], false);
+}
+
+TEST(sa, deref_scalar_widths)
+{
+	// `@!int32 p = @!x; 99 -> p[0]; int32 y = p[0];` -- IT-2805: `p[i]` is
+	// specified as C-equivalent pointer subscript. A scalar element gives a
+	// real load/store (addr-only:false) with elem-size == sizeof(elem).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/143_deref_scalar_widths.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& arr_assign = jout["statements"][2];
+	ASSERT_EQ(arr_assign["stmt-type"], "arr-assign");
+	const auto& target = arr_assign["target"];
+	ASSERT_EQ(target["addr-only"], false);
+	ASSERT_EQ(target["elem-size"]["value"], "4");
+	ASSERT_EQ(target["value-type"]["type-name"], "int32");
+
+	const auto& y = jout["statements"][3]["vars"][0];
+	ASSERT_EQ(y["init"]["addr-only"], false);
+	ASSERT_EQ(y["init"]["elem-size"]["value"], "4");
+}
+
+TEST(sa, deref_var_index)
+{
+	// `p[i]` with a variable index takes the same shape as `p[0]` -- there is
+	// no index==0 special case anywhere in SA.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/144_deref_var_index.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& arr_assign = jout["statements"][4];
+	ASSERT_EQ(arr_assign["stmt-type"], "arr-assign");
+	const auto& target = arr_assign["target"];
+	ASSERT_EQ(target["index"]["expr-type"], "id");
+	ASSERT_EQ(target["index"]["name"], "i");
+	ASSERT_EQ(target["addr-only"], false);
+}
+
+TEST(sa, deref_struct_ptr_field_rw)
+{
+	// `Point pt; 10 -> pt[0].x; int64 v = pt[0].x;` -- IT-2805: a pointer to a
+	// struct dereferences to an address computation (Palan has no
+	// register-sized struct value), so `p[i]` yields pntr(struct) with
+	// addr-only:true and elem-size == sizeof(struct), reachable for both
+	// read (field-access) and write (field-assign) via `p[i].field`.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/145_deref_struct_ptr_field_rw.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& field_assign = jout["statements"][1];
+	ASSERT_EQ(field_assign["stmt-type"], "field-assign");
+	const auto& write_ptr = field_assign["ptr-expr"];
+	ASSERT_EQ(write_ptr["expr-type"], "arr-index");
+	ASSERT_EQ(write_ptr["addr-only"], true);
+	ASSERT_EQ(write_ptr["elem-size"]["value"], "16");
+	ASSERT_EQ(write_ptr["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(write_ptr["value-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(write_ptr["value-type"]["mutable"], true);
+
+	const auto& v = jout["statements"][2]["vars"][0];
+	ASSERT_EQ(v["init"]["expr-type"], "field-access");
+	ASSERT_EQ(v["init"]["ptr-expr"]["addr-only"], true);
+}
+
+TEST(sa, deref_readonly_struct_ptr_field_read)
+{
+	// `@Point ro = pt; int64 v = ro[0].x;` -- IT-2804's read-only enforcement
+	// only blocks writes; reading a field through a read-only struct pointer
+	// via `p[0].field` must still be allowed. Regression guard.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/146_deref_readonly_struct_ptr_field_read.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& v = jout["statements"][2]["vars"][0];
+	const auto& ptr_expr = v["init"]["ptr-expr"];
+	ASSERT_EQ(ptr_expr["addr-only"], true);
+	ASSERT_EQ(ptr_expr["value-type"]["mutable"], false);
+}
+
+TEST(sa, cinclude_arr_field_prim)
+{
+	// struct BufField { char name[16]; }; (cinclude'd) -- IT-2802: c2ast now reflects
+	// C array declarators as an "arr" var-type instead of discarding them, so this
+	// field reaches buildStructDef's embed-arr/prim-leaf case exactly like a native
+	// `[16]$int8 name;` field would.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/138_cinclude_arr_field_prim.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// BufField b; -> calloc(1, 16): confirms totalSize == 16 (was 8 before IT-2802,
+	// since "char name[16]" collapsed to a single int8 field).
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "b");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
+TEST(sa, cinclude_arr_field_struct)
+{
+	// struct Point { int x; int y; }; struct Poly { struct Point pts[3]; }; (cinclude'd)
+	// -- IT-2802: struct-leaf array field. cFieldVarType normalizes the "strct" leaf
+	// inside the "arr" base-type to "prim" so buildStructDef's structDefs_ lookup
+	// (by type-name, not type-kind) finds "Point" and treats it as an embed-arr
+	// struct leaf, same as a native `[3]$Point pts;` field.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/139_cinclude_arr_field_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Poly p; -> calloc(1, 24): confirms totalSize == 3 * Point.totalSize(8) == 24.
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "24");
+}
+
+TEST(sa, cinclude_ptr_slot_arr_field)
+{
+	// struct Point { int x; int y; }; struct Slots { struct Point *pts[4]; long *vals[3]; };
+	// (cinclude'd) -- IT-2026-09-05-cinclude-ptr-slot-array-field: a C struct field
+	// that is an inline array of pointer slots ("T *field[n];") is Palan's
+	// [n]@T / [n]@!T shape. Depends on IT-2026-09-05-c2ast-declarator-precedence:
+	// before that fix, c2ast parsed "T *field[n]" inverted as a single pointer
+	// (pntr(arr(...))), so this field silently registered at the wrong (too small)
+	// size instead of reaching this shape at all.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/156_cinclude_ptr_slot_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Slots s; -> calloc(1, 56): confirms totalSize == 4*8 (pts) + 3*8 (vals) == 56,
+	// not 16 (two 8-byte pointers, the pre-fix misparse).
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "s");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][0]["value"], "1");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "56");
+}
+
+TEST(sa, cinclude_struct_stat_size)
+{
+	// cinclude <sys/stat.h>; stat s; -- the memory-safety validation target for
+	// IT-2802: struct stat's trailing "__syscall_slong_t __glibc_reserved[3]" (and
+	// other array fields) used to collapse to single scalars, so Palan's computed
+	// size was 128 instead of the real 144, meaning a Palan-allocated struct stat
+	// passed to stat(2) would overflow by 16 bytes.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/140_cinclude_struct_stat_size.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "s");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "144");
+}
+
+TEST(sa, c_const_param_readonly_arg)
+{
+	// `ctime(@t)` -- IT-2026-08-31-c2ast-const-capture: C function arguments are
+	// now checked by ptrPermissionOk() too, so this must keep compiling: ctime's
+	// `const time_t *` parameter normalizes (at the cinclude ingestion boundary,
+	// PlnSaInternal.h normalizeCType) to a mutable:false pntr, matching `@t`'s
+	// own mutable:false. Regression guard for every existing `@x`-into-const-C-arg
+	// call site (ctime/gmtime/localtime/... in the time.h build-mgr tests).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/152_c_const_param_readonly_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["name"], "ctime");
+	ASSERT_EQ(init["args"][0]["value-type"]["mutable"], false);
+}
+
+TEST(sa, addr_of_arr_elem)
+{
+	// IT-2807: `@!arr[2]` / `@arr[1]` on a scalar `[4]int64` array -- the
+	// scalar branch of sa_expr_arr_index (addr-only:false, prim elem) is
+	// the addressable case; addr-of re-tags it addr-only:true and wraps
+	// value-type in pntr(elem, mutable).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/153_addr_of_arr_elem.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+	const auto& p_init = body[1]["vars"][0]["init"];
+	ASSERT_EQ(p_init["expr-type"], "arr-index");
+	ASSERT_EQ(p_init["addr-only"], true);
+	ASSERT_EQ(p_init["array"]["name"], "arr");
+	ASSERT_EQ(p_init["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(p_init["value-type"]["mutable"], true);
+	ASSERT_EQ(p_init["value-type"]["base-type"]["type-name"], "int64");
+
+	const auto& q_init = body[2]["vars"][0]["init"];
+	ASSERT_EQ(q_init["addr-only"], true);
+	ASSERT_EQ(q_init["value-type"]["mutable"], false);
+}
+
+TEST(sa, addr_of_embed_arr_field_elem)
+{
+	// `@!s.data[2]` where `data` is `[4]$int64` (embedded array field,
+	// primitive leaf) -- exercises sa_expr_arr_index's embedded+prim branch
+	// (addr-only:false before addr-of) nested under a field-access array base.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/154_addr_of_embed_arr_field_elem.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+	const auto& arg0 = body[2]["body"]["args"][0];
+	ASSERT_EQ(arg0["expr-type"], "arr-index");
+	ASSERT_EQ(arg0["addr-only"], true);
+	ASSERT_EQ(arg0["array"]["expr-type"], "field-access");
+	ASSERT_EQ(arg0["array"]["var"], "s");
+	ASSERT_EQ(arg0["value-type"]["mutable"], true);
+	ASSERT_EQ(arg0["value-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, addr_of_2d_elem)
+{
+	// `@!mat[0][1]` where `mat` is `[2]$[3]int64` -- the outer arr-index's
+	// array is itself an addr-only arr-index (the 2D row access), but the
+	// outer element (after indexing into the row) is a plain prim scalar,
+	// so addr-of accepts it.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/155_addr_of_2d_elem.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+	const auto& arg0 = body[2]["body"]["args"][0];
+	ASSERT_EQ(arg0["expr-type"], "arr-index");
+	ASSERT_EQ(arg0["addr-only"], true);
+	ASSERT_EQ(arg0["array"]["expr-type"], "arr-index");
+	ASSERT_EQ(arg0["array"]["addr-only"], true);
+	ASSERT_EQ(arg0["array"]["array"]["name"], "mat");
+	ASSERT_EQ(arg0["value-type"]["mutable"], true);
+	ASSERT_EQ(arg0["value-type"]["base-type"]["type-name"], "int64");
 }

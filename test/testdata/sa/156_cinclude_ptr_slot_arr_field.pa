@@ -1,0 +1,3 @@
+cinclude "156_cinclude_ptr_slot_arr_field.h";
+
+Slots s;

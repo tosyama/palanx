@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+cinclude <time.h>;
+
+int32 clk_id = 0;
+@!int32 p = @!clk_id;
+int32 rc = clock_getcpuclockid(int32(0), p);
+printf("%d\n", rc == int32(0));
+printf("%d\n", p[0] == clk_id);

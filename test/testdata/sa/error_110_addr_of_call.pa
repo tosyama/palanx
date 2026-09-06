@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+func f() -> int64 {
+	return 1;
+}
+@f();

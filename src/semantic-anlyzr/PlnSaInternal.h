@@ -22,6 +22,22 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
+// True if a value may be written through this pointer-typed value-type
+// (i.e. it is not a `@T` read-only pointer). A missing "mutable" key means
+// writable: it is the default for every pntr value-type SA synthesizes for
+// struct/array variables, which carry no read-only concept of their own.
+inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
+
+// True unless binding `from` to `to` would upgrade a read-only pointer to a
+// mutable one (assigning `@T` to a `@!T`-typed destination). Non-pointer
+// types, and narrowing a mutable pointer to read-only, are always fine.
+inline bool ptrPermissionOk(const json& from, const json& to)
+{
+	if (from.value("type-kind","") != "pntr" || to.value("type-kind","") != "pntr")
+		return true;
+	return isWritableThrough(from) || !isWritableThrough(to);
+}
+
 // LCOV_EXCL_EXCEPTION_BR_START
 inline json fieldValueType(const FieldLayout& f)
 {
@@ -160,7 +176,7 @@ inline void normalizeUnsizedArrSig(json& funcDef) {
 				r["var-type"] = unsizedArrToPntr(r["var-type"]);
 }
 
-inline json normalizeCStructKind(const json& type);
+inline json normalizeCType(const json& type);
 
 // c2ast tags a C struct reference "strct" (a syntactic fact -- it saw the
 // `struct` keyword -- available with no linking/resolution performed, since
@@ -170,10 +186,21 @@ inline json normalizeCStructKind(const json& type);
 // at registration time; this is the same rewrite for cinclude'd C function
 // signatures, so PlnTypeRegistry::fromJson only ever needs to understand the
 // single canonical "struct" tag, never c2ast's raw "strct" one.
-inline json normalizeCStructKind(const json& type) {
+//
+// Also the single point where a C pointer's write permission is decided:
+// c2ast records const-ness as a syntactic fact on the *pointee* ("const" on
+// base-type), the same vocabulary a Palan `@T`/`@!T` pointer never uses --
+// SA's own pointer permission vocabulary is "mutable" on the `pntr` node
+// itself (see ptrPermissionOk/isWritableThrough above). Folding const into
+// mutable here means every consumer of a `pntr` value-type (ptrPermissionOk,
+// codegen) only ever needs to understand "mutable", whether the pointer came
+// from Palan syntax or a cincluded C signature.
+inline json normalizeCType(const json& type) {
 	if (type.value("type-kind","") == "pntr") {
 		json t = type;
-		t["base-type"] = normalizeCStructKind(type["base-type"]);
+		json base = normalizeCType(type["base-type"]);
+		t["mutable"] = !base.value("const", false);
+		t["base-type"] = move(base);
 		return t;
 	}
 	if (type.value("type-kind","") == "strct") {
@@ -187,11 +214,11 @@ inline json normalizeCStructKind(const json& type) {
 // C function entries (from c2ast) always carry a single "ret-type", never
 // Palan's native multi/named-return "rets" list, so there's no "rets" case
 // to handle here unlike normalizeUnsizedArrSig above.
-inline void normalizeCFuncStructSig(json& funcDef) {
+inline void normalizeCFuncSig(json& funcDef) {
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
 			if (p.contains("var-type"))
-				p["var-type"] = normalizeCStructKind(p["var-type"]);
+				p["var-type"] = normalizeCType(p["var-type"]);
 	if (funcDef.contains("ret-type"))
-		funcDef["ret-type"] = normalizeCStructKind(funcDef["ret-type"]);
+		funcDef["ret-type"] = normalizeCType(funcDef["ret-type"]);
 }

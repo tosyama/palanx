@@ -4,6 +4,8 @@
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 using json = nlohmann::json;
 
+class CPreprocessor;
+
 class CParser {
 	const vector<CToken*> &top_tokens;
 	const vector<CLexer*> &lexers;
@@ -15,7 +17,7 @@ class CParser {
 	bool declaration(json &ast, const vector<CToken*> &tokens, int &index, bool is_top_level);
 	bool declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly);
-	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_grouped = false);
+	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index);
 	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool enum_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
@@ -52,5 +54,5 @@ class CParser {
 public:
 	CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexers);
 	int parse(json &ast);
-	void exportMacroConstants(json &ast, const vector<CMacro*> &macros);
+	void exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPreprocessor &cpp);
 };

@@ -1,0 +1,8 @@
+cinclude <sys/stat.h>;
+cinclude <stdio.h>;
+
+if (S_IFDIR == 16384) {
+    printf("dir-mode-ok\n");
+} else {
+    printf("dir-mode-bad\n");
+}

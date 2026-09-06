@@ -629,11 +629,12 @@ TEST(gen_ast, addr_of) {
 	// @int64 p = @x;
 	const auto& p = stmts[2]["vars"][0];
 	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
-	ASSERT_FALSE(p["var-type"].contains("mutable"));
+	ASSERT_EQ(p["var-type"]["mutable"], false);
 	const auto& addr_x = p["init"];
 	ASSERT_EQ(addr_x["expr-type"], "addr-of");
-	ASSERT_EQ(addr_x["name"], "x");
-	ASSERT_FALSE(addr_x.contains("mutable"));
+	ASSERT_EQ(addr_x["object"]["expr-type"], "id");
+	ASSERT_EQ(addr_x["object"]["name"], "x");
+	ASSERT_EQ(addr_x["mutable"], false);
 	ASSERT_FALSE(addr_x["loc"].is_null());
 
 	// @!int64 q = @!y;
@@ -642,8 +643,68 @@ TEST(gen_ast, addr_of) {
 	ASSERT_EQ(q["var-type"]["mutable"], true);
 	const auto& addr_y = q["init"];
 	ASSERT_EQ(addr_y["expr-type"], "addr-of");
-	ASSERT_EQ(addr_y["name"], "y");
+	ASSERT_EQ(addr_y["object"]["expr-type"], "id");
+	ASSERT_EQ(addr_y["object"]["name"], "y");
 	ASSERT_EQ(addr_y["mutable"], true);
+}
+
+TEST(gen_ast, addr_of_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/106_addr_of_field.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 6);
+
+	// @int64 rp = @s.x;
+	const auto& addr_x = stmts[3]["vars"][0]["init"];
+	ASSERT_EQ(addr_x["expr-type"], "addr-of");
+	ASSERT_EQ(addr_x["mutable"], false);
+	ASSERT_EQ(addr_x["object"]["expr-type"], "field-access");
+	ASSERT_EQ(addr_x["object"]["field"], "x");
+	ASSERT_EQ(addr_x["object"]["object"]["expr-type"], "id");
+	ASSERT_EQ(addr_x["object"]["object"]["name"], "s");
+
+	// @!int64 wp = @!s.y;
+	const auto& addr_y = stmts[4]["vars"][0]["init"];
+	ASSERT_EQ(addr_y["expr-type"], "addr-of");
+	ASSERT_EQ(addr_y["mutable"], true);
+	ASSERT_EQ(addr_y["object"]["field"], "y");
+
+	// @!int64 np = @!s.in.v;  (nested field chain)
+	const auto& addr_v = stmts[5]["vars"][0]["init"];
+	ASSERT_EQ(addr_v["expr-type"], "addr-of");
+	ASSERT_EQ(addr_v["mutable"], true);
+	ASSERT_EQ(addr_v["object"]["expr-type"], "field-access");
+	ASSERT_EQ(addr_v["object"]["field"], "v");
+	ASSERT_EQ(addr_v["object"]["object"]["expr-type"], "field-access");
+	ASSERT_EQ(addr_v["object"]["object"]["field"], "in");
+	ASSERT_EQ(addr_v["object"]["object"]["object"]["name"], "s");
+}
+
+TEST(gen_ast, addr_of_arr_index) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/107_addr_of_arr_index.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+
+	// @int64 rp = @arr[1];
+	const auto& addr_rp = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(addr_rp["expr-type"], "addr-of");
+	ASSERT_EQ(addr_rp["mutable"], false);
+	ASSERT_EQ(addr_rp["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(addr_rp["object"]["array"]["expr-type"], "id");
+	ASSERT_EQ(addr_rp["object"]["array"]["name"], "arr");
+	ASSERT_EQ(addr_rp["object"]["index"]["value"], "1");
+
+	// @!int64 wp = @!arr[2];
+	const auto& addr_wp = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(addr_wp["expr-type"], "addr-of");
+	ASSERT_EQ(addr_wp["mutable"], true);
+	ASSERT_EQ(addr_wp["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(addr_wp["object"]["index"]["value"], "2");
 }
 
 TEST(gen_ast, addr_of_type_alias_mix) {
@@ -660,7 +721,8 @@ TEST(gen_ast, addr_of_type_alias_mix) {
 
 	// @z;
 	ASSERT_EQ(stmts[2]["body"]["expr-type"], "addr-of");
-	ASSERT_EQ(stmts[2]["body"]["name"], "z");
+	ASSERT_EQ(stmts[2]["body"]["object"]["expr-type"], "id");
+	ASSERT_EQ(stmts[2]["body"]["object"]["name"], "z");
 
 	// @!z;
 	ASSERT_EQ(stmts[3]["body"]["expr-type"], "addr-of");
@@ -779,7 +841,7 @@ TEST(gen_ast, field_access) {
 	// 10 -> p.x → field-assign
 	const auto& as = stmts[1];
 	ASSERT_EQ(as["stmt-type"], "field-assign");
-	ASSERT_EQ(as["object"]["kind"], "var");
+	ASSERT_EQ(as["object"]["expr-type"], "id");
 	ASSERT_EQ(as["object"]["name"], "p");
 	ASSERT_EQ(as["field"], "x");
 	ASSERT_EQ(as["value"]["expr-type"], "lit-int");
@@ -900,13 +962,13 @@ TEST(gen_ast, write_nested_field_arr_index) {
 	const auto& stmts = jout["ast"]["statements"];
 	ASSERT_EQ(stmts.size(), 1);
 
-	// 10 -> s.f[0].sub; → field-assign, object is an arr-index (kind-tagged) node
+	// 10 -> s.f[0].sub; → field-assign, object is an arr-index expr node
 	// whose array is a field-access node
 	const auto& s = stmts[0];
 	ASSERT_EQ(s["stmt-type"], "field-assign");
 	ASSERT_EQ(s["field"], "sub");
 	const auto& obj = s["object"];
-	ASSERT_EQ(obj["kind"], "arr-index");
+	ASSERT_EQ(obj["expr-type"], "arr-index");
 	ASSERT_EQ(obj["array"]["expr-type"], "field-access");
 	ASSERT_EQ(obj["array"]["field"], "f");
 	ASSERT_EQ(obj["array"]["object"]["name"], "s");
@@ -927,7 +989,7 @@ TEST(gen_ast, write_arr_index_regression) {
 
 	// 20 -> pts[0].x; → field-assign over an arr-index object, array unchanged
 	ASSERT_EQ(stmts[1]["stmt-type"], "field-assign");
-	ASSERT_EQ(stmts[1]["object"]["kind"], "arr-index");
+	ASSERT_EQ(stmts[1]["object"]["expr-type"], "arr-index");
 	ASSERT_EQ(stmts[1]["object"]["array"]["expr-type"], "id");
 	ASSERT_EQ(stmts[1]["object"]["array"]["name"], "pts");
 

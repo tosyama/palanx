@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+cinclude <time.h>;
+
+time_t t = int64(0);
+@!tm p = gmtime(@t);
+1972 -> p[0].tm_year;
+printf("%d\n", p[0].tm_year);
+printf("%d\n", p[0].tm_year == p.tm_year);

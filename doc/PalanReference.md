@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.27
+**Version:** v0.1.28
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -329,6 +329,14 @@ S.printf("%d\n", 42);        // qualified call
   A struct passed *into* a C call follows the same convention as a native struct-typed function
   parameter: it is passed by pointer, borrowed by the callee, and not freed by it (see
   [Struct types in function signatures](#struct-types-in-function-signatures)).
+- A fixed-size C array field (`char name[16];`) becomes a fixed-size [array field](#array-fields)
+  on the Palan side, laid out inline in the struct exactly like a native `[16]int8 name;` field —
+  element access and taking the address of an element both work. A C function parameter declared
+  as an array (`void take(char buf[32])`) decays to a plain pointer, same as in C — only the
+  outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row. A C
+  struct field with two or more array dimensions (`int cells[2][3];`) is not supported this
+  version — the whole struct type is left unusable ("unknown struct type") rather than just that
+  field.
 
 ---
 
@@ -1134,14 +1142,36 @@ int64 x = 42;
 @!int64 p = @!x;   // p now holds the address of x
 ```
 
-- `@ID` yields a read-only pointer to `ID`'s storage; `@!ID` yields a mutable pointer.
-- Scoped to local variables of a primitive type only this version — not usable on function
-  parameters, struct fields, array elements, or general expressions.
-- There is no general pointer-dereference operator, so a value cannot be read or written back
-  through `p` from Palan code itself — the resulting pointer's sole purpose is to be handed to a
-  cincluded C function that expects a pointer parameter, which dereferences it on the C side. It
-  can be used as an input the function reads through (`const T*`), or as an out-param it writes
-  into:
+- `@ID` yields a read-only pointer to `ID`'s storage; `@!ID` yields a mutable pointer. The
+  compiler enforces this: writing through a `@ID` pointer, or assigning/passing one where a
+  `@!`-typed (mutable) destination is expected, is a compile error.
+- `@` also takes the address of a primitive-typed struct field reached from a local variable
+  (`@s.x`, including through a chain of fields — `@!s.inner.x` — and through pointer-typed
+  fields — `@!p.next.val`):
+
+  ```palan
+  type Point { int64 x; int64 y; };
+  Point s;
+  memcpy(@!s.x, @src, 8);   // out-param write into s.x, same as memcpy(@!x, ...) on a plain variable
+  ```
+
+  The same read-only/mutable rule applies at every step of the chain: `@!` on a field reached
+  through a read-only pointer (a `@T`-typed base variable, or a `@T`-typed pointer field along
+  the way) is a compile error, not silently downgraded to a read-only address.
+- `@` also takes the address of a primitive-typed array element (`@arr[2]`, `@!arr[2]`),
+  including an element of a fixed-size array field (`@!s.data[2]`) and the innermost element of a
+  multi-dimensional array (`@!mat[0][1]`):
+
+  ```palan
+  [4]int64 arr;
+  memcpy(@!arr[2], @src, 8);   // out-param write into arr[2]
+  ```
+
+  The same write-permission rule applies: `@!arr[i]` requires write permission on `arr` itself, so
+  taking a mutable address through a read-only array (or a read-only array field reached through a
+  `@T`-typed pointer) is a compile error.
+- The resulting pointer can be handed to a cincluded C function that expects a pointer parameter
+  — as an input the function reads through (`const T*`), or as an out-param it writes into:
 
   ```palan
   cinclude <time.h>;
@@ -1151,6 +1181,60 @@ int64 x = 42;
   printf("%s", ctime(@t));                      // read-only: ctime takes const time_t*
 
   int32 clk_id = 0;
-  int32 rc = clock_getcpuclockid(int32(0), @!clk_id);   // mutable out-param
+  @!int32 p = @!clk_id;
+  int32 rc = clock_getcpuclockid(int32(0), p);   // mutable out-param
   printf("%d\n", rc == int32(0));
+  printf("%d\n", p[0]);                          // read the C-written value back — see below
   ```
+
+  The read-only/mutable rule extends to C parameters too: a `@T` (read-only) value may only be
+  passed where the C parameter is `const`-qualified (as `ctime`'s `const time_t*` is above);
+  passing `@T` to a non-`const` parameter — an out-param like `clock_getcpuclockid`'s second
+  argument — is a compile error, same as passing `@T` where a Palan function expects `@!T`.
+- It can also be dereferenced from Palan code itself, using `p[i]` — subscript notation, not a
+  separate operator, since Palan already represents an array as a pointer plus attributes and a
+  plain pointer as a bare pointer. `p[0]` reads or writes the pointee; `@T` (read-only) allows only
+  the read, `@!T` (mutable) allows both — the same rule as writing a struct field through a
+  pointer. `p[i]` for `i != 0` is ordinary C-style pointer arithmetic (the element at `i` element-
+  widths past `p`) with no bounds check — as in C, staying within the bounds of what `p` actually
+  points to is the programmer's responsibility, not something the compiler verifies.
+
+  ```palan
+  int64 x = 42;
+  @!int64 p = @!x;
+  99 -> p[0];        // writes through p — x is now 99
+  int64 y = p[0];     // reads through p — y is 99
+  ```
+
+  When the pointee is itself a struct (`@T`/`@!T` where `T` is a struct type), Palan has no
+  register-sized representation of a struct value — every struct-typed expression is already a
+  pointer — so `p[i]` computes an address rather than loading a value. Access its fields with
+  `p[i].field`, exactly as with `p.field`:
+
+  ```palan
+  cinclude <time.h>;
+
+  time_t t = int64(0);
+  @!tm p = gmtime(@t);
+  1972 -> p[0].tm_year;
+  printf("%d\n", p.tm_year);   // p[0] and p name the same pointee — prints 1972
+  ```
+- The pointer returned by `@`/`@!` is a borrowed reference: taking it never allocates or frees
+  anything, and the storage it points into keeps its own ownership and free timing unchanged.
+  Nothing checks that the pointer does not outlive that storage — if it escapes the scope that
+  owns the storage (e.g. assigned to a variable declared in an outer block), reading through it
+  after the storage is freed is undefined behavior, not a compile error. See `doc/Issues.md`
+  for a worked example.
+
+### Restrictions
+
+- Not usable on function parameters, or on a whole struct or array variable (`@s`, `@arr`).
+- Not usable when the addressed value is not primitive-typed: a struct-typed field, an
+  embedded-struct-array element (`[n]$T`), a 2D array row (`@mat[i]`), or a pointer-slot array
+  element (`[n]@T`/`[n]@!T`) are all rejected — `@`/`@!` only ever produces a pointer to a single
+  primitive value, never a pointer to an existing pointer or to an aggregate.
+- Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
+  variable, a primitive-typed field reached from one, or a primitive-typed array element reached
+  from one.
+
+---

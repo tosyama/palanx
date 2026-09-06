@@ -1,0 +1,3 @@
+cinclude <sys/stat.h>;
+
+stat s;
