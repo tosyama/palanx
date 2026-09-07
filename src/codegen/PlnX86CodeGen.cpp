@@ -89,6 +89,12 @@ static string negInstrForType(VRegType type) {
     return intMnemonic("neg", type);
 }
 
+// Bitwise operators are integer-only (rejected on float operands in SA); no float case needed.
+static string andInstrForType(VRegType type) { return intMnemonic("and", type); }
+static string orInstrForType(VRegType type)  { return intMnemonic("or",  type); }
+static string xorInstrForType(VRegType type) { return intMnemonic("xor", type); }
+static string notInstrForType(VRegType type) { return intMnemonic("not", type); }
+
 static string cmpInstrForType(VRegType type) {
     if (type == VRegType::Float32) return "ucomiss";
     if (type == VRegType::Float64) return "ucomisd";
@@ -230,6 +236,10 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<Div>      (&instr)) emitInstrDiv(*i, rm);
             else if (auto* i  = std::get_if<Mod>      (&instr)) emitInstrMod(*i, rm);
             else if (auto* i  = std::get_if<Neg>      (&instr)) emitInstrNeg(*i, rm);
+            else if (auto* a  = std::get_if<BitAnd>   (&instr)) emitBinArith(andInstrForType(a->type), a->dst, a->lhs, a->rhs, a->type, rm);
+            else if (auto* o  = std::get_if<BitOr>    (&instr)) emitBinArith(orInstrForType(o->type),  o->dst, o->lhs, o->rhs, o->type, rm);
+            else if (auto* x  = std::get_if<BitXor>   (&instr)) emitBinArith(xorInstrForType(x->type), x->dst, x->lhs, x->rhs, x->type, rm);
+            else if (auto* i  = std::get_if<BitNot>   (&instr)) emitInstrBitNot(*i, rm);
             else if (auto* i  = std::get_if<Cmp>      (&instr)) emitInstrCmp(*i, rm);
             else if (auto* i  = std::get_if<Convert>  (&instr)) emitInstrConvert(*i, rm);
             else if (auto* i  = std::get_if<CallC>    (&instr)) emitInstrCallC(*i, rm);
@@ -392,30 +402,46 @@ void PlnX86CodeGen::emitInstrMod(const Mod& md, const RegMap& rm)
         out << "\tmovq %rdx, " << dst_str << "\n";
 }
 
+void PlnX86CodeGen::emitUnArith(const string& op, VReg dst, VReg src, VRegType type, const RegMap& rm)
+{
+    if (!rm.count(dst)) return;  // dead: result never used
+    const PhysLoc& src_loc = rm.at(src);
+    const PhysLoc& dst_loc = rm.at(dst);
+    string mov = movInstrForType(type);
+    if (!dst_loc.isStack()) {
+        string dst_reg = sizedRegName(dst_loc.base, type);
+        out << "\t" << mov << " " << srcOperand(src_loc) << ", " << dst_reg << "\n";
+        out << "\t" << op  << " " << dst_reg << "\n";
+    } else {
+        // Spilled dst: route through scratch to avoid mem-mem.
+        string scratch = sizedRegName("%rax", type);
+        out << "\t" << mov << " " << srcOperand(src_loc) << ", " << scratch << "\n";
+        out << "\t" << op  << " " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
+    }
+}
+
 void PlnX86CodeGen::emitInstrNeg(const Neg& n, const RegMap& rm)
 {
     if (!rm.count(n.dst)) return;  // dead: result never used
-    const PhysLoc& src_loc = rm.at(n.src);
-    const PhysLoc& dst_loc = rm.at(n.dst);
     if (isFloat(n.type)) {
         // float neg: flip sign bit via xorps/xorpd with mask in .rodata
+        const PhysLoc& src_loc = rm.at(n.src);
+        const PhysLoc& dst_loc = rm.at(n.dst);
         const char* mov  = movInstrForType(n.type);
         const char* xorI = (n.type == VRegType::Float32) ? "xorps" : "xorpd";
         const char* mask = (n.type == VRegType::Float32) ? ".neg_mask_f32" : ".neg_mask_f64";
         out << "\t" << mov  << " " << srcOperand(src_loc) << ", %xmm8\n";
         out << "\t" << xorI << " " << mask << "(%rip), %xmm8\n";
         out << "\t" << mov  << " %xmm8, " << srcOperand(dst_loc) << "\n";
-    } else if (!dst_loc.isStack()) {
-        string dst_reg = sizedRegName(dst_loc.base, n.type);
-        out << "\t" << movInstrForType(n.type) << " " << srcOperand(src_loc) << ", " << dst_reg << "\n";
-        out << "\t" << negInstrForType(n.type) << " " << dst_reg << "\n";
-    } else {
-        // Spilled dst: route through scratch %rax to avoid mem-mem.
-        string scratch = sizedRegName("%rax", n.type);
-        out << "\t" << movInstrForType(n.type) << " " << srcOperand(src_loc) << ", " << scratch << "\n";
-        out << "\t" << negInstrForType(n.type) << " " << scratch << "\n";
-        out << "\t" << movInstrForType(n.type) << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
+        return;
     }
+    emitUnArith(negInstrForType(n.type), n.dst, n.src, n.type, rm);
+}
+
+void PlnX86CodeGen::emitInstrBitNot(const BitNot& n, const RegMap& rm)
+{
+    emitUnArith(notInstrForType(n.type), n.dst, n.src, n.type, rm);
 }
 
 void PlnX86CodeGen::emitInstrCmp(const Cmp& cm, const RegMap& rm)

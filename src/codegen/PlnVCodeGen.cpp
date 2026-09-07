@@ -127,6 +127,37 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             if (e.type == VRegType::Float64) prog_->needsF64Neg = true;
             return dst;
         }
+        case ExprKind::BitAnd: {
+            auto& e  = static_cast<const BitAndExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(BitAnd{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::BitOr: {
+            auto& e  = static_cast<const BitOrExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(BitOr{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::BitXor: {
+            auto& e  = static_cast<const BitXorExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(BitXor{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::BitNot: {
+            auto& e  = static_cast<const BitNotExpr&>(expr);
+            VReg src = lowerExpr(*e.operand, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(BitNot{dst, src, e.type});
+            return dst;
+        }
         case ExprKind::Cmp: {
             auto& e  = static_cast<const CmpExpr&>(expr);
             VReg l   = lowerExpr(*e.left, func);

@@ -1278,3 +1278,19 @@ TEST(codegen, uint_lit_narrow) {
     ASSERT_EQ(asm_text.find("movq $4042322160"), string::npos);
     ASSERT_EQ(asm_text.find("addq %r"), string::npos);
 }
+
+TEST(codegen, bitwise_ops) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/068_bitwise_ops.sa.json";
+    string asmf = "out/068_bitwise_ops.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("andq"), string::npos);
+    ASSERT_NE(asm_text.find("orq"),  string::npos);
+    ASSERT_NE(asm_text.find("xorq"), string::npos);
+    ASSERT_NE(asm_text.find("notq"), string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}

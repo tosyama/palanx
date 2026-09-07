@@ -1061,6 +1061,51 @@ TEST(sa, logical_ops) {
 	ASSERT_EQ(with_cast["value-type"]["type-name"], "int32");
 }
 
+TEST(sa, bitwise_ops) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/158_bitwise_ops.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// [0] int64 a, [1] int64 b, [2] int32 c,
+	// [3] a&b, [4] a|b, [5] a^b, [6] ~a, [7] ~c, [8] a & int32(c)
+	ASSERT_GE(stmts.size(), 9u);
+
+	// a & b  →  value-type int64 (both operands already int64)
+	const auto& band = stmts[3]["body"];
+	ASSERT_EQ(band["expr-type"],               "bitand");
+	ASSERT_EQ(band["value-type"]["type-name"], "int64");
+	ASSERT_EQ(band["left"]["name"],             "a");
+	ASSERT_EQ(band["right"]["name"],            "b");
+
+	// a | b  →  value-type int64
+	const auto& bor = stmts[4]["body"];
+	ASSERT_EQ(bor["expr-type"],               "bitor");
+	ASSERT_EQ(bor["value-type"]["type-name"], "int64");
+
+	// a ^ b  →  value-type int64
+	const auto& bxor = stmts[5]["body"];
+	ASSERT_EQ(bxor["expr-type"],               "bitxor");
+	ASSERT_EQ(bxor["value-type"]["type-name"], "int64");
+
+	// ~a  →  value-type int64 (preserves operand width, unlike logical-not which
+	// always collapses to int32)
+	const auto& bnot64 = stmts[6]["body"];
+	ASSERT_EQ(bnot64["expr-type"],               "bitnot");
+	ASSERT_EQ(bnot64["value-type"]["type-name"], "int64");
+	ASSERT_EQ(bnot64["operand"]["name"],         "a");
+
+	// ~c  →  value-type int32 (preserves the narrower operand's own width)
+	const auto& bnot32 = stmts[7]["body"];
+	ASSERT_EQ(bnot32["expr-type"],               "bitnot");
+	ASSERT_EQ(bnot32["value-type"]["type-name"], "int32");
+
+	// a & int32(c)  →  int64 & int32: right side widened to int64 via a convert node
+	const auto& mixed = stmts[8]["body"];
+	ASSERT_EQ(mixed["expr-type"],               "bitand");
+	ASSERT_EQ(mixed["value-type"]["type-name"], "int64");
+	ASSERT_EQ(mixed["right"]["expr-type"],      "convert");
+}
+
 TEST(sa, embed_arr_decl_const_inner) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/055_embed_arr_decl.pa");

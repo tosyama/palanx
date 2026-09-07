@@ -618,6 +618,50 @@ TEST(gen_ast, logical_ops) {
 	ASSERT_EQ(mixed["right"]["expr-type"], "logical-not");
 }
 
+TEST(gen_ast, bitwise_ops) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/036_bitwise_ops.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 8);  // 2 var-decls + 6 expr-stmts
+
+	// a & b
+	const auto& band = stmts[2]["body"];
+	ASSERT_EQ(band["expr-type"], "bitand");
+	ASSERT_EQ(band["left"]["name"],  "a");
+	ASSERT_EQ(band["right"]["name"], "b");
+
+	// a | b
+	const auto& bor = stmts[3]["body"];
+	ASSERT_EQ(bor["expr-type"], "bitor");
+	ASSERT_EQ(bor["left"]["name"],  "a");
+	ASSERT_EQ(bor["right"]["name"], "b");
+
+	// a ^ b
+	const auto& bxor = stmts[4]["body"];
+	ASSERT_EQ(bxor["expr-type"], "bitxor");
+	ASSERT_EQ(bxor["left"]["name"],  "a");
+	ASSERT_EQ(bxor["right"]["name"], "b");
+
+	// ~a
+	const auto& bnot = stmts[5]["body"];
+	ASSERT_EQ(bnot["expr-type"], "bitnot");
+	ASSERT_EQ(bnot["operand"]["name"], "a");
+
+	// a & b == c  →  (a & b) == c  (& binds tighter than comparisons)
+	const auto& prec1 = stmts[6]["body"];
+	ASSERT_EQ(prec1["expr-type"], "cmp");
+	ASSERT_EQ(prec1["left"]["expr-type"], "bitand");
+
+	// a + b | c  →  a + (b | c)  (| binds tighter than +, same class as *, so this
+	// ticket's deliberately simpler precedence choice does NOT match C's `(a+b)|c`)
+	const auto& prec2 = stmts[7]["body"];
+	ASSERT_EQ(prec2["expr-type"], "add");
+	ASSERT_EQ(prec2["left"]["expr-type"], "id");
+	ASSERT_EQ(prec2["right"]["expr-type"], "bitor");
+}
+
 TEST(gen_ast, addr_of) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/104_addr_of.pa");

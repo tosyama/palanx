@@ -74,6 +74,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const Div& d)      { divmod_indices.push_back(i); setBinOp(d.dst, d.lhs, d.rhs, d.type); },
             [&](const Mod& m)      { divmod_indices.push_back(i); setBinOp(m.dst, m.lhs, m.rhs, m.type); },
             [&](const Neg& n)      { setDef(n.dst, n.type); addUse(n.src); },
+            [&](const BitAnd& a)   { setBinOp(a.dst, a.lhs, a.rhs, a.type); },
+            [&](const BitOr& o)    { setBinOp(o.dst, o.lhs, o.rhs, o.type); },
+            [&](const BitXor& x)   { setBinOp(x.dst, x.lhs, x.rhs, x.type); },
+            [&](const BitNot& n)   { setDef(n.dst, n.type); addUse(n.src); },
             [&](const Cmp& c)      { setDef(c.dst, VRegType::Int32); addUse(c.lhs); addUse(c.rhs); },
             [&](const Convert& c)  { setDef(c.dst, c.to); addUse(c.src); },
             [&](const CallC& c) {

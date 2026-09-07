@@ -215,6 +215,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       "(e.g. a struct-array element, a 2D row, or a pointer element) -- '@'/'@!' only "
 			       "supports a primitive-typed array element.";
 
+		case E_BitwiseOpNotInteger:
+			return "Bitwise operator operand must be an integer type.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

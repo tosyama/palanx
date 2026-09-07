@@ -63,6 +63,7 @@ enum PlnSaMessageCode {
 	E_AddrOfNotAddressable,
 	E_ReadOnlyPtrToNonConstCParam,		// arg1: C function name, arg2: parameter name
 	E_AddrOfNotPrimitiveElem,
+	E_BitwiseOpNotInteger,
 };
 
 class PlnSaMessage

@@ -232,11 +232,22 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		return sa_expr_addr_of(expr);
 
 	} else if (expr_type == "add" || expr_type == "sub"
-	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod") {
+	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod"
+	        || expr_type == "bitand" || expr_type == "bitor" || expr_type == "bitxor") {
 		return sa_expr_arith(expr, expectedType);
 
 	} else if (expr_type == "neg") {
 		json operand = sa_expression(expr["operand"]);
+		sa_expr["operand"]    = operand;
+		sa_expr["value-type"] = operand["value-type"];
+
+	} else if (expr_type == "bitnot") {
+		json operand = sa_expression(expr["operand"], expectedType);
+		const PlnType* t = registry_.fromJson(operand["value-type"]);
+		if (!isIntegerPrim(t)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
+			exit(1);
+		}
 		sa_expr["operand"]    = operand;
 		sa_expr["value-type"] = operand["value-type"];
 
@@ -260,10 +271,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		json right = sa_expression(expr["right"]);
 		for (const json* op : {&left, &right}) {
 			const PlnType* t = registry_.fromJson((*op)["value-type"]);
-			bool isFloat = t->kind == PlnType::Kind::Prim &&
-				(static_cast<const PrimType*>(t)->name == PrimType::Name::Float32 ||
-				 static_cast<const PrimType*>(t)->name == PrimType::Name::Float64);
-			if (t->kind != PlnType::Kind::Prim || isFloat) {
+			if (!isIntegerPrim(t)) {
 				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_LogicalOpNotInteger) << endl;
 				exit(1);
 			}
@@ -275,10 +283,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 	} else if (expr_type == "logical-not") {
 		json operand = sa_expression(expr["operand"]);
 		const PlnType* t = registry_.fromJson(operand["value-type"]);
-		bool isFloat = t->kind == PlnType::Kind::Prim &&
-			(static_cast<const PrimType*>(t)->name == PrimType::Name::Float32 ||
-			 static_cast<const PrimType*>(t)->name == PrimType::Name::Float64);
-		if (t->kind != PlnType::Kind::Prim || isFloat) {
+		if (!isIntegerPrim(t)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_LogicalOpNotInteger) << endl;
 			exit(1);
 		}
@@ -353,6 +358,18 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	}
 	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 	const PlnType* rightType = registry_.fromJson(right["value-type"]);
+	if (expr_type == "bitand" || expr_type == "bitor" || expr_type == "bitxor") {
+		// Checked on the operands themselves, not the post-promotion type: a
+		// pointer/struct pair is Incompatible and falls through to
+		// `promoted = leftType` below unchanged, which would silently accept
+		// `ptr & ptr` if this ran on `promoted` instead.
+		for (const PlnType* t : {leftType, rightType}) {
+			if (!isIntegerPrim(t)) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
+				exit(1);
+			}
+		}
+	}
 	const PlnType* promoted;
 	if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
 		promoted = rightType;

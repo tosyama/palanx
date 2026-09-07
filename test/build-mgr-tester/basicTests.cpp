@@ -1194,6 +1194,14 @@ TEST(build_mgr, uint_lit_narrow) {
 	ASSERT_EQ(output, "44\n50\n4464\n12345\n14745824\n100\n");
 }
 
+TEST(build_mgr, bitwise_ops) {
+	// IT-2026-09-06-2903: `&` `|` `^` `~` were entirely unimplemented -- `&` parsed
+	// but returned "not-impl" in SA, `|`/`^` weren't even lexed, `~` didn't exist.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/146_bitwise_ops.pa");
+	ASSERT_EQ(output, "8 14 6 -13\n1\n61440 61503 63\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
