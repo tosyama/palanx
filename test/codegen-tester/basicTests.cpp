@@ -1240,3 +1240,22 @@ TEST(codegen, float_to_uint) {
     // flo64 -> int8: signed narrow destinations reuse the 32-bit form.
     ASSERT_NE(asm_text.find("cvttsd2sil"), string::npos);
 }
+
+TEST(codegen, uint32_arith) {
+    // IT-2026-09-07: addInstrForType/mulInstrForType enumerated signed widths
+    // explicitly and fell through to the 64-bit default for Uint32, while
+    // movInstrForType/sizedRegName already sized Uint32 at 32 bits — mismatched
+    // instruction/register widths that the assembler rejects.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/066_uint32_arith.sa.json";
+    string asmf = "out/066_uint32_arith.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("addl"),  string::npos);
+    ASSERT_NE(asm_text.find("imull"), string::npos);
+    ASSERT_EQ(asm_text.find("addq %r"),  string::npos);
+    ASSERT_EQ(asm_text.find("imulq %r"), string::npos);
+}

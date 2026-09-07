@@ -26,7 +26,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitFuncPrologue(const VFunc& func, const RegAllocResult& ra, const RegMap& rm);
 
     // Shared helper: emit a binary reg-reg arithmetic instruction (Add/Sub/Mul)
-    void emitBinArith(const char* op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm);
+    void emitBinArith(const string& op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm);
 
     // Per-instruction emit helpers
     void emitInstrLeaLabel(const LeaLabel& i, const RegMap& rm);

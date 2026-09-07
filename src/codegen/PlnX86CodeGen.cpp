@@ -57,57 +57,42 @@ static string extendMnemonic(bool sourceSigned, int fromWidth, int toWidth) {
     return string("mov") + (sourceSigned ? "s" : "z") + widthSuffix(fromWidth) + widthSuffix(toWidth);
 }
 
-static const char* addInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int8:    return "addb";
-        case VRegType::Int16:   return "addw";
-        case VRegType::Int32:   return "addl";
-        case VRegType::Float32: return "addss";
-        case VRegType::Float64: return "addsd";
-        default:                return "addq";
-    }
+// Integer ALU mnemonic for `base` at the width of `type`, e.g. intMnemonic("add", Uint32) => "addl".
+// Deriving the suffix from intWidth()/widthSuffix() instead of enumerating every VRegType keeps
+// signed and unsigned integer widths in sync by construction.
+static string intMnemonic(const char* base, VRegType type) {
+    return string(base) + widthSuffix(intWidth(type));
 }
 
-static const char* subInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int8:    return "subb";
-        case VRegType::Int16:   return "subw";
-        case VRegType::Int32:   return "subl";
-        case VRegType::Float32: return "subss";
-        case VRegType::Float64: return "subsd";
-        default:                return "subq";
-    }
+static string addInstrForType(VRegType type) {
+    if (type == VRegType::Float32) return "addss";
+    if (type == VRegType::Float64) return "addsd";
+    return intMnemonic("add", type);
 }
 
-// imulb has no 2-operand form; Int8 multiplication is not supported here.
-static const char* mulInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int16:   return "imulw";
-        case VRegType::Int32:   return "imull";
-        case VRegType::Float32: return "mulss";
-        case VRegType::Float64: return "mulsd";
-        default:                return "imulq";
-    }
+static string subInstrForType(VRegType type) {
+    if (type == VRegType::Float32) return "subss";
+    if (type == VRegType::Float64) return "subsd";
+    return intMnemonic("sub", type);
 }
 
-static const char* negInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int8:  return "negb";
-        case VRegType::Int16: return "negw";
-        case VRegType::Int32: return "negl";
-        default:              return "negq";
-    }
+// imulb has no 2-operand form; Int8/Uint8 multiplication is not supported here — the
+// 1-byte case is left mapped to imulq, matching the pre-existing (unreachable) fallback.
+static string mulInstrForType(VRegType type) {
+    if (type == VRegType::Float32) return "mulss";
+    if (type == VRegType::Float64) return "mulsd";
+    if (intWidth(type) == 1) return "imulq";
+    return intMnemonic("imul", type);
 }
 
-static const char* cmpInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int8:    return "cmpb";
-        case VRegType::Int16:   return "cmpw";
-        case VRegType::Int32:   return "cmpl";
-        case VRegType::Float32: return "ucomiss";
-        case VRegType::Float64: return "ucomisd";
-        default:                return "cmpq";
-    }
+static string negInstrForType(VRegType type) {
+    return intMnemonic("neg", type);
+}
+
+static string cmpInstrForType(VRegType type) {
+    if (type == VRegType::Float32) return "ucomiss";
+    if (type == VRegType::Float64) return "ucomisd";
+    return intMnemonic("cmp", type);
 }
 
 static const char* setCCForOp(const string& op, bool isFloat) {
@@ -295,7 +280,7 @@ void PlnX86CodeGen::emitFuncPrologue(const VFunc& func, const RegAllocResult& ra
     }
 }
 
-void PlnX86CodeGen::emitBinArith(const char* op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm)
+void PlnX86CodeGen::emitBinArith(const string& op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm)
 {
     if (!rm.count(dst)) return;  // dead: result never used
     const PhysLoc& dst_loc = rm.at(dst);

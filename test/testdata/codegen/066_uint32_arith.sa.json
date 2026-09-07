@@ -1,0 +1,46 @@
+{
+  "original": "/test/uint32_arith.pa",
+  "str-literals": [
+    { "label": ".str0", "value": "%u %u\n" }
+  ],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "x",
+          "var-type": { "type-kind": "prim", "type-name": "uint32" },
+          "init": { "expr-type": "lit-uint", "value": "6", "value-type": {"type-kind": "prim", "type-name": "uint32"} }
+        },
+        {
+          "name": "y",
+          "var-type": { "type-kind": "prim", "type-name": "uint32" },
+          "init": { "expr-type": "lit-uint", "value": "7", "value-type": {"type-kind": "prim", "type-name": "uint32"} }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "printf",
+        "args": [
+          { "expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}} },
+          {
+            "expr-type": "add",
+            "value-type": {"type-kind": "prim", "type-name": "uint32"},
+            "left":  { "expr-type": "id", "name": "x", "var-type": {"type-kind": "prim", "type-name": "uint32"}, "value-type": {"type-kind": "prim", "type-name": "uint32"} },
+            "right": { "expr-type": "id", "name": "y", "var-type": {"type-kind": "prim", "type-name": "uint32"}, "value-type": {"type-kind": "prim", "type-name": "uint32"} }
+          },
+          {
+            "expr-type": "mul",
+            "value-type": {"type-kind": "prim", "type-name": "uint32"},
+            "left":  { "expr-type": "id", "name": "x", "var-type": {"type-kind": "prim", "type-name": "uint32"}, "value-type": {"type-kind": "prim", "type-name": "uint32"} },
+            "right": { "expr-type": "id", "name": "y", "var-type": {"type-kind": "prim", "type-name": "uint32"}, "value-type": {"type-kind": "prim", "type-name": "uint32"} }
+          }
+        ]
+      }
+    }
+  ]
+}

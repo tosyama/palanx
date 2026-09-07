@@ -1166,6 +1166,18 @@ TEST(build_mgr, ptr_alias_pointee) {
 	ASSERT_EQ(output, "42 7\n");
 }
 
+TEST(build_mgr, uint_narrow_arith) {
+	// IT-2026-09-07: PlnX86CodeGen's add/sub/mul/neg/cmp mnemonic tables enumerated
+	// signed widths explicitly but fell through to the 64-bit default for
+	// Uint8/Uint16/Uint32, while movInstrForType/sizedRegName already sized those
+	// types at 8/16/32 bits — e.g. `uint32 a + uint32 b` emitted `movl` into a
+	// 32-bit register followed by `addq`, which the assembler rejects. No test
+	// exercised unsigned sub-64-bit arithmetic before this ticket.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/144_uint_narrow_arith.pa");
+	ASSERT_EQ(output, "4 240 0\n4 65520 65476 0\n4 4294967280 4294967236 0\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
