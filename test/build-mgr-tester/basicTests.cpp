@@ -1154,6 +1154,18 @@ TEST(build_mgr, uint_idx_var_stride) {
 	ASSERT_EQ(output, "40 50 60\n");
 }
 
+TEST(build_mgr, ptr_alias_pointee) {
+	// IT-2026-09-06-2902: deepNormalizePrimToStruct only resolved
+	// prim(Name) -> struct(Name) via structDefs_, without re-applying
+	// resolveTypeAlias at each level of a pntr chain, so a Palan type alias
+	// or a C typedef used as a `@T`/`@!T` pointee reached
+	// PlnTypeRegistry::fromJson unresolved and aborted with rc=134 instead
+	// of resolving to the underlying primitive type.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/143_ptr_alias_pointee.pa");
+	ASSERT_EQ(output, "42 7\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

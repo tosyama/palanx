@@ -226,9 +226,27 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			string tname = vtype.value("type-name", "");
 			if (structDefs_.count(tname))
 				return sa_struct_var_decl(stmt);
-			if (!typeAliases_.count(tname) && elemSizeBytes(tname) < 0) {
+			if (!isKnownTypeName(tname)) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 				exit(1);
+			}
+		}
+		if (tk == "pntr") {
+			// Validate the pointee name at declaration time so `@!NoSuchStruct p;`
+			// is rejected here rather than silently compiling (no init -> never
+			// reaches PlnTypeRegistry::fromJson) or aborting via an unguarded
+			// fromJson throw (with init). Walk through pntr-of-pntr chains; a
+			// pointee of kind other than "prim" (struct/arr/...) is validated by
+			// its own producer, so nothing to check here.
+			const json* base = &vtype["base-type"];
+			while (base->value("type-kind","") == "pntr")
+				base = &(*base)["base-type"];
+			if (base->value("type-kind","") == "prim") {
+				string tname = base->value("type-name", "");
+				if (!isKnownTypeName(tname)) {
+					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+					exit(1);
+				}
 			}
 		}
 	}

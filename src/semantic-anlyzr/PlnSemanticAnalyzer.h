@@ -123,6 +123,8 @@ class PlnSemanticAnalyzer {
 	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_
 	void recordAllocShape(const string& structName);
 	bool isStructType(const json& type) const;
+	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.
+	bool isKnownTypeName(const string& name) const;
 	json  toStructPntrType(const json& type) const;
 	bool  isNamedReturnVar(const string& varName) const;
 	json  deepNormalizePrimToStruct(const json& type) const;

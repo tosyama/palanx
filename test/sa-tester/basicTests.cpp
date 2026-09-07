@@ -3421,3 +3421,20 @@ TEST(sa, addr_of_2d_elem)
 	ASSERT_EQ(arg0["value-type"]["mutable"], true);
 	ASSERT_EQ(arg0["value-type"]["base-type"]["type-name"], "int64");
 }
+
+TEST(sa, ptr_decl_alias_pointee)
+{
+	// `type MyInt = int64; @MyInt p = @a;` -- IT-2902: deepNormalizePrimToStruct
+	// now re-applies resolveTypeAlias at every level of a pntr chain, so an
+	// alias used as a pointee resolves to its underlying type instead of
+	// reaching PlnTypeRegistry::fromJson unresolved (which used to abort with
+	// "unknown prim type-name: MyInt").
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/157_ptr_decl_alias_pointee.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "int64");
+}

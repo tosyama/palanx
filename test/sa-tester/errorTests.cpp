@@ -1071,12 +1071,15 @@ TEST(sa_error, write_readonly_struct_ptr_field)
 
 TEST(sa_error, deref_unknown_struct_ptr)
 {
-	// `@!Foo p; p[0].bar;` where `Foo` is never declared. gen-ast has no
-	// symbol table, so `Foo` parses as a prim base-type, not a struct one --
+	// `func f(@!Foo p) { p[0].bar; }` where `Foo` is never declared. gen-ast has
+	// no symbol table, so `Foo` parses as a prim base-type, not a struct one --
 	// IT-2805: sa_expr_arr_index's generic (non-struct) branch must reject
 	// this at the SA boundary instead of letting elemSizeBytes' -1
 	// "unknown type" sentinel leak into elem-size and crash palan-codegen
 	// downstream (layer violation).
+	// IT-2902 moved this case to a parameter: a local `@!Foo p;` var decl is
+	// now rejected at declaration time (sa_var_decl), so only a parameter's
+	// pointee (unchecked at signature normalization) still reaches this guard.
 	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownStructType)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1178,5 +1181,23 @@ TEST(sa_error, addr_of_readonly_ptr_elem)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_decl_unknown_type)
+{
+	// `@!@!NoSuchStruct p;` (pntr-of-pntr, to exercise the walk-through loop
+	// too) -- IT-2902: sa_var_decl had no "pntr" branch in its dispatch guard,
+	// so the pointee name was never validated at declaration time; without an
+	// initializer, this used to compile silently and leave `p` referencing a
+	// nonexistent type.
+	// Covers: sa_var_decl pntr branch (incl. pntr-of-pntr walk), unknown
+	// pointee prim name -> E_UnknownStructType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_120_ptr_decl_unknown_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unknown struct type"), string::npos);
 }
 

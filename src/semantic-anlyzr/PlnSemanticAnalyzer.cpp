@@ -257,6 +257,11 @@ bool PlnSemanticAnalyzer::isStructType(const json& type) const
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 }
 
+bool PlnSemanticAnalyzer::isKnownTypeName(const string& name) const
+{
+	return structDefs_.count(name) || typeAliases_.count(name) || elemSizeBytes(name) >= 0;
+}
+
 json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 {
 	if (!isStructType(type)) return type;
@@ -288,16 +293,20 @@ bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
 
 json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 {
-	// Recursively convert prim(Name) → struct(Name) inside pntr chains.
-	// Needed when struct types appear nested in pointer-of-pointer signatures like []@!T.
-	if (type.value("type-kind","") == "pntr") {
-		json t = type;
-		t["base-type"] = deepNormalizePrimToStruct(type["base-type"]);
+	// The single walk that resolves type aliases and converts prim(Name) → struct(Name)
+	// at every level of a pntr chain (needed for struct types nested in pointer-of-pointer
+	// signatures like []@!T, and for alias pointees like @MyInt / @!size_t). resolveTypeAlias
+	// alone only inspects the top-level node, so it must be re-applied at each recursion step
+	// or an alias used as a pointee would reach PlnTypeRegistry::fromJson unresolved.
+	json resolved = resolveTypeAlias(type);
+	if (resolved.value("type-kind","") == "pntr") {
+		json t = resolved;
+		t["base-type"] = deepNormalizePrimToStruct(resolved["base-type"]);
 		return t;
 	}
-	if (isStructType(type))
-		return {{"type-kind","struct"},{"type-name",type["type-name"]}};
-	return type;
+	if (isStructType(resolved))
+		return {{"type-kind","struct"},{"type-name",resolved["type-name"]}};
+	return resolved;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)

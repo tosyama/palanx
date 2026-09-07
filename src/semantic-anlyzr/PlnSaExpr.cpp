@@ -599,6 +599,13 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		// doesn't recognize (see the sz<0 guard below). Every such producer
 		// already required the name to resolve in structDefs_, so look it up
 		// unguarded here, matching resolveObjectChain's convention.
+		//
+		// Note: a local `@T`/`@!T` variable declaration is rejected at
+		// declaration time by sa_var_decl for an unknown pointee, so the
+		// sz<0 guard below is unreachable from a local-var-declared pointer.
+		// It remains the first rejection point for a `@T`/`@!T` function
+		// parameter or named-return value, whose pointee name is not
+		// validated at signature normalization time (normalizeStructSig).
 		int64_t stride = structDefs_[elem_type["type-name"].get<string>()].totalSize;
 		json elem_pntr = {{"type-kind","pntr"},{"mutable",array_type.value("mutable", true)},
 		                  {"base-type",elem_type}};
