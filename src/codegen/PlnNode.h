@@ -59,7 +59,8 @@ struct IntLitExpr : Expr {
 
 struct UintLitExpr : Expr {
     UintLitExpr() : Expr(ExprKind::UintLit) {}
-    string value;  // decimal string
+    string   value;  // decimal string
+    VRegType type = VRegType::Uint64;
 };
 
 struct FloLitExpr : Expr {

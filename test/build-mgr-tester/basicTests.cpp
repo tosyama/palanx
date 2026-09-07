@@ -1178,6 +1178,22 @@ TEST(build_mgr, uint_narrow_arith) {
 	ASSERT_EQ(output, "4 240 0\n4 65520 65476 0\n4 4294967280 4294967236 0\n");
 }
 
+TEST(build_mgr, uint_lit_narrow) {
+	// IT-2026-09-07: a uint8/16/32 variable declared directly from a `u`-suffixed
+	// literal (lit-uint expr-type) deserialized to a codegen node with no type
+	// field, so codegen always emitted a 64-bit MovImm regardless of the declared
+	// width, and lowerVarDeclStmt never routed lit-uint through InitVar (unlike
+	// lit-int/lit-flo), so the variable wasn't tracked as a stable stack-resident
+	// variable by RegAlloc either -- reassignment produced mismatched instruction
+	// widths. Uint64 never exposed this (Int64/Uint64 alias to the same 64-bit
+	// register form); `uint8 a = 200;` (no `u` suffix, lit-int) never exposed it
+	// either, since SA retypes the literal itself rather than going through
+	// lit-uint's codegen path.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/145_uint_lit_narrow.pa");
+	ASSERT_EQ(output, "44\n50\n4464\n12345\n14745824\n100\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

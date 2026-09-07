@@ -42,6 +42,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     if (expr_type == "lit-uint") {
         auto e = make_unique<UintLitExpr>();
         e->value = j["value"];
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Uint64;
         return e;
     }
     if (expr_type == "lit-flo") {

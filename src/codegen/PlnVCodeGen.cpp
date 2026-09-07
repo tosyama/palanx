@@ -57,7 +57,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         case ExprKind::UintLit: {
             auto& e = static_cast<const UintLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(MovImm{r, VRegType::Int64, (long long)stoull(e.value)});
+            func.instrs.push_back(MovImm{r, e.type, (long long)stoull(e.value)});
             return r;
         }
         case ExprKind::Convert: {
@@ -417,6 +417,14 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                     if (!blockVarStack_.empty())
                         blockVarStack_.back().push_back(r);
                 }
+            } else if (ve.init->kind == ExprKind::UintLit) {
+                // Uint literal can never adopt a float type (unlike IntLit above):
+                // SA's lit-uint branch only ever assigns a Uint* value-type.
+                auto& e = static_cast<const UintLitExpr&>(*ve.init);
+                r = allocVReg();
+                func.instrs.push_back(InitVar{r, e.type, (long long)stoull(e.value)});
+                if (!blockVarStack_.empty())
+                    blockVarStack_.back().push_back(r);
             } else {
                 r = lowerExpr(*ve.init, func);
             }

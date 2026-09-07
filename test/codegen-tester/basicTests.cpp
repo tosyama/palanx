@@ -1259,3 +1259,22 @@ TEST(codegen, uint32_arith) {
     ASSERT_EQ(asm_text.find("addq %r"),  string::npos);
     ASSERT_EQ(asm_text.find("imulq %r"), string::npos);
 }
+
+TEST(codegen, uint_lit_narrow) {
+    // IT-2026-09-07: a uint32 variable declared directly from a lit-uint node
+    // (a `u`-suffixed literal) deserialized with no type, so InitVar always got
+    // Uint64 (aliased to the 64-bit movq/addq form) regardless of the declared
+    // 32-bit width.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/067_uint_lit_narrow.sa.json";
+    string asmf = "out/067_uint_lit_narrow.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movl $4042322160"), string::npos);
+    ASSERT_NE(asm_text.find("addl"), string::npos);
+    ASSERT_EQ(asm_text.find("movq $4042322160"), string::npos);
+    ASSERT_EQ(asm_text.find("addq %r"), string::npos);
+}

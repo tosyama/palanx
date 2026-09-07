@@ -1,0 +1,24 @@
+cinclude <stdio.h>;
+
+// uint8/16/32 declared directly from a `u`-suffixed literal (lit-uint expr-type),
+// not via a bare integer literal (lit-int) or an id reference. add/sub/reassign.
+uint8 a8 = 200u;
+uint8 b8 = 100u;
+uint8 c8 = a8 + b8;
+printf("%u\n", c8);
+50u -> a8;
+printf("%u\n", a8);
+
+uint16 a16 = 60000u;
+uint16 b16 = 10000u;
+uint16 c16 = a16 + b16;
+printf("%u\n", c16);
+12345u -> a16;
+printf("%u\n", a16);
+
+uint32 a32 = 4042322160u;
+uint32 b32 = 267390960u;
+uint32 c32 = a32 + b32;
+printf("%u\n", c32);
+100u -> a32;
+printf("%u\n", a32);
