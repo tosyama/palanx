@@ -228,6 +228,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       "this version); it can only be used through a pointer ('@" + arg1 + "' / '@!"
 			       + arg1 + "').";
 
+		case E_UnsupportedParamType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "function '" + arg1 + "' has a parameter or return type this version cannot "
+			       "represent: '" + arg2 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

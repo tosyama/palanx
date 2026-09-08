@@ -1387,3 +1387,23 @@ TEST(sa_error, incomplete_struct_native_embed_arr)
 	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
 }
 
+TEST(sa_error, sized_arr_param)
+{
+	// `func f([3]int64 a) -> int64 { ... }` -- a sized-array parameter. []T /
+	// []$[m]T (unsized) normalize to pntr via unsizedArrToPntr, but a sized
+	// [n]T parameter keeps type-kind "arr", which PlnTypeRegistry::fromJson
+	// cannot build. Previously this reached sa_expr_call's parameter-side
+	// fromJson call, which was silently swallowed by a
+	// `catch (const std::runtime_error&) {}` -- the argument itself would
+	// still abort unguarded downstream. IT-2026-09-08: registration now
+	// validates the normalized signature and diagnoses it up front instead.
+	// Covers: PlnSemanticAnalyzer::validateNativeSig (top-level registration)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_133_sized_arr_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'f' has a parameter or return type this version cannot represent: 'array'"),
+	          string::npos);
+}

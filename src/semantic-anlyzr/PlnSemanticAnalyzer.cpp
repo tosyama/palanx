@@ -336,6 +336,51 @@ void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 	}
 }
 
+// Structural-only counterpart to unrepresentableTypeName, scoped to native
+// Palan signatures. A cinclude'd C signature's unresolved "prim" type-name
+// (e.g. "flt128") is genuinely unrepresentable (see requireSupportedCFuncSig),
+// but a native signature's "prim" node can also be a not-yet-registered
+// struct name used as a pointee -- e.g. a forward-referenced type, or a plain
+// typo -- and that is deliberately left to the existing, more specific
+// per-use diagnostics (E_UnknownStructType / E_IncompleteStructType) rather
+// than rejected here. Only a type-kind fromJson can never build regardless of
+// name resolution (currently just "arr" -- gen-ast's type_expr grammar is the
+// only native producer, and unsizedArrToPntr only converts the unsized form)
+// is reported.
+static string unsupportedNativeSigTypeKind(const json& vt)
+{
+	string k = vt.value("type-kind", "");
+	if (k == "pntr")
+		return vt.contains("base-type") ? unsupportedNativeSigTypeKind(vt["base-type"]) : "";
+	if (k == "prim" || k == "struct" || k.empty())
+		return "";
+	return k == "arr" ? "array" : k;
+}
+
+void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
+{
+	string bad;
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"]) {
+			if (!p.contains("var-type")) continue;
+			bad = unsupportedNativeSigTypeKind(p["var-type"]);
+			if (!bad.empty()) break;
+		}
+	if (bad.empty() && funcDef.contains("ret-type"))
+		bad = unsupportedNativeSigTypeKind(funcDef["ret-type"]);
+	if (bad.empty() && funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"]) {
+			if (!r.contains("var-type")) continue;
+			bad = unsupportedNativeSigTypeKind(r["var-type"]);
+			if (!bad.empty()) break;
+		}
+	if (!bad.empty()) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_UnsupportedParamType, funcDef["name"].get<string>(), bad) << endl;
+		exit(1);
+	}
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
@@ -366,6 +411,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 			if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 			normalizeStructSig(funcEntry);
+			validateNativeSig(funcEntry);
 			registerPlnFunc(funcEntry["name"], funcEntry);
 		}
 	// 2. Process top-level statements (cinclude/import registered here,

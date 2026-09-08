@@ -61,25 +61,53 @@ const StructType* PlnTypeRegistry::structType(const std::string& name)
     return ins->second.get();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// Kept in sync with fromJson's three accepted shapes below by construction:
+// fromJson calls this first and refuses to proceed unless it returns "", so
+// the two cannot silently drift apart the way a second, independently
+// maintained predicate could.
+std::string unrepresentableTypeName(const json& j)
+{
+    if (!j.is_object() || !j.contains("type-kind"))
+        return "malformed type";
+    std::string kind = j["type-kind"].get<std::string>();
+    if (kind == "prim") {
+        std::string tname = j.value("type-name", "");
+        if (tname.empty()) return "malformed type";
+        return PrimTypeNames::instance().toEnum.count(tname) ? "" : tname;
+    }
+    if (kind == "pntr")
+        return j.contains("base-type") ? unrepresentableTypeName(j["base-type"]) : "malformed type";
+    if (kind == "struct")
+        return j.contains("type-name") ? "" : "anonymous struct";
+    if (kind == "arr")   return "array";
+    if (kind == "func")  return "function pointer";
+    if (kind == "union") return "union";
+    if (kind == "enum")  return "enum";
+    // "strct": c2ast's pre-normalization struct tag (normalizeCType folds it
+    // to "struct" before a cinclude'd signature reaches fromJson, but this
+    // predicate is also usable ahead of that fold).
+    if (kind == "strct") return j.value("type-name", "anonymous struct");
+    // "user": a typedef name c2ast could not resolve to a known underlying
+    // type -- report the name itself, it is more useful than "user".
+    if (kind == "user")  return j.value("type-name", "user");
+    return kind;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 const PlnType* PlnTypeRegistry::fromJson(const json& j)
 {
-    std::string kind = j.at("type-kind").get<std::string>();
+    std::string bad = unrepresentableTypeName(j);
+    if (!bad.empty())
+        throw std::runtime_error("unrepresentable type: " + bad);
+    std::string kind = j["type-kind"].get<std::string>();
     if (kind == "prim") {
-        std::string tname = j.at("type-name").get<std::string>();
         auto& toEnum = PrimTypeNames::instance().toEnum;
-        auto it = toEnum.find(tname);
-        if (it == toEnum.end())
-            throw std::runtime_error("unknown prim type-name: " + tname);
-        return prim(it->second);
+        return prim(toEnum.at(j["type-name"].get<std::string>()));
     }
-    if (kind == "pntr") {
-        const PlnType* base = fromJson(j.at("base-type"));
-        return ptr(base);
-    }
-    if (kind == "struct") {
-        return structType(j.at("type-name").get<std::string>());
-    }
-    throw std::runtime_error("unknown type-kind: " + kind);
+    if (kind == "pntr")
+        return ptr(fromJson(j["base-type"]));
+    // kind == "struct" (the only remaining possibility once unrepresentableTypeName
+    // returns "")
+    return structType(j["type-name"].get<std::string>());
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnTypeRegistry::toJson(const PlnType* t)

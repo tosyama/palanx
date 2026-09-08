@@ -85,6 +85,8 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 		validateEmbeddedParams(funcEntry);
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+		normalizeStructSig(funcEntry);
+		validateNativeSig(funcEntry);
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
 	}
 
@@ -207,6 +209,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 		normalizeStructSig(funcEntry);
+		validateNativeSig(funcEntry);
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
 	}
 
@@ -218,6 +221,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	normalizeUnsizedArrSig(saFunc);
 	validateEmbeddedParams(saFunc);
 	normalizeStructSig(saFunc);
+	validateNativeSig(saFunc);
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];

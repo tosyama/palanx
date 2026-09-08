@@ -135,6 +135,11 @@ class PlnSemanticAnalyzer {
 	json  resolveTypeAlias(const json& vtype) const;
 	json  resolveTypeAliasDeep(const json& vtype) const;
 	void  normalizeStructSig(json& funcDef);
+	// Diagnose (and exit) if `funcDef`'s parameters/ret-type/rets use a type
+	// PlnTypeRegistry::fromJson cannot represent. Must be called after
+	// normalizeStructSig -- a struct parameter is still prim(Name) before
+	// that runs and would be misclassified as unsupported.
+	void  validateNativeSig(const json& funcDef);
 	void  registerTypedefAliasInType(json& vtype);
 	void  registerCFuncTypedefAliases(json& funcEntry);
 	json sa_field_assign(const json& stmt);

@@ -63,6 +63,14 @@ public:
     json             toJson(const PlnType* t);
 };
 
+// Mirrors PlnTypeRegistry::fromJson's accepted domain (prim with a known
+// type-name, pntr, struct with a type-name) without interning anything, so a
+// caller can diagnose an unrepresentable type before treating a signature as
+// callable instead of relying on fromJson's exception. Returns "" when
+// fromJson(j) would succeed; otherwise a short display name for the first
+// unrepresentable node found (recursing through a pntr chain's base-type).
+std::string unrepresentableTypeName(const json& j);
+
 // Type compatibility check
 TypeCompat typeCompat(const PlnType* from, const PlnType* to,
                       const PlnTypeRegistry& registry);
