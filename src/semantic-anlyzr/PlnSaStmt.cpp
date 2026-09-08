@@ -422,7 +422,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 {
 	FieldChain chain = resolveObjectChain(stmt["object"], /*forWrite=*/true);
 	string fn = stmt["field"].get<string>();
-	const StructDef& def = structDefs_[chain.structName];
+	const StructDef& def = requireCompleteStruct(chain.structName, stmt);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
 	if (it == def.fields.end()) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn) << endl;

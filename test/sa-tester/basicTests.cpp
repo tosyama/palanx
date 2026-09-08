@@ -3483,3 +3483,25 @@ TEST(sa, ptr_decl_alias_pointee)
 	ASSERT_EQ(p["var-type"]["base-type"]["type-kind"], "prim");
 	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "int64");
 }
+
+TEST(sa, incomplete_struct_ptr)
+{
+	// struct Tag { int x; int cells[2][3]; }; (cinclude'd) -- "cells" is a 2D
+	// array field, a shape buildStructDef can't lay out (matches native
+	// `[n]$[m]T` struct fields, also unsupported). IT-2904: isSupportedCFieldType
+	// now downgrades the whole tag to an incomplete struct (opaque handle, C
+	// incomplete-type equivalent) instead of leaving it unregistered, so `Tag`
+	// is still a known type name -- unusable for a sized declaration, but usable
+	// through a non-owning pointer with no layout needed, so `@!Tag p;` declares
+	// successfully and no alloc-shape is emitted for it.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/159_incomplete_struct_ptr.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(p["name"], "p");
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "Tag");
+	ASSERT_TRUE(jout["alloc-shapes"].empty());
+}

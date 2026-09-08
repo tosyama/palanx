@@ -51,7 +51,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	}
 	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
-	const StructDef& def = structDefs_[base.structName];
+	const StructDef& def = requireCompleteStruct(base.structName, obj);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
 	if (it == def.fields.end()) {
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UnknownField, base.structName, fn) << endl;
@@ -86,13 +86,30 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 
 const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode)
 {
-	const StructDef& def = structDefs_[structName];
+	const StructDef& def = requireCompleteStruct(structName, locNode);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fieldName; });
 	if (it == def.fields.end()) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName) << endl;
 		exit(1);
 	}
 	return *it;
+}
+
+// `name` must already be a key in structDefs_ (checked by the caller, e.g. via
+// isKnownTypeName/count(), or because it's a chain hop whose base type was
+// normalized by a producer that already required it -- see resolveObjectChain).
+// This only distinguishes "layout not yet known" (an incomplete/opaque struct,
+// e.g. C's FILE) from "fully laid out": callers needing the former distinguished
+// from "no such struct" must check that separately before calling this.
+const StructDef& PlnSemanticAnalyzer::requireCompleteStruct(const string& structName, const json& locNode)
+{
+	const StructDef& def = structDefs_[structName];
+	if (!def.isComplete) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
+		                                                        def.incompleteReason) << endl;
+		exit(1);
+	}
+	return def;
 }
 
 json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
@@ -615,7 +632,10 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		// which has no symbol table and falls back to "prim" for any name it
 		// doesn't recognize (see the sz<0 guard below). Every such producer
 		// already required the name to resolve in structDefs_, so look it up
-		// unguarded here, matching resolveObjectChain's convention.
+		// via requireCompleteStruct (not a bare structDefs_[...] index) --
+		// registered no longer implies laid-out since incomplete structs
+		// (opaque handles like C's FILE) can be registered with no known
+		// totalSize, and this stride computation needs one.
 		//
 		// Note: a local `@T`/`@!T` variable declaration is rejected at
 		// declaration time by sa_var_decl for an unknown pointee, so the
@@ -623,7 +643,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		// It remains the first rejection point for a `@T`/`@!T` function
 		// parameter or named-return value, whose pointee name is not
 		// validated at signature normalization time (normalizeStructSig).
-		int64_t stride = structDefs_[elem_type["type-name"].get<string>()].totalSize;
+		int64_t stride = requireCompleteStruct(elem_type["type-name"].get<string>(), expr).totalSize;
 		json elem_pntr = {{"type-kind","pntr"},{"mutable",array_type.value("mutable", true)},
 		                  {"base-type",elem_type}};
 		json elem_size_node = {

@@ -1202,6 +1202,18 @@ TEST(build_mgr, bitwise_ops) {
 	ASSERT_EQ(output, "8 14 6 -13\n1\n61440 61503 63\n");
 }
 
+TEST(build_mgr, incomplete_struct_handle) {
+	// IT-2026-09-06-2904: `@!_IO_FILE p;` used to abort at declaration time
+	// ("unknown struct type '_IO_FILE'.", from IT-2902's pointee validation)
+	// because registerCStruct dropped the whole tag when one field
+	// (glibc's "_unused2", a size-expr c2ast can't evaluate) couldn't be laid
+	// out. It now registers _IO_FILE as an incomplete struct instead, so a
+	// non-owning pointer declaration (no layout needed) builds and runs.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/147_incomplete_struct_handle.pa");
+	ASSERT_EQ(output, "ok\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

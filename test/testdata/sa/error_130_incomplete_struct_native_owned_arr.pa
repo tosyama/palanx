@@ -1,0 +1,6 @@
+cinclude "error_130_incomplete_struct_native_owned_arr.h";
+
+func f() {
+	type Wrap { [3]Tag a; };
+}
+f();

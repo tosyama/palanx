@@ -1,0 +1,3 @@
+cinclude "159_incomplete_struct_ptr.h";
+
+@!Tag p;

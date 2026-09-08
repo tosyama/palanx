@@ -1,0 +1,6 @@
+cinclude "error_126_incomplete_struct_native_embed.h";
+
+func f() {
+	type Wrap { $Tag a; };
+}
+f();

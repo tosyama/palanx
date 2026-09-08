@@ -33,10 +33,14 @@ struct FieldLayout {
 struct StructDef {
 	string name;
 	vector<FieldLayout> fields;
-	int  totalSize;
-	int  maxAlign;
+	int  totalSize = -1;
+	int  maxAlign  = 0;
 	bool hasOwnedStructFields = false;
 	bool hasOwnedArrayFields  = false;  // has an "arr-ptr" field ([n]T owned pointer array)
+	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
+	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
+	bool   isComplete = false;
+	string incompleteReason;  // "unsupported-field" when !isComplete; empty otherwise
 };
 
 struct FieldChain {
@@ -135,6 +139,9 @@ class PlnSemanticAnalyzer {
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);
+	// Look up a struct already known to be registered (name presence must be checked
+	// by the caller beforehand) and reject it if its layout isn't known yet.
+	const StructDef& requireCompleteStruct(const string& structName, const json& locNode);
 	json sa_expr_addr_of(const json& expr);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);

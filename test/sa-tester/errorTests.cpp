@@ -1221,3 +1221,151 @@ TEST(sa_error, ptr_decl_unknown_type)
 	ASSERT_NE(sa.find("unknown struct type"), string::npos);
 }
 
+TEST(sa_error, incomplete_struct_var_decl)
+{
+	// `struct Tag { int x; int cells[2][3]; };` (cinclude'd, "cells" unsupported)
+	// then `Tag t;` -- an owned declaration needs Tag's totalSize to calloc it.
+	// IT-2904: registerCStruct now downgrades Tag to an incomplete struct
+	// (opaque handle) instead of leaving the tag unregistered, so this is a
+	// diagnosed E_IncompleteStructType, not "unknown struct type".
+	// Covers: sa_struct_var_decl -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_123_incomplete_struct_var_decl.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_owned_arr)
+{
+	// Same incomplete Tag as above; `[3]Tag a;` (owned pointer array) needs
+	// Tag's layout to record its alloc-shape (recordAllocShape reads totalSize).
+	// Covers: sa_owned_struct_arr_var_decl -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_124_incomplete_struct_owned_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_embed_arr)
+{
+	// Same incomplete Tag; `[3]$Tag a;` (contiguous embedded array) needs Tag's
+	// totalSize as the element stride for the single malloc(n * totalSize).
+	// Covers: sa_embed_arr_var_decl -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_125_incomplete_struct_embed_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_native_embed)
+{
+	// Same incomplete Tag, embedded in a native struct: `type Wrap { $Tag a; };`
+	// declared inside a function body so it is only processed by sa_statements
+	// (pass 3), after cinclude registers Tag (pass 2) -- at top level a struct-def
+	// is also pre-scanned in pass 0, before cinclude, which would hit the
+	// separate "name not yet registered" E_UnknownStructType path instead of
+	// this one.
+	// Covers: buildStructDef "embed" branch, sub.isComplete check
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_126_incomplete_struct_native_embed.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_field_access)
+{
+	// `func f(@!Tag p) { int64 v = p.x; }` -- `@!Tag p` itself declares fine (no
+	// layout needed for a pointer parameter), but reading a field requires
+	// looking up Tag's field list, which an incomplete struct doesn't have.
+	// Without this check this would previously degrade to a misleading
+	// "struct 'Tag' has no field 'x'" (E_UnknownField) instead of naming the
+	// real problem.
+	// Covers: findFieldOrExit -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_127_incomplete_struct_field_access.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+	ASSERT_EQ(sa.find("has no field"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_index)
+{
+	// `func f(@!Tag p) { int64 v = p[0].x; }` -- `p[0]` computes an address as
+	// base + i*sizeof(Tag), which needs Tag's totalSize as the stride; an
+	// incomplete Tag has none.
+	// Covers: sa_expr_arr_index struct branch -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_128_incomplete_struct_index.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_native_owned_field)
+{
+	// Same incomplete Tag; `type Wrap { Tag a; };` (a bare-name field, i.e. an
+	// owned struct-ptr field per native struct syntax) is declared inside a
+	// function body, same reasoning as incomplete_struct_native_embed above,
+	// so it processes after cinclude registers Tag as incomplete. An owned
+	// struct-ptr field's declaring struct records an alloc-shape for it, which
+	// needs the pointee's totalSize.
+	// Covers: buildStructDef "prim name is a registered struct" branch (struct-ptr)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_129_incomplete_struct_native_owned_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_native_owned_arr)
+{
+	// Same incomplete Tag; `type Wrap { [3]Tag a; };` (owned pointer array
+	// field, cascades to __pln_alloc_arr_T/__pln_free_arr_T) needs the leaf's
+	// totalSize when that cascade's alloc-shape is recorded.
+	// Covers: buildStructDef "[n]T owned pointer array, struct leaf" branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_130_incomplete_struct_native_owned_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_native_embed_arr)
+{
+	// Same incomplete Tag; `type Wrap { [3]$Tag a; };` (contiguous embedded
+	// array field within a *native* struct, distinct from the top-level
+	// `[3]$Tag a;` var-decl covered by incomplete_struct_embed_arr above --
+	// that goes through sa_embed_arr_var_decl, this goes through
+	// buildStructDef's own embedded-array leaf case) needs the leaf's
+	// totalSize/maxAlign/hasOwnedStructFields to lay out the array stride.
+	// Covers: buildStructDef "[n]$T embedded array, struct leaf" branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_131_incomplete_struct_native_embed_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+

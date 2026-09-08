@@ -26,6 +26,11 @@ static StructDef buildStructDef(const string& name,
 		if (tk == "prim") {
 			string tname = vtype["type-name"].get<string>();
 			if (structDefs.count(tname)) {
+				if (!structDefs.at(tname).isComplete) {
+					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, tname,
+					                                  structDefs.at(tname).incompleteReason) << endl;
+					exit(1);
+				}
 				int sz = 8, align = 8;
 				offset = alignUp(offset, align);
 				def.fields.push_back({.name=fieldName, .typeKind="struct-ptr",
@@ -58,6 +63,11 @@ static StructDef buildStructDef(const string& name,
 				exit(1);
 			}
 			const StructDef& sub = structDefs.at(structName);
+			if (!sub.isComplete) {
+				cerr << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
+				                                  sub.incompleteReason) << endl;
+				exit(1);
+			}
 			int align = sub.maxAlign;
 			offset = alignUp(offset, align);
 			def.fields.push_back({.name=fieldName, .typeKind="embed",
@@ -130,6 +140,11 @@ static StructDef buildStructDef(const string& name,
 				}
 				// struct leaf ([n]Point): owned pointer array, cascades to
 				// __pln_alloc_arr_T/__pln_free_arr_T (v0.1.24 IT-2407 asset)
+				if (!structDefs.at(leaf_name).isComplete) {
+					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
+					                                  structDefs.at(leaf_name).incompleteReason) << endl;
+					exit(1);
+				}
 				int align = 8;
 				offset = alignUp(offset, align);
 				def.fields.push_back({.name=fieldName, .typeKind="arr-ptr",
@@ -164,6 +179,11 @@ static StructDef buildStructDef(const string& name,
 			} else if (base_kind == "prim") {
 				// struct leaf ([n]$Point)
 				const StructDef& leafDef = structDefs.at(leaf_name);
+				if (!leafDef.isComplete) {
+					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
+					                                  leafDef.incompleteReason) << endl;
+					exit(1);
+				}
 				if (leafDef.hasOwnedStructFields) {
 					cerr << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
 					exit(1);
@@ -189,8 +209,9 @@ static StructDef buildStructDef(const string& name,
 			exit(1);
 		}
 	}
-	def.totalSize = alignUp(offset, maxAlign);
-	def.maxAlign  = maxAlign;
+	def.totalSize  = alignUp(offset, maxAlign);
+	def.maxAlign   = maxAlign;
+	def.isComplete = true;
 	return def;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -474,7 +495,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
 			exit(1);
 		}
-		const StructDef& def = structDefs_[leaf_name];
+		const StructDef& def = requireCompleteStruct(leaf_name, stmt);
 		if (def.hasOwnedStructFields) {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
 			exit(1);
@@ -663,8 +684,14 @@ static json cFieldVarType(const json& vtype)
 // (unresolved typedef fields, C bitfields/anonymous unions, ...). Those are never
 // referenced by Palan interop code, so unlike a native `type Name { ... }` field
 // error (a real mistake in the user's own source, worth exit(1)), an unsupported
-// field here just means "don't register this struct" -- same as the tagless/
-// fieldless struct case c2ast already leaves out of the "structs" list.
+// field here just means the tag registers as an incomplete struct (registerCStruct)
+// -- usable only through @T/@!T, same as C's incomplete-type restriction -- rather
+// than exit(1) or dropping the tag entirely.
+//
+// A field naming a struct that is itself still incomplete is rejected the same way
+// an unsupported field is: buildStructDef needs that struct's totalSize/maxAlign to
+// lay out an embed/embedded-array field, or its totalSize when cascading an owned
+// array's alloc-shape, so this owner cannot become complete off of it either.
 static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef>& structDefs,
                                    const string& ownerName)
 {
@@ -673,7 +700,8 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 		return elemSizeBytes(vtype.value("type-name", "")) >= 0;
 	if (tk == "embed") {
 		string structName = vtype["base-type"].value("type-name", "");
-		return structName != ownerName && structDefs.count(structName);
+		return structName != ownerName && structDefs.count(structName)
+			&& structDefs.at(structName).isComplete;
 	}
 	if (tk == "arr") {
 		if (!vtype.contains("size-expr") || !vtype.contains("base-type")) return false;
@@ -688,7 +716,8 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 		if (btk == "pntr") return true;  // [n]@T / [n]@!T slot array
 		if (btk == "prim") {
 			string leaf = bt.value("type-name", "");
-			return elemSizeBytes(leaf) >= 0 || structDefs.count(leaf) > 0;
+			return elemSizeBytes(leaf) >= 0
+				|| (structDefs.count(leaf) > 0 && structDefs.at(leaf).isComplete);
 		}
 		return false;
 	}
@@ -702,7 +731,17 @@ void PlnSemanticAnalyzer::registerCStruct(const json& s)
 	json fields = json::array();
 	for (auto& f : s["fields"]) {
 		json vt = cFieldVarType(f["var-type"]);
-		if (!isSupportedCFieldType(vt, structDefs_, name)) return;  // skip whole struct
+		if (!isSupportedCFieldType(vt, structDefs_, name)) {
+			// Register the tag as an incomplete struct rather than not at all: the
+			// name is real (glibc defines it), only its layout is unavailable this
+			// version. This lets SA report E_IncompleteStructType -- distinct from
+			// "no such type" -- and still allows @T/@!T use of the tag.
+			StructDef def;
+			def.name             = name;
+			def.incompleteReason = "unsupported-field";
+			structDefs_[name] = def;
+			return;
+		}
 		fields.push_back({{"name", f["name"]}, {"var-type", vt}});
 	}
 	structDefs_[name] = buildStructDef(name, fields, structDefs_);
@@ -746,7 +785,7 @@ json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
 json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 {
 	const string& structName = stmt["vars"][0]["var-type"]["type-name"].get<string>();
-	const StructDef& def = structDefs_[structName];
+	const StructDef& def = requireCompleteStruct(structName, stmt);
 	json pntr_type = {{"type-kind","pntr"},
 	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
 	json result = json::array();
@@ -795,6 +834,7 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 	const json& vtype = stmt["vars"][0]["var-type"];
 	const json& base_type = vtype["base-type"];
 	string struct_name = base_type["type-name"].get<string>();
+	requireCompleteStruct(struct_name, stmt);  // recordAllocShape below needs totalSize/fields
 
 	string shape_key = "arr_" + struct_name;
 	bool found = false;

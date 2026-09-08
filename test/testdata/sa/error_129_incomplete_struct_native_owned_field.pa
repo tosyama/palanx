@@ -1,0 +1,6 @@
+cinclude "error_129_incomplete_struct_native_owned_field.h";
+
+func f() {
+	type Wrap { Tag a; };
+}
+f();
