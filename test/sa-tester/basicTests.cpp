@@ -3484,6 +3484,34 @@ TEST(sa, ptr_decl_alias_pointee)
 	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "int64");
 }
 
+TEST(sa, struct_type_alias)
+{
+	// `type Point {...}; type PT = Point; PT p;` -- IT-2026-09-06-2905 prereq
+	// bug: sa_var_decl's dispatch used to key off the raw var-type's
+	// type-kind/type-name, so a struct reached only through an alias name
+	// ("PT") never matched structDefs_.count() and silently fell through to
+	// the plain scalar var-decl path, which declares the variable but never
+	// allocates its storage. resolveTypeAliasDeep now resolves the alias
+	// before dispatch, so this reaches sa_struct_var_decl the same way a
+	// direct `Point p;` would.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/160_struct_type_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	// init: calloc(1, 16) -- proof storage is actually allocated, not just a
+	// bare pointer-typed variable with no backing memory.
+	ASSERT_EQ(v["init"]["expr-type"], "call");
+	ASSERT_EQ(v["init"]["name"],      "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
 TEST(sa, incomplete_struct_ptr)
 {
 	// struct Tag { int x; int cells[2][3]; }; (cinclude'd) -- "cells" is a 2D

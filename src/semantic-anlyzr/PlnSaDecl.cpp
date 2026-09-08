@@ -225,30 +225,42 @@ json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
-	if (!stmt["vars"].empty()) {
-		const json& vtype = stmt["vars"][0]["var-type"];
+	// Resolve type-alias names (e.g. "PT" -> struct "Point", "FILE" -> struct
+	// "_IO_FILE") at every level (top, and inside pntr/arr wrappers) before
+	// dispatching. The dispatch checks below key off structDefs_.count() on a
+	// "prim" type-name; without this, a struct reached only through an alias
+	// name never matches and silently falls through to the plain scalar
+	// var-decl path at the bottom, which declares the variable but never
+	// allocates its storage (see IT-2026-09-06-2905 prereq bug).
+	json stmt2 = stmt;
+	for (auto& var : stmt2["vars"])
+		if (var.contains("var-type"))
+			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
+
+	if (!stmt2["vars"].empty()) {
+		const json& vtype = stmt2["vars"][0]["var-type"];
 		string tk = vtype.value("type-kind", "");
 
 		if (tk == "arr" && vtype.value("specifier", "") == "raw" && vtype["size-expr"].is_null()) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
+			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
 			exit(1);
 		}
 		if (tk == "arr" && vtype.value("specifier", "") == "raw"
 				&& !vtype["size-expr"].is_null()
 				&& vtype.value("embedded", false))
-			return sa_embed_arr_var_decl(stmt);
+			return sa_embed_arr_var_decl(stmt2);
 		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
 			const json& base = vtype["base-type"];
 			if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
-				return sa_owned_struct_arr_var_decl(stmt);
-			return sa_arr_var_decl(stmt);
+				return sa_owned_struct_arr_var_decl(stmt2);
+			return sa_arr_var_decl(stmt2);
 		}
 		if (tk == "prim") {
 			string tname = vtype.value("type-name", "");
 			if (structDefs_.count(tname))
-				return sa_struct_var_decl(stmt);
+				return sa_struct_var_decl(stmt2);
 			if (!isKnownTypeName(tname)) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 				exit(1);
 			}
 		}
@@ -265,7 +277,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			if (base->value("type-kind","") == "prim") {
 				string tname = base->value("type-name", "");
 				if (!isKnownTypeName(tname)) {
-					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+					cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 					exit(1);
 				}
 			}
@@ -273,10 +285,10 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	}
 
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
-	for (auto& var : stmt["vars"]) {
+	for (auto& var : stmt2["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = deepNormalizePrimToStruct(resolveTypeAlias(var["var-type"]));
+		json varType = deepNormalizePrimToStruct(var["var-type"]);
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
@@ -285,7 +297,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			const PlnType* toType = registry_.fromJson(varType);
 			json init = sa_expression(var["init"], toType);
 			if (!init.contains("value-type")) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 				exit(1);
 			}
 			if (init["value-type"] != varType) {
@@ -296,19 +308,19 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 				} else if (compat == TypeCompat::ExplicitCast) {
 					string et = init["expr-type"];
 					if (et != "lit-int" && et != "lit-uint") {
-						cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_InvalidNarrowingInit) << endl;
+						cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_InvalidNarrowingInit) << endl;
 						exit(1);
 					}
 				}
 				// Incompatible: no action (ptr types pass through as-is)
 			}
 			if (!ptrPermissionOk(init["value-type"], varType)) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);
 			}
 			sa_var["init"] = init;
 		}
-		declareVar(name, varType, &stmt);
+		declareVar(name, varType, &stmt2);
 		sa_stmt["vars"].push_back(sa_var);
 	}
 	return json::array({sa_stmt});
@@ -780,6 +792,22 @@ json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
 		}
 	}
 	return vtype;
+}
+
+// Like resolveTypeAlias, but also resolves alias names nested inside pntr/arr
+// wrappers (e.g. "[3]PT" or "@!PT" where PT is a struct alias), so var-decl
+// dispatch (sa_var_decl) sees the real struct name at every level instead of
+// only at the top. Unlike deepNormalizePrimToStruct, this never converts a
+// resolved prim(StructName) into the "struct" type-kind -- callers still need
+// to see "prim" so their existing structDefs_.count(type-name) checks work
+// unchanged, whether the name came from native syntax or an alias.
+json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
+{
+	json resolved = resolveTypeAlias(vtype);
+	string tk = resolved.value("type-kind", "");
+	if ((tk == "pntr" || tk == "arr") && resolved.contains("base-type"))
+		resolved["base-type"] = resolveTypeAliasDeep(resolved["base-type"]);
+	return resolved;
 }
 
 json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
