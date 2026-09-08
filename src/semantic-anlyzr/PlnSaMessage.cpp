@@ -220,7 +220,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_IncompleteStructType:
 			BOOST_ASSERT(arg1 != "\x01");
-			BOOST_ASSERT(arg2 == "unsupported-field");
+			BOOST_ASSERT(arg2 == "unsupported-field" || arg2 == "forward-declared");
+			if (arg2 == "forward-declared")
+				return "struct '" + arg1 + "' is only forward-declared in this header; it can "
+				       "only be used through a pointer ('@" + arg1 + "' / '@!" + arg1 + "').";
 			return "struct '" + arg1 + "' has no known layout (a field type is not supported "
 			       "this version); it can only be used through a pointer ('@" + arg1 + "' / '@!"
 			       + arg1 + "').";

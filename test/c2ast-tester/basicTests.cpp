@@ -255,8 +255,12 @@ TEST(c2ast, struct_capture) {
     ASSERT_EQ(fields[0]["var-type"]["type-name"], "int32");
     ASSERT_EQ(fields[1]["name"], "y");
 
-    // struct Missing; (forward declaration only) is not registered
-    ASSERT_EQ(find_struct("Missing"), nullptr);
+    // struct Missing; (forward declaration only) is registered without a
+    // "fields" key, so a tag referenced only through a pointer still gets an
+    // entry (needed for SA to register it as an incomplete struct type).
+    json* missing = find_struct("Missing");
+    ASSERT_NE(missing, nullptr);
+    ASSERT_FALSE(missing->contains("fields"));
 
     // make_point()'s return type references the captured struct by name
     json* make_point = find_func("make_point");
@@ -272,14 +276,15 @@ TEST(c2ast, struct_capture) {
     ASSERT_EQ(p_vt["base-type"]["type-kind"], "strct");
     ASSERT_EQ(p_vt["base-type"]["type-name"], "Point");
 
-    // take_missing()'s struct Missing* parameter stays without a type-name,
-    // since Missing was never captured with a field list.
+    // take_missing()'s struct Missing* parameter keeps the tag name even
+    // though Missing was never captured with a field list -- a tag reference
+    // always carries its name now, regardless of whether a definition exists.
     json* take_missing = find_func("take_missing");
     ASSERT_NE(take_missing, nullptr);
     auto& m_vt = (*take_missing)["parameters"][0]["var-type"];
     ASSERT_EQ(m_vt["type-kind"], "pntr");
     ASSERT_EQ(m_vt["base-type"]["type-kind"], "strct");
-    ASSERT_FALSE(m_vt["base-type"].contains("type-name"));
+    ASSERT_EQ(m_vt["base-type"]["type-name"], "Missing");
 }
 
 TEST(c2ast, typedef_scalar) {
@@ -356,6 +361,61 @@ TEST(c2ast, typedef_pointer_chain) {
     ASSERT_EQ((*g)["ret-type"]["base-type"]["type-kind"], "prim");
     ASSERT_EQ((*g)["ret-type"]["base-type"]["type-name"], "void");
     ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
+}
+
+TEST(c2ast, typedef_struct_tag) {
+    // struct Fwd;              -- bare forward declaration, never defined
+    // typedef struct Body X;   -- typedef of a tag not yet defined at this point
+    // struct Body { int a; };  -- the definition arrives later
+    // struct Never *use(X *x); -- X used as a parameter type; Never never declared at all
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/027_typedef_struct.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+
+    // X (typedef of "struct Body") resolves to the tag, regardless of
+    // definition order -- the typedef appears before Body's field-bearing
+    // definition in the source.
+    json* use = find_func("use");
+    ASSERT_NE(use, nullptr);
+    auto& x_vt = (*use)["parameters"][0]["var-type"];
+    ASSERT_EQ(x_vt["type-kind"], "pntr");
+    ASSERT_EQ(x_vt["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(x_vt["base-type"]["type-name"], "Body");
+    ASSERT_EQ(x_vt["base-type"]["typedef-name"], "X");
+
+    // Fwd (forward-declared only) and Never (referenced only, never declared)
+    // both get an entry without a "fields" key.
+    json* fwd = find_struct("Fwd");
+    ASSERT_NE(fwd, nullptr);
+    ASSERT_FALSE(fwd->contains("fields"));
+    json* never = find_struct("Never");
+    ASSERT_NE(never, nullptr);
+    ASSERT_FALSE(never->contains("fields"));
+
+    // Body has exactly one entry, carrying its field list -- the typedef's
+    // earlier tag-only reference doesn't create a duplicate.
+    int bodyCount = 0;
+    for (auto& s : structs)
+        if (s["name"] == "Body") bodyCount++;
+    ASSERT_EQ(bodyCount, 1);
+    json* body = find_struct("Body");
+    ASSERT_NE(body, nullptr);
+    ASSERT_TRUE(body->contains("fields"));
+    ASSERT_EQ((*body)["fields"].size(), 1);
+    ASSERT_EQ((*body)["fields"][0]["name"], "a");
 }
 
 TEST(c2ast, relational_ops) {

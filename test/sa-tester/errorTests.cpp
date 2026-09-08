@@ -1238,6 +1238,24 @@ TEST(sa_error, incomplete_struct_var_decl)
 	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
 }
 
+TEST(sa_error, incomplete_struct_forward_declared)
+{
+	// `struct Tag;` (forward-declared only, never defined in this header) then
+	// `Tag t;` -- IT-2026-09-06-2905: registerCStruct now registers a
+	// forward-declared-only tag as an incomplete struct too (previously it was
+	// never registered at all, and a chain like this used to hit a raw
+	// BOOST_ASSERT abort in requireCompleteStruct rather than a diagnostic).
+	// The message distinguishes this reason ("forward-declared") from an
+	// unsupported field shape.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_132_forward_declared_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' is only forward-declared in this header"), string::npos);
+}
+
 TEST(sa_error, incomplete_struct_owned_arr)
 {
 	// Same incomplete Tag as above; `[3]Tag a;` (owned pointer array) needs

@@ -66,6 +66,29 @@ CParser::CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexer
 {
 }
 
+// Single point where a struct tag registers into capturedStructs_, called from
+// every place struct_union_definition() parses one (standalone declaration,
+// type-specifier reference in a field/parameter/return type, and recursively
+// for a nested struct-typed field). `fields` is null for a tag-only reference
+// or forward declaration; a later full definition of the same tag promotes an
+// existing tag-only entry in place (preserving its first-seen position in the
+// output) rather than adding a duplicate. A first-seen full definition is
+// never overwritten by a later one (first definition wins).
+void CParser::captureStructTag(const string &name, const json *fields)
+{
+	auto it = structIndex_.find(name);
+	if (it == structIndex_.end()) {
+		json entry = {{"name", name}};
+		if (fields) entry["fields"] = *fields;
+		structIndex_[name] = (int)capturedStructs_.size();
+		capturedStructs_.push_back(move(entry));
+		return;
+	}
+	json &entry = capturedStructs_[it->second];
+	if (fields && !entry.contains("fields"))
+		entry["fields"] = *fields;
+}
+
 bool consume(CTokenType expected_type, const vector<CToken*> &tokens, int &index) {
 	if (index < tokens.size()) {
 		CToken* token = tokens[index];
@@ -272,7 +295,7 @@ bool signed_int(const vector<CToken*> &tokens, int &index)
 	return false;
 }
 
-bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index)
+bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_struct)
 {
 	int index = result_index;
 
@@ -281,6 +304,8 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		ast["struct-name"] = *tokens[index-1]->info.id;
 		if (!CONSUME_PUNC('{')) {
 			// struct with tag only (reference, not definition)
+			if (is_struct)
+				captureStructTag(ast["struct-name"].get<string>(), nullptr);
 			result_index = index;
 			return true;
 		}
@@ -318,6 +343,11 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 	EXPECT_PUNC('}');
 
 	ast["fields"] = move(fields);
+	if (is_struct) {
+		string tagName = ast.value("struct-name", "");
+		if (!tagName.empty())
+			captureStructTag(tagName, &ast["fields"]);
+	}
 	result_index = index;
 	return true;
 }
@@ -422,10 +452,10 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	if (CONSUME_KW(TK_FLOAT))  { set_prim("flo32"); result_index = index; return true; }
 
 	if (CONSUME_KW(TK_STRUCT)) {
-		if (struct_union_definition(ast, tokens, index)) {
+		if (struct_union_definition(ast, tokens, index, true)) {
 			json vt = {{"type-kind", "strct"}};
 			string tagName = ast.value("struct-name", "");
-			if (!tagName.empty() && definedStructs_.count(tagName)) {
+			if (!tagName.empty()) {
 				vt["type-name"] = tagName;
 			}
 			set_vt(move(vt));
@@ -436,7 +466,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	}
 
 	if (CONSUME_KW(TK_UNION)) {
-		if (struct_union_definition(ast, tokens, index)) {
+		if (struct_union_definition(ast, tokens, index, false)) {
 			set_vt({{"type-kind", "union"}});
 			result_index = index;
 			return true;
@@ -679,17 +709,10 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 		bool is_struct_kw = CONSUME_KW(TK_STRUCT);
 		bool is_union_kw = !is_struct_kw && CONSUME_KW(TK_UNION);
 		if (is_struct_kw || is_union_kw) {
-			if (struct_union_definition(ast, tokens, index) && CONSUME_PUNC(';')) {
-				if (is_struct_kw && ast.contains("fields")) {
-					string structName = ast.value("struct-name", "");
-					if (!structName.empty()) {
-						ast["ast"]["structs"].push_back({
-							{"name", structName},
-							{"fields", ast["fields"]}
-						});
-						definedStructs_.insert(structName);
-					}
-				}
+			// Capturing into capturedStructs_ happens inside struct_union_definition()
+			// itself (the single point every struct tag reference goes through);
+			// nothing to do here beyond clearing the scratch keys it wrote into ast.
+			if (struct_union_definition(ast, tokens, index, is_struct_kw) && CONSUME_PUNC(';')) {
 				ast.erase("struct-name");
 				ast.erase("fields");
 				result_index = index;
@@ -747,13 +770,20 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 					string tk = vt.value("type-kind", "");
 					if (tk == "prim" || tk == "pntr") {
 						typedefs_[decl["name"].get<string>()] = vt;
+					} else if (tk == "strct" && vt.contains("type-name")) {
+						// typedef struct Tag X; -- register X as an alias for the tag
+						// itself (SA resolves it the same way it resolves any other
+						// struct-bottomed type alias). An anonymous body
+						// (typedef struct { ... } X;, no "type-name") has no tag to
+						// alias to and is left unresolved here.
+						typedefs_[decl["name"].get<string>()] = vt;
 					} else if (tk == "user") {
 						auto it = typedefs_.find(vt["type-name"].get<string>());
 						if (it != typedefs_.end()) {
 							typedefs_[decl["name"].get<string>()] = it->second;
 						}
 					}
-					// strct/union/enum/func underlying types: not registered,
+					// anonymous strct/union/enum/func underlying types: not registered,
 					// left as unresolved "user" at reference sites (unchanged behavior)
 				}
 				result_index = index;
@@ -1328,5 +1358,8 @@ int CParser::parse(json &ast, const vector<CToken*> &tokens)
 // Entry point of parsing
 int CParser::parse(json &ast)
 {
-	return parse(ast, top_tokens);
+	int ret = parse(ast, top_tokens);
+	if (ret == 0 && !capturedStructs_.empty())
+		ast["ast"]["structs"] = capturedStructs_;
+	return ret;
 }

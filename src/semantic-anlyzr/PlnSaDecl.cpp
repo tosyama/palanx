@@ -739,7 +739,29 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 void PlnSemanticAnalyzer::registerCStruct(const json& s)
 {
 	string name = s["name"].get<string>();
-	if (structDefs_.count(name)) return;  // first header wins on duplicate struct tags
+	auto existing = structDefs_.find(name);
+	if (existing != structDefs_.end() && existing->second.isComplete)
+		return;  // first complete definition wins
+
+	if (!s.contains("fields")) {
+		// Tag captured only as a forward declaration or a bare reference (e.g. a
+		// pointer field/parameter whose pointee is never defined in this header,
+		// like FILE's own "_markers"/"_chain" fields, or sys/stat.h's opaque
+		// timer_t-style handles). Register it as incomplete rather than not at
+		// all -- the name is real, only its layout is unavailable -- so
+		// requireCompleteStruct reports E_IncompleteStructType instead of
+		// leaving the name unresolved. Leave an already-incomplete entry (e.g.
+		// "unsupported-field" from an earlier cinclude) as-is: a bare reference
+		// carries no new information to promote it with.
+		if (existing == structDefs_.end()) {
+			StructDef def;
+			def.name             = name;
+			def.incompleteReason = "forward-declared";
+			structDefs_[name] = def;
+		}
+		return;
+	}
+
 	json fields = json::array();
 	for (auto& f : s["fields"]) {
 		json vt = cFieldVarType(f["var-type"]);

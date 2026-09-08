@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+
+// IT-2026-09-06-2905: `FILE` used to reach SA as an unresolved "user" type
+// (typedef struct _IO_FILE FILE; was never registered), so any signature
+// mentioning it -- fopen/fclose/fprintf/... -- aborted at PlnTypeRegistry::
+// fromJson ("unknown type-kind: user") the moment it was actually used with
+// its own name (as opposed to `@!_IO_FILE`, which worked since IT-2904).
+@!FILE f = fopen("/tmp/pln_148_file_handle.txt", "w");
+fclose(f);
+printf("ok\n");

@@ -1214,6 +1214,15 @@ TEST(build_mgr, incomplete_struct_handle) {
 	ASSERT_EQ(output, "ok\n");
 }
 
+TEST(build_mgr, file_handle) {
+	// IT-2026-09-06-2905: `FILE` (typedef struct _IO_FILE FILE;) now resolves
+	// as a type alias for `_IO_FILE`, so fopen/fclose signatures that mention
+	// it by name build and run instead of aborting at fromJson.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/148_file_handle.pa");
+	ASSERT_EQ(output, "ok\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

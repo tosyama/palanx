@@ -66,15 +66,19 @@ forms, etc.) are not exported here.
 
 Struct definition model
 ------------------------
-Captured from `struct Name { field_decl... }` in a `cinclude`d C header (a forward
-declaration with no body, e.g. `struct Missing;`, is not captured — there is no field
-list to register). palan-c2ast collects every struct it captures from a header into its own
-top-level `ast.structs` list; gen-ast then lifts that list onto the enclosing `cinclude`
-statement's `structs` field (see Statement model below) when merging the header's AST in. Same
-field-list shape as the native `struct-def` statement.
+Captured from every struct tag palan-c2ast sees while parsing a `cinclude`d C header —
+a full `struct Name { field_decl... }` definition, a forward declaration with no body
+(`struct Missing;`), or a bare reference through a field/parameter/return type (e.g. a
+pointer field whose pointee is never defined in this header) — one entry per tag name,
+keyed by first appearance. palan-c2ast collects every struct it captures from a header into
+its own top-level `ast.structs` list; gen-ast then lifts that list onto the enclosing
+`cinclude` statement's `structs` field (see Statement model below) when merging the header's
+AST in. Same field-list shape as the native `struct-def` statement.
 
 - name\* - Struct tag name string
-- fields\* - Field list
+- fields - Field list; omitted when this header never gives the tag a body (forward
+  declaration or bare reference only). SA registers such a tag as an incomplete struct
+  (usable only through a pointer) rather than leaving the name unresolved — see SASpec.md.
   - name\* - Field name string
   - var-type\* - Field type (same Variable type object format; a C array declarator, e.g.
     `char name[16];`, produces an `arr` type-kind field — see `embedded` above and SASpec.md's

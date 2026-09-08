@@ -1570,6 +1570,32 @@ TEST(sa, cinclude_typedef_size_t)
 	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
 }
 
+TEST(sa, cinclude_typedef_struct_file)
+{
+	// `typedef struct _IO_FILE FILE;` (stdio.h) -- IT-2026-09-06-2905:
+	// registerTypedefAliasInType now resolves a struct-bottomed typedef the
+	// same way it already resolved a scalar one (size_t), so `@!FILE` reaches
+	// pntr(struct(_IO_FILE)) instead of the unresolved "user" type-kind that
+	// used to make PlnTypeRegistry::fromJson abort.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/161_c_typedef_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "f");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["mutable"], true);
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "_IO_FILE");
+	ASSERT_FALSE(v["var-type"].contains("typedef-name"));
+
+	// fopen()'s return value-type is likewise clean.
+	ASSERT_EQ(v["init"]["name"], "fopen");
+	ASSERT_EQ(v["init"]["value-type"]["base-type"]["type-name"], "_IO_FILE");
+}
+
 TEST(sa, cinclude_struct_arg)
 {
 	cleanTestEnv();

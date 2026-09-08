@@ -403,6 +403,26 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 			exit(1);
 		}
 		vtype.erase("typedef-name");
+	} else if (tk == "strct" && vtype.contains("typedef-name") && vtype.contains("type-name")) {
+		// typedef struct Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
+		// as a type alias for the tag, same representation sa_type_alias uses for
+		// a native "type A = SomeStruct;" (prim(Tag) -- resolveTypeAlias /
+		// isStructType / deepNormalizePrimToStruct all key off that shape, so a
+		// C-typedef'd struct name resolves through the exact same path a native
+		// alias does). Erasing "typedef-name" here leaves the reference-site node
+		// itself as plain strct(Tag), which normalizeCType (called right after
+		// this, in normalizeCFuncSig) already turns into struct(Tag) -- nothing
+		// further to do at this node.
+		string aliasName = vtype["typedef-name"].get<string>();
+		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
+		auto it = typeAliases_.find(aliasName);
+		if (it == typeAliases_.end()) {
+			typeAliases_[aliasName] = resolved;
+		} else if (it->second != resolved) {
+			cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
+			exit(1);
+		}
+		vtype.erase("typedef-name");
 	} else if (tk == "pntr" && vtype.contains("base-type")) {
 		registerTypedefAliasInType(vtype["base-type"]);
 	} else if (tk == "func") {
