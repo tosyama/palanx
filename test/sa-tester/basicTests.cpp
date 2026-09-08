@@ -3559,3 +3559,40 @@ TEST(sa, incomplete_struct_ptr)
 	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "Tag");
 	ASSERT_TRUE(jout["alloc-shapes"].empty());
 }
+
+TEST(sa, c_unsupported_sig_unused)
+{
+	// The header declares `union Val make_val(void);` (unsupported -- a bare
+	// union return type) alongside `int add(int a, int b);` (supported). IT-2906:
+	// normalizeCFuncSig tags the unsupported entry with "_unsupported-sig" at
+	// cinclude time but does not reject registration; only calling
+	// requireSupportedCFuncSig's guarded function fails. Calling only `add`
+	// must compile cleanly -- an unused unsupported C signature is inert, the
+	// same policy union/enum types already got before this ticket.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/162_c_unsupported_sig_unused.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["name"], "add");
+}
+
+TEST(sa, c_widen_arg)
+{
+	// `take64(a)` where `a` is int32 and the C parameter is `long` (int64).
+	// Before IT-2906, sa_expr_call's parameter-side fromJson call was guarded
+	// by `catch (const std::runtime_error&) {}`; removing that guard must not
+	// regress the implicit-widening path it happened to share code with --
+	// the argument must still be wrapped in a "convert" node.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/163_c_widen_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(call["expr-type"], "call");
+	const auto& arg = call["args"][0];
+	ASSERT_EQ(arg["expr-type"], "convert");
+	ASSERT_EQ(arg["value-type"]["type-name"], "int64");
+	ASSERT_EQ(arg["src"]["value-type"]["type-name"], "int32");
+}

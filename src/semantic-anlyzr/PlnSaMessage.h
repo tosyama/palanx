@@ -66,6 +66,7 @@ enum PlnSaMessageCode {
 	E_BitwiseOpNotInteger,
 	E_IncompleteStructType,		// arg1: struct name, arg2: incomplete reason ("unsupported-field")
 	E_UnsupportedParamType,		// arg1: function name, arg2: unsupported type display name
+	E_UnsupportedCFuncSignature,	// arg1: C function name, arg2: unsupported type display name
 };
 
 class PlnSaMessage

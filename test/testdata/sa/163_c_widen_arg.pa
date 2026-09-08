@@ -1,0 +1,4 @@
+cinclude "163_c_widen_arg.h";
+
+int32 a = 5;
+int64 r = take64(a);

@@ -1,0 +1,3 @@
+cinclude <math.h>;
+
+flo64 y = acosl(1.0);

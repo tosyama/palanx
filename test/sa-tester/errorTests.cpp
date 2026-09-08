@@ -1407,3 +1407,171 @@ TEST(sa_error, sized_arr_param)
 	ASSERT_NE(sa.find("function 'f' has a parameter or return type this version cannot represent: 'array'"),
 	          string::npos);
 }
+
+TEST(sa_error, c_unsupported_user_param)
+{
+	// `void take_handle(mystery_t h);` -- `mystery_t` is an identifier c2ast
+	// never saw a typedef for, so it stays type-kind "user" through
+	// normalizeCType. IT-2906: normalizeCFuncSig now tags the registered
+	// entry with "_unsupported-sig" and requireSupportedCFuncSig diagnoses it
+	// at the call, instead of the unguarded fromJson at the argument site
+	// aborting (or, before this ticket, the parameter-side try/catch quietly
+	// degrading typeCompat/wrapConvert for the argument).
+	// Covers: sa_expr_call -> requireSupportedCFuncSig (unaliased path)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_134_c_unsupported_user_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'take_handle'"), string::npos);
+	ASSERT_NE(sa.find("'mystery_t'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_anon_typedef_struct)
+{
+	// `typedef struct { int a; int b; } Pair;` -- an anonymous-body typedef.
+	// IT-2905 only taught c2ast/SA to resolve the *tagged* form
+	// (`typedef struct Tag X;`); an anonymous body has no tag to alias, so
+	// `Pair` stays type-kind "user" at the reference site. Explicitly the
+	// case IT-2905 deferred to this ticket.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, parameter side
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_135_c_unsupported_anon_typedef_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'pair_sum'"), string::npos);
+	ASSERT_NE(sa.find("'Pair'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_union_param)
+{
+	// `int use_val(union Val v);` -- c2ast parses union bodies but discards
+	// them, emitting a bare {"type-kind":"union"} with no name/fields
+	// (CParser.cpp's union branch never calls captureStructTag). No system
+	// header in the empirical audit for this ticket produced a bare `union`
+	// reference (glibc always typedefs anonymous unions), so this is a
+	// hand-written header.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_136_c_unsupported_union_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'use_val'"), string::npos);
+	ASSERT_NE(sa.find("'union'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_enum_param)
+{
+	// `void pick(enum Color c);` -- same reasoning as the union case above,
+	// "enum" is discarded to a bare {"type-kind":"enum"}. (A *tagged* enum
+	// used directly as a top-level return type hits an unrelated c2ast parser
+	// gap -- CParser::declaration's enum branch has no backtrack counterpart
+	// to the struct/union one -- so this exercises the parameter position;
+	// the return-type position is covered by c_unsupported_union_ret below
+	// via a type that does parse there.)
+	// Covers: sa_expr_call -> requireSupportedCFuncSig
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_137_c_unsupported_enum_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'pick'"), string::npos);
+	ASSERT_NE(sa.find("'enum'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_union_ret)
+{
+	// `union Val make_val(void);` -- the ret-type-only path: the callee has
+	// no parameters, so the only way to reach a diagnosis is if
+	// requireSupportedCFuncSig fires before sa_expr["value-type"] is set from
+	// ret-type (sa_expr_call:457-459) -- proves the gate precedes that copy
+	// rather than only catching it downstream once value-type is consumed.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, before ret-type copy
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_138_c_unsupported_union_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'make_val'"), string::npos);
+	ASSERT_NE(sa.find("'union'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_func_param)
+{
+	// `void set_cb(int (*cb)(int));` -- a function-pointer parameter is
+	// pntr(func(...)); unrepresentableTypeName recurses through the pntr to
+	// find the "func" kind underneath, proving the pntr-chain recursion.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, pntr recursion
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_139_c_unsupported_func_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'set_cb'"), string::npos);
+	ASSERT_NE(sa.find("'function pointer'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_anon_strct_param)
+{
+	// `void f(struct { int a; } *p);` -- an inline anonymous struct behind a
+	// pointer. c2ast's "strct" branch still omits type-name for a tagless
+	// struct even after IT-2905 removed the definedStructs_ guard (that guard
+	// only covered forward-declared *tagged* references); normalizeCType
+	// folds it to a nameless {"type-kind":"struct"}.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, nameless struct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_140_c_unsupported_anon_strct_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'f'"), string::npos);
+	ASSERT_NE(sa.find("'anonymous struct'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_long_double)
+{
+	// `acosl(1.0)` from <math.h> -- `long double` maps to c2ast's "flt128"
+	// prim type-name (CParser.cpp), which is not in PrimTypeNames -- the
+	// dominant real-world case: math.h alone has 309 such nodes across 150
+	// functions in the empirical audit for this ticket, far more than every
+	// other unsupported kind combined. Also proves unrepresentableTypeName's
+	// "prim" branch (a resolvable type-kind, unresolvable type-name), not
+	// just its type-kind branches, and that the diagnostic fires instead of
+	// the pre-2906 abort ("unknown prim type-name: flt128", rc=134).
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, unresolved prim name
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_141_c_unsupported_long_double.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'acosl'"), string::npos);
+	ASSERT_NE(sa.find("'flt128'"), string::npos);
+	ASSERT_EQ(sa.find("unrepresentable type"), string::npos);  // diagnosed, not the raw fromJson throw text
+}
+
+TEST(sa_error, c_unsupported_aliased_call)
+{
+	// Same shape as c_unsupported_user_param, but through an aliased
+	// `cinclude ... as M;` / `M.take_handle(...)` call -- exercises
+	// sa_expr_member_call's separate gate rather than sa_expr_call's.
+	// Covers: sa_expr_member_call -> requireSupportedCFuncSig (aliased path)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_142_c_unsupported_aliased_call.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'take_handle'"), string::npos);
+	ASSERT_NE(sa.find("'mystery_t'"), string::npos);
+}
+

@@ -105,3 +105,16 @@ TEST(build_mgr_error, cinclude_arr_field_cast_size) {
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_054_cinclude_arr_field_cast_size.pa");
 	ASSERT_NE(out.find("struct 'CastSized' has no known layout"), string::npos);
 }
+
+TEST(build_mgr_error, c_unsupported_sig) {
+	// `long double` (c2ast's "flt128" prim type-name, unknown to Palan) used
+	// as acosl's return type. IT-2906: previously an uncaught fromJson throw
+	// aborted the process (rc=134, WIFEXITED false -- "return0:" prefix from
+	// execTestCommand); now the signature is diagnosed at the call and the
+	// process exits normally with rc=1 ("return1:" prefix).
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_055_c_unsupported_sig.pa");
+	ASSERT_NE(out.find("cannot call C function 'acosl'"), string::npos);
+	ASSERT_NE(out.find("'flt128'"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}

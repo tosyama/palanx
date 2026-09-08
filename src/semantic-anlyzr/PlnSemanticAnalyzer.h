@@ -148,6 +148,10 @@ class PlnSemanticAnalyzer {
 	// Look up a struct already known to be registered (name presence must be checked
 	// by the caller beforehand) and reject it if its layout isn't known yet.
 	const StructDef& requireCompleteStruct(const string& structName, const json& locNode);
+	// `entry` must be a cinclude'd C function entry already processed by
+	// normalizeCFuncSig -- the only producer of "_unsupported-sig". No-op if
+	// the signature is fully representable.
+	void requireSupportedCFuncSig(const json& entry, const string& funcName, const json& locNode);
 	json sa_expr_addr_of(const json& expr);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);

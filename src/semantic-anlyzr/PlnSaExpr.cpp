@@ -112,6 +112,15 @@ const StructDef& PlnSemanticAnalyzer::requireCompleteStruct(const string& struct
 	return def;
 }
 
+void PlnSemanticAnalyzer::requireSupportedCFuncSig(const json& entry, const string& funcName, const json& locNode)
+{
+	auto it = entry.find("_unsupported-sig");
+	if (it == entry.end()) return;
+	cerr << locPrefix(locNode)
+	     << PlnSaMessage::getMessage(E_UnsupportedCFuncSignature, funcName, it->get<string>()) << endl;
+	exit(1);
+}
+
 json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 {
 	bool isMutable = expr.value("mutable", false);
@@ -445,6 +454,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	const json* cfunc = findCFunc(expr["name"]);
 	if (cfunc) {
 		sa_expr["func-type"] = "c";
+		requireSupportedCFuncSig(*cfunc, expr["name"].get<string>(), expr);
 		if (cfunc->contains("ret-type")
 				&& (*cfunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*cfunc)["ret-type"];
@@ -511,10 +521,8 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 							exit(1);
 						}
 					}
-					const PlnType* toType = nullptr;
-					try { toType = registry_.fromJson(paramVT); }
-					catch (const std::runtime_error&) {}
-					if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
+					const PlnType* toType = registry_.fromJson(paramVT);
+					if (typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 						saArg = wrapConvert(saArg, registry_.toJson(toType));
 					checkArgPtrPermission(expr, expr["name"].get<string>(),
 							sa_expr["func-type"] == "c", saArg, (*funcParams)[argIdx], argIdx);
@@ -704,6 +712,7 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 	sa_expr["func-type"] = isCFunc ? "c" : "palan";
 
 	if (isCFunc) {
+		requireSupportedCFuncSig(*pFunc, method, expr);
 		if (pFunc->contains("ret-type")
 				&& (*pFunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*pFunc)["ret-type"];
@@ -729,10 +738,8 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 			json saArg = sa_expression(arg);
 			if (saArg.contains("value-type") && funcParams && argIdx < fixedCount) {
 				const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-				const PlnType* toType = nullptr;
-				try { toType = registry_.fromJson((*funcParams)[argIdx]["var-type"]); }
-				catch (const std::runtime_error&) {}
-				if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
+				const PlnType* toType = registry_.fromJson((*funcParams)[argIdx]["var-type"]);
+				if (typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
 					saArg = wrapConvert(saArg, registry_.toJson(toType));
 				checkArgPtrPermission(expr, method, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
 			}

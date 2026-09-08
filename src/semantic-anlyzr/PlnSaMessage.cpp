@@ -234,6 +234,13 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "function '" + arg1 + "' has a parameter or return type this version cannot "
 			       "represent: '" + arg2 + "'.";
 
+		case E_UnsupportedCFuncSignature:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot call C function '" + arg1 + "': its signature uses '" + arg2
+			       + "', a C type this version cannot represent; only integer and floating-point "
+			         "types, pointers, and struct pointers are supported in a cinclude'd signature.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

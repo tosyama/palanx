@@ -1,0 +1,3 @@
+cinclude "162_c_unsupported_sig_unused.h";
+
+int32 r = add(1, 2);

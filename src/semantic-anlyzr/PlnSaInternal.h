@@ -224,11 +224,30 @@ inline json normalizeCType(const json& type) {
 // C function entries (from c2ast) always carry a single "ret-type", never
 // Palan's native multi/named-return "rets" list, so there's no "rets" case
 // to handle here unlike normalizeUnsizedArrSig above.
+//
+// Also the single point where a C function's signature is checked for a type
+// PlnTypeRegistry::fromJson cannot represent (a variadic "..." parameter
+// entry has no "var-type" and is skipped, same as every other pass here).
+// Unlike a native Palan signature (see validateNativeSig in
+// PlnSemanticAnalyzer.cpp), an unresolved C "prim" type-name (e.g. "flt128"
+// for `long double`) IS genuinely unrepresentable here, not a forward
+// reference to be resolved later -- c2ast's typedef registration already
+// resolves anything resolvable before a reference site is emitted. A hit is
+// recorded on the entry as "_unsupported-sig" (checked at call time by
+// requireSupportedCFuncSig) rather than rejected here, so cinclude'ing a
+// header that happens to declare an unsupported function is not itself an
+// error -- only calling it is.
 inline void normalizeCFuncSig(json& funcDef) {
+	string bad;
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			if (p.contains("var-type"))
+			if (p.contains("var-type")) {
 				p["var-type"] = normalizeCType(p["var-type"]);
-	if (funcDef.contains("ret-type"))
+				if (bad.empty()) bad = unrepresentableTypeName(p["var-type"]);
+			}
+	if (funcDef.contains("ret-type")) {
 		funcDef["ret-type"] = normalizeCType(funcDef["ret-type"]);
+		if (bad.empty()) bad = unrepresentableTypeName(funcDef["ret-type"]);
+	}
+	if (!bad.empty()) funcDef["_unsupported-sig"] = bad;
 }
