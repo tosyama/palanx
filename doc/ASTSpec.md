@@ -84,6 +84,19 @@ AST in. Same field-list shape as the native `struct-def` statement.
     `char name[16];`, produces an `arr` type-kind field — see `embedded` above and SASpec.md's
     C-origin field admission rules for which array shapes SA accepts)
 
+Global variable model
+----------------------
+Captured from file-scope `extern` object declarations in a `cinclude`d C header (e.g.
+`extern FILE *stdout;`) whose type is `prim` or `pntr` — the only shapes Palan can
+represent without heap or embedded-array semantics. `static` declarations, block-scope
+declarations, and `extern` declarations of array or by-value struct/union/enum type are
+not captured. palan-c2ast collects these into its own top-level `ast.globals` list;
+gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals` field
+(see Statement model below) when merging the header's AST in.
+
+- name\* - Global variable name string
+- var-type\* - Variable type (same Variable type object format)
+
 Palan Parameter
 ---------------
 Used in Palan function `parameters` and `rets`.
@@ -216,8 +229,12 @@ Statement model
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
     - functions - Function definition model list (C prototypes from the header)
+    - constants - Constant definition model list (see Constant definition model above);
+      omitted when the header defines no exportable object-like macro constants
     - structs - Struct definition model list (see Struct definition model above); omitted
       when the header defines no capturable structs
+    - globals - Global variable model list (see Global variable model above); omitted
+      when the header defines no capturable extern objects
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement

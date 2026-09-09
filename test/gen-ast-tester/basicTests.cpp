@@ -1154,3 +1154,28 @@ TEST(gen_ast, cinclude_constant) {
 	}
 	ASSERT_TRUE(found_answer);
 }
+
+TEST(gen_ast, cinclude_global) {
+	cleanTestEnv();
+	// IT-2907: c2ast exports file-scope "extern" object declarations into
+	// ast.globals; this verifies PlnParser.yy's cinclude rule lifts that
+	// array onto the cinclude statement's "globals" field, same as it
+	// already does for functions/constants/structs.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/108_cinclude_global.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_counter = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		ASSERT_TRUE(stmt.contains("globals"));
+		for (auto& g : stmt["globals"]) {
+			if (g["name"] == "shared_counter") {
+				ASSERT_EQ(g["var-type"]["type-kind"], "prim");
+				ASSERT_EQ(g["var-type"]["type-name"], "int32");
+				found_counter = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_counter);
+}

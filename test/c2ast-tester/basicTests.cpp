@@ -122,6 +122,84 @@ TEST(c2ast, stdio_functions_in_ast) {
         ASSERT_EQ(p1vt["type-kind"], "prim");
         ASSERT_EQ(p1vt["type-name"], "int32");
     }
+
+    // stdin/stdout/stderr: extern FILE *NAME -- captured into ast.globals as
+    // pntr(strct _IO_FILE), FILE's typedef resolved via IT-2905.
+    {
+        auto& globals = ast["ast"]["globals"];
+        auto find_global = [&](const string& name) -> json* {
+            for (auto& g : globals)
+                if (g["name"] == name) return &g;
+            return nullptr;
+        };
+        for (const char* name : {"stdin", "stdout", "stderr"}) {
+            json* g = find_global(name);
+            ASSERT_NE(g, nullptr);
+            auto& vt = (*g)["var-type"];
+            ASSERT_EQ(vt["type-kind"], "pntr");
+            ASSERT_EQ(vt["base-type"]["type-kind"], "strct");
+            ASSERT_EQ(vt["base-type"]["type-name"], "_IO_FILE");
+        }
+    }
+}
+
+TEST(c2ast, extern_globals) {
+    // struct Handle;                    -- forward-declared only, never defined
+    // extern int g_count;                extern double g_ratio;
+    // extern struct Handle *g_handle;   -- prim/prim/pntr(strct): all captured
+    // extern int g_a, g_b;              -- comma-separated: both captured
+    // static int s_hidden;              -- no external linkage: not captured
+    // extern char *g_names[2];          -- array type: not captured (non-goal)
+    // typedef int A, B; A take_a(B b);  -- comma-separated typedef: B also
+    //                                      registered, so take_a's signature
+    //                                      resolves to int32/int32, not "user"
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/028_extern_globals.h");
+    json ast = json::parse(output);
+    auto& globals = ast["ast"]["globals"];
+
+    auto find_global = [&](const string& name) -> json* {
+        for (auto& g : globals)
+            if (g["name"] == name) return &g;
+        return nullptr;
+    };
+
+    json* count = find_global("g_count");
+    ASSERT_NE(count, nullptr);
+    ASSERT_EQ((*count)["var-type"]["type-kind"], "prim");
+    ASSERT_EQ((*count)["var-type"]["type-name"], "int32");
+
+    json* ratio = find_global("g_ratio");
+    ASSERT_NE(ratio, nullptr);
+    ASSERT_EQ((*ratio)["var-type"]["type-kind"], "prim");
+    ASSERT_EQ((*ratio)["var-type"]["type-name"], "flo64");
+
+    json* handle = find_global("g_handle");
+    ASSERT_NE(handle, nullptr);
+    auto& hvt = (*handle)["var-type"];
+    ASSERT_EQ(hvt["type-kind"], "pntr");
+    ASSERT_EQ(hvt["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(hvt["base-type"]["type-name"], "Handle");
+
+    ASSERT_NE(find_global("g_a"), nullptr);
+    ASSERT_NE(find_global("g_b"), nullptr);
+
+    ASSERT_EQ(find_global("s_hidden"), nullptr);
+    ASSERT_EQ(find_global("g_names"), nullptr);
+
+    ASSERT_EQ(globals.size(), 5u);
+
+    // take_a's signature proves the comma-separated typedef "B" was
+    // registered too (both A and B resolve to int32, not left as "user").
+    auto& functions = ast["ast"]["functions"];
+    json* take_a = nullptr;
+    for (auto& f : functions)
+        if (f["name"] == "take_a") take_a = &f;
+    ASSERT_NE(take_a, nullptr);
+    ASSERT_EQ((*take_a)["ret-type"]["type-kind"], "prim");
+    ASSERT_EQ((*take_a)["ret-type"]["type-name"], "int32");
+    ASSERT_EQ((*take_a)["parameters"][0]["var-type"]["type-kind"], "prim");
+    ASSERT_EQ((*take_a)["parameters"][0]["var-type"]["type-name"], "int32");
 }
 
 TEST(c2ast, include_macro) {

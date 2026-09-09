@@ -736,60 +736,30 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 	json local;
 	if (declaration_specifiers(local, tokens, index)) {
 		json base_vt = local.value("var-type", json{});
-		json decl = {{"var-type", base_vt}};
-		if (declarator(decl, tokens, index, false)) {
-			// parsed declarator
+		vector<json> decls;
+		decls.push_back({{"var-type", base_vt}});
+		if (declarator(decls.back(), tokens, index, false)) {
+			// parsed first declarator
 
-			// consume additional comma-separated declarators (AST not emitted)
-			// Function prototypes must not appear in comma-separated lists.
-			if (CONSUME_PUNC(',')) {
-				BOOST_ASSERT(decl["var-type"].value("type-kind", "") != "func");
-				do {
-					json decl2 = {{"var-type", base_vt}};
-					bool ok = declarator(decl2, tokens, index, false);
-					BOOST_ASSERT(ok);
-					BOOST_ASSERT(decl2["var-type"].value("type-kind", "") != "func");
-				} while (CONSUME_PUNC(','));
+			// Comma-separated additional declarators ("extern int a, b;",
+			// "typedef int A, B;") are classified the same way as the first,
+			// below -- all go through emitDeclarator() rather than only the
+			// first being visible.
+			while (CONSUME_PUNC(',')) {
+				decls.push_back({{"var-type", base_vt}});
+				bool ok = declarator(decls.back(), tokens, index, false);
+				BOOST_ASSERT(ok);
 			}
 
 			if (CONSUME_PUNC(';')) {
-				// simple declaration
-				auto& vt = decl["var-type"];
-				BOOST_ASSERT(vt.is_object());
-				if (!is_static && !is_typedef
-						&& vt.value("type-kind", "") == "func") {
-					BOOST_ASSERT(decl.contains("name"));
-					BOOST_ASSERT(vt.contains("ret-type") && !vt["ret-type"].is_null());
-					ast["ast"]["functions"].push_back({
-						{"name", move(decl["name"])},
-						{"func-type", "c"},
-						{"ret-type", move(vt["ret-type"])},
-						{"parameters", move(vt["parameters"])}
-					});
-				} else if (is_typedef) {
-					string tk = vt.value("type-kind", "");
-					if (tk == "prim" || tk == "pntr") {
-						typedefs_[decl["name"].get<string>()] = vt;
-					} else if (tk == "strct" && vt.contains("type-name")) {
-						// typedef struct Tag X; -- register X as an alias for the tag
-						// itself (SA resolves it the same way it resolves any other
-						// struct-bottomed type alias). An anonymous body
-						// (typedef struct { ... } X;, no "type-name") has no tag to
-						// alias to and is left unresolved here.
-						typedefs_[decl["name"].get<string>()] = vt;
-					} else if (tk == "user") {
-						auto it = typedefs_.find(vt["type-name"].get<string>());
-						if (it != typedefs_.end()) {
-							typedefs_[decl["name"].get<string>()] = it->second;
-						}
-					}
-					// anonymous strct/union/enum/func underlying types: not registered,
-					// left as unresolved "user" at reference sites (unchanged behavior)
+				// simple declaration(s)
+				for (auto &d : decls) {
+					emitDeclarator(ast, d, is_typedef, is_static, is_extern, is_top_level);
 				}
 				result_index = index;
 				return true;
 
-			} else if (is_top_level && CONSUME_PUNC('{')) {
+			} else if (is_top_level && decls.size() == 1 && CONSUME_PUNC('{')) {
 				// function definition
 				for (;;) {
 					if (declaration(ast, tokens, index, false))
@@ -800,7 +770,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 
 					break;
 				}
-				
+
 				EXPECT_PUNC('}');
 				result_index = index;
 				return true;
@@ -811,6 +781,62 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 
 	return false;
 
+}
+
+// Classifies one completed declarator (the first in a declaration, or any
+// comma-separated successor) and emits it into the appropriate AST channel,
+// or registers it into typedefs_, or discards it. This is the single point
+// every declarator passes through, so multi-declarator lists are classified
+// uniformly instead of only the first declarator being visible to callers.
+void CParser::emitDeclarator(json &ast, json &decl,
+		bool is_typedef, bool is_static, bool is_extern, bool is_top_level)
+{
+	auto& vt = decl["var-type"];
+	BOOST_ASSERT(vt.is_object());
+	string tk = vt.value("type-kind", "");
+
+	if (!is_static && !is_typedef && tk == "func") {
+		BOOST_ASSERT(decl.contains("name"));
+		BOOST_ASSERT(vt.contains("ret-type") && !vt["ret-type"].is_null());
+		ast["ast"]["functions"].push_back({
+			{"name", move(decl["name"])},
+			{"func-type", "c"},
+			{"ret-type", move(vt["ret-type"])},
+			{"parameters", move(vt["parameters"])}
+		});
+	} else if (is_typedef) {
+		if (tk == "prim" || tk == "pntr") {
+			typedefs_[decl["name"].get<string>()] = vt;
+		} else if (tk == "strct" && vt.contains("type-name")) {
+			// typedef struct Tag X; -- register X as an alias for the tag
+			// itself (SA resolves it the same way it resolves any other
+			// struct-bottomed type alias). An anonymous body
+			// (typedef struct { ... } X;, no "type-name") has no tag to
+			// alias to and is left unresolved here.
+			typedefs_[decl["name"].get<string>()] = vt;
+		} else if (tk == "user") {
+			auto it = typedefs_.find(vt["type-name"].get<string>());
+			if (it != typedefs_.end()) {
+				typedefs_[decl["name"].get<string>()] = it->second;
+			}
+		}
+		// anonymous strct/union/enum/func underlying types: not registered,
+		// left as unresolved "user" at reference sites (unchanged behavior)
+	} else if (is_extern && is_top_level && (tk == "prim" || tk == "pntr")) {
+		// A file-scope "extern" object declaration with external linkage, of a
+		// type Palan can represent without heap/embedded-array semantics
+		// (e.g. "extern FILE *stdout;"). Array and by-value struct/union/enum
+		// globals are left unregistered -- same non-goal as elsewhere in this
+		// iteration.
+		ast["ast"]["globals"].push_back({
+			{"name", move(decl["name"])},
+			{"var-type", move(vt)}
+		});
+	}
+	// else: static function, non-func/non-typedef/non-extern-object
+	// declaration, or a shape outside what the globals channel represents --
+	// discarded, matching pre-existing behavior for everything but
+	// "func"/typedef.
 }
 
 bool CParser::statement(json &ast, const vector<CToken*> &tokens, int &result_index)

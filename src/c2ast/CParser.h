@@ -27,6 +27,8 @@ class CParser {
 	int parse(json &ast, const vector<CToken*>& tokens);
 
 	bool declaration(json &ast, const vector<CToken*> &tokens, int &index, bool is_top_level);
+	void emitDeclarator(json &ast, json &decl,
+			bool is_typedef, bool is_static, bool is_extern, bool is_top_level);
 	bool declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly);
 	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
