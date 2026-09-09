@@ -250,6 +250,10 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	string name = stmt["name"];
 	const json* varType = findVar(name);
 	if (varType == nullptr) {
+		if (findCGlobal(name) != nullptr) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_CGlobalNotAssignable, name) << endl;
+			exit(1);
+		}
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 		exit(1);
 	}

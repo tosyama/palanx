@@ -1294,3 +1294,20 @@ TEST(codegen, bitwise_ops) {
     ASSERT_NE(asm_text.find("notq"), string::npos);
     ASSERT_NE(asm_text.find("call printf"), string::npos);
 }
+
+TEST(codegen, c_global) {
+    // IT-2026-09-06-2908: a "c-global" expr-type node (e.g. `stderr`) lowers
+    // to LeaLabel+DerefLoad with no dedicated VInstr and no x86 change --
+    // the label is emitted verbatim, exactly like a str-literal's LeaLabel.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/069_c_global.sa.json";
+    string asmf = "out/069_c_global.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("leaq stderr(%rip), %r"), string::npos);
+    ASSERT_NE(asm_text.find("movq (%r"), string::npos);
+    ASSERT_NE(asm_text.find("call fprintf"), string::npos);
+}

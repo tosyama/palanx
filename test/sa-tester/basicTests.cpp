@@ -3596,3 +3596,59 @@ TEST(sa, c_widen_arg)
 	ASSERT_EQ(arg["value-type"]["type-name"], "int64");
 	ASSERT_EQ(arg["src"]["value-type"]["type-name"], "int32");
 }
+
+TEST(sa, c_global)
+{
+	// IT-2026-09-06-2908: `stderr` referenced as `fprintf`'s first argument
+	// resolves through the new cGlobalScopes -> "id" fallback chain (findVar
+	// -> constDecls_ -> findCGlobal) into a "c-global" node, not a plain "id"
+	// (which would otherwise carry the raw name and no linker label).
+	// Covers: sa_expression "id" branch, findCGlobal fallback
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/164_c_global.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][0]["body"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["func-type"], "c");
+	ASSERT_EQ(call["name"], "fprintf");
+	const auto& arg = call["args"][0];
+	ASSERT_EQ(arg["expr-type"], "c-global");
+	ASSERT_EQ(arg["label"], "stderr");
+	ASSERT_FALSE(arg.contains("name"));
+	ASSERT_EQ(arg["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(arg["value-type"]["mutable"], true);
+	ASSERT_EQ(arg["value-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(arg["value-type"]["base-type"]["type-name"], "_IO_FILE");
+	ASSERT_FALSE(arg["value-type"].contains("typedef-name"));
+}
+
+TEST(sa, c_global_alias)
+{
+	// `cinclude <stdio.h> as S;` still registers globals unqualified, same as
+	// constants/typedefs -- only functions require the S. qualifier.
+	// Covers: sa_cinclude globals loop, alias-independent registration
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/165_c_global_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][0]["body"];
+	ASSERT_EQ(call["name"], "fprintf");
+	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
+	ASSERT_EQ(call["args"][0]["label"], "stderr");
+}
+
+TEST(sa, c_global_block_scope)
+{
+	// A C global from a block-scoped cinclude is visible within that block,
+	// mirroring the existing block_cinclude_scope test for C functions.
+	// Covers: enterScope/leaveScope cGlobalScopes push/pop
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/166_c_global_block_scope.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_EQ(jout["statements"][0]["stmt-type"], "block");
+	const auto& call = jout["statements"][0]["body"][0]["body"];
+	ASSERT_EQ(call["func-type"], "c");
+	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
+}

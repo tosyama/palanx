@@ -241,6 +241,22 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       + "', a C type this version cannot represent; only integer and floating-point "
 			         "types, pointers, and struct pointers are supported in a cinclude'd signature.";
 
+		case E_CGlobalNotAssignable:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot assign to '" + arg1 + "': a cinclude'd C global variable is read-only.";
+
+		case E_CGlobalNotAddressable:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot take the address of, or access a field through, '" + arg1
+			       + "': it is a cinclude'd C global variable's value, not a storage location "
+			         "Palan owns.";
+
+		case E_UnsupportedCGlobalType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot reference C global variable '" + arg1 + "': its type uses '" + arg2
+			       + "', a C type this version cannot represent.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

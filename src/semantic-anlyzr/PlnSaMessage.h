@@ -67,6 +67,9 @@ enum PlnSaMessageCode {
 	E_IncompleteStructType,		// arg1: struct name, arg2: incomplete reason ("unsupported-field")
 	E_UnsupportedParamType,		// arg1: function name, arg2: unsupported type display name
 	E_UnsupportedCFuncSignature,	// arg1: C function name, arg2: unsupported type display name
+	E_CGlobalNotAssignable,		// arg1: C global variable name
+	E_CGlobalNotAddressable,		// arg1: C global variable name
+	E_UnsupportedCGlobalType,		// arg1: C global variable name, arg2: unsupported type display name
 };
 
 class PlnSaMessage

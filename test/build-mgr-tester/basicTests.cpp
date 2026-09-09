@@ -1223,6 +1223,17 @@ TEST(build_mgr, file_handle) {
 	ASSERT_EQ(output, "ok\n");
 }
 
+TEST(build_mgr, c_global_stderr) {
+	// IT-2026-09-06-2908: `stderr` resolves through the new cGlobalScopes and
+	// lowers to LeaLabel+DerefLoad, so fprintf(stderr, ...) actually writes
+	// to fd 2. execTestCommand appends stderr after a ":" only when stderr
+	// is non-empty (test-base/testBase.cpp), so the leading ":" here is
+	// itself proof the bytes went to fd 2, not fd 1.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/149_c_global_stderr.pa");
+	ASSERT_EQ(output, "out\n:err\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

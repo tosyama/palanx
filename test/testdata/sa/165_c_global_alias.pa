@@ -1,0 +1,3 @@
+cinclude <stdio.h> as S;
+
+S.fprintf(stderr, "hi\n");

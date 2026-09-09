@@ -41,6 +41,7 @@ enum class ExprKind {
     LogicalAnd,
     LogicalOr,
     AddrOf,
+    CGlobal,
 };
 
 struct Expr {
@@ -53,6 +54,14 @@ protected:
 struct StrLitExpr : Expr {
     StrLitExpr() : Expr(ExprKind::StrLit) {}
     string label;
+};
+
+// Reference to a cinclude'd C global variable (e.g. `stdout`). Lowered to
+// LeaLabel+DerefLoad in PlnVCodeGen -- no dedicated VInstr, no x86 change.
+struct CGlobalExpr : Expr {
+    CGlobalExpr() : Expr(ExprKind::CGlobal) {}
+    string   label;
+    VRegType type = VRegType::Ptr64;
 };
 
 struct IntLitExpr : Expr {

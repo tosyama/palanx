@@ -251,3 +251,15 @@ inline void normalizeCFuncSig(json& funcDef) {
 	}
 	if (!bad.empty()) funcDef["_unsupported-sig"] = bad;
 }
+
+// Symmetric counterpart to normalizeCFuncSig for a single cinclude'd C global
+// object declaration (see the "Global variable model" in ASTSpec.md). Same
+// deferral policy: an unrepresentable type is recorded as "_unsupported-global"
+// rather than rejected here, so cinclude'ing a header with one unsupported
+// global is not itself an error -- only referencing that global is (checked
+// at reference time by requireSupportedCGlobal).
+inline void normalizeCGlobal(json& g) {
+	g["var-type"] = normalizeCType(g["var-type"]);
+	string bad = unrepresentableTypeName(g["var-type"]);
+	if (!bad.empty()) g["_unsupported-global"] = bad;
+}

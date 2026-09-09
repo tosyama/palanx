@@ -15,6 +15,10 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		string varName = obj["name"].get<string>();
 		const json* vt = findVar(varName);
 		if (!vt) {
+			if (findCGlobal(varName) != nullptr) {
+				cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_CGlobalNotAddressable, varName) << endl;
+				exit(1);
+			}
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
 			exit(1);
 		}
@@ -121,6 +125,15 @@ void PlnSemanticAnalyzer::requireSupportedCFuncSig(const json& entry, const stri
 	exit(1);
 }
 
+void PlnSemanticAnalyzer::requireSupportedCGlobal(const json& entry, const string& globalName, const json& locNode)
+{
+	auto it = entry.find("_unsupported-global");
+	if (it == entry.end()) return;
+	cerr << locPrefix(locNode)
+	     << PlnSaMessage::getMessage(E_UnsupportedCGlobalType, globalName, it->get<string>()) << endl;
+	exit(1);
+}
+
 json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 {
 	bool isMutable = expr.value("mutable", false);
@@ -131,6 +144,10 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		string name = obj["name"].get<string>();
 		const json* varType = findVar(name);
 		if (varType == nullptr) {
+			if (findCGlobal(name) != nullptr) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CGlobalNotAddressable, name) << endl;
+				exit(1);
+			}
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 			exit(1);
 		}
@@ -249,8 +266,16 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 				sa_expr = cit->second["value"];
 				if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
 			} else {
-				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
-				exit(1);
+				string name = expr["name"].get<string>();
+				const json* cglobal = findCGlobal(name);
+				if (cglobal != nullptr) {
+					requireSupportedCGlobal(*cglobal, name, expr);
+					sa_expr = {{"expr-type", "c-global"}, {"label", name}, {"value-type", (*cglobal)["var-type"]}};
+					if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
+				} else {
+					cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
+					exit(1);
+				}
 			}
 		}
 

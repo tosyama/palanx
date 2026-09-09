@@ -94,7 +94,20 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 - cinclude statements are consumed by SA and not emitted; any typedef-derived
   type aliases and object-like-macro constants carried in the header's AST
   (see ASTSpec.md `typedef-name` and `constants`) are registered into the same
-  alias/const tables described below and likewise never appear in sa.json
+  alias/const tables described below and likewise never appear in sa.json.
+  C global variables (see ASTSpec.md's "Global variable model", the header's
+  `globals` list) are registered the same way as constants and typedefs, not
+  like C functions: always unqualified, even under `cinclude ... as S;`
+  (only `S.func(...)` calls require the alias qualifier). A registered global
+  is read-only from Palan -- assigning to it (`E_CGlobalNotAssignable`) or
+  taking its address / accessing a field through it (`E_CGlobalNotAddressable`)
+  is a compile error. Visibility follows the same scope rule as C functions
+  from cinclude (see the **block** entry below): visible from the cinclude
+  point to the end of the enclosing scope. A global whose type SA cannot
+  represent (see PlnType.h's `unrepresentableTypeName`, e.g. C's `long
+  double`) does not make the cinclude itself fail -- only referencing that
+  particular global does, with `E_UnsupportedCGlobalType` (mirrors
+  `_unsupported-sig`/`E_UnsupportedCFuncSignature` for C functions).
 - import statements are consumed by SA and not emitted; imported functions are
   registered in the current scope and become callable from the point of import
 - type-alias statements are consumed by SA and not emitted; the alias is
@@ -254,6 +267,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
   - id: same object as var-type
+  - c-global: the global's registered var-type (fully normalized: `strct`→`struct`,
+    pointee `const`→pointer `mutable`, no leftover `typedef-name`)
   - add: promoted type of left and right operands (see Promotion rules);
     the narrower operand is wrapped in a convert node if types differ
   - sub: same promotion rules as add
@@ -444,6 +459,20 @@ Additional fields per expression kind:
 
 - lit-str expression: value replaced by label (assembly label string, e.g. ".str0")
 - id expression: var-type added (Variable type object from ASTSpec.md)
+- c-global expression: an `id` expression referencing a registered C global
+  variable is replaced wholesale by this node (the original `name` key is not
+  kept): `{"expr-type":"c-global","label":<global name>,"value-type":<Variable
+  type object>}`. `label` is the raw C symbol name, emitted verbatim by
+  codegen as a `leaq <label>(%rip), <reg>` assembly reference (no
+  `.extern`/`.globl` declaration needed, same as an undeclared `call
+  printf`) followed by a load through it -- see codegen's `LeaLabel`+
+  `DerefLoad` lowering, no dedicated instruction. Example -- `stderr` (from
+  `extern FILE *stderr;` in stdio.h):
+  ```json
+  {"expr-type":"c-global","label":"stderr",
+   "value-type":{"type-kind":"pntr","mutable":true,
+                 "base-type":{"type-kind":"struct","type-name":"_IO_FILE"}}}
+  ```
 - call expression:
   - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions
   - value-type added when the function has a single return type (ret-type in its definition)

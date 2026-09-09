@@ -48,6 +48,14 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.label});
             return r;
         }
+        case ExprKind::CGlobal: {
+            auto& e = static_cast<const CGlobalExpr&>(expr);
+            VReg addr = allocVReg();
+            func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, e.label});
+            VReg dst = allocVReg();
+            func.instrs.push_back(DerefLoad{dst, addr, 0, e.type});
+            return dst;
+        }
         case ExprKind::IntLit: {
             auto& e = static_cast<const IntLitExpr&>(expr);
             VReg r = allocVReg();

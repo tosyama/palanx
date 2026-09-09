@@ -32,6 +32,7 @@ void PlnSemanticAnalyzer::enterScope()
 {
 	varScopes.push_back({});
 	cFuncScopes.push_back({});
+	cGlobalScopes.push_back({});
 	plnFuncScopes.push_back({});
 	importScopes.push_back({});
 	arrayScopeVars_.push_back({});
@@ -41,6 +42,7 @@ void PlnSemanticAnalyzer::leaveScope()
 {
 	varScopes.pop_back();
 	cFuncScopes.pop_back();
+	cGlobalScopes.pop_back();
 	plnFuncScopes.pop_back();
 	importScopes.pop_back();
 	arrayScopeVars_.pop_back();
@@ -107,6 +109,20 @@ void PlnSemanticAnalyzer::registerCFunc(const string& name, const json& def)
 const json* PlnSemanticAnalyzer::findCFunc(const string& name) const
 {
 	for (auto it = cFuncScopes.rbegin(); it != cFuncScopes.rend(); ++it) {
+		auto f = it->find(name);
+		if (f != it->end()) return &f->second;
+	}
+	return nullptr;
+}
+
+void PlnSemanticAnalyzer::registerCGlobal(const string& name, const json& def)
+{
+	cGlobalScopes.back()[name] = def;  // shadow allowed
+}
+
+const json* PlnSemanticAnalyzer::findCGlobal(const string& name) const
+{
+	for (auto it = cGlobalScopes.rbegin(); it != cGlobalScopes.rend(); ++it) {
 		auto f = it->find(name);
 		if (f != it->end()) return &f->second;
 	}
@@ -499,6 +515,19 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 	if (stmt.contains("structs"))
 		for (auto& s : stmt["structs"])
 			registerCStruct(s);
+
+	// Globals follow the constants/typedef convention, not the functions one:
+	// always registered unqualified even under `cinclude ... as S;` (only
+	// functions require the S. qualifier). Registered before the "functions"
+	// early-return below so an alias-only header (structs+globals, no
+	// functions) still picks them up.
+	if (stmt.contains("globals"))
+		for (auto& g : stmt["globals"]) {
+			json entry = g;
+			registerTypedefAliasInType(entry["var-type"]);
+			normalizeCGlobal(entry);
+			registerCGlobal(entry["name"].get<string>(), entry);
+		}
 
 	if (!stmt.contains("functions")) return;
 

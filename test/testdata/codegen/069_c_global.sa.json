@@ -1,0 +1,20 @@
+{
+  "original": "/test/069_c_global.pa",
+  "str-literals": [
+    {"label": ".str0", "value": "hi\n"}
+  ],
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "fprintf",
+        "args": [
+          {"expr-type": "c-global", "label": "stderr", "value-type": {"type-kind": "pntr", "mutable": true, "base-type": {"type-kind": "struct", "type-name": "_IO_FILE"}}},
+          {"expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}
+        ]
+      }
+    }
+  ]
+}

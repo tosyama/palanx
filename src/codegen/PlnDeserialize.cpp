@@ -33,6 +33,12 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->label = j["label"];
         return e;
     }
+    if (expr_type == "c-global") {
+        auto e = make_unique<CGlobalExpr>();
+        e->label = j["label"];
+        e->type  = toVRegType(j["value-type"]);
+        return e;
+    }
     if (expr_type == "lit-int") {
         auto e = make_unique<IntLitExpr>();
         e->value = j["value"];

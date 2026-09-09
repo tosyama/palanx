@@ -1,0 +1,9 @@
+cinclude <stdio.h>;
+
+// IT-2026-09-06-2908: `stdout`/`stderr`/`stdin` are cinclude'd C extern
+// globals (`extern FILE *stderr;`), previously dropped silently by
+// sa_cinclude ("Undefined variable 'stderr'." at reference time). This
+// proves the value actually reaches fd 2, not fd 1 -- execTestCommand
+// separates stdout/stderr with a ":" (see test-base/testBase.cpp).
+printf("out\n");
+fprintf(stderr, "err\n");

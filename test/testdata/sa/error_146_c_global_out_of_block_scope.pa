@@ -1,0 +1,5 @@
+{
+    cinclude <stdio.h>;
+}
+
+int32 x = stderr;

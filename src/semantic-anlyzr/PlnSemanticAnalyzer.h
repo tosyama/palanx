@@ -65,6 +65,7 @@ class PlnSemanticAnalyzer {
 
 	vector<map<string, json>> varScopes;
 	vector<map<string, json>> cFuncScopes;
+	vector<map<string, json>> cGlobalScopes;
 	vector<map<string, json>> plnFuncScopes;
 	// scope stack: alias("" = unqualified) → funcname → funcDef (empty json{} = ambiguous sentinel)
 	vector<map<string, map<string, json>>> importScopes;
@@ -99,6 +100,9 @@ class PlnSemanticAnalyzer {
 
 	void        registerCFunc(const string& name, const json& def);
 	const json* findCFunc(const string& name) const;
+
+	void        registerCGlobal(const string& name, const json& def);
+	const json* findCGlobal(const string& name) const;
 
 	void        registerPlnFunc(const string& name, const json& def, const json* loc_node = nullptr);
 	const json* findPlnFunc(const string& name) const;
@@ -152,6 +156,10 @@ class PlnSemanticAnalyzer {
 	// normalizeCFuncSig -- the only producer of "_unsupported-sig". No-op if
 	// the signature is fully representable.
 	void requireSupportedCFuncSig(const json& entry, const string& funcName, const json& locNode);
+	// `entry` must be a cinclude'd C global entry already processed by
+	// normalizeCGlobal -- the only producer of "_unsupported-global". No-op if
+	// the type is fully representable.
+	void requireSupportedCGlobal(const json& entry, const string& globalName, const json& locNode);
 	json sa_expr_addr_of(const json& expr);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);

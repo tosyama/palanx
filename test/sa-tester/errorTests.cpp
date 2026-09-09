@@ -1575,3 +1575,79 @@ TEST(sa_error, c_unsupported_aliased_call)
 	ASSERT_NE(sa.find("'mystery_t'"), string::npos);
 }
 
+TEST(sa_error, c_global_not_assignable)
+{
+	// `fopen(...) -> stderr;` -- a C global is read-only.
+	// Covers: sa_assign_stmt findCGlobal branch, E_CGlobalNotAssignable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_143_c_global_not_assignable.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot assign to 'stderr'"), string::npos);
+	ASSERT_NE(sa.find("read-only"), string::npos);
+}
+
+TEST(sa_error, c_global_addr_of)
+{
+	// `@stderr;` -- a C global is a value, not a storage location Palan owns.
+	// Covers: sa_expr_addr_of "id" branch findCGlobal check, E_CGlobalNotAddressable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_144_c_global_addr_of.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("'stderr'"), string::npos);
+	ASSERT_NE(sa.find("not a storage location"), string::npos);
+}
+
+TEST(sa_error, c_global_field_access)
+{
+	// `stderr._flags` -- field access requires resolveObjectChain to treat
+	// the base as an ordinary struct-pointer local, which a C global is not.
+	// Covers: resolveObjectChain "id" branch findCGlobal check, E_CGlobalNotAddressable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_145_c_global_field_access.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("'stderr'"), string::npos);
+	ASSERT_NE(sa.find("not a storage location"), string::npos);
+}
+
+TEST(sa_error, c_global_out_of_block_scope)
+{
+	// `stderr` referenced after the block whose cinclude registered it --
+	// cGlobalScopes is popped by leaveScope like cFuncScopes, so this is an
+	// ordinary undefined-variable error, not a C-global-specific one.
+	// Covers: enterScope/leaveScope cGlobalScopes pop, sa_expression "id" fallthrough
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_146_c_global_out_of_block_scope.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Undefined variable"), string::npos);
+	ASSERT_NE(sa.find("'stderr'"), string::npos);
+}
+
+TEST(sa_error, c_global_unsupported_type)
+{
+	// `extern long double ld;` -- cinclude succeeds (deferred, same policy as
+	// _unsupported-sig), but referencing `ld` diagnoses its unrepresentable
+	// "flt128" type instead of the pre-2908 abort a raw "user"/unresolved
+	// prim type-name would otherwise cause downstream.
+	// Covers: sa_expression "id" branch -> requireSupportedCGlobal, E_UnsupportedCGlobalType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_147_c_global_unsupported_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot reference C global variable 'ld'"), string::npos);
+	ASSERT_NE(sa.find("'flt128'"), string::npos);
+}
+
