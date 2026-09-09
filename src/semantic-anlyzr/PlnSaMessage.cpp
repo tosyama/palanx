@@ -44,7 +44,11 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "Undefined function '" + arg1 + "'.";
 
 		case E_InvalidNarrowingInit:
-			return "Narrowing initialization requires a numeric literal.";
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "Implicit conversion from '" + arg1 + "' to '" + arg2
+				+ "' is not allowed in an initializer; write an explicit cast '"
+				+ arg2 + "(...)'.";
 
 		case E_ExportInBlock:
 			BOOST_ASSERT(arg1 != "\x01");

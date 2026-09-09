@@ -93,7 +93,7 @@ TEST(sa_error, invalid_narrowing_init) {
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/026_invalid_narrowing_init.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find("Narrowing initialization"), string::npos);
+	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int8'"), string::npos);
 }
 
 TEST(sa_error, export_in_block) {

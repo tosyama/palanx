@@ -308,7 +308,9 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 				} else if (compat == TypeCompat::ExplicitCast) {
 					string et = init["expr-type"];
 					if (et != "lit-int" && et != "lit-uint") {
-						cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_InvalidNarrowingInit) << endl;
+						cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_InvalidNarrowingInit,
+							init["value-type"].value("type-name", init["value-type"]["type-kind"].get<string>()),
+							varType.value("type-name", varType["type-kind"].get<string>())) << endl;
 						exit(1);
 					}
 				}
