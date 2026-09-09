@@ -1234,6 +1234,72 @@ TEST(build_mgr, c_global_stderr) {
 	ASSERT_EQ(output, "out\n:err\n");
 }
 
+TEST(build_mgr, stdio_text_io) {
+	// IT-2026-09-06-2909: end-to-end proof that stdio.h text I/O works on top of
+	// IT-2901..2908. fputs/fprintf/fwrite write the file, then fgets/fread read
+	// every byte back -- the expected string below is the file's own content
+	// round-tripped through the filesystem, so no separate content check is
+	// needed. `uint64 n = fread(...)` (not int64) because fread returns size_t
+	// and a var-decl initializer rejects the cross-signedness narrowing.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/150_stdio_text_io.pa");
+	ASSERT_EQ(output, "1:hello\n2:42 world\n3:raw n=3\nclose=0,0\n");
+}
+
+TEST(build_mgr, stdio_binary_seek) {
+	// IT-2026-09-06-2909: fwrite/fread on a raw [4]int64 buffer (fwrite's void*
+	// parameter accepts any pntr(T)), random access via fseek/ftell, and the
+	// feof/ferror indicators after a read at end-of-file. Also the repo's first
+	// use of the SEEK_*/EOF constants c2ast exports from stdio.h.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/151_stdio_binary_seek.pa");
+	ASSERT_EQ(output,
+		"wrote=4\n"
+		"size=32\n"
+		"tell=16\n"
+		"rec=33 n=1\n"
+		"past=0 eof=1 err=0\n"
+		"EOF=-1 SEEK_SET=0 SEEK_CUR=1 SEEK_END=2\n");
+}
+
+TEST(build_mgr, stdio_std_streams) {
+	// IT-2026-09-06-2909: stdout/stderr/stdin as cinclude'd C globals (IT-2908).
+	// c_global_stderr above only proved stderr reaches fd 2; this adds stdout
+	// and stdin. fileno gives a structural check of all three, and stdin is
+	// additionally read for real -- execTestCommand runs the command through
+	// popen, so the "<" redirect is honoured by the shell and inherited by the
+	// binary palan runs. execTestCommand appends stderr after a ":" only when
+	// it is non-empty (test-base/testBase.cpp), hence the trailing ":to-err\n".
+	cleanTestEnv();
+	string output = execTestCommand(
+		"bin/palan ../test/testdata/build-mgr/152_stdio_std_streams.pa"
+		" < ../test/testdata/build-mgr/152_stdio_stdin_input.txt");
+	ASSERT_EQ(output, "fd out=1 err=2 in=0\nin:piped-line\nto-out\n:to-err\n");
+}
+
+TEST(build_mgr, file_handle_no_autofree_mtrace) {
+	// IT-2026-09-06-2909: proves scope exit does not free a `@!FILE` handle.
+	// Measured log for this program contains exactly two allocations, both
+	// attributed to libc.so.6 frames (fopen64 and _IO_file_doallocate) which
+	// parseMtraceLog skips, and zero deallocations. A control case -- an owned
+	// `[4]int64` in the same block shape -- does produce a non-.so. alloc and a
+	// matching free, so frees==0 here is a real signal and not a blind spot.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_file_handle_no_autofree_mtrace_bin "
+		"../test/testdata/build-mgr/153_file_handle_no_autofree_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_file_handle_no_autofree_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_file_handle_no_autofree_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	EXPECT_EQ(allocs, 0) << "fopen's allocation belongs to libc, not to Palan; got " << allocs;
+	EXPECT_EQ(frees, 0) << "@!FILE must not be freed at scope exit; got " << frees << " free(s)";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

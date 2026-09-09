@@ -118,3 +118,41 @@ TEST(build_mgr_error, c_unsupported_sig) {
 	ASSERT_NE(out.find("'flt128'"), string::npos);
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
+
+TEST(build_mgr_error, stdio_owned_file) {
+	// IT-2026-09-06-2909: `FILE f;` -- an owned declaration of the real glibc
+	// FILE. IT-2905 resolves the alias down to `struct _IO_FILE`, which IT-2904
+	// registered as incomplete (glibc's "_unused2" field has a size-expr c2ast
+	// cannot evaluate), so this is a clean E_IncompleteStructType naming the
+	// underlying tag rather than the alias. sa-tester covers this rule on a
+	// synthetic struct; this pins it on the real system header, through the
+	// typedef, all the way out to the driver.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_056_stdio_owned_file.pa");
+	ASSERT_NE(out.find("struct '_IO_FILE' has no known layout"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
+
+TEST(build_mgr_error, stdio_size_t_narrowing) {
+	// IT-2026-09-06-2909: the first thing anyone writing stdio code hits.
+	// fwrite/fread/strlen return size_t; `int64 n = fwrite(...)` crosses
+	// signedness and a variable-declaration initializer refuses that (unlike a
+	// call argument, which gets no type check at all, and unlike the loose
+	// `fwrite(...) -> n` form, which does convert). Pins the rule at the C-ABI
+	// boundary, where sa-tester only covers it on native expressions.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_057_stdio_size_t_narrowing.pa");
+	ASSERT_NE(out.find("Implicit conversion from 'uint64' to 'int64'"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
+
+TEST(build_mgr_error, stdio_incomplete_field) {
+	// IT-2026-09-06-2909: `f._flags` -- field access on an incomplete struct
+	// reached through a real `@!FILE` handle. Same requireCompleteStruct
+	// diagnostic as the owned-declaration case above; this pins it on the
+	// field-access path instead of the declaration path.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_058_stdio_incomplete_field.pa");
+	ASSERT_NE(out.find("struct '_IO_FILE' has no known layout"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}

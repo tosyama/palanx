@@ -1,0 +1,25 @@
+cinclude <stdio.h>;
+
+@!FILE w = fopen("/tmp/pln_150_stdio_text_io.txt", "w");
+if (w == NULL) {
+    printf("open-w failed\n");
+} else {
+    fputs("hello\n", w);
+    fprintf(w, "%d %s\n", 42, "world");
+    fwrite("raw\n", 1, 4, w);
+    fflush(w);
+    int32 wr = fclose(w);
+
+    @!FILE r = fopen("/tmp/pln_150_stdio_text_io.txt", "r");
+    [64]uint8 buf;
+    fgets(buf, 64, r);
+    printf("1:%s", buf);
+    fgets(buf, 64, r);
+    printf("2:%s", buf);
+    // fread does not NUL-terminate; do it by hand before printing with %s.
+    uint64 n = fread(buf, 1, 3, r);
+    0 -> buf[3];
+    printf("3:%s n=%lu\n", buf, n);
+    int32 rr = fclose(r);
+    printf("close=%d,%d\n", wr, rr);
+}

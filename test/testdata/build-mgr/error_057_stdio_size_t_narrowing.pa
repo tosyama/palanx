@@ -1,0 +1,9 @@
+cinclude <stdio.h>;
+
+// IT-2026-09-06-2909: fwrite returns size_t (uint64). A var-decl initializer is
+// strict about crossing signedness, so binding it to int64 is rejected. Use
+// `size_t`/`uint64`, or the loose `fwrite(...) -> n` form, instead.
+@!FILE f = fopen("/tmp/pln_error_057.txt", "w");
+int64 n = fwrite("abc", 1, 3, f);
+fclose(f);
+printf("%ld\n", n);

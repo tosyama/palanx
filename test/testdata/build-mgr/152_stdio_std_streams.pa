@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+
+printf("fd out=%d err=%d in=%d\n", fileno(stdout), fileno(stderr), fileno(stdin));
+
+[64]uint8 buf;
+fgets(buf, 64, stdin);
+printf("in:%s", buf);
+
+fputs("to-out\n", stdout);
+fflush(stdout);
+fputs("to-err\n", stderr);
+fflush(stderr);
