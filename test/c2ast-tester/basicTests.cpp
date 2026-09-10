@@ -683,6 +683,31 @@ TEST(c2ast, macro_const_alias_chain) {
     ASSERT_EQ(find_const("D"), nullptr);
 }
 
+TEST(c2ast, int_constant_width) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s stdlib.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    // Out of int32 range: must widen to int64 rather than silently truncating.
+    json* wclone = find_const("__WCLONE");
+    ASSERT_NE(wclone, nullptr);
+    ASSERT_EQ((*wclone)["value"], "2147483648");
+    ASSERT_EQ((*wclone)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*wclone)["value-type"]["type-name"], "int64");
+
+    // In range: still int32.
+    json* exit_failure = find_const("EXIT_FAILURE");
+    ASSERT_NE(exit_failure, nullptr);
+    ASSERT_EQ((*exit_failure)["value-type"]["type-name"], "int32");
+}
+
 TEST(c2ast, sys_stat_h_public_names) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast -s sys/stat.h");

@@ -4,6 +4,8 @@
 #include <string>
 #include <iostream>
 #include <utility>
+#include <climits>
+#include <cstdint>
 #include <boost/assert.hpp>
 
 using namespace std;
@@ -1313,7 +1315,9 @@ bool CParser::resolveConstValue(const json &node, json &value, json &type)
 	string expr_type = node.value("expr-type", "");
 	if (expr_type == "lit-int") {
 		value = node["value"];
-		type = {{"type-kind", "prim"}, {"type-name", "int32"}};
+		long long v = stoll(node["value"].get<string>());
+		const char* type_name = (v >= INT32_MIN && v <= INT32_MAX) ? "int32" : "int64";
+		type = {{"type-kind", "prim"}, {"type-name", type_name}};
 		return true;
 	}
 	if (expr_type == "cast") {
