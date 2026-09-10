@@ -130,6 +130,17 @@ bool consume_punc(int expected_punc, const vector<CToken*> &tokens, int &index) 
 
 #define EXPECT_PUNC(punc) if (!CONSUME_PUNC(punc)) { return false; }
 
+// Tries each punctuator in turn and consumes the first one that matches, returning
+// its code (or 0, which no punctuator encodes, if none matched). Used by the binary
+// expression levels below to consume one operator per left-associative loop iteration.
+int consume_punc_any(std::initializer_list<int> puncs, const vector<CToken*> &tokens, int &index) {
+	for (int p : puncs) {
+		if (consume_punc(p, tokens, index)) return p;
+	}
+	return 0;
+}
+#define CONSUME_PUNC_ANY(...) consume_punc_any({__VA_ARGS__}, tokens, index)
+
 
 const bool defalut_char_is_signed = true; 
 
@@ -875,11 +886,12 @@ bool CParser::jump_statement(json &ast, const vector<CToken*> &tokens, int &resu
 
 // Each function in this expression chain (primary_expression .. expression) recognizes
 // C expression grammar and, when the (sub)expression is one of a small set of computable
-// forms (integer literal, unary +/-, parenthesization, explicit cast), also builds a
-// value-AST node into `value` ("expr-type": "lit-int" | "cast", mirroring the convention
-// documented in doc/ASTSpec.md). Anything else (arithmetic, calls, identifiers, ...) is
-// still recognized syntactically (grammar TODOs elsewhere in this chain are unaffected),
-// but `value` is left null to signal "not a compile-time constant we can evaluate".
+// forms (integer literal, unary +/-, parenthesization, explicit cast, or a folded binary
+// arithmetic/bitwise operation), also builds a value-AST node into `value`
+// ("expr-type": "lit-int" | "cast", mirroring the convention documented in
+// doc/ASTSpec.md). Anything else (calls, identifiers, sizeof, ...) is still recognized
+// syntactically (grammar TODOs elsewhere in this chain are unaffected), but `value` is
+// left null to signal "not a compile-time constant we can evaluate".
 bool CParser::primary_expression(json &value, const vector<CToken*> &tokens, int &result_index)
 {
 	// TODO: string literal, character constant, floating constant
@@ -1054,6 +1066,56 @@ bool CParser::cast_expression(json &value, const vector<CToken*> &tokens, int &r
 	return false;
 }
 
+static bool litIntValue(const json &node, long long &out)
+{
+	if (!node.is_object() || node.value("expr-type", "") != "lit-int") return false;
+	out = stoll(node["value"].get<string>());
+	return true;
+}
+
+// Folds one binary C operation on two value-AST nodes into a new "lit-int" node.
+// Returns null -- the expression chain's single "not evaluable" signal -- when either
+// operand is null (not a lit-int), when the operator isn't one of the folded arithmetic
+// or bitwise operators (relational/equality are recognized syntactically by their
+// caller but intentionally not folded), or when evaluating would be undefined behavior
+// in this arithmetic itself (div/mod by zero, out-of-range shift count, overflow).
+// Folding these to null rather than a wrong value keeps them in the same "not a
+// compile-time constant we track" vocabulary as an unresolved identifier.
+static json foldBinaryInt(const json &lhs, int op, const json &rhs)
+{
+	long long l, r, v;
+	if (!litIntValue(lhs, l) || !litIntValue(rhs, r)) return json{};
+
+	switch (op) {
+	case '|': v = l | r; break;
+	case '&': v = l & r; break;
+	case '^': v = l ^ r; break;
+	case '+': if (__builtin_add_overflow(l, r, &v)) return json{}; break;
+	case '-': if (__builtin_sub_overflow(l, r, &v)) return json{}; break;
+	case '*': if (__builtin_mul_overflow(l, r, &v)) return json{}; break;
+	case '/':
+		if (r == 0 || (l == LLONG_MIN && r == -1)) return json{};
+		v = l / r;
+		break;
+	case '%':
+		if (r == 0 || (l == LLONG_MIN && r == -1)) return json{};
+		v = l % r;
+		break;
+	case '<<':
+		if (l < 0 || r < 0 || r >= 63 || l > (LLONG_MAX >> r)) return json{};
+		v = l << r;
+		break;
+	case '>>':
+		if (l < 0 || r < 0 || r >= 64) return json{};
+		v = l >> r;
+		break;
+	default:
+		return json{}; // relational / equality: recognized, not folded
+	}
+
+	return {{"expr-type", "lit-int"}, {"value", to_string(v)}};
+}
+
 bool CParser::multiplicative_expression(json &value, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
@@ -1062,12 +1124,15 @@ bool CParser::multiplicative_expression(json &value, const vector<CToken*> &toke
 		return false;
 	}
 
-	if (CONSUME_PUNC('*') || CONSUME_PUNC('/') || CONSUME_PUNC('%')) {
+	for (;;) {
+		int op = CONSUME_PUNC_ANY('*', '/', '%');
+		if (!op) break;
+
 		json rhs_value;
-		if (!multiplicative_expression(rhs_value, tokens, index)) {
+		if (!cast_expression(rhs_value, tokens, index)) {
 			return false;
 		}
-		value = json{}; // arithmetic result not evaluated
+		value = foldBinaryInt(value, op, rhs_value);
 	}
 
 	result_index = index;
@@ -1082,12 +1147,15 @@ bool CParser::additive_expression(json &value, const vector<CToken*> &tokens, in
 		return false;
 	}
 
-	if (CONSUME_PUNC('+') || CONSUME_PUNC('-')) {
+	for (;;) {
+		int op = CONSUME_PUNC_ANY('+', '-');
+		if (!op) break;
+
 		json rhs_value;
-		if (!additive_expression(rhs_value, tokens, index)) {
+		if (!multiplicative_expression(rhs_value, tokens, index)) {
 			return false;
 		}
-		value = json{}; // arithmetic result not evaluated
+		value = foldBinaryInt(value, op, rhs_value);
 	}
 
 	result_index = index;
@@ -1101,12 +1169,16 @@ bool CParser::shift_expression(json &value, const vector<CToken*> &tokens, int &
 	if (!additive_expression(value, tokens, index)) {
 		return false;
 	}
-	if (CONSUME_PUNC('<<') || CONSUME_PUNC('>>')) {
+
+	for (;;) {
+		int op = CONSUME_PUNC_ANY('<<', '>>');
+		if (!op) break;
+
 		json rhs_value;
-		if (!shift_expression(rhs_value, tokens, index)) {
+		if (!additive_expression(rhs_value, tokens, index)) {
 			return false;
 		}
-		value = json{};
+		value = foldBinaryInt(value, op, rhs_value);
 	}
 
 	result_index = index;
@@ -1120,12 +1192,16 @@ bool CParser::relational_expression(json &value, const vector<CToken*> &tokens, 
 	if (!shift_expression(value, tokens, index)) {
 		return false;
 	}
-	if (CONSUME_PUNC('<') || CONSUME_PUNC('>') || CONSUME_PUNC('<=') || CONSUME_PUNC('>=')) {
+
+	for (;;) {
+		int op = CONSUME_PUNC_ANY('<', '>', '<=', '>=');
+		if (!op) break;
+
 		json rhs_value;
-		if (!relational_expression(rhs_value, tokens, index)) {
+		if (!shift_expression(rhs_value, tokens, index)) {
 			return false;
 		}
-		value = json{};
+		value = foldBinaryInt(value, op, rhs_value);
 	}
 
 	result_index = index;
@@ -1139,12 +1215,16 @@ bool CParser::equality_expression(json &value, const vector<CToken*> &tokens, in
 	if (!relational_expression(value, tokens, index)) {
 		return false;
 	}
-	if (CONSUME_PUNC('==') || CONSUME_PUNC('!=')) {
+
+	for (;;) {
+		int op = CONSUME_PUNC_ANY('==', '!=');
+		if (!op) break;
+
 		json rhs_value;
-		if (!equality_expression(rhs_value, tokens, index)) {
+		if (!relational_expression(rhs_value, tokens, index)) {
 			return false;
 		}
-		value = json{};
+		value = foldBinaryInt(value, op, rhs_value);
 	}
 
 	result_index = index;
@@ -1158,12 +1238,16 @@ bool CParser::and_expression(json &value, const vector<CToken*> &tokens, int &re
 	if (!equality_expression(value, tokens, index)) {
 		return false;
 	}
-	if (CONSUME_PUNC('&')) {
+
+	for (;;) {
+		int op = CONSUME_PUNC_ANY('&');
+		if (!op) break;
+
 		json rhs_value;
-		if (!and_expression(rhs_value, tokens, index)) {
+		if (!equality_expression(rhs_value, tokens, index)) {
 			return false;
 		}
-		value = json{};
+		value = foldBinaryInt(value, op, rhs_value);
 	}
 
 	result_index = index;
@@ -1178,12 +1262,15 @@ bool CParser::exclusive_or_expression(json &value, const vector<CToken*> &tokens
 		return false;
 	}
 
-	if (CONSUME_PUNC('^')) {
+	for (;;) {
+		int op = CONSUME_PUNC_ANY('^');
+		if (!op) break;
+
 		json rhs_value;
-		if (!exclusive_or_expression(rhs_value, tokens, index)) {
+		if (!and_expression(rhs_value, tokens, index)) {
 			return false;
 		}
-		value = json{};
+		value = foldBinaryInt(value, op, rhs_value);
 	}
 
 	result_index = index;
@@ -1198,12 +1285,15 @@ bool CParser::inclusive_or_expression(json &value, const vector<CToken*> &tokens
 		return false;
 	}
 
-	if (CONSUME_PUNC('|')) {
+	for (;;) {
+		int op = CONSUME_PUNC_ANY('|');
+		if (!op) break;
+
 		json rhs_value;
-		if (!inclusive_or_expression(rhs_value, tokens, index)) {
+		if (!exclusive_or_expression(rhs_value, tokens, index)) {
 			return false;
 		}
-		value = json{};
+		value = foldBinaryInt(value, op, rhs_value);
 	}
 
 	result_index = index;

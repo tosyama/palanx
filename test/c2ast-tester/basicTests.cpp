@@ -639,8 +639,12 @@ TEST(c2ast, macro_const_simple) {
     ASSERT_EQ((*magic)["value-type"]["type-kind"], "prim");
     ASSERT_EQ((*magic)["value-type"]["type-name"], "int32");
 
-    // Not a recognized simple constant form: silently skipped, not an error.
-    ASSERT_EQ(find_const("COMPLEX"), nullptr);
+    // An additive expression: folded now that binary operators are evaluated.
+    json* complex_ = find_const("COMPLEX");
+    ASSERT_NE(complex_, nullptr);
+    ASSERT_EQ((*complex_)["value"], "3");
+    ASSERT_EQ((*complex_)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*complex_)["value-type"]["type-name"], "int32");
 }
 
 TEST(c2ast, macro_const_null) {
@@ -679,8 +683,52 @@ TEST(c2ast, macro_const_alias_chain) {
         ASSERT_EQ((*c)["value-type"]["type-name"], "int32");
     }
 
-    // Expands to an additive expression, not a recognized constant shape: still skipped.
-    ASSERT_EQ(find_const("D"), nullptr);
+    // Expands to an additive expression: folded now that binary operators are evaluated.
+    json* d = find_const("D");
+    ASSERT_NE(d, nullptr);
+    ASSERT_EQ((*d)["value"], "6");
+    ASSERT_EQ((*d)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*d)["value-type"]["type-name"], "int32");
+}
+
+TEST(c2ast, macro_const_fold_expr) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/029_macro_const_expr.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    auto expect_value = [&](const string& name, const string& value) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+    };
+
+    expect_value("BITS", "448");
+    expect_value("SUB", "87");     // left-associative: (100 - 10) - 3, not 100 - (10 - 3)
+    expect_value("SHIFTS", "8");   // left-associative: (64 >> 2) >> 1, not 64 >> (2 >> 1)
+    expect_value("DIVS", "10");    // left-associative: (100 / 5) / 2, not 100 / (5 / 2)
+    expect_value("MIXED", "13");   // precedence: 2 + (3 * 4) - 1
+    expect_value("MASK", "63");
+    expect_value("NEG", "-2");
+
+    // Relational operators are recognized but intentionally not folded.
+    ASSERT_EQ(find_const("CMP"), nullptr);
+    // Would be undefined behavior to evaluate ourselves: folds to null, not a wrong value.
+    ASSERT_EQ(find_const("DIVZERO"), nullptr);
+    ASSERT_EQ(find_const("BIGSHIFT"), nullptr);
+    ASSERT_EQ(find_const("OVERFLOWED"), nullptr);
+    // sizeof is never evaluated, so any expression containing it stays null.
+    ASSERT_EQ(find_const("SIZED"), nullptr);
+    // An unresolved identifier keeps the whole expression null.
+    ASSERT_EQ(find_const("IDENT"), nullptr);
+    // A suffixed literal (1L) isn't a plain lit-int, so it doesn't fold either.
+    ASSERT_EQ(find_const("SUFFIXED"), nullptr);
 }
 
 TEST(c2ast, int_constant_width) {
@@ -723,6 +771,36 @@ TEST(c2ast, sys_stat_h_public_names) {
     ASSERT_EQ((*s_ifdir)["value"], "16384");
     ASSERT_EQ((*s_ifdir)["value-type"]["type-kind"], "prim");
     ASSERT_EQ((*s_ifdir)["value-type"]["type-name"], "int32");
+}
+
+TEST(c2ast, sys_stat_h_perm_masks) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s sys/stat.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    // These are all expression-bodied macros (OR/shift of other macros), previously
+    // silently skipped because binary operators weren't folded.
+    auto expect_value = [&](const string& name, const string& value) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+    };
+
+    expect_value("S_IRWXU", "448");
+    expect_value("S_IRGRP", "32");
+    expect_value("S_IRWXG", "56");
+    expect_value("S_IROTH", "4");
+    expect_value("S_IRWXO", "7");
+    expect_value("ACCESSPERMS", "511");
+    expect_value("ALLPERMS", "4095");
+    expect_value("DEFFILEMODE", "438");
 }
 
 TEST(c2ast, string_h_null_constant) {
@@ -909,4 +987,37 @@ TEST(c2ast, ptr_array_decl) {
     ASSERT_FALSE(p_vt.contains("const"));
     ASSERT_EQ(p_vt["base-type"]["type-kind"], "pntr");
     ASSERT_EQ(p_vt["base-type"]["const"], true);
+}
+
+TEST(c2ast, array_size_expr_fold) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/030_array_size_expr.h");
+    json ast = json::parse(output);
+    auto& structs = ast["ast"]["structs"];
+
+    json* sizes = nullptr;
+    for (auto& s : structs)
+        if (s["name"] == "Sizes") { sizes = &s; break; }
+    ASSERT_NE(sizes, nullptr);
+
+    auto find_field = [](json& fields, const string& name) -> json* {
+        for (auto& f : fields)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    // char a[100 - 10 - 3]; -- folded to a lit-int size-expr now that array
+    // sizes go through the same expression chain as macro bodies.
+    json* a = find_field((*sizes)["fields"], "a");
+    ASSERT_NE(a, nullptr);
+    ASSERT_EQ((*a)["var-type"]["size-expr"]["expr-type"], "lit-int");
+    ASSERT_EQ((*a)["var-type"]["size-expr"]["value"], "87");
+
+    // char b[4 * sizeof(int) - 2]; -- sizeof is never evaluated, so null must
+    // still propagate through the surrounding fold (this is what keeps a
+    // struct like FILE, whose glibc layout size expressions involve sizeof,
+    // an incomplete type instead of resolving to a wrong size).
+    json* b = find_field((*sizes)["fields"], "b");
+    ASSERT_NE(b, nullptr);
+    ASSERT_TRUE((*b)["var-type"]["size-expr"].is_null());
 }
