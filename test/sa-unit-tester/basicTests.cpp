@@ -225,3 +225,130 @@ TEST(typecompat, unrepresentable_user_unnamed) {
 TEST(typecompat, unrepresentable_unknown_kind_fallback) {
     EXPECT_EQ(unrepresentableTypeName({{"type-kind","embed"}}), "embed");
 }
+
+// -------- usualArithConv (IT-2026-09-11-usual-arith-conv) --------
+
+TEST(usual_arith_conv, same_signed_higher_rank_wins) {
+    PlnTypeRegistry reg;
+    const PlnType* i32 = reg.prim(N::Int32);
+    const PlnType* i64 = reg.prim(N::Int64);
+    EXPECT_EQ(usualArithConv(i32, i64), i64);
+    EXPECT_EQ(usualArithConv(i64, i32), i64);  // commutative
+}
+
+TEST(usual_arith_conv, same_unsigned_higher_rank_wins) {
+    PlnTypeRegistry reg;
+    const PlnType* u16 = reg.prim(N::Uint16);
+    const PlnType* u32 = reg.prim(N::Uint32);
+    EXPECT_EQ(usualArithConv(u16, u32), u32);
+    EXPECT_EQ(usualArithConv(u32, u16), u32);
+}
+
+TEST(usual_arith_conv, mixed_sign_signed_rank_greater_wins_signed) {
+    PlnTypeRegistry reg;
+    const PlnType* i64 = reg.prim(N::Int64);
+    const PlnType* u32 = reg.prim(N::Uint32);
+    EXPECT_EQ(usualArithConv(i64, u32), i64);
+    EXPECT_EQ(usualArithConv(u32, i64), i64);
+}
+
+TEST(usual_arith_conv, mixed_sign_equal_rank_wins_unsigned) {
+    PlnTypeRegistry reg;
+    const PlnType* i32 = reg.prim(N::Int32);
+    const PlnType* u32 = reg.prim(N::Uint32);
+    EXPECT_EQ(usualArithConv(i32, u32), u32);
+    EXPECT_EQ(usualArithConv(u32, i32), u32);
+}
+
+TEST(usual_arith_conv, mixed_sign_unsigned_rank_greater_wins_unsigned) {
+    PlnTypeRegistry reg;
+    const PlnType* i8  = reg.prim(N::Int8);
+    const PlnType* u32 = reg.prim(N::Uint32);
+    EXPECT_EQ(usualArithConv(i8, u32), u32);
+    EXPECT_EQ(usualArithConv(u32, i8), u32);
+}
+
+TEST(usual_arith_conv, no_integer_promotion_narrow_stays_narrow) {
+    // Palan preserves declared-width wraparound; unlike C, int8+int8 does not
+    // promote to a machine word.
+    PlnTypeRegistry reg;
+    const PlnType* i8 = reg.prim(N::Int8);
+    EXPECT_EQ(usualArithConv(i8, i8), i8);
+}
+
+TEST(usual_arith_conv, float_beats_integer) {
+    PlnTypeRegistry reg;
+    const PlnType* i64 = reg.prim(N::Int64);
+    const PlnType* f32 = reg.prim(N::Float32);
+    EXPECT_EQ(usualArithConv(i64, f32), f32);
+    EXPECT_EQ(usualArithConv(f32, i64), f32);
+}
+
+TEST(usual_arith_conv, wider_float_wins) {
+    PlnTypeRegistry reg;
+    const PlnType* f32 = reg.prim(N::Float32);
+    const PlnType* f64 = reg.prim(N::Float64);
+    EXPECT_EQ(usualArithConv(f32, f64), f64);
+    EXPECT_EQ(usualArithConv(f64, f32), f64);
+}
+
+TEST(usual_arith_conv, non_prim_returns_null) {
+    PlnTypeRegistry reg;
+    const PlnType* i32 = reg.prim(N::Int32);
+    const PlnType* pi32 = reg.ptr(i32);
+    EXPECT_EQ(usualArithConv(i32, pi32), nullptr);
+    EXPECT_EQ(usualArithConv(pi32, pi32), nullptr);
+}
+
+TEST(usual_arith_conv, void_returns_null) {
+    PlnTypeRegistry reg;
+    const PlnType* v   = reg.prim(N::Void);
+    const PlnType* i32 = reg.prim(N::Int32);
+    EXPECT_EQ(usualArithConv(v, i32), nullptr);
+}
+
+// -------- argConvOk (IT-2026-09-11-usual-arith-conv) --------
+
+TEST(arg_conv_ok, widening_ok) {
+    PlnTypeRegistry reg;
+    EXPECT_TRUE(argConvOk(reg.prim(N::Int32), reg.prim(N::Int64)));
+}
+
+TEST(arg_conv_ok, narrowing_rejected) {
+    PlnTypeRegistry reg;
+    EXPECT_FALSE(argConvOk(reg.prim(N::Int64), reg.prim(N::Int32)));
+}
+
+TEST(arg_conv_ok, same_width_sign_reinterpret_ok_both_directions) {
+    // A call argument only needs to fit the callee's ABI width, so a same-width
+    // signedness flip (unlike at a binding site) is allowed both ways.
+    PlnTypeRegistry reg;
+    EXPECT_TRUE(argConvOk(reg.prim(N::Int32), reg.prim(N::Uint32)));
+    EXPECT_TRUE(argConvOk(reg.prim(N::Uint32), reg.prim(N::Int32)));
+    EXPECT_TRUE(argConvOk(reg.prim(N::Uint64), reg.prim(N::Int64)));
+}
+
+TEST(arg_conv_ok, cross_sign_widen_to_wider_signed_ok) {
+    // usualArithConv(int64, uint32) == int64 (rule 3), so passing a uint32
+    // argument to an int64 parameter fits without loss.
+    PlnTypeRegistry reg;
+    EXPECT_TRUE(argConvOk(reg.prim(N::Uint32), reg.prim(N::Int64)));
+}
+
+TEST(arg_conv_ok, cross_sign_narrowing_rejected) {
+    PlnTypeRegistry reg;
+    EXPECT_FALSE(argConvOk(reg.prim(N::Int64), reg.prim(N::Uint32)));
+}
+
+TEST(arg_conv_ok, float_narrowing_rejected) {
+    PlnTypeRegistry reg;
+    EXPECT_FALSE(argConvOk(reg.prim(N::Float64), reg.prim(N::Float32)));
+}
+
+TEST(arg_conv_ok, non_prim_rejected) {
+    PlnTypeRegistry reg;
+    const PlnType* i32 = reg.prim(N::Int32);
+    const PlnType* pi32 = reg.ptr(i32);
+    EXPECT_FALSE(argConvOk(pi32, i32));
+    EXPECT_FALSE(argConvOk(i32, pi32));
+}

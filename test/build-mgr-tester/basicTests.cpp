@@ -1358,6 +1358,17 @@ TEST(build_mgr, stat_mode_bits) {
 		"consts=448 56 7 511 4095\n");
 }
 
+TEST(build_mgr, usual_arith_conv) {
+	// IT-2026-09-11-usual-arith-conv: end-to-end pin for the two repro shapes
+	// that used to produce bad assembly (register/operand-width mismatch)
+	// because a mixed signed/unsigned operand pair silently fell through
+	// typeCompat's ExplicitCast with no convert node inserted -- in a binary
+	// operator (m & big) and in a call argument (uint32 -> int64 param).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/158_usual_arith_conv.pa");
+	ASSERT_EQ(output, "255\n4294967295\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

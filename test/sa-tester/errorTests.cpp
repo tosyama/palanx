@@ -1651,3 +1651,53 @@ TEST(sa_error, c_global_unsupported_type)
 	ASSERT_NE(sa.find("'flt128'"), string::npos);
 }
 
+TEST(sa_error, arg_narrowing)
+{
+	// IT-2026-09-11-usual-arith-conv: a call argument used to get no type
+	// check beyond ImplicitWiden -- an int64 argument to an int32 parameter
+	// silently passed through and produced a bad `movq` operand-width mismatch
+	// in the emitted assembly. Now diagnosed at the call site, same message as
+	// a narrowing var-decl initializer.
+	// Covers: convertCallArg, E_InvalidNarrowingConv
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_148_arg_narrowing.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int32'"), string::npos);
+}
+
+TEST(sa_error, arith_op_not_numeric)
+{
+	// IT-2026-09-11-usual-arith-conv: `p + 1` on a pointer operand used to
+	// silently fall through to `promoted = leftType`, accepting pointer
+	// arithmetic that Palan has no syntax or semantics for. usualArithConv
+	// returns nullptr for a non-Prim operand, which sa_expr_arith now
+	// diagnoses instead of silently accepting.
+	// Covers: sa_expr_arith non-Prim operand, E_ArithOpNotNumeric
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_149_arith_op_not_numeric.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Arithmetic operator operand must be a numeric type"), string::npos);
+}
+
+TEST(sa_error, assign_narrowing)
+{
+	// IT-2026-09-11-usual-arith-conv: an assignment (`big -> x`) used to
+	// silently insert a narrowing convert -- unlike a var-decl initializer,
+	// which has always rejected this. Assignment/array-assign/return/
+	// field-assign now share the initializer's strict rule.
+	// Covers: convertForBinding via sa_assign_stmt, E_InvalidNarrowingConv
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_150_assign_narrowing.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int32'"), string::npos);
+}
+

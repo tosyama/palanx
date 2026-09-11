@@ -481,16 +481,38 @@ Additional fields per expression kind:
 
 Promotion rules
 ---------------
-Integer types are ranked by bit width. The higher-ranked type wins.
+Integer types are ranked by bit width:
 
 - Rank 1: int8, uint8
 - Rank 2: int16, uint16
 - Rank 3: int32, uint32
 - Rank 4: int64, uint64
 
-If one operand type is not in the table, the other operand's type is used as-is.
+### Usual arithmetic conversions (binary operators and comparisons)
 
-Float promotion rules:
+A binary arithmetic operator (`+ - * / % & | ^`) or comparison (`< <= > >= == !=`) applies
+`usualArithConv(leftType, rightType)` to determine a common type; the operand(s) that differ
+from the common type each get a `convert` node. The rules, in order:
+
+1. Either operand is float → the float side wins (both float → the wider float; float paired
+   with an integer → the float type, per the int-to-float widening rule below).
+2. Same signedness (both signed or both unsigned) → the higher-ranked type wins.
+3. Mixed signedness, and the signed operand's rank is strictly greater than the unsigned
+   operand's rank → the signed type wins (e.g. `int64 op uint32` → `int64`).
+4. Mixed signedness, otherwise → the higher-ranked **unsigned** type wins (e.g.
+   `int32 op uint32` → `uint32`; equal rank always falls here since rule 3 requires *strictly*
+   greater).
+
+**No C-style integer promotion to a machine word.** Unlike C, `int8 op int8` stays `int8` — Palan
+preserves the declared width's wraparound rather than promoting to `int`. This also means the
+common type is always one of the two operand types, never a third type.
+
+A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
+an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
+unconverted (pointer comparison, e.g. `p == NULL`, is valid and has no numeric common type); the
+comparison's own result type is always `int32` regardless.
+
+Float promotion rules (subsumed by usual arithmetic conversions above, restated for clarity):
 
 - `flo32 op flo64` → flo32 is implicitly widened to flo64; result is flo64
 - `int op flo32` → int is implicitly widened to flo32; result is flo32
@@ -502,6 +524,11 @@ The `%` (mod) operator on float operands is a compile error (SA emits an error a
 typeCompat rules
 ----------------
 `typeCompat(from, to)` returns one of: `Identical`, `ImplicitWiden`, `ExplicitCast`, `Incompatible`.
+This is the rule for a **binding site** — a var-decl initializer, assignment, array-assignment,
+return, or field-assign — not for a binary operator (see "Usual arithmetic conversions" above)
+or a call argument (see below): those accept some cross-signedness conversions a binding site
+rejects, because a call argument only needs to fit the callee's ABI width rather than match a
+declared variable's exact type.
 
 | from \ to            | same type  | wider, same group | narrower or diff group (prim) | pointer | other |
 |----------------------|------------|-------------------|-------------------------------|---------|-------|
@@ -515,9 +542,33 @@ typeCompat rules
 
 Notes:
 - Signed and unsigned are different groups; `int32 → uint32` requires `ExplicitCast`.
-- `ExplicitCast` is only permitted at a `cast` expression site (`type-name(expr)`).
-  Using it implicitly (e.g. assigning int64 to int32 directly) is a compile error.
+- At a binding site, `ImplicitWiden` inserts a `convert` node; `ExplicitCast` is a compile error
+  (E_InvalidNarrowingConv) unless the source expression is an integer literal (`lit-int` /
+  `lit-uint`), which instead adopts the destination type. All five binding sites (var-decl
+  initializer, assignment, array-assignment, return, field-assign) apply this identically —
+  there is exactly one narrowing rule, not one strict (initializer) and four permissive ones.
+  Writing `ExplicitCast` at a non-literal binding site requires an explicit `type-name(expr)`
+  cast in the source.
 - Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32.
+
+### Call arguments
+
+A fixed (non-variadic) call argument is checked against its parameter's type by `argConvOk(from,
+to)`, not `typeCompat`. It accepts everything `usualArithConv(from, to) == to` would (a genuine
+widen with no information loss) **plus** a same-rank signedness reinterpretation in either
+direction (e.g. `int32` argument → `uint32` parameter, and `uint32` → `int32`) — the bit pattern
+is unchanged, and a binding site's stricter same-width rule doesn't apply here since the
+parameter is the callee's declared ABI width, not a variable the caller is naming. Anything else
+(a genuine narrowing, or a cross-sign conversion where the destination is narrower) diagnoses
+E_InvalidNarrowingConv, the same message a binding site uses. A pointer/struct argument is
+unaffected by this rule (`argConvOk` only applies between two Prim types) and keeps its existing
+`ImplicitWiden`-only check plus `checkArgPtrPermission`.
+
+A bare integer-literal argument (`lit-int`/`lit-uint`) adopts the parameter's type directly (SA
+passes the parameter type down as the literal's `expectedType`) rather than defaulting to
+int64/uint64 and then being checked for narrowing — this is what lets `add(1, 2)` bind to
+`int32` parameters and `mkdir(path, S_IRWXU)` bind to a `uint32`-typed `mode_t` parameter without
+an explicit cast.
 - `pntr(T)` and `pntr(T, mutable=true)` are treated as `Identical`; base-type match is sufficient
   for arr-assign target type checking. `mutable` is a write-permission attribute, not part of
   type identity, so `typeCompat` never inspects it.

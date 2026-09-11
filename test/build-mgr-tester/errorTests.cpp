@@ -136,10 +136,11 @@ TEST(build_mgr_error, stdio_owned_file) {
 TEST(build_mgr_error, stdio_size_t_narrowing) {
 	// IT-2026-09-06-2909: the first thing anyone writing stdio code hits.
 	// fwrite/fread/strlen return size_t; `int64 n = fwrite(...)` crosses
-	// signedness and a variable-declaration initializer refuses that (unlike a
-	// call argument, which gets no type check at all, and unlike the loose
-	// `fwrite(...) -> n` form, which does convert). Pins the rule at the C-ABI
-	// boundary, where sa-tester only covers it on native expressions.
+	// signedness and a variable-declaration initializer refuses that (as of
+	// IT-2026-09-11-usual-arith-conv, a call argument enforces an equivalent
+	// rule too -- see arg_narrowing below -- and the loose `fwrite(...) -> n`
+	// form converts). Pins the rule at the C-ABI boundary, where sa-tester
+	// only covers it on native expressions.
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_057_stdio_size_t_narrowing.pa");
 	ASSERT_NE(out.find("Implicit conversion from 'uint64' to 'int64'"), string::npos);
@@ -164,5 +165,16 @@ TEST(build_mgr_error, stat_func_macro) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_059_stat_func_macro.pa");
 	ASSERT_NE(out.find("Undefined function 'S_ISDIR'"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
+
+TEST(build_mgr_error, arg_narrowing) {
+	// IT-2026-09-11-usual-arith-conv: this is the ticket's own repro -- an
+	// int64 argument to an int32 parameter used to pass through with no type
+	// check and produce a bad `movq` operand-width mismatch at the assembler
+	// stage (a build failure, not a clean SA diagnostic). Now caught here.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_060_arg_narrowing.pa");
+	ASSERT_NE(out.find("Implicit conversion from 'int64' to 'int32'"), string::npos);
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }

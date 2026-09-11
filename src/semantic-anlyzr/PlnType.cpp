@@ -197,3 +197,41 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
 
     return TypeCompat::Incompatible;
 }
+
+const PlnType* usualArithConv(const PlnType* a, const PlnType* b)
+{
+    if (a->kind != PlnType::Kind::Prim || b->kind != PlnType::Kind::Prim) return nullptr;
+    const auto* pa = static_cast<const PrimType*>(a);
+    const auto* pb = static_cast<const PrimType*>(b);
+
+    int ga = primGroup(pa->name), gb = primGroup(pb->name);
+    if (ga < 0 || gb < 0) return nullptr;  // Void is not a valid operand type
+
+    // 1. Either side float -> the wider float wins (both sides float: wider; one
+    //    side integer: the float side, per the existing int-to-float ImplicitWiden rule).
+    if (ga == 2 || gb == 2) {
+        if (ga == 2 && gb == 2) return primRank(pa->name) >= primRank(pb->name) ? a : b;
+        return ga == 2 ? a : b;
+    }
+    // 2. Same signedness -> higher rank wins.
+    if (ga == gb) return primRank(pa->name) >= primRank(pb->name) ? a : b;
+    // 3/4. Mixed signedness: signed wins only if its rank is strictly greater
+    //      than the unsigned side's rank; otherwise the unsigned type wins
+    //      (matches C's usual arithmetic conversions on same-size ranks).
+    const PlnType* signedT   = (ga == 0) ? a : b;
+    const PlnType* unsignedT = (ga == 0) ? b : a;
+    auto signedName   = static_cast<const PrimType*>(signedT)->name;
+    auto unsignedName = static_cast<const PrimType*>(unsignedT)->name;
+    return primRank(signedName) > primRank(unsignedName) ? signedT : unsignedT;
+}
+
+bool argConvOk(const PlnType* from, const PlnType* to)
+{
+    if (usualArithConv(from, to) == to) return true;
+    if (from->kind != PlnType::Kind::Prim || to->kind != PlnType::Kind::Prim) return false;
+    const auto* pf = static_cast<const PrimType*>(from);
+    const auto* pt = static_cast<const PrimType*>(to);
+    int gf = primGroup(pf->name), gt = primGroup(pt->name);
+    if (gf < 0 || gt < 0 || gf == 2 || gt == 2) return false;  // float pairs handled above
+    return primRank(pf->name) == primRank(pt->name);           // same-width sign reinterpretation
+}

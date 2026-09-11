@@ -118,6 +118,17 @@ class PlnSemanticAnalyzer {
 	json sa_expr_member_call(const json& expr);
 	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
 	                           const json& saArg, const json& param, size_t argIdx);
+	// Shared narrowing rule for every binding site (var-decl initializer,
+	// assignment, array-assignment, return, field-assign): ImplicitWiden
+	// inserts a convert node; ExplicitCast is rejected with E_InvalidNarrowingConv
+	// unless `value` is an integer literal (which adopts toType instead of
+	// erroring); Incompatible/Identical pass `value` through unchanged.
+	json convertForBinding(const json& locNode, json value, const PlnType* toType, const json& toTypeJson);
+	// Convert a single call argument to a parameter's type per argConvOk;
+	// diagnoses E_InvalidNarrowingConv if the argument doesn't fit the
+	// parameter's width without an explicit cast. Shared by sa_expr_call and
+	// sa_expr_member_call.
+	json convertCallArg(const json& locNode, json saArg, const json& paramVT);
 	json sa_expr_arr_index(const json& expr);
 	json sa_expression_stmt(const json& stmt);
 	json sa_var_decl(const json& stmt);           // returns array of statements

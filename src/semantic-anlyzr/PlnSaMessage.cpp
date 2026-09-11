@@ -43,11 +43,11 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Undefined function '" + arg1 + "'.";
 
-		case E_InvalidNarrowingInit:
+		case E_InvalidNarrowingConv:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "Implicit conversion from '" + arg1 + "' to '" + arg2
-				+ "' is not allowed in an initializer; write an explicit cast '"
+				+ "' is not allowed; write an explicit cast '"
 				+ arg2 + "(...)'.";
 
 		case E_ExportInBlock:
@@ -260,6 +260,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot reference C global variable '" + arg1 + "': its type uses '" + arg2
 			       + "', a C type this version cannot represent.";
+
+		case E_ArithOpNotNumeric:
+			return "Arithmetic operator operand must be a numeric type.";
 
 		default:
 			BOOST_ASSERT(false);

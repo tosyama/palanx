@@ -3674,3 +3674,64 @@ TEST(sa, neg_lit_expected_type)
 	auto& s = jout["statements"][3]["vars"][0];
 	ASSERT_EQ(s["init"]["value-type"]["type-name"], "int16");
 }
+
+TEST(sa, usual_arith_conv)
+{
+	// IT-2026-09-11-usual-arith-conv: typeCompat's ExplicitCast for a mixed
+	// signed/unsigned operand pair used to be silently ignored by sa_expr_arith,
+	// cmp, and call arguments -- the codegen result then had two different
+	// register widths in one instruction. This pins the usual-arithmetic-
+	// conversion rule that replaced the silent pass-through.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/168_usual_arith_conv.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// [0..3] var-decls (uint32 m, int32 n, int64 big, uint32 mode)
+	// [4] m & n, [5] n & m, [6] big & mode, [7] mode & big, [8] n < m,
+	// [9] take_u32(n), [10] take_i64(mode)
+	ASSERT_GE(stmts.size(), 11u);
+
+	// uint32 & int32 -> uint32 (equal rank, mixed sign: unsigned wins), and the
+	// result type is order-independent regardless of which side is converted.
+	const auto& m_and_n = stmts[4]["body"];
+	ASSERT_EQ(m_and_n["value-type"]["type-name"], "uint32");
+	ASSERT_EQ(m_and_n["left"]["expr-type"],       "id");
+	ASSERT_EQ(m_and_n["right"]["expr-type"],      "convert");
+	ASSERT_EQ(m_and_n["right"]["value-type"]["type-name"], "uint32");
+
+	const auto& n_and_m = stmts[5]["body"];
+	ASSERT_EQ(n_and_m["value-type"]["type-name"], "uint32");
+	ASSERT_EQ(n_and_m["left"]["expr-type"],       "convert");
+	ASSERT_EQ(n_and_m["right"]["expr-type"],      "id");
+
+	// int64 & uint32 -> int64 (mixed sign, signed rank(4) > unsigned rank(3):
+	// signed wins), order-independent.
+	const auto& big_and_mode = stmts[6]["body"];
+	ASSERT_EQ(big_and_mode["value-type"]["type-name"], "int64");
+	ASSERT_EQ(big_and_mode["right"]["expr-type"],      "convert");
+
+	const auto& mode_and_big = stmts[7]["body"];
+	ASSERT_EQ(mode_and_big["value-type"]["type-name"], "int64");
+	ASSERT_EQ(mode_and_big["left"]["expr-type"],       "convert");
+
+	// n < m (int32 < uint32) -> both promote to uint32; cmp's own value-type
+	// (the boolean result) stays int32 regardless of the operand promotion.
+	const auto& cmp = stmts[8]["body"];
+	ASSERT_EQ(cmp["value-type"]["type-name"], "int32");
+	ASSERT_EQ(cmp["left"]["expr-type"],       "convert");
+	ASSERT_EQ(cmp["left"]["value-type"]["type-name"], "uint32");
+
+	// take_u32(n): int32 arg -> uint32 param, same-width sign reinterpretation
+	// (argConvOk-only case, not a usualArithConv widen) -- allowed without an
+	// explicit cast at a call site, unlike at a binding site.
+	const auto& call_u32 = stmts[9]["body"];
+	ASSERT_EQ(call_u32["name"],                        "take_u32");
+	ASSERT_EQ(call_u32["args"][0]["expr-type"],        "convert");
+	ASSERT_EQ(call_u32["args"][0]["value-type"]["type-name"], "uint32");
+
+	// take_i64(mode): uint32 arg -> int64 param, a genuine usualArithConv widen.
+	const auto& call_i64 = stmts[10]["body"];
+	ASSERT_EQ(call_i64["name"],                        "take_i64");
+	ASSERT_EQ(call_i64["args"][0]["expr-type"],        "convert");
+	ASSERT_EQ(call_i64["args"][0]["value-type"]["type-name"], "int64");
+}

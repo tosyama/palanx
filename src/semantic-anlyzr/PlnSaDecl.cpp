@@ -300,22 +300,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 				exit(1);
 			}
-			if (init["value-type"] != varType) {
-				const PlnType* fromType = registry_.fromJson(init["value-type"]);
-				TypeCompat compat = typeCompat(fromType, toType, registry_);
-				if (compat == TypeCompat::ImplicitWiden) {
-					init = wrapConvert(init, varType);
-				} else if (compat == TypeCompat::ExplicitCast) {
-					string et = init["expr-type"];
-					if (et != "lit-int" && et != "lit-uint") {
-						cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_InvalidNarrowingInit,
-							init["value-type"].value("type-name", init["value-type"]["type-kind"].get<string>()),
-							varType.value("type-name", varType["type-kind"].get<string>())) << endl;
-						exit(1);
-					}
-				}
-				// Incompatible: no action (ptr types pass through as-is)
-			}
+			init = convertForBinding(stmt2, init, toType, varType);
 			if (!ptrPermissionOk(init["value-type"], varType)) {
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);

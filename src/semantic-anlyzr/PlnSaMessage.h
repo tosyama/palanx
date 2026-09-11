@@ -15,7 +15,7 @@ enum PlnSaMessageCode {
 	E_DuplicateFuncDef,		// arg1: function name
 	E_IncompatibleTypeCast,	// arg1: from type, arg2: to type
 	E_UndefinedFunction,	// arg1: function name
-	E_InvalidNarrowingInit,	// arg1: source type name, arg2: target type name
+	E_InvalidNarrowingConv,	// arg1: source type name, arg2: target type name
 	E_ExportInBlock,		// arg1: function name
 	E_ExportInFunction,		// arg1: function name
 	E_UndefinedVariable,	// arg1: variable name
@@ -70,6 +70,7 @@ enum PlnSaMessageCode {
 	E_CGlobalNotAssignable,		// arg1: C global variable name
 	E_CGlobalNotAddressable,		// arg1: C global variable name
 	E_UnsupportedCGlobalType,		// arg1: C global variable name, arg2: unsupported type display name
+	E_ArithOpNotNumeric,
 };
 
 class PlnSaMessage

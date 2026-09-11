@@ -263,10 +263,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
-	const PlnType* fromType = registry_.fromJson(value["value-type"]);
-	TypeCompat compat = typeCompat(fromType, toType, registry_);
-	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-		value = wrapConvert(value, registry_.toJson(toType));
+	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 	if (!ptrPermissionOk(value["value-type"], *varType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -295,10 +292,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
-	const PlnType* fromType = registry_.fromJson(sa_value["value-type"]);
-	TypeCompat compat = typeCompat(fromType, toType, registry_);
-	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-		sa_value = wrapConvert(sa_value, registry_.toJson(toType));
+	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
 	if (!ptrPermissionOk(sa_value["value-type"], sa_target["value-type"])) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -349,10 +343,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		const PlnType* toType = registry_.fromJson((*currentFunc_)["ret-type"]);
 		json value = sa_expression(stmt["values"][0], toType);
 		if (value.contains("value-type")) {
-			const PlnType* fromType = registry_.fromJson(value["value-type"]);
-			TypeCompat compat = typeCompat(fromType, toType, registry_);
-			if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-				value = wrapConvert(value, registry_.toJson(toType));
+			value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 			if (!ptrPermissionOk(value["value-type"], (*currentFunc_)["ret-type"])) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);
@@ -443,10 +434,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
-	const PlnType* fromType = registry_.fromJson(value["value-type"]);
-	TypeCompat compat = typeCompat(fromType, toType, registry_);
-	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-		value = wrapConvert(value, fieldType);
+	value = convertForBinding(stmt, value, toType, fieldType);
 	if (!ptrPermissionOk(value["value-type"], fieldType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);

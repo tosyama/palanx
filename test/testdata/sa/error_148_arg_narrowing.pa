@@ -1,0 +1,5 @@
+func take(int32 x) -> int32 {
+    return x;
+}
+int64 big = 4294967303;
+take(big);
