@@ -493,6 +493,70 @@ void PlnX86CodeGen::emitInstrConvert(const Convert& c, const RegMap& rm)
     }
 }
 
+// One leg of a register-argument shuffle: move `srcOperand` (a register or memory
+// operand) into the physical register `dstBase`. `srcBase` is the source's register
+// base name when the source is itself a register (empty for a memory operand), used
+// to detect when one move's destination is needed as another move's source.
+struct RegMove {
+    const char* movInstr;
+    VRegType    type;
+    string      srcOperand;
+    string      srcBase;
+    string      dstBase;
+    string      dstSized;
+};
+
+static RegMove makeIntArgMove(const PhysLoc& src_loc, const string& dstBase)
+{
+    return RegMove{
+        movInstrForType(src_loc.type), src_loc.type,
+        srcOperand(src_loc), src_loc.isStack() ? "" : src_loc.base,
+        dstBase, sizedRegName(dstBase, src_loc.type)
+    };
+}
+
+// Sequence a set of moves into distinct physical registers so that no move clobbers
+// a register another pending move still needs to read from. A naive argument-order
+// pass breaks whenever a source register coincides with an earlier argument's
+// destination register -- e.g. `g(b, a)` where parameters a/b are homed at %rdi/%rsi
+// respectively: moving b into %rdi (position 0) would destroy a's value before it is
+// read for position 1. Moves whose destination nothing else needs are emitted
+// immediately; any remaining moves form a cycle, broken by stashing one destination's
+// live value in `scratch` before it is overwritten.
+static void emitSafeRegMoves(ostream& out, vector<RegMove> moves, const string& scratch)
+{
+    vector<bool> done(moves.size(), false);
+    size_t remaining = moves.size();
+    while (remaining > 0) {
+        bool progress = false;
+        for (size_t i = 0; i < moves.size(); i++) {
+            if (done[i]) continue;
+            bool needed = false;
+            for (size_t j = 0; j < moves.size(); j++) {
+                if (j == i || done[j]) continue;
+                if (!moves[j].srcBase.empty() && moves[j].srcBase == moves[i].dstBase) { needed = true; break; }
+            }
+            if (!needed) {
+                if (moves[i].srcOperand != moves[i].dstSized)
+                    out << "\t" << moves[i].movInstr << " " << moves[i].srcOperand << ", " << moves[i].dstSized << "\n";
+                done[i] = true;
+                remaining--;
+                progress = true;
+            }
+        }
+        if (!progress) {
+            size_t i = 0;
+            while (done[i]) i++;
+            out << "\tmovq " << moves[i].dstBase << ", " << scratch << "\n";
+            for (size_t j = 0; j < moves.size(); j++) {
+                if (done[j] || moves[j].srcBase != moves[i].dstBase) continue;
+                moves[j].srcBase    = scratch;
+                moves[j].srcOperand = sizedRegName(scratch, moves[j].type);
+            }
+        }
+    }
+}
+
 void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
 {
     int n_int_regs = (int)x86PhysRegs.intArgs.size();
@@ -510,6 +574,12 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
         stack_space = ((n_stack * 8) + 15) & ~15;
         out << "\tsubq $" << stack_space << ", %rsp\n";
     }
+    // Int register-destined args are queued (see emitSafeRegMoves below) rather
+    // than emitted here in argument order, and stack-destined args are still
+    // emitted immediately: since no register move has been emitted yet at that
+    // point, a stack arg whose source happens to be a register is read safely
+    // regardless of which position that register is also a destination for.
+    vector<RegMove> intMoves;
     int int_idx = 0, flt_idx = 0, stack_idx = 0;
     for (auto vr : i.args) {
         const PhysLoc& src_loc = rm.at(vr);
@@ -520,10 +590,7 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
             if (s != xmm)
                 out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << xmm << "\n";
         } else if (!is_flt && int_idx < n_int_regs) {
-            string dst = sizedRegName(x86PhysRegs.intArgs[int_idx++], src_loc.type);
-            string s = srcOperand(src_loc);
-            if (s != dst)
-                out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << dst << "\n";
+            intMoves.push_back(makeIntArgMove(src_loc, x86PhysRegs.intArgs[int_idx++]));
         } else {
             // Overflow to stack: both int and float use 8 bytes per slot.
             int offset = stack_idx++ * 8;
@@ -549,6 +616,7 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
             }
         }
     }
+    emitSafeRegMoves(out, intMoves, "%r11");
     emitCallC(i.name, flt_idx);
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
@@ -567,14 +635,14 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
 void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
 {
     int n_regs = (int)x86PhysRegs.intArgs.size();
-    // Move arguments into intArgs registers.
-    for (int j = 0; j < (int)c.args.size() && j < n_regs; j++) {
-        const PhysLoc& src = rm.at(c.args[j]);
-        string s = srcOperand(src);
-        string d = sizedRegName(x86PhysRegs.intArgs[j], src.type);
-        if (s != d)
-            out << "\t" << movInstrForType(src.type) << " " << s << ", " << d << "\n";
-    }
+    // Queue register-destined args for a hazard-safe shuffle (see emitSafeRegMoves)
+    // instead of moving them here in argument order -- a source register can
+    // coincide with an earlier argument's destination register (e.g. two
+    // parameters passed to a call in swapped order).
+    vector<RegMove> intMoves;
+    for (int j = 0; j < (int)c.args.size() && j < n_regs; j++)
+        intMoves.push_back(makeIntArgMove(rm.at(c.args[j]), x86PhysRegs.intArgs[j]));
+
     int n_stack = (int)c.args.size() - n_regs;
     int stack_space = 0;
     if (n_stack > 0) {
@@ -591,6 +659,9 @@ void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
             }
         }
     }
+    // Emitted after the stack-arg moves above (which only ever read registers,
+    // never write them) so this shuffle is the first thing to touch any register.
+    emitSafeRegMoves(out, intMoves, "%r11");
     out << "\tcall " << c.name << "\n";
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";

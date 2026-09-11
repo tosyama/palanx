@@ -1,0 +1,46 @@
+cinclude <stdio.h>;
+
+// IT-2026-09-11-regalloc-call-arg-in-func-body: a Palan function parameter passed
+// as a call argument from inside the function body, outside any loop. Existing
+// coverage (014_param_loop_call_arg.pa) only pins the loop-region case; this is
+// the straight-line case that a naive intArgs-register pre-bind check missed
+// entirely (crosses_call was computed against *other* calls, never against the
+// shuffle of the call the parameter is itself an argument to).
+func direct(int64 x) {
+    printf("direct=%ld\n", x);
+}
+
+func viacopy(int64 x) {
+    int64 y = x;
+    printf("viacopy=%ld\n", y);
+}
+
+func two_params(int64 a, int64 b) {
+    printf("two=%ld %ld\n", a, b);
+}
+
+// Swapped-position case: a/b are homed at their own declared parameter registers,
+// but passed to g in the opposite order -- a genuine 2-cycle in the call's
+// register shuffle (a's home is g's position-1 register and vice versa).
+func g(int64 a, int64 b) {
+    printf("g=%ld %ld\n", a, b);
+}
+func swapped(int64 a, int64 b) {
+    g(b, a);
+}
+
+// A 3-arg call where the first argument resolves without conflict (its home
+// already matches its position) while the other two form a 2-cycle -- exercises
+// the shuffle resolver's cycle-break path when the cycle isn't at index 0.
+func g4(int64 a, int64 b, int64 c) {
+    printf("g4=%ld %ld %ld\n", a, b, c);
+}
+func bystander_then_swap(int64 a, int64 b, int64 c) {
+    g4(a, c, b);
+}
+
+direct(7);
+viacopy(7);
+two_params(7, 8);
+swapped(11, 22);
+bystander_then_swap(1, 2, 3);

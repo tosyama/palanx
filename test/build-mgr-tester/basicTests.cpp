@@ -1300,6 +1300,19 @@ TEST(build_mgr, file_handle_no_autofree_mtrace) {
 	EXPECT_EQ(frees, 0) << "@!FILE must not be freed at scope exit; got " << frees << " free(s)";
 }
 
+TEST(build_mgr, call_arg_in_func_body) {
+	// IT-2026-09-11-regalloc-call-arg-in-func-body: a Palan function parameter
+	// passed as a call argument from inside the function body, outside any loop.
+	// 014_param_loop_call_arg.pa pins the loop-region case; this covers the
+	// straight-line case, a genuine 2-cycle swap between two parameters, and a
+	// 3-arg call where a non-conflicting bystander resolves before the 2-cycle
+	// among the other two -- exercising emitSafeRegMoves' cycle-break path when
+	// the cycle isn't at index 0.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/154_call_arg_in_func_body.pa");
+	ASSERT_EQ(output, "direct=7\nviacopy=7\ntwo=7 8\ng=22 11\ng4=1 3 2\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
