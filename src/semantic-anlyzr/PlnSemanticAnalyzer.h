@@ -40,7 +40,7 @@ struct StructDef {
 	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;
-	string incompleteReason;  // "unsupported-field" when !isComplete; empty otherwise
+	string incompleteReason;  // "unsupported-field" or "forward-declared" when !isComplete; empty otherwise
 };
 
 struct FieldChain {

@@ -64,7 +64,7 @@ enum PlnSaMessageCode {
 	E_ReadOnlyPtrToNonConstCParam,		// arg1: C function name, arg2: parameter name
 	E_AddrOfNotPrimitiveElem,
 	E_BitwiseOpNotInteger,
-	E_IncompleteStructType,		// arg1: struct name, arg2: incomplete reason ("unsupported-field")
+	E_IncompleteStructType,		// arg1: struct name, arg2: incomplete reason ("unsupported-field" or "forward-declared")
 	E_UnsupportedParamType,		// arg1: function name, arg2: unsupported type display name
 	E_UnsupportedCFuncSignature,	// arg1: C function name, arg2: unsupported type display name
 	E_CGlobalNotAssignable,		// arg1: C global variable name

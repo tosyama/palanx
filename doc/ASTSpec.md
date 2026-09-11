@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.28
+ver. 0.1.29
 
 \* - Required
 
@@ -54,15 +54,24 @@ Function definition model
 Constant definition model
 --------------------------
 An object-like `#define` macro whose body, after fully expanding any references to other
-object-like macros (e.g. `#define S_IFDIR __S_IFDIR`), resolves to one of two forms: a bare
-integer literal (e.g. `#define MAGIC 42`), or a pointer-cast of a bare integer literal
-(e.g. `#define NULL ((void *)0)`). Macros whose expanded body doesn't match either form
-(function-like macros referenced without a call, string literals, arithmetic/other expression
-forms, etc.) are not exported here.
+object-like macros (e.g. `#define S_IFDIR __S_IFDIR`), folds down to a single compile-time
+integer value is exported here. The body may be a bare integer literal (e.g. `#define MAGIC
+42`), a unary `+`/`-` of one, or a binary expression built from `| & ^ << >> + - * / %` over such
+forms (e.g. `#define S_IRWXU (S_IREAD|S_IWRITE|S_IEXEC)`) — evaluated left-to-right within each
+precedence level, using signed 64-bit arithmetic; an operation that would overflow, divide/mod by
+zero, or shift by a negative or out-of-range count does not fold (same "not exported" outcome as
+an unsupported form) rather than silently wrapping. The body may also be a pointer-cast of any of
+these folded forms (e.g. `#define NULL ((void *)0)`). A form that doesn't fold this way (a
+function-like macro referenced without a call, a string literal, a relational/equality/logical/
+ternary expression, unary `~`/`!`, or a reference to an unresolved identifier) is not exported
+here — referencing such a macro name from Palan is `Undefined function` or `Undefined variable`,
+not a compiler abort.
 
 - name\* - Macro name string
 - value\* - Decimal string (e.g. "10")
-- value-type\* - Variable type (see below)
+- value-type\* - Variable type (see below); for a folded integer body, always `prim` `int32` or
+  `int64` sized by the value's magnitude — never typed unsigned. For a pointer-cast body, the
+  cast's own target type instead (e.g. `pntr` for `NULL`)
 
 Struct definition model
 ------------------------
@@ -183,21 +192,32 @@ Variable type
     embedded fields' offsets into the parent struct (no separate pointer).
   5. strct - Struct type reference (by name), from a C struct-typed parameter/return in a
      `cinclude`d function signature
-    - type-name - Struct name string; omitted for a reference to a forward-declared-only tag
-      (no captured field list — see Struct definition model above — so the reference cannot
-      be resolved into a registered struct type)
-  6. union - Union type (TBD)
-    - name - Union name string
-    - fields - Field list
-  7. enum - Enum type (TBD)
-    - name - Enum name string
-    - enumerators - Enumerator list
+    - type-name - Struct name string; omitted only for a reference to a genuinely untagged
+      (anonymous `struct { ... }`) type, which SA cannot register under any name and treats
+      as unrepresentable (see SASpec.md's C-origin signature admission). A *named* tag is
+      always given a `type-name` here, even when the header only forward-declares it or the
+      reference is a bare mention with no field list ever seen — SA registers such a tag as
+      an incomplete struct (usable only through a pointer) rather than leaving the name
+      unresolved; see SASpec.md's Incomplete struct types.
+  6. union - Union type, from a C `union Name { ... }`-typed field/parameter/return. c2ast
+     parses the field list but does not capture it — every reference emits the bare shape
+     below regardless of the union's tag name or members, so distinct unions are
+     indistinguishable in the AST. Unrepresentable in SA this version (see SASpec.md's
+     C-origin signature admission); referencing a value of this type is a compile error.
+     (carries no fields beyond `type-kind`)
+  7. enum - Enum type, from a C `enum Name { ... }`-typed field/parameter/return. c2ast parses
+     the enumerator list (names and values) but does not capture it — every reference emits
+     the bare shape below. Unrepresentable in SA this version (see SASpec.md's C-origin
+     signature admission).
+     (carries no fields beyond `type-kind`)
   8. func - Function type
     - parameters - Parameter list
     - ret-type\* - Return variable type
-  9. user - User defined type
-    - type-name\* - Type name string
-    - base-type\* - Base variable type
+  9. user - An identifier used as a type that c2ast could not resolve to a recognized keyword
+     or a previously-registered typedef — including a typedef that bottoms out in an
+     anonymous struct/union/enum/function-pointer body, which c2ast does not register.
+     Unrepresentable in SA this version (see SASpec.md's C-origin signature admission).
+    - type-name\* - The unresolved identifier string
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
 
@@ -285,7 +305,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -353,6 +373,17 @@ Expression model
       parenthesized tuple or a bare function call reached via `@`/`@!`, or `field-access`'s
       chain root when it isn't itself addressable). Carries no fields beyond `expr-type`; SA
       rejects any expression of this shape.
+  20. bitand - Binary bitwise AND (`a & b`; integer operands only)
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  21. bitor - Binary bitwise OR (`a | b`; integer operands only)
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  22. bitxor - Binary bitwise XOR (`a ^ b`; integer operands only)
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  23. bitnot - Unary bitwise NOT (`~a`; integer operand only)
+    - operand\* - Operand expression model
 
 Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.

@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.28
+**Version:** v0.1.29
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -129,6 +129,42 @@ int64 x = 100;
 printf("%d\n", int32(x));   // explicit narrowing cast
 ```
 
+### Usual Arithmetic Conversions (Binary Operators and Comparisons)
+
+A binary arithmetic operator (`+ - * / % & | ^`) or a comparison (`< <= > >= == !=`) first
+converts its two operands to one common type, then evaluates. The common type is chosen by
+these rules, in order:
+
+1. Either operand is a floating-point type → the float side wins (both float → the wider of
+   the two; float paired with an integer → the float type — an integer is always widened to a
+   float type it's compared or combined with, regardless of the integer's own width).
+2. Both operands have the same signedness (both signed or both unsigned) → the wider
+   (higher-ranked) type wins.
+3. Signedness differs, and the signed operand is strictly wider than the unsigned operand →
+   the signed type wins (e.g. `int64 & uint32` → `int64`).
+4. Signedness differs, otherwise (including equal width) → the **unsigned** type wins (e.g.
+   `int32 & uint32` → `uint32`).
+
+Unlike C, there is **no integer promotion to a machine word**: `int8 + int8` stays `int8`,
+preserving that width's own wraparound rather than promoting to a wider type first.
+
+This rule governs binary arithmetic, bitwise operators (§5), and comparisons only — it is
+**more permissive** than the rule for a binding site (a variable initializer, a plain or array
+assignment, `return`, or a struct field assignment): all five of those always require an
+explicit cast for a narrowing or a signedness change, with no exception for same-width
+sign reinterpretation (see Explicit Cast above). A function call argument sits in between: it
+accepts everything a binding site would, plus a same-width signedness reinterpretation (e.g. an
+`int32` value passed where a `uint32` parameter is declared, or vice versa) — an argument only
+needs to fit the callee's declared width, not match a variable's exact declared type. An integer
+*literal* argument or initializer is the one further exception at any of these sites: it simply
+adopts the destination's type instead of being checked for narrowing (this is what lets
+`add(1, 2)` bind to `int32` parameters without a cast).
+
+A pointer or struct operand has no common type with anything under this rule: using one with
+`+ - * / % & | ^` is a compile error (Palan has no pointer arithmetic). A comparison is the
+exception — `p == NULL` and similar pointer comparisons are valid and leave both operands
+unconverted; a comparison's result is always `int32` regardless of operand type.
+
 ### Variadic Argument Promotion
 
 When passing to variadic C functions (e.g., `printf`), small integer types are promoted:
@@ -161,6 +197,10 @@ int32 a = 5, b = 10;   // type inheritance: b is also int32
 | Division | `expr / expr` | `a / b` |
 | Modulo | `expr % expr` | `a % b` |
 | Unary minus | `-expr` | `-x` |
+| Bitwise AND | `expr & expr` | `a & b` |
+| Bitwise OR | `expr \| expr` | `a \| b` |
+| Bitwise XOR | `expr ^ expr` | `a ^ b` |
+| Bitwise NOT | `~expr` | `~a` |
 | Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
@@ -170,10 +210,26 @@ int32 a = 5, b = 10;   // type inheritance: b is also int32
 | Logical NOT | `!expr` | `!x` |
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
 
-Operator precedence (high to low): unary minus / `!`, `* / %`, `+ -`, comparisons, `&&`, `||`, `->`.
-All binary operators are left-associative.
+Operator precedence (high to low): unary minus / `!` / `~`, `* / % & | ^`, `+ -`, comparisons,
+`&&`, `||`, `->`. All binary operators are left-associative.
 
-Comparison operators produce `int32` (1 if true, 0 if false). Both operands are widened to the same type before comparison.
+Note the bitwise operators `&`/`|`/`^` share a precedence class with `*`/`/`/`%` — one level
+**above** `+`/`-` — rather than C's much lower placement below comparisons. This is a deliberate
+simplification, not an oversight, and it changes how mixed expressions parse relative to C:
+
+- `a & b == c` parses as `(a & b) == c` — this actually *avoids* a well-known C pitfall, where
+  the same expression parses as `a & (b == c)` because C's `&` sits below `==`.
+- `a + b | c` parses as `a + (b | c)` — this is **different from C**, where `|`'s low precedence
+  would instead parse it as `(a + b) | c`. Parenthesize explicitly when porting C expressions
+  that mix `+`/`-` with `&`/`|`/`^`.
+
+Bitwise operators require integer operands; using one with a float operand is a compile error.
+There is no shift operator (`<<`/`>>`) in this version — `>>` is already used for
+ownership-transfer syntax (`->>`, `[n]@![]T`; see [Arrays](#18-arrays)), and reusing it for a
+shift would conflict with that grammar.
+
+Comparison operators produce `int32` (1 if true, 0 if false). Both operands are converted to a
+common type first — see [Usual Arithmetic Conversions](#3-type-system) in Type System.
 
 Logical operators `&&` and `||` use **short-circuit evaluation**: the right operand is not
 evaluated if the result is already determined by the left operand. Both operands must be
@@ -278,21 +334,57 @@ cinclude <stdio.h> as S;     // alias — functions accessible only as S.xxx()
 S.printf("%d\n", 42);        // qualified call
 ```
 
+### Function Calls
+
 - `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
 - With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
+
+### Typedefs
+
 - C typedefs that resolve to a primitive type are automatically registered as a Palan type alias
   (see [Type Aliases](#20-type-aliases)) the moment the header is cincluded. For example,
   `size_t n = strlen(s);` works immediately after `cinclude <string.h>;`, with no explicit alias
   declaration needed. Typedefs that bottom out in a pointer type (e.g. `timer_t`, `typedef void
   *timer_t;`) are also resolved, so such a typedef's name can be used as a C function's parameter
   or return type (e.g. `timer_delete(timer_t)`), but — unlike primitive-bottomed typedefs — it is
-  not registered as a usable Palan type alias name itself. Typedefs that bottom out in a struct,
-  union, or enum are not resolved and remain unusable this version.
-- Object-like `#define` macros whose body is a bare integer literal, or a pointer-cast of a bare
-  integer literal (e.g. `#define NULL ((void *)0)`), are automatically imported as a Palan `const`
-  (see [Constant Declarations](#21-constant-declarations)) the moment the header is cincluded. Other
-  macro forms (function-like macros, arithmetic expressions, references to other macros) are silently
-  not imported.
+  not registered as a usable Palan type alias name itself. Typedefs that bottom out in a struct
+  (e.g. `FILE`, `typedef struct _IO_FILE FILE;`) are also resolved and usable the same way as a
+  native struct type — see [Incomplete Struct Types](#incomplete-struct-types-opaque-handles)
+  below for the common case where the struct's own layout isn't fully known. Typedefs that bottom
+  out in a union or enum are not resolved and remain unusable this version.
+- If multiple cincluded headers introduce the same typedef name, the first registration wins
+  (silent deduplication).
+- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported typedefs — they are
+  always registered globally. Only C function calls require the `X.` qualifier.
+
+### Macro Constants
+
+- An object-like `#define` macro whose body folds down to a single compile-time integer value is
+  automatically imported as a Palan `const` (see [Constant Declarations](#21-constant-declarations))
+  the moment the header is cincluded. This covers a bare integer literal, a pointer-cast of one
+  (e.g. `#define NULL ((void *)0)`), and an arithmetic or bitwise expression built from
+  `| & ^ << >> + - * / %` over such forms (e.g. `sys/stat.h`'s `S_IRWXU`, defined as
+  `(S_IREAD|S_IWRITE|S_IEXEC)`) — including one that references another already-defined macro
+  (`#define S_IFDIR __S_IFDIR`).
+- A macro whose body doesn't fold this way — a function-like macro referenced without a call
+  (e.g. `S_ISDIR`, which takes an argument), a string literal, a relational/equality/logical/
+  ternary expression, or a reference to an identifier that never resolves — is not imported.
+  Referencing such a name from Palan is an ordinary `Undefined function`/`Undefined variable`
+  diagnostic, not a compiler crash:
+
+  ```palan
+  cinclude <sys/stat.h>;
+  stat st;
+  stat("/etc", st);
+  if (S_ISDIR(st.st_mode)) { ... }   // error: Undefined function 'S_ISDIR'
+  ```
+
+  `S_IFMT`/`S_IFDIR` and similar bare constants *are* imported, so the same check can be written
+  directly with a bitwise AND (see [Expressions](#5-expressions)):
+
+  ```palan
+  if ((st.st_mode & S_IFMT) == S_IFDIR) { ... }   // works
+  ```
 
   ```palan
   cinclude <string.h>;
@@ -304,15 +396,46 @@ S.printf("%d\n", 42);        // qualified call
   `NULL` is a generic pointer value: it is compatible with and can be compared (`==`/`!=`)
   against any pointer-typed value, including C function return values, `[]T` array
   pointers, and struct pointer fields.
-- If multiple cincluded headers introduce the same typedef or constant name, the first registration
-  wins (silent deduplication).
-- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported typedefs or constants — they
-  are always registered globally. Only C function calls require the `X.` qualifier.
+- An imported constant's type is always signed — `int32` or `int64`, sized by the value's
+  magnitude — never unsigned, regardless of what the resulting value is used for. `S_IFMT` is
+  `int32`; when `st.st_mode & S_IFMT` above comes out `uint32`, that is the [usual arithmetic
+  conversion](#3-type-system) rule for `&` applying to a `uint32`/`int32` pair, not a property of
+  the constant itself.
+- If multiple cincluded headers introduce the same constant name, the first registration wins
+  (silent deduplication).
+- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported constants — they are
+  always registered globally. Only C function calls require the `X.` qualifier.
+
+### C Global Variables
+
+- A file-scope `extern` object declared in a cincluded header, whose type is a primitive or a
+  pointer (e.g. `extern FILE *stdout;`), is captured as a readable Palan variable of the same
+  name, visible from the cinclude point to the end of the enclosing scope — the same rule as a
+  cincluded function. `static` declarations, block-scope declarations, and arrays or by-value
+  struct/union/enum globals are not captured.
+
+  ```palan
+  cinclude <stdio.h>;
+  fprintf(stderr, "starting up\n");   // stderr resolves to the C global
+  ```
+
+- **Read-only from Palan**: assigning to a C global (`x -> stdout`) is a compile error, and so is
+  taking its address (`@stdout`) or reaching a field through it. This is a restriction on the
+  variable binding itself, not on what it points to — the *pointee* keeps its own C-declared
+  mutability, so `fwrite(data, 1, n, stdout)` (writing through the `FILE *` value `stdout` holds)
+  works normally.
+- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace C globals either — like typedefs
+  and constants, they are always registered globally; only a function call needs the `X.`
+  qualifier.
+
+### Struct Types
+
 - A C `struct Name { ... }` defined (with a full field list, not just forward-declared) in a
   cincluded header becomes a usable [struct type](#19-struct-types) under that same name — field
   access, embedded struct-typed fields, and struct-typed function parameters all work identically
-  to a struct declared natively with `type Name { ... }`. A tag that is only forward-declared in
-  the header (no field list visible) is not usable as a struct type this version.
+  to a struct declared natively with `type Name { ... }`. A tag that is only forward-declared, or
+  whose full definition can't be captured, is still usable under its name — see [Incomplete
+  Struct Types](#incomplete-struct-types-opaque-handles) below.
 - A struct pointer *returned* by a C function should be bound to a non-owning `@T`/`@!T`-typed
   local variable, not a named return — the pointer may be owned by C (e.g. a static internal
   buffer), so no automatic freeing is registered for it:
@@ -329,14 +452,44 @@ S.printf("%d\n", 42);        // qualified call
   A struct passed *into* a C call follows the same convention as a native struct-typed function
   parameter: it is passed by pointer, borrowed by the callee, and not freed by it (see
   [Struct types in function signatures](#struct-types-in-function-signatures)).
+
+### C Array Fields
+
 - A fixed-size C array field (`char name[16];`) becomes a fixed-size [array field](#array-fields)
   on the Palan side, laid out inline in the struct exactly like a native `[16]int8 name;` field —
   element access and taking the address of an element both work. A C function parameter declared
   as an array (`void take(char buf[32])`) decays to a plain pointer, same as in C — only the
   outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row. A C
   struct field with two or more array dimensions (`int cells[2][3];`) is not supported this
-  version — the whole struct type is left unusable ("unknown struct type") rather than just that
-  field.
+  version — the field is left with no known layout, which downgrades the whole struct to an
+  [incomplete struct type](#incomplete-struct-types-opaque-handles) rather than making just that
+  field unusable.
+
+### Incomplete Struct Types (Opaque Handles)
+
+A struct tag whose full layout isn't known to Palan — either because the header only
+forward-declares it, or because one of its fields uses a shape [C Array Fields](#c-array-fields)
+above doesn't support — is registered as an **incomplete struct**: its name resolves and it can
+be used, but only through a pointer (`@T`/`@!T`), the same restriction C itself places on an
+incomplete type. `FILE` (from `stdio.h`) is the running example: its underlying `struct _IO_FILE`
+has a field c2ast can't size, so `FILE` is incomplete, and `fopen`/`fprintf`/etc. all work with it
+purely as an opaque handle:
+
+```palan
+cinclude <stdio.h>;
+@!FILE f = fopen("/tmp/out.txt", "w");
+fputs("hello\n", f);
+fclose(f);
+```
+
+`@!FILE f = fopen(...)` is **not** automatically freed at scope exit — unlike an owning struct
+pointer variable, the pointee here belongs to C (closed by `fclose`, not Palan's own allocator).
+
+An incomplete struct cannot be used anywhere a full layout is required: a by-value variable
+declaration (`FILE f;`), an owned or embedded array of it (`[n]FILE`/`[n]$FILE`), a field access
+through it, subscripting an array of it, or embedding it in another struct. Each of these is a
+compile error naming the struct and the reason (forward-declared in the header, or a field type
+this version can't represent) — never a compiler crash.
 
 ---
 
@@ -638,14 +791,10 @@ flo64 v = 3.14;
 
 ### Type Promotion
 
-When operands have different float widths, the narrower type is implicitly widened:
-
-- `flo32 op flo64` → both become `flo64`; result is `flo64`
-
-When one operand is an integer and the other is a float, the integer is implicitly widened to the float type:
-
-- `int op flo32` → int widened to `flo32`; result is `flo32`
-- `int op flo64` → int widened to `flo64`; result is `flo64`
+Float operand conversion for binary operators and comparisons follows the same Usual Arithmetic
+Conversions rule as integer operands — see [Type System](#3-type-system): the wider float wins
+between two floats, and a float always wins over a paired integer regardless of the integer's
+width (`flo32 op flo64` → `flo64`; `int op flo32` → `flo32`; `int op flo64` → `flo64`).
 
 ### Explicit Cast to Integer
 
@@ -1077,6 +1226,11 @@ func makePoint(int64 x, int64 y) -> Point p {
 
 - Nested/2D array fields (`[n]$[m]T field`, etc.) are not supported.
 - Recursive embedding (`type A { $A a; }`) is a compile error.
+- An [incomplete struct type](#incomplete-struct-types-opaque-handles) — a tag whose layout
+  isn't known, e.g. a cincluded `FILE` — cannot be used as a by-value variable (`FILE f;`), an
+  owned or embedded array (`[n]FILE`/`[n]$FILE`), an embedded field (`$FILE field;`), or an
+  array-of-struct element (`arr[i]`/`p[i]` subscripting). It is usable only through a pointer
+  (`@T`/`@!T`) — as a local variable, function parameter, or return type.
 
 ---
 
@@ -1119,6 +1273,10 @@ printf("%ld\n", MaxLen);   // 256
 
 - Only a compile-time literal value is accepted — `lit-int`, `lit-uint`, `lit-flo`, or `lit-str` —
   not an arbitrary compile-time-constant expression (e.g. `const X = 1 + 2;` is not supported).
+  This is unrelated to the C macro-constant folding described under [C Library
+  Integration](#macro-constants) — that folds a *C preprocessor* macro body during header
+  ingestion, using C's own integer semantics; it does not extend what a Palan `const`
+  declaration itself accepts.
 - Every reference to the constant is inlined with the literal value; the constant's name does not
   appear in `sa.json`.
 - A const may reference another const declared earlier (`const B = A;`); this chains naturally

@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.28
+ver. 0.1.29
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -462,7 +462,8 @@ Additional fields per expression kind:
 - c-global expression: an `id` expression referencing a registered C global
   variable is replaced wholesale by this node (the original `name` key is not
   kept): `{"expr-type":"c-global","label":<global name>,"value-type":<Variable
-  type object>}`. `label` is the raw C symbol name, emitted verbatim by
+  type object>}`, plus `loc` carried over unchanged from the source `id`
+  expression when present. `label` is the raw C symbol name, emitted verbatim by
   codegen as a `leaq <label>(%rip), <reg>` assembly reference (no
   `.extern`/`.globl` declaration needed, same as an undeclared `call
   printf`) followed by a load through it -- see codegen's `LeaLabel`+
@@ -592,6 +593,39 @@ an explicit cast.
     variables get elsewhere: SA's own permission checks only ever need to understand `mutable`,
     never c2ast's `const` vocabulary.
 
+C-origin signature admission
+-----------------------------
+Before a `cinclude`d C function's parameters/return type (or a C global's single type, see the
+**cinclude** entry in Statement model above) are usable, `normalizeCFuncSig`/`normalizeCGlobal`
+(`PlnSaInternal.h`) apply `normalizeCType` (folding `pntr`'s pointee `const` to `mutable`, and
+`strct`→`struct`) and then check every type against `unrepresentableTypeName`, which recognizes:
+
+- A `prim` type-name not resolved to a known Palan primitive (e.g. `flt128` for C's `long
+  double` when no typedef maps it to something usable).
+- `arr` (a bare array type-kind — the `[n]@T`/`[n]@!T` pointer-slot-array shape has already
+  normalized to `pntr` by this point), `func` (a function-pointer type), `union`, a `strct`
+  with no `type-name` (an anonymous struct reference), and `user` (an identifier c2ast could
+  not resolve to a known type — including a typedef of an anonymous struct/union/enum/function
+  body, which c2ast does not register).
+- A `struct` type-kind carrying a `type-name` is always representable here, whether or not it
+  is complete — an incomplete struct's layout is enforced later, only where a layout is actually
+  needed (see "Incomplete struct types" below), not at signature-admission time.
+
+This differs from a native Palan signature's check (`validateNativeSig`): a native signature only
+rejects a structural type-kind `PlnTypeRegistry::fromJson` can never build (currently just a bare
+`arr`), and defers a not-yet-registered struct name to the more specific E_UnknownStructType /
+E_IncompleteStructType diagnosed at the point of use — a cinclude'd C signature has no such later
+resolution step to defer to, since c2ast's typedef registration has already resolved anything
+resolvable before the signature is emitted.
+
+**Deferred to reference time, not rejected at cinclude time**: a hit does not fail the `cinclude`
+statement itself. It is recorded on the entry (`_unsupported-sig` for a function,
+`_unsupported-global` for a global) and diagnosed only when the function is called
+(`requireSupportedCFuncSig` → E_UnsupportedCFuncSignature) or the global is referenced
+(`requireSupportedCGlobal` → E_UnsupportedCGlobalType) — so cincluding a header that happens to
+declare one unsupported function or global does not prevent using the header's other, supported
+declarations.
+
 Struct types
 ------------
 `type Name { field_decl... }` defines a struct type. The SA processes `struct-def` nodes and
@@ -603,13 +637,50 @@ for a C-origin struct. Every sa.json shape documented below (C ABI layout, var-d
 field-assign, field-access) applies unchanged regardless of whether the struct came from a
 native `type Name {...}` or a `cinclude`d header.
 
+### Incomplete struct types
+
+A registered struct tag may be *incomplete* — its name is known but no field layout is available,
+the same distinction C makes for a forward-declared or opaque tag (e.g. `FILE`). `StructDef` has
+`bool isComplete` and `string incompleteReason`; when `!isComplete`, `fields` is empty and
+`totalSize` is `-1` (there is no partial layout — either the layout is fully known or not known
+at all). `incompleteReason` is one of exactly two values:
+
+- `"forward-declared"` — the header only ever mentions the tag: a forward declaration (`struct
+  Foo;`) or a bare reference through a field/parameter/return whose pointee struct is never
+  defined in this header (ASTSpec.md's Struct definition model — `fields` omitted). No field
+  information exists to fail on.
+- `"unsupported-field"` — the header gives the tag a field list, but at least one field is
+  rejected by "C-origin field admission" (below).
+
+Either way the tag name still resolves — referencing it is not E_UnknownStructType, the "no such
+type" error — but any use that requires a known layout is E_IncompleteStructType instead:
+
+- Field-chain resolution, including a plain field read or an intermediate hop in a longer chain
+  (`resolveObjectChain`) and field-assign (write).
+- Subscripting a struct-element array (`arr[i]` needs the element stride, i.e. `totalSize`).
+- A by-value struct variable declaration of the tag (`T x;`), a `[n]T` owned-pointer-array
+  declaration, or a `[n]$T` contiguous embedded-array declaration.
+- Embedding the tag as another struct's field — as a `$T` embed leaf, an owned struct-pointer
+  leaf, or a struct-element array leaf (`[n]T`/`[n]$T` field) — checked while the *enclosing*
+  struct is being built, so an incomplete struct cannot be smuggled in as a sub-struct either.
+
+An incomplete struct remains fully usable as a pointer: a local variable, function
+parameter/return type, or cinclude'd C function argument of type `@T`/`@!T` all work normally,
+since none of those require a layout — matching C's own incomplete-type semantics (a `FILE *` is
+usable everywhere `FILE` itself is not).
+
+A tag already registered incomplete may later be promoted to complete by a `cinclude` that
+supplies a full, fully-supported field list (first *complete* definition wins). The reverse never
+happens: a tag already complete keeps its layout regardless of what a later header says.
+
 ### C-origin field admission
 
 Before a C-origin field list is registered, each field's `var-type` (ASTSpec.md's c2ast
 representation) is normalized to the same vocabulary a native `struct-def` field would use, then
-checked for support; a field the check rejects causes the *whole* struct to be skipped (it never
-enters the registry, so any later reference to it is E_UnknownStructType) rather than being
-dropped individually:
+checked for support; a field the check rejects causes the *whole* struct to be registered as an
+incomplete struct (see "Incomplete struct types" below) rather than being dropped individually or
+the tag going unregistered — fields up to and including the failing one are discarded, and no
+partial layout is kept:
 
 - A by-value struct leaf (`type-kind:"strct"`, from `struct Foo f;`) is rewritten to
   `type-kind:"embed"` — same shape a native `$Foo` field produces. A by-value struct leaf inside
@@ -624,8 +695,9 @@ dropped individually:
   and its base-type is one of: a pointer (`[n]@T`/`[n]@!T` slot array), a primitive with a known
   size, or a primitive naming an already-registered struct (`[n]$T`/`[n]T`). **A 2D-or-deeper
   array field (`int cells[2][3];`, base-type itself `arr`) is not supported** — the whole struct
-  is skipped, so `Sample s;` for a `struct Sample { int cells[2][3]; };` fails with
-  E_UnknownStructType even though `cells` is the only unsupported field.
+  is registered incomplete, so `Sample s;` for a `struct Sample { int cells[2][3]; };` fails with
+  E_IncompleteStructType even though `cells` is the only unsupported field (the tag `Sample`
+  itself still resolves, and is usable through `@Sample`/`@!Sample`).
   - A pointer base-type (`T *field[n];`, e.g. glibc's `struct __locale_data *__locales[13];`)
     is Palan's `[n]@T`/`[n]@!T` pointer-slot-array shape. Native syntax never sets `embedded`
     for this shape (only the `$`-prefixed inline-storage forms do), so the `embedded` key
