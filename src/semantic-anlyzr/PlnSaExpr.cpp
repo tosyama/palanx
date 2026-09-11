@@ -288,7 +288,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		return sa_expr_arith(expr, expectedType);
 
 	} else if (expr_type == "neg") {
-		json operand = sa_expression(expr["operand"]);
+		json operand = sa_expression(expr["operand"], expectedType);
 		sa_expr["operand"]    = operand;
 		sa_expr["value-type"] = operand["value-type"];
 

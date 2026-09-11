@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+
+// IT-2026-09-11-neg-literal-expected-type: negated integer/float literals now
+// adopt the initializer's expected type instead of always widening to
+// int64/flo64 first and tripping the narrowing-initializer diagnostic.
+int32 a = -1;
+flo32 f = -1.5;
+int16 s = -200;
+
+printf("%d %f %d\n", a, flo64(f), s);

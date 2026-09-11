@@ -1313,6 +1313,16 @@ TEST(build_mgr, call_arg_in_func_body) {
 	ASSERT_EQ(output, "direct=7\nviacopy=7\ntwo=7 8\ng=22 11\ng4=1 3 2\n");
 }
 
+TEST(build_mgr, neg_lit_narrow_init) {
+	// IT-2026-09-11-neg-literal-expected-type: a negated literal now adopts the
+	// initializer's expected type (matching the adjacent bitnot handling) instead
+	// of always widening to int64/flo64 first and tripping the narrowing-
+	// initializer diagnostic.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/155_neg_lit_narrow_init.pa");
+	ASSERT_EQ(output, "-1 -1.500000 -200\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

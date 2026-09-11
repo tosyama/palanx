@@ -3652,3 +3652,25 @@ TEST(sa, c_global_block_scope)
 	ASSERT_EQ(call["func-type"], "c");
 	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
 }
+
+TEST(sa, neg_lit_expected_type)
+{
+	// IT-2026-09-11-neg-literal-expected-type: `neg` did not propagate expectedType
+	// to its operand (unlike the adjacent `bitnot`), so a negated literal in a
+	// narrower/float initializer always adopted the default int64/flo64 and then
+	// tripped the narrowing-initializer diagnostic -- e.g. `int32 a = -1;` was
+	// rejected even though `int32 a = 1;` and `int32 a = -a;` (a variable) both work.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/167_neg_lit_expected_type.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	auto& a = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(a["init"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(a["init"]["operand"]["value-type"]["type-name"], "int32");
+
+	auto& f = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(f["init"]["value-type"]["type-name"], "flo32");
+
+	auto& s = jout["statements"][3]["vars"][0];
+	ASSERT_EQ(s["init"]["value-type"]["type-name"], "int16");
+}
