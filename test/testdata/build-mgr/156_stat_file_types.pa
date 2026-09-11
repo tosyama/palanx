@@ -1,0 +1,39 @@
+cinclude <sys/stat.h>;
+cinclude <stdio.h>;
+
+// IT-2026-09-06-2911: proves stat/lstat/fstat all report the right S_IFMT bits
+// through three different acquisition paths (path lookup, symlink-aware path
+// lookup, and an already-open file descriptor), plus one nested-struct field
+// read (st_mtim.tv_sec). A mkfifo'd path is checked with lstat only -- the FIFO
+// is never open()'d, since a peer-less open would hang until
+// execTestCommand's 5-second SIGKILL timeout. The harness test creates
+// /tmp/pln_156_link (a symlink to /tmp/pln_156_reg.txt, which this program
+// itself creates via fopen below) and /tmp/pln_156_fifo before running this.
+
+stat d;
+stat("/etc", d);
+printf("dir=%d\n", (d.st_mode & S_IFMT) == S_IFDIR);
+
+stat c;
+stat("/dev/null", c);
+printf("chr=%d\n", (c.st_mode & S_IFMT) == S_IFCHR);
+
+@!FILE fp = fopen("/tmp/pln_156_reg.txt", "w");
+fputs("0123456789", fp);
+fflush(fp);
+stat r;
+fstat(fileno(fp), r);
+printf("reg=%d size=%ld mtime_nonzero=%d\n",
+       (r.st_mode & S_IFMT) == S_IFREG, r.st_size, r.st_mtim.tv_sec > 0);
+fclose(fp);
+
+stat lk;
+stat sk;
+lstat("/tmp/pln_156_link", lk);
+stat("/tmp/pln_156_link", sk);
+printf("lnk=%d target_reg=%d\n",
+       (lk.st_mode & S_IFMT) == S_IFLNK, (sk.st_mode & S_IFMT) == S_IFREG);
+
+stat fi;
+lstat("/tmp/pln_156_fifo", fi);
+printf("fifo=%d\n", (fi.st_mode & S_IFMT) == S_IFIFO);

@@ -1323,6 +1323,41 @@ TEST(build_mgr, neg_lit_narrow_init) {
 	ASSERT_EQ(output, "-1 -1.500000 -200\n");
 }
 
+TEST(build_mgr, stat_file_types) {
+	// IT-2026-09-06-2911: stat/lstat/fstat all report the right S_IFMT bits
+	// through three acquisition paths (path lookup, symlink-aware path lookup,
+	// an open file descriptor), plus a nested-struct field read (st_mtim.tv_sec).
+	// The mkfifo'd path is checked with lstat only -- open()'ing a FIFO with no
+	// peer would hang until execTestCommand's 5-second SIGKILL timeout.
+	cleanTestEnv();
+	execTestCommand("rm -f /tmp/pln_156_reg.txt /tmp/pln_156_link /tmp/pln_156_fifo");
+	execTestCommand("ln -s /tmp/pln_156_reg.txt /tmp/pln_156_link");
+	execTestCommand("mkfifo /tmp/pln_156_fifo");
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/156_stat_file_types.pa");
+	ASSERT_EQ(output,
+		"dir=1\n"
+		"chr=1\n"
+		"reg=1 size=10 mtime_nonzero=1\n"
+		"lnk=1 target_reg=1\n"
+		"fifo=1\n");
+}
+
+TEST(build_mgr, stat_mode_bits) {
+	// IT-2026-09-06-2911: umask(0) makes mkdir's permission bits deterministic
+	// regardless of the caller's inherited umask (verified under both the
+	// harness's default umask and `umask 077`); chmod's bits are unaffected by
+	// umask either way. Also pins IT-2910's constant folding on sys/stat.h's
+	// expression macros (S_IRWXU, ACCESSPERMS, ...).
+	cleanTestEnv();
+	execTestCommand("rm -rf /tmp/pln_157_dir");
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/157_stat_mode_bits.pa");
+	ASSERT_EQ(output,
+		"mkdir_perm=504\n"
+		"chmod_perm=488\n"
+		"umask_roundtrip=0\n"
+		"consts=448 56 7 511 4095\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

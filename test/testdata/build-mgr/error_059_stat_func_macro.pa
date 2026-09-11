@@ -1,0 +1,8 @@
+cinclude <sys/stat.h>;
+
+// IT-2026-09-06-2911: S_ISDIR is a function-like macro; c2ast/gen-ast do not
+// export function-like macros as callable functions, so this must be a clean
+// diagnostic (not an abort) naming the undefined function.
+stat st;
+stat("/etc", st);
+int32 d = S_ISDIR(st.st_mode);
