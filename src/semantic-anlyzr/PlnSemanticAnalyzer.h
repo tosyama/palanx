@@ -33,10 +33,14 @@ struct FieldLayout {
 struct StructDef {
 	string name;
 	vector<FieldLayout> fields;
-	int  totalSize;
-	int  maxAlign;
+	int  totalSize = -1;
+	int  maxAlign  = 0;
 	bool hasOwnedStructFields = false;
 	bool hasOwnedArrayFields  = false;  // has an "arr-ptr" field ([n]T owned pointer array)
+	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
+	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
+	bool   isComplete = false;
+	string incompleteReason;  // "unsupported-field" or "forward-declared" when !isComplete; empty otherwise
 };
 
 struct FieldChain {
@@ -61,6 +65,7 @@ class PlnSemanticAnalyzer {
 
 	vector<map<string, json>> varScopes;
 	vector<map<string, json>> cFuncScopes;
+	vector<map<string, json>> cGlobalScopes;
 	vector<map<string, json>> plnFuncScopes;
 	// scope stack: alias("" = unqualified) → funcname → funcDef (empty json{} = ambiguous sentinel)
 	vector<map<string, map<string, json>>> importScopes;
@@ -96,6 +101,9 @@ class PlnSemanticAnalyzer {
 	void        registerCFunc(const string& name, const json& def);
 	const json* findCFunc(const string& name) const;
 
+	void        registerCGlobal(const string& name, const json& def);
+	const json* findCGlobal(const string& name) const;
+
 	void        registerPlnFunc(const string& name, const json& def, const json* loc_node = nullptr);
 	const json* findPlnFunc(const string& name) const;
 	const json* findImportFunc(const string& fname) const;
@@ -110,6 +118,17 @@ class PlnSemanticAnalyzer {
 	json sa_expr_member_call(const json& expr);
 	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
 	                           const json& saArg, const json& param, size_t argIdx);
+	// Shared narrowing rule for every binding site (var-decl initializer,
+	// assignment, array-assignment, return, field-assign): ImplicitWiden
+	// inserts a convert node; ExplicitCast is rejected with E_InvalidNarrowingConv
+	// unless `value` is an integer literal (which adopts toType instead of
+	// erroring); Incompatible/Identical pass `value` through unchanged.
+	json convertForBinding(const json& locNode, json value, const PlnType* toType, const json& toTypeJson);
+	// Convert a single call argument to a parameter's type per argConvOk;
+	// diagnoses E_InvalidNarrowingConv if the argument doesn't fit the
+	// parameter's width without an explicit cast. Shared by sa_expr_call and
+	// sa_expr_member_call.
+	json convertCallArg(const json& locNode, json saArg, const json& paramVT);
 	json sa_expr_arr_index(const json& expr);
 	json sa_expression_stmt(const json& stmt);
 	json sa_var_decl(const json& stmt);           // returns array of statements
@@ -123,16 +142,35 @@ class PlnSemanticAnalyzer {
 	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_
 	void recordAllocShape(const string& structName);
 	bool isStructType(const json& type) const;
+	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.
+	bool isKnownTypeName(const string& name) const;
 	json  toStructPntrType(const json& type) const;
 	bool  isNamedReturnVar(const string& varName) const;
 	json  deepNormalizePrimToStruct(const json& type) const;
 	json  resolveTypeAlias(const json& vtype) const;
+	json  resolveTypeAliasDeep(const json& vtype) const;
 	void  normalizeStructSig(json& funcDef);
+	// Diagnose (and exit) if `funcDef`'s parameters/ret-type/rets use a type
+	// PlnTypeRegistry::fromJson cannot represent. Must be called after
+	// normalizeStructSig -- a struct parameter is still prim(Name) before
+	// that runs and would be misclassified as unsupported.
+	void  validateNativeSig(const json& funcDef);
 	void  registerTypedefAliasInType(json& vtype);
 	void  registerCFuncTypedefAliases(json& funcEntry);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);
+	// Look up a struct already known to be registered (name presence must be checked
+	// by the caller beforehand) and reject it if its layout isn't known yet.
+	const StructDef& requireCompleteStruct(const string& structName, const json& locNode);
+	// `entry` must be a cinclude'd C function entry already processed by
+	// normalizeCFuncSig -- the only producer of "_unsupported-sig". No-op if
+	// the signature is fully representable.
+	void requireSupportedCFuncSig(const json& entry, const string& funcName, const json& locNode);
+	// `entry` must be a cinclude'd C global entry already processed by
+	// normalizeCGlobal -- the only producer of "_unsupported-global". No-op if
+	// the type is fully representable.
+	void requireSupportedCGlobal(const json& entry, const string& globalName, const json& locNode);
 	json sa_expr_addr_of(const json& expr);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);

@@ -1,0 +1,7 @@
+cinclude <math.h>;
+
+// IT-2906: `long double` maps to c2ast's "flt128" prim type-name, which is
+// not in Palan's PrimTypeNames -- previously this aborted (rc=134) at
+// PlnTypeRegistry::fromJson ("unknown prim type-name: flt128") the moment
+// acosl's result was consumed. Now it is diagnosed at the call.
+flo64 y = acosl(1.0);

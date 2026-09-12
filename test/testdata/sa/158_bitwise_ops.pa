@@ -1,0 +1,9 @@
+int64 a = 12;
+int64 b = 10;
+int32 c = 1;
+a & b;
+a | b;
+a ^ b;
+~a;
+~c;
+a & int32(c);

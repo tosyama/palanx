@@ -18,15 +18,17 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitStringLiteral(const string& label, const string& value);
     void emitLeaLabel(const string& reg, const string& label);
     void emitMovImm(const string& reg, VRegType type, long long value);
-    void emitConvert(const string& dst, const PhysLoc& src, VRegType from, VRegType to);
+    void emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to);
     void emitCallC(const string& name, int nFloatArgs = 0);
     void emitExit(int code);
 
     // Per-function prologue
     void emitFuncPrologue(const VFunc& func, const RegAllocResult& ra, const RegMap& rm);
 
-    // Shared helper: emit a binary reg-reg arithmetic instruction (Add/Sub/Mul)
-    void emitBinArith(const char* op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm);
+    // Shared helper: emit a binary reg-reg arithmetic instruction (Add/Sub/Mul/BitAnd/BitOr/BitXor)
+    void emitBinArith(const string& op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm);
+    // Shared helper: emit a unary reg arithmetic instruction (Neg's integer path/BitNot)
+    void emitUnArith(const string& op, VReg dst, VReg src, VRegType type, const RegMap& rm);
 
     // Per-instruction emit helpers
     void emitInstrLeaLabel(const LeaLabel& i, const RegMap& rm);
@@ -36,6 +38,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrDiv(const Div& i, const RegMap& rm);
     void emitInstrMod(const Mod& i, const RegMap& rm);
     void emitInstrNeg(const Neg& i, const RegMap& rm);
+    void emitInstrBitNot(const BitNot& i, const RegMap& rm);
     void emitInstrCmp(const Cmp& i, const RegMap& rm);
     void emitInstrConvert(const Convert& i, const RegMap& rm);
     void emitInstrCallC(const CallC& i, const RegMap& rm);

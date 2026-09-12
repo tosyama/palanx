@@ -1,0 +1,20 @@
+cinclude <stdio.h>;
+
+// IT-2026-09-11-usual-arith-conv: before this ticket, a mixed signed/unsigned
+// operand pair (here uint32/int64) fell through typeCompat's ExplicitCast
+// with no diagnostic and no convert node inserted, producing an assembler
+// register/operand-width mismatch instead of a correct result.
+int64  big = -1;
+uint32 m   = 255u;
+printf("%lu\n", m & big);
+
+// A uint32 argument passed to an int64 parameter is a genuine usual-
+// arithmetic-conversion widen (allowed without an explicit cast); before
+// this ticket the call-argument path only inserted a convert for
+// ImplicitWiden, so this cross-signedness widen passed the raw 32-bit
+// bit pattern into a 64-bit parameter slot uninitialized in its upper bits.
+func take_i64(int64 x) -> int64 {
+    return x;
+}
+uint32 wide = 4294967295;
+printf("%ld\n", take_i64(wide));

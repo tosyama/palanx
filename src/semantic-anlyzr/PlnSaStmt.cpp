@@ -85,6 +85,8 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 		validateEmbeddedParams(funcEntry);
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+		normalizeStructSig(funcEntry);
+		validateNativeSig(funcEntry);
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
 	}
 
@@ -207,6 +209,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 		normalizeStructSig(funcEntry);
+		validateNativeSig(funcEntry);
 		registerPlnFunc(funcEntry["name"], funcEntry, &f);
 	}
 
@@ -218,6 +221,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	normalizeUnsizedArrSig(saFunc);
 	validateEmbeddedParams(saFunc);
 	normalizeStructSig(saFunc);
+	validateNativeSig(saFunc);
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
@@ -246,6 +250,10 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	string name = stmt["name"];
 	const json* varType = findVar(name);
 	if (varType == nullptr) {
+		if (findCGlobal(name) != nullptr) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_CGlobalNotAssignable, name) << endl;
+			exit(1);
+		}
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 		exit(1);
 	}
@@ -255,10 +263,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
-	const PlnType* fromType = registry_.fromJson(value["value-type"]);
-	TypeCompat compat = typeCompat(fromType, toType, registry_);
-	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-		value = wrapConvert(value, registry_.toJson(toType));
+	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 	if (!ptrPermissionOk(value["value-type"], *varType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -287,10 +292,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
-	const PlnType* fromType = registry_.fromJson(sa_value["value-type"]);
-	TypeCompat compat = typeCompat(fromType, toType, registry_);
-	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-		sa_value = wrapConvert(sa_value, registry_.toJson(toType));
+	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
 	if (!ptrPermissionOk(sa_value["value-type"], sa_target["value-type"])) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -341,10 +343,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		const PlnType* toType = registry_.fromJson((*currentFunc_)["ret-type"]);
 		json value = sa_expression(stmt["values"][0], toType);
 		if (value.contains("value-type")) {
-			const PlnType* fromType = registry_.fromJson(value["value-type"]);
-			TypeCompat compat = typeCompat(fromType, toType, registry_);
-			if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-				value = wrapConvert(value, registry_.toJson(toType));
+			value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 			if (!ptrPermissionOk(value["value-type"], (*currentFunc_)["ret-type"])) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);
@@ -422,7 +421,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 {
 	FieldChain chain = resolveObjectChain(stmt["object"], /*forWrite=*/true);
 	string fn = stmt["field"].get<string>();
-	const StructDef& def = structDefs_[chain.structName];
+	const StructDef& def = requireCompleteStruct(chain.structName, stmt);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
 	if (it == def.fields.end()) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn) << endl;
@@ -435,10 +434,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
-	const PlnType* fromType = registry_.fromJson(value["value-type"]);
-	TypeCompat compat = typeCompat(fromType, toType, registry_);
-	if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast)
-		value = wrapConvert(value, fieldType);
+	value = convertForBinding(stmt, value, toType, fieldType);
 	if (!ptrPermissionOk(value["value-type"], fieldType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);

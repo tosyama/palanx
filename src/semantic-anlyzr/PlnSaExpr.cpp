@@ -15,6 +15,10 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		string varName = obj["name"].get<string>();
 		const json* vt = findVar(varName);
 		if (!vt) {
+			if (findCGlobal(varName) != nullptr) {
+				cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_CGlobalNotAddressable, varName) << endl;
+				exit(1);
+			}
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
 			exit(1);
 		}
@@ -51,7 +55,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	}
 	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
-	const StructDef& def = structDefs_[base.structName];
+	const StructDef& def = requireCompleteStruct(base.structName, obj);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
 	if (it == def.fields.end()) {
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UnknownField, base.structName, fn) << endl;
@@ -86,13 +90,48 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 
 const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode)
 {
-	const StructDef& def = structDefs_[structName];
+	const StructDef& def = requireCompleteStruct(structName, locNode);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fieldName; });
 	if (it == def.fields.end()) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName) << endl;
 		exit(1);
 	}
 	return *it;
+}
+
+// `name` must already be a key in structDefs_ (checked by the caller, e.g. via
+// isKnownTypeName/count(), or because it's a chain hop whose base type was
+// normalized by a producer that already required it -- see resolveObjectChain).
+// This only distinguishes "layout not yet known" (an incomplete/opaque struct,
+// e.g. C's FILE) from "fully laid out": callers needing the former distinguished
+// from "no such struct" must check that separately before calling this.
+const StructDef& PlnSemanticAnalyzer::requireCompleteStruct(const string& structName, const json& locNode)
+{
+	const StructDef& def = structDefs_[structName];
+	if (!def.isComplete) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
+		                                                        def.incompleteReason) << endl;
+		exit(1);
+	}
+	return def;
+}
+
+void PlnSemanticAnalyzer::requireSupportedCFuncSig(const json& entry, const string& funcName, const json& locNode)
+{
+	auto it = entry.find("_unsupported-sig");
+	if (it == entry.end()) return;
+	cerr << locPrefix(locNode)
+	     << PlnSaMessage::getMessage(E_UnsupportedCFuncSignature, funcName, it->get<string>()) << endl;
+	exit(1);
+}
+
+void PlnSemanticAnalyzer::requireSupportedCGlobal(const json& entry, const string& globalName, const json& locNode)
+{
+	auto it = entry.find("_unsupported-global");
+	if (it == entry.end()) return;
+	cerr << locPrefix(locNode)
+	     << PlnSaMessage::getMessage(E_UnsupportedCGlobalType, globalName, it->get<string>()) << endl;
+	exit(1);
 }
 
 json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
@@ -105,6 +144,10 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		string name = obj["name"].get<string>();
 		const json* varType = findVar(name);
 		if (varType == nullptr) {
+			if (findCGlobal(name) != nullptr) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CGlobalNotAddressable, name) << endl;
+				exit(1);
+			}
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 			exit(1);
 		}
@@ -223,8 +266,16 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 				sa_expr = cit->second["value"];
 				if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
 			} else {
-				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
-				exit(1);
+				string name = expr["name"].get<string>();
+				const json* cglobal = findCGlobal(name);
+				if (cglobal != nullptr) {
+					requireSupportedCGlobal(*cglobal, name, expr);
+					sa_expr = {{"expr-type", "c-global"}, {"label", name}, {"value-type", (*cglobal)["var-type"]}};
+					if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
+				} else {
+					cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
+					exit(1);
+				}
 			}
 		}
 
@@ -232,11 +283,22 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		return sa_expr_addr_of(expr);
 
 	} else if (expr_type == "add" || expr_type == "sub"
-	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod") {
+	        || expr_type == "mul" || expr_type == "div" || expr_type == "mod"
+	        || expr_type == "bitand" || expr_type == "bitor" || expr_type == "bitxor") {
 		return sa_expr_arith(expr, expectedType);
 
 	} else if (expr_type == "neg") {
-		json operand = sa_expression(expr["operand"]);
+		json operand = sa_expression(expr["operand"], expectedType);
+		sa_expr["operand"]    = operand;
+		sa_expr["value-type"] = operand["value-type"];
+
+	} else if (expr_type == "bitnot") {
+		json operand = sa_expression(expr["operand"], expectedType);
+		const PlnType* t = registry_.fromJson(operand["value-type"]);
+		if (!isIntegerPrim(t)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
+			exit(1);
+		}
 		sa_expr["operand"]    = operand;
 		sa_expr["value-type"] = operand["value-type"];
 
@@ -245,10 +307,13 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		json right = sa_expression(expr["right"]);
 		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 		const PlnType* rightType = registry_.fromJson(right["value-type"]);
-		if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
-			left = wrapConvert(left, registry_.toJson(rightType));
-		} else if (typeCompat(rightType, leftType, registry_) == TypeCompat::ImplicitWiden) {
-			right = wrapConvert(right, registry_.toJson(leftType));
+		// A pointer/struct pair (usualArithConv returns nullptr) is left
+		// unconverted -- pointer comparison (`p == NULL`, `p == q`) is a valid
+		// use of `==`/`!=` that has no common numeric type to convert to.
+		const PlnType* promoted = usualArithConv(leftType, rightType);
+		if (promoted) {
+			if (leftType != promoted)  left  = wrapConvert(left,  registry_.toJson(promoted));
+			if (rightType != promoted) right = wrapConvert(right, registry_.toJson(promoted));
 		}
 		sa_expr["op"]         = expr["op"];
 		sa_expr["left"]       = left;
@@ -260,10 +325,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		json right = sa_expression(expr["right"]);
 		for (const json* op : {&left, &right}) {
 			const PlnType* t = registry_.fromJson((*op)["value-type"]);
-			bool isFloat = t->kind == PlnType::Kind::Prim &&
-				(static_cast<const PrimType*>(t)->name == PrimType::Name::Float32 ||
-				 static_cast<const PrimType*>(t)->name == PrimType::Name::Float64);
-			if (t->kind != PlnType::Kind::Prim || isFloat) {
+			if (!isIntegerPrim(t)) {
 				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_LogicalOpNotInteger) << endl;
 				exit(1);
 			}
@@ -275,10 +337,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 	} else if (expr_type == "logical-not") {
 		json operand = sa_expression(expr["operand"]);
 		const PlnType* t = registry_.fromJson(operand["value-type"]);
-		bool isFloat = t->kind == PlnType::Kind::Prim &&
-			(static_cast<const PrimType*>(t)->name == PrimType::Name::Float32 ||
-			 static_cast<const PrimType*>(t)->name == PrimType::Name::Float64);
-		if (t->kind != PlnType::Kind::Prim || isFloat) {
+		if (!isIntegerPrim(t)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_LogicalOpNotInteger) << endl;
 			exit(1);
 		}
@@ -353,16 +412,27 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	}
 	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 	const PlnType* rightType = registry_.fromJson(right["value-type"]);
-	const PlnType* promoted;
-	if (typeCompat(leftType, rightType, registry_) == TypeCompat::ImplicitWiden) {
-		promoted = rightType;
-		left = wrapConvert(left, registry_.toJson(promoted));
-	} else if (typeCompat(rightType, leftType, registry_) == TypeCompat::ImplicitWiden) {
-		promoted = leftType;
-		right = wrapConvert(right, registry_.toJson(promoted));
-	} else {
-		promoted = leftType;
+	if (expr_type == "bitand" || expr_type == "bitor" || expr_type == "bitxor") {
+		// Checked on the operands themselves, not the post-promotion type: a
+		// pointer/struct pair is Incompatible and would otherwise reach the
+		// generic E_ArithOpNotNumeric below with a less specific message.
+		for (const PlnType* t : {leftType, rightType}) {
+			if (!isIntegerPrim(t)) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
+				exit(1);
+			}
+		}
 	}
+	// Usual arithmetic conversions: both operands convert to one common type.
+	// A pointer/struct operand (usualArithConv returns nullptr) is rejected --
+	// Palan has no pointer arithmetic syntax, so `p + 1` has no meaning here.
+	const PlnType* promoted = usualArithConv(leftType, rightType);
+	if (!promoted) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArithOpNotNumeric) << endl;
+		exit(1);
+	}
+	if (leftType != promoted)  left  = wrapConvert(left,  registry_.toJson(promoted));
+	if (rightType != promoted) right = wrapConvert(right, registry_.toJson(promoted));
 	if (expr_type == "mod" && promoted->kind == PlnType::Kind::Prim) {
 		auto pn = static_cast<const PrimType*>(promoted)->name;
 		if (pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64) {
@@ -375,6 +445,34 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	sa_expr["value-type"] = registry_.toJson(promoted);
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Shared narrowing rule for every binding site: var-decl initializer,
+// assignment, array-assignment, return, and field-assign. ImplicitWiden
+// inserts a convert node; ExplicitCast (narrowing or cross-signedness) is
+// rejected with E_InvalidNarrowingConv, except an integer literal `value`
+// adopts toType instead of erroring (its printed width/sign was never fixed
+// by the source syntax the way a variable's declared type is); Incompatible
+// leaves `value` unchanged (a pointer/struct pair passes through as-is --
+// ptrPermissionOk is the real gate for those, checked by each call site).
+json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
+		const PlnType* toType, const json& toTypeJson)
+{
+	if (!value.contains("value-type") || value["value-type"] == toTypeJson) return value;
+	const PlnType* fromType = registry_.fromJson(value["value-type"]);
+	TypeCompat compat = typeCompat(fromType, toType, registry_);
+	if (compat == TypeCompat::ImplicitWiden) {
+		value = wrapConvert(value, toTypeJson);
+	} else if (compat == TypeCompat::ExplicitCast) {
+		string et = value["expr-type"];
+		if (et != "lit-int" && et != "lit-uint") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
+				value["value-type"].value("type-name", value["value-type"]["type-kind"].get<string>()),
+				toTypeJson.value("type-name", toTypeJson["type-kind"].get<string>())) << endl;
+			exit(1);
+		}
+	}
+	return value;
+}
 
 // Enforce ptrPermissionOk() at one call argument. `param` is the callee's
 // full parameter entry (var-type plus, for a C function, an optional name --
@@ -411,6 +509,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	const json* cfunc = findCFunc(expr["name"]);
 	if (cfunc) {
 		sa_expr["func-type"] = "c";
+		requireSupportedCFuncSig(*cfunc, expr["name"].get<string>(), expr);
 		if (cfunc->contains("ret-type")
 				&& (*cfunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*cfunc)["ret-type"];
@@ -455,20 +554,26 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 		size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
 		size_t argIdx = 0;
 		for (auto& arg : expr["args"]) {
-			json saArg = sa_expression(arg);
+			const json* paramVT = (funcParams && argIdx < fixedCount)
+				? &(*funcParams)[argIdx]["var-type"] : nullptr;
+			// Pass the parameter's type down so a bare integer literal argument
+			// (e.g. `add(1, 2)`, `umask(0)`) adopts it instead of always
+			// defaulting to int64/uint64 (see sa_expression's lit-int/lit-uint
+			// branches) -- otherwise convertCallArg below would reject most
+			// literal arguments to a non-int64 parameter as narrowing.
+			json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
 			if (saArg.contains("value-type")) {
 				const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-				if (funcParams && argIdx < fixedCount) {
-					const json& paramVT = (*funcParams)[argIdx]["var-type"];
-					if (paramVT.value("embedded", false)) {
+				if (paramVT) {
+					if (paramVT->value("embedded", false)) {
 						const json& argVT = saArg["value-type"];
 						bool argEmbedded = argVT.value("embedded", false);
-						bool paramHasSize = paramVT.contains("inner-size");
+						bool paramHasSize = paramVT->contains("inner-size");
 						bool argHasSize   = argVT.contains("inner-size");
 						if (!argEmbedded || !argHasSize || !paramHasSize
-							|| paramVT["inner-size"] != argVT["inner-size"]) {
+							|| (*paramVT)["inner-size"] != argVT["inner-size"]) {
 							string expected = paramHasSize
-								? to_string(paramVT["inner-size"].get<int64_t>()) : "?";
+								? to_string((*paramVT)["inner-size"].get<int64_t>()) : "?";
 							string actual = (argEmbedded && argHasSize)
 								? to_string(argVT["inner-size"].get<int64_t>()) : "variable";
 							cerr << locPrefix(expr)
@@ -477,11 +582,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 							exit(1);
 						}
 					}
-					const PlnType* toType = nullptr;
-					try { toType = registry_.fromJson(paramVT); }
-					catch (const std::runtime_error&) {}
-					if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
-						saArg = wrapConvert(saArg, registry_.toJson(toType));
+					saArg = convertCallArg(expr, saArg, *paramVT);
 					checkArgPtrPermission(expr, expr["name"].get<string>(),
 							sa_expr["func-type"] == "c", saArg, (*funcParams)[argIdx], argIdx);
 				} else if (isVariadic) {
@@ -496,6 +597,32 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	}
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Convert a single call argument (`saArg`, already SA'd) to a parameter's
+// type. Shared by sa_expr_call and sa_expr_member_call; embedded-array shape
+// checking and pointer-permission checking are the callers' responsibility
+// since they differ (C vs. Palan callee) and don't fit this function's single
+// concern (type conversion / narrowing diagnostic).
+json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const json& paramVT)
+{
+	const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+	const PlnType* toType   = registry_.fromJson(paramVT);
+	if (fromType == toType) return saArg;
+	if (fromType->kind == PlnType::Kind::Prim && toType->kind == PlnType::Kind::Prim) {
+		if (argConvOk(fromType, toType))
+			return wrapConvert(saArg, registry_.toJson(toType));
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
+			saArg["value-type"].value("type-name", saArg["value-type"]["type-kind"].get<string>()),
+			paramVT.value("type-name", paramVT["type-kind"].get<string>())) << endl;
+		exit(1);
+	}
+	// Non-Prim (pointer / embedded-array / struct-by-name): typeCompat only
+	// ever returns Identical or Incompatible for these (never ImplicitWiden,
+	// the only value that would call for a convert here), so this is always a
+	// pass-through; ptr permission and embedded-array shape are the callers'
+	// concern.
+	return saArg;
+}
 
 json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 {
@@ -598,8 +725,18 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		// which has no symbol table and falls back to "prim" for any name it
 		// doesn't recognize (see the sz<0 guard below). Every such producer
 		// already required the name to resolve in structDefs_, so look it up
-		// unguarded here, matching resolveObjectChain's convention.
-		int64_t stride = structDefs_[elem_type["type-name"].get<string>()].totalSize;
+		// via requireCompleteStruct (not a bare structDefs_[...] index) --
+		// registered no longer implies laid-out since incomplete structs
+		// (opaque handles like C's FILE) can be registered with no known
+		// totalSize, and this stride computation needs one.
+		//
+		// Note: a local `@T`/`@!T` variable declaration is rejected at
+		// declaration time by sa_var_decl for an unknown pointee, so the
+		// sz<0 guard below is unreachable from a local-var-declared pointer.
+		// It remains the first rejection point for a `@T`/`@!T` function
+		// parameter or named-return value, whose pointee name is not
+		// validated at signature normalization time (normalizeStructSig).
+		int64_t stride = requireCompleteStruct(elem_type["type-name"].get<string>(), expr).totalSize;
 		json elem_pntr = {{"type-kind","pntr"},{"mutable",array_type.value("mutable", true)},
 		                  {"base-type",elem_type}};
 		json elem_size_node = {
@@ -660,6 +797,7 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 	sa_expr["func-type"] = isCFunc ? "c" : "palan";
 
 	if (isCFunc) {
+		requireSupportedCFuncSig(*pFunc, method, expr);
 		if (pFunc->contains("ret-type")
 				&& (*pFunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*pFunc)["ret-type"];
@@ -682,14 +820,11 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 		size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
 		size_t argIdx = 0;
 		for (auto& arg : expr["args"]) {
-			json saArg = sa_expression(arg);
-			if (saArg.contains("value-type") && funcParams && argIdx < fixedCount) {
-				const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-				const PlnType* toType = nullptr;
-				try { toType = registry_.fromJson((*funcParams)[argIdx]["var-type"]); }
-				catch (const std::runtime_error&) {}
-				if (toType && typeCompat(fromType, toType, registry_) == TypeCompat::ImplicitWiden)
-					saArg = wrapConvert(saArg, registry_.toJson(toType));
+			const json* paramVT = (funcParams && argIdx < fixedCount)
+				? &(*funcParams)[argIdx]["var-type"] : nullptr;
+			json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+			if (saArg.contains("value-type") && paramVT) {
+				saArg = convertCallArg(expr, saArg, *paramVT);
 				checkArgPtrPermission(expr, method, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
 			}
 			sa_expr["args"].push_back(saArg);

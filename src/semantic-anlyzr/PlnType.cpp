@@ -61,25 +61,53 @@ const StructType* PlnTypeRegistry::structType(const std::string& name)
     return ins->second.get();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// Kept in sync with fromJson's three accepted shapes below by construction:
+// fromJson calls this first and refuses to proceed unless it returns "", so
+// the two cannot silently drift apart the way a second, independently
+// maintained predicate could.
+std::string unrepresentableTypeName(const json& j)
+{
+    if (!j.is_object() || !j.contains("type-kind")) // LCOV_EXCL_BR_LINE -- no real producer emits this
+        return "malformed type"; // LCOV_EXCL_LINE
+    std::string kind = j["type-kind"].get<std::string>();
+    if (kind == "prim") {
+        std::string tname = j.value("type-name", "");
+        if (tname.empty()) return "malformed type"; // LCOV_EXCL_BR_LINE -- no real producer emits this
+        return PrimTypeNames::instance().toEnum.count(tname) ? "" : tname; // LCOV_EXCL_EXCEPTION_BR_LINE
+    }
+    if (kind == "pntr")
+        return j.contains("base-type") ? unrepresentableTypeName(j["base-type"]) : "malformed type"; // LCOV_EXCL_EXCEPTION_BR_LINE
+    if (kind == "struct")
+        return j.contains("type-name") ? "" : "anonymous struct";
+    if (kind == "arr")   return "array"; // LCOV_EXCL_BR_LINE -- arrays always decay to pntr before reaching here
+    if (kind == "func")  return "function pointer";
+    if (kind == "union") return "union";
+    if (kind == "enum")  return "enum";
+    // "strct": c2ast's pre-normalization struct tag (normalizeCType folds it
+    // to "struct" before a cinclude'd signature reaches fromJson, but this
+    // predicate is also usable ahead of that fold).
+    if (kind == "strct") return j.value("type-name", "anonymous struct"); // LCOV_EXCL_BR_LINE -- normalizeCType always folds this away first
+    // "user": a typedef name c2ast could not resolve to a known underlying
+    // type -- report the name itself, it is more useful than "user".
+    if (kind == "user")  return j.value("type-name", "user"); // LCOV_EXCL_EXCEPTION_BR_LINE
+    return kind;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 const PlnType* PlnTypeRegistry::fromJson(const json& j)
 {
-    std::string kind = j.at("type-kind").get<std::string>();
+    std::string bad = unrepresentableTypeName(j);
+    if (!bad.empty()) // LCOV_EXCL_BR_LINE -- callers only reach here with an already-validated type
+        throw std::runtime_error("unrepresentable type: " + bad); // LCOV_EXCL_LINE
+    std::string kind = j["type-kind"].get<std::string>();
     if (kind == "prim") {
-        std::string tname = j.at("type-name").get<std::string>();
         auto& toEnum = PrimTypeNames::instance().toEnum;
-        auto it = toEnum.find(tname);
-        if (it == toEnum.end())
-            throw std::runtime_error("unknown prim type-name: " + tname);
-        return prim(it->second);
+        return prim(toEnum.at(j["type-name"].get<std::string>()));
     }
-    if (kind == "pntr") {
-        const PlnType* base = fromJson(j.at("base-type"));
-        return ptr(base);
-    }
-    if (kind == "struct") {
-        return structType(j.at("type-name").get<std::string>());
-    }
-    throw std::runtime_error("unknown type-kind: " + kind);
+    if (kind == "pntr")
+        return ptr(fromJson(j["base-type"]));
+    // kind == "struct" (the only remaining possibility once unrepresentableTypeName
+    // returns "")
+    return structType(j["type-name"].get<std::string>());
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnTypeRegistry::toJson(const PlnType* t)
@@ -168,4 +196,42 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
     }
 
     return TypeCompat::Incompatible;
+}
+
+const PlnType* usualArithConv(const PlnType* a, const PlnType* b)
+{
+    if (a->kind != PlnType::Kind::Prim || b->kind != PlnType::Kind::Prim) return nullptr;
+    const auto* pa = static_cast<const PrimType*>(a);
+    const auto* pb = static_cast<const PrimType*>(b);
+
+    int ga = primGroup(pa->name), gb = primGroup(pb->name);
+    if (ga < 0 || gb < 0) return nullptr; // Void is not a valid operand type; LCOV_EXCL_BR_LINE -- already rejected upstream (E_VoidCallUsedAsValue)
+
+    // 1. Either side float -> the wider float wins (both sides float: wider; one
+    //    side integer: the float side, per the existing int-to-float ImplicitWiden rule).
+    if (ga == 2 || gb == 2) {
+        if (ga == 2 && gb == 2) return primRank(pa->name) >= primRank(pb->name) ? a : b;
+        return ga == 2 ? a : b;
+    }
+    // 2. Same signedness -> higher rank wins.
+    if (ga == gb) return primRank(pa->name) >= primRank(pb->name) ? a : b;
+    // 3/4. Mixed signedness: signed wins only if its rank is strictly greater
+    //      than the unsigned side's rank; otherwise the unsigned type wins
+    //      (matches C's usual arithmetic conversions on same-size ranks).
+    const PlnType* signedT   = (ga == 0) ? a : b;
+    const PlnType* unsignedT = (ga == 0) ? b : a;
+    auto signedName   = static_cast<const PrimType*>(signedT)->name;
+    auto unsignedName = static_cast<const PrimType*>(unsignedT)->name;
+    return primRank(signedName) > primRank(unsignedName) ? signedT : unsignedT;
+}
+
+bool argConvOk(const PlnType* from, const PlnType* to)
+{
+    if (usualArithConv(from, to) == to) return true;
+    if (from->kind != PlnType::Kind::Prim || to->kind != PlnType::Kind::Prim) return false;
+    const auto* pf = static_cast<const PrimType*>(from);
+    const auto* pt = static_cast<const PrimType*>(to);
+    int gf = primGroup(pf->name), gt = primGroup(pt->name);
+    if (gf < 0 || gt < 0 || gf == 2 || gt == 2) return false;  // float pairs handled above
+    return primRank(pf->name) == primRank(pt->name);           // same-width sign reinterpretation
 }

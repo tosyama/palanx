@@ -1061,6 +1061,51 @@ TEST(sa, logical_ops) {
 	ASSERT_EQ(with_cast["value-type"]["type-name"], "int32");
 }
 
+TEST(sa, bitwise_ops) {
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/158_bitwise_ops.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// [0] int64 a, [1] int64 b, [2] int32 c,
+	// [3] a&b, [4] a|b, [5] a^b, [6] ~a, [7] ~c, [8] a & int32(c)
+	ASSERT_GE(stmts.size(), 9u);
+
+	// a & b  →  value-type int64 (both operands already int64)
+	const auto& band = stmts[3]["body"];
+	ASSERT_EQ(band["expr-type"],               "bitand");
+	ASSERT_EQ(band["value-type"]["type-name"], "int64");
+	ASSERT_EQ(band["left"]["name"],             "a");
+	ASSERT_EQ(band["right"]["name"],            "b");
+
+	// a | b  →  value-type int64
+	const auto& bor = stmts[4]["body"];
+	ASSERT_EQ(bor["expr-type"],               "bitor");
+	ASSERT_EQ(bor["value-type"]["type-name"], "int64");
+
+	// a ^ b  →  value-type int64
+	const auto& bxor = stmts[5]["body"];
+	ASSERT_EQ(bxor["expr-type"],               "bitxor");
+	ASSERT_EQ(bxor["value-type"]["type-name"], "int64");
+
+	// ~a  →  value-type int64 (preserves operand width, unlike logical-not which
+	// always collapses to int32)
+	const auto& bnot64 = stmts[6]["body"];
+	ASSERT_EQ(bnot64["expr-type"],               "bitnot");
+	ASSERT_EQ(bnot64["value-type"]["type-name"], "int64");
+	ASSERT_EQ(bnot64["operand"]["name"],         "a");
+
+	// ~c  →  value-type int32 (preserves the narrower operand's own width)
+	const auto& bnot32 = stmts[7]["body"];
+	ASSERT_EQ(bnot32["expr-type"],               "bitnot");
+	ASSERT_EQ(bnot32["value-type"]["type-name"], "int32");
+
+	// a & int32(c)  →  int64 & int32: right side widened to int64 via a convert node
+	const auto& mixed = stmts[8]["body"];
+	ASSERT_EQ(mixed["expr-type"],               "bitand");
+	ASSERT_EQ(mixed["value-type"]["type-name"], "int64");
+	ASSERT_EQ(mixed["right"]["expr-type"],      "convert");
+}
+
 TEST(sa, embed_arr_decl_const_inner) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/055_embed_arr_decl.pa");
@@ -1523,6 +1568,32 @@ TEST(sa, cinclude_typedef_size_t)
 	ASSERT_EQ(v["init"]["func-type"], "c");
 	ASSERT_EQ(v["init"]["value-type"]["type-name"], "uint64");
 	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
+}
+
+TEST(sa, cinclude_typedef_struct_file)
+{
+	// `typedef struct _IO_FILE FILE;` (stdio.h) -- IT-2026-09-06-2905:
+	// registerTypedefAliasInType now resolves a struct-bottomed typedef the
+	// same way it already resolved a scalar one (size_t), so `@!FILE` reaches
+	// pntr(struct(_IO_FILE)) instead of the unresolved "user" type-kind that
+	// used to make PlnTypeRegistry::fromJson abort.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/161_c_typedef_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "f");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["mutable"], true);
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "_IO_FILE");
+	ASSERT_FALSE(v["var-type"].contains("typedef-name"));
+
+	// fopen()'s return value-type is likewise clean.
+	ASSERT_EQ(v["init"]["name"], "fopen");
+	ASSERT_EQ(v["init"]["value-type"]["base-type"]["type-name"], "_IO_FILE");
 }
 
 TEST(sa, cinclude_struct_arg)
@@ -3420,4 +3491,247 @@ TEST(sa, addr_of_2d_elem)
 	ASSERT_EQ(arg0["array"]["array"]["name"], "mat");
 	ASSERT_EQ(arg0["value-type"]["mutable"], true);
 	ASSERT_EQ(arg0["value-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, ptr_decl_alias_pointee)
+{
+	// `type MyInt = int64; @MyInt p = @a;` -- IT-2902: deepNormalizePrimToStruct
+	// now re-applies resolveTypeAlias at every level of a pntr chain, so an
+	// alias used as a pointee resolves to its underlying type instead of
+	// reaching PlnTypeRegistry::fromJson unresolved (which used to abort with
+	// "unknown prim type-name: MyInt").
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/157_ptr_decl_alias_pointee.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, struct_type_alias)
+{
+	// `type Point {...}; type PT = Point; PT p;` -- IT-2026-09-06-2905 prereq
+	// bug: sa_var_decl's dispatch used to key off the raw var-type's
+	// type-kind/type-name, so a struct reached only through an alias name
+	// ("PT") never matched structDefs_.count() and silently fell through to
+	// the plain scalar var-decl path, which declares the variable but never
+	// allocates its storage. resolveTypeAliasDeep now resolves the alias
+	// before dispatch, so this reaches sa_struct_var_decl the same way a
+	// direct `Point p;` would.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/160_struct_type_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "p");
+	ASSERT_EQ(v["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(v["var-type"]["base-type"]["type-name"], "Point");
+	// init: calloc(1, 16) -- proof storage is actually allocated, not just a
+	// bare pointer-typed variable with no backing memory.
+	ASSERT_EQ(v["init"]["expr-type"], "call");
+	ASSERT_EQ(v["init"]["name"],      "calloc");
+	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
+TEST(sa, incomplete_struct_ptr)
+{
+	// struct Tag { int x; int cells[2][3]; }; (cinclude'd) -- "cells" is a 2D
+	// array field, a shape buildStructDef can't lay out (matches native
+	// `[n]$[m]T` struct fields, also unsupported). IT-2904: isSupportedCFieldType
+	// now downgrades the whole tag to an incomplete struct (opaque handle, C
+	// incomplete-type equivalent) instead of leaving it unregistered, so `Tag`
+	// is still a known type name -- unusable for a sized declaration, but usable
+	// through a non-owning pointer with no layout needed, so `@!Tag p;` declares
+	// successfully and no alloc-shape is emitted for it.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/159_incomplete_struct_ptr.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(p["name"], "p");
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "Tag");
+	ASSERT_TRUE(jout["alloc-shapes"].empty());
+}
+
+TEST(sa, c_unsupported_sig_unused)
+{
+	// The header declares `union Val make_val(void);` (unsupported -- a bare
+	// union return type) alongside `int add(int a, int b);` (supported). IT-2906:
+	// normalizeCFuncSig tags the unsupported entry with "_unsupported-sig" at
+	// cinclude time but does not reject registration; only calling
+	// requireSupportedCFuncSig's guarded function fails. Calling only `add`
+	// must compile cleanly -- an unused unsupported C signature is inert, the
+	// same policy union/enum types already got before this ticket.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/162_c_unsupported_sig_unused.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["name"], "add");
+}
+
+TEST(sa, c_widen_arg)
+{
+	// `take64(a)` where `a` is int32 and the C parameter is `long` (int64).
+	// Before IT-2906, sa_expr_call's parameter-side fromJson call was guarded
+	// by `catch (const std::runtime_error&) {}`; removing that guard must not
+	// regress the implicit-widening path it happened to share code with --
+	// the argument must still be wrapped in a "convert" node.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/163_c_widen_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(call["expr-type"], "call");
+	const auto& arg = call["args"][0];
+	ASSERT_EQ(arg["expr-type"], "convert");
+	ASSERT_EQ(arg["value-type"]["type-name"], "int64");
+	ASSERT_EQ(arg["src"]["value-type"]["type-name"], "int32");
+}
+
+TEST(sa, c_global)
+{
+	// IT-2026-09-06-2908: `stderr` referenced as `fprintf`'s first argument
+	// resolves through the new cGlobalScopes -> "id" fallback chain (findVar
+	// -> constDecls_ -> findCGlobal) into a "c-global" node, not a plain "id"
+	// (which would otherwise carry the raw name and no linker label).
+	// Covers: sa_expression "id" branch, findCGlobal fallback
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/164_c_global.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][0]["body"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["func-type"], "c");
+	ASSERT_EQ(call["name"], "fprintf");
+	const auto& arg = call["args"][0];
+	ASSERT_EQ(arg["expr-type"], "c-global");
+	ASSERT_EQ(arg["label"], "stderr");
+	ASSERT_FALSE(arg.contains("name"));
+	ASSERT_EQ(arg["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(arg["value-type"]["mutable"], true);
+	ASSERT_EQ(arg["value-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(arg["value-type"]["base-type"]["type-name"], "_IO_FILE");
+	ASSERT_FALSE(arg["value-type"].contains("typedef-name"));
+}
+
+TEST(sa, c_global_alias)
+{
+	// `cinclude <stdio.h> as S;` still registers globals unqualified, same as
+	// constants/typedefs -- only functions require the S. qualifier.
+	// Covers: sa_cinclude globals loop, alias-independent registration
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/165_c_global_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][0]["body"];
+	ASSERT_EQ(call["name"], "fprintf");
+	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
+	ASSERT_EQ(call["args"][0]["label"], "stderr");
+}
+
+TEST(sa, c_global_block_scope)
+{
+	// A C global from a block-scoped cinclude is visible within that block,
+	// mirroring the existing block_cinclude_scope test for C functions.
+	// Covers: enterScope/leaveScope cGlobalScopes push/pop
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/166_c_global_block_scope.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_EQ(jout["statements"][0]["stmt-type"], "block");
+	const auto& call = jout["statements"][0]["body"][0]["body"];
+	ASSERT_EQ(call["func-type"], "c");
+	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
+}
+
+TEST(sa, neg_lit_expected_type)
+{
+	// IT-2026-09-11-neg-literal-expected-type: `neg` did not propagate expectedType
+	// to its operand (unlike the adjacent `bitnot`), so a negated literal in a
+	// narrower/float initializer always adopted the default int64/flo64 and then
+	// tripped the narrowing-initializer diagnostic -- e.g. `int32 a = -1;` was
+	// rejected even though `int32 a = 1;` and `int32 a = -a;` (a variable) both work.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/167_neg_lit_expected_type.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	auto& a = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(a["init"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(a["init"]["operand"]["value-type"]["type-name"], "int32");
+
+	auto& f = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(f["init"]["value-type"]["type-name"], "flo32");
+
+	auto& s = jout["statements"][3]["vars"][0];
+	ASSERT_EQ(s["init"]["value-type"]["type-name"], "int16");
+}
+
+TEST(sa, usual_arith_conv)
+{
+	// IT-2026-09-11-usual-arith-conv: typeCompat's ExplicitCast for a mixed
+	// signed/unsigned operand pair used to be silently ignored by sa_expr_arith,
+	// cmp, and call arguments -- the codegen result then had two different
+	// register widths in one instruction. This pins the usual-arithmetic-
+	// conversion rule that replaced the silent pass-through.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/168_usual_arith_conv.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// [0..3] var-decls (uint32 m, int32 n, int64 big, uint32 mode)
+	// [4] m & n, [5] n & m, [6] big & mode, [7] mode & big, [8] n < m,
+	// [9] take_u32(n), [10] take_i64(mode)
+	ASSERT_GE(stmts.size(), 11u);
+
+	// uint32 & int32 -> uint32 (equal rank, mixed sign: unsigned wins), and the
+	// result type is order-independent regardless of which side is converted.
+	const auto& m_and_n = stmts[4]["body"];
+	ASSERT_EQ(m_and_n["value-type"]["type-name"], "uint32");
+	ASSERT_EQ(m_and_n["left"]["expr-type"],       "id");
+	ASSERT_EQ(m_and_n["right"]["expr-type"],      "convert");
+	ASSERT_EQ(m_and_n["right"]["value-type"]["type-name"], "uint32");
+
+	const auto& n_and_m = stmts[5]["body"];
+	ASSERT_EQ(n_and_m["value-type"]["type-name"], "uint32");
+	ASSERT_EQ(n_and_m["left"]["expr-type"],       "convert");
+	ASSERT_EQ(n_and_m["right"]["expr-type"],      "id");
+
+	// int64 & uint32 -> int64 (mixed sign, signed rank(4) > unsigned rank(3):
+	// signed wins), order-independent.
+	const auto& big_and_mode = stmts[6]["body"];
+	ASSERT_EQ(big_and_mode["value-type"]["type-name"], "int64");
+	ASSERT_EQ(big_and_mode["right"]["expr-type"],      "convert");
+
+	const auto& mode_and_big = stmts[7]["body"];
+	ASSERT_EQ(mode_and_big["value-type"]["type-name"], "int64");
+	ASSERT_EQ(mode_and_big["left"]["expr-type"],       "convert");
+
+	// n < m (int32 < uint32) -> both promote to uint32; cmp's own value-type
+	// (the boolean result) stays int32 regardless of the operand promotion.
+	const auto& cmp = stmts[8]["body"];
+	ASSERT_EQ(cmp["value-type"]["type-name"], "int32");
+	ASSERT_EQ(cmp["left"]["expr-type"],       "convert");
+	ASSERT_EQ(cmp["left"]["value-type"]["type-name"], "uint32");
+
+	// take_u32(n): int32 arg -> uint32 param, same-width sign reinterpretation
+	// (argConvOk-only case, not a usualArithConv widen) -- allowed without an
+	// explicit cast at a call site, unlike at a binding site.
+	const auto& call_u32 = stmts[9]["body"];
+	ASSERT_EQ(call_u32["name"],                        "take_u32");
+	ASSERT_EQ(call_u32["args"][0]["expr-type"],        "convert");
+	ASSERT_EQ(call_u32["args"][0]["value-type"]["type-name"], "uint32");
+
+	// take_i64(mode): uint32 arg -> int64 param, a genuine usualArithConv widen.
+	const auto& call_i64 = stmts[10]["body"];
+	ASSERT_EQ(call_i64["name"],                        "take_i64");
+	ASSERT_EQ(call_i64["args"][0]["expr-type"],        "convert");
+	ASSERT_EQ(call_i64["args"][0]["value-type"]["type-name"], "int64");
 }

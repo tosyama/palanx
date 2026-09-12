@@ -9,17 +9,31 @@ class CPreprocessor;
 class CParser {
 	const vector<CToken*> &top_tokens;
 	const vector<CLexer*> &lexers;
-	map<string, json> typedefs_;  // typedef name -> resolved var-type (prim/pntr only)
-	set<string> definedStructs_;  // struct tag names captured with a full field-bearing definition
+	map<string, json> typedefs_;  // typedef name -> resolved var-type (prim/pntr only, or a
+	                               // tagged strct: {"type-kind":"strct","type-name":Tag})
+
+	// Every struct tag seen while parsing (as a definition, a forward declaration,
+	// or a bare reference through a field/parameter/return type), keyed by tag
+	// name, in first-appearance order. An entry gains a "fields" key only once a
+	// full field-bearing definition of that tag is captured (see captureStructTag);
+	// this is the single point where struct tags register, so a tag that is only
+	// ever referenced (never defined in this header) still gets an entry -- SA
+	// needs that to register it as an incomplete/opaque struct type rather than
+	// leaving the tag name unresolved.
+	vector<json> capturedStructs_;
+	map<string, int> structIndex_;  // tag name -> index into capturedStructs_
+	void captureStructTag(const string &name, const json *fields);
 
 	int parse(json &ast, const vector<CToken*>& tokens);
-	
+
 	bool declaration(json &ast, const vector<CToken*> &tokens, int &index, bool is_top_level);
+	void emitDeclarator(json &ast, json &decl,
+			bool is_typedef, bool is_static, bool is_extern, bool is_top_level);
 	bool declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool declarator(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_typeonly);
 	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index);
-	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_struct);
 	bool enum_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
 
 	bool statement(json &ast, const vector<CToken*> &tokens, int &result_index);

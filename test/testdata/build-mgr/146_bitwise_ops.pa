@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+
+int64 a = 12;
+int64 b = 10;
+printf("%ld %ld %ld %ld\n", a & b, a | b, a ^ b, ~a);
+
+// precedence: & binds tighter than comparisons, same class as * (tighter than +/-)
+int32 eq = (a & b) == 8;
+printf("%d\n", eq);
+
+// uint32 masking, the sys/stat.h st_mode & S_IFMT use case this ticket exists for
+uint32 m = 61503u;   // 0o167577 style bit pattern
+uint32 mask = 61440u; // high nibble mask
+printf("%u %u %u\n", m & mask, m | mask, m ^ mask);

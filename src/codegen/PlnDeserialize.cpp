@@ -33,6 +33,12 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->label = j["label"];
         return e;
     }
+    if (expr_type == "c-global") {
+        auto e = make_unique<CGlobalExpr>();
+        e->label = j["label"];
+        e->type  = toVRegType(j["value-type"]);
+        return e;
+    }
     if (expr_type == "lit-int") {
         auto e = make_unique<IntLitExpr>();
         e->value = j["value"];
@@ -42,6 +48,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     if (expr_type == "lit-uint") {
         auto e = make_unique<UintLitExpr>();
         e->value = j["value"];
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Uint64;
         return e;
     }
     if (expr_type == "lit-flo") {
@@ -104,6 +111,33 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     }
     if (expr_type == "neg") {
         auto e     = make_unique<NegExpr>();
+        e->operand = deserializeExpr(j["operand"]);
+        e->type    = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
+    if (expr_type == "bitand") {
+        auto e = make_unique<BitAndExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
+    if (expr_type == "bitor") {
+        auto e = make_unique<BitOrExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
+    if (expr_type == "bitxor") {
+        auto e = make_unique<BitXorExpr>();
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
+    if (expr_type == "bitnot") {
+        auto e     = make_unique<BitNotExpr>();
         e->operand = deserializeExpr(j["operand"]);
         e->type    = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;

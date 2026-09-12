@@ -27,6 +27,10 @@ enum class ExprKind {
     Div,
     Mod,
     Neg,
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitNot,
     Cmp,
     Convert,
     CCCall,
@@ -37,6 +41,7 @@ enum class ExprKind {
     LogicalAnd,
     LogicalOr,
     AddrOf,
+    CGlobal,
 };
 
 struct Expr {
@@ -51,6 +56,14 @@ struct StrLitExpr : Expr {
     string label;
 };
 
+// Reference to a cinclude'd C global variable (e.g. `stdout`). Lowered to
+// LeaLabel+DerefLoad in PlnVCodeGen -- no dedicated VInstr, no x86 change.
+struct CGlobalExpr : Expr {
+    CGlobalExpr() : Expr(ExprKind::CGlobal) {}
+    string   label;
+    VRegType type = VRegType::Ptr64;
+};
+
 struct IntLitExpr : Expr {
     IntLitExpr() : Expr(ExprKind::IntLit) {}
     string   value;  // decimal string
@@ -59,7 +72,8 @@ struct IntLitExpr : Expr {
 
 struct UintLitExpr : Expr {
     UintLitExpr() : Expr(ExprKind::UintLit) {}
-    string value;  // decimal string
+    string   value;  // decimal string
+    VRegType type = VRegType::Uint64;
 };
 
 struct FloLitExpr : Expr {
@@ -115,6 +129,33 @@ struct ModExpr : Expr {
 
 struct NegExpr : Expr {
     NegExpr() : Expr(ExprKind::Neg) {}
+    unique_ptr<Expr> operand;
+    VRegType type = VRegType::Int64;
+};
+
+struct BitAndExpr : Expr {
+    BitAndExpr() : Expr(ExprKind::BitAnd) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct BitOrExpr : Expr {
+    BitOrExpr() : Expr(ExprKind::BitOr) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct BitXorExpr : Expr {
+    BitXorExpr() : Expr(ExprKind::BitXor) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct BitNotExpr : Expr {
+    BitNotExpr() : Expr(ExprKind::BitNot) {}
     unique_ptr<Expr> operand;
     VRegType type = VRegType::Int64;
 };

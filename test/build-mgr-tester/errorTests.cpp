@@ -83,13 +83,15 @@ TEST(build_mgr_error, inline_as_value) {
 TEST(build_mgr_error, cinclude_2d_arr_field) {
 	// struct Grid2D { int cells[2][3]; }; -- a cinclude'd struct with a 2D array
 	// field. buildStructDef has no layout rule for nested "arr" fields (matches
-	// native `[n]$[m]T` struct fields, also unsupported), so IT-2802's
-	// isSupportedCFieldType "arr" branch rejects it up front: the whole struct is
-	// left unregistered (same graceful "don't register this struct" path as any
-	// other cinclude-only construct SA can't lay out), not a hard crash.
+	// native `[n]$[m]T` struct fields, also unsupported), so isSupportedCFieldType's
+	// "arr" branch rejects it up front: since IT-2904 this registers Grid2D as an
+	// incomplete struct (opaque handle, tag known but no layout) rather than
+	// leaving the tag unregistered, so `Grid2D g;` (an owned declaration, which
+	// needs the layout) is now a graceful E_IncompleteStructType diagnostic
+	// instead of "unknown struct type", not a hard crash.
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_053_cinclude_2d_arr_field.pa");
-	ASSERT_NE(out.find("unknown struct type"), string::npos);
+	ASSERT_NE(out.find("struct 'Grid2D' has no known layout"), string::npos);
 }
 
 TEST(build_mgr_error, cinclude_arr_field_cast_size) {
@@ -97,9 +99,82 @@ TEST(build_mgr_error, cinclude_arr_field_cast_size) {
 	// size-expr resolves to a non-null, non-literal shape ("cast", from c2ast's
 	// constant_expression on "(int)4") rather than "lit-int"/"lit-uint".
 	// isSupportedCFieldType's "arr" branch rejects any size-expr that isn't a
-	// plain literal, so this hits the same graceful skip-the-whole-struct path
-	// as cinclude_2d_arr_field above, not a hard crash.
+	// plain literal, so this hits the same incomplete-struct registration path as
+	// cinclude_2d_arr_field above (see IT-2904), not a hard crash.
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_054_cinclude_arr_field_cast_size.pa");
-	ASSERT_NE(out.find("unknown struct type"), string::npos);
+	ASSERT_NE(out.find("struct 'CastSized' has no known layout"), string::npos);
+}
+
+TEST(build_mgr_error, c_unsupported_sig) {
+	// `long double` (c2ast's "flt128" prim type-name, unknown to Palan) used
+	// as acosl's return type. IT-2906: previously an uncaught fromJson throw
+	// aborted the process (rc=134, WIFEXITED false -- "return0:" prefix from
+	// execTestCommand); now the signature is diagnosed at the call and the
+	// process exits normally with rc=1 ("return1:" prefix).
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_055_c_unsupported_sig.pa");
+	ASSERT_NE(out.find("cannot call C function 'acosl'"), string::npos);
+	ASSERT_NE(out.find("'flt128'"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
+
+TEST(build_mgr_error, stdio_owned_file) {
+	// IT-2026-09-06-2909: `FILE f;` -- an owned declaration of the real glibc
+	// FILE. IT-2905 resolves the alias down to `struct _IO_FILE`, which IT-2904
+	// registered as incomplete (glibc's "_unused2" field has a size-expr c2ast
+	// cannot evaluate), so this is a clean E_IncompleteStructType naming the
+	// underlying tag rather than the alias. sa-tester covers this rule on a
+	// synthetic struct; this pins it on the real system header, through the
+	// typedef, all the way out to the driver.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_056_stdio_owned_file.pa");
+	ASSERT_NE(out.find("struct '_IO_FILE' has no known layout"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
+
+TEST(build_mgr_error, stdio_size_t_narrowing) {
+	// IT-2026-09-06-2909: the first thing anyone writing stdio code hits.
+	// fwrite/fread/strlen return size_t; `int64 n = fwrite(...)` crosses
+	// signedness and a variable-declaration initializer refuses that (as of
+	// IT-2026-09-11-usual-arith-conv, a call argument enforces an equivalent
+	// rule too -- see arg_narrowing below -- and the loose `fwrite(...) -> n`
+	// form converts). Pins the rule at the C-ABI boundary, where sa-tester
+	// only covers it on native expressions.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_057_stdio_size_t_narrowing.pa");
+	ASSERT_NE(out.find("Implicit conversion from 'uint64' to 'int64'"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
+
+TEST(build_mgr_error, stdio_incomplete_field) {
+	// IT-2026-09-06-2909: `f._flags` -- field access on an incomplete struct
+	// reached through a real `@!FILE` handle. Same requireCompleteStruct
+	// diagnostic as the owned-declaration case above; this pins it on the
+	// field-access path instead of the declaration path.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_058_stdio_incomplete_field.pa");
+	ASSERT_NE(out.find("struct '_IO_FILE' has no known layout"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
+
+TEST(build_mgr_error, stat_func_macro) {
+	// IT-2026-09-06-2911: S_ISDIR is a function-like macro; c2ast/gen-ast only
+	// export object-like macros as constants, so this must be a clean diagnostic
+	// naming the undefined function rather than an abort.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_059_stat_func_macro.pa");
+	ASSERT_NE(out.find("Undefined function 'S_ISDIR'"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
+
+TEST(build_mgr_error, arg_narrowing) {
+	// IT-2026-09-11-usual-arith-conv: this is the ticket's own repro -- an
+	// int64 argument to an int32 parameter used to pass through with no type
+	// check and produce a bad `movq` operand-width mismatch at the assembler
+	// stage (a build failure, not a clean SA diagnostic). Now caught here.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_060_arg_narrowing.pa");
+	ASSERT_NE(out.find("Implicit conversion from 'int64' to 'int32'"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }

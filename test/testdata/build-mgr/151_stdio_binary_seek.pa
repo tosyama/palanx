@@ -1,0 +1,30 @@
+cinclude <stdio.h>;
+
+[4]int64 src;
+11 -> src[0];
+22 -> src[1];
+33 -> src[2];
+44 -> src[3];
+
+@!FILE w = fopen("/tmp/pln_151_stdio_binary_seek.bin", "wb");
+uint64 wn = fwrite(src, 8, 4, w);
+fclose(w);
+printf("wrote=%lu\n", wn);
+
+@!FILE r = fopen("/tmp/pln_151_stdio_binary_seek.bin", "rb");
+fseek(r, 0, SEEK_END);
+printf("size=%ld\n", ftell(r));
+
+// Seek to record #2 (offset 16) and read just that one back.
+fseek(r, 16, SEEK_SET);
+printf("tell=%ld\n", ftell(r));
+[1]int64 rec;
+uint64 rn = fread(rec, 8, 1, r);
+printf("rec=%ld n=%lu\n", rec[0], rn);
+
+// Reading at end-of-file sets the EOF indicator but not the error indicator.
+fseek(r, 0, SEEK_END);
+uint64 past = fread(rec, 8, 1, r);
+printf("past=%lu eof=%d err=%d\n", past, feof(r), ferror(r));
+printf("EOF=%d SEEK_SET=%d SEEK_CUR=%d SEEK_END=%d\n", EOF, SEEK_SET, SEEK_CUR, SEEK_END);
+fclose(r);

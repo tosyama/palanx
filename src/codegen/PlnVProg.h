@@ -41,6 +41,10 @@ struct Mul      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs *
 struct Div      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs / rhs
 struct Mod      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs % rhs
 struct Neg      { VReg dst; VReg src; VRegType type; };            // dst = -src
+struct BitAnd   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs & rhs
+struct BitOr    { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs | rhs
+struct BitXor   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs ^ rhs
+struct BitNot   { VReg dst; VReg src; VRegType type; };            // dst = ~src
 struct Cmp      { VReg dst; string op; VReg lhs; VReg rhs; VRegType type; }; // dst (int32) = (lhs op rhs) ? 1 : 0
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 struct CallC    { string name; vector<VReg> args; VReg dst = -1; VRegType retType = VRegType::Int64; };
@@ -61,7 +65,8 @@ struct DerefStore    { VReg ptr; int offset; VReg src;  VRegType type; };       
 struct CalcAddr      { VReg dst; VReg ptr; int offset; };                                              // dst = ptr + offset (no dereference)
 struct LeaLocal      { VReg dst; VReg local; };                                                        // dst = &local (local's own stack slot address)
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg, Cmp, Convert,
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg,
+                             BitAnd, BitOr, BitXor, BitNot, Cmp, Convert,
                              CallC, CallPln, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,

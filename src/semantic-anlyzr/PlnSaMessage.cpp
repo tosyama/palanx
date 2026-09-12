@@ -43,8 +43,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Undefined function '" + arg1 + "'.";
 
-		case E_InvalidNarrowingInit:
-			return "Narrowing initialization requires a numeric literal.";
+		case E_InvalidNarrowingConv:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "Implicit conversion from '" + arg1 + "' to '" + arg2
+				+ "' is not allowed; write an explicit cast '"
+				+ arg2 + "(...)'.";
 
 		case E_ExportInBlock:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -214,6 +218,51 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "cannot take the address of this array element: it is not a primitive-typed value "
 			       "(e.g. a struct-array element, a 2D row, or a pointer element) -- '@'/'@!' only "
 			       "supports a primitive-typed array element.";
+
+		case E_BitwiseOpNotInteger:
+			return "Bitwise operator operand must be an integer type.";
+
+		case E_IncompleteStructType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 == "unsupported-field" || arg2 == "forward-declared");
+			if (arg2 == "forward-declared")
+				return "struct '" + arg1 + "' is only forward-declared in this header; it can "
+				       "only be used through a pointer ('@" + arg1 + "' / '@!" + arg1 + "').";
+			return "struct '" + arg1 + "' has no known layout (a field type is not supported "
+			       "this version); it can only be used through a pointer ('@" + arg1 + "' / '@!"
+			       + arg1 + "').";
+
+		case E_UnsupportedParamType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "function '" + arg1 + "' has a parameter or return type this version cannot "
+			       "represent: '" + arg2 + "'.";
+
+		case E_UnsupportedCFuncSignature:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot call C function '" + arg1 + "': its signature uses '" + arg2
+			       + "', a C type this version cannot represent; only integer and floating-point "
+			         "types, pointers, and struct pointers are supported in a cinclude'd signature.";
+
+		case E_CGlobalNotAssignable:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot assign to '" + arg1 + "': a cinclude'd C global variable is read-only.";
+
+		case E_CGlobalNotAddressable:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot take the address of, or access a field through, '" + arg1
+			       + "': it is a cinclude'd C global variable's value, not a storage location "
+			         "Palan owns.";
+
+		case E_UnsupportedCGlobalType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot reference C global variable '" + arg1 + "': its type uses '" + arg2
+			       + "', a C type this version cannot represent.";
+
+		case E_ArithOpNotNumeric:
+			return "Arithmetic operator operand must be a numeric type.";
 
 		default:
 			BOOST_ASSERT(false);

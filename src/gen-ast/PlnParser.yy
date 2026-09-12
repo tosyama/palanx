@@ -171,8 +171,8 @@ class PlnLexer;
 %left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
-%left '*' '/' '%' '&' '|'
-%right UNARY_MINUS '!'
+%left '*' '/' '%' '&' '|' '^'
+%right UNARY_MINUS '!' '~'
 %left '.'
 
 %start module
@@ -228,6 +228,9 @@ expr_stmt: import
 			}
 			if (c_ast["ast"].contains("structs")) {
 				$$["structs"] = move(c_ast["ast"]["structs"]);
+			}
+			if (c_ast["ast"].contains("globals")) {
+				$$["globals"] = move(c_ast["ast"]["globals"]);
 			}
 		}
 		LOC($$, @$);
@@ -703,9 +706,13 @@ expression: term
 	| expression '%' expression
 	{ $$ = {{"expr-type", "mod"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '&' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "bitand"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '|' expression
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "bitor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression '^' expression
+	{ $$ = {{"expr-type", "bitxor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| '~' expression %prec UNARY_MINUS
+	{ $$ = {{"expr-type", "bitnot"}, {"operand", $2}}; LOC($$, @$); }
 	| expression OPE_LE expression
 	{ $$ = {{"expr-type", "cmp"}, {"op", "<="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression OPE_GE expression

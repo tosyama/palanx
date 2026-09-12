@@ -1,0 +1,5 @@
+cinclude "error_128_incomplete_struct_index.h";
+
+func f(@!Tag p) {
+	int64 v = p[0].x;
+}

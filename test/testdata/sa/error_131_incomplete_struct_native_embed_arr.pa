@@ -1,0 +1,6 @@
+cinclude "error_131_incomplete_struct_native_embed_arr.h";
+
+func f() {
+	type Wrap { [3]$Tag a; };
+}
+f();

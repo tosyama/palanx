@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+
+// IT-2026-09-06-2909: field access on an incomplete struct through a real
+// stdio.h handle -- the same rule sa-tester pins on a synthetic struct
+// (error_127_incomplete_struct_field_access), exercised here via the `FILE`
+// typedef alias and a real cinclude'd system header.
+@!FILE f = fopen("/tmp/pln_error_058.txt", "w");
+printf("%d\n", f._flags);

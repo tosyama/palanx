@@ -48,6 +48,14 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.label});
             return r;
         }
+        case ExprKind::CGlobal: {
+            auto& e = static_cast<const CGlobalExpr&>(expr);
+            VReg addr = allocVReg();
+            func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, e.label});
+            VReg dst = allocVReg();
+            func.instrs.push_back(DerefLoad{dst, addr, 0, e.type});
+            return dst;
+        }
         case ExprKind::IntLit: {
             auto& e = static_cast<const IntLitExpr&>(expr);
             VReg r = allocVReg();
@@ -57,7 +65,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         case ExprKind::UintLit: {
             auto& e = static_cast<const UintLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(MovImm{r, VRegType::Int64, (long long)stoull(e.value)});
+            func.instrs.push_back(MovImm{r, e.type, (long long)stoull(e.value)});
             return r;
         }
         case ExprKind::Convert: {
@@ -125,6 +133,37 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Neg{dst, src, e.type});
             if (e.type == VRegType::Float32) prog_->needsF32Neg = true;
             if (e.type == VRegType::Float64) prog_->needsF64Neg = true;
+            return dst;
+        }
+        case ExprKind::BitAnd: {
+            auto& e  = static_cast<const BitAndExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(BitAnd{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::BitOr: {
+            auto& e  = static_cast<const BitOrExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(BitOr{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::BitXor: {
+            auto& e  = static_cast<const BitXorExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(BitXor{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::BitNot: {
+            auto& e  = static_cast<const BitNotExpr&>(expr);
+            VReg src = lowerExpr(*e.operand, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(BitNot{dst, src, e.type});
             return dst;
         }
         case ExprKind::Cmp: {
@@ -417,6 +456,14 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                     if (!blockVarStack_.empty())
                         blockVarStack_.back().push_back(r);
                 }
+            } else if (ve.init->kind == ExprKind::UintLit) {
+                // Uint literal can never adopt a float type (unlike IntLit above):
+                // SA's lit-uint branch only ever assigns a Uint* value-type.
+                auto& e = static_cast<const UintLitExpr&>(*ve.init);
+                r = allocVReg();
+                func.instrs.push_back(InitVar{r, e.type, (long long)stoull(e.value)});
+                if (!blockVarStack_.empty())
+                    blockVarStack_.back().push_back(r);
             } else {
                 r = lowerExpr(*ve.init, func);
             }

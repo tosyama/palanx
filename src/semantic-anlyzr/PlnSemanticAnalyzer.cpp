@@ -32,6 +32,7 @@ void PlnSemanticAnalyzer::enterScope()
 {
 	varScopes.push_back({});
 	cFuncScopes.push_back({});
+	cGlobalScopes.push_back({});
 	plnFuncScopes.push_back({});
 	importScopes.push_back({});
 	arrayScopeVars_.push_back({});
@@ -41,6 +42,7 @@ void PlnSemanticAnalyzer::leaveScope()
 {
 	varScopes.pop_back();
 	cFuncScopes.pop_back();
+	cGlobalScopes.pop_back();
 	plnFuncScopes.pop_back();
 	importScopes.pop_back();
 	arrayScopeVars_.pop_back();
@@ -107,6 +109,20 @@ void PlnSemanticAnalyzer::registerCFunc(const string& name, const json& def)
 const json* PlnSemanticAnalyzer::findCFunc(const string& name) const
 {
 	for (auto it = cFuncScopes.rbegin(); it != cFuncScopes.rend(); ++it) {
+		auto f = it->find(name);
+		if (f != it->end()) return &f->second;
+	}
+	return nullptr;
+}
+
+void PlnSemanticAnalyzer::registerCGlobal(const string& name, const json& def)
+{
+	cGlobalScopes.back()[name] = def;  // shadow allowed
+}
+
+const json* PlnSemanticAnalyzer::findCGlobal(const string& name) const
+{
+	for (auto it = cGlobalScopes.rbegin(); it != cGlobalScopes.rend(); ++it) {
 		auto f = it->find(name);
 		if (f != it->end()) return &f->second;
 	}
@@ -257,6 +273,11 @@ bool PlnSemanticAnalyzer::isStructType(const json& type) const
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 }
 
+bool PlnSemanticAnalyzer::isKnownTypeName(const string& name) const
+{
+	return structDefs_.count(name) || typeAliases_.count(name) || elemSizeBytes(name) >= 0;
+}
+
 json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 {
 	if (!isStructType(type)) return type;
@@ -288,16 +309,20 @@ bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
 
 json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 {
-	// Recursively convert prim(Name) → struct(Name) inside pntr chains.
-	// Needed when struct types appear nested in pointer-of-pointer signatures like []@!T.
-	if (type.value("type-kind","") == "pntr") {
-		json t = type;
-		t["base-type"] = deepNormalizePrimToStruct(type["base-type"]);
+	// The single walk that resolves type aliases and converts prim(Name) → struct(Name)
+	// at every level of a pntr chain (needed for struct types nested in pointer-of-pointer
+	// signatures like []@!T, and for alias pointees like @MyInt / @!size_t). resolveTypeAlias
+	// alone only inspects the top-level node, so it must be re-applied at each recursion step
+	// or an alias used as a pointee would reach PlnTypeRegistry::fromJson unresolved.
+	json resolved = resolveTypeAlias(type);
+	if (resolved.value("type-kind","") == "pntr") {
+		json t = resolved;
+		t["base-type"] = deepNormalizePrimToStruct(resolved["base-type"]);
 		return t;
 	}
-	if (isStructType(type))
-		return {{"type-kind","struct"},{"type-name",type["type-name"]}};
-	return type;
+	if (isStructType(resolved))
+		return {{"type-kind","struct"},{"type-name",resolved["type-name"]}};
+	return resolved;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
@@ -324,6 +349,51 @@ void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 			funcDef["ret-type"] = toStructPntrType(funcDef["ret-type"]);
 		else
 			funcDef["ret-type"] = deepNormalizePrimToStruct(funcDef["ret-type"]);
+	}
+}
+
+// Structural-only counterpart to unrepresentableTypeName, scoped to native
+// Palan signatures. A cinclude'd C signature's unresolved "prim" type-name
+// (e.g. "flt128") is genuinely unrepresentable (see requireSupportedCFuncSig),
+// but a native signature's "prim" node can also be a not-yet-registered
+// struct name used as a pointee -- e.g. a forward-referenced type, or a plain
+// typo -- and that is deliberately left to the existing, more specific
+// per-use diagnostics (E_UnknownStructType / E_IncompleteStructType) rather
+// than rejected here. Only a type-kind fromJson can never build regardless of
+// name resolution (currently just "arr" -- gen-ast's type_expr grammar is the
+// only native producer, and unsizedArrToPntr only converts the unsized form)
+// is reported.
+static string unsupportedNativeSigTypeKind(const json& vt)
+{
+	string k = vt.value("type-kind", "");
+	if (k == "pntr")
+		return vt.contains("base-type") ? unsupportedNativeSigTypeKind(vt["base-type"]) : "";
+	if (k == "prim" || k == "struct" || k.empty())
+		return "";
+	return k == "arr" ? "array" : k;
+}
+
+void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
+{
+	string bad;
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"]) {
+			if (!p.contains("var-type")) continue;
+			bad = unsupportedNativeSigTypeKind(p["var-type"]);
+			if (!bad.empty()) break;
+		}
+	if (bad.empty() && funcDef.contains("ret-type"))
+		bad = unsupportedNativeSigTypeKind(funcDef["ret-type"]);
+	if (bad.empty() && funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"]) {
+			if (!r.contains("var-type")) continue;
+			bad = unsupportedNativeSigTypeKind(r["var-type"]);
+			if (!bad.empty()) break;
+		}
+	if (!bad.empty()) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_UnsupportedParamType, funcDef["name"].get<string>(), bad) << endl;
+		exit(1);
 	}
 }
 
@@ -357,6 +427,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 			if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 			normalizeStructSig(funcEntry);
+			validateNativeSig(funcEntry);
 			registerPlnFunc(funcEntry["name"], funcEntry);
 		}
 	// 2. Process top-level statements (cinclude/import registered here,
@@ -384,6 +455,26 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 {
 	string tk = vtype.value("type-kind", "");
 	if (tk == "prim" && vtype.contains("typedef-name")) {
+		string aliasName = vtype["typedef-name"].get<string>();
+		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
+		auto it = typeAliases_.find(aliasName);
+		if (it == typeAliases_.end()) {
+			typeAliases_[aliasName] = resolved;
+		} else if (it->second != resolved) {
+			cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
+			exit(1);
+		}
+		vtype.erase("typedef-name");
+	} else if (tk == "strct" && vtype.contains("typedef-name") && vtype.contains("type-name")) {
+		// typedef struct Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
+		// as a type alias for the tag, same representation sa_type_alias uses for
+		// a native "type A = SomeStruct;" (prim(Tag) -- resolveTypeAlias /
+		// isStructType / deepNormalizePrimToStruct all key off that shape, so a
+		// C-typedef'd struct name resolves through the exact same path a native
+		// alias does). Erasing "typedef-name" here leaves the reference-site node
+		// itself as plain strct(Tag), which normalizeCType (called right after
+		// this, in normalizeCFuncSig) already turns into struct(Tag) -- nothing
+		// further to do at this node.
 		string aliasName = vtype["typedef-name"].get<string>();
 		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
 		auto it = typeAliases_.find(aliasName);
@@ -424,6 +515,19 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 	if (stmt.contains("structs"))
 		for (auto& s : stmt["structs"])
 			registerCStruct(s);
+
+	// Globals follow the constants/typedef convention, not the functions one:
+	// always registered unqualified even under `cinclude ... as S;` (only
+	// functions require the S. qualifier). Registered before the "functions"
+	// early-return below so an alias-only header (structs+globals, no
+	// functions) still picks them up.
+	if (stmt.contains("globals"))
+		for (auto& g : stmt["globals"]) {
+			json entry = g;
+			registerTypedefAliasInType(entry["var-type"]);
+			normalizeCGlobal(entry);
+			registerCGlobal(entry["name"].get<string>(), entry);
+		}
 
 	if (!stmt.contains("functions")) return;
 

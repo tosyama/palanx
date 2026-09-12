@@ -1,0 +1,4 @@
+{
+    cinclude <stdio.h>;
+    fprintf(stderr, "inner\n");
+}

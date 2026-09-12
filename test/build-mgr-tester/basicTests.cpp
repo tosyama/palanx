@@ -216,9 +216,13 @@ TEST(build_mgr, float_newton) {
 
 TEST(build_mgr, float_int_mixed) {
 	cleanTestEnv();
-	// int/float mixed arithmetic: int is implicitly widened to float
+	// int/float mixed arithmetic: int is implicitly widened to float. Covers
+	// both operand orders (float+int and int+float) and flo32/flo64 mixing --
+	// usualArithConv's float tie-break is not commutative in the source code
+	// path taken (left vs right operand), so both directions need a real
+	// program to exercise (see IT-2026-09-06-2912's coverage investigation).
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/030_float_int_mixed.pa");
-	ASSERT_EQ(output, "5.000000\n30.000000\n4.000000\n");
+	ASSERT_EQ(output, "5.000000\n30.000000\n4.000000\n5.000000\n5.000000\n");
 }
 
 TEST(build_mgr, float32_cmp) {
@@ -1126,6 +1130,247 @@ TEST(build_mgr, addr_of_owned_field_borrow_mtrace) {
 	EXPECT_EQ(allocs, 4) << "expected 4 allocs for Cluster c { [2]Point pts; }, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, sign_cross_convert) {
+	// IT-2026-09-06-2901: PlnX86CodeGen::emitConvert had no signed<->unsigned
+	// branches at all; every case below used to abort with rc=134 instead of
+	// printing. Covers the ticket's repro plus the full cross-signedness
+	// widen/narrow/reinterpret matrix (int8/16/32/64 <-> uint8/16/32/64).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/141_sign_cross_convert.pa");
+	ASSERT_EQ(output,
+		"7 7 7 7\n"
+		"255 255 255 65535 65535 4294967295\n"
+		"65535 4294967295 18446744073709551615 4294967295 18446744073709551615 18446744073709551615\n"
+		"-1 -1 -1 -1\n"
+		"255 65535 4294967295 18446744073709551615\n"
+		"-1 -1 -1 -1 -1 -1\n"
+		"255 255 255 65535 65535 4294967295\n");
+}
+
+TEST(build_mgr, uint_idx_var_stride) {
+	// IT-2026-09-06-2901: a uint32 row index into a [n]$[m]T array with a
+	// runtime inner dimension used to abort in PlnVCodeGen's variable-stride
+	// path (Uint32 -> Int64 convert before the stride multiply).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/142_uint_idx_var_stride.pa");
+	ASSERT_EQ(output, "40 50 60\n");
+}
+
+TEST(build_mgr, ptr_alias_pointee) {
+	// IT-2026-09-06-2902: deepNormalizePrimToStruct only resolved
+	// prim(Name) -> struct(Name) via structDefs_, without re-applying
+	// resolveTypeAlias at each level of a pntr chain, so a Palan type alias
+	// or a C typedef used as a `@T`/`@!T` pointee reached
+	// PlnTypeRegistry::fromJson unresolved and aborted with rc=134 instead
+	// of resolving to the underlying primitive type.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/143_ptr_alias_pointee.pa");
+	ASSERT_EQ(output, "42 7\n");
+}
+
+TEST(build_mgr, uint_narrow_arith) {
+	// IT-2026-09-07: PlnX86CodeGen's add/sub/mul/neg/cmp mnemonic tables enumerated
+	// signed widths explicitly but fell through to the 64-bit default for
+	// Uint8/Uint16/Uint32, while movInstrForType/sizedRegName already sized those
+	// types at 8/16/32 bits — e.g. `uint32 a + uint32 b` emitted `movl` into a
+	// 32-bit register followed by `addq`, which the assembler rejects. No test
+	// exercised unsigned sub-64-bit arithmetic before this ticket.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/144_uint_narrow_arith.pa");
+	ASSERT_EQ(output, "4 240 0\n4 65520 65476 0\n4 4294967280 4294967236 0\n");
+}
+
+TEST(build_mgr, uint_lit_narrow) {
+	// IT-2026-09-07: a uint8/16/32 variable declared directly from a `u`-suffixed
+	// literal (lit-uint expr-type) deserialized to a codegen node with no type
+	// field, so codegen always emitted a 64-bit MovImm regardless of the declared
+	// width, and lowerVarDeclStmt never routed lit-uint through InitVar (unlike
+	// lit-int/lit-flo), so the variable wasn't tracked as a stable stack-resident
+	// variable by RegAlloc either -- reassignment produced mismatched instruction
+	// widths. Uint64 never exposed this (Int64/Uint64 alias to the same 64-bit
+	// register form); `uint8 a = 200;` (no `u` suffix, lit-int) never exposed it
+	// either, since SA retypes the literal itself rather than going through
+	// lit-uint's codegen path.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/145_uint_lit_narrow.pa");
+	ASSERT_EQ(output, "44\n50\n4464\n12345\n14745824\n100\n");
+}
+
+TEST(build_mgr, bitwise_ops) {
+	// IT-2026-09-06-2903: `&` `|` `^` `~` were entirely unimplemented -- `&` parsed
+	// but returned "not-impl" in SA, `|`/`^` weren't even lexed, `~` didn't exist.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/146_bitwise_ops.pa");
+	ASSERT_EQ(output, "8 14 6 -13\n1\n61440 61503 63\n");
+}
+
+TEST(build_mgr, incomplete_struct_handle) {
+	// IT-2026-09-06-2904: `@!_IO_FILE p;` used to abort at declaration time
+	// ("unknown struct type '_IO_FILE'.", from IT-2902's pointee validation)
+	// because registerCStruct dropped the whole tag when one field
+	// (glibc's "_unused2", a size-expr c2ast can't evaluate) couldn't be laid
+	// out. It now registers _IO_FILE as an incomplete struct instead, so a
+	// non-owning pointer declaration (no layout needed) builds and runs.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/147_incomplete_struct_handle.pa");
+	ASSERT_EQ(output, "ok\n");
+}
+
+TEST(build_mgr, file_handle) {
+	// IT-2026-09-06-2905: `FILE` (typedef struct _IO_FILE FILE;) now resolves
+	// as a type alias for `_IO_FILE`, so fopen/fclose signatures that mention
+	// it by name build and run instead of aborting at fromJson.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/148_file_handle.pa");
+	ASSERT_EQ(output, "ok\n");
+}
+
+TEST(build_mgr, c_global_stderr) {
+	// IT-2026-09-06-2908: `stderr` resolves through the new cGlobalScopes and
+	// lowers to LeaLabel+DerefLoad, so fprintf(stderr, ...) actually writes
+	// to fd 2. execTestCommand appends stderr after a ":" only when stderr
+	// is non-empty (test-base/testBase.cpp), so the leading ":" here is
+	// itself proof the bytes went to fd 2, not fd 1.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/149_c_global_stderr.pa");
+	ASSERT_EQ(output, "out\n:err\n");
+}
+
+TEST(build_mgr, stdio_text_io) {
+	// IT-2026-09-06-2909: end-to-end proof that stdio.h text I/O works on top of
+	// IT-2901..2908. fputs/fprintf/fwrite write the file, then fgets/fread read
+	// every byte back -- the expected string below is the file's own content
+	// round-tripped through the filesystem, so no separate content check is
+	// needed. `uint64 n = fread(...)` (not int64) because fread returns size_t
+	// and a var-decl initializer rejects the cross-signedness narrowing.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/150_stdio_text_io.pa");
+	ASSERT_EQ(output, "1:hello\n2:42 world\n3:raw n=3\nclose=0,0\n");
+}
+
+TEST(build_mgr, stdio_binary_seek) {
+	// IT-2026-09-06-2909: fwrite/fread on a raw [4]int64 buffer (fwrite's void*
+	// parameter accepts any pntr(T)), random access via fseek/ftell, and the
+	// feof/ferror indicators after a read at end-of-file. Also the repo's first
+	// use of the SEEK_*/EOF constants c2ast exports from stdio.h.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/151_stdio_binary_seek.pa");
+	ASSERT_EQ(output,
+		"wrote=4\n"
+		"size=32\n"
+		"tell=16\n"
+		"rec=33 n=1\n"
+		"past=0 eof=1 err=0\n"
+		"EOF=-1 SEEK_SET=0 SEEK_CUR=1 SEEK_END=2\n");
+}
+
+TEST(build_mgr, stdio_std_streams) {
+	// IT-2026-09-06-2909: stdout/stderr/stdin as cinclude'd C globals (IT-2908).
+	// c_global_stderr above only proved stderr reaches fd 2; this adds stdout
+	// and stdin. fileno gives a structural check of all three, and stdin is
+	// additionally read for real -- execTestCommand runs the command through
+	// popen, so the "<" redirect is honoured by the shell and inherited by the
+	// binary palan runs. execTestCommand appends stderr after a ":" only when
+	// it is non-empty (test-base/testBase.cpp), hence the trailing ":to-err\n".
+	cleanTestEnv();
+	string output = execTestCommand(
+		"bin/palan ../test/testdata/build-mgr/152_stdio_std_streams.pa"
+		" < ../test/testdata/build-mgr/152_stdio_stdin_input.txt");
+	ASSERT_EQ(output, "fd out=1 err=2 in=0\nin:piped-line\nto-out\n:to-err\n");
+}
+
+TEST(build_mgr, file_handle_no_autofree_mtrace) {
+	// IT-2026-09-06-2909: proves scope exit does not free a `@!FILE` handle.
+	// Measured log for this program contains exactly two allocations, both
+	// attributed to libc.so.6 frames (fopen64 and _IO_file_doallocate) which
+	// parseMtraceLog skips, and zero deallocations. A control case -- an owned
+	// `[4]int64` in the same block shape -- does produce a non-.so. alloc and a
+	// matching free, so frees==0 here is a real signal and not a blind spot.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_file_handle_no_autofree_mtrace_bin "
+		"../test/testdata/build-mgr/153_file_handle_no_autofree_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_file_handle_no_autofree_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_file_handle_no_autofree_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	EXPECT_EQ(allocs, 0) << "fopen's allocation belongs to libc, not to Palan; got " << allocs;
+	EXPECT_EQ(frees, 0) << "@!FILE must not be freed at scope exit; got " << frees << " free(s)";
+}
+
+TEST(build_mgr, call_arg_in_func_body) {
+	// IT-2026-09-11-regalloc-call-arg-in-func-body: a Palan function parameter
+	// passed as a call argument from inside the function body, outside any loop.
+	// 014_param_loop_call_arg.pa pins the loop-region case; this covers the
+	// straight-line case, a genuine 2-cycle swap between two parameters, and a
+	// 3-arg call where a non-conflicting bystander resolves before the 2-cycle
+	// among the other two -- exercising emitSafeRegMoves' cycle-break path when
+	// the cycle isn't at index 0.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/154_call_arg_in_func_body.pa");
+	ASSERT_EQ(output, "direct=7\nviacopy=7\ntwo=7 8\ng=22 11\ng4=1 3 2\n");
+}
+
+TEST(build_mgr, neg_lit_narrow_init) {
+	// IT-2026-09-11-neg-literal-expected-type: a negated literal now adopts the
+	// initializer's expected type (matching the adjacent bitnot handling) instead
+	// of always widening to int64/flo64 first and tripping the narrowing-
+	// initializer diagnostic.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/155_neg_lit_narrow_init.pa");
+	ASSERT_EQ(output, "-1 -1.500000 -200\n");
+}
+
+TEST(build_mgr, stat_file_types) {
+	// IT-2026-09-06-2911: stat/lstat/fstat all report the right S_IFMT bits
+	// through three acquisition paths (path lookup, symlink-aware path lookup,
+	// an open file descriptor), plus a nested-struct field read (st_mtim.tv_sec).
+	// The mkfifo'd path is checked with lstat only -- open()'ing a FIFO with no
+	// peer would hang until execTestCommand's 5-second SIGKILL timeout.
+	cleanTestEnv();
+	execTestCommand("rm -f /tmp/pln_156_reg.txt /tmp/pln_156_link /tmp/pln_156_fifo");
+	execTestCommand("ln -s /tmp/pln_156_reg.txt /tmp/pln_156_link");
+	execTestCommand("mkfifo /tmp/pln_156_fifo");
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/156_stat_file_types.pa");
+	ASSERT_EQ(output,
+		"dir=1\n"
+		"chr=1\n"
+		"reg=1 size=10 mtime_nonzero=1\n"
+		"lnk=1 target_reg=1\n"
+		"fifo=1\n");
+}
+
+TEST(build_mgr, stat_mode_bits) {
+	// IT-2026-09-06-2911: umask(0) makes mkdir's permission bits deterministic
+	// regardless of the caller's inherited umask (verified under both the
+	// harness's default umask and `umask 077`); chmod's bits are unaffected by
+	// umask either way. Also pins IT-2910's constant folding on sys/stat.h's
+	// expression macros (S_IRWXU, ACCESSPERMS, ...).
+	cleanTestEnv();
+	execTestCommand("rm -rf /tmp/pln_157_dir");
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/157_stat_mode_bits.pa");
+	ASSERT_EQ(output,
+		"mkdir_perm=504\n"
+		"chmod_perm=488\n"
+		"umask_roundtrip=0\n"
+		"consts=448 56 7 511 4095\n");
+}
+
+TEST(build_mgr, usual_arith_conv) {
+	// IT-2026-09-11-usual-arith-conv: end-to-end pin for the two repro shapes
+	// that used to produce bad assembly (register/operand-width mismatch)
+	// because a mixed signed/unsigned operand pair silently fell through
+	// typeCompat's ExplicitCast with no convert node inserted -- in a binary
+	// operator (m & big) and in a call argument (uint32 -> int64 param).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/158_usual_arith_conv.pa");
+	ASSERT_EQ(output, "255\n4294967295\n");
 }
 
 TEST(build_mgr, clean) {

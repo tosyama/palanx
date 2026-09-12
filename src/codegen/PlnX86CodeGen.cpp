@@ -25,57 +25,80 @@ static bool isFloat(VRegType t) {
     return t == VRegType::Float32 || t == VRegType::Float64;
 }
 
-static const char* addInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int8:    return "addb";
-        case VRegType::Int16:   return "addw";
-        case VRegType::Int32:   return "addl";
-        case VRegType::Float32: return "addss";
-        case VRegType::Float64: return "addsd";
-        default:                return "addq";
+static int intWidth(VRegType t) {
+    switch (t) {
+        case VRegType::Int8:  case VRegType::Uint8:  return 1;
+        case VRegType::Int16: case VRegType::Uint16: return 2;
+        case VRegType::Int32: case VRegType::Uint32: return 4;
+        default:                                     return 8;  // Int64, Uint64, Ptr64
     }
 }
 
-static const char* subInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int8:    return "subb";
-        case VRegType::Int16:   return "subw";
-        case VRegType::Int32:   return "subl";
-        case VRegType::Float32: return "subss";
-        case VRegType::Float64: return "subsd";
-        default:                return "subq";
+static bool isSignedInt(VRegType t) {
+    switch (t) {
+        case VRegType::Int8: case VRegType::Int16: case VRegType::Int32: case VRegType::Int64:
+            return true;
+        default:
+            return false;
     }
 }
 
-// imulb has no 2-operand form; Int8 multiplication is not supported here.
-static const char* mulInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int16:   return "imulw";
-        case VRegType::Int32:   return "imull";
-        case VRegType::Float32: return "mulss";
-        case VRegType::Float64: return "mulsd";
-        default:                return "imulq";
+static const char* widthSuffix(int width) {
+    switch (width) {
+        case 1:  return "b";
+        case 2:  return "w";
+        case 4:  return "l";
+        default: return "q";
     }
 }
 
-static const char* negInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int8:  return "negb";
-        case VRegType::Int16: return "negw";
-        case VRegType::Int32: return "negl";
-        default:              return "negq";
-    }
+// mov(s|z)<fromSuffix><toSuffix> — e.g. extendMnemonic(true, 1, 8) => "movsbq"
+static string extendMnemonic(bool sourceSigned, int fromWidth, int toWidth) {
+    return string("mov") + (sourceSigned ? "s" : "z") + widthSuffix(fromWidth) + widthSuffix(toWidth);
 }
 
-static const char* cmpInstrForType(VRegType type) {
-    switch (type) {
-        case VRegType::Int8:    return "cmpb";
-        case VRegType::Int16:   return "cmpw";
-        case VRegType::Int32:   return "cmpl";
-        case VRegType::Float32: return "ucomiss";
-        case VRegType::Float64: return "ucomisd";
-        default:                return "cmpq";
-    }
+// Integer ALU mnemonic for `base` at the width of `type`, e.g. intMnemonic("add", Uint32) => "addl".
+// Deriving the suffix from intWidth()/widthSuffix() instead of enumerating every VRegType keeps
+// signed and unsigned integer widths in sync by construction.
+static string intMnemonic(const char* base, VRegType type) {
+    return string(base) + widthSuffix(intWidth(type));
+}
+
+static string addInstrForType(VRegType type) {
+    if (type == VRegType::Float32) return "addss";
+    if (type == VRegType::Float64) return "addsd";
+    return intMnemonic("add", type);
+}
+
+static string subInstrForType(VRegType type) {
+    if (type == VRegType::Float32) return "subss";
+    if (type == VRegType::Float64) return "subsd";
+    return intMnemonic("sub", type);
+}
+
+// imulb has no 2-operand form; Int8/Uint8 multiplication is not supported here — the
+// 1-byte case is left mapped to imulq, matching the pre-existing (unreachable) fallback.
+static string mulInstrForType(VRegType type) {
+    if (type == VRegType::Float32) return "mulss";
+    if (type == VRegType::Float64) return "mulsd";
+    if (intWidth(type) == 1) return "imulq";
+    return intMnemonic("imul", type);
+}
+
+static string negInstrForType(VRegType type) {
+    return intMnemonic("neg", type);
+}
+
+// Bitwise operators are integer-only (rejected on float operands in SA); no float case needed.
+static string andInstrForType(VRegType type) { return intMnemonic("and", type); }
+static string orInstrForType(VRegType type)  { return intMnemonic("or",  type); }
+static string xorInstrForType(VRegType type) { return intMnemonic("xor", type); }
+static string notInstrForType(VRegType type) { return intMnemonic("not", type); }
+
+static string cmpInstrForType(VRegType type) {
+    if (type == VRegType::Float32) return "ucomiss";
+    if (type == VRegType::Float64) return "ucomisd";
+    return intMnemonic("cmp", type);
 }
 
 static const char* setCCForOp(const string& op, bool isFloat) {
@@ -213,6 +236,10 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<Div>      (&instr)) emitInstrDiv(*i, rm);
             else if (auto* i  = std::get_if<Mod>      (&instr)) emitInstrMod(*i, rm);
             else if (auto* i  = std::get_if<Neg>      (&instr)) emitInstrNeg(*i, rm);
+            else if (auto* a  = std::get_if<BitAnd>   (&instr)) emitBinArith(andInstrForType(a->type), a->dst, a->lhs, a->rhs, a->type, rm);
+            else if (auto* o  = std::get_if<BitOr>    (&instr)) emitBinArith(orInstrForType(o->type),  o->dst, o->lhs, o->rhs, o->type, rm);
+            else if (auto* x  = std::get_if<BitXor>   (&instr)) emitBinArith(xorInstrForType(x->type), x->dst, x->lhs, x->rhs, x->type, rm);
+            else if (auto* i  = std::get_if<BitNot>   (&instr)) emitInstrBitNot(*i, rm);
             else if (auto* i  = std::get_if<Cmp>      (&instr)) emitInstrCmp(*i, rm);
             else if (auto* i  = std::get_if<Convert>  (&instr)) emitInstrConvert(*i, rm);
             else if (auto* i  = std::get_if<CallC>    (&instr)) emitInstrCallC(*i, rm);
@@ -263,7 +290,7 @@ void PlnX86CodeGen::emitFuncPrologue(const VFunc& func, const RegAllocResult& ra
     }
 }
 
-void PlnX86CodeGen::emitBinArith(const char* op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm)
+void PlnX86CodeGen::emitBinArith(const string& op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm)
 {
     if (!rm.count(dst)) return;  // dead: result never used
     const PhysLoc& dst_loc = rm.at(dst);
@@ -375,30 +402,46 @@ void PlnX86CodeGen::emitInstrMod(const Mod& md, const RegMap& rm)
         out << "\tmovq %rdx, " << dst_str << "\n";
 }
 
+void PlnX86CodeGen::emitUnArith(const string& op, VReg dst, VReg src, VRegType type, const RegMap& rm)
+{
+    if (!rm.count(dst)) return;  // dead: result never used
+    const PhysLoc& src_loc = rm.at(src);
+    const PhysLoc& dst_loc = rm.at(dst);
+    string mov = movInstrForType(type);
+    if (!dst_loc.isStack()) {
+        string dst_reg = sizedRegName(dst_loc.base, type);
+        out << "\t" << mov << " " << srcOperand(src_loc) << ", " << dst_reg << "\n";
+        out << "\t" << op  << " " << dst_reg << "\n";
+    } else {
+        // Spilled dst: route through scratch to avoid mem-mem.
+        string scratch = sizedRegName("%rax", type);
+        out << "\t" << mov << " " << srcOperand(src_loc) << ", " << scratch << "\n";
+        out << "\t" << op  << " " << scratch << "\n";
+        out << "\t" << mov << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
+    }
+}
+
 void PlnX86CodeGen::emitInstrNeg(const Neg& n, const RegMap& rm)
 {
     if (!rm.count(n.dst)) return;  // dead: result never used
-    const PhysLoc& src_loc = rm.at(n.src);
-    const PhysLoc& dst_loc = rm.at(n.dst);
     if (isFloat(n.type)) {
         // float neg: flip sign bit via xorps/xorpd with mask in .rodata
+        const PhysLoc& src_loc = rm.at(n.src);
+        const PhysLoc& dst_loc = rm.at(n.dst);
         const char* mov  = movInstrForType(n.type);
         const char* xorI = (n.type == VRegType::Float32) ? "xorps" : "xorpd";
         const char* mask = (n.type == VRegType::Float32) ? ".neg_mask_f32" : ".neg_mask_f64";
         out << "\t" << mov  << " " << srcOperand(src_loc) << ", %xmm8\n";
         out << "\t" << xorI << " " << mask << "(%rip), %xmm8\n";
         out << "\t" << mov  << " %xmm8, " << srcOperand(dst_loc) << "\n";
-    } else if (!dst_loc.isStack()) {
-        string dst_reg = sizedRegName(dst_loc.base, n.type);
-        out << "\t" << movInstrForType(n.type) << " " << srcOperand(src_loc) << ", " << dst_reg << "\n";
-        out << "\t" << negInstrForType(n.type) << " " << dst_reg << "\n";
-    } else {
-        // Spilled dst: route through scratch %rax to avoid mem-mem.
-        string scratch = sizedRegName("%rax", n.type);
-        out << "\t" << movInstrForType(n.type) << " " << srcOperand(src_loc) << ", " << scratch << "\n";
-        out << "\t" << negInstrForType(n.type) << " " << scratch << "\n";
-        out << "\t" << movInstrForType(n.type) << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
+        return;
     }
+    emitUnArith(negInstrForType(n.type), n.dst, n.src, n.type, rm);
+}
+
+void PlnX86CodeGen::emitInstrBitNot(const BitNot& n, const RegMap& rm)
+{
+    emitUnArith(notInstrForType(n.type), n.dst, n.src, n.type, rm);
 }
 
 void PlnX86CodeGen::emitInstrCmp(const Cmp& cm, const RegMap& rm)
@@ -441,12 +484,76 @@ void PlnX86CodeGen::emitInstrConvert(const Convert& c, const RegMap& rm)
         // stack-allocated (no xmm register allocator).  If XMM registers are
         // ever assigned to live float VRegs, %xmm8 must be chosen more carefully
         // (e.g. pick a register not live at this instruction).
-        string scratch = dst_is_float ? "%xmm8" : sizedRegName("%rax", c.to);
-        emitConvert(scratch, rm.at(c.src), c.from, c.to);
+        string scratchBase = dst_is_float ? "%xmm8" : "%rax";
+        emitConvert(scratchBase, rm.at(c.src), c.from, c.to);
+        string scratch = dst_is_float ? scratchBase : sizedRegName(scratchBase, c.to);
         out << "\t" << movInstrForType(c.to) << " " << scratch << ", " << srcOperand(dst_loc) << "\n";
     } else {
-        string dst_reg = dst_is_float ? dst_loc.base : sizedRegName(dst_loc.base, c.to);
-        emitConvert(dst_reg, rm.at(c.src), c.from, c.to);
+        emitConvert(dst_loc.base, rm.at(c.src), c.from, c.to);
+    }
+}
+
+// One leg of a register-argument shuffle: move `srcOperand` (a register or memory
+// operand) into the physical register `dstBase`. `srcBase` is the source's register
+// base name when the source is itself a register (empty for a memory operand), used
+// to detect when one move's destination is needed as another move's source.
+struct RegMove {
+    const char* movInstr;
+    VRegType    type;
+    string      srcOperand;
+    string      srcBase;
+    string      dstBase;
+    string      dstSized;
+};
+
+static RegMove makeIntArgMove(const PhysLoc& src_loc, const string& dstBase)
+{
+    return RegMove{
+        movInstrForType(src_loc.type), src_loc.type,
+        srcOperand(src_loc), src_loc.isStack() ? "" : src_loc.base,
+        dstBase, sizedRegName(dstBase, src_loc.type)
+    };
+}
+
+// Sequence a set of moves into distinct physical registers so that no move clobbers
+// a register another pending move still needs to read from. A naive argument-order
+// pass breaks whenever a source register coincides with an earlier argument's
+// destination register -- e.g. `g(b, a)` where parameters a/b are homed at %rdi/%rsi
+// respectively: moving b into %rdi (position 0) would destroy a's value before it is
+// read for position 1. Moves whose destination nothing else needs are emitted
+// immediately; any remaining moves form a cycle, broken by stashing one destination's
+// live value in `scratch` before it is overwritten.
+static void emitSafeRegMoves(ostream& out, vector<RegMove> moves, const string& scratch)
+{
+    vector<bool> done(moves.size(), false);
+    size_t remaining = moves.size();
+    while (remaining > 0) {
+        bool progress = false;
+        for (size_t i = 0; i < moves.size(); i++) {
+            if (done[i]) continue;
+            bool needed = false;
+            for (size_t j = 0; j < moves.size(); j++) {
+                if (j == i || done[j]) continue;
+                if (!moves[j].srcBase.empty() && moves[j].srcBase == moves[i].dstBase) { needed = true; break; }
+            }
+            if (!needed) {
+                if (moves[i].srcOperand != moves[i].dstSized)
+                    out << "\t" << moves[i].movInstr << " " << moves[i].srcOperand << ", " << moves[i].dstSized << "\n";
+                done[i] = true;
+                remaining--;
+                progress = true;
+            }
+        }
+        if (!progress) {
+            size_t i = 0;
+            while (done[i]) i++;
+            out << "\tmovq " << moves[i].dstBase << ", " << scratch << "\n";
+            for (size_t j = 0; j < moves.size(); j++) {
+                if (done[j] || moves[j].srcBase != moves[i].dstBase) continue;
+                moves[j].srcBase    = scratch;
+                moves[j].srcOperand = sizedRegName(scratch, moves[j].type);
+            }
+        }
     }
 }
 
@@ -467,6 +574,12 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
         stack_space = ((n_stack * 8) + 15) & ~15;
         out << "\tsubq $" << stack_space << ", %rsp\n";
     }
+    // Int register-destined args are queued (see emitSafeRegMoves below) rather
+    // than emitted here in argument order, and stack-destined args are still
+    // emitted immediately: since no register move has been emitted yet at that
+    // point, a stack arg whose source happens to be a register is read safely
+    // regardless of which position that register is also a destination for.
+    vector<RegMove> intMoves;
     int int_idx = 0, flt_idx = 0, stack_idx = 0;
     for (auto vr : i.args) {
         const PhysLoc& src_loc = rm.at(vr);
@@ -477,10 +590,7 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
             if (s != xmm)
                 out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << xmm << "\n";
         } else if (!is_flt && int_idx < n_int_regs) {
-            string dst = sizedRegName(x86PhysRegs.intArgs[int_idx++], src_loc.type);
-            string s = srcOperand(src_loc);
-            if (s != dst)
-                out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << dst << "\n";
+            intMoves.push_back(makeIntArgMove(src_loc, x86PhysRegs.intArgs[int_idx++]));
         } else {
             // Overflow to stack: both int and float use 8 bytes per slot.
             int offset = stack_idx++ * 8;
@@ -506,6 +616,7 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
             }
         }
     }
+    emitSafeRegMoves(out, intMoves, "%r11");
     emitCallC(i.name, flt_idx);
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
@@ -524,14 +635,14 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
 void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
 {
     int n_regs = (int)x86PhysRegs.intArgs.size();
-    // Move arguments into intArgs registers.
-    for (int j = 0; j < (int)c.args.size() && j < n_regs; j++) {
-        const PhysLoc& src = rm.at(c.args[j]);
-        string s = srcOperand(src);
-        string d = sizedRegName(x86PhysRegs.intArgs[j], src.type);
-        if (s != d)
-            out << "\t" << movInstrForType(src.type) << " " << s << ", " << d << "\n";
-    }
+    // Queue register-destined args for a hazard-safe shuffle (see emitSafeRegMoves)
+    // instead of moving them here in argument order -- a source register can
+    // coincide with an earlier argument's destination register (e.g. two
+    // parameters passed to a call in swapped order).
+    vector<RegMove> intMoves;
+    for (int j = 0; j < (int)c.args.size() && j < n_regs; j++)
+        intMoves.push_back(makeIntArgMove(rm.at(c.args[j]), x86PhysRegs.intArgs[j]));
+
     int n_stack = (int)c.args.size() - n_regs;
     int stack_space = 0;
     if (n_stack > 0) {
@@ -548,6 +659,9 @@ void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
             }
         }
     }
+    // Emitted after the stack-arg moves above (which only ever read registers,
+    // never write them) so this shuffle is the first thing to touch any register.
+    emitSafeRegMoves(out, intMoves, "%r11");
     out << "\tcall " << c.name << "\n";
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
@@ -895,84 +1009,77 @@ void PlnX86CodeGen::emitMovImm(const string& reg, VRegType type, long long value
     out << "\t" << movInstrForType(type) << " $" << value << ", " << reg << "\n";
 }
 
-void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType from, VRegType to)
+void PlnX86CodeGen::emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to)
 {
     // Stack is a memory ref; register is sized by the requested type.
     auto srcAt = [&](VRegType t) -> string {
         if (src.isStack()) return std::to_string(src.stackOffset) + "(%rbp)";
         return sizedRegName(src.base, t);
     };
+    // Destination is always a register; XMM register names ignore width.
+    auto dstAt = [&](VRegType t) -> string {
+        if (isFloat(t)) return dstBase;
+        return sizedRegName(dstBase, t);
+    };
 
-    // Signed integer widening (movsx family)
-    if (from == VRegType::Int8  && to == VRegType::Int16) {
-        out << "\tmovsbw " << srcAt(from) << ", " << dst << "\n"; return;
+    // Integer <-> integer, any width and signedness.
+    if (!isFloat(from) && !isFloat(to)) {
+        int fw = intWidth(from), tw = intWidth(to);
+        if (tw <= fw) {
+            // Narrowing, or same-width sign reinterpretation (e.g. int32<->uint32):
+            // the bit pattern is unchanged, so just reference the low bits.
+            out << "\t" << movInstrForType(to) << " " << srcAt(to) << ", " << dstAt(to) << "\n";
+        } else if (fw == 4 && !isSignedInt(from)) {
+            // No movzlq instruction exists: movl into the 32-bit destination
+            // register implicitly zero-extends the upper 32 bits of the 64-bit register.
+            out << "\tmovl " << srcAt(from) << ", " << dstAt(VRegType::Int32) << "\n";
+        } else {
+            // Widening: extend according to the SOURCE's signedness (C semantics).
+            out << "\t" << extendMnemonic(isSignedInt(from), fw, tw)
+                << " " << srcAt(from) << ", " << dstAt(to) << "\n";
+        }
+        return;
     }
-    if (from == VRegType::Int8  && to == VRegType::Int32) {
-        out << "\tmovsbl " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int8  && to == VRegType::Int64) {
-        out << "\tmovsbq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int16 && to == VRegType::Int32) {
-        out << "\tmovswl " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int16 && to == VRegType::Int64) {
-        out << "\tmovswq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int32 && to == VRegType::Int64) {
-        out << "\tmovslq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    // Narrowing: reference lower bits of the source register (or same memory ref)
-    if (from == VRegType::Int64 && to == VRegType::Int32) {
-        out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int64 && to == VRegType::Int16) {
-        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int64 && to == VRegType::Int8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int32 && to == VRegType::Int16) {
-        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int32 && to == VRegType::Int8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Int16 && to == VRegType::Int8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
+
     // Float to integer conversion (truncation toward zero)
-    if (from == VRegType::Float64 && to == VRegType::Int64) {
-        out << "\tcvttsd2siq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Float64 && to == VRegType::Int32) {
-        out << "\tcvttsd2sil " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Float32 && to == VRegType::Int64) {
-        out << "\tcvttss2siq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Float32 && to == VRegType::Int32) {
-        out << "\tcvttss2sil " << srcAt(from) << ", " << dst << "\n"; return;
+    if (isFloat(from) && !isFloat(to)) {
+        if (to == VRegType::Uint64) {
+            // Requires a branch-based bias-correction sequence that cannot be
+            // emitted inline here. Lower this conversion in PlnVCodeGen instead.
+            std::cerr << "PlnX86CodeGen: float-to-uint64 conversion must be lowered in PlnVCodeGen\n";
+            std::abort();
+        }
+        // cvtt*2si has only 32-bit and 64-bit integer destination forms.
+        // Uint8/16/32 use the 64-bit form: a uint32 above INT32_MAX would not
+        // fit the signed 32-bit result of the 32-bit form. Int8/16 reuse the
+        // 32-bit form and take their answer from the destination's low bits.
+        bool use64 = (to == VRegType::Int64) || !isSignedInt(to);
+        const char* cvt = (from == VRegType::Float64)
+            ? (use64 ? "cvttsd2siq" : "cvttsd2sil")
+            : (use64 ? "cvttss2siq" : "cvttss2sil");
+        out << "\t" << cvt << " " << srcAt(from) << ", "
+            << dstAt(use64 ? VRegType::Int64 : VRegType::Int32) << "\n";
+        return;
     }
     // Float precision conversion
     if (from == VRegType::Float32 && to == VRegType::Float64) {
-        out << "\tcvtss2sd " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtss2sd " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     if (from == VRegType::Float64 && to == VRegType::Float32) {
-        out << "\tcvtsd2ss " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsd2ss " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     // Integer to float conversion
     if (from == VRegType::Int32 && to == VRegType::Float64) {
-        out << "\tcvtsi2sdl " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsi2sdl " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     if (from == VRegType::Int64 && to == VRegType::Float64) {
-        out << "\tcvtsi2sdq " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsi2sdq " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     if (from == VRegType::Int32 && to == VRegType::Float32) {
-        out << "\tcvtsi2ssl " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsi2ssl " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     if (from == VRegType::Int64 && to == VRegType::Float32) {
-        out << "\tcvtsi2ssq " << srcAt(from) << ", " << dst << "\n"; return;
+        out << "\tcvtsi2ssq " << srcAt(from) << ", " << dstAt(to) << "\n"; return;
     }
     // Smaller signed integers: sign-extend to 64-bit via %rax, then convert.
     if ((from == VRegType::Int8 || from == VRegType::Int16) &&
@@ -980,77 +1087,39 @@ void PlnX86CodeGen::emitConvert(const string& dst, const PhysLoc& src, VRegType 
         const char* sx  = (from == VRegType::Int8) ? "movsbq" : "movswq";
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
         out << "\t" << sx << " " << srcAt(from) << ", %rax\n";
-        out << "\t" << cvt << " %rax, " << dst << "\n";
+        out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
-    }
-    // Unsigned integer widening (movzx family — zero-extend)
-    if (from == VRegType::Uint8  && to == VRegType::Uint16) {
-        out << "\tmovzbw " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint8  && to == VRegType::Uint32) {
-        out << "\tmovzbl " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint8  && to == VRegType::Uint64) {
-        out << "\tmovzbq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint16 && to == VRegType::Uint32) {
-        out << "\tmovzwl " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint16 && to == VRegType::Uint64) {
-        out << "\tmovzwq " << srcAt(from) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint32 && to == VRegType::Uint64) {
-        // movl to 32-bit register implicitly zero-extends the upper 32 bits of the 64-bit register.
-        out << "\tmovl " << srcAt(from) << ", " << sizedRegName(dst, VRegType::Int32) << "\n"; return;
-    }
-    // Unsigned narrowing (truncation): reference low bits of the source
-    if (from == VRegType::Uint64 && to == VRegType::Uint32) {
-        out << "\tmovl " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint64 && to == VRegType::Uint16) {
-        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint64 && to == VRegType::Uint8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint32 && to == VRegType::Uint16) {
-        out << "\tmovw " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint32 && to == VRegType::Uint8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
-    }
-    if (from == VRegType::Uint16 && to == VRegType::Uint8) {
-        out << "\tmovb " << srcAt(to) << ", " << dst << "\n"; return;
     }
     // Unsigned integer to float conversion (uint8/16/32 fit in int64, so cvtsi2s*q is correct after zero-extension)
     if (from == VRegType::Uint8 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
         out << "\tmovzbq " << srcAt(from) << ", %rax\n";
-        out << "\t" << cvt << " %rax, " << dst << "\n";
+        out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
     }
     if (from == VRegType::Uint16 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
         out << "\tmovzwq " << srcAt(from) << ", %rax\n";
-        out << "\t" << cvt << " %rax, " << dst << "\n";
+        out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
     }
     if (from == VRegType::Uint32 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         // movl zero-extends uint32 into %rax; result fits in int64, so cvtsi2s*q is correct.
         const char* cvt = (to == VRegType::Float32) ? "cvtsi2ssq" : "cvtsi2sdq";
         out << "\tmovl " << srcAt(from) << ", %eax\n";
-        out << "\t" << cvt << " %rax, " << dst << "\n";
+        out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
     }
     if (from == VRegType::Uint64 && (to == VRegType::Float32 || to == VRegType::Float64)) {
         // uint64-to-float requires a branch-based sequence that cannot be emitted inline here.
         // Lower this conversion in PlnVCodeGen using Label/CondJmp/Jmp instructions.
-        std::cerr << "PlnX86CodeGen: uint64-to-float must be lowered in PlnVCodeGen\n";
+        std::cerr << "PlnX86CodeGen: uint64-to-float conversion must be lowered in PlnVCodeGen\n";
         std::abort();
     }
     // Abort unconditionally — do not rely on BOOST_ASSERT which is a no-op in release builds.
-    std::cerr << "PlnX86CodeGen: unsupported conversion\n";
-    std::abort();
+    // Unreachable: every VRegType pair is handled by the branches above.
+    std::cerr << "PlnX86CodeGen: unsupported conversion\n"; // LCOV_EXCL_LINE
+    std::abort(); // LCOV_EXCL_LINE
 }
 
 void PlnX86CodeGen::emitCallC(const string& name, int nFloatArgs)

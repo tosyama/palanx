@@ -9,3 +9,5 @@ printf("%f\n", x * m);
 
 flo32 y = 2.0;
 printf("%f\n", y + n);
+printf("%f\n", n + x);
+printf("%f\n", y + x);

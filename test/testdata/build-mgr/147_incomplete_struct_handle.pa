@@ -1,0 +1,9 @@
+cinclude <stdio.h>;
+
+// _IO_FILE has 29 fields captured from stdio.h; only "_unused2" (a size-expr
+// c2ast can't evaluate) is unsupported, so it registers as an incomplete
+// struct (opaque handle) instead of not registering at all. IT-2902 rejected
+// this declaration outright ("unknown struct type '_IO_FILE'."); IT-2904 lets
+// it through since only a non-owning pointer is declared, no layout needed.
+@!_IO_FILE p;
+printf("ok\n");

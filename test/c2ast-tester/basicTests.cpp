@@ -122,6 +122,84 @@ TEST(c2ast, stdio_functions_in_ast) {
         ASSERT_EQ(p1vt["type-kind"], "prim");
         ASSERT_EQ(p1vt["type-name"], "int32");
     }
+
+    // stdin/stdout/stderr: extern FILE *NAME -- captured into ast.globals as
+    // pntr(strct _IO_FILE), FILE's typedef resolved via IT-2905.
+    {
+        auto& globals = ast["ast"]["globals"];
+        auto find_global = [&](const string& name) -> json* {
+            for (auto& g : globals)
+                if (g["name"] == name) return &g;
+            return nullptr;
+        };
+        for (const char* name : {"stdin", "stdout", "stderr"}) {
+            json* g = find_global(name);
+            ASSERT_NE(g, nullptr);
+            auto& vt = (*g)["var-type"];
+            ASSERT_EQ(vt["type-kind"], "pntr");
+            ASSERT_EQ(vt["base-type"]["type-kind"], "strct");
+            ASSERT_EQ(vt["base-type"]["type-name"], "_IO_FILE");
+        }
+    }
+}
+
+TEST(c2ast, extern_globals) {
+    // struct Handle;                    -- forward-declared only, never defined
+    // extern int g_count;                extern double g_ratio;
+    // extern struct Handle *g_handle;   -- prim/prim/pntr(strct): all captured
+    // extern int g_a, g_b;              -- comma-separated: both captured
+    // static int s_hidden;              -- no external linkage: not captured
+    // extern char *g_names[2];          -- array type: not captured (non-goal)
+    // typedef int A, B; A take_a(B b);  -- comma-separated typedef: B also
+    //                                      registered, so take_a's signature
+    //                                      resolves to int32/int32, not "user"
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/028_extern_globals.h");
+    json ast = json::parse(output);
+    auto& globals = ast["ast"]["globals"];
+
+    auto find_global = [&](const string& name) -> json* {
+        for (auto& g : globals)
+            if (g["name"] == name) return &g;
+        return nullptr;
+    };
+
+    json* count = find_global("g_count");
+    ASSERT_NE(count, nullptr);
+    ASSERT_EQ((*count)["var-type"]["type-kind"], "prim");
+    ASSERT_EQ((*count)["var-type"]["type-name"], "int32");
+
+    json* ratio = find_global("g_ratio");
+    ASSERT_NE(ratio, nullptr);
+    ASSERT_EQ((*ratio)["var-type"]["type-kind"], "prim");
+    ASSERT_EQ((*ratio)["var-type"]["type-name"], "flo64");
+
+    json* handle = find_global("g_handle");
+    ASSERT_NE(handle, nullptr);
+    auto& hvt = (*handle)["var-type"];
+    ASSERT_EQ(hvt["type-kind"], "pntr");
+    ASSERT_EQ(hvt["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(hvt["base-type"]["type-name"], "Handle");
+
+    ASSERT_NE(find_global("g_a"), nullptr);
+    ASSERT_NE(find_global("g_b"), nullptr);
+
+    ASSERT_EQ(find_global("s_hidden"), nullptr);
+    ASSERT_EQ(find_global("g_names"), nullptr);
+
+    ASSERT_EQ(globals.size(), 5u);
+
+    // take_a's signature proves the comma-separated typedef "B" was
+    // registered too (both A and B resolve to int32, not left as "user").
+    auto& functions = ast["ast"]["functions"];
+    json* take_a = nullptr;
+    for (auto& f : functions)
+        if (f["name"] == "take_a") take_a = &f;
+    ASSERT_NE(take_a, nullptr);
+    ASSERT_EQ((*take_a)["ret-type"]["type-kind"], "prim");
+    ASSERT_EQ((*take_a)["ret-type"]["type-name"], "int32");
+    ASSERT_EQ((*take_a)["parameters"][0]["var-type"]["type-kind"], "prim");
+    ASSERT_EQ((*take_a)["parameters"][0]["var-type"]["type-name"], "int32");
 }
 
 TEST(c2ast, include_macro) {
@@ -255,8 +333,12 @@ TEST(c2ast, struct_capture) {
     ASSERT_EQ(fields[0]["var-type"]["type-name"], "int32");
     ASSERT_EQ(fields[1]["name"], "y");
 
-    // struct Missing; (forward declaration only) is not registered
-    ASSERT_EQ(find_struct("Missing"), nullptr);
+    // struct Missing; (forward declaration only) is registered without a
+    // "fields" key, so a tag referenced only through a pointer still gets an
+    // entry (needed for SA to register it as an incomplete struct type).
+    json* missing = find_struct("Missing");
+    ASSERT_NE(missing, nullptr);
+    ASSERT_FALSE(missing->contains("fields"));
 
     // make_point()'s return type references the captured struct by name
     json* make_point = find_func("make_point");
@@ -272,14 +354,15 @@ TEST(c2ast, struct_capture) {
     ASSERT_EQ(p_vt["base-type"]["type-kind"], "strct");
     ASSERT_EQ(p_vt["base-type"]["type-name"], "Point");
 
-    // take_missing()'s struct Missing* parameter stays without a type-name,
-    // since Missing was never captured with a field list.
+    // take_missing()'s struct Missing* parameter keeps the tag name even
+    // though Missing was never captured with a field list -- a tag reference
+    // always carries its name now, regardless of whether a definition exists.
     json* take_missing = find_func("take_missing");
     ASSERT_NE(take_missing, nullptr);
     auto& m_vt = (*take_missing)["parameters"][0]["var-type"];
     ASSERT_EQ(m_vt["type-kind"], "pntr");
     ASSERT_EQ(m_vt["base-type"]["type-kind"], "strct");
-    ASSERT_FALSE(m_vt["base-type"].contains("type-name"));
+    ASSERT_EQ(m_vt["base-type"]["type-name"], "Missing");
 }
 
 TEST(c2ast, typedef_scalar) {
@@ -356,6 +439,61 @@ TEST(c2ast, typedef_pointer_chain) {
     ASSERT_EQ((*g)["ret-type"]["base-type"]["type-kind"], "prim");
     ASSERT_EQ((*g)["ret-type"]["base-type"]["type-name"], "void");
     ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
+}
+
+TEST(c2ast, typedef_struct_tag) {
+    // struct Fwd;              -- bare forward declaration, never defined
+    // typedef struct Body X;   -- typedef of a tag not yet defined at this point
+    // struct Body { int a; };  -- the definition arrives later
+    // struct Never *use(X *x); -- X used as a parameter type; Never never declared at all
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/027_typedef_struct.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+
+    // X (typedef of "struct Body") resolves to the tag, regardless of
+    // definition order -- the typedef appears before Body's field-bearing
+    // definition in the source.
+    json* use = find_func("use");
+    ASSERT_NE(use, nullptr);
+    auto& x_vt = (*use)["parameters"][0]["var-type"];
+    ASSERT_EQ(x_vt["type-kind"], "pntr");
+    ASSERT_EQ(x_vt["base-type"]["type-kind"], "strct");
+    ASSERT_EQ(x_vt["base-type"]["type-name"], "Body");
+    ASSERT_EQ(x_vt["base-type"]["typedef-name"], "X");
+
+    // Fwd (forward-declared only) and Never (referenced only, never declared)
+    // both get an entry without a "fields" key.
+    json* fwd = find_struct("Fwd");
+    ASSERT_NE(fwd, nullptr);
+    ASSERT_FALSE(fwd->contains("fields"));
+    json* never = find_struct("Never");
+    ASSERT_NE(never, nullptr);
+    ASSERT_FALSE(never->contains("fields"));
+
+    // Body has exactly one entry, carrying its field list -- the typedef's
+    // earlier tag-only reference doesn't create a duplicate.
+    int bodyCount = 0;
+    for (auto& s : structs)
+        if (s["name"] == "Body") bodyCount++;
+    ASSERT_EQ(bodyCount, 1);
+    json* body = find_struct("Body");
+    ASSERT_NE(body, nullptr);
+    ASSERT_TRUE(body->contains("fields"));
+    ASSERT_EQ((*body)["fields"].size(), 1);
+    ASSERT_EQ((*body)["fields"][0]["name"], "a");
 }
 
 TEST(c2ast, relational_ops) {
@@ -501,8 +639,12 @@ TEST(c2ast, macro_const_simple) {
     ASSERT_EQ((*magic)["value-type"]["type-kind"], "prim");
     ASSERT_EQ((*magic)["value-type"]["type-name"], "int32");
 
-    // Not a recognized simple constant form: silently skipped, not an error.
-    ASSERT_EQ(find_const("COMPLEX"), nullptr);
+    // An additive expression: folded now that binary operators are evaluated.
+    json* complex_ = find_const("COMPLEX");
+    ASSERT_NE(complex_, nullptr);
+    ASSERT_EQ((*complex_)["value"], "3");
+    ASSERT_EQ((*complex_)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*complex_)["value-type"]["type-name"], "int32");
 }
 
 TEST(c2ast, macro_const_null) {
@@ -541,8 +683,77 @@ TEST(c2ast, macro_const_alias_chain) {
         ASSERT_EQ((*c)["value-type"]["type-name"], "int32");
     }
 
-    // Expands to an additive expression, not a recognized constant shape: still skipped.
-    ASSERT_EQ(find_const("D"), nullptr);
+    // Expands to an additive expression: folded now that binary operators are evaluated.
+    json* d = find_const("D");
+    ASSERT_NE(d, nullptr);
+    ASSERT_EQ((*d)["value"], "6");
+    ASSERT_EQ((*d)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*d)["value-type"]["type-name"], "int32");
+}
+
+TEST(c2ast, macro_const_fold_expr) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/029_macro_const_expr.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    auto expect_value = [&](const string& name, const string& value) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+    };
+
+    expect_value("BITS", "448");
+    expect_value("SUB", "87");     // left-associative: (100 - 10) - 3, not 100 - (10 - 3)
+    expect_value("SHIFTS", "8");   // left-associative: (64 >> 2) >> 1, not 64 >> (2 >> 1)
+    expect_value("DIVS", "10");    // left-associative: (100 / 5) / 2, not 100 / (5 / 2)
+    expect_value("MIXED", "13");   // precedence: 2 + (3 * 4) - 1
+    expect_value("MASK", "63");
+    expect_value("NEG", "-2");
+
+    // Relational operators are recognized but intentionally not folded.
+    ASSERT_EQ(find_const("CMP"), nullptr);
+    // Would be undefined behavior to evaluate ourselves: folds to null, not a wrong value.
+    ASSERT_EQ(find_const("DIVZERO"), nullptr);
+    ASSERT_EQ(find_const("BIGSHIFT"), nullptr);
+    ASSERT_EQ(find_const("OVERFLOWED"), nullptr);
+    // sizeof is never evaluated, so any expression containing it stays null.
+    ASSERT_EQ(find_const("SIZED"), nullptr);
+    // An unresolved identifier keeps the whole expression null.
+    ASSERT_EQ(find_const("IDENT"), nullptr);
+    // A suffixed literal (1L) isn't a plain lit-int, so it doesn't fold either.
+    ASSERT_EQ(find_const("SUFFIXED"), nullptr);
+}
+
+TEST(c2ast, int_constant_width) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s stdlib.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    // Out of int32 range: must widen to int64 rather than silently truncating.
+    json* wclone = find_const("__WCLONE");
+    ASSERT_NE(wclone, nullptr);
+    ASSERT_EQ((*wclone)["value"], "2147483648");
+    ASSERT_EQ((*wclone)["value-type"]["type-kind"], "prim");
+    ASSERT_EQ((*wclone)["value-type"]["type-name"], "int64");
+
+    // In range: still int32.
+    json* exit_failure = find_const("EXIT_FAILURE");
+    ASSERT_NE(exit_failure, nullptr);
+    ASSERT_EQ((*exit_failure)["value-type"]["type-name"], "int32");
 }
 
 TEST(c2ast, sys_stat_h_public_names) {
@@ -560,6 +771,36 @@ TEST(c2ast, sys_stat_h_public_names) {
     ASSERT_EQ((*s_ifdir)["value"], "16384");
     ASSERT_EQ((*s_ifdir)["value-type"]["type-kind"], "prim");
     ASSERT_EQ((*s_ifdir)["value-type"]["type-name"], "int32");
+}
+
+TEST(c2ast, sys_stat_h_perm_masks) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s sys/stat.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    // These are all expression-bodied macros (OR/shift of other macros), previously
+    // silently skipped because binary operators weren't folded.
+    auto expect_value = [&](const string& name, const string& value) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+    };
+
+    expect_value("S_IRWXU", "448");
+    expect_value("S_IRGRP", "32");
+    expect_value("S_IRWXG", "56");
+    expect_value("S_IROTH", "4");
+    expect_value("S_IRWXO", "7");
+    expect_value("ACCESSPERMS", "511");
+    expect_value("ALLPERMS", "4095");
+    expect_value("DEFFILEMODE", "438");
 }
 
 TEST(c2ast, string_h_null_constant) {
@@ -746,4 +987,37 @@ TEST(c2ast, ptr_array_decl) {
     ASSERT_FALSE(p_vt.contains("const"));
     ASSERT_EQ(p_vt["base-type"]["type-kind"], "pntr");
     ASSERT_EQ(p_vt["base-type"]["const"], true);
+}
+
+TEST(c2ast, array_size_expr_fold) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/030_array_size_expr.h");
+    json ast = json::parse(output);
+    auto& structs = ast["ast"]["structs"];
+
+    json* sizes = nullptr;
+    for (auto& s : structs)
+        if (s["name"] == "Sizes") { sizes = &s; break; }
+    ASSERT_NE(sizes, nullptr);
+
+    auto find_field = [](json& fields, const string& name) -> json* {
+        for (auto& f : fields)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    // char a[100 - 10 - 3]; -- folded to a lit-int size-expr now that array
+    // sizes go through the same expression chain as macro bodies.
+    json* a = find_field((*sizes)["fields"], "a");
+    ASSERT_NE(a, nullptr);
+    ASSERT_EQ((*a)["var-type"]["size-expr"]["expr-type"], "lit-int");
+    ASSERT_EQ((*a)["var-type"]["size-expr"]["value"], "87");
+
+    // char b[4 * sizeof(int) - 2]; -- sizeof is never evaluated, so null must
+    // still propagate through the surrounding fold (this is what keeps a
+    // struct like FILE, whose glibc layout size expressions involve sizeof,
+    // an incomplete type instead of resolving to a wrong size).
+    json* b = find_field((*sizes)["fields"], "b");
+    ASSERT_NE(b, nullptr);
+    ASSERT_TRUE((*b)["var-type"]["size-expr"].is_null());
 }

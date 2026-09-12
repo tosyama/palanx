@@ -63,6 +63,31 @@ public:
     json             toJson(const PlnType* t);
 };
 
+// Mirrors PlnTypeRegistry::fromJson's accepted domain (prim with a known
+// type-name, pntr, struct with a type-name) without interning anything, so a
+// caller can diagnose an unrepresentable type before treating a signature as
+// callable instead of relying on fromJson's exception. Returns "" when
+// fromJson(j) would succeed; otherwise a short display name for the first
+// unrepresentable node found (recursing through a pntr chain's base-type).
+std::string unrepresentableTypeName(const json& j);
+
 // Type compatibility check
 TypeCompat typeCompat(const PlnType* from, const PlnType* to,
                       const PlnTypeRegistry& registry);
+
+// Usual arithmetic conversions (C-style) for a binary operator's operand
+// pair. Returns the common type both operands convert to -- always `a` or
+// `b` itself, so unlike variadicPromote() this needs no registry to intern a
+// new type. Returns nullptr if either side is not Prim, or is Void (illegal
+// as an operand type). Does not perform C's integer promotion to `int`: a
+// narrow width (e.g. int8+int8) stays narrow, since Palan preserves
+// declared-width wraparound rather than promoting to a machine word.
+const PlnType* usualArithConv(const PlnType* a, const PlnType* b);
+
+// Whether an argument of type `from` may be passed to a parameter of type
+// `to` without an explicit cast. Distinct from typeCompat/usualArithConv:
+// a call argument only needs to fit the callee's ABI width, not match a
+// declared variable's exact type, so this also accepts a same-width
+// signedness reinterpretation (e.g. int32 -> uint32) that a binding site
+// (var-decl/assign/return) rejects.
+bool argConvOk(const PlnType* from, const PlnType* to);

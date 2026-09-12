@@ -1,0 +1,3 @@
+cinclude <stdio.h>;
+@!FILE f = fopen("/tmp/pln_sa_161.txt", "w");
+fclose(f);

@@ -1,2 +1,3 @@
-@!Foo p;
-int64 v = p[0].bar;
+func f(@!Foo p) {
+	int64 v = p[0].bar;
+}

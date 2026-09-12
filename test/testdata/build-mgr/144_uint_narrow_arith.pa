@@ -1,0 +1,35 @@
+cinclude <stdio.h>;
+
+// uint8 arithmetic: add/sub with wraparound (mul is not supported at width 1, same as int8).
+// Comparison uses values below 128 so signed vs. unsigned setCC (a separate, out-of-scope
+// issue) can't affect the result — this test is only about instruction width.
+uint8 a8 = 250;
+uint8 b8 = 10;
+uint8 c8 = a8 + b8;
+uint8 d8 = a8 - b8;
+uint8 p8 = 100;
+uint8 q8 = 10;
+int32 lt8 = p8 < q8;
+printf("%u %u %d\n", c8, d8, lt8);
+
+// uint16 arithmetic: add, sub, mul with wraparound
+uint16 a16 = 65530;
+uint16 b16 = 10;
+uint16 c16 = a16 + b16;
+uint16 d16 = a16 - b16;
+uint16 e16 = a16 * b16;
+uint16 p16 = 100;
+uint16 q16 = 10;
+int32 lt16 = p16 < q16;
+printf("%u %u %u %d\n", c16, d16, e16, lt16);
+
+// uint32 arithmetic: add, sub, mul with wraparound
+uint32 a32 = 4294967290;
+uint32 b32 = 10;
+uint32 c32 = a32 + b32;
+uint32 d32 = a32 - b32;
+uint32 e32 = a32 * b32;
+uint32 p32 = 100;
+uint32 q32 = 10;
+int32 lt32 = p32 < q32;
+printf("%u %u %u %d\n", c32, d32, e32, lt32);

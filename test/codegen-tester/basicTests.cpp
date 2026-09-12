@@ -1185,3 +1185,129 @@ TEST(codegen, addr_of_dst_stack_spill) {
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("(%rbp), %r11\n\tmovq %r11, "), string::npos);
 }
+
+TEST(codegen, sign_cross_widen) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/063_sign_cross_widen.sa.json";
+    string asmf = "out/063_sign_cross_widen.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Widening must extend according to the SOURCE's signedness: unsigned
+    // sources zero-extend even when the destination type is signed.
+    ASSERT_NE(asm_text.find("movzbq"), string::npos);  // uint8 -> int64
+    ASSERT_NE(asm_text.find("movzwq"), string::npos);  // uint16 -> int64
+    ASSERT_EQ(asm_text.find("movsbq"), string::npos);  // must not sign-extend
+    ASSERT_EQ(asm_text.find("movswq"), string::npos);
+    ASSERT_EQ(asm_text.find("movslq"), string::npos);  // uint32 -> int64 must not sign-extend
+}
+
+TEST(codegen, sign_cross_narrow) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/064_sign_cross_narrow.sa.json";
+    string asmf = "out/064_sign_cross_narrow.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // Widening must extend according to the SOURCE's signedness: signed
+    // sources sign-extend even when the destination type is unsigned.
+    ASSERT_NE(asm_text.find("movsbq"), string::npos);  // int8 -> uint64
+    ASSERT_NE(asm_text.find("movswl"), string::npos);  // int16 -> uint32
+    ASSERT_EQ(asm_text.find("movzbq"), string::npos);  // must not zero-extend
+    ASSERT_EQ(asm_text.find("movzwl"), string::npos);
+    // Narrowing (int64 -> uint8) and same-width sign reinterpretation
+    // (int32 -> uint32) just reference the low bits; no dedicated mnemonic.
+    ASSERT_NE(asm_text.find("movb"), string::npos);
+    ASSERT_NE(asm_text.find("movl"), string::npos);
+}
+
+TEST(codegen, float_to_uint) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/065_float_to_uint.sa.json";
+    string asmf = "out/065_float_to_uint.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // flo64 -> uint32/uint8: must use the 64-bit form (32-bit form's signed
+    // result cannot represent a uint32 above INT32_MAX).
+    ASSERT_NE(asm_text.find("cvttsd2siq"), string::npos);
+    // flo64 -> int8: signed narrow destinations reuse the 32-bit form.
+    ASSERT_NE(asm_text.find("cvttsd2sil"), string::npos);
+}
+
+TEST(codegen, uint32_arith) {
+    // IT-2026-09-07: addInstrForType/mulInstrForType enumerated signed widths
+    // explicitly and fell through to the 64-bit default for Uint32, while
+    // movInstrForType/sizedRegName already sized Uint32 at 32 bits — mismatched
+    // instruction/register widths that the assembler rejects.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/066_uint32_arith.sa.json";
+    string asmf = "out/066_uint32_arith.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("addl"),  string::npos);
+    ASSERT_NE(asm_text.find("imull"), string::npos);
+    ASSERT_EQ(asm_text.find("addq %r"),  string::npos);
+    ASSERT_EQ(asm_text.find("imulq %r"), string::npos);
+}
+
+TEST(codegen, uint_lit_narrow) {
+    // IT-2026-09-07: a uint32 variable declared directly from a lit-uint node
+    // (a `u`-suffixed literal) deserialized with no type, so InitVar always got
+    // Uint64 (aliased to the 64-bit movq/addq form) regardless of the declared
+    // 32-bit width.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/067_uint_lit_narrow.sa.json";
+    string asmf = "out/067_uint_lit_narrow.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movl $4042322160"), string::npos);
+    ASSERT_NE(asm_text.find("addl"), string::npos);
+    ASSERT_EQ(asm_text.find("movq $4042322160"), string::npos);
+    ASSERT_EQ(asm_text.find("addq %r"), string::npos);
+}
+
+TEST(codegen, bitwise_ops) {
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/068_bitwise_ops.sa.json";
+    string asmf = "out/068_bitwise_ops.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("andq"), string::npos);
+    ASSERT_NE(asm_text.find("orq"),  string::npos);
+    ASSERT_NE(asm_text.find("xorq"), string::npos);
+    ASSERT_NE(asm_text.find("notq"), string::npos);
+    ASSERT_NE(asm_text.find("call printf"), string::npos);
+}
+
+TEST(codegen, c_global) {
+    // IT-2026-09-06-2908: a "c-global" expr-type node (e.g. `stderr`) lowers
+    // to LeaLabel+DerefLoad with no dedicated VInstr and no x86 change --
+    // the label is emitted verbatim, exactly like a str-literal's LeaLabel.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/069_c_global.sa.json";
+    string asmf = "out/069_c_global.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("leaq stderr(%rip), %r"), string::npos);
+    ASSERT_NE(asm_text.find("movq (%r"), string::npos);
+    ASSERT_NE(asm_text.find("call fprintf"), string::npos);
+}

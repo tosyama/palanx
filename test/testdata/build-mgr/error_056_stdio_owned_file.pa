@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+
+// IT-2026-09-06-2909: `FILE` is a typedef for the incomplete `struct _IO_FILE`,
+// so an owned declaration (which needs a layout) must be rejected. The
+// diagnostic names the underlying tag, not the alias.
+FILE f;
+printf("unreachable\n");

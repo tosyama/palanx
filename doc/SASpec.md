@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.28
+ver. 0.1.29
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -94,7 +94,20 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 - cinclude statements are consumed by SA and not emitted; any typedef-derived
   type aliases and object-like-macro constants carried in the header's AST
   (see ASTSpec.md `typedef-name` and `constants`) are registered into the same
-  alias/const tables described below and likewise never appear in sa.json
+  alias/const tables described below and likewise never appear in sa.json.
+  C global variables (see ASTSpec.md's "Global variable model", the header's
+  `globals` list) are registered the same way as constants and typedefs, not
+  like C functions: always unqualified, even under `cinclude ... as S;`
+  (only `S.func(...)` calls require the alias qualifier). A registered global
+  is read-only from Palan -- assigning to it (`E_CGlobalNotAssignable`) or
+  taking its address / accessing a field through it (`E_CGlobalNotAddressable`)
+  is a compile error. Visibility follows the same scope rule as C functions
+  from cinclude (see the **block** entry below): visible from the cinclude
+  point to the end of the enclosing scope. A global whose type SA cannot
+  represent (see PlnType.h's `unrepresentableTypeName`, e.g. C's `long
+  double`) does not make the cinclude itself fail -- only referencing that
+  particular global does, with `E_UnsupportedCGlobalType` (mirrors
+  `_unsupported-sig`/`E_UnsupportedCFuncSignature` for C functions).
 - import statements are consumed by SA and not emitted; imported functions are
   registered in the current scope and become callable from the point of import
 - type-alias statements are consumed by SA and not emitted; the alias is
@@ -254,6 +267,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
   - id: same object as var-type
+  - c-global: the global's registered var-type (fully normalized: `strct`→`struct`,
+    pointee `const`→pointer `mutable`, no leftover `typedef-name`)
   - add: promoted type of left and right operands (see Promotion rules);
     the narrower operand is wrapped in a convert node if types differ
   - sub: same promotion rules as add
@@ -444,6 +459,21 @@ Additional fields per expression kind:
 
 - lit-str expression: value replaced by label (assembly label string, e.g. ".str0")
 - id expression: var-type added (Variable type object from ASTSpec.md)
+- c-global expression: an `id` expression referencing a registered C global
+  variable is replaced wholesale by this node (the original `name` key is not
+  kept): `{"expr-type":"c-global","label":<global name>,"value-type":<Variable
+  type object>}`, plus `loc` carried over unchanged from the source `id`
+  expression when present. `label` is the raw C symbol name, emitted verbatim by
+  codegen as a `leaq <label>(%rip), <reg>` assembly reference (no
+  `.extern`/`.globl` declaration needed, same as an undeclared `call
+  printf`) followed by a load through it -- see codegen's `LeaLabel`+
+  `DerefLoad` lowering, no dedicated instruction. Example -- `stderr` (from
+  `extern FILE *stderr;` in stdio.h):
+  ```json
+  {"expr-type":"c-global","label":"stderr",
+   "value-type":{"type-kind":"pntr","mutable":true,
+                 "base-type":{"type-kind":"struct","type-name":"_IO_FILE"}}}
+  ```
 - call expression:
   - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions
   - value-type added when the function has a single return type (ret-type in its definition)
@@ -452,16 +482,38 @@ Additional fields per expression kind:
 
 Promotion rules
 ---------------
-Integer types are ranked by bit width. The higher-ranked type wins.
+Integer types are ranked by bit width:
 
 - Rank 1: int8, uint8
 - Rank 2: int16, uint16
 - Rank 3: int32, uint32
 - Rank 4: int64, uint64
 
-If one operand type is not in the table, the other operand's type is used as-is.
+### Usual arithmetic conversions (binary operators and comparisons)
 
-Float promotion rules:
+A binary arithmetic operator (`+ - * / % & | ^`) or comparison (`< <= > >= == !=`) applies
+`usualArithConv(leftType, rightType)` to determine a common type; the operand(s) that differ
+from the common type each get a `convert` node. The rules, in order:
+
+1. Either operand is float → the float side wins (both float → the wider float; float paired
+   with an integer → the float type, per the int-to-float widening rule below).
+2. Same signedness (both signed or both unsigned) → the higher-ranked type wins.
+3. Mixed signedness, and the signed operand's rank is strictly greater than the unsigned
+   operand's rank → the signed type wins (e.g. `int64 op uint32` → `int64`).
+4. Mixed signedness, otherwise → the higher-ranked **unsigned** type wins (e.g.
+   `int32 op uint32` → `uint32`; equal rank always falls here since rule 3 requires *strictly*
+   greater).
+
+**No C-style integer promotion to a machine word.** Unlike C, `int8 op int8` stays `int8` — Palan
+preserves the declared width's wraparound rather than promoting to `int`. This also means the
+common type is always one of the two operand types, never a third type.
+
+A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
+an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
+unconverted (pointer comparison, e.g. `p == NULL`, is valid and has no numeric common type); the
+comparison's own result type is always `int32` regardless.
+
+Float promotion rules (subsumed by usual arithmetic conversions above, restated for clarity):
 
 - `flo32 op flo64` → flo32 is implicitly widened to flo64; result is flo64
 - `int op flo32` → int is implicitly widened to flo32; result is flo32
@@ -473,6 +525,11 @@ The `%` (mod) operator on float operands is a compile error (SA emits an error a
 typeCompat rules
 ----------------
 `typeCompat(from, to)` returns one of: `Identical`, `ImplicitWiden`, `ExplicitCast`, `Incompatible`.
+This is the rule for a **binding site** — a var-decl initializer, assignment, array-assignment,
+return, or field-assign — not for a binary operator (see "Usual arithmetic conversions" above)
+or a call argument (see below): those accept some cross-signedness conversions a binding site
+rejects, because a call argument only needs to fit the callee's ABI width rather than match a
+declared variable's exact type.
 
 | from \ to            | same type  | wider, same group | narrower or diff group (prim) | pointer | other |
 |----------------------|------------|-------------------|-------------------------------|---------|-------|
@@ -486,9 +543,33 @@ typeCompat rules
 
 Notes:
 - Signed and unsigned are different groups; `int32 → uint32` requires `ExplicitCast`.
-- `ExplicitCast` is only permitted at a `cast` expression site (`type-name(expr)`).
-  Using it implicitly (e.g. assigning int64 to int32 directly) is a compile error.
+- At a binding site, `ImplicitWiden` inserts a `convert` node; `ExplicitCast` is a compile error
+  (E_InvalidNarrowingConv) unless the source expression is an integer literal (`lit-int` /
+  `lit-uint`), which instead adopts the destination type. All five binding sites (var-decl
+  initializer, assignment, array-assignment, return, field-assign) apply this identically —
+  there is exactly one narrowing rule, not one strict (initializer) and four permissive ones.
+  Writing `ExplicitCast` at a non-literal binding site requires an explicit `type-name(expr)`
+  cast in the source.
 - Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32.
+
+### Call arguments
+
+A fixed (non-variadic) call argument is checked against its parameter's type by `argConvOk(from,
+to)`, not `typeCompat`. It accepts everything `usualArithConv(from, to) == to` would (a genuine
+widen with no information loss) **plus** a same-rank signedness reinterpretation in either
+direction (e.g. `int32` argument → `uint32` parameter, and `uint32` → `int32`) — the bit pattern
+is unchanged, and a binding site's stricter same-width rule doesn't apply here since the
+parameter is the callee's declared ABI width, not a variable the caller is naming. Anything else
+(a genuine narrowing, or a cross-sign conversion where the destination is narrower) diagnoses
+E_InvalidNarrowingConv, the same message a binding site uses. A pointer/struct argument is
+unaffected by this rule (`argConvOk` only applies between two Prim types) and keeps its existing
+`ImplicitWiden`-only check plus `checkArgPtrPermission`.
+
+A bare integer-literal argument (`lit-int`/`lit-uint`) adopts the parameter's type directly (SA
+passes the parameter type down as the literal's `expectedType`) rather than defaulting to
+int64/uint64 and then being checked for narrowing — this is what lets `add(1, 2)` bind to
+`int32` parameters and `mkdir(path, S_IRWXU)` bind to a `uint32`-typed `mode_t` parameter without
+an explicit cast.
 - `pntr(T)` and `pntr(T, mutable=true)` are treated as `Identical`; base-type match is sufficient
   for arr-assign target type checking. `mutable` is a write-permission attribute, not part of
   type identity, so `typeCompat` never inspects it.
@@ -512,6 +593,39 @@ Notes:
     variables get elsewhere: SA's own permission checks only ever need to understand `mutable`,
     never c2ast's `const` vocabulary.
 
+C-origin signature admission
+-----------------------------
+Before a `cinclude`d C function's parameters/return type (or a C global's single type, see the
+**cinclude** entry in Statement model above) are usable, `normalizeCFuncSig`/`normalizeCGlobal`
+(`PlnSaInternal.h`) apply `normalizeCType` (folding `pntr`'s pointee `const` to `mutable`, and
+`strct`→`struct`) and then check every type against `unrepresentableTypeName`, which recognizes:
+
+- A `prim` type-name not resolved to a known Palan primitive (e.g. `flt128` for C's `long
+  double` when no typedef maps it to something usable).
+- `arr` (a bare array type-kind — the `[n]@T`/`[n]@!T` pointer-slot-array shape has already
+  normalized to `pntr` by this point), `func` (a function-pointer type), `union`, a `strct`
+  with no `type-name` (an anonymous struct reference), and `user` (an identifier c2ast could
+  not resolve to a known type — including a typedef of an anonymous struct/union/enum/function
+  body, which c2ast does not register).
+- A `struct` type-kind carrying a `type-name` is always representable here, whether or not it
+  is complete — an incomplete struct's layout is enforced later, only where a layout is actually
+  needed (see "Incomplete struct types" below), not at signature-admission time.
+
+This differs from a native Palan signature's check (`validateNativeSig`): a native signature only
+rejects a structural type-kind `PlnTypeRegistry::fromJson` can never build (currently just a bare
+`arr`), and defers a not-yet-registered struct name to the more specific E_UnknownStructType /
+E_IncompleteStructType diagnosed at the point of use — a cinclude'd C signature has no such later
+resolution step to defer to, since c2ast's typedef registration has already resolved anything
+resolvable before the signature is emitted.
+
+**Deferred to reference time, not rejected at cinclude time**: a hit does not fail the `cinclude`
+statement itself. It is recorded on the entry (`_unsupported-sig` for a function,
+`_unsupported-global` for a global) and diagnosed only when the function is called
+(`requireSupportedCFuncSig` → E_UnsupportedCFuncSignature) or the global is referenced
+(`requireSupportedCGlobal` → E_UnsupportedCGlobalType) — so cincluding a header that happens to
+declare one unsupported function or global does not prevent using the header's other, supported
+declarations.
+
 Struct types
 ------------
 `type Name { field_decl... }` defines a struct type. The SA processes `struct-def` nodes and
@@ -523,13 +637,50 @@ for a C-origin struct. Every sa.json shape documented below (C ABI layout, var-d
 field-assign, field-access) applies unchanged regardless of whether the struct came from a
 native `type Name {...}` or a `cinclude`d header.
 
+### Incomplete struct types
+
+A registered struct tag may be *incomplete* — its name is known but no field layout is available,
+the same distinction C makes for a forward-declared or opaque tag (e.g. `FILE`). `StructDef` has
+`bool isComplete` and `string incompleteReason`; when `!isComplete`, `fields` is empty and
+`totalSize` is `-1` (there is no partial layout — either the layout is fully known or not known
+at all). `incompleteReason` is one of exactly two values:
+
+- `"forward-declared"` — the header only ever mentions the tag: a forward declaration (`struct
+  Foo;`) or a bare reference through a field/parameter/return whose pointee struct is never
+  defined in this header (ASTSpec.md's Struct definition model — `fields` omitted). No field
+  information exists to fail on.
+- `"unsupported-field"` — the header gives the tag a field list, but at least one field is
+  rejected by "C-origin field admission" (below).
+
+Either way the tag name still resolves — referencing it is not E_UnknownStructType, the "no such
+type" error — but any use that requires a known layout is E_IncompleteStructType instead:
+
+- Field-chain resolution, including a plain field read or an intermediate hop in a longer chain
+  (`resolveObjectChain`) and field-assign (write).
+- Subscripting a struct-element array (`arr[i]` needs the element stride, i.e. `totalSize`).
+- A by-value struct variable declaration of the tag (`T x;`), a `[n]T` owned-pointer-array
+  declaration, or a `[n]$T` contiguous embedded-array declaration.
+- Embedding the tag as another struct's field — as a `$T` embed leaf, an owned struct-pointer
+  leaf, or a struct-element array leaf (`[n]T`/`[n]$T` field) — checked while the *enclosing*
+  struct is being built, so an incomplete struct cannot be smuggled in as a sub-struct either.
+
+An incomplete struct remains fully usable as a pointer: a local variable, function
+parameter/return type, or cinclude'd C function argument of type `@T`/`@!T` all work normally,
+since none of those require a layout — matching C's own incomplete-type semantics (a `FILE *` is
+usable everywhere `FILE` itself is not).
+
+A tag already registered incomplete may later be promoted to complete by a `cinclude` that
+supplies a full, fully-supported field list (first *complete* definition wins). The reverse never
+happens: a tag already complete keeps its layout regardless of what a later header says.
+
 ### C-origin field admission
 
 Before a C-origin field list is registered, each field's `var-type` (ASTSpec.md's c2ast
 representation) is normalized to the same vocabulary a native `struct-def` field would use, then
-checked for support; a field the check rejects causes the *whole* struct to be skipped (it never
-enters the registry, so any later reference to it is E_UnknownStructType) rather than being
-dropped individually:
+checked for support; a field the check rejects causes the *whole* struct to be registered as an
+incomplete struct (see "Incomplete struct types" below) rather than being dropped individually or
+the tag going unregistered — fields up to and including the failing one are discarded, and no
+partial layout is kept:
 
 - A by-value struct leaf (`type-kind:"strct"`, from `struct Foo f;`) is rewritten to
   `type-kind:"embed"` — same shape a native `$Foo` field produces. A by-value struct leaf inside
@@ -544,8 +695,9 @@ dropped individually:
   and its base-type is one of: a pointer (`[n]@T`/`[n]@!T` slot array), a primitive with a known
   size, or a primitive naming an already-registered struct (`[n]$T`/`[n]T`). **A 2D-or-deeper
   array field (`int cells[2][3];`, base-type itself `arr`) is not supported** — the whole struct
-  is skipped, so `Sample s;` for a `struct Sample { int cells[2][3]; };` fails with
-  E_UnknownStructType even though `cells` is the only unsupported field.
+  is registered incomplete, so `Sample s;` for a `struct Sample { int cells[2][3]; };` fails with
+  E_IncompleteStructType even though `cells` is the only unsupported field (the tag `Sample`
+  itself still resolves, and is usable through `@Sample`/`@!Sample`).
   - A pointer base-type (`T *field[n];`, e.g. glibc's `struct __locale_data *__locales[13];`)
     is Palan's `[n]@T`/`[n]@!T` pointer-slot-array shape. Native syntax never sets `embedded`
     for this shape (only the `$`-prefixed inline-storage forms do), so the `embedded` key

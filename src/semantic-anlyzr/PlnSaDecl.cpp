@@ -26,6 +26,11 @@ static StructDef buildStructDef(const string& name,
 		if (tk == "prim") {
 			string tname = vtype["type-name"].get<string>();
 			if (structDefs.count(tname)) {
+				if (!structDefs.at(tname).isComplete) {
+					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, tname,
+					                                  structDefs.at(tname).incompleteReason) << endl;
+					exit(1);
+				}
 				int sz = 8, align = 8;
 				offset = alignUp(offset, align);
 				def.fields.push_back({.name=fieldName, .typeKind="struct-ptr",
@@ -58,6 +63,11 @@ static StructDef buildStructDef(const string& name,
 				exit(1);
 			}
 			const StructDef& sub = structDefs.at(structName);
+			if (!sub.isComplete) {
+				cerr << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
+				                                  sub.incompleteReason) << endl;
+				exit(1);
+			}
 			int align = sub.maxAlign;
 			offset = alignUp(offset, align);
 			def.fields.push_back({.name=fieldName, .typeKind="embed",
@@ -130,6 +140,11 @@ static StructDef buildStructDef(const string& name,
 				}
 				// struct leaf ([n]Point): owned pointer array, cascades to
 				// __pln_alloc_arr_T/__pln_free_arr_T (v0.1.24 IT-2407 asset)
+				if (!structDefs.at(leaf_name).isComplete) {
+					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
+					                                  structDefs.at(leaf_name).incompleteReason) << endl;
+					exit(1);
+				}
 				int align = 8;
 				offset = alignUp(offset, align);
 				def.fields.push_back({.name=fieldName, .typeKind="arr-ptr",
@@ -164,6 +179,11 @@ static StructDef buildStructDef(const string& name,
 			} else if (base_kind == "prim") {
 				// struct leaf ([n]$Point)
 				const StructDef& leafDef = structDefs.at(leaf_name);
+				if (!leafDef.isComplete) {
+					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
+					                                  leafDef.incompleteReason) << endl;
+					exit(1);
+				}
 				if (leafDef.hasOwnedStructFields) {
 					cerr << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
 					exit(1);
@@ -189,8 +209,9 @@ static StructDef buildStructDef(const string& name,
 			exit(1);
 		}
 	}
-	def.totalSize = alignUp(offset, maxAlign);
-	def.maxAlign  = maxAlign;
+	def.totalSize  = alignUp(offset, maxAlign);
+	def.maxAlign   = maxAlign;
+	def.isComplete = true;
 	return def;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -204,40 +225,70 @@ json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
-	if (!stmt["vars"].empty()) {
-		const json& vtype = stmt["vars"][0]["var-type"];
+	// Resolve type-alias names (e.g. "PT" -> struct "Point", "FILE" -> struct
+	// "_IO_FILE") at every level (top, and inside pntr/arr wrappers) before
+	// dispatching. The dispatch checks below key off structDefs_.count() on a
+	// "prim" type-name; without this, a struct reached only through an alias
+	// name never matches and silently falls through to the plain scalar
+	// var-decl path at the bottom, which declares the variable but never
+	// allocates its storage (see IT-2026-09-06-2905 prereq bug).
+	json stmt2 = stmt;
+	for (auto& var : stmt2["vars"])
+		if (var.contains("var-type"))
+			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
+
+	if (!stmt2["vars"].empty()) {
+		const json& vtype = stmt2["vars"][0]["var-type"];
 		string tk = vtype.value("type-kind", "");
 
 		if (tk == "arr" && vtype.value("specifier", "") == "raw" && vtype["size-expr"].is_null()) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
+			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
 			exit(1);
 		}
 		if (tk == "arr" && vtype.value("specifier", "") == "raw"
 				&& !vtype["size-expr"].is_null()
 				&& vtype.value("embedded", false))
-			return sa_embed_arr_var_decl(stmt);
+			return sa_embed_arr_var_decl(stmt2);
 		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
 			const json& base = vtype["base-type"];
 			if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
-				return sa_owned_struct_arr_var_decl(stmt);
-			return sa_arr_var_decl(stmt);
+				return sa_owned_struct_arr_var_decl(stmt2);
+			return sa_arr_var_decl(stmt2);
 		}
 		if (tk == "prim") {
 			string tname = vtype.value("type-name", "");
 			if (structDefs_.count(tname))
-				return sa_struct_var_decl(stmt);
-			if (!typeAliases_.count(tname) && elemSizeBytes(tname) < 0) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+				return sa_struct_var_decl(stmt2);
+			if (!isKnownTypeName(tname)) {
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 				exit(1);
+			}
+		}
+		if (tk == "pntr") {
+			// Validate the pointee name at declaration time so `@!NoSuchStruct p;`
+			// is rejected here rather than silently compiling (no init -> never
+			// reaches PlnTypeRegistry::fromJson) or aborting via an unguarded
+			// fromJson throw (with init). Walk through pntr-of-pntr chains; a
+			// pointee of kind other than "prim" (struct/arr/...) is validated by
+			// its own producer, so nothing to check here.
+			const json* base = &vtype["base-type"];
+			while (base->value("type-kind","") == "pntr")
+				base = &(*base)["base-type"];
+			if (base->value("type-kind","") == "prim") {
+				string tname = base->value("type-name", "");
+				if (!isKnownTypeName(tname)) {
+					cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+					exit(1);
+				}
 			}
 		}
 	}
 
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
-	for (auto& var : stmt["vars"]) {
+	for (auto& var : stmt2["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = deepNormalizePrimToStruct(resolveTypeAlias(var["var-type"]));
+		json varType = deepNormalizePrimToStruct(var["var-type"]);
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
@@ -246,30 +297,17 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			const PlnType* toType = registry_.fromJson(varType);
 			json init = sa_expression(var["init"], toType);
 			if (!init.contains("value-type")) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 				exit(1);
 			}
-			if (init["value-type"] != varType) {
-				const PlnType* fromType = registry_.fromJson(init["value-type"]);
-				TypeCompat compat = typeCompat(fromType, toType, registry_);
-				if (compat == TypeCompat::ImplicitWiden) {
-					init = wrapConvert(init, varType);
-				} else if (compat == TypeCompat::ExplicitCast) {
-					string et = init["expr-type"];
-					if (et != "lit-int" && et != "lit-uint") {
-						cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_InvalidNarrowingInit) << endl;
-						exit(1);
-					}
-				}
-				// Incompatible: no action (ptr types pass through as-is)
-			}
+			init = convertForBinding(stmt2, init, toType, varType);
 			if (!ptrPermissionOk(init["value-type"], varType)) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);
 			}
 			sa_var["init"] = init;
 		}
-		declareVar(name, varType, &stmt);
+		declareVar(name, varType, &stmt2);
 		sa_stmt["vars"].push_back(sa_var);
 	}
 	return json::array({sa_stmt});
@@ -456,7 +494,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
 			exit(1);
 		}
-		const StructDef& def = structDefs_[leaf_name];
+		const StructDef& def = requireCompleteStruct(leaf_name, stmt);
 		if (def.hasOwnedStructFields) {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
 			exit(1);
@@ -645,8 +683,14 @@ static json cFieldVarType(const json& vtype)
 // (unresolved typedef fields, C bitfields/anonymous unions, ...). Those are never
 // referenced by Palan interop code, so unlike a native `type Name { ... }` field
 // error (a real mistake in the user's own source, worth exit(1)), an unsupported
-// field here just means "don't register this struct" -- same as the tagless/
-// fieldless struct case c2ast already leaves out of the "structs" list.
+// field here just means the tag registers as an incomplete struct (registerCStruct)
+// -- usable only through @T/@!T, same as C's incomplete-type restriction -- rather
+// than exit(1) or dropping the tag entirely.
+//
+// A field naming a struct that is itself still incomplete is rejected the same way
+// an unsupported field is: buildStructDef needs that struct's totalSize/maxAlign to
+// lay out an embed/embedded-array field, or its totalSize when cascading an owned
+// array's alloc-shape, so this owner cannot become complete off of it either.
 static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef>& structDefs,
                                    const string& ownerName)
 {
@@ -655,7 +699,8 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 		return elemSizeBytes(vtype.value("type-name", "")) >= 0;
 	if (tk == "embed") {
 		string structName = vtype["base-type"].value("type-name", "");
-		return structName != ownerName && structDefs.count(structName);
+		return structName != ownerName && structDefs.count(structName)
+			&& structDefs.at(structName).isComplete;
 	}
 	if (tk == "arr") {
 		if (!vtype.contains("size-expr") || !vtype.contains("base-type")) return false;
@@ -670,7 +715,8 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 		if (btk == "pntr") return true;  // [n]@T / [n]@!T slot array
 		if (btk == "prim") {
 			string leaf = bt.value("type-name", "");
-			return elemSizeBytes(leaf) >= 0 || structDefs.count(leaf) > 0;
+			return elemSizeBytes(leaf) >= 0
+				|| (structDefs.count(leaf) > 0 && structDefs.at(leaf).isComplete);
 		}
 		return false;
 	}
@@ -680,11 +726,43 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 void PlnSemanticAnalyzer::registerCStruct(const json& s)
 {
 	string name = s["name"].get<string>();
-	if (structDefs_.count(name)) return;  // first header wins on duplicate struct tags
+	auto existing = structDefs_.find(name);
+	if (existing != structDefs_.end() && existing->second.isComplete)
+		return;  // first complete definition wins
+
+	if (!s.contains("fields")) {
+		// Tag captured only as a forward declaration or a bare reference (e.g. a
+		// pointer field/parameter whose pointee is never defined in this header,
+		// like FILE's own "_markers"/"_chain" fields, or sys/stat.h's opaque
+		// timer_t-style handles). Register it as incomplete rather than not at
+		// all -- the name is real, only its layout is unavailable -- so
+		// requireCompleteStruct reports E_IncompleteStructType instead of
+		// leaving the name unresolved. Leave an already-incomplete entry (e.g.
+		// "unsupported-field" from an earlier cinclude) as-is: a bare reference
+		// carries no new information to promote it with.
+		if (existing == structDefs_.end()) {
+			StructDef def;
+			def.name             = name;
+			def.incompleteReason = "forward-declared";
+			structDefs_[name] = def;
+		}
+		return;
+	}
+
 	json fields = json::array();
 	for (auto& f : s["fields"]) {
 		json vt = cFieldVarType(f["var-type"]);
-		if (!isSupportedCFieldType(vt, structDefs_, name)) return;  // skip whole struct
+		if (!isSupportedCFieldType(vt, structDefs_, name)) {
+			// Register the tag as an incomplete struct rather than not at all: the
+			// name is real (glibc defines it), only its layout is unavailable this
+			// version. This lets SA report E_IncompleteStructType -- distinct from
+			// "no such type" -- and still allows @T/@!T use of the tag.
+			StructDef def;
+			def.name             = name;
+			def.incompleteReason = "unsupported-field";
+			structDefs_[name] = def;
+			return;
+		}
 		fields.push_back({{"name", f["name"]}, {"var-type", vt}});
 	}
 	structDefs_[name] = buildStructDef(name, fields, structDefs_);
@@ -725,10 +803,26 @@ json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
 	return vtype;
 }
 
+// Like resolveTypeAlias, but also resolves alias names nested inside pntr/arr
+// wrappers (e.g. "[3]PT" or "@!PT" where PT is a struct alias), so var-decl
+// dispatch (sa_var_decl) sees the real struct name at every level instead of
+// only at the top. Unlike deepNormalizePrimToStruct, this never converts a
+// resolved prim(StructName) into the "struct" type-kind -- callers still need
+// to see "prim" so their existing structDefs_.count(type-name) checks work
+// unchanged, whether the name came from native syntax or an alias.
+json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
+{
+	json resolved = resolveTypeAlias(vtype);
+	string tk = resolved.value("type-kind", "");
+	if ((tk == "pntr" || tk == "arr") && resolved.contains("base-type"))
+		resolved["base-type"] = resolveTypeAliasDeep(resolved["base-type"]);
+	return resolved;
+}
+
 json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 {
 	const string& structName = stmt["vars"][0]["var-type"]["type-name"].get<string>();
-	const StructDef& def = structDefs_[structName];
+	const StructDef& def = requireCompleteStruct(structName, stmt);
 	json pntr_type = {{"type-kind","pntr"},
 	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
 	json result = json::array();
@@ -777,6 +871,7 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 	const json& vtype = stmt["vars"][0]["var-type"];
 	const json& base_type = vtype["base-type"];
 	string struct_name = base_type["type-name"].get<string>();
+	requireCompleteStruct(struct_name, stmt);  // recordAllocShape below needs totalSize/fields
 
 	string shape_key = "arr_" + struct_name;
 	bool found = false;

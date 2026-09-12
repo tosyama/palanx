@@ -93,7 +93,7 @@ TEST(sa_error, invalid_narrowing_init) {
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/026_invalid_narrowing_init.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find("Narrowing initialization"), string::npos);
+	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int8'"), string::npos);
 }
 
 TEST(sa_error, export_in_block) {
@@ -293,6 +293,26 @@ TEST(sa_error, float_logical_op) {
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Logical operator operand must be an integer type"), string::npos);
+}
+
+TEST(sa_error, float_bitand) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_121_float_bitand.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Bitwise operator operand must be an integer type"), string::npos);
+}
+
+TEST(sa_error, float_bitnot) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_122_float_bitnot.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Bitwise operator operand must be an integer type"), string::npos);
 }
 
 TEST(sa_error, embed_arr_variable_inner_arg) {
@@ -1071,12 +1091,15 @@ TEST(sa_error, write_readonly_struct_ptr_field)
 
 TEST(sa_error, deref_unknown_struct_ptr)
 {
-	// `@!Foo p; p[0].bar;` where `Foo` is never declared. gen-ast has no
-	// symbol table, so `Foo` parses as a prim base-type, not a struct one --
+	// `func f(@!Foo p) { p[0].bar; }` where `Foo` is never declared. gen-ast has
+	// no symbol table, so `Foo` parses as a prim base-type, not a struct one --
 	// IT-2805: sa_expr_arr_index's generic (non-struct) branch must reject
 	// this at the SA boundary instead of letting elemSizeBytes' -1
 	// "unknown type" sentinel leak into elem-size and crash palan-codegen
 	// downstream (layer violation).
+	// IT-2902 moved this case to a parameter: a local `@!Foo p;` var decl is
+	// now rejected at declaration time (sa_var_decl), so only a parameter's
+	// pointee (unchecked at signature normalization) still reaches this guard.
 	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownStructType)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1178,5 +1201,519 @@ TEST(sa_error, addr_of_readonly_ptr_elem)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
+}
+
+TEST(sa_error, ptr_decl_unknown_type)
+{
+	// `@!@!NoSuchStruct p;` (pntr-of-pntr, to exercise the walk-through loop
+	// too) -- IT-2902: sa_var_decl had no "pntr" branch in its dispatch guard,
+	// so the pointee name was never validated at declaration time; without an
+	// initializer, this used to compile silently and leave `p` referencing a
+	// nonexistent type.
+	// Covers: sa_var_decl pntr branch (incl. pntr-of-pntr walk), unknown
+	// pointee prim name -> E_UnknownStructType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_120_ptr_decl_unknown_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_var_decl)
+{
+	// `struct Tag { int x; int cells[2][3]; };` (cinclude'd, "cells" unsupported)
+	// then `Tag t;` -- an owned declaration needs Tag's totalSize to calloc it.
+	// IT-2904: registerCStruct now downgrades Tag to an incomplete struct
+	// (opaque handle) instead of leaving the tag unregistered, so this is a
+	// diagnosed E_IncompleteStructType, not "unknown struct type".
+	// Covers: sa_struct_var_decl -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_123_incomplete_struct_var_decl.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_forward_declared)
+{
+	// `struct Tag;` (forward-declared only, never defined in this header) then
+	// `Tag t;` -- IT-2026-09-06-2905: registerCStruct now registers a
+	// forward-declared-only tag as an incomplete struct too (previously it was
+	// never registered at all, and a chain like this used to hit a raw
+	// BOOST_ASSERT abort in requireCompleteStruct rather than a diagnostic).
+	// The message distinguishes this reason ("forward-declared") from an
+	// unsupported field shape.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_132_forward_declared_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' is only forward-declared in this header"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_owned_arr)
+{
+	// Same incomplete Tag as above; `[3]Tag a;` (owned pointer array) needs
+	// Tag's layout to record its alloc-shape (recordAllocShape reads totalSize).
+	// Covers: sa_owned_struct_arr_var_decl -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_124_incomplete_struct_owned_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_embed_arr)
+{
+	// Same incomplete Tag; `[3]$Tag a;` (contiguous embedded array) needs Tag's
+	// totalSize as the element stride for the single malloc(n * totalSize).
+	// Covers: sa_embed_arr_var_decl -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_125_incomplete_struct_embed_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_native_embed)
+{
+	// Same incomplete Tag, embedded in a native struct: `type Wrap { $Tag a; };`
+	// declared inside a function body so it is only processed by sa_statements
+	// (pass 3), after cinclude registers Tag (pass 2) -- at top level a struct-def
+	// is also pre-scanned in pass 0, before cinclude, which would hit the
+	// separate "name not yet registered" E_UnknownStructType path instead of
+	// this one.
+	// Covers: buildStructDef "embed" branch, sub.isComplete check
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_126_incomplete_struct_native_embed.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_field_access)
+{
+	// `func f(@!Tag p) { int64 v = p.x; }` -- `@!Tag p` itself declares fine (no
+	// layout needed for a pointer parameter), but reading a field requires
+	// looking up Tag's field list, which an incomplete struct doesn't have.
+	// Without this check this would previously degrade to a misleading
+	// "struct 'Tag' has no field 'x'" (E_UnknownField) instead of naming the
+	// real problem.
+	// Covers: findFieldOrExit -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_127_incomplete_struct_field_access.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+	ASSERT_EQ(sa.find("has no field"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_index)
+{
+	// `func f(@!Tag p) { int64 v = p[0].x; }` -- `p[0]` computes an address as
+	// base + i*sizeof(Tag), which needs Tag's totalSize as the stride; an
+	// incomplete Tag has none.
+	// Covers: sa_expr_arr_index struct branch -> requireCompleteStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_128_incomplete_struct_index.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_native_owned_field)
+{
+	// Same incomplete Tag; `type Wrap { Tag a; };` (a bare-name field, i.e. an
+	// owned struct-ptr field per native struct syntax) is declared inside a
+	// function body, same reasoning as incomplete_struct_native_embed above,
+	// so it processes after cinclude registers Tag as incomplete. An owned
+	// struct-ptr field's declaring struct records an alloc-shape for it, which
+	// needs the pointee's totalSize.
+	// Covers: buildStructDef "prim name is a registered struct" branch (struct-ptr)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_129_incomplete_struct_native_owned_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_native_owned_arr)
+{
+	// Same incomplete Tag; `type Wrap { [3]Tag a; };` (owned pointer array
+	// field, cascades to __pln_alloc_arr_T/__pln_free_arr_T) needs the leaf's
+	// totalSize when that cascade's alloc-shape is recorded.
+	// Covers: buildStructDef "[n]T owned pointer array, struct leaf" branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_130_incomplete_struct_native_owned_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, incomplete_struct_native_embed_arr)
+{
+	// Same incomplete Tag; `type Wrap { [3]$Tag a; };` (contiguous embedded
+	// array field within a *native* struct, distinct from the top-level
+	// `[3]$Tag a;` var-decl covered by incomplete_struct_embed_arr above --
+	// that goes through sa_embed_arr_var_decl, this goes through
+	// buildStructDef's own embedded-array leaf case) needs the leaf's
+	// totalSize/maxAlign/hasOwnedStructFields to lay out the array stride.
+	// Covers: buildStructDef "[n]$T embedded array, struct leaf" branch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_131_incomplete_struct_native_embed_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+}
+
+TEST(sa_error, sized_arr_param)
+{
+	// `func f([3]int64 a) -> int64 { ... }` -- a sized-array parameter. []T /
+	// []$[m]T (unsized) normalize to pntr via unsizedArrToPntr, but a sized
+	// [n]T parameter keeps type-kind "arr", which PlnTypeRegistry::fromJson
+	// cannot build. Previously this reached sa_expr_call's parameter-side
+	// fromJson call, which was silently swallowed by a
+	// `catch (const std::runtime_error&) {}` -- the argument itself would
+	// still abort unguarded downstream. IT-2026-09-08: registration now
+	// validates the normalized signature and diagnoses it up front instead.
+	// Covers: PlnSemanticAnalyzer::validateNativeSig (top-level registration)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_133_sized_arr_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'f' has a parameter or return type this version cannot represent: 'array'"),
+	          string::npos);
+}
+
+TEST(sa_error, c_unsupported_user_param)
+{
+	// `void take_handle(mystery_t h);` -- `mystery_t` is an identifier c2ast
+	// never saw a typedef for, so it stays type-kind "user" through
+	// normalizeCType. IT-2906: normalizeCFuncSig now tags the registered
+	// entry with "_unsupported-sig" and requireSupportedCFuncSig diagnoses it
+	// at the call, instead of the unguarded fromJson at the argument site
+	// aborting (or, before this ticket, the parameter-side try/catch quietly
+	// degrading typeCompat/wrapConvert for the argument).
+	// Covers: sa_expr_call -> requireSupportedCFuncSig (unaliased path)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_134_c_unsupported_user_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'take_handle'"), string::npos);
+	ASSERT_NE(sa.find("'mystery_t'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_anon_typedef_struct)
+{
+	// `typedef struct { int a; int b; } Pair;` -- an anonymous-body typedef.
+	// IT-2905 only taught c2ast/SA to resolve the *tagged* form
+	// (`typedef struct Tag X;`); an anonymous body has no tag to alias, so
+	// `Pair` stays type-kind "user" at the reference site. Explicitly the
+	// case IT-2905 deferred to this ticket.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, parameter side
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_135_c_unsupported_anon_typedef_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'pair_sum'"), string::npos);
+	ASSERT_NE(sa.find("'Pair'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_union_param)
+{
+	// `int use_val(union Val v);` -- c2ast parses union bodies but discards
+	// them, emitting a bare {"type-kind":"union"} with no name/fields
+	// (CParser.cpp's union branch never calls captureStructTag). No system
+	// header in the empirical audit for this ticket produced a bare `union`
+	// reference (glibc always typedefs anonymous unions), so this is a
+	// hand-written header.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_136_c_unsupported_union_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'use_val'"), string::npos);
+	ASSERT_NE(sa.find("'union'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_enum_param)
+{
+	// `void pick(enum Color c);` -- same reasoning as the union case above,
+	// "enum" is discarded to a bare {"type-kind":"enum"}. (A *tagged* enum
+	// used directly as a top-level return type hits an unrelated c2ast parser
+	// gap -- CParser::declaration's enum branch has no backtrack counterpart
+	// to the struct/union one -- so this exercises the parameter position;
+	// the return-type position is covered by c_unsupported_union_ret below
+	// via a type that does parse there.)
+	// Covers: sa_expr_call -> requireSupportedCFuncSig
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_137_c_unsupported_enum_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'pick'"), string::npos);
+	ASSERT_NE(sa.find("'enum'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_union_ret)
+{
+	// `union Val make_val(void);` -- the ret-type-only path: the callee has
+	// no parameters, so the only way to reach a diagnosis is if
+	// requireSupportedCFuncSig fires before sa_expr["value-type"] is set from
+	// ret-type (sa_expr_call:457-459) -- proves the gate precedes that copy
+	// rather than only catching it downstream once value-type is consumed.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, before ret-type copy
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_138_c_unsupported_union_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'make_val'"), string::npos);
+	ASSERT_NE(sa.find("'union'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_func_param)
+{
+	// `void set_cb(int (*cb)(int));` -- a function-pointer parameter is
+	// pntr(func(...)); unrepresentableTypeName recurses through the pntr to
+	// find the "func" kind underneath, proving the pntr-chain recursion.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, pntr recursion
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_139_c_unsupported_func_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'set_cb'"), string::npos);
+	ASSERT_NE(sa.find("'function pointer'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_anon_strct_param)
+{
+	// `void f(struct { int a; } *p);` -- an inline anonymous struct behind a
+	// pointer. c2ast's "strct" branch still omits type-name for a tagless
+	// struct even after IT-2905 removed the definedStructs_ guard (that guard
+	// only covered forward-declared *tagged* references); normalizeCType
+	// folds it to a nameless {"type-kind":"struct"}.
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, nameless struct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_140_c_unsupported_anon_strct_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'f'"), string::npos);
+	ASSERT_NE(sa.find("'anonymous struct'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_long_double)
+{
+	// `acosl(1.0)` from <math.h> -- `long double` maps to c2ast's "flt128"
+	// prim type-name (CParser.cpp), which is not in PrimTypeNames -- the
+	// dominant real-world case: math.h alone has 309 such nodes across 150
+	// functions in the empirical audit for this ticket, far more than every
+	// other unsupported kind combined. Also proves unrepresentableTypeName's
+	// "prim" branch (a resolvable type-kind, unresolvable type-name), not
+	// just its type-kind branches, and that the diagnostic fires instead of
+	// the pre-2906 abort ("unknown prim type-name: flt128", rc=134).
+	// Covers: sa_expr_call -> requireSupportedCFuncSig, unresolved prim name
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_141_c_unsupported_long_double.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'acosl'"), string::npos);
+	ASSERT_NE(sa.find("'flt128'"), string::npos);
+	ASSERT_EQ(sa.find("unrepresentable type"), string::npos);  // diagnosed, not the raw fromJson throw text
+}
+
+TEST(sa_error, c_unsupported_aliased_call)
+{
+	// Same shape as c_unsupported_user_param, but through an aliased
+	// `cinclude ... as M;` / `M.take_handle(...)` call -- exercises
+	// sa_expr_member_call's separate gate rather than sa_expr_call's.
+	// Covers: sa_expr_member_call -> requireSupportedCFuncSig (aliased path)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_142_c_unsupported_aliased_call.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'take_handle'"), string::npos);
+	ASSERT_NE(sa.find("'mystery_t'"), string::npos);
+}
+
+TEST(sa_error, c_global_not_assignable)
+{
+	// `fopen(...) -> stderr;` -- a C global is read-only.
+	// Covers: sa_assign_stmt findCGlobal branch, E_CGlobalNotAssignable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_143_c_global_not_assignable.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot assign to 'stderr'"), string::npos);
+	ASSERT_NE(sa.find("read-only"), string::npos);
+}
+
+TEST(sa_error, c_global_addr_of)
+{
+	// `@stderr;` -- a C global is a value, not a storage location Palan owns.
+	// Covers: sa_expr_addr_of "id" branch findCGlobal check, E_CGlobalNotAddressable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_144_c_global_addr_of.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("'stderr'"), string::npos);
+	ASSERT_NE(sa.find("not a storage location"), string::npos);
+}
+
+TEST(sa_error, c_global_field_access)
+{
+	// `stderr._flags` -- field access requires resolveObjectChain to treat
+	// the base as an ordinary struct-pointer local, which a C global is not.
+	// Covers: resolveObjectChain "id" branch findCGlobal check, E_CGlobalNotAddressable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_145_c_global_field_access.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("'stderr'"), string::npos);
+	ASSERT_NE(sa.find("not a storage location"), string::npos);
+}
+
+TEST(sa_error, c_global_out_of_block_scope)
+{
+	// `stderr` referenced after the block whose cinclude registered it --
+	// cGlobalScopes is popped by leaveScope like cFuncScopes, so this is an
+	// ordinary undefined-variable error, not a C-global-specific one.
+	// Covers: enterScope/leaveScope cGlobalScopes pop, sa_expression "id" fallthrough
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_146_c_global_out_of_block_scope.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Undefined variable"), string::npos);
+	ASSERT_NE(sa.find("'stderr'"), string::npos);
+}
+
+TEST(sa_error, c_global_unsupported_type)
+{
+	// `extern long double ld;` -- cinclude succeeds (deferred, same policy as
+	// _unsupported-sig), but referencing `ld` diagnoses its unrepresentable
+	// "flt128" type instead of the pre-2908 abort a raw "user"/unresolved
+	// prim type-name would otherwise cause downstream.
+	// Covers: sa_expression "id" branch -> requireSupportedCGlobal, E_UnsupportedCGlobalType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_147_c_global_unsupported_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot reference C global variable 'ld'"), string::npos);
+	ASSERT_NE(sa.find("'flt128'"), string::npos);
+}
+
+TEST(sa_error, arg_narrowing)
+{
+	// IT-2026-09-11-usual-arith-conv: a call argument used to get no type
+	// check beyond ImplicitWiden -- an int64 argument to an int32 parameter
+	// silently passed through and produced a bad `movq` operand-width mismatch
+	// in the emitted assembly. Now diagnosed at the call site, same message as
+	// a narrowing var-decl initializer.
+	// Covers: convertCallArg, E_InvalidNarrowingConv
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_148_arg_narrowing.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int32'"), string::npos);
+}
+
+TEST(sa_error, arith_op_not_numeric)
+{
+	// IT-2026-09-11-usual-arith-conv: `p + 1` on a pointer operand used to
+	// silently fall through to `promoted = leftType`, accepting pointer
+	// arithmetic that Palan has no syntax or semantics for. usualArithConv
+	// returns nullptr for a non-Prim operand, which sa_expr_arith now
+	// diagnoses instead of silently accepting.
+	// Covers: sa_expr_arith non-Prim operand, E_ArithOpNotNumeric
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_149_arith_op_not_numeric.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Arithmetic operator operand must be a numeric type"), string::npos);
+}
+
+TEST(sa_error, arith_op_not_numeric_rhs)
+{
+	// Same check as arith_op_not_numeric above, but with the non-Prim operand
+	// on the right (`1 + p`) instead of the left (`p + 1`) -- usualArithConv's
+	// non-Prim guard checks both operands independently, so both orders need
+	// a dedicated test.
+	// Covers: sa_expr_arith non-Prim right operand, E_ArithOpNotNumeric
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_151_arith_op_not_numeric_rhs.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Arithmetic operator operand must be a numeric type"), string::npos);
+}
+
+TEST(sa_error, assign_narrowing)
+{
+	// IT-2026-09-11-usual-arith-conv: an assignment (`big -> x`) used to
+	// silently insert a narrowing convert -- unlike a var-decl initializer,
+	// which has always rejected this. Assignment/array-assign/return/
+	// field-assign now share the initializer's strict rule.
+	// Covers: convertForBinding via sa_assign_stmt, E_InvalidNarrowingConv
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_150_assign_narrowing.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int32'"), string::npos);
 }
 

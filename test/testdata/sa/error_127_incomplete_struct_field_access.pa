@@ -1,0 +1,5 @@
+cinclude "error_127_incomplete_struct_field_access.h";
+
+func f(@!Tag p) {
+	int64 v = p.x;
+}

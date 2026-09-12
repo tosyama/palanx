@@ -1,0 +1,5 @@
+func f([3]int64 a) -> int64 {
+	return a[0];
+}
+
+int64 x = f(0);
