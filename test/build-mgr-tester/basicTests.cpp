@@ -216,9 +216,13 @@ TEST(build_mgr, float_newton) {
 
 TEST(build_mgr, float_int_mixed) {
 	cleanTestEnv();
-	// int/float mixed arithmetic: int is implicitly widened to float
+	// int/float mixed arithmetic: int is implicitly widened to float. Covers
+	// both operand orders (float+int and int+float) and flo32/flo64 mixing --
+	// usualArithConv's float tie-break is not commutative in the source code
+	// path taken (left vs right operand), so both directions need a real
+	// program to exercise (see IT-2026-09-06-2912's coverage investigation).
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/030_float_int_mixed.pa");
-	ASSERT_EQ(output, "5.000000\n30.000000\n4.000000\n");
+	ASSERT_EQ(output, "5.000000\n30.000000\n4.000000\n5.000000\n5.000000\n");
 }
 
 TEST(build_mgr, float32_cmp) {

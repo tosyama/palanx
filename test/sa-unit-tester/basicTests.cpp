@@ -305,6 +305,7 @@ TEST(usual_arith_conv, void_returns_null) {
     const PlnType* v   = reg.prim(N::Void);
     const PlnType* i32 = reg.prim(N::Int32);
     EXPECT_EQ(usualArithConv(v, i32), nullptr);
+    EXPECT_EQ(usualArithConv(i32, v), nullptr);  // void on either side, not just the first
 }
 
 // -------- argConvOk (IT-2026-09-11-usual-arith-conv) --------
@@ -351,4 +352,12 @@ TEST(arg_conv_ok, non_prim_rejected) {
     const PlnType* pi32 = reg.ptr(i32);
     EXPECT_FALSE(argConvOk(pi32, i32));
     EXPECT_FALSE(argConvOk(i32, pi32));
+}
+
+TEST(arg_conv_ok, void_rejected_either_side) {
+    PlnTypeRegistry reg;
+    const PlnType* v   = reg.prim(N::Void);
+    const PlnType* i32 = reg.prim(N::Int32);
+    EXPECT_FALSE(argConvOk(v, i32));
+    EXPECT_FALSE(argConvOk(i32, v));
 }

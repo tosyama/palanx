@@ -1685,6 +1685,22 @@ TEST(sa_error, arith_op_not_numeric)
 	ASSERT_NE(sa.find("Arithmetic operator operand must be a numeric type"), string::npos);
 }
 
+TEST(sa_error, arith_op_not_numeric_rhs)
+{
+	// Same check as arith_op_not_numeric above, but with the non-Prim operand
+	// on the right (`1 + p`) instead of the left (`p + 1`) -- usualArithConv's
+	// non-Prim guard checks both operands independently, so both orders need
+	// a dedicated test.
+	// Covers: sa_expr_arith non-Prim right operand, E_ArithOpNotNumeric
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_151_arith_op_not_numeric_rhs.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Arithmetic operator operand must be a numeric type"), string::npos);
+}
+
 TEST(sa_error, assign_narrowing)
 {
 	// IT-2026-09-11-usual-arith-conv: an assignment (`big -> x`) used to

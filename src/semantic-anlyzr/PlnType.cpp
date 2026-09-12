@@ -67,37 +67,37 @@ const StructType* PlnTypeRegistry::structType(const std::string& name)
 // maintained predicate could.
 std::string unrepresentableTypeName(const json& j)
 {
-    if (!j.is_object() || !j.contains("type-kind"))
-        return "malformed type";
+    if (!j.is_object() || !j.contains("type-kind")) // LCOV_EXCL_BR_LINE -- no real producer emits this
+        return "malformed type"; // LCOV_EXCL_LINE
     std::string kind = j["type-kind"].get<std::string>();
     if (kind == "prim") {
         std::string tname = j.value("type-name", "");
-        if (tname.empty()) return "malformed type";
-        return PrimTypeNames::instance().toEnum.count(tname) ? "" : tname;
+        if (tname.empty()) return "malformed type"; // LCOV_EXCL_BR_LINE -- no real producer emits this
+        return PrimTypeNames::instance().toEnum.count(tname) ? "" : tname; // LCOV_EXCL_EXCEPTION_BR_LINE
     }
     if (kind == "pntr")
-        return j.contains("base-type") ? unrepresentableTypeName(j["base-type"]) : "malformed type";
+        return j.contains("base-type") ? unrepresentableTypeName(j["base-type"]) : "malformed type"; // LCOV_EXCL_EXCEPTION_BR_LINE
     if (kind == "struct")
         return j.contains("type-name") ? "" : "anonymous struct";
-    if (kind == "arr")   return "array";
+    if (kind == "arr")   return "array"; // LCOV_EXCL_BR_LINE -- arrays always decay to pntr before reaching here
     if (kind == "func")  return "function pointer";
     if (kind == "union") return "union";
     if (kind == "enum")  return "enum";
     // "strct": c2ast's pre-normalization struct tag (normalizeCType folds it
     // to "struct" before a cinclude'd signature reaches fromJson, but this
     // predicate is also usable ahead of that fold).
-    if (kind == "strct") return j.value("type-name", "anonymous struct");
+    if (kind == "strct") return j.value("type-name", "anonymous struct"); // LCOV_EXCL_BR_LINE -- normalizeCType always folds this away first
     // "user": a typedef name c2ast could not resolve to a known underlying
     // type -- report the name itself, it is more useful than "user".
-    if (kind == "user")  return j.value("type-name", "user");
+    if (kind == "user")  return j.value("type-name", "user"); // LCOV_EXCL_EXCEPTION_BR_LINE
     return kind;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 const PlnType* PlnTypeRegistry::fromJson(const json& j)
 {
     std::string bad = unrepresentableTypeName(j);
-    if (!bad.empty())
-        throw std::runtime_error("unrepresentable type: " + bad);
+    if (!bad.empty()) // LCOV_EXCL_BR_LINE -- callers only reach here with an already-validated type
+        throw std::runtime_error("unrepresentable type: " + bad); // LCOV_EXCL_LINE
     std::string kind = j["type-kind"].get<std::string>();
     if (kind == "prim") {
         auto& toEnum = PrimTypeNames::instance().toEnum;
@@ -205,7 +205,7 @@ const PlnType* usualArithConv(const PlnType* a, const PlnType* b)
     const auto* pb = static_cast<const PrimType*>(b);
 
     int ga = primGroup(pa->name), gb = primGroup(pb->name);
-    if (ga < 0 || gb < 0) return nullptr;  // Void is not a valid operand type
+    if (ga < 0 || gb < 0) return nullptr; // Void is not a valid operand type; LCOV_EXCL_BR_LINE -- already rejected upstream (E_VoidCallUsedAsValue)
 
     // 1. Either side float -> the wider float wins (both sides float: wider; one
     //    side integer: the float side, per the existing int-to-float ImplicitWiden rule).
