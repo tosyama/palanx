@@ -9,5 +9,5 @@ printf("%f\n", a);
 printf("%f\n", atof("2.25"));
 
 // C function returning flo32
-flo32 b = strtof("0.5", int64(0));
+flo32 b = strtof("0.5", NULL);
 printf("%f\n", b);

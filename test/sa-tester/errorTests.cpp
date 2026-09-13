@@ -1717,3 +1717,101 @@ TEST(sa_error, assign_narrowing)
 	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int32'"), string::npos);
 }
 
+
+TEST(sa_error, toplevel_call_plain_return_struct)
+{
+	// IT-2026-09-12-3001: `Point p2 = makePoint();` used to reach
+	// sa_struct_var_decl, which silently discarded var["init"] and
+	// fabricated its own calloc-init instead of ever emitting `call
+	// makePoint` -- a former sa.toplevel_call_plain_return_struct test in
+	// basicTests.cpp asserted on that fabricated calloc-shaped init as if it
+	// were correct. Struct-typed initializers are now rejected outright
+	// (IT-3004 will admit the one shape it can actually implement: a C
+	// function's SysV-classified struct-by-value return).
+	// Covers: sa_struct_var_decl init rejection, E_StructInitNotSupported
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/136_toplevel_call_plain_return_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("initializing a 'Point' variable from an expression is not supported"), string::npos);
+}
+
+TEST(sa_error, struct_init_not_supported)
+{
+	// IT-2026-09-12-3001 item (1): `Pair p = make_pair(3, 4);` used to
+	// silently discard the call and fabricate a calloc-init instead --
+	// see sa_struct_var_decl. Now rejected outright.
+	// Covers: sa_struct_var_decl, E_StructInitNotSupported
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_152_struct_init_not_supported.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("initializing a 'Pair' variable from an expression is not supported"), string::npos);
+}
+
+TEST(sa_error, call_arg_ptr_mismatch_native)
+{
+	// IT-2026-09-12-3001 item (2): convertCallArg used to pass any non-Prim
+	// (pointer/struct) argument through unchecked -- `@!int32` bound to a
+	// `@!int64` parameter of a Palan function compiled with no diagnostic
+	// and the wrong access width at runtime.
+	// Covers: convertCallArg via sa_expr_call (Palan callee), E_IncompatibleTypes
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_153_call_arg_ptr_mismatch_native.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot convert '@!int32' to '@!int64'"), string::npos);
+}
+
+TEST(sa_error, call_arg_ptr_mismatch_c)
+{
+	// Same gap as call_arg_ptr_mismatch_native, but through the C-callee
+	// path (a cinclude'd `long *` parameter fed a `@!int32` argument).
+	// Covers: convertCallArg via sa_expr_call (C callee), E_IncompatibleTypes
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_154_call_arg_ptr_mismatch_c.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot convert '@!int32' to '@!int64'"), string::npos);
+}
+
+TEST(sa_error, c_by_value_struct_param)
+{
+	// IT-2026-09-12-3001 item (3): normalizeCFuncSig used to accept a
+	// top-level by-value struct parameter (indistinguishable from a
+	// pntr-wrapped struct base-type to unrepresentableTypeName alone),
+	// letting a call like this type-check with the wrong ABI. Real-world
+	// case: stdio.h's fopencookie(..., cookie_io_functions_t).
+	// Covers: normalizeCFuncSig by-value struct detection, E_UnsupportedCFuncSignature
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_155_c_by_value_struct_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'point_sum'"), string::npos);
+	ASSERT_NE(sa.find("by-value struct parameter"), string::npos);
+}
+
+TEST(sa_error, convert_for_binding_ptr_mismatch)
+{
+	// Same Incompatible gap as call_arg_ptr_mismatch_native, but through
+	// convertForBinding's binding-site path (var-decl initializer here;
+	// shared by assignment/array-assign/return/field-assign too).
+	// Covers: convertForBinding, E_IncompatibleTypes
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_156_convert_for_binding_ptr_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot convert '@!int32' to '@!int64'"), string::npos);
+}

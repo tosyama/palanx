@@ -830,6 +830,10 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"].get<string>();
+		if (var.contains("init")) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructInitNotSupported, structName) << endl;
+			exit(1);
+		}
 		declareVar(name, pntr_type, &stmt);
 
 		json init;

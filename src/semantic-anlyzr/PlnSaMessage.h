@@ -71,6 +71,8 @@ enum PlnSaMessageCode {
 	E_CGlobalNotAddressable,		// arg1: C global variable name
 	E_UnsupportedCGlobalType,		// arg1: C global variable name, arg2: unsupported type display name
 	E_ArithOpNotNumeric,
+	E_StructInitNotSupported,	// arg1: struct type name
+	E_IncompatibleTypes,		// arg1: from type display name, arg2: to type display name
 };
 
 class PlnSaMessage

@@ -71,6 +71,16 @@ public:
 // unrepresentable node found (recursing through a pntr chain's base-type).
 std::string unrepresentableTypeName(const json& j);
 
+// Render a type-value JSON node as a short human-readable name for use in
+// diagnostics (e.g. "int32", "@!int32", "MyStruct"). Unlike
+// unrepresentableTypeName, this always returns a non-empty string, including
+// for representable types -- prim renders as its type-name, pntr as "@"/"@!"
+// (per the "mutable" key, defaulting to true the same way
+// isWritableThrough/ptrPermissionOk do) followed by the recursively rendered
+// base type, and struct as its type-name. Every other kind (already
+// unrepresentable) reuses unrepresentableTypeName's display name for it.
+std::string typeDisplayName(const json& j);
+
 // Type compatibility check
 TypeCompat typeCompat(const PlnType* from, const PlnType* to,
                       const PlnTypeRegistry& registry);

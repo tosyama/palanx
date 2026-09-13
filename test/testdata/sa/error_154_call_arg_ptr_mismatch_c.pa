@@ -1,0 +1,5 @@
+cinclude "error_154_call_arg_ptr_mismatch_c.h";
+
+@!int32 x;
+0 -> x[0];
+take_int64_ptr(x);

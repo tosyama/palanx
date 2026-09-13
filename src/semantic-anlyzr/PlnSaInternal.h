@@ -237,13 +237,27 @@ inline json normalizeCType(const json& type) {
 // requireSupportedCFuncSig) rather than rejected here, so cinclude'ing a
 // header that happens to declare an unsupported function is not itself an
 // error -- only calling it is.
+//
+// A top-level by-value struct parameter is also flagged here: unlike a
+// pntr-wrapped struct base-type, unrepresentableTypeName alone cannot tell
+// "by value" from "behind a pointer" apart (both are a bare
+// {"type-kind":"struct",...} node once normalizeCType has stripped the
+// wrapping pntr, or none was ever there), and only this function sees a
+// parameter's position in the signature. By-value struct return is exempt --
+// it stays representable here and is classified by classifySysVStructRet at
+// the call site (IT-2026-09-12-3004) instead of rejected.
 inline void normalizeCFuncSig(json& funcDef) {
 	string bad;
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
 			if (p.contains("var-type")) {
 				p["var-type"] = normalizeCType(p["var-type"]);
-				if (bad.empty()) bad = unrepresentableTypeName(p["var-type"]);
+				if (bad.empty()) {
+					if (p["var-type"].value("type-kind", "") == "struct")
+						bad = "by-value struct parameter";
+					else
+						bad = unrepresentableTypeName(p["var-type"]);
+				}
 			}
 	if (funcDef.contains("ret-type")) {
 		funcDef["ret-type"] = normalizeCType(funcDef["ret-type"]);

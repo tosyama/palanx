@@ -1436,24 +1436,6 @@ TEST(sa, toplevel_call_named_return_struct)
 	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
 }
 
-TEST(sa, toplevel_call_plain_return_struct)
-{
-	cleanTestEnv();
-	// IT-2801 regression: same struct pre-registration path, but for a plain
-	// (non-@!) named return `-> Point ret`.
-	json jout = run_sa("../test/testdata/sa/136_toplevel_call_plain_return_struct.pa");
-	ASSERT_TRUE(jout.is_object());
-
-	const auto& decl = jout["statements"][0];
-	ASSERT_EQ(decl["stmt-type"], "var-decl");
-	const auto& v = decl["vars"][0];
-	ASSERT_EQ(v["name"], "p2");
-	const auto& vt = v["init"]["value-type"];
-	ASSERT_EQ(vt["type-kind"], "pntr");
-	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
-	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
-}
-
 TEST(sa, toplevel_call_struct_arg)
 {
 	cleanTestEnv();

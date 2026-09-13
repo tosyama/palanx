@@ -264,6 +264,16 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_ArithOpNotNumeric:
 			return "Arithmetic operator operand must be a numeric type.";
 
+		case E_StructInitNotSupported:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "initializing a '" + arg1 + "' variable from an expression is not supported "
+			       "yet; declare it without an initializer and assign to its fields instead.";
+
+		case E_IncompatibleTypes:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot convert '" + arg1 + "' to '" + arg2 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

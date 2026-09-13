@@ -355,7 +355,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			return wrapConvert(src, registry_.toJson(target));
 		} else {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
-				src["value-type"].value("type-name", src["value-type"]["type-kind"].get<string>()),
+				typeDisplayName(src["value-type"]),
 				expr["target-type"]["type-name"].get<string>()) << endl;
 			exit(1);
 		}
@@ -452,8 +452,10 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 // rejected with E_InvalidNarrowingConv, except an integer literal `value`
 // adopts toType instead of erroring (its printed width/sign was never fixed
 // by the source syntax the way a variable's declared type is); Incompatible
-// leaves `value` unchanged (a pointer/struct pair passes through as-is --
-// ptrPermissionOk is the real gate for those, checked by each call site).
+// (pointee mismatch, struct-name mismatch, or a Prim<->Ptr/Struct mix such as
+// an integer literal bound to a pointer) is rejected with E_IncompatibleTypes.
+// ptrPermissionOk, checked by each call site, is a separate, narrower gate:
+// it only judges mutability between two otherwise-compatible pointer types.
 json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		const PlnType* toType, const json& toTypeJson)
 {
@@ -466,10 +468,13 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		string et = value["expr-type"];
 		if (et != "lit-int" && et != "lit-uint") {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
-				value["value-type"].value("type-name", value["value-type"]["type-kind"].get<string>()),
-				toTypeJson.value("type-name", toTypeJson["type-kind"].get<string>())) << endl;
+				typeDisplayName(value["value-type"]), typeDisplayName(toTypeJson)) << endl;
 			exit(1);
 		}
+	} else if (compat == TypeCompat::Incompatible) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
+			typeDisplayName(value["value-type"]), typeDisplayName(toTypeJson)) << endl;
+		exit(1);
 	}
 	return value;
 }
@@ -612,15 +617,21 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 		if (argConvOk(fromType, toType))
 			return wrapConvert(saArg, registry_.toJson(toType));
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
-			saArg["value-type"].value("type-name", saArg["value-type"]["type-kind"].get<string>()),
-			paramVT.value("type-name", paramVT["type-kind"].get<string>())) << endl;
+			typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)) << endl;
 		exit(1);
 	}
-	// Non-Prim (pointer / embedded-array / struct-by-name): typeCompat only
-	// ever returns Identical or Incompatible for these (never ImplicitWiden,
-	// the only value that would call for a convert here), so this is always a
-	// pass-through; ptr permission and embedded-array shape are the callers'
-	// concern.
+	// Non-Prim (pointer / embedded-array / struct-by-name), or a Prim<->Ptr
+	// mix (e.g. an integer literal passed where a pointer parameter is
+	// expected): typeCompat never returns ImplicitWiden/ExplicitCast for
+	// these, only Identical (pntr(void) is bidirectionally Identical with any
+	// pntr(T), which is how NULL passes) or Incompatible, so this covers the
+	// whole remaining domain; ptr permission and embedded-array shape are the
+	// callers' concern.
+	if (typeCompat(fromType, toType, registry_) == TypeCompat::Incompatible) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
+			typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)) << endl;
+		exit(1);
+	}
 	return saArg;
 }
 
