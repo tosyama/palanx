@@ -6,52 +6,68 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-06)
-version: 0.1.29 — stdio.h full support (C global variables + opaque handle types) + sys/stat.h
+### 2.1 Iteration Goal (2026-09-12)
+version: 0.1.30 — stdlib.h: anonymous-struct typedefs, by-value struct returns, pointer
+address-of, and C callbacks
 
-A pre-implementation audit found that stdio.h's file-oriented API is completely unusable
-today, and fails as a compiler abort rather than a diagnostic:
+An audit of stdlib.h found 94 of its 104 functions already usable with no compiler change at
+all. The ten that are not split into two groups — five needing C function-pointer parameters
+(`qsort`, `bsearch`, `atexit`, `at_quick_exit`, `on_exit`) and five needing typedefs of
+anonymous struct bodies (`div`/`ldiv`/`lldiv` return `div_t`/`ldiv_t`/`lldiv_t`;
+`select`/`pselect` take `fd_set`/`__sigset_t`) — and a third, orthogonal gap blocks the
+common C out-parameter idiom, since `@`/`@!` accepts only a primitive-typed operand:
 
 ```
-cinclude <stdio.h>;
-fprintf(stderr, "hi\n");                → error: Undefined variable 'stderr'.
-@!FILE f = fopen("/tmp/x", "w");        → abort: unknown prim type-name: FILE
-int32 r = fclose(fopen("/tmp/x","w"));  → abort: unknown type-kind: user
+cinclude <stdlib.h>;
+div_t d = div(7, 2);                → error: unrepresentable type: div_t
+@!int8 endp;
+strtol("42abc", @!endp, 10);        → error: cannot take the address of 'endp'
+qsort(arr, n, 4, cmp);              → error: C function 'qsort' has an unsupported signature
 ```
 
-Two independent gaps cause this: (1) no stage — c2ast, gen-ast, SA, or codegen — has any
-notion of a C `extern` global object, so `stdout`/`stderr`/`stdin` are silently dropped at
-c2ast ingest; (2) `FILE` (a typedef bottoming out in a struct) is never normalized at the
-cinclude ingest boundary, so it reaches `PlnTypeRegistry::fromJson` as an unrecognized
-`user` type-kind and throws unguarded on the argument-expression path.
+Three independent gaps cause this. (1) `typedef struct { ... } div_t;` never reaches c2ast's
+`structs` channel: `captureStructTag` is called only for a *named* tag, so an anonymous body
+attached to a typedef registers nowhere and every later reference falls through to an
+unresolved `user` type-kind. (2) `@`/`@!` rejects a pointer-typed operand, which is exactly
+the shape `char **endptr` and `void **memptr` need. (3) A C function-pointer parameter is
+classified unrepresentable at the cinclude ingestion boundary, so the whole function is
+rejected even though the only value that could ever fill that slot — the address of a Palan
+function — is already just an assembler label.
 
-This iteration makes stdio.h's file API and `stdout`/`stderr`/`stdin` usable, with `FILE`
-represented as an **opaque handle type** (an incomplete type, usable only behind `@T`/`@!T`,
-matching C's own incomplete-type semantics for it) — and, in the latter half, brings
-`sys/stat.h` up to a similar level. A linking-approach spike confirmed that referencing a C
-global via `leaq sym(%rip)` + a `DerefLoad` produces a working `R_X86_64_COPY` relocation
-under the project's existing non-PIE `ld -lc -dynamic-linker` link line — no GOT/PLT/PIE
-handling is needed, and no new x86 emission is required for that path.
+This iteration closes all three, plus the address-of gap for an embedded struct field.
+c2ast synthesizes the typedef's own name as the struct's tag, so an anonymous-body typedef
+registers through the same single path a named tag already uses and SA sees one canonical
+shape. `@`/`@!` extends to a pointer-to-primitive local variable, producing the
+pointer-to-pointer a C out-parameter expects, and to an embedded struct field. A Palan
+function named in a C callback argument position becomes a function reference, lowered to
+the existing `LeaLabel` instruction — no indirect-call machinery is needed, because Palan
+never calls through the pointer; the C library does, in its own compiled code. And receiving
+a struct returned **by value** from a C function is implemented as a general System V AMD64
+return classification (one or two eightbytes in `%rax`/`%rdx` or `%xmm0`/`%xmm1`, or a hidden
+destination pointer for anything over 16 bytes), not as a `div_t`-shaped special case.
 
-The audit also surfaced two prerequisite bugs unrelated to either header, both blocking:
-codegen has no signed↔unsigned integer conversion pairs at all (`emitConvert` aborts on any
-such cast whose result is actually used — dead-code elimination hid this until now), and the
-language has no bitwise operators (`&`/`|` parse but lower to `not-impl`; `^`/`~` aren't even
-lexed) — without which `st_mode & S_IFMT` can't be written, making `sys/stat.h` support
-hollow. Both are fixed first, as their own tickets, before the header work.
+Planning surfaced a prerequisite bug that is worse than any of the above: a struct-typed
+local variable's initializer is discarded outright — `Pair p = make_pair(3, 4);` compiles to
+code that never calls `make_pair`, with no diagnostic — and a by-value struct value passes
+unchecked through every argument, assignment and return binding site, because those sites
+treat a non-primitive type mismatch as a deliberate pass-through. By-value struct
+*parameters* are admitted on the same reasoning, so `fopencookie` type-checks today and would
+be called with a wrong ABI. All of these are made loud first, in their own ticket, before any
+new capability is added on top of them.
 
-Non-goals for this iteration: full `_IO_FILE` layout registration (the opaque handle covers
-every stdio.h entry point without it; full layout would need constant-expression evaluation
-in c2ast, including `sizeof`, which is its own iteration); function-like macros
-(`S_ISDIR(m)` and friends — `S_IFMT`/`S_IFDIR` already export as constants, so
-`(m & S_IFMT) == S_IFDIR` covers the same ground with the new bitwise-AND operator);
-writable C globals or address-of on a C global; shift operators (`>>` collides with the
-existing move-owner operator token); and the long-deferred `timer_create`/`struct sigevent`,
-`strftime_l`/`locale_t`, and borrowed-pointer lifetime checking (`doc/Issues.md` item 6).
+Non-goals for this iteration: unions as a type (c2ast's capture paths are all guarded on
+`is_struct`, and C's overlapping storage is not Palan's `struct`); practical `select`/
+`pselect` support (`fd_set`'s only field is an array sized by `sizeof`, which c2ast still
+cannot fold, so the type stays incomplete even once the typedef resolves); passing a struct
+to a C function by value (the inverse of the return path — diagnosed, not implemented); a
+struct-by-value return type for native Palan functions; first-class function-pointer
+variables or indirect calls from Palan; and `@`/`@!` on array elements — a pointer-typed
+array element is indistinguishable in SA from the out-of-scope `[n]@T` pointer-slot-array
+element, and no C API in the audit needs either.
 
-Full gap catalog, ingestion-boundary design (where `user`/incomplete-struct normalization
-belongs, C-global scoping and mutability rules, sa.json shapes), and the ticket breakdown
-are in `localtickets/iteration-2026-09-06-v0129-stdio-stat.md`.
+Full gap catalog, the SysV classification rules and sa.json shapes, the address-of scope
+decision and its evidence, and the ticket breakdown are in
+`localtickets/iteration-2026-09-12-v0130-stdlib.md`.
 
 The series' underlying goal stays the same: header/feature support is the forcing function
 for general C-interop language capability, not per-function coverage for its own sake.
