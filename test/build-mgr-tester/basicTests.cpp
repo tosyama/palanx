@@ -1373,6 +1373,17 @@ TEST(build_mgr, usual_arith_conv) {
 	ASSERT_EQ(output, "255\n4294967295\n");
 }
 
+TEST(build_mgr, strtol_endptr) {
+	// IT-2026-09-12-3003: `@`/`@!` on a pointer-typed local (not just a
+	// primitive one) now produces pntr-of-pntr, letting `strtol`'s C
+	// out-param idiom (`char **endptr`) be written in Palan: `@!end` where
+	// `end` is `@!int8` gives strtol its `int8**`, and the callee writes
+	// the "abc" tail's address back through it.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/159_strtol_endptr.pa");
+	ASSERT_EQ(output, "42 abc\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

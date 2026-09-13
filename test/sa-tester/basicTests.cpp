@@ -3211,6 +3211,51 @@ TEST(sa, addr_of_field_via_arr_index)
 	ASSERT_EQ(init["value-type"]["mutable"], true);
 }
 
+TEST(sa, addr_of_ptr_local)
+{
+	// `@!int8 end; @!@!int8 pp = @!end;` -- IT-2026-09-12-3003: `@`/`@!` now
+	// also accepts a pointer-to-primitive local (not just a primitive one),
+	// producing pntr-of-pntr. A struct local is still rejected (unchanged),
+	// since it's already pntr(struct T) itself.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/169_addr_of_ptr_local.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& pp = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(pp["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["var-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["var-type"]["base-type"]["base-type"]["type-name"], "int8");
+
+	const auto& init = pp["init"];
+	ASSERT_EQ(init["expr-type"], "addr-of");
+	ASSERT_EQ(init["name"], "end");
+	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+	ASSERT_EQ(init["value-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(init["value-type"]["base-type"]["base-type"]["type-name"], "int8");
+}
+
+TEST(sa, addr_of_embed_field)
+{
+	// `@!Inner q = @!s.in;` where `in` is `$Inner` (inline embed) --
+	// IT-2026-09-12-3003: an embed field's own value-type is already
+	// pntr(struct Inner) (the field IS the struct's inline storage), so
+	// taking its address must NOT double-wrap into pntr(pntr(struct Inner)).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/170_addr_of_embed_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_EQ(init["var"], "s");
+	ASSERT_EQ(init["offset"], 8);  // x(8) then embedded Inner
+	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+	ASSERT_EQ(init["value-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(init["value-type"]["base-type"]["type-name"], "Inner");
+}
+
 TEST(sa, deref_rw_mutable_ptr)
 {
 	// `@!int64 p = @!x; 99 -> p[0]; int64 y = p[0];` -- deref read/write

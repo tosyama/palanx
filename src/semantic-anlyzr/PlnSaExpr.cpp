@@ -155,7 +155,9 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
 			exit(1);
 		}
-		if (varType->value("type-kind", "") != "prim") {
+		string vtk = varType->value("type-kind", "");
+		bool isPtrToPrim = vtk == "pntr" && (*varType)["base-type"].value("type-kind","") == "prim";
+		if (vtk != "prim" && !isPtrToPrim) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
 			exit(1);
 		}
@@ -169,11 +171,20 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
 		string fn = obj["field"].get<string>();
 		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
-		if (fld.typeKind != "prim") {
+		if (fld.typeKind != "prim" && fld.typeKind != "embed") {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
 			exit(1);
 		}
-		json pntr_type = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",fieldValueType(fld)}};
+		// An embed field's own value-type (fieldValueType) is already
+		// pntr(struct T) -- the field IS the struct's storage, same as a
+		// struct-typed local variable -- so wrapping it again here would
+		// produce pntr(pntr(struct T)), a double indirection nothing needs.
+		// A prim field's value-type is the bare prim, so it still needs the
+		// usual pntr(...) wrap to become "address of this prim slot".
+		json pntr_type = (fld.typeKind == "embed")
+			? fieldValueType(fld)
+			: json{{"type-kind","pntr"},{"base-type",fieldValueType(fld)}};
+		pntr_type["mutable"] = isMutable;
 		int off = chain.offset + fld.offset;
 		json out = chain.isPointerBased
 			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",true}}

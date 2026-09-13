@@ -284,18 +284,27 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     or array-element target lowers to an ordinary `field-access`/`arr-index` node instead:
     - `object.expr-type == "id"` (`@x` / `@!x`): emitted as `{"expr-type":"addr-of","name":<var
       name>,"mutable":<bool>,"value-type":{"type-kind":"pntr","mutable":<bool>,"base-type":<named
-      var's prim type>}}`. `mutable` is `true` for `@!ID`, `false` for `@ID`. The named variable
-      must be a local variable in the current scope (not a function parameter, not itself a
-      `pntr`/`struct`/`arr` type) — otherwise a compile error (E_AddrOfNotLocalVar /
-      E_AddrOfNotPrimitive).
+      var's type>}}`. `mutable` is `true` for `@!ID`, `false` for `@ID`. The named variable must be
+      a local variable in the current scope (not a function parameter), and its own type must be
+      `prim` or `pntr`-of-`prim` (a pointer-to-pointer result, matching C's `T **` out-param idiom)
+      — a `struct`/`arr` type, or a pointer whose base isn't itself `prim` (e.g. `pntr(struct)`),
+      is rejected (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive). A struct-typed local is already
+      SA-represented as `pntr(struct T)` (see the var-decl section below), so this same base-type
+      check is what keeps `@!st` rejected — admitting it would build a meaningless `struct T **`.
     - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
       `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
       field-access section below), then re-emitted as `{"expr-type":"field-access","var"|
-      "ptr-expr":…,"offset":<int>,"value-type":{"type-kind":"pntr","mutable":<bool>,"base-type":
-      <field's prim type>},"addr-only":true}` — `addr-only:true` tells codegen to compute the
-      field's address (`CalcAddr`) instead of loading it. The leaf field must be primitive-typed
-      (E_AddrOfNotPrimitive otherwise; embed/owned-pointer/array fields are not addressable this
-      way) and must exist on the resolved struct (E_UnknownField otherwise). Because `@!` requests
+      "ptr-expr":…,"offset":<int>,"value-type":<pntr type>,"addr-only":true}` —
+      `addr-only:true` tells codegen to compute the field's address (`CalcAddr`) instead of loading
+      it. The leaf field must be primitive-typed or an embedded struct (`$T`) — a pointer-typed
+      (`raw-ptr`/`struct-ptr`), embedded-array, or owned-array field is rejected
+      (E_AddrOfNotPrimitive) — and must exist on the resolved struct (E_UnknownField otherwise). A
+      primitive leaf's `value-type` is `{"type-kind":"pntr","mutable":<bool>,"base-type":<field's
+      prim type>}`, same as the `id` case. An embed leaf's own value-type
+      (`fieldValueType`) is already `pntr(struct T)` — the field IS the inner struct's storage, the
+      same shape a struct-typed local variable has — so its `value-type` here is that same
+      `pntr(struct T)` (with `mutable` set to the requested `@`/`@!`), not a further `pntr(...)`
+      wrap; wrapping it again would build a pointless `pntr(pntr(struct T))`. Because `@!` requests
       a *mutable* pointer, resolution runs with the same write-permission checks a store-location
       chain would (`resolveObjectChain(obj, forWrite=<mutable>)`): a read-only `@T`-typed base
       variable (E_WriteThroughReadOnlyPtr) or an intermediate read-only raw-ptr field hop

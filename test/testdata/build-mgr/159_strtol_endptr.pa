@@ -1,0 +1,6 @@
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+
+@!int8 end;
+int64 v = strtol("42abc", @!end, 10);
+printf("%ld %s\n", v, end);

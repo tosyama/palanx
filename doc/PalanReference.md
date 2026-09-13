@@ -1303,6 +1303,17 @@ int64 x = 42;
 - `@ID` yields a read-only pointer to `ID`'s storage; `@!ID` yields a mutable pointer. The
   compiler enforces this: writing through a `@ID` pointer, or assigning/passing one where a
   `@!`-typed (mutable) destination is expected, is a compile error.
+- `ID` may itself already be a pointer to a primitive (`@T`/`@!T`); `@`/`@!` on it then yields a
+  pointer to that pointer's own storage slot, matching the C `T **` out-param idiom used by
+  functions like `strtol`:
+
+  ```palan
+  cinclude <stdlib.h>;
+
+  @!int8 end;
+  int64 v = strtol("42abc", @!end, 10);   // strtol writes end's own storage: end now points at "abc"
+  printf("%ld %s\n", v, end);             // 42 abc
+  ```
 - `@` also takes the address of a primitive-typed struct field reached from a local variable
   (`@s.x`, including through a chain of fields — `@!s.inner.x` — and through pointer-typed
   fields — `@!p.next.val`):
@@ -1316,6 +1327,19 @@ int64 x = 42;
   The same read-only/mutable rule applies at every step of the chain: `@!` on a field reached
   through a read-only pointer (a `@T`-typed base variable, or a `@T`-typed pointer field along
   the way) is a compile error, not silently downgraded to a read-only address.
+- `@` also takes the address of an embedded-struct field (`$T`) reached from a local variable
+  (`@!s.inner`, C's `&st.st_atim` idiom) — the result is a plain pointer to the inner struct
+  (`@!Inner`), the same shape a struct-typed local variable already has, not a pointer to a
+  pointer:
+
+  ```palan
+  cinclude <sys/stat.h>;
+
+  stat st;
+  stat("/", st);
+  @!timespec atim = @!st.st_atim;   // pointer to the embedded timespec field
+  printf("%ld\n", atim.tv_sec);
+  ```
 - `@` also takes the address of a primitive-typed array element (`@arr[2]`, `@!arr[2]`),
   including an element of a fixed-size array field (`@!s.data[2]`) and the innermost element of a
   multi-dimensional array (`@!mat[0][1]`):
@@ -1386,13 +1410,29 @@ int64 x = 42;
 
 ### Restrictions
 
-- Not usable on function parameters, or on a whole struct or array variable (`@s`, `@arr`).
-- Not usable when the addressed value is not primitive-typed: a struct-typed field, an
-  embedded-struct-array element (`[n]$T`), a 2D array row (`@mat[i]`), or a pointer-slot array
-  element (`[n]@T`/`[n]@!T`) are all rejected — `@`/`@!` only ever produces a pointer to a single
-  primitive value, never a pointer to an existing pointer or to an aggregate.
+`@`/`@!` produces a pointer to one storage slot: a primitive value, or a pointer to a primitive
+(pointer-to-pointer). A struct or array variable is never re-addressed this way, because it's
+already its own pointer to its storage — pass it by name instead (`random_r(st, ...)`, not
+`random_r(@!st, ...)`); `@!st` would build a meaningless `struct T **`.
+
+- Not usable on function parameters, or on a whole struct or array variable (`@s`, `@arr`) — see
+  above.
+- On a local variable, usable only when the variable is primitive-typed or itself a pointer to a
+  primitive (`@T`/`@!T`) — a struct-typed local, a pointer-to-struct local, or a plain array
+  variable (`[n]T`, itself a pointer, see above) are all rejected.
+- On a struct field reached from a local variable, usable only when the leaf field is
+  primitive-typed or an embedded struct (`$T`) — a pointer-typed field (`@T`/`@!T`), an
+  embedded-struct-array element (`[n]$T`), or an owned-pointer field are all rejected.
+- Not usable on a 2D array row (`@mat[i]`) or a pointer-slot array element (`[n]@T`/`[n]@!T`) —
+  only a primitive-typed array element.
 - Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
-  variable, a primitive-typed field reached from one, or a primitive-typed array element reached
-  from one.
+  variable, a field reached from one, or an array element reached from one.
+- A fixed-size array variable (`[n]T`) is, like a struct variable, already a pointer to its own
+  storage — but unlike a struct variable it *is* representable as a plain pointer-to-primitive
+  local, so `@!arr` compiles: it yields the address of the variable's own pointer slot, not a new
+  view into the array's elements. Since the array is freed automatically when its owning scope
+  exits, handing that slot to a C function that overwrites it (e.g. an out-param realloc-style
+  API) will make the automatic free operate on whatever the C call left behind — get this pattern
+  right or avoid it, the compiler does not check it.
 
 ---
