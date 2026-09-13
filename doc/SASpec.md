@@ -604,9 +604,12 @@ Before a `cinclude`d C function's parameters/return type (or a C global's single
   double` when no typedef maps it to something usable).
 - `arr` (a bare array type-kind — the `[n]@T`/`[n]@!T` pointer-slot-array shape has already
   normalized to `pntr` by this point), `func` (a function-pointer type), `union`, a `strct`
-  with no `type-name` (an anonymous struct reference), and `user` (an identifier c2ast could
-  not resolve to a known type — including a typedef of an anonymous struct/union/enum/function
-  body, which c2ast does not register).
+  with no `type-name` (a genuinely untagged struct reference — c2ast synthesizes a tag from
+  the typedef name for a single, non-derived `typedef struct { ... } Name;`, so this is a
+  multi-declarator/derived-declarator typedef of such a body, not every anonymous struct),
+  and `user` (an identifier c2ast could not resolve to a known type — including a typedef
+  that bottoms out in an anonymous union/enum/function-pointer body, or an anonymous struct
+  body via one of those two unsynthesized typedef shapes).
 - A `struct` type-kind carrying a `type-name` is always representable here, whether or not it
   is complete — an incomplete struct's layout is enforced later, only where a layout is actually
   needed (see "Incomplete struct types" below), not at signature-admission time.

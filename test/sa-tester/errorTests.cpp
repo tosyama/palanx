@@ -1428,24 +1428,6 @@ TEST(sa_error, c_unsupported_user_param)
 	ASSERT_NE(sa.find("'mystery_t'"), string::npos);
 }
 
-TEST(sa_error, c_unsupported_anon_typedef_struct)
-{
-	// `typedef struct { int a; int b; } Pair;` -- an anonymous-body typedef.
-	// IT-2905 only taught c2ast/SA to resolve the *tagged* form
-	// (`typedef struct Tag X;`); an anonymous body has no tag to alias, so
-	// `Pair` stays type-kind "user" at the reference site. Explicitly the
-	// case IT-2905 deferred to this ticket.
-	// Covers: sa_expr_call -> requireSupportedCFuncSig, parameter side
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_135_c_unsupported_anon_typedef_struct.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot call C function 'pair_sum'"), string::npos);
-	ASSERT_NE(sa.find("'Pair'"), string::npos);
-}
-
 TEST(sa_error, c_unsupported_union_param)
 {
 	// `int use_val(union Val v);` -- c2ast parses union bodies but discards

@@ -71,11 +71,15 @@ CParser::CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexer
 // Single point where a struct tag registers into capturedStructs_, called from
 // every place struct_union_definition() parses one (standalone declaration,
 // type-specifier reference in a field/parameter/return type, and recursively
-// for a nested struct-typed field). `fields` is null for a tag-only reference
-// or forward declaration; a later full definition of the same tag promotes an
-// existing tag-only entry in place (preserving its first-seen position in the
-// output) rather than adding a duplicate. A first-seen full definition is
-// never overwritten by a later one (first definition wins).
+// for a nested struct-typed field) and, for an anonymous struct body, from
+// declaration()'s tag synthesis (the typedef name stands in for the missing
+// tag). `fields` is null for a tag-only reference or forward declaration; a
+// later full definition of the same tag promotes an existing tag-only entry
+// in place (preserving its first-seen position in the output) rather than
+// adding a duplicate. A first-seen full definition is never overwritten by a
+// later one (first definition wins) -- declaration() relies on this by
+// checking structIndex_ itself before calling, so a synthesized name never
+// collides with an unrelated struct already holding it.
 void CParser::captureStructTag(const string &name, const json *fields)
 {
 	auto it = structIndex_.find(name);
@@ -766,6 +770,33 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 
 			if (CONSUME_PUNC(';')) {
 				// simple declaration(s)
+
+				// "typedef struct { ... } Name;" -- an anonymous struct body given a
+				// name only through the typedef, not a tag. Synthesize that name as
+				// the tag so the struct enters capturedStructs_/typedefs_ through the
+				// same single channel a tagged struct would, rather than staying
+				// unresolved as "user" at every reference site. Guarded to a single,
+				// non-derived declarator (decls.size()==1, var-type still bare "strct"
+				// after declarator() -- a pointer/array declarator would have wrapped
+				// it in "pntr") whose var-type has no type-name yet (tagged structs and
+				// typedef-name lookups of an already-registered strct always carry one).
+				// Skipped outright if the name is already taken by a real C tag
+				// (forward-declared or defined): Palan's struct type names are a single
+				// namespace (unlike C's separate tag/typedef namespaces), so a name
+				// already bound to one struct cannot also be re-bound to this unrelated
+				// anonymous one -- doing so would let captureStructTag's promote-in-place
+				// behavior attach this body's fields to that other struct's entry.
+				if (is_typedef && decls.size() == 1 && local.contains("fields")) {
+					json& vt0 = decls[0]["var-type"];
+					if (vt0.value("type-kind", "") == "strct" && !vt0.contains("type-name")) {
+						const string& name = decls[0]["name"].get<string>();
+						if (structIndex_.find(name) == structIndex_.end()) {
+							captureStructTag(name, &local["fields"]);
+							vt0["type-name"] = name;
+						}
+					}
+				}
+
 				for (auto &d : decls) {
 					emitDeclarator(ast, d, is_typedef, is_static, is_extern, is_top_level);
 				}
@@ -823,9 +854,12 @@ void CParser::emitDeclarator(json &ast, json &decl,
 		} else if (tk == "strct" && vt.contains("type-name")) {
 			// typedef struct Tag X; -- register X as an alias for the tag
 			// itself (SA resolves it the same way it resolves any other
-			// struct-bottomed type alias). An anonymous body
-			// (typedef struct { ... } X;, no "type-name") has no tag to
-			// alias to and is left unresolved here.
+			// struct-bottomed type alias). This also covers a single,
+			// non-derived typedef of an anonymous body (typedef struct {...}
+			// X;): declaration() has already synthesized X itself as the tag
+			// (see its call site) and written it into vt's "type-name" before
+			// this function runs, so that case and the tagged one are
+			// indistinguishable here.
 			typedefs_[decl["name"].get<string>()] = vt;
 		} else if (tk == "user") {
 			auto it = typedefs_.find(vt["type-name"].get<string>());
@@ -833,8 +867,11 @@ void CParser::emitDeclarator(json &ast, json &decl,
 				typedefs_[decl["name"].get<string>()] = it->second;
 			}
 		}
-		// anonymous strct/union/enum/func underlying types: not registered,
-		// left as unresolved "user" at reference sites (unchanged behavior)
+		// Remaining anonymous strct/union/enum/func underlying types -- a
+		// multi/derived-declarator anonymous struct body, any union/enum body,
+		// or a name declaration()'s tag synthesis skipped because it was
+		// already taken by an unrelated struct -- are not registered, left as
+		// unresolved "user" at reference sites (unchanged behavior).
 	} else if (is_extern && is_top_level && (tk == "prim" || tk == "pntr")) {
 		// A file-scope "extern" object declaration with external linkage, of a
 		// type Palan can represent without heap/embedded-array semantics

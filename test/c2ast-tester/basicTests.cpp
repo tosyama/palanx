@@ -248,6 +248,7 @@ TEST(c2ast, struct_enum_typedef) {
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/013_struct_enum.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
 
     auto find_func = [&](const string& name) -> json* {
         for (auto& f : functions)
@@ -255,7 +256,8 @@ TEST(c2ast, struct_enum_typedef) {
         return nullptr;
     };
 
-    // get_color() returns typedef enum Color
+    // get_color() returns typedef enum Color -- enum bodies are never tag-
+    // synthesized (IT-2026-09-12-3002 is struct-only), so this stays "user".
     {
         json* f = find_func("get_color");
         ASSERT_NE(f, nullptr);
@@ -263,12 +265,14 @@ TEST(c2ast, struct_enum_typedef) {
         ASSERT_EQ((*f)["ret-type"]["type-name"], "Color");
     }
 
-    // make_point() returns typedef struct Point
+    // make_point() returns typedef struct Point -- the anonymous body's tag is
+    // synthesized from the typedef name "Point" (IT-2026-09-12-3002).
     {
         json* f = find_func("make_point");
         ASSERT_NE(f, nullptr);
-        ASSERT_EQ((*f)["ret-type"]["type-kind"], "user");
+        ASSERT_EQ((*f)["ret-type"]["type-kind"], "strct");
         ASSERT_EQ((*f)["ret-type"]["type-name"], "Point");
+        ASSERT_EQ((*f)["ret-type"]["typedef-name"], "Point");
     }
 
     // point_sum() takes Point param
@@ -276,9 +280,18 @@ TEST(c2ast, struct_enum_typedef) {
         json* f = find_func("point_sum");
         ASSERT_NE(f, nullptr);
         auto& p0vt = (*f)["parameters"][0]["var-type"];
-        ASSERT_EQ(p0vt["type-kind"], "user");
+        ASSERT_EQ(p0vt["type-kind"], "strct");
         ASSERT_EQ(p0vt["type-name"], "Point");
     }
+
+    // The synthesized tag registers Point's field list in "structs", same as
+    // a tagged struct would.
+    json* point = nullptr;
+    for (auto& s : structs)
+        if (s["name"] == "Point") { point = &s; break; }
+    ASSERT_NE(point, nullptr);
+    ASSERT_TRUE(point->contains("fields"));
+    ASSERT_EQ((*point)["fields"].size(), 2);
 }
 
 TEST(c2ast, struct_union_decl_backtrack) {
@@ -403,9 +416,14 @@ TEST(c2ast, typedef_chain) {
     ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
 }
 
-TEST(c2ast, typedef_struct_unresolved) {
+TEST(c2ast, typedef_union_unresolved) {
+    // typedef union {...} U; -- the struct-only tag synthesis
+    // (IT-2026-09-12-3002) doesn't apply to unions (struct_union_definition's
+    // capture path is entirely under an "is_struct" guard), so this stays
+    // unresolved "user", exercising the CParser.cpp:441 fallback that a
+    // struct body now reaches far less often.
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/017_typedef_struct_unresolved.h");
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/017_typedef_union_unresolved.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
@@ -418,7 +436,7 @@ TEST(c2ast, typedef_struct_unresolved) {
     json* h = find_func("h");
     ASSERT_NE(h, nullptr);
     ASSERT_EQ((*h)["ret-type"]["type-kind"], "user");
-    ASSERT_EQ((*h)["ret-type"]["type-name"], "Point");
+    ASSERT_EQ((*h)["ret-type"]["type-name"], "U");
 }
 
 TEST(c2ast, typedef_pointer_chain) {
@@ -1020,4 +1038,81 @@ TEST(c2ast, array_size_expr_fold) {
     json* b = find_field((*sizes)["fields"], "b");
     ASSERT_NE(b, nullptr);
     ASSERT_TRUE((*b)["var-type"]["size-expr"].is_null());
+}
+
+TEST(c2ast, typedef_anon_struct) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/031_typedef_anon_struct.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+
+    // typedef struct { int quot; int rem; } Div; -- single, non-derived
+    // declarator: the anonymous body's tag is synthesized from "Div".
+    {
+        json* make_div = find_func("make_div");
+        ASSERT_NE(make_div, nullptr);
+        ASSERT_EQ((*make_div)["ret-type"]["type-kind"], "strct");
+        ASSERT_EQ((*make_div)["ret-type"]["type-name"], "Div");
+        ASSERT_EQ((*make_div)["ret-type"]["typedef-name"], "Div");
+
+        json* div_sum = find_func("div_sum");
+        ASSERT_NE(div_sum, nullptr);
+        auto& p0vt = (*div_sum)["parameters"][0]["var-type"];
+        ASSERT_EQ(p0vt["type-kind"], "pntr");
+        ASSERT_EQ(p0vt["base-type"]["type-kind"], "strct");
+        ASSERT_EQ(p0vt["base-type"]["type-name"], "Div");
+
+        json* div = find_struct("Div");
+        ASSERT_NE(div, nullptr);
+        ASSERT_TRUE(div->contains("fields"));
+        ASSERT_EQ((*div)["fields"].size(), 2);
+    }
+
+    // typedef struct { int a; } Multi, *MultiPtr; -- multi-declarator: non-goal,
+    // stays unresolved "user", no "Multi" entry in structs.
+    {
+        json* take_multi = find_func("take_multi");
+        ASSERT_NE(take_multi, nullptr);
+        ASSERT_EQ((*take_multi)["ret-type"]["type-kind"], "user");
+        ASSERT_EQ((*take_multi)["ret-type"]["type-name"], "Multi");
+        ASSERT_EQ(find_struct("Multi"), nullptr);
+    }
+
+    // typedef struct { int b; } *DerivedPtr; -- derived (pointer) declarator:
+    // non-goal, the pointee stays an untagged "strct".
+    {
+        json* take_derived = find_func("take_derived");
+        ASSERT_NE(take_derived, nullptr);
+        auto& p0vt = (*take_derived)["parameters"][0]["var-type"];
+        ASSERT_EQ(p0vt["type-kind"], "pntr");
+        ASSERT_EQ(p0vt["base-type"]["type-kind"], "strct");
+        ASSERT_FALSE(p0vt["base-type"].contains("type-name"));
+    }
+
+    // struct Clash { int k; }; then typedef struct { int m; } Clash; -- the
+    // name is already a real C tag, so synthesis is skipped rather than
+    // promoting Clash's entry with these unrelated fields.
+    {
+        json* clash = find_struct("Clash");
+        ASSERT_NE(clash, nullptr);
+        ASSERT_EQ((*clash)["fields"].size(), 1);
+        ASSERT_EQ((*clash)["fields"][0]["name"], "k");
+
+        json* use_clash = find_func("use_clash");
+        ASSERT_NE(use_clash, nullptr);
+        ASSERT_EQ((*use_clash)["ret-type"]["type-kind"], "user");
+        ASSERT_EQ((*use_clash)["ret-type"]["type-name"], "Clash");
+    }
 }
