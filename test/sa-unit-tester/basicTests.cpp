@@ -186,6 +186,44 @@ TEST(typecompat, unrepresentable_pntr_recurses_to_func) {
     EXPECT_EQ(unrepresentableTypeName(j), "function pointer");
 }
 
+// IT-2026-09-12-3006: normalizeCType must recurse into a `func` type-kind's
+// ret-type/parameters, not just stop at the outer pntr wrapping it -- a
+// callback parameter's own inner pointers (e.g. qsort's comparator taking
+// `const void*`) need "mutable" set too, or isWritableThrough's absent-key
+// default (writable) would silently invert their permission.
+TEST(normalize_ctype, func_recurses_into_ret_type_and_parameters) {
+    // int (*cb)(const void*, const void*) -- pntr(func(params: [pntr(const void) x2], ret: pntr(const int)))
+    json j = {
+        {"type-kind","pntr"},
+        {"base-type", {
+            {"type-kind","func"},
+            {"ret-type", {{"type-kind","pntr"},{"base-type",{{"type-kind","prim"},{"type-name","int32"},{"const",true}}}}},
+            {"parameters", json::array({
+                {{"var-type", {{"type-kind","pntr"},{"base-type",{{"type-kind","prim"},{"type-name","void"},{"const",true}}}}}},
+                {{"var-type", {{"type-kind","pntr"},{"base-type",{{"type-kind","prim"},{"type-name","void"}}}}}},
+                {{"name","..."}}
+            })}
+        }}
+    };
+    json n = normalizeCType(j);
+    auto& func = n["base-type"];
+    EXPECT_EQ(func["ret-type"]["mutable"], false);
+    EXPECT_EQ(func["parameters"][0]["var-type"]["mutable"], false);
+    EXPECT_EQ(func["parameters"][1]["var-type"]["mutable"], true);
+    // variadic sentinel has no var-type -- must survive untouched, not crash
+    ASSERT_FALSE(func["parameters"][2].contains("var-type"));
+}
+
+TEST(normalize_ctype, func_recurses_into_nested_strct) {
+    // A callback returning a bare `struct Tag` by value -- proof the recursion
+    // dispatches through normalizeCType's full switch (strct->struct fold),
+    // not a partial copy of only the pntr/mutable logic.
+    json j = {{"type-kind","func"}, {"ret-type", {{"type-kind","strct"},{"type-name","Tag"}}}};
+    json n = normalizeCType(j);
+    EXPECT_EQ(n["ret-type"]["type-kind"], "struct");
+    EXPECT_EQ(n["ret-type"]["type-name"], "Tag");
+}
+
 TEST(typecompat, unrepresentable_struct_named) {
     EXPECT_EQ(unrepresentableTypeName({{"type-kind","struct"},{"type-name","Foo"}}), "");
 }

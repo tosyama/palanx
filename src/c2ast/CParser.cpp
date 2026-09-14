@@ -554,6 +554,17 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 			}
 		}
 
+		// C's `(void)` prototype means "no parameters" -- normalize it to the
+		// same empty list a `f()` prototype and a Palan 0-arg function already
+		// carry (ASTSpec.md: "empty array when no parameters"), so no
+		// consumer needs to know about this pseudo-parameter shape. Applies
+		// equally to a function-pointer's own inner `(void)` parameter list,
+		// since that goes through this same function.
+		if (params.size() == 1 && !params[0].contains("name")
+				&& params[0]["var-type"].value("type-kind", "") == "prim"
+				&& params[0]["var-type"].value("type-name", "") == "void")
+			params.clear();
+
 		result_index = index;
 		return true;
 	}

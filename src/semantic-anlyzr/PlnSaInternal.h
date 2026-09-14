@@ -292,7 +292,12 @@ inline json normalizeCType(const json& type);
 // itself (see ptrPermissionOk/isWritableThrough above). Folding const into
 // mutable here means every consumer of a `pntr` value-type (ptrPermissionOk,
 // codegen) only ever needs to understand "mutable", whether the pointer came
-// from Palan syntax or a cincluded C signature.
+// from Palan syntax or a cincluded C signature. This recurses into a `func`
+// type-kind's own ret-type/parameters too, so a callback parameter's inner
+// pointers (e.g. qsort's `int (*)(const void*, const void*)`) get "mutable"
+// the same as any other pointer -- without this, isWritableThrough's
+// absent-key default (writable) would silently invert the callback's
+// pointer permissions.
 inline json normalizeCType(const json& type) {
 	if (type.value("type-kind","") == "pntr") {
 		json t = type;
@@ -304,6 +309,15 @@ inline json normalizeCType(const json& type) {
 	if (type.value("type-kind","") == "strct") {
 		json t = type;
 		t["type-kind"] = "struct";
+		return t;
+	}
+	if (type.value("type-kind","") == "func") {
+		json t = type;
+		t["ret-type"] = normalizeCType(type["ret-type"]);
+		if (t.contains("parameters"))
+			for (auto& p : t["parameters"])
+				if (p.contains("var-type"))
+					p["var-type"] = normalizeCType(p["var-type"]);
 		return t;
 	}
 	return type;

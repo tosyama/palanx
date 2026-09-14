@@ -1116,3 +1116,39 @@ TEST(c2ast, typedef_anon_struct) {
         ASSERT_EQ((*use_clash)["ret-type"]["type-name"], "Clash");
     }
 }
+
+// IT-2026-09-12-3006: `(void)` normalizes to an empty parameter list, both at
+// top level and inside a function-pointer's own parameter list, while a real
+// parameter and an already-empty `()` are left untouched.
+TEST(c2ast, void_param_list) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/032_void_param_list.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+
+    json* f = find_func("f");
+    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE((*f)["parameters"].empty());
+
+    json* g = find_func("g");
+    ASSERT_NE(g, nullptr);
+    ASSERT_EQ((*g)["parameters"].size(), 1);
+    ASSERT_EQ((*g)["parameters"][0]["name"], "a");
+
+    json* h = find_func("h");
+    ASSERT_NE(h, nullptr);
+    ASSERT_TRUE((*h)["parameters"].empty());
+
+    json* set_cb = find_func("set_cb");
+    ASSERT_NE(set_cb, nullptr);
+    auto& cb_vt = (*set_cb)["parameters"][0]["var-type"];
+    ASSERT_EQ(cb_vt["type-kind"], "pntr");
+    ASSERT_EQ(cb_vt["base-type"]["type-kind"], "func");
+    ASSERT_TRUE(cb_vt["base-type"]["parameters"].empty());
+}
