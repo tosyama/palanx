@@ -1,0 +1,3 @@
+cinclude "172_struct_ret_memory_class.h";
+
+Big g = get_big();

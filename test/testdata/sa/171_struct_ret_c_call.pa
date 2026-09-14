@@ -1,0 +1,3 @@
+cinclude <stdlib.h>;
+
+div_t d = div(7, 2);

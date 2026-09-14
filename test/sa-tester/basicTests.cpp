@@ -3762,3 +3762,68 @@ TEST(sa, usual_arith_conv)
 	ASSERT_EQ(call_i64["args"][0]["expr-type"],        "convert");
 	ASSERT_EQ(call_i64["args"][0]["value-type"]["type-name"], "int64");
 }
+
+TEST(sa, struct_ret_c_call) {
+	// IT-2026-09-12-3005: fixes the SA->codegen contract for IT-3004's
+	// C-function struct-by-value return in place -- `div_t d = div(7, 2);`
+	// must emit the calloc-backed var-decl for `d` followed by a bare `call`
+	// statement carrying a `struct-ret` descriptor (var/struct-name/size/
+	// eightbytes), with `value-type` erased from that call node (codegen's
+	// toVRegType has no struct case, so a lingering value-type there would
+	// silently reach an unhandled branch instead of the struct-ret path).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/171_struct_ret_c_call.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	const auto& decl = stmts[0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "d");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+
+	const auto& call = stmts[1]["body"];
+	ASSERT_EQ(stmts[1]["stmt-type"], "expr");
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["func-type"], "c");
+	ASSERT_EQ(call["name"], "div");
+	ASSERT_FALSE(call.contains("value-type"));
+
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["var"], "d");
+	ASSERT_EQ(sr["struct-name"], "div_t");
+	ASSERT_EQ(sr["size"], 8);
+	ASSERT_EQ(sr["eightbytes"].size(), 1);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
+	ASSERT_EQ(sr["eightbytes"][0]["size"], 8);
+}
+
+TEST(sa, struct_ret_memory_class) {
+	// IT-2026-09-12-3005: MEMORY class (>16 bytes) takes a different SA-side
+	// path than the register classes -- `eightbytes` stays empty and the
+	// destination pointer is prepended to `args` as an ordinary first
+	// argument (the ABI's hidden-pointer convention), so codegen needs no
+	// struct-ret-specific lowering for this class at all.
+	// Covers: sa_struct_var_decl MEMORY-class branch (PlnSaDecl.cpp ~879-888)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/172_struct_ret_memory_class.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	const auto& call = stmts[1]["body"];
+	ASSERT_EQ(call["name"], "get_big");
+	ASSERT_FALSE(call.contains("value-type"));
+
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["var"], "g");
+	ASSERT_EQ(sr["size"], 24);
+	ASSERT_TRUE(sr["eightbytes"].empty());
+
+	ASSERT_EQ(call["args"].size(), 1);
+	ASSERT_EQ(call["args"][0]["expr-type"], "id");
+	ASSERT_EQ(call["args"][0]["name"], "g");
+}

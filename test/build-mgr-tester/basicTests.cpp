@@ -1384,6 +1384,39 @@ TEST(build_mgr, strtol_endptr) {
 	ASSERT_EQ(output, "42 abc\n");
 }
 
+TEST(build_mgr, struct_ret_div) {
+	// IT-2026-09-12-3005: end-to-end proof of IT-3004's SysV struct-by-value
+	// return through real glibc functions -- div_t (1 eightbyte, INTEGER)
+	// and ldiv_t/lldiv_t (2 eightbytes, INTEGER+INTEGER).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/160_struct_ret_div.pa");
+	ASSERT_EQ(output,
+		"3 1\n"
+		"3 1\n"
+		"3 1\n");
+}
+
+TEST(build_mgr, struct_ret_div_mtrace) {
+	// IT-2026-09-12-3005: the calloc backing `div_t d` must be freed exactly
+	// once at scope exit -- no double-free, no leak, for a struct-ret'd
+	// C-function call.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_struct_ret_div_mtrace_bin "
+		"../test/testdata/build-mgr/161_struct_ret_div_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_struct_ret_div_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_struct_ret_div_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	EXPECT_EQ(allocs, 1) << "expected 1 alloc for div_t d, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

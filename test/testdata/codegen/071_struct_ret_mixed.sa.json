@@ -1,0 +1,40 @@
+{
+  "original": "/test/071_struct_ret_mixed.pa",
+  "str-literals": [],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "m",
+          "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Mixed"}},
+          "init": {
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "calloc",
+            "args": [
+              {"expr-type": "lit-uint", "value": "1", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+              {"expr-type": "lit-uint", "value": "16", "value-type": {"type-kind": "prim", "type-name": "uint64"}}
+            ],
+            "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Mixed"}}
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "get_mixed",
+        "args": [],
+        "struct-ret": {
+          "var": "m",
+          "struct-name": "Mixed",
+          "size": 16,
+          "eightbytes": [{"class": "int", "size": 8}, {"class": "sse", "size": 8}]
+        }
+      }
+    }
+  ]
+}
