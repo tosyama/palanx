@@ -3,6 +3,7 @@
 /// @file PlnSemanticAnalyzer.h
 /// @copyright 2024 YAMAGUCHI Toshinobu
 
+#pragma once
 #include <string>
 #include <map>
 #include <set>

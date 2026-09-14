@@ -47,7 +47,13 @@ struct BitXor   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs ^
 struct BitNot   { VReg dst; VReg src; VRegType type; };            // dst = ~src
 struct Cmp      { VReg dst; string op; VReg lhs; VReg rhs; VRegType type; }; // dst (int32) = (lhs op rhs) ? 1 : 0
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
-struct CallC    { string name; vector<VReg> args; VReg dst = -1; VRegType retType = VRegType::Int64; };
+// dsts/retTypes hold zero (statement-level, no return used), one (an ordinary
+// scalar/pointer return), or more (a struct-by-value return classified into
+// eightbytes by palan-sa; each dst receives one eightbyte from %rax/%rdx or
+// %xmm0/%xmm1, then a DerefStore writes it into the destination struct) VRegs
+// -- the same shape as CallPln, so both share PlnRegAlloc's CallPln visitor
+// logic.
+struct CallC    { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
 struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
 struct RetPln   { vector<VReg> rets; vector<VRegType> types; };
 struct ExitCode { int code; };

@@ -72,7 +72,7 @@ TEST(regalloc, stack_frame_alignment) {
 TEST(regalloc, arg_register) {
     VFunc func;
     func.instrs.push_back(MovImm{0, VRegType::Int64, 42});
-    func.instrs.push_back(CallC{"foo", {0}});
+    func.instrs.push_back(CallC{"foo", {0}, {}, {}});
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -85,8 +85,8 @@ TEST(regalloc, arg_register) {
 TEST(regalloc, callee_saved_two_call_uses) {
     VFunc func;
     func.instrs.push_back(MovImm{0, VRegType::Ptr64, 0});  // r0 = label
-    func.instrs.push_back(CallC{"puts",   {0}});            // first use
-    func.instrs.push_back(CallC{"puts",   {0}});            // second use → callee-saved
+    func.instrs.push_back(CallC{"puts", {0}, {}, {}});            // first use
+    func.instrs.push_back(CallC{"puts", {0}, {}, {}});            // second use → callee-saved
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -114,9 +114,9 @@ TEST(regalloc, callee_saved_spill_to_stack) {
     func.isEntry = true;
     func.instrs.push_back(MovImm{0, VRegType::Ptr64, 0});   // r0 def at 0
     func.instrs.push_back(MovImm{1, VRegType::Int32, 42});  // r1 def at 1
-    func.instrs.push_back(CallC{"foo", {}});                 // idx 2: intervening call
-    func.instrs.push_back(CallC{"bar", {0}});                // r0 used at 3 → callee-saved → %rbx
-    func.instrs.push_back(CallC{"baz", {1}});                // r1 used at 4 → spills (Int32 stack)
+    func.instrs.push_back(CallC{"foo", {}, {}, {}});                 // idx 2: intervening call
+    func.instrs.push_back(CallC{"bar", {0}, {}, {}});                // r0 used at 3 → callee-saved → %rbx
+    func.instrs.push_back(CallC{"baz", {1}, {}, {}});                // r1 used at 4 → spills (Int32 stack)
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -137,7 +137,7 @@ TEST(regalloc, convert_src_uses_callee_saved) {
     VFunc func;
     func.instrs.push_back(MovImm{0, VRegType::Int32,  10});              // r0 def at 0
     func.instrs.push_back(Convert{1, 0, VRegType::Int32, VRegType::Int64}); // r1 = (int64)r0; r0.last_any_use=1
-    func.instrs.push_back(CallC{"foo", {1}});                             // r1 used by call
+    func.instrs.push_back(CallC{"foo", {1}, {}, {}});                             // r1 used by call
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -158,7 +158,7 @@ TEST(regalloc, convert_src_uses_callee_saved) {
 TEST(regalloc, initvar_direct_call_use_always_stack) {
     VFunc func;
     func.instrs.push_back(InitVar{0, VRegType::Int64, 10});
-    func.instrs.push_back(CallC{"foo", {0}});
+    func.instrs.push_back(CallC{"foo", {0}, {}, {}});
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -171,8 +171,8 @@ TEST(regalloc, initvar_direct_call_use_always_stack) {
 TEST(regalloc, initvar_with_intervening_call_always_stack) {
     VFunc func;
     func.instrs.push_back(InitVar{0, VRegType::Int64, 10});  // r0 def at 0
-    func.instrs.push_back(CallC{"foo", {}});                  // idx 1: intervening
-    func.instrs.push_back(CallC{"bar", {0}});                 // r0 used at 2
+    func.instrs.push_back(CallC{"foo", {}, {}, {}});                  // idx 1: intervening
+    func.instrs.push_back(CallC{"bar", {0}, {}, {}});                 // r0 used at 2
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -186,7 +186,7 @@ TEST(regalloc, add_result_as_arg_register) {
     func.instrs.push_back(InitVar{0, VRegType::Int64, 10});  // r0: stack (isVar, no call_use)
     func.instrs.push_back(InitVar{1, VRegType::Int64, 20});  // r1: stack
     func.instrs.push_back(Add{2, 0, 1, VRegType::Int64});    // r2 = r0+r1
-    func.instrs.push_back(CallC{"foo", {2}});                 // r2 → %rdi
+    func.instrs.push_back(CallC{"foo", {2}, {}, {}});                 // r2 → %rdi
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -201,7 +201,7 @@ TEST(regalloc, convert_result_as_arg_register) {
     VFunc func;
     func.instrs.push_back(InitVar{0, VRegType::Int32, 10});              // r0: int32 stack var
     func.instrs.push_back(Convert{1, 0, VRegType::Int32, VRegType::Int64}); // r1 = (int64)r0
-    func.instrs.push_back(CallC{"foo", {1}});                             // r1 → %rdi
+    func.instrs.push_back(CallC{"foo", {1}, {}, {}});                             // r1 → %rdi
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -262,9 +262,9 @@ TEST(regalloc, block_reuse_size_mismatch) {
 TEST(regalloc, callee_saved_across_call) {
     VFunc func;
     func.instrs.push_back(MovImm{0, VRegType::Ptr64,  0});  // r0: def at idx 0
-    func.instrs.push_back(CallC{"puts", {}});                // call at idx 1 (between def and use)
+    func.instrs.push_back(CallC{"puts", {}, {}, {}});                // call at idx 1 (between def and use)
     func.instrs.push_back(MovImm{1, VRegType::Int64, 42});  // r1: 42
-    func.instrs.push_back(CallC{"printf", {0, 1}});         // r0 used at idx 3
+    func.instrs.push_back(CallC{"printf", {0, 1}, {}, {}});         // r0 used at idx 3
 
     auto r = allocateRegisters(func, testPhys);
 
@@ -281,8 +281,8 @@ TEST(regalloc, callee_saved_across_call) {
 // register rather than living directly in the arg register it was passed in.
 TEST(regalloc, callee_saved_call_arg_reused_after_call) {
     VFunc func;
-    func.instrs.push_back(CallC{"calloc", {}, 0, VRegType::Ptr64});  // r0: def at idx 0
-    func.instrs.push_back(CallC{"clock_gettime", {1, 0}});           // r0 used as arg at idx 1
+    func.instrs.push_back(CallC{"calloc", {}, {0}, {VRegType::Ptr64}});  // r0: def at idx 0
+    func.instrs.push_back(CallC{"clock_gettime", {1, 0}, {}, {}});           // r0 used as arg at idx 1
     func.instrs.push_back(DerefLoad{2, 0, 0, VRegType::Int64});      // r0 dereferenced at idx 2
 
     auto r = allocateRegisters(func, testPhys);

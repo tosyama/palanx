@@ -217,9 +217,23 @@ static StructDef buildStructDef(const string& name,
 
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
+	json body = sa_expression(stmt["body"]);
+	// A bare `struct` value-type (as opposed to pntr(struct(...))) is only ever
+	// produced by a C function's by-value struct return (see sa_expr_call) --
+	// field-access on an embedded/owned struct field always yields a pointer
+	// (fieldValueType). Discarding that return value as a statement would
+	// otherwise reach codegen with no lowering for it (PlnDeserialize's
+	// toVRegType has no struct case), so reject it here regardless of
+	// eightbyte class -- allowing only the register classes through would
+	// need a second lowering path for a call with no destination to write to.
+	if (body.contains("value-type") && body["value-type"].value("type-kind","") == "struct") {
+		string structName = body["value-type"].value("type-name", "");
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ByvalStructRetDiscarded, structName) << endl;
+		exit(1);
+	}
 	return {
 		{"stmt-type", "expr"},
-		{"body", sa_expression(stmt["body"])}
+		{"body", body}
 	};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -825,21 +839,60 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	const StructDef& def = requireCompleteStruct(structName, stmt);
 	json pntr_type = {{"type-kind","pntr"},
 	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
+	bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inAllocFunc_;
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
+	// The call that fills a struct-ret var must run after every var in this
+	// declaration has its own storage (so `Pair p = f(), q = g();` allocates
+	// both before calling either) -- accumulated here and appended to `result`
+	// only once the whole var-decl statement has been built.
+	json structRetStmts = json::array();
 	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"].get<string>();
+		json structRetCall;  // stays null unless `var` has a valid struct-returning C call initializer
 		if (var.contains("init")) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructInitNotSupported, structName) << endl;
-			exit(1);
+			// Evaluate before declareVar: the initializer must not see the
+			// variable it is initializing (same rule as sa_var_decl).
+			json userInit = sa_expression(var["init"]);
+			bool isStructRetCall = userInit.contains("value-type")
+				&& userInit.value("expr-type", "") == "call"
+				&& userInit.value("func-type", "") == "c"
+				&& userInit["value-type"].value("type-kind","") == "struct"
+				&& userInit["value-type"].value("type-name","") == structName;
+			if (!isStructRetCall) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructInitNotSupported, structName) << endl;
+				exit(1);
+			}
+			bool ok;
+			vector<EightbyteRet> eightbytes = classifySysVStructRet(def, structDefs_, ok);
+			if (!ok || !useSimpleCalloc) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnsupportedCStructReturn, structName) << endl;
+				exit(1);
+			}
+			userInit.erase("value-type");
+			json ebs = json::array();
+			for (auto& eb : eightbytes)
+				ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}});
+			userInit["struct-ret"] = {{"var",name}, {"struct-name",structName},
+			                          {"size",def.totalSize}, {"eightbytes",ebs}};
+			if (eightbytes.empty()) {
+				// MEMORY class (>16 bytes): prepend the destination pointer as an
+				// ordinary first argument -- the callee writes the whole struct
+				// through it directly, so codegen needs no struct-ret-specific
+				// lowering for this class.
+				json var_id = {{"expr-type","id"},{"name",name},
+				               {"var-type",pntr_type},{"value-type",pntr_type}};
+				if (!userInit.contains("args")) userInit["args"] = json::array();
+				userInit["args"].insert(userInit["args"].begin(), var_id);
+			}
+			structRetCall = {{"stmt-type","expr"},{"body",userInit}};
 		}
 		declareVar(name, pntr_type, &stmt);
 
 		json init;
 		json free_stmt;
 
-		bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inAllocFunc_;
 		if (useSimpleCalloc) {
 			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 			json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
@@ -862,8 +915,12 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 		if (!namedRet)
 			arrayScopeVars_.back().push_back({name, free_stmt});
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
+		if (!structRetCall.is_null())
+			structRetStmts.push_back(structRetCall);
 	}
 	result.push_back(sa_stmt);
+	for (auto& s : structRetStmts)
+		result.push_back(s);
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE

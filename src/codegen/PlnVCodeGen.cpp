@@ -183,12 +183,16 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::CCCall: {
             auto& e = static_cast<const CCCallExpr&>(expr);
-            BOOST_ASSERT(e.hasRet);
+            // A struct-ret call produces no scalar value to plug into an
+            // expression context; sa_expression_stmt (E_ByvalStructRetDiscarded)
+            // and sa_struct_var_decl are the only SA producers of one, and both
+            // always place it as a bare statement (lowerExprStmt), never here.
+            BOOST_ASSERT(e.hasRet && !e.hasStructRet);
             vector<VReg> args;
             for (auto& arg : e.args)
                 args.push_back(lowerExpr(*arg, func));
             VReg dst = allocVReg();
-            func.instrs.push_back(CallC{e.name, move(args), dst, e.retType}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CallC{e.name, move(args), {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
             return dst;
         }
         case ExprKind::PlnCall: {
@@ -289,7 +293,32 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
     for (auto& arg : expr.args) {
         args.push_back(lowerExpr(*arg, func));
     }
-    func.instrs.push_back(CallC{expr.name, move(args), /*dst=*/-1}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    if (!expr.hasStructRet || expr.structRetEightbytes.empty()) {
+        // Plain void-context call, or a MEMORY-class (>16B) struct return --
+        // sa_struct_var_decl already prepended the destination pointer to
+        // args as an ordinary first argument for the MEMORY case, so the
+        // callee writes the whole struct through it directly; no dsts needed.
+        func.instrs.push_back(CallC{expr.name, move(args), {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        return;
+    }
+    // Register-class struct return (<=16B): the call writes each eightbyte
+    // into a fresh vreg (from %rax/%rdx or %xmm0/%xmm1), then a DerefStore
+    // per eightbyte copies it into the destination struct's heap storage.
+    // var-decl always precedes this call in the same var-decl statement
+    // (sa_struct_var_decl), so the destination is already declared.
+    VReg dstPtr = findVar(expr.structRetVar);
+    vector<VReg> dsts;
+    vector<VRegType> types;
+    for (VRegType t : expr.structRetEightbytes) {
+        dsts.push_back(allocVReg());
+        types.push_back(t);
+    }
+    func.instrs.push_back(CallC{expr.name, move(args), dsts, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    int offset = 0;
+    for (size_t i = 0; i < dsts.size(); i++) {
+        func.instrs.push_back(DerefStore{dstPtr, offset, dsts[i], types[i]});
+        offset += 8;
+    }
 }
 
 void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)

@@ -136,15 +136,28 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
     emitCallC(i.name, flt_idx);
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
-    if (i.dst != -1 && rm.count(i.dst)) {
-        const PhysLoc& dst_loc = rm.at(i.dst);
-        bool ret_is_float = (i.retType == VRegType::Float32 || i.retType == VRegType::Float64);
-        // Float return value is in %xmm0; integer return value is in %rax.
-        string ret_reg = ret_is_float ? "%xmm0" : sizedRegName("%rax", i.retType);
+    // Move return value(s) to destination(s). An ordinary scalar/pointer
+    // return is one INTEGER (%rax) or SSE (%xmm0) dst; a struct-by-value
+    // return classified into eightbytes (IT-2026-09-12-3004) can add a
+    // second dst of either class, consuming %rdx or %xmm1 next in that
+    // class's own sequence -- SysV's <=16-byte register-return limit means
+    // there is never a third of either. Each dst here is a freshly allocated
+    // temp used only by a single immediately-following DerefStore (see
+    // PlnVCodeGen::lowerCCCallExpr), so PlnRegAlloc always places it in a
+    // callee-saved register or on the stack, never in %rax/%rdx/%xmm0/%xmm1
+    // themselves -- copies below need no clobber-avoiding ordering.
+    static const array<const char*, 2> kIntRetRegs = {"%rax", "%rdx"};
+    static const array<const char*, 2> kSseRetRegs = {"%xmm0", "%xmm1"};
+    int intRetIdx = 0, sseRetIdx = 0;
+    for (size_t k = 0; k < i.dsts.size(); k++) {
+        bool ret_is_float = (i.retTypes[k] == VRegType::Float32 || i.retTypes[k] == VRegType::Float64);
+        string ret_reg = ret_is_float ? kSseRetRegs[sseRetIdx++] : sizedRegName(kIntRetRegs[intRetIdx++], i.retTypes[k]);
+        if (!rm.count(i.dsts[k])) continue;  // dead: result never used
+        const PhysLoc& dst_loc = rm.at(i.dsts[k]);
         string dst_reg = ret_is_float ? (dst_loc.isStack() ? srcOperand(dst_loc) : dst_loc.base)
                                       : srcOperand(dst_loc);
         if (dst_reg != ret_reg)
-            out << "\t" << movInstrForType(i.retType) << " " << ret_reg << ", " << dst_reg << "\n";
+            out << "\t" << movInstrForType(i.retTypes[k]) << " " << ret_reg << ", " << dst_reg << "\n";
     }
 }
 

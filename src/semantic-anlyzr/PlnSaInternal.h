@@ -7,6 +7,11 @@
 #include <string>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
+// FieldLayout/StructDef live in PlnSemanticAnalyzer.h, not here; every SA .cpp
+// already includes it before this header, but classifySysVStructRet below
+// needs it too, and a standalone consumer (sa-unit-tester) would otherwise
+// have to know that ordering by convention rather than by include graph.
+#include "PlnSemanticAnalyzer.h"
 
 using json = nlohmann::json;
 using namespace std;
@@ -97,6 +102,89 @@ inline int elemSizeBytes(const string& typeName)
 	if (typeName == "int32" || typeName == "uint32" || typeName == "flo32") return 4;
 	if (typeName == "int64" || typeName == "uint64" || typeName == "flo64") return 8;
 	return -1;
+}
+
+// SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct return value.
+enum class EightbyteClass { Integer, Sse };
+struct EightbyteRet { EightbyteClass cls; int size; };  // size in {1,2,4,8}; only the last eightbyte may be <8
+
+// Recursively marks the eightbytes covered by one field as INTEGER; SSE is
+// `cls`'s initial value, so an all-float field simply leaves it unmarked
+// (mixing within one eightbyte follows the "any INTEGER wins" merge rule).
+// `base` is the field's struct-relative offset already shifted by every
+// enclosing embed/embed-arr, so recursion always marks against the same
+// top-level `cls` vector.
+inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
+                              const map<string, StructDef>& defs,
+                              vector<EightbyteClass>& cls)
+{
+	auto mark = [&](int offset, int size, EightbyteClass fieldCls) {
+		if (fieldCls != EightbyteClass::Integer) return;  // Sse is the default; nothing to mark
+		for (int b = offset; b < offset + size; b++) {
+			int eb = b / 8;
+			if (eb < nEightbytes) cls[eb] = EightbyteClass::Integer;
+		}
+	};
+	for (auto& f : d.fields) {
+		int off = base + f.offset;
+		if (f.typeKind == "prim") {
+			bool isFloat = (f.typeName == "flo32" || f.typeName == "flo64");
+			mark(off, f.size, isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+		} else if (f.typeKind == "raw-ptr" || f.typeKind == "struct-ptr" || f.typeKind == "arr-ptr") {
+			mark(off, 8, EightbyteClass::Integer);
+		} else if (f.typeKind == "embed-ptr-arr") {
+			for (int64_t i = 0; i < f.count; i++)
+				mark(off + (int)(i * 8), 8, EightbyteClass::Integer);
+		} else if (f.typeKind == "embed") {
+			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, cls);
+		} else if (f.typeKind == "embed-arr") {
+			bool leafFloat = (f.typeName == "flo32" || f.typeName == "flo64");
+			for (int64_t i = 0; i < f.count; i++) {
+				int elemOff = off + (int)(i * f.stride);
+				if (f.elemKind == "struct")
+					classifySysVWalk(defs.at(f.typeName), elemOff, nEightbytes, defs, cls);
+				else
+					mark(elemOff, f.stride, leafFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+			}
+		}
+	}
+}
+
+// Classifies a struct's return value per the System V AMD64 ABI (§3.2.3):
+// a struct over 16 bytes is MEMORY class, returned via a caller-supplied
+// hidden pointer, represented here as an empty vector; 16 bytes or less is
+// returned in up to two eightbytes, each INTEGER (%rax/%rdx) or SSE
+// (%xmm0/%xmm1). Only the return-value rules are implemented (not full
+// argument classification, which additionally has a MEMORY class for
+// eightbytes containing unaligned fields -- unreached by every struct
+// this compiler can construct, since buildStructDef itself enforces
+// natural alignment).
+//
+// Sets `ok` to false, and returns an empty vector, if any eightbyte's
+// natural width isn't 1/2/4/8 bytes (e.g. a trailing `char a[3]` field) --
+// callers should reject that shape with a dedicated diagnostic rather than
+// guess at a partial-eightbyte store.
+inline vector<EightbyteRet> classifySysVStructRet(const StructDef& def,
+                                                   const map<string, StructDef>& defs,
+                                                   bool& ok)
+{
+	ok = true;
+	if (def.totalSize > 16) return {};  // MEMORY class
+
+	int nEightbytes = (def.totalSize + 7) / 8;
+	int tailWidth = def.totalSize - 8 * (nEightbytes - 1);
+	if (tailWidth != 1 && tailWidth != 2 && tailWidth != 4 && tailWidth != 8) {
+		ok = false;
+		return {};
+	}
+
+	vector<EightbyteClass> cls(nEightbytes, EightbyteClass::Sse);
+	classifySysVWalk(def, 0, nEightbytes, defs, cls);
+
+	vector<EightbyteRet> result;
+	for (int i = 0; i < nEightbytes; i++)
+		result.push_back({cls[i], (i == nEightbytes - 1) ? tailWidth : 8});
+	return result;
 }
 
 // Builds a synthetic free() expression statement for the named pointer variable

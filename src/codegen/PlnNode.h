@@ -181,6 +181,17 @@ struct CCCallExpr : Expr {
     bool     hasRet = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
+    // Set when sa.json's call node carries a "struct-ret" descriptor (a C
+    // function returning a struct by value, classified per the System V
+    // AMD64 ABI by palan-sa). Mutually exclusive with hasRet: this call has
+    // no ordinary scalar/pointer return value, only this side effect.
+    // structRetVar names the (already-declared) destination struct variable;
+    // structRetEightbytes lists the classified eightbytes in order (empty
+    // means MEMORY class -- the destination pointer was already prepended to
+    // args as an ordinary argument, so no further lowering is needed here).
+    bool             hasStructRet = false;
+    string           structRetVar;
+    vector<VRegType> structRetEightbytes;
 };
 
 struct PlnCallExpr : Expr {

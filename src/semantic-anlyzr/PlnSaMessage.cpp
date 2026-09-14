@@ -268,13 +268,26 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_StructInitNotSupported:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "initializing a '" + arg1 + "' variable from an expression is not supported "
-			       "yet; declare it without an initializer and assign to its fields instead.";
+			return "initializing a '" + arg1 + "' variable from an expression is only supported "
+			       "when the expression is a call to a C function returning '" + arg1
+			       + "' by value; declare it without an initializer and assign to its fields "
+			         "instead.";
 
 		case E_IncompatibleTypes:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot convert '" + arg1 + "' to '" + arg2 + "'.";
+
+		case E_UnsupportedCStructReturn:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot receive the return value of a C function returning '" + arg1
+			       + "' by value: this version cannot classify its layout for a "
+			         "register-based return.";
+
+		case E_ByvalStructRetDiscarded:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the return value of this call (a '" + arg1 + "' returned by value) is "
+			       "discarded; assign it to a newly declared '" + arg1 + "' variable instead.";
 
 		default:
 			BOOST_ASSERT(false);

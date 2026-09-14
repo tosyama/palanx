@@ -1,3 +1,4 @@
-cinclude "error_152_struct_init_not_supported.h";
+type Pair { int32 a; int32 b; };
 
-Pair p = make_pair(3, 4);
+Pair q;
+Pair p = q;

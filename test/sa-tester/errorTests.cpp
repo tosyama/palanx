@@ -1707,9 +1707,11 @@ TEST(sa_error, toplevel_call_plain_return_struct)
 	// fabricated its own calloc-init instead of ever emitting `call
 	// makePoint` -- a former sa.toplevel_call_plain_return_struct test in
 	// basicTests.cpp asserted on that fabricated calloc-shaped init as if it
-	// were correct. Struct-typed initializers are now rejected outright
-	// (IT-3004 will admit the one shape it can actually implement: a C
-	// function's SysV-classified struct-by-value return).
+	// were correct. Struct-typed initializers are now rejected outright.
+	// IT-2026-09-12-3004 later admits the one shape it can actually
+	// implement -- a C function's SysV-classified struct-by-value return --
+	// but `makePoint` here is a native Palan function (func-type "palan"),
+	// which stays rejected either way.
 	// Covers: sa_struct_var_decl init rejection, E_StructInitNotSupported
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1717,22 +1719,26 @@ TEST(sa_error, toplevel_call_plain_return_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/136_toplevel_call_plain_return_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("initializing a 'Point' variable from an expression is not supported"), string::npos);
+	ASSERT_NE(sa.find("initializing a 'Point' variable from an expression is only supported"), string::npos);
 }
 
 TEST(sa_error, struct_init_not_supported)
 {
-	// IT-2026-09-12-3001 item (1): `Pair p = make_pair(3, 4);` used to
-	// silently discard the call and fabricate a calloc-init instead --
-	// see sa_struct_var_decl. Now rejected outright.
-	// Covers: sa_struct_var_decl, E_StructInitNotSupported
+	// IT-2026-09-12-3004: `Pair p = q;` (copy-initializing one struct
+	// variable from another) is not a call to a C function returning `Pair`
+	// by value, so it stays outside the one shape sa_struct_var_decl now
+	// admits and is rejected. (`Pair p = make_pair(3, 4);`, this test's
+	// fixture prior to IT-3004, is exactly that admitted shape and now
+	// succeeds instead; new success-path tests for it are IT-2026-09-12-3005's
+	// scope.)
+	// Covers: sa_struct_var_decl init rejection, E_StructInitNotSupported
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_152_struct_init_not_supported.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("initializing a 'Pair' variable from an expression is not supported"), string::npos);
+	ASSERT_NE(sa.find("initializing a 'Pair' variable from an expression is only supported"), string::npos);
 }
 
 TEST(sa_error, call_arg_ptr_mismatch_native)
