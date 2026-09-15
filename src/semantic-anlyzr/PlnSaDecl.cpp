@@ -79,10 +79,11 @@ static StructDef buildStructDef(const string& name,
 			int sz = 8, align = 8;
 			string baseName = vtype["base-type"].value("type-name", "");
 			bool isMut = vtype.value("mutable", false);
+			string elemKind = isPrimPointeeName(baseName) ? "prim" : "struct";
 			offset = alignUp(offset, align);
 			def.fields.push_back({.name=fieldName, .typeKind="raw-ptr",
 			                      .typeName=baseName, .isMutable=isMut,
-			                      .offset=offset, .size=sz});
+			                      .offset=offset, .size=sz, .elemKind=elemKind});
 			offset += sz;
 			maxAlign = max(maxAlign, align);
 		} else if (tk == "arr") {

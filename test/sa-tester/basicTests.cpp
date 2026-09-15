@@ -1787,6 +1787,38 @@ TEST(sa, raw_ptr_field)
 	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
 }
 
+TEST(sa, raw_ptr_prim_field)
+{
+	// Prerequisite fix for IT-2026-09-12-3008: a raw-ptr struct field whose
+	// pointee is primitive (e.g. `@!int64 p;`), not another struct, used to
+	// have its pointee kind forgotten at registration (buildStructDef), so
+	// fieldValueType/resolveObjectChain always rebuilt it as pntr(struct(...))
+	// -- `s.p` failed with a misleading "unknown struct type 'int64'." This
+	// covers read (`s.p`), write (`x -> s.p`), and index (`s.p[0]`), all of
+	// which must resolve to pntr(prim int64), not pntr(struct("int64")).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/176_raw_ptr_prim_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// x -> s.p;  (field-assign)
+	const auto& assign = jout["statements"][2];
+	ASSERT_EQ(assign["stmt-type"], "field-assign");
+	ASSERT_EQ(assign["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(assign["value-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(assign["value-type"]["base-type"]["type-name"], "int64");
+
+	// 9 -> s.p[0];  (arr-assign through the field)
+	const auto& arr_target = jout["statements"][3]["target"];
+	ASSERT_EQ(arr_target["array"]["value-type"]["base-type"]["type-name"], "int64");
+	ASSERT_EQ(arr_target["value-type"]["type-name"], "int64");
+
+	// @!int64 rp = s.p;  (plain field read)
+	const auto& rp = jout["statements"][4]["vars"][0];
+	ASSERT_EQ(rp["init"]["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(rp["init"]["value-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(rp["init"]["value-type"]["base-type"]["type-name"], "int64");
+}
+
 TEST(sa, alloc_shape_owned)
 {
 	cleanTestEnv();

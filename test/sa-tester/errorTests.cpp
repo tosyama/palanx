@@ -1956,3 +1956,21 @@ TEST(sa_error, callback_ret_type_mismatch)
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
 }
+
+TEST(sa_error, field_access_through_prim_ptr_field)
+{
+	// Prerequisite fix for IT-2026-09-12-3008: `s.p.q` where `p` is a
+	// raw-ptr field with a primitive pointee (`@!int64 p;`) has nothing to
+	// chain into -- resolveObjectChain must reject it as a non-struct hop,
+	// not build a bogus pntr(struct("int64")) and fail later with an
+	// unrelated "unknown struct type 'int64'." from requireCompleteStruct.
+	// Covers: resolveObjectChain raw-ptr elemKind=="prim" guard,
+	// E_FieldAccessOnNonStruct
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_168_field_access_through_prim_ptr_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}

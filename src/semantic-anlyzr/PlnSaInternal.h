@@ -86,6 +86,10 @@ inline json fieldValueType(const FieldLayout& f)
 		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
 		return {{"type-kind","pntr"},{"base-type",bt}};
 	}
+	if (f.typeKind == "raw-ptr" && f.elemKind == "prim") {
+		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
+		return {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
+	}
 	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
 	json pntr = {{"type-kind","pntr"},{"base-type",bt}};
 	if (f.typeKind == "raw-ptr")
@@ -102,6 +106,13 @@ inline int elemSizeBytes(const string& typeName)
 	if (typeName == "int32" || typeName == "uint32" || typeName == "flo32") return 4;
 	if (typeName == "int64" || typeName == "uint64" || typeName == "flo64") return 8;
 	return -1;
+}
+
+// A pointee type name that is primitive rather than a struct name. `void` is
+// accepted here but not as a standalone value type (PlnType.h PrimType::Name::Void).
+inline bool isPrimPointeeName(const string& name)
+{
+	return name == "void" || elemSizeBytes(name) >= 0;
 }
 
 // SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct return value.

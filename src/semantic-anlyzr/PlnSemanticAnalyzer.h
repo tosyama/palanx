@@ -27,7 +27,7 @@ struct FieldLayout {
 
 	// Array-field-only members (valid when typeKind == "embed-arr", "embed-ptr-arr", or "arr-ptr")
 	int64_t count    = 0;   // element count n (compile-time constant)
-	string  elemKind = "";  // "prim" | "struct"
+	string  elemKind = "";  // "prim" | "struct"; also set for typeKind == "raw-ptr" (pointee kind)
 	int     stride   = 0;   // bytes per element
 };
 
