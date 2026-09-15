@@ -1487,10 +1487,14 @@ TEST(sa_error, c_unsupported_union_ret)
 
 TEST(sa_error, c_unsupported_func_param)
 {
-	// `void set_cb(int (*cb)(int));` -- a function-pointer parameter is
-	// pntr(func(...)); unrepresentableTypeName recurses through the pntr to
-	// find the "func" kind underneath, proving the pntr-chain recursion.
-	// Covers: sa_expr_call -> requireSupportedCFuncSig, pntr recursion
+	// `void set_cb(int (*cb)(long double));` -- a function-pointer parameter
+	// whose own inner signature is unrepresentable (long double) is still
+	// rejected wholesale as "function pointer": IT-2026-09-12-3007 only
+	// exempts a callback parameter from the blanket rejection when
+	// callbackSigRepresentable finds every inner parameter/return type
+	// representable, which is not the case here.
+	// Covers: normalizeCFuncSig -> callbackSigRepresentable (false branch),
+	// sa_expr_call -> requireSupportedCFuncSig
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -1832,4 +1836,123 @@ TEST(sa_error, unsupported_c_struct_return)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot receive the return value of a C function returning 'Odd3' by value"), string::npos);
+}
+
+TEST(sa_error, callback_arg_not_func)
+{
+	// IT-2026-09-12-3007: `qsort(arr, 4, 4, x);` where `x` is a local
+	// variable, not a function name -- the "_callback-param" slot only
+	// accepts a bare reference resolved by findPlnFunc, not findVar.
+	// Covers: sa_func_ref_arg's arg.expr-type=="id" + findVar/findPlnFunc
+	// dispatch, E_CallbackArgRequiresFunc
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_159_callback_arg_not_func.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("argument 'x' to C function 'qsort' must be the bare name of a Palan function"),
+		string::npos);
+}
+
+TEST(sa_error, callback_sig_arity_mismatch)
+{
+	// IT-2026-09-12-3007: `func cmp(@int32 a) -> int32` passed where qsort
+	// expects a 2-parameter comparator -- arity mismatch between the C
+	// callback signature and the Palan function's own signature.
+	// Covers: sa_func_ref_arg's cCount != pCount check, E_CallbackSignatureMismatch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_160_callback_sig_arity_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+}
+
+TEST(sa_error, callback_sig_ptr_permission)
+{
+	// IT-2026-09-12-3007: `func cmp(@!int32 a, @!int32 b) -> int32` passed to
+	// qsort, whose comparator parameters are `const void*` -- C passes a
+	// read-only value INTO the callback, so a Palan `@!T` (which could write
+	// through it) is not a valid match even though the pointee types agree.
+	// Covers: sa_func_ref_arg's ptrPermissionOk(cvt, pvt) direction (value
+	// flows from C into the callback parameter), E_CallbackSignatureMismatch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_161_callback_ptr_permission.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+}
+
+TEST(sa_error, callback_sig_width_mismatch)
+{
+	// IT-2026-09-12-3007: `func cb(int64 status, @int8 arg)` passed to
+	// on_exit, whose handler's first parameter is a plain `int` (int32) --
+	// typeCompat(int32, int64) is ImplicitWiden, not Identical, and this
+	// call site requires Identical because glibc calls the Palan function
+	// directly with no conversion step to widen through at the ABI
+	// boundary. Proves callback matching is strict Identical-only, unlike
+	// every other call site in this file (which tolerate ImplicitWiden).
+	// Covers: sa_func_ref_arg's typeCompat(...) != Identical check for a
+	// non-pointer parameter, E_CallbackSignatureMismatch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_162_callback_sig_width_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'cb' cannot be used as a callback for C function 'on_exit'"), string::npos);
+}
+
+TEST(sa_error, c_unsupported_func_ret)
+{
+	// `void set_cb(long double (*cb)(int));` -- a callback whose parameters
+	// are all representable but whose OWN return type is not (long double).
+	// Distinct from c_unsupported_func_param (which has an unrepresentable
+	// parameter): this exercises callbackSigRepresentable's ret-type check.
+	// Covers: normalizeCFuncSig -> callbackSigRepresentable (ret-type branch)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_163_c_unsupported_func_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot call C function 'set_cb'"), string::npos);
+	ASSERT_NE(sa.find("'function pointer'"), string::npos);
+}
+
+TEST(sa_error, callback_ret_void_mismatch)
+{
+	// IT-2026-09-12-3007: `func cb() -> int32 { ... }` passed to atexit,
+	// whose handler returns void -- the callback's own return value flows
+	// nowhere (glibc's atexit dispatcher discards it), so a Palan function
+	// with a return value cannot stand in for a void C callback.
+	// Covers: sa_func_ref_arg's cVoidRet==true / pHasRet==true branch,
+	// E_CallbackSignatureMismatch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_164_callback_ret_void_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'cb' cannot be used as a callback for C function 'atexit'"), string::npos);
+}
+
+TEST(sa_error, callback_ret_type_mismatch)
+{
+	// IT-2026-09-12-3007: `func cmp(@int32 a, @int32 b) -> int64` passed to
+	// qsort, whose comparator returns `int` (int32) -- parameters match
+	// exactly, but the non-void return types differ.
+	// Covers: sa_func_ref_arg's non-void return-type typeCompat(...) !=
+	// Identical branch, E_CallbackSignatureMismatch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_165_callback_ret_type_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
 }

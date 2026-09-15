@@ -1399,3 +1399,24 @@ TEST(codegen, struct_ret_int_tail_widths) {
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/073_struct_ret_int_tail_widths.o"), "");
 }
+
+TEST(codegen, func_ref) {
+    // IT-2026-09-12-3007: a "func-ref" argument (a Palan function passed as
+    // a C callback, e.g. qsort's comparator) lowers to a bare LeaLabel of
+    // the function's own name -- same shape as a string literal, no
+    // dereference, no new VInstr/x86 instruction. "cmp" is a fixture-only
+    // name that never resolves at link time; `as` (assembling only) is
+    // enough to prove the emitted mnemonic is well-formed.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/074_func_ref.sa.json";
+    string asmf = "out/074_func_ref.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("leaq cmp(%rip)"), string::npos);
+    ASSERT_NE(asm_text.find("call qsort"), string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/074_func_ref.o"), "");
+}

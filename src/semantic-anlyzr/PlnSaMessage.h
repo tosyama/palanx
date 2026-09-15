@@ -75,6 +75,8 @@ enum PlnSaMessageCode {
 	E_IncompatibleTypes,		// arg1: from type display name, arg2: to type display name
 	E_UnsupportedCStructReturn,	// arg1: struct type name
 	E_ByvalStructRetDiscarded,	// arg1: struct type name
+	E_CallbackArgRequiresFunc,	// arg1: C function name, arg2: the argument as written
+	E_CallbackSignatureMismatch,	// arg1: Palan function name, arg2: C function name
 };
 
 class PlnSaMessage

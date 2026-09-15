@@ -125,6 +125,11 @@ class PlnSemanticAnalyzer {
 	// permission checks).
 	json saCallArgs(const json& locNode, const json& args, const json* funcParams,
 	                bool isCFunc, const string& funcName);
+	// Analyze the argument in a `_callback-param` slot: only a bare reference
+	// to a Palan function is accepted, and its signature must be exactly
+	// ABI-identical to the C callback's inner signature. See PlnSaExpr.cpp.
+	json sa_func_ref_arg(const json& locNode, const json& arg,
+	                      const string& cFuncName, const json& param);
 	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
 	                           const json& saArg, const json& param, size_t argIdx);
 	// Shared narrowing rule for every binding site (var-decl initializer,

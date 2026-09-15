@@ -289,6 +289,20 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "the return value of this call (a '" + arg1 + "' returned by value) is "
 			       "discarded; assign it to a newly declared '" + arg1 + "' variable instead.";
 
+		case E_CallbackArgRequiresFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "argument '" + arg2 + "' to C function '" + arg1 + "' must be the bare name of "
+			       "a Palan function to use as a callback; this version does not support passing "
+			       "a variable or any other expression here.";
+
+		case E_CallbackSignatureMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "function '" + arg1 + "' cannot be used as a callback for C function '" + arg2
+			       + "': its parameter types, return type, or pointer mutability do not exactly "
+			         "match the callback signature C expects.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

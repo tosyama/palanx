@@ -323,6 +323,26 @@ inline json normalizeCType(const json& type) {
 	return type;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// True if every parameter type and the return type of a `func` type-kind
+// node (already normalizeCType'd, so consts are folded into "mutable") can be
+// represented by this version -- i.e. this callback's signature is one a
+// Palan function can actually be checked against (IT-2026-09-12-3007). A
+// by-value struct parameter is rejected the same way a top-level C parameter
+// is (see normalizeCFuncSig below); a nested function-pointer parameter is
+// rejected by unrepresentableTypeName's "func" case, same as everywhere else.
+inline bool callbackSigRepresentable(const json& funcType) {
+	if (funcType.contains("parameters"))
+		for (auto& ip : funcType["parameters"]) {
+			if (!ip.contains("var-type")) continue; // "..." variadic marker
+			const json& ivt = ip["var-type"];
+			if (ivt.value("type-kind", "") == "struct") return false;
+			if (!unrepresentableTypeName(ivt).empty()) return false;
+		}
+	if (funcType.contains("ret-type") && !unrepresentableTypeName(funcType["ret-type"]).empty())
+		return false;
+	return true;
+}
+
 // C function entries (from c2ast) always carry a single "ret-type", never
 // Palan's native multi/named-return "rets" list, so there's no "rets" case
 // to handle here unlike normalizeUnsizedArrSig above.
@@ -348,18 +368,39 @@ inline json normalizeCType(const json& type) {
 // parameter's position in the signature. By-value struct return is exempt --
 // it stays representable here and is classified by classifySysVStructRet at
 // the call site (IT-2026-09-12-3004) instead of rejected.
+//
+// A `pntr(func(...))` parameter (e.g. qsort's comparator) is a limited,
+// explicit exception to the blanket function-pointer rejection below
+// (IT-2026-09-12-3007): when callbackSigRepresentable says its inner
+// parameter/return types are all representable, the parameter is marked
+// "_callback-param" instead of contributing "function pointer" to `bad` --
+// this only records that the slot *could* accept a Palan function reference;
+// whether the caller actually supplies one, and whether its signature
+// matches, is checked at the call site (sa_func_ref_arg in PlnSaExpr.cpp).
+// An irrepresentable inner signature still reports "function pointer" like
+// before, since to this function's own caller it remains, at the top level,
+// an unsupported function pointer parameter.
 inline void normalizeCFuncSig(json& funcDef) {
 	string bad;
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
 			if (p.contains("var-type")) {
 				p["var-type"] = normalizeCType(p["var-type"]);
-				if (bad.empty()) {
-					if (p["var-type"].value("type-kind", "") == "struct")
-						bad = "by-value struct parameter";
+				const json& vt = p["var-type"];
+				string paramBad;
+				bool isCallback = vt.value("type-kind", "") == "pntr" && vt.contains("base-type")
+					&& vt["base-type"].value("type-kind", "") == "func";
+				if (isCallback) {
+					if (callbackSigRepresentable(vt["base-type"]))
+						p["_callback-param"] = true;
 					else
-						bad = unrepresentableTypeName(p["var-type"]);
+						paramBad = "function pointer";
+				} else if (vt.value("type-kind", "") == "struct") {
+					paramBad = "by-value struct parameter";
+				} else {
+					paramBad = unrepresentableTypeName(vt);
 				}
+				if (bad.empty()) bad = paramBad;
 			}
 	if (funcDef.contains("ret-type")) {
 		funcDef["ret-type"] = normalizeCType(funcDef["ret-type"]);

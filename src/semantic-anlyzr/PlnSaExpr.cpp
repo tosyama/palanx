@@ -590,6 +590,15 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 	for (auto& arg : args) {
 		const json* paramVT = (funcParams && argIdx < fixedCount)
 			? &(*funcParams)[argIdx]["var-type"] : nullptr;
+		if (funcParams && argIdx < fixedCount
+				&& (*funcParams)[argIdx].value("_callback-param", false)) {
+			// registry_.fromJson (below, and inside sa_expression) throws for a
+			// pntr(func) type -- this parameter's slot never reaches either;
+			// its only legal argument is a bare Palan function name.
+			saArgs.push_back(sa_func_ref_arg(locNode, arg, funcName, (*funcParams)[argIdx]));
+			argIdx++;
+			continue;
+		}
 		// Pass the parameter's type down so a bare integer literal argument
 		// (e.g. `add(1, 2)`, `umask(0)`) adopts it instead of always
 		// defaulting to int64/uint64 (see sa_expression's lit-int/lit-uint
@@ -628,6 +637,80 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		argIdx++;
 	}
 	return saArgs;
+}
+
+// Analyze the argument in a `_callback-param` slot (IT-2026-09-12-3007): a C
+// function pointer parameter (qsort's comparator, atexit's handler, ...)
+// whose inner signature normalizeCFuncSig already proved representable. The
+// only legal argument is a bare reference to a Palan function -- this
+// version has no first-class function-pointer value, so a variable, a call
+// result, or any other expression is rejected outright. The matched
+// function's signature must be exactly ABI-identical to the callback's C
+// signature: glibc calls the Palan function directly with no Palan-side
+// conversion step to widen/narrow through (unlike every other argument in
+// this file, where convertCallArg/checkArgPtrPermission tolerate implicit
+// widening), so anything looser than typeCompat's Identical would silently
+// read/write the wrong number of bytes across the ABI boundary. Pointer
+// permission is checked in the direction the value actually flows: a
+// parameter's value flows from C into the callback, so a `const` C
+// parameter (mutable == false) permits a Palan `@T` argument but not `@!T`;
+// the callback's return value flows from Palan back to C, so that check
+// runs with the operands reversed.
+json PlnSemanticAnalyzer::sa_func_ref_arg(const json& locNode, const json& arg,
+                                           const string& cFuncName, const json& param)
+{
+	string spelling = arg.value("expr-type", "") == "id" ? arg["name"].get<string>() : "<expression>";
+	const json* pFunc = nullptr;
+	if (arg.value("expr-type", "") == "id" && findVar(spelling) == nullptr)
+		pFunc = findPlnFunc(spelling);
+	if (pFunc == nullptr) {
+		cerr << locPrefix(locNode)
+		     << PlnSaMessage::getMessage(E_CallbackArgRequiresFunc, cFuncName, spelling) << endl;
+		exit(1);
+	}
+
+	auto mismatch = [&]() {
+		cerr << locPrefix(locNode)
+		     << PlnSaMessage::getMessage(E_CallbackSignatureMismatch, spelling, cFuncName) << endl;
+		exit(1);
+	};
+
+	const json& cFuncType = param["var-type"]["base-type"]; // {"type-kind":"func",...}
+	const json* cParams = cFuncType.contains("parameters") ? &cFuncType["parameters"] : nullptr;
+	const json* pParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
+	size_t cCount = cParams ? cParams->size() : 0;
+	size_t pCount = pParams ? pParams->size() : 0;
+	if (cCount != pCount) mismatch();
+	for (size_t i = 0; i < cCount; i++) {
+		const json& cp = (*cParams)[i];
+		const json& pp = (*pParams)[i];
+		if (!cp.contains("var-type") || !pp.contains("var-type")) mismatch(); // e.g. C "..." marker
+		const json& cvt = cp["var-type"];
+		const json& pvt = pp["var-type"];
+		if (typeCompat(registry_.fromJson(cvt), registry_.fromJson(pvt), registry_) != TypeCompat::Identical)
+			mismatch();
+		if (!ptrPermissionOk(cvt, pvt)) mismatch();
+	}
+
+	bool cVoidRet = !cFuncType.contains("ret-type")
+		|| cFuncType["ret-type"].value("type-name", "") == "void";
+	bool pMultiRet = pFunc->contains("rets") && (*pFunc)["rets"].size() > 1;
+	bool pHasRet = pFunc->contains("ret-type");
+	if (pMultiRet) mismatch();
+	if (cVoidRet) {
+		if (pHasRet) mismatch();
+	} else {
+		if (!pHasRet) mismatch();
+		const json& cRetVT = cFuncType["ret-type"];
+		const json& pRetVT = (*pFunc)["ret-type"];
+		if (typeCompat(registry_.fromJson(pRetVT), registry_.fromJson(cRetVT), registry_) != TypeCompat::Identical)
+			mismatch();
+		if (!ptrPermissionOk(pRetVT, cRetVT)) mismatch();
+	}
+
+	json out = {{"expr-type", "func-ref"}, {"name", spelling}};
+	if (locNode.contains("loc")) out["loc"] = locNode["loc"];
+	return out;
 }
 
 // Convert a single call argument (`saArg`, already SA'd) to a parameter's

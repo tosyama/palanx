@@ -42,6 +42,7 @@ enum class ExprKind {
     LogicalOr,
     AddrOf,
     CGlobal,
+    FuncRef,
 };
 
 struct Expr {
@@ -62,6 +63,17 @@ struct CGlobalExpr : Expr {
     CGlobalExpr() : Expr(ExprKind::CGlobal) {}
     string   label;
     VRegType type = VRegType::Ptr64;
+};
+
+// Reference to a Palan function's address, to pass as a C callback argument
+// (IT-2026-09-12-3007, e.g. qsort's comparator). A Palan function is emitted
+// as an unmangled assembly label (see PlnVCodeGen::generate), so this is
+// just the address of that label -- lowered to a bare LeaLabel, same as
+// StrLitExpr, with no dereference. No first-class function-pointer value
+// exists in this version, so there is no value-type to carry here.
+struct FuncRefExpr : Expr {
+    FuncRefExpr() : Expr(ExprKind::FuncRef) {}
+    string name;
 };
 
 struct IntLitExpr : Expr {

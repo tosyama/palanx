@@ -1,1 +1,1 @@
-void set_cb(int (*cb)(int));
+void set_cb(int (*cb)(long double));

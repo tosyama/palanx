@@ -3827,3 +3827,41 @@ TEST(sa, struct_ret_memory_class) {
 	ASSERT_EQ(call["args"][0]["expr-type"], "id");
 	ASSERT_EQ(call["args"][0]["name"], "g");
 }
+
+TEST(sa, c_callback_arg) {
+	// IT-2026-09-12-3007: `qsort(arr, 4, 4, cmp);` where `cmp` matches
+	// qsort's `int (*)(const void*, const void*)` comparator exactly --
+	// normalizeCFuncSig marks the comparator parameter "_callback-param"
+	// (its inner signature is fully representable), and sa_func_ref_arg
+	// resolves the bare name `cmp` via findPlnFunc (not findVar) into a
+	// "func-ref" node carrying only the function's name -- no value-type,
+	// since this version has no first-class function-pointer value.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/173_c_callback_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "qsort");
+	ASSERT_EQ(call["args"].size(), 4);
+
+	const auto& cb = call["args"][3];
+	ASSERT_EQ(cb["expr-type"], "func-ref");
+	ASSERT_EQ(cb["name"], "cmp");
+	ASSERT_FALSE(cb.contains("value-type"));
+}
+
+TEST(sa, c_callback_void) {
+	// IT-2026-09-12-3007: `atexit(on_exit_cb);` where both atexit's handler
+	// type and `on_exit_cb` return void -- exercises sa_func_ref_arg's
+	// cVoidRet==true path (distinct from c_callback_arg's non-void qsort
+	// comparator), proving a void-returning callback is accepted without a
+	// spurious return-type mismatch.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/174_c_callback_void.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][0]["body"];
+	ASSERT_EQ(call["name"], "atexit");
+	ASSERT_EQ(call["args"][0]["expr-type"], "func-ref");
+	ASSERT_EQ(call["args"][0]["name"], "on_exit_cb");
+}

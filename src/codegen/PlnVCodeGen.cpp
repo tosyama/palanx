@@ -56,6 +56,15 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(DerefLoad{dst, addr, 0, e.type});
             return dst;
         }
+        case ExprKind::FuncRef: {
+            // A Palan function is emitted as an unmangled label (see
+            // generate() below), so its address is just LeaLabel of that
+            // label -- same shape as StrLit, no dereference.
+            auto& e = static_cast<const FuncRefExpr&>(expr);
+            VReg r = allocVReg();
+            func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.name});
+            return r;
+        }
         case ExprKind::IntLit: {
             auto& e = static_cast<const IntLitExpr&>(expr);
             VReg r = allocVReg();

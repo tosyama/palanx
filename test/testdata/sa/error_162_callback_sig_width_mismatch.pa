@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+func cb(int64 status, @int8 arg) { }
+@!int8 p;
+on_exit(cb, p);
