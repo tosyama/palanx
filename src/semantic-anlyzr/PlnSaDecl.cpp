@@ -291,7 +291,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 				base = &(*base)["base-type"];
 			if (base->value("type-kind","") == "prim") {
 				string tname = base->value("type-name", "");
-				if (!isKnownTypeName(tname)) {
+				if (!isKnownPointeeTypeName(tname)) {
 					cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 					exit(1);
 				}

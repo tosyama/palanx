@@ -1,0 +1,6 @@
+cinclude <stdlib.h>;
+@!void p = malloc(8);
+@!int8 q = p;
+free(p);
+@!void p2;
+@!@!void pp = @!p2;

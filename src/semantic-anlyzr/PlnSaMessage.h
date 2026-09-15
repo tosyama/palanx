@@ -77,6 +77,7 @@ enum PlnSaMessageCode {
 	E_ByvalStructRetDiscarded,	// arg1: struct type name
 	E_CallbackArgRequiresFunc,	// arg1: C function name, arg2: the argument as written
 	E_CallbackSignatureMismatch,	// arg1: Palan function name, arg2: C function name
+	E_DerefVoidPointer,		// no args
 };
 
 class PlnSaMessage

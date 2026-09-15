@@ -860,7 +860,9 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		//
 		// Note: a local `@T`/`@!T` variable declaration is rejected at
 		// declaration time by sa_var_decl for an unknown pointee, so the
-		// sz<0 guard below is unreachable from a local-var-declared pointer.
+		// sz<0 guard below is unreachable from a local-var-declared pointer
+		// (except `@void`/`@!void`, deliberately accepted by sa_var_decl and
+		// rejected here instead with a dedicated E_DerefVoidPointer message).
 		// It remains the first rejection point for a `@T`/`@!T` function
 		// parameter or named-return value, whose pointee name is not
 		// validated at signature normalization time (normalizeStructSig).
@@ -878,6 +880,14 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		return sa_expr;
 	}
 
+	if (elem_type.value("type-kind","") == "prim" && elem_type.value("type-name","") == "void") {
+		// `void` has no size; unlike E_UnknownStructType below (an unrecognized
+		// name), this pointee name IS recognized -- it's just not indexable.
+		// Covers read (p[i]), write (v -> p[i] via sa_arr_assign_stmt), and
+		// element-address-of (@p[i], reached before its own guard runs).
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_DerefVoidPointer) << endl;
+		exit(1);
+	}
 	int sz = (elem_type.value("type-kind","") == "pntr") ? 8
 		: elemSizeBytes(elem_type.value("type-name",""));
 	if (sz < 0) {

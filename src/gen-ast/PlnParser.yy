@@ -982,9 +982,13 @@ type_expr: ID
 	| ID '<' temp_ids '>'
 	{ $$ = {{"not-impl",true}}; }
 	| '@' type_expr
-	{ $$ = {{"type-kind","pntr"},{"mutable",false},{"base-type",move($2)}}; }
+	{ $$ = pntrTypeExpr(move($2), false); }
 	| AT_EXCL type_expr
-	{ $$ = {{"type-kind","pntr"},{"mutable",true},{"base-type",move($2)}}; }
+	{ $$ = pntrTypeExpr(move($2), true); }
+	| '@' KW_VOID
+	{ $$ = pntrTypeExpr(voidTypeExpr(), false); }
+	| AT_EXCL KW_VOID
+	{ $$ = pntrTypeExpr(voidTypeExpr(), true); }
 	| '$' type_expr
 	{ $$ = {{"type-kind","embed"},{"base-type",move($2)}}; }
 	| '[' expression ']' type_expr

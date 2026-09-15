@@ -137,6 +137,21 @@ TEST(typecompat, registry_from_json_void_ptr) {
     EXPECT_EQ(pt->base, reg.prim(N::Void));
 }
 
+TEST(typecompat, void_ptr_interns_regardless_of_mutability) {
+    // IT-2026-09-12-3008: @void and @!void both parse to pntr(void), but
+    // PlnTypeRegistry::ptr() interns solely on the base type (PlnType.cpp);
+    // "mutable" lives only in the JSON value-type, not in the interned
+    // PlnType identity. The new @void/@!void grammar productions rely on
+    // this: fromJson("mutable":false) and fromJson("mutable":true) must
+    // yield the identical PtrType*.
+    PlnTypeRegistry reg;
+    json j_ro = {{"type-kind", "pntr"}, {"mutable", false},
+                 {"base-type", {{"type-kind", "prim"}, {"type-name", "void"}}}};
+    json j_mut = {{"type-kind", "pntr"}, {"mutable", true},
+                  {"base-type", {{"type-kind", "prim"}, {"type-name", "void"}}}};
+    EXPECT_EQ(reg.fromJson(j_ro), reg.fromJson(j_mut));
+}
+
 TEST(typecompat, registry_from_json_unrepresentable_throws) {
     // IT-2026-09-06-2906: fromJson delegates its domain check to
     // unrepresentableTypeName; this backstop throw only fires for a

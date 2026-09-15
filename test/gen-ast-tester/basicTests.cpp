@@ -1179,3 +1179,44 @@ TEST(gen_ast, cinclude_global) {
 	}
 	ASSERT_TRUE(found_counter);
 }
+
+TEST(gen_ast, void_ptr_type) {
+	// IT-2026-09-12-3008: @void/@!void spell C's void* directly. Same file
+	// also carries a bare "(void, int64 z) = myFunc(x);" tapple-decl slot
+	// discard (KW_VOID's original, sole use) to pin that it still parses --
+	// the two new type_expr productions must not shadow it.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/037_void_ptr_type.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	// @void p;
+	const auto& p = stmts[0]["vars"][0]["var-type"];
+	ASSERT_EQ(p["type-kind"], "pntr");
+	ASSERT_EQ(p["mutable"], false);
+	ASSERT_EQ(p["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(p["base-type"]["type-name"], "void");
+
+	// @!void q;
+	const auto& q = stmts[1]["vars"][0]["var-type"];
+	ASSERT_EQ(q["type-kind"], "pntr");
+	ASSERT_EQ(q["mutable"], true);
+	ASSERT_EQ(q["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(q["base-type"]["type-name"], "void");
+
+	// @!@!void pp;
+	const auto& pp = stmts[2]["vars"][0]["var-type"];
+	ASSERT_EQ(pp["type-kind"], "pntr");
+	ASSERT_EQ(pp["mutable"], true);
+	ASSERT_EQ(pp["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["base-type"]["mutable"], true);
+	ASSERT_EQ(pp["base-type"]["base-type"]["type-name"], "void");
+
+	// (void, int64 z) = myFunc(x); -- the void slot is discarded, not
+	// present in "vars"
+	ASSERT_EQ(stmts[3]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[3]["vars"].size(), 1);
+	ASSERT_EQ(stmts[3]["vars"][0]["var-name"], "z");
+}

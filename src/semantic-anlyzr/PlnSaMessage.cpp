@@ -303,6 +303,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       + "': its parameter types, return type, or pointer mutability do not exactly "
 			         "match the callback signature C expects.";
 
+		case E_DerefVoidPointer:
+			return "cannot index or dereference a void pointer; assign it to a typed pointer "
+			       "(e.g. @!int8) first.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

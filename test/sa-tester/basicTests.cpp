@@ -3267,6 +3267,37 @@ TEST(sa, addr_of_ptr_local)
 	ASSERT_EQ(init["value-type"]["base-type"]["base-type"]["type-name"], "int8");
 }
 
+TEST(sa, void_ptr_decl)
+{
+	// IT-2026-09-12-3008: `@!void p = malloc(8);` -- pntr(void) has always
+	// been valid internally (it's what a C `void*` deserializes to), but
+	// sa_var_decl's pointee-name check rejected the *spelled* void pointee
+	// until isKnownPointeeTypeName. `@!int8 q = p;` exercises the existing
+	// bidirectional pntr(void)<->pntr(T) compat rule (typeCompat). The
+	// trailing `@!void p2; @!@!void pp = @!p2;` is the void** out-param
+	// idiom (e.g. posix_memalign) -- sa_expr_addr_of's isPtrToPrim already
+	// accepted a void pointee, so this is a non-regression check.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/175_void_ptr_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "void");
+	ASSERT_EQ(p["init"]["name"], "malloc");
+
+	const auto& q = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(q["var-type"]["base-type"]["type-name"], "int8");
+	ASSERT_EQ(q["init"]["value-type"]["base-type"]["type-name"], "void");
+
+	const auto& pp = jout["statements"][4]["vars"][0];
+	ASSERT_EQ(pp["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["var-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["var-type"]["base-type"]["base-type"]["type-name"], "void");
+	ASSERT_EQ(pp["init"]["expr-type"], "addr-of");
+	ASSERT_EQ(pp["init"]["name"], "p2");
+}
+
 TEST(sa, addr_of_embed_field)
 {
 	// `@!Inner q = @!s.in;` where `in` is `$Inner` (inline embed) --

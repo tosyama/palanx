@@ -158,6 +158,8 @@ class PlnSemanticAnalyzer {
 	bool isStructType(const json& type) const;
 	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.
 	bool isKnownTypeName(const string& name) const;
+	// isKnownTypeName plus "void", valid only as a pointer pointee, never a standalone value type.
+	bool isKnownPointeeTypeName(const string& name) const;
 	json  toStructPntrType(const json& type) const;
 	bool  isNamedReturnVar(const string& varName) const;
 	json  deepNormalizePrimToStruct(const json& type) const;

@@ -1957,6 +1957,36 @@ TEST(sa_error, callback_ret_type_mismatch)
 	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
 }
 
+TEST(sa_error, deref_void_pointer)
+{
+	// IT-2026-09-12-3008: `p[0]` where p is @!void -- void has no size, so
+	// this must give a dedicated diagnostic rather than the misleading
+	// "unknown struct type 'void'." that the shared sz<0 guard in
+	// sa_expr_arr_index would otherwise produce.
+	// Covers: sa_expr_arr_index void-pointee guard, E_DerefVoidPointer
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_166_deref_void_pointer.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot index or dereference a void pointer"), string::npos);
+}
+
+TEST(sa_error, deref_void_pointer_write)
+{
+	// Same guard as deref_void_pointer, reached via sa_arr_assign_stmt's
+	// write path (`v -> p[0]`) instead of a read.
+	// Covers: sa_expr_arr_index void-pointee guard, E_DerefVoidPointer
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_167_deref_void_pointer_write.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot index or dereference a void pointer"), string::npos);
+}
+
 TEST(sa_error, field_access_through_prim_ptr_field)
 {
 	// Prerequisite fix for IT-2026-09-12-3008: `s.p.q` where `p` is a
