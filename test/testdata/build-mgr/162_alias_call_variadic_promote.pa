@@ -1,0 +1,3 @@
+cinclude <stdio.h> as S;
+flo32 f = 1.5;
+S.printf("%f\n", f);

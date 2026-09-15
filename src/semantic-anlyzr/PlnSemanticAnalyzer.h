@@ -117,6 +117,14 @@ class PlnSemanticAnalyzer {
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	json sa_expr_call(const json& expr);
 	json sa_expr_member_call(const json& expr);
+	// Analyze a call's argument list against the callee's parameter list
+	// (funcParams may be null for a call to a function with no parameters).
+	// Shared by sa_expr_call and sa_expr_member_call so both a plain call and
+	// an aliased `S.func(...)` call get identical per-argument handling
+	// (embedded-array inner-size checks, variadic promotion, pointer
+	// permission checks).
+	json saCallArgs(const json& locNode, const json& args, const json* funcParams,
+	                bool isCFunc, const string& funcName);
 	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
 	                           const json& saArg, const json& param, size_t argIdx);
 	// Shared narrowing rule for every binding site (var-decl initializer,

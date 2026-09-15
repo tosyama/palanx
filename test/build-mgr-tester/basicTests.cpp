@@ -1417,6 +1417,18 @@ TEST(build_mgr, struct_ret_div_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, alias_call_variadic_promote) {
+	// Prerequisite fix for IT-2026-09-12-3007: sa_expr_member_call used to
+	// duplicate sa_expr_call's argument loop without the variadic-promotion
+	// step, so an aliased C call silently passed a flo32 where the callee's
+	// va_arg reads a flo64, producing a garbage value instead of a diagnostic
+	// or the correct promotion. `printf("%f\n", f)` (no alias) already
+	// promoted correctly; only the `S.printf(...)` alias form was affected.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/162_alias_call_variadic_promote.pa");
+	ASSERT_EQ(output, "1.500000\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

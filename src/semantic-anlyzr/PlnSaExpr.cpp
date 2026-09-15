@@ -520,20 +520,18 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	json sa_expr = expr;
 	const json* funcParams = nullptr;
-	bool isVariadic = false;
+	bool isCFunc = false;
 
 	const json* cfunc = findCFunc(expr["name"]);
 	if (cfunc) {
+		isCFunc = true;
 		sa_expr["func-type"] = "c";
 		requireSupportedCFuncSig(*cfunc, expr["name"].get<string>(), expr);
 		if (cfunc->contains("ret-type")
 				&& (*cfunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*cfunc)["ret-type"];
-		if (cfunc->contains("parameters")) {
+		if (cfunc->contains("parameters"))
 			funcParams = &(*cfunc)["parameters"];
-			for (auto& p : *funcParams)
-				if (p.value("name", "") == "...") { isVariadic = true; break; }
-		}
 	} else {
 		const string& callName = expr["name"].get<string>();
 		const json* pFunc = findPlnFunc(callName);
@@ -565,54 +563,72 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
 
-	if (expr.contains("args")) {
-		sa_expr["args"] = json::array();
-		size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
-		size_t argIdx = 0;
-		for (auto& arg : expr["args"]) {
-			const json* paramVT = (funcParams && argIdx < fixedCount)
-				? &(*funcParams)[argIdx]["var-type"] : nullptr;
-			// Pass the parameter's type down so a bare integer literal argument
-			// (e.g. `add(1, 2)`, `umask(0)`) adopts it instead of always
-			// defaulting to int64/uint64 (see sa_expression's lit-int/lit-uint
-			// branches) -- otherwise convertCallArg below would reject most
-			// literal arguments to a non-int64 parameter as narrowing.
-			json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-			if (saArg.contains("value-type")) {
-				const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-				if (paramVT) {
-					if (paramVT->value("embedded", false)) {
-						const json& argVT = saArg["value-type"];
-						bool argEmbedded = argVT.value("embedded", false);
-						bool paramHasSize = paramVT->contains("inner-size");
-						bool argHasSize   = argVT.contains("inner-size");
-						if (!argEmbedded || !argHasSize || !paramHasSize
-							|| (*paramVT)["inner-size"] != argVT["inner-size"]) {
-							string expected = paramHasSize
-								? to_string((*paramVT)["inner-size"].get<int64_t>()) : "?";
-							string actual = (argEmbedded && argHasSize)
-								? to_string(argVT["inner-size"].get<int64_t>()) : "variable";
-							cerr << locPrefix(expr)
-							     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
-							            expected, actual) << endl;
-							exit(1);
-						}
-					}
-					saArg = convertCallArg(expr, saArg, *paramVT);
-					checkArgPtrPermission(expr, expr["name"].get<string>(),
-							sa_expr["func-type"] == "c", saArg, (*funcParams)[argIdx], argIdx);
-				} else if (isVariadic) {
-					const PlnType* promoted = variadicPromote(fromType, registry_);
-					if (promoted != fromType)
-						saArg = wrapConvert(saArg, registry_.toJson(promoted));
-				}
-			}
-			sa_expr["args"].push_back(saArg);
-			argIdx++;
-		}
-	}
+	if (expr.contains("args"))
+		sa_expr["args"] = saCallArgs(expr, expr["args"], funcParams, isCFunc, expr["name"].get<string>());
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Analyze a call's argument list against the callee's parameter list. Shared
+// by sa_expr_call and sa_expr_member_call so a plain call and an aliased
+// `S.func(...)` call get identical per-argument handling (embedded-array
+// inner-size checks, variadic promotion, pointer permission checks) --
+// sa_expr_member_call previously duplicated only part of this loop, which
+// silently dropped variadic promotion for aliased calls (e.g.
+// `S.printf("%f\n", someFlo32)` passed the flo32 through unconverted instead
+// of promoting it to flo64, producing a garbage value at the callee).
+json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json* funcParams,
+                                      bool isCFunc, const string& funcName)
+{
+	bool isVariadic = false;
+	if (funcParams)
+		for (auto& p : *funcParams)
+			if (p.value("name", "") == "...") { isVariadic = true; break; }
+
+	json saArgs = json::array();
+	size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
+	size_t argIdx = 0;
+	for (auto& arg : args) {
+		const json* paramVT = (funcParams && argIdx < fixedCount)
+			? &(*funcParams)[argIdx]["var-type"] : nullptr;
+		// Pass the parameter's type down so a bare integer literal argument
+		// (e.g. `add(1, 2)`, `umask(0)`) adopts it instead of always
+		// defaulting to int64/uint64 (see sa_expression's lit-int/lit-uint
+		// branches) -- otherwise convertCallArg below would reject most
+		// literal arguments to a non-int64 parameter as narrowing.
+		json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		if (saArg.contains("value-type")) {
+			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+			if (paramVT) {
+				if (paramVT->value("embedded", false)) {
+					const json& argVT = saArg["value-type"];
+					bool argEmbedded = argVT.value("embedded", false);
+					bool paramHasSize = paramVT->contains("inner-size");
+					bool argHasSize   = argVT.contains("inner-size");
+					if (!argEmbedded || !argHasSize || !paramHasSize
+						|| (*paramVT)["inner-size"] != argVT["inner-size"]) {
+						string expected = paramHasSize
+							? to_string((*paramVT)["inner-size"].get<int64_t>()) : "?";
+						string actual = (argEmbedded && argHasSize)
+							? to_string(argVT["inner-size"].get<int64_t>()) : "variable";
+						cerr << locPrefix(locNode)
+						     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
+						            expected, actual) << endl;
+						exit(1);
+					}
+				}
+				saArg = convertCallArg(locNode, saArg, *paramVT);
+				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
+			} else if (isVariadic) {
+				const PlnType* promoted = variadicPromote(fromType, registry_);
+				if (promoted != fromType)
+					saArg = wrapConvert(saArg, registry_.toJson(promoted));
+			}
+		}
+		saArgs.push_back(saArg);
+		argIdx++;
+	}
+	return saArgs;
+}
 
 // Convert a single call argument (`saArg`, already SA'd) to a parameter's
 // type. Shared by sa_expr_call and sa_expr_member_call; embedded-array shape
@@ -832,26 +848,8 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 		sa_expr["category"] = "expiring";
 
 	const json* funcParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
-	bool isVariadic = false;
-	if (isCFunc && funcParams)
-		for (auto& p : *funcParams)
-			if (p.value("name", "") == "...") { isVariadic = true; break; }
 
-	if (expr.contains("args")) {
-		sa_expr["args"] = json::array();
-		size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
-		size_t argIdx = 0;
-		for (auto& arg : expr["args"]) {
-			const json* paramVT = (funcParams && argIdx < fixedCount)
-				? &(*funcParams)[argIdx]["var-type"] : nullptr;
-			json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-			if (saArg.contains("value-type") && paramVT) {
-				saArg = convertCallArg(expr, saArg, *paramVT);
-				checkArgPtrPermission(expr, method, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
-			}
-			sa_expr["args"].push_back(saArg);
-			argIdx++;
-		}
-	}
+	if (expr.contains("args"))
+		sa_expr["args"] = saCallArgs(expr, expr["args"], funcParams, isCFunc, method);
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
