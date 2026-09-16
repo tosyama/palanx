@@ -3891,6 +3891,61 @@ TEST(sa, struct_ret_memory_class) {
 	ASSERT_EQ(call["args"][0]["name"], "g");
 }
 
+TEST(sa, struct_ret_ptr_field) {
+	// classifySysVWalk's raw-ptr/struct-ptr/arr-ptr branch (PlnSaInternal.h)
+	// was untested: every other struct-ret fixture uses all-prim fields.
+	// `{int tag; char *name;}` is 16 bytes (tag padded to the pointer's
+	// 8-byte alignment), so both eightbytes stay INTEGER via that branch.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/177_struct_ret_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "make_with_ptr");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 16);
+	ASSERT_EQ(sr["eightbytes"].size(), 2);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
+	ASSERT_EQ(sr["eightbytes"][1]["class"], "int");
+}
+
+TEST(sa, struct_ret_embed_and_slots_field) {
+	// classifySysVWalk's embed and embed-ptr-arr branches were untested.
+	// `{struct Point origin; void *slots[1];}` embeds a by-value struct
+	// field (recurses into Point's own fields) and a one-slot pointer
+	// array field, filling the two eightbytes with INTEGER via each
+	// respective branch.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/178_struct_ret_embed_and_slots_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "make_combo");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 16);
+	ASSERT_EQ(sr["eightbytes"].size(), 2);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
+	ASSERT_EQ(sr["eightbytes"][1]["class"], "int");
+}
+
+TEST(sa, struct_ret_embed_arr_field) {
+	// classifySysVWalk's embed-arr branch was untested for both of its leaf
+	// kinds. `{struct Pair1 items[2]; short more[4];}` has an array-of-struct
+	// field (recurses into Pair1 per element) and an array-of-prim field,
+	// filling the two eightbytes with INTEGER via each leaf kind.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/179_struct_ret_embed_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "make_mixed");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 16);
+	ASSERT_EQ(sr["eightbytes"].size(), 2);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
+	ASSERT_EQ(sr["eightbytes"][1]["class"], "int");
+}
+
 TEST(sa, c_callback_arg) {
 	// IT-2026-09-12-3007: `qsort(arr, 4, 4, cmp);` where `cmp` matches
 	// qsort's `int (*)(const void*, const void*)` comparator exactly --

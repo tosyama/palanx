@@ -1,0 +1,3 @@
+cinclude "179_struct_ret_embed_arr_field.h";
+
+Mixed m = make_mixed();

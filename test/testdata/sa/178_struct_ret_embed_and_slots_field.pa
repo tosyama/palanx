@@ -1,0 +1,3 @@
+cinclude "178_struct_ret_embed_and_slots_field.h";
+
+Combo c = make_combo();
