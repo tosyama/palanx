@@ -1429,6 +1429,22 @@ TEST(build_mgr, alias_call_variadic_promote) {
 	ASSERT_EQ(output, "1.500000\n");
 }
 
+TEST(build_mgr, non_executable_stack) {
+	// IT-2026-09-12-3009 (prereq): Palan bypasses the C driver, so
+	// palan-codegen must emit .note.GNU-stack itself. Without it the linked
+	// program gets no PT_GNU_STACK at all (kernel default: READ_IMPLIES_EXEC),
+	// and RWE as soon as any note-carrying object joins the link (e.g.
+	// libc_nonshared.a's atexit) -- ld takes the union of its inputs' notes.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_gnu_stack_bin "
+		"../test/testdata/build-mgr/001_helloworld.pa"), "");
+
+	string segs = execTestCommand("readelf -lW /tmp/palan_gnu_stack_bin");
+	ASSERT_NE(segs.find("GNU_STACK"), string::npos);
+	ASSERT_EQ(segs.find("RWE"),       string::npos);
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

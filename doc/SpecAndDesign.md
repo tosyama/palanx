@@ -211,6 +211,13 @@ Design:
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
  and referenced via `leaq label(%rip), %rdi` (RIP-relative addressing).
 
+ Palan links no crt startup objects (no crt1.o/crti.o/crtbegin.o -- the build manager
+ links `ld <objs> -lc` directly), so the code generator supplies the ELF/libc glue those
+ objects would otherwise provide: the entry object defines `__dso_handle` (needed by
+ glibc's `atexit`/`at_quick_exit`/`pthread_atfork`, which forward to `__cxa_atexit`-family
+ calls taking it), and every object emits `.note.GNU-stack` (otherwise `ld` marks the
+ whole binary's stack executable as soon as any note-carrying libc object joins the link).
+
 
 ### 3.6 Array Allocator Generation (Future Design)
 

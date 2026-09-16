@@ -1420,3 +1420,46 @@ TEST(codegen, func_ref) {
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/074_func_ref.o"), "");
 }
+
+TEST(codegen, elf_crt_glue_entry_object) {
+    // IT-2026-09-12-3009 (prereq): Palan links no crt startup objects (no
+    // crt1.o/crti.o/crtbegin.o), so the entry object must supply the ELF/libc
+    // glue those objects would otherwise provide -- __dso_handle (glibc's
+    // atexit forwards to __cxa_atexit(func, arg, __dso_handle)) and
+    // .note.GNU-stack (without it, ld marks the whole binary's stack
+    // executable as soon as any note-carrying libc object joins the link).
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/002_printf_int_literal.sa.json";
+    string asmf = "out/002_elf_crt_glue.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("\t.section .data\n"),         string::npos);
+    ASSERT_NE(asm_text.find("\t.globl __dso_handle\n"),    string::npos);
+    ASSERT_NE(asm_text.find("\t.hidden __dso_handle\n"),   string::npos);
+    ASSERT_NE(asm_text.find("__dso_handle:\n\t.quad 0\n"), string::npos);
+    ASSERT_NE(asm_text.find(".note.GNU-stack"),            string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/002_elf_crt_glue.o"), "");
+}
+
+TEST(codegen, elf_crt_glue_no_entry) {
+    // --no-entry means "this object is not the program's entry object", so it
+    // must NOT define __dso_handle (exactly one definition per link, derived
+    // from the same isEntry flag that gates .globl _start). The GNU-stack
+    // note is unconditional -- ld unions its inputs, so every object needs it.
+    cleanTestEnv();
+    string asmf = "out/002_no_entry_crt_glue.s";
+
+    string err = execTestCommand(
+        "bin/palan-codegen --no-entry "
+        "../test/testdata/codegen/002_printf_int_literal.sa.json -o " + asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_EQ(asm_text.find("__dso_handle"),    string::npos);
+    ASSERT_EQ(asm_text.find(".globl _start"),   string::npos);
+    ASSERT_NE(asm_text.find(".note.GNU-stack"), string::npos);
+}
