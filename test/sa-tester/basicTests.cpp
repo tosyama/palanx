@@ -3946,6 +3946,42 @@ TEST(sa, struct_ret_embed_arr_field) {
 	ASSERT_EQ(sr["eightbytes"][1]["class"], "int");
 }
 
+TEST(sa, struct_ret_sse_field) {
+	// classifySysVWalk's SSE classification was untested: every other
+	// struct-ret fixture (div_t, WithPtr, Combo, Mixed) uses only integer
+	// fields, so `mark()`'s "fieldCls != Integer -> return" early-out and
+	// the isFloat==true arm of the prim-field ternary never ran.
+	// `{double v;}` is a single flo64 field -> one SSE eightbyte.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/180_struct_ret_sse_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "get_flo");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 8);
+	ASSERT_EQ(sr["eightbytes"].size(), 1);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "sse");
+}
+
+TEST(sa, struct_ret_embed_arr_sse_field) {
+	// classifySysVWalk's embed-arr leafFloat==true arm was untested (the
+	// struct_ret_embed_arr_field fixture's array field is int-only).
+	// `{float vals[4];}` is a 16-byte array-of-flo32 field -> both
+	// eightbytes SSE.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/181_struct_ret_embed_arr_sse_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "get_flo_arr");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 16);
+	ASSERT_EQ(sr["eightbytes"].size(), 2);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "sse");
+	ASSERT_EQ(sr["eightbytes"][1]["class"], "sse");
+}
+
 TEST(sa, c_callback_arg) {
 	// IT-2026-09-12-3007: `qsort(arr, 4, 4, cmp);` where `cmp` matches
 	// qsort's `int (*)(const void*, const void*)` comparator exactly --

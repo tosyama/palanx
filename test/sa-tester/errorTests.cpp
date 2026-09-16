@@ -1957,6 +1957,37 @@ TEST(sa_error, callback_ret_type_mismatch)
 	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
 }
 
+TEST(sa_error, callback_multi_ret_mismatch)
+{
+	// A Palan function with multiple named returns has no single ABI return
+	// value a C callback slot could bind to -- rejected before even looking
+	// at qsort's own (single, non-void) return type.
+	// Covers: sa_func_ref_arg's pMultiRet branch, E_CallbackSignatureMismatch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_169_callback_multi_ret_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+}
+
+TEST(sa_error, callback_ret_missing_mismatch)
+{
+	// `func cmp(@int32 a, @int32 b) { }` has matching parameters but no
+	// return value at all, while qsort's comparator expects a non-void
+	// `int` return -- the mirror image of callback_ret_void_mismatch.
+	// Covers: sa_func_ref_arg's cVoidRet==false / pHasRet==false branch,
+	// E_CallbackSignatureMismatch
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_170_callback_ret_missing_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+}
+
 TEST(sa_error, deref_void_pointer)
 {
 	// IT-2026-09-12-3008: `p[0]` where p is @!void -- void has no size, so
