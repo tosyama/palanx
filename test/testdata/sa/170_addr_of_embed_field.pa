@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+type Inner { int64 v; };
+type Point { int64 x; $Inner in; };
+Point s;
+@!Inner q = @!s.in;

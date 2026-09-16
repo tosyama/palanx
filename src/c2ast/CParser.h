@@ -13,9 +13,11 @@ class CParser {
 	                               // tagged strct: {"type-kind":"strct","type-name":Tag})
 
 	// Every struct tag seen while parsing (as a definition, a forward declaration,
-	// or a bare reference through a field/parameter/return type), keyed by tag
-	// name, in first-appearance order. An entry gains a "fields" key only once a
-	// full field-bearing definition of that tag is captured (see captureStructTag);
+	// or a bare reference through a field/parameter/return type), plus any
+	// anonymous struct body given a synthesized tag via its typedef name (see
+	// declaration()'s tag synthesis in CParser.cpp), keyed by tag name, in
+	// first-appearance order. An entry gains a "fields" key only once a full
+	// field-bearing definition of that tag is captured (see captureStructTag);
 	// this is the single point where struct tags register, so a tag that is only
 	// ever referenced (never defined in this header) still gets an entry -- SA
 	// needs that to register it as an incomplete/opaque struct type rather than

@@ -39,7 +39,6 @@ coverage-codegen: build-cov/CMakeCache.txt
 	cd build-cov && bin/build-mgr-tester
 	cd build-cov && lcov -c -d . -b src -o all.info $(LCOV_FLAGS) --ignore-errors mismatch
 	cd build-cov && lcov -e all.info '*/palanx/src/codegen/*' -o lcov.info $(LCOV_FLAGS) $(LCOV_FILTER)
-	cd build-cov && lcov -r lcov.info '*/PlnParser.cpp' '*/PlnParser.h' '*/location.hh' -o lcov.info $(LCOV_FLAGS) $(LCOV_FILTER)
 coverage-sa: build-cov/CMakeCache.txt
 	find build-cov -name "*.gcda" -delete 2>/dev/null; true
 	cmake --build build-cov

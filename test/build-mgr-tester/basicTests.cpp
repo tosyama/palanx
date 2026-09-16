@@ -1373,6 +1373,121 @@ TEST(build_mgr, usual_arith_conv) {
 	ASSERT_EQ(output, "255\n4294967295\n");
 }
 
+TEST(build_mgr, strtol_endptr) {
+	// IT-2026-09-12-3003: `@`/`@!` on a pointer-typed local (not just a
+	// primitive one) now produces pntr-of-pntr, letting `strtol`'s C
+	// out-param idiom (`char **endptr`) be written in Palan: `@!end` where
+	// `end` is `@!int8` gives strtol its `int8**`, and the callee writes
+	// the "abc" tail's address back through it.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/159_strtol_endptr.pa");
+	ASSERT_EQ(output, "42 abc\n");
+}
+
+TEST(build_mgr, struct_ret_div) {
+	// IT-2026-09-12-3005: end-to-end proof of IT-3004's SysV struct-by-value
+	// return through real glibc functions -- div_t (1 eightbyte, INTEGER)
+	// and ldiv_t/lldiv_t (2 eightbytes, INTEGER+INTEGER).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/160_struct_ret_div.pa");
+	ASSERT_EQ(output,
+		"3 1\n"
+		"3 1\n"
+		"3 1\n");
+}
+
+TEST(build_mgr, struct_ret_div_mtrace) {
+	// IT-2026-09-12-3005: the calloc backing `div_t d` must be freed exactly
+	// once at scope exit -- no double-free, no leak, for a struct-ret'd
+	// C-function call.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_struct_ret_div_mtrace_bin "
+		"../test/testdata/build-mgr/161_struct_ret_div_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_struct_ret_div_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_struct_ret_div_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	EXPECT_EQ(allocs, 1) << "expected 1 alloc for div_t d, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, alias_call_variadic_promote) {
+	// Prerequisite fix for IT-2026-09-12-3007: sa_expr_member_call used to
+	// duplicate sa_expr_call's argument loop without the variadic-promotion
+	// step, so an aliased C call silently passed a flo32 where the callee's
+	// va_arg reads a flo64, producing a garbage value instead of a diagnostic
+	// or the correct promotion. `printf("%f\n", f)` (no alias) already
+	// promoted correctly; only the `S.printf(...)` alias form was affected.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/162_alias_call_variadic_promote.pa");
+	ASSERT_EQ(output, "1.500000\n");
+}
+
+TEST(build_mgr, non_executable_stack) {
+	// IT-2026-09-12-3009 (prereq): Palan bypasses the C driver, so
+	// palan-codegen must emit .note.GNU-stack itself. Without it the linked
+	// program gets no PT_GNU_STACK at all (kernel default: READ_IMPLIES_EXEC),
+	// and RWE as soon as any note-carrying object joins the link (e.g.
+	// libc_nonshared.a's atexit) -- ld takes the union of its inputs' notes.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_gnu_stack_bin "
+		"../test/testdata/build-mgr/001_helloworld.pa"), "");
+
+	string segs = execTestCommand("readelf -lW /tmp/palan_gnu_stack_bin");
+	ASSERT_NE(segs.find("GNU_STACK"), string::npos);
+	ASSERT_EQ(segs.find("RWE"),       string::npos);
+}
+
+TEST(build_mgr, qsort_callback) {
+	// IT-2026-09-12-3009: end-to-end proof of IT-3007's callback mechanism --
+	// glibc's qsort calls a Palan function directly through the address the
+	// func-ref/LeaLabel lowering hands it. The comparator is spelled with a
+	// typed pointee (@int32); bsearch_callback below covers the C-idiomatic
+	// @void spelling.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/163_qsort_callback.pa");
+	ASSERT_EQ(output, "1 3 4 5\n");
+}
+
+TEST(build_mgr, bsearch_callback) {
+	// Same mechanism through bsearch, plus two things qsort cannot show: the
+	// comparator written with C's own `const void *` signature (@void, with a
+	// read-only @void -> @int32 rebinding in the body), and bsearch's `void *`
+	// result bound to a typed Palan pointer -- a hit is dereferenced, a miss
+	// compares equal to NULL, which proves glibc is actually consuming the
+	// comparator's return value rather than merely calling it.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/164_bsearch_callback.pa");
+	ASSERT_EQ(output,
+		"4\n"
+		"1\n");
+}
+
+TEST(build_mgr, atexit_callback) {
+	// A Palan function registered as a process exit handler. _start's epilogue
+	// is `call exit`, so glibc's __run_exit_handlers dispatches these on the
+	// way out -- two handlers prove LIFO dispatch order (C11 7.22.4.2), the
+	// strongest available evidence that the Palan functions are genuinely
+	// going through glibc's __cxa_atexit registry rather than being invoked
+	// incidentally. Requires the entry object's own __dso_handle definition
+	// (see the prereq commit). Both handlers touch only .rodata string
+	// literals: _start frees its owned locals before `call exit`, so a
+	// handler reading a Palan local here would be a use-after-free.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/165_atexit_callback.pa");
+	ASSERT_EQ(output,
+		"hello\n"
+		"last\n"
+		"bye\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

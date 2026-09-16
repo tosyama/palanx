@@ -1,3 +1,0 @@
-cinclude "error_135_c_unsupported_anon_typedef_struct.h";
-
-int32 n = pair_sum(0);

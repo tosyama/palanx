@@ -7,6 +7,11 @@
 #include <string>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
+// FieldLayout/StructDef live in PlnSemanticAnalyzer.h, not here; every SA .cpp
+// already includes it before this header, but classifySysVStructRet below
+// needs it too, and a standalone consumer (sa-unit-tester) would otherwise
+// have to know that ordering by convention rather than by include graph.
+#include "PlnSemanticAnalyzer.h"
 
 using json = nlohmann::json;
 using namespace std;
@@ -81,6 +86,10 @@ inline json fieldValueType(const FieldLayout& f)
 		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
 		return {{"type-kind","pntr"},{"base-type",bt}};
 	}
+	if (f.typeKind == "raw-ptr" && f.elemKind == "prim") {
+		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
+		return {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
+	}
 	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
 	json pntr = {{"type-kind","pntr"},{"base-type",bt}};
 	if (f.typeKind == "raw-ptr")
@@ -97,6 +106,96 @@ inline int elemSizeBytes(const string& typeName)
 	if (typeName == "int32" || typeName == "uint32" || typeName == "flo32") return 4;
 	if (typeName == "int64" || typeName == "uint64" || typeName == "flo64") return 8;
 	return -1;
+}
+
+// A pointee type name that is primitive rather than a struct name. `void` is
+// accepted here but not as a standalone value type (PlnType.h PrimType::Name::Void).
+inline bool isPrimPointeeName(const string& name)
+{
+	return name == "void" || elemSizeBytes(name) >= 0;
+}
+
+// SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct return value.
+enum class EightbyteClass { Integer, Sse };
+struct EightbyteRet { EightbyteClass cls; int size; };  // size in {1,2,4,8}; only the last eightbyte may be <8
+
+// Recursively marks the eightbytes covered by one field as INTEGER; SSE is
+// `cls`'s initial value, so an all-float field simply leaves it unmarked
+// (mixing within one eightbyte follows the "any INTEGER wins" merge rule).
+// `base` is the field's struct-relative offset already shifted by every
+// enclosing embed/embed-arr, so recursion always marks against the same
+// top-level `cls` vector.
+inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
+                              const map<string, StructDef>& defs,
+                              vector<EightbyteClass>& cls)
+{
+	auto mark = [&](int offset, int size, EightbyteClass fieldCls) {
+		if (fieldCls != EightbyteClass::Integer) return;  // Sse is the default; nothing to mark
+		for (int b = offset; b < offset + size; b++) {
+			int eb = b / 8;
+			if (eb < nEightbytes) cls[eb] = EightbyteClass::Integer;
+		}
+	};
+	for (auto& f : d.fields) {
+		int off = base + f.offset;
+		if (f.typeKind == "prim") {
+			bool isFloat = (f.typeName == "flo32" || f.typeName == "flo64");
+			mark(off, f.size, isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+		} else if (f.typeKind == "raw-ptr" || f.typeKind == "struct-ptr" || f.typeKind == "arr-ptr") {
+			mark(off, 8, EightbyteClass::Integer);
+		} else if (f.typeKind == "embed-ptr-arr") {
+			for (int64_t i = 0; i < f.count; i++)
+				mark(off + (int)(i * 8), 8, EightbyteClass::Integer);
+		} else if (f.typeKind == "embed") {
+			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, cls);
+		} else if (f.typeKind == "embed-arr") {
+			bool leafFloat = (f.typeName == "flo32" || f.typeName == "flo64");
+			for (int64_t i = 0; i < f.count; i++) {
+				int elemOff = off + (int)(i * f.stride);
+				if (f.elemKind == "struct")
+					classifySysVWalk(defs.at(f.typeName), elemOff, nEightbytes, defs, cls);
+				else
+					mark(elemOff, f.stride, leafFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+			}
+		}
+	}
+}
+
+// Classifies a struct's return value per the System V AMD64 ABI (§3.2.3):
+// a struct over 16 bytes is MEMORY class, returned via a caller-supplied
+// hidden pointer, represented here as an empty vector; 16 bytes or less is
+// returned in up to two eightbytes, each INTEGER (%rax/%rdx) or SSE
+// (%xmm0/%xmm1). Only the return-value rules are implemented (not full
+// argument classification, which additionally has a MEMORY class for
+// eightbytes containing unaligned fields -- unreached by every struct
+// this compiler can construct, since buildStructDef itself enforces
+// natural alignment).
+//
+// Sets `ok` to false, and returns an empty vector, if any eightbyte's
+// natural width isn't 1/2/4/8 bytes (e.g. a trailing `char a[3]` field) --
+// callers should reject that shape with a dedicated diagnostic rather than
+// guess at a partial-eightbyte store.
+inline vector<EightbyteRet> classifySysVStructRet(const StructDef& def,
+                                                   const map<string, StructDef>& defs,
+                                                   bool& ok)
+{
+	ok = true;
+	if (def.totalSize > 16) return {};  // MEMORY class
+
+	int nEightbytes = (def.totalSize + 7) / 8;
+	int tailWidth = def.totalSize - 8 * (nEightbytes - 1);
+	if (tailWidth != 1 && tailWidth != 2 && tailWidth != 4 && tailWidth != 8) {
+		ok = false;
+		return {};
+	}
+
+	vector<EightbyteClass> cls(nEightbytes, EightbyteClass::Sse);
+	classifySysVWalk(def, 0, nEightbytes, defs, cls);
+
+	vector<EightbyteRet> result;
+	for (int i = 0; i < nEightbytes; i++)
+		result.push_back({cls[i], (i == nEightbytes - 1) ? tailWidth : 8});
+	return result;
 }
 
 // Builds a synthetic free() expression statement for the named pointer variable
@@ -204,7 +303,12 @@ inline json normalizeCType(const json& type);
 // itself (see ptrPermissionOk/isWritableThrough above). Folding const into
 // mutable here means every consumer of a `pntr` value-type (ptrPermissionOk,
 // codegen) only ever needs to understand "mutable", whether the pointer came
-// from Palan syntax or a cincluded C signature.
+// from Palan syntax or a cincluded C signature. This recurses into a `func`
+// type-kind's own ret-type/parameters too, so a callback parameter's inner
+// pointers (e.g. qsort's `int (*)(const void*, const void*)`) get "mutable"
+// the same as any other pointer -- without this, isWritableThrough's
+// absent-key default (writable) would silently invert the callback's
+// pointer permissions.
 inline json normalizeCType(const json& type) {
 	if (type.value("type-kind","") == "pntr") {
 		json t = type;
@@ -218,8 +322,37 @@ inline json normalizeCType(const json& type) {
 		t["type-kind"] = "struct";
 		return t;
 	}
+	if (type.value("type-kind","") == "func") {
+		json t = type;
+		t["ret-type"] = normalizeCType(type["ret-type"]);
+		if (t.contains("parameters"))
+			for (auto& p : t["parameters"])
+				if (p.contains("var-type"))
+					p["var-type"] = normalizeCType(p["var-type"]);
+		return t;
+	}
 	return type;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// True if every parameter type and the return type of a `func` type-kind
+// node (already normalizeCType'd, so consts are folded into "mutable") can be
+// represented by this version -- i.e. this callback's signature is one a
+// Palan function can actually be checked against (IT-2026-09-12-3007). A
+// by-value struct parameter is rejected the same way a top-level C parameter
+// is (see normalizeCFuncSig below); a nested function-pointer parameter is
+// rejected by unrepresentableTypeName's "func" case, same as everywhere else.
+inline bool callbackSigRepresentable(const json& funcType) {
+	if (funcType.contains("parameters"))
+		for (auto& ip : funcType["parameters"]) {
+			if (!ip.contains("var-type")) continue; // "..." variadic marker
+			const json& ivt = ip["var-type"];
+			if (ivt.value("type-kind", "") == "struct") return false;
+			if (!unrepresentableTypeName(ivt).empty()) return false;
+		}
+	if (funcType.contains("ret-type") && !unrepresentableTypeName(funcType["ret-type"]).empty())
+		return false;
+	return true;
+}
 
 // C function entries (from c2ast) always carry a single "ret-type", never
 // Palan's native multi/named-return "rets" list, so there's no "rets" case
@@ -237,13 +370,48 @@ inline json normalizeCType(const json& type) {
 // requireSupportedCFuncSig) rather than rejected here, so cinclude'ing a
 // header that happens to declare an unsupported function is not itself an
 // error -- only calling it is.
+//
+// A top-level by-value struct parameter is also flagged here: unlike a
+// pntr-wrapped struct base-type, unrepresentableTypeName alone cannot tell
+// "by value" from "behind a pointer" apart (both are a bare
+// {"type-kind":"struct",...} node once normalizeCType has stripped the
+// wrapping pntr, or none was ever there), and only this function sees a
+// parameter's position in the signature. By-value struct return is exempt --
+// it stays representable here and is classified by classifySysVStructRet at
+// the call site (IT-2026-09-12-3004) instead of rejected.
+//
+// A `pntr(func(...))` parameter (e.g. qsort's comparator) is a limited,
+// explicit exception to the blanket function-pointer rejection below
+// (IT-2026-09-12-3007): when callbackSigRepresentable says its inner
+// parameter/return types are all representable, the parameter is marked
+// "_callback-param" instead of contributing "function pointer" to `bad` --
+// this only records that the slot *could* accept a Palan function reference;
+// whether the caller actually supplies one, and whether its signature
+// matches, is checked at the call site (sa_func_ref_arg in PlnSaExpr.cpp).
+// An irrepresentable inner signature still reports "function pointer" like
+// before, since to this function's own caller it remains, at the top level,
+// an unsupported function pointer parameter.
 inline void normalizeCFuncSig(json& funcDef) {
 	string bad;
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
 			if (p.contains("var-type")) {
 				p["var-type"] = normalizeCType(p["var-type"]);
-				if (bad.empty()) bad = unrepresentableTypeName(p["var-type"]);
+				const json& vt = p["var-type"];
+				string paramBad;
+				bool isCallback = vt.value("type-kind", "") == "pntr" && vt.contains("base-type")
+					&& vt["base-type"].value("type-kind", "") == "func";
+				if (isCallback) {
+					if (callbackSigRepresentable(vt["base-type"]))
+						p["_callback-param"] = true;
+					else
+						paramBad = "function pointer";
+				} else if (vt.value("type-kind", "") == "struct") {
+					paramBad = "by-value struct parameter";
+				} else {
+					paramBad = unrepresentableTypeName(vt);
+				}
+				if (bad.empty()) bad = paramBad;
 			}
 	if (funcDef.contains("ret-type")) {
 		funcDef["ret-type"] = normalizeCType(funcDef["ret-type"]);

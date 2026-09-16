@@ -278,6 +278,13 @@ bool PlnSemanticAnalyzer::isKnownTypeName(const string& name) const
 	return structDefs_.count(name) || typeAliases_.count(name) || elemSizeBytes(name) >= 0;
 }
 
+bool PlnSemanticAnalyzer::isKnownPointeeTypeName(const string& name) const
+{
+	// `void` is pointee-only (PlnType.h PrimType::Name::Void): @void/@!void are
+	// C's void*, while a standalone `void x;` stays rejected by isKnownTypeName.
+	return isPrimPointeeName(name) || isKnownTypeName(name);
+}
+
 json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 {
 	if (!isStructType(type)) return type;

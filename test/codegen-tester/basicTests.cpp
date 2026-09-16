@@ -1311,3 +1311,155 @@ TEST(codegen, c_global) {
     ASSERT_NE(asm_text.find("movq (%r"), string::npos);
     ASSERT_NE(asm_text.find("call fprintf"), string::npos);
 }
+
+// IT-2026-09-12-3005: hand-written struct-ret fixtures for the SSE / mixed /
+// MEMORY eightbyte classes that IT-3004 added support for. No glibc function
+// returns these shapes, so `get_flo`/`get_mixed`/`get_big` are fixture-only
+// names that never resolve at link time -- `as` (assembling only, no link)
+// is enough to prove the emitted mnemonics/widths/registers are well-formed.
+
+TEST(codegen, struct_ret_sse) {
+    // 1 eightbyte, all SSE: struct { flo64 x; } returned in %xmm0 only.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/070_struct_ret_sse.sa.json";
+    string asmf = "out/070_struct_ret_sse.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("call get_flo"),  string::npos);
+    ASSERT_NE(asm_text.find("movsd %xmm0,"),  string::npos);
+    ASSERT_EQ(asm_text.find("%rdx"),          string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/070_struct_ret_sse.o"), "");
+}
+
+TEST(codegen, struct_ret_mixed) {
+    // 2 eightbytes, INTEGER+SSE mixed: struct { int64 a; flo64 b; } returned
+    // in %rax/%xmm0, second eightbyte stored at offset 8.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/071_struct_ret_mixed.sa.json";
+    string asmf = "out/071_struct_ret_mixed.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("call get_mixed"), string::npos);
+    ASSERT_NE(asm_text.find("movq %rax,"),     string::npos);
+    ASSERT_NE(asm_text.find("movsd %xmm0,"),   string::npos);
+    ASSERT_NE(asm_text.find(", 8(%r"),         string::npos);
+    ASSERT_EQ(asm_text.find("%xmm1"),          string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/071_struct_ret_mixed.o"), "");
+}
+
+TEST(codegen, struct_ret_memory) {
+    // >16 bytes: MEMORY class -- the caller's calloc'd pointer is prepended
+    // as an ordinary first argument (hidden pointer); no register-based
+    // eightbyte store follows the call.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/072_struct_ret_memory.sa.json";
+    string asmf = "out/072_struct_ret_memory.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("movq %rax, %rdi"), string::npos);
+    ASSERT_NE(asm_text.find("call get_big"),    string::npos);
+    ASSERT_EQ(asm_text.find("%xmm"),            string::npos);
+    ASSERT_NE(asm_text.find("call get_big\n\tmovl $0, %edi"), string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/072_struct_ret_memory.o"), "");
+}
+
+TEST(codegen, struct_ret_int_tail_widths) {
+    // eightbyteToVRegType (PlnDeserialize.cpp) maps a fractional-width
+    // INTEGER eightbyte (size 1/2/4, the only kind glibc's div/ldiv/lldiv
+    // never produce -- their eightbytes are always full 8 bytes) to
+    // Int8/Int16/Int32 -- exercises the movb/movw/movl store widths that a
+    // full-eightbyte-only real-function test (struct_ret_sse/mixed/memory
+    // above) cannot reach.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/073_struct_ret_int_tail_widths.sa.json";
+    string asmf = "out/073_struct_ret_int_tail_widths.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("call get_tinya"), string::npos);
+    ASSERT_NE(asm_text.find("movb %al,"),      string::npos);
+    ASSERT_NE(asm_text.find("call get_tinyb"), string::npos);
+    ASSERT_NE(asm_text.find("movw %ax,"),      string::npos);
+    ASSERT_NE(asm_text.find("call get_tinyc"), string::npos);
+    ASSERT_NE(asm_text.find("movl %eax,"),     string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/073_struct_ret_int_tail_widths.o"), "");
+}
+
+TEST(codegen, func_ref) {
+    // IT-2026-09-12-3007: a "func-ref" argument (a Palan function passed as
+    // a C callback, e.g. qsort's comparator) lowers to a bare LeaLabel of
+    // the function's own name -- same shape as a string literal, no
+    // dereference, no new VInstr/x86 instruction. "cmp" is a fixture-only
+    // name that never resolves at link time; `as` (assembling only) is
+    // enough to prove the emitted mnemonic is well-formed.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/074_func_ref.sa.json";
+    string asmf = "out/074_func_ref.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("leaq cmp(%rip)"), string::npos);
+    ASSERT_NE(asm_text.find("call qsort"), string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/074_func_ref.o"), "");
+}
+
+TEST(codegen, elf_crt_glue_entry_object) {
+    // IT-2026-09-12-3009 (prereq): Palan links no crt startup objects (no
+    // crt1.o/crti.o/crtbegin.o), so the entry object must supply the ELF/libc
+    // glue those objects would otherwise provide -- __dso_handle (glibc's
+    // atexit forwards to __cxa_atexit(func, arg, __dso_handle)) and
+    // .note.GNU-stack (without it, ld marks the whole binary's stack
+    // executable as soon as any note-carrying libc object joins the link).
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/002_printf_int_literal.sa.json";
+    string asmf = "out/002_elf_crt_glue.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("\t.section .data\n"),         string::npos);
+    ASSERT_NE(asm_text.find("\t.globl __dso_handle\n"),    string::npos);
+    ASSERT_NE(asm_text.find("\t.hidden __dso_handle\n"),   string::npos);
+    ASSERT_NE(asm_text.find("__dso_handle:\n\t.quad 0\n"), string::npos);
+    ASSERT_NE(asm_text.find(".note.GNU-stack"),            string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/002_elf_crt_glue.o"), "");
+}
+
+TEST(codegen, elf_crt_glue_no_entry) {
+    // --no-entry means "this object is not the program's entry object", so it
+    // must NOT define __dso_handle (exactly one definition per link, derived
+    // from the same isEntry flag that gates .globl _start). The GNU-stack
+    // note is unconditional -- ld unions its inputs, so every object needs it.
+    cleanTestEnv();
+    string asmf = "out/002_no_entry_crt_glue.s";
+
+    string err = execTestCommand(
+        "bin/palan-codegen --no-entry "
+        "../test/testdata/codegen/002_printf_int_literal.sa.json -o " + asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_EQ(asm_text.find("__dso_handle"),    string::npos);
+    ASSERT_EQ(asm_text.find(".globl _start"),   string::npos);
+    ASSERT_NE(asm_text.find(".note.GNU-stack"), string::npos);
+}

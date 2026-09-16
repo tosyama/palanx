@@ -69,6 +69,13 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToImmutablePtrField) << endl;
 		exit(1);
 	}
+	if (it->typeKind == "raw-ptr" && it->elemKind == "prim") {
+		// A pointer-to-primitive field (e.g. `@!int64 p;`) has nothing further to
+		// chain into -- this hop must be the chain's terminal, typed by the
+		// caller via fieldValueType, not resolveObjectChain's own pntr(struct(...)).
+		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+		exit(1);
+	}
 	if (it->typeKind == "embed") {
 		base.offset += it->offset;
 		base.structName = it->typeName;
@@ -155,7 +162,9 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
 			exit(1);
 		}
-		if (varType->value("type-kind", "") != "prim") {
+		string vtk = varType->value("type-kind", "");
+		bool isPtrToPrim = vtk == "pntr" && (*varType)["base-type"].value("type-kind","") == "prim";
+		if (vtk != "prim" && !isPtrToPrim) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
 			exit(1);
 		}
@@ -169,11 +178,20 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
 		string fn = obj["field"].get<string>();
 		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
-		if (fld.typeKind != "prim") {
+		if (fld.typeKind != "prim" && fld.typeKind != "embed") {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
 			exit(1);
 		}
-		json pntr_type = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",fieldValueType(fld)}};
+		// An embed field's own value-type (fieldValueType) is already
+		// pntr(struct T) -- the field IS the struct's storage, same as a
+		// struct-typed local variable -- so wrapping it again here would
+		// produce pntr(pntr(struct T)), a double indirection nothing needs.
+		// A prim field's value-type is the bare prim, so it still needs the
+		// usual pntr(...) wrap to become "address of this prim slot".
+		json pntr_type = (fld.typeKind == "embed")
+			? fieldValueType(fld)
+			: json{{"type-kind","pntr"},{"base-type",fieldValueType(fld)}};
+		pntr_type["mutable"] = isMutable;
 		int off = chain.offset + fld.offset;
 		json out = chain.isPointerBased
 			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",true}}
@@ -355,7 +373,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			return wrapConvert(src, registry_.toJson(target));
 		} else {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
-				src["value-type"].value("type-name", src["value-type"]["type-kind"].get<string>()),
+				typeDisplayName(src["value-type"]),
 				expr["target-type"]["type-name"].get<string>()) << endl;
 			exit(1);
 		}
@@ -452,8 +470,10 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 // rejected with E_InvalidNarrowingConv, except an integer literal `value`
 // adopts toType instead of erroring (its printed width/sign was never fixed
 // by the source syntax the way a variable's declared type is); Incompatible
-// leaves `value` unchanged (a pointer/struct pair passes through as-is --
-// ptrPermissionOk is the real gate for those, checked by each call site).
+// (pointee mismatch, struct-name mismatch, or a Prim<->Ptr/Struct mix such as
+// an integer literal bound to a pointer) is rejected with E_IncompatibleTypes.
+// ptrPermissionOk, checked by each call site, is a separate, narrower gate:
+// it only judges mutability between two otherwise-compatible pointer types.
 json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		const PlnType* toType, const json& toTypeJson)
 {
@@ -466,10 +486,13 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		string et = value["expr-type"];
 		if (et != "lit-int" && et != "lit-uint") {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
-				value["value-type"].value("type-name", value["value-type"]["type-kind"].get<string>()),
-				toTypeJson.value("type-name", toTypeJson["type-kind"].get<string>())) << endl;
+				typeDisplayName(value["value-type"]), typeDisplayName(toTypeJson)) << endl;
 			exit(1);
 		}
+	} else if (compat == TypeCompat::Incompatible) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
+			typeDisplayName(value["value-type"]), typeDisplayName(toTypeJson)) << endl;
+		exit(1);
 	}
 	return value;
 }
@@ -504,20 +527,18 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	json sa_expr = expr;
 	const json* funcParams = nullptr;
-	bool isVariadic = false;
+	bool isCFunc = false;
 
 	const json* cfunc = findCFunc(expr["name"]);
 	if (cfunc) {
+		isCFunc = true;
 		sa_expr["func-type"] = "c";
 		requireSupportedCFuncSig(*cfunc, expr["name"].get<string>(), expr);
 		if (cfunc->contains("ret-type")
 				&& (*cfunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*cfunc)["ret-type"];
-		if (cfunc->contains("parameters")) {
+		if (cfunc->contains("parameters"))
 			funcParams = &(*cfunc)["parameters"];
-			for (auto& p : *funcParams)
-				if (p.value("name", "") == "...") { isVariadic = true; break; }
-		}
 	} else {
 		const string& callName = expr["name"].get<string>();
 		const json* pFunc = findPlnFunc(callName);
@@ -549,54 +570,155 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
 
-	if (expr.contains("args")) {
-		sa_expr["args"] = json::array();
-		size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
-		size_t argIdx = 0;
-		for (auto& arg : expr["args"]) {
-			const json* paramVT = (funcParams && argIdx < fixedCount)
-				? &(*funcParams)[argIdx]["var-type"] : nullptr;
-			// Pass the parameter's type down so a bare integer literal argument
-			// (e.g. `add(1, 2)`, `umask(0)`) adopts it instead of always
-			// defaulting to int64/uint64 (see sa_expression's lit-int/lit-uint
-			// branches) -- otherwise convertCallArg below would reject most
-			// literal arguments to a non-int64 parameter as narrowing.
-			json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-			if (saArg.contains("value-type")) {
-				const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-				if (paramVT) {
-					if (paramVT->value("embedded", false)) {
-						const json& argVT = saArg["value-type"];
-						bool argEmbedded = argVT.value("embedded", false);
-						bool paramHasSize = paramVT->contains("inner-size");
-						bool argHasSize   = argVT.contains("inner-size");
-						if (!argEmbedded || !argHasSize || !paramHasSize
-							|| (*paramVT)["inner-size"] != argVT["inner-size"]) {
-							string expected = paramHasSize
-								? to_string((*paramVT)["inner-size"].get<int64_t>()) : "?";
-							string actual = (argEmbedded && argHasSize)
-								? to_string(argVT["inner-size"].get<int64_t>()) : "variable";
-							cerr << locPrefix(expr)
-							     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
-							            expected, actual) << endl;
-							exit(1);
-						}
-					}
-					saArg = convertCallArg(expr, saArg, *paramVT);
-					checkArgPtrPermission(expr, expr["name"].get<string>(),
-							sa_expr["func-type"] == "c", saArg, (*funcParams)[argIdx], argIdx);
-				} else if (isVariadic) {
-					const PlnType* promoted = variadicPromote(fromType, registry_);
-					if (promoted != fromType)
-						saArg = wrapConvert(saArg, registry_.toJson(promoted));
-				}
-			}
-			sa_expr["args"].push_back(saArg);
-			argIdx++;
-		}
-	}
+	if (expr.contains("args"))
+		sa_expr["args"] = saCallArgs(expr, expr["args"], funcParams, isCFunc, expr["name"].get<string>());
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Analyze a call's argument list against the callee's parameter list. Shared
+// by sa_expr_call and sa_expr_member_call so a plain call and an aliased
+// `S.func(...)` call get identical per-argument handling (embedded-array
+// inner-size checks, variadic promotion, pointer permission checks) --
+// sa_expr_member_call previously duplicated only part of this loop, which
+// silently dropped variadic promotion for aliased calls (e.g.
+// `S.printf("%f\n", someFlo32)` passed the flo32 through unconverted instead
+// of promoting it to flo64, producing a garbage value at the callee).
+json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json* funcParams,
+                                      bool isCFunc, const string& funcName)
+{
+	bool isVariadic = false;
+	if (funcParams)
+		for (auto& p : *funcParams)
+			if (p.value("name", "") == "...") { isVariadic = true; break; }
+
+	json saArgs = json::array();
+	size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
+	size_t argIdx = 0;
+	for (auto& arg : args) {
+		const json* paramVT = (funcParams && argIdx < fixedCount)
+			? &(*funcParams)[argIdx]["var-type"] : nullptr;
+		if (funcParams && argIdx < fixedCount
+				&& (*funcParams)[argIdx].value("_callback-param", false)) {
+			// registry_.fromJson (below, and inside sa_expression) throws for a
+			// pntr(func) type -- this parameter's slot never reaches either;
+			// its only legal argument is a bare Palan function name.
+			saArgs.push_back(sa_func_ref_arg(locNode, arg, funcName, (*funcParams)[argIdx]));
+			argIdx++;
+			continue;
+		}
+		// Pass the parameter's type down so a bare integer literal argument
+		// (e.g. `add(1, 2)`, `umask(0)`) adopts it instead of always
+		// defaulting to int64/uint64 (see sa_expression's lit-int/lit-uint
+		// branches) -- otherwise convertCallArg below would reject most
+		// literal arguments to a non-int64 parameter as narrowing.
+		json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		if (saArg.contains("value-type")) {
+			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+			if (paramVT) {
+				if (paramVT->value("embedded", false)) {
+					const json& argVT = saArg["value-type"];
+					bool argEmbedded = argVT.value("embedded", false);
+					bool paramHasSize = paramVT->contains("inner-size");
+					bool argHasSize   = argVT.contains("inner-size");
+					if (!argEmbedded || !argHasSize || !paramHasSize
+						|| (*paramVT)["inner-size"] != argVT["inner-size"]) {
+						string expected = paramHasSize
+							? to_string((*paramVT)["inner-size"].get<int64_t>()) : "?";
+						string actual = (argEmbedded && argHasSize)
+							? to_string(argVT["inner-size"].get<int64_t>()) : "variable";
+						cerr << locPrefix(locNode)
+						     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
+						            expected, actual) << endl;
+						exit(1);
+					}
+				}
+				saArg = convertCallArg(locNode, saArg, *paramVT);
+				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
+			} else if (isVariadic) {
+				const PlnType* promoted = variadicPromote(fromType, registry_);
+				if (promoted != fromType)
+					saArg = wrapConvert(saArg, registry_.toJson(promoted));
+			}
+		}
+		saArgs.push_back(saArg);
+		argIdx++;
+	}
+	return saArgs;
+}
+
+// Analyze the argument in a `_callback-param` slot (IT-2026-09-12-3007): a C
+// function pointer parameter (qsort's comparator, atexit's handler, ...)
+// whose inner signature normalizeCFuncSig already proved representable. The
+// only legal argument is a bare reference to a Palan function -- this
+// version has no first-class function-pointer value, so a variable, a call
+// result, or any other expression is rejected outright. The matched
+// function's signature must be exactly ABI-identical to the callback's C
+// signature: glibc calls the Palan function directly with no Palan-side
+// conversion step to widen/narrow through (unlike every other argument in
+// this file, where convertCallArg/checkArgPtrPermission tolerate implicit
+// widening), so anything looser than typeCompat's Identical would silently
+// read/write the wrong number of bytes across the ABI boundary. Pointer
+// permission is checked in the direction the value actually flows: a
+// parameter's value flows from C into the callback, so a `const` C
+// parameter (mutable == false) permits a Palan `@T` argument but not `@!T`;
+// the callback's return value flows from Palan back to C, so that check
+// runs with the operands reversed.
+json PlnSemanticAnalyzer::sa_func_ref_arg(const json& locNode, const json& arg,
+                                           const string& cFuncName, const json& param)
+{
+	string spelling = arg.value("expr-type", "") == "id" ? arg["name"].get<string>() : "<expression>";
+	const json* pFunc = nullptr;
+	if (arg.value("expr-type", "") == "id" && findVar(spelling) == nullptr)
+		pFunc = findPlnFunc(spelling);
+	if (pFunc == nullptr) {
+		cerr << locPrefix(locNode)
+		     << PlnSaMessage::getMessage(E_CallbackArgRequiresFunc, cFuncName, spelling) << endl;
+		exit(1);
+	}
+
+	auto mismatch = [&]() {
+		cerr << locPrefix(locNode)
+		     << PlnSaMessage::getMessage(E_CallbackSignatureMismatch, spelling, cFuncName) << endl;
+		exit(1);
+	};
+
+	const json& cFuncType = param["var-type"]["base-type"]; // {"type-kind":"func",...}
+	const json* cParams = cFuncType.contains("parameters") ? &cFuncType["parameters"] : nullptr;
+	const json* pParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
+	size_t cCount = cParams ? cParams->size() : 0;
+	size_t pCount = pParams ? pParams->size() : 0;
+	if (cCount != pCount) mismatch();
+	for (size_t i = 0; i < cCount; i++) {
+		const json& cp = (*cParams)[i];
+		const json& pp = (*pParams)[i];
+		if (!cp.contains("var-type") || !pp.contains("var-type")) mismatch(); // e.g. C "..." marker
+		const json& cvt = cp["var-type"];
+		const json& pvt = pp["var-type"];
+		if (typeCompat(registry_.fromJson(cvt), registry_.fromJson(pvt), registry_) != TypeCompat::Identical)
+			mismatch();
+		if (!ptrPermissionOk(cvt, pvt)) mismatch();
+	}
+
+	bool cVoidRet = !cFuncType.contains("ret-type")
+		|| cFuncType["ret-type"].value("type-name", "") == "void";
+	bool pMultiRet = pFunc->contains("rets") && (*pFunc)["rets"].size() > 1;
+	bool pHasRet = pFunc->contains("ret-type");
+	if (pMultiRet) mismatch();
+	if (cVoidRet) {
+		if (pHasRet) mismatch();
+	} else {
+		if (!pHasRet) mismatch();
+		const json& cRetVT = cFuncType["ret-type"];
+		const json& pRetVT = (*pFunc)["ret-type"];
+		if (typeCompat(registry_.fromJson(pRetVT), registry_.fromJson(cRetVT), registry_) != TypeCompat::Identical)
+			mismatch();
+		if (!ptrPermissionOk(pRetVT, cRetVT)) mismatch();
+	}
+
+	json out = {{"expr-type", "func-ref"}, {"name", spelling}};
+	if (locNode.contains("loc")) out["loc"] = locNode["loc"];
+	return out;
+}
 
 // Convert a single call argument (`saArg`, already SA'd) to a parameter's
 // type. Shared by sa_expr_call and sa_expr_member_call; embedded-array shape
@@ -612,15 +734,21 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 		if (argConvOk(fromType, toType))
 			return wrapConvert(saArg, registry_.toJson(toType));
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
-			saArg["value-type"].value("type-name", saArg["value-type"]["type-kind"].get<string>()),
-			paramVT.value("type-name", paramVT["type-kind"].get<string>())) << endl;
+			typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)) << endl;
 		exit(1);
 	}
-	// Non-Prim (pointer / embedded-array / struct-by-name): typeCompat only
-	// ever returns Identical or Incompatible for these (never ImplicitWiden,
-	// the only value that would call for a convert here), so this is always a
-	// pass-through; ptr permission and embedded-array shape are the callers'
-	// concern.
+	// Non-Prim (pointer / embedded-array / struct-by-name), or a Prim<->Ptr
+	// mix (e.g. an integer literal passed where a pointer parameter is
+	// expected): typeCompat never returns ImplicitWiden/ExplicitCast for
+	// these, only Identical (pntr(void) is bidirectionally Identical with any
+	// pntr(T), which is how NULL passes) or Incompatible, so this covers the
+	// whole remaining domain; ptr permission and embedded-array shape are the
+	// callers' concern.
+	if (typeCompat(fromType, toType, registry_) == TypeCompat::Incompatible) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
+			typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)) << endl;
+		exit(1);
+	}
 	return saArg;
 }
 
@@ -732,7 +860,9 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		//
 		// Note: a local `@T`/`@!T` variable declaration is rejected at
 		// declaration time by sa_var_decl for an unknown pointee, so the
-		// sz<0 guard below is unreachable from a local-var-declared pointer.
+		// sz<0 guard below is unreachable from a local-var-declared pointer
+		// (except `@void`/`@!void`, deliberately accepted by sa_var_decl and
+		// rejected here instead with a dedicated E_DerefVoidPointer message).
 		// It remains the first rejection point for a `@T`/`@!T` function
 		// parameter or named-return value, whose pointee name is not
 		// validated at signature normalization time (normalizeStructSig).
@@ -750,6 +880,14 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		return sa_expr;
 	}
 
+	if (elem_type.value("type-kind","") == "prim" && elem_type.value("type-name","") == "void") {
+		// `void` has no size; unlike E_UnknownStructType below (an unrecognized
+		// name), this pointee name IS recognized -- it's just not indexable.
+		// Covers read (p[i]), write (v -> p[i] via sa_arr_assign_stmt), and
+		// element-address-of (@p[i], reached before its own guard runs).
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_DerefVoidPointer) << endl;
+		exit(1);
+	}
 	int sz = (elem_type.value("type-kind","") == "pntr") ? 8
 		: elemSizeBytes(elem_type.value("type-name",""));
 	if (sz < 0) {
@@ -810,26 +948,8 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 		sa_expr["category"] = "expiring";
 
 	const json* funcParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
-	bool isVariadic = false;
-	if (isCFunc && funcParams)
-		for (auto& p : *funcParams)
-			if (p.value("name", "") == "...") { isVariadic = true; break; }
 
-	if (expr.contains("args")) {
-		sa_expr["args"] = json::array();
-		size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
-		size_t argIdx = 0;
-		for (auto& arg : expr["args"]) {
-			const json* paramVT = (funcParams && argIdx < fixedCount)
-				? &(*funcParams)[argIdx]["var-type"] : nullptr;
-			json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-			if (saArg.contains("value-type") && paramVT) {
-				saArg = convertCallArg(expr, saArg, *paramVT);
-				checkArgPtrPermission(expr, method, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
-			}
-			sa_expr["args"].push_back(saArg);
-			argIdx++;
-		}
-	}
+	if (expr.contains("args"))
+		sa_expr["args"] = saCallArgs(expr, expr["args"], funcParams, isCFunc, method);
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE

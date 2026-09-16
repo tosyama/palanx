@@ -7,6 +7,9 @@ add_executable(palan-codegen
 	PlnVCodeGen.cpp
 	PlnRegAlloc.cpp
 	PlnX86CodeGen.cpp
+	PlnX86Arith.cpp
+	PlnX86Call.cpp
+	PlnX86Mem.cpp
 )
 
 option(OUTPUT_COVERAGE "Output coverage files.")

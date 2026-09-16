@@ -1,0 +1,7 @@
+cinclude <stdlib.h>;
+type T { int64 v; @!int64 p; };
+T s;
+@!int64 x = malloc(8);
+x -> s.p;
+9 -> s.p[0];
+@!int64 rp = s.p;

@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+type T { int64 v; @!int64 p; };
+T s;
+s.p.q;

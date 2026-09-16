@@ -1,0 +1,108 @@
+{
+  "original": "/test/073_struct_ret_int_tail_widths.pa",
+  "str-literals": [],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "a",
+          "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyA"}},
+          "init": {
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "calloc",
+            "args": [
+              {"expr-type": "lit-uint", "value": "1", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+              {"expr-type": "lit-uint", "value": "1", "value-type": {"type-kind": "prim", "type-name": "uint64"}}
+            ],
+            "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyA"}}
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "get_tinya",
+        "args": [],
+        "struct-ret": {
+          "var": "a",
+          "struct-name": "TinyA",
+          "size": 1,
+          "eightbytes": [{"class": "int", "size": 1}]
+        }
+      }
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "b",
+          "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyB"}},
+          "init": {
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "calloc",
+            "args": [
+              {"expr-type": "lit-uint", "value": "1", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+              {"expr-type": "lit-uint", "value": "2", "value-type": {"type-kind": "prim", "type-name": "uint64"}}
+            ],
+            "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyB"}}
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "get_tinyb",
+        "args": [],
+        "struct-ret": {
+          "var": "b",
+          "struct-name": "TinyB",
+          "size": 2,
+          "eightbytes": [{"class": "int", "size": 2}]
+        }
+      }
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "c",
+          "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyC"}},
+          "init": {
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "calloc",
+            "args": [
+              {"expr-type": "lit-uint", "value": "1", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+              {"expr-type": "lit-uint", "value": "4", "value-type": {"type-kind": "prim", "type-name": "uint64"}}
+            ],
+            "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyC"}}
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "get_tinyc",
+        "args": [],
+        "struct-ret": {
+          "var": "c",
+          "struct-name": "TinyC",
+          "size": 4,
+          "eightbytes": [{"class": "int", "size": 4}]
+        }
+      }
+    }
+  ]
+}

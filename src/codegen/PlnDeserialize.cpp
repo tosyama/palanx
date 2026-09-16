@@ -7,6 +7,22 @@ using std::endl;
 
 using namespace std;
 
+// Maps one struct-ret eightbyte descriptor ({"class":"int"|"sse","size":1|2|4|8})
+// to the VRegType its register-to-memory store should use. Sign doesn't matter
+// here (movInstrForType only keys off width), so every "int" eightbyte maps to
+// a plain signed VRegType regardless of the source field's actual signedness.
+static VRegType eightbyteToVRegType(const json& eb) {
+    int size = eb["size"].get<int>();
+    if (eb["class"] == "sse")
+        return size == 4 ? VRegType::Float32 : VRegType::Float64;
+    switch (size) {
+        case 1:  return VRegType::Int8;
+        case 2:  return VRegType::Int16;
+        case 4:  return VRegType::Int32;
+        default: return VRegType::Int64;
+    }
+}
+
 static VRegType toVRegType(const json& vt) {
     if (vt["type-kind"] == "pntr") return VRegType::Ptr64;
     string name = vt["type-name"].get<string>();
@@ -64,6 +80,14 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     }
     if (expr_type == "addr-of") {
         auto e = make_unique<AddrOfExpr>();
+        e->name = j["name"];
+        return e;
+    }
+    if (expr_type == "func-ref") {
+        // No "value-type" to read here (toVRegType would reject a "func"
+        // type-kind) -- this version has no first-class function-pointer
+        // value, just the callback slot's raw address (see FuncRefExpr).
+        auto e = make_unique<FuncRefExpr>();
         e->name = j["name"];
         return e;
     }
@@ -159,6 +183,13 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
             if (j.contains("value-type")) {
                 e->hasRet  = true;
                 e->retType = toVRegType(j["value-type"]);
+            }
+            if (j.contains("struct-ret")) {
+                const json& sr = j["struct-ret"];
+                e->hasStructRet = true;
+                e->structRetVar = sr["var"].get<string>();
+                for (auto& eb : sr["eightbytes"])
+                    e->structRetEightbytes.push_back(eightbyteToVRegType(eb));
             }
             if (j.contains("args")) {
                 for (auto& arg : j["args"]) {

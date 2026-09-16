@@ -3,6 +3,7 @@
 /// @file PlnSemanticAnalyzer.h
 /// @copyright 2024 YAMAGUCHI Toshinobu
 
+#pragma once
 #include <string>
 #include <map>
 #include <set>
@@ -26,7 +27,7 @@ struct FieldLayout {
 
 	// Array-field-only members (valid when typeKind == "embed-arr", "embed-ptr-arr", or "arr-ptr")
 	int64_t count    = 0;   // element count n (compile-time constant)
-	string  elemKind = "";  // "prim" | "struct"
+	string  elemKind = "";  // "prim" | "struct"; also set for typeKind == "raw-ptr" (pointee kind)
 	int     stride   = 0;   // bytes per element
 };
 
@@ -116,6 +117,19 @@ class PlnSemanticAnalyzer {
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	json sa_expr_call(const json& expr);
 	json sa_expr_member_call(const json& expr);
+	// Analyze a call's argument list against the callee's parameter list
+	// (funcParams may be null for a call to a function with no parameters).
+	// Shared by sa_expr_call and sa_expr_member_call so both a plain call and
+	// an aliased `S.func(...)` call get identical per-argument handling
+	// (embedded-array inner-size checks, variadic promotion, pointer
+	// permission checks).
+	json saCallArgs(const json& locNode, const json& args, const json* funcParams,
+	                bool isCFunc, const string& funcName);
+	// Analyze the argument in a `_callback-param` slot: only a bare reference
+	// to a Palan function is accepted, and its signature must be exactly
+	// ABI-identical to the C callback's inner signature. See PlnSaExpr.cpp.
+	json sa_func_ref_arg(const json& locNode, const json& arg,
+	                      const string& cFuncName, const json& param);
 	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
 	                           const json& saArg, const json& param, size_t argIdx);
 	// Shared narrowing rule for every binding site (var-decl initializer,
@@ -144,6 +158,8 @@ class PlnSemanticAnalyzer {
 	bool isStructType(const json& type) const;
 	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.
 	bool isKnownTypeName(const string& name) const;
+	// isKnownTypeName plus "void", valid only as a pointer pointee, never a standalone value type.
+	bool isKnownPointeeTypeName(const string& name) const;
 	json  toStructPntrType(const json& type) const;
 	bool  isNamedReturnVar(const string& varName) const;
 	json  deepNormalizePrimToStruct(const json& type) const;

@@ -1,0 +1,3 @@
+cinclude "177_struct_ret_ptr_field.h";
+
+WithPtr w = make_with_ptr();

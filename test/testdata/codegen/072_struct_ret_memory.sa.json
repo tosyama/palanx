@@ -1,0 +1,47 @@
+{
+  "original": "/test/072_struct_ret_memory.pa",
+  "str-literals": [],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "g",
+          "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Big"}},
+          "init": {
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "calloc",
+            "args": [
+              {"expr-type": "lit-uint", "value": "1", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+              {"expr-type": "lit-uint", "value": "24", "value-type": {"type-kind": "prim", "type-name": "uint64"}}
+            ],
+            "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Big"}}
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "get_big",
+        "args": [
+          {
+            "expr-type": "id",
+            "name": "g",
+            "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Big"}},
+            "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Big"}}
+          }
+        ],
+        "struct-ret": {
+          "var": "g",
+          "struct-name": "Big",
+          "size": 24,
+          "eightbytes": []
+        }
+      }
+    }
+  ]
+}

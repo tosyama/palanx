@@ -16,6 +16,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitGlobal(const string& name);
     void emitLabel(const string& name);
     void emitStringLiteral(const string& label, const string& value);
+    void emitElfCrtGlue(bool isEntryObject);
     void emitLeaLabel(const string& reg, const string& label);
     void emitMovImm(const string& reg, VRegType type, long long value);
     void emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to);

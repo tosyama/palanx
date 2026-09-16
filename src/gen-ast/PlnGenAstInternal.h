@@ -33,3 +33,17 @@ inline json storeLocToExpr(const json& loc)
 	if (loc.contains("loc")) e["loc"] = loc["loc"];
 	return e;
 }
+
+// Build a pointer type node. `mut` distinguishes @T (false) from @!T (true).
+inline json pntrTypeExpr(json base, bool mut)
+{
+	return {{"type-kind","pntr"},{"mutable",mut},{"base-type",std::move(base)}};
+}
+
+// The base-type node for @void/@!void -- C's void*, spelled directly instead
+// of via a primitive pointee like @!int8 (pntr(void) is bidirectionally
+// compatible with any pntr(T), see PlnType.cpp typeCompat).
+inline json voidTypeExpr()
+{
+	return json{{"type-kind","prim"},{"type-name","void"}};
+}

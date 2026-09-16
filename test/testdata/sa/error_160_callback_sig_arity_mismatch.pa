@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+func cmp(@int32 a) -> int32 { return a[0]; }
+[4]int32 arr;
+qsort(arr, uint64(4), uint64(4), cmp);

@@ -98,9 +98,9 @@ Reading through `p` after the block exits reads freed memory (observed to crash 
 
 ---
 
-## 14. C Types Diagnosed But Not Represented (`long double`, `va_list`, Function Pointers, `union`, `enum`)
+## 14. C Types Diagnosed But Not Represented (`long double`, `va_list`, `union`, `enum`)
 
-**Summary:** Several C type-kinds are recognized by c2ast and explicitly diagnosed by SA as unrepresentable (`E_UnsupportedParamType`/`E_UnsupportedCFuncSignature`/`E_UnsupportedCGlobalType`, see SASpec.md's C-origin signature admission) rather than causing a compiler abort, but none has an actual Palan-side representation: `long double` (c2ast's `flt128` prim name, unresolved to a known Palan primitive), `va_list`-shaped types, C function-pointer types (`func` type-kind), and by-value `union`/`enum` types (whose field/enumerator lists c2ast parses but does not capture — see ASTSpec.md's Variable type `union`/`enum` entries). Diagnosing cleanly at the point of use was the v0.1.29 goal (IT-2026-09-06-2906); giving any of these a real representation is separate, larger work.
+**Summary:** Several C type-kinds are recognized by c2ast and explicitly diagnosed by SA as unrepresentable (`E_UnsupportedParamType`/`E_UnsupportedCFuncSignature`/`E_UnsupportedCGlobalType`, see SASpec.md's C-origin signature admission) rather than causing a compiler abort, but none has an actual Palan-side representation: `long double` (c2ast's `flt128` prim name, unresolved to a known Palan primitive), `va_list`-shaped types, and by-value `union`/`enum` types (whose field/enumerator lists c2ast parses but does not capture — see ASTSpec.md's Variable type `union`/`enum` entries). Diagnosing cleanly at the point of use was the v0.1.29 goal (IT-2026-09-06-2906); giving any of these a real representation is separate, larger work. C function-pointer parameters are no longer in this bucket as of v0.1.30: a function-pointer parameter can now be passed a Palan function name as a callback argument (see PalanReference.md's "Passing a Palan Function as a Callback"), but that is passing a value into a slot, not representing a function-pointer *type* — there is still no first-class function-pointer variable, no way to declare one, and no way to call through one from Palan code.
 
 ---
 
@@ -113,3 +113,21 @@ Reading through `p` after the block exits reads freed memory (observed to crash 
 ## 16. `emitInstrDiv`/`emitInstrMod` Always Use 64-Bit `idivq`
 
 **Summary:** `emitInstrDiv`/`emitInstrMod` (`src/codegen/PlnX86CodeGen.cpp`) hard-code the 64-bit signed `idivq` instruction regardless of the operand type's actual width or signedness. Sub-64-bit division/modulo and unsigned division/modulo have no dedicated code path and no test coverage. Needs the same per-type instruction table treatment `IT-2026-09-07-x86-uint-mnemonic-width` gave the other arithmetic instructions.
+
+---
+
+## 17. Passing a Struct By Value to a C Function Is Unsupported
+
+**Summary:** v0.1.30 implemented a C function *returning* a struct by value as a general System V AMD64 classification (see SASpec.md's call expression `struct-ret` entry), but the reverse direction — a struct-typed **parameter** passed by value (not by pointer) — is still rejected outright: `normalizeCFuncSig` marks any C function with a top-level by-value struct parameter as `_unsupported-sig: "by-value struct parameter"`, so the function itself becomes unusable rather than just that call shape. `stdio.h`'s `fopencookie` (which takes a `cookie_io_functions_t` by value) is the running example. Implementing this would need the same eightbyte classification machinery applied to argument passing (SysV register/stack placement for a classified struct argument) rather than return-value placement. A related, narrower gap: even on the return side, a struct whose size classifies into a fractional eightbyte width other than 1/2/4/8 bytes (e.g. 3, 5, 6, or 7 bytes) is diagnosed (`E_UnsupportedCStructReturn`) rather than implemented, since no function in the v0.1.30 audit needed it.
+
+---
+
+## 18. No CRT Startup Objects Are Linked — `palan-codegen` Supplies ELF/libc Glue Itself
+
+**Summary:** The build manager links a binary with a bare `ld <objs> -lc` (`src/build-mgr/main.cpp`), never crt1.o/crti.o/crtbegin.o, and `palan-codegen` emits `_start` itself. This works for ordinary programs, but v0.1.30's `atexit` support surfaced two gaps those missing CRT objects would otherwise have closed: `__dso_handle` was undefined (glibc's `atexit` forwards to `__cxa_atexit(func, arg, __dso_handle)`), and `.note.GNU-stack` was never emitted (so linking any note-carrying libc object made `ld` mark the whole binary's stack executable, `PT_GNU_STACK` RWE, with a linker warning). Both are now patched over by `PlnX86CodeGen::emitElfCrtGlue()`, which emits `__dso_handle` on the entry object and `.note.GNU-stack` unconditionally on every object (see SpecAndDesign.md §3.5). This closes the two gaps v0.1.30 actually hit, but a real CRT strategy — linking via crtbegin/crtend, PIE support, or driving the link through `cc` instead of bare `ld` — remains undesigned; the next libc-glue requirement this same root cause produces will need one.
+
+---
+
+## 19. `select`/`pselect` Remain Unusable — `fd_set`'s `sizeof`-Sized Array Field
+
+**Summary:** v0.1.30's anonymous-struct-typedef support (c2ast synthesizing a struct tag from a typedef name) makes `fd_set`'s and `__sigset_t`'s typedef names resolve, and `select`/`pselect`'s signatures now type-check. But `fd_set`'s only field is an array sized by a `sizeof`-based constant expression (`__FD_SETSIZE / __NFDBITS`, ultimately involving `sizeof`), which c2ast's constant-expression evaluator still cannot fold — the same root cause as item 8's `_IO_FILE` gap. Without a folded size, the field has no known layout, so `fd_set` registers as an incomplete struct and cannot actually be allocated or written to, leaving `select`/`pselect` callable in name only. Resolved by the same fix item 8 calls for: `sizeof` evaluation in c2ast's constant folder.

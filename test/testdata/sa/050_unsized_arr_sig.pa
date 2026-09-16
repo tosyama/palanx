@@ -8,6 +8,6 @@ func sumArr([]int32 arr, int64 n) -> int64 {
 }
 
 func getNestedArr(int64 n) -> [][]int32 {
-    [n]int32 a;
+    [n]@![]int32 a;
     return a;
 }

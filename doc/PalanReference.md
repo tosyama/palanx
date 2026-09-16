@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.29
+**Version:** v0.1.30
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -350,8 +350,11 @@ S.printf("%d\n", 42);        // qualified call
   not registered as a usable Palan type alias name itself. Typedefs that bottom out in a struct
   (e.g. `FILE`, `typedef struct _IO_FILE FILE;`) are also resolved and usable the same way as a
   native struct type — see [Incomplete Struct Types](#incomplete-struct-types-opaque-handles)
-  below for the common case where the struct's own layout isn't fully known. Typedefs that bottom
-  out in a union or enum are not resolved and remain unusable this version.
+  below for the common case where the struct's own layout isn't fully known. This includes a
+  struct body with no tag of its own (`typedef struct { int quot; int rem; } div_t;`) — the
+  typedef's own name is used as the struct's tag, so `div_t`/`ldiv_t`/`lldiv_t` (from
+  `stdlib.h`'s `div`/`ldiv`/`lldiv`) are usable struct types exactly like a tagged one. Typedefs
+  that bottom out in a union or enum are not resolved and remain unusable this version.
 - If multiple cincluded headers introduce the same typedef name, the first registration wins
   (silent deduplication).
 - Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported typedefs — they are
@@ -452,6 +455,116 @@ S.printf("%d\n", 42);        // qualified call
   A struct passed *into* a C call follows the same convention as a native struct-typed function
   parameter: it is passed by pointer, borrowed by the callee, and not freed by it (see
   [Struct types in function signatures](#struct-types-in-function-signatures)).
+
+### Structs Returned By Value
+
+A C function that returns a struct **by value** (not by pointer) can be received directly into a
+struct-typed local variable's initializer, the same syntax as a native call:
+
+```palan
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+
+div_t d = div(7, 2);
+printf("%d %d\n", d.quot, d.rem);   // 3 1
+```
+
+- The variable's own storage is what the C call writes into — this is an ordinary owning struct
+  local, freed automatically at scope exit like any other, not a `@T`/`@!T`-typed handle to
+  something C owns (contrast with the pointer-returning case above).
+- This is implemented as a general System V AMD64 return-value classification, not a
+  `div_t`-specific special case: a struct of 16 bytes or less comes back in registers (`%rax`/
+  `%rdx` for integer-classified eightbytes, `%xmm0`/`%xmm1` for floating-point ones, mixed if the
+  struct has both), and a struct larger than 16 bytes comes back through a hidden destination
+  pointer, the same ABI a C caller would use.
+- Writing a call that returns a struct by value anywhere other than a struct variable's
+  initializer — as a bare statement, discarding the result — is a compile error: the call still
+  has to happen, but there is nowhere to write the result, so the compiler rejects it instead of
+  silently dropping the call.
+- Not supported: a struct whose size classifies into an eightbyte of fractional width other than
+  1, 2, 4, or 8 bytes (e.g. a 3-byte struct) is diagnosed rather than miscompiled. Passing a
+  struct *to* a C function by value (the reverse direction, e.g. `stdio.h`'s `fopencookie`) is
+  also not supported — the C function itself is rejected as having an unsupported signature, so
+  the mismatch is caught at the `cinclude` boundary rather than at the call site. Native Palan
+  functions do not gain a struct-by-value return syntax from this — this feature is about
+  receiving a C function's by-value return, not a Palan-side language addition.
+
+### Passing a Palan Function as a Callback
+
+A bare Palan function name, written in a C function's argument position, is passed as that
+function's address — the common C idiom of handing a callback to a library function like
+`qsort`:
+
+```palan
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+
+func cmp(@int32 a, @int32 b) -> int32 { return a[0] - b[0]; }
+
+[4]int32 arr;
+5 -> arr[0];  3 -> arr[1];  1 -> arr[2];  4 -> arr[3];
+qsort(arr, uint64(4), uint64(4), cmp);
+printf("%d %d %d %d\n", arr[0], arr[1], arr[2], arr[3]);   // 1 3 4 5
+```
+
+- This is narrowly scoped to *passing* a function name where a C parameter expects a function
+  pointer. There is no first-class function-pointer type, no function-pointer variable, and no
+  way to call through one from Palan code — a bare function name written anywhere other than a C
+  callback argument position is an ordinary `Undefined variable` error, not an address.
+- The Palan function's signature must match the C parameter's function-pointer signature exactly:
+  the same number of parameters, each Palan parameter type identical to the corresponding C
+  parameter type (no implicit widening or narrowing — there is no place to insert a conversion,
+  since the C library calls the Palan function directly), matching pointer mutability (a `const`
+  C parameter accepts a Palan `@T`/`@void`; a non-`const` one accepts `@T` or `@!T`), and a
+  matching return type, including a `void` C parameter type requiring a `void` Palan return and
+  vice versa. A Palan function with multiple named returns can't be used as a callback. Any
+  mismatch is a compile error naming both functions.
+- `@void`/`@!void` — a pointer whose pointee type is `void` — exists to write the callback
+  signatures C itself uses generically, such as `qsort`'s and `bsearch`'s `const void *`
+  comparator arguments:
+
+  ```palan
+  cinclude <stdlib.h>;
+  cinclude <stdio.h>;
+
+  func cmp(@void a, @void b) -> int32 {
+      @int32 x = a;   // give the void pointer a concrete type before reading through it
+      @int32 y = b;
+      return x[0] - y[0];
+  }
+
+  [4]int32 arr;
+  1 -> arr[0];  3 -> arr[1];  4 -> arr[2];  5 -> arr[3];
+  int32 key = 4;
+  @!int32 found = bsearch(@key, arr, uint64(4), uint64(4), cmp);
+  printf("%d\n", found[0]);   // 4
+
+  int32 miss = 2;
+  @!int32 none = bsearch(@miss, arr, uint64(4), uint64(4), cmp);
+  printf("%d\n", none == NULL);   // 1 -- not found
+  ```
+
+  `void` can only appear as a pointer's pointee (`@void`/`@!void`) — a bare `void x;` variable is
+  still rejected. A `@void`/`@!void` value is compatible with any other pointer type in both
+  directions, so assigning it to a concretely-typed pointer variable (as `@int32 x = a;` does
+  above) gives it a type to read or write through. Indexing or dereferencing a void pointer
+  directly (`a[0]`) without first assigning it a concrete pointer type is a compile error.
+- A function registered with `atexit`/`at_quick_exit` must not read or write any of the calling
+  scope's Palan-owned local variables: program exit frees all still-live owned locals before
+  invoking the registered handlers, so by the time the handler runs, that storage is gone.
+
+  ```palan
+  cinclude <stdlib.h>;
+  cinclude <stdio.h>;
+
+  func say_bye()  { printf("bye\n"); }
+  func say_last() { printf("last\n"); }
+
+  atexit(say_bye);
+  atexit(say_last);
+  printf("hello\n");
+  // output: hello / last / bye -- exit handlers run in LIFO order, same as C's atexit
+  ```
 
 ### C Array Fields
 
@@ -1303,6 +1416,17 @@ int64 x = 42;
 - `@ID` yields a read-only pointer to `ID`'s storage; `@!ID` yields a mutable pointer. The
   compiler enforces this: writing through a `@ID` pointer, or assigning/passing one where a
   `@!`-typed (mutable) destination is expected, is a compile error.
+- `ID` may itself already be a pointer to a primitive (`@T`/`@!T`); `@`/`@!` on it then yields a
+  pointer to that pointer's own storage slot, matching the C `T **` out-param idiom used by
+  functions like `strtol`:
+
+  ```palan
+  cinclude <stdlib.h>;
+
+  @!int8 end;
+  int64 v = strtol("42abc", @!end, 10);   // strtol writes end's own storage: end now points at "abc"
+  printf("%ld %s\n", v, end);             // 42 abc
+  ```
 - `@` also takes the address of a primitive-typed struct field reached from a local variable
   (`@s.x`, including through a chain of fields — `@!s.inner.x` — and through pointer-typed
   fields — `@!p.next.val`):
@@ -1316,6 +1440,19 @@ int64 x = 42;
   The same read-only/mutable rule applies at every step of the chain: `@!` on a field reached
   through a read-only pointer (a `@T`-typed base variable, or a `@T`-typed pointer field along
   the way) is a compile error, not silently downgraded to a read-only address.
+- `@` also takes the address of an embedded-struct field (`$T`) reached from a local variable
+  (`@!s.inner`, C's `&st.st_atim` idiom) — the result is a plain pointer to the inner struct
+  (`@!Inner`), the same shape a struct-typed local variable already has, not a pointer to a
+  pointer:
+
+  ```palan
+  cinclude <sys/stat.h>;
+
+  stat st;
+  stat("/", st);
+  @!timespec atim = @!st.st_atim;   // pointer to the embedded timespec field
+  printf("%ld\n", atim.tv_sec);
+  ```
 - `@` also takes the address of a primitive-typed array element (`@arr[2]`, `@!arr[2]`),
   including an element of a fixed-size array field (`@!s.data[2]`) and the innermost element of a
   multi-dimensional array (`@!mat[0][1]`):
@@ -1386,13 +1523,29 @@ int64 x = 42;
 
 ### Restrictions
 
-- Not usable on function parameters, or on a whole struct or array variable (`@s`, `@arr`).
-- Not usable when the addressed value is not primitive-typed: a struct-typed field, an
-  embedded-struct-array element (`[n]$T`), a 2D array row (`@mat[i]`), or a pointer-slot array
-  element (`[n]@T`/`[n]@!T`) are all rejected — `@`/`@!` only ever produces a pointer to a single
-  primitive value, never a pointer to an existing pointer or to an aggregate.
+`@`/`@!` produces a pointer to one storage slot: a primitive value, or a pointer to a primitive
+(pointer-to-pointer). A struct or array variable is never re-addressed this way, because it's
+already its own pointer to its storage — pass it by name instead (`random_r(st, ...)`, not
+`random_r(@!st, ...)`); `@!st` would build a meaningless `struct T **`.
+
+- Not usable on function parameters, or on a whole struct or array variable (`@s`, `@arr`) — see
+  above.
+- On a local variable, usable only when the variable is primitive-typed or itself a pointer to a
+  primitive (`@T`/`@!T`) — a struct-typed local, a pointer-to-struct local, or a plain array
+  variable (`[n]T`, itself a pointer, see above) are all rejected.
+- On a struct field reached from a local variable, usable only when the leaf field is
+  primitive-typed or an embedded struct (`$T`) — a pointer-typed field (`@T`/`@!T`), an
+  embedded-struct-array element (`[n]$T`), or an owned-pointer field are all rejected.
+- Not usable on a 2D array row (`@mat[i]`) or a pointer-slot array element (`[n]@T`/`[n]@!T`) —
+  only a primitive-typed array element.
 - Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
-  variable, a primitive-typed field reached from one, or a primitive-typed array element reached
-  from one.
+  variable, a field reached from one, or an array element reached from one.
+- A fixed-size array variable (`[n]T`) is, like a struct variable, already a pointer to its own
+  storage — but unlike a struct variable it *is* representable as a plain pointer-to-primitive
+  local, so `@!arr` compiles: it yields the address of the variable's own pointer slot, not a new
+  view into the array's elements. Since the array is freed automatically when its owning scope
+  exits, handing that slot to a C function that overwrites it (e.g. an out-param realloc-style
+  API) will make the automatic free operate on whatever the C call left behind — get this pattern
+  right or avoid it, the compiler does not check it.
 
 ---

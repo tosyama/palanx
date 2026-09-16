@@ -1,0 +1,19 @@
+{
+  "original": "/test/074_func_ref.pa",
+  "statements": [
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "qsort",
+        "args": [
+          {"expr-type": "lit-uint", "value": "0", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+          {"expr-type": "lit-uint", "value": "4", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+          {"expr-type": "lit-uint", "value": "4", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+          {"expr-type": "func-ref", "name": "cmp"}
+        ]
+      }
+    }
+  ]
+}

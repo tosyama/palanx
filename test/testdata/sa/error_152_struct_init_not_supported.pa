@@ -1,0 +1,4 @@
+type Pair { int32 a; int32 b; };
+
+Pair q;
+Pair p = q;

@@ -1,0 +1,3 @@
+cinclude "181_struct_ret_embed_arr_sse_field.h";
+
+FloArr a = get_flo_arr();

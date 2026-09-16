@@ -1,0 +1,8 @@
+func take(@!int64 p)
+{
+	99 -> p[0];
+}
+
+@!int32 x;
+0 -> x[0];
+take(x);

@@ -93,6 +93,25 @@ std::string unrepresentableTypeName(const json& j)
     return kind;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+std::string typeDisplayName(const json& j)
+{
+    if (!j.is_object() || !j.contains("type-kind")) // LCOV_EXCL_BR_LINE -- no real producer emits this
+        return "malformed type"; // LCOV_EXCL_LINE
+    std::string kind = j["type-kind"].get<std::string>();
+    if (kind == "prim")
+        return j.value("type-name", "malformed type"); // LCOV_EXCL_BR_LINE -- no real producer emits this
+    if (kind == "pntr") {
+        if (!j.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
+        bool mut = j.value("mutable", true);
+        return (mut ? "@!" : "@") + typeDisplayName(j["base-type"]);
+    }
+    if (kind == "struct")
+        return j.value("type-name", "anonymous struct");
+    // Every other kind is already unrepresentable; its display name there is
+    // exactly what a diagnostic needs here too.
+    return unrepresentableTypeName(j);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 const PlnType* PlnTypeRegistry::fromJson(const json& j)
 {
     std::string bad = unrepresentableTypeName(j);
@@ -191,6 +210,22 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
         bool toIsVoid = pt->base->kind == PlnType::Kind::Prim
             && static_cast<const PrimType*>(pt->base)->name == PrimType::Name::Void;
         if (fromIsVoid || toIsVoid) return TypeCompat::Identical;  // pntr(void) is bidirectionally compatible with any pntr(T)
+
+        // pntr(int8) <-> pntr(uint8): the documented "C uint8* / char*
+        // convention" (PalanReference.md "Passing to C Functions") for
+        // string/byte-buffer interop -- a cinclude'd `char *`/`const char *`
+        // normalizes its pointee to int8 (see normalizeCType), while a
+        // Palan string literal and an array-decayed `[n]uint8` both use
+        // uint8. This is a pointer-level exception only: as scalar value
+        // types int8/uint8 remain fully distinct and still require an
+        // explicit cast (see the Prim/Prim branch above).
+        if (pf->base->kind == PlnType::Kind::Prim && pt->base->kind == PlnType::Kind::Prim) {
+            auto bf = static_cast<const PrimType*>(pf->base)->name;
+            auto bt = static_cast<const PrimType*>(pt->base)->name;
+            bool fromIsByte = bf == PrimType::Name::Int8 || bf == PrimType::Name::Uint8;
+            bool toIsByte   = bt == PrimType::Name::Int8 || bt == PrimType::Name::Uint8;
+            if (fromIsByte && toIsByte) return TypeCompat::Identical;
+        }
 
         return TypeCompat::Incompatible;
     }

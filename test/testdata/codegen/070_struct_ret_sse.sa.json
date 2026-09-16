@@ -1,0 +1,40 @@
+{
+  "original": "/test/070_struct_ret_sse.pa",
+  "str-literals": [],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "f",
+          "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "FloBox"}},
+          "init": {
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "calloc",
+            "args": [
+              {"expr-type": "lit-uint", "value": "1", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+              {"expr-type": "lit-uint", "value": "8", "value-type": {"type-kind": "prim", "type-name": "uint64"}}
+            ],
+            "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "FloBox"}}
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "get_flo",
+        "args": [],
+        "struct-ret": {
+          "var": "f",
+          "struct-name": "FloBox",
+          "size": 8,
+          "eightbytes": [{"class": "sse", "size": 8}]
+        }
+      }
+    }
+  ]
+}

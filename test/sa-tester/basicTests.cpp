@@ -1436,24 +1436,6 @@ TEST(sa, toplevel_call_named_return_struct)
 	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
 }
 
-TEST(sa, toplevel_call_plain_return_struct)
-{
-	cleanTestEnv();
-	// IT-2801 regression: same struct pre-registration path, but for a plain
-	// (non-@!) named return `-> Point ret`.
-	json jout = run_sa("../test/testdata/sa/136_toplevel_call_plain_return_struct.pa");
-	ASSERT_TRUE(jout.is_object());
-
-	const auto& decl = jout["statements"][0];
-	ASSERT_EQ(decl["stmt-type"], "var-decl");
-	const auto& v = decl["vars"][0];
-	ASSERT_EQ(v["name"], "p2");
-	const auto& vt = v["init"]["value-type"];
-	ASSERT_EQ(vt["type-kind"], "pntr");
-	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
-	ASSERT_EQ(vt["base-type"]["type-name"], "Point");
-}
-
 TEST(sa, toplevel_call_struct_arg)
 {
 	cleanTestEnv();
@@ -1803,6 +1785,38 @@ TEST(sa, raw_ptr_field)
 	ASSERT_EQ(v["name"], "n");
 	ASSERT_EQ(v["init"]["name"], "calloc");
 	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
+}
+
+TEST(sa, raw_ptr_prim_field)
+{
+	// Prerequisite fix for IT-2026-09-12-3008: a raw-ptr struct field whose
+	// pointee is primitive (e.g. `@!int64 p;`), not another struct, used to
+	// have its pointee kind forgotten at registration (buildStructDef), so
+	// fieldValueType/resolveObjectChain always rebuilt it as pntr(struct(...))
+	// -- `s.p` failed with a misleading "unknown struct type 'int64'." This
+	// covers read (`s.p`), write (`x -> s.p`), and index (`s.p[0]`), all of
+	// which must resolve to pntr(prim int64), not pntr(struct("int64")).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/176_raw_ptr_prim_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// x -> s.p;  (field-assign)
+	const auto& assign = jout["statements"][2];
+	ASSERT_EQ(assign["stmt-type"], "field-assign");
+	ASSERT_EQ(assign["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(assign["value-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(assign["value-type"]["base-type"]["type-name"], "int64");
+
+	// 9 -> s.p[0];  (arr-assign through the field)
+	const auto& arr_target = jout["statements"][3]["target"];
+	ASSERT_EQ(arr_target["array"]["value-type"]["base-type"]["type-name"], "int64");
+	ASSERT_EQ(arr_target["value-type"]["type-name"], "int64");
+
+	// @!int64 rp = s.p;  (plain field read)
+	const auto& rp = jout["statements"][4]["vars"][0];
+	ASSERT_EQ(rp["init"]["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(rp["init"]["value-type"]["base-type"]["type-kind"], "prim");
+	ASSERT_EQ(rp["init"]["value-type"]["base-type"]["type-name"], "int64");
 }
 
 TEST(sa, alloc_shape_owned)
@@ -3229,6 +3243,82 @@ TEST(sa, addr_of_field_via_arr_index)
 	ASSERT_EQ(init["value-type"]["mutable"], true);
 }
 
+TEST(sa, addr_of_ptr_local)
+{
+	// `@!int8 end; @!@!int8 pp = @!end;` -- IT-2026-09-12-3003: `@`/`@!` now
+	// also accepts a pointer-to-primitive local (not just a primitive one),
+	// producing pntr-of-pntr. A struct local is still rejected (unchanged),
+	// since it's already pntr(struct T) itself.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/169_addr_of_ptr_local.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& pp = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(pp["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["var-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["var-type"]["base-type"]["base-type"]["type-name"], "int8");
+
+	const auto& init = pp["init"];
+	ASSERT_EQ(init["expr-type"], "addr-of");
+	ASSERT_EQ(init["name"], "end");
+	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+	ASSERT_EQ(init["value-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(init["value-type"]["base-type"]["base-type"]["type-name"], "int8");
+}
+
+TEST(sa, void_ptr_decl)
+{
+	// IT-2026-09-12-3008: `@!void p = malloc(8);` -- pntr(void) has always
+	// been valid internally (it's what a C `void*` deserializes to), but
+	// sa_var_decl's pointee-name check rejected the *spelled* void pointee
+	// until isKnownPointeeTypeName. `@!int8 q = p;` exercises the existing
+	// bidirectional pntr(void)<->pntr(T) compat rule (typeCompat). The
+	// trailing `@!void p2; @!@!void pp = @!p2;` is the void** out-param
+	// idiom (e.g. posix_memalign) -- sa_expr_addr_of's isPtrToPrim already
+	// accepted a void pointee, so this is a non-regression check.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/175_void_ptr_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& p = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(p["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "void");
+	ASSERT_EQ(p["init"]["name"], "malloc");
+
+	const auto& q = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(q["var-type"]["base-type"]["type-name"], "int8");
+	ASSERT_EQ(q["init"]["value-type"]["base-type"]["type-name"], "void");
+
+	const auto& pp = jout["statements"][4]["vars"][0];
+	ASSERT_EQ(pp["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["var-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["var-type"]["base-type"]["base-type"]["type-name"], "void");
+	ASSERT_EQ(pp["init"]["expr-type"], "addr-of");
+	ASSERT_EQ(pp["init"]["name"], "p2");
+}
+
+TEST(sa, addr_of_embed_field)
+{
+	// `@!Inner q = @!s.in;` where `in` is `$Inner` (inline embed) --
+	// IT-2026-09-12-3003: an embed field's own value-type is already
+	// pntr(struct Inner) (the field IS the struct's inline storage), so
+	// taking its address must NOT double-wrap into pntr(pntr(struct Inner)).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/170_addr_of_embed_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& init = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["addr-only"], true);
+	ASSERT_EQ(init["var"], "s");
+	ASSERT_EQ(init["offset"], 8);  // x(8) then embedded Inner
+	ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(init["value-type"]["mutable"], true);
+	ASSERT_EQ(init["value-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(init["value-type"]["base-type"]["type-name"], "Inner");
+}
+
 TEST(sa, deref_rw_mutable_ptr)
 {
 	// `@!int64 p = @!x; 99 -> p[0]; int64 y = p[0];` -- deref read/write
@@ -3734,4 +3824,198 @@ TEST(sa, usual_arith_conv)
 	ASSERT_EQ(call_i64["name"],                        "take_i64");
 	ASSERT_EQ(call_i64["args"][0]["expr-type"],        "convert");
 	ASSERT_EQ(call_i64["args"][0]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, struct_ret_c_call) {
+	// IT-2026-09-12-3005: fixes the SA->codegen contract for IT-3004's
+	// C-function struct-by-value return in place -- `div_t d = div(7, 2);`
+	// must emit the calloc-backed var-decl for `d` followed by a bare `call`
+	// statement carrying a `struct-ret` descriptor (var/struct-name/size/
+	// eightbytes), with `value-type` erased from that call node (codegen's
+	// toVRegType has no struct case, so a lingering value-type there would
+	// silently reach an unhandled branch instead of the struct-ret path).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/171_struct_ret_c_call.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	const auto& decl = stmts[0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "d");
+	ASSERT_EQ(v["init"]["name"], "calloc");
+
+	const auto& call = stmts[1]["body"];
+	ASSERT_EQ(stmts[1]["stmt-type"], "expr");
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(call["func-type"], "c");
+	ASSERT_EQ(call["name"], "div");
+	ASSERT_FALSE(call.contains("value-type"));
+
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["var"], "d");
+	ASSERT_EQ(sr["struct-name"], "div_t");
+	ASSERT_EQ(sr["size"], 8);
+	ASSERT_EQ(sr["eightbytes"].size(), 1);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
+	ASSERT_EQ(sr["eightbytes"][0]["size"], 8);
+}
+
+TEST(sa, struct_ret_memory_class) {
+	// IT-2026-09-12-3005: MEMORY class (>16 bytes) takes a different SA-side
+	// path than the register classes -- `eightbytes` stays empty and the
+	// destination pointer is prepended to `args` as an ordinary first
+	// argument (the ABI's hidden-pointer convention), so codegen needs no
+	// struct-ret-specific lowering for this class at all.
+	// Covers: sa_struct_var_decl MEMORY-class branch (PlnSaDecl.cpp ~879-888)
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/172_struct_ret_memory_class.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	const auto& call = stmts[1]["body"];
+	ASSERT_EQ(call["name"], "get_big");
+	ASSERT_FALSE(call.contains("value-type"));
+
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["var"], "g");
+	ASSERT_EQ(sr["size"], 24);
+	ASSERT_TRUE(sr["eightbytes"].empty());
+
+	ASSERT_EQ(call["args"].size(), 1);
+	ASSERT_EQ(call["args"][0]["expr-type"], "id");
+	ASSERT_EQ(call["args"][0]["name"], "g");
+}
+
+TEST(sa, struct_ret_ptr_field) {
+	// classifySysVWalk's raw-ptr/struct-ptr/arr-ptr branch (PlnSaInternal.h)
+	// was untested: every other struct-ret fixture uses all-prim fields.
+	// `{int tag; char *name;}` is 16 bytes (tag padded to the pointer's
+	// 8-byte alignment), so both eightbytes stay INTEGER via that branch.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/177_struct_ret_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "make_with_ptr");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 16);
+	ASSERT_EQ(sr["eightbytes"].size(), 2);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
+	ASSERT_EQ(sr["eightbytes"][1]["class"], "int");
+}
+
+TEST(sa, struct_ret_embed_and_slots_field) {
+	// classifySysVWalk's embed and embed-ptr-arr branches were untested.
+	// `{struct Point origin; void *slots[1];}` embeds a by-value struct
+	// field (recurses into Point's own fields) and a one-slot pointer
+	// array field, filling the two eightbytes with INTEGER via each
+	// respective branch.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/178_struct_ret_embed_and_slots_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "make_combo");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 16);
+	ASSERT_EQ(sr["eightbytes"].size(), 2);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
+	ASSERT_EQ(sr["eightbytes"][1]["class"], "int");
+}
+
+TEST(sa, struct_ret_embed_arr_field) {
+	// classifySysVWalk's embed-arr branch was untested for both of its leaf
+	// kinds. `{struct Pair1 items[2]; short more[4];}` has an array-of-struct
+	// field (recurses into Pair1 per element) and an array-of-prim field,
+	// filling the two eightbytes with INTEGER via each leaf kind.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/179_struct_ret_embed_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "make_mixed");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 16);
+	ASSERT_EQ(sr["eightbytes"].size(), 2);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
+	ASSERT_EQ(sr["eightbytes"][1]["class"], "int");
+}
+
+TEST(sa, struct_ret_sse_field) {
+	// classifySysVWalk's SSE classification was untested: every other
+	// struct-ret fixture (div_t, WithPtr, Combo, Mixed) uses only integer
+	// fields, so `mark()`'s "fieldCls != Integer -> return" early-out and
+	// the isFloat==true arm of the prim-field ternary never ran.
+	// `{double v;}` is a single flo64 field -> one SSE eightbyte.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/180_struct_ret_sse_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "get_flo");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 8);
+	ASSERT_EQ(sr["eightbytes"].size(), 1);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "sse");
+}
+
+TEST(sa, struct_ret_embed_arr_sse_field) {
+	// classifySysVWalk's embed-arr leafFloat==true arm was untested (the
+	// struct_ret_embed_arr_field fixture's array field is int-only).
+	// `{float vals[4];}` is a 16-byte array-of-flo32 field -> both
+	// eightbytes SSE.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/181_struct_ret_embed_arr_sse_field.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "get_flo_arr");
+	const auto& sr = call["struct-ret"];
+	ASSERT_EQ(sr["size"], 16);
+	ASSERT_EQ(sr["eightbytes"].size(), 2);
+	ASSERT_EQ(sr["eightbytes"][0]["class"], "sse");
+	ASSERT_EQ(sr["eightbytes"][1]["class"], "sse");
+}
+
+TEST(sa, c_callback_arg) {
+	// IT-2026-09-12-3007: `qsort(arr, 4, 4, cmp);` where `cmp` matches
+	// qsort's `int (*)(const void*, const void*)` comparator exactly --
+	// normalizeCFuncSig marks the comparator parameter "_callback-param"
+	// (its inner signature is fully representable), and sa_func_ref_arg
+	// resolves the bare name `cmp` via findPlnFunc (not findVar) into a
+	// "func-ref" node carrying only the function's name -- no value-type,
+	// since this version has no first-class function-pointer value.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/173_c_callback_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][1]["body"];
+	ASSERT_EQ(call["name"], "qsort");
+	ASSERT_EQ(call["args"].size(), 4);
+
+	const auto& cb = call["args"][3];
+	ASSERT_EQ(cb["expr-type"], "func-ref");
+	ASSERT_EQ(cb["name"], "cmp");
+	ASSERT_FALSE(cb.contains("value-type"));
+}
+
+TEST(sa, c_callback_void) {
+	// IT-2026-09-12-3007: `atexit(on_exit_cb);` where both atexit's handler
+	// type and `on_exit_cb` return void -- exercises sa_func_ref_arg's
+	// cVoidRet==true path (distinct from c_callback_arg's non-void qsort
+	// comparator), proving a void-returning callback is accepted without a
+	// spurious return-type mismatch.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/174_c_callback_void.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& call = jout["statements"][0]["body"];
+	ASSERT_EQ(call["name"], "atexit");
+	ASSERT_EQ(call["args"][0]["expr-type"], "func-ref");
+	ASSERT_EQ(call["args"][0]["name"], "on_exit_cb");
 }

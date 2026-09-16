@@ -1,0 +1,9 @@
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+
+func say_bye()  { printf("bye\n"); }
+func say_last() { printf("last\n"); }
+
+atexit(say_bye);
+atexit(say_last);
+printf("hello\n");

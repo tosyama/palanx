@@ -1,0 +1,22 @@
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+
+func cmp(@void a, @void b) -> int32 {
+	@int32 x = a;
+	@int32 y = b;
+	return x[0] - y[0];
+}
+
+[4]int32 arr;
+1 -> arr[0];
+3 -> arr[1];
+4 -> arr[2];
+5 -> arr[3];
+
+int32 key = 4;
+@!int32 found = bsearch(@key, arr, uint64(4), uint64(4), cmp);
+printf("%d\n", found[0]);
+
+int32 miss = 2;
+@!int32 none = bsearch(@miss, arr, uint64(4), uint64(4), cmp);
+printf("%d\n", none == NULL);

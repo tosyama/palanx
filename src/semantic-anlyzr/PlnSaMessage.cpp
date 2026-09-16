@@ -193,7 +193,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_AddrOfNotPrimitive:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot take the address of '" + arg1 + "': '@'/'@!' only supports a primitive-typed "
-			       "local variable or a primitive-typed field or array element of a struct/array it names.";
+			       "local variable, a primitive-typed pointer local, a primitive-typed or embedded-struct "
+			       "field, or a primitive-typed array element of a struct/array it names.";
 
 		case E_WriteThroughReadOnlyPtr:
 			return "cannot write through read-only pointer '@T'; use '@!T' for mutable.";
@@ -206,7 +207,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_AddrOfNotAddressable:
 			return "cannot take the address of this expression: '@'/'@!' supports a local variable, a "
-			       "primitive-typed field of a struct it names, or a primitive-typed array element.";
+			       "primitive-typed or embedded-struct field of a struct it names, or a primitive-typed "
+			       "array element.";
 
 		case E_ReadOnlyPtrToNonConstCParam:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -263,6 +265,47 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ArithOpNotNumeric:
 			return "Arithmetic operator operand must be a numeric type.";
+
+		case E_StructInitNotSupported:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "initializing a '" + arg1 + "' variable from an expression is only supported "
+			       "when the expression is a call to a C function returning '" + arg1
+			       + "' by value; declare it without an initializer and assign to its fields "
+			         "instead.";
+
+		case E_IncompatibleTypes:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot convert '" + arg1 + "' to '" + arg2 + "'.";
+
+		case E_UnsupportedCStructReturn:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot receive the return value of a C function returning '" + arg1
+			       + "' by value: this version cannot classify its layout for a "
+			         "register-based return.";
+
+		case E_ByvalStructRetDiscarded:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the return value of this call (a '" + arg1 + "' returned by value) is "
+			       "discarded; assign it to a newly declared '" + arg1 + "' variable instead.";
+
+		case E_CallbackArgRequiresFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "argument '" + arg2 + "' to C function '" + arg1 + "' must be the bare name of "
+			       "a Palan function to use as a callback; this version does not support passing "
+			       "a variable or any other expression here.";
+
+		case E_CallbackSignatureMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "function '" + arg1 + "' cannot be used as a callback for C function '" + arg2
+			       + "': its parameter types, return type, or pointer mutability do not exactly "
+			         "match the callback signature C expects.";
+
+		case E_DerefVoidPointer:
+			return "cannot index or dereference a void pointer; assign it to a typed pointer "
+			       "(e.g. @!int8) first.";
 
 		default:
 			BOOST_ASSERT(false);

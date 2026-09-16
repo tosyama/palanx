@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.29
+ver. 0.1.30
 
 \* - Required
 
@@ -122,6 +122,10 @@ Used in C function `parameters`.
   (`T name[n]`) decays to a plain `pntr` whose `base-type` is the array's own `base-type` — same
   as C's own array-to-pointer decay, and only the outermost dimension decays: `T name[2][3]`
   becomes `pntr(arr(base-type: T, size-expr: 3, ...))`, not `pntr(pntr(T))`.
+- A prototype declared with the single unnamed keyword `void` (`f(void)`) normalizes to an empty
+  `parameters` array — the same shape as a genuinely empty `()` parameter list — rather than a
+  one-entry list carrying a `void`-typed parameter. This applies wherever a C parameter list
+  appears, including a function pointer's own inner parameter list.
 
 Return value (rets entry)
 -------------------------
@@ -142,7 +146,11 @@ Variable type
     - type-name\* - Type name string
       - Integer: "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64"
       - Float: "flo32" "flo64"
-      - Other: "void"
+      - Other: "void" — pointee-only (`prim(void)` appears only as a `pntr`'s `base-type`, never
+        as a variable's own top-level type). Previously only reachable from a c2ast-derived
+        signature (a C `void *` parameter/return/field); native syntax `@void`/`@!void` now
+        produces the same shape directly (`'@' KW_VOID` / `AT_EXCL KW_VOID` in the grammar), so
+        `pntr(prim(void))` no longer has a single origin.
   2. pntr - Pointer type
     - base-type\* - Base variable type
     - mutable - Boolean, true for a writable pointer (`@!` syntax), false for a read-only
@@ -195,8 +203,13 @@ Variable type
     - type-name - Struct name string; omitted only for a reference to a genuinely untagged
       (anonymous `struct { ... }`) type, which SA cannot register under any name and treats
       as unrepresentable (see SASpec.md's C-origin signature admission). A *named* tag is
-      always given a `type-name` here, even when the header only forward-declares it or the
-      reference is a bare mention with no field list ever seen — SA registers such a tag as
+      always given a `type-name` here — including a single, non-derived typedef of an
+      otherwise tagless struct body (`typedef struct { ... } Name;`), for which c2ast
+      synthesizes `Name` itself as the tag (a multi-declarator or derived-declarator typedef
+      of such a body, e.g. `typedef struct {...} X, *PX;` or `typedef struct {...} *PX;`,
+      is not synthesized and stays `user`/untagged respectively) — even when the header only
+      forward-declares it or the reference is a bare mention with no field list ever seen —
+      SA registers such a tag as
       an incomplete struct (usable only through a pointer) rather than leaving the name
       unresolved; see SASpec.md's Incomplete struct types.
   6. union - Union type, from a C `union Name { ... }`-typed field/parameter/return. c2ast
@@ -215,7 +228,9 @@ Variable type
     - ret-type\* - Return variable type
   9. user - An identifier used as a type that c2ast could not resolve to a recognized keyword
      or a previously-registered typedef — including a typedef that bottoms out in an
-     anonymous struct/union/enum/function-pointer body, which c2ast does not register.
+     anonymous union/enum/function-pointer body, or an anonymous struct body via a
+     multi-declarator or derived-declarator typedef (see type-kind "strct" above for the one
+     struct-body shape c2ast does register), none of which c2ast registers.
      Unrepresentable in SA this version (see SASpec.md's C-origin signature admission).
     - type-name\* - The unresolved identifier string
 

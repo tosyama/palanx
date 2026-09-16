@@ -83,7 +83,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const CallC& c) {
                 call_indices.push_back(i);
                 addCallArgs(c.args);
-                if (c.dst != -1) setDef(c.dst, c.retType);
+                for (int k = 0; k < (int)c.dsts.size(); k++)
+                    setDef(c.dsts[k], c.retTypes[k]);
             },
             [&](const CallPln& c) {
                 call_indices.push_back(i);

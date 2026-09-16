@@ -1,0 +1,4 @@
+@void p;
+@!void q;
+@!@!void pp;
+(void, int64 z) = myFunc(x);
