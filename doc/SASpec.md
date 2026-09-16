@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.29
+ver. 0.1.30
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -279,6 +279,21 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
+  - func-ref: a bare Palan function name written where a C function parameter marked
+    `_callback-param` (see "C-origin signature admission" below) expects it. Emitted as
+    `{"expr-type":"func-ref","name":<Palan function name>}` (plus `loc` when present on the
+    source node) — no `value-type` key at all, since this version has no first-class
+    function-pointer type to give it. `name` must resolve to an existing Palan function (not a
+    variable) via an ordinary function lookup, with matching arity, per-parameter `typeCompat ==
+    Identical` (no widening/narrowing — there is no conversion point once the C library calls
+    the function directly) plus matching pointer-mutability direction against the callback's
+    parameter types, and a matching return type (including a void/non-void mismatch, and a
+    multi-return Palan function is always rejected) — otherwise E_CallbackArgRequiresFunc (not
+    a bare function-name argument) or E_CallbackSignatureMismatch (signature mismatch). Lowered
+    by codegen to the same `LeaLabel` instruction a string literal or C global address uses,
+    since a Palan function is emitted as an unmangled assembly label — no indirect-call
+    machinery or new instruction is introduced; the callback is invoked by the C library's own
+    compiled code, never by Palan.
   - addr-of: SA dispatches on the AST node's `object` (see ASTSpec.md) and emits one of three
     shapes — the `addr-of` expr-type only ever appears for the plain-variable case; a struct-field
     or array-element target lowers to an ordinary `field-access`/`arr-index` node instead:
@@ -488,6 +503,19 @@ Additional fields per expression kind:
   - value-type added when the function has a single return type (ret-type in its definition)
   - value-types added when the function has multiple return values (rets in its definition);
     array of Variable type objects in declaration order
+  - struct-ret added instead of value-type when a C function returns a struct **by value**
+    (SysV AMD64 classification, see "Struct variable declaration → sa.json" below for how this
+    call is placed): `{"var":<destination variable name string>,"struct-name":<struct tag
+    name>,"size":<total struct size in bytes>,"eightbytes":[{"class":"int"|"sse","size":1|2|4|
+    8}, ...]}`. Each array entry is one eightbyte of the classified return value in order — its
+    byte offset within the struct is implied by its index (`index * 8`), there is no explicit
+    `offset` key; `size` on the last entry is the tail width when the struct isn't a multiple of
+    8 bytes (only 1/2/4/8 are supported — any other tail width is E_UnsupportedCStructReturn). A
+    struct over 16 bytes (the System V AMD64 MEMORY class) is `"eightbytes":[]`, and the hidden
+    destination pointer is prepended by SA as an ordinary first entry in the call's own `args`
+    array (an `id` expression of type `pntr(struct)`) — codegen has no MEMORY-specific lowering,
+    it is just another argument. When `struct-ret` is present the call node never carries
+    `value-type`/`value-types` (SA removes it) since the call has no ordinary return-value slot.
 
 Promotion rules
 ---------------
@@ -621,7 +649,25 @@ Before a `cinclude`d C function's parameters/return type (or a C global's single
   body via one of those two unsynthesized typedef shapes).
 - A `struct` type-kind carrying a `type-name` is always representable here, whether or not it
   is complete — an incomplete struct's layout is enforced later, only where a layout is actually
-  needed (see "Incomplete struct types" below), not at signature-admission time.
+  needed (see "Incomplete struct types" below), not at signature-admission time. This applies to
+  a struct **return** type, including one that requires the full System V AMD64 by-value return
+  classification at the call site (see the call expression's `struct-ret` entry above) — the
+  return direction is fully representable. A by-value struct type-kind used as a top-level
+  **parameter** (not behind a pointer), by contrast, is rejected here with the reason
+  `"by-value struct parameter"` — this direction has no ABI implementation (a C function like
+  `stdio.h`'s `fopencookie`, which takes a `cookie_io_functions_t` by value, is unsupported for
+  this reason).
+- A `pntr` whose `base-type` is `func` (a function-pointer parameter) is representable, as a
+  narrow exception, when the inner function signature is itself fully representable by the same
+  rules applied recursively (no by-value struct parameter, no nested function pointer, no other
+  unrepresentable parameter or return type) — such a parameter is marked `"_callback-param":true`
+  on the parameter's own JSON object (an SA-internal marker, never emitted in sa.json) and its
+  argument position accepts a bare Palan function name as a `func-ref` expression (see the
+  Expression model entry above) instead of an ordinary expression. A function-pointer parameter
+  whose inner signature is not representable this way still contributes `"function pointer"` to
+  `_unsupported-sig`, same as before this marker existed. `normalizeCType` recurses into a `func`
+  type-kind's own return type and parameters, so pointee `const` folds to `mutable` on the inner
+  signature's pointers exactly as it does at the top level.
 
 This differs from a native Palan signature's check (`validateNativeSig`): a native signature only
 rejects a structural type-kind `PlnTypeRegistry::fromJson` can never build (currently just a bare
@@ -757,6 +803,14 @@ Example: `type Mixed { int32 a; int64 b; }` → a@0 (4B), 4B padding, b@8 (8B), 
 
 Struct variables are registered in `arrayScopeVars_` and a `free()` statement is auto-inserted
 at scope exit (same mechanism as heap-allocated arrays).
+
+When the initializer is a call to a C function that returns a struct by value (e.g. `div_t d =
+div(7, 2);`), the var-decl's own `init` is unchanged (still the ordinary `calloc` shown above) —
+the call is instead emitted as a separate statement immediately following the var-decl,
+`{"stmt-type":"expr","body":<call with a "struct-ret" descriptor, see the call expression entry
+above>}`, whose `struct-ret.var` names the just-declared variable. Discarding such a call as a
+bare statement with no destination (not immediately following a matching var-decl) is
+E_ByvalStructRetDiscarded.
 
 ### field-assign statement → sa.json
 

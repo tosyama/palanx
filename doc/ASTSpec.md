@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.29
+ver. 0.1.30
 
 \* - Required
 
@@ -122,6 +122,10 @@ Used in C function `parameters`.
   (`T name[n]`) decays to a plain `pntr` whose `base-type` is the array's own `base-type` — same
   as C's own array-to-pointer decay, and only the outermost dimension decays: `T name[2][3]`
   becomes `pntr(arr(base-type: T, size-expr: 3, ...))`, not `pntr(pntr(T))`.
+- A prototype declared with the single unnamed keyword `void` (`f(void)`) normalizes to an empty
+  `parameters` array — the same shape as a genuinely empty `()` parameter list — rather than a
+  one-entry list carrying a `void`-typed parameter. This applies wherever a C parameter list
+  appears, including a function pointer's own inner parameter list.
 
 Return value (rets entry)
 -------------------------
@@ -142,7 +146,11 @@ Variable type
     - type-name\* - Type name string
       - Integer: "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64"
       - Float: "flo32" "flo64"
-      - Other: "void"
+      - Other: "void" — pointee-only (`prim(void)` appears only as a `pntr`'s `base-type`, never
+        as a variable's own top-level type). Previously only reachable from a c2ast-derived
+        signature (a C `void *` parameter/return/field); native syntax `@void`/`@!void` now
+        produces the same shape directly (`'@' KW_VOID` / `AT_EXCL KW_VOID` in the grammar), so
+        `pntr(prim(void))` no longer has a single origin.
   2. pntr - Pointer type
     - base-type\* - Base variable type
     - mutable - Boolean, true for a writable pointer (`@!` syntax), false for a read-only
