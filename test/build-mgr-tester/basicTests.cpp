@@ -1445,6 +1445,49 @@ TEST(build_mgr, non_executable_stack) {
 	ASSERT_EQ(segs.find("RWE"),       string::npos);
 }
 
+TEST(build_mgr, qsort_callback) {
+	// IT-2026-09-12-3009: end-to-end proof of IT-3007's callback mechanism --
+	// glibc's qsort calls a Palan function directly through the address the
+	// func-ref/LeaLabel lowering hands it. The comparator is spelled with a
+	// typed pointee (@int32); bsearch_callback below covers the C-idiomatic
+	// @void spelling.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/163_qsort_callback.pa");
+	ASSERT_EQ(output, "1 3 4 5\n");
+}
+
+TEST(build_mgr, bsearch_callback) {
+	// Same mechanism through bsearch, plus two things qsort cannot show: the
+	// comparator written with C's own `const void *` signature (@void, with a
+	// read-only @void -> @int32 rebinding in the body), and bsearch's `void *`
+	// result bound to a typed Palan pointer -- a hit is dereferenced, a miss
+	// compares equal to NULL, which proves glibc is actually consuming the
+	// comparator's return value rather than merely calling it.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/164_bsearch_callback.pa");
+	ASSERT_EQ(output,
+		"4\n"
+		"1\n");
+}
+
+TEST(build_mgr, atexit_callback) {
+	// A Palan function registered as a process exit handler. _start's epilogue
+	// is `call exit`, so glibc's __run_exit_handlers dispatches these on the
+	// way out -- two handlers prove LIFO dispatch order (C11 7.22.4.2), the
+	// strongest available evidence that the Palan functions are genuinely
+	// going through glibc's __cxa_atexit registry rather than being invoked
+	// incidentally. Requires the entry object's own __dso_handle definition
+	// (see the prereq commit). Both handlers touch only .rodata string
+	// literals: _start frees its owned locals before `call exit`, so a
+	// handler reading a Palan local here would be a use-after-free.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/165_atexit_callback.pa");
+	ASSERT_EQ(output,
+		"hello\n"
+		"last\n"
+		"bye\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
