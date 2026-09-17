@@ -1152,3 +1152,17 @@ TEST(c2ast, void_param_list) {
     ASSERT_EQ(cb_vt["base-type"]["type-kind"], "func");
     ASSERT_TRUE(cb_vt["base-type"]["parameters"].empty());
 }
+
+// --- Input file edge cases (IT-2026-09-16-3101) ---
+
+TEST(c2ast, empty_header) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/033_empty_header.h");
+    ASSERT_EQ(output, "");
+}
+
+TEST(c2ast, blank_lines) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/034_blank_lines.h");
+    ASSERT_EQ(output, "int f(int a);int g(int b);");
+}

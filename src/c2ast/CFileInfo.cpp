@@ -21,7 +21,7 @@ CFileInfo::CFileInfo(string fname)
 
 	// Join lines that end by '\'.
 	for (int n=lines.size()-2; n>=0; n--) {
-		if (lines[n].back() == '\\') {
+		if (!lines[n].empty() && lines[n].back() == '\\') {
 			string& line = lines[n];
 			line.resize(line.size()-1);
 			line += lines[n+1];
@@ -30,7 +30,7 @@ CFileInfo::CFileInfo(string fname)
 	}
 
 	// Remove last backslash.
-	if (lines.back().back() == '\\') {
+	if (!lines.empty() && !lines.back().empty() && lines.back().back() == '\\') {
 		string& line = lines.back();
 		line.resize(line.size()-1);
 	}
@@ -47,7 +47,7 @@ string& CFileInfo::getLine(int n)
 	return lines[n-1];
 }
 
-static bool file_exists(const string& filepath)
+bool CFileInfo::fileExists(const string& filepath)
 {
 	struct stat st;
 	return !stat(filepath.c_str(), &st);
@@ -82,7 +82,7 @@ string CFileInfo::getFilePath(string filepath, string parentfile, vector<string>
 		const char *delim = "/";
 		if (parentdir.empty() || parentdir.back() == *delim) delim = "";
 		string checkpath = parentdir + delim + fpath;
-		if (file_exists(checkpath)) {
+		if (fileExists(checkpath)) {
 			return checkpath;
 		}
 
@@ -99,7 +99,7 @@ string CFileInfo::searchFilePath(const string& fpath, vector<string> &searchpath
 			delim = "";
 		}
 		string checkpath = searchpath + delim + fpath;
-		if (file_exists(checkpath)) {
+		if (fileExists(checkpath)) {
 			// cout << "include file:" << checkpath << endl;
 			return checkpath;
 		}
