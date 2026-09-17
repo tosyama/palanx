@@ -1180,6 +1180,46 @@ TEST(gen_ast, cinclude_global) {
 	ASSERT_TRUE(found_counter);
 }
 
+TEST(gen_ast, cinclude_global_only) {
+	// IT-2026-09-16-3102 (follow-up): a header with globals but no functions
+	// used to leave "functions": null on the cinclude statement (the lift
+	// unconditionally moved c_ast["ast"]["functions"], unlike the
+	// contains()-guarded constants/structs/globals). Now it must be
+	// omitted, same as the other three fields when absent.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/110_cinclude_global_only.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_cinclude = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		found_cinclude = true;
+		ASSERT_FALSE(stmt.contains("functions"));
+		ASSERT_TRUE(stmt.contains("globals"));
+	}
+	ASSERT_TRUE(found_cinclude);
+}
+
+TEST(gen_ast, cinclude_no_decl) {
+	// IT-2026-09-16-3102: a header that declares nothing (e.g. stdarg.h)
+	// makes palan-c2ast exit 0 with a JSON object that has no "ast" key.
+	// The cinclude fatal-error check must not mistake this no-op for a
+	// c2ast failure.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/109_cinclude_no_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_cinclude = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		found_cinclude = true;
+		ASSERT_FALSE(stmt.contains("functions"));
+	}
+	ASSERT_TRUE(found_cinclude);
+}
+
 TEST(gen_ast, void_ptr_type) {
 	// IT-2026-09-12-3008: @void/@!void spell C's void* directly. Same file
 	// also carries a bare "(void, int64 z) = myFunc(x);" tapple-decl slot

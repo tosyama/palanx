@@ -46,3 +46,14 @@ TEST(gen_ast_error, syntax_error_with_loc) {
 	ASSERT_NE(out.find(":1:"), string::npos);   // loc format
 	ASSERT_NE(out.find("error:"), string::npos);
 }
+
+TEST(gen_ast_error, c2ast_failed) {
+	// IT-2026-09-16-3102: cinclude of a header palan-c2ast cannot read
+	// must be a fatal, diagnosed error rather than a silent no-op.
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_002_c2ast_failed.pa");
+	ASSERT_NE(out.find(":1:"), string::npos);   // loc format
+	ASSERT_NE(out.find("error:"), string::npos);
+	ASSERT_NE(out.find("Failed to read C header"), string::npos);
+}

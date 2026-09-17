@@ -37,6 +37,10 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 		case E_NoInputFile:
 			return "palan-gen-ast: no input file";
 
+		case E_C2AstFailed:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Failed to read C header '" + arg1 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

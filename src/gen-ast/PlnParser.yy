@@ -40,6 +40,7 @@ class PlnLexer;
 {
 	#include <set>
 	#include "PlnLexer.h"
+	#include "PlnGenAstMessage.h"
 	#include "PlnGenAstInternal.h"
 
 	static std::set<std::string> typeNames = {
@@ -56,8 +57,10 @@ class PlnLexer;
 		return lexer.yylex(*yylval, *location);
 	}
 
-	static json execute_c2ast(const string& path_type, const string& path, const string& base_dir)
+	static json execute_c2ast(const string& path_type, const string& path, const string& base_dir, bool& ok)
 	{
+		ok = false;
+
 		fs::path exec_file_path = fs::canonical("/proc/self/exe");
 		string exec_path = exec_file_path.parent_path().string();
 		string c2ast_path = exec_path + "/palan-c2ast";
@@ -83,7 +86,7 @@ class PlnLexer;
 		char buf[4096];
 		while (fgets(buf, sizeof(buf), pipe)) result += buf;
 		int status = pclose(pipe);
-		if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
 			cerr << "palan-c2ast: exited with " << WEXITSTATUS(status) << ": " << cmd << endl;
 			return json{};
 		}
@@ -94,6 +97,7 @@ class PlnLexer;
 			cerr << "palan-c2ast: JSON parse failed" << endl;
 			return json{};
 		}
+		ok = true;
 		return parsed;
 	}
 
@@ -219,10 +223,17 @@ expr_stmt: import
 		$$ = move($1);
 		$$["stmt-type"] = "cinclude";
 
+		bool c2ast_ok = false;
 		json c_ast = execute_c2ast($$["path-type"], $$["path"],
-		                          fs::path(lexer.inputFile).parent_path().string());
+		                          fs::path(lexer.inputFile).parent_path().string(), c2ast_ok);
+		if (!c2ast_ok) {
+			yyparser.error(@$, PlnGenAstMessage::getMessage(E_C2AstFailed, $$["path"].get<string>()));
+			YYABORT;
+		}
 		if (c_ast.is_object() && c_ast.contains("ast")) {
-			$$["functions"] = move(c_ast["ast"]["functions"]);
+			if (c_ast["ast"].contains("functions")) {
+				$$["functions"] = move(c_ast["ast"]["functions"]);
+			}
 			if (c_ast["ast"].contains("constants")) {
 				$$["constants"] = move(c_ast["ast"]["constants"]);
 			}

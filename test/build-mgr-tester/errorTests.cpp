@@ -178,3 +178,13 @@ TEST(build_mgr_error, arg_narrowing) {
 	ASSERT_NE(out.find("Implicit conversion from 'int64' to 'int32'"), string::npos);
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
+
+TEST(build_mgr_error, cinclude_not_found) {
+	// IT-2026-09-16-3102: palan-c2ast fails to read a nonexistent header;
+	// gen-ast used to swallow this and let palan exit 0 as if the header
+	// were empty. Now it must be a clean, diagnosed fatal error.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_061_cinclude_not_found.pa");
+	ASSERT_NE(out.find("Failed to read C header"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
+}
