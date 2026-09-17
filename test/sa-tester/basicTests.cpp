@@ -1552,6 +1552,26 @@ TEST(sa, cinclude_typedef_size_t)
 	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
 }
 
+TEST(sa, cinclude_typedefs)
+{
+	// IT-2026-09-16-3104: a header exporting a typedef but zero C functions
+	// (unlike 122_cinclude_typedef_size_t.pa's size_t, which rides in on
+	// strlen()'s return type) must still have that typedef registered --
+	// the general rule this ticket implements, not the old
+	// signature-piggyback path.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/182_cinclude_typedefs.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "n");
+	ASSERT_EQ(v["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(v["var-type"]["type-name"], "int32");
+	ASSERT_FALSE(v["var-type"].contains("typedef-name"));
+}
+
 TEST(sa, cinclude_typedef_struct_file)
 {
 	// `typedef struct _IO_FILE FILE;` (stdio.h) -- IT-2026-09-06-2905:

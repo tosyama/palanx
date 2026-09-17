@@ -294,6 +294,8 @@ Statement model
       when the header defines no capturable structs
     - globals - Global variable model list (see Global variable model above); omitted
       when the header defines no capturable extern objects
+    - typedefs - Typedef definition model list (see Typedef definition model above);
+      omitted when the header defines no capturable typedef
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement

@@ -1201,6 +1201,32 @@ TEST(gen_ast, cinclude_global_only) {
 	ASSERT_TRUE(found_cinclude);
 }
 
+TEST(gen_ast, cinclude_typedefs) {
+	// IT-2026-09-16-3104 (gen-ast half): c2ast's IT-3103 ast.typedefs section
+	// is lifted onto the cinclude statement, same contains()-guarded pattern
+	// as functions/constants/structs/globals. Header declares zero functions
+	// (a my_size_t typedef only), so this also proves the lift is independent
+	// of the "functions" section's presence.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/111_cinclude_typedefs.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_typedef = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		ASSERT_TRUE(stmt.contains("typedefs"));
+		for (auto& td : stmt["typedefs"]) {
+			if (td["name"] == "my_size_t") {
+				ASSERT_EQ(td["var-type"]["type-kind"], "prim");
+				ASSERT_EQ(td["var-type"]["type-name"], "int32");
+				found_typedef = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_typedef);
+}
+
 TEST(gen_ast, cinclude_no_decl) {
 	// IT-2026-09-16-3102: a header that declares nothing (e.g. stdarg.h)
 	// makes palan-c2ast exit 0 with a JSON object that has no "ast" key.

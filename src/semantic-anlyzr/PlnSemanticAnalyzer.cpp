@@ -453,6 +453,21 @@ const json& PlnSemanticAnalyzer::result()
 	return sa;
 }
 
+// Register a typedef name as an alias for `resolved` in typeAliases_, same
+// first-wins/conflict-diagnosed policy as a native "type X = ...;" alias
+// (sa_type_alias): first registration wins, a later registration of the same
+// name with a different resolved type is E_ConflictingTypedef (fatal).
+void PlnSemanticAnalyzer::registerTypeAliasChecked(const string& aliasName, const json& resolved)
+{
+	auto it = typeAliases_.find(aliasName);
+	if (it == typeAliases_.end()) {
+		typeAliases_[aliasName] = resolved;
+	} else if (it->second != resolved) {
+		cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
+		exit(1);
+	}
+}
+
 // Recursively find "typedef-name" hints (added by c2ast for scalar typedefs
 // like size_t) inside a type node, register the underlying primitive into
 // typeAliases_ so Palan code can reference the typedef name via IT-2602's
@@ -463,14 +478,7 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 	string tk = vtype.value("type-kind", "");
 	if (tk == "prim" && vtype.contains("typedef-name")) {
 		string aliasName = vtype["typedef-name"].get<string>();
-		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
-		auto it = typeAliases_.find(aliasName);
-		if (it == typeAliases_.end()) {
-			typeAliases_[aliasName] = resolved;
-		} else if (it->second != resolved) {
-			cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
-			exit(1);
-		}
+		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
 	} else if (tk == "strct" && vtype.contains("typedef-name") && vtype.contains("type-name")) {
 		// typedef struct Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
@@ -483,14 +491,7 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 		// this, in normalizeCFuncSig) already turns into struct(Tag) -- nothing
 		// further to do at this node.
 		string aliasName = vtype["typedef-name"].get<string>();
-		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
-		auto it = typeAliases_.find(aliasName);
-		if (it == typeAliases_.end()) {
-			typeAliases_[aliasName] = resolved;
-		} else if (it->second != resolved) {
-			cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
-			exit(1);
-		}
+		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
 	} else if (tk == "pntr" && vtype.contains("base-type")) {
 		registerTypedefAliasInType(vtype["base-type"]);
@@ -522,6 +523,25 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 	if (stmt.contains("structs"))
 		for (auto& s : stmt["structs"])
 			registerCStruct(s);
+
+	// Register every typedef the header defines, regardless of whether any C
+	// function/global in the header actually references it (IT-2026-09-16-3104):
+	// c2ast's ast.typedefs (IT-3103) already restricts entries to prim-bottomed
+	// and tagged-strct-bottomed shapes, so no re-filtering is needed here. Must
+	// come after structs (a tagged-strct-bottomed typedef's tag must already be
+	// in structDefs_) and before functions/globals, whose own
+	// registerTypedefAliasInType calls below register the exact same shape for
+	// typedefs actually referenced in a signature -- redundant but harmless,
+	// since registerTypeAliasChecked treats a repeat of an identical value as a
+	// no-op. Those per-reference-site calls are still needed independently of
+	// this loop: they strip the "typedef-name" hint from the reference-site
+	// node itself, which this loop does not touch.
+	if (stmt.contains("typedefs"))
+		for (auto& td : stmt["typedefs"]) {
+			const json& vt = td["var-type"];
+			registerTypeAliasChecked(td["name"].get<string>(),
+				{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
+		}
 
 	// Globals, functions and constants are independent sections -- a header
 	// exporting only some of them (e.g. an alias-only header with no

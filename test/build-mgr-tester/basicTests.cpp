@@ -1498,6 +1498,16 @@ TEST(build_mgr, limits_constants) {
 	ASSERT_EQ(output, "2147483647\n");
 }
 
+TEST(build_mgr, stdint) {
+	// IT-2026-09-16-3104 end-to-end: stdint.h declares zero C functions, only
+	// typedefs (int32_t etc). Before this ticket, int32_t was invisible to
+	// Palan entirely -- no C function/global in the header referenced it to
+	// carry the typedef-name hint through the old signature-piggyback path.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/167_stdint.pa");
+	ASSERT_EQ(output, "5\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

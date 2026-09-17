@@ -91,14 +91,23 @@ Statement model
 ---------------
 Same structure as AST statements (see ASTSpec.md) with the following differences:
 
-- cinclude statements are consumed by SA and not emitted; any typedef-derived
-  type aliases and object-like-macro constants carried in the header's AST
-  (see ASTSpec.md `typedef-name` and `constants`) are registered into the same
-  alias/const tables described below and likewise never appear in sa.json.
-  `functions`, `globals`, `constants` and `structs` are independent sections
-  of the header's AST -- a header exporting only some of them (e.g. a
-  function-less header like `limits.h` with only `constants`) still has each
-  present section registered; none is gated on another's presence.
+- cinclude statements are consumed by SA and not emitted; the header's
+  `typedefs` list (ASTSpec.md's Typedef definition model) is registered into
+  the same type-alias table a native `type X = ...;` uses (see Type Aliases
+  in PalanReference.md), unconditionally for every typedef the header
+  defines -- independent of whether any C function/global in the header
+  actually references that typedef in its signature. A `typedef-name` hint
+  carried on a function/global's own var-type node (ASTSpec.md `typedef-name`)
+  registers the same alias a second time as a side effect of resolving that
+  node; this is a harmless no-op re-registration (same name, same resolved
+  type) whose real job is stripping the hint from that node so it never
+  reaches sa.json. Object-like-macro constants (`constants`) are registered
+  into the const table described below, likewise never appearing in sa.json.
+  `functions`, `globals`, `constants`, `structs` and `typedefs` are
+  independent sections of the header's AST -- a header exporting only some of
+  them (e.g. a function-less header like `limits.h` with only `constants`, or
+  `stdint.h` with only `typedefs`) still has each present section registered;
+  none is gated on another's presence.
   C global variables (see ASTSpec.md's "Global variable model", the header's
   `globals` list) are registered the same way as constants and typedefs, not
   like C functions: always unqualified, even under `cinclude ... as S;`

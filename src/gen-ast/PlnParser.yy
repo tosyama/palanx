@@ -237,6 +237,9 @@ expr_stmt: import
 			if (c_ast["ast"].contains("globals")) {
 				$$["globals"] = move(c_ast["ast"]["globals"]);
 			}
+			if (c_ast["ast"].contains("typedefs")) {
+				$$["typedefs"] = move(c_ast["ast"]["typedefs"]);
+			}
 		}
 		LOC($$, @$);
 	}

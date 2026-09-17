@@ -1,0 +1,5 @@
+cinclude <stdint.h>;
+cinclude <stdio.h>;
+
+int32_t x = 5;
+printf("%d\n", x);
