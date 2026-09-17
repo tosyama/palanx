@@ -1,0 +1,16 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+cinclude <stdlib.h>;
+cinclude <time.h>;
+cinclude <math.h>;
+cinclude <ctype.h>;
+cinclude <sys/stat.h>;
+cinclude <stdint.h>;
+cinclude <inttypes.h>;
+cinclude <sys/types.h>;
+cinclude <errno.h>;
+cinclude <locale.h>;
+cinclude <dirent.h>;
+
+int32_t x = 7;
+printf("%d\n", x);

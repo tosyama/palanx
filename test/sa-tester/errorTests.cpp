@@ -798,7 +798,12 @@ TEST(sa_error, struct_nested_embed_arr_field_unsupported)
 TEST(sa_error, cinclude_typedef_conflict)
 {
 	// type size_t = int32; then cinclude <string.h>; which resolves size_t to uint64
-	// Covers: registerTypedefAliasInType E_ConflictingTypedef branch
+	// Covers: registerTypeAliasChecked's E_ConflictingTypedef branch. Since
+	// IT-2026-09-16-3104, sa_cinclude's unconditional ast.typedefs loop is what
+	// actually triggers this conflict (registerTypeAliasChecked is called
+	// directly from that loop, not via registerTypedefAliasInType) -- the
+	// per-reference-site path (e.g. strlen's size_t return) would hit the same
+	// conflict too, but the typedefs-section registration runs first.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(

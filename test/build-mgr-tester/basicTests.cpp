@@ -1508,6 +1508,44 @@ TEST(build_mgr, stdint) {
 	ASSERT_EQ(output, "5\n");
 }
 
+TEST(build_mgr, stdint_types) {
+	// IT-2026-09-16-3105: a realistic multi-type scenario for stdint.h,
+	// complementing 167_stdint's minimal repro -- int32_t/uint32_t/int64_t/
+	// uint64_t used together, plus one cross-type (int32_t -> int64_t)
+	// assignment, all from a header that declares zero C functions.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/169_stdint_types.pa");
+	ASSERT_EQ(output, "1000000 2000000 300000000 400000000 1000000\n");
+}
+
+TEST(build_mgr, typedef_chain) {
+	// IT-2026-09-16-3105 end-to-end: a multi-level typedef chain (A -> B -> C,
+	// all the way to int32), a tagged-struct-bottomed typedef (S -> struct Tag),
+	// and an anonymous-struct typedef (Anon), all registered via the
+	// unconditional ast.typedefs loop (IT-2026-09-16-3104) rather than by
+	// piggybacking on a C function signature. The header also carries a
+	// pointer-bottomed typedef (P) that is never referenced here -- its
+	// presence proves the other typedefs still register normally even when a
+	// header mixes in an excluded (pntr-bottomed) entry.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/168_typedef_chain.pa");
+	ASSERT_EQ(output, "1 1 1 3 7\n");
+}
+
+TEST(build_mgr, all_headers) {
+	// IT-2026-09-16-3105: cinclude all 13 headers audited for this iteration
+	// (stdio.h, string.h, stdlib.h, time.h, math.h, ctype.h, sys/stat.h,
+	// stdint.h, inttypes.h, sys/types.h, errno.h, locale.h, dirent.h)
+	// simultaneously. IT-2026-09-16-3104's manual audit found zero
+	// E_ConflictingTypedef diagnostics across this same set now that every
+	// header's typedefs register unconditionally rather than only the ones
+	// referenced by some function signature -- this pins that result down as
+	// a standing regression guard instead of a one-off measurement.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/170_all_headers.pa");
+	ASSERT_EQ(output, "7\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
