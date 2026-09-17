@@ -21,6 +21,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstdio>
+#include <stdexcept>
 
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "../common/PlnFileUtils.h"
@@ -30,6 +31,7 @@ using std::string;
 using std::cout;
 using std::cerr;
 using std::endl;
+using std::runtime_error;
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
@@ -57,10 +59,8 @@ class PlnLexer;
 		return lexer.yylex(*yylval, *location);
 	}
 
-	static json execute_c2ast(const string& path_type, const string& path, const string& base_dir, bool& ok)
+	static json execute_c2ast(const string& path_type, const string& path, const string& base_dir)
 	{
-		ok = false;
-
 		fs::path exec_file_path = fs::canonical("/proc/self/exe");
 		string exec_path = exec_file_path.parent_path().string();
 		string c2ast_path = exec_path + "/palan-c2ast";
@@ -79,7 +79,7 @@ class PlnLexer;
 		FILE* pipe = popen(cmd.c_str(), "r");
 		if (!pipe) {
 			cerr << "palan-c2ast: popen failed: " << cmd << endl;
-			return json{};
+			throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
 		}
 
 		string result;
@@ -88,16 +88,15 @@ class PlnLexer;
 		int status = pclose(pipe);
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
 			cerr << "palan-c2ast: exited with " << WEXITSTATUS(status) << ": " << cmd << endl;
-			return json{};
+			throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
 		}
 
 		if (result.empty()) return json{};
 		json parsed = json::parse(result, nullptr, false);  // no exception
 		if (parsed.is_discarded()) {
 			cerr << "palan-c2ast: JSON parse failed" << endl;
-			return json{};
+			throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
 		}
-		ok = true;
 		return parsed;
 	}
 
@@ -223,13 +222,8 @@ expr_stmt: import
 		$$ = move($1);
 		$$["stmt-type"] = "cinclude";
 
-		bool c2ast_ok = false;
 		json c_ast = execute_c2ast($$["path-type"], $$["path"],
-		                          fs::path(lexer.inputFile).parent_path().string(), c2ast_ok);
-		if (!c2ast_ok) {
-			yyparser.error(@$, PlnGenAstMessage::getMessage(E_C2AstFailed, $$["path"].get<string>()));
-			YYABORT;
-		}
+		                          fs::path(lexer.inputFile).parent_path().string());
 		if (c_ast.is_object() && c_ast.contains("ast")) {
 			if (c_ast["ast"].contains("functions")) {
 				$$["functions"] = move(c_ast["ast"]["functions"]);
