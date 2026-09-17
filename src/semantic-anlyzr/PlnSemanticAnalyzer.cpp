@@ -523,11 +523,10 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& s : stmt["structs"])
 			registerCStruct(s);
 
-	// Globals follow the constants/typedef convention, not the functions one:
-	// always registered unqualified even under `cinclude ... as S;` (only
-	// functions require the S. qualifier). Registered before the "functions"
-	// early-return below so an alias-only header (structs+globals, no
-	// functions) still picks them up.
+	// Globals, functions and constants are independent sections -- a header
+	// exporting only some of them (e.g. an alias-only header with no
+	// functions, or a function-less header like limits.h with only
+	// constants) must still have each present section registered.
 	if (stmt.contains("globals"))
 		for (auto& g : stmt["globals"]) {
 			json entry = g;
@@ -536,25 +535,25 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			registerCGlobal(entry["name"].get<string>(), entry);
 		}
 
-	if (!stmt.contains("functions")) return;
-
-	if (stmt.contains("alias")) {
-		const string& alias = stmt["alias"].get<string>();
-		auto& currentScope = importScopes.back();
-		for (auto& f : stmt["functions"]) {
-			string fname = f["name"].get<string>();
-			json entry = f;
-			registerCFuncTypedefAliases(entry);
-			normalizeCFuncSig(entry);
-			entry["_c-func"] = true;
-			currentScope[alias][fname] = entry;
-		}
-	} else {
-		for (auto& f : stmt["functions"]) {
-			json entry = f;
-			registerCFuncTypedefAliases(entry);
-			normalizeCFuncSig(entry);
-			registerCFunc(entry["name"].get<string>(), entry);
+	if (stmt.contains("functions")) {
+		if (stmt.contains("alias")) {
+			const string& alias = stmt["alias"].get<string>();
+			auto& currentScope = importScopes.back();
+			for (auto& f : stmt["functions"]) {
+				string fname = f["name"].get<string>();
+				json entry = f;
+				registerCFuncTypedefAliases(entry);
+				normalizeCFuncSig(entry);
+				entry["_c-func"] = true;
+				currentScope[alias][fname] = entry;
+			}
+		} else {
+			for (auto& f : stmt["functions"]) {
+				json entry = f;
+				registerCFuncTypedefAliases(entry);
+				normalizeCFuncSig(entry);
+				registerCFunc(entry["name"].get<string>(), entry);
+			}
 		}
 	}
 

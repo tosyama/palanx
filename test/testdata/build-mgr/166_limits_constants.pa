@@ -1,0 +1,4 @@
+cinclude <limits.h>;
+cinclude <stdio.h>;
+
+printf("%d\n", INT_MAX);

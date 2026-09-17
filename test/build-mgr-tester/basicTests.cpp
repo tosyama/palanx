@@ -1488,6 +1488,16 @@ TEST(build_mgr, atexit_callback) {
 		"bye\n");
 }
 
+TEST(build_mgr, limits_constants) {
+	// limits.h declares zero C functions -- only object-like macro constants
+	// (INT_MAX etc). Prereq bug: sa_cinclude()'s old "return if no functions"
+	// early-return sat before the constants-registration block, so a
+	// function-less header's constants were silently never registered.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/166_limits_constants.pa");
+	ASSERT_EQ(output, "2147483647\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

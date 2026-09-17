@@ -95,6 +95,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   type aliases and object-like-macro constants carried in the header's AST
   (see ASTSpec.md `typedef-name` and `constants`) are registered into the same
   alias/const tables described below and likewise never appear in sa.json.
+  `functions`, `globals`, `constants` and `structs` are independent sections
+  of the header's AST -- a header exporting only some of them (e.g. a
+  function-less header like `limits.h` with only `constants`) still has each
+  present section registered; none is gated on another's presence.
   C global variables (see ASTSpec.md's "Global variable model", the header's
   `globals` list) are registered the same way as constants and typedefs, not
   like C functions: always unqualified, even under `cinclude ... as S;`
