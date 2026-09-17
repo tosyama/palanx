@@ -1286,3 +1286,59 @@ TEST(gen_ast, void_ptr_type) {
 	ASSERT_EQ(stmts[3]["vars"].size(), 1);
 	ASSERT_EQ(stmts[3]["vars"][0]["var-name"], "z");
 }
+
+TEST(gen_ast, cinclude_link) {
+	// IT-2026-09-16-3106: an optional `link` clause on cinclude collects
+	// library names into "libs" (string array), omitted when absent -- same
+	// contains()-guarded convention as functions/constants/structs/globals/typedefs.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/112_cinclude_link.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "cinclude");
+	ASSERT_EQ(stmts[0]["libs"], json::array({"m"}));
+	ASSERT_FALSE(stmts[0].contains("alias"));
+
+	ASSERT_EQ(stmts[1]["stmt-type"], "cinclude");
+	ASSERT_EQ(stmts[1]["libs"], json::array({"m", "rt"}));
+
+	ASSERT_EQ(stmts[2]["stmt-type"], "cinclude");
+	ASSERT_EQ(stmts[2]["alias"], "M");
+	ASSERT_EQ(stmts[2]["libs"], json::array({"m"}));
+
+	ASSERT_EQ(stmts[3]["stmt-type"], "cinclude");
+	ASSERT_FALSE(stmts[3].contains("libs"));
+}
+
+TEST(gen_ast, link_as_identifier) {
+	// IT-2026-09-16-3106: "link" is a context-dependent keyword recognized
+	// only as `KW_CINCLUDE import_path import_as ID link_libs` where that ID
+	// spells "link". Everywhere else -- as a called C function (unistd.h
+	// really exports one named link()) or as a cinclude alias -- it must
+	// keep parsing as a plain identifier.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/113_link_identifier.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& stmts = jout["ast"]["statements"];
+
+	bool found_link_func = false;
+	bool found_link_alias = false;
+	for (auto& stmt : stmts) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		if (stmt.value("alias", "") == "link") {
+			found_link_alias = true;
+			continue;
+		}
+		for (auto& f : stmt["functions"]) {
+			if (f["name"] == "link") found_link_func = true;
+		}
+	}
+	ASSERT_TRUE(found_link_func);
+	ASSERT_TRUE(found_link_alias);
+}

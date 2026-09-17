@@ -1,0 +1,3 @@
+// A misspelled link clause must be a diagnosed error, not silently parsed
+// as something else.
+cinclude "112_cinclude_link.h" lnk "m";

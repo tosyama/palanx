@@ -296,6 +296,8 @@ Statement model
       when the header defines no capturable extern objects
     - typedefs - Typedef definition model list (see Typedef definition model above);
       omitted when the header defines no capturable typedef
+    - libs - Link library name string list (from the `link` clause); omitted when
+      the statement has no `link` clause
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement

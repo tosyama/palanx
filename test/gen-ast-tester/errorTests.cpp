@@ -58,3 +58,15 @@ TEST(gen_ast_error, c2ast_failed) {
 		"bin/palan-gen-ast ../test/testdata/gen-ast/error_002_c2ast_failed.pa");
 	ASSERT_NE(out.find("Failed to read C header"), string::npos);
 }
+
+TEST(gen_ast_error, link_keyword_typo) {
+	// IT-2026-09-16-3106: the token after import_as, when present, must
+	// spell "link" -- a misspelling is a diagnosed error (E_ExpectedLinkKeyword),
+	// not silently mis-parsed as something else. Thrown from a parser action
+	// (same runtime_error + main.cpp catch path as c2ast_failed above), so no
+	// source location prefix.
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_003_link_keyword_typo.pa");
+	ASSERT_NE(out.find("Expected 'link' keyword"), string::npos);
+}

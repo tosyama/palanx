@@ -15,6 +15,7 @@ enum PlnMessageCode {
 	E_CouldNotOpenOutputFile,	// filename
 	E_NoInputFile,
 	E_C2AstFailed,			// header path
+	E_ExpectedLinkKeyword,		// identifier
 };
 
 class PlnGenAstMessage

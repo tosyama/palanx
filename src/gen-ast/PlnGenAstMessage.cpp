@@ -41,6 +41,10 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Failed to read C header '" + arg1 + "'.";
 
+		case E_ExpectedLinkKeyword:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Expected 'link' keyword, but found '" + arg1 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

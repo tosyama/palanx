@@ -151,7 +151,7 @@ class PlnLexer;
 %type <vector<json>>	stmt_list_e stmt_list_b
 %type <json>	body_list_e body_list_b
 %type <json>	import cinclude import_path
-%type <vector<string>>	import_ids
+%type <vector<string>>	import_ids link_libs link_clause
 %type <string>	import_as
 %type <json>	expression func_call term store_loc
 %type <vector<json>>	arguments
@@ -423,12 +423,36 @@ import_as: /* empty */
 	{ $$ = move($2); }
 	;
 
-cinclude: KW_CINCLUDE import_path import_as
+cinclude: KW_CINCLUDE import_path import_as link_clause
 	{
 		$$ = move($2);
 		if ($3.size()) {
 			$$["alias"] = $3;
 		}
+		if ($4.size()) {
+			$$["libs"] = move($4);
+		}
+	}
+	;
+
+link_clause: /* empty */
+	{ }
+	| ID link_libs
+	{
+		if ($1 != "link") {
+			throw runtime_error(
+				PlnGenAstMessage::getMessage(E_ExpectedLinkKeyword, $1));
+		}
+		$$ = move($2);
+	}
+	;
+
+link_libs: STRING
+	{ $$.emplace_back($1); }
+	| link_libs ',' STRING
+	{
+		$$ = move($1);
+		$$.emplace_back($3);
 	}
 	;
 
