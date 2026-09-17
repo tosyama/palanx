@@ -861,7 +861,7 @@ void CParser::emitDeclarator(json &ast, json &decl,
 		});
 	} else if (is_typedef) {
 		if (tk == "prim" || tk == "pntr") {
-			typedefs_[decl["name"].get<string>()] = vt;
+			registerTypedef(decl["name"].get<string>(), vt);
 		} else if (tk == "strct" && vt.contains("type-name")) {
 			// typedef struct Tag X; -- register X as an alias for the tag
 			// itself (SA resolves it the same way it resolves any other
@@ -871,11 +871,11 @@ void CParser::emitDeclarator(json &ast, json &decl,
 			// (see its call site) and written it into vt's "type-name" before
 			// this function runs, so that case and the tagged one are
 			// indistinguishable here.
-			typedefs_[decl["name"].get<string>()] = vt;
+			registerTypedef(decl["name"].get<string>(), vt);
 		} else if (tk == "user") {
 			auto it = typedefs_.find(vt["type-name"].get<string>());
 			if (it != typedefs_.end()) {
-				typedefs_[decl["name"].get<string>()] = it->second;
+				registerTypedef(decl["name"].get<string>(), it->second);
 			}
 		}
 		// Remaining anonymous strct/union/enum/func underlying types -- a
@@ -898,6 +898,12 @@ void CParser::emitDeclarator(json &ast, json &decl,
 	// declaration, or a shape outside what the globals channel represents --
 	// discarded, matching pre-existing behavior for everything but
 	// "func"/typedef.
+}
+
+void CParser::registerTypedef(const string &name, json vt)
+{
+	vt.erase("typedef-name");
+	typedefs_[name] = move(vt);
 }
 
 bool CParser::statement(json &ast, const vector<CToken*> &tokens, int &result_index)
@@ -1527,7 +1533,21 @@ int CParser::parse(json &ast, const vector<CToken*> &tokens)
 int CParser::parse(json &ast)
 {
 	int ret = parse(ast, top_tokens);
-	if (ret == 0 && !capturedStructs_.empty())
-		ast["ast"]["structs"] = capturedStructs_;
+	if (ret == 0) {
+		if (!capturedStructs_.empty())
+			ast["ast"]["structs"] = capturedStructs_;
+
+		json typedefs = json::array();
+		for (const auto &[name, vt] : typedefs_) {
+			// Pointer-bottomed typedefs stay unregistered this version: naming
+			// one would force a decision about which side of the @/@! mutability
+			// split a bare pointer alias falls on (see IT-2026-09-16-3103).
+			string tk = vt.value("type-kind", "");
+			if (tk == "prim" || (tk == "strct" && vt.contains("type-name")))
+				typedefs.push_back({{"name", name}, {"var-type", vt}});
+		}
+		if (!typedefs.empty())
+			ast["ast"]["typedefs"] = move(typedefs);
+	}
 	return ret;
 }
