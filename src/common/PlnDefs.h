@@ -5,4 +5,4 @@
 
 #pragma once
 
-#define PALAN_VERSION "0.1.30"
+#define PALAN_VERSION "0.1.31"

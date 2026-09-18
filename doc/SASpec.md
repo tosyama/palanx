@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.30
+ver. 0.1.31
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -14,6 +14,11 @@ Root
 - str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
 - functions\* - Processed Palan function list (empty array when no functions defined)
 - statements\* - Top-level statement list
+- libs\* - Link library name list collected from `link` clauses on `cinclude` statements
+  anywhere in this source file, including block-scoped and function-body-scoped ones
+  (sorted, deduplicated). Empty array when none. Each module's sa.json carries only its
+  own libraries; the build manager unions this list across all modules and appends
+  `-l<name>` to the `ld` invocation for each entry.
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
   Three entry kinds:
@@ -107,7 +112,14 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   independent sections of the header's AST -- a header exporting only some of
   them (e.g. a function-less header like `limits.h` with only `constants`, or
   `stdint.h` with only `typedefs`) still has each present section registered;
-  none is gated on another's presence.
+  none is gated on another's presence. A cinclude's `libs` (ASTSpec.md's
+  Statement model, from a `link` clause) is handled differently from the
+  sections above: instead of being registered into a table and discarded, each
+  name is validated (`E_InvalidLinkLibName` on an invalid one) and added to a
+  single deduplicated set that is emitted as the top-level `libs` array (see
+  Root above) regardless of which scope -- top level, block, or function body
+  -- the cinclude appears in, since linking is a whole-program property with
+  no lexical scope.
   C global variables (see ASTSpec.md's "Global variable model", the header's
   `globals` list) are registered the same way as constants and typedefs, not
   like C functions: always unqualified, even under `cinclude ... as S;`

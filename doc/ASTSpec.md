@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.30
+ver. 0.1.31
 
 \* - Required
 
@@ -116,9 +116,9 @@ Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef v
 `typedef`s are captured regardless of whether any C function or global in the header
 references them, so a header of pure typedefs and no functions (e.g. `stdint.h`) still
 exports its types. palan-c2ast collects these into its own top-level `ast.typedefs` list,
-keyed by first appearance's resolved shape (a name typedef'd more than once with the same
-resolved type collapses to one entry); the list is omitted entirely when the header
-defines no capturable typedef.
+keyed by name (a name typedef'd more than once collapses to a single entry holding its
+last-resolved shape) and sorted by typedef name; the list is omitted entirely when the
+header defines no capturable typedef.
 
 - name\* - Typedef name string
 - var-type\* - The typedef's fully resolved underlying type (same Variable type object
@@ -296,8 +296,10 @@ Statement model
       when the header defines no capturable extern objects
     - typedefs - Typedef definition model list (see Typedef definition model above);
       omitted when the header defines no capturable typedef
-    - libs - Link library name string list (from the `link` clause); omitted when
-      the statement has no `link` clause
+    - libs - Link library name string list, in source order (from the `link` clause);
+      omitted when the statement has no `link` clause. See SASpec.md's Root `libs` for
+      how these are aggregated (sorted, deduplicated, and unioned across scopes and
+      modules) once SA processes them.
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement

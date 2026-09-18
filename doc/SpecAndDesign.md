@@ -106,9 +106,10 @@ Design:
  assembles them with `as`, and links the resulting object files with `ld` to create the final executable (default: `a.out`).
  If `-o` is not specified, the resulting `a.out` is executed immediately after linking and then removed.
  This allows palan to be used as a script runner without leaving build artifacts.
- Before linking, the build manager reads ast.json for each source file and collects `link` declarations
- from `cinclude` statements (e.g. `cinclude <stdio.h> link "c";`), passing the corresponding `-l` flags to `ld`.
- This link declaration feature is designed but not yet implemented; linking flags are handled manually in the interim.
+ Before linking, the build manager unions the `libs` array (see SASpec.md's Root) across every
+ module's sa.json, in the same pass it already makes over all modules to collect `alloc-shapes`,
+ and appends `-l<name>` to the `ld` invocation for each library named by a `link` clause on a
+ `cinclude` statement (e.g. `cinclude <math.h> link "m";`) anywhere in the program.
  During each step, the build manager will check the creation times of source files and their corresponding output files
  to determine if recompilation is necessary, optimizing the build process by avoiding redundant work.
 
@@ -177,6 +178,10 @@ Design:
  registered via cinclude statements (scope-aware: functions are visible from the cinclude
  point until the end of the enclosing scope).
  cinclude and import statements are consumed for scope resolution and are not emitted to sa.json.
+ A cinclude's `typedefs` (ASTSpec.md) are registered into the type-alias table unconditionally,
+ independent of whether the header declares any functions, and a cinclude's `link` clause libraries
+ are validated, deduplicated, and emitted as sa.json's top-level `libs` array (SASpec.md's Root) --
+ the one piece of a cinclude statement that survives past this consume-and-drop step.
  Expression statements are annotated with resolution results (e.g., func-type: "c" for calls
  resolved to C functions) and emitted to sa.json.
  Type checking is performed during expression processing. When an implicit widening conversion is required
