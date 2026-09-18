@@ -1546,6 +1546,24 @@ TEST(build_mgr, all_headers) {
 	ASSERT_EQ(output, "7\n");
 }
 
+TEST(build_mgr, link_math) {
+	// IT-2026-09-16-3108: build-mgr unions "libs" from every module's sa.json
+	// and passes -l<name> to ld, so a cinclude `link` clause actually makes
+	// the program linkable (sqrt lives in libm, not libc).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/171_link_math.pa");
+	ASSERT_EQ(output, "1.414214\n");
+}
+
+TEST(build_mgr, link_import) {
+	// IT-2026-09-16-3108: this file itself has no `link` clause -- lib_sqrt.pa
+	// (imported) is the one requesting libm, proving build-mgr's "libs"
+	// aggregation is a whole-program union across modules, not per-file.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/172_link_import.pa");
+	ASSERT_EQ(output, "11\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

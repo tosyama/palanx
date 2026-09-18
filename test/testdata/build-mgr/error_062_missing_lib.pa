@@ -1,0 +1,2 @@
+cinclude <stdio.h> link "nosuchlib";
+printf("hi\n");

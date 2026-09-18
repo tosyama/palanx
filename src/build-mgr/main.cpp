@@ -122,6 +122,10 @@ int main(int argc, char* argv[])
 	}
 
 	vector<string> obj_files;
+	// Union of libraries requested by cinclude `link` clauses across every
+	// module. Declared here (not scoped to the aggregation block below) so it
+	// is still alive when the ld command line is built (IT-2026-09-16-3108).
+	set<string> link_libs;
 
 	for (int i=0; i<ast_files.size(); i++) {
 		string ast_file = ast_files[i];
@@ -168,7 +172,10 @@ int main(int argc, char* argv[])
 		obj_files.push_back(obj_file);
 	}
 
-	// Collect alloc-shapes from all sa.json files, deduplicated by key
+	// Single pass over every module's sa.json to aggregate whole-program
+	// information: the union of `link`-clause libraries (into link_libs,
+	// declared above so it survives to the ld step) and alloc-shapes
+	// deduplicated by key (used below to synthesize shared allocators).
 	{
 		set<string> seen_shapes;
 		vector<json> arr_shapes;
@@ -178,6 +185,10 @@ int main(int argc, char* argv[])
 			string base = ast_file.substr(0, ast_file.size() - 9);
 			ifstream f(base + ".sa.json");
 			json sa = json::parse(f);
+			// SA always emits "libs" (possibly empty), so no contains() guard
+			// is needed. Read before the alloc-shapes continue below: a
+			// module can carry libs without carrying alloc-shapes.
+			for (auto& l : sa["libs"]) link_libs.insert(l.get<string>());
 			if (!sa.contains("alloc-shapes")) continue;
 			for (auto& shape : sa["alloc-shapes"]) {
 				string key;
@@ -215,6 +226,10 @@ int main(int argc, char* argv[])
 			string alloc_o   = alloc_pa + ".o";
 
 			{
+				// This synthesized source only ever cinclude's stdlib.h with
+				// no `link` clause, so its sa.json can never contribute to
+				// link_libs; it does not need to join the aggregation loop
+				// above.
 				ofstream out(alloc_pa);
 				out << "cinclude <stdlib.h>;\n";
 
@@ -393,11 +408,19 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	// ld — link all object files into the final binary
-	// TODO: extract required libraries from AST cinclude link clauses
+	// ld — link all object files into the final binary. -lc is unconditional:
+	// the allocators Palan synthesizes call libc malloc/free, a runtime
+	// dependency independent of any header. link_libs then adds one -l per
+	// cinclude `link` clause; names are validated at SA ingest, not here.
+	// link_libs is a set, so declaration order from source is already lost --
+	// harmless for shared libraries (order doesn't gate symbol resolution),
+	// but this would need to change if static archives with inter-library
+	// dependencies were ever supported.
 	string ldcmd = "ld";
 	for (auto& obj : obj_files) ldcmd += " " + obj;
-	ldcmd += " -lc -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o " + binary_name;
+	ldcmd += " -lc";
+	for (auto& lib : link_libs) ldcmd += " -l" + lib;
+	ldcmd += " -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o " + binary_name;
 	int ret = system(ldcmd.c_str());
 	if (WIFEXITED(ret)) {
 		ret = WEXITSTATUS(ret);

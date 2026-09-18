@@ -188,3 +188,12 @@ TEST(build_mgr_error, cinclude_not_found) {
 	ASSERT_NE(out.find("Failed to read C header"), string::npos);
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
+
+TEST(build_mgr_error, missing_lib) {
+	// IT-2026-09-16-3108: a `link` clause naming a library ld can't find is
+	// not diagnosed by the compiler -- reproducing the library search path
+	// (-L, ld.so.conf, multiarch, ...) belongs to ld, not to Palan.
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_062_missing_lib.pa");
+	ASSERT_NE(out.find("cannot find -lnosuchlib"), string::npos);
+}

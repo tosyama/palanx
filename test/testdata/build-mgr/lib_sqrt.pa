@@ -1,0 +1,13 @@
+// The exported function takes/returns int32, not flo64, to route around the
+// codegen bug tracked as doc/Issues.md item 22 (a Palan function with a
+// flo64 parameter/return fails to assemble); the flo64 math from math.h
+// stays entirely internal to this function.
+cinclude <math.h> link "m";
+
+export func check(int32 n) -> int32 {
+	flo64 x = sqrt(4.0);
+	if (x > 1.9) {
+		return n + 1;
+	}
+	return n;
+}
