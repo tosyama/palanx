@@ -1564,6 +1564,31 @@ TEST(build_mgr, link_import) {
 	ASSERT_EQ(output, "11\n");
 }
 
+TEST(build_mgr, math_functions) {
+	// IT-2026-09-16-3109: broad end-to-end proof that libm functions found
+	// by the pre-audit (sqrt/pow/sin/cos/tan/exp/log/floor/ceil/fabs/fmod/
+	// atan2/hypot) actually run through the `link` clause, including
+	// passing a variable and a nested call/expression as arguments.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/173_math_functions.pa");
+	ASSERT_EQ(output,
+		"1.414214\n"
+		"1024.000000\n"
+		"0.644218\n"
+		"0.764842\n"
+		"0.842288\n"
+		"4.481689\n"
+		"2.014903\n"
+		"3.000000\n"
+		"4.000000\n"
+		"5.500000\n"
+		"1.500000\n"
+		"0.643501\n"
+		"5.000000\n"
+		"6.250000\n"
+		"5.000000\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
