@@ -4,9 +4,11 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
+#include <filesystem>
 #include "../test-base/testBase.h"
 
 using namespace std;
+namespace fs = std::filesystem;
 
 TEST(gen_ast_error, help) {
 	cleanTestEnv();
@@ -69,4 +71,28 @@ TEST(gen_ast_error, link_keyword_typo) {
 	string out = execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/gen-ast/error_003_link_keyword_typo.pa");
 	ASSERT_NE(out.find("Expected 'link' keyword"), string::npos);
+}
+
+TEST(gen_ast_error, cinclude_sys_path_injection) {
+	// IT-2026-09-18-gen-ast-argv-spawn: execute_c2ast used to build a shell
+	// command string for a <...> cinclude path. Pre-fix, the shell ran the
+	// touch and palan-c2ast -s stdio.h (the substituted remainder) succeeded;
+	// post-fix the literal string is not a header palan-c2ast can find.
+	cleanTestEnv();
+	execTestCommand("rm -f PWNED");
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_004_cinclude_sys_injection.pa");
+	ASSERT_NE(out.find("Failed to read C header"), string::npos);
+	ASSERT_FALSE(fs::exists("PWNED"));
+}
+
+TEST(gen_ast_error, cinclude_local_path_injection) {
+	// IT-2026-09-18-gen-ast-argv-spawn: same as cinclude_sys_path_injection,
+	// for the "..." local-path branch (fs::path(base_dir) / resolved).
+	cleanTestEnv();
+	execTestCommand("rm -f PWNED");
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_005_cinclude_local_injection.pa");
+	ASSERT_NE(out.find("Failed to read C header"), string::npos);
+	ASSERT_FALSE(fs::exists("PWNED"));
 }

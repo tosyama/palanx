@@ -1,0 +1,3 @@
+// IT-2026-09-18-gen-ast-argv-spawn: a shell metacharacter in a "..." cinclude
+// path must reach palan-c2ast verbatim, not be interpreted by a shell.
+cinclude "$(touch PWNED).h";

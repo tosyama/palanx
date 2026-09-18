@@ -44,6 +44,7 @@ class PlnLexer;
 	#include "PlnLexer.h"
 	#include "PlnGenAstMessage.h"
 	#include "PlnGenAstInternal.h"
+	#include "PlnGenAstC2Ast.h"
 
 	static std::set<std::string> typeNames = {
 		"int8",  "int16",  "int32",  "int64",
@@ -57,47 +58,6 @@ class PlnLexer;
 		PlnLexer& lexer)
 	{
 		return lexer.yylex(*yylval, *location);
-	}
-
-	static json execute_c2ast(const string& path_type, const string& path, const string& base_dir)
-	{
-		fs::path exec_file_path = fs::canonical("/proc/self/exe");
-		string exec_path = exec_file_path.parent_path().string();
-		string c2ast_path = exec_path + "/palan-c2ast";
-
-		string cmd;
-		if (path_type == "inc") {
-			cmd = c2ast_path + " -s " + path;
-		} else {
-			// Local header path is relative to the including source file, not the process cwd.
-			fs::path resolved = path;
-			if (!resolved.is_absolute())
-				resolved = fs::path(base_dir) / resolved;
-			cmd = c2ast_path + " " + resolved.string();
-		}
-
-		FILE* pipe = popen(cmd.c_str(), "r");
-		if (!pipe) {
-			cerr << "palan-c2ast: popen failed: " << cmd << endl;
-			throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
-		}
-
-		string result;
-		char buf[4096];
-		while (fgets(buf, sizeof(buf), pipe)) result += buf;
-		int status = pclose(pipe);
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-			cerr << "palan-c2ast: exited with " << WEXITSTATUS(status) << ": " << cmd << endl;
-			throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
-		}
-
-		if (result.empty()) return json{};
-		json parsed = json::parse(result, nullptr, false);  // no exception
-		if (parsed.is_discarded()) {
-			cerr << "palan-c2ast: JSON parse failed" << endl;
-			throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
-		}
-		return parsed;
 	}
 
 #define LOC(J, L)       J["loc"] = { (int)L.begin.line, (int)L.begin.column, (int)L.end.line, (int)L.end.column }
