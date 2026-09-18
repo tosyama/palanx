@@ -1,0 +1,4 @@
+{
+	cinclude <math.h> link "m";
+	flo64 x = sqrt(2.0);
+}

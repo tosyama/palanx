@@ -1,0 +1,3 @@
+cinclude "186_link_no_func_header.h" link "rt";
+
+link_marker_t n = 1;

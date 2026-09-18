@@ -78,6 +78,7 @@ enum PlnSaMessageCode {
 	E_CallbackArgRequiresFunc,	// arg1: C function name, arg2: the argument as written
 	E_CallbackSignatureMismatch,	// arg1: Palan function name, arg2: C function name
 	E_DerefVoidPointer,		// no args
+	E_InvalidLinkLibName,		// arg1: the library name as written
 };
 
 class PlnSaMessage

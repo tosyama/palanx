@@ -411,6 +411,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
+	sa["libs"]          = json::array();
 	enterScope();
 	// 0. Pre-scan top-level type-alias and struct-def declarations so function
 	//    signatures pre-registered in step 1 (and calls resolved during step 2)
@@ -445,6 +446,12 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);
+	// 4. Emit the libraries collected from cinclude `link` clauses. After
+	//    steps 2-3 because a cinclude may sit inside a block or a function
+	//    body, not only at top level; linking is a whole-program property,
+	//    so all of them land in the same root section regardless of the
+	//    scope their C declarations were visible in.
+	for (auto& lib : linkLibs_) sa["libs"].push_back(lib);
 	leaveScope();
 }
 
@@ -515,8 +522,40 @@ void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
 				registerTypedefAliasInType(p["var-type"]);
 }
 
+// A `link` library name is concatenated onto "-l" in the ld command line
+// (IT-2026-09-16-3108), so this is a well-formedness invariant of the "libs"
+// section, not merely shell-escaping: the name must be something `ld -l` can
+// consume, and a diagnostic pinned to the cinclude site beats an obscure
+// linker failure. A leading '-' stays allowed -- the name is pasted onto "-l"
+// with no separator, so it can never become a second ld option.
+static bool isValidLinkLibName(const string& name)
+{
+	if (name.empty()) return false;
+	for (char c : name) {
+		bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		       || (c >= '0' && c <= '9')
+		       || c == '_' || c == '.' || c == '+' || c == '-';
+		if (!ok) return false;
+	}
+	return true;
+}
+
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
+	// The `link` clause is source-level and independent of every section
+	// c2ast fills in below, so it is read first and unconditionally: a header
+	// that declares nothing at all still contributes its libraries.
+	if (stmt.contains("libs"))
+		for (auto& l : stmt["libs"]) {
+			string lib = l.get<string>();
+			if (!isValidLinkLibName(lib)) {
+				cerr << locPrefix(stmt)
+				     << PlnSaMessage::getMessage(E_InvalidLinkLibName, lib) << endl;
+				exit(1);
+			}
+			linkLibs_.insert(lib);
+		}
+
 	// Struct definitions must be registered before functions: function
 	// signature resolution (via PlnTypeRegistry::fromJson) needs structDefs_
 	// entries to already exist for any struct-pointer parameter/return type.
