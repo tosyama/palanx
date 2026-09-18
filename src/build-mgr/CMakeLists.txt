@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 add_executable(palan
 	main.cpp
 	PlnBuildMgrMessage.cpp
+	../common/PlnProcess.cpp
 )
 
 option(OUTPUT_COVERAGE "Output coverage files.")

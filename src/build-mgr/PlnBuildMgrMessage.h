@@ -14,10 +14,12 @@ enum PlnBuildMgrMessageCode {
 	E_WrongNumberOfArgs,
 	E_CouldNotOpenFile,		// arg1: file path
 	E_PalanDirNotDirectory,	// arg1: path string
+	E_FailedToExecute,		// arg1: program name, arg2: strerror text
 };
 
 class PlnBuildMgrMessage
 {
 public:
-	static string getMessage(PlnBuildMgrMessageCode msg_code, string arg1="\x01");
+	static string getMessage(PlnBuildMgrMessageCode msg_code,
+	                         string arg1="\x01", string arg2="\x01");
 };

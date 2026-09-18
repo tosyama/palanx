@@ -4,9 +4,11 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
+#include <filesystem>
 #include "../test-base/testBase.h"
 
 using namespace std;
+namespace fs = std::filesystem;
 
 TEST(build_mgr_error, help) {
 	cleanTestEnv();
@@ -196,4 +198,26 @@ TEST(build_mgr_error, missing_lib) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_062_missing_lib.pa");
 	ASSERT_NE(out.find("cannot find -lnosuchlib"), string::npos);
+}
+
+TEST(build_mgr_error, assembler_not_found) {
+	// IT-2026-09-18-build-mgr-argv-spawn: proves the new SpawnFailed/errno
+	// path deterministically. `as` is the only PATH-resolved tool on the
+	// happy path -- palan-gen-ast/-sa/-codegen are launched by absolute path
+	// via /proc/self/exe -- so hiding PATH only breaks the assembler stage.
+	cleanTestEnv();
+	string out = execTestCommand(
+		"env PATH=/nonexistent bin/palan ../test/testdata/build-mgr/001_helloworld.pa");
+	ASSERT_NE(out.find("failed to execute 'as'"), string::npos);
+}
+
+TEST(build_mgr_error, child_killed_by_signal) {
+	// IT-2026-09-18-build-mgr-argv-spawn: pins PlnSpawnStatus::Signaled in the
+	// script-style run-and-delete path (no -o given) -- palan must exit -1
+	// (255 to the shell) instead of crashing itself or reporting garbage.
+	// ulimit -c 0 keeps the compiled program's core dump out of build/.
+	cleanTestEnv();
+	string out = execTestCommand(
+		"ulimit -c 0; bin/palan ../test/testdata/build-mgr/error_063_abort.pa");
+	ASSERT_NE(out.find("return1:"), string::npos);
 }

@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
+#include <filesystem>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
 using json = nlohmann::json;
 using namespace std;
+namespace fs = std::filesystem;
 
 TEST(build_mgr, helloworld) {
 	cleanTestEnv();
@@ -1587,6 +1589,56 @@ TEST(build_mgr, math_functions) {
 		"5.000000\n"
 		"6.250000\n"
 		"5.000000\n");
+}
+
+TEST(build_mgr, output_name_injection) {
+	// IT-2026-09-18-build-mgr-argv-spawn: the -o argument used to be
+	// concatenated unquoted into the ld shell command line. A shell
+	// metacharacter payload proves both halves: the marker file the payload
+	// would create must NOT exist (injection is closed), and a file with the
+	// exact literal name must exist (the argument reached ld verbatim, not
+	// truncated or mangled).
+	cleanTestEnv();
+	execTestCommand("rm -f PWNED");
+	string output = execTestCommand(
+		"bin/palan -o 'out/b_$(touch PWNED)' ../test/testdata/build-mgr/001_helloworld.pa");
+	ASSERT_EQ(output, "");
+	ASSERT_FALSE(fs::exists("PWNED"));
+	ASSERT_TRUE(fs::exists("out/b_$(touch PWNED)"));
+}
+
+TEST(build_mgr, source_path_injection) {
+	// IT-2026-09-18-build-mgr-argv-spawn: the input .pa path flows unquoted
+	// through fs::weakly_canonical into every pipeline stage's command line
+	// (gen-ast/sa/codegen/as/ld) plus the mirrored work directory path. Copy a
+	// fixture to a hostile name at runtime (metacharacter filenames are not
+	// checked into git) and confirm the whole pipeline still runs correctly.
+	cleanTestEnv();
+	execTestCommand("rm -f PWNED");
+	execTestCommand(
+		"cp ../test/testdata/build-mgr/174_shell_metachar_source.pa 'out/inj_$(touch PWNED).pa'");
+	string output = execTestCommand("bin/palan 'out/inj_$(touch PWNED).pa'");
+	ASSERT_EQ(output, "Hello World!\n");
+	ASSERT_FALSE(fs::exists("PWNED"));
+}
+
+TEST(build_mgr, import_path_injection) {
+	// IT-2026-09-18-build-mgr-argv-spawn: an import path read back out of
+	// ast.json used to be concatenated unquoted into the next palan-gen-ast
+	// shell command line. A plain nonexistent metacharacter path is rejected
+	// by the pre-existing fs::exists() check before ever reaching that
+	// command line, so the imported file is created here with the exact
+	// literal metacharacter name -- this is what actually reaches the
+	// vulnerable code path pre-fix.
+	cleanTestEnv();
+	execTestCommand("rm -f PWNED");
+	execTestCommand("cp ../test/testdata/build-mgr/175_import_path_injection.pa out/");
+	execTestCommand(
+		"printf 'export func add(int32 a, int32 b) -> int32 { return a + b; }\\n' "
+		"> 'out/$(touch PWNED).pa'");
+	string output = execTestCommand("bin/palan out/175_import_path_injection.pa");
+	ASSERT_EQ(output, "7\n");
+	ASSERT_FALSE(fs::exists("PWNED"));
 }
 
 TEST(build_mgr, clean) {

@@ -1,0 +1,4 @@
+// IT-2026-09-18-build-mgr-argv-spawn: this fixture is copied to a filename
+// containing shell metacharacters at test time (see build_mgr.source_path_injection).
+cinclude <stdio.h>;
+printf("Hello World!\n");
