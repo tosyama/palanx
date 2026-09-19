@@ -1,0 +1,6 @@
+// IT-2026-09-18-build-mgr-argv-spawn: pins the PlnSpawnStatus::Signaled path
+// of the script-style run-and-delete step (no -o given): the compiled
+// program dies by signal, and palan must report that cleanly (exit -1, i.e.
+// 255) rather than crash itself or misreport the exit code.
+cinclude <stdlib.h>;
+abort();

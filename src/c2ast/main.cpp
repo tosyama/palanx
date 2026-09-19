@@ -173,11 +173,14 @@ int main(int argc, char* argv[])
 			cpp.loadPredefined(predefined_path);
 			set<CMacro*> predefined_macros(macros.begin(), macros.end());
 
-			if (is_sys_header) {
-				input_file = CFileInfo::searchFilePath(input_file, include_paths);
-			}
-
 		try {
+			if (is_sys_header) {
+				string found = CFileInfo::searchFilePath(input_file, include_paths);
+				if (found == "") {
+					throw CPreprocessError(PlnC2AstMessage::getMessage(E_IncludeNotFound, input_file));
+				}
+				input_file = found;
+			}
 			cpp.preprocess(input_file);
 
 			if (do_dump_preprocessed) {

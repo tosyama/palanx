@@ -1,0 +1,5 @@
+cinclude <stdio.h>;
+cinclude <math.h> link "m";
+
+flo64 x = sqrt(2.0);
+printf("%f\n", x);

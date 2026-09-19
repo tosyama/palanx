@@ -21,6 +21,7 @@
 #include <fstream>
 #include <filesystem>
 #include <cstdio>
+#include <stdexcept>
 
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "../common/PlnFileUtils.h"
@@ -30,6 +31,7 @@ using std::string;
 using std::cout;
 using std::cerr;
 using std::endl;
+using std::runtime_error;
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
@@ -40,7 +42,9 @@ class PlnLexer;
 {
 	#include <set>
 	#include "PlnLexer.h"
+	#include "PlnGenAstMessage.h"
 	#include "PlnGenAstInternal.h"
+	#include "PlnGenAstC2Ast.h"
 
 	static std::set<std::string> typeNames = {
 		"int8",  "int16",  "int32",  "int64",
@@ -54,47 +58,6 @@ class PlnLexer;
 		PlnLexer& lexer)
 	{
 		return lexer.yylex(*yylval, *location);
-	}
-
-	static json execute_c2ast(const string& path_type, const string& path, const string& base_dir)
-	{
-		fs::path exec_file_path = fs::canonical("/proc/self/exe");
-		string exec_path = exec_file_path.parent_path().string();
-		string c2ast_path = exec_path + "/palan-c2ast";
-
-		string cmd;
-		if (path_type == "inc") {
-			cmd = c2ast_path + " -s " + path;
-		} else {
-			// Local header path is relative to the including source file, not the process cwd.
-			fs::path resolved = path;
-			if (!resolved.is_absolute())
-				resolved = fs::path(base_dir) / resolved;
-			cmd = c2ast_path + " " + resolved.string();
-		}
-
-		FILE* pipe = popen(cmd.c_str(), "r");
-		if (!pipe) {
-			cerr << "palan-c2ast: popen failed: " << cmd << endl;
-			return json{};
-		}
-
-		string result;
-		char buf[4096];
-		while (fgets(buf, sizeof(buf), pipe)) result += buf;
-		int status = pclose(pipe);
-		if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-			cerr << "palan-c2ast: exited with " << WEXITSTATUS(status) << ": " << cmd << endl;
-			return json{};
-		}
-
-		if (result.empty()) return json{};
-		json parsed = json::parse(result, nullptr, false);  // no exception
-		if (parsed.is_discarded()) {
-			cerr << "palan-c2ast: JSON parse failed" << endl;
-			return json{};
-		}
-		return parsed;
 	}
 
 #define LOC(J, L)       J["loc"] = { (int)L.begin.line, (int)L.begin.column, (int)L.end.line, (int)L.end.column }
@@ -148,7 +111,7 @@ class PlnLexer;
 %type <vector<json>>	stmt_list_e stmt_list_b
 %type <json>	body_list_e body_list_b
 %type <json>	import cinclude import_path
-%type <vector<string>>	import_ids
+%type <vector<string>>	import_ids link_libs link_clause
 %type <string>	import_as
 %type <json>	expression func_call term store_loc
 %type <vector<json>>	arguments
@@ -222,7 +185,9 @@ expr_stmt: import
 		json c_ast = execute_c2ast($$["path-type"], $$["path"],
 		                          fs::path(lexer.inputFile).parent_path().string());
 		if (c_ast.is_object() && c_ast.contains("ast")) {
-			$$["functions"] = move(c_ast["ast"]["functions"]);
+			if (c_ast["ast"].contains("functions")) {
+				$$["functions"] = move(c_ast["ast"]["functions"]);
+			}
 			if (c_ast["ast"].contains("constants")) {
 				$$["constants"] = move(c_ast["ast"]["constants"]);
 			}
@@ -231,6 +196,9 @@ expr_stmt: import
 			}
 			if (c_ast["ast"].contains("globals")) {
 				$$["globals"] = move(c_ast["ast"]["globals"]);
+			}
+			if (c_ast["ast"].contains("typedefs")) {
+				$$["typedefs"] = move(c_ast["ast"]["typedefs"]);
 			}
 		}
 		LOC($$, @$);
@@ -415,12 +383,36 @@ import_as: /* empty */
 	{ $$ = move($2); }
 	;
 
-cinclude: KW_CINCLUDE import_path import_as
+cinclude: KW_CINCLUDE import_path import_as link_clause
 	{
 		$$ = move($2);
 		if ($3.size()) {
 			$$["alias"] = $3;
 		}
+		if ($4.size()) {
+			$$["libs"] = move($4);
+		}
+	}
+	;
+
+link_clause: /* empty */
+	{ }
+	| ID link_libs
+	{
+		if ($1 != "link") {
+			throw runtime_error(
+				PlnGenAstMessage::getMessage(E_ExpectedLinkKeyword, $1));
+		}
+		$$ = move($2);
+	}
+	;
+
+link_libs: STRING
+	{ $$.emplace_back($1); }
+	| link_libs ',' STRING
+	{
+		$$ = move($1);
+		$$.emplace_back($3);
 	}
 	;
 

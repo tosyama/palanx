@@ -1117,6 +1117,103 @@ TEST(c2ast, typedef_anon_struct) {
     }
 }
 
+// IT-2026-09-16-3103: a header's typedefs are flushed into their own
+// ast.typedefs section regardless of whether any C function references them
+// -- this is what lets a header like stdint.h (zero functions, all typedefs)
+// register its types at all. See stdint_typedefs below for that end-to-end case.
+TEST(c2ast, typedef_section) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/035_typedef_section.h");
+    json ast = json::parse(output);
+    auto& typedefs = ast["ast"]["typedefs"];
+
+    auto find_typedef = [&](const string& name) -> json* {
+        for (auto& t : typedefs)
+            if (t["name"] == name) return &t;
+        return nullptr;
+    };
+
+    // typedef int A; typedef A B; typedef B C; -- a multi-level chain fully
+    // resolves to the bottom primitive, and none of the intermediate links'
+    // "typedef-name" reference-site hints leak into the stored entry (that
+    // hint belongs only to the var-type node at the reference site that
+    // looked the name up, e.g. a function parameter/return -- see
+    // declaration_specifiers()).
+    for (const char* name : {"A", "B", "C"}) {
+        json* t = find_typedef(name);
+        ASSERT_NE(t, nullptr) << "expected " << name << " to be registered";
+        ASSERT_EQ((*t)["var-type"]["type-kind"], "prim");
+        ASSERT_EQ((*t)["var-type"]["type-name"], "int32");
+        ASSERT_FALSE((*t)["var-type"].contains("typedef-name"))
+            << "stale typedef-name leaked into " << name;
+    }
+
+    // typedef struct Tag S; -- a tagged-struct-bottomed typedef registers as
+    // an alias for the tag itself.
+    {
+        json* s = find_typedef("S");
+        ASSERT_NE(s, nullptr);
+        ASSERT_EQ((*s)["var-type"]["type-kind"], "strct");
+        ASSERT_EQ((*s)["var-type"]["type-name"], "Tag");
+    }
+
+    // typedef struct Tag Tag; -- the common C self-alias idiom. Registers the
+    // same as any other tagged-struct typedef; nothing about the name
+    // matching the tag is special-cased.
+    {
+        json* tag = find_typedef("Tag");
+        ASSERT_NE(tag, nullptr);
+        ASSERT_EQ((*tag)["var-type"]["type-kind"], "strct");
+        ASSERT_EQ((*tag)["var-type"]["type-name"], "Tag");
+    }
+
+    // typedef struct { int m; } Anon; -- single, non-derived declarator: the
+    // anonymous body's tag is synthesized from "Anon" (see typedef_anon_struct
+    // above), and that synthesized tag qualifies for this section the same as
+    // an explicitly-tagged struct typedef.
+    {
+        json* anon = find_typedef("Anon");
+        ASSERT_NE(anon, nullptr);
+        ASSERT_EQ((*anon)["var-type"]["type-kind"], "strct");
+        ASSERT_EQ((*anon)["var-type"]["type-name"], "Anon");
+    }
+
+    // typedef void *P; -- pointer-bottomed typedefs are deliberately excluded
+    // from this section this version (see IT-2026-09-16-3103).
+    ASSERT_EQ(find_typedef("P"), nullptr);
+
+    ASSERT_EQ(typedefs.size(), 6u);
+}
+
+// A header whose typedefs are never referenced by any C function -- stdint.h
+// declares zero functions, so before IT-2026-09-16-3103 none of its typedefs
+// reached the AST at all (the only export path was piggybacking on a
+// function/global's var-type node).
+TEST(c2ast, stdint_typedefs) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s stdint.h");
+    json ast = json::parse(output);
+    auto& typedefs = ast["ast"]["typedefs"];
+
+    auto find_typedef = [&](const string& name) -> json* {
+        for (auto& t : typedefs)
+            if (t["name"] == name) return &t;
+        return nullptr;
+    };
+
+    auto expect_prim = [&](const string& name, const string& prim) {
+        json* t = find_typedef(name);
+        ASSERT_NE(t, nullptr) << "expected " << name << " to be registered";
+        ASSERT_EQ((*t)["var-type"]["type-kind"], "prim");
+        ASSERT_EQ((*t)["var-type"]["type-name"], prim) << "for " << name;
+    };
+
+    expect_prim("int32_t", "int32");
+    expect_prim("int64_t", "int64");
+    expect_prim("uint32_t", "uint32");
+    expect_prim("uint64_t", "uint64");
+}
+
 // IT-2026-09-12-3006: `(void)` normalizes to an empty parameter list, both at
 // top level and inside a function-pointer's own parameter list, while a real
 // parameter and an already-empty `()` are left untouched.
@@ -1151,4 +1248,22 @@ TEST(c2ast, void_param_list) {
     ASSERT_EQ(cb_vt["type-kind"], "pntr");
     ASSERT_EQ(cb_vt["base-type"]["type-kind"], "func");
     ASSERT_TRUE(cb_vt["base-type"]["parameters"].empty());
+
+    // No typedef in this header at all -- the "typedefs" key itself is
+    // omitted, same convention as "structs" (IT-2026-09-16-3103).
+    ASSERT_FALSE(ast["ast"].contains("typedefs"));
+}
+
+// --- Input file edge cases (IT-2026-09-16-3101) ---
+
+TEST(c2ast, empty_header) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/033_empty_header.h");
+    ASSERT_EQ(output, "");
+}
+
+TEST(c2ast, blank_lines) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/034_blank_lines.h");
+    ASSERT_EQ(output, "int f(int a);int g(int b);");
 }

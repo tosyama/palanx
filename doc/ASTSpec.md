@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.30
+ver. 0.1.31
 
 \* - Required
 
@@ -105,6 +105,26 @@ gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals`
 
 - name\* - Global variable name string
 - var-type\* - Variable type (same Variable type object format)
+
+Typedef definition model
+-------------------------
+Captured from every `typedef` declaration in a `cinclude`d C header whose resolved
+underlying type is `prim`, or a `strct` that carries a `type-name` (including a tag
+synthesized for a single, non-derived typedef of an otherwise tagless struct body — see
+Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef void
+*timer_t;`) is deliberately not captured here — see the `typedef-name` Note below.
+`typedef`s are captured regardless of whether any C function or global in the header
+references them, so a header of pure typedefs and no functions (e.g. `stdint.h`) still
+exports its types. palan-c2ast collects these into its own top-level `ast.typedefs` list,
+keyed by name (a name typedef'd more than once collapses to a single entry holding its
+last-resolved shape) and sorted by typedef name; the list is omitted entirely when the
+header defines no capturable typedef.
+
+- name\* - Typedef name string
+- var-type\* - The typedef's fully resolved underlying type (same Variable type object
+  format; a chain of typedefs is collapsed to its bottom type). Never carries a
+  `typedef-name` field itself — that field is a reference-site annotation (see the Note
+  below), not part of the typedef's own registered shape.
 
 Palan Parameter
 ---------------
@@ -243,6 +263,10 @@ c2ast/cinclude-only annotation. For type-kind "prim", SA registers it as a nativ
 PalanReference.md §20 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
 For type-kind "pntr", the field is left in place; it is not registered as an explicit Palan alias
 type name and never reaches sa.json (C function signatures themselves aren't serialized there).
+This annotation is specific to the var-type node at the reference site that looked the typedef
+name up (a function parameter/return, a global, or a further typedef's underlying type as parsed)
+— it is never present on an `ast.typedefs` entry's own `var-type` (see Typedef definition model
+above), even when that entry's resolved type came from a chain of several typedef names.
 
 Block object
 ------------
@@ -270,6 +294,12 @@ Statement model
       when the header defines no capturable structs
     - globals - Global variable model list (see Global variable model above); omitted
       when the header defines no capturable extern objects
+    - typedefs - Typedef definition model list (see Typedef definition model above);
+      omitted when the header defines no capturable typedef
+    - libs - Link library name string list, in source order (from the `link` clause);
+      omitted when the statement has no `link` clause. See SASpec.md's Root `libs` for
+      how these are aggregated (sorted, deduplicated, and unioned across scopes and
+      modules) once SA processes them.
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement

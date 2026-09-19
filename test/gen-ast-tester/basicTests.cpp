@@ -1180,6 +1180,72 @@ TEST(gen_ast, cinclude_global) {
 	ASSERT_TRUE(found_counter);
 }
 
+TEST(gen_ast, cinclude_global_only) {
+	// IT-2026-09-16-3102 (follow-up): a header with globals but no functions
+	// used to leave "functions": null on the cinclude statement (the lift
+	// unconditionally moved c_ast["ast"]["functions"], unlike the
+	// contains()-guarded constants/structs/globals). Now it must be
+	// omitted, same as the other three fields when absent.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/110_cinclude_global_only.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_cinclude = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		found_cinclude = true;
+		ASSERT_FALSE(stmt.contains("functions"));
+		ASSERT_TRUE(stmt.contains("globals"));
+	}
+	ASSERT_TRUE(found_cinclude);
+}
+
+TEST(gen_ast, cinclude_typedefs) {
+	// IT-2026-09-16-3104 (gen-ast half): c2ast's IT-3103 ast.typedefs section
+	// is lifted onto the cinclude statement, same contains()-guarded pattern
+	// as functions/constants/structs/globals. Header declares zero functions
+	// (a my_size_t typedef only), so this also proves the lift is independent
+	// of the "functions" section's presence.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/111_cinclude_typedefs.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_typedef = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		ASSERT_TRUE(stmt.contains("typedefs"));
+		for (auto& td : stmt["typedefs"]) {
+			if (td["name"] == "my_size_t") {
+				ASSERT_EQ(td["var-type"]["type-kind"], "prim");
+				ASSERT_EQ(td["var-type"]["type-name"], "int32");
+				found_typedef = true;
+			}
+		}
+	}
+	ASSERT_TRUE(found_typedef);
+}
+
+TEST(gen_ast, cinclude_no_decl) {
+	// IT-2026-09-16-3102: a header that declares nothing (e.g. stdarg.h)
+	// makes palan-c2ast exit 0 with a JSON object that has no "ast" key.
+	// The cinclude fatal-error check must not mistake this no-op for a
+	// c2ast failure.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/109_cinclude_no_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	bool found_cinclude = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		found_cinclude = true;
+		ASSERT_FALSE(stmt.contains("functions"));
+	}
+	ASSERT_TRUE(found_cinclude);
+}
+
 TEST(gen_ast, void_ptr_type) {
 	// IT-2026-09-12-3008: @void/@!void spell C's void* directly. Same file
 	// also carries a bare "(void, int64 z) = myFunc(x);" tapple-decl slot
@@ -1219,4 +1285,60 @@ TEST(gen_ast, void_ptr_type) {
 	ASSERT_EQ(stmts[3]["stmt-type"], "tapple-decl");
 	ASSERT_EQ(stmts[3]["vars"].size(), 1);
 	ASSERT_EQ(stmts[3]["vars"][0]["var-name"], "z");
+}
+
+TEST(gen_ast, cinclude_link) {
+	// IT-2026-09-16-3106: an optional `link` clause on cinclude collects
+	// library names into "libs" (string array), omitted when absent -- same
+	// contains()-guarded convention as functions/constants/structs/globals/typedefs.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/112_cinclude_link.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "cinclude");
+	ASSERT_EQ(stmts[0]["libs"], json::array({"m"}));
+	ASSERT_FALSE(stmts[0].contains("alias"));
+
+	ASSERT_EQ(stmts[1]["stmt-type"], "cinclude");
+	ASSERT_EQ(stmts[1]["libs"], json::array({"m", "rt"}));
+
+	ASSERT_EQ(stmts[2]["stmt-type"], "cinclude");
+	ASSERT_EQ(stmts[2]["alias"], "M");
+	ASSERT_EQ(stmts[2]["libs"], json::array({"m"}));
+
+	ASSERT_EQ(stmts[3]["stmt-type"], "cinclude");
+	ASSERT_FALSE(stmts[3].contains("libs"));
+}
+
+TEST(gen_ast, link_as_identifier) {
+	// IT-2026-09-16-3106: "link" is a context-dependent keyword recognized
+	// only as `KW_CINCLUDE import_path import_as ID link_libs` where that ID
+	// spells "link". Everywhere else -- as a called C function (unistd.h
+	// really exports one named link()) or as a cinclude alias -- it must
+	// keep parsing as a plain identifier.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/113_link_identifier.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& stmts = jout["ast"]["statements"];
+
+	bool found_link_func = false;
+	bool found_link_alias = false;
+	for (auto& stmt : stmts) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		if (stmt.value("alias", "") == "link") {
+			found_link_alias = true;
+			continue;
+		}
+		for (auto& f : stmt["functions"]) {
+			if (f["name"] == "link") found_link_func = true;
+		}
+	}
+	ASSERT_TRUE(found_link_func);
+	ASSERT_TRUE(found_link_alias);
 }

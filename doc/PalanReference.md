@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.30
+**Version:** v0.1.31
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -332,6 +332,8 @@ printf("%ld\n", x);          // call C function directly
 
 cinclude <stdio.h> as S;     // alias — functions accessible only as S.xxx()
 S.printf("%d\n", 42);        // qualified call
+
+cinclude <math.h> link "m";  // link against libm (-lm) when building
 ```
 
 ### Function Calls
@@ -339,24 +341,57 @@ S.printf("%d\n", 42);        // qualified call
 - `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
 - With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
 
+### Link Libraries
+
+- Some C headers declare functions that live outside libc, in a separate shared library — `math.h`'s
+  `sqrt`/`pow`/`sin`/etc, for instance, are only in libm. A `link` clause on `cinclude` names the
+  library to add to the final link step: `cinclude <math.h> link "m";` appends `-lm` to the `ld`
+  invocation, the same as passing `-lm` on a C compiler's command line. Palan does not keep a
+  built-in header-to-library lookup table — every third-party library must be named explicitly with
+  `link`, since a lookup table covering every header a program might ever cinclude would itself need
+  ongoing maintenance.
+- Multiple libraries in one clause are comma-separated: `cinclude <stdio.h> link "rt", "m";`. The
+  `link` clause comes last, after an optional `as` alias.
+- A library name may contain only letters, digits, `_`, `.`, `+` and `-`, and may not be empty — it
+  is appended directly after `-l` when invoking the linker, so this is checked at compile time
+  rather than left to fail at the `ld` step.
+- Library names are collected across the whole program, not scoped to the file or block where
+  `link` appears: a `link` clause inside a function body or `{ }` block, or one that reaches the
+  final binary only through an `import`ed module, still ends up on the final `ld` command line. The
+  same library named more than once (in one `link` clause, in different clauses, or across
+  different modules) is deduplicated.
+- A header may be cincluded with `link` in one place and without it elsewhere in the same program —
+  the library is added to the link step regardless of which cincluding site names it.
+- `link` is not a reserved word — it is only recognized as introducing this clause immediately after
+  a `cinclude` path (and optional `as` alias). `unistd.h`'s `link()` function, for example, remains
+  callable as an ordinary C function.
+
 ### Typedefs
 
-- C typedefs that resolve to a primitive type are automatically registered as a Palan type alias
-  (see [Type Aliases](#20-type-aliases)) the moment the header is cincluded. For example,
-  `size_t n = strlen(s);` works immediately after `cinclude <string.h>;`, with no explicit alias
-  declaration needed. Typedefs that bottom out in a pointer type (e.g. `timer_t`, `typedef void
-  *timer_t;`) are also resolved, so such a typedef's name can be used as a C function's parameter
-  or return type (e.g. `timer_delete(timer_t)`), but — unlike primitive-bottomed typedefs — it is
-  not registered as a usable Palan type alias name itself. Typedefs that bottom out in a struct
-  (e.g. `FILE`, `typedef struct _IO_FILE FILE;`) are also resolved and usable the same way as a
-  native struct type — see [Incomplete Struct Types](#incomplete-struct-types-opaque-handles)
-  below for the common case where the struct's own layout isn't fully known. This includes a
-  struct body with no tag of its own (`typedef struct { int quot; int rem; } div_t;`) — the
-  typedef's own name is used as the struct's tag, so `div_t`/`ldiv_t`/`lldiv_t` (from
-  `stdlib.h`'s `div`/`ldiv`/`lldiv`) are usable struct types exactly like a tagged one. Typedefs
-  that bottom out in a union or enum are not resolved and remain unusable this version.
-- If multiple cincluded headers introduce the same typedef name, the first registration wins
-  (silent deduplication).
+- A `typedef` a cincluded C header defines is registered as soon as the header is cincluded,
+  whether or not any C function or global in that same header references it. For example,
+  `cinclude <stdint.h>; int32_t x = 5;` works even though `stdint.h` declares no C functions at
+  all — the typedef itself is what gets registered, not something a function signature happens to
+  carry past SA. `size_t n = strlen(s);` after `cinclude <string.h>;` works the same way, just less
+  visibly, since `string.h` also declares functions.
+- Typedefs that resolve to a primitive type are registered as a Palan type alias (see
+  [Type Aliases](#20-type-aliases)). Typedefs that resolve to a struct (e.g. `FILE`, `typedef struct
+  _IO_FILE FILE;`, including a multi-level chain) are registered and usable the same way as a
+  native struct type — see [Incomplete Struct Types](#incomplete-struct-types-opaque-handles) below
+  for the common case where the struct's own layout isn't fully known. This includes a struct body
+  with no tag of its own (`typedef struct { int quot; int rem; } div_t;`) — the typedef's own name
+  is used as the struct's tag, so `div_t`/`ldiv_t`/`lldiv_t` (from `stdlib.h`'s `div`/`ldiv`/`lldiv`)
+  are usable struct types exactly like a tagged one.
+- Typedefs that bottom out in a pointer type (e.g. `timer_t`, `typedef void *timer_t;`) are *not*
+  registered as a usable Palan type alias name — only resolved at the C function signatures that
+  reference them (e.g. `timer_delete(timer_t)` can still be called). A local variable standing in
+  for such a typedef's pointee can be declared directly instead, e.g. `@!void t;` in place of a
+  `timer_t` local (see `doc/Issues.md` for the underlying limitation).
+- Typedefs that bottom out in a union or enum are not resolved and remain unusable this version.
+- If multiple cincluded headers introduce the same typedef name resolving to the *same* underlying
+  type, the first registration silently wins. If they resolve to *different* underlying types, this
+  is a compile error. Because typedef registration is no longer gated on being referenced by some
+  function's signature, this conflict is more likely to actually surface than before.
 - Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported typedefs — they are
   always registered globally. Only C function calls require the `X.` qualifier.
 

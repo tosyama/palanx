@@ -9,5 +9,6 @@ public:
 
 	static string getFilePath(string filepath, string parentfile, vector<string> &searchpaths);
 	static string searchFilePath(const string& fpath, vector<string> &searchpaths);
+	static bool fileExists(const string& filepath);
 };
 

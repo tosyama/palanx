@@ -1,0 +1,11 @@
+cinclude "168_typedef_chain.h";
+cinclude <stdio.h>;
+
+A a = 1;
+B b = a;
+C c = b;
+S s;
+3 -> s.x;
+Anon an;
+7 -> an.m;
+printf("%d %d %d %d %d\n", a, b, c, s.x, an.m);

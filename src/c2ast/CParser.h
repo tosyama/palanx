@@ -11,6 +11,11 @@ class CParser {
 	const vector<CLexer*> &lexers;
 	map<string, json> typedefs_;  // typedef name -> resolved var-type (prim/pntr only, or a
 	                               // tagged strct: {"type-kind":"strct","type-name":Tag})
+	// The single registration point for typedefs_. Takes the var-type by value and
+	// drops "typedef-name" -- that key is a reference-site annotation stamped on by
+	// declaration_specifiers(), so without stripping it here, a chained typedef
+	// (typedef A B;) would carry the previous link's name (A) into B's stored entry.
+	void registerTypedef(const string &name, json vt);
 
 	// Every struct tag seen while parsing (as a definition, a forward declaration,
 	// or a bare reference through a field/parameter/return type), plus any

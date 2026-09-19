@@ -86,6 +86,10 @@ class PlnSemanticAnalyzer {
 	map<string, json>      typeAliases_;
 	// Registered const declarations (name -> {"value": <SA'd literal expr>, "value-type": <type>})
 	map<string, json>      constDecls_;
+	// Library names collected from cinclude `link` clauses. A set: the same
+	// library named by two cinclude statements is emitted once, and the
+	// ordering makes the sa.json "libs" section deterministic.
+	set<string>            linkLibs_;
 
 	void enterScope();
 	void leaveScope();
@@ -171,6 +175,7 @@ class PlnSemanticAnalyzer {
 	// normalizeStructSig -- a struct parameter is still prim(Name) before
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
+	void  registerTypeAliasChecked(const string& aliasName, const json& resolved);
 	void  registerTypedefAliasInType(json& vtype);
 	void  registerCFuncTypedefAliases(json& funcEntry);
 	json sa_field_assign(const json& stmt);

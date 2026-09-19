@@ -1,0 +1,30 @@
+// IT-2026-09-16-3109: broad end-to-end proof that the math.h functions
+// found by the pre-audit to live only in libm (not libc) actually work
+// through the `link` clause introduced in IT-2026-09-16-3106/3107/3108.
+// 171_link_math.pa already covers the minimal "libs reaches ld" case with
+// sqrt alone; this file exercises 13 representative libm functions,
+// including passing a variable and a nested call/expression as arguments.
+//
+// 029_float_newton.pa computes sqrt(2) itself via Newton's method to avoid
+// libm entirely and gets "1.414214"; the first line below shows the same
+// value comes out of calling libm's sqrt() directly.
+cinclude <stdio.h>;
+cinclude <math.h> link "m";
+
+printf("%f\n", sqrt(2.0));
+printf("%f\n", pow(2.0, 10.0));
+printf("%f\n", sin(0.7));
+printf("%f\n", cos(0.7));
+printf("%f\n", tan(0.7));
+printf("%f\n", exp(1.5));
+printf("%f\n", log(7.5));
+printf("%f\n", floor(3.7));
+printf("%f\n", ceil(3.2));
+printf("%f\n", fabs(-5.5));
+printf("%f\n", fmod(7.5, 2.0));
+printf("%f\n", atan2(3.0, 4.0));
+printf("%f\n", hypot(3.0, 4.0));
+
+flo64 r = 2.5;
+printf("%f\n", pow(r, 2.0));
+printf("%f\n", sqrt(pow(3.0, 2.0) + pow(4.0, 2.0)));

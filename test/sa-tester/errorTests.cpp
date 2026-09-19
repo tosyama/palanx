@@ -798,7 +798,12 @@ TEST(sa_error, struct_nested_embed_arr_field_unsupported)
 TEST(sa_error, cinclude_typedef_conflict)
 {
 	// type size_t = int32; then cinclude <string.h>; which resolves size_t to uint64
-	// Covers: registerTypedefAliasInType E_ConflictingTypedef branch
+	// Covers: registerTypeAliasChecked's E_ConflictingTypedef branch. Since
+	// IT-2026-09-16-3104, sa_cinclude's unconditional ast.typedefs loop is what
+	// actually triggers this conflict (registerTypeAliasChecked is called
+	// directly from that loop, not via registerTypedefAliasInType) -- the
+	// per-reference-site path (e.g. strlen's size_t return) would hit the same
+	// conflict too, but the typedefs-section registration runs first.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -2034,4 +2039,35 @@ TEST(sa_error, field_access_through_prim_ptr_field)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+}
+
+TEST(sa_error, invalid_link_lib_name)
+{
+	// IT-2026-09-16-3107: a library name reaches build-mgr's `ld` command
+	// string (IT-3108), so a name carrying shell metacharacters is rejected
+	// at the one point a name enters "libs", not downstream.
+	// Covers: isValidLinkLibName reject path, E_InvalidLinkLibName
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_171_invalid_link_lib.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(": error:"), string::npos);
+	ASSERT_NE(sa.find("invalid library name"), string::npos);
+}
+
+TEST(sa_error, empty_link_lib_name)
+{
+	// `link "";` lexes fine (the link-clause strings are scanned in
+	// INITIAL, where STRING allows zero characters) and would otherwise
+	// emit a bare "-l" that swallows the next ld argument.
+	// Covers: isValidLinkLibName empty() guard
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_172_empty_link_lib.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("invalid library name"), string::npos);
 }

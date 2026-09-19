@@ -307,6 +307,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "cannot index or dereference a void pointer; assign it to a typed pointer "
 			       "(e.g. @!int8) first.";
 
+		case E_InvalidLinkLibName:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "invalid library name '" + arg1 + "' in a cinclude link clause; a name "
+			       "may only contain letters, digits, '_', '.', '+' and '-', since it is "
+			       "passed to the linker as -l<name>.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

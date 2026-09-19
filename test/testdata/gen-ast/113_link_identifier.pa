@@ -1,0 +1,6 @@
+// Regression: "link" is a context-dependent keyword only inside the cinclude
+// link clause. It must keep working as an ordinary identifier everywhere else,
+// including as the very C function unistd.h exports under that name.
+cinclude <unistd.h>;
+link("/tmp/pln_113_src", "/tmp/pln_113_dst");
+cinclude <unistd.h> as link;

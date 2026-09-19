@@ -9,16 +9,46 @@
 #include <vector>
 #include <set>
 #include <algorithm>
+#include <cstring>
 #include <getopt.h>
 #include <filesystem>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnBuildMgrMessage.h"
+#include "../common/PlnProcess.h"
 
 using namespace std;
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 static string getPalanDirPath();
+
+// Run a pipeline tool and map the outcome onto build-mgr's historical return
+// convention: 0 on success, the child's exit status when it failed, -1 when
+// it died from a signal (main returns that as 255, as before). A child that
+// could not be started at all was previously indistinguishable from either --
+// the shell reported "command not found" on its own stderr and exited 127,
+// which build-mgr forwarded blindly. Now it is diagnosed and 127 is kept as
+// the returned exit code for compatibility.
+static int runTool(const vector<string>& argv)
+{
+	PlnProcResult r = runProcess(argv);
+	switch (r.status) {	// LCOV_EXCL_BR_LINE -- the Signaled arm below is unreachable under test
+		case PlnSpawnStatus::Exited:
+			return r.exit_code;
+		// LCOV_EXCL_START
+		case PlnSpawnStatus::Signaled:
+			// Only reachable if one of the pipeline tools itself (gen-ast/sa/
+			// codegen/as/ld) dies by signal -- not reproducible by any Palan
+			// source under test; the compiled *user* program crashing is a
+			// separate, tested path (see the run-and-delete step below).
+			return -1;
+		// LCOV_EXCL_STOP
+		default:
+			cerr << PlnBuildMgrMessage::getMessage(
+				E_FailedToExecute, argv[0], strerror(r.err_no)) << endl;
+			return 127;
+	}
+}
 
 int main(int argc, char* argv[])
 {
@@ -86,16 +116,9 @@ int main(int argc, char* argv[])
 		string input_file_work_path = palan_work_path + input_file.parent_path().string();
 		fs::create_directories(input_file_work_path);
 		string output_ast_path = palan_work_path + input_file.string() + ".ast.json";
-		string astcmd = exec_path + "/palan-gen-ast " + input_file.string() + " -o " + output_ast_path;
 
-		int ret = system(astcmd.c_str());
-		if (WIFEXITED(ret)) {
-			ret = WEXITSTATUS(ret);
-			if (ret)
-				return ret;
-		} else {
-			return -1;
-		}
+		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path}))
+			return ret;
 		ast_files.emplace_back(output_ast_path);
 
 		// check import files and add targets
@@ -122,19 +145,17 @@ int main(int argc, char* argv[])
 	}
 
 	vector<string> obj_files;
+	// Union of libraries requested by cinclude `link` clauses across every
+	// module. Declared here (not scoped to the aggregation block below) so it
+	// is still alive when the ld command line is built (IT-2026-09-16-3108).
+	set<string> link_libs;
 
 	for (int i=0; i<ast_files.size(); i++) {
 		string ast_file = ast_files[i];
 
 		// palan-sa
-		string sacmd = exec_path + "/palan-sa " + ast_file;
-		int ret = system(sacmd.c_str());
-		if (WIFEXITED(ret)) {
-			ret = WEXITSTATUS(ret);
-			if (ret) return ret;
-		} else {
-			return -1;
-		}
+		if (int ret = runTool({exec_path + "/palan-sa", ast_file}))
+			return ret;
 
 		// Derive output paths (strip ".ast.json" suffix from ast_file)
 		string base = ast_file.substr(0, ast_file.size() - 9);  // remove ".ast.json"
@@ -144,31 +165,23 @@ int main(int argc, char* argv[])
 
 		// palan-codegen
 		bool is_entry = (i == 0);
-		string codegencmd = exec_path + "/palan-codegen";
-		if (!is_entry) codegencmd += " --no-entry";
-		codegencmd += " " + sa_file;
-		ret = system(codegencmd.c_str());
-		if (WIFEXITED(ret)) {
-			ret = WEXITSTATUS(ret);
-			if (ret) return ret;
-		} else {
-			return -1;
-		}
+		vector<string> codegenArgv{exec_path + "/palan-codegen"};
+		if (!is_entry) codegenArgv.push_back("--no-entry");
+		codegenArgv.push_back(sa_file);
+		if (int ret = runTool(codegenArgv))
+			return ret;
 
 		// as
-		string ascmd = "as " + asm_file + " -o " + obj_file;
-		ret = system(ascmd.c_str());
-		if (WIFEXITED(ret)) {
-			ret = WEXITSTATUS(ret);
-			if (ret) return ret;
-		} else {
-			return -1;
-		}
+		if (int ret = runTool({"as", asm_file, "-o", obj_file}))
+			return ret;
 
 		obj_files.push_back(obj_file);
 	}
 
-	// Collect alloc-shapes from all sa.json files, deduplicated by key
+	// Single pass over every module's sa.json to aggregate whole-program
+	// information: the union of `link`-clause libraries (into link_libs,
+	// declared above so it survives to the ld step) and alloc-shapes
+	// deduplicated by key (used below to synthesize shared allocators).
 	{
 		set<string> seen_shapes;
 		vector<json> arr_shapes;
@@ -178,6 +191,10 @@ int main(int argc, char* argv[])
 			string base = ast_file.substr(0, ast_file.size() - 9);
 			ifstream f(base + ".sa.json");
 			json sa = json::parse(f);
+			// SA always emits "libs" (possibly empty), so no contains() guard
+			// is needed. Read before the alloc-shapes continue below: a
+			// module can carry libs without carrying alloc-shapes.
+			for (auto& l : sa["libs"]) link_libs.insert(l.get<string>());
 			if (!sa.contains("alloc-shapes")) continue;
 			for (auto& shape : sa["alloc-shapes"]) {
 				string key;
@@ -215,6 +232,10 @@ int main(int argc, char* argv[])
 			string alloc_o   = alloc_pa + ".o";
 
 			{
+				// This synthesized source only ever cinclude's stdlib.h with
+				// no `link` clause, so its sa.json can never contribute to
+				// link_libs; it does not need to join the aggregation loop
+				// above.
 				ofstream out(alloc_pa);
 				out << "cinclude <stdlib.h>;\n";
 
@@ -373,50 +394,58 @@ int main(int argc, char* argv[])
 				}
 			}
 
-			auto runCmd = [](const string& cmd) -> int {
-				int r = system(cmd.c_str());
-				if (WIFEXITED(r)) return WEXITSTATUS(r);
-				return -1;
-			};
-
-			int ret;
-			ret = runCmd(exec_path + "/palan-gen-ast " + alloc_pa + " -o " + alloc_ast);
-			if (ret) return ret;
-			ret = runCmd(exec_path + "/palan-sa " + alloc_ast);
-			if (ret) return ret;
-			ret = runCmd(exec_path + "/palan-codegen --no-entry " + alloc_sa);
-			if (ret) return ret;
-			ret = runCmd("as " + alloc_s + " -o " + alloc_o);
-			if (ret) return ret;
+			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast}))
+				return ret;
+			if (int ret = runTool({exec_path + "/palan-sa", alloc_ast}))
+				return ret;
+			if (int ret = runTool({exec_path + "/palan-codegen", "--no-entry", alloc_sa}))
+				return ret;
+			if (int ret = runTool({"as", alloc_s, "-o", alloc_o}))
+				return ret;
 
 			obj_files.push_back(alloc_o);
 		}
 	}
 
-	// ld — link all object files into the final binary
-	// TODO: extract required libraries from AST cinclude link clauses
-	string ldcmd = "ld";
-	for (auto& obj : obj_files) ldcmd += " " + obj;
-	ldcmd += " -lc -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o " + binary_name;
-	int ret = system(ldcmd.c_str());
-	if (WIFEXITED(ret)) {
-		ret = WEXITSTATUS(ret);
-		if (ret) return ret;
-	} else {
-		return -1;
-	}
+	// ld — link all object files into the final binary. -lc is unconditional:
+	// the allocators Palan synthesizes call libc malloc/free, a runtime
+	// dependency independent of any header. link_libs then adds one -l per
+	// cinclude `link` clause; names are validated at SA ingest, not here.
+	// link_libs is a set, so declaration order from source is already lost --
+	// harmless for shared libraries (order doesn't gate symbol resolution),
+	// but this would need to change if static archives with inter-library
+	// dependencies were ever supported.
+	vector<string> ldArgv{"ld"};
+	for (auto& obj : obj_files) ldArgv.push_back(obj);
+	ldArgv.push_back("-lc");
+	for (auto& lib : link_libs) ldArgv.push_back("-l" + lib);
+	ldArgv.push_back("-dynamic-linker");
+	ldArgv.push_back("/lib64/ld-linux-x86-64.so.2");
+	ldArgv.push_back("-o");
+	ldArgv.push_back(binary_name);
+	if (int ret = runTool(ldArgv))
+		return ret;
 
 	// When no explicit output is specified, run the binary and remove it.
 	// This enables script-style usage: palan script.pa
 	if (!output_specified) {
-		int run_ret = system(("./" + binary_name).c_str());
+		PlnProcResult r = runProcess({"./" + binary_name});
 		fs::remove(binary_name);
-		if (WIFEXITED(run_ret)) return WEXITSTATUS(run_ret);
+		if (r.status == PlnSpawnStatus::Exited)
+			return r.exit_code;
+		if (r.status == PlnSpawnStatus::SpawnFailed) {	// LCOV_EXCL_START
+			// ld just produced this binary; reaching SpawnFailed here needs an
+			// OS-level condition (e.g. a noexec mount, disk full) rather than
+			// anything reproducible from Palan source under test.
+			cerr << PlnBuildMgrMessage::getMessage(
+				E_FailedToExecute, "./" + binary_name, strerror(r.err_no)) << endl;
+			return 127;
+		}	// LCOV_EXCL_STOP
 		return -1;
 	}
 
 	return 0;
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local strings/paths; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 string getPalanDirPath()
 {

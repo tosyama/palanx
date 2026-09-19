@@ -6,68 +6,76 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-12)
-version: 0.1.30 — stdlib.h: anonymous-struct typedefs, by-value struct returns, pointer
-address-of, and C callbacks
+### 2.1 Iteration Goal (2026-09-16)
+version: 0.1.31 — typedef ingestion generalized to the cinclude boundary, and a `link`
+clause for third-party libraries
 
-An audit of stdlib.h found 94 of its 104 functions already usable with no compiler change at
-all. The ten that are not split into two groups — five needing C function-pointer parameters
-(`qsort`, `bsearch`, `atexit`, `at_quick_exit`, `on_exit`) and five needing typedefs of
-anonymous struct bodies (`div`/`ldiv`/`lldiv` return `div_t`/`ldiv_t`/`lldiv_t`;
-`select`/`pselect` take `fd_set`/`__sigset_t`) — and a third, orthogonal gap blocks the
-common C out-parameter idiom, since `@`/`@!` accepts only a primitive-typed operand:
+Looking for the next high-frequency C standard library gap (rather than auditing one more
+header end to end) surfaced a structural gap instead of a per-function one: **a cincluded
+header's `typedef`s are only exposed to Palan when some C *function* declared in the same
+header happens to reference that typedef in its signature.** There is no rule that says "a
+header defines this typedef, so register it" — only "a function signature carried this
+typedef past SA, so register it as a side effect." `size_t` works after `cinclude
+<string.h>;` only because `size_t strlen(const char*)` rides the typedef past registration;
+a header of pure typedefs and no functions gets nothing:
 
 ```
-cinclude <stdlib.h>;
-div_t d = div(7, 2);                → error: unrepresentable type: div_t
-@!int8 endp;
-strtol("42abc", @!endp, 10);        → error: cannot take the address of 'endp'
-qsort(arr, n, 4, cmp);              → error: C function 'qsort' has an unsupported signature
+cinclude <stdint.h>;
+int32_t x = 5;     → error: unknown struct type 'int32_t'
 ```
 
-Three independent gaps cause this. (1) `typedef struct { ... } div_t;` never reaches c2ast's
-`structs` channel: `captureStructTag` is called only for a *named* tag, so an anonymous body
-attached to a typedef registers nowhere and every later reference falls through to an
-unresolved `user` type-kind. (2) `@`/`@!` rejects a pointer-typed operand, which is exactly
-the shape `char **endptr` and `void **memptr` need. (3) A C function-pointer parameter is
-classified unrepresentable at the cinclude ingestion boundary, so the whole function is
-rejected even though the only value that could ever fill that slot — the address of a Palan
-function — is already just an assembler label.
+`stdint.h` declares zero C functions, so `int32_t`/`uint32_t`/`int64_t`/etc — types that
+appear in nearly every C API signature — never reach `typeAliases_` at all. This is exactly
+the shape this project's development principles warn about: normalization riding along
+opportunistically at each reference site instead of happening once at the point of ingestion.
+c2ast's own `typedefs_` map already resolves multi-level chains correctly (verified: a
+3-level chain fully collapses to a primitive) — the bug is that nothing exports that map on
+its own; it is only ever surfaced as a `typedef-name` hint attached to a function/global's
+var-type node.
 
-This iteration closes all three, plus the address-of gap for an embedded struct field.
-c2ast synthesizes the typedef's own name as the struct's tag, so an anonymous-body typedef
-registers through the same single path a named tag already uses and SA sees one canonical
-shape. `@`/`@!` extends to a pointer-to-primitive local variable, producing the
-pointer-to-pointer a C out-parameter expects, and to an embedded struct field. A Palan
-function named in a C callback argument position becomes a function reference, lowered to
-the existing `LeaLabel` instruction — no indirect-call machinery is needed, because Palan
-never calls through the pointer; the C library does, in its own compiled code. And receiving
-a struct returned **by value** from a C function is implemented as a general System V AMD64
-return classification (one or two eightbytes in `%rax`/`%rdx` or `%xmm0`/`%xmm1`, or a hidden
-destination pointer for anything over 16 bytes), not as a `div_t`-shaped special case.
+A second, unrelated gap was found investigating the same "high-frequency function" question:
+`cinclude <math.h>;` type-checks and generates code for `sqrt`/`pow`/`sin`/etc, but linking
+fails — `src/build-mgr/main.cpp` hardcodes `-lc` with a standing `TODO: extract required
+libraries from AST cinclude link clauses`. Measured: of math.h's 140 public non-long-double
+functions, 124 exist only in libm, not libc, and are all unresolvable today.
 
-Planning surfaced a prerequisite bug that is worse than any of the above: a struct-typed
-local variable's initializer is discarded outright — `Pair p = make_pair(3, 4);` compiles to
-code that never calls `make_pair`, with no diagnostic — and a by-value struct value passes
-unchecked through every argument, assignment and return binding site, because those sites
-treat a non-primitive type mismatch as a deliberate pass-through. By-value struct
-*parameters* are admitted on the same reasoning, so `fopencookie` type-checks today and would
-be called with a wrong ABI. All of these are made loud first, in their own ticket, before any
-new capability is added on top of them.
+This iteration closes both, plus two prerequisite bugs found in the same ingestion path while
+investigating: `cinclude`ing a header that cannot be found crashes palan-c2ast (a null/empty
+path reaches the lexer with no existence check), and that crash — once fixed to a clean
+failure — was previously being swallowed by gen-ast's `execute_c2ast()`, which returns an
+empty JSON on failure and lets the enclosing `cinclude` statement quietly become a no-op, so
+`palan` exits 0 on a program whose header never loaded.
 
-Non-goals for this iteration: unions as a type (c2ast's capture paths are all guarded on
-`is_struct`, and C's overlapping storage is not Palan's `struct`); practical `select`/
-`pselect` support (`fd_set`'s only field is an array sized by `sizeof`, which c2ast still
-cannot fold, so the type stays incomplete even once the typedef resolves); passing a struct
-to a C function by value (the inverse of the return path — diagnosed, not implemented); a
-struct-by-value return type for native Palan functions; first-class function-pointer
-variables or indirect calls from Palan; and `@`/`@!` on array elements — a pointer-typed
-array element is indistinguishable in SA from the out-of-scope `[n]@T` pointer-slot-array
-element, and no C API in the audit needs either.
+The typedef fix generalizes ingestion rather than adding a second registration path: c2ast
+flushes its resolved `typedefs_` map into a new `typedefs` section on its own AST output (the
+same one-shot-flush pattern already used for `structs`), scoped to primitive- and
+struct-bottomed entries only; SA registers all of them unconditionally in `sa_cinclude`,
+ahead of the function-count-dependent early return that was silently gating stdint.h's case.
+Pointer-bottomed typedefs (e.g. `typedef void *timer_t;`) are deliberately left as they are —
+resolved only at C-function reference sites, never as a usable Palan type name — because
+registering them would force a decision about which side of the `@`/`@!` mutability split a
+bare pointer typedef falls on, and the one real need for it (`timer_create`'s out-parameter)
+already has a working spelling via `@!void`.
 
-Full gap catalog, the SysV classification rules and sa.json shapes, the address-of scope
-decision and its evidence, and the ticket breakdown are in
-`localtickets/iteration-2026-09-12-v0130-stdlib.md`.
+The link fix adds an explicit `link` clause to `cinclude` (`cinclude <math.h> link "m";`)
+rather than a header→library lookup table — the project's C-interop stance has consistently
+rejected adding a whitelist instead of asking why one would be needed, and a lookup table for
+every header a user might ever cinclude is exactly that whitelist. `link` is a
+cinclude-adjacent contextual keyword, not a global reserved word, because `unistd.h` exports
+a real `link()` function that must remain callable. SA collects and deduplicates the library
+names into a new `libs` section on sa.json (the single place that already consumes and
+normalizes `cinclude`), and the build manager unions `libs` across every module's sa.json in
+the loop it already runs for `alloc-shapes`, appending `-l<name>` to the existing `ld`
+invocation.
+
+Non-goals for this iteration: registering pointer-bottomed typedefs as Palan type names
+(above); a header→library lookup table (above); union/enum/`long double` representation
+(`doc/Issues.md` item 14, unchanged — diagnosed, not implemented); and any static-linking or
+CRT strategy beyond what already exists (`doc/Issues.md` item 18, undesigned).
+
+Full audit numbers (math.h's libc/libm split, the typedef-count survey across 13 headers, the
+zero-collision measurement, and the c2ast crash/swallow repros), the design decisions, and
+the ticket breakdown are in `localtickets/iteration-2026-09-16-v0131-typedef-link.md`.
 
 The series' underlying goal stays the same: header/feature support is the forcing function
 for general C-interop language capability, not per-function coverage for its own sake.
@@ -98,9 +106,10 @@ Design:
  assembles them with `as`, and links the resulting object files with `ld` to create the final executable (default: `a.out`).
  If `-o` is not specified, the resulting `a.out` is executed immediately after linking and then removed.
  This allows palan to be used as a script runner without leaving build artifacts.
- Before linking, the build manager reads ast.json for each source file and collects `link` declarations
- from `cinclude` statements (e.g. `cinclude <stdio.h> link "c";`), passing the corresponding `-l` flags to `ld`.
- This link declaration feature is designed but not yet implemented; linking flags are handled manually in the interim.
+ Before linking, the build manager unions the `libs` array (see SASpec.md's Root) across every
+ module's sa.json, in the same pass it already makes over all modules to collect `alloc-shapes`,
+ and appends `-l<name>` to the `ld` invocation for each library named by a `link` clause on a
+ `cinclude` statement (e.g. `cinclude <math.h> link "m";`) anywhere in the program.
  During each step, the build manager will check the creation times of source files and their corresponding output files
  to determine if recompilation is necessary, optimizing the build process by avoiding redundant work.
 
@@ -169,6 +178,10 @@ Design:
  registered via cinclude statements (scope-aware: functions are visible from the cinclude
  point until the end of the enclosing scope).
  cinclude and import statements are consumed for scope resolution and are not emitted to sa.json.
+ A cinclude's `typedefs` (ASTSpec.md) are registered into the type-alias table unconditionally,
+ independent of whether the header declares any functions, and a cinclude's `link` clause libraries
+ are validated, deduplicated, and emitted as sa.json's top-level `libs` array (SASpec.md's Root) --
+ the one piece of a cinclude statement that survives past this consume-and-drop step.
  Expression statements are annotated with resolution results (e.g., func-type: "c" for calls
  resolved to C functions) and emitted to sa.json.
  Type checking is performed during expression processing. When an implicit widening conversion is required

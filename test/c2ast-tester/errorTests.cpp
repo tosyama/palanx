@@ -134,3 +134,20 @@ TEST(c2ast_error, if_expr_unexpected_end) {
 		"bin/palan-c2ast ../test/testdata/c2ast/error_014_if_expr_end.h");
 	ASSERT_NE(out.find("unexpected end of expression"), string::npos);
 }
+
+// --- Input file errors (IT-2026-09-16-3101) ---
+
+TEST(c2ast_error, input_system_header_not_found) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-c2ast -s nosuch_system_header.h");
+	ASSERT_NE(out.find("No such file or directory"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);
+}
+
+TEST(c2ast_error, input_local_header_not_found) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/nosuch_local.h");
+	ASSERT_NE(out.find("No such file or directory"), string::npos);
+	ASSERT_EQ(out.find("return0:"), string::npos);
+}

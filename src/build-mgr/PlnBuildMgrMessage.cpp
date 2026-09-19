@@ -9,7 +9,7 @@
 #include "../common/PlnDefs.h"
 #include <boost/assert.hpp>
 
-string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string arg1)
+string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string arg1, string arg2)
 {
 	switch (msg_code) {
 		case M_Help:
@@ -36,6 +36,10 @@ string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string ar
 		case E_PalanDirNotDirectory:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "palan: '" + arg1 + "' exists but is not a directory";
+
+		case E_FailedToExecute:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "palan: failed to execute '" + arg1 + "': " + arg2;
 
 		default:
 			BOOST_ASSERT(false);

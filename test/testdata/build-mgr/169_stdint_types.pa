@@ -1,0 +1,9 @@
+cinclude <stdint.h>;
+cinclude <stdio.h>;
+
+int32_t a = 1000000;
+uint32_t b = 2000000;
+int64_t c = 300000000;
+uint64_t d = 400000000;
+int64_t e = a;
+printf("%d %u %ld %lu %ld\n", a, b, c, d, e);

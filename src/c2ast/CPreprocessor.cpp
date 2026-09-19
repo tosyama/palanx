@@ -66,6 +66,10 @@ bool CPreprocessor::loadPredefined(const string& filepath)
 
 bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 {
+	if (!CFileInfo::fileExists(filepath)) {
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_IncludeNotFound, filepath));
+	}
+
 	if (!tokens) {
 		tokens = &top_tokens;
 	}

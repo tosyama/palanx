@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
+#include <filesystem>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
 using json = nlohmann::json;
 using namespace std;
+namespace fs = std::filesystem;
 
 TEST(build_mgr, helloworld) {
 	cleanTestEnv();
@@ -1486,6 +1488,157 @@ TEST(build_mgr, atexit_callback) {
 		"hello\n"
 		"last\n"
 		"bye\n");
+}
+
+TEST(build_mgr, limits_constants) {
+	// limits.h declares zero C functions -- only object-like macro constants
+	// (INT_MAX etc). Prereq bug: sa_cinclude()'s old "return if no functions"
+	// early-return sat before the constants-registration block, so a
+	// function-less header's constants were silently never registered.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/166_limits_constants.pa");
+	ASSERT_EQ(output, "2147483647\n");
+}
+
+TEST(build_mgr, stdint) {
+	// IT-2026-09-16-3104 end-to-end: stdint.h declares zero C functions, only
+	// typedefs (int32_t etc). Before this ticket, int32_t was invisible to
+	// Palan entirely -- no C function/global in the header referenced it to
+	// carry the typedef-name hint through the old signature-piggyback path.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/167_stdint.pa");
+	ASSERT_EQ(output, "5\n");
+}
+
+TEST(build_mgr, stdint_types) {
+	// IT-2026-09-16-3105: a realistic multi-type scenario for stdint.h,
+	// complementing 167_stdint's minimal repro -- int32_t/uint32_t/int64_t/
+	// uint64_t used together, plus one cross-type (int32_t -> int64_t)
+	// assignment, all from a header that declares zero C functions.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/169_stdint_types.pa");
+	ASSERT_EQ(output, "1000000 2000000 300000000 400000000 1000000\n");
+}
+
+TEST(build_mgr, typedef_chain) {
+	// IT-2026-09-16-3105 end-to-end: a multi-level typedef chain (A -> B -> C,
+	// all the way to int32), a tagged-struct-bottomed typedef (S -> struct Tag),
+	// and an anonymous-struct typedef (Anon), all registered via the
+	// unconditional ast.typedefs loop (IT-2026-09-16-3104) rather than by
+	// piggybacking on a C function signature. The header also carries a
+	// pointer-bottomed typedef (P) that is never referenced here -- its
+	// presence proves the other typedefs still register normally even when a
+	// header mixes in an excluded (pntr-bottomed) entry.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/168_typedef_chain.pa");
+	ASSERT_EQ(output, "1 1 1 3 7\n");
+}
+
+TEST(build_mgr, all_headers) {
+	// IT-2026-09-16-3105: cinclude all 13 headers audited for this iteration
+	// (stdio.h, string.h, stdlib.h, time.h, math.h, ctype.h, sys/stat.h,
+	// stdint.h, inttypes.h, sys/types.h, errno.h, locale.h, dirent.h)
+	// simultaneously. IT-2026-09-16-3104's manual audit found zero
+	// E_ConflictingTypedef diagnostics across this same set now that every
+	// header's typedefs register unconditionally rather than only the ones
+	// referenced by some function signature -- this pins that result down as
+	// a standing regression guard instead of a one-off measurement.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/170_all_headers.pa");
+	ASSERT_EQ(output, "7\n");
+}
+
+TEST(build_mgr, link_math) {
+	// IT-2026-09-16-3108: build-mgr unions "libs" from every module's sa.json
+	// and passes -l<name> to ld, so a cinclude `link` clause actually makes
+	// the program linkable (sqrt lives in libm, not libc).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/171_link_math.pa");
+	ASSERT_EQ(output, "1.414214\n");
+}
+
+TEST(build_mgr, link_import) {
+	// IT-2026-09-16-3108: this file itself has no `link` clause -- lib_sqrt.pa
+	// (imported) is the one requesting libm, proving build-mgr's "libs"
+	// aggregation is a whole-program union across modules, not per-file.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/172_link_import.pa");
+	ASSERT_EQ(output, "11\n");
+}
+
+TEST(build_mgr, math_functions) {
+	// IT-2026-09-16-3109: broad end-to-end proof that libm functions found
+	// by the pre-audit (sqrt/pow/sin/cos/tan/exp/log/floor/ceil/fabs/fmod/
+	// atan2/hypot) actually run through the `link` clause, including
+	// passing a variable and a nested call/expression as arguments.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/173_math_functions.pa");
+	ASSERT_EQ(output,
+		"1.414214\n"
+		"1024.000000\n"
+		"0.644218\n"
+		"0.764842\n"
+		"0.842288\n"
+		"4.481689\n"
+		"2.014903\n"
+		"3.000000\n"
+		"4.000000\n"
+		"5.500000\n"
+		"1.500000\n"
+		"0.643501\n"
+		"5.000000\n"
+		"6.250000\n"
+		"5.000000\n");
+}
+
+TEST(build_mgr, output_name_injection) {
+	// IT-2026-09-18-build-mgr-argv-spawn: the -o argument used to be
+	// concatenated unquoted into the ld shell command line. A shell
+	// metacharacter payload proves both halves: the marker file the payload
+	// would create must NOT exist (injection is closed), and a file with the
+	// exact literal name must exist (the argument reached ld verbatim, not
+	// truncated or mangled).
+	cleanTestEnv();
+	execTestCommand("rm -f PWNED");
+	string output = execTestCommand(
+		"bin/palan -o 'out/b_$(touch PWNED)' ../test/testdata/build-mgr/001_helloworld.pa");
+	ASSERT_EQ(output, "");
+	ASSERT_FALSE(fs::exists("PWNED"));
+	ASSERT_TRUE(fs::exists("out/b_$(touch PWNED)"));
+}
+
+TEST(build_mgr, source_path_injection) {
+	// IT-2026-09-18-build-mgr-argv-spawn: the input .pa path flows unquoted
+	// through fs::weakly_canonical into every pipeline stage's command line
+	// (gen-ast/sa/codegen/as/ld) plus the mirrored work directory path. Copy a
+	// fixture to a hostile name at runtime (metacharacter filenames are not
+	// checked into git) and confirm the whole pipeline still runs correctly.
+	cleanTestEnv();
+	execTestCommand("rm -f PWNED");
+	execTestCommand(
+		"cp ../test/testdata/build-mgr/174_shell_metachar_source.pa 'out/inj_$(touch PWNED).pa'");
+	string output = execTestCommand("bin/palan 'out/inj_$(touch PWNED).pa'");
+	ASSERT_EQ(output, "Hello World!\n");
+	ASSERT_FALSE(fs::exists("PWNED"));
+}
+
+TEST(build_mgr, import_path_injection) {
+	// IT-2026-09-18-build-mgr-argv-spawn: an import path read back out of
+	// ast.json used to be concatenated unquoted into the next palan-gen-ast
+	// shell command line. A plain nonexistent metacharacter path is rejected
+	// by the pre-existing fs::exists() check before ever reaching that
+	// command line, so the imported file is created here with the exact
+	// literal metacharacter name -- this is what actually reaches the
+	// vulnerable code path pre-fix.
+	cleanTestEnv();
+	execTestCommand("rm -f PWNED");
+	execTestCommand("cp ../test/testdata/build-mgr/175_import_path_injection.pa out/");
+	execTestCommand(
+		"printf 'export func add(int32 a, int32 b) -> int32 { return a + b; }\\n' "
+		"> 'out/$(touch PWNED).pa'");
+	string output = execTestCommand("bin/palan out/175_import_path_injection.pa");
+	ASSERT_EQ(output, "7\n");
+	ASSERT_FALSE(fs::exists("PWNED"));
 }
 
 TEST(build_mgr, clean) {

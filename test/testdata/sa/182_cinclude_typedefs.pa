@@ -1,0 +1,3 @@
+cinclude "182_cinclude_typedefs.h";
+
+my_size_t n = 5;

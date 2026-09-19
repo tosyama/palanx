@@ -1,0 +1,4 @@
+cinclude "112_cinclude_link.h" link "m";
+cinclude "112_cinclude_link.h" link "m", "rt";
+cinclude "112_cinclude_link.h" as M link "m";
+cinclude "112_cinclude_link.h";

@@ -1552,6 +1552,26 @@ TEST(sa, cinclude_typedef_size_t)
 	ASSERT_FALSE(v["init"]["value-type"].contains("typedef-name"));
 }
 
+TEST(sa, cinclude_typedefs)
+{
+	// IT-2026-09-16-3104: a header exporting a typedef but zero C functions
+	// (unlike 122_cinclude_typedef_size_t.pa's size_t, which rides in on
+	// strlen()'s return type) must still have that typedef registered --
+	// the general rule this ticket implements, not the old
+	// signature-piggyback path.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/182_cinclude_typedefs.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& decl = jout["statements"][0];
+	ASSERT_EQ(decl["stmt-type"], "var-decl");
+	const auto& v = decl["vars"][0];
+	ASSERT_EQ(v["name"], "n");
+	ASSERT_EQ(v["var-type"]["type-kind"], "prim");
+	ASSERT_EQ(v["var-type"]["type-name"], "int32");
+	ASSERT_FALSE(v["var-type"].contains("typedef-name"));
+}
+
 TEST(sa, cinclude_typedef_struct_file)
 {
 	// `typedef struct _IO_FILE FILE;` (stdio.h) -- IT-2026-09-06-2905:
@@ -4018,4 +4038,86 @@ TEST(sa, c_callback_void) {
 	ASSERT_EQ(call["name"], "atexit");
 	ASSERT_EQ(call["args"][0]["expr-type"], "func-ref");
 	ASSERT_EQ(call["args"][0]["name"], "on_exit_cb");
+}
+
+TEST(sa, link_libs) {
+	// IT-2026-09-16-3107: the `link` clause IT-3106 put on the cinclude AST
+	// node is collected by SA into the sa.json root "libs" section. The
+	// cinclude statement itself is still consumed, as it always was.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/183_link_libs.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_TRUE(jout.contains("libs"));
+	ASSERT_EQ(jout["libs"].size(), 1u);
+	ASSERT_EQ(jout["libs"][0], "m");
+
+	for (auto& stmt : jout["statements"])
+		ASSERT_NE(stmt["stmt-type"], "cinclude");
+}
+
+TEST(sa, link_libs_dedup) {
+	// Two cinclude statements naming the same library yield one entry:
+	// linkLibs_ is a set, so build-mgr never sees "-lm -lm".
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/184_link_libs_dedup.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["libs"].size(), 1u);
+	ASSERT_EQ(jout["libs"][0], "m");
+}
+
+TEST(sa, link_libs_sorted) {
+	// `link "rt", "m"` is written in that order; the output is sorted, so
+	// sa.json is deterministic regardless of source order.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/185_link_libs_sort.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["libs"].size(), 2u);
+	ASSERT_EQ(jout["libs"][0], "m");
+	ASSERT_EQ(jout["libs"][1], "rt");
+}
+
+TEST(sa, link_libs_absent) {
+	// "libs" is a required root section: present and empty when no cinclude
+	// in the module carries a `link` clause, exactly like "str-literals",
+	// "functions" and "alloc-shapes".
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_TRUE(jout.contains("libs"));
+	ASSERT_TRUE(jout["libs"].is_array());
+	ASSERT_EQ(jout["libs"].size(), 0u);
+}
+
+TEST(sa, link_libs_no_func_header) {
+	// IT-2026-09-16-3107: a header that declares zero functions produces a
+	// cinclude node with no "functions" key at all -- collecting `libs`
+	// must not be gated on that section. The link_marker_t declaration
+	// proves the header really was loaded.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/186_link_no_func_header.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_EQ(jout["libs"].size(), 1u);
+	ASSERT_EQ(jout["libs"][0], "rt");
+
+	const auto& v = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(v["name"], "n");
+	ASSERT_EQ(v["var-type"]["type-name"], "int32");
+}
+
+TEST(sa, link_libs_in_block) {
+	// A cinclude nested in a block still contributes to the ROOT "libs":
+	// linking is a whole-program property, so unlike the C declarations the
+	// header brings in (which stay scoped to the block), a library has no
+	// scope to be local to. A cinclude inside a Palan function body takes
+	// the identical path (sa_function -> sa_statements -> sa_cinclude); the
+	// block fixture stands in for both.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/187_link_in_block.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_EQ(jout["statements"][0]["stmt-type"], "block");
+	ASSERT_EQ(jout["libs"].size(), 1u);
+	ASSERT_EQ(jout["libs"][0], "m");
 }

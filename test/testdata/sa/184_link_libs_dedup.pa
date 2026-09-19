@@ -1,0 +1,4 @@
+cinclude <stdio.h> link "m";
+cinclude <stdio.h> link "m";
+
+printf("%d\n", 1);

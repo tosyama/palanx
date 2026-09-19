@@ -11,9 +11,11 @@ add_flex_bison_dependency(PlnLexer PlnParser)
 add_executable(palan-gen-ast
 	main.cpp
 	PlnGenAstMessage.cpp
+	PlnGenAstC2Ast.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/PlnLexer.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/PlnParser.cpp
 	../common/PlnFileUtils.cpp
+	../common/PlnProcess.cpp
 )
 
 option(OUTPUT_COVERAGE "Output coverage files.")

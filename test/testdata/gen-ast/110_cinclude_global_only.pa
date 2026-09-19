@@ -1,0 +1,5 @@
+// IT-2026-09-16-3102 (follow-up): a header with globals but no functions
+// used to make PlnParser.yy's cinclude rule set "functions" to null
+// (unconditional move() vs. the contains()-guarded constants/structs/globals).
+cinclude "110_cinclude_global_only.h";
+int32 x = 5;

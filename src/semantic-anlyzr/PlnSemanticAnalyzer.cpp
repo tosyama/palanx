@@ -411,6 +411,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
+	sa["libs"]          = json::array();
 	enterScope();
 	// 0. Pre-scan top-level type-alias and struct-def declarations so function
 	//    signatures pre-registered in step 1 (and calls resolved during step 2)
@@ -445,12 +446,33 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);
+	// 4. Emit the libraries collected from cinclude `link` clauses. After
+	//    steps 2-3 because a cinclude may sit inside a block or a function
+	//    body, not only at top level; linking is a whole-program property,
+	//    so all of them land in the same root section regardless of the
+	//    scope their C declarations were visible in.
+	for (auto& lib : linkLibs_) sa["libs"].push_back(lib);
 	leaveScope();
 }
 
 const json& PlnSemanticAnalyzer::result()
 {
 	return sa;
+}
+
+// Register a typedef name as an alias for `resolved` in typeAliases_, same
+// first-wins/conflict-diagnosed policy as a native "type X = ...;" alias
+// (sa_type_alias): first registration wins, a later registration of the same
+// name with a different resolved type is E_ConflictingTypedef (fatal).
+void PlnSemanticAnalyzer::registerTypeAliasChecked(const string& aliasName, const json& resolved)
+{
+	auto it = typeAliases_.find(aliasName);
+	if (it == typeAliases_.end()) {
+		typeAliases_[aliasName] = resolved;
+	} else if (it->second != resolved) {
+		cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
+		exit(1);
+	}
 }
 
 // Recursively find "typedef-name" hints (added by c2ast for scalar typedefs
@@ -463,14 +485,7 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 	string tk = vtype.value("type-kind", "");
 	if (tk == "prim" && vtype.contains("typedef-name")) {
 		string aliasName = vtype["typedef-name"].get<string>();
-		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
-		auto it = typeAliases_.find(aliasName);
-		if (it == typeAliases_.end()) {
-			typeAliases_[aliasName] = resolved;
-		} else if (it->second != resolved) {
-			cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
-			exit(1);
-		}
+		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
 	} else if (tk == "strct" && vtype.contains("typedef-name") && vtype.contains("type-name")) {
 		// typedef struct Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
@@ -483,14 +498,7 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 		// this, in normalizeCFuncSig) already turns into struct(Tag) -- nothing
 		// further to do at this node.
 		string aliasName = vtype["typedef-name"].get<string>();
-		json resolved = {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}};
-		auto it = typeAliases_.find(aliasName);
-		if (it == typeAliases_.end()) {
-			typeAliases_[aliasName] = resolved;
-		} else if (it->second != resolved) {
-			cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
-			exit(1);
-		}
+		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
 	} else if (tk == "pntr" && vtype.contains("base-type")) {
 		registerTypedefAliasInType(vtype["base-type"]);
@@ -502,7 +510,7 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 				if (p.contains("var-type"))
 					registerTypedefAliasInType(p["var-type"]);
 	}
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
 {
@@ -514,8 +522,40 @@ void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
 				registerTypedefAliasInType(p["var-type"]);
 }
 
+// A `link` library name is concatenated onto "-l" in the ld command line
+// (IT-2026-09-16-3108), so this is a well-formedness invariant of the "libs"
+// section, not merely shell-escaping: the name must be something `ld -l` can
+// consume, and a diagnostic pinned to the cinclude site beats an obscure
+// linker failure. A leading '-' stays allowed -- the name is pasted onto "-l"
+// with no separator, so it can never become a second ld option.
+static bool isValidLinkLibName(const string& name)
+{
+	if (name.empty()) return false;
+	for (char c : name) {
+		bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		       || (c >= '0' && c <= '9')
+		       || c == '_' || c == '.' || c == '+' || c == '-';
+		if (!ok) return false;
+	}
+	return true;
+}
+
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
+	// The `link` clause is source-level and independent of every section
+	// c2ast fills in below, so it is read first and unconditionally: a header
+	// that declares nothing at all still contributes its libraries.
+	if (stmt.contains("libs"))
+		for (auto& l : stmt["libs"]) {
+			string lib = l.get<string>();
+			if (!isValidLinkLibName(lib)) {
+				cerr << locPrefix(stmt)
+				     << PlnSaMessage::getMessage(E_InvalidLinkLibName, lib) << endl;
+				exit(1);
+			}
+			linkLibs_.insert(lib);
+		}
+
 	// Struct definitions must be registered before functions: function
 	// signature resolution (via PlnTypeRegistry::fromJson) needs structDefs_
 	// entries to already exist for any struct-pointer parameter/return type.
@@ -523,11 +563,29 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& s : stmt["structs"])
 			registerCStruct(s);
 
-	// Globals follow the constants/typedef convention, not the functions one:
-	// always registered unqualified even under `cinclude ... as S;` (only
-	// functions require the S. qualifier). Registered before the "functions"
-	// early-return below so an alias-only header (structs+globals, no
-	// functions) still picks them up.
+	// Register every typedef the header defines, regardless of whether any C
+	// function/global in the header actually references it (IT-2026-09-16-3104):
+	// c2ast's ast.typedefs (IT-3103) already restricts entries to prim-bottomed
+	// and tagged-strct-bottomed shapes, so no re-filtering is needed here. Must
+	// come after structs (a tagged-strct-bottomed typedef's tag must already be
+	// in structDefs_) and before functions/globals, whose own
+	// registerTypedefAliasInType calls below register the exact same shape for
+	// typedefs actually referenced in a signature -- redundant but harmless,
+	// since registerTypeAliasChecked treats a repeat of an identical value as a
+	// no-op. Those per-reference-site calls are still needed independently of
+	// this loop: they strip the "typedef-name" hint from the reference-site
+	// node itself, which this loop does not touch.
+	if (stmt.contains("typedefs"))
+		for (auto& td : stmt["typedefs"]) {
+			const json& vt = td["var-type"];
+			registerTypeAliasChecked(td["name"].get<string>(),
+				{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
+		}
+
+	// Globals, functions and constants are independent sections -- a header
+	// exporting only some of them (e.g. an alias-only header with no
+	// functions, or a function-less header like limits.h with only
+	// constants) must still have each present section registered.
 	if (stmt.contains("globals"))
 		for (auto& g : stmt["globals"]) {
 			json entry = g;
@@ -536,25 +594,25 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			registerCGlobal(entry["name"].get<string>(), entry);
 		}
 
-	if (!stmt.contains("functions")) return;
-
-	if (stmt.contains("alias")) {
-		const string& alias = stmt["alias"].get<string>();
-		auto& currentScope = importScopes.back();
-		for (auto& f : stmt["functions"]) {
-			string fname = f["name"].get<string>();
-			json entry = f;
-			registerCFuncTypedefAliases(entry);
-			normalizeCFuncSig(entry);
-			entry["_c-func"] = true;
-			currentScope[alias][fname] = entry;
-		}
-	} else {
-		for (auto& f : stmt["functions"]) {
-			json entry = f;
-			registerCFuncTypedefAliases(entry);
-			normalizeCFuncSig(entry);
-			registerCFunc(entry["name"].get<string>(), entry);
+	if (stmt.contains("functions")) {
+		if (stmt.contains("alias")) {
+			const string& alias = stmt["alias"].get<string>();
+			auto& currentScope = importScopes.back();
+			for (auto& f : stmt["functions"]) {
+				string fname = f["name"].get<string>();
+				json entry = f;
+				registerCFuncTypedefAliases(entry);
+				normalizeCFuncSig(entry);
+				entry["_c-func"] = true;
+				currentScope[alias][fname] = entry;
+			}
+		} else {
+			for (auto& f : stmt["functions"]) {
+				json entry = f;
+				registerCFuncTypedefAliases(entry);
+				normalizeCFuncSig(entry);
+				registerCFunc(entry["name"].get<string>(), entry);
+			}
 		}
 	}
 
@@ -566,7 +624,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			                     {"value-type", c["value-type"]}};
 		}
 	}
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 static bool is_absolute(filesystem::path &path)
 {

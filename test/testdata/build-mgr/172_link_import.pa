@@ -1,0 +1,7 @@
+// This file itself carries no `link` clause; it exercises that build-mgr
+// unions "libs" across modules, since lib_sqrt.pa's `link "m"` is what
+// actually makes this program linkable (IT-2026-09-16-3108).
+cinclude <stdio.h>;
+import "lib_sqrt.pa";
+
+printf("%d\n", check(10));
