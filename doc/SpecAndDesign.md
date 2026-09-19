@@ -6,79 +6,103 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-16)
-version: 0.1.31 — typedef ingestion generalized to the cinclude boundary, and a `link`
-clause for third-party libraries
+### 2.1 Iteration Goal (2026-09-19)
+version: 0.1.32 — raw Linux syscall declarations
 
-Looking for the next high-frequency C standard library gap (rather than auditing one more
-header end to end) surfaced a structural gap instead of a per-function one: **a cincluded
-header's `typedef`s are only exposed to Palan when some C *function* declared in the same
-header happens to reference that typedef in its signature.** There is no rule that says "a
-header defines this typedef, so register it" — only "a function signature carried this
-typedef past SA, so register it as a side effect." `size_t` works after `cinclude
-<string.h>;` only because `size_t strlen(const char*)` rides the typedef past registration;
-a header of pure typedefs and no functions gets nothing:
+v0.1.31 closed the header-interop gaps in the "cinclude a C header, call the libc wrapper"
+path. This iteration is a deliberate departure from that path: it lets Palan code issue a
+Linux x86-64 syscall **directly**, bypassing libc entirely, via a new `syscall` declaration
+that binds a syscall number (and a typed signature) to a name callable like any other
+function:
 
+```palan
+cinclude <sys/syscall.h>;
+
+export syscall write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
+
+int64 n = write(1, msg, 13);   // called exactly like a normal function afterward
 ```
-cinclude <stdint.h>;
-int32_t x = 5;     → error: unknown struct type 'int32_t'
-```
 
-`stdint.h` declares zero C functions, so `int32_t`/`uint32_t`/`int64_t`/etc — types that
-appear in nearly every C API signature — never reach `typeAliases_` at all. This is exactly
-the shape this project's development principles warn about: normalization riding along
-opportunistically at each reference site instead of happening once at the point of ingestion.
-c2ast's own `typedefs_` map already resolves multi-level chains correctly (verified: a
-3-level chain fully collapses to a primitive) — the bug is that nothing exports that map on
-its own; it is only ever surfaced as a `typedef-name` hint attached to a function/global's
-var-type node.
+This is not a header-coverage gap; it is a new primitive. A libc wrapper like `write()`
+(reachable today via `cinclude <unistd.h>;`) is an ordinary C function using the System V
+AMD64 calling convention (`call`, arguments in rdi/rsi/rdx/**rcx**/r8/r9). A raw syscall uses
+a different, lower-level ABI: the syscall number goes in `rax`, up to six arguments go in
+rdi/rsi/rdx/**r10**/r8/r9 (note r10, not rcx — `syscall` clobbers rcx and r11 as a side
+effect of the mode transition), the instruction is `syscall` rather than `call` (no symbol,
+no PLT/GOT), and the return value is the raw contents of `rax` — a negative value conventionally
+means `-errno`, which the caller must interpret itself since libc's `errno` variable is never
+touched.
 
-A second, unrelated gap was found investigating the same "high-frequency function" question:
-`cinclude <math.h>;` type-checks and generates code for `sqrt`/`pow`/`sin`/etc, but linking
-fails — `src/build-mgr/main.cpp` hardcodes `-lc` with a standing `TODO: extract required
-libraries from AST cinclude link clauses`. Measured: of math.h's 140 public non-long-double
-functions, 124 exist only in libm, not libc, and are all unresolvable today.
+**Why a declaration, not a call-expression builtin.** An earlier design considered a single
+variadic-shaped `syscall(nr, ...)` expression. It was rejected: the user wants a syscall to be
+usable exactly like a typed function after one prototype declaration, including `export`.
+`func_def` (`PlnParser.yy:876-897`) already carries prototype-only signatures into
+`ast["export"]` when `do_export` is set — the same shape a syscall declaration needs, since it
+has no block body of its own. Piggybacking on that existing export path was decisive over a
+bespoke expression-level builtin, which cannot be exported or type-checked at call sites the
+way a named function can.
 
-This iteration closes both, plus two prerequisite bugs found in the same ingestion path while
-investigating: `cinclude`ing a header that cannot be found crashes palan-c2ast (a null/empty
-path reaches the lexer with no existence check), and that crash — once fixed to a clean
-failure — was previously being swallowed by gen-ast's `execute_c2ast()`, which returns an
-empty JSON on failure and lets the enclosing `cinclude` statement quietly become a no-op, so
-`palan` exits 0 on a program whose header never loaded.
+**Why `syscall` is a reserved word, not a contextual keyword like `link`.** `unistd.h`
+exports a real `long syscall(long, ...)` wrapper (`unistd.h:1091`), so reserving `syscall`
+globally shadows that name — the same collision shape v0.1.31 hit with `link` (`unistd.h:819`),
+which was resolved by keeping `link` a contextual keyword recognized only in `cinclude`'s
+trailing clause. This iteration makes the opposite call for `syscall`: a contextual keyword
+would have to disambiguate a statement-leading `ID ID '(' ...` from both a variable
+declaration and an ordinary call-expression statement, which `link`'s position (after
+`import_as`, where no other production can start) never had to do. A native syscall
+declaration also makes the libc wrapper largely redundant — once `write` is declared as a
+syscall, there is little reason to also want `cinclude <unistd.h>;`'s `syscall()` wrapper in
+the same file. Verified empty: no test fixture in this repository uses `syscall` as an
+identifier today.
 
-The typedef fix generalizes ingestion rather than adding a second registration path: c2ast
-flushes its resolved `typedefs_` map into a new `typedefs` section on its own AST output (the
-same one-shot-flush pattern already used for `structs`), scoped to primitive- and
-struct-bottomed entries only; SA registers all of them unconditionally in `sa_cinclude`,
-ahead of the function-count-dependent early return that was silently gating stdint.h's case.
-Pointer-bottomed typedefs (e.g. `typedef void *timer_t;`) are deliberately left as they are —
-resolved only at C-function reference sites, never as a usable Palan type name — because
-registering them would force a decision about which side of the `@`/`@!` mutability split a
-bare pointer typedef falls on, and the one real need for it (`timer_create`'s out-parameter)
-already has a working spelling via `@!void`.
+**Design consequences of the ABI mismatch.** Every stage between AST and instruction emission
+that currently assumes "a call is either a Palan call or a C call" (System V convention) gets
+a third, register-convention-distinct case:
+- `PlnDeserialize.cpp:178-211` switches on `func-type`; today anything other than `"c"` falls
+  through to the Palan-call branch — a `"syscall"` func-type left unhandled there would silently
+  miscompile as a Palan call rather than fail loudly.
+- `PlnRegAlloc.cpp:322-341` binds call arguments to `phys.intArgs[arg_pos]` (rdi/rsi/rdx/rcx/r8/r9,
+  table at `PlnX86CodeGen.cpp:7-11`) directly; a syscall's arguments bind to a different table
+  (r10 in the fourth position). Per this project's normalization principle, the fix is not a
+  syscall-shaped branch inside that shared consumer — it is giving the instruction its own
+  argument-register table, so the consumer stays agnostic to which calling convention it is
+  serving.
+- Register clobbering has no generic per-instruction model today — `call` clobbers "every
+  caller-saved register" as a blanket rule, and the one precedent for a *specific* pair
+  (`%rax`/`%rdx` for `Div`/`Mod`) is a hand-written parallel index list (`divmod_indices`,
+  `PlnRegAlloc.cpp:26,74-75,349-361`), not a data-driven clobber set. `syscall`'s rcx/r11
+  clobber follows that same precedent (`syscall_indices`) rather than inventing a general
+  mechanism this iteration doesn't otherwise need.
+- Emission itself (`PlnX86Call.cpp:76-162` for the existing C-call path, 87 lines handling
+  varargs, stack-argument overflow, and struct-return copyback) is structurally *larger* than
+  what a syscall needs: fixed arity ≤ 6, all-integer-class arguments, no stack overflow, no
+  symbol resolution, single-register return.
 
-The link fix adds an explicit `link` clause to `cinclude` (`cinclude <math.h> link "m";`)
-rather than a header→library lookup table — the project's C-interop stance has consistently
-rejected adding a whitelist instead of asking why one would be needed, and a lookup table for
-every header a user might ever cinclude is exactly that whitelist. `link` is a
-cinclude-adjacent contextual keyword, not a global reserved word, because `unistd.h` exports
-a real `link()` function that must remain callable. SA collects and deduplicates the library
-names into a new `libs` section on sa.json (the single place that already consumes and
-normalizes `cinclude`), and the build manager unions `libs` across every module's sa.json in
-the loop it already runs for `alloc-shapes`, appending `-l<name>` to the existing `ld`
-invocation.
+**Constant-number binding is already solved.** The `= SYS_write` in a syscall declaration is
+an ordinary compile-time constant expression, resolved the same way `sa_const_decl`
+(`PlnSaDecl.cpp:795-806`) resolves any `const`. Verified end-to-end on this machine:
+`palan-c2ast -s sys/syscall.h` yields 744 constants including `SYS_read`→0, `SYS_write`→1,
+`SYS_exit`→60, with the `SYS_read`→`__NR_read`→`0` macro indirection fully resolved by the
+v0.1.26 macro-constant folder (`CParser::exportMacroConstants`, arbitrary indirection depth,
+not just one hop). No new ingestion work was needed for this part.
 
-Non-goals for this iteration: registering pointer-bottomed typedefs as Palan type names
-(above); a header→library lookup table (above); union/enum/`long double` representation
-(`doc/Issues.md` item 14, unchanged — diagnosed, not implemented); and any static-linking or
-CRT strategy beyond what already exists (`doc/Issues.md` item 18, undesigned).
+Non-goals for this iteration: a general variadic `syscall(nr, ...)` call-expression builtin
+(superseded by the declaration approach above); automatic errno translation (the raw `rax`
+value is returned as-is); flo32/flo64 syscall arguments or return values (not representable in
+the Linux syscall ABI's all-integer register convention — diagnosed, not implemented);
+first-class function-pointer types (`doc/Issues.md` item 14, unchanged); union/enum/`long
+double` representation (`doc/Issues.md` item 14, unchanged); and any static-linking or CRT
+strategy beyond what already exists (`doc/Issues.md` item 18, undesigned).
 
-Full audit numbers (math.h's libc/libm split, the typedef-count survey across 13 headers, the
-zero-collision measurement, and the c2ast crash/swallow repros), the design decisions, and
-the ticket breakdown are in `localtickets/iteration-2026-09-16-v0131-typedef-link.md`.
+The full design decisions and the ticket breakdown are in
+`localtickets/iteration-2026-09-19-v0132-syscall.md`.
 
-The series' underlying goal stays the same: header/feature support is the forcing function
-for general C-interop language capability, not per-function coverage for its own sake.
+The series' underlying goal shifts here: earlier header-interop iterations used C headers as a
+forcing function for general C-interop language capability. This iteration instead adds a new
+primitive orthogonal to header interop — direct OS-level access below libc — motivated by the
+same practical need (calling POSIX-adjacent functionality) that made syscalls the next
+candidate after pthread.h was assessed and set aside for the union/bitfield representation
+gaps it would immediately hit (`doc/Issues.md` item 14).
 
 
 ## 3. Command-line Tools' Responsibilities and Design
