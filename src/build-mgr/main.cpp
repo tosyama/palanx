@@ -32,15 +32,17 @@ static string getPalanDirPath();
 static int runTool(const vector<string>& argv)
 {
 	PlnProcResult r = runProcess(argv);
-	switch (r.status) {
+	switch (r.status) {	// LCOV_EXCL_BR_LINE -- the Signaled arm below is unreachable under test
 		case PlnSpawnStatus::Exited:
 			return r.exit_code;
+		// LCOV_EXCL_START
 		case PlnSpawnStatus::Signaled:
 			// Only reachable if one of the pipeline tools itself (gen-ast/sa/
 			// codegen/as/ld) dies by signal -- not reproducible by any Palan
 			// source under test; the compiled *user* program crashing is a
 			// separate, tested path (see the run-and-delete step below).
-			return -1;	// LCOV_EXCL_LINE
+			return -1;
+		// LCOV_EXCL_STOP
 		default:
 			cerr << PlnBuildMgrMessage::getMessage(
 				E_FailedToExecute, argv[0], strerror(r.err_no)) << endl;
@@ -443,7 +445,7 @@ int main(int argc, char* argv[])
 	}
 
 	return 0;
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local strings/paths; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 string getPalanDirPath()
 {

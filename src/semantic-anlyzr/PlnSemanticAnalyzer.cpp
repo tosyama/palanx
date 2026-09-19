@@ -510,7 +510,7 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 				if (p.contains("var-type"))
 					registerTypedefAliasInType(p["var-type"]);
 	}
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
 {
@@ -624,7 +624,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			                     {"value-type", c["value-type"]}};
 		}
 	}
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 static bool is_absolute(filesystem::path &path)
 {
