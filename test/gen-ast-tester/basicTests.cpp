@@ -1342,3 +1342,88 @@ TEST(gen_ast, link_as_identifier) {
 	ASSERT_TRUE(found_link_func);
 	ASSERT_TRUE(found_link_alias);
 }
+
+TEST(gen_ast, syscall_decl) {
+	// IT-2026-09-19-3201: a "syscall" prototype declaration parses like
+	// func_def but carries an unevaluated "syscall-number" expression node
+	// (SA, IT-3202, evaluates it and diagnoses signature constraints).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/114_syscall_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& funcs = jout["ast"]["functions"];
+	ASSERT_EQ(funcs.size(), 6u);  // write, exit, foo, bar, baz, main
+
+	bool found_write = false, found_exit = false, found_foo = false;
+	bool found_bar = false, found_baz = false;
+	for (auto& f : funcs) {
+		if (f["name"] == "write") {
+			ASSERT_EQ(f["func-type"], "syscall");
+			ASSERT_EQ(f["parameters"].size(), 3u);
+			ASSERT_TRUE(f.contains("ret-type"));
+			ASSERT_EQ(f["ret-type"]["type-name"], "int64");
+			ASSERT_EQ(f["syscall-number"]["expr-type"], "id");
+			ASSERT_EQ(f["syscall-number"]["name"], "SYS_write");
+			ASSERT_TRUE(f.value("export", false));
+			found_write = true;
+		}
+		if (f["name"] == "exit") {
+			ASSERT_EQ(f["func-type"], "syscall");
+			ASSERT_FALSE(f.contains("ret-type"));
+			ASSERT_FALSE(f.contains("rets"));
+			ASSERT_EQ(f["syscall-number"]["expr-type"], "id");
+			ASSERT_EQ(f["syscall-number"]["name"], "SYS_exit");
+			found_exit = true;
+		}
+		if (f["name"] == "foo") {
+			ASSERT_EQ(f["func-type"], "syscall");
+			ASSERT_EQ(f["parameters"].size(), 0u);
+			ASSERT_EQ(f["syscall-number"]["expr-type"], "lit-int");
+			ASSERT_EQ(f["syscall-number"]["value"], "42");
+			found_foo = true;
+		}
+		if (f["name"] == "bar") {
+			// GLR-critical case: "-> int64 n = SYS_bar" must resolve as a
+			// named return, not as return_def's own "ID = expr" initializer.
+			ASSERT_TRUE(f.contains("rets"));
+			ASSERT_EQ(f["rets"].size(), 1u);
+			ASSERT_EQ(f["rets"][0]["name"], "n");
+			ASSERT_EQ(f["syscall-number"]["name"], "SYS_bar");
+			found_bar = true;
+		}
+		if (f["name"] == "baz") {
+			// GLR-critical case: multi-return followed by the mandatory "=".
+			ASSERT_TRUE(f.contains("rets"));
+			ASSERT_EQ(f["rets"].size(), 2u);
+			ASSERT_EQ(f["syscall-number"]["name"], "SYS_baz");
+			found_baz = true;
+		}
+	}
+	ASSERT_TRUE(found_write);
+	ASSERT_TRUE(found_exit);
+	ASSERT_TRUE(found_foo);
+	ASSERT_TRUE(found_bar);
+	ASSERT_TRUE(found_baz);
+
+	// root "export" array carries syscall-number too (no symbol to link
+	// against; the importer needs the number itself, IT-3204).
+	ASSERT_TRUE(jout.contains("export"));
+	ASSERT_EQ(jout["export"].size(), 1u);
+	ASSERT_EQ(jout["export"][0]["name"], "write");
+	ASSERT_EQ(jout["export"][0]["func-type"], "syscall");
+	ASSERT_TRUE(jout["export"][0].contains("syscall-number"));
+
+	// nested declaration: lands in the enclosing block's "functions", not
+	// the global ast["ast"]["functions"] list.
+	bool found_main = false;
+	for (auto& f : funcs) {
+		if (f["name"] != "main") continue;
+		found_main = true;
+		auto& nested = f["block"]["functions"];
+		ASSERT_EQ(nested.size(), 1u);
+		ASSERT_EQ(nested[0]["name"], "getpid");
+		ASSERT_EQ(nested[0]["func-type"], "syscall");
+	}
+	ASSERT_TRUE(found_main);
+}

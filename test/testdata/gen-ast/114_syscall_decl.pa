@@ -1,0 +1,10 @@
+export syscall write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
+syscall exit(int32 code) = SYS_exit;
+syscall foo() = 42;
+syscall bar() -> int64 n = SYS_bar;
+syscall baz() -> int64 a, int64 b = SYS_baz;
+
+func main() -> int32 {
+	syscall getpid() -> int64 = SYS_getpid;
+	return 0;
+}

@@ -86,6 +86,19 @@ TEST(gen_ast_error, cinclude_sys_path_injection) {
 	ASSERT_FALSE(fs::exists("PWNED"));
 }
 
+TEST(gen_ast_error, syscall_as_identifier) {
+	// IT-2026-09-19-3201: unlike "link" (context-dependent, IT-3106), "syscall"
+	// is a reserved word everywhere, so using it as an identifier must be a
+	// diagnosed syntax error. Goes through bison's error path, so it has the
+	// usual ":line:" location prefix (fixture's offending line is line 3,
+	// after two leading comment lines).
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_006_syscall_as_identifier.pa");
+	ASSERT_NE(out.find(":3:"), string::npos);
+	ASSERT_NE(out.find("error:"), string::npos);
+}
+
 TEST(gen_ast_error, cinclude_local_path_injection) {
 	// IT-2026-09-18-gen-ast-argv-spawn: same as cinclude_sys_path_injection,
 	// for the "..." local-path branch (fs::path(base_dir) / resolved).

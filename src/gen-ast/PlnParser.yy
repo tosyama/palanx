@@ -94,6 +94,7 @@ class PlnLexer;
 %token KW_ELSE	"else"
 %token KW_BREAK	"break"
 %token KW_CONTINUE	"continue"
+%token KW_SYSCALL	"syscall"
 %token OPE_LE	"<="
 %token OPE_GE	">="
 %token DBL_GRTR	">>"
@@ -118,7 +119,7 @@ class PlnLexer;
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
 %type <vector<json>>	var_declarations
-%type <json>	func_def return_def
+%type <json>	func_def func_item syscall_decl return_def
 %type <json>	return
 %type <vector<json>>	block paramaters expressions
 %type <json>	block_obj standalone_block block_body_items
@@ -302,14 +303,14 @@ stmt_list_e: expr_stmt
 
 stmt_list_b: block_stmt
 	{ $$.push_back(move($1)); }
-	| func_def
+	| func_item
 	{
 		if (!$1.count("not-impl"))
 			ast["ast"]["functions"].push_back(move($1));
 	}
 	| stmt_list_b block_stmt
 	{ $$ = move($1); $$.push_back(move($2)); }
-	| stmt_list_b func_def
+	| stmt_list_b func_item
 	{
 		$$ = move($1);
 		if (!$2.count("not-impl"))
@@ -317,7 +318,7 @@ stmt_list_b: block_stmt
 	}
 	| stmt_list_b ';' block_stmt
 	{ $$ = move($1); $$.push_back(move($3)); }
-	| stmt_list_b ';' func_def
+	| stmt_list_b ';' func_item
 	{
 		$$ = move($1);
 		if (!$3.count("not-impl"))
@@ -325,7 +326,7 @@ stmt_list_b: block_stmt
 	}
 	| stmt_list_e ';' block_stmt
 	{ $$ = move($1); $$.push_back(move($3)); }
-	| stmt_list_e ';' func_def
+	| stmt_list_e ';' func_item
 	{
 		$$ = move($1);
 		if (!$3.count("not-impl"))
@@ -447,7 +448,7 @@ body_list_b: block_stmt
 		$$ = {{"functions", json::array()}, {"body", json::array()}};
 		$$["body"].push_back(move($1));
 	}
-	| func_def
+	| func_item
 	{
 		$$ = {{"functions", json::array()}, {"body", json::array()}};
 		if (!$1.count("not-impl"))
@@ -458,7 +459,7 @@ body_list_b: block_stmt
 		$$ = move($1);
 		$$["body"].push_back(move($2));
 	}
-	| body_list_b func_def
+	| body_list_b func_item
 	{
 		$$ = move($1);
 		if (!$2.count("not-impl"))
@@ -469,7 +470,7 @@ body_list_b: block_stmt
 		$$ = move($1);
 		$$["body"].push_back(move($3));
 	}
-	| body_list_b ';' func_def
+	| body_list_b ';' func_item
 	{
 		$$ = move($1);
 		if (!$3.count("not-impl"))
@@ -480,7 +481,7 @@ body_list_b: block_stmt
 		$$ = move($1);
 		$$["body"].push_back(move($3));
 	}
-	| body_list_e ';' func_def
+	| body_list_e ';' func_item
 	{
 		$$ = move($1);
 		if (!$3.count("not-impl"))
@@ -895,6 +896,44 @@ func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj
 			$$ = {{"not-impl", true}};
 		}
 	}
+	;
+
+func_item: func_def
+	{ $$ = move($1); }
+	| syscall_decl
+	{ $$ = move($1); }
+	;
+
+// A raw syscall declaration binds a syscall number to a name callable like any
+// other function (Linux syscall ABI, not the System V calling convention a
+// libc wrapper uses -- see doc/SpecAndDesign.md). "=" appears in only six
+// other productions and Palan assignment is "->"-based, so the "=" here is
+// the only one between ')' and ';' -- return_def's own optional "= expr" tail
+// (named-return initializer) is forced to fail and die at ';' instead of
+// surviving as a second GLR parse. If a later change makes "=" an expression
+// operator or adds parameter defaults, this stops being a forced split.
+syscall_decl: do_export KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
+	{
+		bool all_ok = true;
+		for (auto& p : $5)
+			if (p.count("not-impl")) { all_ok = false; break; }
+		if (all_ok) {
+			$$ = {{"name", $3}, {"func-type", "syscall"}, {"parameters", move($5)}, {"syscall-number", move($9)}};
+			if ($7.contains("rets"))
+				$$["rets"] = move($7["rets"]);
+			else if ($7.contains("ret-type"))
+				$$["ret-type"] = move($7["ret-type"]);
+			LOC($$, @$);
+			if ($1) {
+				$$["export"] = true;
+				json sig = $$;
+				ast["export"].push_back(move(sig));
+			}
+		} else {
+			$$ = {{"not-impl", true}};
+		}
+	}
+	;
 
 paramaters: /* empty */
 	{ }
