@@ -550,7 +550,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 			}
 		}
 		if (pFunc != nullptr) {
-			sa_expr["func-type"] = "palan";
+			sa_expr["func-type"] = (*pFunc)["func-type"];
 			if (pFunc->contains("ret-type"))
 				sa_expr["value-type"] = (*pFunc)["ret-type"];
 			if (pFunc->contains("parameters"))

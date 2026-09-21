@@ -4134,3 +4134,26 @@ TEST(sa, syscall_decl) {
 	ASSERT_EQ(jout["functions"].size(), 1u);
 	ASSERT_EQ(jout["functions"][0]["name"], "main");
 }
+
+TEST(sa, syscall_call) {
+	// A call resolved to a syscall declaration gets func-type:"syscall" on
+	// its call node (not the "palan" that a normal user function call
+	// gets), routed through the same findPlnFunc/plnFuncScopes lookup.
+	// Covers both a call with args (write) and a no-arg call (getpid), and
+	// confirms the callee's ret-type still flows to value-type unchanged.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/189_syscall_call.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+
+	const auto& writeCall = body[1]["vars"][0]["init"];
+	ASSERT_EQ(writeCall["func-type"], "syscall");
+	ASSERT_EQ(writeCall["name"], "write");
+	ASSERT_EQ(writeCall["value-type"]["type-name"], "int64");
+
+	const auto& getpidCall = body[2]["vars"][0]["init"];
+	ASSERT_EQ(getpidCall["func-type"], "syscall");
+	ASSERT_EQ(getpidCall["name"], "getpid");
+	ASSERT_EQ(getpidCall["value-type"]["type-name"], "int32");
+}

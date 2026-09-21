@@ -2192,3 +2192,33 @@ TEST(sa_error, syscall_duplicate)
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("already defined"), string::npos);
 }
+
+TEST(sa_error, syscall_call_narrowing)
+{
+	// A syscall call's argument checking reuses the same convertCallArg path
+	// as a Palan/C call -- an implicit narrowing conversion is rejected
+	// identically.
+	// Covers: sa_expr_call syscall resolution -> saCallArgs -> convertCallArg, E_InvalidNarrowingConv
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_182_syscall_call_narrowing.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int32' is not allowed"), string::npos);
+}
+
+TEST(sa_error, syscall_call_ptr_permission)
+{
+	// A syscall call's pointer argument checking reuses checkArgPtrPermission
+	// -- passing a read-only '@T' where the syscall declares a mutable
+	// '@!T' parameter is rejected the same way a Palan call would be.
+	// Covers: sa_expr_call syscall resolution -> checkArgPtrPermission (isCFunc=false path), E_PtrMutabilityUpgrade
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_183_syscall_call_ptr_permission.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
