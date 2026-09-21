@@ -139,8 +139,8 @@ static StructDef buildStructDef(const string& name,
 					def.hasOwnedArrayFields = true;
 					continue;
 				}
-				// struct leaf ([n]Point): owned pointer array, cascades to
-				// __pln_alloc_arr_T/__pln_free_arr_T (v0.1.24 IT-2407 asset)
+				// struct leaf ([n]Point): owned pointer array, cascades to the
+				// existing __pln_alloc_arr_T/__pln_free_arr_T allocator helpers
 				if (!structDefs.at(leaf_name).isComplete) {
 					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
 					                                  structDefs.at(leaf_name).incompleteReason) << endl;
@@ -219,14 +219,9 @@ static StructDef buildStructDef(const string& name,
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
 	json body = sa_expression(stmt["body"]);
-	// A bare `struct` value-type (as opposed to pntr(struct(...))) is only ever
-	// produced by a C function's by-value struct return (see sa_expr_call) --
-	// field-access on an embedded/owned struct field always yields a pointer
-	// (fieldValueType). Discarding that return value as a statement would
-	// otherwise reach codegen with no lowering for it (PlnDeserialize's
-	// toVRegType has no struct case), so reject it here regardless of
-	// eightbyte class -- allowing only the register classes through would
-	// need a second lowering path for a call with no destination to write to.
+	// A bare `struct` value-type only comes from a C function's by-value
+	// struct return; discarding it as a statement has no codegen lowering,
+	// so it's rejected here rather than adding one.
 	if (body.contains("value-type") && body["value-type"].value("type-kind","") == "struct") {
 		string structName = body["value-type"].value("type-name", "");
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ByvalStructRetDiscarded, structName) << endl;
@@ -240,13 +235,9 @@ json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
-	// Resolve type-alias names (e.g. "PT" -> struct "Point", "FILE" -> struct
-	// "_IO_FILE") at every level (top, and inside pntr/arr wrappers) before
-	// dispatching. The dispatch checks below key off structDefs_.count() on a
-	// "prim" type-name; without this, a struct reached only through an alias
-	// name never matches and silently falls through to the plain scalar
-	// var-decl path at the bottom, which declares the variable but never
-	// allocates its storage (see IT-2026-09-06-2905 prereq bug).
+	// Resolve type-alias names (e.g. "FILE" -> struct "_IO_FILE") at every
+	// level before dispatching, so a struct reached only through an alias
+	// doesn't fall through to the plain scalar var-decl path below.
 	json stmt2 = stmt;
 	for (auto& var : stmt2["vars"])
 		if (var.contains("var-type"))
@@ -281,11 +272,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		}
 		if (tk == "pntr") {
 			// Validate the pointee name at declaration time so `@!NoSuchStruct p;`
-			// is rejected here rather than silently compiling (no init -> never
-			// reaches PlnTypeRegistry::fromJson) or aborting via an unguarded
-			// fromJson throw (with init). Walk through pntr-of-pntr chains; a
-			// pointee of kind other than "prim" (struct/arr/...) is validated by
-			// its own producer, so nothing to check here.
+			// is rejected here rather than aborting later via an unguarded throw.
 			const json* base = &vtype["base-type"];
 			while (base->value("type-kind","") == "pntr")
 				base = &(*base)["base-type"];
@@ -650,11 +637,9 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// c2ast represents a C struct-by-value field (e.g. "struct timespec it_value;"
-// inside "struct itimerspec") as a plain {"type-kind":"strct","type-name":...}
-// var-type, since it has no concept of Palan's $T inline-embedding sugar.
-// Translate it to the "embed" shape buildStructDef expects so nested C structs
-// get folded into the parent's layout the same way native $T fields do.
+// c2ast has no concept of Palan's $T inline-embedding sugar, so it represents
+// a C struct-by-value field as plain "strct"; translate to the "embed" shape
+// buildStructDef expects.
 static json cFieldVarType(const json& vtype)
 {
 	if (vtype.value("type-kind", "") == "strct" && vtype.contains("type-name")) {
@@ -664,24 +649,14 @@ static json cFieldVarType(const json& vtype)
 	if (vtype.value("type-kind", "") == "arr" && vtype.contains("base-type")) {
 		json v = vtype;
 		json& bt = v["base-type"];
-		// Inside an array, a struct-by-value leaf ("[n]struct Foo", from C's
-		// "struct Foo arr[n];") is Palan's [n]$Foo / [n]Foo shape, which names the
-		// leaf with a plain prim type-name (buildStructDef's "arr" case looks the
-		// leaf up in structDefs_ by name, not by a distinct "struct" type-kind) --
-		// unlike a scalar struct-by-value field, it is not wrapped in "embed".
+		// Inside an array, a struct-by-value leaf is Palan's [n]$Foo / [n]Foo
+		// shape, named with a plain prim type-name rather than wrapped in "embed".
 		if (bt.value("type-kind", "") == "strct" && bt.contains("type-name")) {
 			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}};
 		} else if (bt.value("type-kind", "") == "pntr") {
-			// An inline array of pointer slots ("T *field[n];" from a C header,
-			// e.g. glibc's "struct __locale_data *__locales[13];") is Palan's
-			// [n]@T / [n]@!T shape. Native syntax never sets "embedded" for it
-			// (PlnParser.yy's '[' type_expr production only sets it for the
-			// '$'-prefixed inline-storage forms), but c2ast sets "embedded" on
-			// every C array declarator (ASTSpec.md "arr") -- normalize it away
-			// here so both sources reach buildStructDef's single embed-ptr-arr
-			// case (PlnSaDecl.cpp buildStructDef, "base_kind == pntr") the same
-			// way, rather than that shared consumer needing a second, cinclude-
-			// only shape to tolerate.
+			// An inline array of pointer slots ("T *field[n];") is Palan's
+			// [n]@T / [n]@!T shape; c2ast sets "embedded" here unlike native
+			// syntax, so strip it for a single embed-ptr-arr shape either way.
 			v.erase("embedded");
 			json& leaf = bt["base-type"];
 			if (leaf.value("type-kind", "") == "strct" && leaf.contains("type-name")) {
@@ -693,19 +668,11 @@ static json cFieldVarType(const json& vtype)
 	return vtype;
 }
 
-// cinclude pulls in every struct a system header defines, including glibc-internal
-// ones (e.g. "__pthread_mutex_s") that use shapes buildStructDef can't lay out
-// (unresolved typedef fields, C bitfields/anonymous unions, ...). Those are never
-// referenced by Palan interop code, so unlike a native `type Name { ... }` field
-// error (a real mistake in the user's own source, worth exit(1)), an unsupported
-// field here just means the tag registers as an incomplete struct (registerCStruct)
-// -- usable only through @T/@!T, same as C's incomplete-type restriction -- rather
-// than exit(1) or dropping the tag entirely.
-//
-// A field naming a struct that is itself still incomplete is rejected the same way
-// an unsupported field is: buildStructDef needs that struct's totalSize/maxAlign to
-// lay out an embed/embedded-array field, or its totalSize when cascading an owned
-// array's alloc-shape, so this owner cannot become complete off of it either.
+// An unsupported field type (e.g. a C bitfield/anonymous union) registers its
+// owning tag as an incomplete struct -- usable only through @T/@!T -- rather
+// than exit(1), since cinclude pulls in glibc-internal structs never
+// referenced by Palan interop code. A field naming a still-incomplete struct
+// is rejected the same way.
 static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef>& structDefs,
                                    const string& ownerName)
 {
@@ -746,15 +713,9 @@ void PlnSemanticAnalyzer::registerCStruct(const json& s)
 		return;  // first complete definition wins
 
 	if (!s.contains("fields")) {
-		// Tag captured only as a forward declaration or a bare reference (e.g. a
-		// pointer field/parameter whose pointee is never defined in this header,
-		// like FILE's own "_markers"/"_chain" fields, or sys/stat.h's opaque
-		// timer_t-style handles). Register it as incomplete rather than not at
-		// all -- the name is real, only its layout is unavailable -- so
-		// requireCompleteStruct reports E_IncompleteStructType instead of
-		// leaving the name unresolved. Leave an already-incomplete entry (e.g.
-		// "unsupported-field" from an earlier cinclude) as-is: a bare reference
-		// carries no new information to promote it with.
+		// A forward-declared or bare-referenced tag registers as incomplete
+		// rather than not at all, so requireCompleteStruct can name it in a
+		// diagnostic instead of leaving it unresolved.
 		if (existing == structDefs_.end()) {
 			StructDef def;
 			def.name             = name;
@@ -819,12 +780,9 @@ json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
 }
 
 // Like resolveTypeAlias, but also resolves alias names nested inside pntr/arr
-// wrappers (e.g. "[3]PT" or "@!PT" where PT is a struct alias), so var-decl
-// dispatch (sa_var_decl) sees the real struct name at every level instead of
-// only at the top. Unlike deepNormalizePrimToStruct, this never converts a
-// resolved prim(StructName) into the "struct" type-kind -- callers still need
-// to see "prim" so their existing structDefs_.count(type-name) checks work
-// unchanged, whether the name came from native syntax or an alias.
+// wrappers (e.g. "[3]PT" or "@!PT"). Unlike deepNormalizePrimToStruct, this
+// leaves a resolved name as "prim" rather than "struct", so callers' existing
+// structDefs_.count(type-name) checks keep working.
 json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 {
 	json resolved = resolveTypeAlias(vtype);
@@ -843,10 +801,8 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inAllocFunc_;
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
-	// The call that fills a struct-ret var must run after every var in this
-	// declaration has its own storage (so `Pair p = f(), q = g();` allocates
-	// both before calling either) -- accumulated here and appended to `result`
-	// only once the whole var-decl statement has been built.
+	// Accumulated separately so `Pair p = f(), q = g();` allocates storage for
+	// both before either struct-ret call runs.
 	json structRetStmts = json::array();
 	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {

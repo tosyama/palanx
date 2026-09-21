@@ -1,6 +1,6 @@
-// IT-2026-09-18-build-mgr-argv-spawn: an import path read back out of
-// ast.json used to be concatenated unquoted into the next palan-gen-ast
-// shell command line. The imported file (with this exact literal
+// An import path read back out of ast.json used to be concatenated
+// unquoted into the next palan-gen-ast shell command line. The imported
+// file (with this exact literal
 // metacharacter name) is created at test time in build_mgr.import_path_injection
 // so the pipeline actually reaches and imports it, proving both that the
 // payload never ran AND that the literal path still resolves correctly.

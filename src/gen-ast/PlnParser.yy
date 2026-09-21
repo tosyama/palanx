@@ -904,14 +904,12 @@ func_item: func_def
 	{ $$ = move($1); }
 	;
 
-// A raw syscall declaration binds a syscall number to a name callable like any
-// other function (Linux syscall ABI, not the System V calling convention a
-// libc wrapper uses -- see doc/SpecAndDesign.md). "=" appears in only six
-// other productions and Palan assignment is "->"-based, so the "=" here is
-// the only one between ')' and ';' -- return_def's own optional "= expr" tail
-// (named-return initializer) is forced to fail and die at ';' instead of
-// surviving as a second GLR parse. If a later change makes "=" an expression
-// operator or adds parameter defaults, this stops being a forced split.
+// A syscall declaration binds a number to a name callable like any other
+// function (Linux syscall ABI, not System V -- see doc/SpecAndDesign.md).
+// "=" is otherwise unused between ')' and ';', so return_def's own optional
+// "= expr" tail (named-return initializer) is forced to fail at ';' instead
+// of surviving as a second GLR parse -- adding parameter defaults or an "="
+// expression operator would break this forced split.
 syscall_decl: do_export KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
 	{
 		bool all_ok = true;

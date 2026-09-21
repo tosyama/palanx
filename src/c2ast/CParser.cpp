@@ -1541,7 +1541,7 @@ int CParser::parse(json &ast)
 		for (const auto &[name, vt] : typedefs_) {
 			// Pointer-bottomed typedefs stay unregistered this version: naming
 			// one would force a decision about which side of the @/@! mutability
-			// split a bare pointer alias falls on (see IT-2026-09-16-3103).
+			// split a bare pointer alias falls on.
 			string tk = vt.value("type-kind", "");
 			if (tk == "prim" || (tk == "strct" && vt.contains("type-name")))
 				typedefs.push_back({{"name", name}, {"var-type", vt}});

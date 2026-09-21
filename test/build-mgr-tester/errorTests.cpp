@@ -86,7 +86,7 @@ TEST(build_mgr_error, cinclude_2d_arr_field) {
 	// struct Grid2D { int cells[2][3]; }; -- a cinclude'd struct with a 2D array
 	// field. buildStructDef has no layout rule for nested "arr" fields (matches
 	// native `[n]$[m]T` struct fields, also unsupported), so isSupportedCFieldType's
-	// "arr" branch rejects it up front: since IT-2904 this registers Grid2D as an
+	// "arr" branch rejects it up front, so this registers Grid2D as an
 	// incomplete struct (opaque handle, tag known but no layout) rather than
 	// leaving the tag unregistered, so `Grid2D g;` (an owned declaration, which
 	// needs the layout) is now a graceful E_IncompleteStructType diagnostic
@@ -102,7 +102,7 @@ TEST(build_mgr_error, cinclude_arr_field_cast_size) {
 	// constant_expression on "(int)4") rather than "lit-int"/"lit-uint".
 	// isSupportedCFieldType's "arr" branch rejects any size-expr that isn't a
 	// plain literal, so this hits the same incomplete-struct registration path as
-	// cinclude_2d_arr_field above (see IT-2904), not a hard crash.
+	// cinclude_2d_arr_field above, not a hard crash.
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_054_cinclude_arr_field_cast_size.pa");
 	ASSERT_NE(out.find("struct 'CastSized' has no known layout"), string::npos);
@@ -110,8 +110,8 @@ TEST(build_mgr_error, cinclude_arr_field_cast_size) {
 
 TEST(build_mgr_error, c_unsupported_sig) {
 	// `long double` (c2ast's "flt128" prim type-name, unknown to Palan) used
-	// as acosl's return type. IT-2906: previously an uncaught fromJson throw
-	// aborted the process (rc=134, WIFEXITED false -- "return0:" prefix from
+	// as acosl's return type. An uncaught fromJson throw used to abort the
+	// process (rc=134, WIFEXITED false -- "return0:" prefix from
 	// execTestCommand); now the signature is diagnosed at the call and the
 	// process exits normally with rc=1 ("return1:" prefix).
 	cleanTestEnv();
@@ -122,9 +122,9 @@ TEST(build_mgr_error, c_unsupported_sig) {
 }
 
 TEST(build_mgr_error, stdio_owned_file) {
-	// IT-2026-09-06-2909: `FILE f;` -- an owned declaration of the real glibc
-	// FILE. IT-2905 resolves the alias down to `struct _IO_FILE`, which IT-2904
-	// registered as incomplete (glibc's "_unused2" field has a size-expr c2ast
+	// `FILE f;` -- an owned declaration of the real glibc FILE. The FILE
+	// typedef resolves down to `struct _IO_FILE`, which is registered as
+	// incomplete (glibc's "_unused2" field has a size-expr c2ast
 	// cannot evaluate), so this is a clean E_IncompleteStructType naming the
 	// underlying tag rather than the alias. sa-tester covers this rule on a
 	// synthetic struct; this pins it on the real system header, through the
@@ -136,11 +136,11 @@ TEST(build_mgr_error, stdio_owned_file) {
 }
 
 TEST(build_mgr_error, stdio_size_t_narrowing) {
-	// IT-2026-09-06-2909: the first thing anyone writing stdio code hits.
-	// fwrite/fread/strlen return size_t; `int64 n = fwrite(...)` crosses
-	// signedness and a variable-declaration initializer refuses that (as of
-	// IT-2026-09-11-usual-arith-conv, a call argument enforces an equivalent
-	// rule too -- see arg_narrowing below -- and the loose `fwrite(...) -> n`
+	// The first thing anyone writing stdio code hits: fwrite/fread/strlen
+	// return size_t; `int64 n = fwrite(...)` crosses signedness and a
+	// variable-declaration initializer refuses that (a call argument
+	// enforces an equivalent rule too -- see arg_narrowing below -- and the
+	// loose `fwrite(...) -> n`
 	// form converts). Pins the rule at the C-ABI boundary, where sa-tester
 	// only covers it on native expressions.
 	cleanTestEnv();
@@ -150,7 +150,7 @@ TEST(build_mgr_error, stdio_size_t_narrowing) {
 }
 
 TEST(build_mgr_error, stdio_incomplete_field) {
-	// IT-2026-09-06-2909: `f._flags` -- field access on an incomplete struct
+	// `f._flags` -- field access on an incomplete struct
 	// reached through a real `@!FILE` handle. Same requireCompleteStruct
 	// diagnostic as the owned-declaration case above; this pins it on the
 	// field-access path instead of the declaration path.
@@ -161,7 +161,7 @@ TEST(build_mgr_error, stdio_incomplete_field) {
 }
 
 TEST(build_mgr_error, stat_func_macro) {
-	// IT-2026-09-06-2911: S_ISDIR is a function-like macro; c2ast/gen-ast only
+	// S_ISDIR is a function-like macro; c2ast/gen-ast only
 	// export object-like macros as constants, so this must be a clean diagnostic
 	// naming the undefined function rather than an abort.
 	cleanTestEnv();
@@ -171,8 +171,7 @@ TEST(build_mgr_error, stat_func_macro) {
 }
 
 TEST(build_mgr_error, arg_narrowing) {
-	// IT-2026-09-11-usual-arith-conv: this is the ticket's own repro -- an
-	// int64 argument to an int32 parameter used to pass through with no type
+	// An int64 argument to an int32 parameter used to pass through with no type
 	// check and produce a bad `movq` operand-width mismatch at the assembler
 	// stage (a build failure, not a clean SA diagnostic). Now caught here.
 	cleanTestEnv();
@@ -182,7 +181,7 @@ TEST(build_mgr_error, arg_narrowing) {
 }
 
 TEST(build_mgr_error, cinclude_not_found) {
-	// IT-2026-09-16-3102: palan-c2ast fails to read a nonexistent header;
+	// palan-c2ast fails to read a nonexistent header;
 	// gen-ast used to swallow this and let palan exit 0 as if the header
 	// were empty. Now it must be a clean, diagnosed fatal error.
 	cleanTestEnv();
@@ -192,7 +191,7 @@ TEST(build_mgr_error, cinclude_not_found) {
 }
 
 TEST(build_mgr_error, missing_lib) {
-	// IT-2026-09-16-3108: a `link` clause naming a library ld can't find is
+	// A `link` clause naming a library ld can't find is
 	// not diagnosed by the compiler -- reproducing the library search path
 	// (-L, ld.so.conf, multiarch, ...) belongs to ld, not to Palan.
 	cleanTestEnv();
@@ -201,8 +200,8 @@ TEST(build_mgr_error, missing_lib) {
 }
 
 TEST(build_mgr_error, assembler_not_found) {
-	// IT-2026-09-18-build-mgr-argv-spawn: proves the new SpawnFailed/errno
-	// path deterministically. `as` is the only PATH-resolved tool on the
+	// Proves the SpawnFailed/errno path deterministically. `as` is the only
+	// PATH-resolved tool on the
 	// happy path -- palan-gen-ast/-sa/-codegen are launched by absolute path
 	// via /proc/self/exe -- so hiding PATH only breaks the assembler stage.
 	cleanTestEnv();
@@ -212,7 +211,7 @@ TEST(build_mgr_error, assembler_not_found) {
 }
 
 TEST(build_mgr_error, child_killed_by_signal) {
-	// IT-2026-09-18-build-mgr-argv-spawn: pins PlnSpawnStatus::Signaled in the
+	// Pins PlnSpawnStatus::Signaled in the
 	// script-style run-and-delete path (no -o given) -- palan must exit -1
 	// (255 to the shell) instead of crashing itself or reporting garbage.
 	// ulimit -c 0 keeps the compiled program's core dump out of build/.

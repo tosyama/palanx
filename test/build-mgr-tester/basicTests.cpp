@@ -222,7 +222,7 @@ TEST(build_mgr, float_int_mixed) {
 	// both operand orders (float+int and int+float) and flo32/flo64 mixing --
 	// usualArithConv's float tie-break is not commutative in the source code
 	// path taken (left vs right operand), so both directions need a real
-	// program to exercise (see IT-2026-09-06-2912's coverage investigation).
+	// program to exercise.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/030_float_int_mixed.pa");
 	ASSERT_EQ(output, "5.000000\n30.000000\n4.000000\n5.000000\n5.000000\n");
 }
@@ -465,7 +465,8 @@ TEST(build_mgr, owned_prim_arr_field) {
 	// type Bucket { [3]int64 vals; }; Bucket b;
 	// Declaration-only: proves __pln_alloc_Bucket/__pln_free_Bucket and the shared
 	// __pln_alloc_arr_prim_int64/__pln_free_arr_prim_int64 allocators are generated,
-	// compile, link, and run without crashing. Element access is deferred to IT-2506+.
+	// compile, link, and run without crashing. Element access is deferred to a
+	// later test.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/069_owned_prim_arr_field.pa");
 	ASSERT_EQ(output, "ok\n");
@@ -474,10 +475,10 @@ TEST(build_mgr, owned_prim_arr_field) {
 TEST(build_mgr, owned_struct_arr_field) {
 	// type Point { int64 x; int64 y; }; type Cluster { [4]Point pts; }; Cluster c;
 	// Declaration-only: proves __pln_alloc_Cluster/__pln_free_Cluster cascade into
-	// the existing __pln_alloc_arr_Point/__pln_free_arr_Point (v0.1.24 IT-2407 asset),
+	// the existing __pln_alloc_arr_Point/__pln_free_arr_Point allocator helpers,
 	// including the forward reference from __pln_alloc_Cluster to __pln_alloc_arr_Point
 	// (which is emitted later in the same generated file). Element access is
-	// deferred to IT-2506+.
+	// deferred to a later test.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/070_owned_struct_arr_field.pa");
 	ASSERT_EQ(output, "ok\n");
@@ -485,7 +486,7 @@ TEST(build_mgr, owned_struct_arr_field) {
 
 TEST(build_mgr, embed_prim_arr_field_access) {
 	// type Buf { [4]$int64 data; }; Buf buf; 10->buf.data[0]; 20->buf.data[1];
-	// New 1D primitive embedded array field element access (IT-2507).
+	// 1D primitive embedded array field element access.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/071_embed_prim_arr_field_access.pa");
 	ASSERT_EQ(output, "10 20\n");
@@ -493,7 +494,7 @@ TEST(build_mgr, embed_prim_arr_field_access) {
 
 TEST(build_mgr, embed_struct_arr_field_access) {
 	// type Point{...}; type Polygon { [4]$Point pts; }; Polygon poly;
-	// Regression test for the IT-2507 FieldAccessExpr addr-only fix: before the fix
+	// Regression test for a FieldAccessExpr addr-only fix: before the fix
 	// this segfaulted at runtime (DerefLoad read the embedded struct's raw bytes as
 	// if they were a stored pointer, instead of computing poly_ptr+offset).
 	cleanTestEnv();
@@ -502,14 +503,14 @@ TEST(build_mgr, embed_struct_arr_field_access) {
 }
 
 TEST(build_mgr, owned_prim_arr_field_access) {
-	// type Bucket { [3]int64 vals; }; Bucket b; element read/write access (IT-2507).
+	// type Bucket { [3]int64 vals; }; Bucket b; element read/write access.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/073_owned_prim_arr_field_access.pa");
 	ASSERT_EQ(output, "1 2 3\n");
 }
 
 TEST(build_mgr, owned_struct_arr_field_access) {
-	// type Point{...}; type Cluster { [4]Point pts; }; Cluster c; element access (IT-2507).
+	// type Point{...}; type Cluster { [4]Point pts; }; Cluster c; element access.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/074_owned_struct_arr_field_access.pa");
 	ASSERT_EQ(output, "5 6\n");
@@ -518,7 +519,7 @@ TEST(build_mgr, owned_struct_arr_field_access) {
 TEST(build_mgr, embed_ptr_arr_field_access) {
 	// type Point{...}; type Ring { [4]@!Point nodes; }; store then read through a
 	// non-owning pointer-slot array field.
-	// Regression test for the IT-2507 FieldAccessExpr addr-only fix: before the fix
+	// Regression test for a FieldAccessExpr addr-only fix: before the fix
 	// the write `p -> r.nodes[0];` segfaulted (DerefLoad on the freshly-calloc'd
 	// "nodes" field read back 0, collapsing the store address to NULL).
 	cleanTestEnv();
@@ -859,7 +860,7 @@ TEST(build_mgr, null_notfound_sweep) {
 TEST(build_mgr, cinclude_struct_arg) {
 	cleanTestEnv();
 	// cinclude'd "tm" resolves through the same structDefs_ path as a native
-	// struct; mktime(t) receives t as a borrowed pointer (IT-2702).
+	// struct; mktime(t) receives t as a borrowed pointer.
 	string output = execTestCommand("env TZ=UTC bin/palan ../test/testdata/build-mgr/119_cinclude_struct_arg.pa");
 	ASSERT_EQ(output, "946684800\n");
 }
@@ -886,7 +887,7 @@ TEST(build_mgr, cinclude_struct_arg_mtrace) {
 
 TEST(build_mgr, at_bang_plain_var_decl) {
 	cleanTestEnv();
-	// IT-2703: `@!Point view = original;` as a plain (non-field) local var decl.
+	// `@!Point view = original;` as a plain (non-field) local var decl.
 	// `view` is a non-owning pointer aliasing `original`'s storage; writing
 	// through `view.x` must be visible via `original.x` (same memory).
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/121_at_bang_plain_var_decl.pa");
@@ -895,7 +896,7 @@ TEST(build_mgr, at_bang_plain_var_decl) {
 
 TEST(build_mgr, toplevel_call_named_return_struct) {
 	cleanTestEnv();
-	// IT-2801: top-level statement calling a Palan function with a struct-typed
+	// A top-level statement calling a Palan function with a struct-typed
 	// @!T named return used to crash palan-sa ("unknown prim type-name: Point")
 	// because the pre-registered signature wasn't struct-normalized yet when the
 	// top-level call resolved. Also confirms write-through via the returned
@@ -906,7 +907,7 @@ TEST(build_mgr, toplevel_call_named_return_struct) {
 
 TEST(build_mgr, addr_of) {
 	cleanTestEnv();
-	// IT-2704: `@ID`/`@!ID` address-of on a local primitive variable, passed as
+	// `@ID`/`@!ID` address-of on a local primitive variable, passed as
 	// an out-param pointer to a cincluded C function (memcpy). The second pair
 	// (z = a + b) exercises addr-of on a non-literal-initialized local -- the
 	// general-initializer gap that PlnRegAlloc's isVar-unification design closes.
@@ -916,17 +917,17 @@ TEST(build_mgr, addr_of) {
 
 TEST(build_mgr, time_h_category_a) {
 	cleanTestEnv();
-	// IT-2705: time.h Category A -- clock_t/time_t (already flattened by the
-	// v0.1.26 typedef mechanism) and timer_t (a pointer-bottomed typedef chain,
-	// newly flattened by this ticket's c2ast fix) both resolve cleanly, so NULL
-	// type-checks against timer_t via the existing generic-pointer rule.
+	// time.h Category A -- clock_t/time_t (flattened by the general typedef
+	// mechanism) and timer_t (a pointer-bottomed typedef chain, flattened by
+	// a c2ast fix) both resolve cleanly, so NULL type-checks against timer_t
+	// via the existing generic-pointer rule.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/124_time_h_category_a.pa");
 	ASSERT_EQ(output, "366\n60.000000\n1\n-1\n-1\n");
 }
 
 TEST(build_mgr, time_h_struct_tm) {
 	cleanTestEnv();
-	// IT-2706: time.h Category B (struct tm) -- mktime/timegm/timelocal round
+	// time.h Category B (struct tm) -- mktime/timegm/timelocal round
 	// trip on a known epoch, strftime/asctime/asctime_r formatting. mktime
 	// normalizes tm_wday as a side effect, so asctime/asctime_r (called after)
 	// correctly print "Thu".
@@ -936,7 +937,7 @@ TEST(build_mgr, time_h_struct_tm) {
 
 TEST(build_mgr, time_h_struct_timespec) {
 	cleanTestEnv();
-	// IT-2707: time.h Category B (struct timespec/itimerspec) -- clockid_t +
+	// time.h Category B (struct timespec/itimerspec) -- clockid_t +
 	// CLOCK_REALTIME/TIME_UTC const import used in real program logic, and
 	// itimerspec's nested timespec embed fields (its.it_value.tv_sec) resolved
 	// through the same embed-field chain native $T structs use. timer_gettime
@@ -948,8 +949,8 @@ TEST(build_mgr, time_h_struct_timespec) {
 
 TEST(build_mgr, time_h_category_c) {
 	cleanTestEnv();
-	// IT-2708: time.h Category C -- time/ctime/ctime_r/clock_getcpuclockid, the
-	// only category depending solely on @ID/@!ID (IT-2704) with no struct
+	// time.h Category C -- time/ctime/ctime_r/clock_getcpuclockid, the
+	// only category depending solely on @ID/@!ID (see addr_of above) with no struct
 	// interop. time(NULL)'s live return is only boundary-checked (>= 0); ctime/
 	// ctime_r are exercised against a separately fixed epoch value for a
 	// deterministic assertion.
@@ -959,10 +960,10 @@ TEST(build_mgr, time_h_category_c) {
 
 TEST(build_mgr, time_h_category_d) {
 	cleanTestEnv();
-	// IT-2709: time.h Category D -- gmtime/localtime/gmtime_r/localtime_r, the
-	// convergence point of every gap this iteration introduced: @ID (IT-2704)
+	// time.h Category D -- gmtime/localtime/gmtime_r/localtime_r, the
+	// convergence point of every struct/pointer mechanism above: @ID/@!ID
 	// for the const time_t* input, and binding a cinclude'd struct tm* return
-	// into a non-owning @!tm local (IT-2701/2702/2703). gmtime is UTC and
+	// into a non-owning @!tm local. gmtime is UTC and
 	// environment-independent, so also verifies its glibc static-buffer aliasing
 	// (a second call overwrites the first result) to prove @!T is a real
 	// non-owning alias, not a copy; gmtime_r's caller-owned buffer is unaffected.
@@ -992,9 +993,9 @@ TEST(build_mgr, at_bang_plain_var_decl_mtrace) {
 }
 
 TEST(build_mgr, cinclude_arr_field_access) {
-	// struct Rec { int id; char name[16]; long vals[4]; }; (cinclude'd) -- IT-2802's
-	// ticket repro: read/write through both the first and last element of a
-	// prim-leaf array field. Before the fix, "char name[16]"/"long vals[4]" each
+	// struct Rec { int id; char name[16]; long vals[4]; }; (cinclude'd) --
+	// read/write through both the first and last element of a
+	// prim-leaf array field. Before a fix, "char name[16]"/"long vals[4]" each
 	// collapsed to a single scalar field, so vals[3] (the last of 4 int64 slots)
 	// would have read/written 24 bytes past the field's true end -- i.e. past the
 	// end of the whole struct's calloc'd block.
@@ -1005,7 +1006,7 @@ TEST(build_mgr, cinclude_arr_field_access) {
 
 TEST(build_mgr, cinclude_ptr_slot_arr_field) {
 	// struct Point { int x; int y; }; struct Slots { struct Point *pts[4]; long *vals[3]; };
-	// (cinclude'd) -- IT-2026-09-05-cinclude-ptr-slot-array-field: a C struct field
+	// (cinclude'd) -- a C struct field
 	// that is an inline array of pointer slots ("T *field[n];") is Palan's
 	// [n]@T / [n]@!T shape (same embed-ptr-arr layout as the native
 	// embed_ptr_arr_field_access test, 075). Storing an address into the slot is
@@ -1017,8 +1018,8 @@ TEST(build_mgr, cinclude_ptr_slot_arr_field) {
 }
 
 TEST(build_mgr, sys_stat_h_s_ifdir_alias) {
-	// S_IFDIR is defined as `#define S_IFDIR __S_IFDIR` in sys/stat.h -- IT-2803's
-	// ticket repro: the public alias name must resolve to the same value as the
+	// S_IFDIR is defined as `#define S_IFDIR __S_IFDIR` in sys/stat.h -- the
+	// public alias name must resolve to the same value as the
 	// internal macro it references, not be silently dropped from const-inlining.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/131_sys_stat_s_ifdir.pa");
@@ -1026,7 +1027,7 @@ TEST(build_mgr, sys_stat_h_s_ifdir_alias) {
 }
 
 TEST(build_mgr, deref_write_mutable_ptr) {
-	// IT-2804: `p[0]` deref write through a mutable `@!T` still works end to
+	// `p[0]` deref write through a mutable `@!T` still works end to
 	// end (regression guard for the new read-only enforcement -- writes
 	// through `@!T` must remain unaffected).
 	cleanTestEnv();
@@ -1035,16 +1036,16 @@ TEST(build_mgr, deref_write_mutable_ptr) {
 }
 
 TEST(build_mgr, deref_c_outparam_readback) {
-	// IT-2805: a value a cincluded C function writes through a `@!T`
-	// out-param is now readable from Palan itself via `p[0]` -- v0.1.27
-	// documented this as "C side only"; that limitation is lifted.
+	// A value a cincluded C function writes through a `@!T`
+	// out-param is readable from Palan itself via `p[0]` -- an earlier
+	// version documented this as "C side only"; that limitation is lifted.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/133_deref_c_outparam_readback.pa");
 	ASSERT_EQ(output, "1\n1\n");
 }
 
 TEST(build_mgr, deref_scalar_widths) {
-	// IT-2805: `p[0]` read/write round-trips correctly for every scalar
+	// `p[0]` read/write round-trips correctly for every scalar
 	// width and float -- DerefLoadIdx/DerefStoreIdx pick the right
 	// mov instruction and register class for int8/int16/int32/flo64.
 	cleanTestEnv();
@@ -1053,7 +1054,7 @@ TEST(build_mgr, deref_scalar_widths) {
 }
 
 TEST(build_mgr, deref_struct_ptr_field) {
-	// IT-2805: `p[i]` on a pointer to a struct is an address computation
+	// `p[i]` on a pointer to a struct is an address computation
 	// (Palan has no register-sized struct value), so `p[0].field` reads and
 	// writes through it exactly like `p.field` on the same pointer.
 	cleanTestEnv();
@@ -1062,7 +1063,7 @@ TEST(build_mgr, deref_struct_ptr_field) {
 }
 
 TEST(build_mgr, addr_of_struct_field) {
-	// IT-2806: `@!s.y` / `@!s.in.v` take the address of a struct field
+	// `@!s.y` / `@!s.in.v` take the address of a struct field
 	// (top-level and nested-embed) and hand it to a cincluded C function
 	// (memcpy) as an out-param; the C-side write is read back via the
 	// ordinary field-access path.
@@ -1072,7 +1073,7 @@ TEST(build_mgr, addr_of_struct_field) {
 }
 
 TEST(build_mgr, addr_of_arr_elem) {
-	// IT-2807: `@!arr[2]` takes the address of a scalar array element and
+	// `@!arr[2]` takes the address of a scalar array element and
 	// hands it to a cincluded C function (memcpy) as an out-param; the
 	// write lands only at that element's offset, not the array start.
 	cleanTestEnv();
@@ -1081,7 +1082,7 @@ TEST(build_mgr, addr_of_arr_elem) {
 }
 
 TEST(build_mgr, addr_of_borrow_mtrace) {
-	// IT-2808: taking the address of a struct field (`@!s.x`), an array
+	// Taking the address of a struct field (`@!s.x`), an array
 	// element (`@!arr[2]`) and a plain local (`@!v`), then writing through
 	// each via `p[0]` deref, causes no alloc/free of its own -- the address
 	// is a borrow, not a new owned allocation, and the original owners
@@ -1108,7 +1109,7 @@ TEST(build_mgr, addr_of_borrow_mtrace) {
 }
 
 TEST(build_mgr, addr_of_owned_field_borrow_mtrace) {
-	// IT-2808: same borrow check, but through the cascade alloc/free path --
+	// Same borrow check, but through the cascade alloc/free path --
 	// `@!c.pts[0].x` takes the address of a leaf field inside an owned
 	// struct-array field (Cluster.pts is [2]Point, its own
 	// __pln_alloc_arr_Point/__pln_free_arr_Point pair), and the deref write
@@ -1135,9 +1136,9 @@ TEST(build_mgr, addr_of_owned_field_borrow_mtrace) {
 }
 
 TEST(build_mgr, sign_cross_convert) {
-	// IT-2026-09-06-2901: PlnX86CodeGen::emitConvert had no signed<->unsigned
+	// PlnX86CodeGen::emitConvert had no signed<->unsigned
 	// branches at all; every case below used to abort with rc=134 instead of
-	// printing. Covers the ticket's repro plus the full cross-signedness
+	// printing. Covers the original repro plus the full cross-signedness
 	// widen/narrow/reinterpret matrix (int8/16/32/64 <-> uint8/16/32/64).
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/141_sign_cross_convert.pa");
@@ -1152,7 +1153,7 @@ TEST(build_mgr, sign_cross_convert) {
 }
 
 TEST(build_mgr, uint_idx_var_stride) {
-	// IT-2026-09-06-2901: a uint32 row index into a [n]$[m]T array with a
+	// A uint32 row index into a [n]$[m]T array with a
 	// runtime inner dimension used to abort in PlnVCodeGen's variable-stride
 	// path (Uint32 -> Int64 convert before the stride multiply).
 	cleanTestEnv();
@@ -1161,7 +1162,7 @@ TEST(build_mgr, uint_idx_var_stride) {
 }
 
 TEST(build_mgr, ptr_alias_pointee) {
-	// IT-2026-09-06-2902: deepNormalizePrimToStruct only resolved
+	// deepNormalizePrimToStruct only resolved
 	// prim(Name) -> struct(Name) via structDefs_, without re-applying
 	// resolveTypeAlias at each level of a pntr chain, so a Palan type alias
 	// or a C typedef used as a `@T`/`@!T` pointee reached
@@ -1173,19 +1174,19 @@ TEST(build_mgr, ptr_alias_pointee) {
 }
 
 TEST(build_mgr, uint_narrow_arith) {
-	// IT-2026-09-07: PlnX86CodeGen's add/sub/mul/neg/cmp mnemonic tables enumerated
+	// PlnX86CodeGen's add/sub/mul/neg/cmp mnemonic tables enumerated
 	// signed widths explicitly but fell through to the 64-bit default for
 	// Uint8/Uint16/Uint32, while movInstrForType/sizedRegName already sized those
 	// types at 8/16/32 bits — e.g. `uint32 a + uint32 b` emitted `movl` into a
 	// 32-bit register followed by `addq`, which the assembler rejects. No test
-	// exercised unsigned sub-64-bit arithmetic before this ticket.
+	// exercised unsigned sub-64-bit arithmetic before this fix.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/144_uint_narrow_arith.pa");
 	ASSERT_EQ(output, "4 240 0\n4 65520 65476 0\n4 4294967280 4294967236 0\n");
 }
 
 TEST(build_mgr, uint_lit_narrow) {
-	// IT-2026-09-07: a uint8/16/32 variable declared directly from a `u`-suffixed
+	// A uint8/16/32 variable declared directly from a `u`-suffixed
 	// literal (lit-uint expr-type) deserialized to a codegen node with no type
 	// field, so codegen always emitted a 64-bit MovImm regardless of the declared
 	// width, and lowerVarDeclStmt never routed lit-uint through InitVar (unlike
@@ -1201,7 +1202,7 @@ TEST(build_mgr, uint_lit_narrow) {
 }
 
 TEST(build_mgr, bitwise_ops) {
-	// IT-2026-09-06-2903: `&` `|` `^` `~` were entirely unimplemented -- `&` parsed
+	// `&` `|` `^` `~` were entirely unimplemented -- `&` parsed
 	// but returned "not-impl" in SA, `|`/`^` weren't even lexed, `~` didn't exist.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/146_bitwise_ops.pa");
@@ -1209,8 +1210,8 @@ TEST(build_mgr, bitwise_ops) {
 }
 
 TEST(build_mgr, incomplete_struct_handle) {
-	// IT-2026-09-06-2904: `@!_IO_FILE p;` used to abort at declaration time
-	// ("unknown struct type '_IO_FILE'.", from IT-2902's pointee validation)
+	// `@!_IO_FILE p;` used to abort at declaration time
+	// ("unknown struct type '_IO_FILE'.", from pointee validation)
 	// because registerCStruct dropped the whole tag when one field
 	// (glibc's "_unused2", a size-expr c2ast can't evaluate) couldn't be laid
 	// out. It now registers _IO_FILE as an incomplete struct instead, so a
@@ -1221,7 +1222,7 @@ TEST(build_mgr, incomplete_struct_handle) {
 }
 
 TEST(build_mgr, file_handle) {
-	// IT-2026-09-06-2905: `FILE` (typedef struct _IO_FILE FILE;) now resolves
+	// `FILE` (typedef struct _IO_FILE FILE;) resolves
 	// as a type alias for `_IO_FILE`, so fopen/fclose signatures that mention
 	// it by name build and run instead of aborting at fromJson.
 	cleanTestEnv();
@@ -1230,7 +1231,7 @@ TEST(build_mgr, file_handle) {
 }
 
 TEST(build_mgr, c_global_stderr) {
-	// IT-2026-09-06-2908: `stderr` resolves through the new cGlobalScopes and
+	// `stderr` resolves through cGlobalScopes and
 	// lowers to LeaLabel+DerefLoad, so fprintf(stderr, ...) actually writes
 	// to fd 2. execTestCommand appends stderr after a ":" only when stderr
 	// is non-empty (test-base/testBase.cpp), so the leading ":" here is
@@ -1241,8 +1242,7 @@ TEST(build_mgr, c_global_stderr) {
 }
 
 TEST(build_mgr, stdio_text_io) {
-	// IT-2026-09-06-2909: end-to-end proof that stdio.h text I/O works on top of
-	// IT-2901..2908. fputs/fprintf/fwrite write the file, then fgets/fread read
+	// End-to-end proof that stdio.h text I/O works. fputs/fprintf/fwrite write the file, then fgets/fread read
 	// every byte back -- the expected string below is the file's own content
 	// round-tripped through the filesystem, so no separate content check is
 	// needed. `uint64 n = fread(...)` (not int64) because fread returns size_t
@@ -1253,7 +1253,7 @@ TEST(build_mgr, stdio_text_io) {
 }
 
 TEST(build_mgr, stdio_binary_seek) {
-	// IT-2026-09-06-2909: fwrite/fread on a raw [4]int64 buffer (fwrite's void*
+	// fwrite/fread on a raw [4]int64 buffer (fwrite's void*
 	// parameter accepts any pntr(T)), random access via fseek/ftell, and the
 	// feof/ferror indicators after a read at end-of-file. Also the repo's first
 	// use of the SEEK_*/EOF constants c2ast exports from stdio.h.
@@ -1269,7 +1269,7 @@ TEST(build_mgr, stdio_binary_seek) {
 }
 
 TEST(build_mgr, stdio_std_streams) {
-	// IT-2026-09-06-2909: stdout/stderr/stdin as cinclude'd C globals (IT-2908).
+	// stdout/stderr/stdin as cinclude'd C globals.
 	// c_global_stderr above only proved stderr reaches fd 2; this adds stdout
 	// and stdin. fileno gives a structural check of all three, and stdin is
 	// additionally read for real -- execTestCommand runs the command through
@@ -1284,7 +1284,7 @@ TEST(build_mgr, stdio_std_streams) {
 }
 
 TEST(build_mgr, file_handle_no_autofree_mtrace) {
-	// IT-2026-09-06-2909: proves scope exit does not free a `@!FILE` handle.
+	// Proves scope exit does not free a `@!FILE` handle.
 	// Measured log for this program contains exactly two allocations, both
 	// attributed to libc.so.6 frames (fopen64 and _IO_file_doallocate) which
 	// parseMtraceLog skips, and zero deallocations. A control case -- an owned
@@ -1307,7 +1307,7 @@ TEST(build_mgr, file_handle_no_autofree_mtrace) {
 }
 
 TEST(build_mgr, call_arg_in_func_body) {
-	// IT-2026-09-11-regalloc-call-arg-in-func-body: a Palan function parameter
+	// A Palan function parameter
 	// passed as a call argument from inside the function body, outside any loop.
 	// 014_param_loop_call_arg.pa pins the loop-region case; this covers the
 	// straight-line case, a genuine 2-cycle swap between two parameters, and a
@@ -1320,7 +1320,7 @@ TEST(build_mgr, call_arg_in_func_body) {
 }
 
 TEST(build_mgr, neg_lit_narrow_init) {
-	// IT-2026-09-11-neg-literal-expected-type: a negated literal now adopts the
+	// A negated literal now adopts the
 	// initializer's expected type (matching the adjacent bitnot handling) instead
 	// of always widening to int64/flo64 first and tripping the narrowing-
 	// initializer diagnostic.
@@ -1330,7 +1330,7 @@ TEST(build_mgr, neg_lit_narrow_init) {
 }
 
 TEST(build_mgr, stat_file_types) {
-	// IT-2026-09-06-2911: stat/lstat/fstat all report the right S_IFMT bits
+	// stat/lstat/fstat all report the right S_IFMT bits
 	// through three acquisition paths (path lookup, symlink-aware path lookup,
 	// an open file descriptor), plus a nested-struct field read (st_mtim.tv_sec).
 	// The mkfifo'd path is checked with lstat only -- open()'ing a FIFO with no
@@ -1349,10 +1349,10 @@ TEST(build_mgr, stat_file_types) {
 }
 
 TEST(build_mgr, stat_mode_bits) {
-	// IT-2026-09-06-2911: umask(0) makes mkdir's permission bits deterministic
+	// umask(0) makes mkdir's permission bits deterministic
 	// regardless of the caller's inherited umask (verified under both the
 	// harness's default umask and `umask 077`); chmod's bits are unaffected by
-	// umask either way. Also pins IT-2910's constant folding on sys/stat.h's
+	// umask either way. Also pins constant folding on sys/stat.h's
 	// expression macros (S_IRWXU, ACCESSPERMS, ...).
 	cleanTestEnv();
 	execTestCommand("rm -rf /tmp/pln_157_dir");
@@ -1365,7 +1365,7 @@ TEST(build_mgr, stat_mode_bits) {
 }
 
 TEST(build_mgr, usual_arith_conv) {
-	// IT-2026-09-11-usual-arith-conv: end-to-end pin for the two repro shapes
+	// End-to-end pin for the two repro shapes
 	// that used to produce bad assembly (register/operand-width mismatch)
 	// because a mixed signed/unsigned operand pair silently fell through
 	// typeCompat's ExplicitCast with no convert node inserted -- in a binary
@@ -1376,7 +1376,7 @@ TEST(build_mgr, usual_arith_conv) {
 }
 
 TEST(build_mgr, strtol_endptr) {
-	// IT-2026-09-12-3003: `@`/`@!` on a pointer-typed local (not just a
+	// `@`/`@!` on a pointer-typed local (not just a
 	// primitive one) now produces pntr-of-pntr, letting `strtol`'s C
 	// out-param idiom (`char **endptr`) be written in Palan: `@!end` where
 	// `end` is `@!int8` gives strtol its `int8**`, and the callee writes
@@ -1387,7 +1387,7 @@ TEST(build_mgr, strtol_endptr) {
 }
 
 TEST(build_mgr, struct_ret_div) {
-	// IT-2026-09-12-3005: end-to-end proof of IT-3004's SysV struct-by-value
+	// End-to-end proof of SysV struct-by-value
 	// return through real glibc functions -- div_t (1 eightbyte, INTEGER)
 	// and ldiv_t/lldiv_t (2 eightbytes, INTEGER+INTEGER).
 	cleanTestEnv();
@@ -1399,7 +1399,7 @@ TEST(build_mgr, struct_ret_div) {
 }
 
 TEST(build_mgr, struct_ret_div_mtrace) {
-	// IT-2026-09-12-3005: the calloc backing `div_t d` must be freed exactly
+	// The calloc backing `div_t d` must be freed exactly
 	// once at scope exit -- no double-free, no leak, for a struct-ret'd
 	// C-function call.
 	cleanTestEnv();
@@ -1420,7 +1420,7 @@ TEST(build_mgr, struct_ret_div_mtrace) {
 }
 
 TEST(build_mgr, alias_call_variadic_promote) {
-	// Prerequisite fix for IT-2026-09-12-3007: sa_expr_member_call used to
+	// Prerequisite fix: sa_expr_member_call used to
 	// duplicate sa_expr_call's argument loop without the variadic-promotion
 	// step, so an aliased C call silently passed a flo32 where the callee's
 	// va_arg reads a flo64, producing a garbage value instead of a diagnostic
@@ -1432,7 +1432,7 @@ TEST(build_mgr, alias_call_variadic_promote) {
 }
 
 TEST(build_mgr, non_executable_stack) {
-	// IT-2026-09-12-3009 (prereq): Palan bypasses the C driver, so
+	// Prerequisite: Palan bypasses the C driver, so
 	// palan-codegen must emit .note.GNU-stack itself. Without it the linked
 	// program gets no PT_GNU_STACK at all (kernel default: READ_IMPLIES_EXEC),
 	// and RWE as soon as any note-carrying object joins the link (e.g.
@@ -1448,8 +1448,8 @@ TEST(build_mgr, non_executable_stack) {
 }
 
 TEST(build_mgr, qsort_callback) {
-	// IT-2026-09-12-3009: end-to-end proof of IT-3007's callback mechanism --
-	// glibc's qsort calls a Palan function directly through the address the
+	// End-to-end proof of the C-callback mechanism -- glibc's qsort calls a
+	// Palan function directly through the address the
 	// func-ref/LeaLabel lowering hands it. The comparator is spelled with a
 	// typed pointee (@int32); bsearch_callback below covers the C-idiomatic
 	// @void spelling.
@@ -1501,8 +1501,8 @@ TEST(build_mgr, limits_constants) {
 }
 
 TEST(build_mgr, stdint) {
-	// IT-2026-09-16-3104 end-to-end: stdint.h declares zero C functions, only
-	// typedefs (int32_t etc). Before this ticket, int32_t was invisible to
+	// End-to-end: stdint.h declares zero C functions, only
+	// typedefs (int32_t etc). Before the dedicated typedefs section, int32_t was invisible to
 	// Palan entirely -- no C function/global in the header referenced it to
 	// carry the typedef-name hint through the old signature-piggyback path.
 	cleanTestEnv();
@@ -1511,7 +1511,7 @@ TEST(build_mgr, stdint) {
 }
 
 TEST(build_mgr, stdint_types) {
-	// IT-2026-09-16-3105: a realistic multi-type scenario for stdint.h,
+	// A realistic multi-type scenario for stdint.h,
 	// complementing 167_stdint's minimal repro -- int32_t/uint32_t/int64_t/
 	// uint64_t used together, plus one cross-type (int32_t -> int64_t)
 	// assignment, all from a header that declares zero C functions.
@@ -1521,10 +1521,10 @@ TEST(build_mgr, stdint_types) {
 }
 
 TEST(build_mgr, typedef_chain) {
-	// IT-2026-09-16-3105 end-to-end: a multi-level typedef chain (A -> B -> C,
+	// End-to-end: a multi-level typedef chain (A -> B -> C,
 	// all the way to int32), a tagged-struct-bottomed typedef (S -> struct Tag),
 	// and an anonymous-struct typedef (Anon), all registered via the
-	// unconditional ast.typedefs loop (IT-2026-09-16-3104) rather than by
+	// unconditional ast.typedefs loop rather than by
 	// piggybacking on a C function signature. The header also carries a
 	// pointer-bottomed typedef (P) that is never referenced here -- its
 	// presence proves the other typedefs still register normally even when a
@@ -1535,10 +1535,10 @@ TEST(build_mgr, typedef_chain) {
 }
 
 TEST(build_mgr, all_headers) {
-	// IT-2026-09-16-3105: cinclude all 13 headers audited for this iteration
+	// cinclude all 13 supported headers
 	// (stdio.h, string.h, stdlib.h, time.h, math.h, ctype.h, sys/stat.h,
 	// stdint.h, inttypes.h, sys/types.h, errno.h, locale.h, dirent.h)
-	// simultaneously. IT-2026-09-16-3104's manual audit found zero
+	// simultaneously. A manual audit found zero
 	// E_ConflictingTypedef diagnostics across this same set now that every
 	// header's typedefs register unconditionally rather than only the ones
 	// referenced by some function signature -- this pins that result down as
@@ -1549,7 +1549,7 @@ TEST(build_mgr, all_headers) {
 }
 
 TEST(build_mgr, link_math) {
-	// IT-2026-09-16-3108: build-mgr unions "libs" from every module's sa.json
+	// build-mgr unions "libs" from every module's sa.json
 	// and passes -l<name> to ld, so a cinclude `link` clause actually makes
 	// the program linkable (sqrt lives in libm, not libc).
 	cleanTestEnv();
@@ -1558,7 +1558,7 @@ TEST(build_mgr, link_math) {
 }
 
 TEST(build_mgr, link_import) {
-	// IT-2026-09-16-3108: this file itself has no `link` clause -- lib_sqrt.pa
+	// This file itself has no `link` clause -- lib_sqrt.pa
 	// (imported) is the one requesting libm, proving build-mgr's "libs"
 	// aggregation is a whole-program union across modules, not per-file.
 	cleanTestEnv();
@@ -1567,8 +1567,8 @@ TEST(build_mgr, link_import) {
 }
 
 TEST(build_mgr, math_functions) {
-	// IT-2026-09-16-3109: broad end-to-end proof that libm functions found
-	// by the pre-audit (sqrt/pow/sin/cos/tan/exp/log/floor/ceil/fabs/fmod/
+	// Broad end-to-end proof that libm functions found
+	// by a pre-audit (sqrt/pow/sin/cos/tan/exp/log/floor/ceil/fabs/fmod/
 	// atan2/hypot) actually run through the `link` clause, including
 	// passing a variable and a nested call/expression as arguments.
 	cleanTestEnv();
@@ -1592,7 +1592,7 @@ TEST(build_mgr, math_functions) {
 }
 
 TEST(build_mgr, output_name_injection) {
-	// IT-2026-09-18-build-mgr-argv-spawn: the -o argument used to be
+	// The -o argument used to be
 	// concatenated unquoted into the ld shell command line. A shell
 	// metacharacter payload proves both halves: the marker file the payload
 	// would create must NOT exist (injection is closed), and a file with the
@@ -1608,7 +1608,7 @@ TEST(build_mgr, output_name_injection) {
 }
 
 TEST(build_mgr, source_path_injection) {
-	// IT-2026-09-18-build-mgr-argv-spawn: the input .pa path flows unquoted
+	// The input .pa path used to flow unquoted
 	// through fs::weakly_canonical into every pipeline stage's command line
 	// (gen-ast/sa/codegen/as/ld) plus the mirrored work directory path. Copy a
 	// fixture to a hostile name at runtime (metacharacter filenames are not
@@ -1623,7 +1623,7 @@ TEST(build_mgr, source_path_injection) {
 }
 
 TEST(build_mgr, import_path_injection) {
-	// IT-2026-09-18-build-mgr-argv-spawn: an import path read back out of
+	// An import path read back out of
 	// ast.json used to be concatenated unquoted into the next palan-gen-ast
 	// shell command line. A plain nonexistent metacharacter path is rejected
 	// by the pre-existing fs::exists() check before ever reaching that

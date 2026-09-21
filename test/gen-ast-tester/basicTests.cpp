@@ -1132,9 +1132,9 @@ TEST(gen_ast, cinclude_local_header) {
 
 TEST(gen_ast, cinclude_constant) {
 	cleanTestEnv();
-	// IT-2608: c2ast exports object-like macro constants into ast.constants (IT-2607),
-	// but PlnParser.yy's cinclude rule only copied ast.functions into the cinclude stmt.
-	// This verifies the constants array is now copied through as well.
+	// c2ast exports object-like macro constants into ast.constants; this
+	// verifies PlnParser.yy's cinclude rule copies that constants array
+	// through onto the cinclude statement, not just ast.functions.
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/103_cinclude_constant.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
@@ -1157,7 +1157,7 @@ TEST(gen_ast, cinclude_constant) {
 
 TEST(gen_ast, cinclude_global) {
 	cleanTestEnv();
-	// IT-2907: c2ast exports file-scope "extern" object declarations into
+	// c2ast exports file-scope "extern" object declarations into
 	// ast.globals; this verifies PlnParser.yy's cinclude rule lifts that
 	// array onto the cinclude statement's "globals" field, same as it
 	// already does for functions/constants/structs.
@@ -1181,11 +1181,11 @@ TEST(gen_ast, cinclude_global) {
 }
 
 TEST(gen_ast, cinclude_global_only) {
-	// IT-2026-09-16-3102 (follow-up): a header with globals but no functions
-	// used to leave "functions": null on the cinclude statement (the lift
-	// unconditionally moved c_ast["ast"]["functions"], unlike the
-	// contains()-guarded constants/structs/globals). Now it must be
-	// omitted, same as the other three fields when absent.
+	// A header with globals but no functions used to leave "functions": null
+	// on the cinclude statement (the lift unconditionally moved
+	// c_ast["ast"]["functions"], unlike the contains()-guarded
+	// constants/structs/globals). Now it must be omitted, same as the other
+	// three fields when absent.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/110_cinclude_global_only.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1202,11 +1202,11 @@ TEST(gen_ast, cinclude_global_only) {
 }
 
 TEST(gen_ast, cinclude_typedefs) {
-	// IT-2026-09-16-3104 (gen-ast half): c2ast's IT-3103 ast.typedefs section
-	// is lifted onto the cinclude statement, same contains()-guarded pattern
-	// as functions/constants/structs/globals. Header declares zero functions
-	// (a my_size_t typedef only), so this also proves the lift is independent
-	// of the "functions" section's presence.
+	// c2ast's ast.typedefs section is lifted onto the cinclude statement,
+	// same contains()-guarded pattern as functions/constants/structs/globals.
+	// Header declares zero functions (a my_size_t typedef only), so this
+	// also proves the lift is independent of the "functions" section's
+	// presence.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/111_cinclude_typedefs.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1228,10 +1228,9 @@ TEST(gen_ast, cinclude_typedefs) {
 }
 
 TEST(gen_ast, cinclude_no_decl) {
-	// IT-2026-09-16-3102: a header that declares nothing (e.g. stdarg.h)
-	// makes palan-c2ast exit 0 with a JSON object that has no "ast" key.
-	// The cinclude fatal-error check must not mistake this no-op for a
-	// c2ast failure.
+	// A header that declares nothing (e.g. stdarg.h) makes palan-c2ast exit 0
+	// with a JSON object that has no "ast" key. The cinclude fatal-error
+	// check must not mistake this no-op for a c2ast failure.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/109_cinclude_no_decl.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1247,7 +1246,7 @@ TEST(gen_ast, cinclude_no_decl) {
 }
 
 TEST(gen_ast, void_ptr_type) {
-	// IT-2026-09-12-3008: @void/@!void spell C's void* directly. Same file
+	// @void/@!void spell C's void* directly. Same file
 	// also carries a bare "(void, int64 z) = myFunc(x);" tapple-decl slot
 	// discard (KW_VOID's original, sole use) to pin that it still parses --
 	// the two new type_expr productions must not shadow it.
@@ -1288,9 +1287,9 @@ TEST(gen_ast, void_ptr_type) {
 }
 
 TEST(gen_ast, cinclude_link) {
-	// IT-2026-09-16-3106: an optional `link` clause on cinclude collects
-	// library names into "libs" (string array), omitted when absent -- same
-	// contains()-guarded convention as functions/constants/structs/globals/typedefs.
+	// An optional `link` clause on cinclude collects library names into
+	// "libs" (string array), omitted when absent -- same contains()-guarded
+	// convention as functions/constants/structs/globals/typedefs.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/112_cinclude_link.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1315,7 +1314,7 @@ TEST(gen_ast, cinclude_link) {
 }
 
 TEST(gen_ast, link_as_identifier) {
-	// IT-2026-09-16-3106: "link" is a context-dependent keyword recognized
+	// "link" is a context-dependent keyword recognized
 	// only as `KW_CINCLUDE import_path import_as ID link_libs` where that ID
 	// spells "link". Everywhere else -- as a called C function (unistd.h
 	// really exports one named link()) or as a cinclude alias -- it must
@@ -1344,9 +1343,9 @@ TEST(gen_ast, link_as_identifier) {
 }
 
 TEST(gen_ast, syscall_decl) {
-	// IT-2026-09-19-3201: a "syscall" prototype declaration parses like
-	// func_def but carries an unevaluated "syscall-number" expression node
-	// (SA, IT-3202, evaluates it and diagnoses signature constraints).
+	// A "syscall" prototype declaration parses like func_def but carries an
+	// unevaluated "syscall-number" expression node (SA evaluates it and
+	// diagnoses signature constraints).
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/114_syscall_decl.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1407,7 +1406,7 @@ TEST(gen_ast, syscall_decl) {
 	ASSERT_TRUE(found_baz);
 
 	// root "export" array carries syscall-number too (no symbol to link
-	// against; the importer needs the number itself, IT-3204).
+	// against; the importer needs the number itself).
 	ASSERT_TRUE(jout.contains("export"));
 	ASSERT_EQ(jout["export"].size(), 1u);
 	ASSERT_EQ(jout["export"][0]["name"], "write");

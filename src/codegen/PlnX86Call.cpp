@@ -138,7 +138,7 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
         out << "\taddq $" << stack_space << ", %rsp\n";
     // Move return value(s) to destination(s). An ordinary scalar/pointer
     // return is one INTEGER (%rax) or SSE (%xmm0) dst; a struct-by-value
-    // return classified into eightbytes (IT-2026-09-12-3004) can add a
+    // return classified into eightbytes can add a
     // second dst of either class, consuming %rdx or %xmm1 next in that
     // class's own sequence -- SysV's <=16-byte register-return limit means
     // there is never a third of either. Each dst here is a freshly allocated

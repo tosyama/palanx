@@ -1,8 +1,7 @@
 cinclude <stdio.h>;
 
-// Regression for IT-2026-09-06-2901: PlnX86CodeGen::emitConvert had no
-// signed<->unsigned branches at all and would abort (rc=134) on any of
-// these. Ticket repro (all previously aborted):
+// PlnX86CodeGen::emitConvert used to have no signed<->unsigned branches at
+// all and would abort (rc=134) on any of these (all previously aborted):
 uint32 ra = 7; int64 rb = int64(ra);
 uint64 rc = 7; int64 rd = int64(rc);
 int64  re = 7; uint64 rf = uint64(re);

@@ -124,7 +124,7 @@ TEST(c2ast, stdio_functions_in_ast) {
     }
 
     // stdin/stdout/stderr: extern FILE *NAME -- captured into ast.globals as
-    // pntr(strct _IO_FILE), FILE's typedef resolved via IT-2905.
+    // pntr(strct _IO_FILE), FILE's typedef resolved to the underlying struct.
     {
         auto& globals = ast["ast"]["globals"];
         auto find_global = [&](const string& name) -> json* {
@@ -256,8 +256,8 @@ TEST(c2ast, struct_enum_typedef) {
         return nullptr;
     };
 
-    // get_color() returns typedef enum Color -- enum bodies are never tag-
-    // synthesized (IT-2026-09-12-3002 is struct-only), so this stays "user".
+    // get_color() returns typedef enum Color -- enum bodies are never
+    // tag-synthesized (tag synthesis is struct-only), so this stays "user".
     {
         json* f = find_func("get_color");
         ASSERT_NE(f, nullptr);
@@ -266,7 +266,7 @@ TEST(c2ast, struct_enum_typedef) {
     }
 
     // make_point() returns typedef struct Point -- the anonymous body's tag is
-    // synthesized from the typedef name "Point" (IT-2026-09-12-3002).
+    // synthesized from the typedef name "Point".
     {
         json* f = find_func("make_point");
         ASSERT_NE(f, nullptr);
@@ -417,11 +417,10 @@ TEST(c2ast, typedef_chain) {
 }
 
 TEST(c2ast, typedef_union_unresolved) {
-    // typedef union {...} U; -- the struct-only tag synthesis
-    // (IT-2026-09-12-3002) doesn't apply to unions (struct_union_definition's
-    // capture path is entirely under an "is_struct" guard), so this stays
-    // unresolved "user", exercising the CParser.cpp:441 fallback that a
-    // struct body now reaches far less often.
+    // typedef union {...} U; -- the struct-only tag synthesis doesn't apply
+    // to unions (struct_union_definition's capture path is entirely under an
+    // "is_struct" guard), so this stays unresolved "user", exercising the
+    // CParser.cpp:441 fallback that a struct body now reaches far less often.
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/017_typedef_union_unresolved.h");
     json ast = json::parse(output);
@@ -569,7 +568,7 @@ TEST(c2ast, time_h_struct_pointer) {
     ASSERT_GT((*tm)["fields"].size(), 0);
 
     // asctime(const struct tm *tp): pointee const on a struct-typed pointer
-    // parameter must be captured (IT-2026-08-31-c2ast-const-capture).
+    // parameter must be captured.
     json* asctime = nullptr;
     for (auto& f : functions)
         if (f["name"] == "asctime") { asctime = &f; break; }
@@ -928,8 +927,8 @@ TEST(c2ast, array_decl) {
 }
 
 TEST(c2ast, ptr_array_decl) {
-    // Regression guard for IT-2026-09-05-c2ast-declarator-precedence: postfix
-    // suffixes ('[n]', '(params)') must bind tighter than the prefix '*', so
+    // Regression guard: postfix suffixes ('[n]', '(params)') must bind
+    // tighter than the prefix '*', so
     // "int *a[3]" (array of pointers) and "int (*a)[3]" (pointer to array) must
     // NOT come out swapped.
     cleanTestEnv();
@@ -1117,7 +1116,7 @@ TEST(c2ast, typedef_anon_struct) {
     }
 }
 
-// IT-2026-09-16-3103: a header's typedefs are flushed into their own
+// A header's typedefs are flushed into their own
 // ast.typedefs section regardless of whether any C function references them
 // -- this is what lets a header like stdint.h (zero functions, all typedefs)
 // register its types at all. See stdint_typedefs below for that end-to-end case.
@@ -1179,16 +1178,16 @@ TEST(c2ast, typedef_section) {
     }
 
     // typedef void *P; -- pointer-bottomed typedefs are deliberately excluded
-    // from this section this version (see IT-2026-09-16-3103).
+    // from this section this version.
     ASSERT_EQ(find_typedef("P"), nullptr);
 
     ASSERT_EQ(typedefs.size(), 6u);
 }
 
 // A header whose typedefs are never referenced by any C function -- stdint.h
-// declares zero functions, so before IT-2026-09-16-3103 none of its typedefs
-// reached the AST at all (the only export path was piggybacking on a
-// function/global's var-type node).
+// declares zero functions, so without the dedicated ast.typedefs section
+// none of its typedefs would reach the AST at all (the only other export
+// path is piggybacking on a function/global's var-type node).
 TEST(c2ast, stdint_typedefs) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast -s stdint.h");
@@ -1214,7 +1213,7 @@ TEST(c2ast, stdint_typedefs) {
     expect_prim("uint64_t", "uint64");
 }
 
-// IT-2026-09-12-3006: `(void)` normalizes to an empty parameter list, both at
+// `(void)` normalizes to an empty parameter list, both at
 // top level and inside a function-pointer's own parameter list, while a real
 // parameter and an already-empty `()` are left untouched.
 TEST(c2ast, void_param_list) {
@@ -1250,11 +1249,11 @@ TEST(c2ast, void_param_list) {
     ASSERT_TRUE(cb_vt["base-type"]["parameters"].empty());
 
     // No typedef in this header at all -- the "typedefs" key itself is
-    // omitted, same convention as "structs" (IT-2026-09-16-3103).
+    // omitted, same convention as "structs".
     ASSERT_FALSE(ast["ast"].contains("typedefs"));
 }
 
-// --- Input file edge cases (IT-2026-09-16-3101) ---
+// --- Input file edge cases ---
 
 TEST(c2ast, empty_header) {
     cleanTestEnv();

@@ -464,16 +464,10 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// Shared narrowing rule for every binding site: var-decl initializer,
-// assignment, array-assignment, return, and field-assign. ImplicitWiden
-// inserts a convert node; ExplicitCast (narrowing or cross-signedness) is
-// rejected with E_InvalidNarrowingConv, except an integer literal `value`
-// adopts toType instead of erroring (its printed width/sign was never fixed
-// by the source syntax the way a variable's declared type is); Incompatible
-// (pointee mismatch, struct-name mismatch, or a Prim<->Ptr/Struct mix such as
-// an integer literal bound to a pointer) is rejected with E_IncompatibleTypes.
-// ptrPermissionOk, checked by each call site, is a separate, narrower gate:
-// it only judges mutability between two otherwise-compatible pointer types.
+// Shared narrowing rule for every binding site. An integer/uint literal is
+// exempt from the ExplicitCast rejection below, since its width/sign was
+// never fixed by source syntax; pointer mutability is checked separately by
+// each call site via ptrPermissionOk.
 json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		const PlnType* toType, const json& toTypeJson)
 {
@@ -497,16 +491,9 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 	return value;
 }
 
-// Enforce ptrPermissionOk() at one call argument. `param` is the callee's
-// full parameter entry (var-type plus, for a C function, an optional name --
-// c2ast leaves "name" absent for an abstract declarator, e.g. a prototype
-// with no parameter names). The diagnostic differs by callee kind because the
-// destination vocabulary differs: a Palan parameter's own `@!T` upgrades the
-// existing E_PtrMutabilityUpgrade check every other binding site already uses
-// (var-decl/assign/return/field-assign), while a C parameter's permission
-// comes from const-qualification (folded into `mutable` by normalizeCType at
-// the cinclude ingestion boundary -- see PlnSaInternal.h), so it gets its own
-// message naming the C function and parameter.
+// Enforce ptrPermissionOk() at one call argument; the diagnostic differs by
+// callee kind, since a C parameter's permission comes from const-qualification
+// while a Palan parameter's comes from `@!T`.
 void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& funcName,
 		bool isCFunc, const json& saArg, const json& param, size_t argIdx)
 {
@@ -575,14 +562,9 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// Analyze a call's argument list against the callee's parameter list. Shared
-// by sa_expr_call and sa_expr_member_call so a plain call and an aliased
-// `S.func(...)` call get identical per-argument handling (embedded-array
-// inner-size checks, variadic promotion, pointer permission checks) --
-// sa_expr_member_call previously duplicated only part of this loop, which
-// silently dropped variadic promotion for aliased calls (e.g.
-// `S.printf("%f\n", someFlo32)` passed the flo32 through unconverted instead
-// of promoting it to flo64, producing a garbage value at the callee).
+// Shared by sa_expr_call and sa_expr_member_call: these used to duplicate
+// only part of this loop, silently dropping variadic promotion for an
+// aliased call like `S.printf("%f\n", someFlo32)`.
 json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json* funcParams,
                                       bool isCFunc, const string& funcName)
 {
@@ -606,11 +588,9 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 			argIdx++;
 			continue;
 		}
-		// Pass the parameter's type down so a bare integer literal argument
-		// (e.g. `add(1, 2)`, `umask(0)`) adopts it instead of always
-		// defaulting to int64/uint64 (see sa_expression's lit-int/lit-uint
-		// branches) -- otherwise convertCallArg below would reject most
-		// literal arguments to a non-int64 parameter as narrowing.
+		// A bare integer literal argument adopts the parameter's type here
+		// instead of defaulting to int64/uint64, avoiding a spurious narrowing
+		// rejection below.
 		json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
 		if (saArg.contains("value-type")) {
 			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
@@ -646,23 +626,11 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 	return saArgs;
 }
 
-// Analyze the argument in a `_callback-param` slot (IT-2026-09-12-3007): a C
-// function pointer parameter (qsort's comparator, atexit's handler, ...)
-// whose inner signature normalizeCFuncSig already proved representable. The
-// only legal argument is a bare reference to a Palan function -- this
-// version has no first-class function-pointer value, so a variable, a call
-// result, or any other expression is rejected outright. The matched
-// function's signature must be exactly ABI-identical to the callback's C
-// signature: glibc calls the Palan function directly with no Palan-side
-// conversion step to widen/narrow through (unlike every other argument in
-// this file, where convertCallArg/checkArgPtrPermission tolerate implicit
-// widening), so anything looser than typeCompat's Identical would silently
-// read/write the wrong number of bytes across the ABI boundary. Pointer
-// permission is checked in the direction the value actually flows: a
-// parameter's value flows from C into the callback, so a `const` C
-// parameter (mutable == false) permits a Palan `@T` argument but not `@!T`;
-// the callback's return value flows from Palan back to C, so that check
-// runs with the operands reversed.
+// Analyze the argument in a `_callback-param` slot (a C function pointer
+// parameter, e.g. qsort's comparator): only a bare Palan function reference
+// is legal, matched by exact ABI identity since glibc calls it directly with
+// no Palan-side conversion step. Pointer permission is checked in the
+// direction each value flows, so it's reversed for the return vs. each parameter.
 json PlnSemanticAnalyzer::sa_func_ref_arg(const json& locNode, const json& arg,
                                            const string& cFuncName, const json& param)
 {
@@ -720,11 +688,9 @@ json PlnSemanticAnalyzer::sa_func_ref_arg(const json& locNode, const json& arg,
 	return out;
 }
 
-// Convert a single call argument (`saArg`, already SA'd) to a parameter's
-// type. Shared by sa_expr_call and sa_expr_member_call; embedded-array shape
-// checking and pointer-permission checking are the callers' responsibility
-// since they differ (C vs. Palan callee) and don't fit this function's single
-// concern (type conversion / narrowing diagnostic).
+// Convert a single call argument to a parameter's type. Embedded-array shape
+// and pointer-permission checks are each caller's own responsibility, since
+// those differ by callee kind (C vs. Palan).
 json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const json& paramVT)
 {
 	const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
@@ -737,13 +703,7 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 			typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)) << endl;
 		exit(1);
 	}
-	// Non-Prim (pointer / embedded-array / struct-by-name), or a Prim<->Ptr
-	// mix (e.g. an integer literal passed where a pointer parameter is
-	// expected): typeCompat never returns ImplicitWiden/ExplicitCast for
-	// these, only Identical (pntr(void) is bidirectionally Identical with any
-	// pntr(T), which is how NULL passes) or Incompatible, so this covers the
-	// whole remaining domain; ptr permission and embedded-array shape are the
-	// callers' concern.
+	// pntr(void) is bidirectionally Identical with any pntr(T), which is how NULL passes.
 	if (typeCompat(fromType, toType, registry_) == TypeCompat::Incompatible) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
 			typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)) << endl;
@@ -794,8 +754,8 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 
 		if (elem_type.value("type-kind", "") == "prim"
 				&& !array_type.contains("inner-size") && array_type.contains("stride")) {
-			// [n]$T embedded array field, primitive leaf (IT-2507): data[i] -> scalar
-			// value (stride carried on array_type distinguishes this from the 2D
+			// [n]$T embedded array field, primitive leaf: data[i] -> scalar value
+			// (stride carried on array_type distinguishes this from the 2D
 			// inner-size row-access case below).
 			int64_t stride = array_type.value("stride", (int64_t)0);
 			json elem_size_node = {
@@ -841,31 +801,8 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 	}
 
 	if (elem_type.value("type-kind", "") == "struct") {
-		// Pointer dereference `p[i]` where the pointee is a struct: Palan has no
-		// register-sized representation of a struct value (every struct-typed
-		// expression is itself a `pntr(struct)`), so the result is an address
-		// computation -- base + i*sizeof(T) -- not a load. Same rule as the
-		// embedded struct-array row access above; `p[0].field` reaches it via
-		// the field-access chain in resolveObjectChain.
-		// elem_type's "struct" type-kind is only ever produced by SA itself
-		// (sa_struct_var_decl, resolveObjectChain, or
-		// cinclude struct capture) -- never by gen-ast parsing native syntax,
-		// which has no symbol table and falls back to "prim" for any name it
-		// doesn't recognize (see the sz<0 guard below). Every such producer
-		// already required the name to resolve in structDefs_, so look it up
-		// via requireCompleteStruct (not a bare structDefs_[...] index) --
-		// registered no longer implies laid-out since incomplete structs
-		// (opaque handles like C's FILE) can be registered with no known
-		// totalSize, and this stride computation needs one.
-		//
-		// Note: a local `@T`/`@!T` variable declaration is rejected at
-		// declaration time by sa_var_decl for an unknown pointee, so the
-		// sz<0 guard below is unreachable from a local-var-declared pointer
-		// (except `@void`/`@!void`, deliberately accepted by sa_var_decl and
-		// rejected here instead with a dedicated E_DerefVoidPointer message).
-		// It remains the first rejection point for a `@T`/`@!T` function
-		// parameter or named-return value, whose pointee name is not
-		// validated at signature normalization time (normalizeStructSig).
+		// `p[i]` on a struct pointee is an address computation (base +
+		// i*sizeof(T)), not a load -- Palan has no register-sized struct value.
 		int64_t stride = requireCompleteStruct(elem_type["type-name"].get<string>(), expr).totalSize;
 		json elem_pntr = {{"type-kind","pntr"},{"mutable",array_type.value("mutable", true)},
 		                  {"base-type",elem_type}};

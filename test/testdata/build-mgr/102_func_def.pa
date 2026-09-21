@@ -19,9 +19,9 @@ cinclude <stdio.h>;
 }
 
 // 010: named_ret_narrowing
-// IT-2026-09-11-usual-arith-conv: assignment now enforces the same narrowing
-// rule as a var-decl initializer, so an int64->int32 assign needs an explicit
-// cast (this used to convert silently).
+// Assignment enforces the same narrowing rule as a var-decl initializer, so
+// an int64->int32 assign needs an explicit cast (this used to convert
+// silently).
 {
     func named_ret_narrowing(int64 x) -> int32 a {
         int32(5 + x) -> a;
@@ -39,8 +39,7 @@ cinclude <stdio.h>;
 }
 
 // 012: return_narrowing
-// IT-2026-09-11-usual-arith-conv: return now enforces the same narrowing
-// rule as a var-decl initializer.
+// Return enforces the same narrowing rule as a var-decl initializer.
 {
     func narrow(int64 x) -> int32 {
         return int32(x);

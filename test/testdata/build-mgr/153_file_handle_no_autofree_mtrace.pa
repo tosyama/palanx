@@ -1,7 +1,7 @@
 cinclude <stdio.h>;
 cinclude <mcheck.h>;
 
-// IT-2026-09-06-2909: the ownership contract for a C handle. `@!FILE f` is a
+// The ownership contract for a C handle. `@!FILE f` is a
 // non-owning pointer, so leaving the block must NOT emit a free() -- the
 // FILE* belongs to libc and is released only by an explicit fclose.
 // fclose is deliberately omitted here: with it, libc's own internal frees

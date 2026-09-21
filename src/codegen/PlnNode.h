@@ -66,7 +66,7 @@ struct CGlobalExpr : Expr {
 };
 
 // Reference to a Palan function's address, to pass as a C callback argument
-// (IT-2026-09-12-3007, e.g. qsort's comparator). A Palan function is emitted
+// (e.g. qsort's comparator). A Palan function is emitted
 // as an unmangled assembly label (see PlnVCodeGen::generate), so this is
 // just the address of that label -- lowered to a bare LeaLabel, same as
 // StrLitExpr, with no dereference. No first-class function-pointer value

@@ -708,7 +708,7 @@ TEST(sa_error, write_readonly_arr_field_elem)
 {
 	// type Watch { [3]@Point observed; }; p -> w.observed[0]; 42 -> w.observed[0].x;
 	// -- write-through to a non-mutable embed-ptr-arr struct field element
-	// Covers: IT-2508 — resolveObjectChain(forWrite=true) arr-index base case, mutable:false
+	// Covers: resolveObjectChain(forWrite=true) arr-index base case, mutable:false
 	// branch (E_WriteToReadOnlyArrElem), exercised via a struct field (embed-ptr-arr)
 	// rather than a plain variable array (already covered by write_readonly_arr_elem).
 	cleanTestEnv();
@@ -724,7 +724,7 @@ TEST(sa_error, field_access_on_prim_arr_field_elem)
 {
 	// type Buf { [4]$int64 data; }; printf("%ld\n", buf.data[0].sub);
 	// -- data[0] is a primitive embed-arr leaf, not a struct pointer
-	// Covers: IT-2508 — sa_expr_arr_index primitive leaf branch (IT-2507) feeding
+	// Covers: sa_expr_arr_index's primitive leaf branch feeding
 	// into resolveObjectChain's arr-index base case, non-struct value-type branch
 	// (E_FieldAccessOnNonStruct), exercised via an embedded struct field array
 	// rather than a plain variable array (already covered by
@@ -742,7 +742,7 @@ TEST(sa_error, field_assign_on_prim_arr_field_elem)
 {
 	// type Buf { [4]$int64 data; }; 10 -> buf.data[0].sub;
 	// -- same as field_access_on_prim_arr_field_elem but through the write side
-	// Covers: IT-2508 — resolveObjectChain(forWrite=true) arr-index base case, non-struct
+	// Covers: resolveObjectChain(forWrite=true) arr-index base case, non-struct
 	// value-type branch (E_FieldAccessOnNonStruct), via embedded struct field array.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -798,8 +798,8 @@ TEST(sa_error, struct_nested_embed_arr_field_unsupported)
 TEST(sa_error, cinclude_typedef_conflict)
 {
 	// type size_t = int32; then cinclude <string.h>; which resolves size_t to uint64
-	// Covers: registerTypeAliasChecked's E_ConflictingTypedef branch. Since
-	// IT-2026-09-16-3104, sa_cinclude's unconditional ast.typedefs loop is what
+	// Covers: registerTypeAliasChecked's E_ConflictingTypedef branch.
+	// sa_cinclude's unconditional ast.typedefs loop is what
 	// actually triggers this conflict (registerTypeAliasChecked is called
 	// directly from that loop, not via registerTypedefAliasInType) -- the
 	// per-reference-site path (e.g. strlen's size_t return) would hit the same
@@ -1068,7 +1068,7 @@ TEST(sa_error, assign_whole_struct_elem)
 {
 	// `other -> pt[0];` -- `pt[0]` on a struct pointer is an address
 	// computation (addr-only), not a pointer slot; writing the whole element
-	// is rejected. IT-2805: guards the new struct-deref addr-only path.
+	// is rejected. Guards the struct-deref addr-only path.
 	// Covers: sa_arr_assign_stmt addr-only guard (E_AssignToWholeStructElem)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1098,11 +1098,11 @@ TEST(sa_error, deref_unknown_struct_ptr)
 {
 	// `func f(@!Foo p) { p[0].bar; }` where `Foo` is never declared. gen-ast has
 	// no symbol table, so `Foo` parses as a prim base-type, not a struct one --
-	// IT-2805: sa_expr_arr_index's generic (non-struct) branch must reject
+	// sa_expr_arr_index's generic (non-struct) branch must reject
 	// this at the SA boundary instead of letting elemSizeBytes' -1
 	// "unknown type" sentinel leak into elem-size and crash palan-codegen
 	// downstream (layer violation).
-	// IT-2902 moved this case to a parameter: a local `@!Foo p;` var decl is
+	// A local `@!Foo p;` var decl is
 	// now rejected at declaration time (sa_var_decl), so only a parameter's
 	// pointee (unchecked at signature normalization) still reaches this guard.
 	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownStructType)
@@ -1118,8 +1118,8 @@ TEST(sa_error, deref_unknown_struct_ptr)
 TEST(sa_error, readonly_ptr_to_nonconst_c_param)
 {
 	// `clock_getcpuclockid(int32(0), p);` where `p` is `@int32` (read-only)
-	// and the C parameter is `clockid_t *` (non-const) -- IT-2026-08-31-c2ast-
-	// const-capture: C function arguments are now checked by
+	// and the C parameter is `clockid_t *` (non-const) -- C function
+	// arguments are checked by
 	// ptrPermissionOk() too, previously exempted (see the removed comment at
 	// sa_expr_call's arg loop).
 	// Covers: sa_expr_call checkArgPtrPermission, C-func branch (E_ReadOnlyPtrToNonConstCParam)
@@ -1211,7 +1211,7 @@ TEST(sa_error, addr_of_readonly_ptr_elem)
 TEST(sa_error, ptr_decl_unknown_type)
 {
 	// `@!@!NoSuchStruct p;` (pntr-of-pntr, to exercise the walk-through loop
-	// too) -- IT-2902: sa_var_decl had no "pntr" branch in its dispatch guard,
+	// too) -- sa_var_decl used to have no "pntr" branch in its dispatch guard,
 	// so the pointee name was never validated at declaration time; without an
 	// initializer, this used to compile silently and leave `p` referencing a
 	// nonexistent type.
@@ -1230,7 +1230,7 @@ TEST(sa_error, incomplete_struct_var_decl)
 {
 	// `struct Tag { int x; int cells[2][3]; };` (cinclude'd, "cells" unsupported)
 	// then `Tag t;` -- an owned declaration needs Tag's totalSize to calloc it.
-	// IT-2904: registerCStruct now downgrades Tag to an incomplete struct
+	// registerCStruct downgrades Tag to an incomplete struct
 	// (opaque handle) instead of leaving the tag unregistered, so this is a
 	// diagnosed E_IncompleteStructType, not "unknown struct type".
 	// Covers: sa_struct_var_decl -> requireCompleteStruct
@@ -1246,7 +1246,7 @@ TEST(sa_error, incomplete_struct_var_decl)
 TEST(sa_error, incomplete_struct_forward_declared)
 {
 	// `struct Tag;` (forward-declared only, never defined in this header) then
-	// `Tag t;` -- IT-2026-09-06-2905: registerCStruct now registers a
+	// `Tag t;` -- registerCStruct registers a
 	// forward-declared-only tag as an incomplete struct too (previously it was
 	// never registered at all, and a chain like this used to hit a raw
 	// BOOST_ASSERT abort in requireCompleteStruct rather than a diagnostic).
@@ -1400,7 +1400,7 @@ TEST(sa_error, sized_arr_param)
 	// cannot build. Previously this reached sa_expr_call's parameter-side
 	// fromJson call, which was silently swallowed by a
 	// `catch (const std::runtime_error&) {}` -- the argument itself would
-	// still abort unguarded downstream. IT-2026-09-08: registration now
+	// still abort unguarded downstream. Registration now
 	// validates the normalized signature and diagnoses it up front instead.
 	// Covers: PlnSemanticAnalyzer::validateNativeSig (top-level registration)
 	cleanTestEnv();
@@ -1417,7 +1417,7 @@ TEST(sa_error, c_unsupported_user_param)
 {
 	// `void take_handle(mystery_t h);` -- `mystery_t` is an identifier c2ast
 	// never saw a typedef for, so it stays type-kind "user" through
-	// normalizeCType. IT-2906: normalizeCFuncSig now tags the registered
+	// normalizeCType. normalizeCFuncSig tags the registered
 	// entry with "_unsupported-sig" and requireSupportedCFuncSig diagnoses it
 	// at the call, instead of the unguarded fromJson at the argument site
 	// aborting (or, before this ticket, the parameter-side try/catch quietly
@@ -1494,7 +1494,7 @@ TEST(sa_error, c_unsupported_func_param)
 {
 	// `void set_cb(int (*cb)(long double));` -- a function-pointer parameter
 	// whose own inner signature is unrepresentable (long double) is still
-	// rejected wholesale as "function pointer": IT-2026-09-12-3007 only
+	// rejected wholesale as "function pointer": the callback exception only
 	// exempts a callback parameter from the blanket rejection when
 	// callbackSigRepresentable finds every inner parameter/return type
 	// representable, which is not the case here.
@@ -1514,7 +1514,7 @@ TEST(sa_error, c_unsupported_anon_strct_param)
 {
 	// `void f(struct { int a; } *p);` -- an inline anonymous struct behind a
 	// pointer. c2ast's "strct" branch still omits type-name for a tagless
-	// struct even after IT-2905 removed the definedStructs_ guard (that guard
+	// struct even after removing the definedStructs_ guard (that guard
 	// only covered forward-declared *tagged* references); normalizeCType
 	// folds it to a nameless {"type-kind":"struct"}.
 	// Covers: sa_expr_call -> requireSupportedCFuncSig, nameless struct
@@ -1644,7 +1644,7 @@ TEST(sa_error, c_global_unsupported_type)
 
 TEST(sa_error, arg_narrowing)
 {
-	// IT-2026-09-11-usual-arith-conv: a call argument used to get no type
+	// A call argument used to get no type
 	// check beyond ImplicitWiden -- an int64 argument to an int32 parameter
 	// silently passed through and produced a bad `movq` operand-width mismatch
 	// in the emitted assembly. Now diagnosed at the call site, same message as
@@ -1661,7 +1661,7 @@ TEST(sa_error, arg_narrowing)
 
 TEST(sa_error, arith_op_not_numeric)
 {
-	// IT-2026-09-11-usual-arith-conv: `p + 1` on a pointer operand used to
+	// `p + 1` on a pointer operand used to
 	// silently fall through to `promoted = leftType`, accepting pointer
 	// arithmetic that Palan has no syntax or semantics for. usualArithConv
 	// returns nullptr for a non-Prim operand, which sa_expr_arith now
@@ -1694,7 +1694,7 @@ TEST(sa_error, arith_op_not_numeric_rhs)
 
 TEST(sa_error, assign_narrowing)
 {
-	// IT-2026-09-11-usual-arith-conv: an assignment (`big -> x`) used to
+	// An assignment (`big -> x`) used to
 	// silently insert a narrowing convert -- unlike a var-decl initializer,
 	// which has always rejected this. Assignment/array-assign/return/
 	// field-assign now share the initializer's strict rule.
@@ -1711,13 +1711,13 @@ TEST(sa_error, assign_narrowing)
 
 TEST(sa_error, toplevel_call_plain_return_struct)
 {
-	// IT-2026-09-12-3001: `Point p2 = makePoint();` used to reach
+	// `Point p2 = makePoint();` used to reach
 	// sa_struct_var_decl, which silently discarded var["init"] and
 	// fabricated its own calloc-init instead of ever emitting `call
 	// makePoint` -- a former sa.toplevel_call_plain_return_struct test in
 	// basicTests.cpp asserted on that fabricated calloc-shaped init as if it
 	// were correct. Struct-typed initializers are now rejected outright.
-	// IT-2026-09-12-3004 later admits the one shape it can actually
+	// A later ticket admits the one shape it can actually
 	// implement -- a C function's SysV-classified struct-by-value return --
 	// but `makePoint` here is a native Palan function (func-type "palan"),
 	// which stays rejected either way.
@@ -1733,13 +1733,13 @@ TEST(sa_error, toplevel_call_plain_return_struct)
 
 TEST(sa_error, struct_init_not_supported)
 {
-	// IT-2026-09-12-3004: `Pair p = q;` (copy-initializing one struct
+	// `Pair p = q;` (copy-initializing one struct
 	// variable from another) is not a call to a C function returning `Pair`
 	// by value, so it stays outside the one shape sa_struct_var_decl now
 	// admits and is rejected. (`Pair p = make_pair(3, 4);`, this test's
-	// fixture prior to IT-3004, is exactly that admitted shape and now
-	// succeeds instead; new success-path tests for it are IT-2026-09-12-3005's
-	// scope.)
+	// fixture prior to admitting that shape, is exactly that admitted shape
+	// and now succeeds instead; new success-path tests for it live in
+	// basicTests.cpp's struct_ret_c_call/struct_ret_memory_class.)
 	// Covers: sa_struct_var_decl init rejection, E_StructInitNotSupported
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1752,7 +1752,7 @@ TEST(sa_error, struct_init_not_supported)
 
 TEST(sa_error, call_arg_ptr_mismatch_native)
 {
-	// IT-2026-09-12-3001 item (2): convertCallArg used to pass any non-Prim
+	// convertCallArg used to pass any non-Prim
 	// (pointer/struct) argument through unchecked -- `@!int32` bound to a
 	// `@!int64` parameter of a Palan function compiled with no diagnostic
 	// and the wrong access width at runtime.
@@ -1782,7 +1782,7 @@ TEST(sa_error, call_arg_ptr_mismatch_c)
 
 TEST(sa_error, c_by_value_struct_param)
 {
-	// IT-2026-09-12-3001 item (3): normalizeCFuncSig used to accept a
+	// normalizeCFuncSig used to accept a
 	// top-level by-value struct parameter (indistinguishable from a
 	// pntr-wrapped struct base-type to unrepresentableTypeName alone),
 	// letting a call like this type-check with the wrong ABI. Real-world
@@ -1815,8 +1815,8 @@ TEST(sa_error, convert_for_binding_ptr_mismatch)
 
 TEST(sa_error, byval_struct_ret_discarded)
 {
-	// IT-2026-09-12-3005: `div(7, 2);` as a bare statement -- a C function's
-	// struct-by-value return (IT-3004) reaching sa_expression_stmt with no
+	// `div(7, 2);` as a bare statement -- a C function's
+	// struct-by-value return reaching sa_expression_stmt with no
 	// destination variable to write it into.
 	// Covers: sa_expression_stmt struct value-type rejection, E_ByvalStructRetDiscarded
 	cleanTestEnv();
@@ -1830,7 +1830,7 @@ TEST(sa_error, byval_struct_ret_discarded)
 
 TEST(sa_error, unsupported_c_struct_return)
 {
-	// IT-2026-09-12-3005: `Odd3 o = get_odd();` where Odd3 is `{ char a[3]; }`
+	// `Odd3 o = get_odd();` where Odd3 is `{ char a[3]; }`
 	// -- classifySysVStructRet rejects the 3-byte tail eightbyte (not 1/2/4/8
 	// wide) rather than guessing at a partial-eightbyte store.
 	// Covers: sa_struct_var_decl struct-ret classification rejection, E_UnsupportedCStructReturn
@@ -1845,7 +1845,7 @@ TEST(sa_error, unsupported_c_struct_return)
 
 TEST(sa_error, callback_arg_not_func)
 {
-	// IT-2026-09-12-3007: `qsort(arr, 4, 4, x);` where `x` is a local
+	// `qsort(arr, 4, 4, x);` where `x` is a local
 	// variable, not a function name -- the "_callback-param" slot only
 	// accepts a bare reference resolved by findPlnFunc, not findVar.
 	// Covers: sa_func_ref_arg's arg.expr-type=="id" + findVar/findPlnFunc
@@ -1862,7 +1862,7 @@ TEST(sa_error, callback_arg_not_func)
 
 TEST(sa_error, callback_sig_arity_mismatch)
 {
-	// IT-2026-09-12-3007: `func cmp(@int32 a) -> int32` passed where qsort
+	// `func cmp(@int32 a) -> int32` passed where qsort
 	// expects a 2-parameter comparator -- arity mismatch between the C
 	// callback signature and the Palan function's own signature.
 	// Covers: sa_func_ref_arg's cCount != pCount check, E_CallbackSignatureMismatch
@@ -1877,7 +1877,7 @@ TEST(sa_error, callback_sig_arity_mismatch)
 
 TEST(sa_error, callback_sig_ptr_permission)
 {
-	// IT-2026-09-12-3007: `func cmp(@!int32 a, @!int32 b) -> int32` passed to
+	// `func cmp(@!int32 a, @!int32 b) -> int32` passed to
 	// qsort, whose comparator parameters are `const void*` -- C passes a
 	// read-only value INTO the callback, so a Palan `@!T` (which could write
 	// through it) is not a valid match even though the pointee types agree.
@@ -1894,7 +1894,7 @@ TEST(sa_error, callback_sig_ptr_permission)
 
 TEST(sa_error, callback_sig_width_mismatch)
 {
-	// IT-2026-09-12-3007: `func cb(int64 status, @int8 arg)` passed to
+	// `func cb(int64 status, @int8 arg)` passed to
 	// on_exit, whose handler's first parameter is a plain `int` (int32) --
 	// typeCompat(int32, int64) is ImplicitWiden, not Identical, and this
 	// call site requires Identical because glibc calls the Palan function
@@ -1931,7 +1931,7 @@ TEST(sa_error, c_unsupported_func_ret)
 
 TEST(sa_error, callback_ret_void_mismatch)
 {
-	// IT-2026-09-12-3007: `func cb() -> int32 { ... }` passed to atexit,
+	// `func cb() -> int32 { ... }` passed to atexit,
 	// whose handler returns void -- the callback's own return value flows
 	// nowhere (glibc's atexit dispatcher discards it), so a Palan function
 	// with a return value cannot stand in for a void C callback.
@@ -1948,7 +1948,7 @@ TEST(sa_error, callback_ret_void_mismatch)
 
 TEST(sa_error, callback_ret_type_mismatch)
 {
-	// IT-2026-09-12-3007: `func cmp(@int32 a, @int32 b) -> int64` passed to
+	// `func cmp(@int32 a, @int32 b) -> int64` passed to
 	// qsort, whose comparator returns `int` (int32) -- parameters match
 	// exactly, but the non-void return types differ.
 	// Covers: sa_func_ref_arg's non-void return-type typeCompat(...) !=
@@ -1995,7 +1995,7 @@ TEST(sa_error, callback_ret_missing_mismatch)
 
 TEST(sa_error, deref_void_pointer)
 {
-	// IT-2026-09-12-3008: `p[0]` where p is @!void -- void has no size, so
+	// `p[0]` where p is @!void -- void has no size, so
 	// this must give a dedicated diagnostic rather than the misleading
 	// "unknown struct type 'void'." that the shared sz<0 guard in
 	// sa_expr_arr_index would otherwise produce.
@@ -2025,7 +2025,7 @@ TEST(sa_error, deref_void_pointer_write)
 
 TEST(sa_error, field_access_through_prim_ptr_field)
 {
-	// Prerequisite fix for IT-2026-09-12-3008: `s.p.q` where `p` is a
+	// Prerequisite fix: `s.p.q` where `p` is a
 	// raw-ptr field with a primitive pointee (`@!int64 p;`) has nothing to
 	// chain into -- resolveObjectChain must reject it as a non-struct hop,
 	// not build a bogus pntr(struct("int64")) and fail later with an
@@ -2043,8 +2043,8 @@ TEST(sa_error, field_access_through_prim_ptr_field)
 
 TEST(sa_error, invalid_link_lib_name)
 {
-	// IT-2026-09-16-3107: a library name reaches build-mgr's `ld` command
-	// string (IT-3108), so a name carrying shell metacharacters is rejected
+	// A library name reaches build-mgr's `ld` command
+	// string, so a name carrying shell metacharacters is rejected
 	// at the one point a name enters "libs", not downstream.
 	// Covers: isValidLinkLibName reject path, E_InvalidLinkLibName
 	cleanTestEnv();

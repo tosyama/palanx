@@ -71,7 +71,7 @@ TEST(typecompat, incompatible_ptr_diff_base) {
     EXPECT_EQ(typeCompat(pi32, pi64, reg), TypeCompat::Incompatible);
 }
 
-// -------- typeCompat: pntr(void) (IT-2605) --------
+// -------- typeCompat: pntr(void) --------
 
 TEST(typecompat, void_ptr_compat_with_typed_ptr) {
     PlnTypeRegistry reg;
@@ -138,12 +138,11 @@ TEST(typecompat, registry_from_json_void_ptr) {
 }
 
 TEST(typecompat, void_ptr_interns_regardless_of_mutability) {
-    // IT-2026-09-12-3008: @void and @!void both parse to pntr(void), but
-    // PlnTypeRegistry::ptr() interns solely on the base type (PlnType.cpp);
-    // "mutable" lives only in the JSON value-type, not in the interned
-    // PlnType identity. The new @void/@!void grammar productions rely on
-    // this: fromJson("mutable":false) and fromJson("mutable":true) must
-    // yield the identical PtrType*.
+    // @void and @!void both parse to pntr(void), but PlnTypeRegistry::ptr()
+    // interns solely on the base type (PlnType.cpp); "mutable" lives only in
+    // the JSON value-type, not in the interned PlnType identity. The
+    // @void/@!void grammar productions rely on this: fromJson("mutable":false)
+    // and fromJson("mutable":true) must yield the identical PtrType*.
     PlnTypeRegistry reg;
     json j_ro = {{"type-kind", "pntr"}, {"mutable", false},
                  {"base-type", {{"type-kind", "prim"}, {"type-name", "void"}}}};
@@ -153,7 +152,7 @@ TEST(typecompat, void_ptr_interns_regardless_of_mutability) {
 }
 
 TEST(typecompat, registry_from_json_unrepresentable_throws) {
-    // IT-2026-09-06-2906: fromJson delegates its domain check to
+    // fromJson delegates its domain check to
     // unrepresentableTypeName; this backstop throw only fires for a
     // value-type that reached it despite the upstream gates
     // (validateNativeSig / requireSupportedCFuncSig) -- exercised directly
@@ -201,7 +200,7 @@ TEST(typecompat, unrepresentable_pntr_recurses_to_func) {
     EXPECT_EQ(unrepresentableTypeName(j), "function pointer");
 }
 
-// IT-2026-09-12-3006: normalizeCType must recurse into a `func` type-kind's
+// normalizeCType must recurse into a `func` type-kind's
 // ret-type/parameters, not just stop at the outer pntr wrapping it -- a
 // callback parameter's own inner pointers (e.g. qsort's comparator taking
 // `const void*`) need "mutable" set too, or isWritableThrough's absent-key
@@ -280,7 +279,7 @@ TEST(typecompat, unrepresentable_unknown_kind_fallback) {
     EXPECT_EQ(unrepresentableTypeName({{"type-kind","embed"}}), "embed");
 }
 
-// -------- usualArithConv (IT-2026-09-11-usual-arith-conv) --------
+// -------- usualArithConv --------
 
 TEST(usual_arith_conv, same_signed_higher_rank_wins) {
     PlnTypeRegistry reg;
@@ -362,7 +361,7 @@ TEST(usual_arith_conv, void_returns_null) {
     EXPECT_EQ(usualArithConv(i32, v), nullptr);  // void on either side, not just the first
 }
 
-// -------- argConvOk (IT-2026-09-11-usual-arith-conv) --------
+// -------- argConvOk --------
 
 TEST(arg_conv_ok, widening_ok) {
     PlnTypeRegistry reg;
@@ -416,7 +415,7 @@ TEST(arg_conv_ok, void_rejected_either_side) {
     EXPECT_FALSE(argConvOk(i32, v));
 }
 
-// -------- classifySysVStructRet: SysV AMD64 struct-return classification (IT-2026-09-12-3005) --------
+// -------- classifySysVStructRet: SysV AMD64 struct-return classification --------
 //
 // FieldLayout's first six members have no default initializers, so every
 // field below is built with positional aggregate init:
