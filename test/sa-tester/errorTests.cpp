@@ -2071,3 +2071,124 @@ TEST(sa_error, empty_link_lib_name)
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("invalid library name"), string::npos);
 }
+
+TEST(sa_error, syscall_number_not_constant)
+{
+	// A syscall number must be a literal integer.
+	// Covers: validateSyscallDecl expr-type guard, E_SyscallNumberNotConstant
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_173_syscall_number_not_constant.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("number must be a literal integer"), string::npos);
+}
+
+TEST(sa_error, syscall_symbolic_const_number)
+{
+	// A cinclude'd macro constant (SYS_write) is still an unevaluated "id"
+	// node at this point -- symbolic syscall numbers are deliberately not
+	// supported.
+	// Covers: validateSyscallDecl rejects an id node from a cinclude constant
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_174_syscall_symbolic_const_number.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("number must be a literal integer"), string::npos);
+}
+
+TEST(sa_error, syscall_number_out_of_range)
+{
+	// Covers: validateSyscallDecl uint32 range guard, E_SyscallNumberOutOfRange
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_175_syscall_number_out_of_range.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("does not fit in a 32-bit unsigned integer"), string::npos);
+}
+
+TEST(sa_error, syscall_too_many_params)
+{
+	// Linux syscall ABI supports at most 6 register arguments.
+	// Covers: validateSyscallDecl parameter-count guard, E_SyscallTooManyParams
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_176_syscall_too_many_params.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Linux syscall ABI supports at most 6"), string::npos);
+}
+
+TEST(sa_error, syscall_named_return)
+{
+	// A single named return (`-> int64 n`) is rejected too, not only
+	// multiple returns -- a syscall declaration has no body, so a return
+	// variable name carries no meaning.
+	// Covers: validateSyscallDecl rets guard, E_SyscallInvalidReturn
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_177_syscall_named_return.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("must declare its return with '-> type'"), string::npos);
+}
+
+TEST(sa_error, syscall_multi_return)
+{
+	// Covers: validateSyscallDecl rets guard, E_SyscallInvalidReturn (multi-return case)
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_178_syscall_multi_return.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("must declare its return with '-> type'"), string::npos);
+}
+
+TEST(sa_error, syscall_float_param)
+{
+	// flo32/flo64 do not fit in a GP register, which is all the Linux
+	// syscall ABI passes arguments through.
+	// Covers: validateSyscallDecl float-parameter guard, E_SyscallUnsupportedParamType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_179_syscall_float_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass through the Linux syscall ABI: 'flo64'"), string::npos);
+}
+
+TEST(sa_error, syscall_float_return)
+{
+	// Covers: validateSyscallDecl float-return guard, E_SyscallUnsupportedParamType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_180_syscall_float_return.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass through the Linux syscall ABI: 'flo64'"), string::npos);
+}
+
+TEST(sa_error, syscall_duplicate)
+{
+	// Proves a syscall declaration actually lands in plnFuncScopes (shared
+	// with "palan" func-defs, not a separate table) -- a second syscall of
+	// the same name hits the same E_DuplicateFuncDef guard.
+	// Covers: preregisterFunc -> registerPlnFunc shared table, E_DuplicateFuncDef
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_181_syscall_duplicate.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("already defined"), string::npos);
+}

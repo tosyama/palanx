@@ -313,6 +313,34 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       "may only contain letters, digits, '_', '.', '+' and '-', since it is "
 			       "passed to the linker as -l<name>.";
 
+		case E_SyscallNumberNotConstant:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "syscall '" + arg1 + "' number must be a literal integer; a symbolic "
+			       "constant (e.g. SYS_write) or any other expression is not allowed.";
+
+		case E_SyscallNumberOutOfRange:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "syscall '" + arg1 + "' number '" + arg2 + "' does not fit in a 32-bit "
+			       "unsigned integer.";
+
+		case E_SyscallTooManyParams:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "syscall '" + arg1 + "' has " + arg2 + " parameters; the Linux syscall "
+			       "ABI supports at most 6.";
+
+		case E_SyscallInvalidReturn:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "syscall '" + arg1 + "' must declare its return with '-> type'; named "
+			       "and multiple return values are not supported.";
+
+		case E_SyscallUnsupportedParamType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "syscall '" + arg1 + "' has a parameter or return type this version "
+			       "cannot pass through the Linux syscall ABI: '" + arg2 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

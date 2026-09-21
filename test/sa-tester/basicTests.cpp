@@ -4121,3 +4121,16 @@ TEST(sa, link_libs_in_block) {
 	ASSERT_EQ(jout["libs"].size(), 1u);
 	ASSERT_EQ(jout["libs"][0], "m");
 }
+
+TEST(sa, syscall_decl) {
+	// A syscall declaration registers in plnFuncScopes but is a prototype
+	// with no body, so it does not appear in sa["functions"] -- only "main"
+	// does. Covers both a lit-int and a lit-uint syscall-number, and the
+	// 6-parameter ABI ceiling exactly at its limit (not over it).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/188_syscall_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_EQ(jout["functions"].size(), 1u);
+	ASSERT_EQ(jout["functions"][0]["name"], "main");
+}

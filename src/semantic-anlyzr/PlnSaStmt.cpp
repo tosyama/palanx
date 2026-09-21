@@ -80,14 +80,7 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInBlock, f["name"].get<string>()) << endl;
 			exit(1);
 		}
-		json funcEntry = f;
-		normalizeUnsizedArrSig(funcEntry);
-		validateEmbeddedParams(funcEntry);
-		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
-			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		normalizeStructSig(funcEntry);
-		validateNativeSig(funcEntry);
-		registerPlnFunc(funcEntry["name"], funcEntry, &f);
+		preregisterFunc(f, &f);
 	}
 
 	// analyze block-local func bodies -> appended to sa["functions"]
@@ -170,6 +163,9 @@ json PlnSemanticAnalyzer::sa_continue_stmt(const json& stmt)
 
 void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 {
+	// A syscall declaration is a prototype: no block to analyze, and nothing to emit.
+	if (funcDef.value("func-type", "") == "syscall") return;
+
 	// Save var scopes and use a fresh function scope instead
 	auto savedVarScopes      = varScopes;
 	auto savedCurrentFunc    = currentFunc_;
@@ -203,14 +199,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInFunction, f["name"].get<string>()) << endl;
 			exit(1);
 		}
-		json funcEntry = f;
-		normalizeUnsizedArrSig(funcEntry);
-		validateEmbeddedParams(funcEntry);
-		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
-			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		normalizeStructSig(funcEntry);
-		validateNativeSig(funcEntry);
-		registerPlnFunc(funcEntry["name"], funcEntry, &f);
+		preregisterFunc(f, &f);
 	}
 
 	// analyze inner func bodies -> appended to sa["functions"]

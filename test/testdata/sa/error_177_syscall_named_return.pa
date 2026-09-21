@@ -1,0 +1,1 @@
+syscall foo() -> int64 n = 1;

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <filesystem>
 #include <set>
+#include <stdexcept>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -404,6 +405,89 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 	}
 }
 
+// A "syscall" declaration has no body; its number binds it directly to the
+// Linux syscall ABI (rdi/rsi/rdx/r10/r8/r9, at most 6 GP-register args, no
+// float support, a single raw-rax return). The number must be a literal
+// integer rather than a symbolic constant, since a symbolic constant's value
+// depends on cinclude/SA evaluation order and can't be resolved across an
+// import boundary, while a literal is already fixed when gen-ast parses it.
+// Must run after normalizeStructSig so a by-value struct parameter/return is
+// already the pntr(struct(Name)) it will actually be passed as.
+void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
+{
+	string funcName = funcDef["name"].get<string>();
+	const json& numNode = funcDef["syscall-number"];
+	string et = numNode.value("expr-type", "");
+	if (et != "lit-int" && et != "lit-uint") {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallNumberNotConstant, funcName) << endl;
+		exit(1);
+	}
+	string numStr = numNode["value"].get<string>();
+	uint64_t num = 0;
+	bool outOfRange = false;
+	try {
+		num = stoull(numStr);
+	} catch (const out_of_range&) {
+		outOfRange = true;
+	}
+	if (outOfRange || num > UINT32_MAX) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallNumberOutOfRange, funcName, numStr) << endl;
+		exit(1);
+	}
+	funcDef["syscall-number"] = num;
+
+	if (funcDef.contains("parameters") && funcDef["parameters"].size() > 6) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallTooManyParams, funcName,
+		                                  to_string(funcDef["parameters"].size())) << endl;
+		exit(1);
+	}
+	if (funcDef.contains("rets")) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallInvalidReturn, funcName) << endl;
+		exit(1);
+	}
+
+	auto isFloatType = [](const json& vt) {
+		return vt.value("type-kind", "") == "prim"
+		       && (vt.value("type-name", "") == "flo32" || vt.value("type-name", "") == "flo64");
+	};
+	string badType;
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"]) {
+			if (p.contains("var-type") && isFloatType(p["var-type"])) {
+				badType = typeDisplayName(p["var-type"]);
+				break;
+			}
+		}
+	if (badType.empty() && funcDef.contains("ret-type") && isFloatType(funcDef["ret-type"]))
+		badType = typeDisplayName(funcDef["ret-type"]);
+	if (!badType.empty()) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallUnsupportedParamType, funcName, badType) << endl;
+		exit(1);
+	}
+}
+
+// Shared by top-level, block-local (sa_block), and function-nested
+// (sa_function) func-defs -- the only difference between call sites is
+// whether a loc node is available for a duplicate-definition diagnostic.
+void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
+{
+	json funcEntry = f;
+	normalizeUnsizedArrSig(funcEntry);
+	validateEmbeddedParams(funcEntry);
+	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
+		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+	normalizeStructSig(funcEntry);
+	validateNativeSig(funcEntry);
+	if (funcEntry.value("func-type", "") == "syscall")
+		validateSyscallDecl(funcEntry);
+	registerPlnFunc(funcEntry["name"], funcEntry, loc_node);
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
@@ -427,17 +511,8 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 		}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
-		for (auto& f : ast["ast"]["functions"]) {
-			// Single named return: synthesize ret-type for call resolution
-			json funcEntry = f;
-			normalizeUnsizedArrSig(funcEntry);
-			validateEmbeddedParams(funcEntry);
-			if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
-				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-			normalizeStructSig(funcEntry);
-			validateNativeSig(funcEntry);
-			registerPlnFunc(funcEntry["name"], funcEntry);
-		}
+		for (auto& f : ast["ast"]["functions"])
+			preregisterFunc(f);
 	// 2. Process top-level statements (cinclude/import registered here,
 	//    visible in Palan function bodies processed next). type-alias/struct-def
 	//    statements are re-dispatched here too (harmless: both handlers just
@@ -624,7 +699,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			                     {"value-type", c["value-type"]}};
 		}
 	}
-} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+} // LCOV_EXCL_BR_LINE
 
 static bool is_absolute(filesystem::path &path)
 {

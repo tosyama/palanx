@@ -1,0 +1,2 @@
+syscall foo() = 1;
+syscall foo() = 2;

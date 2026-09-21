@@ -178,6 +178,13 @@ class PlnSemanticAnalyzer {
 	void  registerTypeAliasChecked(const string& aliasName, const json& resolved);
 	void  registerTypedefAliasInType(json& vtype);
 	void  registerCFuncTypedefAliases(json& funcEntry);
+	// Shared function pre-registration sequence (normalize + validate + register)
+	// used by top-level, block-local, and function-nested func-defs alike.
+	void  preregisterFunc(const json& f, const json* loc_node = nullptr);
+	// Diagnose Linux syscall ABI constraints on a syscall declaration
+	// (funcDef must already be normalizeStructSig'd) and fold its
+	// "syscall-number" expression node into a plain JSON integer.
+	void  validateSyscallDecl(json& funcDef);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);
