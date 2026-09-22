@@ -510,6 +510,15 @@ void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& 
 	exit(1);
 }
 
+void PlnSemanticAnalyzer::applyPlnCalleeSig(json& sa_expr, const json& pFunc)
+{
+	sa_expr["func-type"] = pFunc["func-type"];
+	if (pFunc.contains("ret-type"))
+		sa_expr["value-type"] = pFunc["ret-type"];
+	if (pFunc.value("func-type", "") == "syscall")
+		sa_expr["syscall-number"] = pFunc["syscall-number"];
+}
+
 json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	json sa_expr = expr;
@@ -537,9 +546,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 			}
 		}
 		if (pFunc != nullptr) {
-			sa_expr["func-type"] = (*pFunc)["func-type"];
-			if (pFunc->contains("ret-type"))
-				sa_expr["value-type"] = (*pFunc)["ret-type"];
+			applyPlnCalleeSig(sa_expr, *pFunc);
 			if (pFunc->contains("parameters"))
 				funcParams = &(*pFunc)["parameters"];
 		} else {
@@ -869,16 +876,15 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 	sa_expr["name"] = method;
 	sa_expr.erase("object");
 	sa_expr.erase("method");
-	sa_expr["func-type"] = isCFunc ? "c" : "palan";
 
 	if (isCFunc) {
+		sa_expr["func-type"] = "c";
 		requireSupportedCFuncSig(*pFunc, method, expr);
 		if (pFunc->contains("ret-type")
 				&& (*pFunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*pFunc)["ret-type"];
 	} else {
-		if (pFunc->contains("ret-type"))
-			sa_expr["value-type"] = (*pFunc)["ret-type"];
+		applyPlnCalleeSig(sa_expr, *pFunc);
 	}
 
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")

@@ -698,6 +698,8 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets")
 				&& funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+		if (funcEntry.value("func-type", "") == "syscall")
+			validateSyscallDecl(funcEntry);
 
 		if (hasAlias) {
 			currentScope[alias][fname] = funcEntry;

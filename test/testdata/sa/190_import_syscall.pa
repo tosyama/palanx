@@ -1,0 +1,5 @@
+import "lib_sa_syscall.pa";
+
+@void buf;
+int64 n = write(1, buf, 0u);
+int32 pid = getpid();

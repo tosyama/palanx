@@ -174,6 +174,11 @@ class PlnSemanticAnalyzer {
 	// (funcDef must already be normalizeStructSig'd) and fold its
 	// "syscall-number" expression node into a plain JSON integer.
 	void  validateSyscallDecl(json& funcDef);
+	// Copy a resolved Palan/syscall callee's func-type, ret-type (as
+	// value-type) and, for a syscall, its folded syscall-number onto a call
+	// node. Shared by sa_expr_call and sa_expr_member_call so the two paths
+	// can't drift on which fields a syscall call carries.
+	void  applyPlnCalleeSig(json& sa_expr, const json& pFunc);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);

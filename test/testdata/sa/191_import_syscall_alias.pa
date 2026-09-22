@@ -1,0 +1,4 @@
+import "lib_sa_syscall.pa" as S;
+
+@void buf;
+int64 n = S.write(1, buf, 0u);

@@ -4142,6 +4142,8 @@ TEST(sa, syscall_call) {
 	// gets), routed through the same findPlnFunc/plnFuncScopes lookup.
 	// Covers both a call with args (write) and a no-arg call (getpid), and
 	// confirms the callee's ret-type still flows to value-type unchanged.
+	// syscall-number rides along on the call node itself (folded to an
+	// integer) since the declaration never reaches sa["functions"].
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/189_syscall_call.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -4152,9 +4154,53 @@ TEST(sa, syscall_call) {
 	ASSERT_EQ(writeCall["func-type"], "syscall");
 	ASSERT_EQ(writeCall["name"], "write");
 	ASSERT_EQ(writeCall["value-type"]["type-name"], "int64");
+	ASSERT_EQ(writeCall["syscall-number"], 1);
 
 	const auto& getpidCall = body[2]["vars"][0]["init"];
 	ASSERT_EQ(getpidCall["func-type"], "syscall");
 	ASSERT_EQ(getpidCall["name"], "getpid");
 	ASSERT_EQ(getpidCall["value-type"]["type-name"], "int32");
+	ASSERT_EQ(getpidCall["syscall-number"], 39);
+}
+
+static void genLibSaSyscallImport()
+{
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_syscall.pa -o out/lib_sa_syscall.pa.ast.json");
+}
+
+TEST(sa, import_syscall) {
+	// An exported syscall declaration's number is an unevaluated expression
+	// node in ast["export"] (gen-ast doesn't fold it); sa_import must run it
+	// through the same validateSyscallDecl fold that a local declaration
+	// gets via preregisterFunc, or the importing call node would carry a
+	// raw expression node instead of an integer.
+	cleanTestEnv();
+	genLibSaSyscallImport();
+	json jout = run_sa("../test/testdata/sa/190_import_syscall.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& writeCall = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(writeCall["func-type"], "syscall");
+	ASSERT_EQ(writeCall["name"], "write");
+	ASSERT_EQ(writeCall["syscall-number"], 1);
+
+	const auto& getpidCall = jout["statements"][2]["vars"][0]["init"];
+	ASSERT_EQ(getpidCall["func-type"], "syscall");
+	ASSERT_EQ(getpidCall["name"], "getpid");
+	ASSERT_EQ(getpidCall["syscall-number"], 39);
+}
+
+TEST(sa, import_syscall_alias) {
+	// sa_expr_member_call used to hardcode func-type to "palan" for any
+	// non-C callee, silently flattening an aliased call to an imported
+	// syscall declaration. Both paths now share applyPlnCalleeSig.
+	cleanTestEnv();
+	genLibSaSyscallImport();
+	json jout = run_sa("../test/testdata/sa/191_import_syscall_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& writeCall = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(writeCall["func-type"], "syscall");
+	ASSERT_EQ(writeCall["name"], "write");
+	ASSERT_EQ(writeCall["syscall-number"], 1);
 }
