@@ -1426,3 +1426,38 @@ TEST(gen_ast, syscall_decl) {
 	}
 	ASSERT_TRUE(found_main);
 }
+
+TEST(gen_ast, return_def_nonprim) {
+	// return_def's "ARROW type_expr" form used to keep ret-type only for
+	// "prim" and unsized raw arrays, silently dropping any other
+	// representable type (pointer, fixed-size array, ...) and turning the
+	// function into an accidental void. isDeclarableVarType (shared with
+	// var_declaration's no-init form) fixes the whitelist.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/115_return_def_nonprim.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& funcs = jout["ast"]["functions"];
+	bool found_mkPtr = false, found_mkArr = false, found_sret = false;
+	for (auto& f : funcs) {
+		if (f["name"] == "mkPtr") {
+			ASSERT_TRUE(f.contains("ret-type"));
+			ASSERT_EQ(f["ret-type"]["type-kind"], "pntr");
+			found_mkPtr = true;
+		}
+		if (f["name"] == "mkArr") {
+			ASSERT_TRUE(f.contains("ret-type"));
+			ASSERT_EQ(f["ret-type"]["type-kind"], "arr");
+			found_mkArr = true;
+		}
+		if (f["name"] == "sret") {
+			ASSERT_TRUE(f.contains("ret-type"));
+			ASSERT_EQ(f["ret-type"]["type-kind"], "pntr");
+			found_sret = true;
+		}
+	}
+	ASSERT_TRUE(found_mkPtr);
+	ASSERT_TRUE(found_mkArr);
+	ASSERT_TRUE(found_sret);
+}

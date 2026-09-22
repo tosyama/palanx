@@ -47,3 +47,36 @@ inline json voidTypeExpr()
 {
 	return json{{"type-kind","prim"},{"type-name","void"}};
 }
+
+// Whether a type_expr result is one gen-ast currently knows how to carry as
+// a declared variable's type (a bare, uninitialized var_declaration). Shared
+// by var_declaration and return_def (ARROW type_expr) so a bare-return-type
+// function stays representable in exactly the cases a same-typed local
+// variable already is -- a named return (ARROW var_declarations) gets this
+// for free by going through var_declaration itself.
+inline bool isDeclarableVarType(const json& t)
+{
+	string tk = t.value("type-kind", "");
+	if (tk == "prim" || tk == "pntr")
+		return true;
+	if (tk != "arr" || t.value("specifier", "") != "raw")
+		return false;
+	if (t["size-expr"].is_null())
+		return true;  // unsized raw array
+	const json& bt = t["base-type"];
+	string btk = bt.value("type-kind", "");
+	if (btk == "prim")
+		return true;  // fixed-size array of prim
+	if (btk == "pntr" && bt.value("mutable", false) == true && bt.contains("base-type")) {
+		const json& ibt = bt["base-type"];
+		if (ibt.value("type-kind", "") == "arr" && ibt.value("specifier", "") == "raw"
+			&& ibt.contains("size-expr") && ibt["size-expr"].is_null())
+			return true;  // array of @! slots into an unsized array (owning-slot array)
+	}
+	if (btk == "pntr" && bt["base-type"].value("type-kind", "") == "prim")
+		return true;  // array of struct-record pointers (@T elements)
+	if (btk == "arr" && bt.value("specifier", "") == "raw" && !bt["size-expr"].is_null()
+		&& bt["base-type"].value("type-kind", "") == "prim")
+		return true;  // fixed-size multidim array (also covers embedded-struct arrays)
+	return false;
+}

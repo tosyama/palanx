@@ -534,46 +534,7 @@ inherit_var_decl: ID
 
 var_declaration: type_expr move_owner_r ID
 	{
-		string tk = $1.value("type-kind","");
-		bool is_valid_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& !$1["size-expr"].is_null()
-			&& $1["base-type"].value("type-kind","") == "prim";
-		bool is_unsized_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& $1["size-expr"].is_null();
-		bool is_pntr_arr = false;
-		if (tk == "arr" && $1.value("specifier","") == "raw" && !$1["size-expr"].is_null()) {
-			const json& bt = $1["base-type"];
-			if (bt.value("type-kind","") == "pntr" && bt.value("mutable",false) == true
-				&& bt.contains("base-type")) {
-				const json& ibt = bt["base-type"];
-				is_pntr_arr = ibt.value("type-kind","") == "arr"
-					&& ibt.value("specifier","") == "raw"
-					&& ibt.contains("size-expr") && ibt["size-expr"].is_null();
-			}
-		}
-		bool is_at_struct_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& !$1["size-expr"].is_null()
-			&& $1["base-type"].value("type-kind","") == "pntr"
-			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
-		bool is_multidim_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& !$1["size-expr"].is_null()
-			&& $1["base-type"].value("type-kind","") == "arr"
-			&& $1["base-type"].value("specifier","") == "raw"
-			&& !$1["base-type"]["size-expr"].is_null()
-			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
-		bool is_embed_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& !$1["size-expr"].is_null()
-			&& $1.value("embedded", false) == true
-			&& $1["base-type"].value("type-kind","") == "arr"
-			&& $1["base-type"].value("specifier","") == "raw"
-			&& !$1["base-type"]["size-expr"].is_null()
-			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
-		if (!$2 && (tk == "prim" || tk == "pntr" || is_valid_arr || is_unsized_arr || is_pntr_arr || is_at_struct_arr || is_multidim_arr || is_embed_arr))
+		if (!$2 && isDeclarableVarType($1))
 			$$ = {{"name", $3}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};
@@ -951,11 +912,7 @@ return_def: /* empty */
 	}
 	| ARROW type_expr
 	{
-		string tk2 = $2.value("type-kind","");
-		bool is_unsized_arr2 = tk2 == "arr"
-			&& $2.value("specifier","") == "raw"
-			&& $2["size-expr"].is_null();
-		if (tk2 == "prim" || is_unsized_arr2)
+		if (isDeclarableVarType($2))
 			$$["ret-type"] = move($2);
 	}
 	;
