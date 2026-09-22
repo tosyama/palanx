@@ -2178,6 +2178,22 @@ TEST(sa_error, syscall_float_return)
 	ASSERT_NE(sa.find("cannot pass through the Linux syscall ABI: 'flo64'"), string::npos);
 }
 
+TEST(sa_error, syscall_narrow_param)
+{
+	// int8/int16/uint8/uint16 have no dedicated slot in the Linux syscall
+	// ABI either -- every GP register is read/written in full, so a
+	// narrower declared type would leave stale high bits behind a
+	// partial-register move instead of the extension the ABI assumes.
+	// Covers: validateSyscallDecl narrow-int guard, E_SyscallUnsupportedParamType
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_184_syscall_narrow_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("cannot pass through the Linux syscall ABI: 'int8'"), string::npos);
+}
+
 TEST(sa_error, syscall_duplicate)
 {
 	// Proves a syscall declaration actually lands in plnFuncScopes (shared

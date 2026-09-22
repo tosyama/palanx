@@ -440,19 +440,25 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 		exit(1);
 	}
 
-	auto isFloatType = [](const json& vt) {
-		return vt.value("type-kind", "") == "prim"
-		       && (vt.value("type-name", "") == "flo32" || vt.value("type-name", "") == "flo64");
+	// The Linux syscall ABI has no sub-word argument/return slot: every GP
+	// register is read/written in full, so a narrower declared type would
+	// leave stale high bits behind a partial-register move (e.g. movb into
+	// %dil) instead of the zero/sign-extension the ABI assumes.
+	auto isAbiUnrepresentable = [](const json& vt) {
+		if (vt.value("type-kind", "") != "prim") return false;
+		string tn = vt.value("type-name", "");
+		return tn == "flo32" || tn == "flo64"
+		       || tn == "int8" || tn == "int16" || tn == "uint8" || tn == "uint16";
 	};
 	string badType;
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"]) {
-			if (p.contains("var-type") && isFloatType(p["var-type"])) {
+			if (p.contains("var-type") && isAbiUnrepresentable(p["var-type"])) {
 				badType = typeDisplayName(p["var-type"]);
 				break;
 			}
 		}
-	if (badType.empty() && funcDef.contains("ret-type") && isFloatType(funcDef["ret-type"]))
+	if (badType.empty() && funcDef.contains("ret-type") && isAbiUnrepresentable(funcDef["ret-type"]))
 		badType = typeDisplayName(funcDef["ret-type"]);
 	if (!badType.empty()) {
 		cerr << locPrefix(funcDef)
