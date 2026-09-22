@@ -92,6 +92,17 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
+            // addCallArgs assigns C's argument register order (%rcx in slot
+            // 4), not the Linux syscall ABI's (%r10 in slot 4) -- IT-3206
+            // normalizes the argument register table per instruction kind.
+            // No x86 emission exists yet for CallSys (IT-3207), so this
+            // interim allocation is never observed in generated assembly.
+            [&](const CallSys& c) {
+                call_indices.push_back(i);
+                addCallArgs(c.args);
+                for (int k = 0; k < (int)c.dsts.size(); k++)
+                    setDef(c.dsts[k], c.retTypes[k]);
+            },
             [&](const RetPln& r) {
                 for (VReg vr : r.rets) {
                     addUse(vr);

@@ -55,6 +55,10 @@ struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (t
 // logic.
 struct CallC    { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
 struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
+// Same dsts/retTypes shape as CallC/CallPln, but always 0 or 1 (palan-sa's
+// validateSyscallDecl rejects multi-return syscall declarations) and no
+// name -- num is the Linux syscall number (raw syscall ABI, not System V).
+struct CallSys  { long long num; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
 struct RetPln   { vector<VReg> rets; vector<VRegType> types; };
 struct ExitCode { int code; };
 struct BlockEnter {};
@@ -73,7 +77,7 @@ struct LeaLocal      { VReg dst; VReg local; };                                 
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg,
                              BitAnd, BitOr, BitXor, BitNot, Cmp, Convert,
-                             CallC, CallPln, RetPln, ExitCode,
+                             CallC, CallPln, CallSys, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
                              DerefLoad, DerefStore, CalcAddr, LeaLocal>;

@@ -197,6 +197,17 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
                 }
             }
             return e;
+        } else if (func_type == "syscall") {
+            auto e = make_unique<SysCallExpr>();
+            e->sysNum = j["syscall-number"].get<long long>();
+            if (j.contains("value-type")) {
+                e->hasRet  = true;
+                e->retType = toVRegType(j["value-type"]);
+            }
+            if (j.contains("args"))
+                for (auto& arg : j["args"])
+                    e->args.push_back(deserializeExpr(arg));
+            return e;
         } else {
             auto e = make_unique<PlnCallExpr>();
             e->name = j["name"];

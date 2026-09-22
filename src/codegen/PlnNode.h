@@ -35,6 +35,7 @@ enum class ExprKind {
     Convert,
     CCCall,
     PlnCall,
+    SysCall,
     ArrIndex,
     FieldAccess,
     LogicalNot,
@@ -209,6 +210,17 @@ struct CCCallExpr : Expr {
 struct PlnCallExpr : Expr {
     PlnCallExpr() : Expr(ExprKind::PlnCall) {}
     string name;
+    bool     hasRet  = false;
+    VRegType retType = VRegType::Int64;
+    vector<unique_ptr<Expr>> args;
+};
+
+// A raw Linux syscall call (Linux syscall ABI, not System V) -- resolved by
+// palan-sa to a `syscall` declaration and folded to a literal number, so
+// this carries a number instead of a name (no symbol to link against).
+struct SysCallExpr : Expr {
+    SysCallExpr() : Expr(ExprKind::SysCall) {}
+    long long sysNum = 0;
     bool     hasRet  = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;

@@ -214,6 +214,16 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(CallPln{e.name, move(args), {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
             return dst;
         }
+        case ExprKind::SysCall: {
+            auto& e = static_cast<const SysCallExpr&>(expr);
+            BOOST_ASSERT(e.hasRet);
+            vector<VReg> args;
+            for (auto& a : e.args)
+                args.push_back(lowerExpr(*a, func));
+            VReg dst = allocVReg();
+            func.instrs.push_back(CallSys{e.sysNum, move(args), {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            return dst;
+        }
         case ExprKind::LogicalNot: {
             auto& e = static_cast<const LogicalNotExpr&>(expr);
             int idx = labelCounter_++;
@@ -338,6 +348,14 @@ void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
     func.instrs.push_back(CallPln{expr.name, move(args), {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 }
 
+void PlnVCodeGen::lowerSysCallExpr(const SysCallExpr& expr, VFunc& func)
+{
+    vector<VReg> args;
+    for (auto& a : expr.args)
+        args.push_back(lowerExpr(*a, func));
+    func.instrs.push_back(CallSys{expr.sysNum, move(args), {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+}
+
 void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
 {
     VReg src = lowerExpr(*stmt.value, func);
@@ -453,6 +471,9 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
             return;
         case ExprKind::PlnCall:
             lowerPlnCallExpr(static_cast<const PlnCallExpr&>(*stmt.body), func);
+            return;
+        case ExprKind::SysCall:
+            lowerSysCallExpr(static_cast<const SysCallExpr&>(*stmt.body), func);
             return;
         default:
             BOOST_ASSERT(false);  // only call expressions are valid as statements
