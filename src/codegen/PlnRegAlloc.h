@@ -45,6 +45,11 @@ struct PhysRegs {
     vector<string> intArgs;     // integer/pointer arg regs: "%rdi", "%rsi", ...
     vector<string> floatArgs;   // floating-point arg regs: "%xmm0", "%xmm1", ...
     vector<string> calleeSaved; // callee-saved regs: "%rbx", "%r12", ...
+    vector<string> syscallArgs; // Linux raw syscall ABI arg regs (4th differs from intArgs: %r10, not %rcx)
+    // Registers the x86 emitter uses as scratch (e.g. sign-extending an index,
+    // shuffling call args) -- never assigned to a VReg, so a value placed here
+    // by the allocator could be clobbered before its next use.
+    vector<string> scratch;
 };
 
 // Live-range-based register allocator.

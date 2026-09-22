@@ -1,5 +1,4 @@
 #include "PlnRegAlloc.h"
-#include <boost/assert.hpp>
 #include <algorithm>
 
 using namespace std;
@@ -17,7 +16,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         int      def_idx      = -1;
         bool     isVar        = false;   // true if defined by InitVar (variable)
         int      last_any_use = -1;      // last use by non-call-argument instructions
-        vector<pair<int,int>> call_uses; // (call_instr_idx, arg_position)
+        vector<pair<int,string>> call_uses; // (call_instr_idx, desired arg register)
         bool     isRetValue   = false;   // true if used by RetPln
     };
     map<VReg, VRegMeta> meta;
@@ -41,7 +40,13 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             addUse(lhs);
             addUse(rhs);
         };
-        auto addCallArgs = [&](const vector<VReg>& args) {
+        // argRegs is the integer/pointer arg register table for this call kind
+        // (CallC/CallPln use phys.intArgs, CallSys uses phys.syscallArgs -- they
+        // differ at slot 4: %rcx vs %r10). A slot that lands on an x86-emitter
+        // scratch register (phys.scratch) cannot be bound directly either, since
+        // other instructions between this def and the call may clobber it --
+        // it falls through to addUse, same as an out-of-table slot.
+        auto addCallArgs = [&](const vector<VReg>& args, const vector<string>& argRegs) {
             int int_idx = 0;
             for (auto vr : args) {
                 // NOTE: meta only contains VRegs defined by instructions (setDef).
@@ -54,8 +59,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                     // Float args go to XMM registers, not intArgs. Track only liveness.
                     addUse(vr);
                 } else {
-                    if (int_idx < (int)phys.intArgs.size())
-                        meta[vr].call_uses.push_back({i, int_idx});
+                    bool in_table = int_idx < (int)argRegs.size();
+                    bool is_scratch = in_table && find(phys.scratch.begin(), phys.scratch.end(),
+                                                         argRegs[int_idx]) != phys.scratch.end();
+                    if (in_table && !is_scratch)
+                        meta[vr].call_uses.push_back({i, argRegs[int_idx]});
                     else
                         addUse(vr);
                     int_idx++;
@@ -82,24 +90,24 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const Convert& c)  { setDef(c.dst, c.to); addUse(c.src); },
             [&](const CallC& c) {
                 call_indices.push_back(i);
-                addCallArgs(c.args);
+                addCallArgs(c.args, phys.intArgs);
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
             [&](const CallPln& c) {
                 call_indices.push_back(i);
-                addCallArgs(c.args);
+                addCallArgs(c.args, phys.intArgs);
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
-            // addCallArgs assigns C's argument register order (%rcx in slot
-            // 4), not the Linux syscall ABI's (%r10 in slot 4) -- IT-3206
-            // normalizes the argument register table per instruction kind.
-            // No x86 emission exists yet for CallSys (IT-3207), so this
-            // interim allocation is never observed in generated assembly.
+            // Included in call_indices like CallC/CallPln (conservative: the
+            // real syscall instruction only clobbers rax/rcx/r11, but treating
+            // it as a full caller-saved clobber avoids threading a second
+            // clobber set through the four call_indices consumers below --
+            // see IT-3206 status notes for the tradeoff).
             [&](const CallSys& c) {
                 call_indices.push_back(i);
-                addCallArgs(c.args);
+                addCallArgs(c.args, phys.syscallArgs);
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
@@ -334,12 +342,10 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         if (needs_callee_saved) {
             allocCalleeSavedOrStack(vreg, m.type);
         } else {
-            int arg_pos = m.call_uses.front().second;
-            BOOST_ASSERT(arg_pos < (int)phys.intArgs.size());
             // If another vreg mapped to the desired register is still live at this vreg's
             // definition point, we'd clobber it.  Detect this and use callee-saved instead.
             // (e.g. Mod dst and the rhs param both want %rsi, but rhs is still live at Mod.)
-            const string& desired = phys.intArgs[arg_pos];
+            const string& desired = m.call_uses.front().second;
             bool conflict = false;
             for (auto& [vr, loc] : result) {
                 if (loc.isStack() || loc.base != desired) continue;

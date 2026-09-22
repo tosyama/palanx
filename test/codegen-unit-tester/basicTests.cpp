@@ -318,3 +318,62 @@ TEST(regalloc, stack_float32) {
     EXPECT_EQ(r.regMap.at(0).type,        VRegType::Float32);
     EXPECT_EQ(r.frameSize, 8);
 }
+
+// -------- CallSys argument register table (IT-3206) --------
+
+// Full x86 PhysRegs, mirroring PlnX86CodeGen::x86PhysRegs, needed here because
+// testPhys above only has 2 intArgs -- too narrow to exercise slot 4 (%rcx vs
+// %r10) or scratch-register exclusion (%r10/%r11).
+static const PhysRegs x86Phys = {
+    { "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9" },
+    {},
+    { "%rbx", "%r12", "%r13", "%r14", "%r15" },
+    { "%rdi", "%rsi", "%rdx", "%r10", "%r8", "%r9" },
+    { "%r10", "%r11" },
+};
+
+// CallSys's 6 args use the Linux syscall ABI order: slot 3 (0-based) is %r10,
+// not %rcx (which CallC/CallPln would use). %r10 is also emitter scratch, so
+// that arg must NOT be bound directly to it -- it falls back to callee-saved.
+TEST(regalloc, callsys_arg_register_table) {
+    VFunc func;
+    func.instrs.push_back(CallSys{1, {0, 1, 2, 3, 4, 5}, {}, {}});
+
+    auto r = allocateRegisters(func, x86Phys);
+
+    EXPECT_EQ(r.regMap.at(0).base, "%rdi");
+    EXPECT_EQ(r.regMap.at(1).base, "%rsi");
+    EXPECT_EQ(r.regMap.at(2).base, "%rdx");
+    EXPECT_NE(r.regMap.at(3).base, "%rcx");
+    EXPECT_NE(r.regMap.at(3).base, "%r10");
+    EXPECT_EQ(r.regMap.at(4).base, "%r8");
+    EXPECT_EQ(r.regMap.at(5).base, "%r9");
+}
+
+// Same argument shape through CallC instead: slot 3 lands on %rcx, proving
+// the argument register table is chosen per call-instruction kind, not fixed.
+TEST(regalloc, callc_arg_register_table_uses_rcx) {
+    VFunc func;
+    func.instrs.push_back(CallC{"f", {0, 1, 2, 3, 4, 5}, {}, {}});
+
+    auto r = allocateRegisters(func, x86Phys);
+
+    EXPECT_EQ(r.regMap.at(3).base, "%rcx");
+}
+
+// A value defined before a CallSys and passed as a single call arg after it
+// must be spilled to callee-saved rather than bound directly to the arg
+// register: CallSys is included in call_indices (caller-saved clobber), so
+// the existing "a call falls between def and use" check already covers it
+// without a dedicated syscall clobber set (design decision: see IT-3206).
+TEST(regalloc, value_spilled_across_intervening_callsys) {
+    VFunc func;
+    func.instrs.push_back(MovImm{0, VRegType::Int32, 5});   // def v0 at idx 0
+    func.instrs.push_back(CallSys{1, {}, {}, {}});           // idx 1
+    func.instrs.push_back(CallC{"f", {0}, {}, {}});          // v0 used as sole arg at idx 2
+
+    auto r = allocateRegisters(func, x86Phys);
+
+    ASSERT_FALSE(r.regMap.at(0).isStack());
+    EXPECT_NE(r.regMap.at(0).base, "%rdi");
+}
