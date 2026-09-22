@@ -62,6 +62,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<Convert>  (&instr)) emitInstrConvert(*i, rm);
             else if (auto* i  = std::get_if<CallC>    (&instr)) emitInstrCallC(*i, rm);
             else if (auto* i  = std::get_if<CallPln>  (&instr)) emitInstrCallPln(*i, rm);
+            else if (auto* i  = std::get_if<CallSys>  (&instr)) emitInstrCallSys(*i, rm);
             else if (auto* i  = std::get_if<RetPln>   (&instr)) emitInstrRetPln(*i, rm, ra.usedCalleeSaved);
             else if (auto* i  = std::get_if<ExitCode> (&instr)) emitExit(i->code);
             else if (auto* l  = std::get_if<Label>    (&instr)) out << l->name << ":\n";

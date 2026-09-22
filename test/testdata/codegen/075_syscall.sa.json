@@ -1,0 +1,79 @@
+{
+  "original": "/test/075_syscall.pa",
+  "functions": [
+    {
+      "name": "get_pid_wrap",
+      "func-type": "palan",
+      "parameters": [],
+      "ret-type": {"type-kind": "prim", "type-name": "int32"},
+      "body": [
+        {
+          "stmt-type": "return",
+          "values": [
+            { "expr-type": "call", "func-type": "syscall", "name": "getpid", "syscall-number": 39, "args": [], "value-type": {"type-kind": "prim", "type-name": "int32"} }
+          ]
+        }
+      ]
+    }
+  ],
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        { "name": "buf", "var-type": {"type-kind": "pntr", "mutable": false, "base-type": {"type-kind": "prim", "type-name": "void"}} }
+      ]
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "pid",
+          "var-type": {"type-kind": "prim", "type-name": "int32"},
+          "init": { "expr-type": "call", "func-type": "syscall", "name": "getpid", "syscall-number": 39, "args": [], "value-type": {"type-kind": "prim", "type-name": "int32"} }
+        }
+      ]
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "pid2",
+          "var-type": {"type-kind": "prim", "type-name": "int32"},
+          "init": { "expr-type": "call", "func-type": "palan", "name": "get_pid_wrap", "args": [], "value-type": {"type-kind": "prim", "type-name": "int32"} }
+        }
+      ]
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "name": "n",
+          "var-type": {"type-kind": "prim", "type-name": "int64"},
+          "init": {
+            "expr-type": "call", "func-type": "syscall", "name": "pwrite64", "syscall-number": 18,
+            "value-type": {"type-kind": "prim", "type-name": "int64"},
+            "args": [
+              {"expr-type": "lit-int", "value": "1", "value-type": {"type-kind": "prim", "type-name": "int32"}},
+              {"expr-type": "id", "name": "buf", "var-type": {"type-kind": "pntr", "mutable": false, "base-type": {"type-kind": "prim", "type-name": "void"}}, "value-type": {"type-kind": "pntr", "mutable": false, "base-type": {"type-kind": "prim", "type-name": "void"}}},
+              {"expr-type": "lit-uint", "value": "13", "value-type": {"type-kind": "prim", "type-name": "uint64"}},
+              {"expr-type": "lit-int", "value": "4", "value-type": {"type-kind": "prim", "type-name": "int64"}}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "expr",
+      "body": {
+        "expr-type": "call", "func-type": "syscall", "name": "exit_group", "syscall-number": 231,
+        "args": [
+          {
+            "expr-type": "add", "value-type": {"type-kind": "prim", "type-name": "int32"},
+            "left":  {"expr-type": "id", "name": "pid",  "var-type": {"type-kind": "prim", "type-name": "int32"}, "value-type": {"type-kind": "prim", "type-name": "int32"}},
+            "right": {"expr-type": "id", "name": "pid2", "var-type": {"type-kind": "prim", "type-name": "int32"}, "value-type": {"type-kind": "prim", "type-name": "int32"}}
+          }
+        ]
+      }
+    }
+  ]
+}

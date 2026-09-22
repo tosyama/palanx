@@ -20,6 +20,14 @@ static string readFile(const string& path)
     return ss.str();
 }
 
+static size_t countOccurrences(const string& text, const string& sub)
+{
+    size_t n = 0;
+    for (size_t p = text.find(sub); p != string::npos; p = text.find(sub, p + sub.size()))
+        n++;
+    return n;
+}
+
 TEST(codegen, printf_int_literal) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/002_printf_int_literal.sa.json";
@@ -1350,6 +1358,38 @@ TEST(codegen, func_ref) {
     ASSERT_NE(asm_text.find("call qsort"), string::npos);
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/074_func_ref.o"), "");
+}
+
+TEST(codegen, syscall) {
+    // Raw Linux syscall ABI: number in %rax, the syscall argument table
+    // (%r10 in 4th position, never %rcx), and the `syscall` instruction.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/075_syscall.sa.json";
+    string asmf = "out/075_syscall.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // getpid in _start: result must survive the later pwrite64/exit_group
+    // calls, so it lands in a callee-saved register -- a real copy out of %eax.
+    ASSERT_NE(asm_text.find("movl $39, %eax\n\tsyscall\n\tmovl %eax, %"), string::npos);
+    // getpid inside get_pid_wrap, whose sole statement returns it directly:
+    // the result stays in %eax across both the CallSys result copy and
+    // RetPln, eliding both (no "movl %eax, %eax").
+    ASSERT_NE(asm_text.find("movl $39, %eax\n\tsyscall\n\tleave\n\tret\n"), string::npos);
+    // pwrite64: 4 arguments, the 4th in %r10; its result is never read, so
+    // no copy is emitted (the dead-dst guard elides it entirely).
+    ASSERT_NE(asm_text.find("movl $18, %eax\n\tsyscall\n"), string::npos);
+    ASSERT_NE(asm_text.find(", %rsi\n"),  string::npos);
+    ASSERT_NE(asm_text.find(", %r10\n"),  string::npos);
+    ASSERT_EQ(asm_text.find("%rcx"),      string::npos);
+    // exit_group: argument only, no result to copy back.
+    ASSERT_NE(asm_text.find("movl $231, %eax\n\tsyscall\n"), string::npos);
+    ASSERT_EQ(countOccurrences(asm_text, "\tsyscall\n"),    4u);
+    ASSERT_EQ(countOccurrences(asm_text, "\tcall "),        2u);  // get_pid_wrap + exit
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/075_syscall.o"), "");
 }
 
 TEST(codegen, elf_crt_glue_entry_object) {

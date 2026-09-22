@@ -122,7 +122,7 @@ src/
 │   ├── PlnRegAlloc.*    VProg → RegMap (register allocator plug-in point)
 │   ├── PlnX86CodeGen.*  VProg + RegMap → AT&T assembly (dispatch)
 │   ├── PlnX86Arith.cpp  Arithmetic instruction emission
-│   ├── PlnX86Call.cpp   Call instruction emission (C and Palan calls)
+│   ├── PlnX86Call.cpp   Call instruction emission (C calls, Palan calls, syscalls)
 │   ├── PlnX86Mem.cpp    Memory/address instruction emission
 │   ├── PlnDeserialize.* sa.json → Module
 │   └── PlnCodeGen.h     Abstract base class
