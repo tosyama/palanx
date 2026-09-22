@@ -1,0 +1,8 @@
+// exit(2) bypasses the `call exit` epilogue, so libc's stdout buffer is never
+// flushed -- every byte here has to go through unbuffered write(2).
+syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = 1;
+syscall sys_exit(int32 code) = 60;
+
+sys_write(1, "before-exit\n", 12u);
+sys_exit(7);
+sys_write(1, "unreachable\n", 12u);

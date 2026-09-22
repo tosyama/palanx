@@ -1641,6 +1641,46 @@ TEST(build_mgr, import_path_injection) {
 	ASSERT_FALSE(fs::exists("PWNED"));
 }
 
+TEST(build_mgr, syscall_write) {
+	// Also exercises calling a return-declaring syscall as a bare statement.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/176_syscall_write.pa");
+	ASSERT_EQ(output, "hello, syscall\nsecond line\nwrote 12\n");
+}
+
+TEST(build_mgr, syscall_read) {
+	// Same buffer crosses both pointer permissions: @!void into read, @void into write.
+	cleanTestEnv();
+	string output = execTestCommand(
+		"bin/palan ../test/testdata/build-mgr/177_syscall_read.pa"
+		" < ../test/testdata/build-mgr/177_syscall_read_input.txt");
+	ASSERT_EQ(output, "syscall-read-line\nn==w\n");
+}
+
+TEST(build_mgr, syscall_getpid_matches_libc) {
+	// Declared sys_getpid, not getpid: a cinclude'd C function resolves first
+	// with no collision diagnostic, which would compare libc against itself.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/178_syscall_getpid.pa");
+	ASSERT_EQ(output, "same=1 positive=1\n");
+}
+
+TEST(build_mgr, syscall_exit_status) {
+	// execTestCommand exposes no numeric exit code, so `echo $?` reports it;
+	// braces keep palan's stderr inside execTestCommand's " 2>out/err" redirect.
+	cleanTestEnv();
+	string output = execTestCommand(
+		"{ bin/palan ../test/testdata/build-mgr/179_syscall_exit.pa; echo $?; }");
+	ASSERT_EQ(output, "before-exit\n7\n");
+}
+
+TEST(build_mgr, syscall_negative_errno) {
+	// Raw %rax stays -9 (EBADF): Palan does not translate it into libc errno.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/180_syscall_errno.pa");
+	ASSERT_EQ(output, "rc=-9\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

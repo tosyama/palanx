@@ -1,0 +1,10 @@
+// stdin is a redirected regular file, so a single read(2) returns the whole
+// fixture and the echo is deterministic.
+syscall sys_read(int32 fd, @!void buf, uint64 count) -> int64 = 0;
+syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = 1;
+
+[64]uint8 buf;
+int64 n = sys_read(0, buf, 64u);
+uint64 cnt = uint64(n);
+int64 w = sys_write(1, buf, cnt);
+if n == w { sys_write(1, "n==w\n", 5u); }
