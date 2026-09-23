@@ -416,26 +416,24 @@ TEST(c2ast, typedef_chain) {
     ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
 }
 
-TEST(c2ast, typedef_union_unresolved) {
-    // typedef union {...} U; -- the struct-only tag synthesis doesn't apply
-    // to unions (struct_union_definition's capture path is entirely under an
-    // "is_struct" guard), so this stays unresolved "user", exercising the
-    // CParser.cpp:441 fallback that a struct body now reaches far less often.
+TEST(c2ast, typedef_anon_union) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/017_typedef_union_unresolved.h");
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/017_typedef_anon_union.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
+    auto& structs = ast["ast"]["structs"];
 
-    auto find_func = [&](const string& name) -> json* {
-        for (auto& f : functions)
-            if (f["name"] == name) return &f;
-        return nullptr;
-    };
-
-    json* h = find_func("h");
+    json* h = nullptr;
+    for (auto& f : functions)
+        if (f["name"] == "h") h = &f;
     ASSERT_NE(h, nullptr);
-    ASSERT_EQ((*h)["ret-type"]["type-kind"], "user");
+    ASSERT_EQ((*h)["ret-type"]["type-kind"], "union");
     ASSERT_EQ((*h)["ret-type"]["type-name"], "U");
+
+    ASSERT_EQ(structs.size(), 1u);
+    ASSERT_EQ(structs[0]["name"], "U");
+    ASSERT_EQ(structs[0]["union"], true);
+    ASSERT_EQ(structs[0]["fields"].size(), 1u);
 }
 
 TEST(c2ast, typedef_pointer_chain) {
@@ -1113,6 +1111,60 @@ TEST(c2ast, typedef_anon_struct) {
         ASSERT_NE(use_clash, nullptr);
         ASSERT_EQ((*use_clash)["ret-type"]["type-kind"], "user");
         ASSERT_EQ((*use_clash)["ret-type"]["type-name"], "Clash");
+    }
+}
+
+TEST(c2ast, union_capture) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/036_union_capture.h");
+    json ast = json::parse(output);
+    auto& structs = ast["ast"]["structs"];
+    auto& typedefs = ast["ast"]["typedefs"];
+
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+    auto find_typedef = [&](const string& name) -> json* {
+        for (auto& t : typedefs)
+            if (t["name"] == name) return &t;
+        return nullptr;
+    };
+
+    // typedef union Attr { ... } attr_t; -- the pthread_attr_t shape.
+    {
+        json* attr = find_struct("Attr");
+        ASSERT_NE(attr, nullptr);
+        ASSERT_EQ((*attr)["union"], true);
+        ASSERT_EQ((*attr)["fields"].size(), 2u);
+
+        json* attr_t = find_typedef("attr_t");
+        ASSERT_NE(attr_t, nullptr);
+        ASSERT_EQ((*attr_t)["var-type"]["type-kind"], "union");
+        ASSERT_EQ((*attr_t)["var-type"]["type-name"], "Attr");
+    }
+
+    // union Fwd; ... union Fwd { ... }; -- promoted in place, one entry.
+    {
+        int n = 0;
+        for (auto& s : structs)
+            if (s["name"] == "Fwd") n++;
+        ASSERT_EQ(n, 1);
+        json* fwd = find_struct("Fwd");
+        ASSERT_EQ((*fwd)["union"], true);
+        ASSERT_EQ((*fwd)["fields"].size(), 1u);
+    }
+
+    // A union-typed field of a struct carries the tag name; the struct
+    // entry itself has no "union" key.
+    {
+        json* holder = find_struct("Holder");
+        ASSERT_NE(holder, nullptr);
+        ASSERT_FALSE(holder->contains("union"));
+        auto& u_vt = (*holder)["fields"][1]["var-type"];
+        ASSERT_EQ(u_vt["type-kind"], "union");
+        ASSERT_EQ(u_vt["type-name"], "Attr");
     }
 }
 

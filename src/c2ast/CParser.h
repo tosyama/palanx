@@ -17,19 +17,20 @@ class CParser {
 	// (typedef A B;) would carry the previous link's name (A) into B's stored entry.
 	void registerTypedef(const string &name, json vt);
 
-	// Every struct tag seen while parsing (as a definition, a forward declaration,
-	// or a bare reference through a field/parameter/return type), plus any
-	// anonymous struct body given a synthesized tag via its typedef name (see
+	// Every struct/union tag seen while parsing (as a definition, a forward
+	// declaration, or a bare reference through a field/parameter/return type),
+	// plus any anonymous struct/union body given a synthesized tag via its typedef name (see
 	// declaration()'s tag synthesis in CParser.cpp), keyed by tag name, in
 	// first-appearance order. An entry gains a "fields" key only once a full
 	// field-bearing definition of that tag is captured (see captureStructTag);
-	// this is the single point where struct tags register, so a tag that is only
+	// C struct and union tags share one namespace, so unions go into the same
+	// table, marked with "union": true. This is the single point where tags register, so a tag that is only
 	// ever referenced (never defined in this header) still gets an entry -- SA
 	// needs that to register it as an incomplete/opaque struct type rather than
 	// leaving the tag name unresolved.
 	vector<json> capturedStructs_;
 	map<string, int> structIndex_;  // tag name -> index into capturedStructs_
-	void captureStructTag(const string &name, const json *fields);
+	void captureStructTag(const string &name, const json *fields, bool is_union);
 
 	int parse(json &ast, const vector<CToken*>& tokens);
 
