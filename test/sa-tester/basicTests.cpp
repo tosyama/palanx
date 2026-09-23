@@ -1672,9 +1672,9 @@ TEST(sa, cinclude_null_constant)
 	json jout = run_sa("../test/testdata/sa/127_cinclude_null_compat.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// NULL from cinclude <string.h> (via stddef.h) is registered into
-	// constDecls_ and inlines to a lit-int 0 with pntr(void) value-type, which
-	// typeCompat's pntr(void) rule accepts against strchr()'s pntr(int8) return.
+	// NULL from cinclude <string.h> (via stddef.h) is folded by gen-ast into a
+	// typed lit-int 0 with pntr(void) value-type, which typeCompat's
+	// pntr(void) rule accepts against strchr()'s pntr(int8) return.
 	const auto& ifStmt = jout["statements"][1];
 	ASSERT_EQ(ifStmt["stmt-type"], "if");
 	const auto& cond = ifStmt["cond"];
@@ -1693,6 +1693,33 @@ TEST(sa, cinclude_null_constant)
 	ASSERT_EQ(right["value-type"]["type-kind"], "pntr");
 	ASSERT_EQ(right["value-type"]["base-type"]["type-kind"], "prim");
 	ASSERT_EQ(right["value-type"]["base-type"]["type-name"], "void");
+}
+
+TEST(sa, macro_binop_typing)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/192_macro_binop_typing.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// A macro constant's C-declared value-type (S_IFDIR: int32) is kept as
+	// its own type in an "x + S_IFDIR" binary op -- not silently re-typed to
+	// match the other operand -- and reconciled by the normal usual
+	// arithmetic conversion (widened to x's int64 via an explicit convert
+	// node), same as any other differently-typed operand pair would be.
+	const auto& conv = jout["functions"][0]["body"][1]["values"][0];
+	ASSERT_EQ(conv["expr-type"], "convert");
+	const auto& add = conv["src"];
+	ASSERT_EQ(add["expr-type"], "add");
+	ASSERT_EQ(add["left"]["name"], "x");
+	ASSERT_EQ(add["left"]["value-type"]["type-name"], "int64");
+
+	const auto& right = add["right"];
+	ASSERT_EQ(right["expr-type"], "convert");
+	ASSERT_EQ(right["from-type"]["type-name"], "int32");
+	ASSERT_EQ(right["src"]["expr-type"], "lit-int");
+	ASSERT_EQ(right["src"]["value"], "16384");
+	ASSERT_EQ(right["src"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(right["value-type"]["type-name"], "int64");
 }
 
 TEST(sa, field_assign)

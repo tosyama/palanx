@@ -1,0 +1,1 @@
+#define S_IFDIR 0040000

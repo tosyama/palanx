@@ -649,14 +649,6 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		}
 	}
 
-	if (stmt.contains("constants")) {
-		for (auto& c : stmt["constants"]) {
-			string name = c["name"].get<string>();
-			if (constDecls_.count(name)) continue;  // first header wins on duplicate macro names
-			constDecls_[name] = {{"value", {{"expr-type","lit-int"},{"value",c["value"]},{"value-type",c["value-type"]}}},
-			                     {"value-type", c["value-type"]}};
-		}
-	}
 } // LCOV_EXCL_BR_LINE
 
 static bool is_absolute(filesystem::path &path)
