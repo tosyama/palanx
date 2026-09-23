@@ -1,0 +1,7 @@
+// No printf anywhere: write(2) is unbuffered, so a buffered libc stream would
+// make the line order depend on flush timing instead of source order.
+import "lib_syscall.pa";
+
+sys_write(1, "import syscall\n", 15u);
+int64 n = sys_write(1, "second\n", 7u);
+if n == 7 { sys_write(1, "n==7\n", 5u); }

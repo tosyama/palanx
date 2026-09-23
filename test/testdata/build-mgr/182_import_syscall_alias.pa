@@ -1,0 +1,4 @@
+import "lib_syscall.pa" as L;
+
+int64 n = L.sys_write(1, "alias syscall\n", 14u);
+if n == 14 { L.sys_write(1, "n==14\n", 6u); }

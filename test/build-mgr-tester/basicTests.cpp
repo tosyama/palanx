@@ -1536,6 +1536,20 @@ TEST(build_mgr, syscall_negative_errno) {
 	ASSERT_EQ(output, "rc=-9\n");
 }
 
+TEST(build_mgr, import_syscall) {
+	// The library module exports no code at all, only a prototype, so this also
+	// covers assembling and linking an object with no callable symbol.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/181_import_syscall.pa");
+	ASSERT_EQ(output, "import syscall\nsecond\nn==7\n");
+}
+
+TEST(build_mgr, import_syscall_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/182_import_syscall_alias.pa");
+	ASSERT_EQ(output, "alias syscall\nn==14\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
