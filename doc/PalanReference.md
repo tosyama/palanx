@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.31
+**Version:** v0.1.32
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -59,6 +59,7 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 20. [Type Aliases](#20-type-aliases)
 21. [Constant Declarations](#21-constant-declarations)
 22. [Address-Of Operator](#22-address-of-operator)
+23. [Raw Syscalls](#23-raw-syscalls)
 
 ---
 
@@ -1582,5 +1583,35 @@ already its own pointer to its storage — pass it by name instead (`random_r(st
   exits, handing that slot to a C function that overwrites it (e.g. an out-param realloc-style
   API) will make the automatic free operate on whatever the C call left behind — get this pattern
   right or avoid it, the compiler does not check it.
+
+---
+
+## 23. Raw Syscalls
+
+A `syscall` declaration binds a Linux x86-64 syscall number to a name, callable afterward like
+any other function — bypassing libc entirely:
+
+```palan
+syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = 1;
+
+sys_write(1, "hello, syscall\n", 15u);
+```
+
+- Syntax: `[export] syscall name(parameters) [-> type] = number;`, where `number` must be an
+  integer literal (0 to 2^32-1) — a symbolic constant (e.g. a cinclude'd `SYS_write`) or any
+  other expression is not allowed.
+- Once declared, the name is called exactly like a normal function, including from other
+  functions or across an `import`/`export` boundary (see §12).
+- A block-scoped `syscall` declaration is visible only within that block, same as a nested
+  `func`.
+- At most 6 parameters. The return, if any, must be a single unnamed type (`-> type`); named or
+  multiple return values are not allowed.
+- Parameter and return types must be representable as a full 8-byte register: `flo32`/`flo64`
+  and the 8-bit/16-bit integer types are rejected.
+- The return value is the kernel's raw result in `rax`: a negative value conventionally means
+  `-errno` (e.g. `-9` for `EBADF`), which the caller must interpret itself — libc's `errno`
+  variable is never touched.
+- `syscall` is a reserved word, so a cinclude'd `<unistd.h>`'s `syscall()` wrapper function
+  cannot be called from a file that uses this feature.
 
 ---

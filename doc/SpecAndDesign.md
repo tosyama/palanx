@@ -16,9 +16,7 @@ that binds a syscall number (and a typed signature) to a name callable like any 
 function:
 
 ```palan
-cinclude <sys/syscall.h>;
-
-export syscall write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
+export syscall write(int32 fd, @void buf, uint64 count) -> int64 = 1;
 
 int64 n = write(1, msg, 13);   // called exactly like a normal function afterward
 ```
@@ -78,21 +76,24 @@ a third, register-convention-distinct case:
   what a syscall needs: fixed arity ≤ 6, all-integer-class arguments, no stack overflow, no
   symbol resolution, single-register return.
 
-**Constant-number binding is already solved.** The `= SYS_write` in a syscall declaration is
-an ordinary compile-time constant expression, resolved the same way `sa_const_decl`
-(`PlnSaDecl.cpp:795-806`) resolves any `const`. Verified end-to-end on this machine:
-`palan-c2ast -s sys/syscall.h` yields 744 constants including `SYS_read`→0, `SYS_write`→1,
-`SYS_exit`→60, with the `SYS_read`→`__NR_read`→`0` macro indirection fully resolved by the
-v0.1.26 macro-constant folder (`CParser::exportMacroConstants`, arbitrary indirection depth,
-not just one hop). No new ingestion work was needed for this part.
+**The syscall number must be a literal integer, not a symbolic constant.** A cinclude'd macro
+constant like `SYS_write` is fully folded by c2ast at gen-ast time, but a *reference* to that
+name elsewhere in Palan source is only resolved later, in SA, against the referencing module's
+own symbol table — it has no self-contained value by the time `ast.json` is written, so it
+cannot cross an `import` boundary the way the declaration itself needs to (see "Design
+consequences of the ABI mismatch" above: the number is carried in the export/import path as a
+plain value, not re-resolved by the importing module). Restricting the syscall number to a
+literal integer sidesteps this rather than fixing it; the underlying gap is tracked as
+`doc/Issues.md` item 23.
 
 Non-goals for this iteration: a general variadic `syscall(nr, ...)` call-expression builtin
 (superseded by the declaration approach above); automatic errno translation (the raw `rax`
-value is returned as-is); flo32/flo64 syscall arguments or return values (not representable in
-the Linux syscall ABI's all-integer register convention — diagnosed, not implemented);
-first-class function-pointer types (`doc/Issues.md` item 14, unchanged); union/enum/`long
-double` representation (`doc/Issues.md` item 14, unchanged); and any static-linking or CRT
-strategy beyond what already exists (`doc/Issues.md` item 18, undesigned).
+value is returned as-is); flo32/flo64 syscall arguments or return values, and 8-bit/16-bit
+integer arguments or return values (the Linux syscall ABI has no partial-register argument/
+return slot — diagnosed, not implemented); first-class function-pointer types (`doc/Issues.md`
+item 14, unchanged); union/enum/`long double` representation (`doc/Issues.md` item 14,
+unchanged); and any static-linking or CRT strategy beyond what already exists (`doc/Issues.md`
+item 18, undesigned).
 
 The full design decisions and the ticket breakdown are in
 `localtickets/iteration-2026-09-19-v0132-syscall.md`.
