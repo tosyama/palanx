@@ -1,0 +1,8 @@
+cinclude <sys/syscall.h>;
+syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
+
+func main() -> int32 {
+	@void buf;
+	int64 n = sys_write(1, buf, 0u);
+	return 0;
+}

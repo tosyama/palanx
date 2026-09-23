@@ -1132,27 +1132,30 @@ TEST(gen_ast, cinclude_local_header) {
 
 TEST(gen_ast, cinclude_constant) {
 	cleanTestEnv();
-	// c2ast exports object-like macro constants into ast.constants; this
-	// verifies PlnParser.yy's cinclude rule copies that constants array
-	// through onto the cinclude statement, not just ast.functions.
+	// c2ast exports object-like macro constants into ast.constants; gen-ast
+	// registers them into an internal macro table (not carried onto the
+	// cinclude statement) and folds later ANSWER references -- an array
+	// size-expr and a binary-op operand -- into typed lit-int nodes.
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/103_cinclude_constant.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
-	bool found_answer = false;
 	for (auto& stmt : jout["ast"]["statements"]) {
 		if (stmt["stmt-type"] != "cinclude") continue;
-		ASSERT_TRUE(stmt.contains("constants"));
-		for (auto& c : stmt["constants"]) {
-			if (c["name"] == "ANSWER") {
-				ASSERT_EQ(c["value"], "42");
-				ASSERT_EQ(c["value-type"]["type-kind"], "prim");
-				ASSERT_EQ(c["value-type"]["type-name"], "int32");
-				found_answer = true;
-			}
-		}
+		ASSERT_FALSE(stmt.contains("constants"));
 	}
-	ASSERT_TRUE(found_answer);
+
+	auto& body = jout["ast"]["functions"][0]["block"]["body"];
+	auto& size_expr = body[0]["vars"][0]["var-type"]["size-expr"];
+	ASSERT_EQ(size_expr["expr-type"], "lit-int");
+	ASSERT_EQ(size_expr["value"], "42");
+	ASSERT_EQ(size_expr["value-type"]["type-kind"], "prim");
+	ASSERT_EQ(size_expr["value-type"]["type-name"], "int32");
+
+	auto& add_left = body[1]["values"][0]["left"];
+	ASSERT_EQ(add_left["expr-type"], "lit-int");
+	ASSERT_EQ(add_left["value"], "42");
+	ASSERT_EQ(add_left["value-type"]["type-name"], "int32");
 }
 
 TEST(gen_ast, cinclude_global) {
@@ -1425,6 +1428,73 @@ TEST(gen_ast, syscall_decl) {
 		ASSERT_EQ(nested[0]["func-type"], "syscall");
 	}
 	ASSERT_TRUE(found_main);
+}
+
+TEST(gen_ast, macro_fold) {
+	// Macro-constant references fold into typed lit-int both in a
+	// syscall-number position and as a pointer-typed initializer, in both
+	// ast.functions and the deep-copied ast.export.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/116_macro_fold.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "foo") continue;
+		ASSERT_EQ(f["syscall-number"]["expr-type"], "lit-int");
+		ASSERT_EQ(f["syscall-number"]["value"], "5");
+		ASSERT_EQ(f["syscall-number"]["value-type"]["type-name"], "int32");
+	}
+	ASSERT_EQ(jout["export"][0]["syscall-number"]["expr-type"], "lit-int");
+	ASSERT_EQ(jout["export"][0]["syscall-number"]["value"], "5");
+
+	for (auto& f : jout["ast"]["functions"]) {
+		if (f["name"] != "main") continue;
+		auto& init = f["block"]["body"][0]["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "lit-int");
+		ASSERT_EQ(init["value"], "0");
+		ASSERT_EQ(init["value-type"]["type-kind"], "pntr");
+		ASSERT_EQ(init["value-type"]["base-type"]["type-name"], "void");
+	}
+}
+
+TEST(gen_ast, macro_fold_backref) {
+	// A reference textually before its cinclude registers is left as an
+	// unresolved "id" node -- macro visibility is text order, same as C.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/117_macro_fold_backref.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& ret = jout["ast"]["functions"][0]["block"]["body"][0]["values"][0];
+	ASSERT_EQ(ret["expr-type"], "id");
+	ASSERT_EQ(ret["name"], "LATE_ANSWER");
+}
+
+TEST(gen_ast, macro_fold_sameline) {
+	// A macro reference on the same source line as its registering cinclude
+	// still resolves via a column comparison, not just a line comparison.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/119_macro_fold_sameline.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& ret = jout["ast"]["functions"][0]["block"]["body"][0]["values"][0];
+	ASSERT_EQ(ret["expr-type"], "lit-int");
+	ASSERT_EQ(ret["value"], "9");
+}
+
+TEST(gen_ast, macro_fold_duplicate_name) {
+	// Two cincludes defining the same macro name: the first registration
+	// wins and later same-named definitions are ignored.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/118_macro_fold_dup.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& ret = jout["ast"]["functions"][0]["block"]["body"][0]["values"][0];
+	ASSERT_EQ(ret["expr-type"], "lit-int");
+	ASSERT_EQ(ret["value"], "1");
 }
 
 TEST(gen_ast, return_def_nonprim) {

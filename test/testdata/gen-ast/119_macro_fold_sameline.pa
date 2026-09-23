@@ -1,0 +1,1 @@
+cinclude "119_macro_fold_sameline.h"; func main() -> int32 { return SL_NUM; }

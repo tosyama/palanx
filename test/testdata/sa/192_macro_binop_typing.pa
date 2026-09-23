@@ -1,0 +1,6 @@
+cinclude "192_macro_binop_typing.h";
+
+func main() -> int32 {
+	int64 x = 10;
+	return int32(x + S_IFDIR);
+}

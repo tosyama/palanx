@@ -315,6 +315,36 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	return json::array({sa_stmt});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+json PlnSemanticAnalyzer::sa_arr_size_expr(const json& stmt, const json& sizeExprAst)
+{
+	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
+	json sz = sa_expression(sizeExprAst, uint64Type);
+	if (!sz.contains("value-type")) return sz;
+	const PlnType* t = registry_.fromJson(sz["value-type"]);
+	bool is_int = t->kind == PlnType::Kind::Prim
+		&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float32
+		&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float64;
+	if (!is_int) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
+		exit(1);
+	}
+	// A macro-folded lit-int keeps its own (possibly narrower) C-declared
+	// type instead of taking uint64 from expectedType, unlike a plain
+	// source literal (which the lit-int/lit-uint branches above always
+	// force to uint64 here). Left as-is, it would be codegen'd as an
+	// inline immediate sized to its own width while every caller of this
+	// helper embeds it into hand-built uint64 byte-count math, producing a
+	// register-width mismatch at the assembler. Narrow this widening to
+	// the literal case only -- a variable/expression operand already
+	// reaches codegen as a load sized to the context, same as before this
+	// helper existed, and widening it here would just wrap already-working
+	// output in a redundant convert node.
+	string et = sz.value("expr-type", "");
+	if ((et == "lit-int" || et == "lit-uint") && t != uint64Type)
+		sz = wrapConvert(sz, registry_.toJson(uint64Type));
+	return sz;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 {
 	// Array var-decl: transform to pntr var-decl + malloc init.
@@ -345,29 +375,14 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 		json pntr_type = {{"type-kind","pntr"},{"base-type",{
 			{"type-kind","pntr"},{"base-type",leaf_type}
 		}}};
-		const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
-
-		auto checkIntSize = [&](const json& sz) {
-			if (!sz.contains("value-type")) return;
-			const PlnType* t = registry_.fromJson(sz["value-type"]);
-			bool is_int = t->kind == PlnType::Kind::Prim
-				&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float32
-				&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float64;
-			if (!is_int) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
-				exit(1);
-			}
-		};
 
 		json result = json::array();
 		for (auto& var : stmt["vars"]) {
 			string name = var["name"];
 			string d0_name = "__" + name + "_d0";
 
-			json d0_expr = sa_expression(vtype["size-expr"], uint64Type);
-			checkIntSize(d0_expr);
-			json n_expr  = sa_expression(base_type["size-expr"], uint64Type);
-			checkIntSize(n_expr);
+			json d0_expr = sa_arr_size_expr(stmt, vtype["size-expr"]);
+			json n_expr  = sa_arr_size_expr(stmt, base_type["size-expr"]);
 
 			json d0_id = {{"expr-type","id"},{"name",d0_name},
 			              {"var-type",uint64_type},{"value-type",uint64_type}};
@@ -420,19 +435,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 		sa_elem_type = base_type;
 	}
 
-	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
-	json sa_count = sa_expression(vtype["size-expr"], uint64Type);
-
-	if (sa_count.contains("value-type")) {
-		const PlnType* cntType = registry_.fromJson(sa_count["value-type"]);
-		bool is_int = cntType->kind == PlnType::Kind::Prim
-			&& static_cast<const PrimType*>(cntType)->name != PrimType::Name::Float32
-			&& static_cast<const PrimType*>(cntType)->name != PrimType::Name::Float64;
-		if (!is_int) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
-			exit(1);
-		}
-	}
+	json sa_count = sa_arr_size_expr(stmt, vtype["size-expr"]);
 
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 	json size_bytes;
@@ -505,7 +508,6 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json uint64_type  = {{"type-kind","prim"},{"type-name","uint64"}};
 		// LCOV_EXCL_EXCEPTION_BR_STOP
-		const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json struct_base = {{"type-kind","struct"},{"type-name",leaf_name}};
 		json pntr_type   = {{"type-kind","pntr"},{"embedded",true},{"stride",stride},{"base-type",struct_base}};
@@ -513,7 +515,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 		json result = json::array();
 		for (auto& var : stmt["vars"]) {
 			string name = var["name"];
-			json sa_outer = sa_expression(vtype["size-expr"], uint64Type);
+			json sa_outer = sa_arr_size_expr(stmt, vtype["size-expr"]);
 			// LCOV_EXCL_EXCEPTION_BR_START
 			json stride_lit = {{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}};
 			json size_arg   = {{"expr-type","mul"},{"value-type",uint64_type},{"left",sa_outer},{"right",stride_lit}};
@@ -542,19 +544,6 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
-	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
-
-	auto checkIntSize = [&](const json& sz) {
-		if (!sz.contains("value-type")) return;
-		const PlnType* t = registry_.fromJson(sz["value-type"]);
-		bool is_int = t->kind == PlnType::Kind::Prim
-			&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float32
-			&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float64;
-		if (!is_int) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
-			exit(1);
-		}
-	};
 
 	bool inner_is_const = inner_sz.value("expr-type","") == "lit-int"
 	                   || inner_sz.value("expr-type","") == "lit-uint";
@@ -563,10 +552,8 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 
-		json sa_outer = sa_expression(vtype["size-expr"], uint64Type); // n
-		checkIntSize(sa_outer);
-		json sa_inner = sa_expression(inner_sz, uint64Type);            // m
-		checkIntSize(sa_inner);
+		json sa_outer = sa_arr_size_expr(stmt, vtype["size-expr"]); // n
+		json sa_inner = sa_arr_size_expr(stmt, inner_sz);            // m
 
 		json pntr_type;
 		json size_arg;
@@ -912,27 +899,13 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 	json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
 	json pntr_type   = {{"type-kind","pntr"},{"base-type",elem_pntr}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
-	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
-
-	auto checkIntSize = [&](const json& sz) {
-		if (!sz.contains("value-type")) return;
-		const PlnType* t = registry_.fromJson(sz["value-type"]);
-		bool is_int = t->kind == PlnType::Kind::Prim
-			&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float32
-			&& static_cast<const PrimType*>(t)->name != PrimType::Name::Float64;
-		if (!is_int) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
-			exit(1);
-		}
-	};
 
 	json result = json::array();
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 		string n_name = "__" + name + "_n";
 
-		json n_expr = sa_expression(vtype["size-expr"], uint64Type);
-		checkIntSize(n_expr);
+		json n_expr = sa_arr_size_expr(stmt, vtype["size-expr"]);
 
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json n_id = {{"expr-type","id"},{"name",n_name},

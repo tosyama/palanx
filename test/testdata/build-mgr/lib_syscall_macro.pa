@@ -1,0 +1,3 @@
+// Named sys_write to stay clear of libc's write.
+cinclude <sys/syscall.h>;
+export syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;

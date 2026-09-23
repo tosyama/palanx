@@ -10,7 +10,7 @@
 
 %defines
 %define api.parser.class	{PlnParser}
-%parse-param	{PlnLexer& lexer}	{json& ast}
+%parse-param	{PlnLexer& lexer}	{json& ast}	{MacroTable& macros}
 %lex-param	{PlnLexer& lexer}
 
 %code requires
@@ -25,6 +25,7 @@
 
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "../common/PlnFileUtils.h"
+#include "PlnGenAstMacroFold.h"
 
 using std::vector;
 using std::string;
@@ -189,9 +190,6 @@ expr_stmt: import
 			if (c_ast["ast"].contains("functions")) {
 				$$["functions"] = move(c_ast["ast"]["functions"]);
 			}
-			if (c_ast["ast"].contains("constants")) {
-				$$["constants"] = move(c_ast["ast"]["constants"]);
-			}
 			if (c_ast["ast"].contains("structs")) {
 				$$["structs"] = move(c_ast["ast"]["structs"]);
 			}
@@ -203,6 +201,9 @@ expr_stmt: import
 			}
 		}
 		LOC($$, @$);
+		if (c_ast.is_object() && c_ast.contains("ast") && c_ast["ast"].contains("constants")) {
+			registerMacroConstants(macros, c_ast["ast"]["constants"], $$["loc"]);
+		}
 	}
 	| var_declarations
 	{

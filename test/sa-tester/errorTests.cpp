@@ -2085,21 +2085,6 @@ TEST(sa_error, syscall_number_not_constant)
 	ASSERT_NE(sa.find("number must be a literal integer"), string::npos);
 }
 
-TEST(sa_error, syscall_symbolic_const_number)
-{
-	// A cinclude'd macro constant (SYS_write) is still an unevaluated "id"
-	// node at this point -- symbolic syscall numbers are deliberately not
-	// supported.
-	// Covers: validateSyscallDecl rejects an id node from a cinclude constant
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_174_syscall_symbolic_const_number.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("number must be a literal integer"), string::npos);
-}
-
 TEST(sa_error, syscall_number_out_of_range)
 {
 	// Covers: validateSyscallDecl uint32 range guard, E_SyscallNumberOutOfRange
@@ -2237,4 +2222,36 @@ TEST(sa_error, syscall_call_ptr_permission)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
+}
+
+TEST(sa_error, macro_backref_undefined)
+{
+	// A reference to a cinclude'd macro name that textually precedes its
+	// cinclude statement is not folded by gen-ast (visibility is loc-order,
+	// same as the macro table itself) -- it reaches SA as a plain "id" and
+	// is diagnosed like any other undefined variable.
+	// Covers: foldMacroConstants loc-order gate, E_UndefinedVariable
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_185_macro_backref_undefined.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("Undefined variable"), string::npos);
+}
+
+TEST(sa_error, macro_backref_arr_field)
+{
+	// Same loc-order gate as macro_backref_undefined, but for a struct
+	// field array size -- the un-folded "id" reaches buildStructDef's "arr"
+	// branch instead of a lit-int/lit-uint, hitting the pre-existing
+	// not-constant diagnostic rather than a new one.
+	// Covers: foldMacroConstants loc-order gate, E_ArrFieldSizeNotConstant
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_186_macro_backref_arr_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find("must be a compile-time constant"), string::npos);
 }

@@ -1,0 +1,8 @@
+cinclude "116_macro_fold.h";
+
+export syscall foo() = FOO_NUM;
+
+func main() -> int32 {
+	@void p = FOO_NULL;
+	return 0;
+}

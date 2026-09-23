@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.32
+ver. 0.1.33
 
 \* - Required
 
@@ -33,7 +33,6 @@ AST model
 ---------
 - functions - Function definition model list (Palan user-defined functions and `syscall` declarations)
 - statements - Statement model list
-- constants - Constant definition model list (from `cinclude`; object-like `#define` macros recognized as a compile-time constant)
 
 Function definition model
 -------------------------
@@ -57,11 +56,20 @@ Function definition model
      - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters;
        at most 6, checked by SA)
      - ret-type - Return variable type (single-return only; omitted for void; SA rejects `rets`)
-     - syscall-number\* - Expression node for the syscall number, unevaluated by gen-ast; SA
-       requires it to be an integer literal expression and folds it to a plain integer
+     - syscall-number\* - Expression node for the syscall number; a reference to a cinclude'd
+       macro constant is already folded to a typed `lit-int` by gen-ast (see Constant definition
+       model below), so SA only requires the node to be an integer literal expression and folds
+       it to a plain integer
 
 Constant definition model
 --------------------------
+Emitted by **palan-c2ast** in its own per-header `ast.json` (the `ast.constants` list — same
+"lifted from the header's own top-level list" relationship as the Struct definition model
+below), never by palan-gen-ast: gen-ast consumes this list into an internal macro table when it
+processes each `cinclude` statement and folds every later textual reference to a macro name into
+a typed `lit-int` node in place (see Expression model's `lit-int` below), so `constants` itself
+never reaches gen-ast's own `ast.json`.
+
 An object-like `#define` macro whose body, after fully expanding any references to other
 object-like macros (e.g. `#define S_IFDIR __S_IFDIR`), folds down to a single compile-time
 integer value is exported here. The body may be a bare integer literal (e.g. `#define MAGIC
@@ -297,8 +305,6 @@ Statement model
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
     - functions - Function definition model list (C prototypes from the header)
-    - constants - Constant definition model list (see Constant definition model above);
-      omitted when the header defines no exportable object-like macro constants
     - structs - Struct definition model list (see Struct definition model above); omitted
       when the header defines no capturable structs
     - globals - Global variable model list (see Global variable model above); omitted
@@ -365,6 +371,16 @@ Expression model
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token)
     - value\* - Decimal string (e.g. "10")
+    - value-type - Variable type; present only when this node is gen-ast's in-place substitute
+      for a reference to a cinclude'd macro constant (see Constant definition model above) —
+      an ordinary source-literal `lit-int` never carries one. Holds the macro's own
+      `value-type` (e.g. `pntr` for `NULL`), unchanged by the substitution. Substitution happens
+      for every `id` reference whose name matches a macro registered by a `cinclude` earlier in
+      the same textual scope (comparing `loc`; a reference before the cinclude, or to a name no
+      cinclude registered, is left as `id`) and applies uniformly wherever an `id` node can
+      appear (binary operands, `size-expr`, a `syscall-number`, etc.) — but never inside a
+      `cinclude` statement's own subtree. A name registered by more than one `cinclude` resolves
+      to whichever registered it first.
   3. lit-uint - Unsigned integer literal (corresponds to UINT token)
     - value\* - Decimal string (e.g. "10")
   4. lit-flo - Floating-point literal (corresponds to FLO token; format: digits.digits)

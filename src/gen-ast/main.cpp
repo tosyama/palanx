@@ -13,6 +13,7 @@
 namespace fs = std::filesystem;
 
 #include "PlnGenAstMessage.h"
+#include "PlnGenAstMacroFold.h"
 #include "PlnParser.h"
 #include "PlnLexer.h"
 
@@ -63,12 +64,15 @@ int main(int argc, char* argv[])
 	try {
 		PlnLexer lexer(input_file.string());
 		json ast;
-		PlnParser parser(lexer, ast);
+		MacroTable macros;
+		PlnParser parser(lexer, ast, macros);
 
 		int ret;
 		ret = parser.parse();
 		ast["original"] = input_file;
 		if (ret == 0) {
+			foldMacroConstants(ast["ast"], macros);
+			if (ast.contains("export")) foldMacroConstants(ast["export"], macros);
 			string out_str = do_indent ? ast.dump(2) : ast.dump();
 			if (output_file) {
 				ofstream of(output_file);

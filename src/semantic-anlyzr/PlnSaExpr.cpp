@@ -232,10 +232,16 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 	string expr_type = expr["expr-type"];
 
 	if (expr_type == "lit-int") {
-		if (expectedType && expectedType->kind == PlnType::Kind::Prim)
-			sa_expr["value-type"] = registry_.toJson(expectedType);
-		else
-			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
+		// A lit-int already carrying a value-type is a macro constant folded
+		// in by gen-ast (a plain source literal never has one) -- its type
+		// was fixed by the C declaration, not by this expression's context,
+		// so expectedType must not override it.
+		if (!expr.contains("value-type")) {
+			if (expectedType && expectedType->kind == PlnType::Kind::Prim)
+				sa_expr["value-type"] = registry_.toJson(expectedType);
+			else
+				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
+		}
 
 	} else if (expr_type == "lit-uint") {
 		if (expectedType && expectedType->kind == PlnType::Kind::Prim) {
