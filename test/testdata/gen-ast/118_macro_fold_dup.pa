@@ -1,0 +1,6 @@
+cinclude "118_macro_fold_dup1.h";
+cinclude "118_macro_fold_dup2.h";
+
+func main() -> int32 {
+	return DUP_NAME;
+}

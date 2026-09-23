@@ -1,1 +1,6 @@
 cinclude "103_cinclude_constant.h";
+
+func main() -> int32 {
+	[ANSWER]int32 arr;
+	return ANSWER + 1;
+}

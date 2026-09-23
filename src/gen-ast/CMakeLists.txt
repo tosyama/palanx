@@ -12,6 +12,7 @@ add_executable(palan-gen-ast
 	main.cpp
 	PlnGenAstMessage.cpp
 	PlnGenAstC2Ast.cpp
+	PlnGenAstMacroFold.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/PlnLexer.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/PlnParser.cpp
 	../common/PlnFileUtils.cpp
