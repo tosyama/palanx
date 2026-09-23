@@ -1,0 +1,3 @@
+cinclude "194_macro_array_size.h";
+
+[ARR_N]int32 a;

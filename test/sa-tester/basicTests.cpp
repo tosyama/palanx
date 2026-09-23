@@ -1722,6 +1722,31 @@ TEST(sa, macro_binop_typing)
 	ASSERT_EQ(right["value-type"]["type-name"], "int64");
 }
 
+TEST(sa, macro_array_size)
+{
+	// A macro constant used as an array size (ARR_N: int32) keeps its own
+	// C-declared type from gen-ast's fold, unlike a plain source literal
+	// array size, which sa_expression always forces to uint64. sa_arr_size_expr
+	// must explicitly widen it to uint64 (an int32 "mul" operand, sized to
+	// its own width by codegen, mismatches the surrounding uint64 byte-count
+	// math at the assembler otherwise).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/194_macro_array_size.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& mallocArg = jout["statements"][0]["vars"][0]["init"]["args"][0];
+	ASSERT_EQ(mallocArg["expr-type"], "mul");
+	ASSERT_EQ(mallocArg["value-type"]["type-name"], "uint64");
+
+	const auto& left = mallocArg["left"];
+	ASSERT_EQ(left["expr-type"], "convert");
+	ASSERT_EQ(left["value-type"]["type-name"], "uint64");
+	ASSERT_EQ(left["from-type"]["type-name"], "int32");
+	ASSERT_EQ(left["src"]["expr-type"], "lit-int");
+	ASSERT_EQ(left["src"]["value"], "3");
+	ASSERT_EQ(left["src"]["value-type"]["type-name"], "int32");
+}
+
 TEST(sa, field_assign)
 {
 	cleanTestEnv();

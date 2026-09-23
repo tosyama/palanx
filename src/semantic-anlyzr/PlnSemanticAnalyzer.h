@@ -137,6 +137,16 @@ class PlnSemanticAnalyzer {
 	// E_InvalidNarrowingConv if it doesn't fit without an explicit cast.
 	json convertCallArg(const json& locNode, json saArg, const json& paramVT);
 	json sa_expr_arr_index(const json& expr);
+	// Evaluate an array-size sub-expression (an `[n]T` declaration's `n`, or
+	// a 2D array's inner/outer dimension) and normalize the result to
+	// uint64, diagnosing E_ArraySizeNotInteger for a non-integer. Every
+	// caller embeds the result directly into a hand-built uint64-typed node
+	// (byte-count math, or a uint64 temp var's init) without further type
+	// checking, so this is the one place that must guarantee uint64 --
+	// sa_expression's expectedType alone no longer does, now that a
+	// macro-folded lit-int keeps its own C-declared type instead of taking
+	// expectedType unconditionally.
+	json sa_arr_size_expr(const json& stmt, const json& sizeExprAst);
 	json sa_expression_stmt(const json& stmt);
 	json sa_var_decl(const json& stmt);           // returns array of statements
 	json sa_arr_var_decl(const json& stmt);       // returns array of statements
