@@ -1,0 +1,7 @@
+syscall foo(@!void p) = 1;
+
+func main() -> int32 {
+	@void p;
+	foo(p);
+	return 0;
+}

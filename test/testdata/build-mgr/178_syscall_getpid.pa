@@ -1,0 +1,11 @@
+// Not named getpid on purpose: a cinclude'd C function outranks a Palan-side
+// declaration of the same name with no diagnostic, which would silently make
+// both sides of this comparison the libc call.
+cinclude <unistd.h>;
+cinclude <stdio.h>;
+
+syscall sys_getpid() -> int32 = 39;
+
+int32 raw = sys_getpid();
+int32 libc = getpid();
+printf("same=%d positive=%d\n", raw == libc, raw > 0);

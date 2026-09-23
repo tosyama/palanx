@@ -1,0 +1,9 @@
+// An unopened fd makes the kernel return raw -EBADF in %rax; Palan never
+// translates it into libc's errno. The failing write emits nothing, so printf
+// is the only writer and there is no ordering hazard.
+cinclude <stdio.h>;
+
+syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = 1;
+
+int64 rc = sys_write(99, "never\n", 6u);
+printf("rc=%ld\n", rc);

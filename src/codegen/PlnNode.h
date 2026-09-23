@@ -35,6 +35,7 @@ enum class ExprKind {
     Convert,
     CCCall,
     PlnCall,
+    SysCall,
     ArrIndex,
     FieldAccess,
     LogicalNot,
@@ -66,7 +67,7 @@ struct CGlobalExpr : Expr {
 };
 
 // Reference to a Palan function's address, to pass as a C callback argument
-// (IT-2026-09-12-3007, e.g. qsort's comparator). A Palan function is emitted
+// (e.g. qsort's comparator). A Palan function is emitted
 // as an unmangled assembly label (see PlnVCodeGen::generate), so this is
 // just the address of that label -- lowered to a bare LeaLabel, same as
 // StrLitExpr, with no dereference. No first-class function-pointer value
@@ -209,6 +210,17 @@ struct CCCallExpr : Expr {
 struct PlnCallExpr : Expr {
     PlnCallExpr() : Expr(ExprKind::PlnCall) {}
     string name;
+    bool     hasRet  = false;
+    VRegType retType = VRegType::Int64;
+    vector<unique_ptr<Expr>> args;
+};
+
+// A raw Linux syscall call (Linux syscall ABI, not System V) -- resolved by
+// palan-sa to a `syscall` declaration and folded to a literal number, so
+// this carries a number instead of a name (no symbol to link against).
+struct SysCallExpr : Expr {
+    SysCallExpr() : Expr(ExprKind::SysCall) {}
+    long long sysNum = 0;
     bool     hasRet  = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;

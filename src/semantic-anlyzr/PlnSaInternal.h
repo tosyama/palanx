@@ -162,19 +162,11 @@ inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
 }
 
 // Classifies a struct's return value per the System V AMD64 ABI (§3.2.3):
-// a struct over 16 bytes is MEMORY class, returned via a caller-supplied
-// hidden pointer, represented here as an empty vector; 16 bytes or less is
-// returned in up to two eightbytes, each INTEGER (%rax/%rdx) or SSE
-// (%xmm0/%xmm1). Only the return-value rules are implemented (not full
-// argument classification, which additionally has a MEMORY class for
-// eightbytes containing unaligned fields -- unreached by every struct
-// this compiler can construct, since buildStructDef itself enforces
-// natural alignment).
-//
-// Sets `ok` to false, and returns an empty vector, if any eightbyte's
-// natural width isn't 1/2/4/8 bytes (e.g. a trailing `char a[3]` field) --
-// callers should reject that shape with a dedicated diagnostic rather than
-// guess at a partial-eightbyte store.
+// over 16 bytes is MEMORY class (an empty vector here); 16 bytes or less
+// returns in up to two eightbytes, each INTEGER (%rax/%rdx) or SSE
+// (%xmm0/%xmm1). Sets `ok` to false and returns an empty vector if any
+// eightbyte's natural width isn't 1/2/4/8 bytes (e.g. a trailing `char
+// a[3]` field), for callers to reject with a dedicated diagnostic.
 inline vector<EightbyteRet> classifySysVStructRet(const StructDef& def,
                                                    const map<string, StructDef>& defs,
                                                    bool& ok)
@@ -287,28 +279,9 @@ inline void normalizeUnsizedArrSig(json& funcDef) {
 
 inline json normalizeCType(const json& type);
 
-// c2ast tags a C struct reference "strct" (a syntactic fact -- it saw the
-// `struct` keyword -- available with no linking/resolution performed, since
-// c2ast never sees structDefs_). SA's own canonical post-resolution tag for
-// the same nominal type is "struct" (see PlnSemanticAnalyzer::normalizeStructSig,
-// used for native Palan function signatures). Native functions get rewritten
-// at registration time; this is the same rewrite for cinclude'd C function
-// signatures, so PlnTypeRegistry::fromJson only ever needs to understand the
-// single canonical "struct" tag, never c2ast's raw "strct" one.
-//
-// Also the single point where a C pointer's write permission is decided:
-// c2ast records const-ness as a syntactic fact on the *pointee* ("const" on
-// base-type), the same vocabulary a Palan `@T`/`@!T` pointer never uses --
-// SA's own pointer permission vocabulary is "mutable" on the `pntr` node
-// itself (see ptrPermissionOk/isWritableThrough above). Folding const into
-// mutable here means every consumer of a `pntr` value-type (ptrPermissionOk,
-// codegen) only ever needs to understand "mutable", whether the pointer came
-// from Palan syntax or a cincluded C signature. This recurses into a `func`
-// type-kind's own ret-type/parameters too, so a callback parameter's inner
-// pointers (e.g. qsort's `int (*)(const void*, const void*)`) get "mutable"
-// the same as any other pointer -- without this, isWritableThrough's
-// absent-key default (writable) would silently invert the callback's
-// pointer permissions.
+// Rewrites c2ast's "strct" tag to SA's canonical "struct", and folds a
+// pointee's "const" into SA's own "mutable" pointer-permission flag
+// (recursing into `func` nodes so callback pointer parameters get it too).
 inline json normalizeCType(const json& type) {
 	if (type.value("type-kind","") == "pntr") {
 		json t = type;
@@ -334,13 +307,9 @@ inline json normalizeCType(const json& type) {
 	return type;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// True if every parameter type and the return type of a `func` type-kind
-// node (already normalizeCType'd, so consts are folded into "mutable") can be
-// represented by this version -- i.e. this callback's signature is one a
-// Palan function can actually be checked against (IT-2026-09-12-3007). A
-// by-value struct parameter is rejected the same way a top-level C parameter
-// is (see normalizeCFuncSig below); a nested function-pointer parameter is
-// rejected by unrepresentableTypeName's "func" case, same as everywhere else.
+// True if every parameter/return type of a `func` node (already
+// normalizeCType'd) can be represented, i.e. is a signature a Palan function
+// can actually be checked against.
 inline bool callbackSigRepresentable(const json& funcType) {
 	if (funcType.contains("parameters"))
 		for (auto& ip : funcType["parameters"]) {
@@ -354,43 +323,13 @@ inline bool callbackSigRepresentable(const json& funcType) {
 	return true;
 }
 
-// C function entries (from c2ast) always carry a single "ret-type", never
-// Palan's native multi/named-return "rets" list, so there's no "rets" case
-// to handle here unlike normalizeUnsizedArrSig above.
-//
-// Also the single point where a C function's signature is checked for a type
-// PlnTypeRegistry::fromJson cannot represent (a variadic "..." parameter
-// entry has no "var-type" and is skipped, same as every other pass here).
-// Unlike a native Palan signature (see validateNativeSig in
-// PlnSemanticAnalyzer.cpp), an unresolved C "prim" type-name (e.g. "flt128"
-// for `long double`) IS genuinely unrepresentable here, not a forward
-// reference to be resolved later -- c2ast's typedef registration already
-// resolves anything resolvable before a reference site is emitted. A hit is
-// recorded on the entry as "_unsupported-sig" (checked at call time by
-// requireSupportedCFuncSig) rather than rejected here, so cinclude'ing a
-// header that happens to declare an unsupported function is not itself an
-// error -- only calling it is.
-//
-// A top-level by-value struct parameter is also flagged here: unlike a
-// pntr-wrapped struct base-type, unrepresentableTypeName alone cannot tell
-// "by value" from "behind a pointer" apart (both are a bare
-// {"type-kind":"struct",...} node once normalizeCType has stripped the
-// wrapping pntr, or none was ever there), and only this function sees a
-// parameter's position in the signature. By-value struct return is exempt --
-// it stays representable here and is classified by classifySysVStructRet at
-// the call site (IT-2026-09-12-3004) instead of rejected.
-//
-// A `pntr(func(...))` parameter (e.g. qsort's comparator) is a limited,
-// explicit exception to the blanket function-pointer rejection below
-// (IT-2026-09-12-3007): when callbackSigRepresentable says its inner
-// parameter/return types are all representable, the parameter is marked
-// "_callback-param" instead of contributing "function pointer" to `bad` --
-// this only records that the slot *could* accept a Palan function reference;
-// whether the caller actually supplies one, and whether its signature
-// matches, is checked at the call site (sa_func_ref_arg in PlnSaExpr.cpp).
-// An irrepresentable inner signature still reports "function pointer" like
-// before, since to this function's own caller it remains, at the top level,
-// an unsupported function pointer parameter.
+// An unrepresentable parameter/return type is recorded as "_unsupported-sig"
+// rather than rejected here, so cinclude'ing the header is not itself an
+// error -- only calling the function is. A by-value struct parameter is
+// flagged explicitly (unrepresentableTypeName alone can't tell it apart from
+// a pointer once normalizeCType strips the pntr); a representable
+// `pntr(func(...))` parameter is marked "_callback-param" instead, checked
+// later at the call site.
 inline void normalizeCFuncSig(json& funcDef) {
 	string bad;
 	if (funcDef.contains("parameters"))

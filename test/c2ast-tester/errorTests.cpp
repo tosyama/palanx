@@ -8,7 +8,7 @@
 
 using namespace std;
 
-// --- CLI errors (IT-0801) ---
+// --- CLI errors ---
 
 TEST(c2ast_error, no_input_file) {
 	cleanTestEnv();
@@ -28,7 +28,7 @@ TEST(c2ast_error, version) {
 	ASSERT_NE(out.find("palan-c2ast"), string::npos);
 }
 
-// --- Preprocessor errors (IT-0802) ---
+// --- Preprocessor errors ---
 
 TEST(c2ast_error, error_directive) {
 	cleanTestEnv();
@@ -37,7 +37,7 @@ TEST(c2ast_error, error_directive) {
 	ASSERT_NE(out.find("error:"), string::npos);
 }
 
-// --- Remaining preprocessor errors (IT-0807) ---
+// --- Remaining preprocessor errors ---
 
 TEST(c2ast_error, include_not_found) {
 	cleanTestEnv();
@@ -74,7 +74,7 @@ TEST(c2ast_error, if_expr_extra_tokens) {
 	ASSERT_NE(out.find("error:"), string::npos);
 }
 
-// --- Preprocessor warnings (IT-0803) ---
+// --- Preprocessor warnings ---
 
 TEST(c2ast_error, warning_extra_tokens_after_directive) {
 	cleanTestEnv();
@@ -135,7 +135,7 @@ TEST(c2ast_error, if_expr_unexpected_end) {
 	ASSERT_NE(out.find("unexpected end of expression"), string::npos);
 }
 
-// --- Input file errors (IT-2026-09-16-3101) ---
+// --- Input file errors ---
 
 TEST(c2ast_error, input_system_header_not_found) {
 	cleanTestEnv();

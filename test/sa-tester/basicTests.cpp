@@ -1416,7 +1416,7 @@ TEST(sa, arith_lit_retypes_to_right)
 TEST(sa, toplevel_call_named_return_struct)
 {
 	cleanTestEnv();
-	// IT-2801: a top-level statement calling a Palan function with a struct-typed
+	// A top-level statement calling a Palan function with a struct-typed
 	// @!T named return used to see the pre-registered signature before step 2.5's
 	// struct renormalization ran, leaving value-type as unnormalized prim(Point)
 	// and crashing palan-sa. Struct pre-registration now happens in step 0, so
@@ -1439,7 +1439,7 @@ TEST(sa, toplevel_call_named_return_struct)
 TEST(sa, toplevel_call_struct_arg)
 {
 	cleanTestEnv();
-	// IT-2801 regression: same struct pre-registration path, but exercising a
+	// Regression: same struct pre-registration path, but exercising a
 	// struct-typed parameter (not just the return type) in a top-level call.
 	json jout = run_sa("../test/testdata/sa/137_toplevel_call_struct_arg.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -1534,7 +1534,7 @@ TEST(sa, cinclude_typedef_size_t)
 	json jout = run_sa("../test/testdata/sa/122_cinclude_typedef_size_t.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// size_t resolved via IT-2604's cinclude typedef bridge to a clean uint64,
+	// size_t resolved via the cinclude typedef bridge to a clean uint64,
 	// with no leftover "typedef-name" bookkeeping key.
 	const auto& decl = jout["statements"][0];
 	ASSERT_EQ(decl["stmt-type"], "var-decl");
@@ -1554,11 +1554,11 @@ TEST(sa, cinclude_typedef_size_t)
 
 TEST(sa, cinclude_typedefs)
 {
-	// IT-2026-09-16-3104: a header exporting a typedef but zero C functions
+	// A header exporting a typedef but zero C functions
 	// (unlike 122_cinclude_typedef_size_t.pa's size_t, which rides in on
 	// strlen()'s return type) must still have that typedef registered --
-	// the general rule this ticket implements, not the old
-	// signature-piggyback path.
+	// the general rule the dedicated ast.typedefs section implements, not
+	// the old signature-piggyback path.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/182_cinclude_typedefs.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -1574,8 +1574,8 @@ TEST(sa, cinclude_typedefs)
 
 TEST(sa, cinclude_typedef_struct_file)
 {
-	// `typedef struct _IO_FILE FILE;` (stdio.h) -- IT-2026-09-06-2905:
-	// registerTypedefAliasInType now resolves a struct-bottomed typedef the
+	// `typedef struct _IO_FILE FILE;` (stdio.h) --
+	// registerTypedefAliasInType resolves a struct-bottomed typedef the
 	// same way it already resolved a scalar one (size_t), so `@!FILE` reaches
 	// pntr(struct(_IO_FILE)) instead of the unresolved "user" type-kind that
 	// used to make PlnTypeRegistry::fromJson abort.
@@ -1605,8 +1605,8 @@ TEST(sa, cinclude_struct_arg)
 	ASSERT_TRUE(jout.is_object());
 
 	// Point (cinclude'd via a local header) resolves through the same
-	// structDefs_/calloc path as a native `type Point { ... }` -- IT-2701's
-	// c2ast "structs" capture reaches SA and registers "Point" before the
+	// structDefs_/calloc path as a native `type Point { ... }` -- c2ast's
+	// "structs" capture reaches SA and registers "Point" before the
 	// var-decl below is analyzed.
 	const auto& decl = jout["statements"][0];
 	ASSERT_EQ(decl["stmt-type"], "var-decl");
@@ -1672,9 +1672,9 @@ TEST(sa, cinclude_null_constant)
 	json jout = run_sa("../test/testdata/sa/127_cinclude_null_compat.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// IT-2608: NULL from cinclude <string.h> (via stddef.h) is registered into
+	// NULL from cinclude <string.h> (via stddef.h) is registered into
 	// constDecls_ and inlines to a lit-int 0 with pntr(void) value-type, which
-	// IT-2605's typeCompat rule accepts against strchr()'s pntr(int8) return.
+	// typeCompat's pntr(void) rule accepts against strchr()'s pntr(int8) return.
 	const auto& ifStmt = jout["statements"][1];
 	ASSERT_EQ(ifStmt["stmt-type"], "if");
 	const auto& cond = ifStmt["cond"];
@@ -1809,7 +1809,7 @@ TEST(sa, raw_ptr_field)
 
 TEST(sa, raw_ptr_prim_field)
 {
-	// Prerequisite fix for IT-2026-09-12-3008: a raw-ptr struct field whose
+	// Prerequisite fix: a raw-ptr struct field whose
 	// pointee is primitive (e.g. `@!int64 p;`), not another struct, used to
 	// have its pointee kind forgotten at registration (buildStructDef), so
 	// fieldValueType/resolveObjectChain always rebuilt it as pntr(struct(...))
@@ -2787,7 +2787,7 @@ TEST(sa, owned_struct_arr_field)
 TEST(sa, embed_prim_arr_struct_field_access)
 {
 	// type Buf { [4]$int64 data; }; Buf buf; 10->buf.data[0]; printf(buf.data[0],buf.data[1]);
-	// Covers: sa_expr_arr_index new 1D primitive embedded array field branch (IT-2507).
+	// Covers: sa_expr_arr_index's 1D primitive embedded array field branch.
 	// The "array" (buf.data) must be addr-only (FieldAccessExpr computes ptr+offset,
 	// not a load), and the arr-index result itself must be a plain scalar (not pntr)
 	// so the element is actually loaded (DerefLoadIdx), not just addressed.
@@ -2956,7 +2956,7 @@ TEST(sa, field_arr_readonly_ptr_slot)
 {
 	// type Point{...}; type Watch { [3]@Point observed; }; Point p; 99->p.x; Watch w;
 	// p->w.observed[0]; printf(w.observed[0].x);
-	// Covers: IT-2508 — same embed-ptr-arr shape as embed_ptr_arr_struct_field_access
+	// Covers: same embed-ptr-arr shape as embed_ptr_arr_struct_field_access
 	// (118) but with the non-mutable `@T` slot instead of `@!T`, confirming that
 	// assignment into the pointer slot itself is unaffected by the mutable flag
 	// (only write-through to the pointee's fields is restricted; see
@@ -2985,7 +2985,7 @@ TEST(sa, field_arr_readonly_ptr_slot)
 
 TEST(sa, void_ptr_compat)
 {
-	// IT-2605: pntr(void) parameters (e.g. memcpy's void* dest/src) must resolve
+	// pntr(void) parameters (e.g. memcpy's void* dest/src) must resolve
 	// and accept pntr(T) arguments without SA throwing on the unknown "void" prim.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/123_void_ptr_compat.pa");
@@ -2999,7 +2999,7 @@ TEST(sa, void_ptr_compat)
 
 TEST(sa, void_ptr_cmp)
 {
-	// IT-2605: comparing two pntr(void) results (e.g. memchr() == memchr()) goes
+	// Comparing two pntr(void) results (e.g. memchr() == memchr()) goes
 	// through the "cmp" expr's unguarded fromJson() calls, which previously threw.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/124_void_ptr_cmp.pa");
@@ -3042,7 +3042,7 @@ TEST(sa, const_decl_chain)
 
 TEST(sa, at_bang_plain_var_decl)
 {
-	// IT-2703: `@!Point view = original;` as a plain (non-field) local var decl.
+	// `@!Point view = original;` as a plain (non-field) local var decl.
 	// Two gaps had to be closed for this to work:
 	//  1. gen-ast: var_declaration's "type_expr ID '=' expression" alt (PlnParser.yy)
 	//     only whitelisted tk=="prim" for the initializer form; pntr-kind types
@@ -3084,7 +3084,7 @@ TEST(sa, at_bang_plain_var_decl)
 
 TEST(sa, at_plain_var_decl_readonly)
 {
-	// IT-2703: `@Point view = original;` (read-only, non-mutable) plain local var decl.
+	// `@Point view = original;` (read-only, non-mutable) plain local var decl.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/131_at_plain_var_decl_readonly.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -3106,7 +3106,7 @@ TEST(sa, at_plain_var_decl_readonly)
 
 TEST(sa, at_bang_bare_decl_then_assign)
 {
-	// IT-2703: `@!Point view;` with no initializer, followed by a plain
+	// `@!Point view;` with no initializer, followed by a plain
 	// arrow-assign (`original -> view;`) -- the other newly-enabled gen-ast
 	// path (bare var_declaration alt widened to accept tk=="pntr").
 	cleanTestEnv();
@@ -3170,7 +3170,7 @@ TEST(sa, addr_of_mutable_local)
 
 TEST(sa, addr_of_field_readonly)
 {
-	// `@int64 p = @s.x;` -- IT-2806: address-of on a struct field lowers to
+	// `@int64 p = @s.x;` -- address-of on a struct field lowers to
 	// field-access + addr-only:true (CalcAddr in codegen), not an "addr-of"
 	// node -- the field leaf has no local-variable storage of its own.
 	cleanTestEnv();
@@ -3265,7 +3265,7 @@ TEST(sa, addr_of_field_via_arr_index)
 
 TEST(sa, addr_of_ptr_local)
 {
-	// `@!int8 end; @!@!int8 pp = @!end;` -- IT-2026-09-12-3003: `@`/`@!` now
+	// `@!int8 end; @!@!int8 pp = @!end;` -- `@`/`@!`
 	// also accepts a pointer-to-primitive local (not just a primitive one),
 	// producing pntr-of-pntr. A struct local is still rejected (unchanged),
 	// since it's already pntr(struct T) itself.
@@ -3289,7 +3289,7 @@ TEST(sa, addr_of_ptr_local)
 
 TEST(sa, void_ptr_decl)
 {
-	// IT-2026-09-12-3008: `@!void p = malloc(8);` -- pntr(void) has always
+	// `@!void p = malloc(8);` -- pntr(void) has always
 	// been valid internally (it's what a C `void*` deserializes to), but
 	// sa_var_decl's pointee-name check rejected the *spelled* void pointee
 	// until isKnownPointeeTypeName. `@!int8 q = p;` exercises the existing
@@ -3321,7 +3321,7 @@ TEST(sa, void_ptr_decl)
 TEST(sa, addr_of_embed_field)
 {
 	// `@!Inner q = @!s.in;` where `in` is `$Inner` (inline embed) --
-	// IT-2026-09-12-3003: an embed field's own value-type is already
+	// An embed field's own value-type is already
 	// pntr(struct Inner) (the field IS the struct's inline storage), so
 	// taking its address must NOT double-wrap into pntr(pntr(struct Inner)).
 	cleanTestEnv();
@@ -3369,7 +3369,7 @@ TEST(sa, ptr_mutability_narrowing)
 
 TEST(sa, deref_scalar_widths)
 {
-	// `@!int32 p = @!x; 99 -> p[0]; int32 y = p[0];` -- IT-2805: `p[i]` is
+	// `@!int32 p = @!x; 99 -> p[0]; int32 y = p[0];` -- `p[i]` is
 	// specified as C-equivalent pointer subscript. A scalar element gives a
 	// real load/store (addr-only:false) with elem-size == sizeof(elem).
 	cleanTestEnv();
@@ -3406,7 +3406,7 @@ TEST(sa, deref_var_index)
 
 TEST(sa, deref_struct_ptr_field_rw)
 {
-	// `Point pt; 10 -> pt[0].x; int64 v = pt[0].x;` -- IT-2805: a pointer to a
+	// `Point pt; 10 -> pt[0].x; int64 v = pt[0].x;` -- a pointer to a
 	// struct dereferences to an address computation (Palan has no
 	// register-sized struct value), so `p[i]` yields pntr(struct) with
 	// addr-only:true and elem-size == sizeof(struct), reachable for both
@@ -3432,7 +3432,7 @@ TEST(sa, deref_struct_ptr_field_rw)
 
 TEST(sa, deref_readonly_struct_ptr_field_read)
 {
-	// `@Point ro = pt; int64 v = ro[0].x;` -- IT-2804's read-only enforcement
+	// `@Point ro = pt; int64 v = ro[0].x;` -- read-only enforcement
 	// only blocks writes; reading a field through a read-only struct pointer
 	// via `p[0].field` must still be allowed. Regression guard.
 	cleanTestEnv();
@@ -3447,7 +3447,7 @@ TEST(sa, deref_readonly_struct_ptr_field_read)
 
 TEST(sa, cinclude_arr_field_prim)
 {
-	// struct BufField { char name[16]; }; (cinclude'd) -- IT-2802: c2ast now reflects
+	// struct BufField { char name[16]; }; (cinclude'd) -- c2ast reflects
 	// C array declarators as an "arr" var-type instead of discarding them, so this
 	// field reaches buildStructDef's embed-arr/prim-leaf case exactly like a native
 	// `[16]$int8 name;` field would.
@@ -3455,8 +3455,8 @@ TEST(sa, cinclude_arr_field_prim)
 	json jout = run_sa("../test/testdata/sa/138_cinclude_arr_field_prim.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// BufField b; -> calloc(1, 16): confirms totalSize == 16 (was 8 before IT-2802,
-	// since "char name[16]" collapsed to a single int8 field).
+	// BufField b; -> calloc(1, 16): confirms totalSize == 16 (was 8 before the
+	// fix above, since "char name[16]" collapsed to a single int8 field).
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "b");
 	ASSERT_EQ(v["init"]["name"], "calloc");
@@ -3467,7 +3467,7 @@ TEST(sa, cinclude_arr_field_prim)
 TEST(sa, cinclude_arr_field_struct)
 {
 	// struct Point { int x; int y; }; struct Poly { struct Point pts[3]; }; (cinclude'd)
-	// -- IT-2802: struct-leaf array field. cFieldVarType normalizes the "strct" leaf
+	// -- struct-leaf array field. cFieldVarType normalizes the "strct" leaf
 	// inside the "arr" base-type to "prim" so buildStructDef's structDefs_ lookup
 	// (by type-name, not type-kind) finds "Point" and treats it as an embed-arr
 	// struct leaf, same as a native `[3]$Point pts;` field.
@@ -3486,9 +3486,9 @@ TEST(sa, cinclude_arr_field_struct)
 TEST(sa, cinclude_ptr_slot_arr_field)
 {
 	// struct Point { int x; int y; }; struct Slots { struct Point *pts[4]; long *vals[3]; };
-	// (cinclude'd) -- IT-2026-09-05-cinclude-ptr-slot-array-field: a C struct field
+	// (cinclude'd) -- a C struct field
 	// that is an inline array of pointer slots ("T *field[n];") is Palan's
-	// [n]@T / [n]@!T shape. Depends on IT-2026-09-05-c2ast-declarator-precedence:
+	// [n]@T / [n]@!T shape. Depends on a c2ast declarator-precedence fix:
 	// before that fix, c2ast parsed "T *field[n]" inverted as a single pointer
 	// (pntr(arr(...))), so this field silently registered at the wrong (too small)
 	// size instead of reaching this shape at all.
@@ -3508,7 +3508,8 @@ TEST(sa, cinclude_ptr_slot_arr_field)
 TEST(sa, cinclude_struct_stat_size)
 {
 	// cinclude <sys/stat.h>; stat s; -- the memory-safety validation target for
-	// IT-2802: struct stat's trailing "__syscall_slong_t __glibc_reserved[3]" (and
+	// the C-array-field fix above: struct stat's trailing
+	// "__syscall_slong_t __glibc_reserved[3]" (and
 	// other array fields) used to collapse to single scalars, so Palan's computed
 	// size was 128 instead of the real 144, meaning a Palan-allocated struct stat
 	// passed to stat(2) would overflow by 16 bytes.
@@ -3524,8 +3525,8 @@ TEST(sa, cinclude_struct_stat_size)
 
 TEST(sa, c_const_param_readonly_arg)
 {
-	// `ctime(@t)` -- IT-2026-08-31-c2ast-const-capture: C function arguments are
-	// now checked by ptrPermissionOk() too, so this must keep compiling: ctime's
+	// `ctime(@t)` -- C function arguments are
+	// checked by ptrPermissionOk() too, so this must keep compiling: ctime's
 	// `const time_t *` parameter normalizes (at the cinclude ingestion boundary,
 	// PlnSaInternal.h normalizeCType) to a mutable:false pntr, matching `@t`'s
 	// own mutable:false. Regression guard for every existing `@x`-into-const-C-arg
@@ -3541,7 +3542,7 @@ TEST(sa, c_const_param_readonly_arg)
 
 TEST(sa, addr_of_arr_elem)
 {
-	// IT-2807: `@!arr[2]` / `@arr[1]` on a scalar `[4]int64` array -- the
+	// `@!arr[2]` / `@arr[1]` on a scalar `[4]int64` array -- the
 	// scalar branch of sa_expr_arr_index (addr-only:false, prim elem) is
 	// the addressable case; addr-of re-tags it addr-only:true and wraps
 	// value-type in pntr(elem, mutable).
@@ -3605,8 +3606,8 @@ TEST(sa, addr_of_2d_elem)
 
 TEST(sa, ptr_decl_alias_pointee)
 {
-	// `type MyInt = int64; @MyInt p = @a;` -- IT-2902: deepNormalizePrimToStruct
-	// now re-applies resolveTypeAlias at every level of a pntr chain, so an
+	// `type MyInt = int64; @MyInt p = @a;` -- deepNormalizePrimToStruct
+	// re-applies resolveTypeAlias at every level of a pntr chain, so an
 	// alias used as a pointee resolves to its underlying type instead of
 	// reaching PlnTypeRegistry::fromJson unresolved (which used to abort with
 	// "unknown prim type-name: MyInt").
@@ -3622,7 +3623,7 @@ TEST(sa, ptr_decl_alias_pointee)
 
 TEST(sa, struct_type_alias)
 {
-	// `type Point {...}; type PT = Point; PT p;` -- IT-2026-09-06-2905 prereq
+	// `type Point {...}; type PT = Point; PT p;` -- prerequisite
 	// bug: sa_var_decl's dispatch used to key off the raw var-type's
 	// type-kind/type-name, so a struct reached only through an alias name
 	// ("PT") never matched structDefs_.count() and silently fell through to
@@ -3652,8 +3653,8 @@ TEST(sa, incomplete_struct_ptr)
 {
 	// struct Tag { int x; int cells[2][3]; }; (cinclude'd) -- "cells" is a 2D
 	// array field, a shape buildStructDef can't lay out (matches native
-	// `[n]$[m]T` struct fields, also unsupported). IT-2904: isSupportedCFieldType
-	// now downgrades the whole tag to an incomplete struct (opaque handle, C
+	// `[n]$[m]T` struct fields, also unsupported). isSupportedCFieldType
+	// downgrades the whole tag to an incomplete struct (opaque handle, C
 	// incomplete-type equivalent) instead of leaving it unregistered, so `Tag`
 	// is still a known type name -- unusable for a sized declaration, but usable
 	// through a non-owning pointer with no layout needed, so `@!Tag p;` declares
@@ -3673,12 +3674,12 @@ TEST(sa, incomplete_struct_ptr)
 TEST(sa, c_unsupported_sig_unused)
 {
 	// The header declares `union Val make_val(void);` (unsupported -- a bare
-	// union return type) alongside `int add(int a, int b);` (supported). IT-2906:
+	// union return type) alongside `int add(int a, int b);` (supported).
 	// normalizeCFuncSig tags the unsupported entry with "_unsupported-sig" at
 	// cinclude time but does not reject registration; only calling
 	// requireSupportedCFuncSig's guarded function fails. Calling only `add`
 	// must compile cleanly -- an unused unsupported C signature is inert, the
-	// same policy union/enum types already got before this ticket.
+	// same policy union/enum types already got.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/162_c_unsupported_sig_unused.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -3691,7 +3692,7 @@ TEST(sa, c_unsupported_sig_unused)
 TEST(sa, c_widen_arg)
 {
 	// `take64(a)` where `a` is int32 and the C parameter is `long` (int64).
-	// Before IT-2906, sa_expr_call's parameter-side fromJson call was guarded
+	// sa_expr_call's parameter-side fromJson call used to be guarded
 	// by `catch (const std::runtime_error&) {}`; removing that guard must not
 	// regress the implicit-widening path it happened to share code with --
 	// the argument must still be wrapped in a "convert" node.
@@ -3709,8 +3710,8 @@ TEST(sa, c_widen_arg)
 
 TEST(sa, c_global)
 {
-	// IT-2026-09-06-2908: `stderr` referenced as `fprintf`'s first argument
-	// resolves through the new cGlobalScopes -> "id" fallback chain (findVar
+	// `stderr` referenced as `fprintf`'s first argument
+	// resolves through the cGlobalScopes -> "id" fallback chain (findVar
 	// -> constDecls_ -> findCGlobal) into a "c-global" node, not a plain "id"
 	// (which would otherwise carry the raw name and no linker label).
 	// Covers: sa_expression "id" branch, findCGlobal fallback
@@ -3765,7 +3766,7 @@ TEST(sa, c_global_block_scope)
 
 TEST(sa, neg_lit_expected_type)
 {
-	// IT-2026-09-11-neg-literal-expected-type: `neg` did not propagate expectedType
+	// `neg` did not propagate expectedType
 	// to its operand (unlike the adjacent `bitnot`), so a negated literal in a
 	// narrower/float initializer always adopted the default int64/flo64 and then
 	// tripped the narrowing-initializer diagnostic -- e.g. `int32 a = -1;` was
@@ -3787,7 +3788,7 @@ TEST(sa, neg_lit_expected_type)
 
 TEST(sa, usual_arith_conv)
 {
-	// IT-2026-09-11-usual-arith-conv: typeCompat's ExplicitCast for a mixed
+	// typeCompat's ExplicitCast for a mixed
 	// signed/unsigned operand pair used to be silently ignored by sa_expr_arith,
 	// cmp, and call arguments -- the codegen result then had two different
 	// register widths in one instruction. This pins the usual-arithmetic-
@@ -3847,7 +3848,7 @@ TEST(sa, usual_arith_conv)
 }
 
 TEST(sa, struct_ret_c_call) {
-	// IT-2026-09-12-3005: fixes the SA->codegen contract for IT-3004's
+	// Pins the SA->codegen contract for
 	// C-function struct-by-value return in place -- `div_t d = div(7, 2);`
 	// must emit the calloc-backed var-decl for `d` followed by a bare `call`
 	// statement carrying a `struct-ret` descriptor (var/struct-name/size/
@@ -3884,7 +3885,7 @@ TEST(sa, struct_ret_c_call) {
 }
 
 TEST(sa, struct_ret_memory_class) {
-	// IT-2026-09-12-3005: MEMORY class (>16 bytes) takes a different SA-side
+	// MEMORY class (>16 bytes) takes a different SA-side
 	// path than the register classes -- `eightbytes` stays empty and the
 	// destination pointer is prepended to `args` as an ordinary first
 	// argument (the ABI's hidden-pointer convention), so codegen needs no
@@ -4003,7 +4004,7 @@ TEST(sa, struct_ret_embed_arr_sse_field) {
 }
 
 TEST(sa, c_callback_arg) {
-	// IT-2026-09-12-3007: `qsort(arr, 4, 4, cmp);` where `cmp` matches
+	// `qsort(arr, 4, 4, cmp);` where `cmp` matches
 	// qsort's `int (*)(const void*, const void*)` comparator exactly --
 	// normalizeCFuncSig marks the comparator parameter "_callback-param"
 	// (its inner signature is fully representable), and sa_func_ref_arg
@@ -4025,7 +4026,7 @@ TEST(sa, c_callback_arg) {
 }
 
 TEST(sa, c_callback_void) {
-	// IT-2026-09-12-3007: `atexit(on_exit_cb);` where both atexit's handler
+	// `atexit(on_exit_cb);` where both atexit's handler
 	// type and `on_exit_cb` return void -- exercises sa_func_ref_arg's
 	// cVoidRet==true path (distinct from c_callback_arg's non-void qsort
 	// comparator), proving a void-returning callback is accepted without a
@@ -4041,7 +4042,7 @@ TEST(sa, c_callback_void) {
 }
 
 TEST(sa, link_libs) {
-	// IT-2026-09-16-3107: the `link` clause IT-3106 put on the cinclude AST
+	// The `link` clause on the cinclude AST
 	// node is collected by SA into the sa.json root "libs" section. The
 	// cinclude statement itself is still consumed, as it always was.
 	cleanTestEnv();
@@ -4090,7 +4091,7 @@ TEST(sa, link_libs_absent) {
 }
 
 TEST(sa, link_libs_no_func_header) {
-	// IT-2026-09-16-3107: a header that declares zero functions produces a
+	// A header that declares zero functions produces a
 	// cinclude node with no "functions" key at all -- collecting `libs`
 	// must not be gated on that section. The link_marker_t declaration
 	// proves the header really was loaded.
@@ -4120,4 +4121,86 @@ TEST(sa, link_libs_in_block) {
 	ASSERT_EQ(jout["statements"][0]["stmt-type"], "block");
 	ASSERT_EQ(jout["libs"].size(), 1u);
 	ASSERT_EQ(jout["libs"][0], "m");
+}
+
+TEST(sa, syscall_decl) {
+	// A syscall declaration registers in plnFuncScopes but is a prototype
+	// with no body, so it does not appear in sa["functions"] -- only "main"
+	// does. Covers both a lit-int and a lit-uint syscall-number, and the
+	// 6-parameter ABI ceiling exactly at its limit (not over it).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/188_syscall_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_EQ(jout["functions"].size(), 1u);
+	ASSERT_EQ(jout["functions"][0]["name"], "main");
+}
+
+TEST(sa, syscall_call) {
+	// A call resolved to a syscall declaration gets func-type:"syscall" on
+	// its call node (not the "palan" that a normal user function call
+	// gets), routed through the same findPlnFunc/plnFuncScopes lookup.
+	// Covers both a call with args (write) and a no-arg call (getpid), and
+	// confirms the callee's ret-type still flows to value-type unchanged.
+	// syscall-number rides along on the call node itself (folded to an
+	// integer) since the declaration never reaches sa["functions"].
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/189_syscall_call.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& body = jout["functions"][0]["body"];
+
+	const auto& writeCall = body[1]["vars"][0]["init"];
+	ASSERT_EQ(writeCall["func-type"], "syscall");
+	ASSERT_EQ(writeCall["name"], "write");
+	ASSERT_EQ(writeCall["value-type"]["type-name"], "int64");
+	ASSERT_EQ(writeCall["syscall-number"], 1);
+
+	const auto& getpidCall = body[2]["vars"][0]["init"];
+	ASSERT_EQ(getpidCall["func-type"], "syscall");
+	ASSERT_EQ(getpidCall["name"], "getpid");
+	ASSERT_EQ(getpidCall["value-type"]["type-name"], "int32");
+	ASSERT_EQ(getpidCall["syscall-number"], 39);
+}
+
+static void genLibSaSyscallImport()
+{
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_syscall.pa -o out/lib_sa_syscall.pa.ast.json");
+}
+
+TEST(sa, import_syscall) {
+	// An exported syscall declaration's number is an unevaluated expression
+	// node in ast["export"] (gen-ast doesn't fold it); sa_import must run it
+	// through the same validateSyscallDecl fold that a local declaration
+	// gets via preregisterFunc, or the importing call node would carry a
+	// raw expression node instead of an integer.
+	cleanTestEnv();
+	genLibSaSyscallImport();
+	json jout = run_sa("../test/testdata/sa/190_import_syscall.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& writeCall = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(writeCall["func-type"], "syscall");
+	ASSERT_EQ(writeCall["name"], "write");
+	ASSERT_EQ(writeCall["syscall-number"], 1);
+
+	const auto& getpidCall = jout["statements"][2]["vars"][0]["init"];
+	ASSERT_EQ(getpidCall["func-type"], "syscall");
+	ASSERT_EQ(getpidCall["name"], "getpid");
+	ASSERT_EQ(getpidCall["syscall-number"], 39);
+}
+
+TEST(sa, import_syscall_alias) {
+	// sa_expr_member_call used to hardcode func-type to "palan" for any
+	// non-C callee, silently flattening an aliased call to an imported
+	// syscall declaration. Both paths now share applyPlnCalleeSig.
+	cleanTestEnv();
+	genLibSaSyscallImport();
+	json jout = run_sa("../test/testdata/sa/191_import_syscall_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& writeCall = jout["statements"][1]["vars"][0]["init"];
+	ASSERT_EQ(writeCall["func-type"], "syscall");
+	ASSERT_EQ(writeCall["name"], "write");
+	ASSERT_EQ(writeCall["syscall-number"], 1);
 }

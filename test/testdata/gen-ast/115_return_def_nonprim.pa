@@ -1,0 +1,17 @@
+type Pt { int32 x; int32 y; };
+
+func mkPtr() -> @!Pt {
+	@!Pt p;
+	return p;
+}
+
+func mkArr() -> [4]int32 {
+	[4]int32 a;
+	return a;
+}
+
+syscall sret() -> @void = 1;
+
+func main() -> int32 {
+	return 0;
+}

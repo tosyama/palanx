@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.31
+ver. 0.1.32
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -85,6 +85,10 @@ SA-annotated statements.
 - ret-type - Return variable type (single-return functions only)
 - rets - Return value list (multi-return functions only)
 - body\* - SA-annotated statement list (same rules as top-level statements below)
+
+Note: a `syscall` declaration is a prototype with no block, so it never appears in this
+`functions` array (local or imported). Its signature lives only in a call node that resolves to
+it -- see "call expression" below.
 
 Note: cinclude statements are not present in function bodies (they are top-level only).
 
@@ -524,7 +528,11 @@ Additional fields per expression kind:
                  "base-type":{"type-kind":"struct","type-name":"_IO_FILE"}}}
   ```
 - call expression:
-  - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions
+  - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions, "syscall"
+    for a call resolved to a `syscall` declaration (local or imported)
+  - syscall-number added (integer) when func-type is "syscall" -- the declaration's number,
+    folded to a literal by SA; the declaration itself never reaches this or any other module's
+    sa.json (see "Function model" above), so this is the only place the number survives
   - value-type added when the function has a single return type (ret-type in its definition)
   - value-types added when the function has multiple return values (rets in its definition);
     array of Variable type objects in declaration order

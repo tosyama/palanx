@@ -79,6 +79,11 @@ enum PlnSaMessageCode {
 	E_CallbackSignatureMismatch,	// arg1: Palan function name, arg2: C function name
 	E_DerefVoidPointer,		// no args
 	E_InvalidLinkLibName,		// arg1: the library name as written
+	E_SyscallNumberNotConstant,	// arg1: syscall name
+	E_SyscallNumberOutOfRange,	// arg1: syscall name, arg2: the number as written
+	E_SyscallTooManyParams,		// arg1: syscall name, arg2: parameter count
+	E_SyscallInvalidReturn,		// arg1: syscall name
+	E_SyscallUnsupportedParamType,	// arg1: syscall name, arg2: unsupported type display name
 };
 
 class PlnSaMessage

@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.31
+ver. 0.1.32
 
 \* - Required
 
@@ -19,26 +19,27 @@ Import file list
 
 Export declaration list
 -------------------------
-Each entry is a Function definition model (see below) for an `export func` declaration,
-with the `block` field omitted (signature only).
+Each entry is a Function definition model (see below) for an `export func` or `export syscall`
+declaration, with the `block` field omitted (signature only; a `syscall` declaration has none).
 
 - name\* - Function name string
-- func-type\* - Function type string: "palan"
+- func-type\* - Function type string: "palan" "syscall"
 - parameters\* - Parameter list
 - ret-type - Return variable type (single-return; omitted for void and multi-return)
 - rets - Return value list (multi-return; omitted for single-return and void)
+- syscall-number - Expression node (see Function definition model below; func-type "syscall" only)
 
 AST model
 ---------
-- functions - Function definition model list (Palan user-defined functions)
+- functions - Function definition model list (Palan user-defined functions and `syscall` declarations)
 - statements - Statement model list
 - constants - Constant definition model list (from `cinclude`; object-like `#define` macros recognized as a compile-time constant)
 
 Function definition model
 -------------------------
 - name\* - Function name string
-- func-type\* - Function type string: "palan" "c"
-- loc\* - Location Array (palan only)
+- func-type\* - Function type string: "palan" "c" "syscall"
+- loc\* - Location Array (palan, syscall only)
 
   1. **palan** - Palan user-defined function
      - export - Boolean, true if declared with `export` keyword (omitted when false)
@@ -50,6 +51,14 @@ Function definition model
   2. **c** - C function prototype (from `cinclude`)
      - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)
      - ret-type\* - Return variable type
+
+  3. **syscall** - Raw syscall declaration (a prototype with no block)
+     - export - Boolean, true if declared with `export` keyword (omitted when false)
+     - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters;
+       at most 6, checked by SA)
+     - ret-type - Return variable type (single-return only; omitted for void; SA rejects `rets`)
+     - syscall-number\* - Expression node for the syscall number, unevaluated by gen-ast; SA
+       requires it to be an integer literal expression and folds it to a plain integer
 
 Constant definition model
 --------------------------

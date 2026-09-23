@@ -1,11 +1,11 @@
 cinclude <sys/stat.h>;
 cinclude <stdio.h>;
 
-// IT-2026-09-06-2911: umask(0) makes the mkdir permission bits below
-// deterministic regardless of the environment's inherited umask -- without
-// this, st_mode & ACCESSPERMS after mkdir would vary by caller and the
-// expected output couldn't be pinned. Also exercises IT-2910's constant
-// folding on the sys/stat.h expression macros (S_IRWXU, ACCESSPERMS, ...).
+// umask(0) makes the mkdir permission bits below deterministic regardless
+// of the environment's inherited umask -- without this, st_mode &
+// ACCESSPERMS after mkdir would vary by caller and the expected output
+// couldn't be pinned. Also exercises constant folding on the sys/stat.h
+// expression macros (S_IRWXU, ACCESSPERMS, ...).
 uint32 inherited = umask(0);
 
 mkdir("/tmp/pln_157_dir", S_IRWXU | S_IRWXG);

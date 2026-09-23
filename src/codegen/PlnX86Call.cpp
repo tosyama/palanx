@@ -1,5 +1,5 @@
-/// x86-64 call emission: C calls, Palan calls, and Palan returns (ABI argument
-/// shuffling and return-value placement).
+/// x86-64 call emission: C calls, Palan calls, raw Linux syscalls, and Palan
+/// returns (ABI argument shuffling and return-value placement).
 ///
 /// @file PlnX86Call.cpp
 /// @copyright 2026 YAMAGUCHI Toshinobu
@@ -138,7 +138,7 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
         out << "\taddq $" << stack_space << ", %rsp\n";
     // Move return value(s) to destination(s). An ordinary scalar/pointer
     // return is one INTEGER (%rax) or SSE (%xmm0) dst; a struct-by-value
-    // return classified into eightbytes (IT-2026-09-12-3004) can add a
+    // return classified into eightbytes can add a
     // second dst of either class, consuming %rdx or %xmm1 next in that
     // class's own sequence -- SysV's <=16-byte register-return limit means
     // there is never a third of either. Each dst here is a freshly allocated
@@ -212,6 +212,43 @@ void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
             if (src_reg != d)
                 out << "\t" << movInstrForType(c.retTypes[j]) << " " << src_reg << ", " << d << "\n";
         }
+    }
+}
+
+// A raw Linux syscall: number in %rax, arguments in the syscall ABI's own
+// register table (%r10 in 4th position, not %rcx), and the kernel's raw %rax
+// result (a negative value is -errno, deliberately not translated). palan-sa
+// rejects more than 6 parameters, float parameters/returns and multi-value
+// returns, so there is no stack-overflow, XMM or multi-destination path to
+// mirror from emitInstrCallC.
+void PlnX86CodeGen::emitInstrCallSys(const CallSys& c, const RegMap& rm)
+{
+    BOOST_ASSERT(c.args.size() <= x86PhysRegs.syscallArgs.size());
+    BOOST_ASSERT(c.dsts.size() <= 1);
+
+    // Slot 3 is %r10, left unbound by PlnRegAlloc as emitter scratch
+    // (PhysRegs::scratch) -- which is also why queueing its move with the rest
+    // is hazard-free: no allocated VReg lives in %r10 or %r11, so no pending
+    // move can be sourced from either.
+    vector<RegMove> intMoves;
+    for (int j = 0; j < (int)c.args.size(); j++)
+        intMoves.push_back(makeIntArgMove(rm.at(c.args[j]), x86PhysRegs.syscallArgs[j]));
+    emitSafeRegMoves(out, intMoves, "%r11");
+
+    // Loaded after the shuffle: %rax is allocatable (PlnRegAlloc binds a single
+    // return value there), so it must not be written while an argument may
+    // still be read from it. movl keeps the immediate in the 32-bit form
+    // (palan-sa caps the number at UINT32_MAX) and zeroes the rest of %rax,
+    // which the kernel's entry path range-checks in full.
+    emitMovImm("%eax", VRegType::Int32, c.num);
+    out << "\tsyscall\n";
+
+    if (c.dsts.size() == 1 && rm.count(c.dsts[0])) {
+        const PhysLoc& dst = rm.at(c.dsts[0]);
+        string rax = sizedRegName("%rax", c.retTypes[0]);
+        string d   = srcOperand(dst);
+        if (rax != d)
+            out << "\t" << movInstrForType(c.retTypes[0]) << " " << rax << ", " << d << "\n";
     }
 }
 

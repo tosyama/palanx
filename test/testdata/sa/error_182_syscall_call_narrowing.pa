@@ -1,0 +1,7 @@
+syscall foo(int32 a) = 1;
+
+func main() -> int32 {
+	int64 x = 1;
+	foo(x);
+	return 0;
+}

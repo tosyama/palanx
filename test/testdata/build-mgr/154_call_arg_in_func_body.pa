@@ -1,11 +1,11 @@
 cinclude <stdio.h>;
 
-// IT-2026-09-11-regalloc-call-arg-in-func-body: a Palan function parameter passed
-// as a call argument from inside the function body, outside any loop. Existing
-// coverage (014_param_loop_call_arg.pa) only pins the loop-region case; this is
-// the straight-line case that a naive intArgs-register pre-bind check missed
-// entirely (crosses_call was computed against *other* calls, never against the
-// shuffle of the call the parameter is itself an argument to).
+// A Palan function parameter passed as a call argument from inside the
+// function body, outside any loop. Existing coverage
+// (014_param_loop_call_arg.pa) only pins the loop-region case; this is the
+// straight-line case that a naive intArgs-register pre-bind check missed
+// entirely (crosses_call was computed against *other* calls, never against
+// the shuffle of the call the parameter is itself an argument to).
 func direct(int64 x) {
     printf("direct=%ld\n", x);
 }

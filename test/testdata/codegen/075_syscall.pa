@@ -1,0 +1,13 @@
+syscall getpid() -> int32 = 39;
+syscall pwrite64(int32 fd, @void buf, uint64 count, int64 offset) -> int64 = 18;
+syscall exit_group(int32 code) = 231;
+
+func get_pid_wrap() -> int32 {
+    return getpid();
+}
+
+@void buf;
+int32 pid = getpid();
+int32 pid2 = get_pid_wrap();
+int64 n = pwrite64(1, buf, 13u, 4);
+exit_group(pid + pid2);

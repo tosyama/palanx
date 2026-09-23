@@ -50,8 +50,8 @@ TEST(gen_ast_error, syntax_error_with_loc) {
 }
 
 TEST(gen_ast_error, c2ast_failed) {
-	// IT-2026-09-16-3102: cinclude of a header palan-c2ast cannot read
-	// must be a fatal, diagnosed error rather than a silent no-op.
+	// cinclude of a header palan-c2ast cannot read must be a fatal,
+	// diagnosed error rather than a silent no-op.
 	// execute_c2ast() throws on failure (same runtime_error + main.cpp
 	// catch path as E_CouldNotOpenFile), so there is no source location
 	// prefix -- just the message, same style as could_not_open_file above.
@@ -62,7 +62,7 @@ TEST(gen_ast_error, c2ast_failed) {
 }
 
 TEST(gen_ast_error, link_keyword_typo) {
-	// IT-2026-09-16-3106: the token after import_as, when present, must
+	// The token after import_as, when present, must
 	// spell "link" -- a misspelling is a diagnosed error (E_ExpectedLinkKeyword),
 	// not silently mis-parsed as something else. Thrown from a parser action
 	// (same runtime_error + main.cpp catch path as c2ast_failed above), so no
@@ -74,10 +74,11 @@ TEST(gen_ast_error, link_keyword_typo) {
 }
 
 TEST(gen_ast_error, cinclude_sys_path_injection) {
-	// IT-2026-09-18-gen-ast-argv-spawn: execute_c2ast used to build a shell
-	// command string for a <...> cinclude path. Pre-fix, the shell ran the
-	// touch and palan-c2ast -s stdio.h (the substituted remainder) succeeded;
-	// post-fix the literal string is not a header palan-c2ast can find.
+	// execute_c2ast used to build a shell command string for a <...> cinclude
+	// path, letting shell metacharacters in the path escape the intended
+	// palan-c2ast argv (e.g. injecting a `touch PWNED`); now the literal
+	// string is passed as a single argv element, so it is just not a header
+	// palan-c2ast can find.
 	cleanTestEnv();
 	execTestCommand("rm -f PWNED");
 	string out = execTestCommand(
@@ -86,9 +87,22 @@ TEST(gen_ast_error, cinclude_sys_path_injection) {
 	ASSERT_FALSE(fs::exists("PWNED"));
 }
 
+TEST(gen_ast_error, syscall_as_identifier) {
+	// Unlike "link" (a context-dependent keyword), "syscall" is a reserved
+	// word everywhere, so using it as an identifier must be a diagnosed
+	// syntax error. Goes through bison's error path, so it has the usual
+	// ":line:" location prefix (fixture's offending line is line 3, after
+	// two leading comment lines).
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_006_syscall_as_identifier.pa");
+	ASSERT_NE(out.find(":3:"), string::npos);
+	ASSERT_NE(out.find("error:"), string::npos);
+}
+
 TEST(gen_ast_error, cinclude_local_path_injection) {
-	// IT-2026-09-18-gen-ast-argv-spawn: same as cinclude_sys_path_injection,
-	// for the "..." local-path branch (fs::path(base_dir) / resolved).
+	// Same shell-metacharacter-injection risk as cinclude_sys_path_injection
+	// above, for the "..." local-path branch (fs::path(base_dir) / resolved).
 	cleanTestEnv();
 	execTestCommand("rm -f PWNED");
 	string out = execTestCommand(

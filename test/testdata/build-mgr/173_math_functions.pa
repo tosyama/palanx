@@ -1,6 +1,5 @@
-// IT-2026-09-16-3109: broad end-to-end proof that the math.h functions
-// found by the pre-audit to live only in libm (not libc) actually work
-// through the `link` clause introduced in IT-2026-09-16-3106/3107/3108.
+// Broad end-to-end proof that the math.h functions living only in libm
+// (not libc) actually work through the `link` clause.
 // 171_link_math.pa already covers the minimal "libs reaches ld" case with
 // sqrt alone; this file exercises 13 representative libm functions,
 // including passing a variable and a nested call/expression as arguments.

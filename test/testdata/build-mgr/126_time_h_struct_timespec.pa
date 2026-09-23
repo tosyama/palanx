@@ -1,8 +1,8 @@
 cinclude <time.h>;
 cinclude <stdio.h>;
 
-// IT-2707: clockid_t typedef + CLOCK_REALTIME const import (v0.1.26 mechanism)
-// used together in real program logic for the first time at build-mgr level.
+// clockid_t typedef + CLOCK_REALTIME const import used together in real
+// program logic for the first time at build-mgr level.
 timespec ts;
 clock_gettime(CLOCK_REALTIME, ts);
 printf("%d\n", ts.tv_sec >= int64(0));

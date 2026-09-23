@@ -94,6 +94,7 @@ class PlnLexer;
 %token KW_ELSE	"else"
 %token KW_BREAK	"break"
 %token KW_CONTINUE	"continue"
+%token KW_SYSCALL	"syscall"
 %token OPE_LE	"<="
 %token OPE_GE	">="
 %token DBL_GRTR	">>"
@@ -118,7 +119,7 @@ class PlnLexer;
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
 %type <vector<json>>	var_declarations
-%type <json>	func_def return_def
+%type <json>	func_def func_item syscall_decl return_def
 %type <json>	return
 %type <vector<json>>	block paramaters expressions
 %type <json>	block_obj standalone_block block_body_items
@@ -302,14 +303,14 @@ stmt_list_e: expr_stmt
 
 stmt_list_b: block_stmt
 	{ $$.push_back(move($1)); }
-	| func_def
+	| func_item
 	{
 		if (!$1.count("not-impl"))
 			ast["ast"]["functions"].push_back(move($1));
 	}
 	| stmt_list_b block_stmt
 	{ $$ = move($1); $$.push_back(move($2)); }
-	| stmt_list_b func_def
+	| stmt_list_b func_item
 	{
 		$$ = move($1);
 		if (!$2.count("not-impl"))
@@ -317,7 +318,7 @@ stmt_list_b: block_stmt
 	}
 	| stmt_list_b ';' block_stmt
 	{ $$ = move($1); $$.push_back(move($3)); }
-	| stmt_list_b ';' func_def
+	| stmt_list_b ';' func_item
 	{
 		$$ = move($1);
 		if (!$3.count("not-impl"))
@@ -325,7 +326,7 @@ stmt_list_b: block_stmt
 	}
 	| stmt_list_e ';' block_stmt
 	{ $$ = move($1); $$.push_back(move($3)); }
-	| stmt_list_e ';' func_def
+	| stmt_list_e ';' func_item
 	{
 		$$ = move($1);
 		if (!$3.count("not-impl"))
@@ -447,7 +448,7 @@ body_list_b: block_stmt
 		$$ = {{"functions", json::array()}, {"body", json::array()}};
 		$$["body"].push_back(move($1));
 	}
-	| func_def
+	| func_item
 	{
 		$$ = {{"functions", json::array()}, {"body", json::array()}};
 		if (!$1.count("not-impl"))
@@ -458,7 +459,7 @@ body_list_b: block_stmt
 		$$ = move($1);
 		$$["body"].push_back(move($2));
 	}
-	| body_list_b func_def
+	| body_list_b func_item
 	{
 		$$ = move($1);
 		if (!$2.count("not-impl"))
@@ -469,7 +470,7 @@ body_list_b: block_stmt
 		$$ = move($1);
 		$$["body"].push_back(move($3));
 	}
-	| body_list_b ';' func_def
+	| body_list_b ';' func_item
 	{
 		$$ = move($1);
 		if (!$3.count("not-impl"))
@@ -480,7 +481,7 @@ body_list_b: block_stmt
 		$$ = move($1);
 		$$["body"].push_back(move($3));
 	}
-	| body_list_e ';' func_def
+	| body_list_e ';' func_item
 	{
 		$$ = move($1);
 		if (!$3.count("not-impl"))
@@ -533,46 +534,7 @@ inherit_var_decl: ID
 
 var_declaration: type_expr move_owner_r ID
 	{
-		string tk = $1.value("type-kind","");
-		bool is_valid_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& !$1["size-expr"].is_null()
-			&& $1["base-type"].value("type-kind","") == "prim";
-		bool is_unsized_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& $1["size-expr"].is_null();
-		bool is_pntr_arr = false;
-		if (tk == "arr" && $1.value("specifier","") == "raw" && !$1["size-expr"].is_null()) {
-			const json& bt = $1["base-type"];
-			if (bt.value("type-kind","") == "pntr" && bt.value("mutable",false) == true
-				&& bt.contains("base-type")) {
-				const json& ibt = bt["base-type"];
-				is_pntr_arr = ibt.value("type-kind","") == "arr"
-					&& ibt.value("specifier","") == "raw"
-					&& ibt.contains("size-expr") && ibt["size-expr"].is_null();
-			}
-		}
-		bool is_at_struct_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& !$1["size-expr"].is_null()
-			&& $1["base-type"].value("type-kind","") == "pntr"
-			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
-		bool is_multidim_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& !$1["size-expr"].is_null()
-			&& $1["base-type"].value("type-kind","") == "arr"
-			&& $1["base-type"].value("specifier","") == "raw"
-			&& !$1["base-type"]["size-expr"].is_null()
-			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
-		bool is_embed_arr = tk == "arr"
-			&& $1.value("specifier","") == "raw"
-			&& !$1["size-expr"].is_null()
-			&& $1.value("embedded", false) == true
-			&& $1["base-type"].value("type-kind","") == "arr"
-			&& $1["base-type"].value("specifier","") == "raw"
-			&& !$1["base-type"]["size-expr"].is_null()
-			&& $1["base-type"]["base-type"].value("type-kind","") == "prim";
-		if (!$2 && (tk == "prim" || tk == "pntr" || is_valid_arr || is_unsized_arr || is_pntr_arr || is_at_struct_arr || is_multidim_arr || is_embed_arr))
+		if (!$2 && isDeclarableVarType($1))
 			$$ = {{"name", $3}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};
@@ -895,6 +857,42 @@ func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj
 			$$ = {{"not-impl", true}};
 		}
 	}
+	;
+
+func_item: func_def
+	{ $$ = move($1); }
+	| syscall_decl
+	{ $$ = move($1); }
+	;
+
+// A syscall declaration binds a number to a name callable like any other
+// function (Linux syscall ABI, not System V -- see doc/SpecAndDesign.md).
+// "=" is otherwise unused between ')' and ';', so return_def's own optional
+// "= expr" tail (named-return initializer) is forced to fail at ';' instead
+// of surviving as a second GLR parse -- adding parameter defaults or an "="
+// expression operator would break this forced split.
+syscall_decl: do_export KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
+	{
+		bool all_ok = true;
+		for (auto& p : $5)
+			if (p.count("not-impl")) { all_ok = false; break; }
+		if (all_ok) {
+			$$ = {{"name", $3}, {"func-type", "syscall"}, {"parameters", move($5)}, {"syscall-number", move($9)}};
+			if ($7.contains("rets"))
+				$$["rets"] = move($7["rets"]);
+			else if ($7.contains("ret-type"))
+				$$["ret-type"] = move($7["ret-type"]);
+			LOC($$, @$);
+			if ($1) {
+				$$["export"] = true;
+				json sig = $$;
+				ast["export"].push_back(move(sig));
+			}
+		} else {
+			$$ = {{"not-impl", true}};
+		}
+	}
+	;
 
 paramaters: /* empty */
 	{ }
@@ -914,11 +912,7 @@ return_def: /* empty */
 	}
 	| ARROW type_expr
 	{
-		string tk2 = $2.value("type-kind","");
-		bool is_unsized_arr2 = tk2 == "arr"
-			&& $2.value("specifier","") == "raw"
-			&& $2["size-expr"].is_null();
-		if (tk2 == "prim" || is_unsized_arr2)
+		if (isDeclarableVarType($2))
 			$$["ret-type"] = move($2);
 	}
 	;

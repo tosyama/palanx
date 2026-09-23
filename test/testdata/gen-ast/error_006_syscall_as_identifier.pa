@@ -1,0 +1,3 @@
+// "syscall" is a reserved word (unlike "link", it is not context-dependent), so
+// using it as an identifier must be a diagnosed syntax error.
+int32 syscall = 1;

@@ -1132,9 +1132,9 @@ TEST(gen_ast, cinclude_local_header) {
 
 TEST(gen_ast, cinclude_constant) {
 	cleanTestEnv();
-	// IT-2608: c2ast exports object-like macro constants into ast.constants (IT-2607),
-	// but PlnParser.yy's cinclude rule only copied ast.functions into the cinclude stmt.
-	// This verifies the constants array is now copied through as well.
+	// c2ast exports object-like macro constants into ast.constants; this
+	// verifies PlnParser.yy's cinclude rule copies that constants array
+	// through onto the cinclude statement, not just ast.functions.
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/103_cinclude_constant.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
@@ -1157,7 +1157,7 @@ TEST(gen_ast, cinclude_constant) {
 
 TEST(gen_ast, cinclude_global) {
 	cleanTestEnv();
-	// IT-2907: c2ast exports file-scope "extern" object declarations into
+	// c2ast exports file-scope "extern" object declarations into
 	// ast.globals; this verifies PlnParser.yy's cinclude rule lifts that
 	// array onto the cinclude statement's "globals" field, same as it
 	// already does for functions/constants/structs.
@@ -1181,11 +1181,11 @@ TEST(gen_ast, cinclude_global) {
 }
 
 TEST(gen_ast, cinclude_global_only) {
-	// IT-2026-09-16-3102 (follow-up): a header with globals but no functions
-	// used to leave "functions": null on the cinclude statement (the lift
-	// unconditionally moved c_ast["ast"]["functions"], unlike the
-	// contains()-guarded constants/structs/globals). Now it must be
-	// omitted, same as the other three fields when absent.
+	// A header with globals but no functions used to leave "functions": null
+	// on the cinclude statement (the lift unconditionally moved
+	// c_ast["ast"]["functions"], unlike the contains()-guarded
+	// constants/structs/globals). Now it must be omitted, same as the other
+	// three fields when absent.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/110_cinclude_global_only.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1202,11 +1202,11 @@ TEST(gen_ast, cinclude_global_only) {
 }
 
 TEST(gen_ast, cinclude_typedefs) {
-	// IT-2026-09-16-3104 (gen-ast half): c2ast's IT-3103 ast.typedefs section
-	// is lifted onto the cinclude statement, same contains()-guarded pattern
-	// as functions/constants/structs/globals. Header declares zero functions
-	// (a my_size_t typedef only), so this also proves the lift is independent
-	// of the "functions" section's presence.
+	// c2ast's ast.typedefs section is lifted onto the cinclude statement,
+	// same contains()-guarded pattern as functions/constants/structs/globals.
+	// Header declares zero functions (a my_size_t typedef only), so this
+	// also proves the lift is independent of the "functions" section's
+	// presence.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/111_cinclude_typedefs.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1228,10 +1228,9 @@ TEST(gen_ast, cinclude_typedefs) {
 }
 
 TEST(gen_ast, cinclude_no_decl) {
-	// IT-2026-09-16-3102: a header that declares nothing (e.g. stdarg.h)
-	// makes palan-c2ast exit 0 with a JSON object that has no "ast" key.
-	// The cinclude fatal-error check must not mistake this no-op for a
-	// c2ast failure.
+	// A header that declares nothing (e.g. stdarg.h) makes palan-c2ast exit 0
+	// with a JSON object that has no "ast" key. The cinclude fatal-error
+	// check must not mistake this no-op for a c2ast failure.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/109_cinclude_no_decl.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1247,7 +1246,7 @@ TEST(gen_ast, cinclude_no_decl) {
 }
 
 TEST(gen_ast, void_ptr_type) {
-	// IT-2026-09-12-3008: @void/@!void spell C's void* directly. Same file
+	// @void/@!void spell C's void* directly. Same file
 	// also carries a bare "(void, int64 z) = myFunc(x);" tapple-decl slot
 	// discard (KW_VOID's original, sole use) to pin that it still parses --
 	// the two new type_expr productions must not shadow it.
@@ -1288,9 +1287,9 @@ TEST(gen_ast, void_ptr_type) {
 }
 
 TEST(gen_ast, cinclude_link) {
-	// IT-2026-09-16-3106: an optional `link` clause on cinclude collects
-	// library names into "libs" (string array), omitted when absent -- same
-	// contains()-guarded convention as functions/constants/structs/globals/typedefs.
+	// An optional `link` clause on cinclude collects library names into
+	// "libs" (string array), omitted when absent -- same contains()-guarded
+	// convention as functions/constants/structs/globals/typedefs.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/112_cinclude_link.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1315,7 +1314,7 @@ TEST(gen_ast, cinclude_link) {
 }
 
 TEST(gen_ast, link_as_identifier) {
-	// IT-2026-09-16-3106: "link" is a context-dependent keyword recognized
+	// "link" is a context-dependent keyword recognized
 	// only as `KW_CINCLUDE import_path import_as ID link_libs` where that ID
 	// spells "link". Everywhere else -- as a called C function (unistd.h
 	// really exports one named link()) or as a cinclude alias -- it must
@@ -1341,4 +1340,124 @@ TEST(gen_ast, link_as_identifier) {
 	}
 	ASSERT_TRUE(found_link_func);
 	ASSERT_TRUE(found_link_alias);
+}
+
+TEST(gen_ast, syscall_decl) {
+	// A "syscall" prototype declaration parses like func_def but carries an
+	// unevaluated "syscall-number" expression node (SA evaluates it and
+	// diagnoses signature constraints).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/114_syscall_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& funcs = jout["ast"]["functions"];
+	ASSERT_EQ(funcs.size(), 6u);  // write, exit, foo, bar, baz, main
+
+	bool found_write = false, found_exit = false, found_foo = false;
+	bool found_bar = false, found_baz = false;
+	for (auto& f : funcs) {
+		if (f["name"] == "write") {
+			ASSERT_EQ(f["func-type"], "syscall");
+			ASSERT_EQ(f["parameters"].size(), 3u);
+			ASSERT_TRUE(f.contains("ret-type"));
+			ASSERT_EQ(f["ret-type"]["type-name"], "int64");
+			ASSERT_EQ(f["syscall-number"]["expr-type"], "id");
+			ASSERT_EQ(f["syscall-number"]["name"], "SYS_write");
+			ASSERT_TRUE(f.value("export", false));
+			found_write = true;
+		}
+		if (f["name"] == "exit") {
+			ASSERT_EQ(f["func-type"], "syscall");
+			ASSERT_FALSE(f.contains("ret-type"));
+			ASSERT_FALSE(f.contains("rets"));
+			ASSERT_EQ(f["syscall-number"]["expr-type"], "id");
+			ASSERT_EQ(f["syscall-number"]["name"], "SYS_exit");
+			found_exit = true;
+		}
+		if (f["name"] == "foo") {
+			ASSERT_EQ(f["func-type"], "syscall");
+			ASSERT_EQ(f["parameters"].size(), 0u);
+			ASSERT_EQ(f["syscall-number"]["expr-type"], "lit-int");
+			ASSERT_EQ(f["syscall-number"]["value"], "42");
+			found_foo = true;
+		}
+		if (f["name"] == "bar") {
+			// GLR-critical case: "-> int64 n = SYS_bar" must resolve as a
+			// named return, not as return_def's own "ID = expr" initializer.
+			ASSERT_TRUE(f.contains("rets"));
+			ASSERT_EQ(f["rets"].size(), 1u);
+			ASSERT_EQ(f["rets"][0]["name"], "n");
+			ASSERT_EQ(f["syscall-number"]["name"], "SYS_bar");
+			found_bar = true;
+		}
+		if (f["name"] == "baz") {
+			// GLR-critical case: multi-return followed by the mandatory "=".
+			ASSERT_TRUE(f.contains("rets"));
+			ASSERT_EQ(f["rets"].size(), 2u);
+			ASSERT_EQ(f["syscall-number"]["name"], "SYS_baz");
+			found_baz = true;
+		}
+	}
+	ASSERT_TRUE(found_write);
+	ASSERT_TRUE(found_exit);
+	ASSERT_TRUE(found_foo);
+	ASSERT_TRUE(found_bar);
+	ASSERT_TRUE(found_baz);
+
+	// root "export" array carries syscall-number too (no symbol to link
+	// against; the importer needs the number itself).
+	ASSERT_TRUE(jout.contains("export"));
+	ASSERT_EQ(jout["export"].size(), 1u);
+	ASSERT_EQ(jout["export"][0]["name"], "write");
+	ASSERT_EQ(jout["export"][0]["func-type"], "syscall");
+	ASSERT_TRUE(jout["export"][0].contains("syscall-number"));
+
+	// nested declaration: lands in the enclosing block's "functions", not
+	// the global ast["ast"]["functions"] list.
+	bool found_main = false;
+	for (auto& f : funcs) {
+		if (f["name"] != "main") continue;
+		found_main = true;
+		auto& nested = f["block"]["functions"];
+		ASSERT_EQ(nested.size(), 1u);
+		ASSERT_EQ(nested[0]["name"], "getpid");
+		ASSERT_EQ(nested[0]["func-type"], "syscall");
+	}
+	ASSERT_TRUE(found_main);
+}
+
+TEST(gen_ast, return_def_nonprim) {
+	// return_def's "ARROW type_expr" form used to keep ret-type only for
+	// "prim" and unsized raw arrays, silently dropping any other
+	// representable type (pointer, fixed-size array, ...) and turning the
+	// function into an accidental void. isDeclarableVarType (shared with
+	// var_declaration's no-init form) fixes the whitelist.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/115_return_def_nonprim.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& funcs = jout["ast"]["functions"];
+	bool found_mkPtr = false, found_mkArr = false, found_sret = false;
+	for (auto& f : funcs) {
+		if (f["name"] == "mkPtr") {
+			ASSERT_TRUE(f.contains("ret-type"));
+			ASSERT_EQ(f["ret-type"]["type-kind"], "pntr");
+			found_mkPtr = true;
+		}
+		if (f["name"] == "mkArr") {
+			ASSERT_TRUE(f.contains("ret-type"));
+			ASSERT_EQ(f["ret-type"]["type-kind"], "arr");
+			found_mkArr = true;
+		}
+		if (f["name"] == "sret") {
+			ASSERT_TRUE(f.contains("ret-type"));
+			ASSERT_EQ(f["ret-type"]["type-kind"], "pntr");
+			found_sret = true;
+		}
+	}
+	ASSERT_TRUE(found_mkPtr);
+	ASSERT_TRUE(found_mkArr);
+	ASSERT_TRUE(found_sret);
 }

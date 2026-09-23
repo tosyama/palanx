@@ -1,5 +1,5 @@
-// IT-2026-09-16-3102: stdarg.h declares no functions, constants, structs or
-// globals, so palan-c2ast exits 0 with a JSON object that has no "ast" key.
-// This must remain a successful no-op cinclude, not a fatal error.
+// stdarg.h declares no functions, constants, structs or globals, so
+// palan-c2ast exits 0 with a JSON object that has no "ast" key. This must
+// remain a successful no-op cinclude, not a fatal error.
 cinclude <stdarg.h>;
 int32 x = 5;

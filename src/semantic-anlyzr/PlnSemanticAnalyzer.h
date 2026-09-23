@@ -122,30 +122,19 @@ class PlnSemanticAnalyzer {
 	json sa_expr_call(const json& expr);
 	json sa_expr_member_call(const json& expr);
 	// Analyze a call's argument list against the callee's parameter list
-	// (funcParams may be null for a call to a function with no parameters).
-	// Shared by sa_expr_call and sa_expr_member_call so both a plain call and
-	// an aliased `S.func(...)` call get identical per-argument handling
-	// (embedded-array inner-size checks, variadic promotion, pointer
-	// permission checks).
+	// (funcParams may be null for a function with no parameters).
 	json saCallArgs(const json& locNode, const json& args, const json* funcParams,
 	                bool isCFunc, const string& funcName);
 	// Analyze the argument in a `_callback-param` slot: only a bare reference
-	// to a Palan function is accepted, and its signature must be exactly
-	// ABI-identical to the C callback's inner signature. See PlnSaExpr.cpp.
+	// to a Palan function is accepted, matched by exact ABI identity.
 	json sa_func_ref_arg(const json& locNode, const json& arg,
 	                      const string& cFuncName, const json& param);
 	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
 	                           const json& saArg, const json& param, size_t argIdx);
-	// Shared narrowing rule for every binding site (var-decl initializer,
-	// assignment, array-assignment, return, field-assign): ImplicitWiden
-	// inserts a convert node; ExplicitCast is rejected with E_InvalidNarrowingConv
-	// unless `value` is an integer literal (which adopts toType instead of
-	// erroring); Incompatible/Identical pass `value` through unchanged.
+	// Shared narrowing rule for every binding site.
 	json convertForBinding(const json& locNode, json value, const PlnType* toType, const json& toTypeJson);
-	// Convert a single call argument to a parameter's type per argConvOk;
-	// diagnoses E_InvalidNarrowingConv if the argument doesn't fit the
-	// parameter's width without an explicit cast. Shared by sa_expr_call and
-	// sa_expr_member_call.
+	// Convert a single call argument to a parameter's type, diagnosing
+	// E_InvalidNarrowingConv if it doesn't fit without an explicit cast.
 	json convertCallArg(const json& locNode, json saArg, const json& paramVT);
 	json sa_expr_arr_index(const json& expr);
 	json sa_expression_stmt(const json& stmt);
@@ -178,6 +167,18 @@ class PlnSemanticAnalyzer {
 	void  registerTypeAliasChecked(const string& aliasName, const json& resolved);
 	void  registerTypedefAliasInType(json& vtype);
 	void  registerCFuncTypedefAliases(json& funcEntry);
+	// Shared function pre-registration sequence (normalize + validate + register)
+	// used by top-level, block-local, and function-nested func-defs alike.
+	void  preregisterFunc(const json& f, const json* loc_node = nullptr);
+	// Diagnose Linux syscall ABI constraints on a syscall declaration
+	// (funcDef must already be normalizeStructSig'd) and fold its
+	// "syscall-number" expression node into a plain JSON integer.
+	void  validateSyscallDecl(json& funcDef);
+	// Copy a resolved Palan/syscall callee's func-type, ret-type (as
+	// value-type) and, for a syscall, its folded syscall-number onto a call
+	// node. Shared by sa_expr_call and sa_expr_member_call so the two paths
+	// can't drift on which fields a syscall call carries.
+	void  applyPlnCalleeSig(json& sa_expr, const json& pFunc);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);

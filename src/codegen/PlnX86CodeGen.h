@@ -44,6 +44,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrConvert(const Convert& i, const RegMap& rm);
     void emitInstrCallC(const CallC& i, const RegMap& rm);
     void emitInstrCallPln(const CallPln& i, const RegMap& rm);
+    void emitInstrCallSys(const CallSys& i, const RegMap& rm);
     void emitInstrRetPln(const RetPln& i, const RegMap& rm, const vector<string>& usedCalleeSaved);
     void emitInstrCondJmp(const CondJmp& i, const RegMap& rm);
     void emitInstrMov(const Mov& i, const RegMap& rm);

@@ -20,6 +20,14 @@ static string readFile(const string& path)
     return ss.str();
 }
 
+static size_t countOccurrences(const string& text, const string& sub)
+{
+    size_t n = 0;
+    for (size_t p = text.find(sub); p != string::npos; p = text.find(sub, p + sub.size()))
+        n++;
+    return n;
+}
+
 TEST(codegen, printf_int_literal) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/002_printf_int_literal.sa.json";
@@ -718,9 +726,7 @@ TEST(codegen, array_buf) {
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("call malloc"), string::npos);
     ASSERT_NE(asm_text.find("call free"),   string::npos);
-    // Ptr64 return value stored with movq
     ASSERT_NE(asm_text.find("movq %rax,"),  string::npos);
-    // Ptr64 argument passed in %rdi
     ASSERT_NE(asm_text.find("%rdi"),        string::npos);
 }
 
@@ -733,9 +739,9 @@ TEST(codegen, arr_rw) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // arr-index read: DerefLoad emits movl (addr), dst
+    // arr-index read via DerefLoad
     ASSERT_NE(asm_text.find("movl (%r"), string::npos);
-    // arr-assign write: DerefStore emits movl src, (addr)
+    // arr-assign write via DerefStore
     ASSERT_NE(asm_text.find(", (%r"),    string::npos);
 }
 
@@ -749,7 +755,6 @@ TEST(codegen, deref_load_reg_addr) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // DerefLoad with register addr: movl (%rNN), %eax
     ASSERT_NE(asm_text.find("movl (%r"), string::npos);
 }
 
@@ -764,7 +769,7 @@ TEST(codegen, deref_store_reg_src) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // DerefStore with register src: movb %rNNb, (addr) — not scratch %al
+    // src comes from the register itself, not the scratch %al
     ASSERT_NE(asm_text.find("movb %r"), string::npos);
 }
 
@@ -892,6 +897,8 @@ TEST(codegen, if_or_complex) {
 }
 
 TEST(codegen, deref_idx_small_types) {
+    // Both register- and stack-slot-held index operands, for every small
+    // integer type, sign/zero-extend correctly before use as an array index.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/049_deref_idx_small_types.sa.json";
     string asmf = "out/049_deref_idx_small_types.s";
@@ -901,23 +908,16 @@ TEST(codegen, deref_idx_small_types) {
 
     string asm_text = readFile(asmf);
 
-    // Int8 reg: sign-extend from byte register
     ASSERT_NE(asm_text.find("movsbq %sil, %r11"),     string::npos);
-    // Int8 slot: sign-extend from stack slot
     ASSERT_NE(asm_text.find("movsbq -1(%rbp), %r11"), string::npos);
-    // Int16 reg: sign-extend from word register
     ASSERT_NE(asm_text.find("movswq %si, %r11"),      string::npos);
-    // Int16 slot: sign-extend from stack slot
     ASSERT_NE(asm_text.find("movswq -2(%rbp), %r11"), string::npos);
-    // Uint8 reg: zero-extend from byte register
     ASSERT_NE(asm_text.find("movzbl %sil, %r11d"),    string::npos);
-    // Uint8 slot: zero-extend from stack slot
     ASSERT_NE(asm_text.find("movzbl -8(%rbp), %r11d"), string::npos);
-    // Uint16 reg: zero-extend from word register
     ASSERT_NE(asm_text.find("movzwl %si, %r11d"),     string::npos);
-    // Uint16 slot: zero-extend from stack slot
     ASSERT_NE(asm_text.find("movzwl -8(%rbp), %r11d"), string::npos);
-    // Uint32 slot: zero-extend by movl from stack slot (upper 32 bits cleared by x86-64 movl)
+    // Uint32 needs no dedicated zero-extend mnemonic: x86-64 movl already
+    // clears the upper 32 bits of the destination register.
     ASSERT_NE(asm_text.find("movl -8(%rbp), %r11d"),  string::npos);
 }
 
@@ -932,10 +932,8 @@ TEST(codegen, embed_arr) {
     string asm_text = readFile(asmf);
     // Row stride multiply: inner-size(4) * sizeof(int32)(4) = 16
     ASSERT_NE(asm_text.find("imulq $16"), string::npos);
-    // Element read: DerefLoad with scale-4 indexed addressing
-    ASSERT_NE(asm_text.find("movl (%r"),  string::npos);
-    // Element write: DerefStore with scale-4 indexed addressing
-    ASSERT_NE(asm_text.find(", (%r"),     string::npos);
+    ASSERT_NE(asm_text.find("movl (%r"),  string::npos);  // element read: DerefLoad
+    ASSERT_NE(asm_text.find(", (%r"),     string::npos);  // element write: DerefStore
 }
 
 TEST(codegen, embed_arr_var_row) {
@@ -947,12 +945,9 @@ TEST(codegen, embed_arr_var_row) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // Variable-stride row access: runtime multiply (register × register, not immediate)
-    // scale_expr path: Mul{offset, idx, stride} → imulq with register/memory operand
+    // Variable-stride row access is a runtime multiply (register x register), not an immediate.
     ASSERT_NE(asm_text.find("imulq %r"),   string::npos);
-    // Address calculation: Add{dst, base, offset} → addq for addrOnly row pointer
     ASSERT_NE(asm_text.find("addq "),      string::npos);
-    // Element load: DerefLoadIdx with constant scale-4
     ASSERT_NE(asm_text.find("movl (%r"),   string::npos);
 }
 
@@ -965,11 +960,10 @@ TEST(codegen, float_in_block) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // FloLit inside block: blockVarStack_ tracks this VReg for scope cleanup
+    // Both a FloLit and an IntLit-as-float (flo64 y = 2) declared inside a
+    // block must be tracked by blockVarStack_ for scope cleanup.
     ASSERT_NE(asm_text.find(".double 3.14"), string::npos);
-    // IntLit-as-float inside block (flo64 y = 2): blockVarStack_ tracks this too
     ASSERT_NE(asm_text.find(".double 2"),    string::npos);
-    // Both float vars allocated on stack
     ASSERT_NE(asm_text.find("movsd"),        string::npos);
 }
 
@@ -982,18 +976,14 @@ TEST(codegen, field_access) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // DerefStore offset=0: movq ..., (%rXX)
-    ASSERT_NE(asm_text.find(", (%r"),  string::npos);
-    // DerefStore/DerefLoad offset=8: 8(%rXX)
-    ASSERT_NE(asm_text.find("8(%r"),   string::npos);
-    // DerefLoad offset=0: movq (%rXX), ...
-    ASSERT_NE(asm_text.find("(%r"),    string::npos);
+    ASSERT_NE(asm_text.find(", (%r"),  string::npos);  // DerefStore, offset 0
+    ASSERT_NE(asm_text.find("8(%r"),   string::npos);  // offset-8 field, load and store
+    ASSERT_NE(asm_text.find("(%r"),    string::npos);  // DerefLoad, offset 0
 }
 
-// Verify ptr-expr chained field access: r.tl.x / r.tl.y
-//   r holds a pointer to Point at offset 0 (ptr-expr loads r[0])
-//   ptr-expr field-assign: DerefLoad r[0] → ptr, DerefStore ptr[0]=10, ptr[8]=20
-//   ptr-expr field-access: DerefLoad r[0] → ptr, DerefLoad ptr[0] and ptr[8]
+// r.tl.x / r.tl.y: r holds a pointer to Point at offset 0, so each access
+// first DerefLoads r[0] to get the pointer, then DerefStores/DerefLoads
+// through it at offsets 0 and 8.
 TEST(codegen, ptr_field_access) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/058_ptr_field_access.sa.json";
@@ -1003,10 +993,8 @@ TEST(codegen, ptr_field_access) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // Ptr-expr loads tl from r at offset 0: (%rXX) pattern
     ASSERT_NE(asm_text.find("(%r"),  string::npos);
-    // Field y at offset 8: 8(%rXX) pattern
-    ASSERT_NE(asm_text.find("8(%r"), string::npos);
+    ASSERT_NE(asm_text.find("8(%r"), string::npos);  // field y, offset 8
 }
 
 // Verify that Mixed { int32 a; int64 b; } is laid out with C ABI offsets:
@@ -1022,13 +1010,10 @@ TEST(codegen, struct_c_abi_layout) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // Struct size: calloc(1, 16) — $16 passed as second argument
     ASSERT_NE(asm_text.find("$16,"),   string::npos);
-    // Field a (int32) at offset 0: movl instruction with no numeric offset prefix
     ASSERT_NE(asm_text.find("movl"),   string::npos);
-    ASSERT_NE(asm_text.find(", (%r"),  string::npos);  // write: movl src, (%rXX)
-    ASSERT_NE(asm_text.find("(%r"),    string::npos);  // read:  movl (%rXX), dst
-    // Field b (int64) at offset 8: movq instruction — proves 4-byte padding between a and b
+    ASSERT_NE(asm_text.find(", (%r"),  string::npos);
+    ASSERT_NE(asm_text.find("(%r"),    string::npos);
     ASSERT_NE(asm_text.find("8(%r"),   string::npos);
 }
 
@@ -1045,13 +1030,10 @@ TEST(codegen, struct_trailing_pad) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // Struct size = 16, not 12: trailing 4-byte pad aligns to max-align (8)
     ASSERT_NE(asm_text.find("$16,"),   string::npos);
     ASSERT_EQ(asm_text.find("$12,"),   string::npos);
-    // Field a (int64) at offset 0: movq with no numeric prefix
     ASSERT_NE(asm_text.find("movq"),   string::npos);
     ASSERT_NE(asm_text.find(", (%r"),  string::npos);
-    // Field b (int32) at offset 8: movl — proves b is NOT at offset 4
     ASSERT_NE(asm_text.find("movl"),   string::npos);
     ASSERT_NE(asm_text.find("8(%r"),   string::npos);
     ASSERT_EQ(asm_text.find("4(%r"),   string::npos);
@@ -1071,21 +1053,16 @@ TEST(codegen, struct_multi_pad) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // Struct size = 16
     ASSERT_NE(asm_text.find("$16,"),  string::npos);
-    // Field a (int8) at offset 0: movb with no numeric prefix
     ASSERT_NE(asm_text.find("movb"),  string::npos);
     ASSERT_NE(asm_text.find("(%r"),   string::npos);
-    // Field b (int32) at offset 4: movl — proves 3-byte pad inserted after int8
     ASSERT_NE(asm_text.find("movl"),  string::npos);
     ASSERT_NE(asm_text.find("4(%r"),  string::npos);
-    // Field c (int64) at offset 8: movq
     ASSERT_NE(asm_text.find("movq"),  string::npos);
     ASSERT_NE(asm_text.find("8(%r"),  string::npos);
 }
 
-// Six struct pointers exhaust the 5 callee-saved registers, forcing p6 to spill to
-// the stack. DerefStore and DerefLoad on p6 exercise the ptr_loc.isStack() paths.
+// Six struct pointers exhaust the callee-saved registers, forcing p6 to spill to the stack.
 TEST(codegen, deref_stack_spill) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/054_deref_stack_spill.sa.json";
@@ -1095,21 +1072,13 @@ TEST(codegen, deref_stack_spill) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // p6 pointer is stack-spilled: emitted as movq N(%rbp), %r10 before dereference
-    ASSERT_NE(asm_text.find("(%rbp), %r10"), string::npos);
-    // DerefStore via spilled pointer: movq ..., (%r10)
-    ASSERT_NE(asm_text.find(", (%r10)"),     string::npos);
-    // DerefLoad via spilled pointer: movq (%r10), ...
-    ASSERT_NE(asm_text.find("(%r10),"),      string::npos);
+    ASSERT_NE(asm_text.find("(%rbp), %r10"), string::npos);  // p6 reloaded before deref
+    ASSERT_NE(asm_text.find(", (%r10)"),     string::npos);  // DerefStore via reload
+    ASSERT_NE(asm_text.find("(%r10),"),      string::npos);  // DerefLoad via reload
 }
 
-// Six Widget struct pointers (each holding an embed-arr field, accessed via
-// w.tris[0].x) exhaust the callee-saved registers, forcing one pointer to
-// spill to the stack. w.tris[0] first resolves w.tris (an embed-arr field)
-// through a CalcAddr instruction; with the spilled pointer this exercises
-// emitInstrCalcAddr's ptr_loc.isStack() reload path (movq N(%rbp), %r10)
-// followed by a leaq off the reloaded register, distinguishing it from the
-// deref_stack_spill test's DerefLoad/DerefStore spill patterns above.
+// Six spilled Widget struct pointers force w.tris[0].x through the
+// address-only CalcAddr path (not DerefLoad/DerefStore) while spilled.
 TEST(codegen, calcaddr_stack_spill) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/059_calcaddr_stack_spill.sa.json";
@@ -1124,15 +1093,8 @@ TEST(codegen, calcaddr_stack_spill) {
     ASSERT_NE(asm_text.find("(%rbp), %r10\n\tleaq (%r10),"), string::npos);
 }
 
-// `x`'s value is produced by a CallC (get_val()), a general (non-literal)
-// initializer, which is normally free to be register-allocated. Its address is
-// then taken (`@x`) and passed to another CallC (use_ptr). This is the regression
-// test for PlnRegAlloc's isVar-unification design: without forcing address-taken
-// VRegs to a stack slot, x could land in a register and emitInstrLeaLocal would
-// either abort (BOOST_ASSERT) or -- if that guard were missing -- silently emit
-// wrong code. It also exercises PlnX86CodeGen's LeaLocal dispatch line itself:
-// since that dispatch chain is a manual if/else-if (not std::visit), an omitted
-// case would silently drop the instruction rather than fail to build.
+// Regression: an address-taken CallC result (`x`, then `@x`) must be forced
+// to a stack slot rather than left in a register.
 TEST(codegen, addr_of_forces_stack) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/060_addr_of_forces_stack.sa.json";
@@ -1142,18 +1104,14 @@ TEST(codegen, addr_of_forces_stack) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // x's CallC result is stored to a stack slot immediately (not left in %rax
-    // or moved into a callee-saved register)...
+    // x's CallC result goes straight to a stack slot (not %rax or a
+    // callee-saved register), and its address loads from that same slot
+    // into use_ptr's first argument register.
     ASSERT_NE(asm_text.find("call get_val\n\tmovq %rax, -8(%rbp)\n"), string::npos);
-    // ...and its address is then loaded from that exact stack slot into the
-    // first argument register for use_ptr.
     ASSERT_NE(asm_text.find("leaq -8(%rbp), %rdi\n"), string::npos);
 }
 
-// `x` is declared with no initializer at all (`int64 x;`), so it is never the
-// dst of any VInstr and has no def_idx -- this is PlnRegAlloc's isVar fallback
-// path (a permanent stack slot with no freePool reuse) for address-taken
-// variables that InitVar/InitVarF/CallC-style def-index tracking never sees.
+// An address-taken variable with no initializer (`int64 x;`) still gets a stack slot.
 TEST(codegen, addr_of_no_init) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/061_addr_of_no_init.sa.json";
@@ -1168,12 +1126,8 @@ TEST(codegen, addr_of_no_init) {
     ASSERT_NE(asm_text.find("leaq -8(%rbp), %rdi\n"), string::npos);
 }
 
-// Twelve addr-of results are all kept live simultaneously as call arguments
-// (six bind directly to argument registers, six more exhaust the five
-// callee-saved registers), forcing the twelfth LeaLocal *destination* itself
-// to spill to a stack slot -- exercises emitInstrLeaLocal's dst_loc.isStack()
-// branch (scratch %r11 + movq), the LeaLocal analog of emitInstrCalcAddr's
-// stack-spill branch covered by calcaddr_stack_spill above.
+// Twelve simultaneous addr-of results exhaust the registers, forcing the
+// twelfth LeaLocal destination itself to spill to the stack.
 TEST(codegen, addr_of_dst_stack_spill) {
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/062_addr_of_dst_stack_spill.sa.json";
@@ -1242,10 +1196,8 @@ TEST(codegen, float_to_uint) {
 }
 
 TEST(codegen, uint32_arith) {
-    // IT-2026-09-07: addInstrForType/mulInstrForType enumerated signed widths
-    // explicitly and fell through to the 64-bit default for Uint32, while
-    // movInstrForType/sizedRegName already sized Uint32 at 32 bits — mismatched
-    // instruction/register widths that the assembler rejects.
+    // Regression: Uint32 arithmetic used to emit 64-bit-width instructions
+    // (addq/imulq) against 32-bit-sized registers, which the assembler rejects.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/066_uint32_arith.sa.json";
     string asmf = "out/066_uint32_arith.s";
@@ -1261,10 +1213,8 @@ TEST(codegen, uint32_arith) {
 }
 
 TEST(codegen, uint_lit_narrow) {
-    // IT-2026-09-07: a uint32 variable declared directly from a lit-uint node
-    // (a `u`-suffixed literal) deserialized with no type, so InitVar always got
-    // Uint64 (aliased to the 64-bit movq/addq form) regardless of the declared
-    // 32-bit width.
+    // Regression: a uint32 initialized from a `u`-suffixed literal used to be
+    // treated as Uint64 regardless of its declared 32-bit width.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/067_uint_lit_narrow.sa.json";
     string asmf = "out/067_uint_lit_narrow.s";
@@ -1296,9 +1246,8 @@ TEST(codegen, bitwise_ops) {
 }
 
 TEST(codegen, c_global) {
-    // IT-2026-09-06-2908: a "c-global" expr-type node (e.g. `stderr`) lowers
-    // to LeaLabel+DerefLoad with no dedicated VInstr and no x86 change --
-    // the label is emitted verbatim, exactly like a str-literal's LeaLabel.
+    // A C global reference (e.g. `stderr`) lowers to the same LeaLabel+DerefLoad
+    // as a string literal, with no dedicated VInstr of its own.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/069_c_global.sa.json";
     string asmf = "out/069_c_global.s";
@@ -1312,11 +1261,9 @@ TEST(codegen, c_global) {
     ASSERT_NE(asm_text.find("call fprintf"), string::npos);
 }
 
-// IT-2026-09-12-3005: hand-written struct-ret fixtures for the SSE / mixed /
-// MEMORY eightbyte classes that IT-3004 added support for. No glibc function
-// returns these shapes, so `get_flo`/`get_mixed`/`get_big` are fixture-only
-// names that never resolve at link time -- `as` (assembling only, no link)
-// is enough to prove the emitted mnemonics/widths/registers are well-formed.
+// Fixture-only functions (get_flo/get_mixed/get_big, unresolved at link
+// time) cover every SysV struct-return eightbyte class, so these only
+// assemble the output, never link it.
 
 TEST(codegen, struct_ret_sse) {
     // 1 eightbyte, all SSE: struct { flo64 x; } returned in %xmm0 only.
@@ -1376,12 +1323,8 @@ TEST(codegen, struct_ret_memory) {
 }
 
 TEST(codegen, struct_ret_int_tail_widths) {
-    // eightbyteToVRegType (PlnDeserialize.cpp) maps a fractional-width
-    // INTEGER eightbyte (size 1/2/4, the only kind glibc's div/ldiv/lldiv
-    // never produce -- their eightbytes are always full 8 bytes) to
-    // Int8/Int16/Int32 -- exercises the movb/movw/movl store widths that a
-    // full-eightbyte-only real-function test (struct_ret_sse/mixed/memory
-    // above) cannot reach.
+    // Exercises movb/movw/movl store widths for a fractional-size (1/2/4-byte)
+    // INTEGER eightbyte, which no glibc function actually returns.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/073_struct_ret_int_tail_widths.sa.json";
     string asmf = "out/073_struct_ret_int_tail_widths.s";
@@ -1401,12 +1344,8 @@ TEST(codegen, struct_ret_int_tail_widths) {
 }
 
 TEST(codegen, func_ref) {
-    // IT-2026-09-12-3007: a "func-ref" argument (a Palan function passed as
-    // a C callback, e.g. qsort's comparator) lowers to a bare LeaLabel of
-    // the function's own name -- same shape as a string literal, no
-    // dereference, no new VInstr/x86 instruction. "cmp" is a fixture-only
-    // name that never resolves at link time; `as` (assembling only) is
-    // enough to prove the emitted mnemonic is well-formed.
+    // A Palan function passed as a C callback (func-ref, e.g. qsort's
+    // comparator) lowers to a bare LeaLabel of its own name, same as a string literal.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/074_func_ref.sa.json";
     string asmf = "out/074_func_ref.s";
@@ -1421,13 +1360,42 @@ TEST(codegen, func_ref) {
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/074_func_ref.o"), "");
 }
 
+TEST(codegen, syscall) {
+    // Raw Linux syscall ABI: number in %rax, the syscall argument table
+    // (%r10 in 4th position, never %rcx), and the `syscall` instruction.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/075_syscall.sa.json";
+    string asmf = "out/075_syscall.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // getpid in _start: result must survive the later pwrite64/exit_group
+    // calls, so it lands in a callee-saved register -- a real copy out of %eax.
+    ASSERT_NE(asm_text.find("movl $39, %eax\n\tsyscall\n\tmovl %eax, %"), string::npos);
+    // getpid inside get_pid_wrap, whose sole statement returns it directly:
+    // the result stays in %eax across both the CallSys result copy and
+    // RetPln, eliding both (no "movl %eax, %eax").
+    ASSERT_NE(asm_text.find("movl $39, %eax\n\tsyscall\n\tleave\n\tret\n"), string::npos);
+    // pwrite64: 4 arguments, the 4th in %r10; its result is never read, so
+    // no copy is emitted (the dead-dst guard elides it entirely).
+    ASSERT_NE(asm_text.find("movl $18, %eax\n\tsyscall\n"), string::npos);
+    ASSERT_NE(asm_text.find(", %rsi\n"),  string::npos);
+    ASSERT_NE(asm_text.find(", %r10\n"),  string::npos);
+    ASSERT_EQ(asm_text.find("%rcx"),      string::npos);
+    // exit_group: argument only, no result to copy back.
+    ASSERT_NE(asm_text.find("movl $231, %eax\n\tsyscall\n"), string::npos);
+    ASSERT_EQ(countOccurrences(asm_text, "\tsyscall\n"),    4u);
+    ASSERT_EQ(countOccurrences(asm_text, "\tcall "),        2u);  // get_pid_wrap + exit
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/075_syscall.o"), "");
+}
+
 TEST(codegen, elf_crt_glue_entry_object) {
-    // IT-2026-09-12-3009 (prereq): Palan links no crt startup objects (no
-    // crt1.o/crti.o/crtbegin.o), so the entry object must supply the ELF/libc
-    // glue those objects would otherwise provide -- __dso_handle (glibc's
-    // atexit forwards to __cxa_atexit(func, arg, __dso_handle)) and
-    // .note.GNU-stack (without it, ld marks the whole binary's stack
-    // executable as soon as any note-carrying libc object joins the link).
+    // Palan links no crt startup objects, so the entry object itself must
+    // supply __dso_handle and .note.GNU-stack, the ELF/libc glue those objects
+    // would otherwise provide.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/002_printf_int_literal.sa.json";
     string asmf = "out/002_elf_crt_glue.s";
@@ -1446,10 +1414,8 @@ TEST(codegen, elf_crt_glue_entry_object) {
 }
 
 TEST(codegen, elf_crt_glue_no_entry) {
-    // --no-entry means "this object is not the program's entry object", so it
-    // must NOT define __dso_handle (exactly one definition per link, derived
-    // from the same isEntry flag that gates .globl _start). The GNU-stack
-    // note is unconditional -- ld unions its inputs, so every object needs it.
+    // --no-entry means this object must not define __dso_handle (exactly one
+    // per link), but .note.GNU-stack stays unconditional.
     cleanTestEnv();
     string asmf = "out/002_no_entry_crt_glue.s";
 

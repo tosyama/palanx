@@ -147,7 +147,7 @@ int main(int argc, char* argv[])
 	vector<string> obj_files;
 	// Union of libraries requested by cinclude `link` clauses across every
 	// module. Declared here (not scoped to the aggregation block below) so it
-	// is still alive when the ld command line is built (IT-2026-09-16-3108).
+	// is still alive when the ld command line is built.
 	set<string> link_libs;
 
 	for (int i=0; i<ast_files.size(); i++) {

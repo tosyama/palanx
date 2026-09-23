@@ -211,14 +211,9 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
             && static_cast<const PrimType*>(pt->base)->name == PrimType::Name::Void;
         if (fromIsVoid || toIsVoid) return TypeCompat::Identical;  // pntr(void) is bidirectionally compatible with any pntr(T)
 
-        // pntr(int8) <-> pntr(uint8): the documented "C uint8* / char*
-        // convention" (PalanReference.md "Passing to C Functions") for
-        // string/byte-buffer interop -- a cinclude'd `char *`/`const char *`
-        // normalizes its pointee to int8 (see normalizeCType), while a
-        // Palan string literal and an array-decayed `[n]uint8` both use
-        // uint8. This is a pointer-level exception only: as scalar value
-        // types int8/uint8 remain fully distinct and still require an
-        // explicit cast (see the Prim/Prim branch above).
+        // pntr(int8) <-> pntr(uint8) is Identical for string/byte-buffer C
+        // interop (PalanReference.md "Passing to C Functions"); the scalar
+        // types themselves remain distinct and still need an explicit cast.
         if (pf->base->kind == PlnType::Kind::Prim && pt->base->kind == PlnType::Kind::Prim) {
             auto bf = static_cast<const PrimType*>(pf->base)->name;
             auto bt = static_cast<const PrimType*>(pt->base)->name;

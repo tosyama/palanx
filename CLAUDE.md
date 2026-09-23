@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Recognize the shapes a shortcut takes. A change is probably routing around the problem rather than fixing it if it: adds a case to a shared consumer so it tolerates an input shape that should never have reached it; adds an entry to a whitelist instead of asking why the whitelist exists; adds a later pass that re-normalizes what an earlier pass left un-normalized (a second normalization point, with pass ordering deciding which one wins); or threads a flag through so one caller can skip a path. Any of these can be the right call — but each needs a reason beyond "it makes the test pass", and the reason belongs in the ticket.
 - Prefer the design that keeps exactly one internal representation for a given concept over one that lets two equivalent representations coexist and pushes the burden of reconciling them onto every consumer. This is about representations of the *same* concept: distinctions that carry meaning — a read-only versus a mutable pointer, owned versus borrowed — are different concepts, and collapsing them into one representation drops an invariant instead of unifying anything.
 - If the properly-scoped fix looks bigger than the ticket at hand, say so and propose it rather than silently taking the smaller patch that only routes around the symptom. Record the judgment either way, including a deliberate decision to take the smaller patch.
+- Don't restate the same fact across a plan, ticket, or doc section. In source, comment only a WHY that isn't derivable from the code (a hidden constraint, a non-obvious workaround, a subtle invariant) — never comment WHAT the code does.
 
 ## Build Commands
 
@@ -25,28 +26,32 @@ make coverage-sa        # semantic analyzer only (faster)
 make coverage-reset     # full clean rebuild of build-cov/
 ```
 
+Coverage targets intentionally run only the end-to-end testers, not `sa-unit-tester`/`codegen-unit-tester` — the goal is measuring what's reachable through the real binaries and finding dead code; unit tests would exercise paths a real binary never reaches. `make` (no coverage) runs all seven testers.
+
 **Dependencies:** g++ (C++20), CMake 3.16+, Flex, Bison 3.8+, libboost-dev, libfl-dev, lcov
 
 ### Running Individual Test Suites
 
 ```bash
-cd build && bin/c2ast-tester       # C header → AST parser tests
-cd build && bin/gen-ast-tester     # Palan parser tests
-cd build && bin/sa-tester          # Semantic analyzer tests
-cd build && bin/codegen-tester     # Code generator tests
-cd build && bin/build-mgr-tester   # Build manager integration tests
+cd build && bin/c2ast-tester          # C header → AST parser tests
+cd build && bin/gen-ast-tester        # Palan parser tests
+cd build && bin/sa-tester             # Semantic analyzer tests
+cd build && bin/sa-unit-tester        # Semantic analyzer unit tests
+cd build && bin/codegen-tester        # Code generator tests
+cd build && bin/codegen-unit-tester   # Code generator unit tests
+cd build && bin/build-mgr-tester      # Build manager integration tests
 ```
 
 ### Running a Single Test
 
 ```bash
-cd build && bin/sa-tester --gtest_filter=sa.call_c_function_annotated
+cd build && bin/sa-tester --gtest_filter=sa.helloworld_sa
 ```
 
 ### Running Individual Tools
 
 ```bash
-cd build && bin/palan-c2ast -ds stdio.h                        # Parse system header to AST
+cd build && bin/palan-c2ast -s stdio.h                         # Parse system header to AST
 cd build && bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa
 cd build && bin/palan ../test/testdata/build-mgr/001_helloworld.pa
 ```
@@ -100,7 +105,8 @@ src/
 │   └── predefined.h     Built-in macro definitions (copied to build/bin/c2ast/)
 ├── gen-ast/         palan-gen-ast — Palan parser
 │   ├── PlnLexer.ll      Flex lexer rules
-│   └── PlnParser.yy     Bison grammar rules
+│   ├── PlnParser.yy     Bison grammar rules
+│   └── PlnGenAstC2Ast.* Invokes palan-c2ast for each cinclude
 ├── semantic-anlyzr/ palan-sa — semantic analyzer
 │   ├── PlnSemanticAnalyzer.*
 │   ├── PlnSaDecl.cpp
@@ -114,13 +120,17 @@ src/
 │   ├── PlnVProg.h       VReg / VInstr / VProg IR definitions
 │   ├── PlnVCodeGen.*    AST → VProg
 │   ├── PlnRegAlloc.*    VProg → RegMap (register allocator plug-in point)
-│   ├── PlnX86CodeGen.*  VProg → x86-64 AT&T assembly
+│   ├── PlnX86CodeGen.*  VProg + RegMap → AT&T assembly (dispatch)
+│   ├── PlnX86Arith.cpp  Arithmetic instruction emission
+│   ├── PlnX86Call.cpp   Call instruction emission (C calls, Palan calls, syscalls)
+│   ├── PlnX86Mem.cpp    Memory/address instruction emission
 │   ├── PlnDeserialize.* sa.json → Module
 │   └── PlnCodeGen.h     Abstract base class
-└── common/          Shared utilities (PlnFileUtils)
+└── common/          Shared utilities (PlnFileUtils, PlnProcess — argv-based child process spawning)
 test/
 ├── testdata/        Test input files (numbered sequentially per tool)
-└── test-base/       Shared test helpers (execTestCommand, cleanTestEnv)
+├── test-base/       Shared test helpers (execTestCommand, cleanTestEnv)
+└── *-tester/        Seven gtest binaries, one per suite listed above
 doc/
 ├── SpecAndDesign.md  Language spec and toolchain design
 ├── ASTSpec.md        JSON AST format specification (palan-gen-ast output)

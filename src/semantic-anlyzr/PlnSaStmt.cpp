@@ -80,14 +80,7 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInBlock, f["name"].get<string>()) << endl;
 			exit(1);
 		}
-		json funcEntry = f;
-		normalizeUnsizedArrSig(funcEntry);
-		validateEmbeddedParams(funcEntry);
-		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
-			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		normalizeStructSig(funcEntry);
-		validateNativeSig(funcEntry);
-		registerPlnFunc(funcEntry["name"], funcEntry, &f);
+		preregisterFunc(f, &f);
 	}
 
 	// analyze block-local func bodies -> appended to sa["functions"]
@@ -170,6 +163,9 @@ json PlnSemanticAnalyzer::sa_continue_stmt(const json& stmt)
 
 void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 {
+	// A syscall declaration is a prototype: no block to analyze, and nothing to emit.
+	if (funcDef.value("func-type", "") == "syscall") return;
+
 	// Save var scopes and use a fresh function scope instead
 	auto savedVarScopes      = varScopes;
 	auto savedCurrentFunc    = currentFunc_;
@@ -203,14 +199,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInFunction, f["name"].get<string>()) << endl;
 			exit(1);
 		}
-		json funcEntry = f;
-		normalizeUnsizedArrSig(funcEntry);
-		validateEmbeddedParams(funcEntry);
-		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
-			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		normalizeStructSig(funcEntry);
-		validateNativeSig(funcEntry);
-		registerPlnFunc(funcEntry["name"], funcEntry, &f);
+		preregisterFunc(f, &f);
 	}
 
 	// analyze inner func bodies -> appended to sa["functions"]
@@ -275,10 +264,8 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 {
 	json sa_target = sa_expression(stmt["target"]);
 	if (sa_target.value("addr-only", false)) {
-		// The element itself is an address computation, not a storage slot (e.g.
-		// `pts[i]` on an embedded `[n]$T` struct array, a 2D row `mat[i]`, or a
-		// `p[i]` dereference whose pointee is a struct) -- there is no pointer
-		// slot at this location to overwrite. Assign to its fields instead.
+		// The element itself is an address computation (e.g. a struct array
+		// element), not a storage slot to overwrite -- assign to its fields instead.
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AssignToWholeStructElem) << endl;
 		exit(1);
 	}

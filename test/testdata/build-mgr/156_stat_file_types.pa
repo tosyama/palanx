@@ -1,7 +1,7 @@
 cinclude <sys/stat.h>;
 cinclude <stdio.h>;
 
-// IT-2026-09-06-2911: proves stat/lstat/fstat all report the right S_IFMT bits
+// Proves stat/lstat/fstat all report the right S_IFMT bits
 // through three different acquisition paths (path lookup, symlink-aware path
 // lookup, and an already-open file descriptor), plus one nested-struct field
 // read (st_mtim.tv_sec). A mkfifo'd path is checked with lstat only -- the FIFO

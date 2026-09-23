@@ -1,0 +1,2 @@
+cinclude <sys/syscall.h>;
+syscall foo() = SYS_write;

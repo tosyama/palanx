@@ -7,6 +7,7 @@
 #include <fstream>
 #include <filesystem>
 #include <set>
+#include <stdexcept>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -316,11 +317,9 @@ bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
 
 json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 {
-	// The single walk that resolves type aliases and converts prim(Name) → struct(Name)
-	// at every level of a pntr chain (needed for struct types nested in pointer-of-pointer
-	// signatures like []@!T, and for alias pointees like @MyInt / @!size_t). resolveTypeAlias
-	// alone only inspects the top-level node, so it must be re-applied at each recursion step
-	// or an alias used as a pointee would reach PlnTypeRegistry::fromJson unresolved.
+	// Resolves type aliases and converts prim(Name) -> struct(Name) at every
+	// level of a pntr chain, re-applying resolveTypeAlias at each recursion
+	// step since it alone only inspects the top-level node.
 	json resolved = resolveTypeAlias(type);
 	if (resolved.value("type-kind","") == "pntr") {
 		json t = resolved;
@@ -359,17 +358,12 @@ void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 	}
 }
 
-// Structural-only counterpart to unrepresentableTypeName, scoped to native
-// Palan signatures. A cinclude'd C signature's unresolved "prim" type-name
-// (e.g. "flt128") is genuinely unrepresentable (see requireSupportedCFuncSig),
-// but a native signature's "prim" node can also be a not-yet-registered
-// struct name used as a pointee -- e.g. a forward-referenced type, or a plain
-// typo -- and that is deliberately left to the existing, more specific
-// per-use diagnostics (E_UnknownStructType / E_IncompleteStructType) rather
-// than rejected here. Only a type-kind fromJson can never build regardless of
-// name resolution (currently just "arr" -- gen-ast's type_expr grammar is the
-// only native producer, and unsizedArrToPntr only converts the unsized form)
-// is reported.
+// Structural-only counterpart to unrepresentableTypeName for native Palan
+// signatures: unlike a cinclude'd C signature, a "prim" node here may be a
+// not-yet-registered struct name (forward reference or typo), which is left
+// to the more specific E_UnknownStructType/E_IncompleteStructType diagnostics
+// rather than rejected here. Only a type-kind that can never build regardless
+// of name resolution (currently just "arr") is reported.
 static string unsupportedNativeSigTypeKind(const json& vt)
 {
 	string k = vt.value("type-kind", "");
@@ -404,6 +398,92 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 	}
 }
 
+// Diagnoses a "syscall" declaration against the Linux syscall ABI (<=6
+// GP-register args, no float, single raw-rax return) and folds its number
+// into a plain integer. The number must be a literal, not a symbolic
+// constant, since a constant's value can't be resolved across an import
+// boundary. Must run after normalizeStructSig.
+void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
+{
+	string funcName = funcDef["name"].get<string>();
+	const json& numNode = funcDef["syscall-number"];
+	string et = numNode.value("expr-type", "");
+	if (et != "lit-int" && et != "lit-uint") {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallNumberNotConstant, funcName) << endl;
+		exit(1);
+	}
+	string numStr = numNode["value"].get<string>();
+	uint64_t num = 0;
+	bool outOfRange = false;
+	try {
+		num = stoull(numStr);
+	} catch (const out_of_range&) {
+		outOfRange = true;
+	}
+	if (outOfRange || num > UINT32_MAX) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallNumberOutOfRange, funcName, numStr) << endl;
+		exit(1);
+	}
+	funcDef["syscall-number"] = num;
+
+	if (funcDef.contains("parameters") && funcDef["parameters"].size() > 6) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallTooManyParams, funcName,
+		                                  to_string(funcDef["parameters"].size())) << endl;
+		exit(1);
+	}
+	if (funcDef.contains("rets")) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallInvalidReturn, funcName) << endl;
+		exit(1);
+	}
+
+	// The Linux syscall ABI has no sub-word argument/return slot: every GP
+	// register is read/written in full, so a narrower declared type would
+	// leave stale high bits behind a partial-register move (e.g. movb into
+	// %dil) instead of the zero/sign-extension the ABI assumes.
+	auto isAbiUnrepresentable = [](const json& vt) {
+		if (vt.value("type-kind", "") != "prim") return false;
+		string tn = vt.value("type-name", "");
+		return tn == "flo32" || tn == "flo64"
+		       || tn == "int8" || tn == "int16" || tn == "uint8" || tn == "uint16";
+	};
+	string badType;
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"]) {
+			if (p.contains("var-type") && isAbiUnrepresentable(p["var-type"])) {
+				badType = typeDisplayName(p["var-type"]);
+				break;
+			}
+		}
+	if (badType.empty() && funcDef.contains("ret-type") && isAbiUnrepresentable(funcDef["ret-type"]))
+		badType = typeDisplayName(funcDef["ret-type"]);
+	if (!badType.empty()) {
+		cerr << locPrefix(funcDef)
+		     << PlnSaMessage::getMessage(E_SyscallUnsupportedParamType, funcName, badType) << endl;
+		exit(1);
+	}
+}
+
+// Shared by top-level, block-local (sa_block), and function-nested
+// (sa_function) func-defs -- the only difference between call sites is
+// whether a loc node is available for a duplicate-definition diagnostic.
+void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
+{
+	json funcEntry = f;
+	normalizeUnsizedArrSig(funcEntry);
+	validateEmbeddedParams(funcEntry);
+	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
+		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+	normalizeStructSig(funcEntry);
+	validateNativeSig(funcEntry);
+	if (funcEntry.value("func-type", "") == "syscall")
+		validateSyscallDecl(funcEntry);
+	registerPlnFunc(funcEntry["name"], funcEntry, loc_node);
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	this->inputFilePath = ast["original"];
@@ -413,12 +493,8 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	sa["alloc-shapes"]  = json::array();
 	sa["libs"]          = json::array();
 	enterScope();
-	// 0. Pre-scan top-level type-alias and struct-def declarations so function
-	//    signatures pre-registered in step 1 (and calls resolved during step 2)
-	//    see fully-resolved primitive/struct types instead of alias names or
-	//    unnormalized prim(Name) struct references. Single pass in source order
-	//    so alias-of-struct and struct-embeds-struct forward references resolve
-	//    the same way they would if processed only by step 2.
+	// 0. Pre-scan type-alias/struct-def declarations so function signatures
+	//    pre-registered in step 1 see fully-resolved types, not alias names.
 	if (ast["ast"].contains("statements"))
 		for (auto& stmt : ast["ast"]["statements"]) {
 			string t = stmt.value("stmt-type", "");
@@ -427,30 +503,16 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 		}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
-		for (auto& f : ast["ast"]["functions"]) {
-			// Single named return: synthesize ret-type for call resolution
-			json funcEntry = f;
-			normalizeUnsizedArrSig(funcEntry);
-			validateEmbeddedParams(funcEntry);
-			if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
-				funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-			normalizeStructSig(funcEntry);
-			validateNativeSig(funcEntry);
-			registerPlnFunc(funcEntry["name"], funcEntry);
-		}
+		for (auto& f : ast["ast"]["functions"])
+			preregisterFunc(f);
 	// 2. Process top-level statements (cinclude/import registered here,
-	//    visible in Palan function bodies processed next). type-alias/struct-def
-	//    statements are re-dispatched here too (harmless: both handlers just
-	//    overwrite the same map entry with an identical value).
+	//    visible in Palan function bodies processed next).
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);
-	// 4. Emit the libraries collected from cinclude `link` clauses. After
-	//    steps 2-3 because a cinclude may sit inside a block or a function
-	//    body, not only at top level; linking is a whole-program property,
-	//    so all of them land in the same root section regardless of the
-	//    scope their C declarations were visible in.
+	// 4. Emit the libraries collected from cinclude `link` clauses, after
+	//    steps 2-3 since a cinclude may sit inside a block or function body.
 	for (auto& lib : linkLibs_) sa["libs"].push_back(lib);
 	leaveScope();
 }
@@ -460,10 +522,8 @@ const json& PlnSemanticAnalyzer::result()
 	return sa;
 }
 
-// Register a typedef name as an alias for `resolved` in typeAliases_, same
-// first-wins/conflict-diagnosed policy as a native "type X = ...;" alias
-// (sa_type_alias): first registration wins, a later registration of the same
-// name with a different resolved type is E_ConflictingTypedef (fatal).
+// Registers a typedef name as an alias, same first-wins/conflict-diagnosed
+// policy as a native "type X = ...;" alias.
 void PlnSemanticAnalyzer::registerTypeAliasChecked(const string& aliasName, const json& resolved)
 {
 	auto it = typeAliases_.find(aliasName);
@@ -476,10 +536,10 @@ void PlnSemanticAnalyzer::registerTypeAliasChecked(const string& aliasName, cons
 }
 
 // Recursively find "typedef-name" hints (added by c2ast for scalar typedefs
-// like size_t) inside a type node, register the underlying primitive into
-// typeAliases_ so Palan code can reference the typedef name via IT-2602's
-// alias mechanism, and strip the hint so it doesn't leak into sa.json (e.g.
-// via sa_expr_call copying a C function's ret-type into a call's value-type).
+// like size_t) inside a type node, register the underlying primitive as a
+// type alias so Palan code can reference the typedef name, and strip the
+// hint so it doesn't leak into sa.json (e.g. via sa_expr_call copying a C
+// function's ret-type into a call's value-type).
 void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 {
 	string tk = vtype.value("type-kind", "");
@@ -489,14 +549,8 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 		vtype.erase("typedef-name");
 	} else if (tk == "strct" && vtype.contains("typedef-name") && vtype.contains("type-name")) {
 		// typedef struct Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
-		// as a type alias for the tag, same representation sa_type_alias uses for
-		// a native "type A = SomeStruct;" (prim(Tag) -- resolveTypeAlias /
-		// isStructType / deepNormalizePrimToStruct all key off that shape, so a
-		// C-typedef'd struct name resolves through the exact same path a native
-		// alias does). Erasing "typedef-name" here leaves the reference-site node
-		// itself as plain strct(Tag), which normalizeCType (called right after
-		// this, in normalizeCFuncSig) already turns into struct(Tag) -- nothing
-		// further to do at this node.
+		// as a type alias for the tag, same prim(Tag) representation a native
+		// "type A = SomeStruct;" alias uses.
 		string aliasName = vtype["typedef-name"].get<string>();
 		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
@@ -522,12 +576,9 @@ void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
 				registerTypedefAliasInType(p["var-type"]);
 }
 
-// A `link` library name is concatenated onto "-l" in the ld command line
-// (IT-2026-09-16-3108), so this is a well-formedness invariant of the "libs"
-// section, not merely shell-escaping: the name must be something `ld -l` can
-// consume, and a diagnostic pinned to the cinclude site beats an obscure
-// linker failure. A leading '-' stays allowed -- the name is pasted onto "-l"
-// with no separator, so it can never become a second ld option.
+// A `link` library name is concatenated onto "-l" with no separator, so this
+// checks it's something `ld -l` can actually consume, diagnosed here rather
+// than as an obscure linker failure.
 static bool isValidLinkLibName(const string& name)
 {
 	if (name.empty()) return false;
@@ -542,9 +593,6 @@ static bool isValidLinkLibName(const string& name)
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
-	// The `link` clause is source-level and independent of every section
-	// c2ast fills in below, so it is read first and unconditionally: a header
-	// that declares nothing at all still contributes its libraries.
 	if (stmt.contains("libs"))
 		for (auto& l : stmt["libs"]) {
 			string lib = l.get<string>();
@@ -556,25 +604,14 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			linkLibs_.insert(lib);
 		}
 
-	// Struct definitions must be registered before functions: function
-	// signature resolution (via PlnTypeRegistry::fromJson) needs structDefs_
-	// entries to already exist for any struct-pointer parameter/return type.
+	// Must run before functions: PlnTypeRegistry::fromJson needs structDefs_
+	// entries to already exist for a struct-pointer parameter/return type.
 	if (stmt.contains("structs"))
 		for (auto& s : stmt["structs"])
 			registerCStruct(s);
 
-	// Register every typedef the header defines, regardless of whether any C
-	// function/global in the header actually references it (IT-2026-09-16-3104):
-	// c2ast's ast.typedefs (IT-3103) already restricts entries to prim-bottomed
-	// and tagged-strct-bottomed shapes, so no re-filtering is needed here. Must
-	// come after structs (a tagged-strct-bottomed typedef's tag must already be
-	// in structDefs_) and before functions/globals, whose own
-	// registerTypedefAliasInType calls below register the exact same shape for
-	// typedefs actually referenced in a signature -- redundant but harmless,
-	// since registerTypeAliasChecked treats a repeat of an identical value as a
-	// no-op. Those per-reference-site calls are still needed independently of
-	// this loop: they strip the "typedef-name" hint from the reference-site
-	// node itself, which this loop does not touch.
+	// Covers a typedef no C function/global below actually references, which
+	// registerTypedefAliasInType's per-reference-site calls wouldn't reach.
 	if (stmt.contains("typedefs"))
 		for (auto& td : stmt["typedefs"]) {
 			const json& vt = td["var-type"];
@@ -582,10 +619,6 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 				{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
 		}
 
-	// Globals, functions and constants are independent sections -- a header
-	// exporting only some of them (e.g. an alias-only header with no
-	// functions, or a function-less header like limits.h with only
-	// constants) must still have each present section registered.
 	if (stmt.contains("globals"))
 		for (auto& g : stmt["globals"]) {
 			json entry = g;
@@ -624,7 +657,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			                     {"value-type", c["value-type"]}};
 		}
 	}
-} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+} // LCOV_EXCL_BR_LINE
 
 static bool is_absolute(filesystem::path &path)
 {
@@ -671,6 +704,8 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets")
 				&& funcEntry["rets"].size() == 1)
 			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
+		if (funcEntry.value("func-type", "") == "syscall")
+			validateSyscallDecl(funcEntry);
 
 		if (hasAlias) {
 			currentScope[alias][fname] = funcEntry;
