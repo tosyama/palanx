@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.32
+ver. 0.1.33
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -110,13 +110,15 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   registers the same alias a second time as a side effect of resolving that
   node; this is a harmless no-op re-registration (same name, same resolved
   type) whose real job is stripping the hint from that node so it never
-  reaches sa.json. Object-like-macro constants (`constants`) are registered
-  into the const table described below, likewise never appearing in sa.json.
-  `functions`, `globals`, `constants`, `structs` and `typedefs` are
+  reaches sa.json. Object-like-macro constants are no longer an SA concern as
+  of v0.1.33: every reference is already folded to a typed `lit-int` by
+  gen-ast (ASTSpec.md's Constant definition model and `lit-int` entries), so
+  a `cinclude` statement never carries a `constants` field by the time SA
+  sees it, and SA has no macro-name table of its own.
+  `functions`, `globals`, `structs` and `typedefs` are
   independent sections of the header's AST -- a header exporting only some of
-  them (e.g. a function-less header like `limits.h` with only `constants`, or
-  `stdint.h` with only `typedefs`) still has each present section registered;
-  none is gated on another's presence. A cinclude's `libs` (ASTSpec.md's
+  them (e.g. `stdint.h` with only `typedefs`) still has each present section
+  registered; none is gated on another's presence. A cinclude's `libs` (ASTSpec.md's
   Statement model, from a `link` clause) is handled differently from the
   sections above: instead of being registered into a table and discarded, each
   name is validated (`E_InvalidLinkLibName` on an invalid one) and added to a
@@ -125,7 +127,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   -- the cinclude appears in, since linking is a whole-program property with
   no lexical scope.
   C global variables (see ASTSpec.md's "Global variable model", the header's
-  `globals` list) are registered the same way as constants and typedefs, not
+  `globals` list) are registered the same way as typedefs, not
   like C functions: always unqualified, even under `cinclude ... as S;`
   (only `S.func(...)` calls require the alias qualifier). A registered global
   is read-only from Palan -- assigning to it (`E_CGlobalNotAssignable`) or
@@ -289,7 +291,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
 - value-type - Resolved Variable type object (same structure as var-type in ASTSpec.md).
   Present on all expression kinds except bare call with no return type.
   - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
-    defaults to int64 when no expected type is available
+    defaults to int64 when no expected type is available. Exception: an AST `lit-int` that
+    already carries a `value-type` (ASTSpec.md's `lit-int` entry — gen-ast's in-place
+    substitute for a cinclude'd macro-constant reference) keeps that type as-is; the context's
+    expected type never overrides it, since it was fixed by the C declaration, not by where the
+    reference appears
   - lit-uint: adopts the expected uint type when in a uint-typed context (e.g. `uint32 x = 1u;` → uint32);
     defaults to uint64 when no expected uint type is available
   - lit-flo: adopts flo32 or flo64 when used in a float-typed context (e.g. `flo32 y = 1.5;` → flo32);
@@ -635,11 +641,14 @@ E_InvalidNarrowingConv, the same message a binding site uses. A pointer/struct a
 unaffected by this rule (`argConvOk` only applies between two Prim types) and keeps its existing
 `ImplicitWiden`-only check plus `checkArgPtrPermission`.
 
-A bare integer-literal argument (`lit-int`/`lit-uint`) adopts the parameter's type directly (SA
-passes the parameter type down as the literal's `expectedType`) rather than defaulting to
-int64/uint64 and then being checked for narrowing — this is what lets `add(1, 2)` bind to
-`int32` parameters and `mkdir(path, S_IRWXU)` bind to a `uint32`-typed `mode_t` parameter without
-an explicit cast.
+A bare integer-literal argument (`lit-int`/`lit-uint`) without its own `value-type` adopts the
+parameter's type directly (SA passes the parameter type down as the literal's `expectedType`)
+rather than defaulting to int64/uint64 and then being checked for narrowing — this is what lets
+`add(1, 2)` bind to `int32` parameters without an explicit cast. A macro-folded `lit-int` (see
+above) keeps its own type instead and goes through `argConvOk` like any other typed argument —
+this is what lets `mkdir(path, S_IRWXU)` bind `S_IRWXU`'s `int32` to a `uint32`-typed `mode_t`
+parameter via the same-rank signedness reinterpretation described above, without an explicit
+cast.
 - `pntr(T)` and `pntr(T, mutable=true)` are treated as `Identical`; base-type match is sufficient
   for arr-assign target type checking. `mutable` is a write-permission attribute, not part of
   type identity, so `typeCompat` never inspects it.

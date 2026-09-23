@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.32
+**Version:** v0.1.33
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -399,15 +399,16 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 ### Macro Constants
 
 - An object-like `#define` macro whose body folds down to a single compile-time integer value is
-  automatically imported as a Palan `const` (see [Constant Declarations](#21-constant-declarations))
-  the moment the header is cincluded. This covers a bare integer literal, a pointer-cast of one
-  (e.g. `#define NULL ((void *)0)`), and an arithmetic or bitwise expression built from
-  `| & ^ << >> + - * / %` over such forms (e.g. `sys/stat.h`'s `S_IRWXU`, defined as
-  `(S_IREAD|S_IWRITE|S_IEXEC)`) — including one that references another already-defined macro
-  (`#define S_IFDIR __S_IFDIR`).
+  usable by name from Palan the moment the header is cincluded — not as an imported symbol, but
+  as a compile-time text substitution: every later reference to the name is replaced with the
+  folded literal value, the same way the C preprocessor itself would substitute it. This covers a
+  bare integer literal, a pointer-cast of one (e.g. `#define NULL ((void *)0)`), and an
+  arithmetic or bitwise expression built from `| & ^ << >> + - * / %` over such forms (e.g.
+  `sys/stat.h`'s `S_IRWXU`, defined as `(S_IREAD|S_IWRITE|S_IEXEC)`) — including one that
+  references another already-defined macro (`#define S_IFDIR __S_IFDIR`).
 - A macro whose body doesn't fold this way — a function-like macro referenced without a call
   (e.g. `S_ISDIR`, which takes an argument), a string literal, a relational/equality/logical/
-  ternary expression, or a reference to an identifier that never resolves — is not imported.
+  ternary expression, or a reference to an identifier that never resolves — is left untouched.
   Referencing such a name from Palan is an ordinary `Undefined function`/`Undefined variable`
   diagnostic, not a compiler crash:
 
@@ -418,7 +419,7 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   if (S_ISDIR(st.st_mode)) { ... }   // error: Undefined function 'S_ISDIR'
   ```
 
-  `S_IFMT`/`S_IFDIR` and similar bare constants *are* imported, so the same check can be written
+  `S_IFMT`/`S_IFDIR` and similar bare constants *do* fold, so the same check can be written
   directly with a bitwise AND (see [Expressions](#5-expressions)):
 
   ```palan
@@ -435,15 +436,33 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   `NULL` is a generic pointer value: it is compatible with and can be compared (`==`/`!=`)
   against any pointer-typed value, including C function return values, `[]T` array
   pointers, and struct pointer fields.
-- An imported constant's type is always signed — `int32` or `int64`, sized by the value's
+- A macro constant's own type is always signed — `int32` or `int64`, sized by the value's
   magnitude — never unsigned, regardless of what the resulting value is used for. `S_IFMT` is
   `int32`; when `st.st_mode & S_IFMT` above comes out `uint32`, that is the [usual arithmetic
   conversion](#3-type-system) rule for `&` applying to a `uint32`/`int32` pair, not a property of
-  the constant itself.
-- If multiple cincluded headers introduce the same constant name, the first registration wins
-  (silent deduplication).
-- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported constants — they are
-  always registered globally. Only C function calls require the `X.` qualifier.
+  the constant itself. A macro constant's folded type also passes an [argument
+  conversion](#5-expressions) unchanged where a narrower plain literal would instead adopt the
+  parameter's type — e.g. `sys/stat.h`'s `mkdir(path, S_IRWXU)` binds `S_IRWXU`'s `int32` to the
+  `uint32`-typed `mode_t` parameter via same-rank signedness reinterpretation, not by `S_IRWXU`
+  being re-typed to `uint32`.
+- Substitution is text-order only, not lexically scoped like a cincluded C function or `const`:
+  a reference resolves against whichever cincluded header defines the name first, textually
+  before that reference, anywhere in the rest of the file — including past the end of the block
+  the `cinclude` itself appears in. A reference that textually precedes every cincluding
+  `cinclude` is left unresolved (`Undefined function`/`Undefined variable`), even if a later
+  `cinclude` in the same file would otherwise define it.
+- If multiple cincluded headers define the same name, the first one (by source position) wins;
+  later `cinclude`s defining the same name are silently ignored for that name.
+- A macro constant silently takes priority over any same-named variable, parameter, or `const` in
+  scope at the reference site — the opposite of the const/variable [shadowing
+  rule](#21-constant-declarations), and undiagnosed either way.
+- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace macro constants — they fold the
+  same regardless of alias. Only C function calls require the `X.` qualifier.
+- A macro constant is not visible across an `import`/`export` boundary — it is purely a
+  same-file, parse-time substitution. A value built from one (e.g. an `export syscall`'s number,
+  see [Raw Syscalls](#23-raw-syscalls)) is already a plain literal by the time it could be
+  exported, so the folded *value* does cross that boundary even though the macro *name* never
+  does.
 
 ### C Global Variables
 
@@ -1597,9 +1616,18 @@ syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = 1;
 sys_write(1, "hello, syscall\n", 15u);
 ```
 
+A cinclude'd macro constant works here too, since it folds to a literal before this point is
+checked (see [Macro Constants](#macro-constants)):
+
+```palan
+cinclude <sys/syscall.h>;
+
+syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
+```
+
 - Syntax: `[export] syscall name(parameters) [-> type] = number;`, where `number` must be an
-  integer literal (0 to 2^32-1) — a symbolic constant (e.g. a cinclude'd `SYS_write`) or any
-  other expression is not allowed.
+  integer literal (0 to 2^32-1) — a bare literal or a cinclude'd macro constant that folds to
+  one; any other expression is not allowed.
 - Once declared, the name is called exactly like a normal function, including from other
   functions or across an `import`/`export` boundary (see §12).
 - A block-scoped `syscall` declaration is visible only within that block, same as a nested

@@ -1471,6 +1471,19 @@ TEST(gen_ast, macro_fold_backref) {
 	ASSERT_EQ(ret["name"], "LATE_ANSWER");
 }
 
+TEST(gen_ast, macro_fold_sameline) {
+	// A macro reference on the same source line as its registering cinclude
+	// still resolves via a column comparison, not just a line comparison.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/119_macro_fold_sameline.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& ret = jout["ast"]["functions"][0]["block"]["body"][0]["values"][0];
+	ASSERT_EQ(ret["expr-type"], "lit-int");
+	ASSERT_EQ(ret["value"], "9");
+}
+
 TEST(gen_ast, macro_fold_duplicate_name) {
 	// Two cincludes defining the same macro name: the first registration
 	// wins and later same-named definitions are ignored.

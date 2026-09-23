@@ -24,8 +24,8 @@ cinclude <sys/syscall.h>;
 export syscall write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;  // now allowed
 ```
 
-This closes the gap `doc/Issues.md` item 23 tracked, which v0.1.32 deliberately sidestepped by
-restricting syscall numbers to literal integers.
+This closes a gap `doc/Issues.md` used to track (since resolved and removed from that file),
+which v0.1.32 deliberately sidestepped by restricting syscall numbers to literal integers.
 
 **Where the fold happens.** A new post-parse AST-walking pass runs in gen-ast's driver
 (`main.cpp`, after `parser.parse()` succeeds, before the JSON is written) — not inside a GLR
