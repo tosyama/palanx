@@ -96,6 +96,24 @@ void CParser::captureStructTag(const string &name, const json *fields, bool is_u
 		entry["fields"] = *fields;
 }
 
+// Named after the body's source location rather than a per-run counter:
+// each cinclude runs its own c2ast process and SA keeps the first complete
+// definition of a name, so counters would collide across headers while a
+// location names the same body identically in every run. Contains characters
+// no C identifier can, so it never shadows a real tag.
+string CParser::synthesizeAnonTag(const CToken* at)
+{
+	CLexer* lexer = lexers[at->lexer_no];
+	const CToken0& t0 = lexer->tokens[at->token0_no];
+	string base = "anon@" + lexer->infile.fname + ":" + to_string(t0.line_no)
+		+ ":" + to_string(t0.pos + 1);
+	// Tokens from one macro body share a location across expansions.
+	string tag = base;
+	for (int n = 2; structIndex_.count(tag); n++)
+		tag = base + "#" + to_string(n);
+	return tag;
+}
+
 bool consume(CTokenType expected_type, const vector<CToken*> &tokens, int &index) {
 	if (index < tokens.size()) {
 		CToken* token = tokens[index];
@@ -336,9 +354,20 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		// Qualifiers ("const"/"volatile"/"inline") are consumed by
 		// declaration_specifiers() itself (in any order); don't pre-consume them
 		// here, or its "const" capture never sees them.
+		int field_start = index;
 		json flocal;
 		if (declaration_specifiers(flocal, tokens, index)) {
 			json base_vt = flocal.value("var-type", json{});
+			// "struct { ... } name;" member: without a tag the owner's layout can't
+			// reference the body. Synthesized on base_vt, so pointer/array
+			// declarators wrap an already-named type.
+			string btk = base_vt.value("type-kind", "");
+			if ((btk == "strct" || btk == "union") && !base_vt.contains("type-name")
+					&& flocal.contains("fields")) {
+				string tag = synthesizeAnonTag(tokens[field_start]);
+				captureStructTag(tag, &flocal["fields"], btk == "union");
+				base_vt["type-name"] = tag;
+			}
 			json field = {{"var-type", base_vt}};
 			if (!declarator(field, tokens, index, false)) {
 				return false;

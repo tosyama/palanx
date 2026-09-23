@@ -1168,6 +1168,70 @@ TEST(c2ast, union_capture) {
     }
 }
 
+TEST(c2ast, anon_member_tag) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/037_anon_member_tag.h");
+    json ast = json::parse(output);
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+    // Resolves a member var-type's synthesized tag to its captured body.
+    auto body_of = [&](const json& vt) -> json* {
+        if (!vt.contains("type-name")) return nullptr;
+        return find_struct(vt["type-name"].get<string>());
+    };
+
+    {
+        json* outer = find_struct("Outer");
+        ASSERT_NE(outer, nullptr);
+        json* in = body_of((*outer)["fields"][1]["var-type"]);
+        ASSERT_NE(in, nullptr);
+        ASSERT_FALSE(in->contains("union"));
+        ASSERT_EQ((*in)["fields"].size(), 2u);
+    }
+
+    // The __atomic_wide_counter shape: anonymous struct member inside an
+    // anonymous typedef'd union.
+    {
+        json* wide = find_struct("wide_t");
+        ASSERT_NE(wide, nullptr);
+        ASSERT_EQ((*wide)["union"], true);
+        json* v32 = body_of((*wide)["fields"][1]["var-type"]);
+        ASSERT_NE(v32, nullptr);
+        ASSERT_EQ((*v32)["fields"][1]["name"], "hi");
+    }
+
+    // Pointer and array declarators share one tag for the one body.
+    {
+        json* derived = find_struct("Derived");
+        ASSERT_NE(derived, nullptr);
+        auto& p_vt = (*derived)["fields"][0]["var-type"];
+        auto& arr_vt = (*derived)["fields"][1]["var-type"];
+        ASSERT_EQ(p_vt["type-kind"], "pntr");
+        ASSERT_EQ(arr_vt["type-kind"], "arr");
+        ASSERT_NE(body_of(p_vt["base-type"]), nullptr);
+        ASSERT_EQ(p_vt["base-type"]["type-name"], arr_vt["base-type"]["type-name"]);
+    }
+
+    // Two expansions of one macro body share a source location but must
+    // still get distinct tags.
+    {
+        json* pairs = find_struct("Pairs");
+        ASSERT_NE(pairs, nullptr);
+        json* ip = body_of((*pairs)["fields"][0]["var-type"]);
+        json* dp = body_of((*pairs)["fields"][1]["var-type"]);
+        ASSERT_NE(ip, nullptr);
+        ASSERT_NE(dp, nullptr);
+        ASSERT_NE((*ip)["name"], (*dp)["name"]);
+        ASSERT_EQ((*ip)["fields"][0]["var-type"]["type-name"], "int32");
+        ASSERT_EQ((*dp)["fields"][0]["var-type"]["type-name"], "flo64");
+    }
+}
+
 // A header's typedefs are flushed into their own
 // ast.typedefs section regardless of whether any C function references them
 // -- this is what lets a header like stdint.h (zero functions, all typedefs)

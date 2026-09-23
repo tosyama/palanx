@@ -31,6 +31,7 @@ class CParser {
 	vector<json> capturedStructs_;
 	map<string, int> structIndex_;  // tag name -> index into capturedStructs_
 	void captureStructTag(const string &name, const json *fields, bool is_union);
+	string synthesizeAnonTag(const CToken* at);
 
 	int parse(json &ast, const vector<CToken*>& tokens);
 
