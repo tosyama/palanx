@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+cinclude "186_macro_name_collision.h";
+
+func f(int32 COLL) -> int32 {
+	return COLL;
+}
+
+func g() -> int32 {
+	const COLL = 999;
+	return COLL;
+}
+
+int32 COLL = 111;
+
+printf("%d %d %d\n", COLL, f(222), g());

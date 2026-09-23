@@ -1550,6 +1550,41 @@ TEST(build_mgr, import_syscall_alias) {
 	ASSERT_EQ(output, "alias syscall\nn==14\n");
 }
 
+TEST(build_mgr, syscall_macro_number) {
+	// A cinclude'd macro constant (SYS_write) used directly as a syscall
+	// number, folded by gen-ast before it ever reaches SA.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/183_syscall_macro_number.pa");
+	ASSERT_EQ(output, "macro syscall\nsecond\nn==7\n");
+}
+
+TEST(build_mgr, import_syscall_macro) {
+	// The exported syscall's macro-derived number is already folded in the
+	// library module's own ast.json (ast.export gets the same walk as the
+	// library's own statements), so the importing module needs no cinclude
+	// of its own to resolve it.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/184_import_syscall_macro.pa");
+	ASSERT_EQ(output, "import macro syscall\nsecond\nn==7\n");
+}
+
+TEST(build_mgr, macro_array_size) {
+	// A macro constant used as an array size, both for a local array
+	// declaration and a struct field array declaration.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/185_macro_array_size.pa");
+	ASSERT_EQ(output, "1 2 3 10 20 30\n");
+}
+
+TEST(build_mgr, macro_name_collision) {
+	// A macro constant silently wins over a same-named variable, function
+	// parameter, and Palan const -- every reference to the colliding name
+	// resolves to the macro's value, ignoring the local declaration.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/186_macro_name_collision.pa");
+	ASSERT_EQ(output, "7 7 7\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

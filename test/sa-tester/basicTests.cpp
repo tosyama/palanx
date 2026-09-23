@@ -4215,6 +4215,20 @@ TEST(sa, syscall_call) {
 	ASSERT_EQ(getpidCall["syscall-number"], 39);
 }
 
+TEST(sa, syscall_macro_number) {
+	// A cinclude'd macro constant (SYS_write) is folded by gen-ast into a
+	// typed lit-int before validateSyscallDecl runs, so it is accepted the
+	// same as a plain literal syscall number.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/193_syscall_macro_number.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const auto& writeCall = jout["functions"][0]["body"][1]["vars"][0]["init"];
+	ASSERT_EQ(writeCall["func-type"], "syscall");
+	ASSERT_EQ(writeCall["name"], "sys_write");
+	ASSERT_EQ(writeCall["syscall-number"], 1);
+}
+
 static void genLibSaSyscallImport()
 {
 	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_syscall.pa -o out/lib_sa_syscall.pa.ast.json");

@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+cinclude "185_macro_array_size.h";
+
+type Buf { [ARR_N]int32 vals; };
+
+[ARR_N]int32 a;
+int32(1) -> a[0]; int32(2) -> a[1]; int32(3) -> a[2];
+
+Buf b;
+int32(10) -> b.vals[0]; int32(20) -> b.vals[1]; int32(30) -> b.vals[2];
+
+printf("%d %d %d %d %d %d\n", a[0], a[1], a[2], b.vals[0], b.vals[1], b.vals[2]);

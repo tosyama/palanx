@@ -1,0 +1,8 @@
+// write(2) goes straight to fd 1 with no libc stream, so printf must stay out
+// of this file: its buffer would not interleave in source order.
+cinclude <sys/syscall.h>;
+syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
+
+sys_write(1, "macro syscall\n", 14u);
+int64 n = sys_write(1, "second\n", 7u);
+if n == 7 { sys_write(1, "n==7\n", 5u); }
