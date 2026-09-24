@@ -343,6 +343,14 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "syscall '" + arg1 + "' has a parameter or return type this version "
 			       "cannot pass through the Linux syscall ABI: '" + arg2 + "'.";
 
+		case E_VarTypeInferenceNotImpl:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "variable '" + arg1 + "' is declared without a type; type inference is not "
+			       "supported yet, so write the type explicitly.";
+
+		case E_StmtNotImplemented:
+			return "this statement is not supported in this version.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

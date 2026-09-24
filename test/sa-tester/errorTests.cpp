@@ -2287,3 +2287,29 @@ TEST(sa_error, macro_backref_arr_field)
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("must be a compile-time constant"), string::npos);
 }
+
+TEST(sa_error, untyped_var_decl)
+{
+	// `v = 7;` is a declaration with the type omitted (reserved for future type
+	// inference), not an assignment; gen-ast keeps parsing it, so SA must reject it.
+	// Covers: sa_statements "not-impl" branch with untyped-var, E_VarTypeInferenceNotImpl
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_190_untyped_var_decl.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":1:1: error: variable 'v' is declared without a type"), string::npos);
+}
+
+TEST(sa_error, stmt_not_implemented)
+{
+	// Covers: sa_statements "not-impl" branch without untyped-var, E_StmtNotImplemented
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_191_stmt_not_implemented.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":2:1: error: this statement is not supported"), string::npos);
+}

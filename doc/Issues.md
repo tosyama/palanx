@@ -162,12 +162,18 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 25. `name = expr;` Statements Are Silently Dropped
+## 25. Statement-Level `not-impl` Is Silently Dropped
 
-**Summary:** Palan's assignment is `expr -> name;`, but the C-style form `name = expr;` still parses: `var_declaration`'s `ID '=' expression` alternative (`src/gen-ast/PlnParser.yy`) yields a `not-impl` statement, which SA passes through unchanged and codegen skips. No diagnostic is produced, so `int64 v = 1; v = 7; printf("%ld\n", v);` compiles and prints `1`. The same applies to a `cinclude`d C global (`stdout = f;` bypasses `E_CGlobalNotAssignable`). A statement-level `not-impl` should be a compile error rather than a no-op.
+**Summary:** Statements the grammar parses but the compiler does not yet implement — e.g. the type-omitted declaration `name = expr;` (`var_declaration`'s `ID '=' expression` alternative in `src/gen-ast/PlnParser.yy`, reserved for future type inference; not an assignment, which is `expr -> name`), `for`, `interface`, `x++` — yield a `not-impl` statement, which SA passes through unchanged and codegen skips. No diagnostic is produced, so `v = 7;` compiles to nothing. A statement-level `not-impl` should be a compile error rather than a no-op.
 
 ---
 
 ## 26. A `uint64` Literal Above `INT64_MAX` Crashes `palan-codegen`
 
 **Summary:** `uint64 a = 18446744073709551600;` passes gen-ast and SA, but `palan-codegen` aborts with an uncaught `std::out_of_range` from `stoll` while reading the literal. Literal values in the upper half of the `uint64` range need to be parsed as unsigned (`stoull`) wherever codegen converts a `lit-uint`/`lit-int` value string. Distinct from item 21: that one is an assembler rejection of an out-of-range `movq` immediate, whereas this crashes before any assembly is emitted.
+
+---
+
+## 27. Function Definitions With an Unsupported Parameter Form Are Silently Dropped
+
+**Summary:** When any parameter of a `func` or `syscall` declaration parses into a `not-impl` form (e.g. `func f(x = 1) { ... }` — an untyped defaulted parameter, or a `>>`-marked parameter), gen-ast's `func_def`/`syscall_decl` actions yield `{"not-impl": true}` and every `func_item` consumer in `src/gen-ast/PlnParser.yy` (`stmt_list_b`, `body_list_b`, ...) discards it (`if (!$1.count("not-impl"))`) instead of emitting it. The function simply vanishes: an uncalled one produces no diagnostic at all, and a call to it reports a misleading `Undefined function 'f'.`. This is the declaration-level counterpart of the statement-level `not-impl` rejection (item 25) — the fix is to keep the dropped item in the AST with its `loc` (as statements now do) and have SA reject it with a diagnostic naming the unsupported parameter, rather than letting gen-ast erase it.
