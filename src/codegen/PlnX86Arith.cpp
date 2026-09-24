@@ -138,10 +138,10 @@ void PlnX86CodeGen::emitInstrCmp(const Cmp& cm, const RegMap& rm)
     if (!dst_loc.isStack()) {
         string dst_byte = sizedRegName(dst_loc.base, VRegType::Int8);
         string dst_32   = sizedRegName(dst_loc.base, VRegType::Int32);
-        out << "\t" << setCCForOp(cm.op, isFloat(cm.type)) << " " << dst_byte << "\n";
+        out << "\t" << setCCForOp(cm.op, cm.type) << " " << dst_byte << "\n";
         out << "\tmovzbl " << dst_byte << ", " << dst_32 << "\n";
     } else {
-        out << "\t" << setCCForOp(cm.op, isFloat(cm.type)) << " %al\n";
+        out << "\t" << setCCForOp(cm.op, cm.type) << " %al\n";
         out << "\tmovzbl %al, %eax\n";
         out << "\tmovl %eax, " << srcOperand(dst_loc) << "\n";
     }

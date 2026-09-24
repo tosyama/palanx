@@ -1643,6 +1643,15 @@ TEST(build_mgr, int64_imm_range)
 	ASSERT_EQ(output, "3000000000 -9223372036854775807 9223372036854775808\n-3000000000\n");
 }
 
+TEST(build_mgr, unsigned_cmp)
+{
+	// Unsigned comparisons used signed setCC, so a value with its top bit set
+	// compared as negative.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/196_unsigned_cmp.pa");
+	ASSERT_EQ(output, "001101\n001101\n001101\n001101\n110001\nif ok\n6\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.
