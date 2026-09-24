@@ -1652,6 +1652,18 @@ TEST(build_mgr, unsigned_cmp)
 	ASSERT_EQ(output, "001101\n001101\n001101\n001101\n110001\nif ok\n6\n");
 }
 
+TEST(build_mgr, stack_arg_narrow_int)
+{
+	// Stack-passed arguments narrower than 64 bits were stored with movq,
+	// which fails to assemble for a sized register source.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/197_stack_arg_narrow_int.pa");
+	ASSERT_EQ(output, "1 2 3 4 5 -4 4000000001\n"
+	                  "1 2 3 4 5 -299 -69999 -5\n"
+	                  "1 2 3 4 5 -300 -70000 4000000000\n"
+	                  "-699990393\n-700000493\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.

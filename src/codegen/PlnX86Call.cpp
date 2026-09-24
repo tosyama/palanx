@@ -31,6 +31,19 @@ static RegMove makeIntArgMove(const PhysLoc& src_loc, const string& dstBase)
     };
 }
 
+// A narrow value fills only the slot's low bytes; SysV leaves the rest unspecified.
+static void emitIntStackArg(ostream& out, const PhysLoc& src_loc, int offset)
+{
+    const char* mov = movInstrForType(src_loc.type);
+    string src = srcOperand(src_loc);
+    if (src_loc.isStack()) {
+        string scratch = sizedRegName("%r10", src_loc.type);
+        out << "\t" << mov << " " << src << ", " << scratch << "\n";
+        src = scratch;
+    }
+    out << "\t" << mov << " " << src << ", " << offset << "(%rsp)\n";
+}
+
 // Sequence a set of moves into distinct physical registers so that no move clobbers
 // a register another pending move still needs to read from. A naive argument-order
 // pass breaks whenever a source register coincides with an earlier argument's
@@ -123,12 +136,7 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
                 }
             } else {
                 int_idx++;
-                if (src_loc.isStack()) {
-                    out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
-                    out << "\tmovq %r10, " << offset << "(%rsp)\n";
-                } else {
-                    out << "\tmovq " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
-                }
+                emitIntStackArg(out, src_loc, offset);
             }
         }
     }
@@ -178,14 +186,7 @@ void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
         stack_space = ((n_stack * 8) + 15) & ~15;
         out << "\tsubq $" << stack_space << ", %rsp\n";
         for (int j = n_regs; j < (int)c.args.size(); j++) {
-            int offset = (j - n_regs) * 8;
-            const PhysLoc& src_loc = rm.at(c.args[j]);
-            if (src_loc.isStack()) {
-                out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
-                out << "\tmovq %r10, " << offset << "(%rsp)\n";
-            } else {
-                out << "\tmovq " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
-            }
+            emitIntStackArg(out, rm.at(c.args[j]), (j - n_regs) * 8);
         }
     }
     // Emitted after the stack-arg moves above (which only ever read registers,
