@@ -790,7 +790,11 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	const StructDef& def = requireCompleteStruct(structName, stmt);
 	json pntr_type = {{"type-kind","pntr"},
 	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
-	bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inAllocFunc_;
+	// Inside T's own generated allocator, `T p;` must be the bare calloc or
+	// __pln_alloc_T would recurse into itself.
+	bool inOwnAllocator = currentFunc_
+		&& (*currentFunc_)["name"] == "__pln_alloc_" + structName;
+	bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inOwnAllocator;
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
 	// Accumulated separately so `Pair p = f(), q = g();` allocates storage for

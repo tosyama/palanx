@@ -309,7 +309,8 @@ int main(int argc, char* argv[])
 					out << "}\n";
 
 					out << "export func __pln_free_" << name
-					    << "(" << name << " p) {\n";
+					    << "(" << name << " p) {\n"
+					    << "    if (p == NULL) { return; }\n";
 					for (auto& af : ownedArr) {
 						string fname = af["name"];
 						if (af["elem-kind"] == "prim") {
@@ -357,6 +358,7 @@ int main(int argc, char* argv[])
 					    << "}\n"
 					    << "export func __pln_free_" << shape_key
 					    << "([]@!" << struct_name << " pts, int64 n) {\n"
+					    << "    if (pts == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
 					    << "        " << elem_free << "\n"
@@ -383,6 +385,7 @@ int main(int argc, char* argv[])
 					    << "}\n"
 					    << "export func __pln_free_arr_arr_" << leaf
 					    << "([][]" << leaf << " outer, int64 d0) {\n"
+					    << "    if (outer == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
 					    << "        free(outer[i]);\n"

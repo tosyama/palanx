@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int64 x; int64 y; };
+type L { P o; };
+mtrace();
+{
+    [2]L ls;
+    5 -> ls[1].o.x;
+    printf("%ld\n", ls[1].o.x);
+}
+muntrace();
