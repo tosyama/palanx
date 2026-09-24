@@ -1594,6 +1594,29 @@ TEST(build_mgr, c_union_rw)
 	ASSERT_EQ(output, "2 1\n259\n");
 }
 
+TEST(build_mgr, pthread_create_join)
+{
+	// The thread entry is a Palan function passed as C's void *(*)(void *).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/188_pthread_create_join.pa");
+	ASSERT_EQ(output, "42\n");
+}
+
+TEST(build_mgr, pthread_mutex)
+{
+	// A lost update between the two threads would show as a count below 200000.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/189_pthread_mutex.pa");
+	ASSERT_EQ(output, "200000\n");
+}
+
+TEST(build_mgr, pthread_cond)
+{
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/190_pthread_cond.pa");
+	ASSERT_EQ(output, "ready=1\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
