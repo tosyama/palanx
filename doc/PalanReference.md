@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.33
+**Version:** v0.1.34
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -388,7 +388,9 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   reference them (e.g. `timer_delete(timer_t)` can still be called). A local variable standing in
   for such a typedef's pointee can be declared directly instead, e.g. `@!void t;` in place of a
   `timer_t` local (see `doc/Issues.md` for the underlying limitation).
-- Typedefs that bottom out in a union or enum are not resolved and remain unusable this version.
+- Typedefs that bottom out in a union are usable the same way as struct typedefs (see
+  [Union Types](#union-types) below). Typedefs that bottom out in an enum are not resolved and
+  remain unusable this version.
 - If multiple cincluded headers introduce the same typedef name resolving to the *same* underlying
   type, the first registration silently wins. If they resolve to *different* underlying types, this
   is a compile error. Because typedef registration is no longer gated on being referenced by some
@@ -632,6 +634,53 @@ printf("%d %d %d %d\n", arr[0], arr[1], arr[2], arr[3]);   // 1 3 4 5
   version — the field is left with no known layout, which downgrades the whole struct to an
   [incomplete struct type](#incomplete-struct-types-opaque-handles) rather than making just that
   field unusable.
+
+### Union Types
+
+A C `union Name { ... }` (or `typedef union { ... } Name;`) from a cincluded header is usable under
+its name everywhere a C struct is: a by-value variable declaration, `@`/`@!` address-of, field
+read/write, a `$Name` field of a native struct, and passing it to a C function by pointer. All
+members start at the same address, so writing one member changes what the others read, as in C;
+the size is that of the largest member, rounded up to the largest member alignment.
+
+`pthread.h`'s `pthread_mutex_t`, `pthread_cond_t` and `pthread_attr_t` are unions:
+
+```palan
+cinclude <pthread.h>;
+cinclude <stdio.h>;
+
+type Shared { int64 count; $pthread_mutex_t m; };
+
+func worker(@!void arg) -> @!void {
+    @!Shared sh = arg;
+    pthread_mutex_lock(@!sh.m);
+    sh.count + 1 -> sh.count;
+    pthread_mutex_unlock(@!sh.m);
+    return NULL;
+}
+
+Shared s;
+pthread_mutex_init(@!s.m, NULL);
+pthread_t t1;
+pthread_t t2;
+pthread_create(@!t1, NULL, worker, s);
+pthread_create(@!t2, NULL, worker, s);
+pthread_join(t1, NULL);
+pthread_join(t2, NULL);
+pthread_mutex_destroy(@!s.m);
+printf("%ld\n", s.count);    // 2
+```
+
+`PTHREAD_MUTEX_INITIALIZER` and the other `*_INITIALIZER` macros expand to a brace initializer,
+which Palan has no syntax for; call the matching `_init` function instead.
+
+Not supported this version:
+
+- Passing a union by value to a C function — like a struct, calling such a function is a compile
+  error.
+- A C11 anonymous member with no member name (`struct S { int k; union { int a; float b; }; };`)
+  — a header containing one cannot be cincluded. An anonymous body that *does* have a member name
+  (`union { ... } u;`) works; its fields are reached through that name.
 
 ### Incomplete Struct Types (Opaque Handles)
 
