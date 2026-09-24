@@ -1626,6 +1626,14 @@ TEST(build_mgr, struct_field_type_alias)
 	ASSERT_EQ(output, "3 4 5 6 7\n");
 }
 
+TEST(build_mgr, int_literal_range)
+{
+	// A uint64 literal above INT64_MAX used to crash codegen's stoll.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/194_int_literal_range.pa");
+	ASSERT_EQ(output, "18446744073709551600 -128 127\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.

@@ -3,6 +3,16 @@
 
 using namespace std;
 
+// An integer literal's text is parsed per the type SA gave it: a uint64 value
+// above INT64_MAX would make stoll throw.
+static long long intLitImm(const string& value, VRegType type)
+{
+    if (type == VRegType::Uint8 || type == VRegType::Uint16
+     || type == VRegType::Uint32 || type == VRegType::Uint64)
+        return (long long)stoull(value);
+    return stoll(value);
+}
+
 // -------- Variable scope management --------
 
 void PlnVCodeGen::enterVarScope()
@@ -68,13 +78,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         case ExprKind::IntLit: {
             auto& e = static_cast<const IntLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(MovImm{r, e.type, stoll(e.value)});
+            func.instrs.push_back(MovImm{r, e.type, intLitImm(e.value, e.type)});
             return r;
         }
         case ExprKind::UintLit: {
             auto& e = static_cast<const UintLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(MovImm{r, e.type, (long long)stoull(e.value)});
+            func.instrs.push_back(MovImm{r, e.type, intLitImm(e.value, e.type)});
             return r;
         }
         case ExprKind::Convert: {
@@ -511,7 +521,7 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                         blockVarStack_.back().push_back(r);
                 } else {
                     r = allocVReg();
-                    func.instrs.push_back(InitVar{r, e.type, stoll(e.value)});
+                    func.instrs.push_back(InitVar{r, e.type, intLitImm(e.value, e.type)});
                     if (!blockVarStack_.empty())
                         blockVarStack_.back().push_back(r);
                 }
@@ -520,7 +530,7 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                 // SA's lit-uint branch only ever assigns a Uint* value-type.
                 auto& e = static_cast<const UintLitExpr&>(*ve.init);
                 r = allocVReg();
-                func.instrs.push_back(InitVar{r, e.type, (long long)stoull(e.value)});
+                func.instrs.push_back(InitVar{r, e.type, intLitImm(e.value, e.type)});
                 if (!blockVarStack_.empty())
                     blockVarStack_.back().push_back(r);
             } else {

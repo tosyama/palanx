@@ -81,20 +81,22 @@ TEST(gen_ast, unary_minus) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
-	// -42 in printf args should produce neg expr-type
-	bool found_neg = false;
+	// -42 folds into one negative lit-int; -x stays a neg node.
+	auto& neg = jout["ast"]["functions"][0]["block"]["body"][0]["then"]["body"][0]["values"][0];
+	ASSERT_EQ(neg["expr-type"], "neg");
+	ASSERT_EQ(neg["operand"]["expr-type"], "id");
+
+	bool found_neg_lit = false;
 	for (auto& stmt : jout["ast"]["statements"]) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& body = stmt["body"];
 		if (body["expr-type"] != "call" || body["name"] != "printf") continue;
-		for (auto& arg : body["args"]) {
-			if (arg["expr-type"] == "neg") {
-				ASSERT_TRUE(arg.contains("operand"));
-				found_neg = true;
-			}
-		}
+		auto& arg = body["args"][1];
+		ASSERT_EQ(arg["expr-type"], "lit-int");
+		ASSERT_EQ(arg["value"], "-42");
+		found_neg_lit = true;
 	}
-	ASSERT_TRUE(found_neg);
+	ASSERT_TRUE(found_neg_lit);
 }
 
 TEST(gen_ast, comparison) {

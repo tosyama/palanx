@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <charconv>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -226,6 +227,46 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+static bool intLiteralFits(const string& value, PrimType::Name pn)
+{
+	bool neg = value[0] == '-';
+	const char* first = value.data() + (neg ? 1 : 0);
+	const char* last = value.data() + value.size();
+	uint64_t mag;
+	// The lexer only produces digit strings, so the only failure is overflow.
+	if (from_chars(first, last, mag).ec != errc()) return false;
+
+	int bits = 64;
+	bool isSigned = true;
+	switch (pn) {
+		case PrimType::Name::Int8:   bits = 8;  break;
+		case PrimType::Name::Int16:  bits = 16; break;
+		case PrimType::Name::Int32:  bits = 32; break;
+		case PrimType::Name::Int64:  bits = 64; break;
+		case PrimType::Name::Uint8:  bits = 8;  isSigned = false; break;
+		case PrimType::Name::Uint16: bits = 16; isSigned = false; break;
+		case PrimType::Name::Uint32: bits = 32; isSigned = false; break;
+		default:                     bits = 64; isSigned = false; break;
+	}
+	if (isSigned) {
+		uint64_t posMax = (uint64_t(1) << (bits - 1)) - 1;
+		return mag <= (neg ? posMax + 1 : posMax);
+	}
+	if (neg) return mag == 0;
+	return bits == 64 || mag <= (uint64_t(1) << bits) - 1;
+}
+
+void PlnSemanticAnalyzer::checkIntLiteralRange(const json& lit)
+{
+	const PlnType* t = registry_.fromJson(lit["value-type"]);
+	if (!isIntegerPrim(t)) return;
+	string value = lit["value"];
+	if (intLiteralFits(value, static_cast<const PrimType*>(t)->name)) return;
+	cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_IntLiteralOutOfRange,
+		value, typeDisplayName(lit["value-type"])) << endl;
+	exit(1);
+}
+
 json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expectedType)
 {
 	json sa_expr = expr;
@@ -241,6 +282,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 				sa_expr["value-type"] = registry_.toJson(expectedType);
 			else
 				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
+			checkIntLiteralRange(sa_expr);
 		}
 
 	} else if (expr_type == "lit-uint") {
@@ -254,6 +296,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		} else {
 			sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Uint64));
 		}
+		checkIntLiteralRange(sa_expr);
 
 	} else if (expr_type == "lit-flo") {
 		if (expectedType && expectedType->kind == PlnType::Kind::Prim) {
@@ -422,17 +465,24 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
 
-	// First pass: propagate expectedType so that lit-int leaves can adopt the
-	// context type (e.g. both sides of `(4+4)` in `int32 x = (4+4)` → int32).
-	json left  = sa_expression(expr["left"],  expectedType);
-	json right = sa_expression(expr["right"], expectedType);
-	// Second pass: if one side is a lit-int and the other has a concrete type
-	// (from a variable), re-type the literal to match — this takes precedence
-	// over expectedType (e.g. `int64_var + 4` keeps int64, not expectedType).
-	if (expr["left"]["expr-type"] == "lit-int" && right.contains("value-type")) {
-		left = sa_expression(expr["left"], registry_.fromJson(right["value-type"]));
-	} else if (expr["right"]["expr-type"] == "lit-int" && left.contains("value-type")) {
-		right = sa_expression(expr["right"], registry_.fromJson(left["value-type"]));
+	// A lit-int operand takes the other operand's type, which takes
+	// precedence over expectedType (e.g. `int64_var + 4` keeps int64); only
+	// when both are literals does expectedType decide (`int32 x = (4+4)`).
+	// Each literal is typed exactly once so its range check never fires on
+	// a provisional type.
+	json left, right;
+	auto typeOf = [&](const json& other) {
+		return other.contains("value-type") ? registry_.fromJson(other["value-type"]) : expectedType;
+	};
+	if (expr["left"]["expr-type"] == "lit-int") {
+		right = sa_expression(expr["right"], expectedType);
+		left  = sa_expression(expr["left"],  typeOf(right));
+	} else if (expr["right"]["expr-type"] == "lit-int") {
+		left  = sa_expression(expr["left"],  expectedType);
+		right = sa_expression(expr["right"], typeOf(left));
+	} else {
+		left  = sa_expression(expr["left"],  expectedType);
+		right = sa_expression(expr["right"], expectedType);
 	}
 	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 	const PlnType* rightType = registry_.fromJson(right["value-type"]);

@@ -660,7 +660,7 @@ expression: term
 	| expression '-' expression
 	{ $$ = {{"expr-type", "sub"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| '-' expression %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "neg"}, {"operand", $2}}; LOC($$, @$); }
+	{ $$ = negateExpr(move($2)); LOC($$, @$); }
 	| expression '*' expression
 	{ $$ = {{"expr-type", "mul"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '/' expression

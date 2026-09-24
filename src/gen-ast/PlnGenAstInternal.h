@@ -80,3 +80,16 @@ inline bool isDeclarableVarType(const json& t)
 		return true;  // fixed-size multidim array (also covers embedded-struct arrays)
 	return false;
 }
+
+// Unary minus on an untyped integer literal becomes one negative literal, so
+// SA's range check sees `-128` as a single value (an int8 `neg(128)` operand
+// would be out of range). A typed lit-int (macro-folded) keeps its `neg`.
+inline json negateExpr(json operand)
+{
+	if (operand.value("expr-type", "") == "lit-int" && !operand.contains("value-type")) {
+		string v = operand["value"];
+		operand["value"] = (v[0] == '-') ? v.substr(1) : "-" + v;
+		return operand;
+	}
+	return {{"expr-type", "neg"}, {"operand", std::move(operand)}};
+}
