@@ -68,10 +68,10 @@ CParser::CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexer
 {
 }
 
-// Single point where a struct tag registers into capturedStructs_, called from
-// every place struct_union_definition() parses one (standalone declaration,
+// Single point where a struct/union tag registers into capturedStructs_, called
+// from every place struct_union_definition() parses one (standalone declaration,
 // type-specifier reference in a field/parameter/return type, and recursively
-// for a nested struct-typed field) and, for an anonymous struct body, from
+// for a nested struct-typed field) and, for an anonymous struct/union body, from
 // declaration()'s tag synthesis (the typedef name stands in for the missing
 // tag). `fields` is null for a tag-only reference or forward declaration; a
 // later full definition of the same tag promotes an existing tag-only entry
@@ -80,11 +80,12 @@ CParser::CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexer
 // later one (first definition wins) -- declaration() relies on this by
 // checking structIndex_ itself before calling, so a synthesized name never
 // collides with an unrelated struct already holding it.
-void CParser::captureStructTag(const string &name, const json *fields)
+void CParser::captureStructTag(const string &name, const json *fields, bool is_union)
 {
 	auto it = structIndex_.find(name);
 	if (it == structIndex_.end()) {
 		json entry = {{"name", name}};
+		if (is_union) entry["union"] = true;
 		if (fields) entry["fields"] = *fields;
 		structIndex_[name] = (int)capturedStructs_.size();
 		capturedStructs_.push_back(move(entry));
@@ -93,6 +94,24 @@ void CParser::captureStructTag(const string &name, const json *fields)
 	json &entry = capturedStructs_[it->second];
 	if (fields && !entry.contains("fields"))
 		entry["fields"] = *fields;
+}
+
+// Named after the body's source location rather than a per-run counter:
+// each cinclude runs its own c2ast process and SA keeps the first complete
+// definition of a name, so counters would collide across headers while a
+// location names the same body identically in every run. Contains characters
+// no C identifier can, so it never shadows a real tag.
+string CParser::synthesizeAnonTag(const CToken* at)
+{
+	CLexer* lexer = lexers[at->lexer_no];
+	const CToken0& t0 = lexer->tokens[at->token0_no];
+	string base = "anon@" + lexer->infile.fname + ":" + to_string(t0.line_no)
+		+ ":" + to_string(t0.pos + 1);
+	// Tokens from one macro body share a location across expansions.
+	string tag = base;
+	for (int n = 2; structIndex_.count(tag); n++)
+		tag = base + "#" + to_string(n);
+	return tag;
 }
 
 bool consume(CTokenType expected_type, const vector<CToken*> &tokens, int &index) {
@@ -321,8 +340,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		ast["struct-name"] = *tokens[index-1]->info.id;
 		if (!CONSUME_PUNC('{')) {
 			// struct with tag only (reference, not definition)
-			if (is_struct)
-				captureStructTag(ast["struct-name"].get<string>(), nullptr);
+			captureStructTag(ast["struct-name"].get<string>(), nullptr, !is_struct);
 			result_index = index;
 			return true;
 		}
@@ -336,9 +354,19 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		// Qualifiers ("const"/"volatile"/"inline") are consumed by
 		// declaration_specifiers() itself (in any order); don't pre-consume them
 		// here, or its "const" capture never sees them.
+		int field_start = index;
 		json flocal;
 		if (declaration_specifiers(flocal, tokens, index)) {
 			json base_vt = flocal.value("var-type", json{});
+			// "struct { ... } name;" member: without a tag the owner's layout can't
+			// reference the body. Synthesized on base_vt, so pointer/array
+			// declarators wrap an already-named type.
+			string btk = base_vt.value("type-kind", "");
+			if ((btk == "strct" || btk == "union") && !base_vt.contains("type-name")) {
+				string tag = synthesizeAnonTag(tokens[field_start]);
+				captureStructTag(tag, &flocal["fields"], btk == "union");
+				base_vt["type-name"] = tag;
+			}
 			json field = {{"var-type", base_vt}};
 			if (!declarator(field, tokens, index, false)) {
 				return false;
@@ -360,11 +388,9 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 	EXPECT_PUNC('}');
 
 	ast["fields"] = move(fields);
-	if (is_struct) {
-		string tagName = ast.value("struct-name", "");
-		if (!tagName.empty())
-			captureStructTag(tagName, &ast["fields"]);
-	}
+	string tagName = ast.value("struct-name", "");
+	if (!tagName.empty())
+		captureStructTag(tagName, &ast["fields"], !is_struct);
 	result_index = index;
 	return true;
 }
@@ -484,7 +510,12 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_UNION)) {
 		if (struct_union_definition(ast, tokens, index, false)) {
-			set_vt({{"type-kind", "union"}});
+			json vt = {{"type-kind", "union"}};
+			string tagName = ast.value("struct-name", "");
+			if (!tagName.empty()) {
+				vt["type-name"] = tagName;
+			}
+			set_vt(move(vt));
 			result_index = index;
 			return true;
 		}
@@ -782,12 +813,12 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 			if (CONSUME_PUNC(';')) {
 				// simple declaration(s)
 
-				// "typedef struct { ... } Name;" -- an anonymous struct body given a
+				// "typedef struct/union { ... } Name;" -- an anonymous body given a
 				// name only through the typedef, not a tag. Synthesize that name as
-				// the tag so the struct enters capturedStructs_/typedefs_ through the
-				// same single channel a tagged struct would, rather than staying
+				// the tag so the body enters capturedStructs_/typedefs_ through the
+				// same single channel a tagged one would, rather than staying
 				// unresolved as "user" at every reference site. Guarded to a single,
-				// non-derived declarator (decls.size()==1, var-type still bare "strct"
+				// non-derived declarator (decls.size()==1, var-type still bare "strct"/"union"
 				// after declarator() -- a pointer/array declarator would have wrapped
 				// it in "pntr") whose var-type has no type-name yet (tagged structs and
 				// typedef-name lookups of an already-registered strct always carry one).
@@ -799,10 +830,11 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 				// behavior attach this body's fields to that other struct's entry.
 				if (is_typedef && decls.size() == 1 && local.contains("fields")) {
 					json& vt0 = decls[0]["var-type"];
-					if (vt0.value("type-kind", "") == "strct" && !vt0.contains("type-name")) {
+					string tk0 = vt0.value("type-kind", "");
+					if ((tk0 == "strct" || tk0 == "union") && !vt0.contains("type-name")) {
 						const string& name = decls[0]["name"].get<string>();
 						if (structIndex_.find(name) == structIndex_.end()) {
-							captureStructTag(name, &local["fields"]);
+							captureStructTag(name, &local["fields"], tk0 == "union");
 							vt0["type-name"] = name;
 						}
 					}
@@ -862,11 +894,11 @@ void CParser::emitDeclarator(json &ast, json &decl,
 	} else if (is_typedef) {
 		if (tk == "prim" || tk == "pntr") {
 			registerTypedef(decl["name"].get<string>(), vt);
-		} else if (tk == "strct" && vt.contains("type-name")) {
-			// typedef struct Tag X; -- register X as an alias for the tag
+		} else if ((tk == "strct" || tk == "union") && vt.contains("type-name")) {
+			// typedef struct/union Tag X; -- register X as an alias for the tag
 			// itself (SA resolves it the same way it resolves any other
 			// struct-bottomed type alias). This also covers a single,
-			// non-derived typedef of an anonymous body (typedef struct {...}
+			// non-derived typedef of an anonymous body (typedef struct/union {...}
 			// X;): declaration() has already synthesized X itself as the tag
 			// (see its call site) and written it into vt's "type-name" before
 			// this function runs, so that case and the tagged one are
@@ -879,7 +911,7 @@ void CParser::emitDeclarator(json &ast, json &decl,
 			}
 		}
 		// Remaining anonymous strct/union/enum/func underlying types -- a
-		// multi/derived-declarator anonymous struct body, any union/enum body,
+		// multi/derived-declarator anonymous struct/union body, any enum body,
 		// or a name declaration()'s tag synthesis skipped because it was
 		// already taken by an unrelated struct -- are not registered, left as
 		// unresolved "user" at reference sites (unchanged behavior).
@@ -1543,7 +1575,7 @@ int CParser::parse(json &ast)
 			// one would force a decision about which side of the @/@! mutability
 			// split a bare pointer alias falls on.
 			string tk = vt.value("type-kind", "");
-			if (tk == "prim" || (tk == "strct" && vt.contains("type-name")))
+			if (tk == "prim" || ((tk == "strct" || tk == "union") && vt.contains("type-name")))
 				typedefs.push_back({{"name", name}, {"var-type", vt}});
 		}
 		if (!typedefs.empty())

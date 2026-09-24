@@ -42,6 +42,10 @@ struct StructDef {
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;
 	string incompleteReason;  // "unsupported-field" or "forward-declared" when !isComplete; empty otherwise
+	// A C union: every field sits at offset 0. Only layout (buildStructDef) and
+	// diagnostics consult this; every other consumer sees offsets/totalSize.
+	bool   isUnion = false;
+	const char* keyword() const { return isUnion ? "union" : "struct"; }
 };
 
 struct FieldChain {
@@ -77,8 +81,6 @@ class PlnSemanticAnalyzer {
 	vector<size_t> whileScopeStack_;
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
-	// True when analyzing a __pln_alloc_* function body (suppress recursive alloc)
-	bool inAllocFunc_ = false;
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
@@ -117,6 +119,7 @@ class PlnSemanticAnalyzer {
 	json sa_statements(const json& stmts);
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
+	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	json sa_expr_call(const json& expr);

@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+cinclude <stdint.h>;
+
+type I = int32;
+type Point { int64 x; int64 y; };
+type PT = Point;
+type S { I a; int64_t b; $PT e; PT o; [2]I arr; };
+
+S s;
+3 -> s.a;
+4 -> s.b;
+5 -> s.e.y;
+6 -> s.o.x;
+7 -> s.arr[1];
+printf("%d %ld %ld %ld %d\n", s.a, s.b, s.e.y, s.o.x, s.arr[1]);

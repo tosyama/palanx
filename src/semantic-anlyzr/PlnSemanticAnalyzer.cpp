@@ -194,24 +194,6 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	allocShapeNames_.insert(name);
 
 	const StructDef& def = structDefs_[name];
-	json fields = json::array();
-	for (auto& f : def.fields) {
-		// LCOV_EXCL_EXCEPTION_BR_START
-		json fj = {
-			{"name",      f.name},
-			{"type-kind", f.typeKind},
-			{"type-name", f.typeName},
-			{"offset",    f.offset},
-			{"size",      f.size}
-		};
-		if (f.typeKind == "embed-arr" || f.typeKind == "arr-ptr" || f.typeKind == "embed-ptr-arr") {
-			fj["count"]     = f.count;
-			fj["elem-kind"] = f.elemKind;
-			fj["mutable"]   = f.isMutable;
-		}
-		fields.push_back(move(fj));
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-	}
 	json owned = json::array();
 	for (auto& f : def.fields) {
 		if (f.typeKind != "struct-ptr") continue;
@@ -259,7 +241,6 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 		{"shape-kind",         "struct"},
 		{"shape-name",         name},
 		{"total-size",         def.totalSize},
-		{"fields",             move(fields)},
 		{"owned-fields",       move(owned)},
 		{"owned-array-fields", move(ownedArr)}
 	});
@@ -495,11 +476,15 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	enterScope();
 	// 0. Pre-scan type-alias/struct-def declarations so function signatures
 	//    pre-registered in step 1 see fully-resolved types, not alias names.
+	//    Top-level cinclude types join the scan in source order, since native
+	//    struct fields and signatures can name them; step 2 registering them
+	//    again is a no-op.
 	if (ast["ast"].contains("statements"))
 		for (auto& stmt : ast["ast"]["statements"]) {
 			string t = stmt.value("stmt-type", "");
 			if      (t == "type-alias") sa_type_alias(stmt);
 			else if (t == "struct-def") sa_struct_def(stmt);
+			else if (t == "cinclude")   registerCIncludeTypes(stmt);
 		}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
@@ -547,8 +532,8 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 		string aliasName = vtype["typedef-name"].get<string>();
 		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
-	} else if (tk == "strct" && vtype.contains("typedef-name") && vtype.contains("type-name")) {
-		// typedef struct Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
+	} else if (isCRecordTag(vtype) && vtype.contains("typedef-name")) {
+		// typedef struct/union Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
 		// as a type alias for the tag, same prim(Tag) representation a native
 		// "type A = SomeStruct;" alias uses.
 		string aliasName = vtype["typedef-name"].get<string>();
@@ -591,6 +576,24 @@ static bool isValidLinkLibName(const string& name)
 	return true;
 }
 
+void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
+{
+	if (stmt.contains("structs"))
+		for (auto& s : stmt["structs"])
+			registerCStruct(s);
+
+	// Covers a typedef no C function/global actually references, which
+	// registerTypedefAliasInType's per-reference-site calls wouldn't reach.
+	if (stmt.contains("typedefs"))
+		for (auto& td : stmt["typedefs"]) {
+			const json& vt = td["var-type"];
+			// LCOV_EXCL_EXCEPTION_BR_START
+			registerTypeAliasChecked(td["name"].get<string>(),
+				{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+		}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
 	if (stmt.contains("libs"))
@@ -606,18 +609,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 
 	// Must run before functions: PlnTypeRegistry::fromJson needs structDefs_
 	// entries to already exist for a struct-pointer parameter/return type.
-	if (stmt.contains("structs"))
-		for (auto& s : stmt["structs"])
-			registerCStruct(s);
-
-	// Covers a typedef no C function/global below actually references, which
-	// registerTypedefAliasInType's per-reference-site calls wouldn't reach.
-	if (stmt.contains("typedefs"))
-		for (auto& td : stmt["typedefs"]) {
-			const json& vt = td["var-type"];
-			registerTypeAliasChecked(td["name"].get<string>(),
-				{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
-		}
+	registerCIncludeTypes(stmt);
 
 	if (stmt.contains("globals"))
 		for (auto& g : stmt["globals"]) {

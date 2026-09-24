@@ -1,0 +1,4 @@
+cinclude "error_187_c_union_unknown_field.h";
+
+U u;
+1 -> u.c.a;

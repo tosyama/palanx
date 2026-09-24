@@ -1,0 +1,27 @@
+cinclude <pthread.h>;
+cinclude <stdio.h>;
+
+type Shared { int64 count; $pthread_mutex_t m; };
+
+func worker(@!void arg) -> @!void {
+	@!Shared sh = arg;
+	int64 i = 0;
+	while i < 100000 {
+		pthread_mutex_lock(@!sh.m);
+		sh.count + 1 -> sh.count;
+		pthread_mutex_unlock(@!sh.m);
+		i + 1 -> i;
+	}
+	return NULL;
+}
+
+Shared s;
+pthread_mutex_init(@!s.m, NULL);
+pthread_t t1;
+pthread_t t2;
+pthread_create(@!t1, NULL, worker, s);
+pthread_create(@!t2, NULL, worker, s);
+pthread_join(t1, NULL);
+pthread_join(t2, NULL);
+pthread_mutex_destroy(@!s.m);
+printf("%ld\n", s.count);

@@ -7,80 +7,45 @@ This document specifies the goals, scope, architecture, and requirements for the
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
 ### 2.1 Iteration Goal (2026-09-23)
-version: 0.1.33 — fold cinclude'd C macro-constant references at gen-ast time
+version: 0.1.34 — pthread.h support via C union types
 
-Today a cinclude'd C macro constant (`SYS_write`, `S_IFMT`, `NULL`, etc.) is fully folded to a
-concrete literal by c2ast at gen-ast time and stored by name in the cinclude statement's
-`constants` list. But a *reference* to that name elsewhere in Palan source (`= SYS_write`) is
-left as a plain `id` node by gen-ast — substitution only happens later, in SA, against the
-referencing module's own symbol table (`constDecls_`). Since the macro constant is fundamentally
-a C-preprocessor textual-substitution concept, not a Palan symbol with its own scope/type
-semantics, this iteration moves the substitution to gen-ast (parse time) instead, so any value
-built from a macro reference is self-contained by the time `ast.json` is written:
+The goal is to make `pthread.h` usable from Palan: thread creation/join, mutex lock/unlock,
+condition variable wait/signal.
 
-```palan
-cinclude <sys/syscall.h>;
+Against this system's glibc (2.39), almost everything is already in place: the header's
+functions parse cleanly, `pthread_create`'s `void *(*)(void *)` callback is handled by the
+existing "Passing a Palan Function as a Callback" mechanism, `pthread_t` and friends bottom out
+in primitive types, and glibc >= 2.34 folds pthread into libc (no `link` clause). The blocker is
+that `pthread_mutex_t`, `pthread_cond_t`, `pthread_attr_t` and the other synchronization types
+are C unions, which c2ast leaves unresolved and SA rejects as unrepresentable (`doc/Issues.md`
+item 14). They are declared by value and passed by address, so this one gap blocks the header.
+`pthread_cond_t` additionally needs two more general gaps closed: a union-typed field inside a
+struct, and an anonymous struct *member* (`struct { ... } name;`), which c2ast currently emits
+with no name or fields, so its size is unknowable.
 
-export syscall write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;  // now allowed
-```
+**A union is a struct whose fields all sit at offset 0.** SA registers a C union in the same
+struct table as a struct, with every field at offset 0 and a total size of the largest member
+rounded up to the largest alignment. Every consumer of a struct -- allocation, address-of,
+pointer compatibility, field access, System V by-value classification -- works only from field
+offsets and total size, so it is correct for a union with no union-specific branch; the
+union/struct distinction exists only where the layout is computed and in diagnostic display.
+Union field access (read/write) therefore comes for free and is in scope. A separate union type
+kind was rejected: it would need a union case at every struct consumer and every future record
+feature would be implemented twice. The one invariant it would have enforced structurally --
+a union must not have owned fields -- is unreachable from C input, and any future Palan-native
+union syntax must reject owned fields where the layout is built.
 
-This closes a gap `doc/Issues.md` used to track (since resolved and removed from that file),
-which v0.1.32 deliberately sidestepped by restricting syscall numbers to literal integers.
+At the ingestion boundary, c2ast records unions in its existing struct-tag table (C struct and
+union tags share one namespace) with a union marker, and SA folds c2ast's `"union"` tag to its
+canonical struct shape at the same points that already fold `"strct"`.
 
-**Where the fold happens.** A new post-parse AST-walking pass runs in gen-ast's driver
-(`main.cpp`, after `parser.parse()` succeeds, before the JSON is written) — not inside a GLR
-reduction action. A growing macro-name-to-literal table consulted by *later* reductions to
-decide whether to substitute would be riskier shared mutable state than `ast["export"]`
-accumulation: an id-vs-literal decision changes how a later token is typed, so a decision made
-by a branch that later gets discarded could diverge from the branch that survives. Doing the
-substitution once, after the single surviving parse tree is fixed, avoids that risk entirely.
-
-**What feeds the pass.** The cinclude grammar action no longer copies c2ast's `constants` array
-onto the AST node. Instead it registers each macro name into an internal table (name → value,
-value-type, and the cinclude statement's own `loc`) that the parser owns for the duration of the
-parse. `constants` never appears in `ast.json` — the macro table is gen-ast-internal state, not
-an AST shape, so there is no "add it to the tree, then strip it back out" step.
-
-**Visibility and shadowing.** The fold walk is textual, matching the C-preprocessor model: a
-name resolves to whichever cinclude registered it first among cinclude points at or before the
-reference's own `loc` — no scope-stack tracking, no diagnostic for shadowing. A local variable,
-parameter, or Palan `const` with the same name as a macro is overwritten silently by whichever
-the fold walk reaches; this is a deliberate simplification (the alternative — teaching the fold
-walk to track every declaration's scope just to out-diagnose a rare collision — was rejected as
-disproportionate for this iteration).
-
-**What gets replaced.** The walker is a schema-agnostic recursive JSON walk: it looks for
-`{"expr-type":"id","name":...}` objects, skips entirely under any `{"stmt-type":"cinclude"}`
-subtree, and does not need to special-case every statement/expression shape gen-ast's grammar
-happens to produce today. This reaches array `size-expr`, parameter/named-return `init`,
-`syscall-number`, and the raw `store_loc` `base`/`index` nodes that survive into `field-assign-expr`
-alongside the ordinary expression tree — and also `ast["export"]`, which holds separate deep
-copies of exported signatures and gets the same walk applied to it.
-
-**The replacement node.** A folded reference becomes a *typed* `lit-int`:
-`{"expr-type":"lit-int","value":...,"value-type":...,"loc":<reference's own loc>}`, carrying
-c2ast's `value-type` (e.g. `NULL`'s `pntr(void)`) rather than leaving it to be inferred from an
-expected type the way an ordinary untyped `lit-int` is. This is the same shape SA already
-constructs today when splicing a `constDecls_` hit into an expression, so `sa.json`'s shape for
-a macro-derived value is unchanged.
-
-**Consequence for SA.** `sa_cinclude`'s registration of `constants` into `constDecls_`
-(`PlnSemanticAnalyzer.cpp:652-659`) is removed — this was SA's only macro-aware code, and it
-becomes dead once every reference already arrives as a literal. `constDecls_` and the id-branch
-lookup in `PlnSaExpr.cpp` remain, but narrow to their other, legitimately SA-owned purpose:
-Palan's own `const Name = literal;` declarations (`doc/Issues.md` item 10), which are a
-different concept — an SA-scoped symbol, not C-preprocessor text substitution — and stay
-resolved by SA regardless of this change. The only other SA-side change is accepting a `lit-int`
-that already carries a `value-type`, which is a general "already-typed literal" capability, not
-a macro-specific branch.
-
-Non-goals for this iteration: function-like macro export (`doc/Issues.md` item 9, unchanged);
-extending Palan's own `const` to accept an arbitrary compile-time expression (`doc/Issues.md`
-item 10, unchanged); exporting a macro constant as its own cross-module symbol; a diagnostic for
-a macro/variable/const name collision.
+Non-goals for this iteration: C11 anonymous members without a declarator name (and promoted
+access to their fields); union by-value parameters/returns; Palan-native union syntax;
+`enum`/`long double`/`va_list` (`doc/Issues.md` item 14, unchanged); `*attr_t` customization
+beyond passing `NULL`; rwlock/barrier end-to-end fixtures (type registration is verified).
 
 The full design decisions and the ticket breakdown are in
-`localtickets/iteration-2026-09-23-v0133-macro-fold.md`.
+`localtickets/iteration-2026-09-23-v0134-pthread.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design

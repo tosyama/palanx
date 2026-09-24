@@ -171,10 +171,6 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	auto savedCurrentFunc    = currentFunc_;
 	auto savedArrayScopeVars = arrayScopeVars_;
 	auto savedFuncBodyIdx    = funcBodyScopeIdx_;
-	bool savedInAllocFunc    = inAllocFunc_;
-
-	string funcName = funcDef["name"].get<string>();
-	inAllocFunc_ = (funcName.rfind("__pln_alloc_", 0) == 0);
 
 	varScopes       = {{}};
 	arrayScopeVars_ = {{}};  // scope[0] = params; no arrays expected here
@@ -229,7 +225,6 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	arrayScopeVars_  = savedArrayScopeVars;
 	funcBodyScopeIdx_ = savedFuncBodyIdx;
 	currentFunc_     = savedCurrentFunc;
-	inAllocFunc_     = savedInAllocFunc;
 
 	sa["functions"].push_back(saFunc);
 }
@@ -292,7 +287,8 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	arr_assign["ownership-transfer"] = true;
 	json result = json::array({arr_assign});
 
-	// Null out the source variable so free(NULL) at scope end is a no-op.
+	// Null out the source variable so its scope-exit free is a no-op: C free and
+	// the build-mgr generated __pln_free_* functions all accept NULL.
 	if (sa_value.value("expr-type","") == "id" && sa_value.contains("value-type")) {
 		result.push_back({
 			{"stmt-type", "assign"},
@@ -411,7 +407,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 	const StructDef& def = requireCompleteStruct(chain.structName, stmt);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
 	if (it == def.fields.end()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn, def.keyword()) << endl;
 		exit(1);
 	}
 	json fieldType = fieldValueType(*it);

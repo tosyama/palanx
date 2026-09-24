@@ -1,0 +1,12 @@
+type I = int32;
+type Point { int64 x; int64 y; };
+type PT = Point;
+type S { I a; $PT e; @PT p; [2]$PT ea; };
+
+S s;
+Point q;
+3 -> s.a;
+4 -> s.e.y;
+q -> s.p;
+5 -> s.ea[1].x;
+I v = s.a;

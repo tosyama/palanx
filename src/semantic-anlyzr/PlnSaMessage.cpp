@@ -9,7 +9,7 @@
 #include "../common/PlnDefs.h"
 #include <boost/assert.hpp>
 
-string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2)
+string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
 {
 	switch (msg_code) {
 		case M_Help:
@@ -151,7 +151,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_UnknownField:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "struct '" + arg1 + "' has no field '" + arg2 + "'.";
+			BOOST_ASSERT(arg3 == "struct" || arg3 == "union");
+			return arg3 + " '" + arg1 + "' has no field '" + arg2 + "'.";
 
 		case E_UnsupportedStructFieldType:
 			return "unsupported struct field type.";
@@ -227,10 +228,11 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_IncompleteStructType:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 == "unsupported-field" || arg2 == "forward-declared");
+			BOOST_ASSERT(arg3 == "struct" || arg3 == "union");
 			if (arg2 == "forward-declared")
-				return "struct '" + arg1 + "' is only forward-declared in this header; it can "
+				return arg3 + " '" + arg1 + "' is only forward-declared in this header; it can "
 				       "only be used through a pointer ('@" + arg1 + "' / '@!" + arg1 + "').";
-			return "struct '" + arg1 + "' has no known layout (a field type is not supported "
+			return arg3 + " '" + arg1 + "' has no known layout (a field type is not supported "
 			       "this version); it can only be used through a pointer ('@" + arg1 + "' / '@!"
 			       + arg1 + "').";
 

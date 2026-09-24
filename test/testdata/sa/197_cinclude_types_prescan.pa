@@ -1,0 +1,7 @@
+cinclude <time.h>;
+cinclude <stdint.h>;
+
+type S { int64 a; $timespec ts; };
+func f(@timespec t, int64_t n) -> int64_t { return t.tv_sec + n; }
+
+S s;

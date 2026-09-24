@@ -239,28 +239,37 @@ int main(int argc, char* argv[])
 				ofstream out(alloc_pa);
 				out << "cinclude <stdlib.h>;\n";
 
-				// Struct type declarations (leaf-first order from SA)
+				// Struct type declarations (leaf-first order from SA).
+				// Only the owned pointer fields are declared, at their original
+				// offsets; every other byte range becomes opaque padding. The
+				// allocators touch nothing else, and the full field list cannot
+				// be re-expressed as Palan source in general (C unions, synthesized
+				// anonymous tags, embedded types not declared in this module).
 				for (auto& shape : struct_shapes) {
 					string name = shape["shape-name"];
+					vector<pair<int64_t, string>> owned_decls;
+					for (auto& of : shape["owned-fields"])
+						owned_decls.push_back({of["offset"].get<int64_t>(),
+							of["struct-name"].get<string>() + " " + of["name"].get<string>()});
+					for (auto& af : shape["owned-array-fields"])
+						owned_decls.push_back({af["offset"].get<int64_t>(),
+							"[" + to_string(af["count"].get<int64_t>()) + "]"
+							+ af["leaf-name"].get<string>() + " " + af["name"].get<string>()});
+					sort(owned_decls.begin(), owned_decls.end());
+
 					out << "\ntype " << name << " {";
-					for (auto& f : shape["fields"]) {
-						string kind  = f["type-kind"];
-						string tname = f["type-name"];
-						string fname = f["name"];
-						if (kind == "embed")
-							out << " $" << tname << " " << fname << ";";
-						else if (kind == "raw-ptr")
-							out << " @" << tname << " " << fname << ";";
-						else if (kind == "embed-arr")
-							out << " [" << f["count"].get<int64_t>() << "]$" << tname << " " << fname << ";";
-						else if (kind == "arr-ptr")
-							out << " [" << f["count"].get<int64_t>() << "]" << tname << " " << fname << ";";
-						else if (kind == "embed-ptr-arr")
-							out << " [" << f["count"].get<int64_t>() << (f.value("mutable",false) ? "]@!" : "]@")
-							    << tname << " " << fname << ";";
-						else
-							out << " " << tname << " " << fname << ";";
+					int64_t pos = 0;
+					int pad_no = 0;
+					auto pad_to = [&](int64_t end) {
+						if (end > pos)
+							out << " [" << (end - pos) << "]$uint8 __pln_pad" << pad_no++ << ";";
+					};
+					for (auto& [offset, decl] : owned_decls) {
+						pad_to(offset);
+						out << " " << decl << ";";
+						pos = offset + 8;
 					}
+					pad_to(shape["total-size"].get<int64_t>());
 					out << " };\n";
 				}
 
@@ -309,7 +318,8 @@ int main(int argc, char* argv[])
 					out << "}\n";
 
 					out << "export func __pln_free_" << name
-					    << "(" << name << " p) {\n";
+					    << "(" << name << " p) {\n"
+					    << "    if (p == NULL) { return; }\n";
 					for (auto& af : ownedArr) {
 						string fname = af["name"];
 						if (af["elem-kind"] == "prim") {
@@ -357,6 +367,7 @@ int main(int argc, char* argv[])
 					    << "}\n"
 					    << "export func __pln_free_" << shape_key
 					    << "([]@!" << struct_name << " pts, int64 n) {\n"
+					    << "    if (pts == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
 					    << "        " << elem_free << "\n"
@@ -383,6 +394,7 @@ int main(int argc, char* argv[])
 					    << "}\n"
 					    << "export func __pln_free_arr_arr_" << leaf
 					    << "([][]" << leaf << " outer, int64 d0) {\n"
+					    << "    if (outer == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
 					    << "        free(outer[i]);\n"

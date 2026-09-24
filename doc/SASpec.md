@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.33
+ver. 0.1.34
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -40,27 +40,23 @@ Root
   - shape-kind\* - "struct"
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
-  - fields\* - All field descriptors (prim, embed, struct-ptr, raw-ptr, embed-arr, arr-ptr, embed-ptr-arr)
-    - name\* - Field name string
-    - type-kind\* - Field type kind string ("prim", "embed", "struct-ptr", "raw-ptr", "embed-arr", "arr-ptr", "embed-ptr-arr")
-    - type-name\* - Type name string (primitive name or struct name; for array-kind fields, the leaf element's type name)
-    - offset\* - Byte offset within the struct
-    - size\* - Field size in bytes
-    - count - Element count integer; present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr"
-    - elem-kind - Leaf kind string ("prim" or "struct"); present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr"
-    - mutable - Boolean; present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr" (meaningful only for "embed-ptr-arr": `@T`=false, `@!T`=true; always false for the other two kinds)
-  - owned-fields\* - Fields that require a sub-allocator (type-kind "struct-ptr"); empty array if none
+  - owned-fields\* - Owned struct-pointer fields (`T field`), which require a sub-allocator; empty array if none
     - name\* - Field name string
     - offset\* - Byte offset within the struct
     - struct-name\* - Sub-struct type name
     - struct-total-size\* - Sub-struct total size in bytes
     - needs-alloc\* - Boolean; true if the sub-struct itself has owned-fields requiring `__pln_alloc_*`
-  - owned-array-fields\* - Fields that require a cascaded array allocator (type-kind "arr-ptr", i.e. `[n]T field`); empty array if none
+  - owned-array-fields\* - Owned array fields (`[n]T field`), which require a cascaded array allocator; empty array if none
     - name\* - Field name string
     - offset\* - Byte offset within the struct
     - elem-kind\* - Leaf kind string ("prim" or "struct")
     - leaf-name\* - Leaf element type name (primitive name or struct name)
     - count\* - Element count integer
+
+  Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
+  generated allocator module with only the owned fields at their offsets and opaque padding
+  elsewhere, because the full layout cannot always be re-expressed as Palan source (C unions,
+  synthesized anonymous tags, embedded types not declared in that module).
 
   Struct entries (and their leaf-first "arr-struct"/struct dependencies) are ordered leaf-first
   (topological order) so build-mgr can generate and compile allocators in dependency order.
@@ -118,7 +114,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `functions`, `globals`, `structs` and `typedefs` are
   independent sections of the header's AST -- a header exporting only some of
   them (e.g. `stdint.h` with only `typedefs`) still has each present section
-  registered; none is gated on another's presence. A cinclude's `libs` (ASTSpec.md's
+  registered; none is gated on another's presence. For a top-level cinclude,
+  `structs` and `typedefs` are registered early, in the same source-order
+  pre-scan as native `type-alias`/`struct-def` statements and before Palan
+  function signatures are pre-registered, so a native struct field or a Palan
+  function signature below the cinclude can name a C type. `functions` and
+  `globals` are still registered at the statement's own position. A cinclude's `libs` (ASTSpec.md's
   Statement model, from a `link` clause) is handled differently from the
   sections above: instead of being registered into a table and discarded, each
   name is validated (`E_InvalidLinkLibName` on an invalid one) and added to a
@@ -302,7 +303,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
   - id: same object as var-type
-  - c-global: the global's registered var-type (fully normalized: `strct`→`struct`,
+  - c-global: the global's registered var-type (fully normalized: `strct`/`union`→`struct`,
     pointee `const`→pointer `mutable`, no leftover `typedef-name`)
   - add: promoted type of left and right operands (see Promotion rules);
     the narrower operand is wrapped in a convert node if types differ
@@ -677,12 +678,12 @@ C-origin signature admission
 Before a `cinclude`d C function's parameters/return type (or a C global's single type, see the
 **cinclude** entry in Statement model above) are usable, `normalizeCFuncSig`/`normalizeCGlobal`
 (`PlnSaInternal.h`) apply `normalizeCType` (folding `pntr`'s pointee `const` to `mutable`, and
-`strct`→`struct`) and then check every type against `unrepresentableTypeName`, which recognizes:
+a named `strct`/`union`→`struct`) and then check every type against `unrepresentableTypeName`, which recognizes:
 
 - A `prim` type-name not resolved to a known Palan primitive (e.g. `flt128` for C's `long
   double` when no typedef maps it to something usable).
 - `arr` (a bare array type-kind — the `[n]@T`/`[n]@!T` pointer-slot-array shape has already
-  normalized to `pntr` by this point), `func` (a function-pointer type), `union`, a `strct`
+  normalized to `pntr` by this point), `func` (a function-pointer type), a `strct`/`union`
   with no `type-name` (a genuinely untagged struct reference — c2ast synthesizes a tag from
   the typedef name for a single, non-derived `typedef struct { ... } Name;`, so this is a
   multi-declarator/derived-declarator typedef of such a body, not every anonymous struct),
@@ -737,6 +738,14 @@ for a C-origin struct. Every sa.json shape documented below (C ABI layout, var-d
 field-assign, field-access) applies unchanged regardless of whether the struct came from a
 native `type Name {...}` or a `cinclude`d header.
 
+A C union (Struct definition model entry with `"union": true`) registers into the same registry
+as a struct whose fields all sit at offset 0, with `totalSize` = the largest member size rounded
+up to the largest member alignment. sa.json has no union marker: a union appears everywhere as a
+`struct` type-kind, and every consumer (allocation, field access, address-of, pointer
+compatibility, System V classification) works from offsets and `totalSize` alone. `StructDef`
+keeps an `isUnion` flag used only by the layout computation and by diagnostic wording (e.g.
+"union 'U' has no field 'c'").
+
 ### Incomplete struct types
 
 A registered struct tag may be *incomplete* — its name is known but no field layout is available,
@@ -782,7 +791,7 @@ incomplete struct (see "Incomplete struct types" below) rather than being droppe
 the tag going unregistered — fields up to and including the failing one are discarded, and no
 partial layout is kept:
 
-- A by-value struct leaf (`type-kind:"strct"`, from `struct Foo f;`) is rewritten to
+- A by-value struct or union leaf (`type-kind:"strct"`/`"union"`, from `struct Foo f;`) is rewritten to
   `type-kind:"embed"` — same shape a native `$Foo` field produces. A by-value struct leaf inside
   an array (`struct Foo arr[n];`) is instead rewritten to a plain `prim` type-name leaf, matching
   the native `[n]$Foo` shape (`buildStructDef`'s array case looks the leaf up in the struct

@@ -1585,6 +1585,91 @@ TEST(build_mgr, macro_name_collision) {
 	ASSERT_EQ(output, "7 7 7\n");
 }
 
+TEST(build_mgr, c_union_rw)
+{
+	// Both members of a cinclude'd union alias the same bytes: a write through
+	// one is visible through the other (little-endian 258 = 0x0102).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/187_c_union_rw.pa");
+	ASSERT_EQ(output, "2 1\n259\n");
+}
+
+TEST(build_mgr, pthread_create_join)
+{
+	// The thread entry is a Palan function passed as C's void *(*)(void *).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/188_pthread_create_join.pa");
+	ASSERT_EQ(output, "42\n");
+}
+
+TEST(build_mgr, pthread_mutex)
+{
+	// A lost update between the two threads would show as a count below 200000.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/189_pthread_mutex.pa");
+	ASSERT_EQ(output, "200000\n");
+}
+
+TEST(build_mgr, pthread_cond)
+{
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/190_pthread_cond.pa");
+	ASSERT_EQ(output, "ready=1\n");
+}
+
+TEST(build_mgr, struct_field_type_alias)
+{
+	// Owned alias-typed fields reach the generated allocator module under
+	// their resolved names.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/191_struct_field_type_alias.pa");
+	ASSERT_EQ(output, "3 4 5 6 7\n");
+}
+
+TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
+	// Moving each element into the array nulls the loop-local source, so the
+	// generated __pln_free_L must accept NULL.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_owned_struct_arr_owned_field_mtrace_bin "
+		"../test/testdata/build-mgr/192_owned_struct_arr_owned_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_owned_struct_arr_owned_field_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_owned_struct_arr_owned_field_mtrace_bin");
+	ASSERT_EQ(output, "5\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// [2]L ls: 1 ptr array + 2 x (L + owned P) = 5 allocs
+	EXPECT_EQ(allocs, 5) << "expected 5 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, owned_arr_embed_field_mtrace) {
+	// Element types whose embedded fields are not declarable in the generated
+	// allocator module: a native embed, a C struct embed, and a C union.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_owned_arr_embed_field_mtrace_bin "
+		"../test/testdata/build-mgr/193_owned_arr_embed_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_owned_arr_embed_field_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_owned_arr_embed_field_mtrace_bin");
+	ASSERT_EQ(output, "3 4 5 6\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// [2]L: 1 + 2 x (L + owned P) = 5; [2]itimerspec: 3; [2]pthread_mutex_t: 3
+	EXPECT_EQ(allocs, 11) << "expected 11 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

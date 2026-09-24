@@ -13,11 +13,25 @@ static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1)
 
 static StructDef buildStructDef(const string& name,
                                 const json& fields,
-                                const map<string, StructDef>& structDefs)
+                                const map<string, StructDef>& structDefs,
+                                bool isUnion = false)
 {
 	StructDef def;
 	def.name = name;
+	def.isUnion = isUnion;
 	int offset = 0, maxAlign = 1;
+	// Returns the new field's offset; a union overlays every field at 0 and
+	// sizes to its largest member instead of advancing past each one.
+	auto place = [&](int64_t size, int align) {
+		maxAlign = max(maxAlign, align);
+		if (isUnion) {
+			offset = max<int64_t>(offset, size);
+			return 0;
+		}
+		int at = alignUp(offset, align);
+		offset = at + size;
+		return at;
+	};
 	for (auto& f : fields) {
 		const json& vtype = f["var-type"];
 		string tk = vtype.value("type-kind", "");
@@ -26,18 +40,17 @@ static StructDef buildStructDef(const string& name,
 		if (tk == "prim") {
 			string tname = vtype["type-name"].get<string>();
 			if (structDefs.count(tname)) {
-				if (!structDefs.at(tname).isComplete) {
+				const StructDef& target = structDefs.at(tname);
+				if (!target.isComplete) {
 					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, tname,
-					                                  structDefs.at(tname).incompleteReason) << endl;
+					                                  target.incompleteReason, target.keyword()) << endl;
 					exit(1);
 				}
 				int sz = 8, align = 8;
-				offset = alignUp(offset, align);
+				int at = place(sz, align);
 				def.fields.push_back({.name=fieldName, .typeKind="struct-ptr",
 				                      .typeName=tname, .isMutable=false,
-				                      .offset=offset, .size=sz});
-				offset += sz;
-				maxAlign = max(maxAlign, align);
+				                      .offset=at, .size=sz});
 				def.hasOwnedStructFields = true;
 			} else {
 				int sz = elemSizeBytes(tname);
@@ -45,12 +58,10 @@ static StructDef buildStructDef(const string& name,
 					cerr << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 					exit(1);
 				}
-				offset = alignUp(offset, sz);
+				int at = place(sz, sz);
 				def.fields.push_back({.name=fieldName, .typeKind="prim",
 				                      .typeName=tname, .isMutable=false,
-				                      .offset=offset, .size=sz});
-				offset += sz;
-				maxAlign = max(maxAlign, sz);
+				                      .offset=at, .size=sz});
 			}
 		} else if (tk == "embed") {
 			string structName = vtype["base-type"]["type-name"].get<string>();
@@ -65,27 +76,23 @@ static StructDef buildStructDef(const string& name,
 			const StructDef& sub = structDefs.at(structName);
 			if (!sub.isComplete) {
 				cerr << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
-				                                  sub.incompleteReason) << endl;
+				                                  sub.incompleteReason, sub.keyword()) << endl;
 				exit(1);
 			}
 			int align = sub.maxAlign;
-			offset = alignUp(offset, align);
+			int at = place(sub.totalSize, align);
 			def.fields.push_back({.name=fieldName, .typeKind="embed",
 			                      .typeName=structName, .isMutable=false,
-			                      .offset=offset, .size=sub.totalSize});
-			offset += sub.totalSize;
-			maxAlign = max(maxAlign, align);
+			                      .offset=at, .size=sub.totalSize});
 		} else if (tk == "pntr") {
 			int sz = 8, align = 8;
 			string baseName = vtype["base-type"].value("type-name", "");
 			bool isMut = vtype.value("mutable", false);
 			string elemKind = isPrimPointeeName(baseName) ? "prim" : "struct";
-			offset = alignUp(offset, align);
+			int at = place(sz, align);
 			def.fields.push_back({.name=fieldName, .typeKind="raw-ptr",
 			                      .typeName=baseName, .isMutable=isMut,
-			                      .offset=offset, .size=sz, .elemKind=elemKind});
-			offset += sz;
-			maxAlign = max(maxAlign, align);
+			                      .offset=at, .size=sz, .elemKind=elemKind});
 		} else if (tk == "arr") {
 			const json& size_expr = vtype["size-expr"];
 			if (size_expr.is_null()) {
@@ -110,13 +117,11 @@ static StructDef buildStructDef(const string& name,
 					string elemKind = structDefs.count(leaf_name) ? "struct" : "prim";
 
 					int align = 8;
-					offset = alignUp(offset, align);
+					int at = place(count*8, align);
 					def.fields.push_back({.name=fieldName, .typeKind="embed-ptr-arr",
 					                      .typeName=leaf_name, .isMutable=isMut,
-					                      .offset=offset, .size=(int)(count*8),
+					                      .offset=at, .size=(int)(count*8),
 					                      .count=count, .elemKind=elemKind, .stride=8});
-					offset += count * 8;
-					maxAlign = max(maxAlign, align);
 					continue;
 				}
 				// [n]T: owned pointer array (field is an 8B pointer, cascade alloc/free)
@@ -129,31 +134,28 @@ static StructDef buildStructDef(const string& name,
 						exit(1);
 					}
 					int align = 8;
-					offset = alignUp(offset, align);
+					int at = place(8, align);
 					def.fields.push_back({.name=fieldName, .typeKind="arr-ptr",
 					                      .typeName=leaf_name, .isMutable=false,
-					                      .offset=offset, .size=8,
+					                      .offset=at, .size=8,
 					                      .count=count, .elemKind="prim", .stride=stride});
-					offset += 8;
-					maxAlign = max(maxAlign, align);
 					def.hasOwnedArrayFields = true;
 					continue;
 				}
 				// struct leaf ([n]Point): owned pointer array, cascades to the
 				// existing __pln_alloc_arr_T/__pln_free_arr_T allocator helpers
-				if (!structDefs.at(leaf_name).isComplete) {
+				const StructDef& leafDef = structDefs.at(leaf_name);
+				if (!leafDef.isComplete) {
 					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
-					                                  structDefs.at(leaf_name).incompleteReason) << endl;
+					                                  leafDef.incompleteReason, leafDef.keyword()) << endl;
 					exit(1);
 				}
 				int align = 8;
-				offset = alignUp(offset, align);
+				int at = place(8, align);
 				def.fields.push_back({.name=fieldName, .typeKind="arr-ptr",
 				                      .typeName=leaf_name, .isMutable=false,
-				                      .offset=offset, .size=8,
+				                      .offset=at, .size=8,
 				                      .count=count, .elemKind="struct", .stride=8});
-				offset += 8;
-				maxAlign = max(maxAlign, align);
 				def.hasOwnedArrayFields = true;
 				continue;
 			}
@@ -182,7 +184,7 @@ static StructDef buildStructDef(const string& name,
 				const StructDef& leafDef = structDefs.at(leaf_name);
 				if (!leafDef.isComplete) {
 					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
-					                                  leafDef.incompleteReason) << endl;
+					                                  leafDef.incompleteReason, leafDef.keyword()) << endl;
 					exit(1);
 				}
 				if (leafDef.hasOwnedStructFields) {
@@ -198,13 +200,11 @@ static StructDef buildStructDef(const string& name,
 				exit(1);
 			}
 
-			offset = alignUp(offset, align);
+			int at = place(count*stride, align);
 			def.fields.push_back({.name=fieldName, .typeKind="embed-arr",
 			                      .typeName=leaf_name, .isMutable=false,
-			                      .offset=offset, .size=(int)(count*stride),
+			                      .offset=at, .size=(int)(count*stride),
 			                      .count=count, .elemKind=elemKind, .stride=stride});
-			offset += count * stride;
-			maxAlign = max(maxAlign, align);
 		} else {
 			cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 			exit(1);
@@ -620,16 +620,19 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	structDefs_[name] = buildStructDef(name, stmt["fields"], structDefs_);
+	json fields = stmt["fields"];
+	for (auto& f : fields)
+		f["var-type"] = resolveTypeAliasDeep(f["var-type"]);
+	structDefs_[name] = buildStructDef(name, fields, structDefs_);
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // c2ast has no concept of Palan's $T inline-embedding sugar, so it represents
-// a C struct-by-value field as plain "strct"; translate to the "embed" shape
+// a C struct/union-by-value field as a plain tag; translate to the "embed" shape
 // buildStructDef expects.
 static json cFieldVarType(const json& vtype)
 {
-	if (vtype.value("type-kind", "") == "strct" && vtype.contains("type-name")) {
+	if (isCRecordTag(vtype)) {
 		return {{"type-kind", "embed"},
 		        {"base-type", {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}}};
 	}
@@ -638,7 +641,7 @@ static json cFieldVarType(const json& vtype)
 		json& bt = v["base-type"];
 		// Inside an array, a struct-by-value leaf is Palan's [n]$Foo / [n]Foo
 		// shape, named with a plain prim type-name rather than wrapped in "embed".
-		if (bt.value("type-kind", "") == "strct" && bt.contains("type-name")) {
+		if (isCRecordTag(bt)) {
 			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}};
 		} else if (bt.value("type-kind", "") == "pntr") {
 			// An inline array of pointer slots ("T *field[n];") is Palan's
@@ -646,7 +649,7 @@ static json cFieldVarType(const json& vtype)
 			// syntax, so strip it for a single embed-ptr-arr shape either way.
 			v.erase("embedded");
 			json& leaf = bt["base-type"];
-			if (leaf.value("type-kind", "") == "strct" && leaf.contains("type-name")) {
+			if (isCRecordTag(leaf)) {
 				leaf = {{"type-kind", "prim"}, {"type-name", leaf["type-name"]}};
 			}
 		}
@@ -706,6 +709,7 @@ void PlnSemanticAnalyzer::registerCStruct(const json& s)
 		if (existing == structDefs_.end()) {
 			StructDef def;
 			def.name             = name;
+			def.isUnion          = s.value("union", false);
 			def.incompleteReason = "forward-declared";
 			structDefs_[name] = def;
 		}
@@ -722,13 +726,14 @@ void PlnSemanticAnalyzer::registerCStruct(const json& s)
 			// "no such type" -- and still allows @T/@!T use of the tag.
 			StructDef def;
 			def.name             = name;
+			def.isUnion          = s.value("union", false);
 			def.incompleteReason = "unsupported-field";
 			structDefs_[name] = def;
 			return;
 		}
 		fields.push_back({{"name", f["name"]}, {"var-type", vt}});
 	}
-	structDefs_[name] = buildStructDef(name, fields, structDefs_);
+	structDefs_[name] = buildStructDef(name, fields, structDefs_, s.value("union", false));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)
@@ -767,14 +772,14 @@ json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
 }
 
 // Like resolveTypeAlias, but also resolves alias names nested inside pntr/arr
-// wrappers (e.g. "[3]PT" or "@!PT"). Unlike deepNormalizePrimToStruct, this
+// wrappers (e.g. "[3]PT", "@!PT" or "$PT"). Unlike deepNormalizePrimToStruct, this
 // leaves a resolved name as "prim" rather than "struct", so callers' existing
 // structDefs_.count(type-name) checks keep working.
 json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 {
 	json resolved = resolveTypeAlias(vtype);
 	string tk = resolved.value("type-kind", "");
-	if ((tk == "pntr" || tk == "arr") && resolved.contains("base-type"))
+	if ((tk == "pntr" || tk == "arr" || tk == "embed") && resolved.contains("base-type"))
 		resolved["base-type"] = resolveTypeAliasDeep(resolved["base-type"]);
 	return resolved;
 }
@@ -785,7 +790,11 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	const StructDef& def = requireCompleteStruct(structName, stmt);
 	json pntr_type = {{"type-kind","pntr"},
 	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
-	bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inAllocFunc_;
+	// Inside T's own generated allocator, `T p;` must be the bare calloc or
+	// __pln_alloc_T would recurse into itself.
+	bool inOwnAllocator = currentFunc_
+		&& (*currentFunc_)["name"] == "__pln_alloc_" + structName; // LCOV_EXCL_EXCEPTION_BR_LINE
+	bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inOwnAllocator;
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
 	// Accumulated separately so `Pair p = f(), q = g();` allocates storage for

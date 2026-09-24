@@ -1,0 +1,16 @@
+cinclude <pthread.h>;
+cinclude <stdio.h>;
+
+type Shared { int64 value; };
+
+func worker(@!void arg) -> @!void {
+	@!Shared sh = arg;
+	42 -> sh.value;
+	return NULL;
+}
+
+Shared s;
+pthread_t t;
+pthread_create(@!t, NULL, worker, s);
+pthread_join(t, NULL);
+printf("%ld\n", s.value);

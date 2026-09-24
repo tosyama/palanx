@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.33
+ver. 0.1.34
 
 \* - Required
 
@@ -92,7 +92,8 @@ not a compiler abort.
 
 Struct definition model
 ------------------------
-Captured from every struct tag palan-c2ast sees while parsing a `cinclude`d C header —
+Captured from every struct or union tag palan-c2ast sees while parsing a `cinclude`d C header
+(C struct and union tags share one namespace, so both go into this one list) —
 a full `struct Name { field_decl... }` definition, a forward declaration with no body
 (`struct Missing;`), or a bare reference through a field/parameter/return type (e.g. a
 pointer field whose pointee is never defined in this header) — one entry per tag name,
@@ -101,7 +102,14 @@ its own top-level `ast.structs` list; gen-ast then lifts that list onto the encl
 `cinclude` statement's `structs` field (see Statement model below) when merging the header's
 AST in. Same field-list shape as the native `struct-def` statement.
 
-- name\* - Struct tag name string
+- name\* - Struct tag name string. An anonymous struct/union body used as a member
+  (`struct { ... } name;` inside another struct/union) is given a synthesized tag
+  `anon@<file>:<line>:<col>` (the body's source location, with `#2`, `#3`, ... appended when several
+  bodies share one location, as every expansion of one macro body does). Named by location rather than a counter so the
+  same body gets the same tag in every cinclude's separate c2ast run. The name contains
+  characters no C identifier can, so it never collides with a real tag, and Palan source cannot
+  spell it.
+- union - `true` when the tag is a C union; omitted for a struct.
 - fields - Field list; omitted when this header never gives the tag a body (forward
   declaration or bare reference only). SA registers such a tag as an incomplete struct
   (usable only through a pointer) rather than leaving the name unresolved — see SASpec.md.
@@ -126,8 +134,8 @@ gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals`
 Typedef definition model
 -------------------------
 Captured from every `typedef` declaration in a `cinclude`d C header whose resolved
-underlying type is `prim`, or a `strct` that carries a `type-name` (including a tag
-synthesized for a single, non-derived typedef of an otherwise tagless struct body — see
+underlying type is `prim`, or a `strct`/`union` that carries a `type-name` (including a tag
+synthesized for a single, non-derived typedef of an otherwise tagless struct/union body — see
 Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef void
 *timer_t;`) is deliberately not captured here — see the `typedef-name` Note below.
 `typedef`s are captured regardless of whether any C function or global in the header
@@ -249,12 +257,12 @@ Variable type
       SA registers such a tag as
       an incomplete struct (usable only through a pointer) rather than leaving the name
       unresolved; see SASpec.md's Incomplete struct types.
-  6. union - Union type, from a C `union Name { ... }`-typed field/parameter/return. c2ast
-     parses the field list but does not capture it — every reference emits the bare shape
-     below regardless of the union's tag name or members, so distinct unions are
-     indistinguishable in the AST. Unrepresentable in SA this version (see SASpec.md's
-     C-origin signature admission); referencing a value of this type is a compile error.
-     (carries no fields beyond `type-kind`)
+  6. union - Union type reference (by name), from a C union-typed field/parameter/return.
+     Same shape and `type-name` rules as `strct` above (including tag synthesis for a single,
+     non-derived `typedef union { ... } Name;` and for an anonymous member body); the union's
+     fields are in its Struct definition model entry (`"union": true`). SA folds it to
+     `struct` at ingestion, the same as `strct`.
+    - type-name - Union tag name string; omitted only for a genuinely untagged reference
   7. enum - Enum type, from a C `enum Name { ... }`-typed field/parameter/return. c2ast parses
      the enumerator list (names and values) but does not capture it — every reference emits
      the bare shape below. Unrepresentable in SA this version (see SASpec.md's C-origin
@@ -265,9 +273,9 @@ Variable type
     - ret-type\* - Return variable type
   9. user - An identifier used as a type that c2ast could not resolve to a recognized keyword
      or a previously-registered typedef — including a typedef that bottoms out in an
-     anonymous union/enum/function-pointer body, or an anonymous struct body via a
+     anonymous enum/function-pointer body, or an anonymous struct/union body via a
      multi-declarator or derived-declarator typedef (see type-kind "strct" above for the one
-     struct-body shape c2ast does register), none of which c2ast registers.
+     struct/union-body shape c2ast does register), none of which c2ast registers.
      Unrepresentable in SA this version (see SASpec.md's C-origin signature admission).
     - type-name\* - The unresolved identifier string
 

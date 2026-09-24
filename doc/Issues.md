@@ -47,12 +47,12 @@ type Point { int64 x; int64 y; };
 {
     Point s;
     5 -> s.x;
-    p = @!s.x;
+    @!s.x -> p;
 }
 printf("%ld\n", p[0]);
 ```
 
-Reading through `p` after the block exits reads freed memory (observed to crash reliably in practice). Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today.
+Reading through `p` after the block exits reads freed memory — undefined behavior, observed to print a garbage value rather than crash. Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today.
 
 ---
 
@@ -98,9 +98,9 @@ Reading through `p` after the block exits reads freed memory (observed to crash 
 
 ---
 
-## 14. C Types Diagnosed But Not Represented (`long double`, `va_list`, `union`, `enum`)
+## 14. C Types Diagnosed But Not Represented (`long double`, `va_list`, `enum`)
 
-**Summary:** Several C type-kinds are recognized by c2ast and explicitly diagnosed by SA as unrepresentable (`E_UnsupportedParamType`/`E_UnsupportedCFuncSignature`/`E_UnsupportedCGlobalType`, see SASpec.md's C-origin signature admission) rather than causing a compiler abort, but none has an actual Palan-side representation: `long double` (c2ast's `flt128` prim name, unresolved to a known Palan primitive), `va_list`-shaped types, and by-value `union`/`enum` types (whose field/enumerator lists c2ast parses but does not capture — see ASTSpec.md's Variable type `union`/`enum` entries). Diagnosing cleanly at the point of use was the v0.1.29 goal (IT-2026-09-06-2906); giving any of these a real representation is separate, larger work. C function-pointer parameters are no longer in this bucket as of v0.1.30: a function-pointer parameter can now be passed a Palan function name as a callback argument (see PalanReference.md's "Passing a Palan Function as a Callback"), but that is passing a value into a slot, not representing a function-pointer *type* — there is still no first-class function-pointer variable, no way to declare one, and no way to call through one from Palan code.
+**Summary:** Several C type-kinds are recognized by c2ast and explicitly diagnosed by SA as unrepresentable (`E_UnsupportedParamType`/`E_UnsupportedCFuncSignature`/`E_UnsupportedCGlobalType`, see SASpec.md's C-origin signature admission) rather than causing a compiler abort, but none has an actual Palan-side representation: `long double` (c2ast's `flt128` prim name, unresolved to a known Palan primitive), `va_list`-shaped types, and `enum` types (whose enumerator lists c2ast parses but does not capture — see ASTSpec.md's Variable type `enum` entry). C unions are no longer in this bucket as of v0.1.34: they register as structs whose fields all sit at offset 0 (see SASpec.md's Struct types). Diagnosing cleanly at the point of use was the v0.1.29 goal (IT-2026-09-06-2906); giving any of these a real representation is separate, larger work. C function-pointer parameters are no longer in this bucket as of v0.1.30: a function-pointer parameter can now be passed a Palan function name as a callback argument (see PalanReference.md's "Passing a Palan Function as a Callback"), but that is passing a value into a slot, not representing a function-pointer *type* — there is still no first-class function-pointer variable, no way to declare one, and no way to call through one from Palan code.
 
 ---
 
@@ -118,7 +118,7 @@ Reading through `p` after the block exits reads freed memory (observed to crash 
 
 ## 17. Passing a Struct By Value to a C Function Is Unsupported
 
-**Summary:** v0.1.30 implemented a C function *returning* a struct by value as a general System V AMD64 classification (see SASpec.md's call expression `struct-ret` entry), but the reverse direction — a struct-typed **parameter** passed by value (not by pointer) — is still rejected outright: `normalizeCFuncSig` marks any C function with a top-level by-value struct parameter as `_unsupported-sig: "by-value struct parameter"`, so the function itself becomes unusable rather than just that call shape. `stdio.h`'s `fopencookie` (which takes a `cookie_io_functions_t` by value) is the running example. Implementing this would need the same eightbyte classification machinery applied to argument passing (SysV register/stack placement for a classified struct argument) rather than return-value placement. A related, narrower gap: even on the return side, a struct whose size classifies into a fractional eightbyte width other than 1/2/4/8 bytes (e.g. 3, 5, 6, or 7 bytes) is diagnosed (`E_UnsupportedCStructReturn`) rather than implemented, since no function in the v0.1.30 audit needed it.
+**Summary:** v0.1.30 implemented a C function *returning* a struct by value as a general System V AMD64 classification (see SASpec.md's call expression `struct-ret` entry), but the reverse direction — a struct-typed **parameter** passed by value (not by pointer) — is still rejected outright: `normalizeCFuncSig` marks any C function with a top-level by-value struct parameter as `_unsupported-sig: "by-value struct parameter"`, so the function itself becomes unusable rather than just that call shape. `stdio.h`'s `fopencookie` (which takes a `cookie_io_functions_t` by value) is the running example. A C union passed by value falls under the same rule, since SA registers unions as structs (v0.1.34); its diagnostic still says "by-value struct parameter". Implementing this would need the same eightbyte classification machinery applied to argument passing (SysV register/stack placement for a classified struct argument) rather than return-value placement. A related, narrower gap: even on the return side, a struct whose size classifies into a fractional eightbyte width other than 1/2/4/8 bytes (e.g. 3, 5, 6, or 7 bytes) is diagnosed (`E_UnsupportedCStructReturn`) rather than implemented, since no function in the v0.1.30 audit needed it.
 
 ---
 
@@ -153,3 +153,21 @@ Reading through `p` after the block exits reads freed memory (observed to crash 
 ## 23. `unistd.h`'s `syscall()` Wrapper Is Shadowed by the `syscall` Reserved Word
 
 **Summary:** v0.1.32 makes `syscall` a globally reserved word to introduce the raw syscall declaration (`PlnParser.yy:874-894`), which shadows `unistd.h`'s own `long syscall(long, ...)` wrapper (`unistd.h:1091`) — a file that cinclude's `<unistd.h>` and uses a native `syscall` declaration cannot also call that libc wrapper by name. This is a deliberate trade-off, not an oversight: `link` (v0.1.31) hit the same collision and was resolved as a contextual keyword recognized only in `cinclude`'s trailing clause, a position (after `import_as`) where no other production can start. `syscall` can't reuse that trick — it appears statement-leading, where `ID ID '(' ...` is ambiguous between a variable declaration, an ordinary call-expression statement, and the new declaration, so disambiguating it contextually would need lookahead machinery this grammar doesn't have. Reserving it globally was judged acceptable because a native syscall declaration makes the libc wrapper largely redundant once the same syscall is declared directly. If a future need for both in the same file arises, the fix is the same contextual-keyword approach `link` used, scoped to the statement-leading position.
+
+---
+
+## 24. C11 Anonymous Members Without a Member Name Fail to Parse
+
+**Summary:** c2ast's struct/union field parser requires a declarator after every member's type, so a C11 anonymous member (`struct S { int k; union { int a; float b; }; };`) is a parse error ("unexpected token") that fails the whole `cinclude`, for struct and union bodies alike. An anonymous body that has a member name (`union { ... } u;`) works since v0.1.34 (c2ast synthesizes a tag for it). Supporting the unnamed form would need both the parse and promoted field access (`s.a` reaching into the anonymous member), which SA's field resolution has no concept of. None of the headers targeted so far (including glibc's `pthread.h`) uses this form.
+
+---
+
+## 25. `name = expr;` Statements Are Silently Dropped
+
+**Summary:** Palan's assignment is `expr -> name;`, but the C-style form `name = expr;` still parses: `var_declaration`'s `ID '=' expression` alternative (`src/gen-ast/PlnParser.yy`) yields a `not-impl` statement, which SA passes through unchanged and codegen skips. No diagnostic is produced, so `int64 v = 1; v = 7; printf("%ld\n", v);` compiles and prints `1`. The same applies to a `cinclude`d C global (`stdout = f;` bypasses `E_CGlobalNotAssignable`). A statement-level `not-impl` should be a compile error rather than a no-op.
+
+---
+
+## 26. A `uint64` Literal Above `INT64_MAX` Crashes `palan-codegen`
+
+**Summary:** `uint64 a = 18446744073709551600;` passes gen-ast and SA, but `palan-codegen` aborts with an uncaught `std::out_of_range` from `stoll` while reading the literal. Literal values in the upper half of the `uint64` range need to be parsed as unsigned (`stoull`) wherever codegen converts a `lit-uint`/`lit-int` value string. Distinct from item 21: that one is an assembler rejection of an out-of-range `movq` immediate, whereas this crashes before any assembly is emitted.

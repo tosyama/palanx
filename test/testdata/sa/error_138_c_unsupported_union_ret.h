@@ -1,2 +1,1 @@
-union Val { int i; };
-union Val make_val(void);
+union { int i; } make_val(void);

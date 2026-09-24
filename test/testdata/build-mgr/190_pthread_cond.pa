@@ -1,0 +1,28 @@
+cinclude <pthread.h>;
+cinclude <stdio.h>;
+
+type Shared { int64 ready; $pthread_mutex_t m; $pthread_cond_t c; };
+
+func worker(@!void arg) -> @!void {
+	@!Shared sh = arg;
+	pthread_mutex_lock(@!sh.m);
+	1 -> sh.ready;
+	pthread_cond_signal(@!sh.c);
+	pthread_mutex_unlock(@!sh.m);
+	return NULL;
+}
+
+Shared s;
+pthread_mutex_init(@!s.m, NULL);
+pthread_cond_init(@!s.c, NULL);
+pthread_mutex_lock(@!s.m);
+pthread_t t;
+pthread_create(@!t, NULL, worker, s);
+while s.ready == 0 {
+	pthread_cond_wait(@!s.c, @!s.m);
+}
+pthread_mutex_unlock(@!s.m);
+pthread_join(t, NULL);
+pthread_cond_destroy(@!s.c);
+pthread_mutex_destroy(@!s.m);
+printf("ready=%ld\n", s.ready);

@@ -90,5 +90,6 @@ class PlnSaMessage
 {
 public:
 	static string getMessage(PlnSaMessageCode msg_code,
-	                         string arg1="\x01", string arg2="\x01");
+	                         string arg1="\x01", string arg2="\x01",
+	                         string arg3="\x01");
 };

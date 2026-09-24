@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+cinclude "187_c_union_rw.h";
+
+Bits u;
+258 -> u.l;
+printf("%d %d\n", u.b[0], u.b[1]);
+3 -> u.b[0];
+printf("%d\n", u.l);

@@ -1666,6 +1666,36 @@ TEST(sa, cinclude_nested_struct)
 	ASSERT_EQ(jout["statements"][2]["offset"], 24);
 }
 
+TEST(sa, cinclude_union)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/195_c_union.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& st = jout["statements"];
+
+	// u_t = union U { char b[12]; long l; }: max member 12 rounded up to
+	// the 8-byte alignment of l.
+	ASSERT_EQ(st[0]["vars"][0]["init"]["args"][1]["value"], "16");
+	// struct S { int k; union U u; }: u aligned to 8 after k.
+	ASSERT_EQ(st[1]["vars"][0]["init"]["args"][1]["value"], "24");
+	// union W { struct Pt { int x; int y; } p; long l; }
+	ASSERT_EQ(st[2]["vars"][0]["init"]["args"][1]["value"], "8");
+
+	ASSERT_EQ(st[3]["stmt-type"], "field-assign");
+	ASSERT_EQ(st[3]["offset"], 0);   // u.l
+	ASSERT_EQ(st[4]["offset"], 8);   // s.u.l
+	ASSERT_EQ(st[5]["offset"], 4);   // w.p.y
+	ASSERT_EQ(st[6]["vars"][0]["init"]["array"]["offset"], 0);  // u.b[0]
+
+	// @U / @!u_t borrow the union as a plain struct pointer, and the
+	// mutable one passes to take(u_t *).
+	ASSERT_EQ(st[7]["vars"][0]["var-type"]["base-type"]["type-name"], "U");
+	ASSERT_EQ(st[8]["vars"][0]["var-type"]["base-type"]["type-name"], "U");
+	const auto& call = st[9]["body"];
+	ASSERT_EQ(call["name"], "take");
+	ASSERT_EQ(call["args"][0]["name"], "m");
+}
+
 TEST(sa, cinclude_null_constant)
 {
 	cleanTestEnv();
@@ -2765,13 +2795,6 @@ TEST(sa, owned_prim_arr_field)
 	ASSERT_EQ(shapes[0]["total-size"], 8);
 	ASSERT_EQ(shapes[0]["owned-fields"].size(), 0u);
 
-	const auto& fields = shapes[0]["fields"];
-	ASSERT_EQ(fields[0]["name"], "vals");
-	ASSERT_EQ(fields[0]["type-kind"], "arr-ptr");
-	ASSERT_EQ(fields[0]["type-name"], "int64");
-	ASSERT_EQ(fields[0]["count"], 3);
-	ASSERT_EQ(fields[0]["elem-kind"], "prim");
-
 	const auto& ownedArr = shapes[0]["owned-array-fields"];
 	ASSERT_EQ(ownedArr.size(), 1u);
 	ASSERT_EQ(ownedArr[0]["name"], "vals");
@@ -2819,13 +2842,6 @@ TEST(sa, owned_struct_arr_field)
 	ASSERT_NE(cluster_it, shapes.end());
 	ASSERT_EQ((*cluster_it)["total-size"], 8);
 	ASSERT_EQ((*cluster_it)["owned-fields"].size(), 0u);
-
-	const auto& fields = (*cluster_it)["fields"];
-	ASSERT_EQ(fields[0]["name"], "pts");
-	ASSERT_EQ(fields[0]["type-kind"], "arr-ptr");
-	ASSERT_EQ(fields[0]["type-name"], "Point");
-	ASSERT_EQ(fields[0]["count"], 4);
-	ASSERT_EQ(fields[0]["elem-kind"], "struct");
 
 	const auto& ownedArr = (*cluster_it)["owned-array-fields"];
 	ASSERT_EQ(ownedArr.size(), 1u);
@@ -3575,6 +3591,39 @@ TEST(sa, cinclude_struct_stat_size)
 	ASSERT_EQ(v["init"]["args"][1]["value"], "144");
 }
 
+TEST(sa, cinclude_pthread_union_size)
+{
+	// Expected sizes are gcc's sizeof on x86-64 glibc. pthread_cond_t
+	// reaches a union nested in a struct whose member is an anonymous struct.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/196_cinclude_pthread_union_size.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const char* sizes[] = {"40", "48", "56", "4", "4", "56", "8", "32", "4"};
+	const auto& st = jout["statements"];
+	ASSERT_EQ(st.size(), size(sizes));
+	for (size_t i = 0; i < size(sizes); i++) {
+		const auto& v = st[i]["vars"][0];
+		ASSERT_EQ(v["init"]["name"], "calloc") << v["name"];
+		ASSERT_EQ(v["init"]["args"][1]["value"], sizes[i]) << v["name"];
+	}
+}
+
+TEST(sa, cinclude_types_prescan)
+{
+	// Native struct defs and function signatures are pre-scanned before
+	// top-level statements run, so cinclude types must be registered then too.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/197_cinclude_types_prescan.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "24");
+	const auto& f = jout["functions"][0];
+	ASSERT_EQ(f["parameters"][0]["var-type"]["base-type"]["type-name"], "timespec");
+	ASSERT_EQ(f["parameters"][1]["var-type"]["type-name"], "int64");
+	ASSERT_EQ(f["ret-type"]["type-name"], "int64");
+}
+
 TEST(sa, c_const_param_readonly_arg)
 {
 	// `ctime(@t)` -- C function arguments are
@@ -3701,6 +3750,24 @@ TEST(sa, struct_type_alias)
 	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
 }
 
+TEST(sa, struct_field_type_alias)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/198_struct_field_type_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& st = jout["statements"];
+
+	// S { I a; $PT e; @PT p; [2]$PT ea; }: 4 + pad 4 + 16 + 8 + 32
+	ASSERT_EQ(st[0]["vars"][0]["init"]["args"][1]["value"], "64");
+	ASSERT_EQ(st[2]["offset"], 0);   // s.a
+	ASSERT_EQ(st[2]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(st[3]["offset"], 16);  // s.e.y
+	ASSERT_EQ(st[4]["offset"], 24);  // s.p
+	ASSERT_EQ(st[4]["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(st[5]["ptr-expr"]["array"]["offset"], 32);  // s.ea
+	ASSERT_EQ(st[6]["vars"][0]["init"]["value-type"]["type-name"], "int32");
+}
+
 TEST(sa, incomplete_struct_ptr)
 {
 	// struct Tag { int x; int cells[2][3]; }; (cinclude'd) -- "cells" is a 2D
@@ -3725,8 +3792,8 @@ TEST(sa, incomplete_struct_ptr)
 
 TEST(sa, c_unsupported_sig_unused)
 {
-	// The header declares `union Val make_val(void);` (unsupported -- a bare
-	// union return type) alongside `int add(int a, int b);` (supported).
+	// The header declares `union { int i; } make_val(void);` (unsupported --
+	// a nameless union return type) alongside `int add(int a, int b);` (supported).
 	// normalizeCFuncSig tags the unsupported entry with "_unsupported-sig" at
 	// cinclude time but does not reject registration; only calling
 	// requireSupportedCFuncSig's guarded function fails. Calling only `add`
