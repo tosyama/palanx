@@ -40,27 +40,23 @@ Root
   - shape-kind\* - "struct"
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
-  - fields\* - All field descriptors (prim, embed, struct-ptr, raw-ptr, embed-arr, arr-ptr, embed-ptr-arr)
-    - name\* - Field name string
-    - type-kind\* - Field type kind string ("prim", "embed", "struct-ptr", "raw-ptr", "embed-arr", "arr-ptr", "embed-ptr-arr")
-    - type-name\* - Type name string (primitive name or struct name; for array-kind fields, the leaf element's type name)
-    - offset\* - Byte offset within the struct
-    - size\* - Field size in bytes
-    - count - Element count integer; present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr"
-    - elem-kind - Leaf kind string ("prim" or "struct"); present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr"
-    - mutable - Boolean; present only for type-kind "embed-arr", "arr-ptr", "embed-ptr-arr" (meaningful only for "embed-ptr-arr": `@T`=false, `@!T`=true; always false for the other two kinds)
-  - owned-fields\* - Fields that require a sub-allocator (type-kind "struct-ptr"); empty array if none
+  - owned-fields\* - Owned struct-pointer fields (`T field`), which require a sub-allocator; empty array if none
     - name\* - Field name string
     - offset\* - Byte offset within the struct
     - struct-name\* - Sub-struct type name
     - struct-total-size\* - Sub-struct total size in bytes
     - needs-alloc\* - Boolean; true if the sub-struct itself has owned-fields requiring `__pln_alloc_*`
-  - owned-array-fields\* - Fields that require a cascaded array allocator (type-kind "arr-ptr", i.e. `[n]T field`); empty array if none
+  - owned-array-fields\* - Owned array fields (`[n]T field`), which require a cascaded array allocator; empty array if none
     - name\* - Field name string
     - offset\* - Byte offset within the struct
     - elem-kind\* - Leaf kind string ("prim" or "struct")
     - leaf-name\* - Leaf element type name (primitive name or struct name)
     - count\* - Element count integer
+
+  Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
+  generated allocator module with only the owned fields at their offsets and opaque padding
+  elsewhere, because the full layout cannot always be re-expressed as Palan source (C unions,
+  synthesized anonymous tags, embedded types not declared in that module).
 
   Struct entries (and their leaf-first "arr-struct"/struct dependencies) are ordered leaf-first
   (topological order) so build-mgr can generate and compile allocators in dependency order.

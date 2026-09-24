@@ -2795,13 +2795,6 @@ TEST(sa, owned_prim_arr_field)
 	ASSERT_EQ(shapes[0]["total-size"], 8);
 	ASSERT_EQ(shapes[0]["owned-fields"].size(), 0u);
 
-	const auto& fields = shapes[0]["fields"];
-	ASSERT_EQ(fields[0]["name"], "vals");
-	ASSERT_EQ(fields[0]["type-kind"], "arr-ptr");
-	ASSERT_EQ(fields[0]["type-name"], "int64");
-	ASSERT_EQ(fields[0]["count"], 3);
-	ASSERT_EQ(fields[0]["elem-kind"], "prim");
-
 	const auto& ownedArr = shapes[0]["owned-array-fields"];
 	ASSERT_EQ(ownedArr.size(), 1u);
 	ASSERT_EQ(ownedArr[0]["name"], "vals");
@@ -2849,13 +2842,6 @@ TEST(sa, owned_struct_arr_field)
 	ASSERT_NE(cluster_it, shapes.end());
 	ASSERT_EQ((*cluster_it)["total-size"], 8);
 	ASSERT_EQ((*cluster_it)["owned-fields"].size(), 0u);
-
-	const auto& fields = (*cluster_it)["fields"];
-	ASSERT_EQ(fields[0]["name"], "pts");
-	ASSERT_EQ(fields[0]["type-kind"], "arr-ptr");
-	ASSERT_EQ(fields[0]["type-name"], "Point");
-	ASSERT_EQ(fields[0]["count"], 4);
-	ASSERT_EQ(fields[0]["elem-kind"], "struct");
 
 	const auto& ownedArr = (*cluster_it)["owned-array-fields"];
 	ASSERT_EQ(ownedArr.size(), 1u);

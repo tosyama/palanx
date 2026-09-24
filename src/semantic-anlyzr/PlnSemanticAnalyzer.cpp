@@ -194,24 +194,6 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	allocShapeNames_.insert(name);
 
 	const StructDef& def = structDefs_[name];
-	json fields = json::array();
-	for (auto& f : def.fields) {
-		// LCOV_EXCL_EXCEPTION_BR_START
-		json fj = {
-			{"name",      f.name},
-			{"type-kind", f.typeKind},
-			{"type-name", f.typeName},
-			{"offset",    f.offset},
-			{"size",      f.size}
-		};
-		if (f.typeKind == "embed-arr" || f.typeKind == "arr-ptr" || f.typeKind == "embed-ptr-arr") {
-			fj["count"]     = f.count;
-			fj["elem-kind"] = f.elemKind;
-			fj["mutable"]   = f.isMutable;
-		}
-		fields.push_back(move(fj));
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-	}
 	json owned = json::array();
 	for (auto& f : def.fields) {
 		if (f.typeKind != "struct-ptr") continue;
@@ -259,7 +241,6 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 		{"shape-kind",         "struct"},
 		{"shape-name",         name},
 		{"total-size",         def.totalSize},
-		{"fields",             move(fields)},
 		{"owned-fields",       move(owned)},
 		{"owned-array-fields", move(ownedArr)}
 	});

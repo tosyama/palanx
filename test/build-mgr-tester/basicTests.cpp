@@ -1648,6 +1648,28 @@ TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, owned_arr_embed_field_mtrace) {
+	// Element types whose embedded fields are not declarable in the generated
+	// allocator module: a native embed, a C struct embed, and a C union.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_owned_arr_embed_field_mtrace_bin "
+		"../test/testdata/build-mgr/193_owned_arr_embed_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_owned_arr_embed_field_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_owned_arr_embed_field_mtrace_bin");
+	ASSERT_EQ(output, "3 4 5 6\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// [2]L: 1 + 2 x (L + owned P) = 5; [2]itimerspec: 3; [2]pthread_mutex_t: 3
+	EXPECT_EQ(allocs, 11) << "expected 11 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
