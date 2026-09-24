@@ -6,46 +6,47 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-23)
-version: 0.1.34 — pthread.h support via C union types
+### 2.1 Iteration Goal (2026-09-24)
+version: 0.1.35 — statement/literal correctness and integer/float codegen correctness
 
-The goal is to make `pthread.h` usable from Palan: thread creation/join, mutex lock/unlock,
-condition variable wait/signal.
+The goal is to close six `doc/Issues.md` items where valid-looking source is silently dropped,
+miscompiled, crashes the toolchain, or fails to assemble: first the two at the SA/codegen
+boundary (items 25, 26), then the four inside codegen (items 15, 16, 21, 22).
 
-Against this system's glibc (2.39), almost everything is already in place: the header's
-functions parse cleanly, `pthread_create`'s `void *(*)(void *)` callback is handled by the
-existing "Passing a Palan Function as a Callback" mechanism, `pthread_t` and friends bottom out
-in primitive types, and glibc >= 2.34 folds pthread into libc (no `link` clause). The blocker is
-that `pthread_mutex_t`, `pthread_cond_t`, `pthread_attr_t` and the other synchronization types
-are C unions, which c2ast leaves unresolved and SA rejects as unrepresentable (`doc/Issues.md`
-item 14). They are declared by value and passed by address, so this one gap blocks the header.
-`pthread_cond_t` additionally needs two more general gaps closed: a union-typed field inside a
-struct, and an anonymous struct *member* (`struct { ... } name;`), which c2ast currently emits
-with no name or fields, so its size is unknowable.
+**Rejected statements are diagnosed, not dropped (item 25).** A statement-level `not-impl`
+(C-style `name = expr;`, `for`, `interface`, ...) becomes a palan-sa error instead of a no-op.
+gen-ast keeps parsing these forms -- its fixtures exercise the grammar's breadth through them --
+so the rejection belongs in SA, with gen-ast attaching a `loc` and marking the `name = expr;`
+form so SA can point at `expr -> name` instead.
 
-**A union is a struct whose fields all sit at offset 0.** SA registers a C union in the same
-struct table as a struct, with every field at offset 0 and a total size of the largest member
-rounded up to the largest alignment. Every consumer of a struct -- allocation, address-of,
-pointer compatibility, field access, System V by-value classification -- works only from field
-offsets and total size, so it is correct for a union with no union-specific branch; the
-union/struct distinction exists only where the layout is computed and in diagnostic display.
-Union field access (read/write) therefore comes for free and is in scope. A separate union type
-kind was rejected: it would need a union case at every struct consumer and every future record
-feature would be implemented twice. The one invariant it would have enforced structurally --
-a union must not have owned fields -- is unreachable from C input, and any future Palan-native
-union syntax must reject owned fields where the layout is built.
+**An integer literal must fit the type it adopts (item 26).** Out-of-range literals are
+currently truncated by `as` (`int8 x = 300;`) or crash codegen's `stoll` (any value above
+`INT64_MAX`). SA checks the range where a literal's type is decided. Two things make that the
+right place only after normalization: a negative literal is folded by gen-ast into a single
+`lit-int` with a negative value (the shape macro-constant folding already produces), so
+`int8 x = -128;` is not checked as `128`; and `sa_expr_arith` types a literal operand once,
+from the other operand when it has a type, instead of provisionally from the expected type
+first. Codegen then reads a literal's value according to its type's signedness.
 
-At the ingestion boundary, c2ast records unions in its existing struct-tag table (C struct and
-union tags share one namespace) with a union marker, and SA folds c2ast's `"union"` tag to its
-canonical struct shape at the same points that already fold `"strct"`.
+**Codegen emits width- and signedness-correct instructions (items 15, 16, 21).** Comparisons
+select unsigned condition codes for unsigned and pointer operands. Division/modulo selects
+`div`/`idiv` by signedness and operates at 32 or 64 bits, widening 8/16-bit operands to 32
+(avoiding `idivb`'s `%ah` result and the `-128 / -1` trap). An immediate outside the
+sign-extended 32-bit range is loaded with `movabsq` and stored through a scratch register.
 
-Non-goals for this iteration: C11 anonymous members without a declarator name (and promoted
-access to their fields); union by-value parameters/returns; Palan-native union syntax;
-`enum`/`long double`/`va_list` (`doc/Issues.md` item 14, unchanged); `*attr_t` customization
-beyond passing `NULL`; rwlock/barrier end-to-end fixtures (type registration is verified).
+**Palan functions take and return floats (item 22).** Palan-to-Palan calls assign arguments
+per class as System V does -- integer arguments to the integer registers by integer index,
+float arguments to `%xmm0`-`%xmm7` by float index, overflow to the stack in order -- sharing
+the C call path's argument marshalling instead of keeping a second, integer-only one. A single
+float return is in `%xmm0`; a multi-value return assigns its integer and float values per
+class in the same way.
+
+Non-goals for this iteration: `uint64` <-> float conversion (item 13); by-value struct
+parameters (item 17); allocating float values to XMM registers (they stay stack-resident);
+implementing the forms item 25 now rejects.
 
 The full design decisions and the ticket breakdown are in
-`localtickets/iteration-2026-09-23-v0134-pthread.md`.
+`localtickets/iteration-2026-09-24-v0135-codegen-correctness.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
