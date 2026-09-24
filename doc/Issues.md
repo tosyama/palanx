@@ -47,12 +47,12 @@ type Point { int64 x; int64 y; };
 {
     Point s;
     5 -> s.x;
-    p = @!s.x;
+    @!s.x -> p;
 }
 printf("%ld\n", p[0]);
 ```
 
-Reading through `p` after the block exits reads freed memory (observed to crash reliably in practice). Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today.
+Reading through `p` after the block exits reads freed memory — undefined behavior, observed to print a garbage value rather than crash. Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today.
 
 ---
 
@@ -159,3 +159,15 @@ Reading through `p` after the block exits reads freed memory (observed to crash 
 ## 24. C11 Anonymous Members Without a Member Name Fail to Parse
 
 **Summary:** c2ast's struct/union field parser requires a declarator after every member's type, so a C11 anonymous member (`struct S { int k; union { int a; float b; }; };`) is a parse error ("unexpected token") that fails the whole `cinclude`, for struct and union bodies alike. An anonymous body that has a member name (`union { ... } u;`) works since v0.1.34 (c2ast synthesizes a tag for it). Supporting the unnamed form would need both the parse and promoted field access (`s.a` reaching into the anonymous member), which SA's field resolution has no concept of. None of the headers targeted so far (including glibc's `pthread.h`) uses this form.
+
+---
+
+## 25. `name = expr;` Statements Are Silently Dropped
+
+**Summary:** Palan's assignment is `expr -> name;`, but the C-style form `name = expr;` still parses: `var_declaration`'s `ID '=' expression` alternative (`src/gen-ast/PlnParser.yy`) yields a `not-impl` statement, which SA passes through unchanged and codegen skips. No diagnostic is produced, so `int64 v = 1; v = 7; printf("%ld\n", v);` compiles and prints `1`. The same applies to a `cinclude`d C global (`stdout = f;` bypasses `E_CGlobalNotAssignable`). A statement-level `not-impl` should be a compile error rather than a no-op.
+
+---
+
+## 26. A `uint64` Literal Above `INT64_MAX` Crashes `palan-codegen`
+
+**Summary:** `uint64 a = 18446744073709551600;` passes gen-ast and SA, but `palan-codegen` aborts with an uncaught `std::out_of_range` from `stoll` while reading the literal. Literal values in the upper half of the `uint64` range need to be parsed as unsigned (`stoull`) wherever codegen converts a `lit-uint`/`lit-int` value string. Distinct from item 21: that one is an assembler rejection of an out-of-range `movq` immediate, whereas this crashes before any assembly is emitted.
