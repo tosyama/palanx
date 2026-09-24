@@ -78,15 +78,15 @@ std::string unrepresentableTypeName(const json& j)
     if (kind == "pntr")
         return j.contains("base-type") ? unrepresentableTypeName(j["base-type"]) : "malformed type"; // LCOV_EXCL_EXCEPTION_BR_LINE
     if (kind == "struct")
-        return j.contains("type-name") ? "" : "anonymous struct";
+        return j.contains("type-name") ? "" : "anonymous struct"; // LCOV_EXCL_BR_LINE -- normalizeCType only folds a named tag to "struct"
     if (kind == "arr")   return "array"; // LCOV_EXCL_BR_LINE -- arrays always decay to pntr before reaching here
     if (kind == "func")  return "function pointer";
     if (kind == "union") return "union";
     if (kind == "enum")  return "enum";
-    // "strct": c2ast's pre-normalization struct tag (normalizeCType folds it
-    // to "struct" before a cinclude'd signature reaches fromJson, but this
-    // predicate is also usable ahead of that fold).
-    if (kind == "strct") return j.value("type-name", "anonymous struct"); // LCOV_EXCL_BR_LINE -- normalizeCType always folds this away first
+    // "strct": c2ast's struct tag. normalizeCType folds a named one to
+    // "struct", so only a nameless one (e.g. `void f(struct { int a; } *p);`)
+    // reaches here from a cinclude'd signature.
+    if (kind == "strct") return j.value("type-name", "anonymous struct"); // LCOV_EXCL_BR_LINE -- a named strct is folded away first
     // "user": a typedef name c2ast could not resolve to a known underlying
     // type -- report the name itself, it is more useful than "user".
     if (kind == "user")  return j.value("type-name", "user"); // LCOV_EXCL_EXCEPTION_BR_LINE

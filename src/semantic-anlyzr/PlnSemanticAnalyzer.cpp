@@ -547,8 +547,8 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
 		string aliasName = vtype["typedef-name"].get<string>();
 		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
-	} else if (tk == "strct" && vtype.contains("typedef-name") && vtype.contains("type-name")) {
-		// typedef struct Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
+	} else if (isCRecordTag(vtype) && vtype.contains("typedef-name")) {
+		// typedef struct/union Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
 		// as a type alias for the tag, same prim(Tag) representation a native
 		// "type A = SomeStruct;" alias uses.
 		string aliasName = vtype["typedef-name"].get<string>();

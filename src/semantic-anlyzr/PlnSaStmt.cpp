@@ -411,7 +411,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 	const StructDef& def = requireCompleteStruct(chain.structName, stmt);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
 	if (it == def.fields.end()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn, def.keyword()) << endl;
 		exit(1);
 	}
 	json fieldType = fieldValueType(*it);

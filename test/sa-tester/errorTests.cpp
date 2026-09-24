@@ -1261,6 +1261,28 @@ TEST(sa_error, incomplete_struct_forward_declared)
 	ASSERT_NE(sa.find("struct 'Tag' is only forward-declared in this header"), string::npos);
 }
 
+TEST(sa_error, c_union_unknown_field)
+{
+	// The unknown field sits mid-chain (u.c.a), so it is diagnosed while
+	// resolving the object chain rather than at the final field store.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_187_c_union_unknown_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("union 'U' has no field 'c'"), string::npos);
+}
+
+TEST(sa_error, c_union_forward_declared)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_188_c_union_forward_decl.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("union 'F' is only forward-declared in this header"), string::npos);
+}
+
 TEST(sa_error, incomplete_struct_owned_arr)
 {
 	// Same incomplete Tag as above; `[3]Tag a;` (owned pointer array) needs
@@ -1435,12 +1457,10 @@ TEST(sa_error, c_unsupported_user_param)
 
 TEST(sa_error, c_unsupported_union_param)
 {
-	// `int use_val(union Val v);` -- c2ast parses union bodies but discards
-	// them, emitting a bare {"type-kind":"union"} with no name/fields
-	// (CParser.cpp's union branch never calls captureStructTag). No system
-	// header in the empirical audit for this ticket produced a bare `union`
-	// reference (glibc always typedefs anonymous unions), so this is a
-	// hand-written header.
+	// `int use_val(union { int i; } v);` -- a nameless union in a signature
+	// has no tag to register a layout under, so c2ast emits a bare
+	// {"type-kind":"union"}. glibc always names or typedefs its unions, so
+	// this is a hand-written header.
 	// Covers: sa_expr_call -> requireSupportedCFuncSig
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1454,8 +1474,8 @@ TEST(sa_error, c_unsupported_union_param)
 
 TEST(sa_error, c_unsupported_enum_param)
 {
-	// `void pick(enum Color c);` -- same reasoning as the union case above,
-	// "enum" is discarded to a bare {"type-kind":"enum"}. (A *tagged* enum
+	// `void pick(enum Color c);` -- c2ast discards even a tagged enum to a
+	// bare {"type-kind":"enum"}. (A *tagged* enum
 	// used directly as a top-level return type hits an unrelated c2ast parser
 	// gap -- CParser::declaration's enum branch has no backtrack counterpart
 	// to the struct/union one -- so this exercises the parameter position;
@@ -1474,7 +1494,7 @@ TEST(sa_error, c_unsupported_enum_param)
 
 TEST(sa_error, c_unsupported_union_ret)
 {
-	// `union Val make_val(void);` -- the ret-type-only path: the callee has
+	// `union { int i; } make_val(void);` -- the ret-type-only path: the callee has
 	// no parameters, so the only way to reach a diagnosis is if
 	// requireSupportedCFuncSig fires before sa_expr["value-type"] is set from
 	// ret-type (sa_expr_call:457-459) -- proves the gate precedes that copy

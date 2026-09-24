@@ -42,6 +42,10 @@ struct StructDef {
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;
 	string incompleteReason;  // "unsupported-field" or "forward-declared" when !isComplete; empty otherwise
+	// A C union: every field sits at offset 0. Only layout (buildStructDef) and
+	// diagnostics consult this; every other consumer sees offsets/totalSize.
+	bool   isUnion = false;
+	const char* keyword() const { return isUnion ? "union" : "struct"; }
 };
 
 struct FieldChain {

@@ -1,0 +1,12 @@
+cinclude "195_c_union.h";
+
+u_t u;
+S s;
+W w;
+1 -> u.l;
+2 -> s.u.l;
+3 -> w.p.y;
+int8 c = u.b[0];
+@U r = u;
+@!u_t m = u;
+take(m);

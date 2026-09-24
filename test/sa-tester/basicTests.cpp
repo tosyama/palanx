@@ -1666,6 +1666,36 @@ TEST(sa, cinclude_nested_struct)
 	ASSERT_EQ(jout["statements"][2]["offset"], 24);
 }
 
+TEST(sa, cinclude_union)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/195_c_union.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& st = jout["statements"];
+
+	// u_t = union U { char b[12]; long l; }: max member 12 rounded up to
+	// the 8-byte alignment of l.
+	ASSERT_EQ(st[0]["vars"][0]["init"]["args"][1]["value"], "16");
+	// struct S { int k; union U u; }: u aligned to 8 after k.
+	ASSERT_EQ(st[1]["vars"][0]["init"]["args"][1]["value"], "24");
+	// union W { struct Pt { int x; int y; } p; long l; }
+	ASSERT_EQ(st[2]["vars"][0]["init"]["args"][1]["value"], "8");
+
+	ASSERT_EQ(st[3]["stmt-type"], "field-assign");
+	ASSERT_EQ(st[3]["offset"], 0);   // u.l
+	ASSERT_EQ(st[4]["offset"], 8);   // s.u.l
+	ASSERT_EQ(st[5]["offset"], 4);   // w.p.y
+	ASSERT_EQ(st[6]["vars"][0]["init"]["array"]["offset"], 0);  // u.b[0]
+
+	// @U / @!u_t borrow the union as a plain struct pointer, and the
+	// mutable one passes to take(u_t *).
+	ASSERT_EQ(st[7]["vars"][0]["var-type"]["base-type"]["type-name"], "U");
+	ASSERT_EQ(st[8]["vars"][0]["var-type"]["base-type"]["type-name"], "U");
+	const auto& call = st[9]["body"];
+	ASSERT_EQ(call["name"], "take");
+	ASSERT_EQ(call["args"][0]["name"], "m");
+}
+
 TEST(sa, cinclude_null_constant)
 {
 	cleanTestEnv();
@@ -3725,8 +3755,8 @@ TEST(sa, incomplete_struct_ptr)
 
 TEST(sa, c_unsupported_sig_unused)
 {
-	// The header declares `union Val make_val(void);` (unsupported -- a bare
-	// union return type) alongside `int add(int a, int b);` (supported).
+	// The header declares `union { int i; } make_val(void);` (unsupported --
+	// a nameless union return type) alongside `int add(int a, int b);` (supported).
 	// normalizeCFuncSig tags the unsupported entry with "_unsupported-sig" at
 	// cinclude time but does not reject registration; only calling
 	// requireSupportedCFuncSig's guarded function fails. Calling only `add`

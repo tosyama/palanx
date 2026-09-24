@@ -58,7 +58,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	const StructDef& def = requireCompleteStruct(base.structName, obj);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
 	if (it == def.fields.end()) {
-		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UnknownField, base.structName, fn) << endl;
+		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UnknownField, base.structName, fn, def.keyword()) << endl;
 		exit(1);
 	}
 	if (it->typeKind == "prim") {
@@ -100,7 +100,7 @@ const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName
 	const StructDef& def = requireCompleteStruct(structName, locNode);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fieldName; });
 	if (it == def.fields.end()) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName) << endl;
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName, def.keyword()) << endl;
 		exit(1);
 	}
 	return *it;
@@ -117,7 +117,7 @@ const StructDef& PlnSemanticAnalyzer::requireCompleteStruct(const string& struct
 	const StructDef& def = structDefs_[structName];
 	if (!def.isComplete) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
-		                                                        def.incompleteReason) << endl;
+		                                                        def.incompleteReason, def.keyword()) << endl;
 		exit(1);
 	}
 	return def;

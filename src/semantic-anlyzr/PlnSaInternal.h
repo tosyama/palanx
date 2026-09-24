@@ -277,9 +277,18 @@ inline void normalizeUnsizedArrSig(json& funcDef) {
 				r["var-type"] = unsizedArrToPntr(r["var-type"]);
 }
 
+// A named C struct or union reference. Both are laid out through structDefs_
+// (a union is a StructDef with every field at offset 0), so SA folds them to
+// one canonical "struct" shape; a nameless one has nothing to register under
+// and stays unrepresentable.
+inline bool isCRecordTag(const json& t) {
+	string tk = t.value("type-kind", "");
+	return (tk == "strct" || tk == "union") && t.contains("type-name");
+}
+
 inline json normalizeCType(const json& type);
 
-// Rewrites c2ast's "strct" tag to SA's canonical "struct", and folds a
+// Rewrites a named C struct/union tag to SA's canonical "struct", and folds a
 // pointee's "const" into SA's own "mutable" pointer-permission flag
 // (recursing into `func` nodes so callback pointer parameters get it too).
 inline json normalizeCType(const json& type) {
@@ -290,7 +299,7 @@ inline json normalizeCType(const json& type) {
 		t["base-type"] = move(base);
 		return t;
 	}
-	if (type.value("type-kind","") == "strct") {
+	if (isCRecordTag(type)) {
 		json t = type;
 		t["type-kind"] = "struct";
 		return t;

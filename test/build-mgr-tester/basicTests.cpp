@@ -1585,6 +1585,15 @@ TEST(build_mgr, macro_name_collision) {
 	ASSERT_EQ(output, "7 7 7\n");
 }
 
+TEST(build_mgr, c_union_rw)
+{
+	// Both members of a cinclude'd union alias the same bytes: a write through
+	// one is visible through the other (little-endian 258 = 0x0102).
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/187_c_union_rw.pa");
+	ASSERT_EQ(output, "2 1\n259\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
