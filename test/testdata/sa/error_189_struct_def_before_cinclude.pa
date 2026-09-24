@@ -1,0 +1,2 @@
+type S { int64 a; $timespec ts; };
+cinclude <time.h>;

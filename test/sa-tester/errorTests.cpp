@@ -1283,6 +1283,18 @@ TEST(sa_error, c_union_forward_declared)
 	ASSERT_NE(sa.find("union 'F' is only forward-declared in this header"), string::npos);
 }
 
+TEST(sa_error, struct_def_before_cinclude)
+{
+	// The cinclude pre-scan keeps source order: a struct defined above the
+	// cinclude cannot see its types.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_189_struct_def_before_cinclude.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("unknown struct type 'timespec'"), string::npos);
+}
+
 TEST(sa_error, incomplete_struct_owned_arr)
 {
 	// Same incomplete Tag as above; `[3]Tag a;` (owned pointer array) needs

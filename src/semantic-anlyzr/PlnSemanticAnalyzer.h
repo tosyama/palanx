@@ -121,6 +121,7 @@ class PlnSemanticAnalyzer {
 	json sa_statements(const json& stmts);
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
+	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	json sa_expr_call(const json& expr);

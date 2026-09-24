@@ -3623,6 +3623,21 @@ TEST(sa, cinclude_pthread_union_size)
 	}
 }
 
+TEST(sa, cinclude_types_prescan)
+{
+	// Native struct defs and function signatures are pre-scanned before
+	// top-level statements run, so cinclude types must be registered then too.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/197_cinclude_types_prescan.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "24");
+	const auto& f = jout["functions"][0];
+	ASSERT_EQ(f["parameters"][0]["var-type"]["base-type"]["type-name"], "timespec");
+	ASSERT_EQ(f["parameters"][1]["var-type"]["type-name"], "int64");
+	ASSERT_EQ(f["ret-type"]["type-name"], "int64");
+}
+
 TEST(sa, c_const_param_readonly_arg)
 {
 	// `ctime(@t)` -- C function arguments are
