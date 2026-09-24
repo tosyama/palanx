@@ -1634,6 +1634,15 @@ TEST(build_mgr, int_literal_range)
 	ASSERT_EQ(output, "18446744073709551600 -128 127\n");
 }
 
+TEST(build_mgr, int64_imm_range)
+{
+	// mov to memory only encodes a sign-extended imm32, so wider values
+	// failed to assemble.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/195_int64_imm_range.pa");
+	ASSERT_EQ(output, "3000000000 -9223372036854775807 9223372036854775808\n-3000000000\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.

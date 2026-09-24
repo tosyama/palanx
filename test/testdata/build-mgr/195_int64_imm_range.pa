@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+
+int64 a = 3000000000;
+int64 b = -9223372036854775807;
+uint64 c = 9223372036854775808;
+printf("%ld %ld %lu\n", a, b, c);
+-3000000000 -> a;
+printf("%ld\n", a);

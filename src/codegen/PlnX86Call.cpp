@@ -240,7 +240,7 @@ void PlnX86CodeGen::emitInstrCallSys(const CallSys& c, const RegMap& rm)
     // still be read from it. movl keeps the immediate in the 32-bit form
     // (palan-sa caps the number at UINT32_MAX) and zeroes the rest of %rax,
     // which the kernel's entry path range-checks in full.
-    emitMovImm("%eax", VRegType::Int32, c.num);
+    emitMovImm("%eax", false, VRegType::Int32, c.num);
     out << "\tsyscall\n";
 
     if (c.dsts.size() == 1 && rm.count(c.dsts[0])) {
