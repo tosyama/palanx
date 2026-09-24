@@ -3605,6 +3605,24 @@ TEST(sa, cinclude_struct_stat_size)
 	ASSERT_EQ(v["init"]["args"][1]["value"], "144");
 }
 
+TEST(sa, cinclude_pthread_union_size)
+{
+	// Expected sizes are gcc's sizeof on x86-64 glibc. pthread_cond_t
+	// reaches a union nested in a struct whose member is an anonymous struct.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/196_cinclude_pthread_union_size.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const char* sizes[] = {"40", "48", "56", "4", "4", "56", "8", "32", "4"};
+	const auto& st = jout["statements"];
+	ASSERT_EQ(st.size(), size(sizes));
+	for (size_t i = 0; i < size(sizes); i++) {
+		const auto& v = st[i]["vars"][0];
+		ASSERT_EQ(v["init"]["name"], "calloc") << v["name"];
+		ASSERT_EQ(v["init"]["args"][1]["value"], sizes[i]) << v["name"];
+	}
+}
+
 TEST(sa, c_const_param_readonly_arg)
 {
 	// `ctime(@t)` -- C function arguments are

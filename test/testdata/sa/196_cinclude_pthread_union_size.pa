@@ -1,0 +1,11 @@
+cinclude <pthread.h>;
+
+pthread_mutex_t a;
+pthread_cond_t b;
+pthread_attr_t c;
+pthread_mutexattr_t d;
+pthread_condattr_t e;
+pthread_rwlock_t f;
+pthread_rwlockattr_t g;
+pthread_barrier_t h;
+pthread_barrierattr_t i;
