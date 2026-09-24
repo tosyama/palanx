@@ -587,10 +587,12 @@ void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 	if (stmt.contains("typedefs"))
 		for (auto& td : stmt["typedefs"]) {
 			const json& vt = td["var-type"];
+			// LCOV_EXCL_EXCEPTION_BR_START
 			registerTypeAliasChecked(td["name"].get<string>(),
 				{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {

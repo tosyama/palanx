@@ -362,8 +362,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 			// reference the body. Synthesized on base_vt, so pointer/array
 			// declarators wrap an already-named type.
 			string btk = base_vt.value("type-kind", "");
-			if ((btk == "strct" || btk == "union") && !base_vt.contains("type-name")
-					&& flocal.contains("fields")) {
+			if ((btk == "strct" || btk == "union") && !base_vt.contains("type-name")) {
 				string tag = synthesizeAnonTag(tokens[field_start]);
 				captureStructTag(tag, &flocal["fields"], btk == "union");
 				base_vt["type-name"] = tag;
