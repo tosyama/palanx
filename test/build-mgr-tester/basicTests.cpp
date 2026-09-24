@@ -1664,6 +1664,14 @@ TEST(build_mgr, stack_arg_narrow_int)
 	                  "-699990393\n-700000493\n");
 }
 
+TEST(build_mgr, mul_8bit)
+{
+	// 8-bit multiply was emitted as imulq on byte registers, which fails to assemble.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/198_mul_8bit.pa");
+	ASSERT_EQ(output, "-15 44 -128\n144 255\n44 144\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.

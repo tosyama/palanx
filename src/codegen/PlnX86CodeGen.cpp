@@ -51,7 +51,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<InitVarF> (&instr)) emitInstrInitVarF(*i, rm);
             else if (auto* a  = std::get_if<Add>      (&instr)) emitBinArith(addInstrForType(a->type), a->dst, a->lhs, a->rhs, a->type, rm);
             else if (auto* s  = std::get_if<Sub>      (&instr)) emitBinArith(subInstrForType(s->type), s->dst, s->lhs, s->rhs, s->type, rm);
-            else if (auto* m  = std::get_if<Mul>      (&instr)) emitBinArith(mulInstrForType(m->type), m->dst, m->lhs, m->rhs, m->type, rm);
+            else if (auto* m  = std::get_if<Mul>      (&instr)) emitInstrMul(*m, rm);
             else if (auto* i  = std::get_if<Div>      (&instr)) emitInstrDiv(*i, rm);
             else if (auto* i  = std::get_if<Mod>      (&instr)) emitInstrMod(*i, rm);
             else if (auto* i  = std::get_if<Neg>      (&instr)) emitInstrNeg(*i, rm);

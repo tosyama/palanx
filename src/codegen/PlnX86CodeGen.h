@@ -36,6 +36,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrMovImm(const MovImm& i, const RegMap& rm);
     void emitInstrInitVar(const InitVar& i, const RegMap& rm);
     void emitInstrInitVarF(const InitVarF& i, const RegMap& rm);
+    void emitInstrMul(const Mul& i, const RegMap& rm);
     void emitInstrDiv(const Div& i, const RegMap& rm);
     void emitInstrMod(const Mod& i, const RegMap& rm);
     void emitInstrNeg(const Neg& i, const RegMap& rm);

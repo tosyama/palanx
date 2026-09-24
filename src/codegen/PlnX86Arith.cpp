@@ -29,6 +29,25 @@ void PlnX86CodeGen::emitBinArith(const string& op, VReg dst, VReg lhs, VReg rhs,
     }
 }
 
+void PlnX86CodeGen::emitInstrMul(const Mul& ml, const RegMap& rm)
+{
+    if (isFloat(ml.type) || intWidth(ml.type) != 1) {
+        emitBinArith(mulInstrForType(ml.type), ml.dst, ml.lhs, ml.rhs, ml.type, rm);
+        return;
+    }
+    if (!rm.count(ml.dst)) return;  // dead: result never used
+    // imulb has no 2-operand form. The product's low byte depends only on the
+    // operands' low bytes, so a 32-bit multiply of zero-extended operands is exact.
+    // rhs is loaded first so a dst sharing rhs's register cannot clobber it.
+    const PhysLoc& dst_loc = rm.at(ml.dst);
+    out << "\tmovzbl " << srcOperand(rm.at(ml.rhs)) << ", %r10d\n";
+    string acc = dst_loc.isStack() ? "%eax" : sizedRegName(dst_loc.base, VRegType::Int32);
+    out << "\tmovzbl " << srcOperand(rm.at(ml.lhs)) << ", " << acc << "\n";
+    out << "\timull %r10d, " << acc << "\n";
+    if (dst_loc.isStack())
+        out << "\tmovb %al, " << srcOperand(dst_loc) << "\n";
+}
+
 void PlnX86CodeGen::emitInstrDiv(const Div& dv, const RegMap& rm)
 {
     if (!rm.count(dv.dst)) return;  // dead: result never used

@@ -83,12 +83,11 @@ inline string subInstrForType(VRegType type) {
     return intMnemonic("sub", type);
 }
 
-// imulb has no 2-operand form; Int8/Uint8 multiplication is not supported here — the
-// 1-byte case is left mapped to imulq, matching the pre-existing (unreachable) fallback.
+// imulb has no 2-operand form; emitInstrMul handles the 1-byte case itself.
 inline string mulInstrForType(VRegType type) {
     if (type == VRegType::Float32) return "mulss";
     if (type == VRegType::Float64) return "mulsd";
-    if (intWidth(type) == 1) return "imulq";
+    BOOST_ASSERT(intWidth(type) != 1);
     return intMnemonic("imul", type);
 }
 
