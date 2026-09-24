@@ -1617,6 +1617,15 @@ TEST(build_mgr, pthread_cond)
 	ASSERT_EQ(output, "ready=1\n");
 }
 
+TEST(build_mgr, struct_field_type_alias)
+{
+	// Owned alias-typed fields reach the generated allocator module under
+	// their resolved names.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/191_struct_field_type_alias.pa");
+	ASSERT_EQ(output, "3 4 5 6 7\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

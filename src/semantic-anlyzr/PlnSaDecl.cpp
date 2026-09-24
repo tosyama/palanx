@@ -620,7 +620,10 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	structDefs_[name] = buildStructDef(name, stmt["fields"], structDefs_);
+	json fields = stmt["fields"];
+	for (auto& f : fields)
+		f["var-type"] = resolveTypeAliasDeep(f["var-type"]);
+	structDefs_[name] = buildStructDef(name, fields, structDefs_);
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -769,14 +772,14 @@ json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
 }
 
 // Like resolveTypeAlias, but also resolves alias names nested inside pntr/arr
-// wrappers (e.g. "[3]PT" or "@!PT"). Unlike deepNormalizePrimToStruct, this
+// wrappers (e.g. "[3]PT", "@!PT" or "$PT"). Unlike deepNormalizePrimToStruct, this
 // leaves a resolved name as "prim" rather than "struct", so callers' existing
 // structDefs_.count(type-name) checks keep working.
 json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 {
 	json resolved = resolveTypeAlias(vtype);
 	string tk = resolved.value("type-kind", "");
-	if ((tk == "pntr" || tk == "arr") && resolved.contains("base-type"))
+	if ((tk == "pntr" || tk == "arr" || tk == "embed") && resolved.contains("base-type"))
 		resolved["base-type"] = resolveTypeAliasDeep(resolved["base-type"]);
 	return resolved;
 }

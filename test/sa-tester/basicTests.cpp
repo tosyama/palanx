@@ -3764,6 +3764,24 @@ TEST(sa, struct_type_alias)
 	ASSERT_EQ(v["init"]["args"][1]["value"], "16");
 }
 
+TEST(sa, struct_field_type_alias)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/198_struct_field_type_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& st = jout["statements"];
+
+	// S { I a; $PT e; @PT p; [2]$PT ea; }: 4 + pad 4 + 16 + 8 + 32
+	ASSERT_EQ(st[0]["vars"][0]["init"]["args"][1]["value"], "64");
+	ASSERT_EQ(st[2]["offset"], 0);   // s.a
+	ASSERT_EQ(st[2]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(st[3]["offset"], 16);  // s.e.y
+	ASSERT_EQ(st[4]["offset"], 24);  // s.p
+	ASSERT_EQ(st[4]["value-type"]["base-type"]["type-name"], "Point");
+	ASSERT_EQ(st[5]["ptr-expr"]["array"]["offset"], 32);  // s.ea
+	ASSERT_EQ(st[6]["vars"][0]["init"]["value-type"]["type-name"], "int32");
+}
+
 TEST(sa, incomplete_struct_ptr)
 {
 	// struct Tag { int x; int cells[2][3]; }; (cinclude'd) -- "cells" is a 2D
