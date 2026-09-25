@@ -249,10 +249,8 @@ inline json unsizedArrToPntr(const json& type) {
 	if (type.value("type-kind","") == "arr"
 		&& type.value("specifier","") == "raw"
 		&& type["size-expr"].is_null()) {
-		// []$[m]T parameter form: arr with embed base-type (from gen-ast)
-		if (type["base-type"].value("type-kind","") == "embed") {
-			// base-type is {type-kind:"embed", base-type: {arr, size-expr:m, base-type:T}}
-			const auto& embed_bt = type["base-type"]["base-type"];  // [m]T part
+		if (type.value("embedded", false)) {
+			const auto& embed_bt = type["base-type"];  // [m]T part
 			json pntr = {{"type-kind","pntr"},{"embedded",true}};
 			if (embed_bt.value("type-kind","") == "arr" && !embed_bt["size-expr"].is_null()) {
 				const auto& sz = embed_bt["size-expr"];

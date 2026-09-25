@@ -1011,7 +1011,12 @@ type_expr: ID
 			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",move($2)},{"base-type",move($4)}};
 	}
 	| '[' ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"base-type",move($3)}}; }
+	{
+		if ($3.value("type-kind","") == "embed")
+			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"embedded",true},{"base-type",move($3["base-type"])}};
+		else
+			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"base-type",move($3)}};
+	}
 	| '[' '#' ']' type_expr
 	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",nullptr},{"base-type",move($4)}}; }
 	| '[' '#' expression ']' type_expr

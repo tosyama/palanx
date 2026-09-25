@@ -218,7 +218,8 @@ Variable type
         - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
     - embedded - Boolean, true when the array's storage is laid out inline/contiguous rather than
       as a separately-allocated block; omitted when false. Native syntax sets this for the
-      `$`-prefixed inline-storage forms, both 1D (`[n]$T`) and a contiguous 2D array (`[n]$[m]T`);
+      `$`-prefixed inline-storage forms, both 1D (`[n]$T`) and a contiguous 2D array (`[n]$[m]T`,
+      or `[]$[m]T` with a null outer size-expr);
       c2ast sets it on every C array declarator it captures (a struct field or parameter written
       `T name[n]` in the header), 1D included, since a C array is always inline storage.
     Note: For `[m][n]T` (2D array via pointer-of-pointers), the outer arr's `base-type` is itself an

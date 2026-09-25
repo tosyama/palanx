@@ -623,6 +623,13 @@ TEST(gen_ast, embed_arr_decl) {
 	ASSERT_FALSE(inner["size-expr"].is_null());
 	ASSERT_EQ(inner["base-type"]["type-kind"], "prim");
 	ASSERT_EQ(inner["base-type"]["type-name"], "int32");
+
+	// []$[4]int32 param: same shape as the sized form, with a null outer size
+	const auto& pvt = jout["ast"]["functions"][0]["parameters"][0]["var-type"];
+	ASSERT_TRUE(pvt["size-expr"].is_null());
+	ASSERT_TRUE(pvt.value("embedded", false));
+	ASSERT_EQ(pvt["base-type"]["type-kind"], "arr");
+	ASSERT_EQ(pvt["base-type"]["base-type"]["type-name"], "int32");
 }
 
 TEST(gen_ast, logical_ops) {
