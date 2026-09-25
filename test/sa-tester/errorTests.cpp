@@ -2351,6 +2351,7 @@ TEST(sa_error, arr_lit_init)
 		{"error_215_arr_lit_self_ref.pa", ":1:18: error: Undefined variable 'a'."},
 		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array variable 'a' cannot be initialized with an array literal: only numeric element types are supported."},
 		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_218_arr_lit_void_elem.pa", ":2:15: error: Void function call cannot be used as a value."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
