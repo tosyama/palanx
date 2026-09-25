@@ -302,8 +302,8 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue"
-- loc\* - Location Array (omitted for "not-impl")
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue" "not-impl"
+- loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
@@ -370,6 +370,10 @@ Statement model
     - body\* - Statement model list (raw array, no block wrapper)
   16. break - exit the innermost while loop (no additional fields)
   17. continue - skip to next iteration of innermost while loop (no additional fields)
+  18. not-impl - a statement the grammar parses but the compiler does not implement (e.g. `for`,
+      `interface`, `x++`, a type-omitted declaration). Rejected by SA.
+    - untyped-var - Name of the first type-omitted variable; present only for a `name = expr;`
+      declaration (reserved for type inference; an assignment is `expr -> name`)
 
 Expression model
 ----------------
@@ -378,7 +382,7 @@ Expression model
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token)
-    - value\* - Decimal string (e.g. "10")
+    - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128")
     - value-type - Variable type; present only when this node is gen-ast's in-place substitute
       for a reference to a cinclude'd macro constant (see Constant definition model above) —
       an ordinary source-literal `lit-int` never carries one. Holds the macro's own
@@ -463,7 +467,9 @@ Expression model
   23. bitnot - Unary bitwise NOT (`~a`; integer operand only)
     - operand\* - Operand expression model
 
-Note: Negative integer literals (e.g. `-42`) are represented as a `neg` expression wrapping a positive literal.
+Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
+`value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a
+macro-folded `lit-int` and a `lit-uint`) is wrapped in a `neg` expression.
 Note: sa.json extends this format with additional fields and expression kinds. See SASpec.md.
 
 Location Array

@@ -11,15 +11,15 @@ version: 0.1.35 — statement/literal correctness and integer/float codegen corr
 
 The goal is to close six `doc/Issues.md` items where valid-looking source is silently dropped,
 miscompiled, crashes the toolchain, or fails to assemble: first the two at the SA/codegen
-boundary (items 25, 26), then the four inside codegen (items 15, 16, 21, 22).
+boundary, then the four inside codegen.
 
-**Rejected statements are diagnosed, not dropped (item 25).** A statement-level `not-impl`
+**Rejected statements are diagnosed, not dropped.** A statement-level `not-impl`
 (C-style `name = expr;`, `for`, `interface`, ...) becomes a palan-sa error instead of a no-op.
 gen-ast keeps parsing these forms -- its fixtures exercise the grammar's breadth through them --
 so the rejection belongs in SA, with gen-ast attaching a `loc` and marking the `name = expr;`
 form so SA can point at `expr -> name` instead.
 
-**An integer literal must fit the type it adopts (item 26).** Out-of-range literals are
+**An integer literal must fit the type it adopts.** Out-of-range literals are
 currently truncated by `as` (`int8 x = 300;`) or crash codegen's `stoll` (any value above
 `INT64_MAX`). SA checks the range where a literal's type is decided. Two things make that the
 right place only after normalization: a negative literal is folded by gen-ast into a single
@@ -28,13 +28,13 @@ right place only after normalization: a negative literal is folded by gen-ast in
 from the other operand when it has a type, instead of provisionally from the expected type
 first. Codegen then reads a literal's value according to its type's signedness.
 
-**Codegen emits width- and signedness-correct instructions (items 15, 16, 21).** Comparisons
+**Codegen emits width- and signedness-correct instructions.** Comparisons
 select unsigned condition codes for unsigned and pointer operands. Division/modulo selects
 `div`/`idiv` by signedness and operates at 32 or 64 bits, widening 8/16-bit operands to 32
 (avoiding `idivb`'s `%ah` result and the `-128 / -1` trap). An immediate outside the
 sign-extended 32-bit range is loaded with `movabsq` and stored through a scratch register.
 
-**Palan functions take and return floats (item 22).** Palan-to-Palan calls assign arguments
+**Palan functions take and return floats.** Palan-to-Palan calls assign arguments
 per class as System V does -- integer arguments to the integer registers by integer index,
 float arguments to `%xmm0`-`%xmm7` by float index, overflow to the stack in order -- sharing
 the C call path's argument marshalling instead of keeping a second, integer-only one. A single
@@ -42,8 +42,8 @@ float return is in `%xmm0`; a multi-value return assigns its integer and float v
 class in the same way.
 
 Non-goals for this iteration: `uint64` <-> float conversion (item 13); by-value struct
-parameters (item 17); allocating float values to XMM registers (they stay stack-resident);
-implementing the forms item 25 now rejects.
+parameters (item 15); allocating float values to XMM registers (they stay stack-resident);
+implementing the statement forms now rejected.
 
 The full design decisions and the ticket breakdown are in
 `localtickets/iteration-2026-09-24-v0135-codegen-correctness.md`.
@@ -177,11 +177,14 @@ Design:
  and required libraries).
 
  Calling convention:
- - C function calls follow the x86-64 System V ABI: arguments passed in rdi, rsi, rdx, rcx, r8, r9.
- - For variadic C functions (e.g. printf), al is set to 0 (no floating-point arguments).
- - Palan function calls use the same argument registers (rdi/rsi/rdx/rcx/r8/r9).
- - A single return value is returned in rax (System V compatible).
- - Two or more return values are returned in rdi/rsi/rdx/... (caller-saved; read immediately after call).
+ - C and Palan function calls share the x86-64 System V argument assignment: integer/pointer
+   arguments take rdi, rsi, rdx, rcx, r8, r9 and float arguments take xmm0-xmm7, each counted
+   by its own class index; arguments beyond either sequence go to the stack in order.
+ - Before a C call, al is set to the number of XMM argument registers used (required by
+   variadic functions such as printf).
+ - A single return value is returned in rax, or xmm0 for a float (System V compatible).
+ - Two or more return values take each class's argument register sequence in order
+   (integers in rdi/rsi/rdx/..., floats in xmm0/xmm1/...; caller-saved, read immediately after call).
  - Normal Palan functions use standard frame setup (pushq %rbp / movq %rsp, %rbp / subq $N, %rsp)
    with frameSize rounded to a multiple of 16, and epilogue `leave; ret`.
  - The `_start` entry point uses `call exit` as its epilogue; `return` statements are rejected by palan-sa.

@@ -148,6 +148,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 - const-decl statements are consumed by SA and not emitted; literal values
   are inlined at each reference site (see Constant Declarations /
   Restrictions in PalanReference.md)
+- not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
+  the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise
 - var-type resolved on id expressions (see Expression model below)
 - assign and return statements are emitted as-is with SA-annotated expressions
 
@@ -299,6 +301,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     reference appears
   - lit-uint: adopts the expected uint type when in a uint-typed context (e.g. `uint32 x = 1u;` → uint32);
     defaults to uint64 when no expected uint type is available
+  - Range check (lit-int without its own `value-type`, and lit-uint): once the type is decided, a
+    value outside that integer type's range (including a negative value adopting an unsigned type)
+    is rejected with `E_IntLiteralOutOfRange`. A literal operand of a binary operator is typed only
+    once -- from the other operand's type when that has one, else from the expected type -- so the
+    check never runs against a provisional type.
   - lit-flo: adopts flo32 or flo64 when used in a float-typed context (e.g. `flo32 y = 1.5;` → flo32);
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
