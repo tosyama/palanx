@@ -1682,6 +1682,24 @@ TEST(build_mgr, divmod_width_sign)
 	                  "35 5 9285 5\n571428571 3\n1844674407370955160 0\n-128 500000000\n");
 }
 
+TEST(build_mgr, pln_float_call)
+{
+	// Palan calls passed every arg in intArgs[j] and returned in %rax regardless
+	// of type, so float params/returns failed to assemble.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/200_pln_float_call.pa");
+	ASSERT_EQ(output, "2.000000\n4.500000 2.500000\n21.750000\n"
+	                  "9.000000 10.000000 600 700 800\n3655.000000\n"
+	                  "x=1.250000\n2.500000\n3 1.500000 2 1.000000\n0.500000\n");
+}
+
+TEST(build_mgr, import_float)
+{
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/201_import_float.pa");
+	ASSERT_EQ(output, "25.000000 1.500000\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.

@@ -729,15 +729,21 @@ VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
             declareVar(p.name, r);
         }
         // Pre-declare single named return variable
+        auto zeroInit = [&](VReg r, VRegType t) {
+            if (t == VRegType::Float32 || t == VRegType::Float64)
+                vf.instrs.push_back(InitVarF{r, t, addFloatLiteral("0.0", t)});
+            else
+                vf.instrs.push_back(InitVar{r, t, 0});
+        };
         if (!pf.retVarName.empty()) {
             VReg r = allocVReg();
-            vf.instrs.push_back(InitVar{r, pf.retType, 0});
+            zeroInit(r, pf.retType);
             declareVar(pf.retVarName, r);
         }
         // Pre-declare multiple named return variables
         for (auto& rv : pf.retVars) {
             VReg r = allocVReg();
-            vf.instrs.push_back(InitVar{r, rv.type, 0});
+            zeroInit(r, rv.type);
             declareVar(rv.name, r);
         }
         currentPlnFunc_ = &pf;

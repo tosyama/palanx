@@ -21,6 +21,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitMovImm(const string& dst, bool dst_is_mem, VRegType type, long long value);
     void emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to);
     void emitCallC(const string& name, int nFloatArgs = 0);
+    int  emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs);
     void emitExit(int code);
 
     // Per-function prologue

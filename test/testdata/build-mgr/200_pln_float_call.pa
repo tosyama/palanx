@@ -1,0 +1,62 @@
+cinclude <stdio.h>;
+
+// minimal repro
+{
+    func show(flo64 x) { printf("%f\n", x); }
+    show(2.0);
+}
+
+// flo64/flo32 params and returns with arithmetic
+{
+    func scale(flo64 x, flo64 k) -> flo64 { return x * k; }
+    func half(flo32 x) -> flo32 { return x / 2.0; }
+    flo64 d = 1.5;
+    printf("%f %f\n", scale(d, 3.0), flo64(half(5.0)));
+}
+
+// int/float params interleaved: each class indexed independently
+{
+    func mix(int32 a, flo64 x, int64 b, flo32 y) -> flo64 {
+        return a + x + b + y;
+    }
+    printf("%f\n", mix(1, 0.5, 20, 0.25));
+}
+
+// float args beyond %xmm7 and int args beyond %r9 overflow to the stack in argument order
+{
+    func many(flo64 a, flo64 b, flo64 c, flo64 d, flo64 e, flo64 f, flo64 g, flo64 h,
+              flo64 i, flo32 j, int64 k1, int64 k2, int64 k3, int64 k4, int64 k5,
+              int64 k6, int32 k7, int16 k8) -> flo64 {
+        printf("%f %f %ld %d %d\n", i, flo64(j), k6, k7, k8);
+        return a + b + c + d + e + f + g + h + i + j + k1 + k2 + k3 + k4 + k5 + k6 + k7 + k8;
+    }
+    printf("%f\n", many(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                        100, 200, 300, 400, 500, 600, 700, 800));
+}
+
+// float param live across a call
+{
+    func twice(flo64 x) -> flo64 {
+        printf("x=%f\n", x);
+        return x + x;
+    }
+    printf("%f\n", twice(1.25));
+}
+
+// multiple returns mixing int and float
+{
+    func divmodf(int64 a, int64 b, flo64 s) -> int64 q, flo64 fq, int64 r, flo32 fr {
+        a / b -> q;
+        a % b -> r;
+        q * s -> fq;
+        flo32(r * s) -> fr;
+    }
+    (int64 q, flo64 fq, int64 r, flo32 fr) = divmodf(17, 5, 0.5);
+    printf("%ld %f %ld %f\n", q, fq, r, flo64(fr));
+}
+
+// single named float return
+{
+    func third(flo32 x) -> flo32 r { x / 3.0 -> r; }
+    printf("%f\n", flo64(third(1.5)));
+}

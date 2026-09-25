@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+import "lib_float.pa";
+
+printf("%f %f\n", hypot2(3.0, 4.0), flo64(blend(3, 0.5)));
