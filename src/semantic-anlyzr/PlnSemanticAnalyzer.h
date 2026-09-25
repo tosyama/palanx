@@ -156,6 +156,7 @@ class PlnSemanticAnalyzer {
 	json sa_var_decl_group(const json& stmt);     // all vars share one var-type; returns array of statements
 	json sa_arr_var_decl(const json& stmt);       // returns array of statements
 	json sa_arr_lit_var_decl(const json& stmt);   // single var; returns array of statements
+	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_owned_struct_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_

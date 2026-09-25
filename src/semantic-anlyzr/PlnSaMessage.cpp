@@ -381,6 +381,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "array variable '" + arg1 + "' cannot be initialized with an array literal: only numeric element types are supported.";
 
+		case E_ArrLitRowSizeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "array variable '" + arg1 + "' has rows of size " + arg2 + " but a row of its array literal has " + arg3 + " elements.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

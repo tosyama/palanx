@@ -1765,6 +1765,12 @@ TEST(build_mgr, arr_lit_1d) {
 	ASSERT_EQ(output, "1 -2 3\n200 255\n1.5 2.0 10.0\n11 20 -2\n2 3 5\n9 7 8\n");
 }
 
+TEST(build_mgr, arr_lit_2d) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/207_arr_lit_2d.pa");
+	ASSERT_EQ(output, "1 3 5 -6\n8 10 12\n1.50 10.00 3.00 4.25\n3 4 6\n200 255 0 10\n20 -6 3\n10 11 12 13\n");
+}
+
 TEST(build_mgr, mixed_type_var_decl) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/206_mixed_type_var_decl.pa");
@@ -1786,6 +1792,26 @@ TEST(build_mgr, arr_lit_mtrace) {
 
 	auto [allocs, frees] = parseMtraceLog(traceFile);
 	EXPECT_EQ(allocs, 2) << "expected 2 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, arr_lit_2d_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_arr_lit_2d_mtrace_bin "
+		"../test/testdata/build-mgr/208_arr_lit_2d_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_arr_lit_2d_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_arr_lit_2d_mtrace_bin");
+	ASSERT_EQ(output, "10\n");
+
+	// [2][3]int32: row table + 2 rows; []$[3]int32: one contiguous block
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
