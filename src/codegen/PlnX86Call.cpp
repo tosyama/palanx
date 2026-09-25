@@ -199,15 +199,22 @@ void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
     out << "\tcall " << c.name << "\n";
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
-    // Multi-return: copy in reverse order to avoid overwrite.
+    // Stack dsts first (they only read return registers), then register dsts
+    // as a hazard-safe shuffle: a dst may be bound to the next call's argument
+    // register that still holds another, not-yet-copied result.
     vector<string> regs = plnRetRegs(c.retTypes);
-    for (int j = (int)c.dsts.size() - 1; j >= 0; j--) {
+    vector<RegMove> retMoves;
+    for (int j = 0; j < (int)c.dsts.size(); j++) {
         if (!rm.count(c.dsts[j])) continue;
-        string src_reg = sizedRegName(regs[j], c.retTypes[j]);
-        string d = srcOperand(rm.at(c.dsts[j]));
-        if (src_reg != d)
-            out << "\t" << movInstrForType(c.retTypes[j]) << " " << src_reg << ", " << d << "\n";
+        const PhysLoc& dst = rm.at(c.dsts[j]);
+        VRegType t = c.retTypes[j];
+        string src_reg = sizedRegName(regs[j], t);
+        if (dst.isStack())
+            out << "\t" << movInstrForType(t) << " " << src_reg << ", " << srcOperand(dst) << "\n";
+        else
+            retMoves.push_back(RegMove{movInstrForType(t), t, src_reg, regs[j], dst.base, sizedRegName(dst.base, t)});
     }
+    emitSafeRegMoves(out, retMoves, "%r11");
 }
 
 // A raw Linux syscall: number in %rax, arguments in the syscall ABI's own

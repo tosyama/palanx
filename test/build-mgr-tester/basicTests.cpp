@@ -1700,6 +1700,15 @@ TEST(build_mgr, import_float)
 	ASSERT_EQ(output, "25.000000 1.500000\n");
 }
 
+TEST(build_mgr, multiret_recv_swap)
+{
+	// Results were copied to their dsts in reverse order, clobbering a return
+	// register still holding a later-copied result when dsts sit in arg registers.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/202_multiret_recv_swap.pa");
+	ASSERT_EQ(output, "2 1\n3 1 2\n20 2.500000 10\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.
