@@ -1,0 +1,199 @@
+{
+  "alloc-shapes": [],
+  "functions": [],
+  "libs": [],
+  "original": "/test/076_uint64_float_convert.pa",
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "expr-type": "lit-uint",
+            "loc": [
+              1,
+              12,
+              1,
+              33
+            ],
+            "value": "18446744073709551615",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "uint64"
+            }
+          },
+          "name": "u",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "uint64"
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "expr-type": "convert",
+            "from-type": {
+              "type-kind": "prim",
+              "type-name": "uint64"
+            },
+            "src": {
+              "expr-type": "id",
+              "loc": [
+                2,
+                11,
+                2,
+                12
+              ],
+              "name": "u",
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "uint64"
+              },
+              "var-type": {
+                "type-kind": "prim",
+                "type-name": "uint64"
+              }
+            },
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "flo64"
+            }
+          },
+          "name": "d",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "flo64"
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "expr-type": "convert",
+            "from-type": {
+              "type-kind": "prim",
+              "type-name": "uint64"
+            },
+            "src": {
+              "expr-type": "id",
+              "loc": [
+                3,
+                17,
+                3,
+                18
+              ],
+              "name": "u",
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "uint64"
+              },
+              "var-type": {
+                "type-kind": "prim",
+                "type-name": "uint64"
+              }
+            },
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "flo32"
+            }
+          },
+          "name": "s",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "flo32"
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "expr-type": "convert",
+            "from-type": {
+              "type-kind": "prim",
+              "type-name": "flo64"
+            },
+            "src": {
+              "expr-type": "id",
+              "loc": [
+                4,
+                20,
+                4,
+                21
+              ],
+              "name": "d",
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "flo64"
+              },
+              "var-type": {
+                "type-kind": "prim",
+                "type-name": "flo64"
+              }
+            },
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "uint64"
+            }
+          },
+          "name": "ud",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "uint64"
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "expr-type": "convert",
+            "from-type": {
+              "type-kind": "prim",
+              "type-name": "flo32"
+            },
+            "src": {
+              "expr-type": "id",
+              "loc": [
+                5,
+                20,
+                5,
+                21
+              ],
+              "name": "s",
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "flo32"
+              },
+              "var-type": {
+                "type-kind": "prim",
+                "type-name": "flo32"
+              }
+            },
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "uint64"
+            }
+          },
+          "name": "us",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "uint64"
+          }
+        }
+      ]
+    }
+  ],
+  "str-literals": []
+}

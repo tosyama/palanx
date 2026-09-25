@@ -1,0 +1,27 @@
+cinclude <stdio.h>;
+
+// uint64 -> float: values below and at/above 2^63 take different paths.
+uint64 u0 = 0;
+uint64 u1 = 9007199254740993;
+uint64 u2 = 9223372036854775808u;
+uint64 u3 = 18446744073709551615u;
+// 2^63 + 1025 sits just above a flo64 rounding midpoint; halving without
+// keeping the dropped low bit would round it down to 2^63.
+uint64 u4 = 9223372036854776833u;
+printf("%.0f %.0f %.0f %.0f %.0f\n", flo64(u0), flo64(u1), flo64(u2), flo64(u3), flo64(u4));
+printf("%.0f %.0f %.0f %.0f\n", flo64(flo32(u0)), flo64(flo32(u1)), flo64(flo32(u2)), flo64(flo32(u3)));
+
+// Implicit widening and usual arithmetic conversion.
+flo64 f1 = u3;
+flo32 f2 = u2;
+printf("%.0f %.0f %.1f\n", f1, flo64(f2), u2 + 0.5);
+
+// float -> uint64.
+flo64 d1 = 1.8e19;
+flo64 d2 = 12345.75;
+flo32 d3 = 9223372036854775808.0;
+printf("%lu %lu %lu\n", uint64(d1), uint64(d2), uint64(d3));
+
+// Round trip of a value exactly representable in flo64.
+uint64 rt = 18446744073709549568u;
+printf("%lu\n", uint64(flo64(rt)));

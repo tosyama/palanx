@@ -228,11 +228,10 @@ void PlnX86CodeGen::emitConvert(const string& dstBase, const PhysLoc& src, VRegT
 
     // Float to integer conversion (truncation toward zero)
     if (isFloat(from) && !isFloat(to)) {
-        if (to == VRegType::Uint64) {
-            // Requires a branch-based bias-correction sequence that cannot be
-            // emitted inline here. Lower this conversion in PlnVCodeGen instead.
-            std::cerr << "PlnX86CodeGen: float-to-uint64 conversion must be lowered in PlnVCodeGen\n";
-            std::abort();
+        if (to == VRegType::Uint64) { // LCOV_EXCL_BR_LINE
+            // Unreachable: PlnVCodeGen lowers float-to-uint64 into a branch sequence.
+            std::cerr << "PlnX86CodeGen: float-to-uint64 conversion must be lowered in PlnVCodeGen\n"; // LCOV_EXCL_LINE
+            std::abort(); // LCOV_EXCL_LINE
         }
         // cvtt*2si has only 32-bit and 64-bit integer destination forms.
         // Uint8/16/32 use the 64-bit form: a uint32 above INT32_MAX would not
@@ -295,14 +294,9 @@ void PlnX86CodeGen::emitConvert(const string& dstBase, const PhysLoc& src, VRegT
         out << "\t" << cvt << " %rax, " << dstAt(to) << "\n";
         return;
     }
-    if (from == VRegType::Uint64 && (to == VRegType::Float32 || to == VRegType::Float64)) {
-        // uint64-to-float requires a branch-based sequence that cannot be emitted inline here.
-        // Lower this conversion in PlnVCodeGen using Label/CondJmp/Jmp instructions.
-        std::cerr << "PlnX86CodeGen: uint64-to-float conversion must be lowered in PlnVCodeGen\n";
-        std::abort();
-    }
     // Abort unconditionally — do not rely on BOOST_ASSERT which is a no-op in release builds.
-    // Unreachable: every VRegType pair is handled by the branches above.
+    // Unreachable: uint64-to-float is lowered in PlnVCodeGen, and every other
+    // VRegType pair is handled by the branches above.
     std::cerr << "PlnX86CodeGen: unsupported conversion\n"; // LCOV_EXCL_LINE
     std::abort(); // LCOV_EXCL_LINE
 }

@@ -1429,3 +1429,29 @@ TEST(codegen, elf_crt_glue_no_entry) {
     ASSERT_EQ(asm_text.find(".globl _start"),   string::npos);
     ASSERT_NE(asm_text.find(".note.GNU-stack"), string::npos);
 }
+
+TEST(codegen, uint64_float_convert) {
+    // SSE converts cover only the signed int64 range, so each direction is
+    // lowered into a branch on the top bit / the 2^63 threshold.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/076_uint64_float_convert.sa.json";
+    string asmf = "out/076_uint64_float_convert.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find(".Lu2f0_hi:"), string::npos);
+    ASSERT_NE(asm_text.find(".Lu2f1_hi:"), string::npos);
+    ASSERT_NE(asm_text.find(".Lf2u2_hi:"), string::npos);
+    ASSERT_NE(asm_text.find(".Lf2u3_hi:"), string::npos);
+    ASSERT_NE(asm_text.find("cvtsi2sdq"),  string::npos);
+    ASSERT_NE(asm_text.find("cvtsi2ssq"),  string::npos);
+    ASSERT_NE(asm_text.find("divq"),       string::npos);
+    ASSERT_NE(asm_text.find("cvttsd2siq"), string::npos);
+    ASSERT_NE(asm_text.find("cvttss2siq"), string::npos);
+    ASSERT_NE(asm_text.find("movabsq $-9223372036854775808"), string::npos);
+    ASSERT_NE(asm_text.find("xorq"),       string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/076_uint64_float_convert.o"), "");
+}

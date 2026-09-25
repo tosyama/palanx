@@ -90,6 +90,10 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         case ExprKind::Convert: {
             auto& e = static_cast<const ConvertExpr&>(expr);
             VReg src = lowerExpr(*e.src, func);
+            bool fromF = e.from == VRegType::Float32 || e.from == VRegType::Float64;
+            bool toF   = e.to   == VRegType::Float32 || e.to   == VRegType::Float64;
+            if ((e.from == VRegType::Uint64 && toF) || (fromF && e.to == VRegType::Uint64))
+                return lowerU64FloatConvert(src, e.from, e.to, func);
             VReg dst = allocVReg();
             func.instrs.push_back(Convert{dst, src, e.from, e.to});
             return dst;
@@ -488,6 +492,65 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
         default:
             BOOST_ASSERT(false);  // only call expressions are valid as statements
     }
+}
+
+// SSE converts only cover the signed int64 range, so values with the top bit
+// set need a branch; emitConvert emits straight-line code only.
+VReg PlnVCodeGen::lowerU64FloatConvert(VReg src, VRegType from, VRegType to, VFunc& func)
+{
+    auto imm = [&](VRegType t, long long v) {
+        VReg r = allocVReg();
+        func.instrs.push_back(MovImm{r, t, v});
+        return r;
+    };
+    auto op = [&](auto instr) {
+        func.instrs.push_back(instr);
+        return instr.dst;
+    };
+
+    bool toFloat = from == VRegType::Uint64;
+    string prefix   = (toFloat ? ".Lu2f" : ".Lf2u") + to_string(labelCounter_++);
+    string hiLabel  = prefix + "_hi";
+    string endLabel = prefix + "_end";
+    VReg dst = allocVReg();
+
+    if (toFloat) {
+        func.instrs.push_back(InitVarF{dst, to, addFloatLiteral("0.0", to)});
+
+        VReg neg = op(Cmp{allocVReg(), "<", src, imm(VRegType::Int64, 0), VRegType::Int64}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        func.instrs.push_back(CondJmp{hiLabel, neg, false}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        VReg lo = op(Convert{allocVReg(), src, VRegType::Int64, to});
+        func.instrs.push_back(Mov{dst, lo, to});
+        func.instrs.push_back(Jmp{endLabel});
+
+        // Halve, keeping the dropped low bit as a sticky bit so the
+        // int64->float rounding of the halved value matches that of x.
+        func.instrs.push_back(Label{hiLabel});
+        VReg half = op(Div{allocVReg(), src, imm(VRegType::Uint64, 2), VRegType::Uint64});
+        VReg bit  = op(BitAnd{allocVReg(), src, imm(VRegType::Int64, 1), VRegType::Int64});
+        VReg h    = op(BitOr{allocVReg(), half, bit, VRegType::Int64});
+        VReg hf   = op(Convert{allocVReg(), h, VRegType::Int64, to});
+        VReg hi   = op(Add{allocVReg(), hf, hf, to});
+        func.instrs.push_back(Mov{dst, hi, to});
+    } else {
+        func.instrs.push_back(InitVar{dst, VRegType::Uint64, 0});
+
+        VReg lim = allocVReg();
+        func.instrs.push_back(InitVarF{lim, from, addFloatLiteral("9223372036854775808.0", from)});
+        VReg ge = op(Cmp{allocVReg(), ">=", src, lim, from}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        func.instrs.push_back(CondJmp{hiLabel, ge, false}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        VReg lo = op(Convert{allocVReg(), src, from, VRegType::Int64});
+        func.instrs.push_back(Mov{dst, lo, VRegType::Uint64});
+        func.instrs.push_back(Jmp{endLabel});
+
+        func.instrs.push_back(Label{hiLabel});
+        VReg biased = op(Sub{allocVReg(), src, lim, from});
+        VReg bi     = op(Convert{allocVReg(), biased, from, VRegType::Int64});
+        VReg hi     = op(BitXor{allocVReg(), bi, imm(VRegType::Int64, INT64_MIN), VRegType::Int64});
+        func.instrs.push_back(Mov{dst, hi, VRegType::Uint64});
+    }
+    func.instrs.push_back(Label{endLabel});
+    return dst;
 }
 
 // Return a float literal label, adding the literal to prog_.floatData.

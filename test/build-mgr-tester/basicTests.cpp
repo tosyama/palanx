@@ -1816,6 +1816,17 @@ TEST(build_mgr, arr_lit_2d_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, uint64_float_convert) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/209_uint64_float_convert.pa");
+	ASSERT_EQ(output,
+		"0 9007199254740992 9223372036854775808 18446744073709551616 9223372036854777856\n"
+		"0 9007199254740992 9223372036854775808 18446744073709551616\n"
+		"18446744073709551616 9223372036854775808 9223372036854775808.0\n"
+		"18000000000000000000 12345 9223372036854775808\n"
+		"18446744073709549568\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
