@@ -126,7 +126,7 @@ src/
 │   ├── PlnX86Mem.cpp    Memory/address instruction emission
 │   ├── PlnDeserialize.* sa.json → Module
 │   └── PlnCodeGen.h     Abstract base class
-└── common/          Shared utilities (PlnFileUtils, PlnProcess — argv-based child process spawning)
+└── common/          Shared utilities (PlnProcess — argv-based child process spawning)
 test/
 ├── testdata/        Test input files (numbered sequentially per tool)
 ├── test-base/       Shared test helpers (execTestCommand, cleanTestEnv)

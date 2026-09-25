@@ -24,7 +24,6 @@
 #include <stdexcept>
 
 #include "../../lib/json/single_include/nlohmann/json.hpp"
-#include "../common/PlnFileUtils.h"
 #include "PlnGenAstMacroFold.h"
 
 using std::vector;
