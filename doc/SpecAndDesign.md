@@ -6,47 +6,31 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-24)
-version: 0.1.35 — statement/literal correctness and integer/float codegen correctness
+### 2.1 Iteration Goal (2026-09-25)
+version: 0.1.36 — array literals as initializers, and uint64 <-> float conversion
 
-The goal is to close six `doc/Issues.md` items where valid-looking source is silently dropped,
-miscompiled, crashes the toolchain, or fails to assemble: first the two at the SA/codegen
-boundary, then the four inside codegen.
+**Array literals initialize array variables.** `[3]int32 a = [1, 2, 3];` and
+`[2][3]int32 m = [1,2,3][4,5,6];` allocate the array as today and fill it element by element.
+An omitted dimension (`[]int32 a = [1, 2, 3];`) is inferred from the literal; a given
+dimension must be a compile-time integer equal to the literal's length. A 2D literal may be
+written concatenated (`[1,2][3,4]`) or nested (`[[1,2],[3,4]]`); gen-ast folds both into one
+nested `arr-lit` node, so SA sees one shape. Rows must have equal length. Elements are
+arbitrary expressions, typed and checked against the element type exactly as a scalar
+initializer is (narrowing rejected, literal range checked), and evaluated before the variable
+comes into scope. SA lowers the initializer to the existing allocation plus element stores, so
+sa.json and codegen gain no new shape. Leaf element types are numeric primitives; `[m][n]T` and
+`[n]$[m]T` are the 2D forms. An array literal anywhere else (call argument, `->` source,
+operand) is a palan-sa error, not a silent drop.
 
-**Rejected statements are diagnosed, not dropped.** A statement-level `not-impl`
-(C-style `name = expr;`, `for`, `interface`, ...) becomes a palan-sa error instead of a no-op.
-gen-ast keeps parsing these forms -- its fixtures exercise the grammar's breadth through them --
-so the rejection belongs in SA, with gen-ast attaching a `loc` and marking the `name = expr;`
-form so SA can point at `expr -> name` instead.
+**`uint64` <-> `flo32`/`flo64` conversion is lowered, not aborted (item 13).** `PlnVCodeGen`
+expands these conversions into a branch on the top bit / the 2^63 threshold using the existing
+`CondJmp`/`Label` instructions, so `emitConvert` never sees them.
 
-**An integer literal must fit the type it adopts.** Out-of-range literals are
-currently truncated by `as` (`int8 x = 300;`) or crash codegen's `stoll` (any value above
-`INT64_MAX`). SA checks the range where a literal's type is decided. Two things make that the
-right place only after normalization: a negative literal is folded by gen-ast into a single
-`lit-int` with a negative value (the shape macro-constant folding already produces), so
-`int8 x = -128;` is not checked as `128`; and `sa_expr_arith` types a literal operand once,
-from the other operand when it has a type, instead of provisionally from the expected type
-first. Codegen then reads a literal's value according to its type's signedness.
-
-**Codegen emits width- and signedness-correct instructions.** Comparisons
-select unsigned condition codes for unsigned and pointer operands. Division/modulo selects
-`div`/`idiv` by signedness and operates at 32 or 64 bits, widening 8/16-bit operands to 32
-(avoiding `idivb`'s `%ah` result and the `-128 / -1` trap). An immediate outside the
-sign-extended 32-bit range is loaded with `movabsq` and stored through a scratch register.
-
-**Palan functions take and return floats.** Palan-to-Palan calls assign arguments
-per class as System V does -- integer arguments to the integer registers by integer index,
-float arguments to `%xmm0`-`%xmm7` by float index, overflow to the stack in order -- sharing
-the C call path's argument marshalling instead of keeping a second, integer-only one. A single
-float return is in `%xmm0`; a multi-value return assigns its integer and float values per
-class in the same way.
-
-Non-goals for this iteration: `uint64` <-> float conversion (item 13); by-value struct
-parameters (item 15); allocating float values to XMM registers (they stay stack-resident);
-implementing the statement forms now rejected.
+Non-goals for this iteration: array literals as call arguments or `->` sources; placing
+constant literals in `.rodata`; struct or pointer leaf elements.
 
 The full design decisions and the ticket breakdown are in
-`localtickets/iteration-2026-09-24-v0135-codegen-correctness.md`.
+`localtickets/iteration-2026-09-25-v0136-array-literal.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
