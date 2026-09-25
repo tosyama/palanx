@@ -512,22 +512,11 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                     blockVarStack_.back().push_back(r);
             } else if (ve.init->kind == ExprKind::IntLit) {
                 auto& e = static_cast<const IntLitExpr&>(*ve.init);
-                if (e.type == VRegType::Float32 || e.type == VRegType::Float64) {
-                    // Int literal adopted float type (e.g. flo64 x = 5)
-                    string label = addFloatLiteral(e.value, e.type);
-                    r = allocVReg();
-                    func.instrs.push_back(InitVarF{r, e.type, label});
-                    if (!blockVarStack_.empty())
-                        blockVarStack_.back().push_back(r);
-                } else {
-                    r = allocVReg();
-                    func.instrs.push_back(InitVar{r, e.type, intLitImm(e.value, e.type)});
-                    if (!blockVarStack_.empty())
-                        blockVarStack_.back().push_back(r);
-                }
+                r = allocVReg();
+                func.instrs.push_back(InitVar{r, e.type, intLitImm(e.value, e.type)});
+                if (!blockVarStack_.empty())
+                    blockVarStack_.back().push_back(r);
             } else if (ve.init->kind == ExprKind::UintLit) {
-                // Uint literal can never adopt a float type (unlike IntLit above):
-                // SA's lit-uint branch only ever assigns a Uint* value-type.
                 auto& e = static_cast<const UintLitExpr&>(*ve.init);
                 r = allocVReg();
                 func.instrs.push_back(InitVar{r, e.type, intLitImm(e.value, e.type)});

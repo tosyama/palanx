@@ -287,7 +287,12 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 				sa_expr["value-type"] = registry_.toJson(expectedType);
 			else
 				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
-			checkIntLiteralRange(sa_expr);
+			// A float constant has exactly one form, lit-flo, so codegen never
+			// sees an integer literal that must be materialized as a float.
+			if (isFloatPrim(expectedType))
+				sa_expr["expr-type"] = "lit-flo";
+			else
+				checkIntLiteralRange(sa_expr);
 		}
 
 	} else if (expr_type == "lit-uint") {

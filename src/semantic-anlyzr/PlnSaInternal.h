@@ -37,6 +37,12 @@ inline bool isIntegerPrim(const PlnType* t) {
 	    && pn != PrimType::Name::Void;
 }
 
+inline bool isFloatPrim(const PlnType* t) {
+	if (t == nullptr || t->kind != PlnType::Kind::Prim) return false;
+	auto pn = static_cast<const PrimType*>(t)->name;
+	return pn == PrimType::Name::Float32 || pn == PrimType::Name::Float64;
+}
+
 // True if a value may be written through this pointer-typed value-type
 // (i.e. it is not a `@T` read-only pointer). A missing "mutable" key means
 // writable: it is the default for every pntr value-type SA synthesizes for

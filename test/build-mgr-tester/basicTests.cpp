@@ -1753,6 +1753,12 @@ TEST(build_mgr, owned_arr_embed_field_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, int_lit_float_ctx) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/203_int_lit_float_ctx.pa");
+	ASSERT_EQ(output, "2.0 2.5 3.0\n3.0 2.0\n7.0\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
