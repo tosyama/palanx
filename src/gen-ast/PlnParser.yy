@@ -24,7 +24,6 @@
 #include <stdexcept>
 
 #include "../../lib/json/single_include/nlohmann/json.hpp"
-#include "../common/PlnFileUtils.h"
 #include "PlnGenAstMacroFold.h"
 
 using std::vector;
@@ -164,9 +163,9 @@ statements: /* empty */
 block_stmt: standalone_block
 	{ $$ = move($1); }
 	| construct_def
-	{ $$ = {{"stmt-type", "not-impl"}}; }
+	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
 	| for_loop
-	{ $$ = {{"stmt-type", "not-impl"}}; }
+	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
 	| while_loop
 	{ $$ = move($1); }
 	| if_stmt
@@ -222,6 +221,9 @@ expr_stmt: import
 				LOC($$, @$);
 			} else {
 				$$ = {{"stmt-type", "not-impl"}};
+				for (auto& v : $1)
+					if (v.contains("untyped-var")) { $$["untyped-var"] = v["untyped-var"]; break; }
+				LOC($$, @$);
 			}
 		}
 	}
@@ -237,10 +239,11 @@ expr_stmt: import
 			LOC($$, @$);
 		} else {
 			$$ = {{"stmt-type", "not-impl"}};
+			LOC($$, @$);
 		}
 	}
 	| interface_decl
-	{ $$ = {{"stmt-type", "not-impl"}}; }
+	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
 	| expression
 	{
 		string et = $1.value("expr-type", "");
@@ -250,6 +253,7 @@ expr_stmt: import
 				LOC($$, @$);
 			} else {
 				$$ = {{"stmt-type", "not-impl"}};
+				LOC($$, @$);
 			}
 		} else if (et == "arr-assign-expr") {
 			$$ = {{"stmt-type", "arr-assign"}, {"target", move($1["target"])}, {"value", move($1["value"])}};
@@ -265,6 +269,7 @@ expr_stmt: import
 			LOC($$, @$);
 		} else {
 			$$ = {{"stmt-type", "not-impl"}};
+			LOC($$, @$);
 		}
 	}
 	| return
@@ -279,13 +284,14 @@ expr_stmt: import
 				LOC($$, @$);
 			} else {
 				$$ = {{"stmt-type", "not-impl"}};
+				LOC($$, @$);
 			}
 		} else {
 			LOC($$, @$);
 		}
 	}
 	| term DBL_PLUS
-	{ $$ = {{"stmt-type", "not-impl"}}; }
+	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
 	| KW_BREAK
 	{ $$ = {{"stmt-type", "break"}}; LOC($$, @$); }
 	| KW_CONTINUE
@@ -549,7 +555,7 @@ var_declaration: type_expr move_owner_r ID
 			$$ = {{"not-impl", true}};
 	}
 	| ID '=' expression
-	{ $$ = {{"not-impl", true}}; }
+	{ $$ = {{"not-impl", true}, {"untyped-var", $1}}; }
 	| tapple_decl '=' expression
 	{
 		string et = $3.value("expr-type","");
@@ -653,7 +659,7 @@ expression: term
 	| expression '-' expression
 	{ $$ = {{"expr-type", "sub"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| '-' expression %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "neg"}, {"operand", $2}}; LOC($$, @$); }
+	{ $$ = negateExpr(move($2)); LOC($$, @$); }
 	| expression '*' expression
 	{ $$ = {{"expr-type", "mul"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '/' expression

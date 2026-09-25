@@ -51,7 +51,13 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 			}
 			result.push_back(sa_continue_stmt(stmt));
 		}
-		else if (t == "not-impl")    result.push_back(stmt);
+		else if (t == "not-impl") {
+			if (stmt.contains("untyped-var"))
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VarTypeInferenceNotImpl, stmt["untyped-var"]) << endl;
+			else
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
+			exit(1);
+		}
 		else if (t == "func-def") {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_InternalError, "1") << endl;
 			exit(1);

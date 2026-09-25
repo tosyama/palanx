@@ -1,0 +1,21 @@
+cinclude <stdio.h>;
+
+int8 a = -3;
+int8 b = 5;
+int8 c = 100;
+int8 d = 3;
+int8 e = -128;
+int8 f = -1;
+uint8 g = 200;
+uint8 h = 2;
+uint8 i = 15;
+uint8 j = 17;
+
+printf("%d %d %d\n", a * b, c * d, e * f);
+printf("%u %u\n", g * h, i * j);
+
+int8 r1 = 0;
+uint8 r2 = 0;
+c * d -> r1;
+g * h -> r2;
+printf("%d %u\n", r1, r2);

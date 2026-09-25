@@ -31,6 +31,19 @@ static RegMove makeIntArgMove(const PhysLoc& src_loc, const string& dstBase)
     };
 }
 
+// A narrow value fills only the slot's low bytes; SysV leaves the rest unspecified.
+static void emitIntStackArg(ostream& out, const PhysLoc& src_loc, int offset)
+{
+    const char* mov = movInstrForType(src_loc.type);
+    string src = srcOperand(src_loc);
+    if (src_loc.isStack()) {
+        string scratch = sizedRegName("%r10", src_loc.type);
+        out << "\t" << mov << " " << src << ", " << scratch << "\n";
+        src = scratch;
+    }
+    out << "\t" << mov << " " << src << ", " << offset << "(%rsp)\n";
+}
+
 // Sequence a set of moves into distinct physical registers so that no move clobbers
 // a register another pending move still needs to read from. A naive argument-order
 // pass breaks whenever a source register coincides with an earlier argument's
@@ -73,17 +86,18 @@ static void emitSafeRegMoves(ostream& out, vector<RegMove> moves, const string& 
     }
 }
 
-void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
+// SysV argument marshalling shared by C and Palan calls: each class takes its
+// own register sequence, and overflow of either class goes to the stack in
+// argument order. Returns the stack space reserved (to release after the call)
+// and sets nFloatArgs to the float-class count (for C variadic %al).
+int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs)
 {
     int n_int_regs = (int)x86PhysRegs.intArgs.size();
     int n_flt_regs = (int)x86PhysRegs.floatArgs.size();
-    // Count overflow args (int > 6 or float > 8) to pre-allocate stack space.
     int n_stack = 0, int_count = 0, flt_count = 0;
-    for (auto vr : i.args) {
-        const PhysLoc& s = rm.at(vr);
-        bool is_flt = (s.type == VRegType::Float32 || s.type == VRegType::Float64);
-        if (is_flt) { if (flt_count >= n_flt_regs) n_stack++; flt_count++; }
-        else         { if (int_count >= n_int_regs) n_stack++; int_count++; }
+    for (auto vr : args) {
+        if (isFloat(rm.at(vr).type)) { if (flt_count >= n_flt_regs) n_stack++; flt_count++; }
+        else                         { if (int_count >= n_int_regs) n_stack++; int_count++; }
     }
     int stack_space = 0;
     if (n_stack > 0) {
@@ -97,9 +111,9 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
     // regardless of which position that register is also a destination for.
     vector<RegMove> intMoves;
     int int_idx = 0, flt_idx = 0, stack_idx = 0;
-    for (auto vr : i.args) {
+    for (auto vr : args) {
         const PhysLoc& src_loc = rm.at(vr);
-        bool is_flt = (src_loc.type == VRegType::Float32 || src_loc.type == VRegType::Float64);
+        bool is_flt = isFloat(src_loc.type);
         if (is_flt && flt_idx < n_flt_regs) {
             string xmm = x86PhysRegs.floatArgs[flt_idx++];
             string s = srcOperand(src_loc);
@@ -123,16 +137,19 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
                 }
             } else {
                 int_idx++;
-                if (src_loc.isStack()) {
-                    out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
-                    out << "\tmovq %r10, " << offset << "(%rsp)\n";
-                } else {
-                    out << "\tmovq " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
-                }
+                emitIntStackArg(out, src_loc, offset);
             }
         }
     }
     emitSafeRegMoves(out, intMoves, "%r11");
+    nFloatArgs = flt_idx;
+    return stack_space;
+}
+
+void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
+{
+    int flt_idx;
+    int stack_space = emitCallArgs(i.args, rm, flt_idx);
     emitCallC(i.name, flt_idx);
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
@@ -161,58 +178,43 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
     }
 }
 
+// Palan's own return convention: a single value uses the SysV return register
+// of its class (%rax/%xmm0); multiple values take each class's argument
+// register sequence in order (intArgs / floatArgs).
+static vector<string> plnRetRegs(const vector<VRegType>& types)
+{
+    if (types.size() == 1)
+        return { isFloat(types[0]) ? "%xmm0" : "%rax" };
+    vector<string> regs;
+    int int_idx = 0, flt_idx = 0;
+    for (VRegType t : types)
+        regs.push_back(isFloat(t) ? PlnX86CodeGen::x86PhysRegs.floatArgs[flt_idx++] : PlnX86CodeGen::x86PhysRegs.intArgs[int_idx++]);
+    return regs;
+}
+
 void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
 {
-    int n_regs = (int)x86PhysRegs.intArgs.size();
-    // Queue register-destined args for a hazard-safe shuffle (see emitSafeRegMoves)
-    // instead of moving them here in argument order -- a source register can
-    // coincide with an earlier argument's destination register (e.g. two
-    // parameters passed to a call in swapped order).
-    vector<RegMove> intMoves;
-    for (int j = 0; j < (int)c.args.size() && j < n_regs; j++)
-        intMoves.push_back(makeIntArgMove(rm.at(c.args[j]), x86PhysRegs.intArgs[j]));
-
-    int n_stack = (int)c.args.size() - n_regs;
-    int stack_space = 0;
-    if (n_stack > 0) {
-        stack_space = ((n_stack * 8) + 15) & ~15;
-        out << "\tsubq $" << stack_space << ", %rsp\n";
-        for (int j = n_regs; j < (int)c.args.size(); j++) {
-            int offset = (j - n_regs) * 8;
-            const PhysLoc& src_loc = rm.at(c.args[j]);
-            if (src_loc.isStack()) {
-                out << "\tmovq " << srcOperand(src_loc) << ", %r10\n";
-                out << "\tmovq %r10, " << offset << "(%rsp)\n";
-            } else {
-                out << "\tmovq " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
-            }
-        }
-    }
-    // Emitted after the stack-arg moves above (which only ever read registers,
-    // never write them) so this shuffle is the first thing to touch any register.
-    emitSafeRegMoves(out, intMoves, "%r11");
+    int n_flt;
+    int stack_space = emitCallArgs(c.args, rm, n_flt);
     out << "\tcall " << c.name << "\n";
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
-    // Move return value(s) to destination(s).
-    if (c.dsts.size() == 1 && rm.count(c.dsts[0])) {
-        // Single return: copy from %rax
-        const PhysLoc& dst = rm.at(c.dsts[0]);
-        string rax = sizedRegName("%rax", c.retTypes[0]);
-        string d   = srcOperand(dst);
-        if (rax != d)
-            out << "\t" << movInstrForType(c.retTypes[0]) << " " << rax << ", " << d << "\n";
-    } else if (c.dsts.size() > 1) {
-        // Multi-return: copy from intArgs[j] in reverse order to avoid overwrite
-        for (int j = (int)c.dsts.size() - 1; j >= 0; j--) {
-            if (!rm.count(c.dsts[j])) continue;
-            const PhysLoc& dst = rm.at(c.dsts[j]);
-            string src_reg = sizedRegName(x86PhysRegs.intArgs[j], c.retTypes[j]);
-            string d = srcOperand(dst);
-            if (src_reg != d)
-                out << "\t" << movInstrForType(c.retTypes[j]) << " " << src_reg << ", " << d << "\n";
-        }
+    // Stack dsts first (they only read return registers), then register dsts
+    // as a hazard-safe shuffle: a dst may be bound to the next call's argument
+    // register that still holds another, not-yet-copied result.
+    vector<string> regs = plnRetRegs(c.retTypes);
+    vector<RegMove> retMoves;
+    for (int j = 0; j < (int)c.dsts.size(); j++) {
+        if (!rm.count(c.dsts[j])) continue;
+        const PhysLoc& dst = rm.at(c.dsts[j]);
+        VRegType t = c.retTypes[j];
+        string src_reg = sizedRegName(regs[j], t);
+        if (dst.isStack())
+            out << "\t" << movInstrForType(t) << " " << src_reg << ", " << srcOperand(dst) << "\n";
+        else
+            retMoves.push_back(RegMove{movInstrForType(t), t, src_reg, regs[j], dst.base, sizedRegName(dst.base, t)});
     }
+    emitSafeRegMoves(out, retMoves, "%r11");
 }
 
 // A raw Linux syscall: number in %rax, arguments in the syscall ABI's own
@@ -240,7 +242,7 @@ void PlnX86CodeGen::emitInstrCallSys(const CallSys& c, const RegMap& rm)
     // still be read from it. movl keeps the immediate in the 32-bit form
     // (palan-sa caps the number at UINT32_MAX) and zeroes the rest of %rax,
     // which the kernel's entry path range-checks in full.
-    emitMovImm("%eax", VRegType::Int32, c.num);
+    emitMovImm("%eax", false, VRegType::Int32, c.num);
     out << "\tsyscall\n";
 
     if (c.dsts.size() == 1 && rm.count(c.dsts[0])) {
@@ -254,23 +256,12 @@ void PlnX86CodeGen::emitInstrCallSys(const CallSys& c, const RegMap& rm)
 
 void PlnX86CodeGen::emitInstrRetPln(const RetPln& r, const RegMap& rm, const vector<string>& usedCalleeSaved)
 {
-    // Move return value(s) to return registers.
-    if (r.rets.size() == 1) {
-        // Single return: copy to %rax
-        const PhysLoc& src = rm.at(r.rets[0]);
-        string s   = srcOperand(src);
-        string rax = sizedRegName("%rax", r.types[0]);
-        if (s != rax)
-            out << "\t" << movInstrForType(r.types[0]) << " " << s << ", " << rax << "\n";
-    } else if (r.rets.size() > 1) {
-        // Multi-return: copy to intArgs[j] in forward order
-        for (int j = 0; j < (int)r.rets.size(); j++) {
-            const PhysLoc& src = rm.at(r.rets[j]);
-            string s = srcOperand(src);
-            string dst_reg = sizedRegName(x86PhysRegs.intArgs[j], r.types[j]);
-            if (s != dst_reg)
-                out << "\t" << movInstrForType(r.types[j]) << " " << s << ", " << dst_reg << "\n";
-        }
+    vector<string> regs = plnRetRegs(r.types);
+    for (int j = 0; j < (int)r.rets.size(); j++) {
+        string s = srcOperand(rm.at(r.rets[j]));
+        string dst_reg = sizedRegName(regs[j], r.types[j]);
+        if (s != dst_reg)
+            out << "\t" << movInstrForType(r.types[j]) << " " << s << ", " << dst_reg << "\n";
     }
     // Restore callee-saved registers in reverse order before returning
     for (int i = (int)usedCalleeSaved.size() - 1; i >= 0; i--)

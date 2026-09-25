@@ -1626,6 +1626,89 @@ TEST(build_mgr, struct_field_type_alias)
 	ASSERT_EQ(output, "3 4 5 6 7\n");
 }
 
+TEST(build_mgr, int_literal_range)
+{
+	// A uint64 literal above INT64_MAX used to crash codegen's stoll.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/194_int_literal_range.pa");
+	ASSERT_EQ(output, "18446744073709551600 -128 127\n");
+}
+
+TEST(build_mgr, int64_imm_range)
+{
+	// mov to memory only encodes a sign-extended imm32, so wider values
+	// failed to assemble.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/195_int64_imm_range.pa");
+	ASSERT_EQ(output, "3000000000 -9223372036854775807 9223372036854775808\n-3000000000\n");
+}
+
+TEST(build_mgr, unsigned_cmp)
+{
+	// Unsigned comparisons used signed setCC, so a value with its top bit set
+	// compared as negative.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/196_unsigned_cmp.pa");
+	ASSERT_EQ(output, "001101\n001101\n001101\n001101\n110001\nif ok\n6\n");
+}
+
+TEST(build_mgr, stack_arg_narrow_int)
+{
+	// Stack-passed arguments narrower than 64 bits were stored with movq,
+	// which fails to assemble for a sized register source.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/197_stack_arg_narrow_int.pa");
+	ASSERT_EQ(output, "1 2 3 4 5 -4 4000000001\n"
+	                  "1 2 3 4 5 -299 -69999 -5\n"
+	                  "1 2 3 4 5 -300 -70000 4000000000\n"
+	                  "-699990393\n-700000493\n");
+}
+
+TEST(build_mgr, mul_8bit)
+{
+	// 8-bit multiply was emitted as imulq on byte registers, which fails to assemble.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/198_mul_8bit.pa");
+	ASSERT_EQ(output, "-15 44 -128\n144 255\n44 144\n");
+}
+
+TEST(build_mgr, divmod_width_sign)
+{
+	// Div/Mod always used movq+cqto+idivq: narrower operands failed to assemble
+	// and unsigned operands were divided as signed.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/199_divmod_width_sign.pa");
+	ASSERT_EQ(output, "-3 -1 -128 0\n-4285 -5\n-666666666 -2\n-1285714285714285714 -2\n"
+	                  "35 5 9285 5\n571428571 3\n1844674407370955160 0\n-128 500000000\n");
+}
+
+TEST(build_mgr, pln_float_call)
+{
+	// Palan calls passed every arg in intArgs[j] and returned in %rax regardless
+	// of type, so float params/returns failed to assemble.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/200_pln_float_call.pa");
+	ASSERT_EQ(output, "2.000000\n4.500000 2.500000\n21.750000\n"
+	                  "9.000000 10.000000 600 700 800\n3655.000000\n"
+	                  "x=1.250000\n2.500000\n3 1.500000 2 1.000000\n0.500000\n");
+}
+
+TEST(build_mgr, import_float)
+{
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/201_import_float.pa");
+	ASSERT_EQ(output, "25.000000 1.500000\n");
+}
+
+TEST(build_mgr, multiret_recv_swap)
+{
+	// Results were copied to their dsts in reverse order, clobbering a return
+	// register still holding a later-copied result when dsts sit in arg registers.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/202_multiret_recv_swap.pa");
+	ASSERT_EQ(output, "2 1\n3 1 2\n20 2.500000 10\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.

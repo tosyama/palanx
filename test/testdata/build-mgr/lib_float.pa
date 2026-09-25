@@ -1,0 +1,2 @@
+export func hypot2(flo64 x, flo64 y) -> flo64 { return x * x + y * y; }
+export func blend(int32 n, flo32 w) -> flo32 { return n * w; }

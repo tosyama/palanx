@@ -20,6 +20,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         bool     isRetValue   = false;   // true if used by RetPln
     };
     map<VReg, VRegMeta> meta;
+    for (auto& [vreg, type] : func.params)
+        meta[vreg].type = type;
 
     vector<int> call_indices;    // instruction indices of all CallC/CallPln
     vector<int> divmod_indices;  // instruction indices of all Div/Mod (%rax/%rdx clobbered)
@@ -49,10 +51,6 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         auto addCallArgs = [&](const vector<VReg>& args, const vector<string>& argRegs) {
             int int_idx = 0;
             for (auto vr : args) {
-                // NOTE: meta only contains VRegs defined by instructions (setDef).
-                // Palan function parameters live in func.params, not meta, so they
-                // default to Int64 here.  When float parameters are implemented,
-                // parameter VRegs must be pre-registered in meta with their actual type.
                 VRegType t = meta.count(vr) ? meta[vr].type : VRegType::Int64;
                 bool is_flt = (t == VRegType::Float32 || t == VRegType::Float64);
                 if (is_flt) {
@@ -221,20 +219,29 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
     };
 
-    // Pre-bind parameters to intArgs registers.
+    // Pre-bind parameters to argument registers, each class in its own
+    // sequence (SysV), overflow of either class to the caller's stack in order.
     // If a parameter's live range crosses a call, move it to a callee-saved
     // register so it survives the call (caller-saved arg regs are clobbered).
     vector<tuple<string, VReg, VRegType>> pendingParamCopies;
-    for (int j = 0; j < (int)func.params.size(); j++) {
-        auto [vreg, type] = func.params[j];
-
-        if (j >= (int)phys.intArgs.size()) {
+    int int_idx = 0, flt_idx = 0, stack_idx = 0;
+    for (auto& [vreg, type] : func.params) {
+        bool is_flt = (type == VRegType::Float32 || type == VRegType::Float64);
+        bool in_regs = is_flt ? flt_idx < (int)phys.floatArgs.size()
+                              : int_idx < (int)phys.intArgs.size();
+        if (!in_regs) {
             // Stack parameter: passed by caller above %rbp → 16(%rbp), 24(%rbp), ...
             // The caller's stack is stable across all calls within this function.
-            int offset = (j - (int)phys.intArgs.size() + 2) * 8;
-            result[vreg] = PhysLoc{"", type, offset};
+            result[vreg] = PhysLoc{"", type, (stack_idx++ + 2) * 8};
             continue;
         }
+        if (is_flt) {
+            // Float VRegs always live on the stack (no XMM allocation).
+            allocStackSlot(vreg, type);
+            pendingParamCopies.push_back({phys.floatArgs[flt_idx++], vreg, type});
+            continue;
+        }
+        const string& argReg = phys.intArgs[int_idx++];
 
         const VRegMeta& m = meta[vreg];
         int last_use = m.last_any_use;
@@ -270,9 +277,9 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
 
         if (crosses_call) {
             allocCalleeSavedOrStack(vreg, type);
-            pendingParamCopies.push_back({phys.intArgs[j], vreg, type});
+            pendingParamCopies.push_back({argReg, vreg, type});
         } else {
-            result[vreg] = PhysLoc{phys.intArgs[j], type};
+            result[vreg] = PhysLoc{argReg, type};
         }
     }
 
@@ -286,8 +293,9 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         if (m.isVar) continue;  // Pass B always allocates isVar to stack
 
         if (m.call_uses.empty()) {
-            if (m.isRetValue && numRetValues == 1) {
-                // Single return value: bind to %rax, but if it's defined by a call and another
+            bool is_flt = (m.type == VRegType::Float32 || m.type == VRegType::Float64);
+            if (m.isRetValue && numRetValues == 1 && !is_flt) {
+                // Single int return value: bind to %rax, but if it's defined by a call and another
                 // call clobbers %rax before the last use, spill to callee-saved instead.
                 bool def_is_call = (find(call_indices.begin(), call_indices.end(), m.def_idx) != call_indices.end());
                 bool crosses_call = false;

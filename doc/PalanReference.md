@@ -83,6 +83,11 @@ The build manager (`palan`) orchestrates the full pipeline: parse → semantic a
 - Signed: `[0-9]+` (e.g., `42`, `1000`)
 - Unsigned: `[0-9]+u` (e.g., `42u`)
 
+A literal must fit the type it adopts from its context (the declared variable, parameter, or the
+other operand); otherwise it is a compile error — `int8 x = 300;` and `uint8 y = -1;` are both
+rejected. A minus sign directly on an integer literal is part of the value, so `int8 x = -128;`
+is accepted.
+
 **String literals:** `"..."` with the following escape sequences:
 
 | Escape | Meaning |
@@ -183,6 +188,9 @@ int32 a = 5, b = 10;   // type inheritance: b is also int32
 
 **Type inheritance:** In a comma-separated declaration, all variables after the first inherit the type of the first variable.
 
+**Type is required:** `x = 10;` is a declaration without a type, reserved for future type inference,
+and is currently a compile error. It is not an assignment — assignment is written `10 -> x;`.
+
 ---
 
 ## 5. Expressions
@@ -261,6 +269,7 @@ if expr { ... } else { ... }  // conditional with else (see §10)
 
 Functions are defined with the `func` keyword. Return values are declared after `->`.
 The optional `export` keyword makes the function callable from other Palan files that import this file (see §12).
+Parameters and return values may be float types as well as integer types (see [Floating-Point Types](#17-floating-point-types)).
 
 ### No Return Value
 
@@ -1021,6 +1030,18 @@ Use `int64(x)` or `int32(x)` to convert a float to an integer (truncation toward
 cinclude <stdio.h>;
 flo64 pi = 3.14159;
 printf("%ld\n", int64(pi));   // prints 3
+```
+
+### Float Parameters and Return Values
+
+Palan functions take and return `flo32`/`flo64` values like any other type, and may mix them with
+integer parameters and return values:
+
+```palan
+func scale(flo64 x, int32 n) -> flo64 {
+    return x * n;
+}
+flo64 r = scale(1.5, 4);   // 6.0
 ```
 
 ### Example — Newton's Method

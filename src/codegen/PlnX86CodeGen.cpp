@@ -1,5 +1,6 @@
 #include "PlnX86CodeGen.h"
 #include "PlnX86Internal.h"
+#include <cstdint>
 
 using namespace std;
 
@@ -50,7 +51,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<InitVarF> (&instr)) emitInstrInitVarF(*i, rm);
             else if (auto* a  = std::get_if<Add>      (&instr)) emitBinArith(addInstrForType(a->type), a->dst, a->lhs, a->rhs, a->type, rm);
             else if (auto* s  = std::get_if<Sub>      (&instr)) emitBinArith(subInstrForType(s->type), s->dst, s->lhs, s->rhs, s->type, rm);
-            else if (auto* m  = std::get_if<Mul>      (&instr)) emitBinArith(mulInstrForType(m->type), m->dst, m->lhs, m->rhs, m->type, rm);
+            else if (auto* m  = std::get_if<Mul>      (&instr)) emitInstrMul(*m, rm);
             else if (auto* i  = std::get_if<Div>      (&instr)) emitInstrDiv(*i, rm);
             else if (auto* i  = std::get_if<Mod>      (&instr)) emitInstrMod(*i, rm);
             else if (auto* i  = std::get_if<Neg>      (&instr)) emitInstrNeg(*i, rm);
@@ -132,21 +133,15 @@ void PlnX86CodeGen::emitInstrLeaLabel(const LeaLabel& i, const RegMap& rm)
 void PlnX86CodeGen::emitInstrMovImm(const MovImm& i, const RegMap& rm)
 {
     const PhysLoc& loc = rm.at(i.dst);
-    if (loc.isStack()) {
-        out << "\t" << movInstrForType(i.type) << " $" << i.value << ", " << srcOperand(loc) << "\n";
-    } else {
-        emitMovImm(sizedRegName(loc.base, i.type), i.type, i.value);
-    }
+    string dst = loc.isStack() ? srcOperand(loc) : sizedRegName(loc.base, i.type);
+    emitMovImm(dst, loc.isStack(), i.type, i.value);
 }
 
 void PlnX86CodeGen::emitInstrInitVar(const InitVar& i, const RegMap& rm)
 {
     const PhysLoc& loc = rm.at(i.dst);
-    if (loc.isStack()) {
-        out << "\t" << movInstrForType(i.type) << " $" << i.imm << ", " << loc.stackOffset << "(%rbp)\n";
-    } else {
-        out << "\t" << movInstrForType(i.type) << " $" << i.imm << ", " << sizedRegName(loc.base, i.type) << "\n";
-    }
+    string dst = loc.isStack() ? srcOperand(loc) : sizedRegName(loc.base, i.type);
+    emitMovImm(dst, loc.isStack(), i.type, i.imm);
 }
 
 void PlnX86CodeGen::emitInstrInitVarF(const InitVarF& i, const RegMap& rm)
@@ -269,9 +264,20 @@ void PlnX86CodeGen::emitLeaLabel(const string& reg, const string& label)
     out << "\tleaq " << label << "(%rip), " << reg << "\n";
 }
 
-void PlnX86CodeGen::emitMovImm(const string& reg, VRegType type, long long value)
+void PlnX86CodeGen::emitMovImm(const string& dst, bool dst_is_mem, VRegType type, long long value)
 {
-    out << "\t" << movInstrForType(type) << " $" << value << ", " << reg << "\n";
+    // mov to memory only takes a sign-extended imm32; a wider 64-bit value
+    // must be materialized in a register first.
+    if (intWidth(type) == 8 && (value < INT32_MIN || value > INT32_MAX)) {
+        if (!dst_is_mem) {
+            out << "\tmovabsq $" << value << ", " << dst << "\n";
+            return;
+        }
+        out << "\tmovabsq $" << value << ", %r11\n";
+        out << "\tmovq %r11, " << dst << "\n";
+        return;
+    }
+    out << "\t" << movInstrForType(type) << " $" << value << ", " << dst << "\n";
 }
 
 void PlnX86CodeGen::emitExit(int code)

@@ -1,0 +1,16 @@
+cinclude <stdio.h>;
+
+func tail3(int64 a, int64 b, int64 c, int64 d, int64 e, int64 f, int32 g, int8 h, uint16 k) -> int64 {
+    return g * 10000 + int32(h) * 100 + k;
+}
+
+int8 i8 = -5;
+int16 i16 = -300;
+int32 i32 = -70000;
+uint32 u32 = 4000000000;
+
+printf("%d %d %d %d %d %d %u\n", 1, 2, 3, 4, 5, i8 + 1, u32 + 1);
+printf("%d %d %d %d %d %d %d %d\n", 1, 2, 3, 4, 5, i16 + 1, i32 + 1, i8);
+printf("%d %d %d %d %d %d %d %u\n", 1, 2, 3, 4, 5, i16, i32, u32);
+printf("%ld\n", tail3(1, 2, 3, 4, 5, 6, i32 + 1, i8 + 1, 7));
+printf("%ld\n", tail3(1, 2, 3, 4, 5, 6, i32, i8, 7));

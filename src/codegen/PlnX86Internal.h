@@ -83,12 +83,11 @@ inline string subInstrForType(VRegType type) {
     return intMnemonic("sub", type);
 }
 
-// imulb has no 2-operand form; Int8/Uint8 multiplication is not supported here — the
-// 1-byte case is left mapped to imulq, matching the pre-existing (unreachable) fallback.
+// imulb has no 2-operand form; emitInstrMul handles the 1-byte case itself.
 inline string mulInstrForType(VRegType type) {
     if (type == VRegType::Float32) return "mulss";
     if (type == VRegType::Float64) return "mulsd";
-    if (intWidth(type) == 1) return "imulq";
+    BOOST_ASSERT(intWidth(type) != 1);
     return intMnemonic("imul", type);
 }
 
@@ -108,22 +107,21 @@ inline string cmpInstrForType(VRegType type) {
     return intMnemonic("cmp", type);
 }
 
-inline const char* setCCForOp(const string& op, bool isFloat) {
-    if (isFloat) {
-        if (op == "<")  return "setb";
-        if (op == "<=") return "setbe";
-        if (op == ">")  return "seta";
-        if (op == ">=") return "setae";
-        if (op == "==") return "sete";
-        if (op == "!=") return "setne";
-    } else {
+inline const char* setCCForOp(const string& op, VRegType t) {
+    // ucomis* reports its result in CF/ZF, so floats share the unsigned (below/above) codes.
+    if (isSignedInt(t)) {
         if (op == "<")  return "setl";
         if (op == "<=") return "setle";
         if (op == ">")  return "setg";
         if (op == ">=") return "setge";
-        if (op == "==") return "sete";
-        if (op == "!=") return "setne";
+    } else {
+        if (op == "<")  return "setb";
+        if (op == "<=") return "setbe";
+        if (op == ">")  return "seta";
+        if (op == ">=") return "setae";
     }
+    if (op == "==") return "sete";
+    if (op == "!=") return "setne";
     BOOST_ASSERT(false); return "";
 }
 

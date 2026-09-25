@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+
+uint64 a = 18446744073709551600;
+int8 b = -128;
+int8 c = -(-127);
+printf("%lu %d %d\n", a, b, c);

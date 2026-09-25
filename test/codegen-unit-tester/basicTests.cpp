@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "PlnRegAlloc.h"
+#include "PlnX86Internal.h"
 
 // Minimal PhysRegs used across tests: 2 int-arg regs, 1 callee-saved reg.
 static const PhysRegs testPhys = {
@@ -376,4 +377,17 @@ TEST(regalloc, value_spilled_across_intervening_callsys) {
 
     ASSERT_FALSE(r.regMap.at(0).isStack());
     EXPECT_NE(r.regMap.at(0).base, "%rdi");
+}
+
+// Only signed integers take the less/greater codes; unsigned, pointers, and
+// floats (ucomis* sets CF/ZF) take below/above.
+TEST(x86, setcc_for_op_by_type) {
+    EXPECT_STREQ(setCCForOp("<",  VRegType::Int32),   "setl");
+    EXPECT_STREQ(setCCForOp(">=", VRegType::Int8),    "setge");
+    EXPECT_STREQ(setCCForOp("<",  VRegType::Uint32),  "setb");
+    EXPECT_STREQ(setCCForOp("<=", VRegType::Uint8),   "setbe");
+    EXPECT_STREQ(setCCForOp(">",  VRegType::Ptr64),   "seta");
+    EXPECT_STREQ(setCCForOp(">=", VRegType::Float64), "setae");
+    EXPECT_STREQ(setCCForOp("==", VRegType::Uint64),  "sete");
+    EXPECT_STREQ(setCCForOp("!=", VRegType::Int64),   "setne");
 }

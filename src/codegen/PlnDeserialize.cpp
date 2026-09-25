@@ -385,10 +385,6 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         s->value  = deserializeExpr(j["value"]);
         return s;
     }
-    if (stmt_type == "not-impl") {
-        return nullptr;
-    }
-
     cerr << PlnCodegenMessage::getMessage(E_UnknownStmtType, stmt_type) << endl;
     exit(1);
 }
@@ -396,11 +392,8 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
 static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr)
 {
     vector<unique_ptr<Stmt>> result;
-    for (auto& j : arr) {
-        auto stmt = deserializeStmt(j);
-        if (stmt)
-            result.push_back(move(stmt));
-    }
+    for (auto& j : arr)
+        result.push_back(deserializeStmt(j));
     return result;
 }
 

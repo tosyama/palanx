@@ -3894,15 +3894,38 @@ TEST(sa, neg_lit_expected_type)
 	json jout = run_sa("../test/testdata/sa/167_neg_lit_expected_type.pa");
 	ASSERT_TRUE(jout.is_object());
 
+	// A negative integer literal is folded into one lit-int by gen-ast; a
+	// float literal still goes through `neg`.
 	auto& a = jout["statements"][0]["vars"][0];
+	ASSERT_EQ(a["init"]["expr-type"], "lit-int");
+	ASSERT_EQ(a["init"]["value"], "-1");
 	ASSERT_EQ(a["init"]["value-type"]["type-name"], "int32");
-	ASSERT_EQ(a["init"]["operand"]["value-type"]["type-name"], "int32");
 
 	auto& f = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(f["init"]["expr-type"], "neg");
 	ASSERT_EQ(f["init"]["value-type"]["type-name"], "flo32");
+	ASSERT_EQ(f["init"]["operand"]["value-type"]["type-name"], "flo32");
 
 	auto& s = jout["statements"][3]["vars"][0];
 	ASSERT_EQ(s["init"]["value-type"]["type-name"], "int16");
+}
+
+TEST(sa, int_literal_range)
+{
+	// Boundary values of each literal's adopted type are accepted, and a
+	// literal operand is typed only from the other operand (300 never takes
+	// a provisional narrower type).
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/199_int_literal_range.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value"], "-128");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["value"], "-9223372036854775808");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value"], "-128");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value-type"]["type-name"], "uint64");
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value-type"]["type-name"], "uint8");
+	auto& g = stmts[7]["vars"][0]["init"];
+	ASSERT_EQ(g["left"]["value-type"]["type-name"], "int64");
 }
 
 TEST(sa, usual_arith_conv)

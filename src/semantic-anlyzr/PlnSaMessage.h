@@ -84,6 +84,9 @@ enum PlnSaMessageCode {
 	E_SyscallTooManyParams,		// arg1: syscall name, arg2: parameter count
 	E_SyscallInvalidReturn,		// arg1: syscall name
 	E_SyscallUnsupportedParamType,	// arg1: syscall name, arg2: unsupported type display name
+	E_VarTypeInferenceNotImpl,	// arg1: variable name
+	E_StmtNotImplemented,
+	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
 };
 
 class PlnSaMessage

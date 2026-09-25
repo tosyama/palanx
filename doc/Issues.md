@@ -104,70 +104,42 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 15. `setCCForOp` Uses Signed Condition Codes for Unsigned Comparisons
-
-**Summary:** `setCCForOp` (`src/codegen/PlnX86CodeGen.cpp`) always emits a signed `setCC` mnemonic (`setl`/`setg`/etc.) regardless of the compared type's signedness. For an unsigned comparison this is wrong: `uint8 250 < 10` evaluates to `true` (250 is being read as the signed value -6). The fix needs an unsigned-specific mnemonic table (`setb`/`seta`/etc.), mirroring the signed/unsigned split already done for arithmetic and multiply instructions in `IT-2026-09-07-x86-uint-mnemonic-width`.
-
----
-
-## 16. `emitInstrDiv`/`emitInstrMod` Always Use 64-Bit `idivq`
-
-**Summary:** `emitInstrDiv`/`emitInstrMod` (`src/codegen/PlnX86CodeGen.cpp`) hard-code the 64-bit signed `idivq` instruction regardless of the operand type's actual width or signedness. Sub-64-bit division/modulo and unsigned division/modulo have no dedicated code path and no test coverage. Needs the same per-type instruction table treatment `IT-2026-09-07-x86-uint-mnemonic-width` gave the other arithmetic instructions.
-
----
-
-## 17. Passing a Struct By Value to a C Function Is Unsupported
+## 15. Passing a Struct By Value to a C Function Is Unsupported
 
 **Summary:** v0.1.30 implemented a C function *returning* a struct by value as a general System V AMD64 classification (see SASpec.md's call expression `struct-ret` entry), but the reverse direction — a struct-typed **parameter** passed by value (not by pointer) — is still rejected outright: `normalizeCFuncSig` marks any C function with a top-level by-value struct parameter as `_unsupported-sig: "by-value struct parameter"`, so the function itself becomes unusable rather than just that call shape. `stdio.h`'s `fopencookie` (which takes a `cookie_io_functions_t` by value) is the running example. A C union passed by value falls under the same rule, since SA registers unions as structs (v0.1.34); its diagnostic still says "by-value struct parameter". Implementing this would need the same eightbyte classification machinery applied to argument passing (SysV register/stack placement for a classified struct argument) rather than return-value placement. A related, narrower gap: even on the return side, a struct whose size classifies into a fractional eightbyte width other than 1/2/4/8 bytes (e.g. 3, 5, 6, or 7 bytes) is diagnosed (`E_UnsupportedCStructReturn`) rather than implemented, since no function in the v0.1.30 audit needed it.
 
 ---
 
-## 18. No CRT Startup Objects Are Linked — `palan-codegen` Supplies ELF/libc Glue Itself
+## 16. No CRT Startup Objects Are Linked — `palan-codegen` Supplies ELF/libc Glue Itself
 
 **Summary:** The build manager links a binary with a bare `ld <objs> -lc [-l<lib>...]` (`src/build-mgr/main.cpp`; the `-l<lib>` flags come from `link` clauses on `cinclude`, v0.1.31), never crt1.o/crti.o/crtbegin.o, and `palan-codegen` emits `_start` itself. This works for ordinary programs, but v0.1.30's `atexit` support surfaced two gaps those missing CRT objects would otherwise have closed: `__dso_handle` was undefined (glibc's `atexit` forwards to `__cxa_atexit(func, arg, __dso_handle)`), and `.note.GNU-stack` was never emitted (so linking any note-carrying libc object made `ld` mark the whole binary's stack executable, `PT_GNU_STACK` RWE, with a linker warning). Both are now patched over by `PlnX86CodeGen::emitElfCrtGlue()`, which emits `__dso_handle` on the entry object and `.note.GNU-stack` unconditionally on every object (see SpecAndDesign.md §3.5). This closes the two gaps v0.1.30 actually hit, but a real CRT strategy — linking via crtbegin/crtend, PIE support, or driving the link through `cc` instead of bare `ld` — remains undesigned; the next libc-glue requirement this same root cause produces will need one.
 
 ---
 
-## 19. `select`/`pselect` Remain Unusable — `fd_set`'s `sizeof`-Sized Array Field
+## 17. `select`/`pselect` Remain Unusable — `fd_set`'s `sizeof`-Sized Array Field
 
 **Summary:** v0.1.30's anonymous-struct-typedef support (c2ast synthesizing a struct tag from a typedef name) makes `fd_set`'s and `__sigset_t`'s typedef names resolve, and `select`/`pselect`'s signatures now type-check. But `fd_set`'s only field is an array sized by a `sizeof`-based constant expression (`__FD_SETSIZE / __NFDBITS`, ultimately involving `sizeof`), which c2ast's constant-expression evaluator still cannot fold — the same root cause as item 8's `_IO_FILE` gap. Without a folded size, the field has no known layout, so `fd_set` registers as an incomplete struct and cannot actually be allocated or written to, leaving `select`/`pselect` callable in name only. Resolved by the same fix item 8 calls for: `sizeof` evaluation in c2ast's constant folder.
 
 ---
 
-## 20. Pointer-Bottomed C Typedefs Are Not Registered As Type Names
+## 18. Pointer-Bottomed C Typedefs Are Not Registered As Type Names
 
 **Summary:** IT-2026-09-16-3103/3104 (v0.1.31) generalized cincluded typedef registration so that any `prim`- or tagged-`strct`-bottomed typedef a header defines becomes usable as a Palan type name, regardless of whether some C function in the header references it. Pointer-bottomed typedefs (`typedef void *timer_t;`, `typedef int *P;`) were deliberately excluded from the new `ast.typedefs` section (`src/c2ast/CParser.cpp`'s flush filter in `CParser::parse()`) — registering one would force a premature decision about which side of the `@`/`@!` mutability split a bare pointer alias falls on. The per-reference-site path (`registerTypedefAliasInType`'s `pntr` branch, `src/semantic-anlyzr/PlnSemanticAnalyzer.cpp`) doesn't rescue this either: it only recurses into the pointee's own base type, never registers the pointer typedef's own name. So a pointer-bottomed typedef's name is unusable as a Palan type in every path, and referencing it (`P p;`) produces the generic `E_UnknownStructType` message (`"unknown struct type 'P'."`) — accurate in that the name is unresolved, but misleading wording for a pointer alias rather than a struct. `E_UnknownStructType` is a cross-cutting message used from 8 call sites for various "unknown type name" cases, so a wording fix belongs to a separate, broader ticket, not to a pointer-typedef-specific one. Workaround: address-of a variable of the pointee's own type (`@!void t;` in place of a `timer_t` local) — this is a spelling limitation, not a missing capability.
 
 ---
 
-## 21. `movq` With a 64-Bit Immediate Outside the 32-Bit Signed Range Fails to Assemble
-
-**Summary:** Initializing an `int64`/`uint64` local (including a typedef'd one like `int64_t`) with a literal outside the sign-extended 32-bit immediate range (e.g. `int64_t c = 3000000000;`) emits `movq $3000000000, -24(%rbp)`, which GNU `as` rejects as an operand type mismatch — `movq` to a memory operand only accepts a 32-bit immediate, sign-extended; a true 64-bit immediate can only be loaded into a register (`movabsq`) and then stored. Codegen has no path that detects an out-of-range immediate and routes it through a register. Discovered incidentally while writing an IT-2026-09-16-3105 stdint.h test; worked around there by choosing in-range literals, since the fix belongs to `PlnX86CodeGen`'s immediate-emission logic, not to a test-only ticket.
-
-## 22. A User-Defined Palan Function With a `flo64` Parameter or Return Type Fails to Assemble
-
-**Summary:** Any Palan (not C) function declared with a `flo64` parameter or `flo64` return type fails at the `as` step with `operand type mismatch for 'movsd'` (and, for arithmetic on the parameter, `mulsd` too), regardless of whether the function is called across an `import` boundary or from the same file, and regardless of whether the argument is a literal or a variable. Reproduced with the minimal case `func show(flo64 x) { printf("%f\n", x); } show(2.0);` — no cinclude, no math library, no import involved. This is unrelated to C-function float parameter/return handling, which already works (`sqrt(2.0)` assigned into a `flo64` local and printed is fine; see `171_link_math.pa`). Discovered while designing the cross-module test for IT-2026-09-16-3108 (`link` clause library propagation) — the originally planned exported-function shape (`flo64` param/return) had to be replaced with an `int32` boundary wrapping internal `flo64` math to route around this bug, since fixing codegen is out of scope for that ticket.
-
----
-
-## 23. `unistd.h`'s `syscall()` Wrapper Is Shadowed by the `syscall` Reserved Word
+## 19. `unistd.h`'s `syscall()` Wrapper Is Shadowed by the `syscall` Reserved Word
 
 **Summary:** v0.1.32 makes `syscall` a globally reserved word to introduce the raw syscall declaration (`PlnParser.yy:874-894`), which shadows `unistd.h`'s own `long syscall(long, ...)` wrapper (`unistd.h:1091`) — a file that cinclude's `<unistd.h>` and uses a native `syscall` declaration cannot also call that libc wrapper by name. This is a deliberate trade-off, not an oversight: `link` (v0.1.31) hit the same collision and was resolved as a contextual keyword recognized only in `cinclude`'s trailing clause, a position (after `import_as`) where no other production can start. `syscall` can't reuse that trick — it appears statement-leading, where `ID ID '(' ...` is ambiguous between a variable declaration, an ordinary call-expression statement, and the new declaration, so disambiguating it contextually would need lookahead machinery this grammar doesn't have. Reserving it globally was judged acceptable because a native syscall declaration makes the libc wrapper largely redundant once the same syscall is declared directly. If a future need for both in the same file arises, the fix is the same contextual-keyword approach `link` used, scoped to the statement-leading position.
 
 ---
 
-## 24. C11 Anonymous Members Without a Member Name Fail to Parse
+## 20. C11 Anonymous Members Without a Member Name Fail to Parse
 
 **Summary:** c2ast's struct/union field parser requires a declarator after every member's type, so a C11 anonymous member (`struct S { int k; union { int a; float b; }; };`) is a parse error ("unexpected token") that fails the whole `cinclude`, for struct and union bodies alike. An anonymous body that has a member name (`union { ... } u;`) works since v0.1.34 (c2ast synthesizes a tag for it). Supporting the unnamed form would need both the parse and promoted field access (`s.a` reaching into the anonymous member), which SA's field resolution has no concept of. None of the headers targeted so far (including glibc's `pthread.h`) uses this form.
 
 ---
 
-## 25. `name = expr;` Statements Are Silently Dropped
+## 21. Function Definitions With an Unsupported Parameter Form Are Silently Dropped
 
-**Summary:** Palan's assignment is `expr -> name;`, but the C-style form `name = expr;` still parses: `var_declaration`'s `ID '=' expression` alternative (`src/gen-ast/PlnParser.yy`) yields a `not-impl` statement, which SA passes through unchanged and codegen skips. No diagnostic is produced, so `int64 v = 1; v = 7; printf("%ld\n", v);` compiles and prints `1`. The same applies to a `cinclude`d C global (`stdout = f;` bypasses `E_CGlobalNotAssignable`). A statement-level `not-impl` should be a compile error rather than a no-op.
-
----
-
-## 26. A `uint64` Literal Above `INT64_MAX` Crashes `palan-codegen`
-
-**Summary:** `uint64 a = 18446744073709551600;` passes gen-ast and SA, but `palan-codegen` aborts with an uncaught `std::out_of_range` from `stoll` while reading the literal. Literal values in the upper half of the `uint64` range need to be parsed as unsigned (`stoull`) wherever codegen converts a `lit-uint`/`lit-int` value string. Distinct from item 21: that one is an assembler rejection of an out-of-range `movq` immediate, whereas this crashes before any assembly is emitted.
+**Summary:** When any parameter of a `func` or `syscall` declaration parses into a `not-impl` form (e.g. `func f(x = 1) { ... }` — an untyped defaulted parameter, or a `>>`-marked parameter), gen-ast's `func_def`/`syscall_decl` actions yield `{"not-impl": true}` and every `func_item` consumer in `src/gen-ast/PlnParser.yy` (`stmt_list_b`, `body_list_b`, ...) discards it (`if (!$1.count("not-impl"))`) instead of emitting it. The function simply vanishes: an uncalled one produces no diagnostic at all, and a call to it reports a misleading `Undefined function 'f'.`. This is the declaration-level counterpart of v0.1.35's statement-level `not-impl` rejection — the fix is to keep the dropped item in the AST with its `loc` (as statements now do) and have SA reject it with a diagnostic naming the unsupported parameter, rather than letting gen-ast erase it.

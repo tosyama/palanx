@@ -122,6 +122,7 @@ class PlnSemanticAnalyzer {
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
+	void checkIntLiteralRange(const json& lit);
 	json sa_expr_call(const json& expr);
 	json sa_expr_member_call(const json& expr);
 	// Analyze a call's argument list against the callee's parameter list

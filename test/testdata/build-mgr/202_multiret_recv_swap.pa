@@ -1,0 +1,25 @@
+cinclude <stdio.h>;
+
+// results passed on swapped: each dst is bound to another result's return register
+{
+    func two() -> int64 a, int64 b { 1 -> a; 2 -> b; }
+    func pr(int64 x, int64 y) { printf("%ld %ld\n", x, y); }
+    (int64 p, int64 q) = two();
+    pr(q, p);
+}
+
+// rotation forms a register cycle
+{
+    func three() -> int64 a, int32 b, int16 c { 1 -> a; 2 -> b; 3 -> c; }
+    func pr3(int16 x, int64 y, int32 z) { printf("%d %ld %d\n", x, y, z); }
+    (int64 a, int32 b, int16 c) = three();
+    pr3(c, a, b);
+}
+
+// int/float mixed
+{
+    func mixed() -> int64 a, flo64 f, int64 b { 10 -> a; 2.5 -> f; 20 -> b; }
+    func prm(int64 x, flo64 g, int64 y) { printf("%ld %f %ld\n", x, g, y); }
+    (int64 a, flo64 f, int64 b) = mixed();
+    prm(b, f, a);
+}

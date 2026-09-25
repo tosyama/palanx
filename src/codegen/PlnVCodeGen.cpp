@@ -3,6 +3,16 @@
 
 using namespace std;
 
+// An integer literal's text is parsed per the type SA gave it: a uint64 value
+// above INT64_MAX would make stoll throw.
+static long long intLitImm(const string& value, VRegType type)
+{
+    if (type == VRegType::Uint8 || type == VRegType::Uint16
+     || type == VRegType::Uint32 || type == VRegType::Uint64)
+        return (long long)stoull(value);
+    return stoll(value);
+}
+
 // -------- Variable scope management --------
 
 void PlnVCodeGen::enterVarScope()
@@ -68,13 +78,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         case ExprKind::IntLit: {
             auto& e = static_cast<const IntLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(MovImm{r, e.type, stoll(e.value)});
+            func.instrs.push_back(MovImm{r, e.type, intLitImm(e.value, e.type)});
             return r;
         }
         case ExprKind::UintLit: {
             auto& e = static_cast<const UintLitExpr&>(expr);
             VReg r = allocVReg();
-            func.instrs.push_back(MovImm{r, e.type, (long long)stoull(e.value)});
+            func.instrs.push_back(MovImm{r, e.type, intLitImm(e.value, e.type)});
             return r;
         }
         case ExprKind::Convert: {
@@ -511,7 +521,7 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                         blockVarStack_.back().push_back(r);
                 } else {
                     r = allocVReg();
-                    func.instrs.push_back(InitVar{r, e.type, stoll(e.value)});
+                    func.instrs.push_back(InitVar{r, e.type, intLitImm(e.value, e.type)});
                     if (!blockVarStack_.empty())
                         blockVarStack_.back().push_back(r);
                 }
@@ -520,7 +530,7 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                 // SA's lit-uint branch only ever assigns a Uint* value-type.
                 auto& e = static_cast<const UintLitExpr&>(*ve.init);
                 r = allocVReg();
-                func.instrs.push_back(InitVar{r, e.type, (long long)stoull(e.value)});
+                func.instrs.push_back(InitVar{r, e.type, intLitImm(e.value, e.type)});
                 if (!blockVarStack_.empty())
                     blockVarStack_.back().push_back(r);
             } else {
@@ -719,15 +729,21 @@ VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
             declareVar(p.name, r);
         }
         // Pre-declare single named return variable
+        auto zeroInit = [&](VReg r, VRegType t) {
+            if (t == VRegType::Float32 || t == VRegType::Float64)
+                vf.instrs.push_back(InitVarF{r, t, addFloatLiteral("0.0", t)});
+            else
+                vf.instrs.push_back(InitVar{r, t, 0});
+        };
         if (!pf.retVarName.empty()) {
             VReg r = allocVReg();
-            vf.instrs.push_back(InitVar{r, pf.retType, 0});
+            zeroInit(r, pf.retType);
             declareVar(pf.retVarName, r);
         }
         // Pre-declare multiple named return variables
         for (auto& rv : pf.retVars) {
             VReg r = allocVReg();
-            vf.instrs.push_back(InitVar{r, rv.type, 0});
+            zeroInit(r, rv.type);
             declareVar(rv.name, r);
         }
         currentPlnFunc_ = &pf;

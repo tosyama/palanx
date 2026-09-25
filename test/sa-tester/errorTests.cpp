@@ -2287,3 +2287,64 @@ TEST(sa_error, macro_backref_arr_field)
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("must be a compile-time constant"), string::npos);
 }
+
+TEST(sa_error, untyped_var_decl)
+{
+	// `v = 7;` is a declaration with the type omitted (reserved for future type
+	// inference), not an assignment; gen-ast keeps parsing it, so SA must reject it.
+	// Covers: sa_statements "not-impl" branch with untyped-var, E_VarTypeInferenceNotImpl
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_190_untyped_var_decl.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":1:1: error: variable 'v' is declared without a type"), string::npos);
+}
+
+TEST(sa_error, stmt_not_implemented)
+{
+	// Covers: sa_statements "not-impl" branch without untyped-var, E_StmtNotImplemented
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_191_stmt_not_implemented.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":2:1: error: this statement is not supported"), string::npos);
+}
+
+TEST(sa_error, int_literal_out_of_range)
+{
+	// Covers: checkIntLiteralRange for lit-int/lit-uint, via a var-decl
+	// initializer and an arith operand typed from expectedType
+	const pair<string, string> cases[] = {
+		{"error_200_int_lit_range_int8.pa", ":1:10: error: Integer literal '300' is out of range for type 'int8'."},
+		{"error_201_int_lit_range_uint32.pa", "'5000000000' is out of range for type 'uint32'"},
+		{"error_202_int_lit_range_int64.pa", "'99999999999999999999' is out of range for type 'int64'"},
+		{"error_203_int_lit_range_uint64.pa", "'18446744073709551616' is out of range for type 'uint64'"},
+		{"error_204_int_lit_range_arith.pa", ":1:14: error: Integer literal '300' is out of range for type 'int8'."},
+		{"error_205_int_lit_range_neg_unsigned.pa", "'-1' is out of range for type 'uint32'"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, int_literal_typed_from_other_operand)
+{
+	// `300 + i` in an int8 initializer: 300 takes int64 from `i`, so the
+	// error is the narrowing of the sum, not a range error on the literal.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_206_int_lit_arith_other_operand.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:1: error: Implicit conversion from 'int64' to 'int8'"), string::npos);
+	ASSERT_EQ(sa.find("out of range"), string::npos);
+}
