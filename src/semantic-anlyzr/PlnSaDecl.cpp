@@ -243,13 +243,30 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		if (var.contains("var-type"))
 			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
 
+	bool hasArrLit = false;
 	for (auto& var : stmt2["vars"]) {
 		if (var["var-type"].value("type-kind", "") == "arr" && var.contains("init")) {
-			if (var["init"].value("expr-type", "") == "arr-lit")
-				sa_expression(var["init"]);
-			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_ArrVarInitNotLiteral, var["name"]) << endl;
-			exit(1);
+			if (var["init"].value("expr-type", "") != "arr-lit") {
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_ArrVarInitNotLiteral, var["name"]) << endl;
+				exit(1);
+			}
+			hasArrLit = true;
 		}
+	}
+
+	// Each literal fixes its own variable's size (`[]int32 a = [1,2], b = [1,2,3]`),
+	// so the declaration is lowered one variable at a time. A literal requires a
+	// compile-time size, so splitting cannot re-evaluate a side-effecting size expression.
+	if (hasArrLit) {
+		json result = json::array();
+		for (auto& var : stmt2["vars"]) {
+			json single = stmt2;
+			single["vars"] = json::array({var});
+			json lowered = var.contains("init") ? sa_arr_lit_var_decl(single) : sa_var_decl(single);
+			for (auto& s : lowered)
+				result.push_back(move(s));
+		}
+		return result;
 	}
 
 	if (!stmt2["vars"].empty()) {
@@ -493,6 +510,79 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",malloc_call}});
 	}
 	result.push_back(sa_stmt);
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
+{
+	const json& var = stmt["vars"][0];
+	string name = var["name"];
+	const json& vtype = var["var-type"];
+	const json& base = vtype["base-type"];
+	const json& items = var["init"]["items"];
+
+	if (base.value("type-kind", "") == "arr") {
+		cerr << locPrefix(var["init"]) << PlnSaMessage::getMessage(E_ArrLitContext) << endl;
+		exit(1);
+	}
+	string leafName = base.value("type-name", "");
+	if (base.value("type-kind", "") != "prim" || vtype.value("embedded", false)
+			|| structDefs_.count(leafName)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
+		exit(1);
+	}
+	if (!isKnownTypeName(leafName)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leafName) << endl;
+		exit(1);
+	}
+	const PlnType* elemType = registry_.fromJson(base);
+
+	// Elements are analyzed before the variable is declared, so an element
+	// cannot read the array it is initializing.
+	json values = json::array();
+	for (auto& item : items) {
+		if (item.value("expr-type", "") == "arr-lit") {
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, name) << endl;
+			exit(1);
+		}
+		json value = sa_expression(item, elemType);
+		if (!value.contains("value-type")) {
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+			exit(1);
+		}
+		values.push_back(convertForBinding(item, value, elemType, base));
+	}
+
+	json declStmt = stmt;
+	json& declVar = declStmt["vars"][0];
+	declVar.erase("init");
+	if (vtype["size-expr"].is_null()) {
+		declVar["var-type"]["size-expr"] = {{"expr-type", "lit-uint"}, {"value", to_string(items.size())}};
+	} else {
+		json sz = sa_arr_size_expr(stmt, vtype["size-expr"]);
+		const json& lit = sz.value("expr-type", "") == "convert" ? sz["src"] : sz;
+		string et = lit.value("expr-type", "");
+		if (et != "lit-int" && et != "lit-uint") {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitSizeNotConst, name) << endl;
+			exit(1);
+		}
+		string declared = lit["value"].get<string>();
+		if (stoull(declared) != items.size()) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitCountMismatch,
+			                                  name, declared, to_string(items.size())) << endl;
+			exit(1);
+		}
+	}
+
+	json result = sa_arr_var_decl(declStmt);
+	for (size_t i = 0; i < values.size(); i++) {
+		json target = {
+			{"expr-type", "arr-index"},
+			{"array", {{"expr-type", "id"}, {"name", name}}},
+			{"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}
+		};
+		result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(target)}, {"value", values[i]}});
+	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

@@ -1759,6 +1759,31 @@ TEST(build_mgr, int_lit_float_ctx) {
 	ASSERT_EQ(output, "2.0 2.5 3.0\n3.0 2.0\n7.0\n");
 }
 
+TEST(build_mgr, arr_lit_1d) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/204_arr_lit_1d.pa");
+	ASSERT_EQ(output, "1 -2 3\n200 255\n1.5 2.0 10.0\n11 20 -2\n2 3 5\n9 7 8\n");
+}
+
+TEST(build_mgr, arr_lit_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_arr_lit_mtrace_bin "
+		"../test/testdata/build-mgr/205_arr_lit_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_arr_lit_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_arr_lit_mtrace_bin");
+	ASSERT_EQ(output, "8\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	EXPECT_EQ(allocs, 2) << "expected 2 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

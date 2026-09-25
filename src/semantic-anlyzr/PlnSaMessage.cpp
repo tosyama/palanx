@@ -363,6 +363,24 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_ArrLitContext:
 			return "an array literal can only be used as an array variable's initializer in this version.";
 
+		case E_ArrLitCountMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "array variable '" + arg1 + "' has size " + arg2 + " but its array literal has " + arg3 + " elements.";
+
+		case E_ArrLitSizeNotConst:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "array variable '" + arg1 + "' initialized with an array literal must have a compile-time constant size.";
+
+		case E_ArrLitDimMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the array literal's dimensions do not match array variable '" + arg1 + "'.";
+
+		case E_ArrLitElemType:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "array variable '" + arg1 + "' cannot be initialized with an array literal: only numeric element types are supported.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

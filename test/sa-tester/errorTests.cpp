@@ -2338,15 +2338,28 @@ TEST(sa_error, arr_lit_func_arg)
 	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array variable's initializer in this version."), string::npos);
 }
 
-TEST(sa_error, arr_lit_init_not_impl)
+TEST(sa_error, arr_lit_init)
 {
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_209_arr_lit_init_not_impl.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:14: error: an array literal can only be used as an array variable's initializer in this version."), string::npos);
+	const pair<string, string> cases[] = {
+		{"error_209_arr_lit_count_mismatch.pa", ":1:1: error: array variable 'a' has size 3 but its array literal has 2 elements."},
+		{"error_210_arr_lit_size_not_const.pa", ":2:1: error: array variable 'a' initialized with an array literal must have a compile-time constant size."},
+		{"error_211_arr_lit_dim_mismatch.pa", ":1:15: error: the array literal's dimensions do not match array variable 'a'."},
+		{"error_212_arr_lit_elem_type.pa", ":2:1: error: array variable 'a' cannot be initialized with an array literal: only numeric element types are supported."},
+		{"error_213_arr_lit_elem_narrowing.pa", ":2:17: error: Implicit conversion from 'int16' to 'int8' is not allowed"},
+		{"error_214_arr_lit_elem_range.pa", ":1:17: error: Integer literal '300' is out of range for type 'int8'."},
+		// Elements are analyzed before the array is declared.
+		{"error_215_arr_lit_self_ref.pa", ":1:18: error: Undefined variable 'a'."},
+		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array variable 'a' cannot be initialized with an array literal: only numeric element types are supported."},
+		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
 }
 
 TEST(sa_error, int_literal_out_of_range)
