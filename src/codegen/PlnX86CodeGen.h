@@ -28,6 +28,7 @@ class PlnX86CodeGen : public PlnCodeGen {
 
     // Shared helper: emit a binary reg-reg arithmetic instruction (Add/Sub/Mul/BitAnd/BitOr/BitXor)
     void emitBinArith(const string& op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm);
+    void emitIntDivMod(VReg dst, VReg lhs, VReg rhs, VRegType type, const char* result_reg, const RegMap& rm);
     // Shared helper: emit a unary reg arithmetic instruction (Neg's integer path/BitNot)
     void emitUnArith(const string& op, VReg dst, VReg src, VRegType type, const RegMap& rm);
 

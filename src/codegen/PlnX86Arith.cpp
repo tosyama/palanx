@@ -48,52 +48,59 @@ void PlnX86CodeGen::emitInstrMul(const Mul& ml, const RegMap& rm)
         out << "\tmovb %al, " << srcOperand(dst_loc) << "\n";
 }
 
+void PlnX86CodeGen::emitIntDivMod(VReg dst, VReg lhs, VReg rhs, VRegType type, const char* result_reg, const RegMap& rm)
+{
+    if (!rm.count(dst)) return;  // dead: result never used
+    const PhysLoc& lhs_loc = rm.at(lhs);
+    const PhysLoc& rhs_loc = rm.at(rhs);
+    const PhysLoc& dst_loc = rm.at(dst);
+    int w = intWidth(type);
+    bool sign = isSignedInt(type);
+    const string mov = intMnemonic("mov", type);
+    // Division clobbers %rax and %rdx, so rhs is moved out of them first.
+    string rhs_src = srcOperand(rhs_loc);
+    VRegType div_type = type;
+    if (w < 4) {
+        // 8/16-bit operands are divided at 32 bits: idivb leaves the remainder in %ah,
+        // and int8 -128/-1 would raise #DE instead of wrapping.
+        div_type = sign ? VRegType::Int32 : VRegType::Uint32;
+        out << "\t" << extendMnemonic(sign, w, 4) << " " << rhs_src << ", %r10d\n";
+        out << "\t" << extendMnemonic(sign, w, 4) << " " << srcOperand(lhs_loc) << ", %eax\n";
+        rhs_src = "%r10d";
+    } else {
+        if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
+            string r10 = sizedRegName("%r10", type);
+            out << "\t" << mov << " " << rhs_src << ", " << r10 << "\n";
+            rhs_src = r10;
+        }
+        out << "\t" << mov << " " << srcOperand(lhs_loc) << ", " << sizedRegName("%rax", type) << "\n";
+    }
+    if (sign)
+        out << (w == 8 ? "\tcqto\n" : "\tcltd\n");
+    else
+        out << "\txorl %edx, %edx\n";
+    out << "\t" << intMnemonic(sign ? "idiv" : "div", div_type) << " " << rhs_src << "\n";
+    if (dst_loc.isStack() || dst_loc.base != result_reg)
+        out << "\t" << mov << " " << sizedRegName(result_reg, type) << ", " << srcOperand(dst_loc) << "\n";
+}
+
 void PlnX86CodeGen::emitInstrDiv(const Div& dv, const RegMap& rm)
 {
-    if (!rm.count(dv.dst)) return;  // dead: result never used
-    const PhysLoc& lhs_loc = rm.at(dv.lhs);
-    const PhysLoc& rhs_loc = rm.at(dv.rhs);
-    const PhysLoc& dst_loc = rm.at(dv.dst);
-    if (isFloat(dv.type)) {
-        const char* mov = movInstrForType(dv.type);
-        const char* div = dv.type == VRegType::Float32 ? "divss" : "divsd";
-        out << "\t" << mov << " " << srcOperand(lhs_loc) << ", %xmm8\n";
-        out << "\t" << div << " " << srcOperand(rhs_loc) << ", %xmm8\n";
-        out << "\t" << mov << " %xmm8, " << srcOperand(dst_loc) << "\n";
-    } else {
-        // idivq clobbers %rax and %rdx; save rhs if it lives in either.
-        string rhs_src = srcOperand(rhs_loc);
-        if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
-            out << "\tmovq " << rhs_src << ", %r10\n";
-            rhs_src = "%r10";
-        }
-        out << "\tmovq " << srcOperand(lhs_loc) << ", %rax\n";
-        out << "\tcqto\n";
-        out << "\tidivq " << rhs_src << "\n";
-        string dst_str = srcOperand(dst_loc);
-        if (dst_str != "%rax")
-            out << "\tmovq %rax, " << dst_str << "\n";
+    if (!isFloat(dv.type)) {
+        emitIntDivMod(dv.dst, dv.lhs, dv.rhs, dv.type, "%rax", rm);
+        return;
     }
+    if (!rm.count(dv.dst)) return;  // dead: result never used
+    const char* mov = movInstrForType(dv.type);
+    const char* div = dv.type == VRegType::Float32 ? "divss" : "divsd";
+    out << "\t" << mov << " " << srcOperand(rm.at(dv.lhs)) << ", %xmm8\n";
+    out << "\t" << div << " " << srcOperand(rm.at(dv.rhs)) << ", %xmm8\n";
+    out << "\t" << mov << " %xmm8, " << srcOperand(rm.at(dv.dst)) << "\n";
 }
 
 void PlnX86CodeGen::emitInstrMod(const Mod& md, const RegMap& rm)
 {
-    if (!rm.count(md.dst)) return;  // dead: result never used
-    const PhysLoc& lhs_loc = rm.at(md.lhs);
-    const PhysLoc& rhs_loc = rm.at(md.rhs);
-    const PhysLoc& dst_loc = rm.at(md.dst);
-    // idivq clobbers %rax and %rdx; save rhs if it lives in either.
-    string rhs_src = srcOperand(rhs_loc);
-    if (!rhs_loc.isStack() && (rhs_loc.base == "%rax" || rhs_loc.base == "%rdx")) {
-        out << "\tmovq " << rhs_src << ", %r10\n";
-        rhs_src = "%r10";
-    }
-    out << "\tmovq " << srcOperand(lhs_loc) << ", %rax\n";
-    out << "\tcqto\n";
-    out << "\tidivq " << rhs_src << "\n";
-    string dst_str = srcOperand(dst_loc);
-    if (dst_str != "%rdx")
-        out << "\tmovq %rdx, " << dst_str << "\n";
+    emitIntDivMod(md.dst, md.lhs, md.rhs, md.type, "%rdx", rm);
 }
 
 void PlnX86CodeGen::emitUnArith(const string& op, VReg dst, VReg src, VRegType type, const RegMap& rm)

@@ -1672,6 +1672,16 @@ TEST(build_mgr, mul_8bit)
 	ASSERT_EQ(output, "-15 44 -128\n144 255\n44 144\n");
 }
 
+TEST(build_mgr, divmod_width_sign)
+{
+	// Div/Mod always used movq+cqto+idivq: narrower operands failed to assemble
+	// and unsigned operands were divided as signed.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/199_divmod_width_sign.pa");
+	ASSERT_EQ(output, "-3 -1 -128 0\n-4285 -5\n-666666666 -2\n-1285714285714285714 -2\n"
+	                  "35 5 9285 5\n571428571 3\n1844674407370955160 0\n-128 500000000\n");
+}
+
 TEST(build_mgr, owned_struct_arr_owned_field_mtrace) {
 	// Moving each element into the array nulls the loop-local source, so the
 	// generated __pln_free_L must accept NULL.
