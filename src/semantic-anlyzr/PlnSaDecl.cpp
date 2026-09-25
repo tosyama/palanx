@@ -243,71 +243,77 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		if (var.contains("var-type"))
 			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
 
-	bool hasArrLit = false;
+	auto isArrLit = [](const json& var) {
+		return var["var-type"].value("type-kind", "") == "arr" && var.contains("init");
+	};
 	for (auto& var : stmt2["vars"]) {
-		if (var["var-type"].value("type-kind", "") == "arr" && var.contains("init")) {
-			if (var["init"].value("expr-type", "") != "arr-lit") {
-				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_ArrVarInitNotLiteral, var["name"]) << endl;
-				exit(1);
-			}
-			hasArrLit = true;
-		}
-	}
-
-	// Each literal fixes its own variable's size (`[]int32 a = [1,2], b = [1,2,3]`),
-	// so the declaration is lowered one variable at a time. A literal requires a
-	// compile-time size, so splitting cannot re-evaluate a side-effecting size expression.
-	if (hasArrLit) {
-		json result = json::array();
-		for (auto& var : stmt2["vars"]) {
-			json single = stmt2;
-			single["vars"] = json::array({var});
-			json lowered = var.contains("init") ? sa_arr_lit_var_decl(single) : sa_var_decl(single);
-			for (auto& s : lowered)
-				result.push_back(move(s));
-		}
-		return result;
-	}
-
-	if (!stmt2["vars"].empty()) {
-		const json& vtype = stmt2["vars"][0]["var-type"];
-		string tk = vtype.value("type-kind", "");
-
-		if (tk == "arr" && vtype.value("specifier", "") == "raw" && vtype["size-expr"].is_null()) {
-			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
+		if (isArrLit(var) && var["init"].value("expr-type", "") != "arr-lit") {
+			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_ArrVarInitNotLiteral, var["name"]) << endl;
 			exit(1);
 		}
-		if (tk == "arr" && vtype.value("specifier", "") == "raw"
-				&& !vtype["size-expr"].is_null()
-				&& vtype.value("embedded", false))
-			return sa_embed_arr_var_decl(stmt2);
-		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
-			const json& base = vtype["base-type"];
-			if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
-				return sa_owned_struct_arr_var_decl(stmt2);
-			return sa_arr_var_decl(stmt2);
+	}
+
+	// The lowering paths below apply one var-type to every var in a statement,
+	// so the declaration is split into runs of equal var-type. The comparison
+	// includes loc, so only vars inheriting the same source type node (`[f()]int32 a, b`)
+	// share one evaluation of its size expression. Each array literal fixes its own
+	// variable's size (`[]int32 a = [1,2], b = [1,2,3]`), so it always gets its own run.
+	json result = json::array();
+	const json& vars = stmt2["vars"];
+	size_t begin = 0;
+	for (size_t i = 1; i <= vars.size(); i++) {
+		if (i < vars.size() && vars[i]["var-type"] == vars[i-1]["var-type"]
+				&& !isArrLit(vars[i]) && !isArrLit(vars[i-1]))
+			continue;
+		json run = stmt2;
+		run["vars"] = json(vars.begin() + begin, vars.begin() + i);
+		json lowered = isArrLit(vars[begin]) ? sa_arr_lit_var_decl(run) : sa_var_decl_group(run);
+		for (auto& s : lowered)
+			result.push_back(move(s));
+		begin = i;
+	}
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
+{
+	const json& vtype = stmt2["vars"][0]["var-type"];
+	string tk = vtype.value("type-kind", "");
+
+	if (tk == "arr" && vtype.value("specifier", "") == "raw" && vtype["size-expr"].is_null()) {
+		cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
+		exit(1);
+	}
+	if (tk == "arr" && vtype.value("specifier", "") == "raw"
+			&& !vtype["size-expr"].is_null()
+			&& vtype.value("embedded", false))
+		return sa_embed_arr_var_decl(stmt2);
+	if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
+		const json& base = vtype["base-type"];
+		if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
+			return sa_owned_struct_arr_var_decl(stmt2);
+		return sa_arr_var_decl(stmt2);
+	}
+	if (tk == "prim") {
+		string tname = vtype.value("type-name", "");
+		if (structDefs_.count(tname))
+			return sa_struct_var_decl(stmt2);
+		if (!isKnownTypeName(tname)) {
+			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+			exit(1);
 		}
-		if (tk == "prim") {
-			string tname = vtype.value("type-name", "");
-			if (structDefs_.count(tname))
-				return sa_struct_var_decl(stmt2);
-			if (!isKnownTypeName(tname)) {
+	}
+	if (tk == "pntr") {
+		// Validate the pointee name at declaration time so `@!NoSuchStruct p;`
+		// is rejected here rather than aborting later via an unguarded throw.
+		const json* base = &vtype["base-type"];
+		while (base->value("type-kind","") == "pntr")
+			base = &(*base)["base-type"];
+		if (base->value("type-kind","") == "prim") {
+			string tname = base->value("type-name", "");
+			if (!isKnownPointeeTypeName(tname)) {
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 				exit(1);
-			}
-		}
-		if (tk == "pntr") {
-			// Validate the pointee name at declaration time so `@!NoSuchStruct p;`
-			// is rejected here rather than aborting later via an unguarded throw.
-			const json* base = &vtype["base-type"];
-			while (base->value("type-kind","") == "pntr")
-				base = &(*base)["base-type"];
-			if (base->value("type-kind","") == "prim") {
-				string tname = base->value("type-name", "");
-				if (!isKnownPointeeTypeName(tname)) {
-					cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
-					exit(1);
-				}
 			}
 		}
 	}

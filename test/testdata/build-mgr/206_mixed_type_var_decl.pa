@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+[3]int32 a, [2]int64 b;
+5000000000 -> b[1];
+7 -> a[2];
+printf("%d %ld\n", a[2], b[1]);
+[2]int32 c, int32 x = 3;
+printf("%d\n", x);
+int32 y = 1, [2]int32 d;
+4 -> d[1];
+printf("%d %d\n", y, d[1]);
+[2]int32 e, f;
+5 -> e[1];
+6 -> f[1];
+printf("%d %d\n", e[1], f[1]);

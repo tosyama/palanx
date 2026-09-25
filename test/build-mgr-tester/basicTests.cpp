@@ -1765,6 +1765,12 @@ TEST(build_mgr, arr_lit_1d) {
 	ASSERT_EQ(output, "1 -2 3\n200 255\n1.5 2.0 10.0\n11 20 -2\n2 3 5\n9 7 8\n");
 }
 
+TEST(build_mgr, mixed_type_var_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/206_mixed_type_var_decl.pa");
+	ASSERT_EQ(output, "7 5000000000\n3\n1 4\n5 6\n");
+}
+
 TEST(build_mgr, arr_lit_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(
