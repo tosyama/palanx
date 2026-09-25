@@ -245,6 +245,8 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 
 	for (auto& var : stmt2["vars"]) {
 		if (var["var-type"].value("type-kind", "") == "arr" && var.contains("init")) {
+			if (var["init"].value("expr-type", "") == "arr-lit")
+				sa_expression(var["init"]);
 			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_ArrVarInitNotLiteral, var["name"]) << endl;
 			exit(1);
 		}

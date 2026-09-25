@@ -272,6 +272,11 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
 
+	if (expr_type == "arr-lit") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLitContext) << endl;
+		exit(1);
+	}
+
 	if (expr_type == "lit-int") {
 		// A lit-int already carrying a value-type is a macro constant folded
 		// in by gen-ast (a plain source literal never has one) -- its type

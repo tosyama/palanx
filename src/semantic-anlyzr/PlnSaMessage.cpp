@@ -360,6 +360,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "array variable '" + arg1 + "' can only be initialized with an array literal.";
 
+		case E_ArrLitContext:
+			return "an array literal can only be used as an array variable's initializer in this version.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

@@ -88,6 +88,7 @@ enum PlnSaMessageCode {
 	E_StmtNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
 	E_ArrVarInitNotLiteral,	// arg1: variable name
+	E_ArrLitContext,
 };
 
 class PlnSaMessage

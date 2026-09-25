@@ -2327,6 +2327,28 @@ TEST(sa_error, arr_var_init_not_literal)
 	ASSERT_NE(sa.find(":1:1: error: array variable 'b' can only be initialized with an array literal."), string::npos);
 }
 
+TEST(sa_error, arr_lit_func_arg)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array variable's initializer in this version."), string::npos);
+}
+
+TEST(sa_error, arr_lit_init_not_impl)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_209_arr_lit_init_not_impl.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":1:14: error: an array literal can only be used as an array variable's initializer in this version."), string::npos);
+}
+
 TEST(sa_error, int_literal_out_of_range)
 {
 	// Covers: checkIntLiteralRange for lit-int/lit-uint, via a var-decl
