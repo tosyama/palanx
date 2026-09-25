@@ -243,6 +243,13 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		if (var.contains("var-type"))
 			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
 
+	for (auto& var : stmt2["vars"]) {
+		if (var["var-type"].value("type-kind", "") == "arr" && var.contains("init")) {
+			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_ArrVarInitNotLiteral, var["name"]) << endl;
+			exit(1);
+		}
+	}
+
 	if (!stmt2["vars"].empty()) {
 		const json& vtype = stmt2["vars"][0]["var-type"];
 		string tk = vtype.value("type-kind", "");

@@ -356,6 +356,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "Integer literal '" + arg1 + "' is out of range for type '" + arg2 + "'.";
 
+		case E_ArrVarInitNotLiteral:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "array variable '" + arg1 + "' can only be initialized with an array literal.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

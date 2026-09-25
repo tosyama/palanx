@@ -2314,6 +2314,19 @@ TEST(sa_error, stmt_not_implemented)
 	ASSERT_NE(sa.find(":2:1: error: this statement is not supported"), string::npos);
 }
 
+TEST(sa_error, arr_var_init_not_literal)
+{
+	// `b` inherits `[3]int32` from `a`; the array var-decl lowering never reads
+	// "init", so without this check the initializer was silently dropped.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_207_arr_var_init_not_literal.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":1:1: error: array variable 'b' can only be initialized with an array literal."), string::npos);
+}
+
 TEST(sa_error, int_literal_out_of_range)
 {
 	// Covers: checkIntLiteralRange for lit-int/lit-uint, via a var-decl
