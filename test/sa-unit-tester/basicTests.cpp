@@ -679,3 +679,32 @@ TEST(sysv_struct_ret, embed_ptr_arr_field) {
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
     EXPECT_EQ(result[1].cls, EightbyteClass::Integer);
 }
+
+// -------- bool --------
+
+TEST(bool_type, widens_into_numeric_but_needs_cast_from_it) {
+    PlnTypeRegistry reg;
+    const PlnType* b = reg.prim(N::Bool);
+    EXPECT_EQ(typeCompat(b, reg.prim(N::Int8), reg),    TypeCompat::ImplicitWiden);
+    EXPECT_EQ(typeCompat(b, reg.prim(N::Float64), reg), TypeCompat::ImplicitWiden);
+    EXPECT_EQ(typeCompat(reg.prim(N::Uint8), b, reg),   TypeCompat::ExplicitCast);
+    EXPECT_EQ(typeCompat(reg.prim(N::Float32), b, reg), TypeCompat::ExplicitCast);
+}
+
+TEST(bool_type, other_operand_wins_arith_conv) {
+    PlnTypeRegistry reg;
+    const PlnType* b  = reg.prim(N::Bool);
+    const PlnType* i8 = reg.prim(N::Int8);
+    EXPECT_EQ(usualArithConv(b, i8), i8);
+    EXPECT_EQ(usualArithConv(i8, b), i8);
+    EXPECT_EQ(usualArithConv(b, b), b);
+}
+
+TEST(bool_type, arg_conv) {
+    // Same width as int8/uint8, but that is not a reinterpretation: bool only holds 0/1.
+    PlnTypeRegistry reg;
+    const PlnType* b = reg.prim(N::Bool);
+    EXPECT_TRUE(argConvOk(b, reg.prim(N::Int32)));
+    EXPECT_FALSE(argConvOk(reg.prim(N::Int8), b));
+    EXPECT_FALSE(argConvOk(reg.prim(N::Uint8), b));
+}

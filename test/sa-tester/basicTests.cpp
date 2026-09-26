@@ -4360,3 +4360,46 @@ TEST(sa, import_syscall_alias) {
 	ASSERT_EQ(writeCall["name"], "write");
 	ASSERT_EQ(writeCall["syscall-number"], 1);
 }
+
+TEST(sa, bool_type)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/200_bool.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value-type"]["type-name"], "bool");
+
+	// bool(x) tests x != 0 rather than truncating, for integers and floats alike.
+	for (int i : {2, 3}) {
+		const auto& c = stmts[i]["vars"][0]["init"];
+		ASSERT_EQ(c["expr-type"], "convert");
+		ASSERT_EQ(c["value-type"]["type-name"], "bool");
+		ASSERT_EQ(c["src"]["expr-type"], "cmp");
+		ASSERT_EQ(c["src"]["op"], "!=");
+	}
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["src"]["right"]["expr-type"], "lit-flo");
+
+	const auto& w = stmts[4]["vars"][0]["init"];
+	ASSERT_EQ(w["expr-type"], "convert");
+	ASSERT_EQ(w["value-type"]["type-name"], "int32");
+
+	// Operators promote a bool operand to int32, so `t + 1` is 2, not a 1-byte sum.
+	const auto& s = stmts[5]["vars"][0]["init"];
+	ASSERT_EQ(s["value-type"]["type-name"], "int32");
+	ASSERT_EQ(s["left"]["expr-type"], "convert");
+	ASSERT_EQ(s["right"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[6]["vars"][0]["init"]["operand"]["expr-type"], "convert");
+	ASSERT_EQ(stmts[7]["cond"]["left"]["expr-type"], "convert");
+
+	ASSERT_EQ(stmts[8]["cond"]["value-type"]["type-name"], "bool");
+	ASSERT_EQ(stmts[9]["body"]["args"][0]["value-type"]["type-name"], "bool");
+	ASSERT_EQ(stmts[10]["vars"][0]["init"]["args"][0]["value"], "2");
+	ASSERT_EQ(stmts[12]["vars"][0]["init"]["value-type"]["type-name"], "bool");
+	ASSERT_EQ(stmts[13]["body"]["args"][0]["value-type"]["type-name"], "int32");
+
+	// A variadic bool argument is promoted to int32, as C does for _Bool.
+	const auto& pa = stmts[14]["body"]["args"];
+	ASSERT_EQ(pa[1]["expr-type"], "convert");
+	ASSERT_EQ(pa[1]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(pa[2]["value-type"]["type-name"], "int32");
+}

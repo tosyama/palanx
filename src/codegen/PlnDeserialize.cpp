@@ -36,6 +36,8 @@ static VRegType toVRegType(const json& vt) {
     if (name == "uint64") return VRegType::Uint64;
     if (name == "flo32")  return VRegType::Float32;
     if (name == "flo64")  return VRegType::Float64;
+    // SA guarantees a bool holds 0/1, so it needs nothing beyond a uint8.
+    if (name == "bool")   return VRegType::Uint8;
     cerr << PlnCodegenMessage::getMessage(E_UnknownType, name) << endl;
     exit(1);
 }

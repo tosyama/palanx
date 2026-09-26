@@ -2405,3 +2405,22 @@ TEST(sa_error, int_literal_typed_from_other_operand)
 	ASSERT_NE(sa.find(":2:1: error: Implicit conversion from 'int64' to 'int8'"), string::npos);
 	ASSERT_EQ(sa.find("out of range"), string::npos);
 }
+
+TEST(sa_error, bool_conversion)
+{
+	const pair<string, string> cases[] = {
+		{"error_226_bool_lit_range.pa", ":1:10: error: Integer literal '2' is out of range for type 'bool'."},
+		{"error_227_bool_from_int.pa", ":2:1: error: Implicit conversion from 'int32' to 'bool'"},
+		{"error_228_bool_arg_from_int.pa", ":3:1: error: Implicit conversion from 'int8' to 'bool'"},
+		{"error_229_bool_arith_result.pa", ":2:1: error: Implicit conversion from 'int32' to 'bool'"},
+		{"error_230_syscall_bool_param.pa", "cannot pass through the Linux syscall ABI: 'bool'"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
