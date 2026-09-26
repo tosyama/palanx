@@ -218,7 +218,8 @@ Variable type
         - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
     - embedded - Boolean, true when the array's storage is laid out inline/contiguous rather than
       as a separately-allocated block; omitted when false. Native syntax sets this for the
-      `$`-prefixed inline-storage forms, both 1D (`[n]$T`) and a contiguous 2D array (`[n]$[m]T`);
+      `$`-prefixed inline-storage forms, both 1D (`[n]$T`) and a contiguous 2D array (`[n]$[m]T`,
+      or `[]$[m]T` with a null outer size-expr);
       c2ast sets it on every C array declarator it captures (a struct field or parameter written
       `T name[n]` in the header), 1D included, since a C array is always inline storage.
     Note: For `[m][n]T` (2D array via pointer-of-pointers), the outer arr's `base-type` is itself an
@@ -377,7 +378,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -466,6 +467,10 @@ Expression model
     - right\* - Right operand expression model
   23. bitnot - Unary bitwise NOT (`~a`; integer operand only)
     - operand\* - Operand expression model
+  24. arr-lit - Array literal (`[a, b, c]`)
+    - items\* - Element expression model list. A 2D literal is an `arr-lit` of row `arr-lit`s;
+      the concatenated form `[a,b][c,d]` is normalized to the same shape as the nested form
+      `[[a,b],[c,d]]` (only `loc` differs)
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

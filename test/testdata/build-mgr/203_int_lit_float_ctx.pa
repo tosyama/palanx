@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+func half(flo64 a) -> flo64 { return a / 2; }
+func three() -> flo32 { return 3; }
+flo64 x = 1.5;
+2 -> x;
+printf("%.1f %.1f %.1f\n", x, half(5), three());
+printf("%.1f %.1f\n", x + 1, 4 - x);
+[2]flo32 f;
+7 -> f[1];
+printf("%.1f\n", f[1]);

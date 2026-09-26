@@ -116,6 +116,8 @@ class PlnLexer;
 %type <string>	import_as
 %type <json>	expression func_call term store_loc
 %type <vector<json>>	arguments
+%type <json>	array_desc array_row
+%type <vector<json>>	array_rows array_items
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
 %type <vector<json>>	var_declarations
@@ -548,8 +550,7 @@ var_declaration: type_expr move_owner_r ID
 	}
 	| type_expr ID '=' expression
 	{
-		string tk = $1.value("type-kind","");
-		if (tk == "prim" || tk == "pntr")
+		if (isDeclarableVarType($1))
 			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}};
 		else
 			$$ = {{"not-impl", true}};
@@ -651,7 +652,7 @@ expression: term
 	| func_call
 	{ $$ = move($1); }
 	| array_desc
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = move($1); }
 	| dict_desc
 	{ $$ = {{"expr-type", "not-impl"}}; }
 	| expression '+' expression
@@ -810,12 +811,30 @@ arguments: /* empty */
 	}
 	;
 
-array_desc: '[' array_items ']'
-	| array_desc '[' array_items ']'
+array_desc: array_row
+	{ $$ = move($1); }
+	| array_rows
+	{
+		// The concatenated form [a,b][c,d] yields the same AST as the nested [[a,b],[c,d]].
+		$$ = {{"expr-type", "arr-lit"}, {"items", move($1)}};
+		LOC($$, @$);
+	}
+	;
+
+array_rows: array_row array_row
+	{ $$ = {move($1), move($2)}; }
+	| array_rows array_row
+	{ $$ = move($1); $$.push_back(move($2)); }
+	;
+
+array_row: '[' array_items ']'
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
 	;
 
 array_items: expression
+	{ $$ = {move($1)}; }
 	| array_items ',' expression
+	{ $$ = move($1); $$.push_back(move($3)); }
 	;
 
 dict_desc: '{' dict_items '}'
@@ -992,7 +1011,12 @@ type_expr: ID
 			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",move($2)},{"base-type",move($4)}};
 	}
 	| '[' ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"base-type",move($3)}}; }
+	{
+		if ($3.value("type-kind","") == "embed")
+			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"embedded",true},{"base-type",move($3["base-type"])}};
+		else
+			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"base-type",move($3)}};
+	}
 	| '[' '#' ']' type_expr
 	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",nullptr},{"base-type",move($4)}}; }
 	| '[' '#' expression ']' type_expr

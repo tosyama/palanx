@@ -87,6 +87,13 @@ enum PlnSaMessageCode {
 	E_VarTypeInferenceNotImpl,	// arg1: variable name
 	E_StmtNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
+	E_ArrVarInitNotLiteral,	// arg1: variable name
+	E_ArrLitContext,
+	E_ArrLitCountMismatch,	// arg1: variable name, arg2: declared size, arg3: literal element count
+	E_ArrLitSizeNotConst,	// arg1: variable name
+	E_ArrLitDimMismatch,	// arg1: variable name
+	E_ArrLitElemType,	// arg1: variable name
+	E_ArrLitRowSizeMismatch,	// arg1: variable name, arg2: row size, arg3: the row's element count
 };
 
 class PlnSaMessage

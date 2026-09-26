@@ -45,6 +45,44 @@ TEST(gen_ast, basic_tests) {
 	ASSERT_EQ(jout["ast"]["statements"].size(), 12);
 }
 
+static json stripLoc(const json& j) {
+	if (j.is_object()) {
+		json r = json::object();
+		for (auto& [k, v] : j.items())
+			if (k != "loc") r[k] = stripLoc(v);
+		return r;
+	}
+	if (j.is_array()) {
+		json r = json::array();
+		for (auto& v : j) r.push_back(stripLoc(v));
+		return r;
+	}
+	return j;
+}
+
+TEST(gen_ast, arr_lit_2d_forms) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	const json* vars = nullptr;
+	for (auto& stmt : jout["ast"]["statements"])
+		if (stmt["stmt-type"] == "var-decl" && stmt["vars"][0]["name"] == "a1")
+			vars = &stmt["vars"];
+	ASSERT_NE(vars, nullptr);
+	ASSERT_EQ(vars->size(), 2);
+
+	const json& a1 = (*vars)[0]["init"];
+	ASSERT_EQ(a1["expr-type"], "arr-lit");
+	ASSERT_EQ(a1["items"].size(), 2);
+	for (auto& row : a1["items"]) {
+		ASSERT_EQ(row["expr-type"], "arr-lit");
+		ASSERT_EQ(row["items"].size(), 3);
+	}
+	ASSERT_EQ(stripLoc(a1), stripLoc((*vars)[1]["init"]));
+}
+
 TEST(gen_ast, addition) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/003_addition.pa");
@@ -585,6 +623,13 @@ TEST(gen_ast, embed_arr_decl) {
 	ASSERT_FALSE(inner["size-expr"].is_null());
 	ASSERT_EQ(inner["base-type"]["type-kind"], "prim");
 	ASSERT_EQ(inner["base-type"]["type-name"], "int32");
+
+	// []$[4]int32 param: same shape as the sized form, with a null outer size
+	const auto& pvt = jout["ast"]["functions"][0]["parameters"][0]["var-type"];
+	ASSERT_TRUE(pvt["size-expr"].is_null());
+	ASSERT_TRUE(pvt.value("embedded", false));
+	ASSERT_EQ(pvt["base-type"]["type-kind"], "arr");
+	ASSERT_EQ(pvt["base-type"]["base-type"]["type-name"], "int32");
 }
 
 TEST(gen_ast, logical_ops) {

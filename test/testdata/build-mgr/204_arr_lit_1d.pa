@@ -1,0 +1,16 @@
+cinclude <stdio.h>;
+const N = 3;
+int32 n = 10;
+[3]int32 a = [1, -2, 3];
+[]uint8 u = [200, 255];
+[N]flo64 f = [1.5, 2, n];
+[]int64 e = [n+1, n*2, a[1]];
+printf("%d %d %d\n", a[0], a[1], a[2]);
+printf("%d %d\n", u[0], u[1]);
+printf("%.1f %.1f %.1f\n", f[0], f[1], f[2]);
+printf("%ld %ld %ld\n", e[0], e[1], e[2]);
+[]int32 p = [1, 2], q = [3, 4, 5];
+printf("%d %d %d\n", p[1], q[0], q[2]);
+[2]int16 r, s = [7, 8];
+9 -> r[0];
+printf("%d %d %d\n", r[0], s[0], s[1]);

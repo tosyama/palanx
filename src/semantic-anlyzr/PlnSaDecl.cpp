@@ -243,45 +243,77 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		if (var.contains("var-type"))
 			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
 
-	if (!stmt2["vars"].empty()) {
-		const json& vtype = stmt2["vars"][0]["var-type"];
-		string tk = vtype.value("type-kind", "");
-
-		if (tk == "arr" && vtype.value("specifier", "") == "raw" && vtype["size-expr"].is_null()) {
-			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
+	auto isArrLit = [](const json& var) {
+		return var["var-type"].value("type-kind", "") == "arr" && var.contains("init");
+	};
+	for (auto& var : stmt2["vars"]) {
+		if (isArrLit(var) && var["init"].value("expr-type", "") != "arr-lit") {
+			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_ArrVarInitNotLiteral, var["name"]) << endl;
 			exit(1);
 		}
-		if (tk == "arr" && vtype.value("specifier", "") == "raw"
-				&& !vtype["size-expr"].is_null()
-				&& vtype.value("embedded", false))
-			return sa_embed_arr_var_decl(stmt2);
-		if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
-			const json& base = vtype["base-type"];
-			if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
-				return sa_owned_struct_arr_var_decl(stmt2);
-			return sa_arr_var_decl(stmt2);
+	}
+
+	// The lowering paths below apply one var-type to every var in a statement,
+	// so the declaration is split into runs of equal var-type. The comparison
+	// includes loc, so only vars inheriting the same source type node (`[f()]int32 a, b`)
+	// share one evaluation of its size expression. Each array literal fixes its own
+	// variable's size (`[]int32 a = [1,2], b = [1,2,3]`), so it always gets its own run.
+	json result = json::array();
+	const json& vars = stmt2["vars"];
+	size_t begin = 0;
+	for (size_t i = 1; i <= vars.size(); i++) {
+		if (i < vars.size() && vars[i]["var-type"] == vars[i-1]["var-type"]
+				&& !isArrLit(vars[i]) && !isArrLit(vars[i-1]))
+			continue;
+		json run = stmt2;
+		run["vars"] = json(vars.begin() + begin, vars.begin() + i);
+		json lowered = isArrLit(vars[begin]) ? sa_arr_lit_var_decl(run) : sa_var_decl_group(run);
+		for (auto& s : lowered)
+			result.push_back(move(s));
+		begin = i;
+	}
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
+{
+	const json& vtype = stmt2["vars"][0]["var-type"];
+	string tk = vtype.value("type-kind", "");
+
+	if (tk == "arr" && vtype.value("specifier", "") == "raw" && vtype["size-expr"].is_null()) {
+		cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
+		exit(1);
+	}
+	if (tk == "arr" && vtype.value("specifier", "") == "raw"
+			&& !vtype["size-expr"].is_null()
+			&& vtype.value("embedded", false))
+		return sa_embed_arr_var_decl(stmt2);
+	if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
+		const json& base = vtype["base-type"];
+		if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
+			return sa_owned_struct_arr_var_decl(stmt2);
+		return sa_arr_var_decl(stmt2);
+	}
+	if (tk == "prim") {
+		string tname = vtype.value("type-name", "");
+		if (structDefs_.count(tname))
+			return sa_struct_var_decl(stmt2);
+		if (!isKnownTypeName(tname)) {
+			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+			exit(1);
 		}
-		if (tk == "prim") {
-			string tname = vtype.value("type-name", "");
-			if (structDefs_.count(tname))
-				return sa_struct_var_decl(stmt2);
-			if (!isKnownTypeName(tname)) {
+	}
+	if (tk == "pntr") {
+		// Validate the pointee name at declaration time so `@!NoSuchStruct p;`
+		// is rejected here rather than aborting later via an unguarded throw.
+		const json* base = &vtype["base-type"];
+		while (base->value("type-kind","") == "pntr")
+			base = &(*base)["base-type"];
+		if (base->value("type-kind","") == "prim") {
+			string tname = base->value("type-name", "");
+			if (!isKnownPointeeTypeName(tname)) {
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 				exit(1);
-			}
-		}
-		if (tk == "pntr") {
-			// Validate the pointee name at declaration time so `@!NoSuchStruct p;`
-			// is rejected here rather than aborting later via an unguarded throw.
-			const json* base = &vtype["base-type"];
-			while (base->value("type-kind","") == "pntr")
-				base = &(*base)["base-type"];
-			if (base->value("type-kind","") == "prim") {
-				string tname = base->value("type-name", "");
-				if (!isKnownPointeeTypeName(tname)) {
-					cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
-					exit(1);
-				}
 			}
 		}
 	}
@@ -484,6 +516,117 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",malloc_call}});
 	}
 	result.push_back(sa_stmt);
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Fills an omitted dimension with `count`; otherwise returns the declared
+// size, which must be a compile-time constant.
+string PlnSemanticAnalyzer::arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count)
+{
+	if (sizeExpr.is_null()) {
+		sizeExpr = {{"expr-type", "lit-uint"}, {"value", to_string(count)}};
+		return to_string(count);
+	}
+	json sz = sa_arr_size_expr(stmt, sizeExpr);
+	const json& lit = sz.value("expr-type", "") == "convert" ? sz["src"] : sz;
+	string et = lit.value("expr-type", "");
+	if (et != "lit-int" && et != "lit-uint") {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitSizeNotConst, name) << endl;
+		exit(1);
+	}
+	return lit["value"].get<string>();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
+{
+	const json& var = stmt["vars"][0];
+	string name = var["name"];
+	const json& vtype = var["var-type"];
+	const json& base = vtype["base-type"];
+	const json& items = var["init"]["items"];
+
+	bool is2d = base.value("type-kind", "") == "arr";
+	const json& leaf = is2d ? base["base-type"] : base;
+	string leafName = leaf.value("type-name", "");
+	if (leaf.value("type-kind", "") != "prim" || (!is2d && vtype.value("embedded", false))
+			|| structDefs_.count(leafName)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
+		exit(1);
+	}
+	if (!isKnownTypeName(leafName)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leafName) << endl;
+		exit(1);
+	}
+	const PlnType* elemType = registry_.fromJson(leaf);
+
+	// Elements are analyzed before the variable is declared, so an element
+	// cannot read the array it is initializing.
+	auto elemValue = [&](const json& item) {
+		if (item.value("expr-type", "") == "arr-lit") {
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, name) << endl;
+			exit(1);
+		}
+		json value = sa_expression(item, elemType);
+		if (!value.contains("value-type")) {
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+			exit(1);
+		}
+		return convertForBinding(item, value, elemType, leaf);
+	};
+
+	// values[i] is one element (1D) or one row of elements (2D).
+	json values = json::array();
+	for (auto& item : items) {
+		if (!is2d) {
+			values.push_back(elemValue(item));
+			continue;
+		}
+		if (item.value("expr-type", "") != "arr-lit") {
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, name) << endl;
+			exit(1);
+		}
+		json row = json::array();
+		for (auto& elem : item["items"])
+			row.push_back(elemValue(elem));
+		values.push_back(row);
+	}
+
+	json declStmt = stmt;
+	json& declVar = declStmt["vars"][0];
+	declVar.erase("init");
+	json& declType = declVar["var-type"];
+	string declared = arrLitDimSize(stmt, name, declType["size-expr"], items.size());
+	if (stoull(declared) != items.size()) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitCountMismatch,
+		                                  name, declared, to_string(items.size())) << endl;
+		exit(1);
+	}
+	if (is2d) {
+		string rowSize = arrLitDimSize(stmt, name, declType["base-type"]["size-expr"], items[0]["items"].size());
+		for (auto& row : items) {
+			if (stoull(rowSize) != row["items"].size()) {
+				cerr << locPrefix(row) << PlnSaMessage::getMessage(E_ArrLitRowSizeMismatch,
+				                                 name, rowSize, to_string(row["items"].size())) << endl;
+				exit(1);
+			}
+		}
+	}
+
+	json result = sa_var_decl_group(declStmt);
+	auto indexOf = [](json array, size_t i) -> json {
+		return {{"expr-type", "arr-index"}, {"array", move(array)},
+		        {"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}};
+	};
+	json id = {{"expr-type", "id"}, {"name", name}};
+	for (size_t i = 0; i < values.size(); i++) {
+		if (!is2d) {
+			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(indexOf(id, i))}, {"value", values[i]}});
+			continue;
+		}
+		for (size_t j = 0; j < values[i].size(); j++) {
+			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(indexOf(indexOf(id, i), j))}, {"value", values[i][j]}});
+		}
+	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

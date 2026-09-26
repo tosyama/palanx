@@ -1,0 +1,5 @@
+uint64 u = 18446744073709551615u;
+flo64 d = u;
+flo32 s = flo32(u);
+uint64 ud = uint64(d);
+uint64 us = uint64(s);

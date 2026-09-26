@@ -35,7 +35,7 @@
             "vars": [
                 {
                     "init": {
-                        "expr-type": "lit-int",
+                        "expr-type": "lit-flo",
                         "value": "5",
                         "value-type": { "type-kind": "prim", "type-name": "flo64" }
                     },
@@ -49,7 +49,7 @@
             "vars": [
                 {
                     "init": {
-                        "expr-type": "lit-int",
+                        "expr-type": "lit-flo",
                         "value": "3",
                         "value-type": { "type-kind": "prim", "type-name": "flo32" }
                     },

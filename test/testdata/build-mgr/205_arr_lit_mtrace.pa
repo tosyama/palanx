@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+mtrace();
+{
+    []int32 a = [1, 2, 3], b = [4, 5];
+    printf("%d\n", a[2] + b[1]);
+}
+muntrace();

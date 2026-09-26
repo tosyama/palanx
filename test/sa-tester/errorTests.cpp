@@ -2314,6 +2314,61 @@ TEST(sa_error, stmt_not_implemented)
 	ASSERT_NE(sa.find(":2:1: error: this statement is not supported"), string::npos);
 }
 
+TEST(sa_error, arr_var_init_not_literal)
+{
+	// `b` inherits `[3]int32` from `a`; the array var-decl lowering never reads
+	// "init", so without this check the initializer was silently dropped.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_207_arr_var_init_not_literal.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":1:1: error: array variable 'b' can only be initialized with an array literal."), string::npos);
+}
+
+TEST(sa_error, arr_lit_func_arg)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa, "");
+	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array variable's initializer in this version."), string::npos);
+}
+
+TEST(sa_error, arr_lit_init)
+{
+	const pair<string, string> cases[] = {
+		{"error_209_arr_lit_count_mismatch.pa", ":1:1: error: array variable 'a' has size 3 but its array literal has 2 elements."},
+		{"error_210_arr_lit_size_not_const.pa", ":2:1: error: array variable 'a' initialized with an array literal must have a compile-time constant size."},
+		{"error_211_arr_lit_dim_mismatch.pa", ":1:15: error: the array literal's dimensions do not match array variable 'a'."},
+		{"error_212_arr_lit_elem_type.pa", ":2:1: error: array variable 'a' cannot be initialized with an array literal: only numeric element types are supported."},
+		{"error_213_arr_lit_elem_narrowing.pa", ":2:17: error: Implicit conversion from 'int16' to 'int8' is not allowed"},
+		{"error_214_arr_lit_elem_range.pa", ":1:17: error: Integer literal '300' is out of range for type 'int8'."},
+		// Elements are analyzed before the array is declared.
+		{"error_215_arr_lit_self_ref.pa", ":1:18: error: Undefined variable 'a'."},
+		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array variable 'a' cannot be initialized with an array literal: only numeric element types are supported."},
+		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_218_arr_lit_void_elem.pa", ":2:15: error: Void function call cannot be used as a value."},
+		{"error_219_arr_lit_row_size.pa", ":1:24: error: array variable 'm' has rows of size 3 but a row of its array literal has 2 elements."},
+		{"error_220_arr_lit_row_size_declared.pa", ":1:19: error: array variable 'm' has rows of size 3 but a row of its array literal has 2 elements."},
+		{"error_221_arr_lit_row_count.pa", ":1:1: error: array variable 'm' has size 3 but its array literal has 2 elements."},
+		{"error_222_arr_lit_2d_given_1d.pa", ":1:18: error: the array literal's dimensions do not match array variable 'm'."},
+		{"error_223_arr_lit_3d.pa", ":1:1: error: array variable 'm' cannot be initialized with an array literal: only numeric element types are supported."},
+		{"error_224_arr_lit_row_size_not_const.pa", ":2:1: error: array variable 'm' initialized with an array literal must have a compile-time constant size."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
 TEST(sa_error, int_literal_out_of_range)
 {
 	// Covers: checkIntLiteralRange for lit-int/lit-uint, via a var-decl
