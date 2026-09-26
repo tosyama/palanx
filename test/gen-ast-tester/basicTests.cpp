@@ -1182,7 +1182,8 @@ TEST(gen_ast, cinclude_constant) {
 	// c2ast exports object-like macro constants into ast.constants; gen-ast
 	// registers them into an internal macro table (not carried onto the
 	// cinclude statement) and folds later ANSWER references -- an array
-	// size-expr and a binary-op operand -- into typed lit-int nodes.
+	// size-expr and a binary-op operand -- into lit-int nodes. An unsuffixed
+	// macro stays untyped, like a source literal.
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/103_cinclude_constant.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
@@ -1196,13 +1197,12 @@ TEST(gen_ast, cinclude_constant) {
 	auto& size_expr = body[0]["vars"][0]["var-type"]["size-expr"];
 	ASSERT_EQ(size_expr["expr-type"], "lit-int");
 	ASSERT_EQ(size_expr["value"], "42");
-	ASSERT_EQ(size_expr["value-type"]["type-kind"], "prim");
-	ASSERT_EQ(size_expr["value-type"]["type-name"], "int32");
+	ASSERT_FALSE(size_expr.contains("value-type"));
 
 	auto& add_left = body[1]["values"][0]["left"];
 	ASSERT_EQ(add_left["expr-type"], "lit-int");
 	ASSERT_EQ(add_left["value"], "42");
-	ASSERT_EQ(add_left["value-type"]["type-name"], "int32");
+	ASSERT_FALSE(add_left.contains("value-type"));
 }
 
 TEST(gen_ast, cinclude_global) {
@@ -1478,7 +1478,7 @@ TEST(gen_ast, syscall_decl) {
 }
 
 TEST(gen_ast, macro_fold) {
-	// Macro-constant references fold into typed lit-int both in a
+	// Macro-constant references fold into lit-int both in a
 	// syscall-number position and as a pointer-typed initializer, in both
 	// ast.functions and the deep-copied ast.export.
 	cleanTestEnv();
@@ -1490,7 +1490,7 @@ TEST(gen_ast, macro_fold) {
 		if (f["name"] != "foo") continue;
 		ASSERT_EQ(f["syscall-number"]["expr-type"], "lit-int");
 		ASSERT_EQ(f["syscall-number"]["value"], "5");
-		ASSERT_EQ(f["syscall-number"]["value-type"]["type-name"], "int32");
+		ASSERT_FALSE(f["syscall-number"].contains("value-type"));
 	}
 	ASSERT_EQ(jout["export"][0]["syscall-number"]["expr-type"], "lit-int");
 	ASSERT_EQ(jout["export"][0]["syscall-number"]["value"], "5");

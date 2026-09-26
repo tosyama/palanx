@@ -107,7 +107,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   node; this is a harmless no-op re-registration (same name, same resolved
   type) whose real job is stripping the hint from that node so it never
   reaches sa.json. Object-like-macro constants are no longer an SA concern as
-  of v0.1.33: every reference is already folded to a typed `lit-int` by
+  of v0.1.33: every reference is already folded to a `lit-int` by
   gen-ast (ASTSpec.md's Constant definition model and `lit-int` entries), so
   a `cinclude` statement never carries a `constants` field by the time SA
   sees it, and SA has no macro-name table of its own.

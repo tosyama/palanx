@@ -57,7 +57,7 @@ Function definition model
        at most 6, checked by SA)
      - ret-type - Return variable type (single-return only; omitted for void; SA rejects `rets`)
      - syscall-number\* - Expression node for the syscall number; a reference to a cinclude'd
-       macro constant is already folded to a typed `lit-int` by gen-ast (see Constant definition
+       macro constant is already folded to a `lit-int` by gen-ast (see Constant definition
        model below), so SA only requires the node to be an integer literal expression and folds
        it to a plain integer
 
@@ -67,7 +67,7 @@ Emitted by **palan-c2ast** in its own per-header `ast.json` (the `ast.constants`
 "lifted from the header's own top-level list" relationship as the Struct definition model
 below), never by palan-gen-ast: gen-ast consumes this list into an internal macro table when it
 processes each `cinclude` statement and folds every later textual reference to a macro name into
-a typed `lit-int` node in place (see Expression model's `lit-int` below), so `constants` itself
+a `lit-int` node in place (see Expression model's `lit-int` below), so `constants` itself
 never reaches gen-ast's own `ast.json`.
 
 An object-like `#define` macro whose body, after fully expanding any references to other
@@ -89,10 +89,12 @@ is not exported here — referencing such a macro name from Palan is `Undefined 
 
 - name\* - Macro name string
 - value\* - Decimal string (e.g. "10")
-- value-type\* - Variable type (see below). For a body with a suffixed literal or an integer cast,
-  its C type (e.g. `uint32` for `1U`; a cast's own target type, including `typedef-name`, when
-  the cast is outermost). Otherwise `prim` `int32` or `int64` sized by the value's magnitude.
-  For a pointer-cast body, the cast's own target type (e.g. `pntr` for `NULL`)
+- value-type - Variable type (see below). Present only when C fixes the type: for a body with a
+  suffixed literal or an integer cast, its C type (e.g. `uint32` for `1U`; a cast's own target
+  type, including `typedef-name`, when the cast is outermost); for a pointer-cast body, the
+  cast's own target type (e.g. `pntr` for `NULL`). Omitted otherwise (e.g. `#define MAGIC 42`,
+  `#define ERR (-1)`), so the constant is an untyped literal that takes its type from the
+  context, same as a Palan source literal
 
 Struct definition model
 ------------------------
@@ -390,13 +392,14 @@ Expression model
     - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128"); a macro
       substitute's value may exceed int64 when its `value-type` is `uint64`
     - value-type - Variable type; present only when this node is gen-ast's in-place substitute
-      for a reference to a cinclude'd macro constant (see Constant definition model above) —
-      an ordinary source-literal `lit-int` never carries one. Holds the macro's own
-      `value-type` (e.g. `pntr` for `NULL`), unchanged by the substitution. Substitution happens
-      for every `id` reference whose name matches a macro registered by a `cinclude` earlier in
-      the same textual scope (comparing `loc`; a reference before the cinclude, or to a name no
-      cinclude registered, is left as `id`) and applies uniformly wherever an `id` node can
-      appear (binary operands, `size-expr`, a `syscall-number`, etc.) — but never inside a
+      for a reference to a cinclude'd macro constant that has a `value-type` (see Constant
+      definition model above) — an ordinary source-literal `lit-int` never carries one. Holds the
+      macro's own `value-type` (e.g. `pntr` for `NULL`), unchanged by the substitution; a macro
+      without one substitutes an untyped `lit-int`, identical to a source literal. Substitution
+      happens for every `id` reference whose name matches a macro registered by a `cinclude`
+      earlier in the same textual scope (comparing `loc`; a reference before the cinclude, or to
+      a name no cinclude registered, is left as `id`) and applies uniformly wherever an `id` node
+      can appear (binary operands, `size-expr`, a `syscall-number`, etc.) — but never inside a
       `cinclude` statement's own subtree. A name registered by more than one `cinclude` resolves
       to whichever registered it first.
   3. lit-uint - Unsigned integer literal (corresponds to UINT token)

@@ -1,1 +1,1 @@
-#define ARR_N 3
+#define ARR_N ((int)3)

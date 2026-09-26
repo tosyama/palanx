@@ -10,7 +10,7 @@ void registerMacroConstants(MacroTable& macros, const json& constants, const jso
 	for (auto& c : constants) {
 		string name = c["name"].get<string>();
 		if (macros.count(name)) continue;  // first cinclude wins on duplicate macro names
-		macros[name] = MacroEntry{ c["value"], c["value-type"], cincludeLoc };
+		macros[name] = MacroEntry{ c["value"], c.value("value-type", json()), cincludeLoc };
 	}
 }
 
@@ -38,8 +38,8 @@ void foldMacroConstants(json& node, const MacroTable& macros)
 		auto it = macros.find(node["name"].get<string>());
 		if (it != macros.end() && isAfterMacroLoc(node["loc"], it->second.loc)) {
 			json loc = node["loc"];
-			node = { {"expr-type", "lit-int"}, {"value", it->second.value},
-			         {"value-type", it->second.valueType}, {"loc", loc} };
+			node = { {"expr-type", "lit-int"}, {"value", it->second.value}, {"loc", loc} };
+			if (!it->second.valueType.is_null()) node["value-type"] = it->second.valueType;
 		} // LCOV_EXCL_EXCEPTION_BR_LINE
 		return;
 	}

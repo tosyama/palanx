@@ -651,15 +651,14 @@ TEST(c2ast, macro_const_simple) {
     json* magic = find_const("MAGIC");
     ASSERT_NE(magic, nullptr);
     ASSERT_EQ((*magic)["value"], "42");
-    ASSERT_EQ((*magic)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*magic)["value-type"]["type-name"], "int32");
+    // Unsuffixed and uncast: untyped, like a Palan source literal.
+    ASSERT_FALSE(magic->contains("value-type"));
 
     // An additive expression: folded now that binary operators are evaluated.
     json* complex_ = find_const("COMPLEX");
     ASSERT_NE(complex_, nullptr);
     ASSERT_EQ((*complex_)["value"], "3");
-    ASSERT_EQ((*complex_)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*complex_)["value-type"]["type-name"], "int32");
+    ASSERT_FALSE(complex_->contains("value-type"));
 }
 
 TEST(c2ast, macro_const_null) {
@@ -694,16 +693,14 @@ TEST(c2ast, macro_const_alias_chain) {
         json* c = find_const(name);
         ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
         ASSERT_EQ((*c)["value"], "5");
-        ASSERT_EQ((*c)["value-type"]["type-kind"], "prim");
-        ASSERT_EQ((*c)["value-type"]["type-name"], "int32");
+        ASSERT_FALSE(c->contains("value-type"));
     }
 
     // Expands to an additive expression: folded now that binary operators are evaluated.
     json* d = find_const("D");
     ASSERT_NE(d, nullptr);
     ASSERT_EQ((*d)["value"], "6");
-    ASSERT_EQ((*d)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*d)["value-type"]["type-name"], "int32");
+    ASSERT_FALSE(d->contains("value-type"));
 }
 
 TEST(c2ast, macro_const_fold_expr) {
@@ -801,17 +798,16 @@ TEST(c2ast, int_constant_width) {
         return nullptr;
     };
 
-    // Out of int32 range: must widen to int64 rather than silently truncating.
+    // Out of int32 range: the value is kept exactly rather than truncated.
     json* wclone = find_const("__WCLONE");
     ASSERT_NE(wclone, nullptr);
     ASSERT_EQ((*wclone)["value"], "2147483648");
-    ASSERT_EQ((*wclone)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*wclone)["value-type"]["type-name"], "int64");
+    ASSERT_FALSE(wclone->contains("value-type"));
 
-    // In range: still int32.
     json* exit_failure = find_const("EXIT_FAILURE");
     ASSERT_NE(exit_failure, nullptr);
-    ASSERT_EQ((*exit_failure)["value-type"]["type-name"], "int32");
+    ASSERT_EQ((*exit_failure)["value"], "1");
+    ASSERT_FALSE(exit_failure->contains("value-type"));
 }
 
 TEST(c2ast, sys_stat_h_public_names) {
@@ -827,8 +823,7 @@ TEST(c2ast, sys_stat_h_public_names) {
         if (c["name"] == "S_IFDIR") { s_ifdir = &c; break; }
     ASSERT_NE(s_ifdir, nullptr);
     ASSERT_EQ((*s_ifdir)["value"], "16384");
-    ASSERT_EQ((*s_ifdir)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*s_ifdir)["value-type"]["type-name"], "int32");
+    ASSERT_FALSE(s_ifdir->contains("value-type"));
 }
 
 TEST(c2ast, sys_stat_h_perm_masks) {

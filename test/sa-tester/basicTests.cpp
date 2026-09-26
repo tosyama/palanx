@@ -1731,7 +1731,7 @@ TEST(sa, macro_binop_typing)
 	json jout = run_sa("../test/testdata/sa/192_macro_binop_typing.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// A macro constant's C-declared value-type (S_IFDIR: int32) is kept as
+	// A macro constant whose type C fixed (S_IFDIR cast to int) keeps it as
 	// its own type in an "x + S_IFDIR" binary op -- not silently re-typed to
 	// match the other operand -- and reconciled by the normal usual
 	// arithmetic conversion (widened to x's int64 via an explicit convert
@@ -1754,8 +1754,8 @@ TEST(sa, macro_binop_typing)
 
 TEST(sa, macro_array_size)
 {
-	// A macro constant used as an array size (ARR_N: int32) keeps its own
-	// C-declared type from gen-ast's fold, unlike a plain source literal
+	// A macro constant used as an array size whose type C fixed (ARR_N cast
+	// to int) keeps it through gen-ast's fold, unlike a plain source literal
 	// array size, which sa_expression always forces to uint64. sa_arr_size_expr
 	// must explicitly widen it to uint64 (an int32 "mul" operand, sized to
 	// its own width by codegen, mismatches the surrounding uint64 byte-count

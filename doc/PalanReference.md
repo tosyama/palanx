@@ -447,15 +447,15 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   `NULL` is a generic pointer value: it is compatible with and can be compared (`==`/`!=`)
   against any pointer-typed value, including C function return values, `[]T` array
   pointers, and struct pointer fields.
-- A macro constant's own type is always signed — `int32` or `int64`, sized by the value's
-  magnitude — never unsigned, regardless of what the resulting value is used for. `S_IFMT` is
-  `int32`; when `st.st_mode & S_IFMT` above comes out `uint32`, that is the [usual arithmetic
-  conversion](#3-type-system) rule for `&` applying to a `uint32`/`int32` pair, not a property of
-  the constant itself. A macro constant's folded type also passes an [argument
-  conversion](#5-expressions) unchanged where a narrower plain literal would instead adopt the
-  parameter's type — e.g. `sys/stat.h`'s `mkdir(path, S_IRWXU)` binds `S_IRWXU`'s `int32` to the
-  `uint32`-typed `mode_t` parameter via same-rank signedness reinterpretation, not by `S_IRWXU`
-  being re-typed to `uint32`.
+- A macro constant whose type C leaves open — a plain number such as `#define COLOR_RED 1` or
+  `#define ERR (-1)`, or arithmetic over plain numbers like `S_IRWXU` — behaves exactly like an
+  integer literal written in Palan: it takes the type its context expects and must fit in it. So
+  `st.st_mode & S_IFMT` is `uint32` because `S_IFMT` takes `st_mode`'s type, and ncurses'
+  `init_pair(1, COLOR_RED, COLOR_BLACK)` passes the constants to `short` parameters without a
+  cast.
+- A macro constant whose type C fixes — an unsigned or long suffix (`1U`, `5L`) or an integer
+  cast, as in ncurses' `A_REVERSE` (`unsigned int`) — keeps that type, and meets other operands
+  through the [usual arithmetic conversions](#3-type-system) like any typed value.
 - Substitution is text-order only, not lexically scoped like a cincluded C function or `const`:
   a reference resolves against whichever cincluded header defines the name first, textually
   before that reference, anywhere in the rest of the file — including past the end of the block

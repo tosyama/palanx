@@ -1602,6 +1602,15 @@ TEST(build_mgr, macro_const_suffix)
 	ASSERT_EQ(output, "262144 2097152 2359296 18446744073709551615\n");
 }
 
+TEST(build_mgr, macro_const_untyped)
+{
+	// Unsuffixed macros take the parameter's type like source literals, so
+	// ncurses' init_pair(1, COLOR_RED, COLOR_BLACK) needs no casts to short.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/212_macro_const_untyped.pa");
+	ASSERT_EQ(output, "1 -1 -1\n40000 1\n");
+}
+
 TEST(build_mgr, c_union_rw)
 {
 	// Both members of a cinclude'd union alias the same bytes: a write through

@@ -1658,6 +1658,8 @@ bool CParser::expression(json &value, const vector<CToken*> &tokens, int &result
 // pair, for the narrow set of forms useful as an exported constant: an integer literal,
 // or a cast of one (e.g. NULL == ((void *)0)). Anything else (the node is null because
 // the source expression wasn't a compile-time constant we track) is rejected.
+// `type` stays null when C left the constant untyped, so it reaches Palan as an untyped
+// literal that takes its type from the context, like a source literal.
 bool CParser::resolveConstValue(const json &node, json &value, json &type)
 {
 	if (!node.is_object()) return false;
@@ -1665,13 +1667,8 @@ bool CParser::resolveConstValue(const json &node, json &value, json &type)
 	string expr_type = node.value("expr-type", "");
 	if (expr_type == "lit-int") {
 		value = node["value"];
-		if (node.contains("value-type")) {
+		if (node.contains("value-type"))
 			type = node["value-type"];
-			return true;
-		}
-		long long v = stoll(node["value"].get<string>());
-		const char* type_name = (v >= INT32_MIN && v <= INT32_MAX) ? "int32" : "int64";
-		type = {{"type-kind", "prim"}, {"type-name", type_name}};
 		return true;
 	}
 	if (expr_type == "cast") {
@@ -1701,11 +1698,9 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 		for (CToken* t : expanded) delete t;
 		if (!ok) continue;
 
-		ast["ast"]["constants"].push_back({
-			{"name", m->name},
-			{"value", value},
-			{"value-type", type}
-		});
+		json constant = {{"name", m->name}, {"value", value}};
+		if (!type.is_null()) constant["value-type"] = type;
+		ast["ast"]["constants"].push_back(constant);
 	}
 }
 
