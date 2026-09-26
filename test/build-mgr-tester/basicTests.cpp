@@ -1611,6 +1611,15 @@ TEST(build_mgr, macro_const_untyped)
 	ASSERT_EQ(output, "1 -1 -1\n40000 1\n");
 }
 
+TEST(build_mgr, cond_width)
+{
+	// A condition is tested at its own width: a uint8 argument's upper bits
+	// are not clean, and 2^32 is nonzero only above bit 31.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/213_cond_width.pa");
+	ASSERT_EQ(output, "0 1\n");
+}
+
 TEST(build_mgr, c_union_rw)
 {
 	// Both members of a cinclude'd union alias the same bytes: a write through

@@ -159,15 +159,16 @@ void PlnX86CodeGen::emitInstrInitVarF(const InitVarF& i, const RegMap& rm)
 
 void PlnX86CodeGen::emitInstrCondJmp(const CondJmp& cj, const RegMap& rm)
 {
+    // Test exactly the value's width: bits above a sub-32-bit value are not
+    // guaranteed clean (a caller passes a uint8 argument with movb), and an
+    // int64 may be nonzero only above bit 31.
     const PhysLoc& loc = rm.at(cj.cond);
-    string cond_reg;
-    if (loc.isStack()) {
-        out << "\tmovl " << srcOperand(loc) << ", %eax\n";
-        cond_reg = "%eax";
-    } else {
-        cond_reg = sizedRegName(loc.base, VRegType::Int32);
-    }
-    out << "\ttestl " << cond_reg << ", " << cond_reg << "\n";
+    const char* sfx = widthSuffix(intWidth(loc.type));
+    string cond = srcOperand(loc);
+    if (loc.isStack())
+        out << "\tcmp" << sfx << " $0, " << cond << "\n";
+    else
+        out << "\ttest" << sfx << " " << cond << ", " << cond << "\n";
     out << (cj.jumpIfZero ? "\tje " : "\tjne ") << cj.label << "\n";
 }
 
