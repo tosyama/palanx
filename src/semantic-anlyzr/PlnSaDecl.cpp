@@ -624,8 +624,7 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 			continue;
 		}
 		for (size_t j = 0; j < values[i].size(); j++) {
-			json target = indexOf(indexOf(id, i), j);
-			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(target)}, {"value", values[i][j]}});
+			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(indexOf(indexOf(id, i), j))}, {"value", values[i][j]}});
 		}
 	}
 	return result;

@@ -1768,7 +1768,7 @@ TEST(build_mgr, arr_lit_1d) {
 TEST(build_mgr, arr_lit_2d) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/207_arr_lit_2d.pa");
-	ASSERT_EQ(output, "1 3 5 -6\n8 10 12\n1.50 10.00 3.00 4.25\n3 4 6\n200 255 0 10\n20 -6 3\n10 11 12 13\n");
+	ASSERT_EQ(output, "1 3 5 -6\n8 10 12\n1.50 10.00 3.00 4.25\n3 4 6\n200 255 0 10\n20 -6 3\n10 11 12 13\n2 3 6\n");
 }
 
 TEST(build_mgr, mixed_type_var_decl) {
