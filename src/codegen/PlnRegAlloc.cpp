@@ -18,6 +18,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         int      last_any_use = -1;      // last use by non-call-argument instructions
         vector<pair<int,string>> call_uses; // (call_instr_idx, desired arg register)
         bool     isRetValue   = false;   // true if used by RetPln
+        int      live_end     = -1;      // last instruction the value must survive to
     };
     map<VReg, VRegMeta> meta;
     for (auto& [vreg, type] : func.params)
@@ -138,14 +139,30 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     }
 
     // Collect loop regions: backward jumps define [loop_start_label_idx, jmp_idx].
-    // A parameter used inside a loop that also contains a call effectively crosses
-    // that call (next iteration re-executes the use after the call).
     vector<pair<int,int>> loop_regions;
     for (int i = 0; i < (int)func.instrs.size(); i++) {
         if (auto* j = get_if<Jmp>(&func.instrs[i])) {
             auto it = label_idx.find(j->label);
             if (it != label_idx.end() && it->second < i)
                 loop_regions.push_back({it->second, i});
+        }
+    }
+
+    // A value defined before a loop and used inside it is re-read on the next
+    // iteration, so it must survive until the backward jump, not just its last
+    // textual use. Repeat until stable so nested loops extend to the outermost.
+    for (auto& [vreg, m] : meta) {
+        m.live_end = m.last_any_use;
+        for (auto& [ci, pos] : m.call_uses) m.live_end = max(m.live_end, ci);
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (auto& [ls, le] : loop_regions) {
+                if (m.def_idx < ls && ls <= m.live_end && m.live_end < le) {
+                    m.live_end = le;
+                    changed = true;
+                }
+            }
         }
     }
 
@@ -179,11 +196,6 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     // stack slot of the same size if one exists, otherwise allocate a fresh slot.
     auto allocTempStackSlot = [&](VReg vreg, VRegType type, int def_idx) {
         int sz = sizeOfType(type);
-        auto getEnd = [&](VReg vr) -> int {
-            int e = meta[vr].last_any_use;
-            for (auto& [ci, pos] : meta[vr].call_uses) e = std::max(e, ci);
-            return e;
-        };
         // Build the maximum lifetime-end per local stack slot of matching size.
         // A slot may be shared by multiple VRegs (due to earlier reuse), so we
         // must ensure ALL current occupants have expired before reusing the slot.
@@ -191,7 +203,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         for (auto& [vr, loc] : result) {
             if (!loc.isStack() || loc.stackOffset >= 0) continue;  // skip non-local
             if (sizeOfType(meta[vr].type) != sz) continue;
-            int e = getEnd(vr);
+            int e = meta[vr].live_end;
             auto [it, inserted] = slot_end.emplace(loc.stackOffset, e);
             if (!inserted) it->second = std::max(it->second, e);
         }
@@ -244,34 +256,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         const string& argReg = phys.intArgs[int_idx++];
 
         const VRegMeta& m = meta[vreg];
-        int last_use = m.last_any_use;
-        for (auto& [ci, pos] : m.call_uses)
-            last_use = max(last_use, ci);
-
         bool crosses_call = false;
         for (int c_idx : call_indices) {
-            if (c_idx < last_use) {
+            if (c_idx < m.live_end) {
                 crosses_call = true;
                 break;
-            }
-        }
-        // Loop check: if a use and a call both appear in the same loop body,
-        // the backward jump causes re-execution of the use after the call.
-        if (!crosses_call) {
-            for (auto& [ls, le] : loop_regions) {
-                bool use_in_loop = (m.last_any_use >= ls && m.last_any_use <= le);
-                if (!use_in_loop) {
-                    for (auto& [ci, pos] : m.call_uses)
-                        if (ci >= ls && ci <= le) { use_in_loop = true; break; }
-                }
-                if (!use_in_loop) continue;
-                for (int c_idx : call_indices) {
-                    if (c_idx >= ls && c_idx <= le) {
-                        crosses_call = true;
-                        break;
-                    }
-                }
-                if (crosses_call) break;
             }
         }
 
@@ -301,7 +290,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 bool crosses_call = false;
                 if (def_is_call) {
                     for (int c_idx : call_indices) {
-                        if (c_idx > m.def_idx && c_idx < m.last_any_use) {
+                        if (c_idx > m.def_idx && c_idx < m.live_end) {
                             crosses_call = true;
                             break;
                         }
@@ -342,7 +331,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // dereferenced to read a field the call just wrote), that later read
             // would see whatever the call left behind rather than the original
             // value, so it must survive in a callee-saved register instead.
-            if (!needs_callee_saved && m.last_any_use > use_idx) {
+            if (!needs_callee_saved && m.live_end > use_idx) {
                 needs_callee_saved = true;
             }
         }
@@ -363,9 +352,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 const VRegMeta& um = meta[vr];
                 int u_def = (um.def_idx < 0) ? 0 : um.def_idx;
                 if (u_def > m.def_idx) continue;
-                int u_last = um.last_any_use;
-                for (auto& [ci, pos] : um.call_uses)
-                    u_last = max(u_last, ci);
+                int u_last = um.live_end;
                 // Strict ">": if u_last == m.def_idx the existing VReg's last use is the
                 // same instruction as m's definition (e.g. call args die when the call
                 // produces its result), so no real conflict.

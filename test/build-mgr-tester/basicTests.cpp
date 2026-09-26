@@ -86,10 +86,19 @@ TEST(build_mgr, divmod_rdx_conflict) {
 
 TEST(build_mgr, param_loop_call_arg) {
 	cleanTestEnv();
-	// Parameter n is used only as call arg inside loop (not Cmp operand).
-	// Covers RegAlloc lines 172-173: call_uses loop-region check for params.
+	// Parameter n is used only as call arg inside loop (not Cmp operand), so
+	// only the loop extension of its live range makes it cross the call.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/014_param_loop_call_arg.pa");
 	ASSERT_EQ(output, "42\n42\n42\n");
+}
+
+TEST(build_mgr, loop_live_range) {
+	// Values defined before a loop must stay live until its backward jump:
+	// a spilled param's stack slot and a call-arg-only local were both
+	// clobbered on the second iteration.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/210_loop_live_range.pa");
+	ASSERT_EQ(output, "f=60\nf=60\nf=60\nk=7\nk=7\nk=7\n");
 }
 
 TEST(build_mgr, rdx_divmod_conflict) {

@@ -1,8 +1,7 @@
 cinclude <stdio.h>;
 
 // Parameter n is used only as a call argument inside the while loop (not as Cmp operand).
-// This triggers the call_uses loop-region check in RegAlloc (lines 172-173):
-// last_any_use=-1 so the first branch misses; the call_uses loop detects n is live in loop.
+// Its live range extends to the loop's backward jump, so it crosses printf.
 func print_n_times(int64 n) {
     int64 i = 0;
     while i < 3 {
