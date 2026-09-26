@@ -1250,6 +1250,61 @@ rejects calls where the argument's inner dimension is variable or does not match
 **Memory management:** A single `malloc` is called at declaration and a single `free` is
 inserted at scope exit. No helper functions are generated.
 
+### Array Literals
+
+An array variable can be initialized with an array literal `[a, b, c]` in its declaration.
+When the size is omitted (`[]T`), it is taken from the number of elements.
+
+```palan
+cinclude <stdio.h>;
+int32 n = 10;
+[3]int32 a = [1, -2, 3];
+[]flo64 f = [1.5, 2, n];
+printf("%d %d %d\n", a[0], a[1], a[2]);
+printf("%.1f %.1f %.1f\n", f[0], f[1], f[2]);
+```
+
+Expected output:
+```
+1 -2 3
+1.5 2.0 10.0
+```
+
+A two-dimensional literal can be written either as a sequence of rows (`[1,2,3][4,5,6]`) or as
+nested rows (`[[1,2,3],[4,5,6]]`); both mean the same. It initializes both `[m][n]T` and
+`[n]$[m]T` arrays, and omitted dimensions (`[][]T`, `[]$[]T`) are taken from the literal.
+
+```palan
+cinclude <stdio.h>;
+[2][3]int32 a = [1,2,3][4,5,-6];
+[]$[3]int32 d = [[1,2,3],[4,5,6]];
+printf("%d %d %d %d\n", a[0][0], a[0][2], a[1][1], a[1][2]);
+printf("%d %d %d\n", d[0][2], d[1][0], d[1][2]);
+```
+
+Expected output:
+```
+1 3 5 -6
+3 4 6
+```
+
+Elements may be any expressions, converted to the element type by the same rules as a scalar
+variable's initializer: implicit narrowing is an error (use an explicit cast such as `uint8(n)`),
+and integer literals are range-checked against the element type. The elements are evaluated
+before the array variable is declared, so they cannot refer to the variable itself.
+
+In a comma-separated declaration, each initializer belongs to its own variable:
+`[2]int16 r, s = [7, 8];` initializes only `s`.
+
+**Restrictions:**
+- An array literal can only be used as an array variable's initializer — not as a function
+  argument or the source of `->`.
+- A given dimension must be a compile-time constant that matches the literal's element or row
+  count, and every row of a 2D literal must have the same length.
+- Only numeric (integer and float) element types are supported. Arrays of structs or pointers,
+  and arrays of three or more dimensions, cannot be initialized with a literal.
+- Omitting only the inner dimension (`[2][]T`, `[2]$[]T`) is not supported.
+
 ### Struct Arrays
 
 Palan supports four forms of struct array declarations. All are heap-allocated and automatically freed at scope exit.
