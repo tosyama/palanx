@@ -75,20 +75,24 @@ object-like macros (e.g. `#define S_IFDIR __S_IFDIR`), folds down to a single co
 integer value is exported here. The body may be a bare integer literal (e.g. `#define MAGIC
 42`), a unary `+`/`-` of one, or a binary expression built from `| & ^ << >> + - * / %` over such
 forms (e.g. `#define S_IRWXU (S_IREAD|S_IWRITE|S_IEXEC)`) — evaluated left-to-right within each
-precedence level, using signed 64-bit arithmetic; an operation that would overflow, divide/mod by
-zero, or shift by a negative or out-of-range count does not fold (same "not exported" outcome as
-an unsupported form) rather than silently wrapping. The body may also be a pointer-cast of any of
-these folded forms (e.g. `#define NULL ((void *)0)`). A form that doesn't fold this way (a
-function-like macro referenced without a call, a string literal, a relational/equality/logical/
-ternary expression, unary `~`/`!`, or a reference to an unresolved identifier) is not exported
-here — referencing such a macro name from Palan is `Undefined function` or `Undefined variable`,
-not a compiler abort.
+precedence level. Literals may carry C's `U`/`L`/`LL` suffixes, and any operand may be an integer
+cast (e.g. ncurses' `((chtype)(1U) << 18)`). An operation with no suffixed or cast operand uses
+exact signed 64-bit arithmetic; otherwise it follows C's integer promotions and usual arithmetic
+conversions (LP64), with unsigned results wrapping to their width. An operation that would
+overflow a signed type, divide/mod by zero, or shift by a negative or out-of-range count does not
+fold (same "not exported" outcome as an unsupported form). The body may also be a pointer-cast of
+any of these folded forms (e.g. `#define NULL ((void *)0)`). A form that doesn't fold this way (a
+function-like macro referenced without a call, a string or floating literal, a relational/
+equality/logical/ternary expression, unary `~`/`!`, or a reference to an unresolved identifier)
+is not exported here — referencing such a macro name from Palan is `Undefined function` or
+`Undefined variable`, not a compiler abort.
 
 - name\* - Macro name string
 - value\* - Decimal string (e.g. "10")
-- value-type\* - Variable type (see below); for a folded integer body, always `prim` `int32` or
-  `int64` sized by the value's magnitude — never typed unsigned. For a pointer-cast body, the
-  cast's own target type instead (e.g. `pntr` for `NULL`)
+- value-type\* - Variable type (see below). For a body with a suffixed literal or an integer cast,
+  its C type (e.g. `uint32` for `1U`; a cast's own target type, including `typedef-name`, when
+  the cast is outermost). Otherwise `prim` `int32` or `int64` sized by the value's magnitude.
+  For a pointer-cast body, the cast's own target type (e.g. `pntr` for `NULL`)
 
 Struct definition model
 ------------------------
@@ -383,7 +387,8 @@ Expression model
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token)
-    - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128")
+    - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128"); a macro
+      substitute's value may exceed int64 when its `value-type` is `uint64`
     - value-type - Variable type; present only when this node is gen-ast's in-place substitute
       for a reference to a cinclude'd macro constant (see Constant definition model above) —
       an ordinary source-literal `lit-int` never carries one. Holds the macro's own

@@ -143,3 +143,9 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 21. Array Literals Are Limited to Array Variable Initializers
 
 **Summary:** v0.1.36 accepts an array literal (`[1, 2, 3]`, and 2D in either `[1,2][3,4]` or `[[1,2],[3,4]]` form) only as an array variable's declaration initializer. Anywhere else — a function argument, the source of `->` — SA rejects it with `E_ArrLitContext`. The initializer form is lowered to the variable's ordinary allocation plus one store per element, so the variable itself owns the storage and frees it at scope exit. A literal in any other position has no such owner: it would need a temporary array whose allocation and free timing (or ownership transfer to the callee) are designed first. The same lowering also means an all-constant literal is built at run time rather than placed in `.rodata`.
+
+---
+
+## 22. C Macro Constants Using Unary `~` Are Not Exported
+
+**Summary:** c2ast's macro-constant folding (ASTSpec.md's Constant definition model) recognizes unary `~` syntactically but does not fold it, so a macro whose body uses it is not exported. For example, ncurses' `A_ATTRIBUTES` (`NCURSES_BITS(~(1U - 1U),0)`) is unavailable, while the other `A_*` attributes are exported. The typed folding added in v0.1.37 already carries each operand's C type, so `~` could fold as a bitwise complement at the promoted operand's width, with the result typed like the operand. An untyped operand has no fixed width, so it needs its own rule, for example taking the C type the literal would have.

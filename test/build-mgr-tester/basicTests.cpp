@@ -1594,6 +1594,14 @@ TEST(build_mgr, macro_name_collision) {
 	ASSERT_EQ(output, "7 7 7\n");
 }
 
+TEST(build_mgr, macro_const_suffix)
+{
+	// Same shape as ncurses' A_* attributes: a typedef cast of a suffixed literal, shifted.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/211_macro_const_suffix.pa");
+	ASSERT_EQ(output, "262144 2097152 2359296 18446744073709551615\n");
+}
+
 TEST(build_mgr, c_union_rw)
 {
 	// Both members of a cinclude'd union alias the same bytes: a write through

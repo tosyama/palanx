@@ -970,6 +970,241 @@ bool CParser::jump_statement(json &ast, const vector<CToken*> &tokens, int &resu
 	return false;
 }
 
+// A value-AST "lit-int" follows the Palan AST convention for "value-type": present only
+// when C fixed the type (a suffixed literal, an integer cast, or an operation with such an
+// operand). An untyped node is a plain unsuffixed literal and folds with exact int64
+// arithmetic. The value string is always within the range of its value-type.
+
+static bool isLitInt(const json &node)
+{
+	return node.is_object() && node.value("expr-type", "") == "lit-int";
+}
+
+static bool intTypeInfo(const json &type, int &width, bool &is_signed)
+{
+	if (!type.is_object() || type.value("type-kind", "") != "prim") return false;
+	static const map<string, pair<int, bool>> infos = {
+		{"int8", {8, true}}, {"int16", {16, true}}, {"int32", {32, true}}, {"int64", {64, true}},
+		{"uint8", {8, false}}, {"uint16", {16, false}}, {"uint32", {32, false}}, {"uint64", {64, false}},
+	};
+	auto it = infos.find(type.value("type-name", ""));
+	if (it == infos.end()) return false;
+	width = it->second.first;
+	is_signed = it->second.second;
+	return true;
+}
+
+static json intPrimType(int width, bool is_signed)
+{
+	return {{"type-kind", "prim"}, {"type-name", (is_signed ? "int" : "uint") + to_string(width)}};
+}
+
+// Two's complement bit pattern of a lit-int's value.
+static unsigned long long litIntBits(const json &node)
+{
+	const string &s = node["value"].get_ref<const string&>();
+	return s[0] == '-' ? (unsigned long long)stoll(s) : stoull(s);
+}
+
+// Builds a lit-int of `type` from `bits`, wrapping to the type's width the way GCC
+// converts between integer types.
+static json makeTypedLitInt(unsigned long long bits, const json &type)
+{
+	int width;
+	bool is_signed;
+	intTypeInfo(type, width, is_signed);
+	if (width < 64) {
+		unsigned long long mask = (1ULL << width) - 1;
+		bits &= mask;
+		if (is_signed && (bits >> (width - 1)))
+			bits |= ~mask;
+	}
+	string value = is_signed ? to_string((long long)bits) : to_string(bits);
+	return {{"expr-type", "lit-int"}, {"value", value}, {"value-type", type}};
+}
+
+// C11 6.4.4.1 integer constant typing (LP64). An unsuffixed literal stays untyped.
+static json parseIntLiteral(const string &text)
+{
+	size_t consumed;
+	unsigned long long v;
+	try {
+		v = stoull(text, &consumed, 0);
+	} catch (...) {
+		return json{};
+	}
+
+	string suffix;
+	for (size_t i = consumed; i < text.size(); i++) suffix += tolower(text[i]);
+	bool has_u = false;
+	int l_count = 0;
+	if (!suffix.empty() && suffix.front() == 'u') { has_u = true; suffix.erase(0, 1); }
+	if (!suffix.empty() && suffix.back() == 'u' && !has_u) { has_u = true; suffix.pop_back(); }
+	if (suffix == "l") l_count = 1;
+	else if (suffix == "ll") l_count = 2;
+	else if (!suffix.empty()) return json{}; // float literal or invalid suffix
+
+	bool is_decimal = text.size() == 1 || text[0] != '0';
+	if (!has_u && !l_count) {
+		if (v > LLONG_MAX) return json{};
+		return {{"expr-type", "lit-int"}, {"value", to_string(v)}};
+	}
+	if (has_u) {
+		bool fits32 = !l_count && v <= UINT32_MAX;
+		return makeTypedLitInt(v, intPrimType(fits32 ? 32 : 64, false));
+	}
+	if (v > LLONG_MAX && is_decimal) return json{};
+	return makeTypedLitInt(v, intPrimType(64, v <= LLONG_MAX));
+}
+
+// Width and signedness a lit-int operand takes in C arithmetic, after integer promotion.
+// An untyped operand is taken as int, or long when its value doesn't fit int.
+static void promotedIntType(const json &node, int &width, bool &is_signed)
+{
+	if (node.contains("value-type")) {
+		intTypeInfo(node["value-type"], width, is_signed);
+		if (width < 32) { width = 32; is_signed = true; }
+		return;
+	}
+	long long v = stoll(node["value"].get<string>());
+	width = (v >= INT32_MIN && v <= INT32_MAX) ? 32 : 64;
+	is_signed = true;
+}
+
+static bool fitsSigned(long long v, int width)
+{
+	return width == 64 || (v >= INT32_MIN && v <= INT32_MAX);
+}
+
+static json foldUntypedBinaryInt(long long l, int op, long long r)
+{
+	long long v;
+	switch (op) {
+	case '|': v = l | r; break;
+	case '&': v = l & r; break;
+	case '^': v = l ^ r; break;
+	case '+': if (__builtin_add_overflow(l, r, &v)) return json{}; break;
+	case '-': if (__builtin_sub_overflow(l, r, &v)) return json{}; break;
+	case '*': if (__builtin_mul_overflow(l, r, &v)) return json{}; break;
+	case '/':
+		if (r == 0 || (l == LLONG_MIN && r == -1)) return json{};
+		v = l / r;
+		break;
+	case '%':
+		if (r == 0 || (l == LLONG_MIN && r == -1)) return json{};
+		v = l % r;
+		break;
+	case '<<':
+		if (l < 0 || r < 0 || r >= 63 || l > (LLONG_MAX >> r)) return json{};
+		v = l << r;
+		break;
+	case '>>':
+		if (l < 0 || r < 0 || r >= 64) return json{};
+		v = l >> r;
+		break;
+	default:
+		return json{};
+	}
+	return {{"expr-type", "lit-int"}, {"value", to_string(v)}};
+}
+
+// Shift: the result takes the promoted left operand's type (not the usual arithmetic
+// conversions), and a count outside [0, width) is undefined behavior.
+static json foldTypedShift(const json &lhs, int op, const json &rhs)
+{
+	int width, r_width;
+	bool is_signed, r_signed;
+	promotedIntType(lhs, width, is_signed);
+	promotedIntType(rhs, r_width, r_signed);
+	unsigned long long l = litIntBits(lhs), r = litIntBits(rhs);
+	if ((r_signed && (long long)r < 0) || r >= (unsigned long long)width) return json{};
+
+	json type = intPrimType(width, is_signed);
+	if (is_signed) {
+		long long sl = (long long)l;
+		long long max = width == 64 ? LLONG_MAX : INT32_MAX;
+		if (sl < 0 || (op == '<<' && sl > (max >> r))) return json{};
+	}
+	return makeTypedLitInt(op == '<<' ? l << r : l >> r, type);
+}
+
+// Folds with C's usual arithmetic conversions: unsigned results wrap to their width,
+// signed results that overflow their width don't fold.
+static json foldTypedBinaryInt(const json &lhs, int op, const json &rhs)
+{
+	if (op == '<<' || op == '>>') return foldTypedShift(lhs, op, rhs);
+
+	int l_width, r_width;
+	bool l_signed, r_signed;
+	promotedIntType(lhs, l_width, l_signed);
+	promotedIntType(rhs, r_width, r_signed);
+	int width = max(l_width, r_width);
+	bool is_signed = !((l_width == width && !l_signed) || (r_width == width && !r_signed));
+	json type = intPrimType(width, is_signed);
+	unsigned long long l = litIntBits(lhs), r = litIntBits(rhs);
+
+	if (!is_signed) {
+		unsigned long long mask = width == 64 ? ~0ULL : (1ULL << width) - 1;
+		l &= mask;
+		r &= mask;
+		unsigned long long v;
+		switch (op) {
+		case '|': v = l | r; break;
+		case '&': v = l & r; break;
+		case '^': v = l ^ r; break;
+		case '+': v = l + r; break;
+		case '-': v = l - r; break;
+		case '*': v = l * r; break;
+		case '/': if (r == 0) return json{}; v = l / r; break;
+		case '%': if (r == 0) return json{}; v = l % r; break;
+		default: return json{};
+		}
+		return makeTypedLitInt(v, type);
+	}
+
+	json folded = foldUntypedBinaryInt((long long)l, op, (long long)r);
+	if (!isLitInt(folded)) return json{};
+	long long v = stoll(folded["value"].get<string>());
+	if (!fitsSigned(v, width)) return json{};
+	return makeTypedLitInt((unsigned long long)v, type);
+}
+
+// Folds one binary C operation on two value-AST nodes into a new "lit-int" node.
+// Returns null -- the expression chain's single "not evaluable" signal -- when either
+// operand is null (not a lit-int), when the operator isn't one of the folded arithmetic
+// or bitwise operators (relational/equality are recognized syntactically by their
+// caller but intentionally not folded), or when evaluating would be undefined behavior
+// in this arithmetic itself (div/mod by zero, out-of-range shift count, overflow).
+// Folding these to null rather than a wrong value keeps them in the same "not a
+// compile-time constant we track" vocabulary as an unresolved identifier.
+static json foldBinaryInt(const json &lhs, int op, const json &rhs)
+{
+	if (!isLitInt(lhs) || !isLitInt(rhs)) return json{};
+	if (lhs.contains("value-type") || rhs.contains("value-type"))
+		return foldTypedBinaryInt(lhs, op, rhs);
+	return foldUntypedBinaryInt(stoll(lhs["value"].get<string>()), op,
+		stoll(rhs["value"].get<string>()));
+}
+
+static json foldNegate(const json &node)
+{
+	if (!isLitInt(node)) return json{};
+	if (!node.contains("value-type")) {
+		long long v = stoll(node["value"].get<string>());
+		if (v == LLONG_MIN) return json{};
+		return {{"expr-type", "lit-int"}, {"value", to_string(-v)}};
+	}
+	int width;
+	bool is_signed;
+	promotedIntType(node, width, is_signed);
+	unsigned long long bits = litIntBits(node);
+	if (is_signed) {
+		long long v = (long long)bits;
+		if (v == LLONG_MIN || !fitsSigned(-v, width)) return json{};
+	}
+	return makeTypedLitInt(0 - bits, intPrimType(width, is_signed));
+}
+
 // Each function in this expression chain (primary_expression .. expression) recognizes
 // C expression grammar and, when the (sub)expression is one of a small set of computable
 // forms (integer literal, unary +/-, parenthesization, explicit cast, or a folded binary
@@ -990,18 +1225,7 @@ bool CParser::primary_expression(json &value, const vector<CToken*> &tokens, int
 	}
 
 	if (CONSUME(TT_PP_NUMBER)) {
-		const string& text = *tokens[index-1]->info.str;
-		try {
-			size_t consumed;
-			long long v = stoll(text, &consumed, 0);
-			if (consumed == text.size()) {
-				value = {{"expr-type", "lit-int"}, {"value", to_string(v)}};
-			} else {
-				value = json{}; // suffix like L/U, or a float literal: not a simple int
-			}
-		} catch (...) {
-			value = json{};
-		}
+		value = parseIntLiteral(*tokens[index-1]->info.str);
 		result_index = index;
 		return true;
 	}
@@ -1065,12 +1289,7 @@ bool CParser::unary_expression(json &value, const vector<CToken*> &tokens, int &
 			return false;
 		}
 		if (has_minus) {
-			if (inner_value.is_object() && inner_value.value("expr-type", "") == "lit-int") {
-				long long v = stoll(inner_value["value"].get<string>());
-				value = {{"expr-type", "lit-int"}, {"value", to_string(-v)}};
-			} else {
-				value = json{};
-			}
+			value = foldNegate(inner_value);
 		} else {
 			value = inner_value; // unary plus: value unchanged
 		}
@@ -1133,7 +1352,12 @@ bool CParser::cast_expression(json &value, const vector<CToken*> &tokens, int &r
 	json inner_value;
 	if (unary_expression(inner_value, tokens, index)) {
 		for (auto it = cast_types.rbegin(); it != cast_types.rend(); ++it) {
-			inner_value = {{"expr-type", "cast"}, {"target-type", *it}, {"src", inner_value}};
+			int width;
+			bool is_signed;
+			if (isLitInt(inner_value) && intTypeInfo(*it, width, is_signed))
+				inner_value = makeTypedLitInt(litIntBits(inner_value), *it);
+			else
+				inner_value = {{"expr-type", "cast"}, {"target-type", *it}, {"src", inner_value}};
 		}
 		value = inner_value;
 		result_index = index;
@@ -1150,56 +1374,6 @@ bool CParser::cast_expression(json &value, const vector<CToken*> &tokens, int &r
 	}
 
 	return false;
-}
-
-static bool litIntValue(const json &node, long long &out)
-{
-	if (!node.is_object() || node.value("expr-type", "") != "lit-int") return false;
-	out = stoll(node["value"].get<string>());
-	return true;
-}
-
-// Folds one binary C operation on two value-AST nodes into a new "lit-int" node.
-// Returns null -- the expression chain's single "not evaluable" signal -- when either
-// operand is null (not a lit-int), when the operator isn't one of the folded arithmetic
-// or bitwise operators (relational/equality are recognized syntactically by their
-// caller but intentionally not folded), or when evaluating would be undefined behavior
-// in this arithmetic itself (div/mod by zero, out-of-range shift count, overflow).
-// Folding these to null rather than a wrong value keeps them in the same "not a
-// compile-time constant we track" vocabulary as an unresolved identifier.
-static json foldBinaryInt(const json &lhs, int op, const json &rhs)
-{
-	long long l, r, v;
-	if (!litIntValue(lhs, l) || !litIntValue(rhs, r)) return json{};
-
-	switch (op) {
-	case '|': v = l | r; break;
-	case '&': v = l & r; break;
-	case '^': v = l ^ r; break;
-	case '+': if (__builtin_add_overflow(l, r, &v)) return json{}; break;
-	case '-': if (__builtin_sub_overflow(l, r, &v)) return json{}; break;
-	case '*': if (__builtin_mul_overflow(l, r, &v)) return json{}; break;
-	case '/':
-		if (r == 0 || (l == LLONG_MIN && r == -1)) return json{};
-		v = l / r;
-		break;
-	case '%':
-		if (r == 0 || (l == LLONG_MIN && r == -1)) return json{};
-		v = l % r;
-		break;
-	case '<<':
-		if (l < 0 || r < 0 || r >= 63 || l > (LLONG_MAX >> r)) return json{};
-		v = l << r;
-		break;
-	case '>>':
-		if (l < 0 || r < 0 || r >= 64) return json{};
-		v = l >> r;
-		break;
-	default:
-		return json{}; // relational / equality: recognized, not folded
-	}
-
-	return {{"expr-type", "lit-int"}, {"value", to_string(v)}};
 }
 
 bool CParser::multiplicative_expression(json &value, const vector<CToken*> &tokens, int &result_index)
@@ -1491,6 +1665,10 @@ bool CParser::resolveConstValue(const json &node, json &value, json &type)
 	string expr_type = node.value("expr-type", "");
 	if (expr_type == "lit-int") {
 		value = node["value"];
+		if (node.contains("value-type")) {
+			type = node["value-type"];
+			return true;
+		}
 		long long v = stoll(node["value"].get<string>());
 		const char* type_name = (v >= INT32_MIN && v <= INT32_MAX) ? "int32" : "int64";
 		type = {{"type-kind", "prim"}, {"type-name", type_name}};

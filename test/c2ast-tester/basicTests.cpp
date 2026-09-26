@@ -742,8 +742,51 @@ TEST(c2ast, macro_const_fold_expr) {
     ASSERT_EQ(find_const("SIZED"), nullptr);
     // An unresolved identifier keeps the whole expression null.
     ASSERT_EQ(find_const("IDENT"), nullptr);
-    // A suffixed literal (1L) isn't a plain lit-int, so it doesn't fold either.
-    ASSERT_EQ(find_const("SUFFIXED"), nullptr);
+    json* suffixed = find_const("SUFFIXED");
+    ASSERT_NE(suffixed, nullptr);
+    ASSERT_EQ((*suffixed)["value"], "2");
+    ASSERT_EQ((*suffixed)["value-type"]["type-name"], "int64");
+}
+
+TEST(c2ast, macro_const_suffix) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/038_macro_const_suffix.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    auto expect_const = [&](const string& name, const string& value, const string& type_name) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+        ASSERT_EQ((*c)["value-type"]["type-kind"], "prim") << "for " << name;
+        ASSERT_EQ((*c)["value-type"]["type-name"], type_name) << "for " << name;
+    };
+
+    expect_const("U1", "1", "uint32");
+    expect_const("UL5", "5", "uint64");
+    expect_const("ULL5", "5", "uint64");
+    expect_const("L5", "5", "int64");
+    expect_const("H80", "2147483648", "uint32");
+    expect_const("ULMAX", "18446744073709551615", "uint64");
+    expect_const("SH", "262144", "uint32");
+    expect_const("AREV", "262144", "uint32");
+    expect_const("MASK", "255", "uint32");
+    expect_const("WRAP", "4294967295", "uint32");
+    expect_const("NEGU", "4294967295", "uint32");
+    expect_const("MIXNEG", "0", "uint32");
+    expect_const("UCH", "44", "uint8");
+    expect_const("LADD", "2", "int64");
+
+    ASSERT_EQ(find_const("BIGSH"), nullptr);
+    ASSERT_EQ(find_const("SOVF"), nullptr);
+    ASSERT_EQ(find_const("BIGDEC"), nullptr);
+    ASSERT_EQ(find_const("FLO"), nullptr);
 }
 
 TEST(c2ast, int_constant_width) {

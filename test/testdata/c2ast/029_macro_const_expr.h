@@ -11,5 +11,5 @@
 #define OVERFLOWED (0x7fffffffffffffff * 2)  /* skipped */
 #define SIZED  (4 * sizeof(int))      /* skipped: sizeof stays null */
 #define IDENT  (UNKNOWN_NAME + 1)     /* skipped: identifier stays null */
-#define SUFFIXED (1L + 1)             /* skipped: suffixed literal is null */
+#define SUFFIXED (1L + 1)             /* 2, typed long */
 int f(void);
