@@ -100,6 +100,26 @@ TEST(gen_ast_error, syscall_as_identifier) {
 	ASSERT_NE(out.find("error:"), string::npos);
 }
 
+TEST(gen_ast_error, unknown_char) {
+	// flex echoed unmatched bytes to stdout ahead of the AST JSON. The
+	// "return1::" prefix (empty stdout between the colons) checks it no longer does.
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_007_unknown_char.pa");
+	ASSERT_EQ(out.rfind("return1::", 0), 0u) << out;
+	ASSERT_NE(out.find(":3:13: error: Unexpected character '`'."), string::npos) << out;
+}
+
+TEST(gen_ast_error, unknown_char_nonascii) {
+	// Reported inside a declaration, where the GLR parser stack is split: the
+	// error must still be reported exactly once.
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_008_unknown_char_nonascii.pa");
+	ASSERT_NE(out.find(":2:10: error: Unexpected character '\\xC3'."), string::npos) << out;
+	ASSERT_EQ(out.find("syntax error"), string::npos) << out;
+}
+
 TEST(gen_ast_error, cinclude_local_path_injection) {
 	// Same shell-metacharacter-injection risk as cinclude_sys_path_injection
 	// above, for the "..." local-path branch (fs::path(base_dir) / resolved).

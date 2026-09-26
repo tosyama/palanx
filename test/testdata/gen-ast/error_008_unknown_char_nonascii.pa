@@ -1,0 +1,2 @@
+// Non-ASCII bytes are shown escaped rather than as a partial UTF-8 sequence.
+int32 café = 1;

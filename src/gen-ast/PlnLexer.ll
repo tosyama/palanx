@@ -168,6 +168,21 @@ COMMENT1	\/\/[^\n]*\n
 <*>"||"	{ return OPE_OR; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
+<*>.	{
+		// Printing a lone byte of a UTF-8 sequence would garble the terminal.
+		unsigned char c = yytext[0];
+		string ch(1, c);
+		if (c < 0x20 || c > 0x7e) {
+			char buf[8];
+			snprintf(buf, sizeof(buf), "\\x%02X", c);
+			ch = buf;
+		}
+		// Not PlnParser::syntax_error: glr2.cc reports a scanner-thrown
+		// syntax_error a second time when the parser stack is split.
+		throw runtime_error(PlnGenAstMessage::locatedError(inputFile,
+			loc.begin.line, loc.begin.column,
+			PlnGenAstMessage::getMessage(E_UnexpectedChar, ch)));
+	}
 <*><<EOF>>	{ return 0; }
 
 %%

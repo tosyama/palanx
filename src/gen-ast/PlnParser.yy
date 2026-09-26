@@ -1043,6 +1043,6 @@ move_owner_r: /* empty */ { $$ = false; }
 
 void palan::PlnParser::error(const location_type& l, const string& m)
 {
-	cerr << lexer.inputFile << ":" << l.begin.line << ":" << l.begin.column << ": error: " << m << endl;
+	cerr << PlnGenAstMessage::locatedError(lexer.inputFile, l.begin.line, l.begin.column, m) << endl;
 }
 
