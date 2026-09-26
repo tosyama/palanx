@@ -6,31 +6,41 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-25)
-version: 0.1.36 — array literals as initializers, and uint64 <-> float conversion
+### 2.1 Iteration Goal (2026-09-26)
+version: 0.1.37 — what a console Tetris on ncurses needs
 
-**Array literals initialize array variables.** `[3]int32 a = [1, 2, 3];` and
-`[2][3]int32 m = [1,2,3][4,5,6];` allocate the array as today and fill it element by element.
-An omitted dimension (`[]int32 a = [1, 2, 3];`) is inferred from the literal; a given
-dimension must be a compile-time integer equal to the literal's length. A 2D literal may be
-written concatenated (`[1,2][3,4]`) or nested (`[[1,2],[3,4]]`); gen-ast folds both into one
-nested `arr-lit` node, so SA sees one shape. Rows must have equal length. Elements are
-arbitrary expressions, typed and checked against the element type exactly as a scalar
-initializer is (narrowing rejected, literal range checked), and evaluated before the variable
-comes into scope. SA lowers the initializer to the existing allocation plus element stores, so
-sa.json and codegen gain no new shape. Leaf element types are numeric primitives; `[m][n]T` and
-`[n]$[m]T` are the 2D forms. An array literal anywhere else (call argument, `->` source,
-operand) is a palan-sa error, not a silent drop.
+The target is a playable ncurses Tetris. A probe compiled but corrupted values at run time and
+needed several workarounds; this iteration removes them.
 
-**`uint64` <-> `flo32`/`flo64` conversion is lowered, not aborted (item 13).** `PlnVCodeGen`
-expands these conversions into a branch on the top bit / the 2^63 threshold using the existing
-`CondJmp`/`Label` instructions, so `emitConvert` never sees them.
+**Values live across a loop back-edge keep their storage.** `PlnRegAlloc` computes each vreg's
+live range linearly, so a vreg defined before a loop and used inside it could have its stack slot
+reused by a later temporary and be clobbered on the next iteration. The live range of such a vreg
+is extended to the loop's backward jump where the range is computed, so every consumer (temp-slot
+reuse, call-crossing checks) sees the same range.
 
-Non-goals for this iteration: array literals as call arguments or `->` sources; placing
-constant literals in `.rodata`; struct or pointer leaf elements.
+**`bool` primitive.** A 1-byte type holding 0 or 1. Integer literals convert implicitly with a
+range check (0/1 only); other integers need an explicit `bool(x)`, lowered to `x != 0`. `bool`
+widens implicitly to integer types and is accepted as an `if`/`while` condition. c2ast maps C's
+`_Bool` keyword to it, so `keypad`/`nodelay` become callable.
+
+**C macro constants.** c2ast folds integer literals with `U`/`L`/`UL`/`ULL` suffixes using C's
+usual arithmetic conversions, so the `A_*` attribute macros are exported. A constant folded from
+an unsuffixed, uncast literal carries no `value-type`: it is the same untyped integer literal a
+Palan source literal is, so passing `COLOR_RED` to a `short` parameter is range-checked instead
+of rejected as narrowing.
+
+**Character literals.** gen-ast normalizes `'a'` (escapes `\n` `\t` `\r` `\0` `\\` `\'`)
+to an integer literal, so SA and codegen see no new shape; a non-ASCII character is an error.
+A character the lexer does not recognize is reported as a palan-gen-ast error instead of being
+echoed to stdout.
+
+Non-goals for this iteration: referring to top-level variables from functions; `bool` results
+from comparison/logical operators and `true`/`false` keywords; Palan shift operators;
+assignment-style macros such as `getmaxyx`. `WINDOW` is opaque in ncurses and is used as
+`@!WINDOW`, which already works.
 
 The full design decisions and the ticket breakdown are in
-`localtickets/iteration-2026-09-25-v0136-array-literal.md`.
+`localtickets/iteration-2026-09-26-v0137-tetris.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
