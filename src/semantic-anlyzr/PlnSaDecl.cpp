@@ -898,13 +898,16 @@ json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)
 json PlnSemanticAnalyzer::sa_const_decl(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	json value = sa_expression(stmt["value"]);
-	string et = value.value("expr-type", "");
+	string et = sa_expression(stmt["value"]).value("expr-type", "");
 	if (et != "lit-int" && et != "lit-uint" && et != "lit-flo" && et != "lit-str") {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ConstNotCompileTimeValue, name) << endl;
 		exit(1);
 	}
-	constDecls_[name] = {{"value", value}, {"value-type", value["value-type"]}};
+	// Stored untyped so each reference is typed by its own context, exactly
+	// like the literal written in place of the name.
+	json value = resolveConstRef(stmt["value"]);
+	value.erase("loc");
+	constDecls_[name] = value;
 	return json::array();
 }
 

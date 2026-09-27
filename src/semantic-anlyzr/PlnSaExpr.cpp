@@ -296,8 +296,23 @@ static json promoteBool(json operand)
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
-json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expectedType)
+// A variable shadows a same-named const, so this can only be decided at
+// the reference site, not by rewriting the AST up front.
+json PlnSemanticAnalyzer::resolveConstRef(const json& expr) const
 {
+	if (expr.value("expr-type", "") != "id") return expr;
+	string name = expr["name"].get<string>();
+	if (findVar(name) != nullptr) return expr;
+	auto cit = constDecls_.find(name);
+	if (cit == constDecls_.end()) return expr;
+	json lit = cit->second;
+	if (expr.contains("loc")) lit["loc"] = expr["loc"];
+	return lit;
+}
+
+json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expectedType)
+{
+	const json expr = resolveConstRef(rawExpr);
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
 
@@ -368,21 +383,15 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 			if (isInArrayScope(expr["name"].get<string>()))
 				sa_expr["category"] = "owned";
 		} else {
-			auto cit = constDecls_.find(expr["name"].get<string>());
-			if (cit != constDecls_.end()) {
-				sa_expr = cit->second["value"];
+			string name = expr["name"].get<string>();
+			const json* cglobal = findCGlobal(name);
+			if (cglobal != nullptr) {
+				requireSupportedCGlobal(*cglobal, name, expr);
+				sa_expr = {{"expr-type", "c-global"}, {"label", name}, {"value-type", (*cglobal)["var-type"]}};
 				if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
 			} else {
-				string name = expr["name"].get<string>();
-				const json* cglobal = findCGlobal(name);
-				if (cglobal != nullptr) {
-					requireSupportedCGlobal(*cglobal, name, expr);
-					sa_expr = {{"expr-type", "c-global"}, {"label", name}, {"value-type", (*cglobal)["var-type"]}};
-					if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
-				} else {
-					cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
-					exit(1);
-				}
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
+				exit(1);
 			}
 		}
 
@@ -525,10 +534,10 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	auto typeOf = [&](const json& other) {
 		return other.contains("value-type") ? registry_.fromJson(other["value-type"]) : expectedType;
 	};
-	if (expr["left"]["expr-type"] == "lit-int") {
+	if (resolveConstRef(expr["left"])["expr-type"] == "lit-int") {
 		right = promoteBool(sa_expression(expr["right"], expectedType));
 		left  = promoteBool(sa_expression(expr["left"],  typeOf(right)));
-	} else if (expr["right"]["expr-type"] == "lit-int") {
+	} else if (resolveConstRef(expr["right"])["expr-type"] == "lit-int") {
 		left  = promoteBool(sa_expression(expr["left"],  expectedType));
 		right = promoteBool(sa_expression(expr["right"], typeOf(left)));
 	} else {

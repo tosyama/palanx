@@ -2382,6 +2382,7 @@ TEST(sa_error, int_literal_out_of_range)
 		{"error_205_int_lit_range_neg_unsigned.pa", "'-1' is out of range for type 'uint32'"},
 		// An unsuffixed cinclude macro is an untyped literal, typed from its context.
 		{"error_225_macro_untyped_range.pa", ":5:3: error: Integer literal '300' is out of range for type 'int8'."},
+		{"error_247_int_lit_range_const.pa", ":2:10: error: Integer literal '300' is out of range for type 'int8'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

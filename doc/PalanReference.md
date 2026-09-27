@@ -1626,6 +1626,8 @@ printf("%ld\n", MaxLen);   // 256
   appear in `sa.json`.
 - A const may reference another const declared earlier (`const B = A;`); this chains naturally
   through inlining.
+- Like the literal it names, a const takes its type from where it is used: `const N = 20;` can be
+  passed to an `int32` parameter, used in `N + 2` for an `int16` variable, or assigned to `flo64`.
 
 ### Restrictions
 

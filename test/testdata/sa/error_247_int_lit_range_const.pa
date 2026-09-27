@@ -1,0 +1,2 @@
+const B = 300;
+int8 x = B;

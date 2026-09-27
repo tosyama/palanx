@@ -1904,6 +1904,13 @@ TEST(build_mgr, arr_borrow) {
 	ASSERT_EQ(output, "161\n7 8\n5 6\n8\n1 9\n");
 }
 
+TEST(build_mgr, const_typed_context) {
+	// A const is typed by its reference context, like the literal it names.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/220_const_typed_context.pa");
+	ASSERT_EQ(output, "x 22 40 23 20.0 10.0\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

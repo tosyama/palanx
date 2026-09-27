@@ -120,6 +120,7 @@ class PlnSemanticAnalyzer {
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
+	json resolveConstRef(const json& expr) const;
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	void checkIntLiteralRange(const json& lit);
