@@ -88,6 +88,11 @@ other operand); otherwise it is a compile error — `int8 x = 300;` and `uint8 y
 rejected. A minus sign directly on an integer literal is part of the value, so `int8 x = -128;`
 is accepted.
 
+**Character literals:** `'a'` is an integer literal whose value is the character's ASCII code, so
+it follows the same rules as any other integer literal (`int8 c = 'a';` is accepted). Only
+printable ASCII characters and the escapes `\n` `\t` `\r` `\0` `\\` `\'` are allowed; an empty,
+multi-character, or non-ASCII literal is a compile error.
+
 **String literals:** `"..."` with the following escape sequences:
 
 | Escape | Meaning |
@@ -118,6 +123,17 @@ is accepted.
 | `uint64`| 64-bit  | unsigned   |
 | `flo32` | 32-bit  | float      |
 | `flo64` | 64-bit  | float      |
+| `bool`  | 8-bit   | holds 0 or 1 |
+
+### bool
+
+- An integer literal converts to `bool` implicitly only when it is `0` or `1`. Any other integer
+  or float value needs `bool(x)`, which yields 1 for every nonzero value rather than truncating.
+- `bool` widens implicitly to every integer and float type.
+- An operator promotes a `bool` operand to `int32`, as C does, so `b + 1` is 2. Storing such a
+  result back into a `bool` needs `bool(...)`.
+- A `bool` can be an `if`/`while` condition. Comparisons and logical operators still yield `int32`.
+- A C `_Bool` parameter or field (e.g. ncurses' `keypad`) is a `bool`.
 
 ### Implicit Widening
 
@@ -176,6 +192,7 @@ unconverted; a comparison's result is always `int32` regardless of operand type.
 When passing to variadic C functions (e.g., `printf`), small integer types are promoted:
 - `int8`, `int16` → `int32`
 - `uint8`, `uint16` → `uint32`
+- `bool` → `int32`
 
 ---
 
@@ -1760,7 +1777,7 @@ syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
 - At most 6 parameters. The return, if any, must be a single unnamed type (`-> type`); named or
   multiple return values are not allowed.
 - Parameter and return types must be representable as a full 8-byte register: `flo32`/`flo64`
-  and the 8-bit/16-bit integer types are rejected.
+  and the 8-bit/16-bit integer types (including `bool`) are rejected.
 - The return value is the kernel's raw result in `rax`: a negative value conventionally means
   `-errno` (e.g. `-9` for `EBADF`), which the caller must interpret itself — libc's `errno`
   variable is never touched.

@@ -197,6 +197,7 @@ Variable type
     - type-name\* - Type name string
       - Integer: "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64"
       - Float: "flo32" "flo64"
+      - Boolean: "bool" — also what c2ast emits for C's `_Bool`
       - Other: "void" — pointee-only (`prim(void)` appears only as a `pntr`'s `base-type`, never
         as a variable's own top-level type). Previously only reachable from a c2ast-derived
         signature (a C `void *` parameter/return/field); native syntax `@void`/`@!void` now
@@ -388,7 +389,8 @@ Expression model
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
-  2. lit-int - Signed integer literal (corresponds to INT token)
+  2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
+    is also emitted as a `lit-int` holding its ASCII code, with no `value-type`
     - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128"); a macro
       substitute's value may exceed int64 when its `value-type` is `uint64`
     - value-type - Variable type; present only when this node is gen-ast's in-place substitute

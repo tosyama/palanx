@@ -149,3 +149,9 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 22. C Macro Constants Using Unary `~` Are Not Exported
 
 **Summary:** c2ast's macro-constant folding (ASTSpec.md's Constant definition model) recognizes unary `~` syntactically but does not fold it, so a macro whose body uses it is not exported. For example, ncurses' `A_ATTRIBUTES` (`NCURSES_BITS(~(1U - 1U),0)`) is unavailable, while the other `A_*` attributes are exported. The typed folding added in v0.1.37 already carries each operand's C type, so `~` could fold as a bitwise complement at the promoted operand's width, with the result typed like the operand. An untyped operand has no fixed width, so it needs its own rule, for example taking the C type the literal would have.
+
+---
+
+## 23. Functions Cannot Reference Top-Level Variables
+
+**Summary:** A variable declared at the top level is a local of the generated `_start`, so a function body cannot see it (`Undefined variable`). Shared state such as a game board must be passed as arguments. Making top-level variables global needs a decision on storage (`.data`/`.bss` or heap), on initialization order, and on how an imported module's top-level variables relate to the entry file's, which is the same open question as #4.
