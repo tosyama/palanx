@@ -183,7 +183,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(unsizedArrToPntr(resolveTypeAlias(p["var-type"])))), &funcDef);
+			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(normalizeArrBorrowType(funcDef, unsizedArrToPntr(resolveTypeAlias(p["var-type"]))))), &funcDef);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
 			if (!isStructType(resolveTypeAlias(r["var-type"])))
@@ -210,6 +210,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	json saFunc = funcDef;
 	normalizeUnsizedArrSig(saFunc);
+	normalizeArrBorrowSig(saFunc);
 	validateEmbeddedParams(saFunc);
 	normalizeStructSig(saFunc);
 	validateNativeSig(saFunc);
@@ -253,6 +254,8 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
+	if (varType->contains("arr-size") && !isInArrayScope(name))
+		checkArrBorrowBinding(stmt, stmt["value"], value, *varType);
 	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 	if (!ptrPermissionOk(value["value-type"], *varType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;

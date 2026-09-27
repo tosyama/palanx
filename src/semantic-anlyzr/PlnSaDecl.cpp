@@ -318,11 +318,14 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
 		}
 	}
 
+	json borrowType = normalizeArrBorrowType(stmt2, vtype);
+	bool isArrBorrow = borrowType.contains("arr-size");
+
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
 	for (auto& var : stmt2["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = deepNormalizePrimToStruct(var["var-type"]);
+		json varType = deepNormalizePrimToStruct(isArrBorrow ? borrowType : var["var-type"]);
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
@@ -334,6 +337,8 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 				exit(1);
 			}
+			if (isArrBorrow)
+				checkArrBorrowBinding(stmt2, var["init"], init, varType);
 			init = convertForBinding(stmt2, init, toType, varType);
 			if (!ptrPermissionOk(init["value-type"], varType)) {
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
@@ -404,9 +409,6 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 		string free_func  = "__pln_free_"  + shape_key;
 
 		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-		json pntr_type = {{"type-kind","pntr"},{"base-type",{
-			{"type-kind","pntr"},{"base-type",leaf_type}
-		}}};
 
 		json result = json::array();
 		for (auto& var : stmt["vars"]) {
@@ -415,6 +417,12 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 
 			json d0_expr = sa_arr_size_expr(stmt, vtype["size-expr"]);
 			json n_expr  = sa_arr_size_expr(stmt, base_type["size-expr"]);
+
+			json pntr_type = {{"type-kind","pntr"},{"base-type",{
+				{"type-kind","pntr"},{"base-type",leaf_type}
+			}}};
+			setArrSize(pntr_type, d0_expr);
+			setArrSize(pntr_type["base-type"], n_expr);
 
 			json d0_id = {{"expr-type","id"},{"name",d0_name},
 			              {"var-type",uint64_type},{"value-type",uint64_type}};
@@ -484,6 +492,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	}
 
 	json pntr_type = {{"type-kind","pntr"},{"base-type",sa_elem_type}};
+	setArrSize(pntr_type, sa_count);
 
 	// For multiple vars: emit a temp uint64 var holding size_bytes so it
 	// is evaluated only once at runtime.  For a single var, inline it.
@@ -688,21 +697,18 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 
-	bool inner_is_const = inner_sz.value("expr-type","") == "lit-int"
-	                   || inner_sz.value("expr-type","") == "lit-uint";
-
 	json result = json::array();
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 
 		json sa_outer = sa_arr_size_expr(stmt, vtype["size-expr"]); // n
 		json sa_inner = sa_arr_size_expr(stmt, inner_sz);            // m
+		int64_t m_val = constArrSize(sa_inner);
 
 		json pntr_type;
 		json size_arg;
 
-		if (inner_is_const) {
-			int64_t m_val = stoll(inner_sz["value"].get<string>());
+		if (m_val >= 0) {
 			int64_t stride = m_val * elem_size;
 			// LCOV_EXCL_EXCEPTION_BR_START
 			pntr_type = {{"type-kind","pntr"},{"embedded",true},
@@ -742,6 +748,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 			}})}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
+		setArrSize(pntr_type, sa_outer);
 
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json malloc_call = {

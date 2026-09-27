@@ -181,6 +181,13 @@ class PlnSemanticAnalyzer {
 	// normalizeStructSig -- a struct parameter is still prim(Name) before
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
+	json  normalizeArrBorrowType(const json& locNode, const json& type);
+	json  arrBorrowLevel(const json& locNode, const json& arr, bool isMutable);
+	int64_t borrowSize(const json& locNode, const json& sizeExprAst);
+	void  normalizeArrBorrowSig(json& funcDef);
+	bool  onlyNamesConsts(const json& expr) const;
+	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
+	                            const json& dstType);
 	void  registerTypeAliasChecked(const string& aliasName, const json& resolved);
 	void  registerTypedefAliasInType(json& vtype);
 	void  registerCFuncTypedefAliases(json& funcEntry);

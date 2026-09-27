@@ -1179,6 +1179,41 @@ func sum_arr([]int32 a, int64 n) -> int64 {
 
 Using `[]T` in a variable declaration is a compile error.
 
+### Borrowing Arrays
+
+`@[n]T` borrows an array read-only and `@![n]T` borrows it writable. Pass the array with
+`@arr` / `@!arr`: the callee asks for a borrow, so the caller writes one. Nothing is copied or
+freed; the array keeps its owner.
+
+```palan
+const H = 3;
+const W = 4;
+
+[H][W]int32 grid;
+fill(@!grid, 7);
+printf("%d\n", sum(@grid));
+
+func sum(@[H][W]int32 g) -> int32 {
+    return g[0][0] + g[H-1][W-1];
+}
+
+func fill(@![H][W]int32 g, int32 x) {
+    x -> g[0][0];
+    x -> g[H-1][W-1];
+}
+```
+
+- The forms are `@[n]T`, `@[n][m]T`, and `@[n]$[m]T`, each with the `@!` variant. `T` must be a
+  primitive type. Every size must be a constant: an integer literal or a `const`.
+- The array's shape must match exactly: the number of dimensions, contiguous (`$`) or not, and
+  every size. An array whose size is only known at run time cannot be borrowed as `@[n]T`.
+- Through `@`, no element can be written, including elements reached through a row
+  (`g[i][j]`). A `@` borrow cannot be passed where `@!` is expected.
+- A borrowed array can also be a local variable (`@[4]int64 p = @v;`). Inside the function, pass
+  a borrowed parameter on with `@g`.
+- `@!arr` also works where a C function takes a pointer to the elements (`memset(@!v, 0, 32)`).
+- A borrowed array cannot be a return type.
+
 ### Array of Pointer Slots (`[n]@![]T`)
 
 `[n]@![]T` declares an array of `n` writable pointer slots, each capable of holding a `[]T`
@@ -1596,8 +1631,8 @@ printf("%ld\n", MaxLen);   // 256
 
 - There is no name-collision check between a const and a variable — a variable declaration of the
   same name silently shadows a same-named const.
-- A const cannot be used at a point where a function signature is pre-registered, e.g. as an
-  array-size in a parameter type. It is only usable from ordinary statement processing onward.
+- Only a top-level const can size a borrowed array parameter (`@[N]T`); function signatures are
+  registered before any other statement is processed.
 
 ---
 
@@ -1721,15 +1756,16 @@ int64 x = 42;
 ### Restrictions
 
 `@`/`@!` produces a pointer to one storage slot: a primitive value, or a pointer to a primitive
-(pointer-to-pointer). A struct or array variable is never re-addressed this way, because it's
-already its own pointer to its storage — pass it by name instead (`random_r(st, ...)`, not
-`random_r(@!st, ...)`); `@!st` would build a meaningless `struct T **`.
+(pointer-to-pointer). A struct variable is never re-addressed this way, because it's already its
+own pointer to its storage — pass it by name instead (`random_r(st, ...)`, not
+`random_r(@!st, ...)`); `@!st` would build a meaningless `struct T **`. An array variable is the
+exception: `@arr`/`@!arr` borrows the array itself (see [Borrowing Arrays](#borrowing-arrays)).
 
-- Not usable on function parameters, or on a whole struct or array variable (`@s`, `@arr`) — see
-  above.
-- On a local variable, usable only when the variable is primitive-typed or itself a pointer to a
-  primitive (`@T`/`@!T`) — a struct-typed local, a pointer-to-struct local, or a plain array
-  variable (`[n]T`, itself a pointer, see above) are all rejected.
+- Not usable on function parameters (except a borrowed array parameter), or on a whole struct
+  variable (`@s`) — see above.
+- On a local variable, usable only when the variable is primitive-typed, itself a pointer to a
+  primitive (`@T`/`@!T`), or an array with primitive elements — a struct-typed local, a
+  pointer-to-struct local, or an array of structs are all rejected.
 - On a struct field reached from a local variable, usable only when the leaf field is
   primitive-typed or an embedded struct (`$T`) — a pointer-typed field (`@T`/`@!T`), an
   embedded-struct-array element (`[n]$T`), or an owned-pointer field are all rejected.
@@ -1737,13 +1773,6 @@ already its own pointer to its storage — pass it by name instead (`random_r(st
   only a primitive-typed array element.
 - Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
   variable, a field reached from one, or an array element reached from one.
-- A fixed-size array variable (`[n]T`) is, like a struct variable, already a pointer to its own
-  storage — but unlike a struct variable it *is* representable as a plain pointer-to-primitive
-  local, so `@!arr` compiles: it yields the address of the variable's own pointer slot, not a new
-  view into the array's elements. Since the array is freed automatically when its owning scope
-  exits, handing that slot to a C function that overwrites it (e.g. an out-param realloc-style
-  API) will make the automatic free operate on whatever the C call left behind — get this pattern
-  right or avoid it, the compiler does not check it.
 
 ---
 

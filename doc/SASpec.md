@@ -232,6 +232,23 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - The argument's `value-type` must also have `embedded:true` and `inner-size:k` where `k == m`.
   - Mismatch (or variable inner-size in the argument) is a compile error (`E_EmbeddedArrInnerSizeMismatch`).
 
+  **`arr-size`:** Every `pntr` level that stands for an array dimension carries `arr-size`
+  (its element count) when that size is a compile-time constant (a literal or a `const`). It is
+  absent for a size known only at run time. It is only used by SA for borrowed-array checks;
+  codegen ignores it.
+
+  **`@[n]T` / `@![n]T` (borrowed array):** In a parameter or a local variable declaration, a
+  `pntr` whose `base-type` is an `arr` is normalized to the array's own pntr chain, with
+  `arr-size` on every level and `mutable` (`false` for `@`, `true` for `@!`) on every level down
+  to the elements — `@[n][m]T` becomes `pntr(pntr(T, mutable, arr-size:m), mutable, arr-size:n)`,
+  `@[n]$[m]T` becomes `pntr(T, mutable, embedded:true, inner-size:m, arr-size:n)`. Every size must
+  be constant (`E_ArrBorrowSizeNotConst`) and `T` primitive (`E_ArrBorrowUnsupportedElem`). A
+  return type of this form stays rejected (`E_UnsupportedParamType`). At a call argument, a
+  local's initializer, or an assignment to such a destination, the source must be written as
+  `@x`/`@!x` (`E_ArrBorrowNeedsAddrOf`) and its value-type must match depth, `embedded`,
+  `inner-size`, and every `arr-size` (`E_ArrBorrowShapeMismatch`). A row read through an
+  embedded borrow inherits its `mutable`.
+
   Scope-exit cleanup:
   - At the end of each block/while/function body containing array var-decls, SA appends
     `free()` expression statements in reverse declaration order for that scope's arrays.
@@ -345,8 +362,12 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       var's type>}}`. `mutable` is `true` for `@!ID`, `false` for `@ID`. The named variable must be
       a local variable in the current scope (not a function parameter), and its own type must be
       `prim` or `pntr`-of-`prim` (a pointer-to-pointer result, matching C's `T **` out-param idiom)
-      — a `struct`/`arr` type, or a pointer whose base isn't itself `prim` (e.g. `pntr(struct)`),
-      is rejected (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive). A struct-typed local is already
+      — a `struct` type, or a pointer whose base isn't itself `prim` (e.g. `pntr(struct)`),
+      is rejected (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive). An array variable (an owned array,
+      or a variable of borrowed array type — including a parameter) is the exception: it is
+      already a pointer to its elements, so `@x`/`@!x` is emitted as a plain `id` whose
+      `value-type` is the variable's type with `mutable` set on every level. Its leaf element must be
+      `prim` (E_AddrOfNotPrimitive), and `@!x` needs a writable array (E_WriteThroughReadOnlyPtr). A struct-typed local is already
       SA-represented as `pntr(struct T)` (see the var-decl section below), so this same base-type
       check is what keeps `@!st` rejected — admitting it would build a meaningless `struct T **`.
     - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same

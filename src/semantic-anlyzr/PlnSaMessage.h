@@ -94,6 +94,10 @@ enum PlnSaMessageCode {
 	E_ArrLitDimMismatch,	// arg1: variable name
 	E_ArrLitElemType,	// arg1: variable name
 	E_ArrLitRowSizeMismatch,	// arg1: variable name, arg2: row size, arg3: the row's element count
+	E_ArrBorrowSizeNotConst,
+	E_ArrBorrowUnsupportedElem,
+	E_ArrBorrowNeedsAddrOf,
+	E_ArrBorrowShapeMismatch,	// arg1: expected shape, arg2: actual shape
 };
 
 class PlnSaMessage

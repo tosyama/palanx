@@ -159,6 +159,22 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 			exit(1);
 		}
+		// An array variable is already a pointer to its elements, so '@' borrows
+		// it as it is rather than taking the address of the variable's slot.
+		if (isInArrayScope(name) || varType->contains("arr-size")) {
+			if (!arrLeafIsPrim(*varType)) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
+				exit(1);
+			}
+			if (isMutable && !isWritableThrough(*varType)) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+				exit(1);
+			}
+			json out = {{"expr-type","id"},{"name",name},{"var-type",*varType},
+			            {"value-type",withArrPermission(*varType, isMutable)}};
+			if (expr.contains("loc")) out["loc"] = expr["loc"];
+			return out;
+		}
 		if (!isLocalVar(name)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
 			exit(1);
@@ -693,7 +709,9 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		if (saArg.contains("value-type")) {
 			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 			if (paramVT) {
-				if (paramVT->value("embedded", false)) {
+				if (paramVT->contains("arr-size")) {
+					checkArrBorrowBinding(locNode, arg, saArg, *paramVT);
+				} else if (paramVT->value("embedded", false)) {
 					const json& argVT = saArg["value-type"];
 					bool argEmbedded = argVT.value("embedded", false);
 					bool paramHasSize = paramVT->contains("inner-size");
@@ -871,6 +889,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
 		// elem-size = stride = inner-size * sizeof(T)  (or __name_d1 * sizeof(T) if variable)
 		int elem_sz = elemSizeBytes(elem_type.value("type-name",""));
 		json row_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
+		if (array_type.contains("mutable")) row_pntr["mutable"] = array_type["mutable"];
 		json elem_size_node;
 
 		if (array_type.contains("inner-size")) {

@@ -379,6 +379,73 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 	}
 }
 
+int64_t PlnSemanticAnalyzer::borrowSize(const json& locNode, const json& sizeExprAst)
+{
+	int64_t n = sizeExprAst.is_null() ? -1 : constArrSize(sa_arr_size_expr(locNode, sizeExprAst));
+	if (n < 0) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowSizeNotConst) << endl;
+		exit(1);
+	}
+	return n;
+}
+
+json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, bool isMutable)
+{
+	json out = {{"type-kind","pntr"},{"mutable",isMutable},{"arr-size",borrowSize(locNode, arr["size-expr"])}};
+	json leaf = arr["base-type"];
+	if (arr.value("embedded", false)) {
+		if (leaf.value("type-kind","") != "arr") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
+			exit(1);
+		}
+		out["embedded"]   = true;
+		out["inner-size"] = borrowSize(locNode, leaf["size-expr"]);
+		leaf = json(leaf["base-type"]);
+	} else if (leaf.value("type-kind","") == "arr") {
+		out["base-type"] = arrBorrowLevel(locNode, leaf, isMutable);
+		return out;
+	}
+	leaf = resolveTypeAlias(leaf);
+	string tname = leaf.value("type-name","");
+	if (leaf.value("type-kind","") != "prim" || structDefs_.count(tname) || !isKnownTypeName(tname)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
+		exit(1);
+	}
+	out["base-type"] = leaf;
+	return out;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json& type)
+{
+	if (type.value("type-kind","") != "pntr" || type["base-type"].value("type-kind","") != "arr")
+		return type;
+	return arrBorrowLevel(locNode, type["base-type"], type.value("mutable", false));
+}
+
+// Parameters only: a borrowed array return would outlive the storage it
+// borrows, so it stays rejected by validateNativeSig.
+void PlnSemanticAnalyzer::normalizeArrBorrowSig(json& funcDef)
+{
+	if (!funcDef.contains("parameters")) return;
+	for (auto& p : funcDef["parameters"])
+		if (p.contains("var-type"))
+			p["var-type"] = normalizeArrBorrowType(funcDef, p["var-type"]);
+}
+
+void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json& srcAst,
+		const json& saValue, const json& dstType)
+{
+	if (srcAst.value("expr-type","") != "addr-of") {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowNeedsAddrOf) << endl;
+		exit(1);
+	}
+	if (!arrShapeMatch(saValue["value-type"], dstType)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowShapeMismatch,
+			arrShapeName(dstType), arrShapeName(saValue["value-type"])) << endl;
+		exit(1);
+	}
+}
+
 // Diagnoses a "syscall" declaration against the Linux syscall ABI (<=6
 // GP-register args, no float, single raw-rax return) and folds its number
 // into a plain integer. The number must be a literal, not a symbolic
@@ -456,6 +523,7 @@ void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
 {
 	json funcEntry = f;
 	normalizeUnsizedArrSig(funcEntry);
+	normalizeArrBorrowSig(funcEntry);
 	validateEmbeddedParams(funcEntry);
 	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
@@ -464,6 +532,22 @@ void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
 	registerPlnFunc(funcEntry["name"], funcEntry, loc_node);
+}
+
+// A const whose value names a variable can only be diagnosed once variables
+// are declared, so the pre-scan leaves it to step 2.
+bool PlnSemanticAnalyzer::onlyNamesConsts(const json& expr) const
+{
+	if (expr.is_object()) {
+		if (expr.value("expr-type","") == "id" && !constDecls_.count(expr.value("name","")))
+			return false;
+		for (auto& [k, v] : expr.items())
+			if (!onlyNamesConsts(v)) return false;
+	} else if (expr.is_array()) {
+		for (auto& v : expr)
+			if (!onlyNamesConsts(v)) return false;
+	}
+	return true;
 }
 
 void PlnSemanticAnalyzer::analysis(const json &ast)
@@ -478,14 +562,16 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 0. Pre-scan type-alias/struct-def declarations so function signatures
 	//    pre-registered in step 1 see fully-resolved types, not alias names.
 	//    Top-level cinclude types join the scan in source order, since native
-	//    struct fields and signatures can name them; step 2 registering them
-	//    again is a no-op.
+	//    struct fields and signatures can name them; consts join it so a
+	//    borrowed array parameter can size itself with one. Step 2
+	//    registering them again is a no-op.
 	if (ast["ast"].contains("statements"))
 		for (auto& stmt : ast["ast"]["statements"]) {
 			string t = stmt.value("stmt-type", "");
 			if      (t == "type-alias") sa_type_alias(stmt);
 			else if (t == "struct-def") sa_struct_def(stmt);
 			else if (t == "cinclude")   registerCIncludeTypes(stmt);
+			else if (t == "const-decl" && onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
 		}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))

@@ -274,6 +274,66 @@ inline json unsizedArrToPntr(const json& type) {
 	return type;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// Element count of an SA-evaluated array size, or -1 when it is not a
+// compile-time literal. sa_arr_size_expr may wrap a literal in a uint64 convert.
+inline int64_t constArrSize(const json& sz) {
+	const json* e = &sz;
+	if (e->value("expr-type","") == "convert") e = &(*e)["src"];
+	string et = e->value("expr-type","");
+	if (et != "lit-int" && et != "lit-uint") return -1;
+	return stoll((*e)["value"].get<string>());
+}
+
+inline void setArrSize(json& pntrType, const json& saSize) {
+	int64_t n = constArrSize(saSize);
+	if (n >= 0) pntrType["arr-size"] = n;
+}
+
+// Renders an array pntr chain as source-like shape text ("[20][10]int32",
+// "[3]$[?]int32") for diagnostics; an unknown size shows as "?".
+inline string arrShapeName(const json& t) {
+	string out;
+	const json* cur = &t;
+	while (cur->value("type-kind","") == "pntr") {
+		out += "[" + (cur->contains("arr-size") ? to_string((*cur)["arr-size"].get<int64_t>()) : string("?")) + "]";
+		if (cur->value("embedded", false))
+			out += "$[" + (cur->contains("inner-size") ? to_string((*cur)["inner-size"].get<int64_t>()) : string("?")) + "]";
+		cur = &(*cur)["base-type"];
+	}
+	return out + cur->value("type-name", "");
+}
+
+// Shape equality for binding an array to a borrowed array type: same depth,
+// same embedded layout, and every size known and equal. The element type is
+// left to the usual type compatibility check.
+inline bool arrShapeMatch(const json& from, const json& to) {
+	bool fp = from.value("type-kind","") == "pntr", tp = to.value("type-kind","") == "pntr";
+	if (!fp || !tp) return fp == tp;
+	auto sameKey = [&](const char* k) {
+		return from.contains(k) == to.contains(k) && (!to.contains(k) || from[k] == to[k]);
+	};
+	return from.contains("arr-size") && sameKey("arr-size")
+	    && from.value("embedded", false) == to.value("embedded", false) && sameKey("inner-size")
+	    && arrShapeMatch(from["base-type"], to["base-type"]);
+}
+
+inline bool arrLeafIsPrim(const json& t) {
+	const json* cur = &t;
+	while (cur->value("type-kind","") == "pntr") cur = &(*cur)["base-type"];
+	return cur->value("type-kind","") == "prim";
+}
+
+// An array is borrowed with one permission for every level down to its
+// elements, so a read-only 2D borrow also makes its rows read-only.
+inline json withArrPermission(json t, bool isMutable) {
+	json* cur = &t;
+	while (cur->value("type-kind","") == "pntr") {
+		(*cur)["mutable"] = isMutable;
+		cur = &(*cur)["base-type"];
+	}
+	return t;
+}
+
 inline void normalizeUnsizedArrSig(json& funcDef) {
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])

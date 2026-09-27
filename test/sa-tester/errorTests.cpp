@@ -2424,3 +2424,33 @@ TEST(sa_error, bool_conversion)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, arr_borrow)
+{
+	const pair<string, string> cases[] = {
+		{"error_231_arr_borrow_write_ro.pa", ":1:26: error: cannot write through read-only pointer"},
+		{"error_232_arr_borrow_write_ro_embed.pa", ":1:27: error: cannot write through read-only pointer"},
+		{"error_233_arr_borrow_ro_to_mut.pa", ":2:1: error: cannot bind a read-only pointer"},
+		{"error_234_arr_borrow_no_addr_of.pa", ":2:1: error: a borrowed array ('@[n]T'/'@![n]T') must be given as"},
+		{"error_235_arr_borrow_size_mismatch.pa", "array shape '[3][4]int32' does not match the borrowed array type '[3][5]int32'."},
+		{"error_236_arr_borrow_runtime_size.pa", "array shape '[?]int32' does not match the borrowed array type '[2]int32'."},
+		{"error_237_arr_borrow_embed_mismatch.pa", "array shape '[2]$[3]int32' does not match the borrowed array type '[2][3]int32'."},
+		{"error_238_arr_borrow_size_not_const.pa", ":2:1: error: every size in a borrowed array type"},
+		{"error_239_addr_of_struct_arr.pa", "cannot take the address of 'a'"},
+		{"error_240_arr_borrow_struct_elem.pa", "supports only primitive element types"},
+		{"error_241_arr_borrow_mut_of_ro.pa", "cannot write through read-only pointer"},
+		{"error_242_arr_borrow_local_no_addr_of.pa", ":2:1: error: a borrowed array ('@[n]T'/'@![n]T') must be given as"},
+		{"error_243_arr_borrow_assign_mismatch.pa", ":4:1: error: array shape '[3]int32' does not match"},
+		{"error_244_arr_borrow_unsized.pa", "every size in a borrowed array type"},
+		{"error_245_arr_borrow_return.pa", "cannot represent: 'array'"},
+		{"error_246_arr_borrow_embed_struct.pa", "supports only primitive element types"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

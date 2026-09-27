@@ -1898,6 +1898,12 @@ TEST(build_mgr, var_init_copy) {
 	ASSERT_EQ(output, "3 2 1.5 2.5 10 20 6\n");
 }
 
+TEST(build_mgr, arr_borrow) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/219_arr_borrow.pa");
+	ASSERT_EQ(output, "161\n7 8\n5 6\n8\n1 9\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

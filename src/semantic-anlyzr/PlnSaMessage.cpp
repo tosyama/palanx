@@ -387,6 +387,20 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg3 != "\x01");
 			return "array variable '" + arg1 + "' has rows of size " + arg2 + " but a row of its array literal has " + arg3 + " elements.";
 
+		case E_ArrBorrowSizeNotConst:
+			return "every size in a borrowed array type ('@[n]T'/'@![n]T') must be a compile-time constant.";
+
+		case E_ArrBorrowUnsupportedElem:
+			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive element types in this version.";
+
+		case E_ArrBorrowNeedsAddrOf:
+			return "a borrowed array ('@[n]T'/'@![n]T') must be given as '@name' or '@!name'.";
+
+		case E_ArrBorrowShapeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "array shape '" + arg2 + "' does not match the borrowed array type '" + arg1 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

@@ -4403,3 +4403,28 @@ TEST(sa, bool_type)
 	ASSERT_EQ(pa[1]["value-type"]["type-name"], "int32");
 	ASSERT_EQ(pa[2]["value-type"]["type-name"], "int32");
 }
+
+TEST(sa, arr_borrow)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/201_arr_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// '@!a' borrows the array pointer itself: an id, not an address of its slot.
+	const json* call = nullptr;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr") call = &st["body"];
+	ASSERT_NE(call, nullptr);
+	const auto& arg = (*call)["args"][0];
+	ASSERT_EQ(arg["expr-type"], "id");
+	ASSERT_EQ(arg["value-type"]["mutable"], true);
+	ASSERT_EQ(arg["value-type"]["arr-size"], 2);
+	ASSERT_EQ(arg["value-type"]["base-type"]["mutable"], true);
+	ASSERT_EQ(arg["value-type"]["base-type"]["arr-size"], 3);
+
+	const auto& pt = jout["functions"][0]["parameters"][0]["var-type"];
+	ASSERT_EQ(pt["type-kind"], "pntr");
+	ASSERT_EQ(pt["arr-size"], 2);
+	ASSERT_EQ(pt["base-type"]["arr-size"], 3);
+	ASSERT_EQ(pt["base-type"]["base-type"]["type-name"], "int32");
+}
