@@ -1407,6 +1407,39 @@ TEST(c2ast, void_param_list) {
     ASSERT_FALSE(ast["ast"].contains("typedefs"));
 }
 
+TEST(c2ast, bool_keyword) {
+    // stdbool.h's `bool` is a macro for `_Bool`, so both spellings reach the same keyword.
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/039_bool.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    json prim_bool = {{"type-kind", "prim"}, {"type-name", "bool"}};
+    json const_bool = {{"type-kind", "prim"}, {"type-name", "bool"}, {"const", true}};
+
+    json* f = find_func("f");
+    ASSERT_NE(f, nullptr);
+    ASSERT_EQ((*f)["parameters"][0]["var-type"], prim_bool);
+
+    json* g = find_func("g");
+    ASSERT_NE(g, nullptr);
+    ASSERT_EQ((*g)["ret-type"], prim_bool);
+
+    json* h = find_func("h");
+    ASSERT_NE(h, nullptr);
+    ASSERT_EQ((*h)["ret-type"], prim_bool);
+    ASSERT_EQ((*h)["parameters"][0]["var-type"], const_bool);
+
+    auto& structs = ast["ast"]["structs"];
+    ASSERT_EQ(structs.size(), 1);
+    ASSERT_EQ(structs[0]["fields"][0]["var-type"], prim_bool);
+}
+
 // --- Input file edge cases ---
 
 TEST(c2ast, empty_header) {

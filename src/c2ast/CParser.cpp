@@ -532,6 +532,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	}
 
 	if (CONSUME_KW(TK_VOID)) { set_prim("void"); result_index = index; return true; }
+	if (CONSUME_KW(TK_BOOL)) { set_prim("bool"); result_index = index; return true; }
 
 	return false;
 }

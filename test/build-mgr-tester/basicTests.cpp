@@ -1635,6 +1635,14 @@ TEST(build_mgr, c_narrow_arg)
 	ASSERT_EQ(output, "-5 200 -300 60000 7 -6 250 -30000\n");
 }
 
+TEST(build_mgr, c_bool)
+{
+	// libc functions redeclared with _Bool check the C ABI without needing ncurses.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/216_c_bool.pa");
+	ASSERT_EQ(output, "1 1 0\n1 0\ncond\n");
+}
+
 TEST(build_mgr, c_union_rw)
 {
 	// Both members of a cinclude'd union alias the same bytes: a write through
