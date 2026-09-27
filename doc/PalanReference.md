@@ -443,7 +443,7 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   ```palan
   cinclude <sys/stat.h>;
   stat st;
-  stat("/etc", st);
+  stat("/etc", @!st);
   if (S_ISDIR(st.st_mode)) { ... }   // error: Undefined function 'S_ISDIR'
   ```
 
@@ -535,8 +535,9 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   printf("%d\n", int32(p.tm_year) + 1900);    // 1970
   ```
 
-  A struct passed *into* a C call follows the same convention as a native struct-typed function
-  parameter: it is passed by pointer, borrowed by the callee, and not freed by it (see
+  A struct passed *into* a C call's struct pointer parameter is borrowed the same way as for a
+  native `@T`/`@!T` parameter: write `@s` for a `const` pointer parameter and `@!s` otherwise
+  (`mktime(@!t)`, `asctime(@t)`; see
   [Struct types in function signatures](#struct-types-in-function-signatures)).
 
 ### Structs Returned By Value
@@ -1388,11 +1389,11 @@ printf("%ld\n", pts2[0].x);  // 5
 Point p;
 99 -> p.x;
 [4]@Point rpts;    // read-only slots
-p -> rpts[0];
+@p -> rpts[0];
 printf("%ld\n", rpts[0].x);   // 99
 
 [4]@!Point wpts;   // writable slots
-p -> wpts[0];
+@!p -> wpts[0];
 42 -> wpts[0].x;
 printf("%ld\n", p.x);         // 42 (write-through via pointer)
 ```
@@ -1457,7 +1458,7 @@ type Point { int64 x; int64 y; };
 Point original;
 5 -> original.x;  10 -> original.y;
 
-@!Point view = original;   // non-owning alias — view and original share the same storage
+@!Point view = @!original;   // non-owning alias — view and original share the same storage
 20 -> view.x;               // write-through
 printf("%ld %ld\n", original.x, original.y);   // 20 10
 ```
@@ -1533,7 +1534,7 @@ type Node { int64 val; @Node next; };
 
 Node n1;  Node n2;
 42 -> n1.val;  100 -> n2.val;
-n2 -> n1.next;                          // set pointer value: OK
+@n2 -> n1.next;                         // set pointer value: OK
 printf("%ld %ld\n", n1.val, n1.next.val);   // 42 100
 ```
 
@@ -1543,7 +1544,7 @@ printf("%ld %ld\n", n1.val, n1.next.val);   // 42 100
 type Node { int64 val; @!Node next; };
 
 Node n1;  Node n2;
-n2 -> n1.next;
+@!n2 -> n1.next;
 42 -> n1.next.val;                      // write through mutable pointer: OK
 printf("%ld\n", n2.val);               // 42
 ```
@@ -1557,6 +1558,23 @@ func getX(Point p) -> int64 x {
     p.x -> x;
 }
 ```
+
+A `@T`/`@!T` parameter borrows a struct, and the caller writes `@s` (read-only) or `@!s`
+(mutable), as with a [borrowed array](#borrowing-arrays):
+
+```palan
+func moveX(@!Point p, int64 dx) {
+    p.x + dx -> p.x;
+}
+
+Point pt;
+moveX(@!pt, 3);
+```
+
+A struct given by name where a `@T`/`@!T` is expected — a parameter, a variable's initializer, an
+assignment, or a pointer field or slot — is a compile error. `@`/`@!` works on a struct variable
+(including a struct-type parameter), an owned (`T`) or embedded (`$T`) struct field, and a struct
+array element (`@!pts[1]`). A `@T`/`@!T` pointer itself is already a borrow and is passed by name.
 
 A named return of struct type transfers ownership to the caller:
 
@@ -1683,7 +1701,7 @@ int64 x = 42;
   cinclude <sys/stat.h>;
 
   stat st;
-  stat("/", st);
+  stat("/", @!st);
   @!timespec atim = @!st.st_atim;   // pointer to the embedded timespec field
   printf("%ld\n", atim.tv_sec);
   ```
@@ -1758,21 +1776,20 @@ int64 x = 42;
 ### Restrictions
 
 `@`/`@!` produces a pointer to one storage slot: a primitive value, or a pointer to a primitive
-(pointer-to-pointer). A struct variable is never re-addressed this way, because it's already its
-own pointer to its storage — pass it by name instead (`random_r(st, ...)`, not
-`random_r(@!st, ...)`); `@!st` would build a meaningless `struct T **`. An array variable is the
-exception: `@arr`/`@!arr` borrows the array itself (see [Borrowing Arrays](#borrowing-arrays)).
+(pointer-to-pointer). A struct or array variable is the exception: it is already its own pointer
+to its storage, so `@s`/`@!s` and `@arr`/`@!arr` borrow it as it is (see
+[Struct types in function signatures](#struct-types-in-function-signatures) and
+[Borrowing Arrays](#borrowing-arrays)).
 
-- Not usable on function parameters (except a borrowed array parameter), or on a whole struct
-  variable (`@s`) — see above.
+- Not usable on function parameters, except a struct-type parameter or a borrowed array parameter.
 - On a local variable, usable only when the variable is primitive-typed, itself a pointer to a
-  primitive (`@T`/`@!T`), or an array with primitive elements — a struct-typed local, a
-  pointer-to-struct local, or an array of structs are all rejected.
+  primitive (`@T`/`@!T`), a struct, or an array with primitive elements — a pointer-to-struct
+  local (pass it by name) or an array of structs are rejected.
 - On a struct field reached from a local variable, usable only when the leaf field is
-  primitive-typed or an embedded struct (`$T`) — a pointer-typed field (`@T`/`@!T`), an
-  embedded-struct-array element (`[n]$T`), or an owned-pointer field are all rejected.
+  primitive-typed, an embedded struct (`$T`), or an owned struct (`T`) — a pointer-typed field
+  (`@T`/`@!T`) or an array field is rejected.
 - Not usable on a 2D array row (`@mat[i]`) or a pointer-slot array element (`[n]@T`/`[n]@!T`) —
-  only a primitive-typed array element.
+  only a primitive-typed or struct array element.
 - Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
   variable, a field reached from one, or an array element reached from one.
 

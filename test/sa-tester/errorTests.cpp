@@ -839,14 +839,15 @@ TEST(sa_error, addr_of_on_param)
 	ASSERT_NE(sa.find("address-of requires a local variable"), string::npos);
 }
 
-TEST(sa_error, addr_of_on_struct)
+TEST(sa_error, addr_of_struct_ptr_var)
 {
-	// `@p;` where p is a struct-typed local variable
+	// `@v;` where v is a `@!Point` local -- a struct pointer is passed by name,
+	// and '@' on it would build a `struct T **`.
 	// Covers: sa_expression addr-of E_AddrOfNotPrimitive branch
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_092_addr_of_on_struct.pa -o " + ast_out), "");
+		"bin/palan-gen-ast ../test/testdata/sa/error_092_addr_of_struct_ptr_var.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot take the address of"), string::npos);
@@ -896,15 +897,15 @@ TEST(sa_error, addr_of_field_immutable_ptr_hop)
 	ASSERT_NE(sa.find("cannot write through read-only pointer field '@T'"), string::npos);
 }
 
-TEST(sa_error, addr_of_embed_field)
+TEST(sa_error, addr_of_ptr_field)
 {
-	// `@s.in;` where `in` is a struct-typed field (non-primitive leaf) --
-	// address-of on a struct field is limited to primitive-typed fields.
-	// Covers: sa_expr_addr_of field-access branch -> leaf typeKind != "prim" -> E_AddrOfNotPrimitive
+	// `@s.in;` where `in` is a `@Inner` pointer field -- it is passed by name,
+	// like a pointer variable.
+	// Covers: sa_expr_addr_of field-access branch -> raw-ptr leaf -> E_AddrOfNotPrimitive
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_107_addr_of_embed_field.pa -o " + ast_out), "");
+		"bin/palan-gen-ast ../test/testdata/sa/error_107_addr_of_ptr_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot take the address of"), string::npos);
@@ -2445,6 +2446,25 @@ TEST(sa_error, arr_borrow)
 		{"error_244_arr_borrow_unsized.pa", "every size in a borrowed array type"},
 		{"error_245_arr_borrow_return.pa", "cannot represent: 'array'"},
 		{"error_246_arr_borrow_embed_struct.pa", "supports only primitive element types"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, struct_borrow)
+{
+	const pair<string, string> cases[] = {
+		{"error_248_struct_borrow_no_addr_of.pa", ":4:1: error: a struct given to a '@T'/'@!T' pointer must be written as"},
+		{"error_249_struct_borrow_c_no_addr_of.pa", ":4:1: error: a struct given to a '@T'/'@!T' pointer must be written as"},
+		{"error_250_struct_borrow_init_no_addr_of.pa", ":3:1: error: a struct given to a '@T'/'@!T' pointer must be written as"},
+		{"error_251_struct_borrow_ro_to_mut.pa", ":4:1: error: cannot bind a read-only pointer"},
+		{"error_252_struct_borrow_owned_field_ro.pa", ":3:27: error: cannot write through read-only pointer"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

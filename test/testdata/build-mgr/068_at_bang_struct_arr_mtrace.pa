@@ -6,7 +6,7 @@ Point p;
 mtrace();
 {
     [4]@!Point wpts;
-    p -> wpts[0];
+    @!p -> wpts[0];
     42 -> wpts[0].x;
     printf("%ld\n", p.x);
 }

@@ -362,28 +362,31 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       var's type>}}`. `mutable` is `true` for `@!ID`, `false` for `@ID`. The named variable must be
       a local variable in the current scope (not a function parameter), and its own type must be
       `prim` or `pntr`-of-`prim` (a pointer-to-pointer result, matching C's `T **` out-param idiom)
-      — a `struct` type, or a pointer whose base isn't itself `prim` (e.g. `pntr(struct)`),
-      is rejected (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive). An array variable (an owned array,
+      — a pointer whose base isn't itself `prim` (e.g. a `@T` struct pointer) is rejected
+      (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive). A struct variable (a `pntr(struct T)` with no
+      `mutable` key: a struct local, named return, or struct-type parameter) is emitted as a plain
+      `id` whose `value-type` is the variable's type with `mutable` added — the struct's own
+      pointer, not the address of the variable's slot. An array variable (an owned array,
       or a variable of borrowed array type — including a parameter) is the exception: it is
       already a pointer to its elements, so `@x`/`@!x` is emitted as a plain `id` whose
       `value-type` is the variable's type with `mutable` set on every level. Its leaf element must be
-      `prim` (E_AddrOfNotPrimitive), and `@!x` needs a writable array (E_WriteThroughReadOnlyPtr). A struct-typed local is already
-      SA-represented as `pntr(struct T)` (see the var-decl section below), so this same base-type
-      check is what keeps `@!st` rejected — admitting it would build a meaningless `struct T **`.
+      `prim` (E_AddrOfNotPrimitive), and `@!x` needs a writable array (E_WriteThroughReadOnlyPtr).
     - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
       `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
       field-access section below), then re-emitted as `{"expr-type":"field-access","var"|
       "ptr-expr":…,"offset":<int>,"value-type":<pntr type>,"addr-only":true}` —
       `addr-only:true` tells codegen to compute the field's address (`CalcAddr`) instead of loading
-      it. The leaf field must be primitive-typed or an embedded struct (`$T`) — a pointer-typed
-      (`raw-ptr`/`struct-ptr`), embedded-array, or owned-array field is rejected
+      it. The leaf field must be primitive-typed, an embedded struct (`$T`), or an owned struct
+      (`struct-ptr`) — a `raw-ptr`, embedded-array, or owned-array field is rejected
       (E_AddrOfNotPrimitive) — and must exist on the resolved struct (E_UnknownField otherwise). A
       primitive leaf's `value-type` is `{"type-kind":"pntr","mutable":<bool>,"base-type":<field's
       prim type>}`, same as the `id` case. An embed leaf's own value-type
       (`fieldValueType`) is already `pntr(struct T)` — the field IS the inner struct's storage, the
       same shape a struct-typed local variable has — so its `value-type` here is that same
       `pntr(struct T)` (with `mutable` set to the requested `@`/`@!`), not a further `pntr(...)`
-      wrap; wrapping it again would build a pointless `pntr(pntr(struct T))`. Because `@!` requests
+      wrap; wrapping it again would build a pointless `pntr(pntr(struct T))`. An owned struct
+      leaf holds the pointer to its struct, so it is emitted with `addr-only:false` (a load of that
+      pointer) and the field's `pntr(struct T)` value-type plus `mutable`. Because `@!` requests
       a *mutable* pointer, resolution runs with the same write-permission checks a store-location
       chain would (`resolveObjectChain(obj, forWrite=<mutable>)`): a read-only `@T`-typed base
       variable (E_WriteThroughReadOnlyPtr) or an intermediate read-only raw-ptr field hop
@@ -394,8 +397,10 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       the resulting node is reused as-is with `addr-only` forced to `true` and `value-type`
       rewrapped as `{"type-kind":"pntr","mutable":<bool>,"base-type":<original element
       value-type>}` — the node keeps its `expr-type:"arr-index"`, `array`, `index`, `elem-size`,
-      and `loc` keys unchanged (unlike the field-access shape above, no new node is built). Two
-      checks gate this: the resolved element must not already be `addr-only:true` (a struct-array
+      and `loc` keys unchanged (unlike the field-access shape above, no new node is built). A
+      struct element (value-type `pntr(struct T)` with no `mutable` key, from `[n]T` or `[n]$T`) is
+      already a pointer to its storage, so only `mutable` is added to its value-type and
+      `addr-only` keeps its value. For any other element, two checks gate this: the resolved element must not already be `addr-only:true` (a struct-array
       element, a 2D row, or a contiguous-embedded element are all already addresses) and its
       `value-type.type-kind` must be `"prim"` (a pointer-slot element is not) — either failure is
       E_AddrOfNotPrimitiveElem. When `mutable` is requested, `isWritableThrough` is additionally
@@ -417,7 +422,17 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     - Any other operand shape (a call result, a parenthesized tuple, …) is a compile error
       (E_AddrOfNotAddressable) — address-of is not general in this version.
     `mutable` is always present on the resulting `value-type` regardless of which shape was
-    emitted. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
+    emitted.
+
+    **Struct borrow binding:** a `pntr(struct T)` value-type without a `mutable` key is a struct's
+    own storage; one with the key is a borrow (`@T`/`@!T`, a C pointer whose `const` was folded by
+    cinclude normalization, or a `@x`/`@!x` result). Binding struct storage to a borrow
+    destination — a call argument (Palan or C), a local's initializer, an assignment, a field
+    store, an array-slot store, or a return — is a compile error (E_StructBorrowNeedsAddrOf); the
+    source must be written `@x`/`@!x`. Two sources are exempt: a call result (`category:
+    "expiring"`), which has no name to write `@` on, and a `->>` ownership transfer into a
+    pointer slot. The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
+    `mutable` as `true`. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
     an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules
     below for how mutability is enforced separately from type compatibility.
   - call: present when the function has a return type (ret-type in its definition).

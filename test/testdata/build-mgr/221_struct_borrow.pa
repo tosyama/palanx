@@ -1,0 +1,25 @@
+cinclude <stdio.h>;
+cinclude <time.h>;
+type In { int64 v; };
+type P { int64 x; $In e; In o; @!In r; };
+func setv(@!In q, int64 n) { n -> q.v; }
+func getv(@In q) -> int64 n { q.v -> n; }
+func setx(@!P q) { 5 -> q.x; }
+func fwd(P p) { setv(@!p.o, 7); }
+
+P s;
+[3]In a;
+[3]$In b;
+setx(@!s);
+fwd(s);
+@!P v = @!s;
+setv(@!v.e, 1);
+setv(@!a[1], 2);
+setv(@!b[2], 3);
+@!a[1] -> s.r;
+printf("%ld %ld %ld %ld %ld %ld\n", s.x, getv(@s.e), getv(@s.o), getv(@a[1]), getv(@b[2]), s.r.v);
+
+time_t t = int64(86400);
+tm m;
+gmtime_r(@t, @!m);
+printf("%d\n", m.tm_mday);

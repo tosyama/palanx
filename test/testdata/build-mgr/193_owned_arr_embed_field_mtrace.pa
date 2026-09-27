@@ -13,10 +13,10 @@ mtrace();
     [2]itimerspec its;
     6 -> its[1].it_value.tv_sec;
     [2]pthread_mutex_t ms;
-    pthread_mutex_init(ms[1], NULL);
-    pthread_mutex_lock(ms[1]);
-    pthread_mutex_unlock(ms[1]);
-    pthread_mutex_destroy(ms[1]);
+    pthread_mutex_init(@!ms[1], NULL);
+    pthread_mutex_lock(@!ms[1]);
+    pthread_mutex_unlock(@!ms[1]);
+    pthread_mutex_destroy(@!ms[1]);
     printf("%ld %ld %ld %ld\n", ls[1].a.y, ls[1].z, ls[1].o.x, its[1].it_value.tv_sec);
 }
 muntrace();

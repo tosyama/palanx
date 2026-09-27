@@ -11,6 +11,6 @@ mtrace();
     0 -> t.tm_min;
     0 -> t.tm_sec;
     0 -> t.tm_isdst;
-    asctime(t);
+    asctime(@t);
 }
 muntrace();

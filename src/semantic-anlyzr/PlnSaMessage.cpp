@@ -194,8 +194,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_AddrOfNotPrimitive:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot take the address of '" + arg1 + "': '@'/'@!' only supports a primitive-typed "
-			       "local variable, a primitive-typed pointer local, a primitive-typed or embedded-struct "
-			       "field, or a primitive-typed array element of a struct/array it names.";
+			       "local variable, a primitive-typed pointer local, a struct or array variable, a "
+			       "primitive-typed, embedded-struct or owned-struct field, or a primitive-typed or struct "
+			       "array element of a struct/array it names.";
 
 		case E_WriteThroughReadOnlyPtr:
 			return "cannot write through read-only pointer '@T'; use '@!T' for mutable.";
@@ -219,8 +220,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_AddrOfNotPrimitiveElem:
 			return "cannot take the address of this array element: it is not a primitive-typed value "
-			       "(e.g. a struct-array element, a 2D row, or a pointer element) -- '@'/'@!' only "
-			       "supports a primitive-typed array element.";
+			       "(e.g. a 2D row, or a pointer element) -- '@'/'@!' only "
+			       "supports a primitive-typed or struct array element.";
 
 		case E_BitwiseOpNotInteger:
 			return "Bitwise operator operand must be an integer type.";
@@ -400,6 +401,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "array shape '" + arg2 + "' does not match the borrowed array type '" + arg1 + "'.";
+
+		case E_StructBorrowNeedsAddrOf:
+			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'.";
 
 		default:
 			BOOST_ASSERT(false);

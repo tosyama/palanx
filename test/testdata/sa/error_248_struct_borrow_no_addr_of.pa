@@ -1,0 +1,4 @@
+type In { int64 v; };
+func f(@!In q) { }
+In s;
+f(s);

@@ -1,0 +1,4 @@
+cinclude <time.h>;
+time_t t = int64(0);
+tm m;
+gmtime_r(@t, m);

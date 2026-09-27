@@ -159,8 +159,15 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 			exit(1);
 		}
-		// An array variable is already a pointer to its elements, so '@' borrows
-		// it as it is rather than taking the address of the variable's slot.
+		// A struct or array variable is already a pointer to its storage, so '@'
+		// borrows it as it is rather than taking the address of the variable's slot.
+		if (isStructStorage(*varType)) {
+			json vt = *varType;
+			vt["mutable"] = isMutable;
+			json out = {{"expr-type","id"},{"name",name},{"var-type",*varType},{"value-type",vt}};
+			if (expr.contains("loc")) out["loc"] = expr["loc"];
+			return out;
+		}
 		if (isInArrayScope(name) || varType->contains("arr-size")) {
 			if (!arrLeafIsPrim(*varType)) {
 				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
@@ -195,7 +202,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
 		string fn = obj["field"].get<string>();
 		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
-		if (fld.typeKind != "prim" && fld.typeKind != "embed") {
+		if (fld.typeKind != "prim" && fld.typeKind != "embed" && fld.typeKind != "struct-ptr") {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
 			exit(1);
 		}
@@ -203,28 +210,33 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		// pntr(struct T) -- the field IS the struct's storage, same as a
 		// struct-typed local variable -- so wrapping it again here would
 		// produce pntr(pntr(struct T)), a double indirection nothing needs.
+		// An owned struct field holds the pointer to its struct, so '@' loads
+		// that pointer rather than computing the field's address.
 		// A prim field's value-type is the bare prim, so it still needs the
 		// usual pntr(...) wrap to become "address of this prim slot".
-		json pntr_type = (fld.typeKind == "embed")
-			? fieldValueType(fld)
-			: json{{"type-kind","pntr"},{"base-type",fieldValueType(fld)}};
+		bool addrOnly = fld.typeKind != "struct-ptr";
+		json pntr_type = (fld.typeKind == "prim")
+			? json{{"type-kind","pntr"},{"base-type",fieldValueType(fld)}}
+			: fieldValueType(fld);
 		pntr_type["mutable"] = isMutable;
 		int off = chain.offset + fld.offset;
 		json out = chain.isPointerBased
-			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",true}}
-			: json{{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",pntr_type},{"addr-only",true}};
+			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",addrOnly}}
+			: json{{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",pntr_type},{"addr-only",addrOnly}};
 		if (expr.contains("loc")) out["loc"] = expr["loc"];
 		return out;
 	}
 
 	if (obj_type == "arr-index") {
 		json sa_idx = sa_expr_arr_index(obj);
-		// Reject an element that is already an address computation (embedded
-		// struct-array element, 2D row access, pointer-to-struct dereference)
-		// or a pointer-typed element (would double the indirection) -- '@'
-		// keeps a single meaning ("make a pointer to a storage slot"), so an
-		// element that is already a pointer/address is out of scope.
-		if (sa_idx.value("addr-only", false) || sa_idx["value-type"].value("type-kind","") != "prim") {
+		// A struct element is already a pointer to its storage, so '@' only
+		// marks it as a borrow. Any other element that is already an address
+		// computation (2D row access) or a pointer (pointer-slot element) is
+		// rejected -- '@' keeps a single meaning ("make a pointer to a storage
+		// slot"), and wrapping those would double the indirection.
+		bool isStructElem = isStructStorage(sa_idx["value-type"]);
+		if (!isStructElem && (sa_idx.value("addr-only", false)
+		                      || sa_idx["value-type"].value("type-kind","") != "prim")) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitiveElem) << endl;
 			exit(1);
 		}
@@ -232,9 +244,12 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
 			exit(1);
 		}
-		json pntr_type = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",sa_idx["value-type"]}};
-		sa_idx["addr-only"]  = true;
-		sa_idx["value-type"] = pntr_type;
+		if (isStructElem) {
+			sa_idx["value-type"]["mutable"] = isMutable;
+		} else {
+			sa_idx["addr-only"]  = true;
+			sa_idx["value-type"] = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",sa_idx["value-type"]}};
+		}
 		if (expr.contains("loc")) sa_idx["loc"] = expr["loc"];
 		return sa_idx;
 	}
@@ -626,6 +641,18 @@ void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& 
 	exit(1);
 }
 
+// A temporary (an owned struct returned by a call) has no name to write '@'
+// on, so it binds to a borrow as it is.
+void PlnSemanticAnalyzer::checkStructBorrowSource(const json& locNode, const json& saValue,
+		const json& dstType)
+{
+	if (!isStructBorrow(dstType) || !isStructStorage(saValue["value-type"])
+	    || saValue.value("category", "") == "expiring")
+		return;
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StructBorrowNeedsAddrOf) << endl;
+	exit(1);
+}
+
 void PlnSemanticAnalyzer::applyPlnCalleeSig(json& sa_expr, const json& pFunc)
 {
 	sa_expr["func-type"] = pFunc["func-type"];
@@ -738,6 +765,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 					}
 				}
 				saArg = convertCallArg(locNode, saArg, *paramVT);
+				checkStructBorrowSource(locNode, saArg, *paramVT);
 				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
 			} else if (isVariadic) {
 				const PlnType* promoted = variadicPromote(fromType, registry_);

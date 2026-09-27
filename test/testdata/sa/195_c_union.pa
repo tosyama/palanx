@@ -7,6 +7,6 @@ W w;
 2 -> s.u.l;
 3 -> w.p.y;
 int8 c = u.b[0];
-@U r = u;
-@!u_t m = u;
+@U r = @u;
+@!u_t m = @!u;
 take(m);

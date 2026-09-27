@@ -340,6 +340,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
 			if (isArrBorrow)
 				checkArrBorrowBinding(stmt2, var["init"], init, varType);
 			init = convertForBinding(stmt2, init, toType, varType);
+			checkStructBorrowSource(stmt2, init, varType);
 			if (!ptrPermissionOk(init["value-type"], varType)) {
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);

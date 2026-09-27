@@ -1911,6 +1911,12 @@ TEST(build_mgr, const_typed_context) {
 	ASSERT_EQ(output, "x 22 40 23 20.0 10.0\n");
 }
 
+TEST(build_mgr, struct_borrow) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/221_struct_borrow.pa");
+	ASSERT_EQ(output, "5 1 7 2 3 2\n2\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

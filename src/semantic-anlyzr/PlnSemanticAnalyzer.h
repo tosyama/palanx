@@ -189,6 +189,7 @@ class PlnSemanticAnalyzer {
 	bool  onlyNamesConsts(const json& expr) const;
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);
+	void  checkStructBorrowSource(const json& locNode, const json& saValue, const json& dstType);
 	void  registerTypeAliasChecked(const string& aliasName, const json& resolved);
 	void  registerTypedefAliasInType(json& vtype);
 	void  registerCFuncTypedefAliases(json& funcEntry);

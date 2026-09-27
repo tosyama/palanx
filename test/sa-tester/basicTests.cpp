@@ -4428,3 +4428,34 @@ TEST(sa, arr_borrow)
 	ASSERT_EQ(pt["base-type"]["arr-size"], 3);
 	ASSERT_EQ(pt["base-type"]["base-type"]["type-name"], "int32");
 }
+
+TEST(sa, struct_borrow)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/202_struct_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	vector<json> args;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr" && st["body"]["name"] == "getv")
+			args.push_back(st["body"]["args"][0]);
+	ASSERT_EQ(args.size(), 4u);
+
+	// '@s' borrows the struct pointer itself: an id, not an address of its slot.
+	ASSERT_EQ(args[0]["expr-type"], "id");
+	ASSERT_EQ(args[0]["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(args[0]["value-type"]["mutable"], false);
+	ASSERT_EQ(args[0]["value-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_FALSE(args[0]["var-type"].contains("mutable"));
+
+	// An owned struct field loads the pointer it holds.
+	ASSERT_EQ(args[1]["expr-type"], "field-access");
+	ASSERT_EQ(args[1]["addr-only"], false);
+	ASSERT_EQ(args[1]["value-type"]["mutable"], false);
+
+	ASSERT_EQ(args[2]["expr-type"], "arr-index");
+	ASSERT_EQ(args[2]["value-type"]["mutable"], false);
+
+	// A call result has no name to write '@' on and binds as it is.
+	ASSERT_EQ(args[3]["category"], "expiring");
+}

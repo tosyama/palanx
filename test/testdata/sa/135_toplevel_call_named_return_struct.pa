@@ -2,7 +2,7 @@ cinclude <stdio.h>;
 type Point { int64 x; int64 y; };
 
 func borrow(Point p) -> @!Point r {
-	p -> r;
+	@!p -> r;
 }
 
 Point original;

@@ -13,7 +13,7 @@ printf("%d %d\n", int32(p1.tm_mday), int32(p2.tm_mday));   // 2 2
 
 // gmtime_r: caller-owned buffer, unaffected by the static-buffer aliasing above
 tm tv;
-gmtime_r(@t, tv);
+gmtime_r(@t, @!tv);
 printf("%d\n", int32(tv.tm_year) + 1900);   // 1970
 
 // localtime/localtime_r: timezone-dependent -- loose sanity check only
@@ -22,5 +22,5 @@ time_t t3 = int64(0);
 printf("%d\n", int32(p3.tm_year) + 1900 >= 1900);
 
 tm tv2;
-localtime_r(@t3, tv2);
+localtime_r(@t3, @!tv2);
 printf("%d\n", int32(tv2.tm_year) + 1900 >= 1900);

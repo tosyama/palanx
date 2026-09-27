@@ -257,6 +257,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	if (varType->contains("arr-size") && !isInArrayScope(name))
 		checkArrBorrowBinding(stmt, stmt["value"], value, *varType);
 	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
+	checkStructBorrowSource(stmt, value, *varType);
 	if (!ptrPermissionOk(value["value-type"], *varType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -284,6 +285,9 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 		exit(1);
 	}
 	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
+	// '->>' hands the struct over rather than borrowing it.
+	if (!stmt.value("ownership-transfer", false))
+		checkStructBorrowSource(stmt, sa_value, sa_target["value-type"]);
 	if (!ptrPermissionOk(sa_value["value-type"], sa_target["value-type"])) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -336,6 +340,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		json value = sa_expression(stmt["values"][0], toType);
 		if (value.contains("value-type")) {
 			value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
+			checkStructBorrowSource(stmt, value, (*currentFunc_)["ret-type"]);
 			if (!ptrPermissionOk(value["value-type"], (*currentFunc_)["ret-type"])) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);
@@ -427,6 +432,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		exit(1);
 	}
 	value = convertForBinding(stmt, value, toType, fieldType);
+	checkStructBorrowSource(stmt, value, fieldType);
 	if (!ptrPermissionOk(value["value-type"], fieldType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);

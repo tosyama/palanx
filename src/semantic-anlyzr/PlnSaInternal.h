@@ -64,6 +64,18 @@ inline bool ptrPermissionOk(const json& from, const json& to)
 	return isWritableThrough(from) || !isWritableThrough(to);
 }
 
+// A pntr(struct) with no "mutable" key is a struct's own storage (a struct
+// variable, owned field or array element); one with the key is a borrow
+// ('@T'/'@!T', or a C pointer whose const was folded in by normalizeCType).
+// PlnTypeRegistry interns both alike, so test the raw JSON.
+inline bool isStructPntr(const json& vt)
+{
+	return vt.value("type-kind","") == "pntr" && vt.contains("base-type")
+	    && vt["base-type"].value("type-kind","") == "struct";
+}
+inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
+inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && vt.contains("mutable"); }
+
 // LCOV_EXCL_EXCEPTION_BR_START
 inline json fieldValueType(const FieldLayout& f)
 {

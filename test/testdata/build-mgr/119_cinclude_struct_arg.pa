@@ -9,5 +9,5 @@ tm t;
 0 -> t.tm_min;
 0 -> t.tm_sec;
 0 -> t.tm_isdst;
-int64 secs = mktime(t);
+int64 secs = mktime(@!t);
 printf("%ld\n", secs);

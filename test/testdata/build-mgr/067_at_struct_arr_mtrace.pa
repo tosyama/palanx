@@ -6,7 +6,7 @@ Point p;
 mtrace();
 {
     [4]@Point rpts;
-    p -> rpts[0];
+    @p -> rpts[0];
     printf("%ld\n", rpts[0].x);
 }
 muntrace();
