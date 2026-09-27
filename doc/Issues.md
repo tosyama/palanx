@@ -155,3 +155,9 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 23. Functions Cannot Reference Top-Level Variables
 
 **Summary:** A variable declared at the top level is a local of the generated `_start`, so a function body cannot see it (`Undefined variable`). Shared state such as a game board must be passed as arguments. Making top-level variables global needs a decision on storage (`.data`/`.bss` or heap), on initialization order, and on how an imported module's top-level variables relate to the entry file's, which is the same open question as #4.
+
+---
+
+## 24. gen-ast Parsing Time Grows Quadratically With Statement Count
+
+**Summary:** Bison's GLR C++ skeleton (`glr.cc`) copies each semantic value into its stack state on every shift and reduce. Statement lists (`stmt_list_e`, `stmt_list_b`, `block`) are `vector<json>` values that grow by one statement per reduction, so every added statement copies the whole list so far, even though the grammar actions `move` their operands. Parsing time is quadratic in the number of statements in one list: a function body of 250 simple statements takes about 2.8s and 2000 take about 178s, and the ~170-line ncurses Tetris spends about 3.2s of its 5.3s build in gen-ast's own parsing. A likely fix is to carry lists through the parser stack as a cheap-to-copy handle (for example a `shared_ptr` to the vector) or to accumulate them outside the semantic value, rather than by value.
