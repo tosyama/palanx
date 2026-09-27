@@ -1,0 +1,23 @@
+cinclude <stdio.h>;
+
+func countDown(int32 y) -> int32 {
+    int32 n = 0;
+    while y > 0 {
+        int32 yy = y;
+        while yy > 0 { yy - 1 -> yy; n + 1 -> n; }
+        y - 1 -> y;
+    }
+    return n;
+}
+
+int32 a = 3;
+int32 b = a;
+b - 1 -> b;
+flo64 f = 1.5;
+flo64 g = f;
+g + 1.0 -> g;
+int64 v = 10, w = 20;
+@!int64 p = @!v;
+@!int64 q = p;
+@!w -> q;
+printf("%d %d %.1f %.1f %d %d %d\n", a, b, f, g, p[0], q[0], countDown(3));

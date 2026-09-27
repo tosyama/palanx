@@ -67,6 +67,7 @@ struct Label      { string name; };                              // name:
 struct Jmp        { string label; };                             // jmp label
 struct CondJmp    { string label; VReg cond; bool jumpIfZero; }; // testl+je/jne
 struct Mov        { VReg dst; VReg src; VRegType type; };        // dst = src (variable update)
+struct Copy       { VReg dst; VReg src; VRegType type; };        // dst = src (defines dst)
 struct DerefLoadIdx  { VReg dst; VReg base; VReg idx; int scale; VRegType type; VRegType idx_type; };  // dst = base[idx*scale]
 struct DerefStoreIdx { VReg base; VReg idx; int scale; VReg src; VRegType type; VRegType idx_type; };  // base[idx*scale] = src
 struct CalcAddrIdx   { VReg dst; VReg base; VReg idx; int scale; VRegType idx_type; };                 // dst = base + idx*scale (no dereference)
@@ -79,7 +80,7 @@ using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, 
                              BitAnd, BitOr, BitXor, BitNot, Cmp, Convert,
                              CallC, CallPln, CallSys, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
-                             Label, Jmp, CondJmp, Mov, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
+                             Label, Jmp, CondJmp, Mov, Copy, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
                              DerefLoad, DerefStore, CalcAddr, LeaLocal>;
 
 // -------- Program structure --------

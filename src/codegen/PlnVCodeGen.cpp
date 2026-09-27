@@ -585,6 +585,11 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
                 func.instrs.push_back(InitVar{r, e.type, intLitImm(e.value, e.type)});
                 if (!blockVarStack_.empty())
                     blockVarStack_.back().push_back(r);
+            } else if (ve.init->kind == ExprKind::Id) {
+                // The source's VReg is its canonical storage, updated in place by
+                // later assignments; sharing it would alias the two variables.
+                r = allocVReg();
+                func.instrs.push_back(Copy{r, lowerExpr(*ve.init, func), ve.type});
             } else {
                 r = lowerExpr(*ve.init, func);
             }

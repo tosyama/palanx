@@ -1891,6 +1891,13 @@ TEST(build_mgr, char_literal) {
 	ASSERT_EQ(output, "quit 113\n98 10 92\n");
 }
 
+TEST(build_mgr, var_init_copy) {
+	// A variable initialized from another must not share its storage.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/218_var_init_copy.pa");
+	ASSERT_EQ(output, "3 2 1.5 2.5 10 20 6\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
