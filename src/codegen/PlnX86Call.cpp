@@ -14,7 +14,7 @@ using namespace std;
 // base name when the source is itself a register (empty for a memory operand), used
 // to detect when one move's destination is needed as another move's source.
 struct RegMove {
-    const char* movInstr;
+    string      movInstr;
     VRegType    type;
     string      srcOperand;
     string      srcBase;
@@ -22,22 +22,33 @@ struct RegMove {
     string      dstSized;
 };
 
+// SysV leaves the bits above a narrow (<32-bit) argument unspecified, but gcc
+// callers extend it to 32 bits and clang-compiled callees rely on that.
+static bool isNarrowInt(VRegType t) { return intWidth(t) < 4; }
+
 static RegMove makeIntArgMove(const PhysLoc& src_loc, const string& dstBase)
 {
+    VRegType t = src_loc.type;
+    bool narrow = isNarrowInt(t);
     return RegMove{
-        movInstrForType(src_loc.type), src_loc.type,
+        narrow ? extendMnemonic(isSignedInt(t), intWidth(t), 4) : string(movInstrForType(t)), t,
         srcOperand(src_loc), src_loc.isStack() ? "" : src_loc.base,
-        dstBase, sizedRegName(dstBase, src_loc.type)
+        dstBase, sizedRegName(dstBase, narrow ? VRegType::Int32 : t)
     };
 }
 
-// A narrow value fills only the slot's low bytes; SysV leaves the rest unspecified.
 static void emitIntStackArg(ostream& out, const PhysLoc& src_loc, int offset)
 {
-    const char* mov = movInstrForType(src_loc.type);
+    VRegType t = src_loc.type;
     string src = srcOperand(src_loc);
+    if (isNarrowInt(t)) {
+        out << "\t" << extendMnemonic(isSignedInt(t), intWidth(t), 4) << " " << src << ", %r10d\n";
+        out << "\tmovl %r10d, " << offset << "(%rsp)\n";
+        return;
+    }
+    const char* mov = movInstrForType(t);
     if (src_loc.isStack()) {
-        string scratch = sizedRegName("%r10", src_loc.type);
+        string scratch = sizedRegName("%r10", t);
         out << "\t" << mov << " " << src << ", " << scratch << "\n";
         src = scratch;
     }

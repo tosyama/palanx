@@ -1627,6 +1627,14 @@ TEST(build_mgr, bool_type)
 	ASSERT_EQ(output, "1 0 1 0\n0 1\n2 1 -1 -2\n1\n0 1\n3 1\n");
 }
 
+TEST(build_mgr, c_narrow_arg)
+{
+	// printf reads each narrow argument as a full int, in registers and on the stack.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/215_c_narrow_arg.pa");
+	ASSERT_EQ(output, "-5 200 -300 60000 7 -6 250 -30000\n");
+}
+
 TEST(build_mgr, c_union_rw)
 {
 	// Both members of a cinclude'd union alias the same bytes: a write through
