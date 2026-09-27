@@ -17,6 +17,7 @@ enum PlnMessageCode {
 	E_C2AstFailed,			// header path
 	E_ExpectedLinkKeyword,		// identifier
 	E_UnexpectedChar,		// character
+	E_InvalidCharLiteral,		// literal text
 };
 
 class PlnGenAstMessage

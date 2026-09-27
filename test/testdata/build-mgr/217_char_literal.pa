@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+
+func show(int8 c) -> int32
+{
+	return c + 1;
+}
+
+int32 c = 'q';
+if c == 'q' {
+	printf("quit %d\n", c);
+}
+printf("%d %d %d\n", show('a'), '\n', '\\');

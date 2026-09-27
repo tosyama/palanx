@@ -1531,6 +1531,23 @@ TEST(gen_ast, macro_fold_sameline) {
 	ASSERT_EQ(ret["value"], "9");
 }
 
+TEST(gen_ast, char_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/120_char_literal.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& stmts = jout["ast"]["statements"];
+	const char* expected[] = {"97", "10", "39", "92", "0", "32"};
+	ASSERT_EQ(stmts.size(), 6u);
+	for (int i = 0; i < 6; i++) {
+		auto& init = stmts[i]["vars"][0]["init"];
+		EXPECT_EQ(init["expr-type"], "lit-int") << i;
+		EXPECT_EQ(init["value"], expected[i]) << i;
+	}
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["loc"], json::parse("[1, 11, 1, 14]"));
+}
+
 TEST(gen_ast, macro_fold_duplicate_name) {
 	// Two cincludes defining the same macro name: the first registration
 	// wins and later same-named definitions are ignored.

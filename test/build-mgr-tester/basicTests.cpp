@@ -1885,6 +1885,12 @@ TEST(build_mgr, uint64_float_convert) {
 		"18446744073709549568\n");
 }
 
+TEST(build_mgr, char_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/217_char_literal.pa");
+	ASSERT_EQ(output, "quit 113\n98 10 92\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

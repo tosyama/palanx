@@ -1,0 +1,6 @@
+int32 a = 'a';
+int32 nl = '\n';
+int32 q = '\'';
+int32 bs = '\\';
+int32 z = '\0';
+int32 sp = ' ';

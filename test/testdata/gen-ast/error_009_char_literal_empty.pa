@@ -1,0 +1,2 @@
+// An empty character literal is rejected.
+int32 c = '';
