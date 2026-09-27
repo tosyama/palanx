@@ -294,9 +294,7 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         for (auto& jv : j["vars"]) {
             VarEntry ve;
             ve.varName  = jv["name"];
-            string kind = jv["var-type"]["type-kind"];
-            if (kind == "prim" || kind == "pntr")
-                ve.type = toVRegType(jv["var-type"]);
+            ve.type     = toVRegType(jv["var-type"]);
             if (jv.contains("init")) {
                 ve.init = deserializeExpr(jv["init"]);
             }

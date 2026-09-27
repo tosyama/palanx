@@ -728,11 +728,13 @@ TEST(c2ast, macro_const_fold_expr) {
     expect_value("MIXED", "13");   // precedence: 2 + (3 * 4) - 1
     expect_value("MASK", "63");
     expect_value("NEG", "-2");
+    expect_value("MOD", "2");
 
     // Relational operators are recognized but intentionally not folded.
     ASSERT_EQ(find_const("CMP"), nullptr);
     // Would be undefined behavior to evaluate ourselves: folds to null, not a wrong value.
     ASSERT_EQ(find_const("DIVZERO"), nullptr);
+    ASSERT_EQ(find_const("MODZERO"), nullptr);
     ASSERT_EQ(find_const("BIGSHIFT"), nullptr);
     ASSERT_EQ(find_const("OVERFLOWED"), nullptr);
     // sizeof is never evaluated, so any expression containing it stays null.
@@ -779,11 +781,19 @@ TEST(c2ast, macro_const_suffix) {
     expect_const("MIXNEG", "0", "uint32");
     expect_const("UCH", "44", "uint8");
     expect_const("LADD", "2", "int64");
+    expect_const("UOR", "255", "uint32");
+    expect_const("UAND", "48", "uint32");
+    expect_const("UXOR", "240", "uint32");
+    expect_const("UMUL", "15", "uint32");
+    expect_const("UDIV", "3", "uint32");
+    expect_const("UMOD", "1", "uint32");
+    expect_const("LU5", "5", "uint64");
+    expect_const("HEXL", "18446744073709551615", "uint64");
+    expect_const("SNARROW", "-25536", "int16");
 
-    ASSERT_EQ(find_const("BIGSH"), nullptr);
-    ASSERT_EQ(find_const("SOVF"), nullptr);
-    ASSERT_EQ(find_const("BIGDEC"), nullptr);
-    ASSERT_EQ(find_const("FLO"), nullptr);
+    for (const char* name : {"BIGSH", "SOVF", "BIGDEC", "FLO", "UCMP", "UDIVZ", "UMODZ",
+                             "TOOBIG", "UNTBIG", "SSHNEG", "LSHOVF"})
+        ASSERT_EQ(find_const(name), nullptr) << name;
 }
 
 TEST(c2ast, int_constant_width) {

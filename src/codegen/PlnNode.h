@@ -259,7 +259,7 @@ struct ExprStmt : Stmt {
 
 struct VarEntry {
     string           varName;
-    VRegType         type = VRegType::Int64;  // meaningful only for prim/pntr variables
+    VRegType         type = VRegType::Int64;
     unique_ptr<Expr> init;       // nullable
 };
 

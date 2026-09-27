@@ -1538,9 +1538,9 @@ TEST(gen_ast, char_literal) {
 	json jout = json::parse(output);
 
 	auto& stmts = jout["ast"]["statements"];
-	const char* expected[] = {"97", "10", "39", "92", "0", "32"};
-	ASSERT_EQ(stmts.size(), 6u);
-	for (int i = 0; i < 6; i++) {
+	const char* expected[] = {"97", "10", "39", "92", "0", "32", "13", "9"};
+	ASSERT_EQ(stmts.size(), 8u);
+	for (int i = 0; i < 8; i++) {
 		auto& init = stmts[i]["vars"][0]["init"];
 		EXPECT_EQ(init["expr-type"], "lit-int") << i;
 		EXPECT_EQ(init["value"], expected[i]) << i;

@@ -4,3 +4,5 @@ int32 q = '\'';
 int32 bs = '\\';
 int32 z = '\0';
 int32 sp = ' ';
+int32 cr = '\r';
+int32 tb = '\t';

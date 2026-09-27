@@ -5,6 +5,8 @@
 #define MIXED  (2 + 3 * 4 - 1)        /* 13 -- precedence */
 #define MASK   ((0xf0 & 0x3c) ^ 0x0f) /* 63 */
 #define NEG    (-8 / 3)               /* -2 */
+#define MOD    (17 % 5)               /* 2 */
+#define MODZERO  (1 % 0)              /* skipped */
 #define CMP    (3 > 2)                /* skipped: relational not folded */
 #define DIVZERO  (1 / 0)              /* skipped */
 #define BIGSHIFT (1 << 64)            /* skipped */
