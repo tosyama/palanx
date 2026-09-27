@@ -2465,6 +2465,14 @@ TEST(sa_error, struct_borrow)
 		{"error_250_struct_borrow_init_no_addr_of.pa", ":3:1: error: a struct given to a '@T'/'@!T' pointer must be written as"},
 		{"error_251_struct_borrow_ro_to_mut.pa", ":4:1: error: cannot bind a read-only pointer"},
 		{"error_252_struct_borrow_owned_field_ro.pa", ":3:27: error: cannot write through read-only pointer"},
+		{"error_253_ro_ptr_embed_arr_field_write.pa", ":3:21: error: cannot write through read-only pointer '@T'"},
+		{"error_254_ro_ptr_embed_arr_field_addr_mut.pa", ":3:30: error: cannot write through read-only pointer '@T'"},
+		{"error_255_ro_ptr_owned_arr_field_write.pa", ":3:21: error: cannot write through read-only pointer '@T'"},
+		{"error_256_ro_ptr_embed_struct_arr_field_write.pa", ":3:21: error: cannot write through read-only pointer '@T'"},
+		{"error_257_ro_ptr_owned_struct_arr_field_write.pa", ":3:21: error: cannot write through read-only pointer '@T'"},
+		{"error_258_ro_ptr_ptr_slot_arr_field_store.pa", ":3:29: error: cannot write through read-only pointer '@T'"},
+		{"error_259_ro_ptr_raw_ptr_field_index_write.pa", ":3:21: error: cannot write through read-only pointer '@T'"},
+		{"error_260_mut_ptr_ro_elem_arr_field_write.pa", ":3:22: error: cannot write through read-only pointer array element"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

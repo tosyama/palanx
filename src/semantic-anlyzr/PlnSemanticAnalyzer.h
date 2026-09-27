@@ -141,7 +141,11 @@ class PlnSemanticAnalyzer {
 	// Convert a single call argument to a parameter's type, diagnosing
 	// E_InvalidNarrowingConv if it doesn't fit without an explicit cast.
 	json convertCallArg(const json& locNode, json saArg, const json& paramVT);
-	json sa_expr_arr_index(const json& expr);
+	// forWrite: the result is written through (store, '@!', or a field write
+	// below it), so every hop back to the chain's root must be writable --
+	// the same rule resolveObjectChain applies to struct field chains.
+	json sa_expr_arr_index(const json& expr, bool forWrite = false);
+	json sa_expr_field_access(const json& expr, bool forWrite);
 	// Evaluate an array-size sub-expression (an `[n]T` declaration's `n`, or
 	// a 2D array's inner/outer dimension) and normalize the result to
 	// uint64, diagnosing E_ArraySizeNotInteger for a non-integer. Every

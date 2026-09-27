@@ -1,0 +1,3 @@
+type In { int64 v; };
+type P { [2]In arr; };
+func f(@P p) { 9 -> p.arr[0].v; }

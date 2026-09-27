@@ -34,7 +34,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		return {false, varName, 0, {}, (*vt)["base-type"]["type-name"].get<string>()};
 	}
 	if (obj.value("expr-type","") == "arr-index") {
-		json sa_idx = sa_expression(obj);
+		json sa_idx = sa_expr_arr_index(obj, forWrite);
 		const json& vt = sa_idx["value-type"];
 		if (vt.value("type-kind","") != "pntr" || vt["base-type"].value("type-kind","") != "struct") {
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
@@ -228,7 +228,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	}
 
 	if (obj_type == "arr-index") {
-		json sa_idx = sa_expr_arr_index(obj);
+		json sa_idx = sa_expr_arr_index(obj, isMutable);
 		// A struct element is already a pointer to its storage, so '@' only
 		// marks it as a borrow. Any other element that is already an address
 		// computation (2D row access) or a pointer (pointer-slot element) is
@@ -508,25 +508,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		return sa_expr_member_call(expr);
 
 	} else if (expr_type == "field-access") {
-		FieldChain chain = resolveObjectChain(expr["object"], /*forWrite=*/false);
-		string fn = expr["field"].get<string>();
-		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, expr);
-		if (fld.typeKind == "embed") {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InlineStructAsValue) << endl;
-			exit(1);
-		}
-		// LCOV_EXCL_EXCEPTION_BR_START
-		json vt = fieldValueType(fld);
-		int off = chain.offset + fld.offset;
-		// embed-arr/embed-ptr-arr fields are inline data (no pointer is actually
-		// stored at this offset): the field's "value" is its own address, computed
-		// as ptr+offset, not a load of the memory there.
-		bool addrOnly = (fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr");
-		if (!chain.isPointerBased)
-			return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
-		else
-			return {{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
-		// LCOV_EXCL_EXCEPTION_BR_STOP
+		return sa_expr_field_access(expr, /*forWrite=*/false);
 
 	} else if (expr_type == "arr-index") {
 		return sa_expr_arr_index(expr);
@@ -865,10 +847,38 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 	return saArg;
 }
 
-json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr)
+json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)
+{
+	FieldChain chain = resolveObjectChain(expr["object"], forWrite);
+	string fn = expr["field"].get<string>();
+	const FieldLayout& fld = findFieldOrExit(chain.structName, fn, expr);
+	if (fld.typeKind == "embed") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InlineStructAsValue) << endl;
+		exit(1);
+	}
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json vt = fieldValueType(fld);
+	int off = chain.offset + fld.offset;
+	// embed-arr/embed-ptr-arr fields are inline data (no pointer is actually
+	// stored at this offset): the field's "value" is its own address, computed
+	// as ptr+offset, not a load of the memory there.
+	bool addrOnly = (fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr");
+	if (!chain.isPointerBased)
+		return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
+	else
+		return {{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 {
 	json sa_expr = expr;
-	json sa_array = sa_expression(expr["array"]);
+	const json& arr = expr["array"];
+	string arr_kind = arr.value("expr-type", "");
+	json sa_array = !forWrite ? sa_expression(arr)
+		: arr_kind == "field-access" ? sa_expr_field_access(arr, true)
+		: arr_kind == "arr-index"    ? sa_expr_arr_index(arr, true)
+		: sa_expression(arr);
 	const json& array_type = sa_array["value-type"];
 	if (array_type.value("type-kind", "") != "pntr") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_NotArrayType) << endl;

@@ -267,7 +267,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 {
-	json sa_target = sa_expression(stmt["target"]);
+	json sa_target = sa_expr_arr_index(stmt["target"], /*forWrite=*/true);
 	if (sa_target.value("addr-only", false)) {
 		// The element itself is an address computation (e.g. a struct array
 		// element), not a storage slot to overwrite -- assign to its fields instead.

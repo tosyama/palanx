@@ -4459,3 +4459,17 @@ TEST(sa, struct_borrow)
 	// A call result has no name to write '@' on and binds as it is.
 	ASSERT_EQ(args[3]["category"], "expiring");
 }
+
+TEST(sa, ptr_arr_field_permission)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/203_ptr_arr_field_permission.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	const json& wr = jout["functions"][1];
+	ASSERT_EQ(wr["name"], "wr");
+	int arrAssigns = 0;
+	for (auto& st : wr["body"])
+		if (st["stmt-type"] == "arr-assign") arrAssigns++;
+	ASSERT_EQ(arrAssigns, 2);
+}
