@@ -37,6 +37,11 @@ inline bool isIntegerPrim(const PlnType* t) {
 	    && pn != PrimType::Name::Void;
 }
 
+inline bool isBoolPrim(const PlnType* t) {
+	return t != nullptr && t->kind == PlnType::Kind::Prim
+	    && static_cast<const PrimType*>(t)->name == PrimType::Name::Bool;
+}
+
 inline bool isFloatPrim(const PlnType* t) {
 	if (t == nullptr || t->kind != PlnType::Kind::Prim) return false;
 	auto pn = static_cast<const PrimType*>(t)->name;
@@ -107,7 +112,7 @@ inline json fieldValueType(const FieldLayout& f)
 // Returns element byte size for a primitive type name; -1 if unknown
 inline int elemSizeBytes(const string& typeName)
 {
-	if (typeName == "int8"  || typeName == "uint8")  return 1;
+	if (typeName == "int8"  || typeName == "uint8" || typeName == "bool") return 1;
 	if (typeName == "int16" || typeName == "uint16") return 2;
 	if (typeName == "int32" || typeName == "uint32" || typeName == "flo32") return 4;
 	if (typeName == "int64" || typeName == "uint64" || typeName == "flo64") return 8;
@@ -238,6 +243,7 @@ inline const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 	switch (p->name) {
 		case N::Int8:   case N::Int16:  return reg.prim(N::Int32);
 		case N::Uint8:  case N::Uint16: return reg.prim(N::Uint32);
+		case N::Bool:                   return reg.prim(N::Int32);
 		case N::Float32:                return reg.prim(N::Float64);
 		default: return t;
 	}

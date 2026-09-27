@@ -246,6 +246,7 @@ static bool intLiteralFits(const string& value, PrimType::Name pn)
 		case PrimType::Name::Uint8:  bits = 8;  isSigned = false; break;
 		case PrimType::Name::Uint16: bits = 16; isSigned = false; break;
 		case PrimType::Name::Uint32: bits = 32; isSigned = false; break;
+		case PrimType::Name::Bool:   bits = 1;  isSigned = false; break;
 		default:                     bits = 64; isSigned = false; break;
 	}
 	if (isSigned) {
@@ -266,6 +267,18 @@ void PlnSemanticAnalyzer::checkIntLiteralRange(const json& lit)
 		value, typeDisplayName(lit["value-type"])) << endl;
 	exit(1);
 }
+
+// C's integer promotion, applied to bool only: an operator computes in at
+// least int32 so a bool operand never yields a 1-byte result outside 0/1
+// (`b + 1` is 2). Other narrow types keep their declared width.
+// LCOV_EXCL_EXCEPTION_BR_START
+static json promoteBool(json operand)
+{
+	const json& vt = operand["value-type"];
+	if (vt.value("type-kind", "") != "prim" || vt.value("type-name", "") != "bool") return operand;
+	return wrapConvert(operand, {{"type-kind", "prim"}, {"type-name", "int32"}});
+}
+// LCOV_EXCL_EXCEPTION_BR_STOP
 
 json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expectedType)
 {
@@ -299,7 +312,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		if (expectedType && expectedType->kind == PlnType::Kind::Prim) {
 			auto pn = static_cast<const PrimType*>(expectedType)->name;
 			if (pn == PrimType::Name::Uint8  || pn == PrimType::Name::Uint16 ||
-			    pn == PrimType::Name::Uint32 || pn == PrimType::Name::Uint64)
+			    pn == PrimType::Name::Uint32 || pn == PrimType::Name::Uint64 ||
+			    pn == PrimType::Name::Bool)
 				sa_expr["value-type"] = registry_.toJson(expectedType);
 			else
 				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Uint64));
@@ -365,12 +379,12 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		return sa_expr_arith(expr, expectedType);
 
 	} else if (expr_type == "neg") {
-		json operand = sa_expression(expr["operand"], expectedType);
+		json operand = promoteBool(sa_expression(expr["operand"], expectedType));
 		sa_expr["operand"]    = operand;
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "bitnot") {
-		json operand = sa_expression(expr["operand"], expectedType);
+		json operand = promoteBool(sa_expression(expr["operand"], expectedType));
 		const PlnType* t = registry_.fromJson(operand["value-type"]);
 		if (!isIntegerPrim(t)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
@@ -380,8 +394,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "cmp") {
-		json left  = sa_expression(expr["left"]);
-		json right = sa_expression(expr["right"]);
+		json left  = promoteBool(sa_expression(expr["left"]));
+		json right = promoteBool(sa_expression(expr["right"]));
 		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 		const PlnType* rightType = registry_.fromJson(right["value-type"]);
 		// A pointer/struct pair (usualArithConv returns nullptr) is left
@@ -428,6 +442,16 @@ json PlnSemanticAnalyzer::sa_expression(const json &expr, const PlnType* expecte
 		TypeCompat compat      = typeCompat(srcType, target, registry_);
 		if (compat == TypeCompat::Identical) {
 			return src;
+		} else if (compat == TypeCompat::ExplicitCast && isBoolPrim(target)) {
+			// C's conversion to _Bool: any nonzero value is 1, not a truncation.
+			// LCOV_EXCL_EXCEPTION_BR_START
+			json zero = isFloatPrim(srcType)
+				? json{{"expr-type", "lit-flo"}, {"value", "0.0"}, {"value-type", src["value-type"]}}
+				: json{{"expr-type", "lit-int"}, {"value", "0"}, {"value-type", src["value-type"]}};
+			json ne = {{"expr-type", "cmp"}, {"op", "!="}, {"left", src}, {"right", zero},
+			           {"value-type", {{"type-kind", "prim"}, {"type-name", "int32"}}}};
+			return wrapConvert(ne, expr["target-type"]);
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 		} else if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast) {
 			return wrapConvert(src, registry_.toJson(target));
 		} else {
@@ -480,19 +504,20 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	// when both are literals does expectedType decide (`int32 x = (4+4)`).
 	// Each literal is typed exactly once so its range check never fires on
 	// a provisional type.
+	if (isBoolPrim(expectedType)) expectedType = registry_.prim(PrimType::Name::Int32);
 	json left, right;
 	auto typeOf = [&](const json& other) {
 		return other.contains("value-type") ? registry_.fromJson(other["value-type"]) : expectedType;
 	};
 	if (expr["left"]["expr-type"] == "lit-int") {
-		right = sa_expression(expr["right"], expectedType);
-		left  = sa_expression(expr["left"],  typeOf(right));
+		right = promoteBool(sa_expression(expr["right"], expectedType));
+		left  = promoteBool(sa_expression(expr["left"],  typeOf(right)));
 	} else if (expr["right"]["expr-type"] == "lit-int") {
-		left  = sa_expression(expr["left"],  expectedType);
-		right = sa_expression(expr["right"], typeOf(left));
+		left  = promoteBool(sa_expression(expr["left"],  expectedType));
+		right = promoteBool(sa_expression(expr["right"], typeOf(left)));
 	} else {
-		left  = sa_expression(expr["left"],  expectedType);
-		right = sa_expression(expr["right"], expectedType);
+		left  = promoteBool(sa_expression(expr["left"],  expectedType));
+		right = promoteBool(sa_expression(expr["right"], expectedType));
 	}
 	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 	const PlnType* rightType = registry_.fromJson(right["value-type"]);

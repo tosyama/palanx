@@ -1,0 +1,2 @@
+// Unknown escape sequences are rejected.
+int32 c = '\q';

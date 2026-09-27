@@ -651,15 +651,14 @@ TEST(c2ast, macro_const_simple) {
     json* magic = find_const("MAGIC");
     ASSERT_NE(magic, nullptr);
     ASSERT_EQ((*magic)["value"], "42");
-    ASSERT_EQ((*magic)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*magic)["value-type"]["type-name"], "int32");
+    // Unsuffixed and uncast: untyped, like a Palan source literal.
+    ASSERT_FALSE(magic->contains("value-type"));
 
     // An additive expression: folded now that binary operators are evaluated.
     json* complex_ = find_const("COMPLEX");
     ASSERT_NE(complex_, nullptr);
     ASSERT_EQ((*complex_)["value"], "3");
-    ASSERT_EQ((*complex_)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*complex_)["value-type"]["type-name"], "int32");
+    ASSERT_FALSE(complex_->contains("value-type"));
 }
 
 TEST(c2ast, macro_const_null) {
@@ -694,16 +693,14 @@ TEST(c2ast, macro_const_alias_chain) {
         json* c = find_const(name);
         ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
         ASSERT_EQ((*c)["value"], "5");
-        ASSERT_EQ((*c)["value-type"]["type-kind"], "prim");
-        ASSERT_EQ((*c)["value-type"]["type-name"], "int32");
+        ASSERT_FALSE(c->contains("value-type"));
     }
 
     // Expands to an additive expression: folded now that binary operators are evaluated.
     json* d = find_const("D");
     ASSERT_NE(d, nullptr);
     ASSERT_EQ((*d)["value"], "6");
-    ASSERT_EQ((*d)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*d)["value-type"]["type-name"], "int32");
+    ASSERT_FALSE(d->contains("value-type"));
 }
 
 TEST(c2ast, macro_const_fold_expr) {
@@ -731,19 +728,72 @@ TEST(c2ast, macro_const_fold_expr) {
     expect_value("MIXED", "13");   // precedence: 2 + (3 * 4) - 1
     expect_value("MASK", "63");
     expect_value("NEG", "-2");
+    expect_value("MOD", "2");
 
     // Relational operators are recognized but intentionally not folded.
     ASSERT_EQ(find_const("CMP"), nullptr);
     // Would be undefined behavior to evaluate ourselves: folds to null, not a wrong value.
     ASSERT_EQ(find_const("DIVZERO"), nullptr);
+    ASSERT_EQ(find_const("MODZERO"), nullptr);
     ASSERT_EQ(find_const("BIGSHIFT"), nullptr);
     ASSERT_EQ(find_const("OVERFLOWED"), nullptr);
     // sizeof is never evaluated, so any expression containing it stays null.
     ASSERT_EQ(find_const("SIZED"), nullptr);
     // An unresolved identifier keeps the whole expression null.
     ASSERT_EQ(find_const("IDENT"), nullptr);
-    // A suffixed literal (1L) isn't a plain lit-int, so it doesn't fold either.
-    ASSERT_EQ(find_const("SUFFIXED"), nullptr);
+    json* suffixed = find_const("SUFFIXED");
+    ASSERT_NE(suffixed, nullptr);
+    ASSERT_EQ((*suffixed)["value"], "2");
+    ASSERT_EQ((*suffixed)["value-type"]["type-name"], "int64");
+}
+
+TEST(c2ast, macro_const_suffix) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/038_macro_const_suffix.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+
+    auto expect_const = [&](const string& name, const string& value, const string& type_name) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+        ASSERT_EQ((*c)["value-type"]["type-kind"], "prim") << "for " << name;
+        ASSERT_EQ((*c)["value-type"]["type-name"], type_name) << "for " << name;
+    };
+
+    expect_const("U1", "1", "uint32");
+    expect_const("UL5", "5", "uint64");
+    expect_const("ULL5", "5", "uint64");
+    expect_const("L5", "5", "int64");
+    expect_const("H80", "2147483648", "uint32");
+    expect_const("ULMAX", "18446744073709551615", "uint64");
+    expect_const("SH", "262144", "uint32");
+    expect_const("AREV", "262144", "uint32");
+    expect_const("MASK", "255", "uint32");
+    expect_const("WRAP", "4294967295", "uint32");
+    expect_const("NEGU", "4294967295", "uint32");
+    expect_const("MIXNEG", "0", "uint32");
+    expect_const("UCH", "44", "uint8");
+    expect_const("LADD", "2", "int64");
+    expect_const("UOR", "255", "uint32");
+    expect_const("UAND", "48", "uint32");
+    expect_const("UXOR", "240", "uint32");
+    expect_const("UMUL", "15", "uint32");
+    expect_const("UDIV", "3", "uint32");
+    expect_const("UMOD", "1", "uint32");
+    expect_const("LU5", "5", "uint64");
+    expect_const("HEXL", "18446744073709551615", "uint64");
+    expect_const("SNARROW", "-25536", "int16");
+
+    for (const char* name : {"BIGSH", "SOVF", "BIGDEC", "FLO", "UCMP", "UDIVZ", "UMODZ",
+                             "TOOBIG", "UNTBIG", "SSHNEG", "LSHOVF"})
+        ASSERT_EQ(find_const(name), nullptr) << name;
 }
 
 TEST(c2ast, int_constant_width) {
@@ -758,17 +808,16 @@ TEST(c2ast, int_constant_width) {
         return nullptr;
     };
 
-    // Out of int32 range: must widen to int64 rather than silently truncating.
+    // Out of int32 range: the value is kept exactly rather than truncated.
     json* wclone = find_const("__WCLONE");
     ASSERT_NE(wclone, nullptr);
     ASSERT_EQ((*wclone)["value"], "2147483648");
-    ASSERT_EQ((*wclone)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*wclone)["value-type"]["type-name"], "int64");
+    ASSERT_FALSE(wclone->contains("value-type"));
 
-    // In range: still int32.
     json* exit_failure = find_const("EXIT_FAILURE");
     ASSERT_NE(exit_failure, nullptr);
-    ASSERT_EQ((*exit_failure)["value-type"]["type-name"], "int32");
+    ASSERT_EQ((*exit_failure)["value"], "1");
+    ASSERT_FALSE(exit_failure->contains("value-type"));
 }
 
 TEST(c2ast, sys_stat_h_public_names) {
@@ -784,8 +833,7 @@ TEST(c2ast, sys_stat_h_public_names) {
         if (c["name"] == "S_IFDIR") { s_ifdir = &c; break; }
     ASSERT_NE(s_ifdir, nullptr);
     ASSERT_EQ((*s_ifdir)["value"], "16384");
-    ASSERT_EQ((*s_ifdir)["value-type"]["type-kind"], "prim");
-    ASSERT_EQ((*s_ifdir)["value-type"]["type-name"], "int32");
+    ASSERT_FALSE(s_ifdir->contains("value-type"));
 }
 
 TEST(c2ast, sys_stat_h_perm_masks) {
@@ -1367,6 +1415,39 @@ TEST(c2ast, void_param_list) {
     // No typedef in this header at all -- the "typedefs" key itself is
     // omitted, same convention as "structs".
     ASSERT_FALSE(ast["ast"].contains("typedefs"));
+}
+
+TEST(c2ast, bool_keyword) {
+    // stdbool.h's `bool` is a macro for `_Bool`, so both spellings reach the same keyword.
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/039_bool.h");
+    json ast = json::parse(output);
+    auto& functions = ast["ast"]["functions"];
+
+    auto find_func = [&](const string& name) -> json* {
+        for (auto& f : functions)
+            if (f["name"] == name) return &f;
+        return nullptr;
+    };
+    json prim_bool = {{"type-kind", "prim"}, {"type-name", "bool"}};
+    json const_bool = {{"type-kind", "prim"}, {"type-name", "bool"}, {"const", true}};
+
+    json* f = find_func("f");
+    ASSERT_NE(f, nullptr);
+    ASSERT_EQ((*f)["parameters"][0]["var-type"], prim_bool);
+
+    json* g = find_func("g");
+    ASSERT_NE(g, nullptr);
+    ASSERT_EQ((*g)["ret-type"], prim_bool);
+
+    json* h = find_func("h");
+    ASSERT_NE(h, nullptr);
+    ASSERT_EQ((*h)["ret-type"], prim_bool);
+    ASSERT_EQ((*h)["parameters"][0]["var-type"], const_bool);
+
+    auto& structs = ast["ast"]["structs"];
+    ASSERT_EQ(structs.size(), 1);
+    ASSERT_EQ(structs[0]["fields"][0]["var-type"], prim_bool);
 }
 
 // --- Input file edge cases ---

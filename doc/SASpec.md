@@ -107,7 +107,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   node; this is a harmless no-op re-registration (same name, same resolved
   type) whose real job is stripping the hint from that node so it never
   reaches sa.json. Object-like-macro constants are no longer an SA concern as
-  of v0.1.33: every reference is already folded to a typed `lit-int` by
+  of v0.1.33: every reference is already folded to a `lit-int` by
   gen-ast (ASTSpec.md's Constant definition model and `lit-int` entries), so
   a `cinclude` statement never carries a `constants` field by the time SA
   sees it, and SA has no macro-name table of its own.
@@ -168,7 +168,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
 - **if** - if / if-else statement
   - stmt-type\*: "if"
-  - cond\*: SA-annotated condition expression (value-type present; integer expected)
+  - cond\*: SA-annotated condition expression (value-type present; integer or bool expected)
   - then\*: then-block (same structure as block stmt body in ASTSpec.md)
   - else: else-block or nested if statement (omitted when absent)
 
@@ -247,7 +247,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
 - **while** - while loop statement
   - stmt-type\*: "while"
-  - cond\*: SA-annotated condition expression (value-type present; integer expected)
+  - cond\*: SA-annotated condition expression (value-type present; integer or bool expected)
   - body\*: SA-annotated statement list (raw array; variables declared inside are scoped to the loop body)
 
 - **break** - exit the innermost while loop
@@ -305,7 +305,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     value outside that integer type's range (including a negative value adopting an unsigned type)
     is rejected with `E_IntLiteralOutOfRange`. A literal operand of a binary operator is typed only
     once -- from the other operand's type when that has one, else from the expected type -- so the
-    check never runs against a provisional type.
+    check never runs against a provisional type. For `bool` the range is 0..1.
   - lit-flo: adopts flo32 or flo64 when used in a float-typed context (e.g. `flo32 y = 1.5;` → flo32);
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
@@ -408,7 +408,9 @@ SA-only expression kinds (not present in AST JSON):
 - convert - Type conversion inserted by SA. Wraps an expression whose value-type
   differs from the required type. Used for both implicit widening and explicit casts
   (narrowing, signed↔unsigned). The `cast` AST node is consumed by SA and replaced
-  by `convert` (or removed if Identical); it does not appear in sa.json.
+  by `convert` (or removed if Identical); it does not appear in sa.json. A cast to `bool`
+  from any other numeric type becomes `convert(cmp(src != 0))` (`0.0` for a float source), so a
+  nonzero value yields 1 instead of being truncated.
   - expr-type\*: "convert"
   - value-type\*: target Variable type object
   - from-type\*: source Variable type object
@@ -592,6 +594,11 @@ from the common type each get a `convert` node. The rules, in order:
 preserves the declared width's wraparound rather than promoting to `int`. This also means the
 common type is always one of the two operand types, never a third type.
 
+`bool` is the one exception: before the rules above, SA wraps a `bool` operand of an arithmetic,
+bitwise, or comparison operator, `neg`, or `bitnot` in a `convert` to `int32`, so the result is
+never a 1-byte value outside 0/1 (`b + 1` is 2). `usualArithConv` itself ranks `bool` below every
+other type, so the other side wins; this matters only for call arguments (below).
+
 A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
 an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
 unconverted (pointer comparison, e.g. `p == NULL`, is valid and has no numeric common type); the
@@ -627,6 +634,8 @@ declared variable's exact type.
 
 Notes:
 - Signed and unsigned are different groups; `int32 → uint32` requires `ExplicitCast`.
+- `bool` is its own group: `bool →` any integer or float is `ImplicitWiden`, and any integer or
+  float `→ bool` is `ExplicitCast`.
 - At a binding site, `ImplicitWiden` inserts a `convert` node; `ExplicitCast` is a compile error
   (E_InvalidNarrowingConv) unless the source expression is an integer literal (`lit-int` /
   `lit-uint`), which instead adopts the destination type. All five binding sites (var-decl
@@ -634,7 +643,8 @@ Notes:
   there is exactly one narrowing rule, not one strict (initializer) and four permissive ones.
   Writing `ExplicitCast` at a non-literal binding site requires an explicit `type-name(expr)`
   cast in the source.
-- Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32.
+- Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32,
+  bool → int32.
 
 ### Call arguments
 
@@ -647,7 +657,8 @@ parameter is the callee's declared ABI width, not a variable the caller is namin
 (a genuine narrowing, or a cross-sign conversion where the destination is narrower) diagnoses
 E_InvalidNarrowingConv, the same message a binding site uses. A pointer/struct argument is
 unaffected by this rule (`argConvOk` only applies between two Prim types) and keeps its existing
-`ImplicitWiden`-only check plus `checkArgPtrPermission`.
+`ImplicitWiden`-only check plus `checkArgPtrPermission`. A `bool` parameter accepts no
+reinterpretation: an `int8`/`uint8` argument needs `bool(x)`.
 
 A bare integer-literal argument (`lit-int`/`lit-uint`) without its own `value-type` adopts the
 parameter's type directly (SA passes the parameter type down as the literal's `expectedType`)

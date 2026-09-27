@@ -429,7 +429,8 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 		if (vt.value("type-kind", "") != "prim") return false;
 		string tn = vt.value("type-name", "");
 		return tn == "flo32" || tn == "flo64"
-		       || tn == "int8" || tn == "int16" || tn == "uint8" || tn == "uint16";
+		       || tn == "int8" || tn == "int16" || tn == "uint8" || tn == "uint16"
+		       || tn == "bool";
 	};
 	string badType;
 	if (funcDef.contains("parameters"))

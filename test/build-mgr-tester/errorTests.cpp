@@ -92,7 +92,7 @@ TEST(build_mgr_error, cinclude_2d_arr_field) {
 }
 
 TEST(build_mgr_error, cinclude_arr_field_cast_size) {
-	// A non-literal array size-expr ("(int)4" resolves to "cast", not
+	// A non-literal array size-expr ("(int)4.0" resolves to "cast", not
 	// "lit-int") hits the same incomplete-struct path as cinclude_2d_arr_field.
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_054_cinclude_arr_field_cast_size.pa");

@@ -1,0 +1,5 @@
+cinclude <stdio.h>;
+cinclude "211_macro_const_suffix.h";
+
+uint32 attrs = A_REVERSE | A_BOLD;
+printf("%u %u %u %lu\n", A_REVERSE, A_BOLD, attrs, ULMAX);

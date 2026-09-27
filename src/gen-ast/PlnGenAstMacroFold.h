@@ -12,10 +12,10 @@ using json = nlohmann::json;
 using std::string;
 using std::map;
 
-// One registered `#define NAME value` macro constant: its already-typed
-// literal value/value-type (as c2ast reported them) and the `loc` of the
-// cinclude statement that registered it, used to decide whether a given
-// reference appears textually after this registration.
+// One registered `#define NAME value` macro constant: its literal value and
+// value-type (null when C left it untyped) as c2ast reported them, and the
+// `loc` of the cinclude statement that registered it, used to decide whether
+// a given reference appears textually after this registration.
 struct MacroEntry {
 	json value;
 	json valueType;
@@ -31,8 +31,9 @@ void registerMacroConstants(MacroTable& macros, const json& constants, const jso
 
 // Recursively replace `id` expression nodes in `node` whose name matches a
 // registered macro constant, and whose reference `loc` is textually after
-// that macro's cinclude `loc`, with a typed `lit-int` node carrying the
-// macro's value/value-type. Does not descend into `cinclude` statement
-// subtrees (their `functions`/`structs`/etc. are C declarations, not Palan
-// references). Leaves earlier (pre-cinclude) references as `id` untouched.
+// that macro's cinclude `loc`, with a `lit-int` node carrying the macro's
+// value, plus its value-type only when it has one. Does not descend into
+// `cinclude` statement subtrees (their `functions`/`structs`/etc. are C
+// declarations, not Palan references). Leaves earlier (pre-cinclude)
+// references as `id` untouched.
 void foldMacroConstants(json& node, const MacroTable& macros);

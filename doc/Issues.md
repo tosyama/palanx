@@ -143,3 +143,21 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 21. Array Literals Are Limited to Array Variable Initializers
 
 **Summary:** v0.1.36 accepts an array literal (`[1, 2, 3]`, and 2D in either `[1,2][3,4]` or `[[1,2],[3,4]]` form) only as an array variable's declaration initializer. Anywhere else — a function argument, the source of `->` — SA rejects it with `E_ArrLitContext`. The initializer form is lowered to the variable's ordinary allocation plus one store per element, so the variable itself owns the storage and frees it at scope exit. A literal in any other position has no such owner: it would need a temporary array whose allocation and free timing (or ownership transfer to the callee) are designed first. The same lowering also means an all-constant literal is built at run time rather than placed in `.rodata`.
+
+---
+
+## 22. C Macro Constants Using Unary `~` Are Not Exported
+
+**Summary:** c2ast's macro-constant folding (ASTSpec.md's Constant definition model) recognizes unary `~` syntactically but does not fold it, so a macro whose body uses it is not exported. For example, ncurses' `A_ATTRIBUTES` (`NCURSES_BITS(~(1U - 1U),0)`) is unavailable, while the other `A_*` attributes are exported. The typed folding added in v0.1.37 already carries each operand's C type, so `~` could fold as a bitwise complement at the promoted operand's width, with the result typed like the operand. An untyped operand has no fixed width, so it needs its own rule, for example taking the C type the literal would have.
+
+---
+
+## 23. Functions Cannot Reference Top-Level Variables
+
+**Summary:** A variable declared at the top level is a local of the generated `_start`, so a function body cannot see it (`Undefined variable`). Shared state such as a game board must be passed as arguments. Making top-level variables global needs a decision on storage (`.data`/`.bss` or heap), on initialization order, and on how an imported module's top-level variables relate to the entry file's, which is the same open question as #4.
+
+---
+
+## 24. gen-ast Parsing Time Grows Quadratically With Statement Count
+
+**Summary:** Bison's GLR C++ skeleton (`glr.cc`) copies each semantic value into its stack state on every shift and reduce. Statement lists (`stmt_list_e`, `stmt_list_b`, `block`) are `vector<json>` values that grow by one statement per reduction, so every added statement copies the whole list so far, even though the grammar actions `move` their operands. Parsing time is quadratic in the number of statements in one list: a function body of 250 simple statements takes about 2.8s and 2000 take about 178s, and the ~170-line ncurses Tetris spends about 3.2s of its 5.3s build in gen-ast's own parsing. A likely fix is to carry lists through the parser stack as a cheap-to-copy handle (for example a `shared_ptr` to the vector) or to accumulate them outside the semantic value, rather than by value.

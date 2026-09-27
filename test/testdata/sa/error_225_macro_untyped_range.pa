@@ -1,0 +1,5 @@
+cinclude "error_225_macro_untyped_range.h";
+
+func f(int8 v) -> int8 { return v; }
+
+f(BIG);

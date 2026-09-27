@@ -1,0 +1,2 @@
+bool b = 1;
+bool c = b + 1;

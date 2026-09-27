@@ -2380,6 +2380,8 @@ TEST(sa_error, int_literal_out_of_range)
 		{"error_203_int_lit_range_uint64.pa", "'18446744073709551616' is out of range for type 'uint64'"},
 		{"error_204_int_lit_range_arith.pa", ":1:14: error: Integer literal '300' is out of range for type 'int8'."},
 		{"error_205_int_lit_range_neg_unsigned.pa", "'-1' is out of range for type 'uint32'"},
+		// An unsuffixed cinclude macro is an untyped literal, typed from its context.
+		{"error_225_macro_untyped_range.pa", ":5:3: error: Integer literal '300' is out of range for type 'int8'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2402,4 +2404,23 @@ TEST(sa_error, int_literal_typed_from_other_operand)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:1: error: Implicit conversion from 'int64' to 'int8'"), string::npos);
 	ASSERT_EQ(sa.find("out of range"), string::npos);
+}
+
+TEST(sa_error, bool_conversion)
+{
+	const pair<string, string> cases[] = {
+		{"error_226_bool_lit_range.pa", ":1:10: error: Integer literal '2' is out of range for type 'bool'."},
+		{"error_227_bool_from_int.pa", ":2:1: error: Implicit conversion from 'int32' to 'bool'"},
+		{"error_228_bool_arg_from_int.pa", ":3:1: error: Implicit conversion from 'int8' to 'bool'"},
+		{"error_229_bool_arith_result.pa", ":2:1: error: Implicit conversion from 'int32' to 'bool'"},
+		{"error_230_syscall_bool_param.pa", "cannot pass through the Linux syscall ABI: 'bool'"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
 }

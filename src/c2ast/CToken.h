@@ -54,6 +54,7 @@ typedef enum {
 	TK_UNION,
 	TK_ENUM,
 	TK_VOID,
+	TK_BOOL,
 
 	TK_RETURN,
 

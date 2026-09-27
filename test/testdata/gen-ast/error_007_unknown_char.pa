@@ -1,0 +1,3 @@
+// An unmatched byte must be a located lexer error, not echoed to stdout
+// ahead of the AST JSON.
+int32 x = 1 ` 2;

@@ -1,0 +1,29 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+
+// All six params cross the printf call, so the last one spills to the stack
+// once callee-saved registers run out; the || temporaries in the loop must
+// not reuse its slot.
+func six(int64 a, int64 b, int64 c, int64 d, int64 e, int64 f) {
+    int64 i = 0;
+    while i < 3 {
+        if i < a || i >= b || i >= c || i >= d || i >= e {
+            printf("f=%ld\n", f);
+        }
+        i + 1 -> i;
+    }
+}
+
+// k is defined before the loop and used only as a call argument inside it;
+// the call clobbers the argument register before the next iteration.
+func onlyArg() {
+    int32 k = abs(-7);
+    int32 i = 0;
+    while i < 3 {
+        printf("k=%d\n", k);
+        i + 1 -> i;
+    }
+}
+
+six(10, 20, 30, 40, 50, 60);
+onlyArg();

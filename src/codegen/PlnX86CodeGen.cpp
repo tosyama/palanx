@@ -70,6 +70,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* j  = std::get_if<Jmp>      (&instr)) out << "\tjmp " << j->label << "\n";
             else if (auto* i  = std::get_if<CondJmp>  (&instr)) emitInstrCondJmp(*i, rm);
             else if (auto* i  = std::get_if<Mov>      (&instr)) emitInstrMov(*i, rm);
+            else if (auto* i  = std::get_if<Copy>     (&instr)) emitInstrMov(Mov{i->dst, i->src, i->type}, rm);
             else if (auto* i  = std::get_if<DerefLoadIdx> (&instr)) emitInstrDerefLoadIdx(*i, rm);
             else if (auto* i  = std::get_if<DerefStoreIdx>(&instr)) emitInstrDerefStoreIdx(*i, rm);
             else if (auto* c  = std::get_if<CalcAddrIdx>  (&instr)) emitInstrCalcAddrIdx(*c, rm);
@@ -159,15 +160,16 @@ void PlnX86CodeGen::emitInstrInitVarF(const InitVarF& i, const RegMap& rm)
 
 void PlnX86CodeGen::emitInstrCondJmp(const CondJmp& cj, const RegMap& rm)
 {
+    // Test exactly the value's width: bits above a sub-32-bit value are not
+    // guaranteed clean (a caller passes a uint8 argument with movb), and an
+    // int64 may be nonzero only above bit 31.
     const PhysLoc& loc = rm.at(cj.cond);
-    string cond_reg;
-    if (loc.isStack()) {
-        out << "\tmovl " << srcOperand(loc) << ", %eax\n";
-        cond_reg = "%eax";
-    } else {
-        cond_reg = sizedRegName(loc.base, VRegType::Int32);
-    }
-    out << "\ttestl " << cond_reg << ", " << cond_reg << "\n";
+    const char* sfx = widthSuffix(intWidth(loc.type));
+    string cond = srcOperand(loc);
+    if (loc.isStack())
+        out << "\tcmp" << sfx << " $0, " << cond << "\n";
+    else
+        out << "\ttest" << sfx << " " << cond << ", " << cond << "\n";
     out << (cj.jumpIfZero ? "\tje " : "\tjne ") << cj.label << "\n";
 }
 

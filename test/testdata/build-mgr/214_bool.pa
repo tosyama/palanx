@@ -1,0 +1,31 @@
+cinclude <stdio.h>;
+type Flags { bool on; int32 n; };
+
+func negate(bool b) -> bool {
+	if b { return 0; }
+	return 1;
+}
+
+int32 big = 256;
+flo64 f = -0.5;
+bool t = 1;
+bool z = bool(0);
+printf("%d %d %d %d\n", bool(big), z, bool(f), bool(big - 256));
+printf("%d %d\n", negate(t), negate(z));
+printf("%d %d %d %d\n", t + 1, bool(t + 1), -t, ~t);
+
+Flags fl;
+bool(big) -> fl.on;
+printf("%d\n", fl.on);
+
+[3]bool a;
+0 -> a[0];
+bool(big) -> a[2];
+printf("%d %d\n", a[0], a[2]);
+
+int32 cnt = 0;
+while z == 0 {
+	cnt + 1 -> cnt;
+	if cnt == 3 { 1 -> z; }
+}
+printf("%d %d\n", cnt, t == 1 && z);

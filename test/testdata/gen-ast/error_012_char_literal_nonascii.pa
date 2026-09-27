@@ -1,0 +1,2 @@
+// Non-ASCII characters are rejected.
+int32 c = 'é';

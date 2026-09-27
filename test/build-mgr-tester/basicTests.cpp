@@ -86,10 +86,19 @@ TEST(build_mgr, divmod_rdx_conflict) {
 
 TEST(build_mgr, param_loop_call_arg) {
 	cleanTestEnv();
-	// Parameter n is used only as call arg inside loop (not Cmp operand).
-	// Covers RegAlloc lines 172-173: call_uses loop-region check for params.
+	// Parameter n is used only as call arg inside loop (not Cmp operand), so
+	// only the loop extension of its live range makes it cross the call.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/014_param_loop_call_arg.pa");
 	ASSERT_EQ(output, "42\n42\n42\n");
+}
+
+TEST(build_mgr, loop_live_range) {
+	// Values defined before a loop must stay live until its backward jump:
+	// a spilled param's stack slot and a call-arg-only local were both
+	// clobbered on the second iteration.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/210_loop_live_range.pa");
+	ASSERT_EQ(output, "f=60\nf=60\nf=60\nk=7\nk=7\nk=7\n");
 }
 
 TEST(build_mgr, rdx_divmod_conflict) {
@@ -1585,6 +1594,55 @@ TEST(build_mgr, macro_name_collision) {
 	ASSERT_EQ(output, "7 7 7\n");
 }
 
+TEST(build_mgr, macro_const_suffix)
+{
+	// Same shape as ncurses' A_* attributes: a typedef cast of a suffixed literal, shifted.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/211_macro_const_suffix.pa");
+	ASSERT_EQ(output, "262144 2097152 2359296 18446744073709551615\n");
+}
+
+TEST(build_mgr, macro_const_untyped)
+{
+	// Unsuffixed macros take the parameter's type like source literals, so
+	// ncurses' init_pair(1, COLOR_RED, COLOR_BLACK) needs no casts to short.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/212_macro_const_untyped.pa");
+	ASSERT_EQ(output, "1 -1 -1\n40000 1\n");
+}
+
+TEST(build_mgr, cond_width)
+{
+	// A condition is tested at its own width: a uint8 argument's upper bits
+	// are not clean, and 2^32 is nonzero only above bit 31.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/213_cond_width.pa");
+	ASSERT_EQ(output, "0 1\n");
+}
+
+TEST(build_mgr, bool_type)
+{
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/214_bool.pa");
+	ASSERT_EQ(output, "1 0 1 0\n0 1\n2 1 -1 -2\n1\n0 1\n3 1\n");
+}
+
+TEST(build_mgr, c_narrow_arg)
+{
+	// printf reads each narrow argument as a full int, in registers and on the stack.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/215_c_narrow_arg.pa");
+	ASSERT_EQ(output, "-5 200 -300 60000 7 -6 250 -30000\n");
+}
+
+TEST(build_mgr, c_bool)
+{
+	// libc functions redeclared with _Bool check the C ABI without needing ncurses.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/216_c_bool.pa");
+	ASSERT_EQ(output, "1 1 0\n1 0\ncond\n");
+}
+
 TEST(build_mgr, c_union_rw)
 {
 	// Both members of a cinclude'd union alias the same bytes: a write through
@@ -1825,6 +1883,19 @@ TEST(build_mgr, uint64_float_convert) {
 		"18446744073709551616 9223372036854775808 9223372036854775808.0\n"
 		"18000000000000000000 12345 9223372036854775808\n"
 		"18446744073709549568\n");
+}
+
+TEST(build_mgr, char_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/217_char_literal.pa");
+	ASSERT_EQ(output, "quit 113\n98 10 92\n");
+}
+
+TEST(build_mgr, var_init_copy) {
+	// A variable initialized from another must not share its storage.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/218_var_init_copy.pa");
+	ASSERT_EQ(output, "3 2 1.5 2.5 10 20 6\n");
 }
 
 TEST(build_mgr, clean) {

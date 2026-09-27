@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+cinclude "216_c_bool.h";
+
+printf("%d %d %d\n", abs(bool(7)), abs(TRUE), abs(FALSE));
+bool r = labs(1);
+bool z = labs(0);
+printf("%d %d\n", r, z);
+if labs(1) {
+	printf("cond\n");
+}

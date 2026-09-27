@@ -1,1 +1,1 @@
-#define S_IFDIR 0040000
+#define S_IFDIR ((int)0040000)

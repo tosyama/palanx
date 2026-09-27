@@ -62,6 +62,7 @@ enum {
 };
 
 static string& unescape(string& str);
+static int charLiteralCode(const char* text, int len);
 
 PlnLexer::PlnLexer(const string& input_file)
 	: inputFile(input_file), inStream(input_file), yyFlexLexer()
@@ -84,6 +85,7 @@ FLOAT	[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?
 ID	[a-zA-Z_][0-9a-zA-Z_]*
 DEMILITER	"{"|"}"|"("|")"|"["|"]"|","|";"|":"|"="|"+"|"-"|"*"|"/"|"%"|"<"|">"|"!"|"?"|"&"|"@"|"."|"$"|"#"|"|"|"^"|"~"
 STRING	"\""(\\.|\\\n|[^\\\"])*"\""
+CHAR	"'"(\\.|[^\\'\n])*"'"
 PATH	"\""[^\"\n]*"\""
 INCLUDE_FILE	"<".*">"
 COMMENT1	\/\/[^\n]*\n
@@ -153,6 +155,15 @@ COMMENT1	\/\/[^\n]*\n
 		lval.build<string>() = move(unescape(str));
 		return STRING;
 	}
+<INITIAL>{CHAR}	{
+		int code = charLiteralCode(yytext, yyleng);
+		if (code < 0)
+			throw runtime_error(PlnGenAstMessage::locatedError(inputFile,
+				loc.begin.line, loc.begin.column,
+				PlnGenAstMessage::getMessage(E_InvalidCharLiteral, yytext)));
+		lval.build<string>() = to_string(code);
+		return INT;
+	}
 <*>{COMMENT1}	{ loc.lines(); loc.step(); }
 <*>{DEMILITER} { return yytext[0]; }
 <*>"<="	{ return OPE_LE; }
@@ -168,6 +179,21 @@ COMMENT1	\/\/[^\n]*\n
 <*>"||"	{ return OPE_OR; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
+<*>.	{
+		// Printing a lone byte of a UTF-8 sequence would garble the terminal.
+		unsigned char c = yytext[0];
+		string ch(1, c);
+		if (c < 0x20 || c > 0x7e) {
+			char buf[8];
+			snprintf(buf, sizeof(buf), "\\x%02X", c);
+			ch = buf;
+		}
+		// Not PlnParser::syntax_error: glr2.cc reports a scanner-thrown
+		// syntax_error a second time when the parser stack is split.
+		throw runtime_error(PlnGenAstMessage::locatedError(inputFile,
+			loc.begin.line, loc.begin.column,
+			PlnGenAstMessage::getMessage(E_UnexpectedChar, ch)));
+	}
 <*><<EOF>>	{ return 0; }
 
 %%
@@ -217,3 +243,23 @@ static string& unescape(string& str)
 	return str;
 }
 
+static int charLiteralCode(const char* text, int len)
+{
+	// text includes the surrounding quotes.
+	if (len == 3) {
+		unsigned char c = text[1];
+		if (c < 0x20 || c > 0x7e) return -1;
+		return c;
+	}
+	if (len == 4 && text[1] == '\\') {
+		switch (text[2]) {
+			case 'n': return '\n';
+			case 't': return '\t';
+			case 'r': return '\r';
+			case '0': return 0;
+			case '\\': return '\\';
+			case '\'': return '\'';
+		}
+	}
+	return -1;
+}

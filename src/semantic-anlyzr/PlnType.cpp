@@ -24,6 +24,7 @@ struct PrimTypeNames {
         toEnum["uint64"] = PrimType::Name::Uint64;
         toEnum["flo32"]  = PrimType::Name::Float32;
         toEnum["flo64"]  = PrimType::Name::Float64;
+        toEnum["bool"]   = PrimType::Name::Bool;
         toEnum["void"]   = PrimType::Name::Void;
         for (auto& [k, v] : toEnum) fromEnum[v] = k;
     }
@@ -153,12 +154,13 @@ json PlnTypeRegistry::toJson(const PlnType* t)
 
 static int primGroup(PrimType::Name n)
 {
-    // 0 = signed, 1 = unsigned, 2 = float
+    // 0 = signed, 1 = unsigned, 2 = float, 3 = bool
     using N = PrimType::Name;
     switch (n) {
         case N::Int8: case N::Int16: case N::Int32: case N::Int64:   return 0;
         case N::Uint8: case N::Uint16: case N::Uint32: case N::Uint64: return 1;
         case N::Float32: case N::Float64:                              return 2;
+        case N::Bool:                                                  return 3;
     }
     return -1; // LCOV_EXCL_LINE
 }
@@ -188,6 +190,10 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
 
         int gf = primGroup(pf->name);
         int gt = primGroup(pt->name);
+        // bool holds only 0/1: it widens into any numeric type, but entering
+        // it from one needs bool(x), which tests != 0 instead of truncating.
+        if (gf == 3) return TypeCompat::ImplicitWiden;
+        if (gt == 3) return TypeCompat::ExplicitCast;
         // Integer (signed or unsigned) → float: implicit widening allowed.
         // Float → integer and cross-signedness require explicit cast.
         if ((gf == 0 || gf == 1) && gt == 2) return TypeCompat::ImplicitWiden;
@@ -237,6 +243,10 @@ const PlnType* usualArithConv(const PlnType* a, const PlnType* b)
     int ga = primGroup(pa->name), gb = primGroup(pb->name);
     if (ga < 0 || gb < 0) return nullptr; // Void is not a valid operand type; LCOV_EXCL_BR_LINE -- already rejected upstream (E_VoidCallUsedAsValue)
 
+    // bool ranks below every other type, so the other side always wins.
+    if (ga == 3) return b;
+    if (gb == 3) return a;
+
     // 1. Either side float -> the wider float wins (both sides float: wider; one
     //    side integer: the float side, per the existing int-to-float ImplicitWiden rule).
     if (ga == 2 || gb == 2) {
@@ -263,5 +273,6 @@ bool argConvOk(const PlnType* from, const PlnType* to)
     const auto* pt = static_cast<const PrimType*>(to);
     int gf = primGroup(pf->name), gt = primGroup(pt->name);
     if (gf < 0 || gt < 0 || gf == 2 || gt == 2) return false;  // float pairs handled above
+    if (gt == 3) return false;  // int8 -> bool is not a reinterpretation
     return primRank(pf->name) == primRank(pt->name);           // same-width sign reinterpretation
 }

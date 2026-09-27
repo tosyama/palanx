@@ -49,7 +49,7 @@ class PlnLexer;
 	static std::set<std::string> typeNames = {
 		"int8",  "int16",  "int32",  "int64",
 		"uint8", "uint16", "uint32", "uint64",
-		"flo32", "flo64"
+		"flo32", "flo64", "bool"
 	};
 
 	int yylex(
@@ -1043,6 +1043,6 @@ move_owner_r: /* empty */ { $$ = false; }
 
 void palan::PlnParser::error(const location_type& l, const string& m)
 {
-	cerr << lexer.inputFile << ":" << l.begin.line << ":" << l.begin.column << ": error: " << m << endl;
+	cerr << PlnGenAstMessage::locatedError(lexer.inputFile, l.begin.line, l.begin.column, m) << endl;
 }
 

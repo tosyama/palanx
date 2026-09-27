@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+cinclude "212_macro_const_untyped.h";
+
+func show(int16 a, int16 b, int8 c) {
+	printf("%d %d %d\n", a, b, c);
+}
+
+show(COLOR_RED, ERR, -COLOR_RED);
+uint32 u = BIG;
+printf("%u %d\n", u, u == BIG);

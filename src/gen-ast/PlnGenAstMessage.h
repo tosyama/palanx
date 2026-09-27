@@ -16,12 +16,15 @@ enum PlnMessageCode {
 	E_NoInputFile,
 	E_C2AstFailed,			// header path
 	E_ExpectedLinkKeyword,		// identifier
+	E_UnexpectedChar,		// character
+	E_InvalidCharLiteral,		// literal text
 };
 
 class PlnGenAstMessage
 {
 public:
 	static string getMessage(PlnMessageCode msg_code, string arg1="\x01");
+	static string locatedError(const string& file, int line, int column, const string& msg);
 };
 
 

@@ -1,0 +1,6 @@
+cinclude "215_c_narrow_arg.h";
+
+int8 a = -5;
+uint16 d = 60000;
+int16 h = -30000;
+printf("%d %d %d %d %d %d %d %d\n", a, 200, -300, d, 7, -6, 250, h);

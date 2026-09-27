@@ -1,0 +1,19 @@
+cinclude <stdio.h>;
+func id(bool b) -> bool { return b; }
+func take(int32 v) { }
+type Flags { bool on; };
+bool t = 1;
+int32 n = 5;
+bool c = bool(n);
+bool d = bool(1.5);
+int32 w = t;
+int32 s = t + 1;
+int32 k = -t;
+if t == n { }
+while t { 0 -> t; }
+id(0);
+[2]bool a;
+Flags f;
+bool u = 1u;
+take(t);
+printf("%d %d\n", t, t + 1);

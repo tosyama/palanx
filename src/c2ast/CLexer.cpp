@@ -38,6 +38,7 @@ CLexer::CLexer(CFileInfo &infile) : infile(move(infile)), no(-1)
 		keywords[TK_UNION] = "union";
 		keywords[TK_ENUM] = "enum";
 		keywords[TK_VOID] = "void";
+		keywords[TK_BOOL] = "_Bool";
 		keywords[TK_RETURN] = "return";
 		keywords[TK_INLINE] = "inline";
 		keywords[TK_RESTRICT] = "restrict";

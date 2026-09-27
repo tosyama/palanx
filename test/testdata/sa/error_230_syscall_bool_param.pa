@@ -1,0 +1,1 @@
+syscall foo(bool x) = 1;
