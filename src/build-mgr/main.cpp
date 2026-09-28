@@ -187,6 +187,7 @@ int main(int argc, char* argv[])
 		vector<json> arr_shapes;
 		vector<json> struct_shapes;
 		vector<json> arr_struct_shapes;
+		vector<json> arr_arr_struct_shapes;
 		for (auto& ast_file : ast_files) {
 			string base = ast_file.substr(0, ast_file.size() - 9);
 			ifstream f(base + ".sa.json");
@@ -207,6 +208,8 @@ int main(int argc, char* argv[])
 					struct_shapes.push_back(shape);
 				else if (shape.value("shape-kind", "") == "arr-struct")
 					arr_struct_shapes.push_back(shape);
+				else if (shape.value("shape-kind", "") == "arr-arr-struct")
+					arr_arr_struct_shapes.push_back(shape);
 				else
 					arr_shapes.push_back(shape);
 			}
@@ -374,6 +377,33 @@ int main(int argc, char* argv[])
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "    free(pts);\n"
+					    << "    return;\n"
+					    << "}\n";
+				}
+
+				// Owned 2D struct array: each row is an owned struct array from above
+				for (auto& shape : arr_arr_struct_shapes) {
+					string struct_name = shape["struct-name"];
+					string shape_key   = shape["shape-key"];
+					out << "\nexport func __pln_alloc_" << shape_key
+					    << "(int64 d0, int64 d1) -> [][]@!" << struct_name << " {\n"
+					    << "    [d0]@![]@!" << struct_name << " outer;\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < d0 {\n"
+					    << "        __pln_alloc_arr_" << struct_name << "(d1) ->> outer[i];\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
+					    << "    return outer;\n"
+					    << "}\n"
+					    << "export func __pln_free_" << shape_key
+					    << "([][]@!" << struct_name << " outer, int64 d0, int64 d1) {\n"
+					    << "    if (outer == NULL) { return; }\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < d0 {\n"
+					    << "        __pln_free_arr_" << struct_name << "(outer[i], d1);\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
+					    << "    free(outer);\n"
 					    << "    return;\n"
 					    << "}\n";
 				}

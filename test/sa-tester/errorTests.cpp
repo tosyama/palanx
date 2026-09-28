@@ -2483,3 +2483,19 @@ TEST(sa_error, struct_borrow)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, struct_arr_2d)
+{
+	const pair<string, string> cases[] = {
+		{"error_261_struct_arr_2d_embed_outer.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T'."},
+		{"error_262_struct_arr_2d_embed_row.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

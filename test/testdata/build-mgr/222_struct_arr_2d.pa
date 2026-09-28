@@ -1,0 +1,26 @@
+cinclude <stdio.h>;
+type Point { int32 x; int32 y; };
+type Line { Point a; $Point b; };
+
+func shift(@!Point p, int32 d) {
+	p.x + d -> p.x;
+}
+
+[2][3]Point m;
+int32 i = 0;
+while i < 2 {
+	int32 j = 0;
+	while j < 3 {
+		i * 10 + j -> m[i][j].x;
+		j -> m[i][j].y;
+		j + 1 -> j;
+	}
+	i + 1 -> i;
+}
+shift(@!m[1][2], 100);
+printf("%d %d %d\n", m[0][1].x, m[1][2].x, m[1][1].y);
+
+[2][2]Line l;
+3 -> l[1][0].a.y;
+4 -> l[0][1].b.x;
+printf("%d %d\n", l[1][0].a.y, l[0][1].b.x);

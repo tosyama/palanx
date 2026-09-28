@@ -284,6 +284,17 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
 		cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
 		exit(1);
 	}
+	if (tk == "arr" && vtype.value("specifier", "") == "raw") {
+		const json& base = vtype["base-type"];
+		if (base.value("type-kind", "") == "arr" && base["base-type"].value("type-kind", "") == "prim"
+				&& structDefs_.count(base["base-type"].value("type-name", ""))) {
+			if (vtype.value("embedded", false) || base.value("embedded", false)) {
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_Unsupported2DStructArr) << endl;
+				exit(1);
+			}
+			return sa_owned_struct_arr2d_var_decl(stmt2);
+		}
+	}
 	if (tk == "arr" && vtype.value("specifier", "") == "raw"
 			&& !vtype["size-expr"].is_null()
 			&& vtype.value("embedded", false))
@@ -469,7 +480,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			                {"mutable",base_type.value("mutable", false)}};
 		} else {
 			// [n]@![]T: elem is mutable pntr to unsized arr → SA elem = pntr(T)
-			sa_elem_type = unsizedArrToPntr(inner);
+			sa_elem_type = deepNormalizePrimToStruct(unsizedArrToPntr(inner));
 		}
 	} else {
 		elem_size = elemSizeBytes(base_type.value("type-name",""));
@@ -1032,6 +1043,18 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+void PlnSemanticAnalyzer::recordArrStructShape(const string& structName)
+{
+	string shape_key = "arr_" + structName;
+	for (auto& s : sa["alloc-shapes"])
+		if (s.value("shape-key","") == shape_key) return;
+	// struct shape must be present for build-mgr to know the field layout
+	recordAllocShape(structName);
+	sa["alloc-shapes"].push_back({
+		{"shape-kind","arr-struct"}, {"shape-key",shape_key}, {"struct-name",structName}
+	});
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 {
 	// [n]T (T = struct): owned pointer array.
@@ -1041,18 +1064,8 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 	string struct_name = base_type["type-name"].get<string>();
 	requireCompleteStruct(struct_name, stmt);  // recordAllocShape below needs totalSize/fields
 
+	recordArrStructShape(struct_name);
 	string shape_key = "arr_" + struct_name;
-	bool found = false;
-	for (auto& s : sa["alloc-shapes"])
-		if (s.value("shape-key","") == shape_key) { found = true; break; }
-	if (!found) {
-		// struct shape must be present for build-mgr to know the field layout
-		recordAllocShape(struct_name);
-		sa["alloc-shapes"].push_back({
-			{"shape-kind","arr-struct"}, {"shape-key",shape_key}, {"struct-name",struct_name}
-		});
-	}
-
 	string alloc_func = "__pln_alloc_" + shape_key;
 	string free_func  = "__pln_free_"  + shape_key;
 
@@ -1092,6 +1105,86 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 			{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
 			{"args",json::array({arr_id, n_id})}
 		}}};
+
+		declareVar(name, pntr_type, &stmt);
+		arrayScopeVars_.back().push_back({name, free_stmt_json});
+		// LCOV_EXCL_EXCEPTION_BR_START
+		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+			{"name",name},{"var-type",pntr_type},{"init",alloc_call}
+		}})}});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_owned_struct_arr2d_var_decl(const json& stmt)
+{
+	// [m][n]T (T = struct): an array of owned [n]T rows.
+	// __pln_alloc_arr_arr_T(m, n) on declaration, __pln_free_arr_arr_T(pts, m, n) at scope exit.
+	const json& vtype = stmt["vars"][0]["var-type"];
+	const json& row_type = vtype["base-type"];
+	string struct_name = row_type["base-type"]["type-name"].get<string>();
+	requireCompleteStruct(struct_name, stmt);
+
+	// The rows are allocated and freed by the [n]T helpers.
+	recordArrStructShape(struct_name);
+	string shape_key = "arr_arr_" + struct_name;
+	bool found = false;
+	for (auto& s : sa["alloc-shapes"])
+		if (s.value("shape-key","") == shape_key) { found = true; break; }
+	if (!found)
+		sa["alloc-shapes"].push_back({
+			{"shape-kind","arr-arr-struct"}, {"shape-key",shape_key}, {"struct-name",struct_name}
+		});
+
+	string alloc_func = "__pln_alloc_" + shape_key;
+	string free_func  = "__pln_free_"  + shape_key;
+
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	json struct_type = {{"type-kind","struct"},{"type-name",struct_name}};
+	json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+
+	json result = json::array();
+	for (auto& var : stmt["vars"]) {
+		string name = var["name"];
+		json d0_expr = sa_arr_size_expr(stmt, vtype["size-expr"]);
+		json d1_expr = sa_arr_size_expr(stmt, row_type["size-expr"]);
+
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json pntr_type = {{"type-kind","pntr"},{"base-type",{
+			{"type-kind","pntr"},{"base-type",elem_pntr}
+		}}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+		setArrSize(pntr_type, d0_expr);
+		setArrSize(pntr_type["base-type"], d1_expr);
+
+		// Both sizes are kept in variables because the free call needs them too.
+		auto dimVar = [&](const string& dim_name, const json& init) -> json {
+			declareVar(dim_name, uint64_type, &stmt);
+			// LCOV_EXCL_EXCEPTION_BR_START
+			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
+				{"name",dim_name},{"var-type",uint64_type},{"init",init}
+			}})}});
+			return {{"expr-type","id"},{"name",dim_name},
+			        {"var-type",uint64_type},{"value-type",uint64_type}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+		};
+		json args = json::array({dimVar("__" + name + "_d0", d0_expr), dimVar("__" + name + "_d1", d1_expr)});
+
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json arr_id = {{"expr-type","id"},{"name",name},
+		               {"var-type",pntr_type},{"value-type",pntr_type}};
+		json alloc_call = {
+			{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
+			{"args",args}, {"value-type",pntr_type}
+		};
+		json free_stmt_json = {{"stmt-type","expr"},{"body",{
+			{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
+			{"args",json::array({arr_id, args[0], args[1]})}
+		}}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 
 		declareVar(name, pntr_type, &stmt);
 		arrayScopeVars_.back().push_back({name, free_stmt_json});

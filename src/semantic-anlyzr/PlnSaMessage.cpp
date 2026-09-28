@@ -405,6 +405,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_StructBorrowNeedsAddrOf:
 			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'.";
 
+		case E_Unsupported2DStructArr:
+			return "a two-dimensional struct array must be declared as '[m][n]T'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

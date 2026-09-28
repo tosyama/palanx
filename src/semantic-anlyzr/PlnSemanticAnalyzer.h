@@ -164,6 +164,8 @@ class PlnSemanticAnalyzer {
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_owned_struct_arr_var_decl(const json& stmt); // returns array of statements
+	json sa_owned_struct_arr2d_var_decl(const json& stmt); // returns array of statements
+	void recordArrStructShape(const string& structName);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	void registerCStruct(const json& s);          // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements

@@ -99,6 +99,7 @@ enum PlnSaMessageCode {
 	E_ArrBorrowNeedsAddrOf,
 	E_ArrBorrowShapeMismatch,	// arg1: expected shape, arg2: actual shape
 	E_StructBorrowNeedsAddrOf,
+	E_Unsupported2DStructArr,
 };
 
 class PlnSaMessage

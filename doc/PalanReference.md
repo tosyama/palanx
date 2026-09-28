@@ -1250,9 +1250,9 @@ free-tracking and the caller receives the pointer.
 
 ### Two-Dimensional Arrays (`[m][n]T`)
 
-`[m][n]T` declares a two-dimensional array with `m` rows and `n` columns, where `T` must be a
-primitive type. The outer array is heap-allocated; each row is independently heap-allocated by
-the auto-generated allocator.
+`[m][n]T` declares a two-dimensional array with `m` rows and `n` columns. The outer array is
+heap-allocated; each row is independently heap-allocated by the auto-generated allocator.
+`T` can also be a struct type; see [Struct Arrays](#struct-arrays).
 
 ```palan
 int64 rows = 2;
@@ -1401,7 +1401,20 @@ printf("%ld\n", rpts[0].x);   // 99
 printf("%ld\n", p.x);         // 42 (write-through via pointer)
 ```
 
-**Restriction:** `[n]$T` requires that `T` has no owned sub-struct fields. Use `[n]T` instead when `T` contains owned pointer fields.
+A two-dimensional struct array is declared as `[m][n]T`: each of the `m` rows is an `[n]T` owned
+pointer array. `pts[i][j]` yields a `T` pointer, and `pts[i][j].field` accesses a field.
+
+```palan
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+[2][3]Point grid;
+7 -> grid[1][2].y;
+printf("%ld\n", grid[1][2].y);  // 7
+```
+
+**Restrictions:**
+- `[n]$T` requires that `T` has no owned sub-struct fields. Use `[n]T` instead when `T` contains owned pointer fields.
+- Other two-dimensional struct array forms (`[m]$[n]T`, `[m][n]$T`, `[m]$[n]$T`) are not supported.
 
 Array **fields** (declared inside `type { ... }`, see Section 19) use the same four forms but
 require `n` to be a compile-time integer literal, since struct layout must be statically known.

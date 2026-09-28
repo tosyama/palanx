@@ -1917,6 +1917,31 @@ TEST(build_mgr, struct_borrow) {
 	ASSERT_EQ(output, "5 1 7 2 3 2\n2\n");
 }
 
+TEST(build_mgr, struct_arr_2d) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/222_struct_arr_2d.pa");
+	ASSERT_EQ(output, "1 112 1\n3 4\n");
+}
+
+TEST(build_mgr, struct_arr_2d_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_struct_arr_2d_mtrace_bin "
+		"../test/testdata/build-mgr/223_struct_arr_2d_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_struct_arr_2d_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_struct_arr_2d_mtrace_bin");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// [2][3]Line: 1 outer + 2 rows + 6 Line elements + 6 owned Point fields
+	EXPECT_EQ(allocs, 15) << "expected 15 allocs for [2][3]Line, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

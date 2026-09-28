@@ -21,7 +21,7 @@ Root
   `-l<name>` to the `ld` invocation for each entry.
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
-  Three entry kinds:
+  Four entry kinds:
 
   **Array entry** (multi-dimensional arrays):
   - shape-key\* - Shape key string (e.g. "arr\_arr\_int32")
@@ -34,6 +34,14 @@ Root
   feature) before any struct that has an owned array field of leaf type `T`:
   - shape-kind\* - "arr-struct"
   - shape-key\* - Shape key string (e.g. "arr\_Point")
+  - struct-name\* - Leaf struct type name (e.g. "Point")
+
+  **Arr-arr-struct entry** (`[m][n]T` variable where `T` is a struct): build-mgr generates
+  `__pln_alloc_arr_arr_T(d0, d1)`/`__pln_free_arr_arr_T(pts, d0, d1)`, which allocate and free
+  each row with the `__pln_alloc_arr_T`/`__pln_free_arr_T` pair (its "arr-struct" entry is
+  always emitted alongside):
+  - shape-kind\* - "arr-arr-struct"
+  - shape-key\* - Shape key string (e.g. "arr\_arr\_Point")
   - struct-name\* - Leaf struct type name (e.g. "Point")
 
   **Struct entry** (structs with owned struct-pointer fields and/or array fields):
@@ -198,6 +206,14 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     to the root `alloc-shapes` array (deduplicated by shape-key across all var-decls).
   - Scope-exit free: palan call stmt `__pln_free_arr_arr_<leaf>(<name>, __<name>_d0)`.
   - build-mgr auto-generates the allocator/free Palan source from `alloc-shapes` and links it.
+
+  **`[m][n]T` (2D struct array, `T` a struct):** Each row is an owned `[n]T` array.
+  - Temp vars `__<name>_d0` and `__<name>_d1` (uint64) are prepended; the free call needs both.
+  - `var-type`: `pntr(pntr(pntr(struct(T))))`, with `arr-size` on the outer two levels when constant.
+  - `init`: palan call to `__pln_alloc_arr_arr_<T>(__<name>_d0, __<name>_d1)`.
+  - "arr-struct" and "arr-arr-struct" entries are added to `alloc-shapes`.
+  - Scope-exit free: palan call stmt `__pln_free_arr_arr_<T>(<name>, __<name>_d0, __<name>_d1)`.
+  - Other 2D struct forms (`[m]$[n]T`, `[m][n]$T`, `[m]$[n]$T`) are compile errors.
 
   **`[n]$[m]T` (contiguous 2D array):** A `var-decl` with outer `arr` type-kind where
   `embedded: true` and `base-type` is an inner `arr(prim T)` is transformed to a single

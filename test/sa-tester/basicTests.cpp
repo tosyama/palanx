@@ -4473,3 +4473,28 @@ TEST(sa, ptr_arr_field_permission)
 		if (st["stmt-type"] == "arr-assign") arrAssigns++;
 	ASSERT_EQ(arrAssigns, 2);
 }
+
+TEST(sa, struct_arr_2d)
+{
+	json jout = run_sa("../test/testdata/sa/204_struct_arr_2d.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// The rows reuse the [n]T helpers, so their shape is registered too.
+	json kinds = json::array();
+	for (auto& s : jout["alloc-shapes"])
+		kinds.push_back(s["shape-kind"]);
+	ASSERT_EQ(kinds, json::array({"struct", "arr-struct", "arr-arr-struct"}));
+	ASSERT_EQ(jout["alloc-shapes"][2]["shape-key"], "arr_arr_Point");
+
+	const json& stmts = jout["statements"];
+	const json& m = stmts[2]["vars"][0];
+	ASSERT_EQ(m["name"], "m");
+	ASSERT_EQ(m["init"]["name"], "__pln_alloc_arr_arr_Point");
+	ASSERT_EQ(m["init"]["args"].size(), 2);
+	json point = {{"type-kind","struct"},{"type-name","Point"}};
+	ASSERT_EQ(m["var-type"]["base-type"]["base-type"]["base-type"], point);
+	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
+
+	const json& rowsElem = stmts[4]["vars"][0]["var-type"]["base-type"];
+	ASSERT_EQ(rowsElem["base-type"]["base-type"], point);
+}
