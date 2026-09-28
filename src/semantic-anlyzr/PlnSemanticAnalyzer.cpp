@@ -407,11 +407,15 @@ json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, b
 	}
 	leaf = resolveTypeAlias(leaf);
 	string tname = leaf.value("type-name","");
-	if (leaf.value("type-kind","") != "prim" || structDefs_.count(tname) || !isKnownTypeName(tname)) {
+	bool isStruct = structDefs_.count(tname) > 0;
+	if (leaf.value("type-kind","") != "prim" || (!isStruct && !isKnownTypeName(tname))
+			|| (isStruct && out.value("embedded", false))) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
 		exit(1);
 	}
-	out["base-type"] = leaf;
+	// LCOV_EXCL_EXCEPTION_BR_START
+	out["base-type"] = isStruct ? toStructPntrType(leaf) : leaf;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 	return out;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

@@ -1162,7 +1162,7 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 	json struct_type = {{"type-kind","struct"},{"type-name",struct_name}};
 	json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
-	json pntr_type   = {{"type-kind","pntr"},{"base-type",elem_pntr}};
+	json arr_type    = {{"type-kind","pntr"},{"base-type",elem_pntr}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 
 	json result = json::array();
@@ -1171,6 +1171,8 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 		string n_name = "__" + name + "_n";
 
 		json n_expr = sa_arr_size_expr(stmt, vtype["size-expr"]);
+		json pntr_type = arr_type;
+		setArrSize(pntr_type, n_expr);
 
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json n_id = {{"expr-type","id"},{"name",n_name},

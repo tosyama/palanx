@@ -4525,3 +4525,27 @@ TEST(sa, struct_arr_lit)
 	ASSERT_EQ(assigns["m"].size(), 8);
 	ASSERT_EQ(assigns["m"][7], (pair<int, string>{4, "7"}));
 }
+
+TEST(sa, struct_arr_borrow)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/206_struct_arr_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// The element stays the struct's storage (no "mutable"): only the array
+	// level carries the borrow's permission.
+	json elem = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name","P"}}}};
+	const auto& pt = jout["functions"][0]["parameters"][0]["var-type"];
+	ASSERT_EQ(pt["arr-size"], 2);
+	ASSERT_EQ(pt["mutable"], true);
+	ASSERT_EQ(pt["base-type"], elem);
+
+	const json* call = nullptr;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr") call = &st["body"];
+	ASSERT_NE(call, nullptr);
+	const auto& at = (*call)["args"][0]["value-type"];
+	ASSERT_EQ(at["arr-size"], 2);
+	ASSERT_EQ(at["mutable"], true);
+	ASSERT_EQ(at["base-type"], elem);
+}

@@ -257,12 +257,16 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `pntr` whose `base-type` is an `arr` is normalized to the array's own pntr chain, with
   `arr-size` on every level and `mutable` (`false` for `@`, `true` for `@!`) on every level down
   to the elements — `@[n][m]T` becomes `pntr(pntr(T, mutable, arr-size:m), mutable, arr-size:n)`,
-  `@[n]$[m]T` becomes `pntr(T, mutable, embedded:true, inner-size:m, arr-size:n)`. Every size must
-  be constant (`E_ArrBorrowSizeNotConst`) and `T` primitive (`E_ArrBorrowUnsupportedElem`). A
+  `@[n]$[m]T` becomes `pntr(T, mutable, embedded:true, inner-size:m, arr-size:n)`. For a struct
+  `T` (`@[n]T` / `@[n][m]T` only), the element is `pntr(struct(T))` without `mutable`, the same
+  as in the owned array: it is the struct's storage, and a field write through it is checked
+  against the permission of the array level it is indexed from. Every size must be constant
+  (`E_ArrBorrowSizeNotConst`) and `T` primitive or struct (`E_ArrBorrowUnsupportedElem`). A
   return type of this form stays rejected (`E_UnsupportedParamType`). At a call argument, a
   local's initializer, or an assignment to such a destination, the source must be written as
   `@x`/`@!x` (`E_ArrBorrowNeedsAddrOf`) and its value-type must match depth, `embedded`,
-  `inner-size`, and every `arr-size` (`E_ArrBorrowShapeMismatch`). A row read through an
+  `inner-size`, every `arr-size`, and whether the element is a stored struct
+  (`E_ArrBorrowShapeMismatch`). A row read through an
   embedded borrow inherits its `mutable`.
 
   Scope-exit cleanup:

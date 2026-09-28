@@ -1,2 +1,2 @@
 type P { int32 x; };
-func f(@[2]P g) { }
+func f(@[2]$[3]P g) { }

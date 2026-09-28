@@ -1968,6 +1968,12 @@ TEST(build_mgr, struct_arr_lit_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, struct_arr_borrow) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/226_struct_arr_borrow.pa");
+	ASSERT_EQ(output, "9\n(30,4) 10 30 50\n(50,6)\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

@@ -1,0 +1,44 @@
+cinclude <stdio.h>;
+type Point { int32 x; int32 y; };
+const N = 2;
+
+func sum(@[N][3]Point m) -> int32
+{
+	int32 s = 0;
+	int32 i = 0;
+	while i < N {
+		int32 j = 0;
+		while j < 3 { s + m[i][j].x + m[i][j].y -> s; j + 1 -> j; }
+		i + 1 -> i;
+	}
+	return s;
+}
+
+func fill(@![N][3]Point m)
+{
+	int32 i = 0;
+	while i < N {
+		int32 j = 0;
+		while j < 3 { i -> m[i][j].x; j -> m[i][j].y; j + 1 -> j; }
+		i + 1 -> i;
+	}
+}
+
+func show(@Point p) { printf("(%d,%d)", p.x, p.y); }
+
+func scale(@![3]Point v, int32 k)
+{
+	int32 i = 0;
+	while i < 3 { v[i].x * k -> v[i].x; i + 1 -> i; }
+	show(@v[1]);
+}
+
+[N][3]Point a;
+fill(@!a);
+printf("%d\n", sum(@a));
+[3]Point b = [[1,2],[3,4],[5,6]];
+scale(@!b, 10);
+printf(" %d %d %d\n", b[0].x, b[1].x, b[2].x);
+@[3]Point rb = @b;
+show(@rb[2]);
+printf("\n");

@@ -301,26 +301,34 @@ inline void setArrSize(json& pntrType, const json& saSize) {
 	if (n >= 0) pntrType["arr-size"] = n;
 }
 
+// A struct array's element is a pntr(struct) to the struct's own storage;
+// the array levels stop there.
+inline bool isArrLevel(const json& t) {
+	return t.value("type-kind","") == "pntr" && !isStructStorage(t);
+}
+
 // Renders an array pntr chain as source-like shape text ("[20][10]int32",
 // "[3]$[?]int32") for diagnostics; an unknown size shows as "?".
 inline string arrShapeName(const json& t) {
 	string out;
 	const json* cur = &t;
-	while (cur->value("type-kind","") == "pntr") {
+	while (isArrLevel(*cur)) {
 		out += "[" + (cur->contains("arr-size") ? to_string((*cur)["arr-size"].get<int64_t>()) : string("?")) + "]";
 		if (cur->value("embedded", false))
 			out += "$[" + (cur->contains("inner-size") ? to_string((*cur)["inner-size"].get<int64_t>()) : string("?")) + "]";
 		cur = &(*cur)["base-type"];
 	}
+	if (isStructStorage(*cur)) cur = &(*cur)["base-type"];
 	return out + cur->value("type-name", "");
 }
 
 // Shape equality for binding an array to a borrowed array type: same depth,
-// same embedded layout, and every size known and equal. The element type is
-// left to the usual type compatibility check.
+// same embedded layout, every size known and equal, and structs stored in
+// both or neither. The element type is left to the usual type compatibility
+// check, which cannot tell a stored struct from a pointer to one.
 inline bool arrShapeMatch(const json& from, const json& to) {
-	bool fp = from.value("type-kind","") == "pntr", tp = to.value("type-kind","") == "pntr";
-	if (!fp || !tp) return fp == tp;
+	bool fp = isArrLevel(from), tp = isArrLevel(to);
+	if (!fp || !tp) return fp == tp && isStructStorage(from) == isStructStorage(to);
 	auto sameKey = [&](const char* k) {
 		return from.contains(k) == to.contains(k) && (!to.contains(k) || from[k] == to[k]);
 	};
@@ -329,17 +337,19 @@ inline bool arrShapeMatch(const json& from, const json& to) {
 	    && arrShapeMatch(from["base-type"], to["base-type"]);
 }
 
-inline bool arrLeafIsPrim(const json& t) {
+inline bool arrElemIsBorrowable(const json& t) {
 	const json* cur = &t;
-	while (cur->value("type-kind","") == "pntr") cur = &(*cur)["base-type"];
-	return cur->value("type-kind","") == "prim";
+	while (isArrLevel(*cur)) cur = &(*cur)["base-type"];
+	return cur->value("type-kind","") == "prim" || isStructStorage(*cur);
 }
 
 // An array is borrowed with one permission for every level down to its
-// elements, so a read-only 2D borrow also makes its rows read-only.
+// elements, so a read-only 2D borrow also makes its rows read-only. A struct
+// element stays the struct's storage; writes to it are checked against the
+// array it is reached through.
 inline json withArrPermission(json t, bool isMutable) {
 	json* cur = &t;
-	while (cur->value("type-kind","") == "pntr") {
+	while (isArrLevel(*cur)) {
 		(*cur)["mutable"] = isMutable;
 		cur = &(*cur)["base-type"];
 	}

@@ -40,7 +40,13 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
 		}
-		if (forWrite && vt.value("mutable", true) == false) {
+		// A pointer element carries its own permission; a struct stored in the
+		// array is writable only as far as the array it is reached through.
+		if (forWrite && isStructStorage(vt) && !isWritableThrough(sa_idx["array"]["value-type"])) {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+			exit(1);
+		}
+		if (forWrite && !isWritableThrough(vt)) {
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToReadOnlyArrElem) << endl;
 			exit(1);
 		}
@@ -169,7 +175,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			return out;
 		}
 		if (isInArrayScope(name) || varType->contains("arr-size")) {
-			if (!arrLeafIsPrim(*varType)) {
+			if (!arrElemIsBorrowable(*varType)) {
 				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
 				exit(1);
 			}
