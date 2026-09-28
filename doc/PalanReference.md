@@ -1235,6 +1235,27 @@ int64 rows = 4;
 // free(ptrs) emitted automatically at scope exit
 ```
 
+### Copying (`->`)
+
+`src -> dst` where `dst` is an array or a struct copies the contents of `src` into the storage
+`dst` already has; the two stay independent. The destination can be a variable, an array
+element or row (`a[i]`, `m[i]`), or a field. Initializing a declaration from another array or
+struct (`[4]$Point p = minos[1];`, `Point q = p;`) copies the same way.
+
+```palan
+[2][4]$Point minos = [[0,0][0,1][0,2][0,3], [0,0][0,1][1,1][2,1]];
+[4]$Point mino = minos[1];   // copy row 1
+minos[0][3] -> mino[0];      // copy one struct element
+2 -> mino[1].x;              // minos is unchanged
+```
+
+- The source must have the same element type and the same sizes as the destination, all known
+  at compile time; otherwise it is a compile error. A source may be borrowed (`@[n]T`, `@T`).
+- What the destination owns is copied too: owned struct fields and arrays, and the structs of a
+  `[n]T` array, get copies of the source's. A `@T`/`@!T` pointer is copied as a pointer.
+- A value returned by a function (e.g. a `[]T` return) is not copied: it is moved into the
+  destination as before.
+
 ### Ownership Transfer (`->>`)
 
 `val ->> arr[i]` transfers ownership of `val` into the array slot `arr[i]`. The semantic
@@ -1632,6 +1653,8 @@ A struct given by name where a `@T`/`@!T` is expected — a parameter, a variabl
 assignment, or a pointer field or slot — is a compile error. `@`/`@!` works on a struct variable
 (including a struct-type parameter), an owned (`T`) or embedded (`$T`) struct field, and a struct
 array element (`@!pts[1]`). A `@T`/`@!T` pointer itself is already a borrow and is passed by name.
+
+`q -> p` copies struct `q` into `p`, including what `q` owns; see [Copying](#copying--).
 
 A named return of struct type transfers ownership to the caller:
 

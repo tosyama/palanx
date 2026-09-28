@@ -1,0 +1,37 @@
+cinclude <stdio.h>;
+type Point { int32 x; int32 y; };
+type Line { $Point a; $Point b; };
+type Poly { Point c; [2]int32 w; [2]Point v; @!Point ref; };
+
+func show(@Point p) { printf("(%d,%d)", p.x, p.y); }
+
+func showCopy(@Point src)
+{
+	Point q = src;
+	10 -> q.x;
+	printf(" %d %d\n", q.x + q.y, src.x);
+}
+
+Point p;
+1 -> p.x; 2 -> p.y;
+Point q = p;
+0 -> p.x;
+show(@q);
+p -> q;
+show(@q);
+showCopy(@q);
+
+Line l;
+q -> l.b;
+0 -> q.y;
+show(@l.b);
+
+Poly g;
+3 -> g.c.x; 4 -> g.w[1]; 5 -> g.v[1].y; @!p -> g.ref;
+Poly h = g;
+0 -> g.c.x; 0 -> g.w[1]; 0 -> g.v[1].y; 8 -> g.ref.x;
+printf(" %d %d %d %d\n", h.c.x, h.w[1], h.v[1].y, h.ref.x);
+
+h.c -> g.v[0];
+h.v[1] -> g.c;
+printf("%d %d\n", g.v[0].x, g.c.y);

@@ -8,6 +8,7 @@
 #include <fstream>
 #include <vector>
 #include <set>
+#include <map>
 #include <algorithm>
 #include <cstring>
 #include <getopt.h>
@@ -240,7 +241,24 @@ int main(int argc, char* argv[])
 				// link_libs; it does not need to join the aggregation loop
 				// above.
 				ofstream out(alloc_pa);
-				out << "cinclude <stdlib.h>;\n";
+				out << "cinclude <stdlib.h>;\n"
+				    << "cinclude <string.h>;\n";
+
+				map<string, const json*> struct_by_name;
+				for (auto& shape : struct_shapes)
+					struct_by_name[shape["shape-name"].get<string>()] = &shape;
+				auto hasOwned = [&](const string& name) {
+					const json& ss = *struct_by_name.at(name);
+					return !ss["owned-fields"].empty() || !ss["owned-array-fields"].empty();
+				};
+				// Copies one struct's storage into another's: a flat struct is a
+				// byte copy, one owning sub-objects goes through its copy function.
+				auto structCopy = [&](const string& name, const string& dst, const string& src) {
+					if (hasOwned(name))
+						return "__pln_copy_" + name + "(" + dst + ", " + src + ");";
+					return "memcpy(" + dst + ", " + src + ", "
+						+ to_string(struct_by_name.at(name)->at("total-size").get<int64_t>()) + ");";
+				};
 
 				// Struct type declarations (leaf-first order from SA).
 				// Only the owned pointer fields are declared, at their original
@@ -248,6 +266,9 @@ int main(int argc, char* argv[])
 				// allocators touch nothing else, and the full field list cannot
 				// be re-expressed as Palan source in general (C unions, synthesized
 				// anonymous tags, embedded types not declared in this module).
+				// Byte ranges of each struct outside its owned pointer fields,
+				// declared as __pln_padN fields and copied as they are.
+				map<string, vector<pair<string, int64_t>>> struct_pads;
 				for (auto& shape : struct_shapes) {
 					string name = shape["shape-name"];
 					vector<pair<int64_t, string>> owned_decls;
@@ -264,8 +285,10 @@ int main(int argc, char* argv[])
 					int64_t pos = 0;
 					int pad_no = 0;
 					auto pad_to = [&](int64_t end) {
-						if (end > pos)
-							out << " [" << (end - pos) << "]$uint8 __pln_pad" << pad_no++ << ";";
+						if (end <= pos) return;
+						string pad = "__pln_pad" + to_string(pad_no++);
+						out << " [" << (end - pos) << "]$uint8 " << pad << ";";
+						struct_pads[name].push_back({pad, end - pos});
 					};
 					for (auto& [offset, decl] : owned_decls) {
 						pad_to(offset);
@@ -342,6 +365,26 @@ int main(int argc, char* argv[])
 					out << "    free(p);\n"
 					    << "    return;\n"
 					    << "}\n";
+
+					out << "export func __pln_copy_" << name
+					    << "(" << name << " dst, " << name << " src) {\n";
+					for (auto& [pad, size] : struct_pads[name])
+						out << "    memcpy(dst." << pad << ", src." << pad << ", " << size << ");\n";
+					for (auto& of : owned) {
+						string oname = of["name"];
+						out << "    " << structCopy(of["struct-name"].get<string>(), "dst." + oname, "src." + oname) << "\n";
+					}
+					for (auto& af : ownedArr) {
+						string fname = af["name"];
+						int64_t count = af["count"].get<int64_t>();
+						if (af["elem-kind"] == "prim")
+							out << "    memcpy(dst." << fname << ", src." << fname << ", "
+							    << count * af["elem-size"].get<int64_t>() << ");\n";
+						else
+							out << "    __pln_copy_arr_" << af["leaf-name"].get<string>()
+							    << "(dst." << fname << ", src." << fname << ", " << count << ");\n";
+					}
+					out << "}\n";
 				}
 
 				// Owned struct array allocator/free functions
@@ -378,6 +421,14 @@ int main(int argc, char* argv[])
 					    << "    }\n"
 					    << "    free(pts);\n"
 					    << "    return;\n"
+					    << "}\n"
+					    << "export func __pln_copy_" << shape_key
+					    << "([]@!" << struct_name << " dst, []@!" << struct_name << " src, int64 n) {\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < n {\n"
+					    << "        " << structCopy(struct_name, "dst[i]", "src[i]") << "\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
 					    << "}\n";
 				}
 
@@ -405,6 +456,15 @@ int main(int argc, char* argv[])
 					    << "    }\n"
 					    << "    free(outer);\n"
 					    << "    return;\n"
+					    << "}\n"
+					    << "export func __pln_copy_" << shape_key
+					    << "([][]@!" << struct_name << " dst, [][]@!" << struct_name
+					    << " src, int64 d0, int64 d1) {\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < d0 {\n"
+					    << "        __pln_copy_arr_" << struct_name << "(dst[i], src[i], d1);\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
 					    << "}\n";
 				}
 
@@ -432,6 +492,14 @@ int main(int argc, char* argv[])
 					    << "    }\n"
 					    << "    free(outer);\n"
 					    << "    return;\n"
+					    << "}\n"
+					    << "export func __pln_copy_arr_arr_" << leaf
+					    << "([][]" << leaf << " dst, [][]" << leaf << " src, int64 d0, int64 d1) {\n"
+					    << "    int64 i = 0;\n"
+					    << "    while i < d0 {\n"
+					    << "        memcpy(dst[i], src[i], d1 * " << shape["leaf-size"].get<int64_t>() << ");\n"
+					    << "        i + 1 -> i;\n"
+					    << "    }\n"
 					    << "}\n";
 				}
 			}

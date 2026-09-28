@@ -2018,6 +2018,45 @@ TEST(build_mgr, embed_struct_arr_2d_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, copy_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/232_copy_arr.pa");
+	ASSERT_EQ(output, "1 1 3 11 1\n4 7 6\n3\n");
+}
+
+TEST(build_mgr, copy_struct) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/233_copy_struct.pa");
+	ASSERT_EQ(output, "(1,2)(0,2) 12 0\n(0,2) 3 4 5 8\n3 5\n");
+}
+
+TEST(build_mgr, copy_struct_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/234_copy_struct_arr.pa");
+	ASSERT_EQ(output, "3 2 0\n2 3 1\n2 1\n5 0\n");
+}
+
+TEST(build_mgr, copy_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_copy_mtrace_bin "
+		"../test/testdata/build-mgr/235_copy_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_copy_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_copy_mtrace_bin");
+	ASSERT_EQ(output, "7\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// Poly: itself + c + w + v (1 + 2 Points) = 6; 2 Polys, 2 [2]Poly (1 + 2 * 6),
+	// 2 [2][2]Point (1 + 2 rows of 1 + 2 Points). Copies allocate nothing.
+	EXPECT_EQ(allocs, 52) << "expected 52 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

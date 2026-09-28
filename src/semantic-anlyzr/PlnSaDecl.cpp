@@ -243,35 +243,56 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		if (var.contains("var-type"))
 			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
 
-	auto isArrLit = [](const json& var) {
+	auto isArrInit = [](const json& var) {
 		return var["var-type"].value("type-kind", "") == "arr" && var.contains("init");
 	};
-	for (auto& var : stmt2["vars"]) {
-		if (isArrLit(var) && var["init"].value("expr-type", "") != "arr-lit") {
-			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_ArrVarInitNotLiteral, var["name"]) << endl;
-			exit(1);
-		}
-	}
 
 	// The lowering paths below apply one var-type to every var in a statement,
 	// so the declaration is split into runs of equal var-type. The comparison
 	// includes loc, so only vars inheriting the same source type node (`[f()]int32 a, b`)
 	// share one evaluation of its size expression. Each array literal fixes its own
-	// variable's size (`[]int32 a = [1,2], b = [1,2,3]`), so it always gets its own run.
+	// variable's size (`[]int32 a = [1,2], b = [1,2,3]`), so it always gets its own run,
+	// as does an array initialized by copying another one.
 	json result = json::array();
 	const json& vars = stmt2["vars"];
 	size_t begin = 0;
 	for (size_t i = 1; i <= vars.size(); i++) {
 		if (i < vars.size() && vars[i]["var-type"] == vars[i-1]["var-type"]
-				&& !isArrLit(vars[i]) && !isArrLit(vars[i-1]))
+				&& !isArrInit(vars[i]) && !isArrInit(vars[i-1]))
 			continue;
 		json run = stmt2;
 		run["vars"] = json(vars.begin() + begin, vars.begin() + i);
-		json lowered = isArrLit(vars[begin]) ? sa_arr_lit_var_decl(run) : sa_var_decl_group(run);
+		json lowered;
+		if (!isArrInit(vars[begin]))
+			lowered = sa_var_decl_group(run);
+		else if (vars[begin]["init"].value("expr-type", "") == "arr-lit")
+			lowered = sa_arr_lit_var_decl(run);
+		else
+			lowered = sa_arr_copy_var_decl(run);
 		for (auto& s : lowered)
 			result.push_back(move(s));
 		begin = i;
 	}
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt)
+{
+	// Evaluated before the declaration so the variable is not in scope in its
+	// own initializer.
+	json var = stmt["vars"][0];
+	json src = sa_expression(var["init"]);
+	if (!src.contains("value-type")) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+		exit(1);
+	}
+	json declStmt = stmt;
+	declStmt["vars"][0].erase("init");
+	json result = sa_var_decl_group(declStmt);
+	string name = var["name"];
+	const json& vt = *findVar(name);
+	json dst = {{"expr-type","id"},{"name",name},{"var-type",vt},{"value-type",vt}};
+	result.push_back(makeCopyStmt(stmt, dst, src));
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -426,15 +447,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			leaf_name = "uint8";
 		}
 		string shape_key = "arr_arr_" + leaf_name;
-
-		// Register shape in sa["alloc-shapes"] (deduplicated by shape-key)
-		bool found = false;
-		for (auto& s : sa["alloc-shapes"])
-			if (s["shape-key"] == shape_key) { found = true; break; }
-		if (!found)
-			sa["alloc-shapes"].push_back({
-				{"shape-key", shape_key}, {"leaf-type", leaf_name}, {"depth", 2}
-			});
+		recordArrArrShape(leaf_name);
 
 		string alloc_func = "__pln_alloc_" + shape_key;
 		string free_func  = "__pln_free_"  + shape_key;
@@ -1080,12 +1093,13 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
 	// Accumulated separately so `Pair p = f(), q = g();` allocates storage for
-	// both before either struct-ret call runs.
-	json structRetStmts = json::array();
+	// both before either struct-ret call or copy runs.
+	json initStmts = json::array();
 	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"].get<string>();
 		json structRetCall;  // stays null unless `var` has a valid struct-returning C call initializer
+		json copySrc;        // stays null unless `var` is initialized by copying another struct
 		if (var.contains("init")) {
 			// Evaluate before declareVar: the initializer must not see the
 			// variable it is initializing (same rule as sa_var_decl).
@@ -1096,32 +1110,37 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 				&& userInit["value-type"].value("type-kind","") == "struct"
 				&& userInit["value-type"].value("type-name","") == structName;
 			if (!isStructRetCall) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructInitNotSupported, structName) << endl;
-				exit(1);
+				// A copy would leak an owned struct returned by a Palan call.
+				if (!userInit.contains("value-type") || userInit.value("category", "") == "expiring") {
+					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructInitNotSupported, structName) << endl;
+					exit(1);
+				}
+				copySrc = move(userInit);
+			} else {
+				bool ok;
+				vector<EightbyteRet> eightbytes = classifySysVStructRet(def, structDefs_, ok);
+				if (!ok || !useSimpleCalloc) {
+					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnsupportedCStructReturn, structName) << endl;
+					exit(1);
+				}
+				userInit.erase("value-type");
+				json ebs = json::array();
+				for (auto& eb : eightbytes)
+					ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}});
+				userInit["struct-ret"] = {{"var",name}, {"struct-name",structName},
+				                          {"size",def.totalSize}, {"eightbytes",ebs}};
+				if (eightbytes.empty()) {
+					// MEMORY class (>16 bytes): prepend the destination pointer as an
+					// ordinary first argument -- the callee writes the whole struct
+					// through it directly, so codegen needs no struct-ret-specific
+					// lowering for this class.
+					json var_id = {{"expr-type","id"},{"name",name},
+					               {"var-type",pntr_type},{"value-type",pntr_type}};
+					if (!userInit.contains("args")) userInit["args"] = json::array();
+					userInit["args"].insert(userInit["args"].begin(), var_id);
+				}
+				structRetCall = {{"stmt-type","expr"},{"body",userInit}};
 			}
-			bool ok;
-			vector<EightbyteRet> eightbytes = classifySysVStructRet(def, structDefs_, ok);
-			if (!ok || !useSimpleCalloc) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnsupportedCStructReturn, structName) << endl;
-				exit(1);
-			}
-			userInit.erase("value-type");
-			json ebs = json::array();
-			for (auto& eb : eightbytes)
-				ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}});
-			userInit["struct-ret"] = {{"var",name}, {"struct-name",structName},
-			                          {"size",def.totalSize}, {"eightbytes",ebs}};
-			if (eightbytes.empty()) {
-				// MEMORY class (>16 bytes): prepend the destination pointer as an
-				// ordinary first argument -- the callee writes the whole struct
-				// through it directly, so codegen needs no struct-ret-specific
-				// lowering for this class.
-				json var_id = {{"expr-type","id"},{"name",name},
-				               {"var-type",pntr_type},{"value-type",pntr_type}};
-				if (!userInit.contains("args")) userInit["args"] = json::array();
-				userInit["args"].insert(userInit["args"].begin(), var_id);
-			}
-			structRetCall = {{"stmt-type","expr"},{"body",userInit}};
 		}
 		declareVar(name, pntr_type, &stmt);
 
@@ -1151,10 +1170,14 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 			arrayScopeVars_.back().push_back({name, free_stmt});
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
 		if (!structRetCall.is_null())
-			structRetStmts.push_back(structRetCall);
+			initStmts.push_back(structRetCall);
+		if (!copySrc.is_null()) {
+			json dst = {{"expr-type","id"},{"name",name},{"var-type",pntr_type},{"value-type",pntr_type}};
+			initStmts.push_back(makeCopyStmt(stmt, dst, copySrc));
+		}
 	}
 	result.push_back(sa_stmt);
-	for (auto& s : structRetStmts)
+	for (auto& s : initStmts)
 		result.push_back(s);
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	return result;
@@ -1169,6 +1192,29 @@ void PlnSemanticAnalyzer::recordArrStructShape(const string& structName)
 	recordAllocShape(structName);
 	sa["alloc-shapes"].push_back({
 		{"shape-kind","arr-struct"}, {"shape-key",shape_key}, {"struct-name",structName}
+	});
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::recordArrArrShape(const string& leafName)
+{
+	string shape_key = "arr_arr_" + leafName;
+	for (auto& s : sa["alloc-shapes"])
+		if (s.value("shape-key","") == shape_key) return;
+	sa["alloc-shapes"].push_back({
+		{"shape-key", shape_key}, {"leaf-type", leafName},
+		{"leaf-size", elemSizeBytes(leafName)}, {"depth", 2}
+	});
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::recordArrArrStructShape(const string& structName)
+{
+	string shape_key = "arr_arr_" + structName;
+	for (auto& s : sa["alloc-shapes"])
+		if (s.value("shape-key","") == shape_key) return;
+	// The rows are allocated, freed and copied by the [n]T helpers.
+	recordArrStructShape(structName);
+	sa["alloc-shapes"].push_back({
+		{"shape-kind","arr-arr-struct"}, {"shape-key",shape_key}, {"struct-name",structName}
 	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -1245,16 +1291,8 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr2d_var_decl(const json& stmt)
 	string struct_name = row_type["base-type"]["type-name"].get<string>();
 	requireCompleteStruct(struct_name, stmt);
 
-	// The rows are allocated and freed by the [n]T helpers.
-	recordArrStructShape(struct_name);
+	recordArrArrStructShape(struct_name);
 	string shape_key = "arr_arr_" + struct_name;
-	bool found = false;
-	for (auto& s : sa["alloc-shapes"])
-		if (s.value("shape-key","") == shape_key) { found = true; break; }
-	if (!found)
-		sa["alloc-shapes"].push_back({
-			{"shape-kind","arr-arr-struct"}, {"shape-key",shape_key}, {"struct-name",struct_name}
-		});
 
 	string alloc_func = "__pln_alloc_" + shape_key;
 	string free_func  = "__pln_free_"  + shape_key;

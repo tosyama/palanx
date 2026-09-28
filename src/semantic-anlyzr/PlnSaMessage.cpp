@@ -271,8 +271,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_StructInitNotSupported:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "initializing a '" + arg1 + "' variable from an expression is only supported "
-			       "when the expression is a call to a C function returning '" + arg1
+			return "initializing a '" + arg1 + "' variable from a call is only supported "
+			       "when it is a call to a C function returning '" + arg1
 			       + "' by value; declare it without an initializer and assign to its fields "
 			         "instead.";
 
@@ -357,10 +357,6 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "Integer literal '" + arg1 + "' is out of range for type '" + arg2 + "'.";
 
-		case E_ArrVarInitNotLiteral:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "array variable '" + arg1 + "' can only be initialized with an array literal.";
-
 		case E_ArrLitContext:
 			return "an array literal can only be used as an array variable's initializer in this version.";
 
@@ -434,6 +430,15 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_DictLitContext:
 			return "a '{name: value}' literal can only be used as a struct element of an array literal.";
+
+		case E_CopyShapeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot copy '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+
+		case E_CopyUnsupportedShape:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "copying '" + arg1 + "' is not supported in this version.";
 
 		default:
 			BOOST_ASSERT(false);

@@ -1761,26 +1761,7 @@ TEST(sa_error, toplevel_call_plain_return_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/136_toplevel_call_plain_return_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("initializing a 'Point' variable from an expression is only supported"), string::npos);
-}
-
-TEST(sa_error, struct_init_not_supported)
-{
-	// `Pair p = q;` (copy-initializing one struct
-	// variable from another) is not a call to a C function returning `Pair`
-	// by value, so it stays outside the one shape sa_struct_var_decl now
-	// admits and is rejected. (`Pair p = make_pair(3, 4);`, this test's
-	// fixture prior to admitting that shape, is exactly that admitted shape
-	// and now succeeds instead; new success-path tests for it live in
-	// basicTests.cpp's struct_ret_c_call/struct_ret_memory_class.)
-	// Covers: sa_struct_var_decl init rejection, E_StructInitNotSupported
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_152_struct_init_not_supported.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("initializing a 'Pair' variable from an expression is only supported"), string::npos);
+	ASSERT_NE(sa.find("initializing a 'Point' variable from a call is only supported"), string::npos);
 }
 
 TEST(sa_error, call_arg_ptr_mismatch_native)
@@ -2315,19 +2296,6 @@ TEST(sa_error, stmt_not_implemented)
 	ASSERT_NE(sa.find(":2:1: error: this statement is not supported"), string::npos);
 }
 
-TEST(sa_error, arr_var_init_not_literal)
-{
-	// `b` inherits `[3]int32` from `a`; the array var-decl lowering never reads
-	// "init", so without this check the initializer was silently dropped.
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_207_arr_var_init_not_literal.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: array variable 'b' can only be initialized with an array literal."), string::npos);
-}
-
 TEST(sa_error, arr_lit_func_arg)
 {
 	cleanTestEnv();
@@ -2550,6 +2518,28 @@ TEST(sa_error, ptr_slot_arr)
 		{"error_288_prim_ptr_slot_arr_borrow_as_prim.pa", "array shape '[2]@int32' does not match the borrowed array type '[2]int32'."},
 		{"error_289_arr_borrow_embed_ptr_elem.pa", "neither a struct nor a pointer inside a '$[m]' row"},
 		{"error_290_arr_borrow_runtime_inner_size.pa", "array shape '[2][?]int32' does not match the borrowed array type '[2][3]int32'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, copy)
+{
+	const pair<string, string> cases[] = {
+		{"error_207_arr_var_init_not_literal.pa", ":1:1: error: cannot copy 'int64' into '[3]int32'"},
+		{"error_296_copy_size_mismatch.pa", ":3:1: error: cannot copy '[4]int32' into '[3]int32'"},
+		{"error_297_copy_runtime_size.pa", ":4:1: error: cannot copy '[?]int32' into '[?]int32'"},
+		{"error_298_copy_elem_type.pa", ":2:1: error: cannot copy '[3]int32' into '[3]int64'"},
+		{"error_299_copy_struct_type.pa", ":5:1: error: cannot copy 'P' into 'Q'"},
+		{"error_300_copy_into_ro_elem.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
+		{"error_301_copy_ptr_slots_into_structs.pa", ":4:1: error: cannot copy '[2]@P' into '[2]P'"},
+		{"error_302_copy_unsupported_shape.pa", ":2:2: error: copying '[2][3][4]int32' is not supported in this version."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

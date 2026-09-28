@@ -218,7 +218,8 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 			{"offset",    f.offset},
 			{"elem-kind", f.elemKind},
 			{"leaf-name", f.typeName},
-			{"count",     f.count}
+			{"count",     f.count},
+			{"elem-size", f.stride}
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 		if (f.elemKind == "struct") {

@@ -254,6 +254,13 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
+	// A borrowed array variable ("mutable" on its levels) is rebound to what
+	// '@x' names; an expiring value is moved in as it is.
+	if (isCopiedByValue(*varType) && !varType->contains("mutable")
+	    && value.value("category", "") != "expiring") {
+		json dst = {{"expr-type","id"},{"name",name},{"var-type",*varType},{"value-type",*varType}};
+		return makeCopyStmt(stmt, dst, value);
+	}
 	if (varType->contains("arr-size") && !isInArrayScope(name))
 		checkArrBorrowBinding(stmt, stmt["value"], value, *varType);
 	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
@@ -268,25 +275,33 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 {
 	json sa_target = sa_expr_arr_index(stmt["target"], /*forWrite=*/true);
+	bool transfer = stmt.value("ownership-transfer", false);
+	if (!isWritableThrough(sa_target["array"]["value-type"])) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+		exit(1);
+	}
+	json sa_value;
+	if (!transfer && isCopiedByValue(sa_target["value-type"])) {
+		sa_value = sa_expression(stmt["value"]);
+		if (sa_value.value("category", "") != "expiring")
+			return json::array({makeCopyStmt(stmt, sa_target, sa_value)});
+	}
 	if (sa_target.value("addr-only", false)) {
 		// The element itself is an address computation (e.g. a struct array
 		// element), not a storage slot to overwrite -- assign to its fields instead.
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AssignToWholeStructElem) << endl;
 		exit(1);
 	}
-	if (!isWritableThrough(sa_target["array"]["value-type"])) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
-		exit(1);
-	}
 	const PlnType* toType = registry_.fromJson(sa_target["value-type"]);
-	json sa_value = sa_expression(stmt["value"], toType);
+	if (sa_value.is_null())
+		sa_value = sa_expression(stmt["value"], toType);
 	if (!sa_value.contains("value-type")) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
 	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
 	// '->>' hands the struct over rather than borrowing it.
-	if (!stmt.value("ownership-transfer", false))
+	if (!transfer)
 		checkStructBorrowSource(stmt, sa_value, sa_target["value-type"]);
 	if (!ptrPermissionOk(sa_value["value-type"], sa_target["value-type"])) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
@@ -294,7 +309,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	}
 
 	json arr_assign = {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
-	if (!stmt.value("ownership-transfer", false))
+	if (!transfer)
 		return json::array({arr_assign});
 
 	arr_assign["ownership-transfer"] = true;
@@ -431,6 +446,8 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
+	if (isCopiedByValue(fieldType) && value.value("category", "") != "expiring")
+		return makeCopyStmt(stmt, makeFieldAccess(chain, *it), value);
 	value = convertForBinding(stmt, value, toType, fieldType);
 	checkStructBorrowSource(stmt, value, fieldType);
 	if (!ptrPermissionOk(value["value-type"], fieldType)) {
@@ -452,4 +469,83 @@ json PlnSemanticAnalyzer::makeFieldAssign(const FieldChain& chain, const FieldLa
 		return {{"stmt-type","field-assign"},{"ptr-expr",chain.ptrExpr},
 		        {"offset",off},{"value-type",fieldType},{"value",move(value)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, const json& src)
+{
+	const json& t = dst["value-type"];
+	const json& st = src["value-type"];
+	// A lone struct may be copied from a '@T' as well as from another struct's storage.
+	bool match = isStructStorage(t)
+		? isStructPntr(st) && st["base-type"] == t["base-type"]
+		: copyShapeMatch(st, t);
+	if (!match) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
+			arrShapeName(t), arrShapeName(st)) << endl;
+		exit(1);
+	}
+
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	auto lit = [&](int64_t v) -> json {
+		return {{"expr-type","lit-uint"},{"value",to_string(v)},{"value-type",uint64_type}};
+	};
+	auto callStmt = [&](const string& name, const string& funcType, json args) -> json {
+		return {{"stmt-type","expr"},{"body",{
+			{"expr-type","call"},{"name",name},{"func-type",funcType},{"args",move(args)}}}};
+	};
+	auto memcpyStmt = [&](int64_t bytes) {
+		return callStmt("memcpy", "c", json::array({dst, src, lit(bytes)}));
+	};
+	auto structHasOwned = [&](const string& name) {
+		const StructDef& def = requireCompleteStruct(name, locNode);
+		return def.hasOwnedStructFields || def.hasOwnedArrayFields;
+	};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+
+	if (isStructStorage(t)) {
+		string name = t["base-type"]["type-name"];
+		if (!structHasOwned(name))
+			return memcpyStmt(structDefs_[name].totalSize);
+		recordAllocShape(name);
+		return callStmt("__pln_copy_" + name, "palan", json::array({dst, src}));
+	}
+
+	int64_t n = t["arr-size"];
+	const json& elem = t["base-type"];
+	if (t.value("embedded", false)) {
+		int64_t rowBytes = t.contains("stride") ? t["stride"].get<int64_t>()
+			: t["inner-size"].get<int64_t>() * elemSizeBytes(elem["type-name"]);
+		return memcpyStmt(n * rowBytes);
+	}
+	if (isStructStorage(elem)) {
+		string name = elem["base-type"]["type-name"];
+		recordArrStructShape(name);
+		return callStmt("__pln_copy_arr_" + name, "palan", json::array({dst, src, lit(n)}));
+	}
+	if (isArrLevel(elem)) {
+		int64_t m = elem["arr-size"];
+		const json& leaf = elem["base-type"];
+		if (elem.value("embedded", false) && elem.contains("stride")) {
+			// [n][m]$T: rows are byte blocks, allocated as arr_arr_uint8.
+			recordArrArrShape("uint8");
+			return callStmt("__pln_copy_arr_arr_uint8", "palan",
+				json::array({dst, src, lit(n), lit(m * elem["stride"].get<int64_t>())}));
+		}
+		if (isStructStorage(leaf)) {
+			string name = leaf["base-type"]["type-name"];
+			recordArrArrStructShape(name);
+			return callStmt("__pln_copy_arr_arr_" + name, "palan", json::array({dst, src, lit(n), lit(m)}));
+		}
+		if (leaf.value("type-kind","") == "prim" && !elem.value("embedded", false)) {
+			string leafName = leaf["type-name"];
+			recordArrArrShape(leafName);
+			return callStmt("__pln_copy_arr_arr_" + leafName, "palan", json::array({dst, src, lit(n), lit(m)}));
+		}
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, arrShapeName(t)) << endl;
+		exit(1);
+	}
+	// Primitive elements, or '@T' slots whose pointers are copied as they are.
+	int64_t elemBytes = isPtrBorrow(elem) ? 8 : elemSizeBytes(elem["type-name"]);
+	return memcpyStmt(n * elemBytes);
 } // LCOV_EXCL_EXCEPTION_BR_LINE

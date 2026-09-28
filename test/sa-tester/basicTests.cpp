@@ -2148,25 +2148,24 @@ TEST(sa, if_else_if_chain)
 TEST(sa, struct_ptr_field_assign)
 {
 	// type A { int64 v; }; type B { A inner; }; B b; A a; a -> b.inner;
-	// field-assign for struct-ptr field → fieldValueType returns pntr type
-	// Covers: fieldValueType struct-ptr branch
+	// An owned struct field is copied into, not rebound: a flat A is a memcpy
+	// into the storage the field points to.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/088_struct_ptr_field_assign.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// Find the field-assign statement
-	json* fa = nullptr;
+	json* call = nullptr;
 	for (auto& s : jout["statements"])
-		if (s["stmt-type"] == "field-assign") { fa = &s; break; }
-	ASSERT_NE(fa, nullptr);
+		if (s["stmt-type"] == "expr" && s["body"].value("name", "") == "memcpy") { call = &s["body"]; break; }
+	ASSERT_NE(call, nullptr);
 
-	// field "inner" is a struct-ptr → value-type must be pntr(struct(A))
-	ASSERT_EQ((*fa)["value-type"]["type-kind"],                  "pntr");
-	ASSERT_EQ((*fa)["value-type"]["base-type"]["type-kind"],     "struct");
-	ASSERT_EQ((*fa)["value-type"]["base-type"]["type-name"],     "A");
-	// var-based access (b is direct variable)
-	ASSERT_EQ((*fa)["var"],                                      "b");
-	ASSERT_EQ((*fa)["offset"],                                   0);
+	const json& dst = (*call)["args"][0];
+	ASSERT_EQ(dst["expr-type"],                           "field-access");
+	ASSERT_EQ(dst["var"],                                 "b");
+	ASSERT_EQ(dst["offset"],                              0);
+	ASSERT_EQ(dst["value-type"]["base-type"]["type-name"], "A");
+	ASSERT_EQ((*call)["args"][1]["name"],                 "a");
+	ASSERT_EQ((*call)["args"][2]["value"],                "8");
 }
 
 TEST(sa, raw_ptr_mutable_field_assign)

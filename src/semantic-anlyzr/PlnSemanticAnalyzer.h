@@ -161,6 +161,7 @@ class PlnSemanticAnalyzer {
 	json sa_var_decl_group(const json& stmt);     // all vars share one var-type; returns array of statements
 	json sa_arr_var_decl(const json& stmt);       // returns array of statements
 	json sa_arr_lit_var_decl(const json& stmt);   // single var; returns array of statements
+	json sa_arr_copy_var_decl(const json& stmt);  // single var; returns array of statements
 	json sa_struct_lit(const json& item, const StructDef& def);
 	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
@@ -168,6 +169,8 @@ class PlnSemanticAnalyzer {
 	json sa_owned_struct_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_owned_struct_arr2d_var_decl(const json& stmt); // returns array of statements
 	void recordArrStructShape(const string& structName);
+	void recordArrArrShape(const string& leafName);
+	void recordArrArrStructShape(const string& structName);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	void registerCStruct(const json& s);          // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
@@ -216,6 +219,7 @@ class PlnSemanticAnalyzer {
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	json makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value);
+	json makeFieldAccess(const FieldChain& chain, const FieldLayout& field);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);
 	// Look up a struct already known to be registered (name presence must be checked
 	// by the caller beforehand) and reject it if its layout isn't known yet.
@@ -233,6 +237,9 @@ class PlnSemanticAnalyzer {
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);
 	json sa_assign_stmt(const json& stmt);
+	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
+	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
+	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
 	json sa_arr_assign_stmt(const json& stmt);  // returns json::array()
 	json sa_return_stmt(const json& stmt);
 	json sa_tapple_decl(const json& stmt);

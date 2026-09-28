@@ -282,6 +282,7 @@ palan-sa annotates expressions with their category and uses it to drive free-tra
 - An unused `expiring` value → freed at the end of the statement (or immediately after use).
 - `return expr` where `expr` is `owned` → SA removes it from free-tracking (no free emitted); the caller is responsible for freeing.
 - `val ->> target` (ownership-transfer arr-assign) → SA emits `val = NULL` after the transfer; the scope-end `free(val)` becomes `free(NULL)` which is a no-op.
+- `val -> target` where target is an owned array or struct and `val` is not `expiring` → the contents are copied (owned parts included); neither side's ownership changes.
 
 ### SA determination of expiring
 

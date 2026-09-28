@@ -866,13 +866,18 @@ json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InlineStructAsValue) << endl;
 		exit(1);
 	}
+	return makeFieldAccess(chain, fld);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::makeFieldAccess(const FieldChain& chain, const FieldLayout& fld)
+{
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json vt = fieldValueType(fld);
 	int off = chain.offset + fld.offset;
-	// embed-arr/embed-ptr-arr fields are inline data (no pointer is actually
-	// stored at this offset): the field's "value" is its own address, computed
-	// as ptr+offset, not a load of the memory there.
-	bool addrOnly = (fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr");
+	// embed/embed-arr/embed-ptr-arr fields are inline data (no pointer is
+	// actually stored at this offset): the field's "value" is its own address,
+	// computed as ptr+offset, not a load of the memory there.
+	bool addrOnly = (fld.typeKind == "embed" || fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr");
 	if (!chain.isPointerBased)
 		return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
 	else

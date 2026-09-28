@@ -87,7 +87,6 @@ enum PlnSaMessageCode {
 	E_VarTypeInferenceNotImpl,	// arg1: variable name
 	E_StmtNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
-	E_ArrVarInitNotLiteral,	// arg1: variable name
 	E_ArrLitContext,
 	E_ArrLitCountMismatch,	// arg1: variable name, arg2: declared size, arg3: literal element count
 	E_ArrLitSizeNotConst,	// arg1: variable name
@@ -106,6 +105,8 @@ enum PlnSaMessageCode {
 	E_StructLitExpected,	// arg1: struct name
 	E_StructLitFieldType,	// arg1: struct name, arg2: field name
 	E_DictLitContext,
+	E_CopyShapeMismatch,	// arg1: destination shape, arg2: source shape
+	E_CopyUnsupportedShape,	// arg1: shape
 };
 
 class PlnSaMessage

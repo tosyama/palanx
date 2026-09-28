@@ -26,6 +26,7 @@ Root
   **Array entry** (multi-dimensional arrays):
   - shape-key\* - Shape key string (e.g. "arr\_arr\_int32")
   - leaf-type\* - Innermost element type name (e.g. "int32")
+  - leaf-size\* - Size of the leaf type in bytes, for the row copy
   - depth\* - Nesting depth integer (currently always 2 for `[m][n]T`)
 
   **Arr-struct entry** (dependency marker for struct-leaf owned array fields, `[n]T field`
@@ -60,6 +61,7 @@ Root
     - elem-kind\* - Leaf kind string ("prim" or "struct")
     - leaf-name\* - Leaf element type name (primitive name or struct name)
     - count\* - Element count integer
+    - elem-size\* - Bytes per element of the array the field points to (8 for a struct leaf's pointers)
 
   Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
   generated allocator module with only the owned fields at their offsets and opaque padding
@@ -257,9 +259,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Mismatch (or variable inner-size in the argument) is a compile error (`E_EmbeddedArrInnerSizeMismatch`).
 
   **`arr-size`:** Every `pntr` level that stands for an array dimension carries `arr-size`
-  (its element count) when that size is a compile-time constant (a literal or a `const`). It is
-  absent for a size known only at run time. It is only used by SA for borrowed-array checks;
-  codegen ignores it.
+  (its element count) when that size is a compile-time constant (a literal or a `const`),
+  including an array field's value-type. It is absent for a size known only at run time. It is
+  only used by SA for borrowed-array and copy checks; codegen ignores it.
 
   **`@[n]T` / `@![n]T` (borrowed array):** In a parameter or a local variable declaration, a
   `pntr` whose `base-type` is an `arr` is normalized to the array's own pntr chain, with
@@ -326,6 +328,28 @@ Additional statement kinds emitted by SA:
   When `ownership-transfer: true` (`->>` syntax): SA emits an additional `assign` statement
   immediately after the arr-assign that sets the source variable to NULL. The variable remains
   in `arrayScopeVars_` and receives `free(NULL)` at scope exit (C standard guarantees no-op).
+
+- **Copy** (`src -> dst` where dst is an array or a struct's storage) - no dedicated statement
+  kind. SA lowers the copy to an `expr` statement calling a copy routine with `(dst, src, ...)`,
+  where `dst` is the destination's `id`, `arr-index` or `field-access` expression. It applies to
+  an `assign` to an owned array or struct variable (a borrowed array variable, with `mutable` on
+  its levels, is rebound instead), an `arr-assign` whose element is a struct or an array row, a
+  `field-assign` to an owned, embedded or array field, and a `var-decl` of an array or struct
+  initialized from another value (the variable is allocated first, then copied into). A source
+  whose `category` is `expiring` is not copied; it keeps the plain assignment. The destination's
+  type selects the routine:
+  - No owned parts (a primitive, `$T`, `$[m]T` or `@T` element array, a struct without owned
+    fields): C `memcpy(dst, src, bytes)` with a `lit-uint` byte count.
+  - Struct `T` with owned fields: `__pln_copy_T(dst, src)`.
+  - `[n]T` (T a struct): `__pln_copy_arr_T(dst, src, n)`; `[m][n]T`: `__pln_copy_arr_arr_T(dst, src, m, n)`.
+  - `[m][n]T` (T primitive): `__pln_copy_arr_arr_<T>(dst, src, m, n)`; `[m][n]$T`:
+    `__pln_copy_arr_arr_uint8(dst, src, m, n * sizeof(T))`.
+
+  The routine's `alloc-shapes` entry is recorded as for a declaration, and build-mgr generates
+  the copy function next to that shape's allocator. The source's value-type must match the
+  destination's level by level: every `arr-size` present and equal, the same `embedded`,
+  `stride`/`inner-size`, struct storage versus pointer, and the same element type
+  (E_CopyShapeMismatch). A lone struct may also be copied from a `@T`/`@!T`.
 
 - **return** - return statement
   - stmt-type\*: "return"
@@ -538,9 +562,9 @@ SA-only expression kinds (added to AST nodes):
     a `palan-codegen` failure later. (The struct-element branch above has no equivalent guard —
     every `struct`-kind `elem_type` SA constructs already came from a name resolved in its own
     struct registry.)
-  - As an `arr-assign` target (`v -> arr[i]`), a node with `addr-only:true` is rejected
-    (E_AssignToWholeStructElem) — there is no storage slot at an address-only location to
-    overwrite; assign to its fields instead (`v -> arr[i].field`).
+  - As an `arr-assign` target, a struct element is copied into (see Copy above); a `->>` to a
+    node with `addr-only:true` is rejected (E_AssignToWholeStructElem) — there is no storage slot
+    at an address-only location to overwrite.
 
   **Pointer dereference (`p[i]`) on a scalar or pointer element:** when `array`'s `pntr` base-type
   is a primitive or another `pntr`, `arr-index` is exactly C's pointer subscript: `elem-size` is

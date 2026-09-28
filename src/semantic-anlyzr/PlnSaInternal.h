@@ -94,14 +94,14 @@ inline json fieldValueType(const FieldLayout& f)
 		json bt = (f.elemKind == "struct")
 			? json{{"type-kind","struct"},{"type-name",f.typeName}}
 			: json{{"type-kind","prim"},{"type-name",f.typeName}};
-		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"base-type",bt}};
+		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"arr-size",f.count},{"base-type",bt}};
 	}
 	if (f.typeKind == "embed-ptr-arr") {
 		json bt = (f.elemKind == "struct")
 			? json{{"type-kind","struct"},{"type-name",f.typeName}}
 			: json{{"type-kind","prim"},{"type-name",f.typeName}};
 		json elem_pntr = {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
-		return {{"type-kind","pntr"},{"base-type",elem_pntr}};
+		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
 	}
 	if (f.typeKind == "arr-ptr") {
 		// Primitive leaf: field is a plain pointer to inline malloc'd values
@@ -113,10 +113,10 @@ inline json fieldValueType(const FieldLayout& f)
 		if (f.elemKind == "struct") {
 			json struct_type = {{"type-kind","struct"},{"type-name",f.typeName}};
 			json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
-			return {{"type-kind","pntr"},{"base-type",elem_pntr}};
+			return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
 		}
 		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
-		return {{"type-kind","pntr"},{"base-type",bt}};
+		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",bt}};
 	}
 	if (f.typeKind == "raw-ptr" && f.elemKind == "prim") {
 		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
@@ -355,6 +355,33 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 	return from.contains("arr-size") && sameKey("arr-size")
 	    && from.value("embedded", false) == to.value("embedded", false) && sameKey("inner-size")
 	    && arrShapeMatch(from["base-type"], to["base-type"], isWritableThrough(to));
+}
+
+// '->' into a value of this type copies its contents: a struct's own storage
+// or an array level. Rebinding would alias the source and free it twice.
+inline bool isCopiedByValue(const json& t) { return isStructStorage(t) || isArrLevel(t); }
+
+// Shape equality for such a copy, which is a plain byte copy level by level:
+// every size known and equal, the same layout and the exact same element
+// type, since no conversion can apply.
+inline bool copyShapeMatch(const json& from, const json& to) {
+	if (isArrLevel(to)) {
+		if (!isArrLevel(from) || !to.contains("arr-size") || from.value("arr-size", -1) != to["arr-size"]
+		    || from.value("embedded", false) != to.value("embedded", false)
+		    || from.value("inner-size", -1) != to.value("inner-size", -1))
+			return false;
+		if (to.value("embedded", false) && !to.contains("stride") && !to.contains("inner-size"))
+			return false;
+		return copyShapeMatch(from["base-type"], to["base-type"]);
+	}
+	if (isStructStorage(from) != isStructStorage(to) || isPtrBorrow(from) != isPtrBorrow(to))
+		return false;
+	if (isPtrBorrow(to))
+		return ptrPermissionOk(from, to) && from["base-type"] == to["base-type"];
+	if (isStructStorage(to))
+		return from["base-type"] == to["base-type"];
+	return from.value("type-kind","") == to.value("type-kind","")
+	    && from.value("type-name","") == to.value("type-name","");
 }
 
 inline bool arrElemIsBorrowable(const json& t) {
