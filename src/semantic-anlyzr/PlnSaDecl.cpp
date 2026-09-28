@@ -473,14 +473,13 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	if (base_type.value("type-kind","") == "pntr") {
 		const json& inner = base_type["base-type"];
 		elem_size = 8;
-		if (inner.value("type-kind","") == "prim" && structDefs_.count(inner.value("type-name",""))) {
-			// [n]@T / [n]@!T: elem is non-owning pntr to struct → SA elem = pntr(struct(T), mutable:bool)
-			json struct_type = {{"type-kind","struct"},{"type-name",inner["type-name"]}};
-			sa_elem_type = {{"type-kind","pntr"},{"base-type",struct_type},
-			                {"mutable",base_type.value("mutable", false)}};
-		} else {
+		if (inner.value("type-kind","") == "arr") {
 			// [n]@![]T: elem is mutable pntr to unsized arr → SA elem = pntr(T)
 			sa_elem_type = deepNormalizePrimToStruct(unsizedArrToPntr(inner));
+		} else {
+			// [n]@T / [n]@!T: elem is a non-owning pointer carrying its own permission
+			sa_elem_type = {{"type-kind","pntr"},{"base-type",deepNormalizePrimToStruct(inner)},
+			                {"mutable",base_type.value("mutable", false)}};
 		}
 	} else {
 		elem_size = elemSizeBytes(base_type.value("type-name",""));

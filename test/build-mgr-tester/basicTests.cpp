@@ -1980,6 +1980,12 @@ TEST(build_mgr, embed_struct_arr_borrow) {
 	ASSERT_EQ(output, "33 (2,20)(1,10)\n");
 }
 
+TEST(build_mgr, prim_ptr_slot_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/228_prim_ptr_slot_arr.pa");
+	ASSERT_EQ(output, "11 20 11\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

@@ -1399,6 +1399,9 @@ Palan supports four forms of struct array declarations. All are heap-allocated a
 
 `pts[i]` yields a `T` pointer for all four forms. Fields are accessed with `pts[i].field`.
 
+The pointer-slot forms also take a primitive element type: `[n]@int32` / `[n]@!int32` hold
+`@int32` / `@!int32` pointers, and `pts[i][0]` reads or writes the value one points to.
+
 ```palan
 cinclude <stdio.h>;
 type Point { int64 x; int64 y; };
