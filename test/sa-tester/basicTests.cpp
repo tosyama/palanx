@@ -4549,3 +4549,22 @@ TEST(sa, struct_arr_borrow)
 	ASSERT_EQ(at["mutable"], true);
 	ASSERT_EQ(at["base-type"], elem);
 }
+
+TEST(sa, embed_struct_arr_borrow)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/207_embed_struct_arr_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// The borrow keeps the variable's contiguous layout: the structs sit in
+	// the array itself, so its base is the struct, not a pointer to one.
+	json expected = {{"type-kind","pntr"},{"embedded",true},{"stride",8},{"arr-size",2},
+	                 {"mutable",true},{"base-type",{{"type-kind","struct"},{"type-name","P"}}}};
+	ASSERT_EQ(jout["functions"][0]["parameters"][0]["var-type"], expected);
+
+	const json* call = nullptr;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr") call = &st["body"];
+	ASSERT_NE(call, nullptr);
+	ASSERT_EQ((*call)["args"][0]["value-type"], expected);
+}

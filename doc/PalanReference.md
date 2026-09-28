@@ -1204,9 +1204,9 @@ func fill(@![H][W]int32 g, int32 x) {
 }
 ```
 
-- The forms are `@[n]T`, `@[n][m]T`, and `@[n]$[m]T`, each with the `@!` variant. `T` must be a
-  primitive type, or a struct type in `@[n]T` and `@[n][m]T` (an array of owned structs,
-  `[n]T` / `[n][m]T`). Every size must be a constant: an integer literal or a `const`.
+- The forms are `@[n]T`, `@[n][m]T`, `@[n]$[m]T`, and `@[n]$T`, each with the `@!` variant. `T`
+  must be a primitive type, or a struct type in `@[n]T` and `@[n][m]T` (an array of owned structs,
+  `[n]T` / `[n][m]T`) and in `@[n]$T` (a contiguous struct array, `[n]$T`). Every size must be a constant: an integer literal or a `const`.
 - The array's shape must match exactly: the number of dimensions, contiguous (`$`) or not, and
   every size. An array whose size is only known at run time cannot be borrowed as `@[n]T`.
 - Through `@`, no element can be written, including elements reached through a row

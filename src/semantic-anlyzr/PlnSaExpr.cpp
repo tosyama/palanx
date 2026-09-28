@@ -23,7 +23,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
 			exit(1);
 		}
-		if (vt->value("type-kind","") != "pntr" || (*vt)["base-type"].value("type-kind","") != "struct") {
+		if (!isStructPntr(*vt)) {
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
 		}

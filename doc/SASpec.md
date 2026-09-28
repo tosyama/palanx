@@ -258,10 +258,14 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `arr-size` on every level and `mutable` (`false` for `@`, `true` for `@!`) on every level down
   to the elements — `@[n][m]T` becomes `pntr(pntr(T, mutable, arr-size:m), mutable, arr-size:n)`,
   `@[n]$[m]T` becomes `pntr(T, mutable, embedded:true, inner-size:m, arr-size:n)`. For a struct
-  `T` (`@[n]T` / `@[n][m]T` only), the element is `pntr(struct(T))` without `mutable`, the same
+  `T` in `@[n]T` / `@[n][m]T`, the element is `pntr(struct(T))` without `mutable`, the same
   as in the owned array: it is the struct's storage, and a field write through it is checked
-  against the permission of the array level it is indexed from. Every size must be constant
-  (`E_ArrBorrowSizeNotConst`) and `T` primitive or struct (`E_ArrBorrowUnsupportedElem`). A
+  against the permission of the array level it is indexed from. `@[n]$T` takes the contiguous
+  variable's form, `pntr(struct(T), mutable, embedded:true, stride:T.totalSize, arr-size:n)`;
+  its `arr[i]` is the same struct storage. Because of `embedded`, that form is an array, not a
+  struct pointer. Every size must be constant
+  (`E_ArrBorrowSizeNotConst`) and `T` primitive or struct, with no struct inside a `$[m]` row
+  (`E_ArrBorrowUnsupportedElem`). A
   return type of this form stays rejected (`E_UnsupportedParamType`). At a call argument, a
   local's initializer, or an assignment to such a destination, the source must be written as
   `@x`/`@!x` (`E_ArrBorrowNeedsAddrOf`) and its value-type must match depth, `embedded`,

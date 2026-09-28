@@ -1,0 +1,29 @@
+cinclude <stdio.h>;
+type Point { int32 x; int32 y; };
+const N = 3;
+
+func sum(@[N]$Point v) -> int32
+{
+	int32 s = 0;
+	int32 i = 0;
+	while i < N { s + v[i].x + v[i].y -> s; i + 1 -> i; }
+	return s;
+}
+
+func fill(@![N]$Point v)
+{
+	int32 i = 0;
+	while i < N { i -> v[i].x; i * 10 -> v[i].y; i + 1 -> i; }
+}
+
+func show(@Point p) { printf("(%d,%d)", p.x, p.y); }
+
+func last(@[N]$Point v) { show(@v[N-1]); }
+
+[N]$Point a;
+fill(@!a);
+printf("%d ", sum(@a));
+last(@a);
+@[N]$Point ra = @a;
+show(@ra[1]);
+printf("\n");

@@ -67,11 +67,12 @@ inline bool ptrPermissionOk(const json& from, const json& to)
 // A pntr(struct) with no "mutable" key is a struct's own storage (a struct
 // variable, owned field or array element); one with the key is a borrow
 // ('@T'/'@!T', or a C pointer whose const was folded in by normalizeCType).
-// PlnTypeRegistry interns both alike, so test the raw JSON.
+// PlnTypeRegistry interns both alike, so test the raw JSON. A contiguous
+// struct array ([n]$T) shares the shape but is an array, not one struct.
 inline bool isStructPntr(const json& vt)
 {
 	return vt.value("type-kind","") == "pntr" && vt.contains("base-type")
-	    && vt["base-type"].value("type-kind","") == "struct";
+	    && vt["base-type"].value("type-kind","") == "struct" && !vt.value("embedded", false);
 }
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && vt.contains("mutable"); }
@@ -314,7 +315,9 @@ inline string arrShapeName(const json& t) {
 	const json* cur = &t;
 	while (isArrLevel(*cur)) {
 		out += "[" + (cur->contains("arr-size") ? to_string((*cur)["arr-size"].get<int64_t>()) : string("?")) + "]";
-		if (cur->value("embedded", false))
+		if (cur->value("embedded", false) && (*cur)["base-type"].value("type-kind","") == "struct")
+			out += "$";
+		else if (cur->value("embedded", false))
 			out += "$[" + (cur->contains("inner-size") ? to_string((*cur)["inner-size"].get<int64_t>()) : string("?")) + "]";
 		cur = &(*cur)["base-type"];
 	}
@@ -339,8 +342,13 @@ inline bool arrShapeMatch(const json& from, const json& to) {
 
 inline bool arrElemIsBorrowable(const json& t) {
 	const json* cur = &t;
-	while (isArrLevel(*cur)) cur = &(*cur)["base-type"];
-	return cur->value("type-kind","") == "prim" || isStructStorage(*cur);
+	bool inEmbedded = false;
+	while (isArrLevel(*cur)) {
+		inEmbedded = cur->value("embedded", false);
+		cur = &(*cur)["base-type"];
+	}
+	string k = cur->value("type-kind","");
+	return k == "prim" || (k == "struct" && inEmbedded) || isStructStorage(*cur);
 }
 
 // An array is borrowed with one permission for every level down to its

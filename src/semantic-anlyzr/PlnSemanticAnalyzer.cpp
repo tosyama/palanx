@@ -180,7 +180,7 @@ void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
 	for (auto& p : funcDef["parameters"]) {
 		if (!p.contains("var-type")) continue;
 		const auto& vt = p["var-type"];
-		if (vt.value("embedded", false) && !vt.contains("inner-size")) {
+		if (vt.value("embedded", false) && !vt.contains("inner-size") && !vt.contains("stride")) {
 			cerr << locPrefix(funcDef)
 			     << PlnSaMessage::getMessage(E_EmbeddedArrUnsizedInner) << endl;
 			exit(1);
@@ -394,11 +394,21 @@ json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, b
 	json out = {{"type-kind","pntr"},{"mutable",isMutable},{"arr-size",borrowSize(locNode, arr["size-expr"])}};
 	json leaf = arr["base-type"];
 	if (arr.value("embedded", false)) {
+		out["embedded"] = true;
 		if (leaf.value("type-kind","") != "arr") {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
-			exit(1);
+			// [n]$T: the structs themselves are laid out in the array, as in the variable.
+			leaf = resolveTypeAlias(leaf);
+			string tname = leaf.value("type-name","");
+			if (leaf.value("type-kind","") != "prim" || !structDefs_.count(tname)) {
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
+				exit(1);
+			}
+			// LCOV_EXCL_EXCEPTION_BR_START
+			out["stride"]    = requireCompleteStruct(tname, locNode).totalSize;
+			out["base-type"] = {{"type-kind","struct"},{"type-name",tname}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+			return out;
 		}
-		out["embedded"]   = true;
 		out["inner-size"] = borrowSize(locNode, leaf["size-expr"]);
 		leaf = json(leaf["base-type"]);
 	} else if (leaf.value("type-kind","") == "arr") {

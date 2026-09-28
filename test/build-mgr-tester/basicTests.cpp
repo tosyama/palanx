@@ -1974,6 +1974,12 @@ TEST(build_mgr, struct_arr_borrow) {
 	ASSERT_EQ(output, "9\n(30,4) 10 30 50\n(50,6)\n");
 }
 
+TEST(build_mgr, embed_struct_arr_borrow) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/227_embed_struct_arr_borrow.pa");
+	ASSERT_EQ(output, "33 (2,20)(1,10)\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

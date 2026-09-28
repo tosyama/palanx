@@ -772,14 +772,18 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 			// LCOV_EXCL_EXCEPTION_BR_START
 			json stride_lit = {{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}};
 			json size_arg   = {{"expr-type","mul"},{"value-type",uint64_type},{"left",sa_outer},{"right",stride_lit}};
-			json malloc_call = {{"expr-type","call"},{"name","malloc"},{"func-type","c"},
-			                    {"args",json::array({size_arg})},{"value-type",pntr_type}};
 			// LCOV_EXCL_EXCEPTION_BR_STOP
-			declareVar(name, pntr_type, &stmt);
-			arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
+			json var_type = pntr_type;
+			setArrSize(var_type, sa_outer);
+			// LCOV_EXCL_EXCEPTION_BR_START
+			json malloc_call = {{"expr-type","call"},{"name","malloc"},{"func-type","c"},
+			                    {"args",json::array({size_arg})},{"value-type",var_type}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+			declareVar(name, var_type, &stmt);
+			arrayScopeVars_.back().push_back({name, makeFreeStmt(name, var_type)});
 			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
-				{"name",name},{"var-type",pntr_type},{"init",malloc_call}
+				{"name",name},{"var-type",var_type},{"init",malloc_call}
 			}})}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
