@@ -1346,6 +1346,9 @@ variable's initializer: implicit narrowing is an error (use an explicit cast suc
 and integer literals are range-checked against the element type. The elements are evaluated
 before the array variable is declared, so they cannot refer to the variable itself.
 
+A trailing comma after the last element of a row is allowed (`[1, 2, 3,]`), which is convenient
+when a literal is written over several lines.
+
 In a comma-separated declaration, each initializer belongs to its own variable:
 `[2]int16 r, s = [7, 8];` initializes only `s`.
 

@@ -83,6 +83,23 @@ TEST(gen_ast, arr_lit_2d_forms) {
 	ASSERT_EQ(stripLoc(a1), stripLoc((*vars)[1]["init"]));
 }
 
+TEST(gen_ast, arr_lit_trailing_comma) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/121_arr_lit_trailing_comma.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	int pairs = 0;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		const json& vars = stmt["vars"];
+		ASSERT_EQ(vars.size(), 2);
+		ASSERT_EQ(stripLoc(vars[0]["init"]), stripLoc(vars[1]["init"]));
+		pairs++;
+	}
+	ASSERT_EQ(pairs, 4);
+}
+
 TEST(gen_ast, addition) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/003_addition.pa");

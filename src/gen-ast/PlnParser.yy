@@ -829,6 +829,8 @@ array_rows: array_row array_row
 
 array_row: '[' array_items ']'
 	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	| '[' array_items ',' ']'
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
 	;
 
 array_items: expression
