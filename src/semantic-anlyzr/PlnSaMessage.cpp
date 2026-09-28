@@ -380,7 +380,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ArrLitElemType:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "array variable '" + arg1 + "' cannot be initialized with an array literal: only numeric element types are supported.";
+			return "array variable '" + arg1 + "' cannot be initialized with an array literal: only numeric and struct element types are supported.";
 
 		case E_ArrLitRowSizeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -407,6 +407,33 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_Unsupported2DStructArr:
 			return "a two-dimensional struct array must be declared as '[m][n]T'.";
+
+		case E_StructLitFieldCount:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "struct '" + arg1 + "' has " + arg2 + " fields but its literal has " + arg3 + " values.";
+
+		case E_StructLitDupField:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "field '" + arg1 + "' is given more than once in a struct literal.";
+
+		case E_StructLitMissingField:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "the literal of struct '" + arg1 + "' is missing field '" + arg2 + "'.";
+
+		case E_StructLitExpected:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a value of struct '" + arg1 + "' must be written as '[...]' or '{name: value, ...}'.";
+
+		case E_StructLitFieldType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "field '" + arg2 + "' of struct '" + arg1 + "' cannot be initialized by a literal: only numeric and struct fields are supported.";
+
+		case E_DictLitContext:
+			return "a '{name: value}' literal can only be used as a struct element of an array literal.";
 
 		default:
 			BOOST_ASSERT(false);

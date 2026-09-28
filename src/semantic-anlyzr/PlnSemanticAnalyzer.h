@@ -161,6 +161,8 @@ class PlnSemanticAnalyzer {
 	json sa_var_decl_group(const json& stmt);     // all vars share one var-type; returns array of statements
 	json sa_arr_var_decl(const json& stmt);       // returns array of statements
 	json sa_arr_lit_var_decl(const json& stmt);   // single var; returns array of statements
+	json sa_struct_lit(const json& item, const StructDef& def);
+	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_owned_struct_arr_var_decl(const json& stmt); // returns array of statements
@@ -213,6 +215,7 @@ class PlnSemanticAnalyzer {
 	void  applyPlnCalleeSig(json& sa_expr, const json& pFunc);
 	json sa_field_assign(const json& stmt);
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
+	json makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);
 	// Look up a struct already known to be registered (name presence must be checked
 	// by the caller beforehand) and reject it if its layout isn't known yet.

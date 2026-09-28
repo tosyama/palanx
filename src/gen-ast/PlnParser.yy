@@ -116,8 +116,8 @@ class PlnLexer;
 %type <string>	import_as
 %type <json>	expression func_call term store_loc
 %type <vector<json>>	arguments
-%type <json>	array_desc array_row
-%type <vector<json>>	array_rows array_items
+%type <json>	array_desc array_row dict_desc
+%type <vector<json>>	array_rows array_items dict_items
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
 %type <vector<json>>	var_declarations
@@ -654,7 +654,7 @@ expression: term
 	| array_desc
 	{ $$ = move($1); }
 	| dict_desc
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = move($1); }
 	| expression '+' expression
 	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '-' expression
@@ -840,10 +840,24 @@ array_items: expression
 	;
 
 dict_desc: '{' dict_items '}'
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	| '{' dict_items ',' '}'
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", move($2)}}; LOC($$, @$); }
 	;
 
 dict_items: ID ':' expression
+	{
+		json item = {{"name", move($1)}, {"value", move($3)}};
+		LOC(item, @$);
+		$$ = {move(item)};
+	}
 	| dict_items ',' ID ':' expression
+	{
+		json item = {{"name", move($3)}, {"value", move($5)}};
+		LOC_BE(item, @3, @5);
+		$$ = move($1);
+		$$.push_back(move(item));
+	}
 	;
 
 store_loc

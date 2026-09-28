@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <fstream>
 #include <algorithm>
+#include <map>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -4497,4 +4498,30 @@ TEST(sa, struct_arr_2d)
 
 	const json& rowsElem = stmts[4]["vars"][0]["var-type"]["base-type"];
 	ASSERT_EQ(rowsElem["base-type"]["base-type"], point);
+}
+
+TEST(sa, struct_arr_lit)
+{
+	json jout = run_sa("../test/testdata/sa/205_struct_arr_lit.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// (offset, literal) of the field assignments that follow each array's declaration.
+	map<string, vector<pair<int, string>>> assigns;
+	string cur;
+	for (auto& st : jout["statements"]) {
+		if (st["stmt-type"] == "var-decl") {
+			cur = st["vars"][0]["name"];
+			continue;
+		}
+		ASSERT_EQ(st["stmt-type"], "field-assign");
+		assigns[cur].push_back({st["offset"], st["value"]["value"]});
+	}
+
+	// A struct value written in field order or by name lowers identically.
+	ASSERT_EQ(assigns["p1"], (vector<pair<int, string>>{{0, "1"}, {4, "2"}}));
+	ASSERT_EQ(assigns["p1"], assigns["p2"]);
+	ASSERT_EQ(assigns["l1"].size(), 4);
+	ASSERT_EQ(assigns["l1"], assigns["l2"]);
+	ASSERT_EQ(assigns["m"].size(), 8);
+	ASSERT_EQ(assigns["m"][7], (pair<int, string>{4, "7"}));
 }

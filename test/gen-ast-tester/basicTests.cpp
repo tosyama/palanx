@@ -100,6 +100,27 @@ TEST(gen_ast, arr_lit_trailing_comma) {
 	ASSERT_EQ(pairs, 4);
 }
 
+TEST(gen_ast, dict_lit) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/122_dict_lit.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	const json& items = jout["ast"]["statements"][0]["vars"][0]["init"]["items"];
+	ASSERT_EQ(items.size(), 2);
+	ASSERT_EQ(items[0]["expr-type"], "dict-lit");
+	const json& first = items[0]["items"];
+	ASSERT_EQ(first.size(), 2);
+	ASSERT_EQ(first[0]["name"], "x");
+	ASSERT_EQ(first[0]["value"]["expr-type"], "lit-int");
+	ASSERT_EQ(first[1]["name"], "y");
+	ASSERT_EQ(first[1]["value"]["expr-type"], "add");
+	ASSERT_EQ(first[1]["loc"], json::array({1, 22, 1, 30}));
+	// A trailing comma is allowed, as in array literals.
+	ASSERT_EQ(items[1]["items"].size(), 2);
+	ASSERT_EQ(items[1]["items"][0]["name"], "y");
+}
+
 TEST(gen_ast, addition) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/003_addition.pa");

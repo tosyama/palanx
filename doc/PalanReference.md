@@ -1349,6 +1349,27 @@ before the array variable is declared, so they cannot refer to the variable itse
 A trailing comma after the last element of a row is allowed (`[1, 2, 3,]`), which is convenient
 when a literal is written over several lines.
 
+An array of structs (`[n]T`, `[n]$T`, `[m][n]T`) is initialized the same way, with each element
+written either as its field values in declaration order (`[1, 2]`) or by field name
+(`{y: 2, x: 1}`). Every field must be given exactly once. A struct field (`T` or `$T`) is written
+as a nested struct value; pointer and array fields cannot be initialized by a literal. Since a
+struct element is itself written in brackets, `[0,1][2,3]` is one row of two `Point`s.
+
+```palan
+cinclude <stdio.h>;
+type Point { int32 x; int32 y; };
+type Line { Point a; $Point b; };
+[2][2]Point m = [[0,1][2,3], [4,5][6,7]];
+[]$Point e = [{y: 5, x: 6}, [7, 8]];
+[1]Line l = [[{x: 1, y: 2}, [3, 4]]];
+printf("%d %d %d %d\n", m[1][0].y, e[0].x, l[0].a.y, l[0].b.x);
+```
+
+Expected output:
+```
+5 6 2 3
+```
+
 In a comma-separated declaration, each initializer belongs to its own variable:
 `[2]int16 r, s = [7, 8];` initializes only `s`.
 
@@ -1357,8 +1378,9 @@ In a comma-separated declaration, each initializer belongs to its own variable:
   argument or the source of `->`.
 - A given dimension must be a compile-time constant that matches the literal's element or row
   count, and every row of a 2D literal must have the same length.
-- Only numeric (integer and float) element types are supported. Arrays of structs or pointers,
-  and arrays of three or more dimensions, cannot be initialized with a literal.
+- Only numeric (integer and float) and struct element types are supported. Arrays of pointers
+  and arrays of three or more dimensions cannot be initialized with a literal.
+- A `{name: value}` literal can only be used as a struct element of an array literal.
 - Omitting only the inner dimension (`[2][]T`, `[2]$[]T`) is not supported.
 
 ### Struct Arrays

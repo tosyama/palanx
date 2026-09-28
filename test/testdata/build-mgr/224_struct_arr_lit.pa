@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+const NUM_MINO = 2;
+type Point { int32 x; int32 y; };
+type Line { Point a; $Point b; int8 w; };
+[NUM_MINO][4]Point minos = [
+	[0,0][0,1][0,2][0,3],	// I
+	[0,0][0,1][1,1][2,1],	// J
+];
+printf("%d %d %d %d\n", minos[0][3].y, minos[1][2].x, minos[1][3].x, minos[1][3].y);
+[]$Point e = [{y: 5, x: 6}, [7, 8],];
+printf("%d %d %d %d\n", e[0].x, e[0].y, e[1].x, e[1].y);
+int32 n = 9;
+[2]Line l = [[[1,2],{x:3,y:n},4], {w:5, b:[6,7], a:{x:n+1,y:11}}];
+printf("%d %d %d %d %d | %d %d %d %d %d\n", l[0].a.x, l[0].a.y, l[0].b.x, l[0].b.y, l[0].w, l[1].a.x, l[1].a.y, l[1].b.x, l[1].b.y, l[1].w);

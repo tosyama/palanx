@@ -335,6 +335,10 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLitContext) << endl;
 		exit(1);
 	}
+	if (expr_type == "dict-lit") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
+		exit(1);
+	}
 
 	if (expr_type == "lit-int") {
 		// A lit-int already carrying a value-type is a macro constant folded

@@ -569,8 +569,9 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 	bool is2d = base.value("type-kind", "") == "arr";
 	const json& leaf = is2d ? base["base-type"] : base;
 	string leafName = leaf.value("type-name", "");
-	if (leaf.value("type-kind", "") != "prim" || (!is2d && vtype.value("embedded", false))
-			|| structDefs_.count(leafName)) {
+	bool isStructLeaf = leaf.value("type-kind", "") == "prim" && structDefs_.count(leafName);
+	if (leaf.value("type-kind", "") != "prim"
+			|| (!isStructLeaf && !is2d && vtype.value("embedded", false))) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
 		exit(1);
 	}
@@ -578,11 +579,14 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leafName) << endl;
 		exit(1);
 	}
-	const PlnType* elemType = registry_.fromJson(leaf);
+	const StructDef* structDef = isStructLeaf ? &requireCompleteStruct(leafName, stmt) : nullptr;
+	const PlnType* elemType = isStructLeaf ? nullptr : registry_.fromJson(leaf);
 
 	// Elements are analyzed before the variable is declared, so an element
 	// cannot read the array it is initializing.
 	auto elemValue = [&](const json& item) {
+		if (structDef)
+			return sa_struct_lit(item, *structDef);
 		if (item.value("expr-type", "") == "arr-lit") {
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, name) << endl;
 			exit(1);
@@ -639,17 +643,102 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 		        {"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}};
 	};
 	json id = {{"expr-type", "id"}, {"name", name}};
+	auto assignElem = [&](const json& elemAst, const json& value) {
+		if (structDef)
+			emitStructLitAssigns(elemAst, *structDef, value, result);
+		else
+			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(elemAst)}, {"value", value}});
+	};
 	for (size_t i = 0; i < values.size(); i++) {
 		if (!is2d) {
-			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(indexOf(id, i))}, {"value", values[i]}});
+			assignElem(indexOf(id, i), values[i]);
 			continue;
 		}
-		for (size_t j = 0; j < values[i].size(); j++) {
-			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(indexOf(indexOf(id, i), j))}, {"value", values[i][j]}});
-		}
+		for (size_t j = 0; j < values[i].size(); j++)
+			assignElem(indexOf(indexOf(id, i), j), values[i][j]);
 	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Normalizes a struct value written in field order (`[0, 1]`) or by name
+// (`{x: 0, y: 1}`) to one array of analyzed values in field declaration
+// order; an entry for a struct field is itself such an array.
+json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
+{
+	string et = item.value("expr-type", "");
+	if (et != "arr-lit" && et != "dict-lit") {
+		cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitExpected, def.name) << endl;
+		exit(1);
+	}
+	const json& items = item["items"];
+	vector<const json*> given(def.fields.size(), nullptr);
+	if (et == "arr-lit") {
+		if (items.size() != def.fields.size()) {
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitFieldCount,
+			                                  def.name, to_string(def.fields.size()), to_string(items.size())) << endl;
+			exit(1);
+		}
+		for (size_t k = 0; k < items.size(); k++)
+			given[k] = &items[k];
+	} else {
+		for (auto& named : items) {
+			string fn = named["name"].get<string>();
+			auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
+			if (it == def.fields.end()) {
+				cerr << locPrefix(named) << PlnSaMessage::getMessage(E_UnknownField, def.name, fn, def.keyword()) << endl;
+				exit(1);
+			}
+			const json*& slot = given[it - def.fields.begin()];
+			if (slot) {
+				cerr << locPrefix(named) << PlnSaMessage::getMessage(E_StructLitDupField, fn) << endl;
+				exit(1);
+			}
+			slot = &named["value"];
+		}
+		for (size_t k = 0; k < given.size(); k++) {
+			if (!given[k]) {
+				cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitMissingField, def.name, def.fields[k].name) << endl;
+				exit(1);
+			}
+		}
+	}
+
+	json values = json::array();
+	for (size_t k = 0; k < def.fields.size(); k++) {
+		const FieldLayout& f = def.fields[k];
+		const json& v = *given[k];
+		if (f.typeKind == "embed" || f.typeKind == "struct-ptr") {
+			values.push_back(sa_struct_lit(v, requireCompleteStruct(f.typeName, v)));
+			continue;
+		}
+		if (f.typeKind != "prim") {
+			cerr << locPrefix(v) << PlnSaMessage::getMessage(E_StructLitFieldType, def.name, f.name) << endl;
+			exit(1);
+		}
+		json fieldType = fieldValueType(f);
+		const PlnType* toType = registry_.fromJson(fieldType);
+		json value = sa_expression(v, toType);
+		if (!value.contains("value-type")) {
+			cerr << locPrefix(v) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+			exit(1);
+		}
+		values.push_back(convertForBinding(v, value, toType, fieldType));
+	}
+	return values;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out)
+{
+	for (size_t k = 0; k < def.fields.size(); k++) {
+		const FieldLayout& f = def.fields[k];
+		if (f.typeKind == "prim") {
+			out.push_back(makeFieldAssign(resolveObjectChain(objAst, /*forWrite=*/true), f, values[k]));
+			continue;
+		}
+		json fieldAst = {{"expr-type", "field-access"}, {"object", objAst}, {"field", f.name}};
+		emitStructLitAssigns(fieldAst, requireCompleteStruct(f.typeName, objAst), values[k], out);
+	}
+}
 
 json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 {

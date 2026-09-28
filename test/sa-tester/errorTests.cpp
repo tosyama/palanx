@@ -2345,19 +2345,19 @@ TEST(sa_error, arr_lit_init)
 		{"error_209_arr_lit_count_mismatch.pa", ":1:1: error: array variable 'a' has size 3 but its array literal has 2 elements."},
 		{"error_210_arr_lit_size_not_const.pa", ":2:1: error: array variable 'a' initialized with an array literal must have a compile-time constant size."},
 		{"error_211_arr_lit_dim_mismatch.pa", ":1:15: error: the array literal's dimensions do not match array variable 'a'."},
-		{"error_212_arr_lit_elem_type.pa", ":2:1: error: array variable 'a' cannot be initialized with an array literal: only numeric element types are supported."},
+		{"error_212_arr_lit_elem_type.pa", ":2:11: error: a value of struct 'P' must be written as '[...]' or '{name: value, ...}'."},
 		{"error_213_arr_lit_elem_narrowing.pa", ":2:17: error: Implicit conversion from 'int16' to 'int8' is not allowed"},
 		{"error_214_arr_lit_elem_range.pa", ":1:17: error: Integer literal '300' is out of range for type 'int8'."},
 		// Elements are analyzed before the array is declared.
 		{"error_215_arr_lit_self_ref.pa", ":1:18: error: Undefined variable 'a'."},
-		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array variable 'a' cannot be initialized with an array literal: only numeric element types are supported."},
+		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array variable 'a' cannot be initialized with an array literal: only numeric and struct element types are supported."},
 		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_218_arr_lit_void_elem.pa", ":2:15: error: Void function call cannot be used as a value."},
 		{"error_219_arr_lit_row_size.pa", ":1:24: error: array variable 'm' has rows of size 3 but a row of its array literal has 2 elements."},
 		{"error_220_arr_lit_row_size_declared.pa", ":1:19: error: array variable 'm' has rows of size 3 but a row of its array literal has 2 elements."},
 		{"error_221_arr_lit_row_count.pa", ":1:1: error: array variable 'm' has size 3 but its array literal has 2 elements."},
 		{"error_222_arr_lit_2d_given_1d.pa", ":1:18: error: the array literal's dimensions do not match array variable 'm'."},
-		{"error_223_arr_lit_3d.pa", ":1:1: error: array variable 'm' cannot be initialized with an array literal: only numeric element types are supported."},
+		{"error_223_arr_lit_3d.pa", ":1:1: error: array variable 'm' cannot be initialized with an array literal: only numeric and struct element types are supported."},
 		{"error_224_arr_lit_row_size_not_const.pa", ":2:1: error: array variable 'm' initialized with an array literal must have a compile-time constant size."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -2489,6 +2489,28 @@ TEST(sa_error, struct_arr_2d)
 	const pair<string, string> cases[] = {
 		{"error_261_struct_arr_2d_embed_outer.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T'."},
 		{"error_262_struct_arr_2d_embed_row.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, struct_arr_lit)
+{
+	const pair<string, string> cases[] = {
+		{"error_263_struct_lit_count.pa", ":2:21: error: struct 'Point' has 2 fields but its literal has 1 values."},
+		{"error_264_struct_lit_dup_field.pa", ":2:26: error: field 'x' is given more than once in a struct literal."},
+		{"error_265_struct_lit_missing_field.pa", ":2:15: error: the literal of struct 'Point' is missing field 'y'."},
+		{"error_266_struct_lit_unknown_field.pa", ":2:21: error: struct 'Point' has no field 'z'."},
+		{"error_267_struct_lit_ptr_field.pa", ":2:15: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric and struct fields are supported."},
+		{"error_268_struct_lit_narrowing.pa", ":3:17: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
+		{"error_269_dict_lit_prim_elem.pa", ":1:15: error: a '{name: value}' literal can only be used as a struct element of an array literal."},
+		{"error_270_dict_lit_context.pa", ":2:11: error: a '{name: value}' literal can only be used as a struct element of an array literal."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

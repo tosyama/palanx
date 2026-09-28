@@ -1,0 +1,2 @@
+type Point { int32 x; int32 y; };
+[2]Point a = [[1,2],[3]];

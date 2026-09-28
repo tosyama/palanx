@@ -437,8 +437,14 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
 	}
+	return makeFieldAssign(chain, *it, move(value));
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value)
+{
 	// LCOV_EXCL_EXCEPTION_BR_START
-	int off = chain.offset + it->offset;
+	int off = chain.offset + field.offset;
+	json fieldType = fieldValueType(field);
 	if (!chain.isPointerBased)
 		return {{"stmt-type","field-assign"},{"var",chain.varName},
 		        {"offset",off},{"value-type",fieldType},{"value",move(value)}};

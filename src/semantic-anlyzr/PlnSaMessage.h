@@ -100,6 +100,12 @@ enum PlnSaMessageCode {
 	E_ArrBorrowShapeMismatch,	// arg1: expected shape, arg2: actual shape
 	E_StructBorrowNeedsAddrOf,
 	E_Unsupported2DStructArr,
+	E_StructLitFieldCount,	// arg1: struct name, arg2: field count, arg3: value count
+	E_StructLitDupField,	// arg1: field name
+	E_StructLitMissingField,	// arg1: struct name, arg2: field name
+	E_StructLitExpected,	// arg1: struct name
+	E_StructLitFieldType,	// arg1: struct name, arg2: field name
+	E_DictLitContext,
 };
 
 class PlnSaMessage
