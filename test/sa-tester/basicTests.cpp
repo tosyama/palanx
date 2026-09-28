@@ -4568,3 +4568,23 @@ TEST(sa, embed_struct_arr_borrow)
 	ASSERT_NE(call, nullptr);
 	ASSERT_EQ((*call)["args"][0]["value-type"], expected);
 }
+
+TEST(sa, ptr_slot_arr_borrow)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/208_ptr_slot_arr_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// The borrow's permission covers the slots only; each element pointer
+	// keeps its own.
+	json expected = {{"type-kind","pntr"},{"arr-size",2},{"mutable",false},
+	                 {"base-type",{{"type-kind","pntr"},{"mutable",true},
+	                               {"base-type",{{"type-kind","struct"},{"type-name","P"}}}}}};
+	ASSERT_EQ(jout["functions"][0]["parameters"][0]["var-type"], expected);
+
+	const json* call = nullptr;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr") call = &st["body"];
+	ASSERT_NE(call, nullptr);
+	ASSERT_EQ((*call)["args"][0]["value-type"], expected);
+}

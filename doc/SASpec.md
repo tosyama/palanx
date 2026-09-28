@@ -263,13 +263,17 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   against the permission of the array level it is indexed from. `@[n]$T` takes the contiguous
   variable's form, `pntr(struct(T), mutable, embedded:true, stride:T.totalSize, arr-size:n)`;
   its `arr[i]` is the same struct storage. Because of `embedded`, that form is an array, not a
-  struct pointer. Every size must be constant
-  (`E_ArrBorrowSizeNotConst`) and `T` primitive or struct, with no struct inside a `$[m]` row
-  (`E_ArrBorrowUnsupportedElem`). A
+  struct pointer. For `@[n]@T` / `@[n]@!T`, the element is `pntr(T, mutable)` without
+  `arr-size`, as in the owned `[n]@T`; the borrow's `mutable` stops at the slots. A `pntr` with
+  `mutable` and neither `arr-size` nor `embedded` is a `@T`/`@!T` pointer, never an array level.
+  Every size must be constant
+  (`E_ArrBorrowSizeNotConst`) and `T` primitive, struct or a pointer to one, with neither a
+  struct nor a pointer inside a `$[m]` row (`E_ArrBorrowUnsupportedElem`). A
   return type of this form stays rejected (`E_UnsupportedParamType`). At a call argument, a
   local's initializer, or an assignment to such a destination, the source must be written as
   `@x`/`@!x` (`E_ArrBorrowNeedsAddrOf`) and its value-type must match depth, `embedded`,
-  `inner-size`, every `arr-size`, and whether the element is a stored struct
+  `inner-size`, every `arr-size`, whether the element is a stored struct or a pointer, and a
+  pointer element's `mutable`, which a read-only borrow may narrow from `true` to `false`
   (`E_ArrBorrowShapeMismatch`). A row read through an
   embedded borrow inherits its `mutable`.
 
@@ -393,8 +397,9 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       pointer, not the address of the variable's slot. An array variable (an owned array,
       or a variable of borrowed array type — including a parameter) is the exception: it is
       already a pointer to its elements, so `@x`/`@!x` is emitted as a plain `id` whose
-      `value-type` is the variable's type with `mutable` set on every level. Its leaf element must be
-      `prim` (E_AddrOfNotPrimitive), and `@!x` needs a writable array (E_WriteThroughReadOnlyPtr).
+      `value-type` is the variable's type with `mutable` set on every array level (a `@T`/`@!T`
+      element keeps its own). Its leaf element must be `prim`, a struct, or a `@T`/`@!T` pointer
+      (E_AddrOfNotPrimitive), and `@!x` needs a writable array (E_WriteThroughReadOnlyPtr).
     - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
       `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
       field-access section below), then re-emitted as `{"expr-type":"field-access","var"|

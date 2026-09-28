@@ -392,7 +392,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "every size in a borrowed array type ('@[n]T'/'@![n]T') must be a compile-time constant.";
 
 		case E_ArrBorrowUnsupportedElem:
-			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive and struct elements, and no struct inside a '$[m]' row, in this version.";
+			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements, and neither a struct nor a pointer inside a '$[m]' row, in this version.";
 
 		case E_ArrBorrowNeedsAddrOf:
 			return "a borrowed array ('@[n]T'/'@![n]T') must be given as '@name' or '@!name'.";

@@ -1207,6 +1207,10 @@ func fill(@![H][W]int32 g, int32 x) {
 - The forms are `@[n]T`, `@[n][m]T`, `@[n]$[m]T`, and `@[n]$T`, each with the `@!` variant. `T`
   must be a primitive type, or a struct type in `@[n]T` and `@[n][m]T` (an array of owned structs,
   `[n]T` / `[n][m]T`) and in `@[n]$T` (a contiguous struct array, `[n]$T`). Every size must be a constant: an integer literal or a `const`.
+- An array of pointer slots (`[n]@T` / `[n]@!T`) is borrowed as `@[n]@T`, `@![n]@!T`, and so on.
+  The borrow's `@`/`@!` controls writing the slots (`@q -> g[i]`); the element's `@T`/`@!T`
+  controls writing through a pointer (`1 -> g[i].x`). The element permission must match the
+  array's, except that a `@` borrow may take `[n]@!T` as `@[n]@T`.
 - The array's shape must match exactly: the number of dimensions, contiguous (`$`) or not, and
   every size. An array whose size is only known at run time cannot be borrowed as `@[n]T`.
 - Through `@`, no element can be written, including elements reached through a row
@@ -1827,8 +1831,8 @@ to its storage, so `@s`/`@!s` and `@arr`/`@!arr` borrow it as it is (see
 
 - Not usable on function parameters, except a struct-type parameter or a borrowed array parameter.
 - On a local variable, usable only when the variable is primitive-typed, itself a pointer to a
-  primitive (`@T`/`@!T`), a struct, or an array with primitive or owned struct elements — a
-  pointer-to-struct local (pass it by name) or an array of struct pointer slots are rejected.
+  primitive (`@T`/`@!T`), a struct, or an array with primitive, struct, or `@T`/`@!T` pointer
+  elements — a pointer-to-struct local (pass it by name) is rejected.
 - On a struct field reached from a local variable, usable only when the leaf field is
   primitive-typed, an embedded struct (`$T`), or an owned struct (`T`) — a pointer-typed field
   (`@T`/`@!T`) or an array field is rejected.

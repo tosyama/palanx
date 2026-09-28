@@ -416,6 +416,12 @@ json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, b
 		return out;
 	}
 	leaf = resolveTypeAlias(leaf);
+	// [n]@T / [n]@!T: the element pointer keeps its own permission.
+	json ptrElem;
+	if (leaf.value("type-kind","") == "pntr" && !out.value("embedded", false)) {
+		ptrElem = {{"type-kind","pntr"},{"mutable",leaf.value("mutable", true)}};
+		leaf = resolveTypeAlias(leaf["base-type"]);
+	}
 	string tname = leaf.value("type-name","");
 	bool isStruct = structDefs_.count(tname) > 0;
 	if (leaf.value("type-kind","") != "prim" || (!isStruct && !isKnownTypeName(tname))
@@ -424,7 +430,12 @@ json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, b
 		exit(1);
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
-	out["base-type"] = isStruct ? toStructPntrType(leaf) : leaf;
+	if (!ptrElem.is_null()) {
+		ptrElem["base-type"] = isStruct ? json{{"type-kind","struct"},{"type-name",tname}} : leaf;
+		out["base-type"] = move(ptrElem);
+	} else {
+		out["base-type"] = isStruct ? toStructPntrType(leaf) : leaf;
+	}
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	return out;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -454,8 +465,11 @@ void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json&
 		exit(1);
 	}
 	if (!arrShapeMatch(saValue["value-type"], dstType)) {
+		// The owned var-type names the source's levels exactly: a borrowed row
+		// whose size is unknown looks like a '@T' element once it has "mutable".
+		const json& srcType = saValue.contains("var-type") ? saValue["var-type"] : saValue["value-type"];
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowShapeMismatch,
-			arrShapeName(dstType), arrShapeName(saValue["value-type"])) << endl;
+			arrShapeName(dstType), arrShapeName(srcType)) << endl;
 		exit(1);
 	}
 }

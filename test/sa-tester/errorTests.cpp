@@ -2439,17 +2439,17 @@ TEST(sa_error, arr_borrow)
 		{"error_237_arr_borrow_embed_mismatch.pa", "array shape '[2]$[3]int32' does not match the borrowed array type '[2][3]int32'."},
 		{"error_238_arr_borrow_size_not_const.pa", ":2:1: error: every size in a borrowed array type"},
 		{"error_239_addr_of_struct_arr.pa", "array shape '[2]P' does not match the borrowed array type '[2]int32'."},
-		{"error_240_arr_borrow_struct_elem.pa", "no struct inside a '$[m]' row"},
+		{"error_240_arr_borrow_struct_elem.pa", "neither a struct nor a pointer inside a '$[m]' row"},
 		{"error_241_arr_borrow_mut_of_ro.pa", "cannot write through read-only pointer"},
 		{"error_242_arr_borrow_local_no_addr_of.pa", ":2:1: error: a borrowed array ('@[n]T'/'@![n]T') must be given as"},
 		{"error_243_arr_borrow_assign_mismatch.pa", ":4:1: error: array shape '[3]int32' does not match"},
 		{"error_244_arr_borrow_unsized.pa", "every size in a borrowed array type"},
 		{"error_245_arr_borrow_return.pa", "cannot represent: 'array'"},
-		{"error_246_arr_borrow_embed_prim.pa", "supports only primitive and struct elements"},
+		{"error_246_arr_borrow_embed_prim.pa", "supports only primitive, struct and '@T'/'@!T' pointer elements"},
 		{"error_271_struct_arr_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer"},
 		{"error_272_struct_arr_borrow_mut_elem_of_ro.pa", ":3:10: error: cannot write through read-only pointer"},
 		{"error_273_struct_arr_borrow_elem_no_addr_of.pa", ":3:2: error: a struct given to a '@T'/'@!T' pointer must be written as"},
-		{"error_274_struct_arr_borrow_ptr_slots.pa", "cannot take the address of 'a'"},
+		{"error_274_struct_arr_borrow_ptr_slots.pa", "array shape '[2]@P' does not match the borrowed array type '[2]P'."},
 		{"error_275_struct_arr_borrow_size_mismatch.pa", "array shape '[2][4]P' does not match the borrowed array type '[2][3]P'."},
 		{"error_276_embed_struct_arr_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer"},
 		{"error_277_embed_struct_arr_borrow_mut_elem_of_ro.pa", ":3:10: error: cannot write through read-only pointer"},
@@ -2537,6 +2537,14 @@ TEST(sa_error, ptr_slot_arr)
 {
 	const pair<string, string> cases[] = {
 		{"error_282_prim_ptr_slot_arr_write_ro.pa", ":4:1: error: cannot write through read-only pointer '@T'"},
+		{"error_283_ptr_slot_arr_borrow_elem_upgrade.pa", "array shape '[2]@P' does not match the borrowed array type '[2]@!P'."},
+		{"error_284_ptr_slot_arr_borrow_narrow_mut_slots.pa", "array shape '[2]@!P' does not match the borrowed array type '[2]@P'."},
+		{"error_285_ptr_slot_arr_borrow_owned_arr.pa", "array shape '[2]P' does not match the borrowed array type '[2]@P'."},
+		{"error_286_ptr_slot_arr_borrow_write_ro_slot.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
+		{"error_287_ptr_slot_arr_borrow_write_ro_elem.pa", ":3:7: error: cannot write through read-only pointer array element"},
+		{"error_288_prim_ptr_slot_arr_borrow_as_prim.pa", "array shape '[2]@int32' does not match the borrowed array type '[2]int32'."},
+		{"error_289_arr_borrow_embed_ptr_elem.pa", "neither a struct nor a pointer inside a '$[m]' row"},
+		{"error_290_arr_borrow_runtime_inner_size.pa", "array shape '[2][?]int32' does not match the borrowed array type '[2][3]int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

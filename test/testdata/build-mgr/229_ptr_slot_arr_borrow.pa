@@ -1,0 +1,46 @@
+cinclude <stdio.h>;
+type Point { int32 x; int32 y; };
+const N = 2;
+
+func swap(@![N]@!Point ps)
+{
+	@!Point t = ps[0];
+	ps[1] -> ps[0];
+	t -> ps[1];
+}
+
+func shift(@[N]@!Point ps, int32 d)
+{
+	int32 i = 0;
+	while i < N { ps[i].x + d -> ps[i].x; i + 1 -> i; }
+}
+
+func show(@[N]@Point ps)
+{
+	int32 i = 0;
+	while i < N { printf("(%d,%d)", ps[i].x, ps[i].y); i + 1 -> i; }
+}
+
+func bump(@![N]@!int32 vs) { vs[0][0] + 1 -> vs[0][0]; vs[0] -> vs[1]; }
+
+Point a;
+Point b;
+1 -> a.x; 2 -> a.y;
+3 -> b.x; 4 -> b.y;
+[N]@!Point ps;
+@!a -> ps[0];
+@!b -> ps[1];
+swap(@!ps);
+shift(@ps, 10);
+show(@ps);
+@[N]@Point r = @ps;
+printf(" %d ", r[0].x);
+
+int32 v = 5;
+int32 w = 7;
+[N]@!int32 vs;
+@!v -> vs[0];
+@!w -> vs[1];
+bump(@!vs);
+vs[1][0] + 100 -> vs[1][0];
+printf("%d %d\n", v, w);

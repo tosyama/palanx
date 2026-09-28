@@ -74,8 +74,16 @@ inline bool isStructPntr(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("base-type")
 	    && vt["base-type"].value("type-kind","") == "struct" && !vt.value("embedded", false);
 }
+// A '@T'/'@!T' pointer to any T. A borrowed array level also has "mutable",
+// but always with "arr-size" or "embedded"; an owned array level has no
+// "mutable".
+inline bool isPtrBorrow(const json& vt)
+{
+	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
+	    && !vt.contains("arr-size") && !vt.value("embedded", false);
+}
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
-inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && vt.contains("mutable"); }
+inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 
 // LCOV_EXCL_EXCEPTION_BR_START
 inline json fieldValueType(const FieldLayout& f)
@@ -302,10 +310,10 @@ inline void setArrSize(json& pntrType, const json& saSize) {
 	if (n >= 0) pntrType["arr-size"] = n;
 }
 
-// A struct array's element is a pntr(struct) to the struct's own storage;
-// the array levels stop there.
+// The array levels stop at an element that is a struct's own storage or a
+// '@T'/'@!T' pointer.
 inline bool isArrLevel(const json& t) {
-	return t.value("type-kind","") == "pntr" && !isStructStorage(t);
+	return t.value("type-kind","") == "pntr" && !isStructStorage(t) && !isPtrBorrow(t);
 }
 
 // Renders an array pntr chain as source-like shape text ("[20][10]int32",
@@ -322,22 +330,31 @@ inline string arrShapeName(const json& t) {
 		cur = &(*cur)["base-type"];
 	}
 	if (isStructStorage(*cur)) cur = &(*cur)["base-type"];
-	return out + cur->value("type-name", "");
+	return out + typeDisplayName(*cur);
 }
 
 // Shape equality for binding an array to a borrowed array type: same depth,
-// same embedded layout, every size known and equal, and structs stored in
-// both or neither. The element type is left to the usual type compatibility
-// check, which cannot tell a stored struct from a pointer to one.
-inline bool arrShapeMatch(const json& from, const json& to) {
+// same embedded layout, every size known and equal, structs stored in both or
+// neither, and pointer elements in both or neither. The element type is left
+// to the usual type compatibility check, which cannot tell a stored struct
+// from a pointer to one and ignores pointer permissions. A pointer element
+// keeps its permission, except that read-only slots may narrow '@!T' to '@T':
+// with writable slots the callee could store a '@T' where the caller expects
+// a '@!T'.
+inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable = true) {
 	bool fp = isArrLevel(from), tp = isArrLevel(to);
-	if (!fp || !tp) return fp == tp && isStructStorage(from) == isStructStorage(to);
+	if (!fp || !tp) {
+		if (fp != tp || isStructStorage(from) != isStructStorage(to) || isPtrBorrow(from) != isPtrBorrow(to))
+			return false;
+		return !isPtrBorrow(to) || isWritableThrough(from) == isWritableThrough(to)
+		    || (!toSlotsMutable && !isWritableThrough(to));
+	}
 	auto sameKey = [&](const char* k) {
 		return from.contains(k) == to.contains(k) && (!to.contains(k) || from[k] == to[k]);
 	};
 	return from.contains("arr-size") && sameKey("arr-size")
 	    && from.value("embedded", false) == to.value("embedded", false) && sameKey("inner-size")
-	    && arrShapeMatch(from["base-type"], to["base-type"]);
+	    && arrShapeMatch(from["base-type"], to["base-type"], isWritableThrough(to));
 }
 
 inline bool arrElemIsBorrowable(const json& t) {
@@ -348,13 +365,14 @@ inline bool arrElemIsBorrowable(const json& t) {
 		cur = &(*cur)["base-type"];
 	}
 	string k = cur->value("type-kind","");
-	return k == "prim" || (k == "struct" && inEmbedded) || isStructStorage(*cur);
+	return k == "prim" || (k == "struct" && inEmbedded) || isStructStorage(*cur)
+	    || isPtrBorrow(*cur);
 }
 
 // An array is borrowed with one permission for every level down to its
 // elements, so a read-only 2D borrow also makes its rows read-only. A struct
 // element stays the struct's storage; writes to it are checked against the
-// array it is reached through.
+// array it is reached through. A pointer element keeps its own permission.
 inline json withArrPermission(json t, bool isMutable) {
 	json* cur = &t;
 	while (isArrLevel(*cur)) {
