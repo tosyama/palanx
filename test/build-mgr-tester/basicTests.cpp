@@ -1992,6 +1992,32 @@ TEST(build_mgr, ptr_slot_arr_borrow) {
 	ASSERT_EQ(output, "(13,4)(11,2) 13 106 7\n");
 }
 
+TEST(build_mgr, embed_struct_arr_2d) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/230_embed_struct_arr_2d.pa");
+	ASSERT_EQ(output, "(8,9) 66 (110,11)(2,42) 5\n");
+}
+
+TEST(build_mgr, embed_struct_arr_2d_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_embed_struct_arr_2d_mtrace_bin "
+		"../test/testdata/build-mgr/231_embed_struct_arr_2d_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_embed_struct_arr_2d_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_embed_struct_arr_2d_mtrace_bin");
+	ASSERT_EQ(output, "5\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// [2][3]$Line: 1 outer + 2 rows; the Lines sit in the rows
+	EXPECT_EQ(allocs, 3) << "expected 3 allocs for [2][3]$Line, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

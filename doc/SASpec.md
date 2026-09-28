@@ -213,7 +213,15 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - `init`: palan call to `__pln_alloc_arr_arr_<T>(__<name>_d0, __<name>_d1)`.
   - "arr-struct" and "arr-arr-struct" entries are added to `alloc-shapes`.
   - Scope-exit free: palan call stmt `__pln_free_arr_arr_<T>(<name>, __<name>_d0, __<name>_d1)`.
-  - Other 2D struct forms (`[m]$[n]T`, `[m][n]$T`, `[m]$[n]$T`) are compile errors.
+
+  **`[m][n]$T` (2D array of contiguous struct rows, `T` a struct):** Lowered like `[m][n]T` for a
+  primitive leaf, with each row an `n * sizeof(T)` byte block (`T` owns nothing, so no per-element
+  allocation is needed).
+  - `var-type`: `pntr(pntr{embedded, stride, base-type: struct(T)})`, with `arr-size` on both levels when constant.
+  - `init`: palan call to `__pln_alloc_arr_arr_uint8(__<name>_d0, n * sizeof(T))`, which registers the
+    `arr_arr_uint8` shape; scope-exit free: `__pln_free_arr_arr_uint8(<name>, __<name>_d0)`.
+
+  Other 2D struct forms (`[m]$[n]T`, `[m]$[n]$T`) are compile errors.
 
   **`[n]$[m]T` (contiguous 2D array):** A `var-decl` with outer `arr` type-kind where
   `embedded: true` and `base-type` is an inner `arr(prim T)` is transformed to a single

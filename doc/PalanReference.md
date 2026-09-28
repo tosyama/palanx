@@ -1204,9 +1204,9 @@ func fill(@![H][W]int32 g, int32 x) {
 }
 ```
 
-- The forms are `@[n]T`, `@[n][m]T`, `@[n]$[m]T`, and `@[n]$T`, each with the `@!` variant. `T`
+- The forms are `@[n]T`, `@[n][m]T`, `@[n]$[m]T`, `@[n]$T`, and `@[n][m]$T`, each with the `@!` variant. `T`
   must be a primitive type, or a struct type in `@[n]T` and `@[n][m]T` (an array of owned structs,
-  `[n]T` / `[n][m]T`) and in `@[n]$T` (a contiguous struct array, `[n]$T`). Every size must be a constant: an integer literal or a `const`.
+  `[n]T` / `[n][m]T`) and in `@[n]$T` / `@[n][m]$T` (contiguous struct arrays, `[n]$T` / `[n][m]$T`). Every size must be a constant: an integer literal or a `const`.
 - An array of pointer slots (`[n]@T` / `[n]@!T`) is borrowed as `@[n]@T`, `@![n]@!T`, and so on.
   The borrow's `@`/`@!` controls writing the slots (`@q -> g[i]`); the element's `@T`/`@!T`
   controls writing through a pointer (`1 -> g[i].x`). The element permission must match the
@@ -1356,7 +1356,7 @@ before the array variable is declared, so they cannot refer to the variable itse
 A trailing comma after the last element of a row is allowed (`[1, 2, 3,]`), which is convenient
 when a literal is written over several lines.
 
-An array of structs (`[n]T`, `[n]$T`, `[m][n]T`) is initialized the same way, with each element
+An array of structs (`[n]T`, `[n]$T`, `[m][n]T`, `[m][n]$T`) is initialized the same way, with each element
 written either as its field values in declaration order (`[1, 2]`) or by field name
 (`{y: 2, x: 1}`). Every field must be given exactly once. A struct field (`T` or `$T`) is written
 as a nested struct value; pointer and array fields cannot be initialized by a literal. Since a
@@ -1444,9 +1444,18 @@ type Point { int64 x; int64 y; };
 printf("%ld\n", grid[1][2].y);  // 7
 ```
 
+`[m][n]$T` instead makes each row an `[n]$T` contiguous array, so the structs sit in the rows
+themselves. It is accessed the same way.
+
+```palan
+[2][3]$Point tiles;
+7 -> tiles[1][2].y;
+printf("%ld\n", tiles[1][2].y);  // 7
+```
+
 **Restrictions:**
-- `[n]$T` requires that `T` has no owned sub-struct fields. Use `[n]T` instead when `T` contains owned pointer fields.
-- Other two-dimensional struct array forms (`[m]$[n]T`, `[m][n]$T`, `[m]$[n]$T`) are not supported.
+- `[n]$T` and `[m][n]$T` require that `T` has no owned sub-struct fields. Use `[n]T` / `[m][n]T` instead when `T` contains owned pointer fields.
+- Other two-dimensional struct array forms (`[m]$[n]T`, `[m]$[n]$T`) are not supported.
 
 Array **fields** (declared inside `type { ... }`, see Section 19) use the same four forms but
 require `n` to be a compile-time integer literal, since struct layout must be statically known.

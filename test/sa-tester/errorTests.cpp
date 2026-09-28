@@ -2498,8 +2498,13 @@ TEST(sa_error, struct_borrow)
 TEST(sa_error, struct_arr_2d)
 {
 	const pair<string, string> cases[] = {
-		{"error_261_struct_arr_2d_embed_outer.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T'."},
-		{"error_262_struct_arr_2d_embed_row.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T'."},
+		{"error_261_struct_arr_2d_embed_outer.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
+		{"error_262_struct_arr_2d_embed_both.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
+		{"error_291_embed_struct_arr_2d_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer '@T'"},
+		{"error_292_embed_struct_arr_2d_borrow_owned.pa", "array shape '[2][3]$Point' does not match the borrowed array type '[2][3]Point'."},
+		{"error_293_struct_arr_2d_borrow_embed.pa", "array shape '[2][3]Point' does not match the borrowed array type '[2][3]$Point'."},
+		{"error_294_embed_struct_arr_2d_borrow_size.pa", "array shape '[2][4]$Point' does not match the borrowed array type '[2][3]$Point'."},
+		{"error_295_embed_struct_arr_2d_owned_sub.pa", ":3:1: error: [n]$T: T has owned sub-struct fields; use [n]T instead."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -1,0 +1,37 @@
+cinclude <stdio.h>;
+type Point { int32 x; int32 y; };
+const M = 2;
+const N = 3;
+
+func sum(@[M][N]$Point v) -> int32
+{
+	int32 s = 0;
+	int32 i = 0;
+	while i < M {
+		int32 j = 0;
+		while j < N { s + v[i][j].x + v[i][j].y -> s; j + 1 -> j; }
+		i + 1 -> i;
+	}
+	return s;
+}
+
+func shift(@![M][N]$Point v) { v[1][2].x + 100 -> v[1][2].x; }
+
+func show(@Point p) { printf("(%d,%d)", p.x, p.y); }
+
+[M][N]$Point a = [
+	[0,1][2,3][4,5],
+	[{x:6, y:7}, {y:9, x:8}, [10,11],],
+];
+show(@a[1][1]);
+printf(" %d ", sum(@a));
+shift(@!a);
+show(@a[1][2]);
+42 -> a[0][1].y;
+@[M][N]$Point ra = @a;
+show(@ra[0][1]);
+
+int64 rows = 2;
+[rows][N]$Point b;
+5 -> b[rows-1][N-1].x;
+printf(" %d\n", b[1][2].x);

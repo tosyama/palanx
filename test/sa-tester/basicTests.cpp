@@ -4500,6 +4500,31 @@ TEST(sa, struct_arr_2d)
 	ASSERT_EQ(rowsElem["base-type"]["base-type"], point);
 }
 
+TEST(sa, embed_struct_arr_2d)
+{
+	json jout = run_sa("../test/testdata/sa/209_embed_struct_arr_2d.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Each row is a plain block of n structs, so the byte-row allocator serves it.
+	json keys = json::array();
+	for (auto& s : jout["alloc-shapes"])
+		keys.push_back(s["shape-key"]);
+	ASSERT_EQ(keys, json::array({"arr_arr_uint8"}));
+
+	const json& m = jout["statements"][1]["vars"][0];
+	ASSERT_EQ(m["name"], "m");
+	ASSERT_EQ(m["init"]["name"], "__pln_alloc_arr_arr_uint8");
+	const json& rowBytes = m["init"]["args"][1];
+	ASSERT_EQ(rowBytes["expr-type"], "mul");
+	ASSERT_EQ(rowBytes["right"]["value"], "8");
+
+	json row = {{"type-kind","pntr"},{"embedded",true},{"stride",8},{"arr-size",3},
+	            {"base-type",{{"type-kind","struct"},{"type-name","Point"}}}};
+	json expected = {{"type-kind","pntr"},{"arr-size",2},{"base-type",row}};
+	ASSERT_EQ(m["var-type"], expected);
+	ASSERT_EQ(jout["statements"][2]["stmt-type"], "field-assign");
+}
+
 TEST(sa, struct_arr_lit)
 {
 	json jout = run_sa("../test/testdata/sa/205_struct_arr_lit.pa");

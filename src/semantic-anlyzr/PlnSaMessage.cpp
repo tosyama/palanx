@@ -406,7 +406,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'.";
 
 		case E_Unsupported2DStructArr:
-			return "a two-dimensional struct array must be declared as '[m][n]T'.";
+			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
 
 		case E_StructLitFieldCount:
 			BOOST_ASSERT(arg1 != "\x01");

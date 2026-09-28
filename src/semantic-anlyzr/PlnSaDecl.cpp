@@ -288,10 +288,12 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
 		const json& base = vtype["base-type"];
 		if (base.value("type-kind", "") == "arr" && base["base-type"].value("type-kind", "") == "prim"
 				&& structDefs_.count(base["base-type"].value("type-name", ""))) {
-			if (vtype.value("embedded", false) || base.value("embedded", false)) {
+			if (vtype.value("embedded", false)) {
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_Unsupported2DStructArr) << endl;
 				exit(1);
 			}
+			if (base.value("embedded", false))
+				return sa_arr_var_decl(stmt2);
 			return sa_owned_struct_arr2d_var_decl(stmt2);
 		}
 	}
@@ -406,6 +408,23 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	if (base_type.value("type-kind","") == "arr") {
 		const json& leaf_type = base_type["base-type"];
 		string leaf_name = leaf_type.value("type-name","");
+		json row_type = {{"type-kind","pntr"},{"base-type",leaf_type}};
+		int64_t row_stride = 1;
+		if (base_type.value("embedded", false)) {
+			// [m][n]$T: a row is n structs laid out in place. $T owns nothing, so a
+			// row is a plain byte block and the uint8 row allocator serves it.
+			const StructDef& def = requireCompleteStruct(leaf_name, stmt);
+			if (def.hasOwnedStructFields) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
+				exit(1);
+			}
+			row_stride = def.totalSize;
+			// LCOV_EXCL_EXCEPTION_BR_START
+			row_type = {{"type-kind","pntr"},{"embedded",true},{"stride",row_stride},
+			            {"base-type",{{"type-kind","struct"},{"type-name",leaf_name}}}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+			leaf_name = "uint8";
+		}
 		string shape_key = "arr_arr_" + leaf_name;
 
 		// Register shape in sa["alloc-shapes"] (deduplicated by shape-key)
@@ -430,11 +449,17 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			json d0_expr = sa_arr_size_expr(stmt, vtype["size-expr"]);
 			json n_expr  = sa_arr_size_expr(stmt, base_type["size-expr"]);
 
-			json pntr_type = {{"type-kind","pntr"},{"base-type",{
-				{"type-kind","pntr"},{"base-type",leaf_type}
-			}}};
+			json pntr_type = {{"type-kind","pntr"},{"base-type",row_type}};
 			setArrSize(pntr_type, d0_expr);
 			setArrSize(pntr_type["base-type"], n_expr);
+			json row_bytes = n_expr;
+			if (row_stride != 1) {
+				// LCOV_EXCL_EXCEPTION_BR_START
+				row_bytes = {{"expr-type","mul"},{"value-type",uint64_type},{"left",n_expr},
+				             {"right",{{"expr-type","lit-uint"},{"value",to_string(row_stride)},
+				                       {"value-type",uint64_type}}}};
+				// LCOV_EXCL_EXCEPTION_BR_STOP
+			}
 
 			json d0_id = {{"expr-type","id"},{"name",d0_name},
 			              {"var-type",uint64_type},{"value-type",uint64_type}};
@@ -450,7 +475,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 
 			json alloc_call = {
 				{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
-				{"args",json::array({d0_id, n_expr})}, {"value-type",pntr_type}
+				{"args",json::array({d0_id, row_bytes})}, {"value-type",pntr_type}
 			};
 			json free_stmt_json = {{"stmt-type","expr"},{"body",{
 				{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
