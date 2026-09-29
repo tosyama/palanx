@@ -1,0 +1,2 @@
+type P { int32 a; };
+type A { [2][3]$P x; };

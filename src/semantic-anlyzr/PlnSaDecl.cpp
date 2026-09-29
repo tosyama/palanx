@@ -124,9 +124,14 @@ static StructDef buildStructDef(const string& name,
 					                      .count=count, .elemKind=elemKind, .stride=8});
 					continue;
 				}
+				if (base_kind != "prim") {
+					// [n][m]T / [n][m]$T nested -- not supported
+					cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+					exit(1);
+				}
 				// [n]T: owned pointer array (field is an 8B pointer, cascade alloc/free)
 				string leaf_name = base_wrap.value("type-name", "");
-				if (base_kind == "prim" && !structDefs.count(leaf_name)) {
+				if (!structDefs.count(leaf_name)) {
 					// primitive leaf
 					int stride = elemSizeBytes(leaf_name);
 					if (stride < 0) {

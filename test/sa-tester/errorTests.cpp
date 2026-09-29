@@ -2599,3 +2599,20 @@ TEST(sa_error, embed_elem_not_struct)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, field_2d_arr_unsupported)
+{
+	const char* files[] = {
+		"error_323_field_2d_arr.pa",
+		"error_324_field_2d_embed_prim.pa",
+		"error_325_field_2d_embed_struct.pa",
+	};
+	for (auto file : files) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			string("bin/palan-gen-ast ../test/testdata/sa/") + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find("unsupported struct field type"), string::npos) << file << ": " << sa;
+	}
+}
