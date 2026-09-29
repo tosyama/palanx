@@ -463,9 +463,11 @@ TEST(codegen, div_rhs_in_rax) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // rhs of div is in %rax (named return value), must be saved to %r10 before idivq
-    ASSERT_NE(asm_text.find("movq %rax, %r10"), string::npos);
-    ASSERT_NE(asm_text.find("idivq %r10"),      string::npos);
+    // The return value is also the divisor; idivq overwrites %rax, so the
+    // value must live elsewhere until the return.
+    ASSERT_EQ(asm_text.find("movq %rax, %r10"), string::npos);
+    ASSERT_NE(asm_text.find("idivq %rbx"),      string::npos);
+    ASSERT_NE(asm_text.find("movq %rbx, %rax"), string::npos);
 }
 
 TEST(codegen, while_loop) {

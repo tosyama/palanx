@@ -285,19 +285,19 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         if (m.call_uses.empty()) {
             bool is_flt = (m.type == VRegType::Float32 || m.type == VRegType::Float64);
             if (m.isRetValue && numRetValues == 1 && !is_flt) {
-                // Single int return value: bind to %rax, but if it's defined by a call and another
-                // call clobbers %rax before the last use, spill to callee-saved instead.
-                bool def_is_call = (find(call_indices.begin(), call_indices.end(), m.def_idx) != call_indices.end());
-                bool crosses_call = false;
-                if (def_is_call) {
-                    for (int c_idx : call_indices) {
-                        if (c_idx > m.def_idx && c_idx < m.live_end) {
-                            crosses_call = true;
-                            break;
-                        }
+                // Besides calls, most x86 emitters use %rax as scratch for stack
+                // operands, so %rax is safe only if nothing that emits code lies
+                // between the def and the return.
+                bool rax_safe = true;
+                for (int k = m.def_idx + 1; k < m.live_end; k++) {
+                    auto& in = func.instrs[k];
+                    if (!holds_alternative<Label>(in) && !holds_alternative<BlockEnter>(in)
+                            && !holds_alternative<BlockLeave>(in)) {
+                        rax_safe = false;
+                        break;
                     }
                 }
-                if (!crosses_call) {
+                if (rax_safe) {
                     result[vreg] = PhysLoc{"%rax", m.type};
                 } else {
                     allocCalleeSavedOrStack(vreg, m.type);

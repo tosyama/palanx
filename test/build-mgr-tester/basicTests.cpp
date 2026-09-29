@@ -2057,6 +2057,12 @@ TEST(build_mgr, copy_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, ret_value_across_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/236_ret_value_across_call.pa");
+	ASSERT_EQ(output, "a=7\nt=6\n9 7\n6\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

@@ -292,6 +292,35 @@ TEST(regalloc, callee_saved_call_arg_reused_after_call) {
     EXPECT_EQ(r.regMap.at(0).base, "%rbx");
 }
 
+// A single return value is bound straight to %rax only when nothing between
+// its def and the return could clobber %rax.
+TEST(regalloc, ret_value_in_rax_when_adjacent) {
+    VFunc func;
+    func.instrs.push_back(MovImm{0, VRegType::Int32, 1});
+    func.instrs.push_back(MovImm{1, VRegType::Int32, 2});
+    func.instrs.push_back(Add{2, 0, 1, VRegType::Int32});
+    func.instrs.push_back(BlockLeave{});
+    func.instrs.push_back(RetPln{{2}, {VRegType::Int32}});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    ASSERT_FALSE(r.regMap.at(2).isStack());
+    EXPECT_EQ(r.regMap.at(2).base, "%rax");
+}
+
+TEST(regalloc, ret_value_across_call_not_in_rax) {
+    VFunc func;
+    func.instrs.push_back(MovImm{0, VRegType::Int32, 1});
+    func.instrs.push_back(MovImm{1, VRegType::Int32, 2});
+    func.instrs.push_back(Add{2, 0, 1, VRegType::Int32});
+    func.instrs.push_back(CallC{"puts", {}, {}, {}});
+    func.instrs.push_back(RetPln{{2}, {VRegType::Int32}});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    EXPECT_TRUE(r.regMap.at(2).isStack() || r.regMap.at(2).base != "%rax");
+}
+
 // flo64 variable → 8-byte slot at -8(%rbp)
 TEST(regalloc, stack_float64) {
     VFunc func;
