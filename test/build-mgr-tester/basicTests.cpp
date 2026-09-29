@@ -1901,7 +1901,7 @@ TEST(build_mgr, var_init_copy) {
 TEST(build_mgr, arr_borrow) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/219_arr_borrow.pa");
-	ASSERT_EQ(output, "161\n7 8\n5 6\n8\n1 9\n");
+	ASSERT_EQ(output, "161\n7 8\n8\n5 6\n8\n9 8\n1 9\n");
 }
 
 TEST(build_mgr, const_typed_context) {

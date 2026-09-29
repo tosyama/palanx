@@ -461,7 +461,9 @@ void PlnSemanticAnalyzer::normalizeArrBorrowSig(json& funcDef)
 void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json& srcAst,
 		const json& saValue, const json& dstType)
 {
-	if (srcAst.value("expr-type","") != "addr-of") {
+	bool namesBorrow = saValue.value("expr-type","") == "id" && saValue.contains("var-type")
+	                   && isArrBorrowVar(saValue["var-type"]);
+	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowNeedsAddrOf) << endl;
 		exit(1);
 	}

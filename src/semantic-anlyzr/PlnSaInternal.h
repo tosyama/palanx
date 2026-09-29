@@ -82,6 +82,14 @@ inline bool isPtrBorrow(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && !vt.contains("arr-size") && !vt.value("embedded", false);
 }
+// A variable or parameter declared as a borrowed array ('@[n]T'/'@![n]T').
+// Checked on its var-type: a row reached through it also carries "mutable" but
+// is part of the borrowed storage, not a borrow of its own.
+inline bool isArrBorrowVar(const json& vt)
+{
+	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
+	    && (vt.contains("arr-size") || vt.value("embedded", false));
+}
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 

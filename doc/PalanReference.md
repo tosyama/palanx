@@ -1217,8 +1217,11 @@ func fill(@![H][W]int32 g, int32 x) {
   (`g[i][j]`) and the fields of a struct element (`g[i].x`). A `@` borrow cannot be passed
   where `@!` is expected.
 - A struct element is still passed to a `@T`/`@!T` parameter as `@g[i]` / `@!g[i]`.
-- A borrowed array can also be a local variable (`@[4]int64 p = @v;`). Inside the function, pass
-  a borrowed parameter on with `@g`.
+- A borrowed array can also be a local variable (`@[4]int64 p = @v;`).
+- A borrowed array is already a borrow, like a `@T`/`@!T` pointer: pass it on, bind it, and
+  rebind it by name (`sum(g)`, `@[4]int64 q = p;`, `q -> p`). `@g` on it is a compile error. A
+  `@!` borrow may be given where `@` is expected. A row (`g[i]`) is part of the borrowed storage,
+  not a borrow of its own, and cannot be given by name.
 - `@!arr` also works where a C function takes a pointer to the elements (`memset(@!v, 0, 32)`).
 - A borrowed array cannot be a return type.
 
@@ -1652,7 +1655,7 @@ moveX(@!pt, 3);
 A struct given by name where a `@T`/`@!T` is expected — a parameter, a variable's initializer, an
 assignment, or a pointer field or slot — is a compile error. `@`/`@!` works on a struct variable
 (including a struct-type parameter), an owned (`T`) or embedded (`$T`) struct field, and a struct
-array element (`@!pts[1]`). A `@T`/`@!T` pointer itself is already a borrow and is passed by name.
+array element (`@!pts[1]`). A `@T`/`@!T` pointer itself is already a borrow and is passed by name; `@` on it is a compile error.
 
 `q -> p` copies struct `q` into `p`, including what `q` owns; see [Copying](#copying--).
 
@@ -1861,10 +1864,12 @@ to its storage, so `@s`/`@!s` and `@arr`/`@!arr` borrow it as it is (see
 [Struct types in function signatures](#struct-types-in-function-signatures) and
 [Borrowing Arrays](#borrowing-arrays)).
 
-- Not usable on function parameters, except a struct-type parameter or a borrowed array parameter.
+- Not usable on function parameters, except a struct-type parameter.
+- Not usable on a borrow: a struct pointer (`@T`/`@!T` where `T` is a struct) or a borrowed array
+  (`@[n]T`) is passed by name.
 - On a local variable, usable only when the variable is primitive-typed, itself a pointer to a
   primitive (`@T`/`@!T`), a struct, or an array with primitive, struct, or `@T`/`@!T` pointer
-  elements — a pointer-to-struct local (pass it by name) is rejected.
+  elements.
 - On a struct field reached from a local variable, usable only when the leaf field is
   primitive-typed, an embedded struct (`$T`), or an owned struct (`T`) — a pointer-typed field
   (`@T`/`@!T`) or an array field is rejected.

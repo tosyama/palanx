@@ -165,6 +165,12 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 			exit(1);
 		}
+		// '@' on a borrow would name its variable's slot; only a primitive
+		// pointer has a use for that (a C 'T **' out-param).
+		if (isArrBorrowVar(*varType) || isStructBorrow(*varType)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfBorrowed, name) << endl;
+			exit(1);
+		}
 		// A struct or array variable is already a pointer to its storage, so '@'
 		// borrows it as it is rather than taking the address of the variable's slot.
 		if (isStructStorage(*varType)) {
@@ -177,10 +183,6 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		if (isInArrayScope(name) || varType->contains("arr-size")) {
 			if (!arrElemIsBorrowable(*varType)) {
 				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
-				exit(1);
-			}
-			if (isMutable && !isWritableThrough(*varType)) {
-				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
 				exit(1);
 			}
 			json out = {{"expr-type","id"},{"name",name},{"var-type",*varType},

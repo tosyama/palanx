@@ -391,7 +391,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements, and neither a struct nor a pointer inside a '$[m]' row, in this version.";
 
 		case E_ArrBorrowNeedsAddrOf:
-			return "a borrowed array ('@[n]T'/'@![n]T') must be given as '@name' or '@!name'.";
+			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name'.";
 
 		case E_ArrBorrowShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -439,6 +439,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_CopyUnsupportedShape:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "copying '" + arg1 + "' is not supported in this version.";
+
+		case E_AddrOfBorrowed:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is already a borrow ('@T'/'@[n]T'); pass it by name.";
 
 		default:
 			BOOST_ASSERT(false);

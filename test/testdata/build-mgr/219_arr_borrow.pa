@@ -21,6 +21,12 @@ set1d(@!v);
 printf("%ld %ld\n", v[0], v[3]);
 @[4]int64 rv = @v;
 printf("%ld\n", rv[2]);
+@[4]int64 rv2 = rv;
+[4]int64 w;
+9 -> w[2];
+@[4]int64 rw = @w;
+rw -> rv2;
+printf("%ld %ld\n", rv2[2], at2(rv));
 
 [2]$[3]int16 m;
 setm(@!m);
@@ -34,7 +40,7 @@ func sum2d(@[H][W]int32 g) -> int32 {
 		while j < W { s + g[i][j] -> s; j + 1 -> j; }
 		i + 1 -> i;
 	}
-	return s + corner(@g);
+	return s + corner(g);
 }
 
 func corner(@[3][4]int32 g) -> int32 {
@@ -50,6 +56,11 @@ func set1d(@![4]int64 a) {
 	5 -> a[0];
 	6 -> a[3];
 	8 -> a[2];
+	printf("%ld\n", at2(a));
+}
+
+func at2(@[4]int64 a) -> int64 {
+	return a[2];
 }
 
 func setm(@![2]$[3]int16 a) {

@@ -843,14 +843,14 @@ TEST(sa_error, addr_of_struct_ptr_var)
 {
 	// `@v;` where v is a `@!Point` local -- a struct pointer is passed by name,
 	// and '@' on it would build a `struct T **`.
-	// Covers: sa_expression addr-of E_AddrOfNotPrimitive branch
+	// Covers: sa_expr_addr_of E_AddrOfBorrowed branch
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_092_addr_of_struct_ptr_var.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot take the address of"), string::npos);
+	ASSERT_NE(sa.find("'v' is already a borrow"), string::npos);
 }
 
 TEST(sa_error, addr_of_undefined)
@@ -2401,15 +2401,15 @@ TEST(sa_error, arr_borrow)
 		{"error_231_arr_borrow_write_ro.pa", ":1:26: error: cannot write through read-only pointer"},
 		{"error_232_arr_borrow_write_ro_embed.pa", ":1:27: error: cannot write through read-only pointer"},
 		{"error_233_arr_borrow_ro_to_mut.pa", ":2:1: error: cannot bind a read-only pointer"},
-		{"error_234_arr_borrow_no_addr_of.pa", ":2:1: error: a borrowed array ('@[n]T'/'@![n]T') must be given as"},
+		{"error_234_arr_borrow_no_addr_of.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as"},
 		{"error_235_arr_borrow_size_mismatch.pa", "array shape '[3][4]int32' does not match the borrowed array type '[3][5]int32'."},
 		{"error_236_arr_borrow_runtime_size.pa", "array shape '[?]int32' does not match the borrowed array type '[2]int32'."},
 		{"error_237_arr_borrow_embed_mismatch.pa", "array shape '[2]$[3]int32' does not match the borrowed array type '[2][3]int32'."},
 		{"error_238_arr_borrow_size_not_const.pa", ":2:1: error: every size in a borrowed array type"},
 		{"error_239_addr_of_struct_arr.pa", "array shape '[2]P' does not match the borrowed array type '[2]int32'."},
 		{"error_240_arr_borrow_struct_elem.pa", "neither a struct nor a pointer inside a '$[m]' row"},
-		{"error_241_arr_borrow_mut_of_ro.pa", "cannot write through read-only pointer"},
-		{"error_242_arr_borrow_local_no_addr_of.pa", ":2:1: error: a borrowed array ('@[n]T'/'@![n]T') must be given as"},
+		{"error_241_arr_borrow_mut_of_ro.pa", "cannot bind a read-only pointer"},
+		{"error_242_arr_borrow_local_no_addr_of.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as"},
 		{"error_243_arr_borrow_assign_mismatch.pa", ":4:1: error: array shape '[3]int32' does not match"},
 		{"error_244_arr_borrow_unsized.pa", "every size in a borrowed array type"},
 		{"error_245_arr_borrow_return.pa", "cannot represent: 'array'"},
@@ -2425,6 +2425,9 @@ TEST(sa_error, arr_borrow)
 		{"error_279_struct_arr_borrow_embed_arr.pa", "array shape '[2]$P' does not match the borrowed array type '[2]P'."},
 		{"error_280_embed_struct_arr_borrow_size_mismatch.pa", "array shape '[3]$P' does not match the borrowed array type '[2]$P'."},
 		{"error_281_embed_struct_arr_field_access.pa", ":3:11: error: field access on non-struct variable."},
+		{"error_303_arr_borrow_addr_of_param.pa", ":1:25: error: 'g' is already a borrow"},
+		{"error_304_arr_borrow_addr_of_local.pa", ":3:16: error: 'g' is already a borrow"},
+		{"error_305_arr_borrow_row_by_name.pa", ":3:1: error: an array given to a borrowed array"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
