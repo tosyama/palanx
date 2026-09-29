@@ -1,0 +1,2 @@
+type A = [2]Foo;
+A x;

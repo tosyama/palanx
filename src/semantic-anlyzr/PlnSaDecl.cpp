@@ -240,8 +240,10 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	// doesn't fall through to the plain scalar var-decl path below.
 	json stmt2 = stmt;
 	for (auto& var : stmt2["vars"])
-		if (var.contains("var-type"))
+		if (var.contains("var-type")) {
 			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
+			requireKnownTypeNames(stmt2, var["var-type"]);
+		}
 
 	auto isArrInit = [](const json& var) {
 		return var["var-type"].value("type-kind", "") == "arr" && var.contains("init");
@@ -328,29 +330,8 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
 			return sa_owned_struct_arr_var_decl(stmt2);
 		return sa_arr_var_decl(stmt2);
 	}
-	if (tk == "prim") {
-		string tname = vtype.value("type-name", "");
-		if (structDefs_.count(tname))
-			return sa_struct_var_decl(stmt2);
-		if (!isKnownTypeName(tname)) {
-			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
-			exit(1);
-		}
-	}
-	if (tk == "pntr") {
-		// Validate the pointee name at declaration time so `@!NoSuchStruct p;`
-		// is rejected here rather than aborting later via an unguarded throw.
-		const json* base = &vtype["base-type"];
-		while (base->value("type-kind","") == "pntr")
-			base = &(*base)["base-type"];
-		if (base->value("type-kind","") == "prim") {
-			string tname = base->value("type-name", "");
-			if (!isKnownPointeeTypeName(tname)) {
-				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
-				exit(1);
-			}
-		}
-	}
+	if (tk == "prim" && structDefs_.count(vtype.value("type-name", "")))
+		return sa_struct_var_decl(stmt2);
 
 	json borrowType = normalizeArrBorrowType(stmt2, vtype);
 	bool isArrBorrow = borrowType.contains("arr-size");
@@ -610,10 +591,6 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 	if (leaf.value("type-kind", "") != "prim"
 			|| (!isStructLeaf && !is2d && vtype.value("embedded", false))) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
-		exit(1);
-	}
-	if (!isKnownTypeName(leafName)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leafName) << endl;
 		exit(1);
 	}
 	const StructDef* structDef = isStructLeaf ? &requireCompleteStruct(leafName, stmt) : nullptr;

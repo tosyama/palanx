@@ -2553,3 +2553,30 @@ TEST(sa_error, copy)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, unknown_type_name)
+{
+	const pair<string, string> cases[] = {
+		{"error_306_unknown_arr_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_307_unknown_ptr_slot_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_308_unknown_ptr_slot_unsized_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_309_unknown_arr2d_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_310_unknown_arr2d_embed_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_311_unknown_arr_borrow_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_312_unknown_arr_elem_via_alias.pa", ":2:1: error: unknown struct type 'Foo'."},
+		// A block-local struct is visible only after its definition, as for a scalar `Foo p;`.
+		{"error_313_unknown_arr_elem_before_def.pa", ":2:2: error: unknown struct type 'Foo'."},
+		{"error_314_unknown_unsized_param.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_315_unknown_param.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_316_unknown_arr_borrow_param.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_317_unknown_named_ret.pa", ":1:1: error: unknown struct type 'Foo'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

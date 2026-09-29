@@ -268,6 +268,22 @@ bool PlnSemanticAnalyzer::isKnownPointeeTypeName(const string& name) const
 	return isPrimPointeeName(name) || isKnownTypeName(name);
 }
 
+void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json& type) const
+{
+	const json resolved = resolveTypeAliasDeep(type);
+	const json* t = &resolved;
+	bool isPointee = false;
+	while (t->value("type-kind","") == "arr" || t->value("type-kind","") == "pntr") {
+		isPointee = t->value("type-kind","") == "pntr";
+		t = &(*t)["base-type"];
+	}
+	if (t->value("type-kind","") != "prim") return;
+	string tname = t->value("type-name","");
+	if (isPointee ? isKnownPointeeTypeName(tname) : isKnownTypeName(tname)) return;
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+	exit(1);
+}
+
 json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 {
 	if (!isStructType(type)) return type;
@@ -341,11 +357,8 @@ void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 }
 
 // Structural-only counterpart to unrepresentableTypeName for native Palan
-// signatures: unlike a cinclude'd C signature, a "prim" node here may be a
-// not-yet-registered struct name (forward reference or typo), which is left
-// to the more specific E_UnknownStructType/E_IncompleteStructType diagnostics
-// rather than rejected here. Only a type-kind that can never build regardless
-// of name resolution (currently just "arr") is reported.
+// signatures: names were already checked by preregisterFunc, so only a
+// type-kind that can never build (currently just "arr") is reported.
 static string unsupportedNativeSigTypeKind(const json& vt)
 {
 	string k = vt.value("type-kind", "");
@@ -425,8 +438,7 @@ json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, b
 	}
 	string tname = leaf.value("type-name","");
 	bool isStruct = structDefs_.count(tname) > 0;
-	if (leaf.value("type-kind","") != "prim" || (!isStruct && !isKnownTypeName(tname))
-			|| (isStruct && out.value("embedded", false))) {
+	if (leaf.value("type-kind","") != "prim" || (isStruct && out.value("embedded", false))) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
 		exit(1);
 	}
@@ -552,6 +564,12 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 // whether a loc node is available for a duplicate-definition diagnostic.
 void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
 {
+	for (auto& p : f.value("parameters", json::array()))
+		if (p.contains("var-type")) requireKnownTypeNames(f, p["var-type"]);
+	for (auto& r : f.value("rets", json::array()))
+		requireKnownTypeNames(f, r["var-type"]);
+	if (f.contains("ret-type")) requireKnownTypeNames(f, f["ret-type"]);
+
 	json funcEntry = f;
 	normalizeUnsizedArrSig(funcEntry);
 	normalizeArrBorrowSig(funcEntry);

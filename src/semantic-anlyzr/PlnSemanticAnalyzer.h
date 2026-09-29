@@ -182,6 +182,8 @@ class PlnSemanticAnalyzer {
 	bool isKnownTypeName(const string& name) const;
 	// isKnownTypeName plus "void", valid only as a pointer pointee, never a standalone value type.
 	bool isKnownPointeeTypeName(const string& name) const;
+	// Exits with E_UnknownStructType if a name at the leaf of `type` (through arr/pntr levels) is unknown.
+	void requireKnownTypeNames(const json& locNode, const json& type) const;
 	json  toStructPntrType(const json& type) const;
 	bool  isNamedReturnVar(const string& varName) const;
 	json  deepNormalizePrimToStruct(const json& type) const;
