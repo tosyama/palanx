@@ -392,11 +392,7 @@ int main(int argc, char* argv[])
 					string struct_name = shape["struct-name"];
 					string shape_key   = shape["shape-key"];
 
-					bool has_owned = false;
-					for (auto& ss : struct_shapes)
-						if (ss.value("shape-name","") == struct_name && !ss["owned-fields"].empty())
-							{ has_owned = true; break; }
-					string elem_free = has_owned
+					string elem_free = hasOwned(struct_name)
 						? "__pln_free_" + struct_name + "(pts[i]);"
 						: "free(pts[i]);";
 

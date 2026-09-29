@@ -54,7 +54,6 @@ Root
     - offset\* - Byte offset within the struct
     - struct-name\* - Sub-struct type name
     - struct-total-size\* - Sub-struct total size in bytes
-    - needs-alloc\* - Boolean; true if the sub-struct itself has owned-fields requiring `__pln_alloc_*`
   - owned-array-fields\* - Owned array fields (`[n]T field`), which require a cascaded array allocator; empty array if none
     - name\* - Field name string
     - offset\* - Byte offset within the struct

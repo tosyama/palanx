@@ -36,8 +36,7 @@ struct StructDef {
 	vector<FieldLayout> fields;
 	int  totalSize = -1;
 	int  maxAlign  = 0;
-	bool hasOwnedStructFields = false;
-	bool hasOwnedArrayFields  = false;  // has an "arr-ptr" field ([n]T owned pointer array)
+	bool ownsFields = false;  // has a struct-ptr (T) or arr-ptr ([n]T) field
 	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;

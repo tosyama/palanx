@@ -1,0 +1,2 @@
+type W { int32 n; [2]int32 w; };
+type A { $W e; };

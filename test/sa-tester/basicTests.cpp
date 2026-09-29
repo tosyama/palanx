@@ -1872,7 +1872,7 @@ TEST(sa, owned_struct_field)
 	json jout = run_sa("../test/testdata/sa/075_owned_struct_field.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// Rect { Point tl; Point br; } — hasOwnedStructFields → __pln_alloc_Rect
+	// Rect { Point tl; Point br; } — ownsFields → __pln_alloc_Rect
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
@@ -1949,7 +1949,6 @@ TEST(sa, alloc_shape_owned)
 	ASSERT_EQ(shapes[1]["total-size"], 16);
 	ASSERT_EQ(shapes[1]["owned-fields"].size(), 2u);
 	ASSERT_EQ(shapes[1]["owned-fields"][0]["struct-name"], "Point");
-	ASSERT_EQ(shapes[1]["owned-fields"][0]["needs-alloc"], false);
 	ASSERT_EQ(shapes[1]["owned-fields"][1]["struct-name"], "Point");
 }
 
@@ -2698,7 +2697,7 @@ TEST(sa, embed_prim_arr_field)
 	ASSERT_TRUE(jout.is_object());
 
 	// Buf buf; -> calloc(1, 32): confirms totalSize == 4*8 == 32 and useSimpleCalloc path
-	// (hasOwnedStructFields stays false for embed-arr-only structs).
+	// (ownsFields stays false for embed-arr-only structs).
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "buf");
 	ASSERT_EQ(v["init"]["name"], "calloc");
@@ -2715,7 +2714,7 @@ TEST(sa, embed_struct_arr_field)
 	ASSERT_TRUE(jout.is_object());
 
 	// Polygon poly; -> calloc(1, 64): confirms totalSize == 4*Point.totalSize(16) == 64
-	// and useSimpleCalloc path (hasOwnedStructFields stays false for embed-arr-only structs).
+	// and useSimpleCalloc path (ownsFields stays false for embed-arr-only structs).
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "poly");
 	ASSERT_EQ(v["init"]["name"], "calloc");
@@ -2733,7 +2732,7 @@ TEST(sa, embed_ptr_arr_field)
 	ASSERT_TRUE(jout.is_object());
 
 	// Ring r; -> calloc(1, 32): confirms totalSize == 4*8 == 32 (4 pointer slots)
-	// and useSimpleCalloc path (hasOwnedStructFields stays false for embed-ptr-arr-only structs).
+	// and useSimpleCalloc path (ownsFields stays false for embed-ptr-arr-only structs).
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
 	ASSERT_EQ(v["init"]["name"], "calloc");
@@ -2777,14 +2776,14 @@ TEST(sa, owned_prim_arr_field)
 {
 	// type Bucket { [3]int64 vals; }; Bucket b;
 	// Covers: buildStructDef "arr" branch, non-embedded non-pntr-wrapped primitive-leaf
-	// case (arr-ptr typeKind, hasOwnedArrayFields), useSimpleCalloc==false path,
+	// case (arr-ptr typeKind, ownsFields), useSimpleCalloc==false path,
 	// recordAllocShape "owned-array-fields" output.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/112_owned_prim_arr_field.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// Bucket b; -> __pln_alloc_Bucket() (not calloc): hasOwnedArrayFields forces
-	// the struct off the simple-calloc path even with no owned-struct fields.
+	// Bucket b; -> __pln_alloc_Bucket() (not calloc): an owned array field
+	// alone takes the struct off the simple-calloc path.
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "b");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Bucket");

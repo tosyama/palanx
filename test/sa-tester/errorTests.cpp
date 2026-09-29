@@ -589,7 +589,7 @@ TEST(sa_error, embed_arr_owned_sub_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_076_embed_arr_owned_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("owned sub-struct"), string::npos);
+	ASSERT_NE(sa.find("it owns fields"), string::npos) << sa;
 }
 
 TEST(sa_error, write_readonly_arr_elem)
@@ -688,7 +688,7 @@ TEST(sa_error, embed_arr_field_owned_substruct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_081_embed_arr_field_owned_substruct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("owned sub-struct"), string::npos);
+	ASSERT_NE(sa.find("it owns fields"), string::npos) << sa;
 }
 
 TEST(sa_error, recursive_arr_field)
@@ -1416,7 +1416,7 @@ TEST(sa_error, incomplete_struct_native_embed_arr)
 	// `[3]$Tag a;` var-decl covered by incomplete_struct_embed_arr above --
 	// that goes through sa_embed_arr_var_decl, this goes through
 	// buildStructDef's own embedded-array leaf case) needs the leaf's
-	// totalSize/maxAlign/hasOwnedStructFields to lay out the array stride.
+	// totalSize/maxAlign/ownsFields to lay out the array stride.
 	// Covers: buildStructDef "[n]$T embedded array, struct leaf" branch
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -2475,7 +2475,7 @@ TEST(sa_error, struct_arr_2d)
 		{"error_292_embed_struct_arr_2d_borrow_owned.pa", "array shape '[2][3]$Point' does not match the borrowed array type '[2][3]Point'."},
 		{"error_293_struct_arr_2d_borrow_embed.pa", "array shape '[2][3]Point' does not match the borrowed array type '[2][3]$Point'."},
 		{"error_294_embed_struct_arr_2d_borrow_size.pa", "array shape '[2][4]$Point' does not match the borrowed array type '[2][3]$Point'."},
-		{"error_295_embed_struct_arr_2d_owned_sub.pa", ":3:1: error: [n]$T: T has owned sub-struct fields; use [n]T instead."},
+		{"error_295_embed_struct_arr_2d_owned_sub.pa", ":3:1: error: cannot embed 'Box' with '$': it owns fields; use 'Box' without '$'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2614,5 +2614,26 @@ TEST(sa_error, field_2d_arr_unsupported)
 			string("bin/palan-gen-ast ../test/testdata/sa/") + file + " -o " + ast_out), "");
 		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find("unsupported struct field type"), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, embed_owning_struct)
+{
+	// Owned array fields count as owning just like owned struct fields,
+	// and a plain $T field is rejected the same way as [n]$T.
+	const char* files[] = {
+		"error_326_embed_arr_owning_arr_field.pa",
+		"error_327_embed_arr_2d_owning_arr_field.pa",
+		"error_328_embed_arr_field_owning_arr_field.pa",
+		"error_329_embed_field_owning_arr_field.pa",
+		"error_330_embed_field_owning_struct_field.pa",
+	};
+	for (auto file : files) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			string("bin/palan-gen-ast ../test/testdata/sa/") + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find("it owns fields"), string::npos) << file << ": " << sa;
 	}
 }

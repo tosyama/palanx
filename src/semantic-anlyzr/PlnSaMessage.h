@@ -50,7 +50,7 @@ enum PlnSaMessageCode {
 	E_FieldAccessOnNonStruct,
 	E_InlineStructAsValue,
 	E_WriteToImmutablePtrField,
-	E_EmbedArrOwnedSubStruct,
+	E_EmbedOwningStruct,			// arg1: struct name
 	E_WriteToReadOnlyArrElem,
 	E_ArrFieldSizeNotConstant,
 	E_ConflictingTypedef,			// arg1: typedef name

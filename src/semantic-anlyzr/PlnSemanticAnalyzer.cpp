@@ -203,8 +203,7 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 			{"name",              f.name},
 			{"offset",            f.offset},
 			{"struct-name",       f.typeName},
-			{"struct-total-size", sub.totalSize},
-			{"needs-alloc",       sub.hasOwnedStructFields}
+			{"struct-total-size", sub.totalSize}
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 		recordAllocShape(f.typeName);

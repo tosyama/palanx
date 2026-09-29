@@ -170,8 +170,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_WriteToImmutablePtrField:
 			return "cannot write through read-only pointer field '@T'; use '@!T' for mutable.";
 
-		case E_EmbedArrOwnedSubStruct:
-			return "[n]$T: T has owned sub-struct fields; use [n]T instead.";
+		case E_EmbedOwningStruct:
+			return "cannot embed '" + arg1 + "' with '$': it owns fields; use '" + arg1 + "' without '$'.";
 
 		case E_WriteToReadOnlyArrElem:
 			return "cannot write through read-only pointer array element; use [n]@!T for mutable.";

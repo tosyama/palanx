@@ -1478,7 +1478,7 @@ printf("%ld\n", tiles[1][2].y);  // 7
 ```
 
 **Restrictions:**
-- `[n]$T` and `[m][n]$T` require that `T` has no owned sub-struct fields. Use `[n]T` / `[m][n]T` instead when `T` contains owned pointer fields.
+- `[n]$T` and `[m][n]$T` require that `T` owns no fields (no `U field` or `[k]U field`). Use `[n]T` / `[m][n]T` instead when it does.
 - Other two-dimensional struct array forms (`[m]$[n]T`, `[m]$[n]$T`) are not supported.
 
 Array **fields** (declared inside `type { ... }`, see Section 19) use the same four forms but
@@ -1489,7 +1489,7 @@ Array **variables** (this section) allow non-constant `n`.
 
 - Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
 - Boundary checking is not performed.
-- `[n]$T` is not supported when `T` has owned sub-struct fields.
+- `[n]$T` is not supported when `T` owns fields.
 
 ## 19. Struct Types
 
@@ -1594,6 +1594,8 @@ printf("%ld %ld\n", l.a.x, l.a.y);   // 10 20
 ```
 
 `$Point` fields are stored directly inside `Line`'s memory block. No separate allocation.
+Because nothing allocates on its behalf, a `$T` field (and a `[n]$T` field) requires that `T`
+owns no fields (no `U field` or `[k]U field`); use `T field` instead.
 
 **`T` — owned struct pointer**
 

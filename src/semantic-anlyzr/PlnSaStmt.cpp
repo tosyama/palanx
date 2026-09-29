@@ -521,7 +521,7 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	};
 	auto structHasOwned = [&](const string& name) {
 		const StructDef& def = requireCompleteStruct(name, locNode);
-		return def.hasOwnedStructFields || def.hasOwnedArrayFields;
+		return def.ownsFields;
 	};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 

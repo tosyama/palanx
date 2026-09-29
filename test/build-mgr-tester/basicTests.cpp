@@ -2089,6 +2089,26 @@ TEST(build_mgr, ret_after_free_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, owned_arr_field_elem_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_owned_arr_field_elem_bin "
+		"../test/testdata/build-mgr/239_owned_arr_field_elem_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_owned_arr_field_elem.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_owned_arr_field_elem_bin");
+	ASSERT_EQ(output, "3 4\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// W: itself + w = 2; [2]W (1 + 2 * 2), [2][2]W (1 + 2 rows of 1 + 2 * 2)
+	EXPECT_EQ(allocs, 16) << "expected 16 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

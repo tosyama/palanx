@@ -51,7 +51,7 @@ static StructDef buildStructDef(const string& name,
 				def.fields.push_back({.name=fieldName, .typeKind="struct-ptr",
 				                      .typeName=tname, .isMutable=false,
 				                      .offset=at, .size=sz});
-				def.hasOwnedStructFields = true;
+				def.ownsFields = true;
 			} else {
 				int sz = elemSizeBytes(tname);
 				if (sz < 0) {
@@ -77,6 +77,10 @@ static StructDef buildStructDef(const string& name,
 			if (!sub.isComplete) {
 				cerr << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
 				                                  sub.incompleteReason, sub.keyword()) << endl;
+				exit(1);
+			}
+			if (sub.ownsFields) {
+				cerr << PlnSaMessage::getMessage(E_EmbedOwningStruct, structName) << endl;
 				exit(1);
 			}
 			int align = sub.maxAlign;
@@ -144,7 +148,7 @@ static StructDef buildStructDef(const string& name,
 					                      .typeName=leaf_name, .isMutable=false,
 					                      .offset=at, .size=8,
 					                      .count=count, .elemKind="prim", .stride=stride});
-					def.hasOwnedArrayFields = true;
+					def.ownsFields = true;
 					continue;
 				}
 				// struct leaf ([n]Point): owned pointer array, cascades to the
@@ -161,7 +165,7 @@ static StructDef buildStructDef(const string& name,
 				                      .typeName=leaf_name, .isMutable=false,
 				                      .offset=at, .size=8,
 				                      .count=count, .elemKind="struct", .stride=8});
-				def.hasOwnedArrayFields = true;
+				def.ownsFields = true;
 				continue;
 			}
 
@@ -192,8 +196,8 @@ static StructDef buildStructDef(const string& name,
 					                                  leafDef.incompleteReason, leafDef.keyword()) << endl;
 					exit(1);
 				}
-				if (leafDef.hasOwnedStructFields) {
-					cerr << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
+				if (leafDef.ownsFields) {
+					cerr << PlnSaMessage::getMessage(E_EmbedOwningStruct, leaf_name) << endl;
 					exit(1);
 				}
 				stride = leafDef.totalSize;
@@ -421,8 +425,8 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			// [m][n]$T: a row is n structs laid out in place. $T owns nothing, so a
 			// row is a plain byte block and the uint8 row allocator serves it.
 			const StructDef& def = requireCompleteStruct(leaf_name, stmt);
-			if (def.hasOwnedStructFields) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
+			if (def.ownsFields) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedOwningStruct, leaf_name) << endl;
 				exit(1);
 			}
 			row_stride = def.totalSize;
@@ -768,8 +772,8 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 	if (base_kind == "prim") {
 		string leaf_name = vtype["base-type"].value("type-name", "");
 		const StructDef& def = requireCompleteStruct(leaf_name, stmt);
-		if (def.hasOwnedStructFields) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;
+		if (def.ownsFields) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedOwningStruct, leaf_name) << endl;
 			exit(1);
 		}
 		int stride = def.totalSize;
@@ -1067,7 +1071,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	// __pln_alloc_T would recurse into itself.
 	bool inOwnAllocator = currentFunc_
 		&& (*currentFunc_)["name"] == "__pln_alloc_" + structName; // LCOV_EXCL_EXCEPTION_BR_LINE
-	bool useSimpleCalloc = (!def.hasOwnedStructFields && !def.hasOwnedArrayFields) || inOwnAllocator;
+	bool useSimpleCalloc = !def.ownsFields || inOwnAllocator;
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
 	// Accumulated separately so `Pair p = f(), q = g();` allocates storage for
