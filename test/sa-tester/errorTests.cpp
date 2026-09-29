@@ -2573,7 +2573,10 @@ TEST(sa_error, unknown_type_name)
 		{"error_331_unknown_ptr_field.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_332_unknown_ptr_slot_field.pa", ":1:1: error: unknown struct type 'Foo'."},
 		// A pointer field may name a struct defined later only in its own or an enclosing statement list.
-		{"error_333_ptr_field_sibling_block_def.pa", "error: unknown struct type 'B'."},
+		{"error_333_ptr_field_sibling_block_def.pa", ":2:2: error: unknown struct type 'B'."},
+		// A declaration after another statement starts at its own first token.
+		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
+		{"error_335_unknown_param_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

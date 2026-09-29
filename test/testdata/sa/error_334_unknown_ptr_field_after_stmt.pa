@@ -1,0 +1,2 @@
+int32 x = 1;
+type A { @Foo b; };

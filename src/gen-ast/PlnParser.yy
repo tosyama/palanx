@@ -62,6 +62,22 @@ class PlnLexer;
 
 #define LOC(J, L)       J["loc"] = { (int)L.begin.line, (int)L.begin.column, (int)L.end.line, (int)L.end.column }
 #define LOC_BE(J, B, E) J["loc"] = { (int)B.begin.line, (int)B.begin.column, (int)E.end.line, (int)E.end.column }
+
+// An empty rule (e.g. do_export) is located at the end of the previous token,
+// so a rule's start is taken from its first non-empty component instead.
+#define YYLLOC_DEFAULT(Current, Rhs, N)                                   \
+	do {                                                                  \
+		if (N) {                                                          \
+			int yyk = 1;                                                  \
+			while (yyk < (N) && YYRHSLOC(Rhs, yyk).begin.line == YYRHSLOC(Rhs, yyk).end.line \
+			       && YYRHSLOC(Rhs, yyk).begin.column == YYRHSLOC(Rhs, yyk).end.column) \
+				yyk++;                                                    \
+			(Current).begin = YYRHSLOC(Rhs, yyk).begin;                   \
+			(Current).end   = YYRHSLOC(Rhs, N).end;                       \
+		} else {                                                          \
+			(Current).begin = (Current).end = YYRHSLOC(Rhs, 0).end;       \
+		}                                                                 \
+	} while (false)
 }
 
 %locations
