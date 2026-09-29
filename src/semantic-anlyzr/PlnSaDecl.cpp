@@ -118,7 +118,7 @@ static StructDef buildStructDef(const string& name,
 					// [n]@T / [n]@!T: embedded array of n non-owning pointer slots (8B each)
 					bool isMut = base_wrap.value("mutable", false);
 					string leaf_name = base_wrap["base-type"].value("type-name", "");
-					string elemKind = structDefs.count(leaf_name) ? "struct" : "prim";
+					string elemKind = isPrimPointeeName(leaf_name) ? "prim" : "struct";
 
 					int align = 8;
 					int at = place(count*8, align);
@@ -891,12 +891,32 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+void PlnSemanticAnalyzer::pushStructDefNames(const json& stmts)
+{
+	set<string> names;
+	for (auto& stmt : stmts)
+		if (stmt.value("stmt-type", "") == "struct-def")
+			names.insert(stmt["name"].get<string>());
+	structDefNameScopes_.push_back(names);
+}
+
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
 	json fields = stmt["fields"];
-	for (auto& f : fields)
+	for (auto& f : fields) {
 		f["var-type"] = resolveTypeAliasDeep(f["var-type"]);
+		// Only a pointee may name a struct that is not registered yet; every
+		// other field type is checked by buildStructDef against structDefs_.
+		const json* t = &f["var-type"];
+		if (t->value("type-kind", "") == "arr" && !t->value("embedded", false))
+			t = &(*t)["base-type"];
+		if (t->value("type-kind", "") != "pntr") continue;
+		string pointee = (*t)["base-type"].value("type-name", "");
+		bool laterDef = pointee == name || any_of(structDefNameScopes_.begin(), structDefNameScopes_.end(),
+			[&](const set<string>& names) { return names.count(pointee) > 0; });
+		if (!laterDef) requireKnownTypeNames(stmt, f["var-type"]);
+	}
 	structDefs_[name] = buildStructDef(name, fields, structDefs_);
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE

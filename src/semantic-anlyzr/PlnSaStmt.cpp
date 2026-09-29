@@ -12,6 +12,7 @@
 json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 {
 	json result = json::array();
+	pushStructDefNames(stmts);
 	for (auto& stmt : stmts) {
 		string t = stmt["stmt-type"];
 		if      (t == "import")   sa_import(stmt);
@@ -74,6 +75,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 			exit(1);
 		}
 	}
+	structDefNameScopes_.pop_back();
 	return result;
 }
 

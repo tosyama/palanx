@@ -83,6 +83,9 @@ class PlnSemanticAnalyzer {
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
+	// struct-def names of each statement list being analyzed, innermost last:
+	// a pointer field may name a struct defined later in an enclosing list.
+	vector<set<string>>    structDefNameScopes_;
 	// Registered type aliases (name -> fully-resolved base type json)
 	map<string, json>      typeAliases_;
 	// Registered const declarations (name -> {"value": <SA'd literal expr>, "value-type": <type>})
@@ -170,6 +173,7 @@ class PlnSemanticAnalyzer {
 	void recordArrStructShape(const string& structName);
 	void recordArrArrShape(const string& leafName);
 	void recordArrArrStructShape(const string& structName);
+	void pushStructDefNames(const json& stmts);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	void registerCStruct(const json& s);          // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements

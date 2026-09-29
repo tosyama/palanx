@@ -1,0 +1,10 @@
+type A { @B b; [2]@B bs; };
+type B { int32 x; @A a; };
+{
+	type C { @D d; };
+	type D { int32 y; };
+	C c;
+	int32 w = c.d.y;
+}
+A a;
+int32 v = a.bs[1].x;

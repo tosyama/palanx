@@ -2570,6 +2570,10 @@ TEST(sa_error, unknown_type_name)
 		{"error_315_unknown_param.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_316_unknown_arr_borrow_param.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_317_unknown_named_ret.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_331_unknown_ptr_field.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_332_unknown_ptr_slot_field.pa", ":1:1: error: unknown struct type 'Foo'."},
+		// A pointer field may name a struct defined later only in its own or an enclosing statement list.
+		{"error_333_ptr_field_sibling_block_def.pa", "error: unknown struct type 'B'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -4614,3 +4614,16 @@ TEST(sa, ptr_slot_arr_borrow)
 	ASSERT_NE(call, nullptr);
 	ASSERT_EQ((*call)["args"][0]["value-type"], expected);
 }
+
+TEST(sa, ptr_field_forward_ref)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/210_ptr_field_forward_ref.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// a.bs[1].x: a [2]@B slot declared before B still reads as a struct pointer.
+	const json& rd = jout["statements"].back()["vars"][0]["init"];
+	ASSERT_EQ(rd["expr-type"], "field-access");
+	ASSERT_EQ(rd["ptr-expr"]["expr-type"], "arr-index");
+	ASSERT_EQ(rd["ptr-expr"]["value-type"]["base-type"]["type-name"], "B");
+}

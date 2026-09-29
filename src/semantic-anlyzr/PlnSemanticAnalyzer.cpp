@@ -621,7 +621,8 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	//    struct fields and signatures can name them; consts join it so a
 	//    borrowed array parameter can size itself with one. Step 2
 	//    registering them again is a no-op.
-	if (ast["ast"].contains("statements"))
+	if (ast["ast"].contains("statements")) {
+		pushStructDefNames(ast["ast"]["statements"]);
 		for (auto& stmt : ast["ast"]["statements"]) {
 			string t = stmt.value("stmt-type", "");
 			if      (t == "type-alias") sa_type_alias(stmt);
@@ -629,6 +630,8 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 			else if (t == "cinclude")   registerCIncludeTypes(stmt);
 			else if (t == "const-decl" && onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
 		}
+		structDefNameScopes_.pop_back();
+	}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"])
