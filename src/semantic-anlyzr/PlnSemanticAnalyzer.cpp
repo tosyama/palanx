@@ -275,6 +275,18 @@ void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json&
 	bool isPointee = false;
 	while (t->value("type-kind","") == "arr" || t->value("type-kind","") == "pntr") {
 		isPointee = t->value("type-kind","") == "pntr";
+		if (t->value("embedded", false)) {
+			const json& elem = (*t)["base-type"];
+			string ek = elem.value("type-kind","");
+			if (ek == "prim" && !structDefs_.count(elem.value("type-name",""))) { // LCOV_EXCL_EXCEPTION_BR_LINE
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, elem.value("type-name","")) << endl;
+				exit(1);
+			}
+			if (ek != "prim" && ek != "arr") {
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedElemNotStruct, typeDisplayName(elem)) << endl;
+				exit(1);
+			}
+		}
 		t = &(*t)["base-type"];
 	}
 	if (t->value("type-kind","") != "prim") return;
@@ -413,10 +425,6 @@ json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, b
 			// [n]$T: the structs themselves are laid out in the array, as in the variable.
 			leaf = resolveTypeAlias(leaf);
 			string tname = leaf.value("type-name","");
-			if (leaf.value("type-kind","") != "prim" || !structDefs_.count(tname)) {
-				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
-				exit(1);
-			}
 			// LCOV_EXCL_EXCEPTION_BR_START
 			out["stride"]    = requireCompleteStruct(tname, locNode).totalSize;
 			out["base-type"] = {{"type-kind","struct"},{"type-name",tname}};

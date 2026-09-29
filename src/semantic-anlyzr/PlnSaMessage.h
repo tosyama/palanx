@@ -108,6 +108,7 @@ enum PlnSaMessageCode {
 	E_CopyShapeMismatch,	// arg1: destination shape, arg2: source shape
 	E_CopyUnsupportedShape,	// arg1: shape
 	E_AddrOfBorrowed,	// arg1: variable name
+	E_EmbedElemNotStruct,	// arg1: element type
 };
 
 class PlnSaMessage

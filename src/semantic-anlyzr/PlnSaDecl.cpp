@@ -762,10 +762,6 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 	// [n]$T: contiguous 1D struct array — single malloc(n * totalSize), free at scope exit
 	if (base_kind == "prim") {
 		string leaf_name = vtype["base-type"].value("type-name", "");
-		if (!structDefs_.count(leaf_name)) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
-			exit(1);
-		}
 		const StructDef& def = requireCompleteStruct(leaf_name, stmt);
 		if (def.hasOwnedStructFields) {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedArrOwnedSubStruct) << endl;

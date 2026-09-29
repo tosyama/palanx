@@ -2413,7 +2413,7 @@ TEST(sa_error, arr_borrow)
 		{"error_243_arr_borrow_assign_mismatch.pa", ":4:1: error: array shape '[3]int32' does not match"},
 		{"error_244_arr_borrow_unsized.pa", "every size in a borrowed array type"},
 		{"error_245_arr_borrow_return.pa", "cannot represent: 'array'"},
-		{"error_246_arr_borrow_embed_prim.pa", "supports only primitive, struct and '@T'/'@!T' pointer elements"},
+		{"error_246_arr_borrow_embed_prim.pa", ":1:1: error: unknown struct type 'int32'."},
 		{"error_271_struct_arr_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer"},
 		{"error_272_struct_arr_borrow_mut_elem_of_ro.pa", ":3:10: error: cannot write through read-only pointer"},
 		{"error_273_struct_arr_borrow_elem_no_addr_of.pa", ":3:2: error: a struct given to a '@T'/'@!T' pointer must be written as"},
@@ -2570,6 +2570,25 @@ TEST(sa_error, unknown_type_name)
 		{"error_315_unknown_param.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_316_unknown_arr_borrow_param.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_317_unknown_named_ret.pa", ":1:1: error: unknown struct type 'Foo'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, embed_elem_not_struct)
+{
+	const pair<string, string> cases[] = {
+		{"error_318_embed_prim_2d_var.pa", ":1:1: error: unknown struct type 'int32'."},
+		{"error_319_embed_prim_row_elem.pa", ":1:1: error: unknown struct type 'int32'."},
+		{"error_320_embed_prim_alias.pa", ":2:1: error: unknown struct type 'int32'."},
+		{"error_321_embed_prim_param.pa", ":1:1: error: unknown struct type 'int32'."},
+		{"error_322_embed_ptr_elem.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not '@int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
