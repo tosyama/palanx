@@ -1,0 +1,41 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Poly { int32 n; [3]int32 v; };
+
+func sumExpr() -> int32 {
+	[3]int32 d = [1, 2, 3];
+	return d[0] + d[1] + d[2];
+}
+
+func sumVar() -> int32 {
+	[3]int32 d = [1, 2, 3];
+	int32 s = d[0] + d[1] + d[2];
+	return s;
+}
+
+func polyField() -> int32 {
+	Poly p;
+	7 -> p.v[2];
+	return p.v[2] * 2;
+}
+
+func avg() -> flo64 {
+	[2]flo64 d = [1.5, 2.5];
+	return (d[0] + d[1]) / 2.0;
+}
+
+func findFirst(int32 key) -> int32 {
+	[4]int32 d = [5, 8, 13, 21];
+	int32 i = 0;
+	while i < 4 {
+		[2]int32 w = [i, key];
+		if d[w[0]] > w[1] {
+			return d[i] * 10 + w[0];
+		}
+		i + 1 -> i;
+	}
+	return -1;
+}
+
+mtrace();
+printf("%d %d %d %.1f %d %d\n", sumExpr(), sumVar(), polyField(), avg(), findFirst(10), findFirst(30));

@@ -259,8 +259,8 @@ TEST(build_mgr, array_mtrace) {
 		"MALLOC_TRACE=" + traceFile + " "
 		"/tmp/palan_array_mtrace_bin");
 
-	// Skip allocations from shared libraries (e.g. libc stdio buffers): not
-	// freed within the mtrace window.
+	// Skip allocations and frees from shared libraries (e.g. libc stdio
+	// buffers): whether they fall within the mtrace window varies.
 	string catResult = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;
 	size_t pos = 0;
@@ -269,7 +269,7 @@ TEST(build_mgr, array_mtrace) {
 		string line = catResult.substr(pos, eol - pos);
 		bool fromSharedLib = line.find(".so.") != string::npos;
 		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
-		if (line.find(" - ") != string::npos) frees++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
 	EXPECT_EQ(allocs, 1) << "expected 1 malloc for [64]uint8 buf, got " << allocs;
@@ -528,7 +528,7 @@ static pair<int,int> parseMtraceLog(const string& traceFile) {
 		string line = log.substr(pos, eol - pos);
 		bool fromSharedLib = line.find(".so.") != string::npos;
 		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
-		if (line.find(" - ") != string::npos) frees++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
 	return {allocs, frees};
@@ -2061,6 +2061,32 @@ TEST(build_mgr, ret_value_across_call) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/236_ret_value_across_call.pa");
 	ASSERT_EQ(output, "a=7\nt=6\n9 7\n6\n");
+}
+
+TEST(build_mgr, ret_after_free) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/237_ret_after_free.pa");
+	ASSERT_EQ(output, "6 6 14 2.0 132 -1\n");
+}
+
+TEST(build_mgr, ret_after_free_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_ret_after_free_bin "
+		"../test/testdata/build-mgr/238_ret_after_free_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_ret_after_free.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_ret_after_free_bin");
+	ASSERT_EQ(output, "6 6 14 2.0 132 -1\n");
+
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	// 1 + 1 + Poly (2) + 1 + findFirst(10): d + 3 w + findFirst(30): d + 4 w
+	EXPECT_EQ(allocs, 14) << "expected 14 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
 TEST(build_mgr, clean) {

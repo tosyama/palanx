@@ -1234,8 +1234,11 @@ TEST(sa, embed_arr_var_row_access) {
 	ASSERT_EQ(body[1]["vars"][0]["name"], "mat");
 	ASSERT_FALSE(body[1]["vars"][0]["var-type"].contains("inner-size"));
 
-	// body[3]: return mat[0][0] — inner arr-index (row access) has mul elem-size
-	const auto& ret_val = body[3]["values"][0];
+	// body[2]: mat[0][0] is evaluated into a temp before body[3] frees mat;
+	// the inner arr-index (row access) has mul elem-size
+	ASSERT_EQ(body[3]["body"]["name"], "free");
+	ASSERT_EQ(body[4]["values"][0]["name"], body[2]["vars"][0]["name"]);
+	const auto& ret_val = body[2]["vars"][0]["init"];
 	ASSERT_EQ(ret_val["expr-type"], "arr-index");
 	const auto& row_idx = ret_val["array"];
 	ASSERT_EQ(row_idx["expr-type"], "arr-index");

@@ -242,6 +242,7 @@ class PlnSemanticAnalyzer {
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
 	json sa_arr_assign_stmt(const json& stmt);  // returns json::array()
 	json sa_return_stmt(const json& stmt);
+	json bindReturnValueToTemp(const json& stmt, json& ret);
 	json sa_tapple_decl(const json& stmt);
 	json sa_block(const json& stmt);
 	json sa_if_stmt(const json& stmt);

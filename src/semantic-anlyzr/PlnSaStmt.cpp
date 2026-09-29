@@ -29,10 +29,16 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 				if (stmt.contains("values") && stmt["values"].size() == 1
 						&& stmt["values"][0].value("expr-type","") == "id")
 					removeFromArrayScope(stmt["values"][0]["name"].get<string>());
+				json ret = sa_return_stmt(stmt);
 				json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
+				// The return value may read what the frees release, so it is
+				// evaluated into a temp first.
+				if (!frees.empty() && ret.contains("values"))
+					result.push_back(bindReturnValueToTemp(stmt, ret));
 				for (auto& s : frees) result.push_back(s);
-			}
-			result.push_back(sa_return_stmt(stmt));
+				result.push_back(ret);
+			} else
+				result.push_back(sa_return_stmt(stmt));
 		}
 		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
 		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
@@ -369,6 +375,22 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		exit(1);
 	}
 	return {{"stmt-type", "return"}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Moves ret's single value into a fresh temp var; returns that var's decl and
+// rewrites ret to return the temp.
+json PlnSemanticAnalyzer::bindReturnValueToTemp(const json& stmt, json& ret)
+{
+	json& value = ret["values"][0];
+	json type = value.contains("value-type") ? value["value-type"] : (*currentFunc_)["ret-type"];
+	string name = "__ret_" + to_string(tempVarCounter_++);
+	declareVar(name, type, &stmt);
+	json decl = {
+		{"stmt-type", "var-decl"},
+		{"vars", json::array({{{"name", name}, {"var-type", type}, {"init", value}}})}
+	};
+	value = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}};
+	return decl;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)

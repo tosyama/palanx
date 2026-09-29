@@ -294,7 +294,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
   Early-exit cleanup:
   - `return`: free calls are prepended for all array vars in all active function-level scopes
-    (innermost-first, reverse declaration order).
+    (innermost-first, reverse declaration order). When there are frees and the `return` has a
+    value, the value is first bound to a temp var `__ret_<N>` (a `var-decl` before the frees)
+    and the `return` returns that temp, so the value never reads freed memory.
   - `break`/`continue`: free calls are prepended for arrays in all scopes within the current
     while loop body (including any nested blocks active at that point).
   - Prepended frees before `break`/`continue`/`return` may leave unreachable free calls at the
