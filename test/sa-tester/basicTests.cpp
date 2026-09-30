@@ -4647,3 +4647,27 @@ TEST(sa, named_ret_init)
 	ASSERT_EQ(h["body"][0]["value"]["value"], "7");
 	ASSERT_EQ(h["body"][1]["value"]["value"], "1");
 }
+
+TEST(sa, tapple_assign)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/212_tapple_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Each multiple assignment becomes a tapple-decl of temps plus one assignment per target.
+	const json& stmts = jout["statements"];
+	size_t k = 0;
+	while (stmts[k]["stmt-type"] != "tapple-decl") k++;
+	const json& decl = stmts[k];
+	ASSERT_EQ(decl["vars"].size(), 2);
+	ASSERT_EQ(decl["vars"][1]["var-type"]["type-name"], "int64");
+	string t0 = decl["vars"][0]["var-name"], t1 = decl["vars"][1]["var-name"];
+	ASSERT_EQ(stmts[k + 1]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[k + 1]["value"]["name"], t0);
+	ASSERT_EQ(stmts[k + 2]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[k + 2]["name"], "i");
+	ASSERT_EQ(stmts[k + 2]["value"]["name"], t1);
+
+	ASSERT_EQ(stmts[k + 3]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[k + 5]["stmt-type"], "arr-assign");
+}

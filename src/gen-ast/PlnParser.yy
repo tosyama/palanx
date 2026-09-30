@@ -282,6 +282,9 @@ expr_stmt: import
 				  {"object", storeLocToExpr($1["base"])}, {"field", move($1["field"])},
 				  {"value", move($1["value"])}};
 			LOC($$, @$);
+		} else if (et == "tapple-assign-expr") {
+			$$ = {{"stmt-type", "tapple-assign"}, {"targets", move($1["targets"])}, {"value", move($1["value"])}};
+			LOC($$, @$);
 		} else if (et != "not-impl") {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
 			LOC($$, @$);
@@ -730,6 +733,14 @@ expression: term
 				  {"base", move($3["base"])}, {"field", move($3["field"])},
 				  {"value", move($1)}};
 			LOC($$, @$);
+		} else if ($3.value("kind", "") == "tapple") {
+			string et = $1.value("expr-type", "");
+			if (et == "call" || et == "member-call") {
+				$$ = {{"expr-type", "tapple-assign-expr"}, {"targets", move($3["targets"])}, {"value", move($1)}};
+				LOC($$, @$);
+			} else {
+				$$ = {{"expr-type", "not-impl"}};
+			}
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
 		}
@@ -765,8 +776,8 @@ term: INT
 	| '(' tapple_inner ')'
 	{
 		// Single-expression grouping (e.g. -(2+3)): pass the inner expression through.
-		// Multi-expression tapple (e.g. (a, b)): not yet supported.
-		if ($2.count("not-impl"))
+		// Multi-expression tapple (e.g. (a, b)) is only a multiple-assignment target.
+		if ($2.count("not-impl") || $2.count("tapple-items"))
 			$$ = {{"expr-type", "not-impl"}};
 		else
 			$$ = $2;
@@ -785,7 +796,16 @@ tapple_inner: expression
 	| '-'
 	{ $$ = {{"not-impl", true}}; }
 	| tapple_inner ',' expression
-	{ $$ = {{"not-impl", true}}; }
+	{
+		if ($1.count("not-impl")) {
+			$$ = move($1);
+		} else if ($1.count("tapple-items")) {
+			$$ = move($1);
+			$$["tapple-items"].push_back(move($3));
+		} else {
+			$$ = {{"tapple-items", json::array({move($1), move($3)})}};
+		}
+	}
 	| tapple_inner ',' '-'
 	{ $$ = {{"not-impl", true}}; }
 	;
@@ -888,7 +908,17 @@ store_loc
 	| store_loc '.' ID
 	{ $$ = {{"kind", "field"}, {"base", move($1)}, {"field", move($3)}}; LOC($$, @$); }
 	| '(' tapple_inner ')'
-	{ $$ = {{"kind", "not-impl"}}; }
+	{
+		$$ = {{"kind", "not-impl"}};
+		if ($2.count("tapple-items")) {
+			bool all_ok = true;
+			for (auto& t : $2["tapple-items"]) {
+				string et = t.value("expr-type", "");
+				if (et != "id" && et != "arr-index" && et != "field-access") { all_ok = false; break; }
+			}
+			if (all_ok) $$ = {{"kind", "tapple"}, {"targets", move($2["tapple-items"])}};
+		}
+	}
 	| func_call
 	{ $$ = {{"kind", "not-impl"}}; }
 	;

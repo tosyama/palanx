@@ -2115,6 +2115,12 @@ TEST(build_mgr, named_ret_init) {
 	ASSERT_EQ(output, "5 21 7 3.0\n3 4\n");
 }
 
+TEST(build_mgr, tapple_assign) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/241_tapple_assign.pa");
+	ASSERT_EQ(output, "4 2\n2 1\n2 2\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

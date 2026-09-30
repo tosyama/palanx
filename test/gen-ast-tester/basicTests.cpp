@@ -1633,3 +1633,27 @@ TEST(gen_ast, return_def_nonprim) {
 	ASSERT_TRUE(found_mkArr);
 	ASSERT_TRUE(found_sret);
 }
+
+TEST(gen_ast, tapple_assign) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/123_tapple_assign.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const json& stmts = jout["ast"]["statements"];
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "tapple-assign");
+	ASSERT_EQ(stmts[0]["value"]["expr-type"], "call");
+	const json& targets = stmts[0]["targets"];
+	ASSERT_EQ(targets.size(), 3);
+	ASSERT_EQ(targets[0]["expr-type"], "id");
+	ASSERT_EQ(targets[1]["expr-type"], "arr-index");
+	ASSERT_EQ(targets[2]["expr-type"], "field-access");
+	ASSERT_EQ(targets[2]["object"]["expr-type"], "field-access");
+
+	ASSERT_EQ(stmts[1]["stmt-type"], "tapple-assign");
+	ASSERT_EQ(stmts[1]["value"]["expr-type"], "member-call");
+
+	// Only a call can be assigned, and only to storable targets.
+	for (int i = 2; i <= 4; i++)
+		ASSERT_EQ(stmts[i]["stmt-type"], "not-impl") << i;
+}

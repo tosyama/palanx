@@ -311,7 +311,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue" "not-impl"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "break" "continue" "not-impl"
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -367,19 +367,22 @@ Statement model
   12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function)
-  13. block - standalone block statement (`{ ... }`)
+  13. tapple-assign - multiple return values assigned to existing targets (`call(...) -> (target, ...)`)
+    - targets\* - Target expression model list: `id`, `arr-index` or `field-access` per entry
+    - value\* - Call expression model (must be a call to a multi-return Palan function)
+  14. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
-  14. if - if / if-else statement
+  15. if - if / if-else statement
     - cond\* - Condition expression model
     - then\* - Then-block object (block statement body)
     - else - Else-block object or nested if statement (omitted when absent)
-  15. while - while loop statement
+  16. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  16. break - exit the innermost while loop (no additional fields)
-  17. continue - skip to next iteration of innermost while loop (no additional fields)
-  18. not-impl - a statement the grammar parses but the compiler does not implement (e.g. `for`,
+  17. break - exit the innermost while loop (no additional fields)
+  18. continue - skip to next iteration of innermost while loop (no additional fields)
+  19. not-impl - a statement the grammar parses but the compiler does not implement (e.g. `for`,
       `interface`, `x++`, a type-omitted declaration). Rejected by SA.
     - untyped-var - Name of the first type-omitted variable; present only for a `name = expr;`
       declaration (reserved for type inference; an assignment is `expr -> name`)

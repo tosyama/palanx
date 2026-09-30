@@ -275,6 +275,7 @@ printf("%ld\n", x);        // expression statement (function call)
 return;                    // return from function (no value)
 return expr;               // return with single value
 (int64 a, b) = foo();      // tapple declaration (receive multiple return values)
+foo() -> (a, b);           // assign multiple return values to existing variables
 import "lib.pa";           // import Palan source file (see §12)
 if expr { ... }            // conditional (see §10)
 if expr { ... } else { ... }  // conditional with else (see §10)
@@ -355,6 +356,14 @@ printf("%ld %ld\n", ab, bc);
 ```palan
 (int64 ab, bc) = sumsOf(1, 2, 3);   // bc is also int64
 ```
+
+To store the values into existing variables, array elements or fields instead, assign the call to a parenthesized target list:
+
+```palan
+sumsOf(1, 2, 3) -> (ab, arr[1]);
+```
+
+All return values are received first, then assigned to the targets from left to right, with the same type rules as a single `->`. So in `f() -> (i, arr[i])`, `arr[i]` uses the newly assigned `i`.
 
 ---
 

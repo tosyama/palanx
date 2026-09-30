@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+type P { int32 x; int64 y; };
+func f(int32 a) -> int32 q, int64 r { a / 3 -> q; a % 3 -> r; }
+int32 i = 0;
+int64 j = 0;
+f(14) -> (i, j);
+printf("%d %ld\n", i, j);
+[3]int64 arr;
+P p;
+f(7) -> (p.x, arr[2]);
+printf("%d %ld\n", p.x, arr[2]);
+// Every return value is received before the targets are assigned left to right.
+f(8) -> (i, arr[i]);
+printf("%d %ld\n", i, arr[2]);

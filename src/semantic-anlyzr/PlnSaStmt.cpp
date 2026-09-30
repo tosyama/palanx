@@ -42,6 +42,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 				result.push_back(sa_return_stmt(stmt));
 		}
 		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
+		else if (t == "tapple-assign") { for (auto& s : sa_tapple_assign(stmt)) result.push_back(s); }
 		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
 		else if (t == "while")    result.push_back(sa_while_stmt(stmt));
 		else if (t == "break") {
@@ -410,7 +411,7 @@ json PlnSemanticAnalyzer::bindReturnValueToTemp(const json& stmt, json& ret)
 	return decl;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
+const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, size_t recvCount)
 {
 	const json& callExpr = stmt["value"];
 	const json* pFunc = nullptr;
@@ -447,25 +448,67 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleNeedsMultiRet, fname) << endl;
 		exit(1);
 	}
-	if (stmt["vars"].size() != (*pFunc)["rets"].size()) {
+	if (recvCount != (*pFunc)["rets"].size()) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleVarCountMismatch, fname) << endl;
 		exit(1);
 	}
+	return *pFunc;
+}
+
+json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
+{
+	const json& rets = findMultiRetFunc(stmt, stmt["vars"].size())["rets"];
 
 	// Process the call expression via sa_expression (resolves func-type, annotates args)
-	json saCall = sa_expression(callExpr);
+	json saCall = sa_expression(stmt["value"]);
 
 	// Add multi-return value-types from the function's rets
 	json valueTypes = json::array();
-	for (auto& r : (*pFunc)["rets"])
+	for (auto& r : rets)
 		valueTypes.push_back(r["var-type"]);
 	saCall["value-types"] = valueTypes;
 
 	// Register declared variables in the symbol table
 	for (size_t i = 0; i < stmt["vars"].size(); i++)
-		declareVar(stmt["vars"][i]["var-name"].get<string>(), (*pFunc)["rets"][i]["var-type"]);
+		declareVar(stmt["vars"][i]["var-name"].get<string>(), rets[i]["var-type"]);
 
 	return {{"stmt-type", "tapple-decl"}, {"vars", stmt["vars"]}, {"value", saCall}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// All return values are received into temps first, then assigned left to
+// right through the single-target assignment paths, so `f() -> (i, arr[i])`
+// indexes with the new i.
+json PlnSemanticAnalyzer::sa_tapple_assign(const json& stmt)
+{
+	const json& targets = stmt["targets"];
+	const json& rets = findMultiRetFunc(stmt, targets.size())["rets"];
+
+	json decl = {{"stmt-type", "tapple-decl"}, {"vars", json::array()}, {"value", stmt["value"]},
+	             {"loc", stmt["loc"]}};
+	vector<string> temps;
+	for (auto& r : rets) {
+		temps.push_back("__tap_" + to_string(tempVarCounter_++));
+		decl["vars"].push_back({{"var-name", temps.back()}, {"var-type", r["var-type"]}});
+	}
+	json result = json::array({sa_tapple_decl(decl)});
+
+	for (size_t i = 0; i < targets.size(); i++) {
+		const json& t = targets[i];
+		json value = {{"expr-type", "id"}, {"name", temps[i]}, {"loc", t["loc"]}};
+		string et = t["expr-type"];
+		if (et == "id") {
+			result.push_back(sa_assign_stmt({{"stmt-type", "assign"}, {"name", t["name"]},
+			                                 {"value", value}, {"loc", t["loc"]}}));
+		} else if (et == "arr-index") {
+			for (auto& s : sa_arr_assign_stmt({{"stmt-type", "arr-assign"}, {"target", t},
+			                                   {"value", value}, {"loc", t["loc"]}}))
+				result.push_back(s);
+		} else {
+			result.push_back(sa_field_assign({{"stmt-type", "field-assign"}, {"object", t["object"]},
+			                                  {"field", t["field"]}, {"value", value}, {"loc", t["loc"]}}));
+		}
+	}
+	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)

@@ -365,6 +365,9 @@ Additional statement kinds emitted by SA:
   - vars\*: variable list (name, var-type per entry; types resolved by SA from function rets)
   - value\*: SA-annotated call expression (func-type: "palan"; carries value-types field)
 
+  A `tapple-assign` is emitted as a `tapple-decl` into temporaries followed by one `assign`,
+  `arr-assign` or `field-assign` per target, in target order.
+
 Expression model
 ----------------
 Same structure as AST expressions (see ASTSpec.md) with the following additions:
