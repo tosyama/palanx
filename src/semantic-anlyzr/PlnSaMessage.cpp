@@ -448,6 +448,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'$' applies only to a struct element or a '$[m]' row, not '" + arg1 + "'.";
 
+		case E_NamedRetInitOnStruct:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "struct-type named return '" + arg1 + "' cannot have an initializer.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

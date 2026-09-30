@@ -43,8 +43,8 @@ Function definition model
   1. **palan** - Palan user-defined function
      - export - Boolean, true if declared with `export` keyword (omitted when false)
      - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters)
-     - ret-type - Return variable type (single-return functions only; omitted for void and multi-return)
-     - rets - Return value list (multi-return functions only; omitted for single-return and void)
+     - ret-type - Return variable type (unnamed single return only; omitted for void and named returns)
+     - rets - Named return list (Palan parameter, see below; omitted for an unnamed return and void)
      - block\* - Block object (function body; see Block object below)
 
   2. **c** - C function prototype (from `cinclude`)
@@ -163,6 +163,7 @@ Used in Palan function `parameters` and `rets`.
 
 - name\* - Variable name string
 - var-type\* - Variable type
+- init - Expression node for the initial value (`rets` only; omitted when not written)
 
 C Parameter
 -----------

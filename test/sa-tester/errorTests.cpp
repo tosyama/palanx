@@ -2577,6 +2577,8 @@ TEST(sa_error, unknown_type_name)
 		// A declaration after another statement starts at its own first token.
 		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
 		{"error_335_unknown_param_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
+		{"error_336_named_ret_init_narrowing.pa", ":1:30: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
+		{"error_337_named_ret_init_struct.pa", ":2:19: error: struct-type named return 'p' cannot have an initializer."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

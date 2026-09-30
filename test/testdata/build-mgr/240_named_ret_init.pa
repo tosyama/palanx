@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+const H = 20;
+func g(int32 a) -> int32 x = 5, int64 y = H + a { }
+func h() -> int32 z = 7 { }
+func f() -> flo64 d = 1.5 { d * 2.0 -> d; }
+// A later initializer sees the earlier named return's initial value.
+func k() -> int32 x = 3, int32 y = x + 1 { }
+(int32 a, int64 b) = g(1);
+printf("%d %ld %d %.1f\n", a, b, h(), f());
+(int32 c, int32 e) = k();
+printf("%d %d\n", c, e);

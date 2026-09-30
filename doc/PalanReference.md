@@ -331,6 +331,14 @@ func sumsOf(int64 a, int64 b, int64 c) -> int64 ab, int64 bc {
 }
 ```
 
+A named return starts at `0` unless it has an initializer. Initializers are evaluated in order at function entry and can use the parameters:
+
+```palan
+func range(int32 from) -> int32 lo = from, int32 hi = from + 10 { }
+```
+
+A struct-type named return is declared in the body instead, so it can't have an initializer.
+
 ---
 
 ## 8. Receiving Multiple Return Values

@@ -2109,6 +2109,12 @@ TEST(build_mgr, owned_arr_field_elem_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, named_ret_init) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/240_named_ret_init.pa");
+	ASSERT_EQ(output, "5 21 7 3.0\n3 4\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

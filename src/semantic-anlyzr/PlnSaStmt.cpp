@@ -193,9 +193,15 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		for (auto& p : funcDef["parameters"])
 			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(normalizeArrBorrowType(funcDef, unsizedArrToPntr(resolveTypeAlias(p["var-type"]))))), &funcDef);
 	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"])
-			if (!isStructType(resolveTypeAlias(r["var-type"])))
+		for (auto& r : funcDef["rets"]) {
+			if (!isStructType(resolveTypeAlias(r["var-type"]))) {
 				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(resolveTypeAlias(r["var-type"]))), &funcDef);
+			} else if (r.contains("init")) {
+				// A struct-type named return is declared by the body itself, so there's no variable to initialize here.
+				cerr << locPrefix(r["init"]) << PlnSaMessage::getMessage(E_NamedRetInitOnStruct, r["name"].get<string>()) << endl;
+				exit(1);
+			}
+		}
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
 	enterScope();  // push scope[1] = function body
@@ -226,7 +232,16 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
 
-	json body = sa_statements(blk["body"]);
+	json body = json::array();
+	if (saFunc.contains("rets"))
+		for (auto& r : saFunc["rets"]) {
+			if (!r.contains("init")) continue;
+			json assign = {{"stmt-type", "assign"}, {"name", r["name"]}, {"value", r["init"]},
+			               {"loc", r["init"].value("loc", json::array())}};
+			body.push_back(sa_assign_stmt(assign));
+			r.erase("init");
+		}
+	for (auto& s : sa_statements(blk["body"])) body.push_back(move(s));
 
 	// Append free() for array vars in function body scope (reverse declaration order)
 	json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());

@@ -4627,3 +4627,23 @@ TEST(sa, ptr_field_forward_ref)
 	ASSERT_EQ(rd["ptr-expr"]["expr-type"], "arr-index");
 	ASSERT_EQ(rd["ptr-expr"]["value-type"]["base-type"]["type-name"], "B");
 }
+
+TEST(sa, named_ret_init)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/211_named_ret_init.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Initializers run as assignments ahead of the body, in declaration order.
+	const json& g = jout["functions"][0];
+	ASSERT_FALSE(g["rets"][0].contains("init"));
+	ASSERT_EQ(g["body"].size(), 2);
+	ASSERT_EQ(g["body"][0]["name"], "x");
+	ASSERT_EQ(g["body"][1]["name"], "y");
+	ASSERT_EQ(g["body"][1]["value"]["expr-type"], "convert");
+
+	const json& h = jout["functions"][1];
+	ASSERT_EQ(h["body"].size(), 2);
+	ASSERT_EQ(h["body"][0]["value"]["value"], "7");
+	ASSERT_EQ(h["body"][1]["value"]["value"], "1");
+}

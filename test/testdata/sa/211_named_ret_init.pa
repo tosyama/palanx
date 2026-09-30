@@ -1,0 +1,3 @@
+const H = 20;
+func g(int32 a) -> int32 x = 5, int64 y = H + a { }
+func h() -> int32 z = 7 { 1 -> z; }
