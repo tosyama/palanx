@@ -122,9 +122,11 @@ TEST(sa, comparison_sa) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& body = stmt["body"];
 		if (body["expr-type"] == "call" && body["name"] == "printf") {
-			for (auto& arg : body["args"]) {
-				if (arg["expr-type"] != "cmp") continue;
-				ASSERT_EQ(arg["value-type"]["type-name"], "int32");
+			for (auto& a : body["args"]) {
+				if (a["expr-type"] != "convert" || a["src"]["expr-type"] != "cmp") continue;
+				ASSERT_EQ(a["value-type"]["type-name"], "int32");
+				const auto& arg = a["src"];
+				ASSERT_EQ(arg["value-type"]["type-name"], "bool");
 				ASSERT_EQ(arg["left"]["value-type"]["type-name"],  "int64");
 				ASSERT_EQ(arg["right"]["value-type"]["type-name"], "int64");
 				if (arg["op"] == "<")  found_lt = true;
@@ -466,9 +468,8 @@ TEST(sa, if_stmt_sa) {
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "if") continue;
 		found_if = true;
-		// cond is a cmp expression with value-type int32
 		ASSERT_EQ(stmt["cond"]["expr-type"], "cmp");
-		ASSERT_EQ(stmt["cond"]["value-type"]["type-name"], "int32");
+		ASSERT_EQ(stmt["cond"]["value-type"]["type-name"], "bool");
 		// then block contains a printf call
 		ASSERT_EQ(stmt["then"]["stmt-type"], "block");
 		ASSERT_FALSE(stmt.contains("else"));
@@ -550,9 +551,8 @@ TEST(sa, while_stmt) {
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "while") continue;
 		found_while = true;
-		// cond is a cmp expression with value-type int32
 		ASSERT_EQ(stmt["cond"]["expr-type"], "cmp");
-		ASSERT_EQ(stmt["cond"]["value-type"]["type-name"], "int32");
+		ASSERT_EQ(stmt["cond"]["value-type"]["type-name"], "bool");
 		ASSERT_EQ(stmt["cond"]["op"], "<");
 		// body is a raw array containing an assign statement
 		ASSERT_TRUE(stmt.contains("body"));
@@ -1031,35 +1031,35 @@ TEST(sa, logical_ops) {
 	// [0] int64 a, [1] int64 b, [2] int32 c, [3] a&&b, [4] a||b, [5] !a, [6] a&&b||!a, [7] a&&int32(c)
 	ASSERT_GE(stmts.size(), 8u);
 
-	// a && b  →  value-type int32
+	// a && b  →  value-type bool
 	const auto& land = stmts[3]["body"];
 	ASSERT_EQ(land["expr-type"],               "logical-and");
-	ASSERT_EQ(land["value-type"]["type-name"], "int32");
+	ASSERT_EQ(land["value-type"]["type-name"], "bool");
 	ASSERT_EQ(land["left"]["name"],            "a");
 	ASSERT_EQ(land["right"]["name"],           "b");
 
-	// a || b  →  value-type int32
+	// a || b  →  value-type bool
 	const auto& lor = stmts[4]["body"];
 	ASSERT_EQ(lor["expr-type"],               "logical-or");
-	ASSERT_EQ(lor["value-type"]["type-name"], "int32");
+	ASSERT_EQ(lor["value-type"]["type-name"], "bool");
 
-	// !a  →  value-type int32
+	// !a  →  value-type bool
 	const auto& lnot = stmts[5]["body"];
 	ASSERT_EQ(lnot["expr-type"],               "logical-not");
-	ASSERT_EQ(lnot["value-type"]["type-name"], "int32");
+	ASSERT_EQ(lnot["value-type"]["type-name"], "bool");
 	ASSERT_EQ(lnot["operand"]["name"],         "a");
 
 	// a && b || !a  →  (a&&b) || (!a)
 	const auto& mixed = stmts[6]["body"];
 	ASSERT_EQ(mixed["expr-type"],                  "logical-or");
-	ASSERT_EQ(mixed["value-type"]["type-name"],    "int32");
+	ASSERT_EQ(mixed["value-type"]["type-name"],    "bool");
 	ASSERT_EQ(mixed["left"]["expr-type"],          "logical-and");
 	ASSERT_EQ(mixed["right"]["expr-type"],         "logical-not");
 
-	// a && int32(c)  →  convert wraps c, value-type int32
+	// a && int32(c)  →  convert wraps c, value-type bool
 	const auto& with_cast = stmts[7]["body"];
 	ASSERT_EQ(with_cast["expr-type"],               "logical-and");
-	ASSERT_EQ(with_cast["value-type"]["type-name"], "int32");
+	ASSERT_EQ(with_cast["value-type"]["type-name"], "bool");
 }
 
 TEST(sa, bitwise_ops) {
@@ -1376,13 +1376,13 @@ TEST(sa, cmp_mixed_int_widening)
 	ASSERT_TRUE(jout.is_object());
 
 	// int32 x = a(int32) < b(int64) → left(a) wrapped in convert
-	const auto& x_cmp = jout["statements"][2]["vars"][0]["init"];
+	const auto& x_cmp = jout["statements"][2]["vars"][0]["init"]["src"];
 	ASSERT_EQ(x_cmp["expr-type"], "cmp");
 	ASSERT_EQ(x_cmp["left"]["expr-type"],              "convert");
 	ASSERT_EQ(x_cmp["left"]["value-type"]["type-name"], "int64");
 
 	// int32 y = b(int64) < a(int32) → right(a) wrapped in convert
-	const auto& y_cmp = jout["statements"][3]["vars"][0]["init"];
+	const auto& y_cmp = jout["statements"][3]["vars"][0]["init"]["src"];
 	ASSERT_EQ(y_cmp["expr-type"], "cmp");
 	ASSERT_EQ(y_cmp["right"]["expr-type"],              "convert");
 	ASSERT_EQ(y_cmp["right"]["value-type"]["type-name"], "int64");
@@ -3080,8 +3080,9 @@ TEST(sa, void_ptr_cmp)
 	const auto& v = decl["vars"][0];
 	ASSERT_EQ(v["name"], "r");
 	ASSERT_EQ(v["var-type"]["type-name"], "int32");
-	ASSERT_EQ(v["init"]["expr-type"], "cmp");
-	ASSERT_EQ(v["init"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(v["init"]["expr-type"], "convert");
+	ASSERT_EQ(v["init"]["src"]["expr-type"], "cmp");
+	ASSERT_EQ(v["init"]["src"]["value-type"]["type-name"], "bool");
 }
 
 TEST(sa, const_decl_basic)
@@ -3970,9 +3971,9 @@ TEST(sa, usual_arith_conv)
 	ASSERT_EQ(mode_and_big["left"]["expr-type"],       "convert");
 
 	// n < m (int32 < uint32) -> both promote to uint32; cmp's own value-type
-	// (the boolean result) stays int32 regardless of the operand promotion.
+	// (the boolean result) stays bool regardless of the operand promotion.
 	const auto& cmp = stmts[8]["body"];
-	ASSERT_EQ(cmp["value-type"]["type-name"], "int32");
+	ASSERT_EQ(cmp["value-type"]["type-name"], "bool");
 	ASSERT_EQ(cmp["left"]["expr-type"],       "convert");
 	ASSERT_EQ(cmp["left"]["value-type"]["type-name"], "uint32");
 
@@ -4374,12 +4375,11 @@ TEST(sa, bool_type)
 	// bool(x) tests x != 0 rather than truncating, for integers and floats alike.
 	for (int i : {2, 3}) {
 		const auto& c = stmts[i]["vars"][0]["init"];
-		ASSERT_EQ(c["expr-type"], "convert");
+		ASSERT_EQ(c["expr-type"], "cmp");
 		ASSERT_EQ(c["value-type"]["type-name"], "bool");
-		ASSERT_EQ(c["src"]["expr-type"], "cmp");
-		ASSERT_EQ(c["src"]["op"], "!=");
+		ASSERT_EQ(c["op"], "!=");
 	}
-	ASSERT_EQ(stmts[3]["vars"][0]["init"]["src"]["right"]["expr-type"], "lit-flo");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["right"]["expr-type"], "lit-flo");
 
 	const auto& w = stmts[4]["vars"][0]["init"];
 	ASSERT_EQ(w["expr-type"], "convert");

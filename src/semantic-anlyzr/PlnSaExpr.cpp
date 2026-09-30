@@ -461,7 +461,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		sa_expr["op"]         = expr["op"];
 		sa_expr["left"]       = left;
 		sa_expr["right"]      = right;
-		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int32"}};
+		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}};
 
 	} else if (expr_type == "logical-and" || expr_type == "logical-or") {
 		json left  = sa_expression(expr["left"]);
@@ -475,7 +475,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		}
 		sa_expr["left"]       = left;
 		sa_expr["right"]      = right;
-		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int32"}};
+		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}};
 
 	} else if (expr_type == "logical-not") {
 		json operand = sa_expression(expr["operand"]);
@@ -485,7 +485,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 			exit(1);
 		}
 		sa_expr["operand"]    = operand;
-		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "int32"}};
+		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}};
 
 	} else if (expr_type == "cast") {
 		const PlnType* target  = registry_.fromJson(expr["target-type"]);
@@ -500,9 +500,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 			json zero = isFloatPrim(srcType)
 				? json{{"expr-type", "lit-flo"}, {"value", "0.0"}, {"value-type", src["value-type"]}}
 				: json{{"expr-type", "lit-int"}, {"value", "0"}, {"value-type", src["value-type"]}};
-			json ne = {{"expr-type", "cmp"}, {"op", "!="}, {"left", src}, {"right", zero},
-			           {"value-type", {{"type-kind", "prim"}, {"type-name", "int32"}}}};
-			return wrapConvert(ne, expr["target-type"]);
+			return {{"expr-type", "cmp"}, {"op", "!="}, {"left", src}, {"right", zero},
+			        {"value-type", expr["target-type"]}};
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 		} else if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast) {
 			return wrapConvert(src, registry_.toJson(target));

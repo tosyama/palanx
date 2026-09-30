@@ -1,0 +1,25 @@
+cinclude <stdio.h>;
+type Flags { bool on; int32 n; };
+
+func lt(int32 a, int32 b) -> bool { return a < b; }
+func count(bool a, bool b, bool c, bool d, bool e, bool f, bool g, bool h) -> int32 {
+	return a + b + c + d + e + f + g + h;
+}
+
+int32 x = 3;
+int32 y = 5;
+bool b = x < y;
+bool c = x > y || y == 5;
+printf("%d %d %d\n", b, c, lt(y, x));
+!b && c -> b;
+printf("%d\n", b);
+printf("%d\n", count(x < y, x > y, !b, b || c, x == 3, y != 5, c && !b, lt(x, y)));
+
+int32 i = x < y;
+printf("%d %d %d\n", i, (x < y) + 1, (x < y) == (y < x));
+
+Flags fl;
+x < y -> fl.on;
+[3]bool a;
+x != y && y > 0 -> a[1];
+printf("%d %d %d\n", fl.on, a[0], a[1]);

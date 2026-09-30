@@ -397,12 +397,12 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     the narrower operand is wrapped in a convert node if types differ
   - sub: same promotion rules as add
   - neg: same type as operand (no promotion)
-  - cmp: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
+  - cmp: always `{"type-kind": "prim", "type-name": "bool"}`;
     left and right operands are promoted by the same rules as add
-  - logical-and: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
+  - logical-and: always `{"type-kind": "prim", "type-name": "bool"}`;
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
-  - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
+  - logical-not: always `{"type-kind": "prim", "type-name": "bool"}`; operand must be integer type
   - func-ref: a bare Palan function name written where a C function parameter marked
     `_callback-param` (see "C-origin signature admission" below) expects it. Emitted as
     `{"expr-type":"func-ref","name":<Palan function name>}` (plus `loc` when present on the
@@ -703,7 +703,7 @@ other type, so the other side wins; this matters only for call arguments (below)
 A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
 an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
 unconverted (pointer comparison, e.g. `p == NULL`, is valid and has no numeric common type); the
-comparison's own result type is always `int32` regardless.
+comparison's own result type is always `bool` regardless.
 
 Float promotion rules (subsumed by usual arithmetic conversions above, restated for clarity):
 

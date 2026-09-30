@@ -361,8 +361,8 @@ TEST(codegen, if_stmt) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // condition: testl + je to end label
-    ASSERT_NE(asm_text.find("testl"),       string::npos);
+    // condition: testb + je to end label
+    ASSERT_NE(asm_text.find("testb"),       string::npos);
     ASSERT_NE(asm_text.find("je "),         string::npos);
     ASSERT_NE(asm_text.find(".Lif0_end:"),  string::npos);
     ASSERT_NE(asm_text.find("call printf"), string::npos);
@@ -380,7 +380,7 @@ TEST(codegen, if_else_stmt) {
 
     string asm_text = readFile(asmf);
     // conditional jump to else label
-    ASSERT_NE(asm_text.find("testl"),            string::npos);
+    ASSERT_NE(asm_text.find("testb"),            string::npos);
     ASSERT_NE(asm_text.find("je "),              string::npos);
     ASSERT_NE(asm_text.find(".Lif0_else:"),      string::npos);
     ASSERT_NE(asm_text.find(".Lif0_end:"),       string::npos);
@@ -483,7 +483,7 @@ TEST(codegen, while_loop) {
     ASSERT_NE(asm_text.find(".Lwhile0_start:"),      string::npos);
     ASSERT_NE(asm_text.find(".Lwhile0_end:"),        string::npos);
     // condition test and conditional jump to end
-    ASSERT_NE(asm_text.find("testl"),                string::npos);
+    ASSERT_NE(asm_text.find("testb"),                string::npos);
     ASSERT_NE(asm_text.find("je "),                  string::npos);
     // unconditional back-jump to start
     ASSERT_NE(asm_text.find("\tjmp .Lwhile0_start"), string::npos);

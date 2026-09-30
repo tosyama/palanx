@@ -132,7 +132,7 @@ multi-character, or non-ASCII literal is a compile error.
 - `bool` widens implicitly to every integer and float type.
 - An operator promotes a `bool` operand to `int32`, as C does, so `b + 1` is 2. Storing such a
   result back into a `bool` needs `bool(...)`.
-- A `bool` can be an `if`/`while` condition. Comparisons and logical operators still yield `int32`.
+- A `bool` can be an `if`/`while` condition. Comparisons and logical operators yield `bool`.
 - A C `_Bool` parameter or field (e.g. ncurses' `keypad`) is a `bool`.
 
 ### Implicit Widening
@@ -185,7 +185,7 @@ adopts the destination's type instead of being checked for narrowing (this is wh
 A pointer or struct operand has no common type with anything under this rule: using one with
 `+ - * / % & | ^` is a compile error (Palan has no pointer arithmetic). A comparison is the
 exception — `p == NULL` and similar pointer comparisons are valid and leave both operands
-unconverted; a comparison's result is always `int32` regardless of operand type.
+unconverted; a comparison's result is always `bool` regardless of operand type.
 
 ### Variadic Argument Promotion
 
@@ -254,12 +254,12 @@ There is no shift operator (`<<`/`>>`) in this version — `>>` is already used 
 ownership-transfer syntax (`->>`, `[n]@![]T`; see [Arrays](#18-arrays)), and reusing it for a
 shift would conflict with that grammar.
 
-Comparison operators produce `int32` (1 if true, 0 if false). Both operands are converted to a
+Comparison operators produce `bool` (1 if true, 0 if false). Both operands are converted to a
 common type first — see [Usual Arithmetic Conversions](#3-type-system) in Type System.
 
 Logical operators `&&` and `||` use **short-circuit evaluation**: the right operand is not
 evaluated if the result is already determined by the left operand. Both operands must be
-integer types (float operands are a compile error). The result is always `int32` (1 if true,
+integer types (float operands are a compile error). The result is always `bool` (1 if true,
 0 if false).
 
 The assignment expression `expr -> var` evaluates `expr`, stores it in `var`, and the result is the stored value.
@@ -1034,7 +1034,7 @@ The `%` (modulo) operator is **not** supported on float types; using it is a com
 
 ### Comparison Operators
 
-All six comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) work on float operands and produce `int32` (1 if true, 0 if false), the same as integer comparisons.
+All six comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) work on float operands and produce `bool` (1 if true, 0 if false), the same as integer comparisons.
 
 ```palan
 flo64 x = 1.5;

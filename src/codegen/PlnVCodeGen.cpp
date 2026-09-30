@@ -244,14 +244,14 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             string endLabel = ".Lnot" + to_string(idx) + "_end";
 
             VReg dst = allocVReg();
-            func.instrs.push_back(InitVar{dst, VRegType::Int32, 1});  // assume true
+            func.instrs.push_back(InitVar{dst, VRegType::Uint8, 1});  // assume true
 
             VReg src = lowerExpr(*e.operand, func);
             func.instrs.push_back(CondJmp{endLabel, src, true});  // operand==0 → keep 1 // LCOV_EXCL_EXCEPTION_BR_LINE
 
             VReg zero = allocVReg();
-            func.instrs.push_back(MovImm{zero, VRegType::Int32, 0});
-            func.instrs.push_back(Mov{dst, zero, VRegType::Int32});
+            func.instrs.push_back(MovImm{zero, VRegType::Uint8, 0});
+            func.instrs.push_back(Mov{dst, zero, VRegType::Uint8});
 
             func.instrs.push_back(Label{endLabel});
             return dst;
@@ -262,7 +262,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             string endLabel = ".Lland" + to_string(idx) + "_end";
 
             VReg dst = allocVReg();
-            func.instrs.push_back(InitVar{dst, VRegType::Int32, 0});
+            func.instrs.push_back(InitVar{dst, VRegType::Uint8, 0});
 
             VReg l = lowerExpr(*e.left, func);
             func.instrs.push_back(CondJmp{endLabel, l, true});   // l==0 → skip // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -271,8 +271,8 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(CondJmp{endLabel, r, true});   // r==0 → skip // LCOV_EXCL_EXCEPTION_BR_LINE
 
             VReg one = allocVReg();
-            func.instrs.push_back(MovImm{one, VRegType::Int32, 1});
-            func.instrs.push_back(Mov{dst, one, VRegType::Int32});
+            func.instrs.push_back(MovImm{one, VRegType::Uint8, 1});
+            func.instrs.push_back(Mov{dst, one, VRegType::Uint8});
 
             func.instrs.push_back(Label{endLabel});
             return dst;
@@ -284,7 +284,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             string endLabel  = ".Llor" + to_string(idx) + "_end";
 
             VReg dst = allocVReg();
-            func.instrs.push_back(InitVar{dst, VRegType::Int32, 0});
+            func.instrs.push_back(InitVar{dst, VRegType::Uint8, 0});
 
             VReg l = lowerExpr(*e.left, func);
             func.instrs.push_back(CondJmp{trueLabel, l, false});  // l!=0 → true // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -296,8 +296,8 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
 
             func.instrs.push_back(Label{trueLabel});
             VReg one = allocVReg();
-            func.instrs.push_back(MovImm{one, VRegType::Int32, 1});
-            func.instrs.push_back(Mov{dst, one, VRegType::Int32});
+            func.instrs.push_back(MovImm{one, VRegType::Uint8, 1});
+            func.instrs.push_back(Mov{dst, one, VRegType::Uint8});
 
             func.instrs.push_back(Label{endLabel});
             return dst;
