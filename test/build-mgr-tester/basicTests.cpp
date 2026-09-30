@@ -2127,6 +2127,12 @@ TEST(build_mgr, bool_cmp_result) {
 	ASSERT_EQ(output, "1 1 0\n0\n6\n1 2 0\n1 0 1\n");
 }
 
+TEST(build_mgr, bool_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/243_bool_literal.pa");
+	ASSERT_EQ(output, "1 0 0 1\n1\n1 2 1 -1\n1 1\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

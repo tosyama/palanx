@@ -48,6 +48,8 @@ enum {
 	KW_BREAK = PlnParser::token::KW_BREAK,
 	KW_CONTINUE = PlnParser::token::KW_CONTINUE,
 	KW_SYSCALL = PlnParser::token::KW_SYSCALL,
+	KW_TRUE = PlnParser::token::KW_TRUE,
+	KW_FALSE = PlnParser::token::KW_FALSE,
 	OPE_LE =	PlnParser::token::OPE_LE,
 	OPE_GE =	PlnParser::token::OPE_GE,
 	DBL_GRTR =	PlnParser::token::DBL_GRTR,
@@ -145,6 +147,8 @@ COMMENT1	\/\/[^\n]*\n
 <*>"break" { return KW_BREAK; }
 <*>"continue" { return KW_CONTINUE; }
 <*>"syscall" { return KW_SYSCALL; }
+<*>"true" { return KW_TRUE; }
+<*>"false" { return KW_FALSE; }
 <*>{ID} {
 		string id = yytext;
 		lval.build<string>() = move(id);

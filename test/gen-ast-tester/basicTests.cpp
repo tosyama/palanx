@@ -1586,6 +1586,24 @@ TEST(gen_ast, char_literal) {
 	ASSERT_EQ(stmts[0]["vars"][0]["init"]["loc"], json::parse("[1, 11, 1, 14]"));
 }
 
+TEST(gen_ast, bool_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/124_bool_literal.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& stmts = jout["ast"]["statements"];
+	json bool_type = {{"type-kind", "prim"}, {"type-name", "bool"}};
+	auto& t = stmts[0]["vars"][0]["init"];
+	EXPECT_EQ(t["expr-type"], "lit-int");
+	EXPECT_EQ(t["value"], "1");
+	EXPECT_EQ(t["value-type"], bool_type);
+	EXPECT_EQ(t["loc"], json::parse("[1, 10, 1, 14]"));
+	auto& f = stmts[1]["vars"][0]["init"];
+	EXPECT_EQ(f["value"], "0");
+	EXPECT_EQ(f["value-type"], bool_type);
+}
+
 TEST(gen_ast, macro_fold_duplicate_name) {
 	// Two cincludes defining the same macro name: the first registration
 	// wins and later same-named definitions are ignored.

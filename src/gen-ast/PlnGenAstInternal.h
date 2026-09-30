@@ -81,6 +81,14 @@ inline bool isDeclarableVarType(const json& t)
 	return false;
 }
 
+// A typed lit-int, like a macro-folded constant: SA keeps its bool type
+// instead of retyping it from context, so no separate literal kind is needed.
+inline json boolLiteral(const char* value)
+{
+	return {{"expr-type", "lit-int"}, {"value", value},
+	        {"value-type", {{"type-kind", "prim"}, {"type-name", "bool"}}}};
+}
+
 // Unary minus on an untyped integer literal becomes one negative literal, so
 // SA's range check sees `-128` as a single value (an int8 `neg(128)` operand
 // would be out of range). A typed lit-int (macro-folded) keeps its `neg`.

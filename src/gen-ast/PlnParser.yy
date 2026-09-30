@@ -111,6 +111,8 @@ class PlnLexer;
 %token KW_BREAK	"break"
 %token KW_CONTINUE	"continue"
 %token KW_SYSCALL	"syscall"
+%token KW_TRUE	"true"
+%token KW_FALSE	"false"
 %token OPE_LE	"<="
 %token OPE_GE	">="
 %token DBL_GRTR	">>"
@@ -771,6 +773,10 @@ term: INT
 	{ $$ = {{"expr-type", "lit-flo"}, {"value", move($1)}}; LOC($$, @$); }
 	| STRING
 	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; LOC($$, @$); }
+	| KW_TRUE
+	{ $$ = boolLiteral("1"); LOC($$, @$); }
+	| KW_FALSE
+	{ $$ = boolLiteral("0"); LOC($$, @$); }
 	| ID
 	{ $$ = {{"expr-type", "id"}, {"name", move($1)}}; LOC($$, @$); }
 	| '(' tapple_inner ')'

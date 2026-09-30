@@ -394,12 +394,14 @@ Expression model
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
-    is also emitted as a `lit-int` holding its ASCII code, with no `value-type`
+    is also emitted as a `lit-int` holding its ASCII code, with no `value-type`; `true`/`false`
+    are emitted as a `bool`-typed `lit-int`
     - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128"); a macro
       substitute's value may exceed int64 when its `value-type` is `uint64`
-    - value-type - Variable type; present only when this node is gen-ast's in-place substitute
+    - value-type - Variable type; present only for `true`/`false` (value `"1"`/`"0"`, value-type
+      `bool`) or when this node is gen-ast's in-place substitute
       for a reference to a cinclude'd macro constant that has a `value-type` (see Constant
-      definition model above) — an ordinary source-literal `lit-int` never carries one. Holds the
+      definition model above) — a numeric or character literal never carries one. Holds the
       macro's own `value-type` (e.g. `pntr` for `NULL`), unchanged by the substitution; a macro
       without one substitutes an untyped `lit-int`, identical to a source literal. Substitution
       happens for every `id` reference whose name matches a macro registered by a `cinclude`

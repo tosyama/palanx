@@ -100,6 +100,13 @@ TEST(gen_ast_error, syscall_as_identifier) {
 	ASSERT_NE(out.find("error:"), string::npos);
 }
 
+TEST(gen_ast_error, true_as_identifier) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/gen-ast/error_013_true_as_identifier.pa");
+	ASSERT_NE(out.find(":2:7: error: syntax error"), string::npos) << out;
+}
+
 TEST(gen_ast_error, unknown_char) {
 	// flex echoed unmatched bytes to stdout ahead of the AST JSON. The
 	// "return1::" prefix (empty stdout between the colons) checks it no longer does.

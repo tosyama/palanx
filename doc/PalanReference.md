@@ -127,6 +127,8 @@ multi-character, or non-ASCII literal is a compile error.
 
 ### bool
 
+- `true` and `false` are the `bool` literals (reserved words), with the values 1 and 0. They are
+  always `bool`, so `int32 x = true;` is a widening and `true + 1` is 2.
 - An integer literal converts to `bool` implicitly only when it is `0` or `1`. Any other integer
   or float value needs `bool(x)`, which yields 1 for every nonzero value rather than truncating.
 - `bool` widens implicitly to every integer and float type.

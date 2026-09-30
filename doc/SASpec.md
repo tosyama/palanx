@@ -376,10 +376,10 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   Present on all expression kinds except bare call with no return type.
   - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
     defaults to int64 when no expected type is available. Exception: an AST `lit-int` that
-    already carries a `value-type` (ASTSpec.md's `lit-int` entry — gen-ast's in-place
-    substitute for a cinclude'd macro-constant reference) keeps that type as-is; the context's
-    expected type never overrides it, since it was fixed by the C declaration, not by where the
-    reference appears
+    already carries a `value-type` (ASTSpec.md's `lit-int` entry — `true`/`false`, or gen-ast's
+    in-place substitute for a cinclude'd macro-constant reference) keeps that type as-is; the
+    context's expected type never overrides it, since it was fixed by the literal or the C
+    declaration, not by where the expression appears
   - lit-uint: adopts the expected uint type when in a uint-typed context (e.g. `uint32 x = 1u;` → uint32);
     defaults to uint64 when no expected uint type is available
   - Range check (lit-int without its own `value-type`, and lit-uint): once the type is decided, a
