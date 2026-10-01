@@ -4800,6 +4800,17 @@ TEST(sa, ptr_slot_store) {
 	ASSERT_EQ(stmts[1]["value"]["name"], "malloc");
 }
 
+TEST(sa, embed_ptr_slot_store) {
+	json jout = run_sa("../test/testdata/sa/221_embed_ptr_slot_store.pa");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+	// A slot pointing at contiguous rows is a borrow too, not an array to copy into.
+	ASSERT_EQ(stmts[1]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[1]["target"]["value-type"]["embedded"], true);
+	ASSERT_EQ(stmts[1]["target"]["value-type"]["mutable"], true);
+	ASSERT_EQ(stmts[1]["value"]["name"], "malloc");
+}
+
 TEST(sa, unsized_struct_arr_sig) {
 	json jout = run_sa("../test/testdata/sa/220_unsized_struct_arr_sig.pa");
 	// The same representations as [n]P / [n]$P, minus the size.

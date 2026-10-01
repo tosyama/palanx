@@ -74,13 +74,13 @@ inline bool isStructPntr(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("base-type")
 	    && vt["base-type"].value("type-kind","") == "struct" && !vt.value("embedded", false);
 }
-// A '@T'/'@!T' pointer to any T. A borrowed array level also has "mutable",
-// but always with "arr-size" or "embedded"; an owned array level has no
-// "mutable".
+// A '@T'/'@!T' pointer to any T, including one to contiguous rows or structs of
+// unknown count (a '[n]@![]$T' slot). A borrowed array level also has
+// "mutable", but always with "arr-size"; an owned array level has no "mutable".
 inline bool isPtrBorrow(const json& vt)
 {
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
-	    && !vt.contains("arr-size") && !vt.value("embedded", false);
+	    && !vt.contains("arr-size");
 }
 // A variable or parameter declared as a borrowed array ('@[n]T'/'@![n]T').
 // Checked on its var-type: a row reached through it also carries "mutable" but
@@ -88,7 +88,7 @@ inline bool isPtrBorrow(const json& vt)
 inline bool isArrBorrowVar(const json& vt)
 {
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
-	    && (vt.contains("arr-size") || vt.value("embedded", false));
+	    && vt.contains("arr-size");
 }
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }

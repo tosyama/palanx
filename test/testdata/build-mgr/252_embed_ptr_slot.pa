@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+type P { int32 x; };
+[2]@![]$[3]int32 s;
+malloc(24) -> s[0];
+7 -> s[0][1][2];
+[2]$P ps;
+5 -> ps[1].x;
+[1]@![]$P e;
+ps -> e[0];
+6 + e[0][1].x -> e[0][1].x;
+[2]@![]$[3]int32 t;
+s -> t;
+printf("%d %d %d\n", t[0][1][2], e[0][1].x, ps[1].x);
+free(s[0]);

@@ -2603,6 +2603,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_358_transfer_row_size_mismatch.pa", ":3:1: error: cannot transfer '[5]int32' into '[3]int32'"},
 		{"error_359_transfer_to_dynamic_row.pa", ":4:1: error: cannot transfer '[3]int32' into '[?]int32'"},
 		{"error_361_struct_to_embed_struct_param.pa", ":4:1: error: cannot convert 'P' to '[?]$P'."},
+		{"error_362_transfer_to_embed_ptr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

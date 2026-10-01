@@ -1254,6 +1254,7 @@ func fill(@![H][W]int32 g, int32 x) {
 pointer. The outer array is heap-allocated (`malloc(n * 8)`) and automatically freed at scope
 exit. A slot borrows what it points to and never owns it: store into it with `->` (for example
 memory from C `malloc`) and free that memory yourself. `->>` into a slot is a compile error.
+`[n]@![]$[m]T` and `[n]@![]$T` are slots the same way, pointing at contiguous rows or structs.
 
 ```palan
 int64 rows = 4;

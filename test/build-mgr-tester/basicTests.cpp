@@ -2324,6 +2324,12 @@ TEST(build_mgr, unsized_struct_arr) {
 	ASSERT_EQ(output, "15 6 7 13\n");
 }
 
+TEST(build_mgr, embed_ptr_slot) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/252_embed_ptr_slot.pa");
+	ASSERT_EQ(output, "7 11 11\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
