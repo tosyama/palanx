@@ -113,6 +113,8 @@ enum PlnSaMessageCode {
 	E_TransferToNonOwnedField,	// arg1: field name
 	E_ExpiringStructToBorrow,
 	E_TransferFromNonOwner,
+	E_TransferToBorrowSlot,
+	E_TransferShapeMismatch,	// arg1: destination shape, arg2: source shape
 };
 
 class PlnSaMessage

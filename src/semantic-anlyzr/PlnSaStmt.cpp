@@ -311,17 +311,21 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AssignToWholeStructElem) << endl;
 		exit(1);
 	}
-	const PlnType* toType = registry_.fromJson(sa_target["value-type"]);
+	const json& targetType = sa_target["value-type"];
+	// A borrowed slot never owns what it points to, so it cannot be given anything.
+	if (transfer && isPtrBorrow(targetType)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToBorrowSlot) << endl;
+		exit(1);
+	}
+	const PlnType* toType = registry_.fromJson(targetType);
 	json sa_value = sa_expression(stmt["value"], toType);
 	if (!sa_value.contains("value-type")) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
 	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
-	// '->>' hands the struct over rather than borrowing it.
-	if (!transfer)
-		checkStructBorrowSource(stmt, sa_value, sa_target["value-type"]);
-	if (!ptrPermissionOk(sa_value["value-type"], sa_target["value-type"])) {
+	checkStructBorrowSource(stmt, sa_value, targetType);
+	if (!ptrPermissionOk(sa_value["value-type"], targetType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
 	}
@@ -330,8 +334,14 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	if (!transfer)
 		return json::array({arr_assign});
 
+	// The row's owner frees it by the row's declared size, which the new row must have.
+	if (isArrLevel(targetType) && !copyShapeMatch(sa_value["value-type"], targetType)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferShapeMismatch,
+			arrShapeName(targetType), arrShapeName(sa_value["value-type"])) << endl;
+		exit(1);
+	}
 	arr_assign["ownership-transfer"] = true;
-	json result = json::array({arr_assign});
+	json result = json::array({makeOwnedValueFreeStmt(sa_target), arr_assign});
 	appendTransferSourceReset(result, stmt, sa_value);
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -584,9 +594,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 	if (!transfer && isCopiedByValue(fieldType))
 		return json::array({makeCopyStmt(stmt, makeFieldAccess(chain, *it), value)});
 	value = convertForBinding(stmt, value, toType, fieldType);
-	// '->>' hands the struct over rather than borrowing it.
-	if (!transfer)
-		checkStructBorrowSource(stmt, value, fieldType);
+	checkStructBorrowSource(stmt, value, fieldType);
 	if (!ptrPermissionOk(value["value-type"], fieldType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -594,7 +602,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 	if (!transfer)
 		return json::array({makeFieldAssign(chain, *it, move(value))});
 	// The field owns what it held, so '->>' releases that before taking over.
-	json result = json::array({makeOwnedFieldFreeStmt(chain, *it), makeFieldAssign(chain, *it, value)});
+	json result = json::array({makeOwnedValueFreeStmt(makeFieldAccess(chain, *it)), makeFieldAssign(chain, *it, value)});
 	appendTransferSourceReset(result, stmt, value);
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE

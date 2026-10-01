@@ -1116,21 +1116,22 @@ json PlnSemanticAnalyzer::makeStructFreeCall(json ptr, const string& structName)
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// What an owned field ('T' or '[n]T') holds, freed the way its owner's
+// What an owned struct, array or row holds, freed the way its owner's
 // __pln_free_* would. Every free here accepts NULL.
-json PlnSemanticAnalyzer::makeOwnedFieldFreeStmt(const FieldChain& chain, const FieldLayout& field)
+json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
-	json value = makeFieldAccess(chain, field);
-	if (field.typeKind == "struct-ptr")
-		return makeStructFreeCall(move(value), field.typeName);
+	json vt = value["value-type"];
+	if (isStructStorage(vt))
+		return makeStructFreeCall(move(value), vt["base-type"]["type-name"].get<string>());
 	json args = json::array({move(value)});
 	string fn = "free", funcType = "c";
-	if (field.elemKind == "struct") {
-		recordArrStructShape(field.typeName);
-		fn = "__pln_free_arr_" + field.typeName;
+	if (isStructStorage(vt["base-type"])) {
+		string name = vt["base-type"]["base-type"]["type-name"];
+		recordArrStructShape(name);
+		fn = "__pln_free_arr_" + name;
 		funcType = "pln";
-		args.push_back({{"expr-type","lit-int"},{"value",to_string(field.count)},
+		args.push_back({{"expr-type","lit-int"},{"value",to_string(vt["arr-size"].get<int64_t>())},
 		                {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}});
 	}
 	return {{"stmt-type","expr"},{"body",{

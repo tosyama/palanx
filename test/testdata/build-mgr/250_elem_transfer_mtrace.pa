@@ -1,0 +1,22 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; };
+type Q { P own; };
+mtrace();
+{
+    [2]Q qs;
+    Q q; 3 -> q.own.x;
+    q ->> qs[1];
+    [2][3]int32 m;
+    [3]int32 r; 5 -> r[2];
+    r ->> m[1];
+    [2][3]P pm;
+    [3]P pr; 7 -> pr[2].x;
+    pr ->> pm[1];
+    [2][3]$P em;
+    [3]$P er; 9 -> er[2].x;
+    er ->> em[1];
+    m[1] ->> m[0];
+    printf("%d %d %d %d\n", qs[1].own.x, m[0][2], pm[1][2].x, em[1][2].x);
+}
+muntrace();

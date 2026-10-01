@@ -1250,12 +1250,15 @@ func fill(@![H][W]int32 g, int32 x) {
 
 `[n]@![]T` declares an array of `n` writable pointer slots, each capable of holding a `[]T`
 pointer. The outer array is heap-allocated (`malloc(n * 8)`) and automatically freed at scope
-exit. The inner arrays stored in each slot must be freed explicitly or transferred via `->>`.
+exit. A slot borrows what it points to and never owns it: store into it with `->` (for example
+memory from C `malloc`) and free that memory yourself. `->>` into a slot is a compile error.
 
 ```palan
 int64 rows = 4;
 [rows]@![]int32 ptrs;   // malloc(rows * 8) — outer array
-// ... store inner arrays into ptrs[i] ...
+malloc(3 * 4) -> ptrs[0];
+// ...
+free(ptrs[0]);
 // free(ptrs) emitted automatically at scope exit
 ```
 
@@ -1282,20 +1285,22 @@ minos[0][3] -> mino[0];      // copy one struct element
 
 ### Ownership Transfer (`->>`)
 
-`val ->> arr[i]` transfers ownership of `val` into the array slot `arr[i]`. The semantic
-analyzer emits a null assignment (`NULL -> val`) immediately after the store, so that the
-automatic `free(val)` at scope exit becomes `free(NULL)` — a no-op by C standard.
+`val ->> arr[i]` transfers ownership of `val` into an owned element or row: a struct of a
+`[n]T` array, or a row of an `[m][n]T` array. What the element or row held is freed first. `val`
+is then set to NULL, so that the automatic `free(val)` at scope exit becomes `free(NULL)` — a
+no-op by C standard.
 
 ```palan
-int64 n = 3;
-[n]int32 inner;          // inner: owned, will be freed automatically
-int64 m = 2;
-[m]@![]int32 outer;      // outer: owns the slot array
+[3]int32 inner;
+[2][3]int32 outer;
 
-inner ->> outer[0];      // transfers inner into outer[0]; inner is set to NULL
+inner ->> outer[0];      // outer's original row 0 is freed; inner is set to NULL
 // free(inner) at scope exit → free(NULL) = no-op
-// free(outer) at scope exit frees the slot array (inner arrays must be freed separately)
 ```
+
+A row must have the same element type and the same size as `val`, both known at compile time.
+A `@T`/`@!T` pointer slot (including `[n]@![]T`) cannot take ownership; `->>` into one is a
+compile error.
 
 `val ->> obj.field` transfers `val` into an owned struct field (`T` or `[n]T`). What the field
 held is freed first, and `val` is set to NULL as above. Other fields are a compile error.

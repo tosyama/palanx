@@ -931,32 +931,30 @@ TEST(sa, ownership_transfer) {
 	// functions[1]: testTransfer(int64 i)
 	{
 		const auto& body = jout["functions"][1]["body"];
-		// body[0]: var-decl inner — pntr(int32)
 		ASSERT_EQ(body[0]["stmt-type"], "var-decl");
 		ASSERT_EQ(body[0]["vars"][0]["name"], "inner");
-		// body[1]: var-decl outer — pntr(pntr(int32))
-		ASSERT_EQ(body[1]["stmt-type"], "var-decl");
-		ASSERT_EQ(body[1]["vars"][0]["name"], "outer");
-		// body[2]: arr-assign with ownership-transfer: true
-		ASSERT_EQ(body[2]["stmt-type"], "arr-assign");
-		ASSERT_EQ(body[2].value("ownership-transfer", false), true);
-		// body[3]: null-assign for inner (inner = 0)
-		ASSERT_EQ(body[3]["stmt-type"], "assign");
-		ASSERT_EQ(body[3]["name"], "inner");
-		ASSERT_EQ(body[3]["value"]["expr-type"], "lit-int");
-		ASSERT_EQ(body[3]["value"]["value"], "0");
-		ASSERT_EQ(body[3]["value"]["value-type"]["type-kind"], "pntr");
-		// body[4]: testOwnedReturn() call with category: "expiring"
-		ASSERT_EQ(body[4]["stmt-type"], "expr");
-		ASSERT_EQ(body[4]["body"]["name"], "testOwnedReturn");
-		ASSERT_EQ(body[4]["body"]["category"], "expiring");
-		// body[5..6]: free(outer), free(inner) before return
-		ASSERT_EQ(body[5]["stmt-type"], "expr");
-		ASSERT_EQ(body[5]["body"]["name"], "free");
+		ASSERT_EQ(body[2]["stmt-type"], "var-decl");
+		ASSERT_EQ(body[2]["vars"][0]["name"], "outer");
+		// body[3]: the row outer[i] owned is freed before it takes over inner
+		ASSERT_EQ(body[3]["stmt-type"], "expr");
+		ASSERT_EQ(body[3]["body"]["name"], "free");
+		ASSERT_EQ(body[3]["body"]["args"][0]["expr-type"], "arr-index");
+		ASSERT_EQ(body[4]["stmt-type"], "arr-assign");
+		ASSERT_EQ(body[4].value("ownership-transfer", false), true);
+		// body[5]: null-assign for inner (inner = 0)
+		ASSERT_EQ(body[5]["stmt-type"], "assign");
+		ASSERT_EQ(body[5]["name"], "inner");
+		ASSERT_EQ(body[5]["value"]["expr-type"], "lit-int");
+		ASSERT_EQ(body[5]["value"]["value"], "0");
+		ASSERT_EQ(body[5]["value"]["value-type"]["type-kind"], "pntr");
+		// body[6]: testOwnedReturn() call with category: "expiring"
 		ASSERT_EQ(body[6]["stmt-type"], "expr");
-		ASSERT_EQ(body[6]["body"]["name"], "free");
-		// body[7]: return
-		ASSERT_EQ(body[7]["stmt-type"], "return");
+		ASSERT_EQ(body[6]["body"]["name"], "testOwnedReturn");
+		ASSERT_EQ(body[6]["body"]["category"], "expiring");
+		// body[7..8]: free outer, free(inner) before return
+		ASSERT_EQ(body[7]["body"]["name"], "__pln_free_arr_arr_int32");
+		ASSERT_EQ(body[8]["body"]["name"], "free");
+		ASSERT_EQ(body[9]["stmt-type"], "return");
 	}
 
 	// functions[2]: testFreePtr(int64 i)

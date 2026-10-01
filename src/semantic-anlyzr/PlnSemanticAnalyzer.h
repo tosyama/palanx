@@ -184,7 +184,7 @@ class PlnSemanticAnalyzer {
 	json makeStructFreeStmt(const string& name, const json& pntrType);
 	json makeStructFreeCall(json ptr, const string& structName);
 	pair<string, string> structFreeFunc(const string& structName);
-	json makeOwnedFieldFreeStmt(const FieldChain& chain, const FieldLayout& field);
+	json makeOwnedValueFreeStmt(json value);
 	bool isStructType(const json& type) const;
 	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.
 	bool isKnownTypeName(const string& name) const;

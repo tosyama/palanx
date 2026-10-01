@@ -464,6 +464,14 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "'->>' needs a source that owns its value: an owning variable, an owned field "
 			       "or element, or a call result.";
 
+		case E_TransferToBorrowSlot:
+			return "'->>' cannot give ownership to a borrowed pointer slot ('@T'/'@!T'); store into it with '->'.";
+
+		case E_TransferShapeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

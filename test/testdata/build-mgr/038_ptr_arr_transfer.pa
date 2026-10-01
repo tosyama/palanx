@@ -5,9 +5,8 @@ func fill_and_sum(int64 rows, int64 cols) -> int64 {
 	[rows]@![]int32 outer;
 	int64 i = 0;
 	while i < rows {
-		[cols]int32 inner;
-		int32(i) -> inner[0];
-		inner ->> outer[i];
+		malloc(cols * 4) -> outer[i];
+		int32(i) -> outer[i][0];
 		i + 1 -> i;
 	}
 	int64 sum = 0;

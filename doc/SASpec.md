@@ -197,8 +197,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     the element carries the slot's permission, so a slot is a borrow and `->` into it stores the
     pointer
   - `init`: `malloc(size-expr * 8)` (each slot is a pointer; elem-size is always 8)
-  - The outer array is freed at scope exit. Inner arrays (stored in slots) must be freed
-    explicitly or transferred via `->>` before scope exit.
+  - The outer array is freed at scope exit. What the slots point to is not freed; a slot cannot
+    take ownership with `->>` (E_TransferToBorrowSlot).
 
   **`[m][n]T` (2D array):** A `var-decl` with `arr` type-kind where `base-type` is itself an
   `arr(prim T)` is transformed to a 2D allocation:
@@ -328,14 +328,17 @@ Additional statement kinds emitted by SA:
   - target\*: SA-annotated arr-index expression (see Expression model below)
   - value\*: SA-annotated source expression (may be wrapped in convert node to match elem type)
 
-  When `ownership-transfer: true` (`->>` syntax): SA emits an additional `assign` statement
-  immediately after the arr-assign that sets the source variable to NULL. The variable remains
-  in `arrayScopeVars_` and receives `free(NULL)` at scope exit (C standard guarantees no-op).
+  When `ownership-transfer: true` (`->>` syntax): the target must be an owned struct element or
+  row. A `@T`/`@!T` slot is E_TransferToBorrowSlot; a row whose shape differs from the source's
+  (as for Copy below, including a row of unknown size) is E_TransferShapeMismatch. SA emits three
+  statements: a free of the target's current value (`free`, `__pln_free_T` or
+  `__pln_free_arr_T(row, n)`; each accepts NULL), the arr-assign, and an `assign` that sets the
+  source variable to NULL. The variable remains in `arrayScopeVars_` and receives `free(NULL)` at
+  scope exit (C standard guarantees no-op).
 
   A `->>` into a struct field (`val ->> obj.field`) is accepted only for an owned field (`T` or
-  `[n]T`; otherwise E_TransferToNonOwnedField). SA emits three statements: a free of the field's
-  current value (`free`, `__pln_free_T` or `__pln_free_arr_T(field, n)`; each accepts NULL), the
-  `field-assign`, and the same NULL `assign` of the source variable.
+  `[n]T`; otherwise E_TransferToNonOwnedField), and emits the same three statements with a
+  `field-assign`.
 
 - **Copy** (`src -> dst` where dst is an array or a struct's storage) - no dedicated statement
   kind. SA lowers the copy to an `expr` statement calling a copy routine with `(dst, src, ...)`,
@@ -506,8 +509,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     cinclude normalization, or a `@x`/`@!x` result). Binding struct storage to a borrow
     destination — a call argument (Palan or C), a local's initializer, an assignment, a field
     store, an array-slot store, or a return — is a compile error (E_StructBorrowNeedsAddrOf); the
-    source must be written `@x`/`@!x`, and a `->>` ownership transfer into a pointer slot is
-    exempt. A call result (`category: "expiring"`) has no owner, so binding it to a borrow is
+    source must be written `@x`/`@!x`. A call result (`category: "expiring"`) has no owner, so binding it to a borrow is
     E_ExpiringStructToBorrow, except as a call argument (see `release-after-call` below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
     `mutable` as `true`. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
     an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules

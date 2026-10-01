@@ -2597,6 +2597,10 @@ TEST(sa_error, unknown_type_name)
 		{"error_353_transfer_from_param.pa", ":4:2: error: '->>' needs a source that owns its value"},
 		{"error_354_transfer_from_ptr_field.pa", ":5:1: error: '->>' needs a source that owns its value"},
 		{"error_355_transfer_from_readonly_elem.pa", ":4:2: error: cannot write through read-only pointer"},
+		{"error_356_transfer_to_ptr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
+		{"error_357_transfer_to_arr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
+		{"error_358_transfer_row_size_mismatch.pa", ":3:1: error: cannot transfer '[5]int32' into '[3]int32'"},
+		{"error_359_transfer_to_dynamic_row.pa", ":4:1: error: cannot transfer '[3]int32' into '[?]int32'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
