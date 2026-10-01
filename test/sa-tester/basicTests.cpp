@@ -4735,3 +4735,22 @@ TEST(sa, field_transfer) {
 	ASSERT_EQ(stmts[5]["name"], "pa");
 	ASSERT_EQ(stmts[5]["value"]["value"], "0");
 }
+
+TEST(sa, struct_ret_copy) {
+	json jout = run_sa("../test/testdata/sa/216_struct_ret_copy.pa");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+	// The returned struct is received in a temp, copied into s, and freed.
+	const auto& blk = stmts[1];
+	ASSERT_EQ(blk["stmt-type"], "block");
+	const auto& body = blk["body"];
+	ASSERT_EQ(body.size(), 3);
+	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+	string temp = body[0]["vars"][0]["name"];
+	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "g");
+	ASSERT_EQ(body[1]["body"]["name"], "memcpy");
+	ASSERT_EQ(body[1]["body"]["args"][0]["name"], "s");
+	ASSERT_EQ(body[1]["body"]["args"][1]["name"], temp);
+	ASSERT_EQ(body[2]["body"]["name"], "free");
+	ASSERT_EQ(body[2]["body"]["args"][0]["name"], temp);
+}

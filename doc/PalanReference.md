@@ -1277,8 +1277,8 @@ minos[0][3] -> mino[0];      // copy one struct element
   at compile time; otherwise it is a compile error. A source may be borrowed (`@[n]T`, `@T`).
 - What the destination owns is copied too: owned struct fields and arrays, and the structs of a
   `[n]T` array, get copies of the source's. A `@T`/`@!T` pointer is copied as a pointer.
-- A value returned by a function (e.g. a `[]T` return) is not copied: it is moved into the
-  destination as before.
+- A struct returned by a function is copied the same way, and then freed. A `[]T` return has
+  no size known at compile time, so it cannot be copied into an array.
 
 ### Ownership Transfer (`->>`)
 

@@ -1,0 +1,17 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; };
+type Q { [2]int32 a; };
+type W { P own; $P emb; };
+func g() -> P p { P p; 3 -> p.x; }
+func h() -> Q q { Q q; 5 -> q.a[1]; }
+mtrace();
+{
+    P s; g() -> s;
+    Q t; h() -> t;
+    [2]P a; g() -> a[1];
+    [2]$P e; g() -> e[1];
+    W w; g() -> w.own; g() -> w.emb;
+    printf("%d %d %d %d %d %d\n", s.x, t.a[1], a[1].x, e[1].x, w.own.x, w.emb.x);
+}
+muntrace();

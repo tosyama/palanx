@@ -1152,7 +1152,8 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 				&& userInit["value-type"].value("type-kind","") == "struct"
 				&& userInit["value-type"].value("type-name","") == structName;
 			if (!isStructRetCall) {
-				// A copy would leak an owned struct returned by a Palan call.
+				// Copying a returned struct would allocate the variable only to
+				// copy over it; taking the struct over in a declaration is undecided.
 				if (!userInit.contains("value-type") || userInit.value("category", "") == "expiring") {
 					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructInitNotSupported, structName) << endl;
 					exit(1);

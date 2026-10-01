@@ -279,9 +279,8 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		exit(1);
 	}
 	// A borrowed array variable ("mutable" on its levels) is rebound to what
-	// '@x' names; an expiring value is moved in as it is.
-	if (isCopiedByValue(*varType) && !varType->contains("mutable")
-	    && value.value("category", "") != "expiring") {
+	// '@x' names.
+	if (isCopiedByValue(*varType) && !varType->contains("mutable")) {
 		json dst = {{"expr-type","id"},{"name",name},{"var-type",*varType},{"value-type",*varType}};
 		return makeCopyStmt(stmt, dst, value);
 	}
@@ -304,12 +303,8 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
 		exit(1);
 	}
-	json sa_value;
-	if (!transfer && isCopiedByValue(sa_target["value-type"])) {
-		sa_value = sa_expression(stmt["value"]);
-		if (sa_value.value("category", "") != "expiring")
-			return json::array({makeCopyStmt(stmt, sa_target, sa_value)});
-	}
+	if (!transfer && isCopiedByValue(sa_target["value-type"]))
+		return json::array({makeCopyStmt(stmt, sa_target, sa_expression(stmt["value"]))});
 	if (sa_target.value("addr-only", false)) {
 		// The element itself is an address computation (e.g. a struct array
 		// element), not a storage slot to overwrite -- assign to its fields instead.
@@ -317,8 +312,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 		exit(1);
 	}
 	const PlnType* toType = registry_.fromJson(sa_target["value-type"]);
-	if (sa_value.is_null())
-		sa_value = sa_expression(stmt["value"], toType);
+	json sa_value = sa_expression(stmt["value"], toType);
 	if (!sa_value.contains("value-type")) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
@@ -558,7 +552,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
-	if (!transfer && isCopiedByValue(fieldType) && value.value("category", "") != "expiring")
+	if (!transfer && isCopiedByValue(fieldType))
 		return json::array({makeCopyStmt(stmt, makeFieldAccess(chain, *it), value)});
 	value = convertForBinding(stmt, value, toType, fieldType);
 	// '->>' hands the struct over rather than borrowing it.
@@ -602,6 +596,19 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
 			arrShapeName(t), arrShapeName(st)) << endl;
 		exit(1);
+	}
+
+	// A struct returned by a Palan call is owned by nobody yet: receive it in a
+	// temp, copy from it like from a named value, and free it.
+	if (src.value("category", "") == "expiring" && isStructStorage(st)) {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		string temp = "__cpy_" + to_string(tempVarCounter_++);
+		json decl = {{"stmt-type","var-decl"},
+		             {"vars",json::array({{{"name",temp},{"var-type",st},{"init",src}}})}};
+		json tempId = {{"expr-type","id"},{"name",temp},{"var-type",st},{"value-type",st}};
+		json body = json::array({decl, makeCopyStmt(locNode, dst, tempId), makeStructFreeStmt(temp, st)});
+		return {{"stmt-type","block"},{"body",move(body)}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 	}
 
 	// LCOV_EXCL_EXCEPTION_BR_START

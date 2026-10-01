@@ -341,9 +341,10 @@ Additional statement kinds emitted by SA:
   an `assign` to an owned array or struct variable (a borrowed array variable, with `mutable` on
   its levels, is rebound instead), an `arr-assign` whose element is a struct or an array row, a
   `field-assign` to an owned, embedded or array field, and a `var-decl` of an array or struct
-  initialized from another value (the variable is allocated first, then copied into). A source
-  whose `category` is `expiring` is not copied; it keeps the plain assignment. The destination's
-  type selects the routine:
+  initialized from another value (the variable is allocated first, then copied into). A struct
+  source whose `category` is `expiring` (returned by a Palan call) becomes a `block` of three
+  statements: a `var-decl` of a temp initialized by the call, the copy from the temp, and the
+  temp's free. The destination's type selects the routine:
   - No owned parts (a primitive, `$T`, `$[m]T` or `@T` element array, a struct without owned
     fields): C `memcpy(dst, src, bytes)` with a `lit-uint` byte count.
   - Struct `T` with owned fields: `__pln_copy_T(dst, src)`.

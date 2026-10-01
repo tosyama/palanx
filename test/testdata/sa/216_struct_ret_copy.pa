@@ -1,0 +1,4 @@
+type P { int32 x; };
+func g() -> P p { P p; 3 -> p.x; }
+P s;
+g() -> s;
