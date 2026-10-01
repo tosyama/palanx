@@ -323,6 +323,13 @@ int main(int argc, char* argv[])
 					out << "\nexport func __pln_alloc_" << name
 					    << "() -> " << name << " p {\n"
 					    << "    " << name << " p;\n";
+					if (hasOwned(name))
+						out << "    __pln_init_" << name << "(@!p);\n";
+					out << "}\n";
+
+					if (hasOwned(name))
+						out << "export func __pln_init_" << name
+						    << "(@!" << name << " p) {\n";
 					for (auto& of : owned) {
 						string oname = of["name"];
 						string sname = of["struct-name"];
@@ -341,7 +348,8 @@ int main(int argc, char* argv[])
 							    << ") ->> p." << fname << ";\n";
 						}
 					}
-					out << "}\n";
+					if (hasOwned(name))
+						out << "}\n";
 
 					out << "export func __pln_free_" << name
 					    << "(" << name << " p) {\n"
@@ -387,6 +395,17 @@ int main(int argc, char* argv[])
 					out << "}\n";
 				}
 
+				// Slots are filled with raw C allocations: a borrow slot never takes
+				// ownership, and the array's free function releases the elements.
+				auto structElemBuild = [&](const string& name, const string& slot, const string& indent) {
+					string s = indent + "calloc(1, "
+						+ to_string(struct_by_name.at(name)->at("total-size").get<int64_t>())
+						+ ") -> " + slot + ";\n";
+					if (hasOwned(name))
+						s += indent + "__pln_init_" + name + "(" + slot + ");\n";
+					return s;
+				};
+
 				// Owned struct array allocator/free functions
 				for (auto& shape : arr_struct_shapes) {
 					string struct_name = shape["struct-name"];
@@ -401,8 +420,7 @@ int main(int argc, char* argv[])
 					    << "    [n]@!" << struct_name << " outer;\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
-					    << "        " << struct_name << " p;\n"
-					    << "        p ->> outer[i];\n"
+					    << structElemBuild(struct_name, "outer[i]", "        ")
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "    return outer;\n"
@@ -437,7 +455,12 @@ int main(int argc, char* argv[])
 					    << "    [d0]@![]@!" << struct_name << " outer;\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
-					    << "        __pln_alloc_arr_" << struct_name << "(d1) ->> outer[i];\n"
+					    << "        calloc(d1, 8) -> outer[i];\n"
+					    << "        int64 j = 0;\n"
+					    << "        while j < d1 {\n"
+					    << structElemBuild(struct_name, "outer[i][j]", "            ")
+					    << "            j + 1 -> j;\n"
+					    << "        }\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "    return outer;\n"
@@ -472,8 +495,7 @@ int main(int argc, char* argv[])
 					    << "    [d0]@![]" << leaf << " outer;\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
-					    << "        [d1]" << leaf << " inner;\n"
-					    << "        inner ->> outer[i];\n"
+					    << "        malloc(d1 * " << shape["leaf-size"].get<int64_t>() << ") -> outer[i];\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "    return outer;\n"
