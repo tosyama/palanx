@@ -340,6 +340,15 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 		return pntr;
 	}
 	json bt = resolveTypeAlias(type["base-type"]);
+	if (bt.value("type-kind","") == "arr" && !bt["size-expr"].is_null()) {
+		json leaf = resolveTypeAlias(bt["base-type"]);
+		string lk = leaf.value("type-kind","");
+		if (lk == "arr" || lk == "pntr") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsizedArrRowUnsupported) << endl;
+			exit(1);
+		}
+		return {{"type-kind","pntr"}, {"base-type", sizedArrLevel(locNode, bt, nullopt)}};
+	}
 	return {{"type-kind","pntr"},
 	        {"base-type", isStructType(bt) ? toStructPntrType(bt) : unsizedArrToPntr(locNode, type["base-type"])}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -448,19 +457,23 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 	}
 }
 
-int64_t PlnSemanticAnalyzer::borrowSize(const json& locNode, const json& sizeExprAst)
+int64_t PlnSemanticAnalyzer::constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow)
 {
 	int64_t n = sizeExprAst.is_null() ? -1 : constArrSize(sa_arr_size_expr(locNode, sizeExprAst));
 	if (n < 0) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowSizeNotConst) << endl;
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(
+			isBorrow ? E_ArrBorrowSizeNotConst : E_UnsizedArrRowSizeNotConst) << endl;
 		exit(1);
 	}
 	return n;
 }
 
-json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, bool isMutable)
+// A sized array level as the variable holding it is typed, which a borrow of it
+// shares except that every level carries the borrow's permission.
+json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable)
 {
-	json out = {{"type-kind","pntr"},{"mutable",isMutable},{"arr-size",borrowSize(locNode, arr["size-expr"])}};
+	json out = {{"type-kind","pntr"},{"arr-size",constLevelSize(locNode, arr["size-expr"], isMutable.has_value())}};
+	if (isMutable) out["mutable"] = *isMutable;
 	json leaf = arr["base-type"];
 	if (arr.value("embedded", false)) {
 		out["embedded"] = true;
@@ -474,10 +487,10 @@ json PlnSemanticAnalyzer::arrBorrowLevel(const json& locNode, const json& arr, b
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 			return out;
 		}
-		out["inner-size"] = borrowSize(locNode, leaf["size-expr"]);
+		out["inner-size"] = constLevelSize(locNode, leaf["size-expr"], isMutable.has_value());
 		leaf = json(leaf["base-type"]);
 	} else if (leaf.value("type-kind","") == "arr") {
-		out["base-type"] = arrBorrowLevel(locNode, leaf, isMutable);
+		out["base-type"] = sizedArrLevel(locNode, leaf, isMutable);
 		return out;
 	}
 	leaf = resolveTypeAlias(leaf);
@@ -508,7 +521,7 @@ json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json
 {
 	if (type.value("type-kind","") != "pntr" || type["base-type"].value("type-kind","") != "arr")
 		return type;
-	return arrBorrowLevel(locNode, type["base-type"], type.value("mutable", false));
+	return sizedArrLevel(locNode, type["base-type"], type.value("mutable", false));
 }
 
 // Parameters only: a borrowed array return would outlive the storage it
@@ -538,6 +551,16 @@ void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json&
 			arrShapeName(dstType), arrShapeName(srcType)) << endl;
 		exit(1);
 	}
+}
+
+void PlnSemanticAnalyzer::checkRowShape(const json& locNode, const json& saValue, const json& dstType)
+{
+	if (!saValue.contains("value-type") || rowShapeMatch(saValue["value-type"], dstType)) return;
+	json dstShape = dstType;
+	dstShape.erase("mutable");  // a slot reads as the array it points to
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrRowShapeMismatch,
+		arrShapeName(dstShape), arrShapeName(saValue["value-type"])) << endl;
+	exit(1);
 }
 
 // Diagnoses a "syscall" declaration against the Linux syscall ABI (<=6

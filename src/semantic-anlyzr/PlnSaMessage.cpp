@@ -472,6 +472,17 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
 
+		case E_UnsizedArrRowSizeNotConst:
+			return "the row size in '[][m]T' must be a compile-time constant.";
+
+		case E_UnsizedArrRowUnsupported:
+			return "'[][m]T' supports only '[m]T' rows of a primitive or struct element and '[m]$T' rows of a struct, in this version.";
+
+		case E_ArrRowShapeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "array shape '" + arg2 + "' does not match '" + arg1 + "': its rows must have the same size and layout.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

@@ -2330,6 +2330,12 @@ TEST(build_mgr, embed_ptr_slot) {
 	ASSERT_EQ(output, "7 11 11\n");
 }
 
+TEST(build_mgr, unsized_arr_rows) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/253_unsized_arr_rows.pa");
+	ASSERT_EQ(output, "0 1 2\n10 11 12\n5 6\n7 8\n12\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

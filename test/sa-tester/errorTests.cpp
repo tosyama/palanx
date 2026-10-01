@@ -2604,6 +2604,13 @@ TEST(sa_error, unknown_type_name)
 		{"error_359_transfer_to_dynamic_row.pa", ":4:1: error: cannot transfer '[3]int32' into '[?]int32'"},
 		{"error_361_struct_to_embed_struct_param.pa", ":4:1: error: cannot convert 'P' to '[?]$P'."},
 		{"error_362_transfer_to_embed_ptr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
+		{"error_363_unsized_rows_arg_mismatch.pa", ":3:1: error: array shape '[2][4]int32' does not match '[?][3]int32'"},
+		{"error_364_unsized_rows_ret_mismatch.pa", ":2:2: error: array shape '[?][4]int32' does not match '[?][3]int32'"},
+		{"error_365_unsized_rows_slot_mismatch.pa", ":3:1: error: array shape '[2][4]int32' does not match '[?][3]int32'"},
+		{"error_366_unsized_rows_size_not_const.pa", ":2:1: error: the row size in '[][m]T' must be a compile-time constant."},
+		{"error_367_unsized_rows_3d.pa", ":1:1: error: '[][m]T' supports only"},
+		{"error_368_unsized_rows_ptr_elem.pa", ":2:1: error: '[][m]T' supports only"},
+		{"error_369_unsized_rows_1d_borrow.pa", ":3:1: error: array shape '[3]int32' does not match '[?][3]int32'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

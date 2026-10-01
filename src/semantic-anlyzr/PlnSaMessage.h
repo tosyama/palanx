@@ -115,6 +115,9 @@ enum PlnSaMessageCode {
 	E_TransferFromNonOwner,
 	E_TransferToBorrowSlot,
 	E_TransferShapeMismatch,	// arg1: destination shape, arg2: source shape
+	E_UnsizedArrRowSizeNotConst,
+	E_UnsizedArrRowUnsupported,
+	E_ArrRowShapeMismatch,	// arg1: expected shape, arg2: actual shape
 };
 
 class PlnSaMessage

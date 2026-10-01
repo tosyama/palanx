@@ -328,6 +328,17 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 	    && arrShapeMatch(from["base-type"], to["base-type"], isWritableThrough(to));
 }
 
+// Rows of a fixed size reached through a pointer that has no size of its own
+// ('[][m]T', a '[k]@![][m]T' slot). The type registry ignores sizes, so only
+// this check keeps rows of another size out.
+inline bool rowShapeMatch(const json& from, const json& to) {
+	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(to["base-type"])
+	    || !to["base-type"].contains("arr-size"))
+		return true;
+	return from.value("type-kind","") == "pntr" && from.contains("base-type")
+	    && arrShapeMatch(from["base-type"], to["base-type"]);
+}
+
 // '->' into a value of this type copies its contents: a struct's own storage
 // or an array level. Rebinding would alias the source and free it twice.
 inline bool isCopiedByValue(const json& t) { return isStructStorage(t) || isArrLevel(t); }

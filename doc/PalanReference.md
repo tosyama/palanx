@@ -1187,7 +1187,8 @@ The semantic analyzer resolves them to plain pointer types with no ownership tra
 `[]T` becomes a pointer to `T`, and `[][]T` becomes a pointer to a pointer to `T`. The caller
 is responsible for managing the lifetime of the returned pointer. A struct element is laid out
 as in a sized array: `[]T` takes the elements of a `[n]T` array, and `[]$T` those of a `[n]$T`
-array.
+array. `[][m]T` takes the rows of a `[n][m]T` array (and `[][m]$T` those of a `[n][m]$T` struct
+array); `m` must be a constant, and an array whose rows have another size is a compile error.
 
 ```palan
 func sum_arr([]int32 a, int64 n) -> int64 {

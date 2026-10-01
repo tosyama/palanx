@@ -98,7 +98,9 @@ it -- see "call expression" below.
 Note: cinclude statements are not present in function bodies (they are top-level only).
 
 Note: `[]T` (unsized array type) in `ret-type` or parameter `var-type` is resolved by SA to
-`pntr(T)` with no ownership tracking. `[][]T` becomes `pntr(pntr(T))`.
+`pntr(T)` with no ownership tracking. `[][]T` becomes `pntr(pntr(T))`. `[][m]T` becomes
+`pntr` over the same row type a `[n][m]T` variable has (`pntr` with `"arr-size": m`); `m` must be
+a compile-time constant.
 These types are valid only in function signatures; using `[]T` in a `var-decl` is a compile error.
 
 Statement model

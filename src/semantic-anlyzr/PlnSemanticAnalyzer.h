@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <optional>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
 
@@ -211,10 +212,12 @@ class PlnSemanticAnalyzer {
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
-	json  arrBorrowLevel(const json& locNode, const json& arr, bool isMutable);
-	int64_t borrowSize(const json& locNode, const json& sizeExprAst);
+	// isMutable: the borrow's permission, or none for an owned level.
+	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable);
+	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);
 	void  normalizeArrBorrowSig(json& funcDef);
 	bool  onlyNamesConsts(const json& expr) const;
+	void  checkRowShape(const json& locNode, const json& saValue, const json& dstType);
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);
 	void  checkStructBorrowSource(const json& locNode, const json& saValue, const json& dstType);
