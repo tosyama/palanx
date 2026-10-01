@@ -600,7 +600,7 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 
 	// A struct returned by a Palan call is owned by nobody yet: receive it in a
 	// temp, copy from it like from a named value, and free it.
-	if (src.value("category", "") == "expiring" && isStructStorage(st)) {
+	if (isExpiringStruct(src)) {
 		// LCOV_EXCL_EXCEPTION_BR_START
 		string temp = "__cpy_" + to_string(tempVarCounter_++);
 		json decl = {{"stmt-type","var-decl"},

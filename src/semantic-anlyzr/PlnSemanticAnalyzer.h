@@ -183,6 +183,7 @@ class PlnSemanticAnalyzer {
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
 	json makeStructFreeStmt(const string& name, const json& pntrType);
 	json makeStructFreeCall(json ptr, const string& structName);
+	pair<string, string> structFreeFunc(const string& structName);
 	json makeOwnedFieldFreeStmt(const FieldChain& chain, const FieldLayout& field);
 	bool isStructType(const json& type) const;
 	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.

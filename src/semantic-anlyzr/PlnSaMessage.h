@@ -111,6 +111,7 @@ enum PlnSaMessageCode {
 	E_EmbedElemNotStruct,	// arg1: element type
 	E_NamedRetInitOnStruct,	// arg1: return name
 	E_TransferToNonOwnedField,	// arg1: field name
+	E_ExpiringStructToBorrow,
 };
 
 class PlnSaMessage

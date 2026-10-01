@@ -1,0 +1,9 @@
+type P { int32 x; };
+type Q { [2]int32 a; };
+func g() -> P p { P p; 3 -> p.x; }
+func h() -> Q q { Q q; 5 -> q.a[1]; }
+func k(@P q) -> int32 r { q.x -> r; }
+func kq(@Q q) -> int32 r { q.a[1] -> r; }
+int32 a = k(g());
+int32 b = kq(h());
+g();

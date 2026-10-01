@@ -456,6 +456,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'->>' needs a field that owns its value (T or [n]T); '" + arg1 + "' does not.";
 
+		case E_ExpiringStructToBorrow:
+			return "a struct returned by a call has no owner to borrow from; receive it into a "
+			       "struct variable with '->' and borrow it with '@name' or '@!name'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

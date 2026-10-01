@@ -92,6 +92,11 @@ inline bool isArrBorrowVar(const json& vt)
 }
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
+// A struct returned by a Palan call, owned by whoever receives it.
+inline bool isExpiringStruct(const json& v)
+{
+	return v.value("category", "") == "expiring" && isStructStorage(v["value-type"]);
+}
 
 // LCOV_EXCL_EXCEPTION_BR_START
 inline json fieldValueType(const FieldLayout& f)

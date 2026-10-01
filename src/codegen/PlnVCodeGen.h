@@ -49,6 +49,8 @@ class PlnVCodeGen {
     void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
     void lowerSysCallExpr(const SysCallExpr& expr, VFunc& func);
+    vector<VReg> lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc& func);
+    void emitArgReleases(const vector<ArgRelease>& releases, const vector<VReg>& args, VFunc& func);
     void lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func);
     void lowerBlockStmt(const BlockStmt& stmt, VFunc& func);
     void lowerBranchCond(const Expr& expr, VFunc& func, const std::string& falseLabel);

@@ -2587,6 +2587,11 @@ TEST(sa_error, unknown_type_name)
 		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown struct type 'Foo'."},
 		{"error_344_transfer_non_owned_field.pa", ":3:1: error: '->>' needs a field that owns its value (T or [n]T); 'n' does not."},
 		{"error_345_unsized_ret_copy.pa", ":3:1: error: cannot copy '[?]int32' into '[3]int32'"},
+		{"error_346_ret_struct_borrow_decl.pa", ":3:1: error: a struct returned by a call has no owner to borrow from"},
+		{"error_347_ret_struct_borrow_assign.pa", ":5:1: error: a struct returned by a call has no owner to borrow from"},
+		{"error_348_ret_struct_borrow_slot.pa", ":4:1: error: a struct returned by a call has no owner to borrow from"},
+		{"error_349_ret_struct_borrow_field.pa", ":5:1: error: a struct returned by a call has no owner to borrow from"},
+		{"error_350_ret_struct_borrow_return.pa", ":3:18: error: a struct returned by a call has no owner to borrow from"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -1,0 +1,5 @@
+type P { int32 x; };
+type W { @P ref; };
+func g() -> P p { P p; 3 -> p.x; }
+W w;
+g() -> w.ref;

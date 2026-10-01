@@ -634,14 +634,17 @@ void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& 
 	exit(1);
 }
 
-// A temporary (an owned struct returned by a call) has no name to write '@'
-// on, so it binds to a borrow as it is.
+// A struct returned by a call is owned by nobody, and a borrow never frees
+// what it points to.
 void PlnSemanticAnalyzer::checkStructBorrowSource(const json& locNode, const json& saValue,
 		const json& dstType)
 {
-	if (!isStructBorrow(dstType) || !isStructStorage(saValue["value-type"])
-	    || saValue.value("category", "") == "expiring")
+	if (!isStructBorrow(dstType) || !isStructStorage(saValue["value-type"]))
 		return;
+	if (isExpiringStruct(saValue)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ExpiringStructToBorrow) << endl;
+		exit(1);
+	}
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StructBorrowNeedsAddrOf) << endl;
 	exit(1);
 }
@@ -758,13 +761,21 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 					}
 				}
 				saArg = convertCallArg(locNode, saArg, *paramVT);
-				checkStructBorrowSource(locNode, saArg, *paramVT);
+				if (!isExpiringStruct(saArg))
+					checkStructBorrowSource(locNode, saArg, *paramVT);
 				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
 			} else if (isVariadic) {
 				const PlnType* promoted = variadicPromote(fromType, registry_);
 				if (promoted != fromType)
 					saArg = wrapConvert(saArg, registry_.toJson(promoted));
 			}
+		}
+		// The callee only borrows an argument, and an argument evaluated
+		// conditionally (a '&&' operand, a loop condition) can't be released
+		// by a statement around it, so the call itself releases it.
+		if (isExpiringStruct(saArg)) {
+			auto [fn, funcType] = structFreeFunc(saArg["value-type"]["base-type"]["type-name"].get<string>());
+			saArg["release-after-call"] = {{"name",fn},{"func-type",funcType}};
 		}
 		saArgs.push_back(saArg);
 		argIdx++;

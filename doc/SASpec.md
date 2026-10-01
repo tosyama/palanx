@@ -504,15 +504,23 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     cinclude normalization, or a `@x`/`@!x` result). Binding struct storage to a borrow
     destination — a call argument (Palan or C), a local's initializer, an assignment, a field
     store, an array-slot store, or a return — is a compile error (E_StructBorrowNeedsAddrOf); the
-    source must be written `@x`/`@!x`. Two sources are exempt: a call result (`category:
-    "expiring"`), which has no name to write `@` on, and a `->>` ownership transfer into a
-    pointer slot. The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
+    source must be written `@x`/`@!x`, and a `->>` ownership transfer into a pointer slot is
+    exempt. A call result (`category: "expiring"`) has no owner, so binding it to a borrow is
+    E_ExpiringStructToBorrow, except as a call argument (see `release-after-call` below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
     `mutable` as `true`. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
     an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules
     below for how mutability is enforced separately from type compatibility.
   - call: present when the function has a return type (ret-type in its definition).
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).
+
+    **`release-after-call`:** a call argument that is a struct returned by a Palan call
+    (`category: "expiring"`) carries `"release-after-call":{"name":<fn>,"func-type":"c"|"pln"}`,
+    and codegen calls `<fn>(arg)` right after the call returns (`free`, or `__pln_free_T` for a
+    struct with owned fields). Releasing at the call rather than around its statement keeps a
+    conditionally evaluated call (a `&&`/`||` operand, a loop condition) correct. Such a struct
+    discarded as an `expr` statement becomes a `block` of a temp `var-decl` initialized by the
+    call and the temp's free.
 
 SA-only expression kinds (not present in AST JSON):
 

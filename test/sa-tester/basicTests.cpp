@@ -4754,3 +4754,25 @@ TEST(sa, struct_ret_copy) {
 	ASSERT_EQ(body[2]["body"]["name"], "free");
 	ASSERT_EQ(body[2]["body"]["args"][0]["name"], temp);
 }
+
+TEST(sa, struct_ret_temp) {
+	json jout = run_sa("../test/testdata/sa/217_struct_ret_temp.pa");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+	// A returned struct passed as an argument is released by the call.
+	const auto& argP = stmts[0]["vars"][0]["init"]["args"][0];
+	ASSERT_EQ(argP["release-after-call"]["name"], "free");
+	ASSERT_EQ(argP["release-after-call"]["func-type"], "c");
+	const auto& argQ = stmts[1]["vars"][0]["init"]["args"][0];
+	ASSERT_EQ(argQ["release-after-call"]["name"], "__pln_free_Q");
+	ASSERT_EQ(argQ["release-after-call"]["func-type"], "pln");
+	// A discarded one is received in a temp and freed.
+	const auto& blk = stmts[2];
+	ASSERT_EQ(blk["stmt-type"], "block");
+	const auto& body = blk["body"];
+	ASSERT_EQ(body.size(), 2);
+	string temp = body[0]["vars"][0]["name"];
+	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "g");
+	ASSERT_EQ(body[1]["body"]["name"], "free");
+	ASSERT_EQ(body[1]["body"]["args"][0]["name"], temp);
+}

@@ -236,6 +236,16 @@ json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ByvalStructRetDiscarded, structName) << endl;
 		exit(1);
 	}
+	// A discarded struct returned by a Palan call has no other owner.
+	if (isExpiringStruct(body)) {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		string temp = "__tmp_" + to_string(tempVarCounter_++);
+		const json& st = body["value-type"];
+		json decl = {{"stmt-type","var-decl"},
+		             {"vars",json::array({{{"name",temp},{"var-type",st},{"init",body}}})}};
+		return {{"stmt-type","block"},{"body",json::array({decl, makeStructFreeStmt(temp, st)})}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
 	return {
 		{"stmt-type", "expr"},
 		{"body", body}
@@ -1087,15 +1097,23 @@ json PlnSemanticAnalyzer::makeStructFreeStmt(const string& name, const json& pnt
 	return makeStructFreeCall(move(var_id), pntrType["base-type"]["type-name"].get<string>());
 }
 
+pair<string, string> PlnSemanticAnalyzer::structFreeFunc(const string& structName)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	if (!structDefs_.at(structName).ownsFields)
+		return {"free", "c"};
+	recordAllocShape(structName);
+	return {"__pln_free_" + structName, "pln"};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::makeStructFreeCall(json ptr, const string& structName)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
-	bool owns = structDefs_.at(structName).ownsFields;
-	if (owns)
-		recordAllocShape(structName);
+	auto [fn, funcType] = structFreeFunc(structName);
 	return {{"stmt-type","expr"},{"body",{
-		{"expr-type","call"},{"name",owns ? "__pln_free_" + structName : "free"},
-		{"func-type",owns ? "pln" : "c"},{"args",json::array({move(ptr)})}}}};
+		{"expr-type","call"},{"name",fn},
+		{"func-type",funcType},{"args",json::array({move(ptr)})}}}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
