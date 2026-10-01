@@ -511,14 +511,13 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	if (base_type.value("type-kind","") == "pntr") {
 		const json& inner = base_type["base-type"];
 		elem_size = 8;
-		if (inner.value("type-kind","") == "arr") {
-			// [n]@![]T: elem is mutable pntr to unsized arr → SA elem = pntr(T)
+		// [n]@T / [n]@!T / [n]@![]T: elem is a non-owning pointer carrying its
+		// own permission; an unsized array target is a pointer to its elements.
+		if (inner.value("type-kind","") == "arr")
 			sa_elem_type = deepNormalizePrimToStruct(unsizedArrToPntr(inner));
-		} else {
-			// [n]@T / [n]@!T: elem is a non-owning pointer carrying its own permission
-			sa_elem_type = {{"type-kind","pntr"},{"base-type",deepNormalizePrimToStruct(inner)},
-			                {"mutable",base_type.value("mutable", false)}};
-		}
+		else
+			sa_elem_type = {{"type-kind","pntr"},{"base-type",deepNormalizePrimToStruct(inner)}};
+		sa_elem_type["mutable"] = base_type.value("mutable", false);
 	} else {
 		elem_size = elemSizeBytes(base_type.value("type-name",""));
 		sa_elem_type = base_type;

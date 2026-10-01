@@ -1,0 +1,5 @@
+cinclude <stdlib.h>;
+[2]@![]int32 o;
+malloc(12) -> o[0];
+5 -> o[0][1];
+free(o[0]);

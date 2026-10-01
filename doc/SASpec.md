@@ -193,7 +193,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
   **`[n]@![]T` (array of pointer slots):** A `var-decl` with `arr` type-kind where `base-type` is
   `pntr(mutable=true, base=arr(T))` is also transformed:
-  - `var-type`: changed to `pntr(pntr(T))` (pointer to pointer)
+  - `var-type`: changed to `pntr(pntr(T, mutable))` (pointer to pointer); like `[n]@T`/`[n]@!T`,
+    the element carries the slot's permission, so a slot is a borrow and `->` into it stores the
+    pointer
   - `init`: `malloc(size-expr * 8)` (each slot is a pointer; elem-size is always 8)
   - The outer array is freed at scope exit. Inner arrays (stored in slots) must be freed
     explicitly or transferred via `->>` before scope exit.

@@ -4791,3 +4791,13 @@ TEST(sa, struct_ret_temp) {
 	ASSERT_EQ(body[1]["body"]["name"], "free");
 	ASSERT_EQ(body[1]["body"]["args"][0]["name"], temp);
 }
+
+TEST(sa, ptr_slot_store) {
+	json jout = run_sa("../test/testdata/sa/219_ptr_slot_store.pa");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+	// A '@![]T' slot holds a borrow, so '->' stores the pointer instead of copying.
+	ASSERT_EQ(stmts[1]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[1]["target"]["value-type"]["mutable"], true);
+	ASSERT_EQ(stmts[1]["value"]["name"], "malloc");
+}
