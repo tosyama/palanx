@@ -4799,3 +4799,25 @@ TEST(sa, ptr_slot_store) {
 	ASSERT_EQ(stmts[1]["target"]["value-type"]["mutable"], true);
 	ASSERT_EQ(stmts[1]["value"]["name"], "malloc");
 }
+
+TEST(sa, unsized_struct_arr_sig) {
+	json jout = run_sa("../test/testdata/sa/220_unsized_struct_arr_sig.pa");
+	// The same representations as [n]P / [n]$P, minus the size.
+	json owned = {{"type-kind","pntr"},{"base-type",{{"type-kind","pntr"},
+	              {"base-type",{{"type-kind","struct"},{"type-name","P"}}}}}};
+	json contig = {{"type-kind","pntr"},{"embedded",true},{"stride",4},
+	               {"base-type",{{"type-kind","struct"},{"type-name","P"}}}};
+	const auto& f = jout["functions"][0];
+	ASSERT_EQ(f["parameters"][0]["var-type"], owned);
+	ASSERT_EQ(f["parameters"][1]["var-type"], contig);
+	ASSERT_EQ(f["parameters"][2]["var-type"], (json{{"type-kind","pntr"},{"base-type",owned}}));
+	ASSERT_EQ(f["ret-type"], owned);
+
+	json ownedSlot = owned;
+	ownedSlot["mutable"] = true;
+	json contigSlot = contig;
+	contigSlot["mutable"] = true;
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["var-type"]["base-type"], ownedSlot);
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"], contigSlot);
+}

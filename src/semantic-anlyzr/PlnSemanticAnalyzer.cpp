@@ -305,6 +305,59 @@ json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// A struct element gets the same representation as in the sized array: its own
+// storage in `[]T`, laid out with its stride in `[]$T`.
+json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type)
+{
+	if (type.value("type-kind","") != "arr" || type.value("specifier","") != "raw"
+	    || !type["size-expr"].is_null())
+		return type;
+	if (type.value("embedded", false)) {
+		json embed_bt = resolveTypeAlias(type["base-type"]);  // [m]T or a struct
+		json pntr = {{"type-kind","pntr"},{"embedded",true}};
+		if (isStructType(embed_bt)) {
+			string tname = embed_bt["type-name"].get<string>();
+			// LCOV_EXCL_EXCEPTION_BR_START
+			pntr["stride"]    = requireCompleteStruct(tname, locNode).totalSize;
+			pntr["base-type"] = {{"type-kind","struct"},{"type-name",tname}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+			return pntr;
+		}
+		bool isRow = embed_bt.value("type-kind","") == "arr";
+		if (isRow && isStructType(resolveTypeAlias(embed_bt["base-type"]))) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_Unsupported2DStructArr) << endl;
+			exit(1);
+		}
+		if (isRow && !embed_bt["size-expr"].is_null()) {
+			const auto& sz = embed_bt["size-expr"];
+			string et = sz.value("expr-type","");
+			if (et == "lit-int" || et == "lit-uint")
+				pntr["inner-size"] = stoll(sz["value"].get<string>());
+			// Variable inner-size: no inner-size field; validateEmbeddedParams catches it
+		}
+		// []$[]T or []$[var]T: no inner-size → validateEmbeddedParams reports error
+		pntr["base-type"] = embed_bt.value("base-type", json{});
+		return pntr;
+	}
+	json bt = resolveTypeAlias(type["base-type"]);
+	return {{"type-kind","pntr"},
+	        {"base-type", isStructType(bt) ? toStructPntrType(bt) : unsizedArrToPntr(locNode, type["base-type"])}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::normalizeUnsizedArrSig(json& funcDef)
+{
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"])
+			if (p.contains("var-type"))
+				p["var-type"] = unsizedArrToPntr(funcDef, p["var-type"]);
+	if (funcDef.contains("ret-type"))
+		funcDef["ret-type"] = unsizedArrToPntr(funcDef, funcDef["ret-type"]);
+	if (funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"])
+			if (r.contains("var-type"))
+				r["var-type"] = unsizedArrToPntr(funcDef, r["var-type"]);
+}
+
 bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
 {
 	if (!currentFunc_ || !currentFunc_->contains("rets")) return false;

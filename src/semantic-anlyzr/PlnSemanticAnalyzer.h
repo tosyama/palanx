@@ -195,6 +195,8 @@ class PlnSemanticAnalyzer {
 	// a `[n]$int32` field is an inline array, which a variable has no counterpart of.
 	void requireKnownTypeNames(const json& locNode, const json& type) const;
 	json  toStructPntrType(const json& type) const;
+	json  unsizedArrToPntr(const json& locNode, const json& type);
+	void  normalizeUnsizedArrSig(json& funcDef);
 	bool  isNamedReturnVar(const string& varName) const;
 	json  deepNormalizePrimToStruct(const json& type) const;
 	json  resolveTypeAlias(const json& vtype) const;

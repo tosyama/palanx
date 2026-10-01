@@ -1185,7 +1185,9 @@ Expected output:
 `[]T` and `[][]T` can be used as parameter types and return types in function declarations.
 The semantic analyzer resolves them to plain pointer types with no ownership tracking —
 `[]T` becomes a pointer to `T`, and `[][]T` becomes a pointer to a pointer to `T`. The caller
-is responsible for managing the lifetime of the returned pointer.
+is responsible for managing the lifetime of the returned pointer. A struct element is laid out
+as in a sized array: `[]T` takes the elements of a `[n]T` array, and `[]$T` those of a `[n]$T`
+array.
 
 ```palan
 func sum_arr([]int32 a, int64 n) -> int64 {

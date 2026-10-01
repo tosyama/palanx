@@ -743,6 +743,14 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 			if (paramVT) {
 				if (paramVT->contains("arr-size")) {
 					checkArrBorrowBinding(locNode, arg, saArg, *paramVT);
+				} else if (paramVT->value("embedded", false) && paramVT->contains("stride")) {
+					// The type registry can't tell a contiguous struct array from a single struct.
+					const json& argVT = saArg["value-type"];
+					if (!argVT.value("embedded", false) || !argVT.contains("stride")) {
+						cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
+							arrShapeName(argVT), arrShapeName(*paramVT)) << endl;
+						exit(1);
+					}
 				} else if (paramVT->value("embedded", false)) {
 					const json& argVT = saArg["value-type"];
 					bool argEmbedded = argVT.value("embedded", false);

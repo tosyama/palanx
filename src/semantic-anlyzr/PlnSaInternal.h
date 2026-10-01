@@ -266,31 +266,6 @@ inline const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 	}
 }
 
-inline json unsizedArrToPntr(const json& type);
-
-inline json unsizedArrToPntr(const json& type) {
-	if (type.value("type-kind","") == "arr"
-		&& type.value("specifier","") == "raw"
-		&& type["size-expr"].is_null()) {
-		if (type.value("embedded", false)) {
-			const auto& embed_bt = type["base-type"];  // [m]T part
-			json pntr = {{"type-kind","pntr"},{"embedded",true}};
-			if (embed_bt.value("type-kind","") == "arr" && !embed_bt["size-expr"].is_null()) {
-				const auto& sz = embed_bt["size-expr"];
-				string et = sz.value("expr-type","");
-				if (et == "lit-int" || et == "lit-uint")
-					pntr["inner-size"] = stoll(sz["value"].get<string>());
-				// Variable inner-size: no inner-size field; validateEmbeddedParams catches it
-			}
-			// []$[]T or []$[var]T: no inner-size → validateEmbeddedParams reports error
-			pntr["base-type"] = embed_bt.value("base-type", json{});
-			return pntr;
-		}
-		return {{"type-kind","pntr"},{"base-type", unsizedArrToPntr(type["base-type"])}};
-	}
-	return type;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-
 // Element count of an SA-evaluated array size, or -1 when it is not a
 // compile-time literal. sa_arr_size_expr may wrap a literal in a uint64 convert.
 inline int64_t constArrSize(const json& sz) {
@@ -403,19 +378,6 @@ inline json withArrPermission(json t, bool isMutable) {
 		cur = &(*cur)["base-type"];
 	}
 	return t;
-}
-
-inline void normalizeUnsizedArrSig(json& funcDef) {
-	if (funcDef.contains("parameters"))
-		for (auto& p : funcDef["parameters"])
-			if (p.contains("var-type"))
-				p["var-type"] = unsizedArrToPntr(p["var-type"]);
-	if (funcDef.contains("ret-type"))
-		funcDef["ret-type"] = unsizedArrToPntr(funcDef["ret-type"]);
-	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"])
-			if (r.contains("var-type"))
-				r["var-type"] = unsizedArrToPntr(r["var-type"]);
 }
 
 // A named C struct or union reference. Both are laid out through structDefs_

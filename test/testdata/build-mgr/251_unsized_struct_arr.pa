@@ -1,0 +1,32 @@
+cinclude <stdio.h>;
+type P { int32 x; };
+
+func sum([]P a, int64 n) -> int32 {
+    int32 s = 0;
+    int64 i = 0;
+    while i < n { s + a[i].x -> s; i + 1 -> i; }
+    return s;
+}
+
+func bump([]$P a, int64 n) -> []$P {
+    int64 i = 0;
+    while i < n { a[i].x + 1 -> a[i].x; i + 1 -> i; }
+    return a;
+}
+
+func second([]$P a) -> int32 { return a[1].x; }
+
+func make(int64 n) -> []P {
+    [n]P a;
+    7 -> a[n - 1].x;
+    return a;
+}
+
+[3]P ps;
+1 -> ps[0].x; 2 -> ps[1].x; 3 -> ps[2].x;
+[2]$P es;
+4 -> es[0].x; 5 -> es[1].x;
+[2]@![]P rows;
+ps -> rows[1];
+10 -> rows[1][0].x;
+printf("%d %d %d %d\n", sum(ps, 3), second(bump(es, 2)), sum(make(2), 2), rows[1][0].x + rows[1][2].x);

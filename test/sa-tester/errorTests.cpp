@@ -2471,6 +2471,7 @@ TEST(sa_error, struct_arr_2d)
 	const pair<string, string> cases[] = {
 		{"error_261_struct_arr_2d_embed_outer.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
 		{"error_262_struct_arr_2d_embed_both.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
+		{"error_360_unsized_struct_arr_2d_embed.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
 		{"error_291_embed_struct_arr_2d_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer '@T'"},
 		{"error_292_embed_struct_arr_2d_borrow_owned.pa", "array shape '[2][3]$Point' does not match the borrowed array type '[2][3]Point'."},
 		{"error_293_struct_arr_2d_borrow_embed.pa", "array shape '[2][3]Point' does not match the borrowed array type '[2][3]$Point'."},
@@ -2601,6 +2602,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_357_transfer_to_arr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
 		{"error_358_transfer_row_size_mismatch.pa", ":3:1: error: cannot transfer '[5]int32' into '[3]int32'"},
 		{"error_359_transfer_to_dynamic_row.pa", ":4:1: error: cannot transfer '[3]int32' into '[?]int32'"},
+		{"error_361_struct_to_embed_struct_param.pa", ":4:1: error: cannot convert 'P' to '[?]$P'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

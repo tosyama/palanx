@@ -192,11 +192,11 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(normalizeArrBorrowType(funcDef, unsizedArrToPntr(resolveTypeAlias(p["var-type"]))))), &funcDef);
+			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(normalizeArrBorrowType(funcDef, unsizedArrToPntr(funcDef, resolveTypeAlias(p["var-type"]))))), &funcDef);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"]) {
 			if (!isStructType(resolveTypeAlias(r["var-type"]))) {
-				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(resolveTypeAlias(r["var-type"]))), &funcDef);
+				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(funcDef, resolveTypeAlias(r["var-type"]))), &funcDef);
 			} else if (r.contains("init")) {
 				// A struct-type named return is declared by the body itself, so there's no variable to initialize here.
 				cerr << locPrefix(r["init"]) << PlnSaMessage::getMessage(E_NamedRetInitOnStruct, r["name"].get<string>()) << endl;

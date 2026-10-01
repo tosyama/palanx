@@ -2318,6 +2318,12 @@ TEST(build_mgr, bool_literal) {
 	ASSERT_EQ(output, "1 0 0 1\n1\n1 2 1 -1\n1 1\n");
 }
 
+TEST(build_mgr, unsized_struct_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/251_unsized_struct_arr.pa");
+	ASSERT_EQ(output, "15 6 7 13\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
