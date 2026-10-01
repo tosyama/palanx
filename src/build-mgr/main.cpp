@@ -326,7 +326,7 @@ int main(int argc, char* argv[])
 					for (auto& of : owned) {
 						string oname = of["name"];
 						string sname = of["struct-name"];
-						out << "    __pln_alloc_" << sname << "() -> p." << oname << ";\n";
+						out << "    __pln_alloc_" << sname << "() ->> p." << oname << ";\n";
 					}
 					for (auto& af : ownedArr) {
 						string fname = af["name"];
@@ -334,11 +334,11 @@ int main(int argc, char* argv[])
 						if (af["elem-kind"] == "prim") {
 							string leaf = af["leaf-name"];
 							out << "    __pln_alloc_arr_prim_" << leaf << "(" << count
-							    << ") -> p." << fname << ";\n";
+							    << ") ->> p." << fname << ";\n";
 						} else { // struct leaf
 							string sname = af["leaf-name"];
 							out << "    __pln_alloc_arr_" << sname << "(" << count
-							    << ") -> p." << fname << ";\n";
+							    << ") ->> p." << fname << ";\n";
 						}
 					}
 					out << "}\n";

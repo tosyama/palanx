@@ -182,6 +182,8 @@ class PlnSemanticAnalyzer {
 	void recordAllocShape(const string& structName);
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
 	json makeStructFreeStmt(const string& name, const json& pntrType);
+	json makeStructFreeCall(json ptr, const string& structName);
+	json makeOwnedFieldFreeStmt(const FieldChain& chain, const FieldLayout& field);
 	bool isStructType(const json& type) const;
 	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.
 	bool isKnownTypeName(const string& name) const;
@@ -228,7 +230,7 @@ class PlnSemanticAnalyzer {
 	// node. Shared by sa_expr_call and sa_expr_member_call so the two paths
 	// can't drift on which fields a syscall call carries.
 	void  applyPlnCalleeSig(json& sa_expr, const json& pFunc);
-	json sa_field_assign(const json& stmt);
+	json sa_field_assign(const json& stmt);  // returns json::array()
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	json makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value);
 	json makeFieldAccess(const FieldChain& chain, const FieldLayout& field);
@@ -253,6 +255,7 @@ class PlnSemanticAnalyzer {
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
 	json sa_arr_assign_stmt(const json& stmt);  // returns json::array()
+	void appendTransferSourceReset(json& stmts, const json& saValue);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
 	const json& findMultiRetFunc(const json& stmt, size_t recvCount);

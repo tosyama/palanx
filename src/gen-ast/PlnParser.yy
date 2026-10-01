@@ -283,6 +283,7 @@ expr_stmt: import
 			$$ = {{"stmt-type", "field-assign"},
 				  {"object", storeLocToExpr($1["base"])}, {"field", move($1["field"])},
 				  {"value", move($1["value"])}};
+			if ($1.value("ownership-transfer", false)) $$["ownership-transfer"] = true;
 			LOC($$, @$);
 		} else if (et == "tapple-assign-expr") {
 			$$ = {{"stmt-type", "tapple-assign"}, {"targets", move($1["targets"])}, {"value", move($1["value"])}};
@@ -756,6 +757,11 @@ expression: term
 			LOC(arr_node, @3);
 			$$ = {{"expr-type", "arr-assign-expr"}, {"ownership-transfer", true},
 				  {"target", move(arr_node)}, {"value", move($1)}};
+			LOC($$, @$);
+		} else if ($3.value("kind", "") == "field") {
+			$$ = {{"expr-type", "field-assign-expr"}, {"ownership-transfer", true},
+				  {"base", move($3["base"])}, {"field", move($3["field"])},
+				  {"value", move($1)}};
 			LOC($$, @$);
 		} else {
 			$$ = {{"expr-type", "not-impl"}};

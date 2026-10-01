@@ -452,6 +452,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "struct-type named return '" + arg1 + "' cannot have an initializer.";
 
+		case E_TransferToNonOwnedField:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->>' needs a field that owns its value (T or [n]T); '" + arg1 + "' does not.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

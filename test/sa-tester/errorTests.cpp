@@ -2585,6 +2585,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_341_tapple_decl_narrowing.pa", ":2:1: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_342_tapple_decl_struct_mismatch.pa", ":3:1: error: cannot convert '@!P' to 'int32'."},
 		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown struct type 'Foo'."},
+		{"error_344_transfer_non_owned_field.pa", ":3:1: error: '->>' needs a field that owns its value (T or [n]T); 'n' does not."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -330,6 +330,11 @@ Additional statement kinds emitted by SA:
   immediately after the arr-assign that sets the source variable to NULL. The variable remains
   in `arrayScopeVars_` and receives `free(NULL)` at scope exit (C standard guarantees no-op).
 
+  A `->>` into a struct field (`val ->> obj.field`) is accepted only for an owned field (`T` or
+  `[n]T`; otherwise E_TransferToNonOwnedField). SA emits three statements: a free of the field's
+  current value (`free`, `__pln_free_T` or `__pln_free_arr_T(field, n)`; each accepts NULL), the
+  `field-assign`, and the same NULL `assign` of the source variable.
+
 - **Copy** (`src -> dst` where dst is an array or a struct's storage) - no dedicated statement
   kind. SA lowers the copy to an `expr` statement calling a copy routine with `(dst, src, ...)`,
   where `dst` is the destination's `id`, `arr-index` or `field-access` expression. It applies to

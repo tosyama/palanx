@@ -24,7 +24,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "struct-def")   sa_struct_def(stmt);
 		else if (t == "type-alias")   sa_type_alias(stmt);
 		else if (t == "const-decl")   sa_const_decl(stmt);
-		else if (t == "field-assign") result.push_back(sa_field_assign(stmt));
+		else if (t == "field-assign") { for (auto& s : sa_field_assign(stmt)) result.push_back(s); }
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
 				if (stmt.contains("values") && stmt["values"].size() == 1
@@ -338,17 +338,21 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 
 	arr_assign["ownership-transfer"] = true;
 	json result = json::array({arr_assign});
+	appendTransferSourceReset(result, sa_value);
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
-	// Null out the source variable so its scope-exit free is a no-op: C free and
-	// the build-mgr generated __pln_free_* functions all accept NULL.
-	if (sa_value.value("expr-type","") == "id" && sa_value.contains("value-type")) {
-		result.push_back({
+// Null out a '->>' source variable so its scope-exit free is a no-op: C free and
+// the build-mgr generated __pln_free_* functions all accept NULL.
+void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& saValue)
+{
+	if (saValue.value("expr-type","") == "id" && saValue.contains("value-type")) {
+		stmts.push_back({
 			{"stmt-type", "assign"},
-			{"name", sa_value["name"]},
-			{"value", {{"expr-type","lit-int"},{"value","0"},{"value-type",sa_value["value-type"]}}}
+			{"name", saValue["name"]},
+			{"value", {{"expr-type","lit-int"},{"value","0"},{"value-type",saValue["value-type"]}}}
 		});
 	}
-	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
@@ -542,6 +546,11 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn, def.keyword()) << endl;
 		exit(1);
 	}
+	bool transfer = stmt.value("ownership-transfer", false);
+	if (transfer && it->typeKind != "struct-ptr" && it->typeKind != "arr-ptr") {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedField, fn) << endl;
+		exit(1);
+	}
 	json fieldType = fieldValueType(*it);
 	const PlnType* toType = registry_.fromJson(fieldType);
 	json value = sa_expression(stmt["value"], toType);
@@ -549,15 +558,22 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
-	if (isCopiedByValue(fieldType) && value.value("category", "") != "expiring")
-		return makeCopyStmt(stmt, makeFieldAccess(chain, *it), value);
+	if (!transfer && isCopiedByValue(fieldType) && value.value("category", "") != "expiring")
+		return json::array({makeCopyStmt(stmt, makeFieldAccess(chain, *it), value)});
 	value = convertForBinding(stmt, value, toType, fieldType);
-	checkStructBorrowSource(stmt, value, fieldType);
+	// '->>' hands the struct over rather than borrowing it.
+	if (!transfer)
+		checkStructBorrowSource(stmt, value, fieldType);
 	if (!ptrPermissionOk(value["value-type"], fieldType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
 	}
-	return makeFieldAssign(chain, *it, move(value));
+	if (!transfer)
+		return json::array({makeFieldAssign(chain, *it, move(value))});
+	// The field owns what it held, so '->>' releases that before taking over.
+	json result = json::array({makeOwnedFieldFreeStmt(chain, *it), makeFieldAssign(chain, *it, value)});
+	appendTransferSourceReset(result, value);
+	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value)

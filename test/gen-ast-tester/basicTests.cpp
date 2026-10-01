@@ -1675,3 +1675,21 @@ TEST(gen_ast, tapple_assign) {
 	for (int i = 2; i <= 4; i++)
 		ASSERT_EQ(stmts[i]["stmt-type"], "not-impl") << i;
 }
+
+TEST(gen_ast, field_transfer) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/125_field_transfer.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	ASSERT_EQ(stmts[2]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[2]["object"]["name"], "w");
+	ASSERT_EQ(stmts[2]["field"], "own");
+	ASSERT_EQ(stmts[2]["value"]["name"], "t");
+	ASSERT_EQ(stmts[2].value("ownership-transfer", false), true);
+
+	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
+	ASSERT_FALSE(stmts[3].contains("ownership-transfer"));
+}

@@ -1083,12 +1083,43 @@ json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 
 json PlnSemanticAnalyzer::makeStructFreeStmt(const string& name, const json& pntrType)
 {
-	const string& structName = pntrType["base-type"]["type-name"].get<string>();
-	if (!structDefs_.at(structName).ownsFields)
-		return makeFreeStmt(name, pntrType);
-	recordAllocShape(structName);
-	return makePlanFreeStmt(name, pntrType, "__pln_free_" + structName);
+	json var_id = {{"expr-type","id"},{"name",name},{"var-type",pntrType},{"value-type",pntrType}};
+	return makeStructFreeCall(move(var_id), pntrType["base-type"]["type-name"].get<string>());
 }
+
+json PlnSemanticAnalyzer::makeStructFreeCall(json ptr, const string& structName)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	bool owns = structDefs_.at(structName).ownsFields;
+	if (owns)
+		recordAllocShape(structName);
+	return {{"stmt-type","expr"},{"body",{
+		{"expr-type","call"},{"name",owns ? "__pln_free_" + structName : "free"},
+		{"func-type",owns ? "pln" : "c"},{"args",json::array({move(ptr)})}}}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// What an owned field ('T' or '[n]T') holds, freed the way its owner's
+// __pln_free_* would. Every free here accepts NULL.
+json PlnSemanticAnalyzer::makeOwnedFieldFreeStmt(const FieldChain& chain, const FieldLayout& field)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json value = makeFieldAccess(chain, field);
+	if (field.typeKind == "struct-ptr")
+		return makeStructFreeCall(move(value), field.typeName);
+	json args = json::array({move(value)});
+	string fn = "free", funcType = "c";
+	if (field.elemKind == "struct") {
+		recordArrStructShape(field.typeName);
+		fn = "__pln_free_arr_" + field.typeName;
+		funcType = "pln";
+		args.push_back({{"expr-type","lit-int"},{"value",to_string(field.count)},
+		                {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}});
+	}
+	return {{"stmt-type","expr"},{"body",{
+		{"expr-type","call"},{"name",fn},{"func-type",funcType},{"args",move(args)}}}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 {

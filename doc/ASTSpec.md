@@ -357,11 +357,12 @@ Statement model
   9. const-decl - native constant declaration (`const Name = <literal>;`; consumed by SA, not emitted to sa.json)
     - name\* - Constant name string
     - value\* - Literal expression model (lit-int, lit-uint, lit-flo, or lit-str; see Expression model)
-  10. field-assign - struct field assignment (`value -> obj.field`)
+  10. field-assign - struct field assignment (`value -> obj.field` or `value ->> obj.field`)
     - object\* - Base object expression model: `id` for a plain variable, `arr-index` or
       `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`)
     - field\*  - Field name string
     - value\*  - Source expression model
+    - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
   11. return - return statement
     - values - Return expression list (omitted for bare `return;`)
   12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)

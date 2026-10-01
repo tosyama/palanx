@@ -4720,3 +4720,18 @@ TEST(sa, tapple_struct)
 	ASSERT_EQ(body.back()["body"]["name"], "free");
 	ASSERT_EQ(body.back()["body"]["args"][0]["name"], t0);
 }
+
+TEST(sa, field_transfer) {
+	json jout = run_sa("../test/testdata/sa/215_field_transfer.pa");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 6);
+	// The field's previous array is freed before it takes over pa.
+	ASSERT_EQ(stmts[3]["body"]["name"], "__pln_free_arr_P");
+	ASSERT_EQ(stmts[3]["body"]["args"][0]["expr-type"], "field-access");
+	ASSERT_EQ(stmts[3]["body"]["args"][1]["value"], "2");
+	ASSERT_EQ(stmts[4]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[4]["value"]["name"], "pa");
+	ASSERT_EQ(stmts[5]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[5]["name"], "pa");
+	ASSERT_EQ(stmts[5]["value"]["value"], "0");
+}

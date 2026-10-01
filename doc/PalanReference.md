@@ -1297,6 +1297,16 @@ inner ->> outer[0];      // transfers inner into outer[0]; inner is set to NULL
 // free(outer) at scope exit frees the slot array (inner arrays must be freed separately)
 ```
 
+`val ->> obj.field` transfers `val` into an owned struct field (`T` or `[n]T`). What the field
+held is freed first, and `val` is set to NULL as above. Other fields are a compile error.
+
+```palan
+type W { Point pt; };
+W w;
+Point p;
+p ->> w.pt;              // w's original Point is freed; p is set to NULL
+```
+
 `return` on a tracked array variable also transfers ownership: the variable is removed from
 free-tracking and the caller receives the pointer.
 

@@ -110,6 +110,7 @@ enum PlnSaMessageCode {
 	E_AddrOfBorrowed,	// arg1: variable name
 	E_EmbedElemNotStruct,	// arg1: element type
 	E_NamedRetInitOnStruct,	// arg1: return name
+	E_TransferToNonOwnedField,	// arg1: field name
 };
 
 class PlnSaMessage
