@@ -340,31 +340,22 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 	return resolved;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+json PlnSemanticAnalyzer::normalizeSigType(const json& type) const
+{
+	json t = resolveTypeAlias(type);
+	return isStructType(t) ? toStructPntrType(t) : deepNormalizePrimToStruct(t);
+}
+
 void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 {
 	if (funcDef.contains("parameters"))
-		for (auto& p : funcDef["parameters"]) {
-			p["var-type"] = resolveTypeAlias(p["var-type"]);
-			if (isStructType(p["var-type"]))
-				p["var-type"] = toStructPntrType(p["var-type"]);
-			else
-				p["var-type"] = deepNormalizePrimToStruct(p["var-type"]);
-		}
+		for (auto& p : funcDef["parameters"])
+			p["var-type"] = normalizeSigType(p["var-type"]);
 	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"]) {
-			r["var-type"] = resolveTypeAlias(r["var-type"]);
-			if (isStructType(r["var-type"]))
-				r["var-type"] = toStructPntrType(r["var-type"]);
-			else
-				r["var-type"] = deepNormalizePrimToStruct(r["var-type"]);
-		}
-	if (funcDef.contains("ret-type")) {
-		funcDef["ret-type"] = resolveTypeAlias(funcDef["ret-type"]);
-		if (isStructType(funcDef["ret-type"]))
-			funcDef["ret-type"] = toStructPntrType(funcDef["ret-type"]);
-		else
-			funcDef["ret-type"] = deepNormalizePrimToStruct(funcDef["ret-type"]);
-	}
+		for (auto& r : funcDef["rets"])
+			r["var-type"] = normalizeSigType(r["var-type"]);
+	if (funcDef.contains("ret-type"))
+		funcDef["ret-type"] = normalizeSigType(funcDef["ret-type"]);
 }
 
 // Structural-only counterpart to unrepresentableTypeName for native Palan

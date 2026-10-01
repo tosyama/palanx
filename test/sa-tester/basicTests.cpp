@@ -4671,3 +4671,25 @@ TEST(sa, tapple_assign)
 	ASSERT_EQ(stmts[k + 3]["stmt-type"], "tapple-decl");
 	ASSERT_EQ(stmts[k + 5]["stmt-type"], "arr-assign");
 }
+
+TEST(sa, tapple_decl_convert)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/213_tapple_decl_convert.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// Only the variable whose declared type differs is received through a temp.
+	const json& stmts = jout["statements"];
+	size_t k = 0;
+	while (stmts[k]["stmt-type"] != "tapple-decl") k++;
+	const json& vars = stmts[k]["vars"];
+	string t0 = vars[0]["var-name"];
+	ASSERT_NE(t0, "q");
+	ASSERT_EQ(vars[0]["var-type"]["type-name"], "int32");
+	ASSERT_EQ(vars[1]["var-name"], "c");
+	const json& conv = stmts[k + 1];
+	ASSERT_EQ(conv["stmt-type"], "var-decl");
+	ASSERT_EQ(conv["vars"][0]["name"], "q");
+	ASSERT_EQ(conv["vars"][0]["var-type"]["type-name"], "int64");
+	ASSERT_EQ(conv["vars"][0]["init"]["src"]["name"], t0);
+}

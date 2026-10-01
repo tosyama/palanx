@@ -2121,6 +2121,12 @@ TEST(build_mgr, tapple_assign) {
 	ASSERT_EQ(output, "4 2\n2 1\n2 2\n");
 }
 
+TEST(build_mgr, tapple_decl_convert) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/244_tapple_decl_convert.pa");
+	ASSERT_EQ(output, "4 2.0\n");
+}
+
 TEST(build_mgr, bool_cmp_result) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/242_bool_cmp_result.pa");

@@ -1,0 +1,2 @@
+func f() -> int32 a, int32 b { 1 -> a; 2 -> b; }
+(int64 q, int32 c) = f();

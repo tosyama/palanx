@@ -362,9 +362,11 @@ Additional statement kinds emitted by SA:
 
 - **tapple-decl** - tuple-style multiple return value declaration
   - stmt-type\*: "tapple-decl"
-  - vars\*: variable list (name, var-type per entry; types resolved by SA from function rets)
+  - vars\*: variable list (name, var-type per entry; var-type is the function's ret type)
   - value\*: SA-annotated call expression (func-type: "palan"; carries value-types field)
 
+  A declared variable whose type differs from its ret type is received into a temporary
+  and declared by a following `var-decl` initialized from it.
   A `tapple-assign` is emitted as a `tapple-decl` into temporaries followed by one `assign`,
   `arr-assign` or `field-assign` per target, in target order.
 

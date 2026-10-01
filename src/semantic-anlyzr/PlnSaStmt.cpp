@@ -41,7 +41,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 			} else
 				result.push_back(sa_return_stmt(stmt));
 		}
-		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
+		else if (t == "tapple-decl") { for (auto& s : sa_tapple_decl(stmt)) result.push_back(s); }
 		else if (t == "tapple-assign") { for (auto& s : sa_tapple_assign(stmt)) result.push_back(s); }
 		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
 		else if (t == "while")    result.push_back(sa_while_stmt(stmt));
@@ -455,6 +455,9 @@ const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, size_t recvC
 	return *pFunc;
 }
 
+// A variable whose declared type differs from its return value's receives it
+// through a temp and is declared as `T x = temp;`, so it follows the same
+// conversion rules as a single-value declaration.
 json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 {
 	const json& rets = findMultiRetFunc(stmt, stmt["vars"].size())["rets"];
@@ -468,11 +471,29 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		valueTypes.push_back(r["var-type"]);
 	saCall["value-types"] = valueTypes;
 
-	// Register declared variables in the symbol table
-	for (size_t i = 0; i < stmt["vars"].size(); i++)
-		declareVar(stmt["vars"][i]["var-name"].get<string>(), rets[i]["var-type"]);
+	json vars = json::array();
+	json convDecls = json::array();
+	for (size_t i = 0; i < stmt["vars"].size(); i++) {
+		const json& v = stmt["vars"][i];
+		const json& retType = rets[i]["var-type"];
+		requireKnownTypeNames(stmt, v["var-type"]);
+		string name = v["var-name"];
+		if (normalizeSigType(v["var-type"]) != retType) {
+			string temp = "__tap_" + to_string(tempVarCounter_++);
+			convDecls.push_back({{"stmt-type", "var-decl"}, {"loc", stmt["loc"]},
+				{"vars", json::array({{{"name", name}, {"var-type", v["var-type"]},
+					{"init", {{"expr-type", "id"}, {"name", temp}, {"loc", stmt["loc"]}}}}})}});
+			name = temp;
+		}
+		declareVar(name, retType);
+		vars.push_back({{"var-name", name}, {"var-type", retType}});
+	}
 
-	return {{"stmt-type", "tapple-decl"}, {"vars", stmt["vars"]}, {"value", saCall}};
+	json result = json::array({{{"stmt-type", "tapple-decl"}, {"vars", vars}, {"value", saCall}}});
+	for (auto& d : convDecls)
+		for (auto& s : sa_var_decl(d))
+			result.push_back(s);
+	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // All return values are received into temps first, then assigned left to
@@ -490,7 +511,7 @@ json PlnSemanticAnalyzer::sa_tapple_assign(const json& stmt)
 		temps.push_back("__tap_" + to_string(tempVarCounter_++));
 		decl["vars"].push_back({{"var-name", temps.back()}, {"var-type", r["var-type"]}});
 	}
-	json result = json::array({sa_tapple_decl(decl)});
+	json result = sa_tapple_decl(decl);
 
 	for (size_t i = 0; i < targets.size(); i++) {
 		const json& t = targets[i];

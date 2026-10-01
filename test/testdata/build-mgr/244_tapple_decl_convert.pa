@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+func f(int32 a) -> int32 q, int32 r { a / 3 -> q; a % 3 -> r; }
+(int64 i, flo64 d) = f(14);
+printf("%ld %.1f\n", i, d);

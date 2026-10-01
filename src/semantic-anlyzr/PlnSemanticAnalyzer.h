@@ -194,6 +194,9 @@ class PlnSemanticAnalyzer {
 	json  deepNormalizePrimToStruct(const json& type) const;
 	json  resolveTypeAlias(const json& vtype) const;
 	json  resolveTypeAliasDeep(const json& vtype) const;
+	// The canonical form of a signature type (an owned struct becomes pntr(struct)),
+	// also what a tapple-decl variable's declared type is compared in.
+	json  normalizeSigType(const json& type) const;
 	void  normalizeStructSig(json& funcDef);
 	// Diagnose (and exit) if `funcDef`'s parameters/ret-type/rets use a type
 	// PlnTypeRegistry::fromJson cannot represent. Must be called after
@@ -251,7 +254,7 @@ class PlnSemanticAnalyzer {
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
 	const json& findMultiRetFunc(const json& stmt, size_t recvCount);
-	json sa_tapple_decl(const json& stmt);
+	json sa_tapple_decl(const json& stmt);       // returns array of statements
 	json sa_tapple_assign(const json& stmt);
 	json sa_block(const json& stmt);
 	json sa_if_stmt(const json& stmt);

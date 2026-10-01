@@ -2582,6 +2582,9 @@ TEST(sa_error, unknown_type_name)
 		{"error_338_tapple_assign_narrowing.pa", ":3:13: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_339_tapple_assign_count.pa", ":3:1: error: Variable count does not match return count of 'f'."},
 		{"error_340_tapple_assign_single_ret.pa", ":3:1: error: Function 'g' does not have multiple return values."},
+		{"error_341_tapple_decl_narrowing.pa", ":2:1: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
+		{"error_342_tapple_decl_struct_mismatch.pa", ":3:1: error: cannot convert '@!P' to 'int32'."},
+		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown struct type 'Foo'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
