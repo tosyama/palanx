@@ -2592,6 +2592,11 @@ TEST(sa_error, unknown_type_name)
 		{"error_348_ret_struct_borrow_slot.pa", ":4:1: error: a struct returned by a call has no owner to borrow from"},
 		{"error_349_ret_struct_borrow_field.pa", ":5:1: error: a struct returned by a call has no owner to borrow from"},
 		{"error_350_ret_struct_borrow_return.pa", ":3:18: error: a struct returned by a call has no owner to borrow from"},
+		{"error_351_transfer_from_borrow_to_field.pa", ":4:1: error: '->>' needs a source that owns its value"},
+		{"error_352_transfer_from_borrow_to_elem.pa", ":3:1: error: '->>' needs a source that owns its value"},
+		{"error_353_transfer_from_param.pa", ":4:2: error: '->>' needs a source that owns its value"},
+		{"error_354_transfer_from_ptr_field.pa", ":5:1: error: '->>' needs a source that owns its value"},
+		{"error_355_transfer_from_readonly_elem.pa", ":4:2: error: cannot write through read-only pointer"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

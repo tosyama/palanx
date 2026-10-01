@@ -4736,6 +4736,21 @@ TEST(sa, field_transfer) {
 	ASSERT_EQ(stmts[5]["value"]["value"], "0");
 }
 
+TEST(sa, transfer_from_slot) {
+	json jout = run_sa("../test/testdata/sa/218_transfer_from_slot.pa");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 10);
+	ASSERT_EQ(stmts[5]["value"]["var"], "v");
+	ASSERT_EQ(stmts[6]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[6]["var"], "v");
+	ASSERT_EQ(stmts[6]["value"]["value"], "0");
+	ASSERT_EQ(stmts[8]["value"]["expr-type"], "arr-index");
+	ASSERT_EQ(stmts[9]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[9]["target"]["array"]["name"], "s");
+	ASSERT_EQ(stmts[9]["target"]["index"]["value"], "1");
+	ASSERT_EQ(stmts[9]["value"]["value"], "0");
+}
+
 TEST(sa, struct_ret_copy) {
 	json jout = run_sa("../test/testdata/sa/216_struct_ret_copy.pa");
 	const auto& stmts = jout["statements"];

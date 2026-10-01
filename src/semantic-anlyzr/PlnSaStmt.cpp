@@ -332,21 +332,50 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 
 	arr_assign["ownership-transfer"] = true;
 	json result = json::array({arr_assign});
-	appendTransferSourceReset(result, sa_value);
+	appendTransferSourceReset(result, stmt, sa_value);
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// Null out a '->>' source variable so its scope-exit free is a no-op: C free and
-// the build-mgr generated __pln_free_* functions all accept NULL.
-void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& saValue)
+// Only an owner may give its value away, and it then holds NULL so its own free
+// is a no-op: C free and the build-mgr generated __pln_free_* functions all
+// accept NULL. A call result has no owner to reset.
+void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue)
 {
-	if (saValue.value("expr-type","") == "id" && saValue.contains("value-type")) {
-		stmts.push_back({
-			{"stmt-type", "assign"},
-			{"name", saValue["name"]},
-			{"value", {{"expr-type","lit-int"},{"value","0"},{"value-type",saValue["value-type"]}}}
-		});
+	if (saValue.value("category", "") == "expiring")
+		return;
+	const json& src = stmt["value"];
+	string et = src.value("expr-type", "");
+	auto nullOf = [](const json& vt) -> json {
+		return {{"expr-type","lit-int"},{"value","0"},{"value-type",vt}};
+	};
+	if (et == "id" && saValue.value("category", "") == "owned") {
+		stmts.push_back({{"stmt-type", "assign"}, {"name", saValue["name"]},
+		                 {"value", nullOf(saValue["value-type"])}});
+		return;
 	}
+	if (et == "field-access" || et == "arr-index") {
+		json loc = et == "field-access" ? sa_expr_field_access(src, /*forWrite=*/true)
+		                                : sa_expr_arr_index(src, /*forWrite=*/true);
+		if (!loc.value("addr-only", false) && isCopiedByValue(loc["value-type"])) {
+			if (et == "arr-index") {
+				if (!isWritableThrough(loc["array"]["value-type"])) {
+					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+					exit(1);
+				}
+				stmts.push_back({{"stmt-type", "arr-assign"}, {"target", loc},
+				                 {"value", nullOf(loc["value-type"])}});
+			} else {
+				json reset = {{"stmt-type", "field-assign"}, {"offset", loc["offset"]},
+				              {"value-type", loc["value-type"]}, {"value", nullOf(loc["value-type"])}};
+				if (loc.contains("var")) reset["var"] = loc["var"];
+				else reset["ptr-expr"] = loc["ptr-expr"];
+				stmts.push_back(move(reset));
+			}
+			return;
+		}
+	}
+	cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner) << endl;
+	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
@@ -566,7 +595,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		return json::array({makeFieldAssign(chain, *it, move(value))});
 	// The field owns what it held, so '->>' releases that before taking over.
 	json result = json::array({makeOwnedFieldFreeStmt(chain, *it), makeFieldAssign(chain, *it, value)});
-	appendTransferSourceReset(result, value);
+	appendTransferSourceReset(result, stmt, value);
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

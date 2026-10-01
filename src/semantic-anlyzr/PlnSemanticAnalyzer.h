@@ -256,7 +256,7 @@ class PlnSemanticAnalyzer {
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
 	json sa_arr_assign_stmt(const json& stmt);  // returns json::array()
-	void appendTransferSourceReset(json& stmts, const json& saValue);
+	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
 	const json& findMultiRetFunc(const json& stmt, size_t recvCount);

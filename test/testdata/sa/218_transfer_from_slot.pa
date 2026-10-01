@@ -1,0 +1,5 @@
+type P { int32 x; };
+type W { P own; };
+W w; W v; [2]P s;
+v.own ->> w.own;
+s[1] ->> w.own;

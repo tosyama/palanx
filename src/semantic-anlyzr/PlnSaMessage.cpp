@@ -460,6 +460,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "a struct returned by a call has no owner to borrow from; receive it into a "
 			       "struct variable with '->' and borrow it with '@name' or '@!name'.";
 
+		case E_TransferFromNonOwner:
+			return "'->>' needs a source that owns its value: an owning variable, an owned field "
+			       "or element, or a call result.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

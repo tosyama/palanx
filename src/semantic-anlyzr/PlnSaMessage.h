@@ -112,6 +112,7 @@ enum PlnSaMessageCode {
 	E_NamedRetInitOnStruct,	// arg1: return name
 	E_TransferToNonOwnedField,	// arg1: field name
 	E_ExpiringStructToBorrow,
+	E_TransferFromNonOwner,
 };
 
 class PlnSaMessage

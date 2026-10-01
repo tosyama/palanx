@@ -1307,6 +1307,11 @@ Point p;
 p ->> w.pt;              // w's original Point is freed; p is set to NULL
 ```
 
+The source must own what it gives away: a variable that owns its array or struct, an owned
+field or element (`v.pt ->> w.pt`, `pts[1] ->> w.pt`, `m[1] ->> w.arr`), or a value returned by
+a function. A field or element source is set to NULL like a variable. A borrow (`@T`/`@!T`,
+`@[n]T`), a struct parameter, or a `@T` field is a compile error.
+
 `return` on a tracked array variable also transfers ownership: the variable is removed from
 free-tracking and the caller receives the pointer.
 
