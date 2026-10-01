@@ -42,7 +42,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 				result.push_back(sa_return_stmt(stmt));
 		}
 		else if (t == "tapple-decl") { for (auto& s : sa_tapple_decl(stmt)) result.push_back(s); }
-		else if (t == "tapple-assign") { for (auto& s : sa_tapple_assign(stmt)) result.push_back(s); }
+		else if (t == "tapple-assign") result.push_back(sa_tapple_assign(stmt));
 		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
 		else if (t == "while")    result.push_back(sa_while_stmt(stmt));
 		else if (t == "break") {
@@ -486,6 +486,9 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 			name = temp;
 		}
 		declareVar(name, retType);
+		// A returned struct is owned by the caller.
+		if (isStructStorage(retType))
+			arrayScopeVars_.back().push_back({name, makeStructFreeStmt(name, retType)});
 		vars.push_back({{"var-name", name}, {"var-type", retType}});
 	}
 
@@ -498,7 +501,8 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 
 // All return values are received into temps first, then assigned left to
 // right through the single-target assignment paths, so `f() -> (i, arr[i])`
-// indexes with the new i.
+// indexes with the new i. The block limits the temps to this statement and
+// releases a returned struct once it has been copied into its target.
 json PlnSemanticAnalyzer::sa_tapple_assign(const json& stmt)
 {
 	const json& targets = stmt["targets"];
@@ -511,25 +515,21 @@ json PlnSemanticAnalyzer::sa_tapple_assign(const json& stmt)
 		temps.push_back("__tap_" + to_string(tempVarCounter_++));
 		decl["vars"].push_back({{"var-name", temps.back()}, {"var-type", r["var-type"]}});
 	}
-	json result = sa_tapple_decl(decl);
+	json body = json::array({decl});
 
 	for (size_t i = 0; i < targets.size(); i++) {
 		const json& t = targets[i];
 		json value = {{"expr-type", "id"}, {"name", temps[i]}, {"loc", t["loc"]}};
 		string et = t["expr-type"];
-		if (et == "id") {
-			result.push_back(sa_assign_stmt({{"stmt-type", "assign"}, {"name", t["name"]},
-			                                 {"value", value}, {"loc", t["loc"]}}));
-		} else if (et == "arr-index") {
-			for (auto& s : sa_arr_assign_stmt({{"stmt-type", "arr-assign"}, {"target", t},
-			                                   {"value", value}, {"loc", t["loc"]}}))
-				result.push_back(s);
-		} else {
-			result.push_back(sa_field_assign({{"stmt-type", "field-assign"}, {"object", t["object"]},
-			                                  {"field", t["field"]}, {"value", value}, {"loc", t["loc"]}}));
-		}
+		if (et == "id")
+			body.push_back({{"stmt-type", "assign"}, {"name", t["name"]}, {"value", value}, {"loc", t["loc"]}});
+		else if (et == "arr-index")
+			body.push_back({{"stmt-type", "arr-assign"}, {"target", t}, {"value", value}, {"loc", t["loc"]}});
+		else
+			body.push_back({{"stmt-type", "field-assign"}, {"object", t["object"]},
+			                {"field", t["field"]}, {"value", value}, {"loc", t["loc"]}});
 	}
-	return result;
+	return sa_block({{"stmt-type", "block"}, {"body", body}});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)

@@ -4654,22 +4654,24 @@ TEST(sa, tapple_assign)
 	json jout = run_sa("../test/testdata/sa/212_tapple_assign.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// Each multiple assignment becomes a tapple-decl of temps plus one assignment per target.
+	// Each multiple assignment becomes a block of a tapple-decl of temps plus one assignment per target.
 	const json& stmts = jout["statements"];
 	size_t k = 0;
-	while (stmts[k]["stmt-type"] != "tapple-decl") k++;
-	const json& decl = stmts[k];
+	while (stmts[k]["stmt-type"] != "block") k++;
+	const json& body = stmts[k]["body"];
+	const json& decl = body[0];
+	ASSERT_EQ(decl["stmt-type"], "tapple-decl");
 	ASSERT_EQ(decl["vars"].size(), 2);
 	ASSERT_EQ(decl["vars"][1]["var-type"]["type-name"], "int64");
 	string t0 = decl["vars"][0]["var-name"], t1 = decl["vars"][1]["var-name"];
-	ASSERT_EQ(stmts[k + 1]["stmt-type"], "field-assign");
-	ASSERT_EQ(stmts[k + 1]["value"]["name"], t0);
-	ASSERT_EQ(stmts[k + 2]["stmt-type"], "assign");
-	ASSERT_EQ(stmts[k + 2]["name"], "i");
-	ASSERT_EQ(stmts[k + 2]["value"]["name"], t1);
+	ASSERT_EQ(body[1]["stmt-type"], "field-assign");
+	ASSERT_EQ(body[1]["value"]["name"], t0);
+	ASSERT_EQ(body[2]["stmt-type"], "assign");
+	ASSERT_EQ(body[2]["name"], "i");
+	ASSERT_EQ(body[2]["value"]["name"], t1);
 
-	ASSERT_EQ(stmts[k + 3]["stmt-type"], "tapple-decl");
-	ASSERT_EQ(stmts[k + 5]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[k + 1]["stmt-type"], "block");
+	ASSERT_EQ(stmts[k + 1]["body"][2]["stmt-type"], "arr-assign");
 }
 
 TEST(sa, tapple_decl_convert)
@@ -4692,4 +4694,29 @@ TEST(sa, tapple_decl_convert)
 	ASSERT_EQ(conv["vars"][0]["name"], "q");
 	ASSERT_EQ(conv["vars"][0]["var-type"]["type-name"], "int64");
 	ASSERT_EQ(conv["vars"][0]["init"]["src"]["name"], t0);
+}
+
+TEST(sa, tapple_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/214_tapple_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	// A returned struct is received as the caller's owned pointer and freed at scope exit.
+	size_t b = 0;
+	while (jout["statements"][b]["stmt-type"] != "block") b++;
+	const json& stmts = jout["statements"][b]["body"];
+	const json& vt = stmts[0]["vars"][0]["var-type"];
+	ASSERT_EQ(vt["type-kind"], "pntr");
+	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
+	const json& last = stmts.back();
+	ASSERT_EQ(last["body"]["name"], "free");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "s");
+
+	// The temps of `f() -> (s, n)` live only in its block: s is copied, then the temp is freed.
+	const json& body = stmts[stmts.size() - 2]["body"];
+	string t0 = body[0]["vars"][0]["var-name"];
+	ASSERT_EQ(body[1]["body"]["name"], "memcpy");
+	ASSERT_EQ(body.back()["body"]["name"], "free");
+	ASSERT_EQ(body.back()["body"]["args"][0]["name"], t0);
 }

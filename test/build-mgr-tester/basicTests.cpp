@@ -2127,6 +2127,35 @@ TEST(build_mgr, tapple_decl_convert) {
 	ASSERT_EQ(output, "4 2.0\n");
 }
 
+TEST(build_mgr, tapple_struct_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_tapple_struct_mtrace_bin "
+		"../test/testdata/build-mgr/245_tapple_struct_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_tapple_struct_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_tapple_struct_mtrace_bin");
+	ASSERT_EQ(output, "3 6 4\n6 4 12\n5 10 6\n8 6 18\n7 8\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 11) << "expected 11 allocs for the received and target structs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, bool_cmp_result) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/242_bool_cmp_result.pa");

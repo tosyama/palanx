@@ -1081,6 +1081,15 @@ json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 	return resolved;
 }
 
+json PlnSemanticAnalyzer::makeStructFreeStmt(const string& name, const json& pntrType)
+{
+	const string& structName = pntrType["base-type"]["type-name"].get<string>();
+	if (!structDefs_.at(structName).ownsFields)
+		return makeFreeStmt(name, pntrType);
+	recordAllocShape(structName);
+	return makePlanFreeStmt(name, pntrType, "__pln_free_" + structName);
+}
+
 json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 {
 	const string& structName = stmt["vars"][0]["var-type"]["type-name"].get<string>();
@@ -1147,8 +1156,6 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 		declareVar(name, pntr_type, &stmt);
 
 		json init;
-		json free_stmt;
-
 		if (useSimpleCalloc) {
 			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 			json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
@@ -1157,19 +1164,14 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 			                 {"value-type",uint64_type}};
 			init = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},
 			        {"args",json::array({one_arg, size_arg})},{"value-type",pntr_type}};
-			free_stmt = makeFreeStmt(name, pntr_type);
 		} else {
 			recordAllocShape(structName);
-			string alloc_fn = "__pln_alloc_" + structName;
-			string free_fn  = "__pln_free_"  + structName;
-			init = {{"expr-type","call"},{"name",alloc_fn},{"func-type","pln"},
+			init = {{"expr-type","call"},{"name","__pln_alloc_" + structName},{"func-type","pln"},
 			        {"args",json::array()},{"value-type",pntr_type}};
-			free_stmt = makePlanFreeStmt(name, pntr_type, free_fn);
 		}
 
-		bool namedRet = isNamedReturnVar(name);
-		if (!namedRet)
-			arrayScopeVars_.back().push_back({name, free_stmt});
+		if (!isNamedReturnVar(name))
+			arrayScopeVars_.back().push_back({name, makeStructFreeStmt(name, pntr_type)});
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
 		if (!structRetCall.is_null())
 			initStmts.push_back(structRetCall);

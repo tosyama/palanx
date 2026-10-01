@@ -180,6 +180,8 @@ class PlnSemanticAnalyzer {
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_
 	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_
 	void recordAllocShape(const string& structName);
+	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
+	json makeStructFreeStmt(const string& name, const json& pntrType);
 	bool isStructType(const json& type) const;
 	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.
 	bool isKnownTypeName(const string& name) const;

@@ -367,8 +367,10 @@ Additional statement kinds emitted by SA:
 
   A declared variable whose type differs from its ret type is received into a temporary
   and declared by a following `var-decl` initialized from it.
-  A `tapple-assign` is emitted as a `tapple-decl` into temporaries followed by one `assign`,
-  `arr-assign` or `field-assign` per target, in target order.
+  A variable receiving a struct owns it and is freed at scope exit like a declared struct.
+  A `tapple-assign` is emitted as a `block` holding a `tapple-decl` into temporaries followed by
+  one `assign`, `arr-assign` or `field-assign` per target, in target order; a struct is copied
+  into its target and its temporary freed at the end of the block.
 
 Expression model
 ----------------

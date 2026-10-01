@@ -359,7 +359,7 @@ printf("%ld %ld\n", ab, bc);
 (int64 ab, bc) = sumsOf(1, 2, 3);   // bc is also int64
 ```
 
-Each variable is initialized from its return value with the same type rules as a single declaration `int64 ab = ...;` (widening is implicit, narrowing is an error).
+Each variable is initialized from its return value with the same type rules as a single declaration `int64 ab = ...;` (widening is implicit, narrowing is an error). A returned struct is owned by the variable that receives it.
 
 To store the values into existing variables, array elements or fields instead, assign the call to a parenthesized target list:
 
@@ -367,7 +367,7 @@ To store the values into existing variables, array elements or fields instead, a
 sumsOf(1, 2, 3) -> (ab, arr[1]);
 ```
 
-All return values are received first, then assigned to the targets from left to right, with the same type rules as a single `->`. So in `f() -> (i, arr[i])`, `arr[i]` uses the newly assigned `i`.
+All return values are received first, then assigned to the targets from left to right, with the same type rules as a single `->` (a struct is copied into its target). So in `f() -> (i, arr[i])`, `arr[i]` uses the newly assigned `i`.
 
 ---
 
