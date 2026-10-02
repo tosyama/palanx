@@ -305,7 +305,8 @@ inline string arrShapeName(const json& t) {
 }
 
 // Shape equality for binding an array to a borrowed array type: same depth,
-// same embedded layout, every size known and equal, structs stored in both or
+// same embedded layout, every size `to` names known and equal (a borrowed
+// array type names them all), structs stored in both or
 // neither, and pointer elements in both or neither. The element type is left
 // to the usual type compatibility check, which cannot tell a stored struct
 // from a pointer to one and ignores pointer permissions. A pointer element
@@ -323,20 +324,26 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 	auto sameKey = [&](const char* k) {
 		return from.contains(k) == to.contains(k) && (!to.contains(k) || from[k] == to[k]);
 	};
-	return from.contains("arr-size") && sameKey("arr-size")
+	return (!to.contains("arr-size") || (from.contains("arr-size") && from["arr-size"] == to["arr-size"]))
 	    && from.value("embedded", false) == to.value("embedded", false) && sameKey("inner-size")
 	    && arrShapeMatch(from["base-type"], to["base-type"], isWritableThrough(to));
 }
 
-// Rows of a fixed size reached through a pointer that has no size of its own
-// ('[][m]T', a '[k]@![][m]T' slot). The type registry ignores sizes, so only
-// this check keeps rows of another size out.
-inline bool rowShapeMatch(const json& from, const json& to) {
-	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(to["base-type"])
-	    || !to["base-type"].contains("arr-size"))
+// Binding an array to a pointer that has no size of its own ('[]T', '[][m]T',
+// a '[k]@![]T' slot, a C 'T*'). The type registry ignores sizes and cannot
+// tell an owned row or struct from a '@T'/'@!T' pointer, so only this check
+// keeps rows of another size out and keeps the elements' owner unchanged:
+// either side would free, or overwrite, what the other one owns. A 'void*'
+// on either side (NULL, a C 'void*') says nothing about the elements.
+inline bool elemShapeMatch(const json& from, const json& to) {
+	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(from))
 		return true;
-	return from.value("type-kind","") == "pntr" && from.contains("base-type")
-	    && arrShapeMatch(from["base-type"], to["base-type"]);
+	auto isVoid = [](const json& t) {
+		return t.value("type-kind","") == "prim" && t.value("type-name","") == "void";
+	};
+	if (isVoid(from["base-type"]) || isVoid(to["base-type"]))
+		return true;
+	return arrShapeMatch(from["base-type"], to["base-type"], isWritableThrough(to));
 }
 
 // '->' into a value of this type copies its contents: a struct's own storage

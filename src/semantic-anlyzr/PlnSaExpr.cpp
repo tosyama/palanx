@@ -768,7 +768,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 						exit(1);
 					}
 				}
-				checkRowShape(locNode, saArg, *paramVT);
+				checkElemShape(locNode, saArg, *paramVT);
 				saArg = convertCallArg(locNode, saArg, *paramVT);
 				if (!isExpiringStruct(saArg))
 					checkStructBorrowSource(locNode, saArg, *paramVT);

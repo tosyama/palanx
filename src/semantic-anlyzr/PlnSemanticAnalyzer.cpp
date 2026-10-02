@@ -349,8 +349,22 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 		}
 		return {{"type-kind","pntr"}, {"base-type", sizedArrLevel(locNode, bt, nullopt)}};
 	}
-	return {{"type-kind","pntr"},
-	        {"base-type", isStructType(bt) ? toStructPntrType(bt) : unsizedArrToPntr(locNode, type["base-type"])}};
+	json elem = isStructType(bt) ? toStructPntrType(bt)
+	          : bt.value("type-kind","") == "pntr" ? ptrSlotElemType(locNode, bt)
+	          : unsizedArrToPntr(locNode, type["base-type"]);
+	return {{"type-kind","pntr"}, {"base-type", elem}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A slot to an unsized array ('@![]T') points at the array's elements, so it
+// is that array's pointer carrying the slot's permission.
+json PlnSemanticAnalyzer::ptrSlotElemType(const json& locNode, const json& type)
+{
+	const json& target = type["base-type"];
+	json elem = target.value("type-kind","") == "arr"
+		? unsizedArrToPntr(locNode, target)
+		: json{{"type-kind","pntr"},{"base-type",target}};
+	elem["mutable"] = type.value("mutable", false);
+	return deepNormalizePrimToStruct(elem);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::normalizeUnsizedArrSig(json& funcDef)
@@ -553,12 +567,12 @@ void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json&
 	}
 }
 
-void PlnSemanticAnalyzer::checkRowShape(const json& locNode, const json& saValue, const json& dstType)
+void PlnSemanticAnalyzer::checkElemShape(const json& locNode, const json& saValue, const json& dstType)
 {
-	if (!saValue.contains("value-type") || rowShapeMatch(saValue["value-type"], dstType)) return;
+	if (!saValue.contains("value-type") || elemShapeMatch(saValue["value-type"], dstType)) return;
 	json dstShape = dstType;
 	dstShape.erase("mutable");  // a slot reads as the array it points to
-	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrRowShapeMismatch,
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrElemShapeMismatch,
 		arrShapeName(dstShape), arrShapeName(saValue["value-type"])) << endl;
 	exit(1);
 }

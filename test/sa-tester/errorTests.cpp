@@ -2611,6 +2611,10 @@ TEST(sa_error, unknown_type_name)
 		{"error_367_unsized_rows_3d.pa", ":1:1: error: '[][m]T' supports only"},
 		{"error_368_unsized_rows_ptr_elem.pa", ":2:1: error: '[][m]T' supports only"},
 		{"error_369_unsized_rows_1d_borrow.pa", ":3:1: error: array shape '[3]int32' does not match '[?][3]int32'"},
+		{"error_370_slot_arr_ret_as_owned_rows.pa", ":3:2: error: array shape '[?]@!int32' does not match '[?][?]int32'"},
+		{"error_371_borrow_elems_arg_as_owned.pa", ":6:1: error: array shape '[1]@!P' does not match '[?]P'"},
+		{"error_372_owned_elems_arg_as_borrow.pa", ":5:1: error: array shape '[2]P' does not match '[?]@!P'"},
+		{"error_373_slot_arr_into_owned_rows_slot.pa", ":3:1: error: array shape '[3]@!int32' does not match '[?][?]int32'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

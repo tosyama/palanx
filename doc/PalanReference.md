@@ -1189,6 +1189,13 @@ is responsible for managing the lifetime of the returned pointer. A struct eleme
 as in a sized array: `[]T` takes the elements of a `[n]T` array, and `[]$T` those of a `[n]$T`
 array. `[][m]T` takes the rows of a `[n][m]T` array (and `[][m]$T` those of a `[n][m]$T` struct
 array); `m` must be a constant, and an array whose rows have another size is a compile error.
+`[]@![]T` takes the slots of a `[n]@![]T` array.
+
+Only the outermost size may be left out: the elements must match exactly. An element owned by
+the array (a row, or a struct of `[n]T`) cannot be given as a `@T`/`@!T` pointer slot, or the
+other way around, since one side would free or overwrite what the other one owns. For example,
+a `[n]@![]int32` array is returned as `[]@![]int32`, not as `[][]int32`, and a `[n]P` array
+cannot be passed as `[]@!P`. The same holds for storing an array into a `[n]@![]T` slot.
 
 ```palan
 func sum_arr([]int32 a, int64 n) -> int64 {

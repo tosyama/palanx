@@ -197,6 +197,8 @@ class PlnSemanticAnalyzer {
 	void requireKnownTypeNames(const json& locNode, const json& type) const;
 	json  toStructPntrType(const json& type) const;
 	json  unsizedArrToPntr(const json& locNode, const json& type);
+	// A '@T'/'@!T' array element (a pointer slot) as SA represents it.
+	json  ptrSlotElemType(const json& locNode, const json& type);
 	void  normalizeUnsizedArrSig(json& funcDef);
 	bool  isNamedReturnVar(const string& varName) const;
 	json  deepNormalizePrimToStruct(const json& type) const;
@@ -217,7 +219,7 @@ class PlnSemanticAnalyzer {
 	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);
 	void  normalizeArrBorrowSig(json& funcDef);
 	bool  onlyNamesConsts(const json& expr) const;
-	void  checkRowShape(const json& locNode, const json& saValue, const json& dstType);
+	void  checkElemShape(const json& locNode, const json& saValue, const json& dstType);
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);
 	void  checkStructBorrowSource(const json& locNode, const json& saValue, const json& dstType);

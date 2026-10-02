@@ -509,15 +509,8 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	int elem_size;
 	json sa_elem_type;
 	if (base_type.value("type-kind","") == "pntr") {
-		const json& inner = base_type["base-type"];
 		elem_size = 8;
-		// [n]@T / [n]@!T / [n]@![]T: elem is a non-owning pointer carrying its
-		// own permission; an unsized array target is a pointer to its elements.
-		if (inner.value("type-kind","") == "arr")
-			sa_elem_type = deepNormalizePrimToStruct(unsizedArrToPntr(stmt, inner));
-		else
-			sa_elem_type = {{"type-kind","pntr"},{"base-type",deepNormalizePrimToStruct(inner)}};
-		sa_elem_type["mutable"] = base_type.value("mutable", false);
+		sa_elem_type = ptrSlotElemType(stmt, base_type);
 	} else {
 		elem_size = elemSizeBytes(base_type.value("type-name",""));
 		sa_elem_type = base_type;

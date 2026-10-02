@@ -478,10 +478,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_UnsizedArrRowUnsupported:
 			return "'[][m]T' supports only '[m]T' rows of a primitive or struct element and '[m]$T' rows of a struct, in this version.";
 
-		case E_ArrRowShapeMismatch:
+		case E_ArrElemShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "array shape '" + arg2 + "' does not match '" + arg1 + "': its rows must have the same size and layout.";
+			return "array shape '" + arg2 + "' does not match '" + arg1 + "': its elements must have the same size and layout, and be owned by both or by neither.";
 
 		default:
 			BOOST_ASSERT(false);

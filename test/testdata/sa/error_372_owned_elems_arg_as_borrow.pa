@@ -1,0 +1,5 @@
+type P { int32 x; };
+func g([]@!P x, @!P q) { q -> x[0]; }
+[2]P a;
+P b;
+g(a, @!b);

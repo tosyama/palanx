@@ -426,7 +426,7 @@ int main(int argc, char* argv[])
 					    << "    return outer;\n"
 					    << "}\n"
 					    << "export func __pln_free_" << shape_key
-					    << "([]@!" << struct_name << " pts, int64 n) {\n"
+					    << "([]" << struct_name << " pts, int64 n) {\n"
 					    << "    if (pts == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
@@ -437,7 +437,7 @@ int main(int argc, char* argv[])
 					    << "    return;\n"
 					    << "}\n"
 					    << "export func __pln_copy_" << shape_key
-					    << "([]@!" << struct_name << " dst, []@!" << struct_name << " src, int64 n) {\n"
+					    << "([]" << struct_name << " dst, []" << struct_name << " src, int64 n) {\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
 					    << "        " << structCopy(struct_name, "dst[i]", "src[i]") << "\n"
@@ -451,7 +451,7 @@ int main(int argc, char* argv[])
 					string struct_name = shape["struct-name"];
 					string shape_key   = shape["shape-key"];
 					out << "\nexport func __pln_alloc_" << shape_key
-					    << "(int64 d0, int64 d1) -> [][]@!" << struct_name << " {\n"
+					    << "(int64 d0, int64 d1) -> []@![]@!" << struct_name << " {\n"
 					    << "    [d0]@![]@!" << struct_name << " outer;\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
@@ -466,7 +466,7 @@ int main(int argc, char* argv[])
 					    << "    return outer;\n"
 					    << "}\n"
 					    << "export func __pln_free_" << shape_key
-					    << "([][]@!" << struct_name << " outer, int64 d0, int64 d1) {\n"
+					    << "([][]" << struct_name << " outer, int64 d0, int64 d1) {\n"
 					    << "    if (outer == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
@@ -477,7 +477,7 @@ int main(int argc, char* argv[])
 					    << "    return;\n"
 					    << "}\n"
 					    << "export func __pln_copy_" << shape_key
-					    << "([][]@!" << struct_name << " dst, [][]@!" << struct_name
+					    << "([][]" << struct_name << " dst, [][]" << struct_name
 					    << " src, int64 d0, int64 d1) {\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
@@ -491,7 +491,7 @@ int main(int argc, char* argv[])
 				for (auto& shape : arr_shapes) {
 					string leaf = shape["leaf-type"];
 					out << "\nexport func __pln_alloc_arr_arr_" << leaf
-					    << "(int64 d0, int64 d1) -> [][]" << leaf << " {\n"
+					    << "(int64 d0, int64 d1) -> []@![]" << leaf << " {\n"
 					    << "    [d0]@![]" << leaf << " outer;\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"

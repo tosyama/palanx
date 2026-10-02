@@ -1,0 +1,4 @@
+func f(int64 n) -> [][]int32 {
+	[n]@![]int32 a;
+	return a;
+}

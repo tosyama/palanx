@@ -874,6 +874,13 @@ TEST(sa, unsized_arr_sig) {
 	ASSERT_EQ((*getNestedArr)["ret-type"]["type-kind"], "pntr");
 	ASSERT_EQ((*getNestedArr)["ret-type"]["base-type"]["type-kind"], "pntr");
 	ASSERT_EQ((*getNestedArr)["ret-type"]["base-type"]["base-type"]["type-name"], "int32");
+	ASSERT_FALSE((*getNestedArr)["ret-type"]["base-type"].contains("mutable"));
+
+	// getSlotArr: []@![]int32 return type → pntr(writable slot pntr(int32))
+	const json* getSlotArr = findFunc("getSlotArr");
+	ASSERT_NE(getSlotArr, nullptr);
+	ASSERT_EQ((*getSlotArr)["ret-type"]["base-type"]["mutable"], true);
+	ASSERT_EQ((*getSlotArr)["ret-type"]["base-type"]["base-type"]["type-name"], "int32");
 }
 
 TEST(sa, pntr_arr_decl) {
