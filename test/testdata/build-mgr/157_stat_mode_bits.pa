@@ -10,11 +10,11 @@ uint32 inherited = umask(0);
 
 mkdir("/tmp/pln_157_dir", S_IRWXU | S_IRWXG);
 stat d;
-stat("/tmp/pln_157_dir", d);
+stat("/tmp/pln_157_dir", @!d);
 printf("mkdir_perm=%u\n", d.st_mode & ACCESSPERMS);
 
 chmod("/tmp/pln_157_dir", S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP);
-stat("/tmp/pln_157_dir", d);
+stat("/tmp/pln_157_dir", @!d);
 printf("chmod_perm=%u\n", d.st_mode & ACCESSPERMS);
 
 uint32 prev = umask(63);

@@ -1,0 +1,12 @@
+type In { int64 v; };
+type P { [2]$int64 arr; [2]$In sa; @!int64 f; };
+func rd(@P p) -> int64 n {
+	@In q = @p.sa[0];
+	p.arr[1] + q.v -> n;
+}
+func wr(@!P p) {
+	9 -> p.arr[0];
+	@!int64 x = @!p.arr[1];
+	9 -> p.sa[0].v;
+	9 -> p.f[0];
+}

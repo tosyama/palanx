@@ -45,7 +45,7 @@ struct BitAnd   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs &
 struct BitOr    { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs | rhs
 struct BitXor   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs ^ rhs
 struct BitNot   { VReg dst; VReg src; VRegType type; };            // dst = ~src
-struct Cmp      { VReg dst; string op; VReg lhs; VReg rhs; VRegType type; }; // dst (int32) = (lhs op rhs) ? 1 : 0
+struct Cmp      { VReg dst; string op; VReg lhs; VReg rhs; VRegType type; }; // dst (uint8) = (lhs op rhs) ? 1 : 0
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 // dsts/retTypes hold zero (statement-level, no return used), one (an ordinary
 // scalar/pointer return), or more (a struct-by-value return classified into

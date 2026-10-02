@@ -1,0 +1,4 @@
+type Point { int32 x; int32 y; };
+func f(@[2][3]$Point v) { }
+[2][4]$Point a;
+f(@a);

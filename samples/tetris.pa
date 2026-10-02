@@ -1,0 +1,302 @@
+// Tetris Game
+cinclude <ncurses.h> link "ncursesw";
+cinclude <unistd.h>;
+cinclude <stdlib.h>;
+cinclude <time.h>;
+
+srand(uint32(time(NULL)));
+
+initscr();
+cbreak();
+noecho();
+curs_set(0);
+keypad(stdscr, TRUE);
+timeout(0);
+start_color();
+
+init_pair(1, COLOR_BLACK, COLOR_CYAN);
+init_pair(2, COLOR_BLACK, COLOR_YELLOW);
+init_pair(3, COLOR_BLACK, COLOR_MAGENTA);
+init_pair(4, COLOR_BLACK, COLOR_GREEN);
+init_pair(5, COLOR_BLACK, COLOR_RED);
+init_pair(6, COLOR_BLACK, COLOR_BLUE);
+init_pair(7, COLOR_BLACK, COLOR_WHITE);
+
+const FLD_W = 10;
+const FLD_H = 20;
+@!WINDOW fldwin = newwin(FLD_H + 2, FLD_W * 2 + 2, 1, 0);
+[FLD_H][FLD_W]int32 field;
+
+{
+	int32 i = 0;
+	while i < FLD_H {
+		int32 j = 0;
+		while j < FLD_W { 0 -> field[i][j]; j + 1 -> j; }
+		i + 1 -> i;
+	}
+}
+
+const NUM_MINO = 7;
+type Point { int32 x; int32 y; };
+[NUM_MINO][4]$Point minos = [
+	[-1,0][0,0][1,0][2,0],	// I
+	[0,0][1,0][0,1][1,1],	// O
+	[-1,0][0,0][1,0][0,1],	// T
+	[-1,0][0,0][0,-1][1,-1],	// S
+	[-1,-1][0,-1][0,0][1,0],	// Z
+	[-1,-1][-1,0][0,0][1,0],	// J
+	[1,-1][-1,0][0,0][1,0],	// L
+];
+
+bool gameover = false;
+bool new_mino = true;
+bool deleting_line = false;
+int32 score = 0;
+int32 mino_no = 0;
+[4]$Point mino, tmp_mino;
+int32 K; // Rotation center parameter for I and O minos
+int32 mx, my;
+int32 tick = 0;
+int32 boost_tick = 0;
+int32 lowest_del_y = 0;
+
+while true {
+	int32 ch = getch();
+
+	if (!deleting_line) {
+		if new_mino {
+			rand() % NUM_MINO -> mino_no;
+			minos[mino_no] -> mino;
+			false -> new_mino;
+			if mino_no <= 1 { 1 -> K } else { 0 -> K }
+			0 -> my;
+			FLD_W/2-1 -> mx;
+			if !fits(@field, @mino, mx, my) {
+				true -> gameover;
+				break;
+			}
+		}
+
+		if ch == ' ' {
+			mino -> tmp_mino;
+			rotateMino(@!tmp_mino, K);
+			if fits(@field, @tmp_mino, mx, my) { tmp_mino -> mino }
+		} else if ch == KEY_LEFT {
+			if fits(@field, @mino, mx - 1, my) { mx - 1 -> mx }
+		} else if ch == KEY_RIGHT {
+			if fits(@field, @mino, mx + 1, my) { mx + 1 -> mx }
+		} else if ch == KEY_DOWN {
+			51 -> boost_tick
+		} else if ch == KEY_UP {
+			while fits(@field, @mino, mx, my + 1) { my + 1 -> my }
+			51 -> tick
+		}
+
+		if boost_tick > 0 { boost_tick - 1 -> boost_tick }
+
+		if tick > 50 {
+			if fits(@field, @mino, mx, my + 1) { my + 1 -> my }
+			else {
+				int32 deleted_num = 0;
+				placeMino(@!field, @mino, mx, my, mino_no + 1);
+				clearLines (@!field) -> (deleted_num, lowest_del_y);
+				if deleted_num > 0 {
+					score + deleted_num * deleted_num * 100 -> score;
+					true -> deleting_line;
+				} else {
+					true -> new_mino;
+				}
+				0 -> boost_tick;
+			}
+			0 -> tick;
+		}
+
+	} else {	// deleting line
+		if tick > 50 { // wait for a while to show the deleted line
+			pressDown(@!field, lowest_del_y);
+			true -> new_mino;
+			false -> deleting_line;
+			0 -> tick;
+		}
+	}
+
+	draw(fldwin, @field, @mino, mx, my, mino_no+1, score, deleting_line || new_mino);
+
+	if ch == 'q' { break }
+	if (boost_tick > 0) {
+		usleep(500);
+	} else {
+		usleep(20000);
+	}
+
+	tick + 1 -> tick;
+}
+
+if gameover {
+	attron(A_REVERSE | A_BOLD);
+	mvaddstr(10, 5, " GAME OVER ");
+	attroff(A_REVERSE | A_BOLD);
+	mvaddstr(11, 3, "press q to quit");
+	refresh();
+
+	while getch() != 'q' { usleep(1000) }
+}
+
+endwin();
+
+// end of game
+
+func rotateMino(@![4]$Point mino, int32 K)
+{
+	int32 i = 0;
+	while i < 4 {
+		int32 tmp = mino[i].x;
+		K - mino[i].y -> mino[i].x; 
+		tmp -> mino[i].y;
+		i + 1 -> i;
+	}
+}
+
+func fits(@[FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my)
+	-> bool
+{
+	int32 i = 0;
+	while i < 4 {
+		int32 x = mino[i].x + mx;
+		int32 y = mino[i].y + my;
+		if x < 0 || x >= FLD_W || y >= FLD_H { return 0; }
+		if y >= 0 && field[y][x] != 0 { return 0; }
+		i + 1 -> i;
+	}
+	return 1;
+}
+
+func placeMino(@![FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my, int32 color)
+{
+	int32 i = 0;
+	while i < 4 {
+		int32 x = mino[i].x + mx;
+		int32 y = mino[i].y + my;
+		if y >= 0 { color -> field[y][x] }
+		i + 1 -> i;
+	}
+}
+
+func draw(@!WINDOW win, @[FLD_H][FLD_W]int32 field,
+		@[4]$Point mino, int32 mx, int32 my, int32 mino_color,
+		int32 score, bool placed)
+{
+	box(win, 0, 0);
+
+	drawField(win, field);
+	if !placed { drawMino(win, mino, mx, my, mino_color) }
+
+	// draw score and controls
+	attron(A_BOLD);
+	mvprintw(2, 24, "Score: %d", score);
+	attroff(A_BOLD);
+	mvprintw(4, 24, "<-/->: move  space: rotate");
+	mvprintw(5, 24, "down: fall  up: drop  q: quit");
+
+	refresh();
+	wrefresh(win);
+}
+
+func drawField(@!WINDOW win, @[FLD_H][FLD_W]int32 field)
+{
+	int32 y = 0;
+	while y < FLD_H {
+		int32 x = 0;
+		while x < FLD_W {
+			if field[y][x] != 0 { draw1block(win, x, y, field[y][x]) }
+			else { draw1block(win, x, y, 0) }
+			x + 1 -> x;
+		}
+		y + 1 -> y;
+	}
+}
+
+func drawMino(@!WINDOW win, @[4]$Point mino, int32 mx, int32 my, int32 color)
+{
+	int32 i = 0;
+	while i < 4 {
+		int32 x = mino[i].x + mx;
+		int32 y = mino[i].y + my;
+		if y >= 0 { draw1block(win, x, y, color); }
+		i + 1 -> i;
+	}
+}
+
+func draw1block(@!WINDOW win, int32 x, int32 y, int32 color)
+{
+	wattron(win, COLOR_PAIR(color));
+	mvwaddstr(win, y + 1, x * 2 + 1, "  ");
+	wattroff(win, COLOR_PAIR(color));
+}
+
+func clearLines(@![FLD_H][FLD_W]int32 field)
+	-> int32 deleted_num = 0, int32 lowest_del_y = FLD_H
+{
+	int32 y = 0;
+
+	while y < FLD_H {
+		bool full = 1;
+		int32 x = 0;
+		while x < FLD_W {
+			if field[y][x] == 0 { 0 -> full; break; }
+			x + 1 -> x;
+		}
+
+		if full {
+			y -> lowest_del_y;
+			deleted_num + 1 -> deleted_num;
+			0 -> x;
+			while x < FLD_W {
+				0 -> field[y][x];
+				x + 1 -> x;
+			}
+		}
+		y + 1 -> y;
+	}
+}
+
+func pressDown(@![FLD_H][FLD_W]int32 field, int32 dst_y)
+{
+	int32 src_y = dst_y - 1;
+	int32 last_src_y = src_y;
+	while true {
+		// find the first non-empty line above dst_y
+		while src_y >= 0 {
+			bool empty = 1;
+			int32 x = 0;
+			while x < FLD_W {
+				if field[src_y][x] != 0 { 0 -> empty; break; }
+				x + 1 -> x;
+			}
+			if !empty { break; }
+			src_y - 1 -> src_y;
+		}
+
+		if src_y < 0 {
+			// fill the remaining lines with empty
+			if last_src_y < 0 { return; }
+			while dst_y >= last_src_y {
+				int32 x = 0;
+				while x < FLD_W {
+					0 -> field[dst_y][x];
+					x + 1 -> x;
+				}
+				dst_y - 1 -> dst_y;
+			}
+			return;
+		} else {
+			// copy lines from src_y to dst_y
+			field[src_y] -> field[dst_y];
+		}
+
+		dst_y - 1 -> dst_y;
+		src_y -> last_src_y;
+		src_y - 1 -> src_y;
+	}
+}
+

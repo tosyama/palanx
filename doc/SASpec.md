@@ -21,11 +21,12 @@ Root
   `-l<name>` to the `ld` invocation for each entry.
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
-  Three entry kinds:
+  Four entry kinds:
 
   **Array entry** (multi-dimensional arrays):
   - shape-key\* - Shape key string (e.g. "arr\_arr\_int32")
   - leaf-type\* - Innermost element type name (e.g. "int32")
+  - leaf-size\* - Size of the leaf type in bytes, for the row copy
   - depth\* - Nesting depth integer (currently always 2 for `[m][n]T`)
 
   **Arr-struct entry** (dependency marker for struct-leaf owned array fields, `[n]T field`
@@ -34,6 +35,14 @@ Root
   feature) before any struct that has an owned array field of leaf type `T`:
   - shape-kind\* - "arr-struct"
   - shape-key\* - Shape key string (e.g. "arr\_Point")
+  - struct-name\* - Leaf struct type name (e.g. "Point")
+
+  **Arr-arr-struct entry** (`[m][n]T` variable where `T` is a struct): build-mgr generates
+  `__pln_alloc_arr_arr_T(d0, d1)`/`__pln_free_arr_arr_T(pts, d0, d1)`, which allocate and free
+  each row with the `__pln_alloc_arr_T`/`__pln_free_arr_T` pair (its "arr-struct" entry is
+  always emitted alongside):
+  - shape-kind\* - "arr-arr-struct"
+  - shape-key\* - Shape key string (e.g. "arr\_arr\_Point")
   - struct-name\* - Leaf struct type name (e.g. "Point")
 
   **Struct entry** (structs with owned struct-pointer fields and/or array fields):
@@ -45,13 +54,13 @@ Root
     - offset\* - Byte offset within the struct
     - struct-name\* - Sub-struct type name
     - struct-total-size\* - Sub-struct total size in bytes
-    - needs-alloc\* - Boolean; true if the sub-struct itself has owned-fields requiring `__pln_alloc_*`
   - owned-array-fields\* - Owned array fields (`[n]T field`), which require a cascaded array allocator; empty array if none
     - name\* - Field name string
     - offset\* - Byte offset within the struct
     - elem-kind\* - Leaf kind string ("prim" or "struct")
     - leaf-name\* - Leaf element type name (primitive name or struct name)
     - count\* - Element count integer
+    - elem-size\* - Bytes per element of the array the field points to (8 for a struct leaf's pointers)
 
   Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
   generated allocator module with only the owned fields at their offsets and opaque padding
@@ -89,7 +98,10 @@ it -- see "call expression" below.
 Note: cinclude statements are not present in function bodies (they are top-level only).
 
 Note: `[]T` (unsized array type) in `ret-type` or parameter `var-type` is resolved by SA to
-`pntr(T)` with no ownership tracking. `[][]T` becomes `pntr(pntr(T))`.
+`pntr(T)` with no ownership tracking. `[][]T` becomes `pntr(pntr(T))`. `[][m]T` becomes
+`pntr` over the same row type a `[n][m]T` variable has (`pntr` with `"arr-size": m`); `m` must be
+a compile-time constant. `[]@![]T` becomes `pntr` over the element type a `[n]@![]T` variable
+has (`pntr(T)` with `"mutable": true`).
 These types are valid only in function signatures; using `[]T` in a `var-decl` is a compile error.
 
 Statement model
@@ -184,10 +196,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
   **`[n]@![]T` (array of pointer slots):** A `var-decl` with `arr` type-kind where `base-type` is
   `pntr(mutable=true, base=arr(T))` is also transformed:
-  - `var-type`: changed to `pntr(pntr(T))` (pointer to pointer)
+  - `var-type`: changed to `pntr(pntr(T, mutable))` (pointer to pointer); like `[n]@T`/`[n]@!T`,
+    the element carries the slot's permission, so a slot is a borrow and `->` into it stores the
+    pointer
   - `init`: `malloc(size-expr * 8)` (each slot is a pointer; elem-size is always 8)
-  - The outer array is freed at scope exit. Inner arrays (stored in slots) must be freed
-    explicitly or transferred via `->>` before scope exit.
+  - The outer array is freed at scope exit. What the slots point to is not freed; a slot cannot
+    take ownership with `->>` (E_TransferToBorrowSlot).
 
   **`[m][n]T` (2D array):** A `var-decl` with `arr` type-kind where `base-type` is itself an
   `arr(prim T)` is transformed to a 2D allocation:
@@ -198,6 +212,22 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     to the root `alloc-shapes` array (deduplicated by shape-key across all var-decls).
   - Scope-exit free: palan call stmt `__pln_free_arr_arr_<leaf>(<name>, __<name>_d0)`.
   - build-mgr auto-generates the allocator/free Palan source from `alloc-shapes` and links it.
+
+  **`[m][n]T` (2D struct array, `T` a struct):** Each row is an owned `[n]T` array.
+  - Temp vars `__<name>_d0` and `__<name>_d1` (uint64) are prepended; the free call needs both.
+  - `var-type`: `pntr(pntr(pntr(struct(T))))`, with `arr-size` on the outer two levels when constant.
+  - `init`: palan call to `__pln_alloc_arr_arr_<T>(__<name>_d0, __<name>_d1)`.
+  - "arr-struct" and "arr-arr-struct" entries are added to `alloc-shapes`.
+  - Scope-exit free: palan call stmt `__pln_free_arr_arr_<T>(<name>, __<name>_d0, __<name>_d1)`.
+
+  **`[m][n]$T` (2D array of contiguous struct rows, `T` a struct):** Lowered like `[m][n]T` for a
+  primitive leaf, with each row an `n * sizeof(T)` byte block (`T` owns nothing, so no per-element
+  allocation is needed).
+  - `var-type`: `pntr(pntr{embedded, stride, base-type: struct(T)})`, with `arr-size` on both levels when constant.
+  - `init`: palan call to `__pln_alloc_arr_arr_uint8(__<name>_d0, n * sizeof(T))`, which registers the
+    `arr_arr_uint8` shape; scope-exit free: `__pln_free_arr_arr_uint8(<name>, __<name>_d0)`.
+
+  Other 2D struct forms (`[m]$[n]T`, `[m]$[n]$T`) are compile errors.
 
   **`[n]$[m]T` (contiguous 2D array):** A `var-decl` with outer `arr` type-kind where
   `embedded: true` and `base-type` is an inner `arr(prim T)` is transformed to a single
@@ -232,6 +262,35 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - The argument's `value-type` must also have `embedded:true` and `inner-size:k` where `k == m`.
   - Mismatch (or variable inner-size in the argument) is a compile error (`E_EmbeddedArrInnerSizeMismatch`).
 
+  **`arr-size`:** Every `pntr` level that stands for an array dimension carries `arr-size`
+  (its element count) when that size is a compile-time constant (a literal or a `const`),
+  including an array field's value-type. It is absent for a size known only at run time. It is
+  only used by SA for borrowed-array and copy checks; codegen ignores it.
+
+  **`@[n]T` / `@![n]T` (borrowed array):** In a parameter or a local variable declaration, a
+  `pntr` whose `base-type` is an `arr` is normalized to the array's own pntr chain, with
+  `arr-size` on every level and `mutable` (`false` for `@`, `true` for `@!`) on every level down
+  to the elements — `@[n][m]T` becomes `pntr(pntr(T, mutable, arr-size:m), mutable, arr-size:n)`,
+  `@[n]$[m]T` becomes `pntr(T, mutable, embedded:true, inner-size:m, arr-size:n)`. For a struct
+  `T` in `@[n]T` / `@[n][m]T`, the element is `pntr(struct(T))` without `mutable`, the same
+  as in the owned array: it is the struct's storage, and a field write through it is checked
+  against the permission of the array level it is indexed from. `@[n]$T` takes the contiguous
+  variable's form, `pntr(struct(T), mutable, embedded:true, stride:T.totalSize, arr-size:n)`;
+  its `arr[i]` is the same struct storage. Because of `embedded`, that form is an array, not a
+  struct pointer. For `@[n]@T` / `@[n]@!T`, the element is `pntr(T, mutable)` without
+  `arr-size`, as in the owned `[n]@T`; the borrow's `mutable` stops at the slots. A `pntr` with
+  `mutable` and neither `arr-size` nor `embedded` is a `@T`/`@!T` pointer, never an array level.
+  Every size must be constant
+  (`E_ArrBorrowSizeNotConst`) and `T` primitive, struct or a pointer to one, with neither a
+  struct nor a pointer inside a `$[m]` row (`E_ArrBorrowUnsupportedElem`). A
+  return type of this form stays rejected (`E_UnsupportedParamType`). At a call argument, a
+  local's initializer, or an assignment to such a destination, the source must be written as
+  `@x`/`@!x` (`E_ArrBorrowNeedsAddrOf`) and its value-type must match depth, `embedded`,
+  `inner-size`, every `arr-size`, whether the element is a stored struct or a pointer, and a
+  pointer element's `mutable`, which a read-only borrow may narrow from `true` to `false`
+  (`E_ArrBorrowShapeMismatch`). A row read through an
+  embedded borrow inherits its `mutable`.
+
   Scope-exit cleanup:
   - At the end of each block/while/function body containing array var-decls, SA appends
     `free()` expression statements in reverse declaration order for that scope's arrays.
@@ -239,7 +298,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
   Early-exit cleanup:
   - `return`: free calls are prepended for all array vars in all active function-level scopes
-    (innermost-first, reverse declaration order).
+    (innermost-first, reverse declaration order). When there are frees and the `return` has a
+    value, the value is first bound to a temp var `__ret_<N>` (a `var-decl` before the frees)
+    and the `return` returns that temp, so the value never reads freed memory.
   - `break`/`continue`: free calls are prepended for arrays in all scopes within the current
     while loop body (including any nested blocks active at that point).
   - Prepended frees before `break`/`continue`/`return` may leave unreachable free calls at the
@@ -270,9 +331,40 @@ Additional statement kinds emitted by SA:
   - target\*: SA-annotated arr-index expression (see Expression model below)
   - value\*: SA-annotated source expression (may be wrapped in convert node to match elem type)
 
-  When `ownership-transfer: true` (`->>` syntax): SA emits an additional `assign` statement
-  immediately after the arr-assign that sets the source variable to NULL. The variable remains
-  in `arrayScopeVars_` and receives `free(NULL)` at scope exit (C standard guarantees no-op).
+  When `ownership-transfer: true` (`->>` syntax): the target must be an owned struct element or
+  row. A `@T`/`@!T` slot is E_TransferToBorrowSlot; a row whose shape differs from the source's
+  (as for Copy below, including a row of unknown size) is E_TransferShapeMismatch. SA emits three
+  statements: a free of the target's current value (`free`, `__pln_free_T` or
+  `__pln_free_arr_T(row, n)`; each accepts NULL), the arr-assign, and an `assign` that sets the
+  source variable to NULL. The variable remains in `arrayScopeVars_` and receives `free(NULL)` at
+  scope exit (C standard guarantees no-op).
+
+  A `->>` into a struct field (`val ->> obj.field`) is accepted only for an owned field (`T` or
+  `[n]T`; otherwise E_TransferToNonOwnedField), and emits the same three statements with a
+  `field-assign`.
+
+- **Copy** (`src -> dst` where dst is an array or a struct's storage) - no dedicated statement
+  kind. SA lowers the copy to an `expr` statement calling a copy routine with `(dst, src, ...)`,
+  where `dst` is the destination's `id`, `arr-index` or `field-access` expression. It applies to
+  an `assign` to an owned array or struct variable (a borrowed array variable, with `mutable` on
+  its levels, is rebound instead), an `arr-assign` whose element is a struct or an array row, a
+  `field-assign` to an owned, embedded or array field, and a `var-decl` of an array or struct
+  initialized from another value (the variable is allocated first, then copied into). A struct
+  source whose `category` is `expiring` (returned by a Palan call) becomes a `block` of three
+  statements: a `var-decl` of a temp initialized by the call, the copy from the temp, and the
+  temp's free. The destination's type selects the routine:
+  - No owned parts (a primitive, `$T`, `$[m]T` or `@T` element array, a struct without owned
+    fields): C `memcpy(dst, src, bytes)` with a `lit-uint` byte count.
+  - Struct `T` with owned fields: `__pln_copy_T(dst, src)`.
+  - `[n]T` (T a struct): `__pln_copy_arr_T(dst, src, n)`; `[m][n]T`: `__pln_copy_arr_arr_T(dst, src, m, n)`.
+  - `[m][n]T` (T primitive): `__pln_copy_arr_arr_<T>(dst, src, m, n)`; `[m][n]$T`:
+    `__pln_copy_arr_arr_uint8(dst, src, m, n * sizeof(T))`.
+
+  The routine's `alloc-shapes` entry is recorded as for a declaration, and build-mgr generates
+  the copy function next to that shape's allocator. The source's value-type must match the
+  destination's level by level: every `arr-size` present and equal, the same `embedded`,
+  `stride`/`inner-size`, struct storage versus pointer, and the same element type
+  (E_CopyShapeMismatch). A lone struct may also be copied from a `@T`/`@!T`.
 
 - **return** - return statement
   - stmt-type\*: "return"
@@ -284,8 +376,15 @@ Additional statement kinds emitted by SA:
 
 - **tapple-decl** - tuple-style multiple return value declaration
   - stmt-type\*: "tapple-decl"
-  - vars\*: variable list (name, var-type per entry; types resolved by SA from function rets)
+  - vars\*: variable list (name, var-type per entry; var-type is the function's ret type)
   - value\*: SA-annotated call expression (func-type: "palan"; carries value-types field)
+
+  A declared variable whose type differs from its ret type is received into a temporary
+  and declared by a following `var-decl` initialized from it.
+  A variable receiving a struct owns it and is freed at scope exit like a declared struct.
+  A `tapple-assign` is emitted as a `block` holding a `tapple-decl` into temporaries followed by
+  one `assign`, `arr-assign` or `field-assign` per target, in target order; a struct is copied
+  into its target and its temporary freed at the end of the block.
 
 Expression model
 ----------------
@@ -295,10 +394,10 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   Present on all expression kinds except bare call with no return type.
   - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
     defaults to int64 when no expected type is available. Exception: an AST `lit-int` that
-    already carries a `value-type` (ASTSpec.md's `lit-int` entry — gen-ast's in-place
-    substitute for a cinclude'd macro-constant reference) keeps that type as-is; the context's
-    expected type never overrides it, since it was fixed by the C declaration, not by where the
-    reference appears
+    already carries a `value-type` (ASTSpec.md's `lit-int` entry — `true`/`false`, or gen-ast's
+    in-place substitute for a cinclude'd macro-constant reference) keeps that type as-is; the
+    context's expected type never overrides it, since it was fixed by the literal or the C
+    declaration, not by where the expression appears
   - lit-uint: adopts the expected uint type when in a uint-typed context (e.g. `uint32 x = 1u;` → uint32);
     defaults to uint64 when no expected uint type is available
   - Range check (lit-int without its own `value-type`, and lit-uint): once the type is decided, a
@@ -316,12 +415,12 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     the narrower operand is wrapped in a convert node if types differ
   - sub: same promotion rules as add
   - neg: same type as operand (no promotion)
-  - cmp: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
+  - cmp: always `{"type-kind": "prim", "type-name": "bool"}`;
     left and right operands are promoted by the same rules as add
-  - logical-and: always `{"type-kind": "prim", "type-name": "int32"}` (result is 0 or 1);
+  - logical-and: always `{"type-kind": "prim", "type-name": "bool"}`;
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
-  - logical-not: always `{"type-kind": "prim", "type-name": "int32"}`; operand must be integer type
+  - logical-not: always `{"type-kind": "prim", "type-name": "bool"}`; operand must be integer type
   - func-ref: a bare Palan function name written where a C function parameter marked
     `_callback-param` (see "C-origin signature admission" below) expects it. Emitted as
     `{"expr-type":"func-ref","name":<Palan function name>}` (plus `loc` when present on the
@@ -345,24 +444,32 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       var's type>}}`. `mutable` is `true` for `@!ID`, `false` for `@ID`. The named variable must be
       a local variable in the current scope (not a function parameter), and its own type must be
       `prim` or `pntr`-of-`prim` (a pointer-to-pointer result, matching C's `T **` out-param idiom)
-      — a `struct`/`arr` type, or a pointer whose base isn't itself `prim` (e.g. `pntr(struct)`),
-      is rejected (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive). A struct-typed local is already
-      SA-represented as `pntr(struct T)` (see the var-decl section below), so this same base-type
-      check is what keeps `@!st` rejected — admitting it would build a meaningless `struct T **`.
+      — a pointer whose base isn't itself `prim` (e.g. a `@T` struct pointer) is rejected
+      (E_AddrOfNotLocalVar / E_AddrOfNotPrimitive). A struct variable (a `pntr(struct T)` with no
+      `mutable` key: a struct local, named return, or struct-type parameter) is emitted as a plain
+      `id` whose `value-type` is the variable's type with `mutable` added — the struct's own
+      pointer, not the address of the variable's slot. An array variable (an owned array,
+      or a variable of borrowed array type — including a parameter) is the exception: it is
+      already a pointer to its elements, so `@x`/`@!x` is emitted as a plain `id` whose
+      `value-type` is the variable's type with `mutable` set on every array level (a `@T`/`@!T`
+      element keeps its own). Its leaf element must be `prim`, a struct, or a `@T`/`@!T` pointer
+      (E_AddrOfNotPrimitive), and `@!x` needs a writable array (E_WriteThroughReadOnlyPtr).
     - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
       `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
       field-access section below), then re-emitted as `{"expr-type":"field-access","var"|
       "ptr-expr":…,"offset":<int>,"value-type":<pntr type>,"addr-only":true}` —
       `addr-only:true` tells codegen to compute the field's address (`CalcAddr`) instead of loading
-      it. The leaf field must be primitive-typed or an embedded struct (`$T`) — a pointer-typed
-      (`raw-ptr`/`struct-ptr`), embedded-array, or owned-array field is rejected
+      it. The leaf field must be primitive-typed, an embedded struct (`$T`), or an owned struct
+      (`struct-ptr`) — a `raw-ptr`, embedded-array, or owned-array field is rejected
       (E_AddrOfNotPrimitive) — and must exist on the resolved struct (E_UnknownField otherwise). A
       primitive leaf's `value-type` is `{"type-kind":"pntr","mutable":<bool>,"base-type":<field's
       prim type>}`, same as the `id` case. An embed leaf's own value-type
       (`fieldValueType`) is already `pntr(struct T)` — the field IS the inner struct's storage, the
       same shape a struct-typed local variable has — so its `value-type` here is that same
       `pntr(struct T)` (with `mutable` set to the requested `@`/`@!`), not a further `pntr(...)`
-      wrap; wrapping it again would build a pointless `pntr(pntr(struct T))`. Because `@!` requests
+      wrap; wrapping it again would build a pointless `pntr(pntr(struct T))`. An owned struct
+      leaf holds the pointer to its struct, so it is emitted with `addr-only:false` (a load of that
+      pointer) and the field's `pntr(struct T)` value-type plus `mutable`. Because `@!` requests
       a *mutable* pointer, resolution runs with the same write-permission checks a store-location
       chain would (`resolveObjectChain(obj, forWrite=<mutable>)`): a read-only `@T`-typed base
       variable (E_WriteThroughReadOnlyPtr) or an intermediate read-only raw-ptr field hop
@@ -373,8 +480,10 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       the resulting node is reused as-is with `addr-only` forced to `true` and `value-type`
       rewrapped as `{"type-kind":"pntr","mutable":<bool>,"base-type":<original element
       value-type>}` — the node keeps its `expr-type:"arr-index"`, `array`, `index`, `elem-size`,
-      and `loc` keys unchanged (unlike the field-access shape above, no new node is built). Two
-      checks gate this: the resolved element must not already be `addr-only:true` (a struct-array
+      and `loc` keys unchanged (unlike the field-access shape above, no new node is built). A
+      struct element (value-type `pntr(struct T)` with no `mutable` key, from `[n]T` or `[n]$T`) is
+      already a pointer to its storage, so only `mutable` is added to its value-type and
+      `addr-only` keeps its value. For any other element, two checks gate this: the resolved element must not already be `addr-only:true` (a struct-array
       element, a 2D row, or a contiguous-embedded element are all already addresses) and its
       `value-type.type-kind` must be `"prim"` (a pointer-slot element is not) — either failure is
       E_AddrOfNotPrimitiveElem. When `mutable` is requested, `isWritableThrough` is additionally
@@ -396,12 +505,29 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     - Any other operand shape (a call result, a parenthesized tuple, …) is a compile error
       (E_AddrOfNotAddressable) — address-of is not general in this version.
     `mutable` is always present on the resulting `value-type` regardless of which shape was
-    emitted. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
+    emitted.
+
+    **Struct borrow binding:** a `pntr(struct T)` value-type without a `mutable` key is a struct's
+    own storage; one with the key is a borrow (`@T`/`@!T`, a C pointer whose `const` was folded by
+    cinclude normalization, or a `@x`/`@!x` result). Binding struct storage to a borrow
+    destination — a call argument (Palan or C), a local's initializer, an assignment, a field
+    store, an array-slot store, or a return — is a compile error (E_StructBorrowNeedsAddrOf); the
+    source must be written `@x`/`@!x`. A call result (`category: "expiring"`) has no owner, so binding it to a borrow is
+    E_ExpiringStructToBorrow, except as a call argument (see `release-after-call` below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
+    `mutable` as `true`. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
     an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules
     below for how mutability is enforced separately from type compatibility.
   - call: present when the function has a return type (ret-type in its definition).
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).
+
+    **`release-after-call`:** a call argument that is a struct returned by a Palan call
+    (`category: "expiring"`) carries `"release-after-call":{"name":<fn>,"func-type":"c"|"pln"}`,
+    and codegen calls `<fn>(arg)` right after the call returns (`free`, or `__pln_free_T` for a
+    struct with owned fields). Releasing at the call rather than around its statement keeps a
+    conditionally evaluated call (a `&&`/`||` operand, a loop condition) correct. Such a struct
+    discarded as an `expr` statement becomes a `block` of a temp `var-decl` initialized by the
+    call and the temp's free.
 
 SA-only expression kinds (not present in AST JSON):
 
@@ -465,9 +591,9 @@ SA-only expression kinds (added to AST nodes):
     a `palan-codegen` failure later. (The struct-element branch above has no equivalent guard —
     every `struct`-kind `elem_type` SA constructs already came from a name resolved in its own
     struct registry.)
-  - As an `arr-assign` target (`v -> arr[i]`), a node with `addr-only:true` is rejected
-    (E_AssignToWholeStructElem) — there is no storage slot at an address-only location to
-    overwrite; assign to its fields instead (`v -> arr[i].field`).
+  - As an `arr-assign` target, a struct element is copied into (see Copy above); a `->>` to a
+    node with `addr-only:true` is rejected (E_AssignToWholeStructElem) — there is no storage slot
+    at an address-only location to overwrite.
 
   **Pointer dereference (`p[i]`) on a scalar or pointer element:** when `array`'s `pntr` base-type
   is a primitive or another `pntr`, `arr-index` is exactly C's pointer subscript: `elem-size` is
@@ -602,7 +728,7 @@ other type, so the other side wins; this matters only for call arguments (below)
 A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
 an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
 unconverted (pointer comparison, e.g. `p == NULL`, is valid and has no numeric common type); the
-comparison's own result type is always `int32` regardless.
+comparison's own result type is always `bool` regardless.
 
 Float promotion rules (subsumed by usual arithmetic conversions above, restated for clarity):
 

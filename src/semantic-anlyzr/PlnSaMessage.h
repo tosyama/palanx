@@ -50,7 +50,7 @@ enum PlnSaMessageCode {
 	E_FieldAccessOnNonStruct,
 	E_InlineStructAsValue,
 	E_WriteToImmutablePtrField,
-	E_EmbedArrOwnedSubStruct,
+	E_EmbedOwningStruct,			// arg1: struct name
 	E_WriteToReadOnlyArrElem,
 	E_ArrFieldSizeNotConstant,
 	E_ConflictingTypedef,			// arg1: typedef name
@@ -87,13 +87,37 @@ enum PlnSaMessageCode {
 	E_VarTypeInferenceNotImpl,	// arg1: variable name
 	E_StmtNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
-	E_ArrVarInitNotLiteral,	// arg1: variable name
 	E_ArrLitContext,
 	E_ArrLitCountMismatch,	// arg1: variable name, arg2: declared size, arg3: literal element count
 	E_ArrLitSizeNotConst,	// arg1: variable name
 	E_ArrLitDimMismatch,	// arg1: variable name
 	E_ArrLitElemType,	// arg1: variable name
 	E_ArrLitRowSizeMismatch,	// arg1: variable name, arg2: row size, arg3: the row's element count
+	E_ArrBorrowSizeNotConst,
+	E_ArrBorrowUnsupportedElem,
+	E_ArrBorrowNeedsAddrOf,
+	E_ArrBorrowShapeMismatch,	// arg1: expected shape, arg2: actual shape
+	E_StructBorrowNeedsAddrOf,
+	E_Unsupported2DStructArr,
+	E_StructLitFieldCount,	// arg1: struct name, arg2: field count, arg3: value count
+	E_StructLitDupField,	// arg1: field name
+	E_StructLitMissingField,	// arg1: struct name, arg2: field name
+	E_StructLitExpected,	// arg1: struct name
+	E_StructLitFieldType,	// arg1: struct name, arg2: field name
+	E_DictLitContext,
+	E_CopyShapeMismatch,	// arg1: destination shape, arg2: source shape
+	E_CopyUnsupportedShape,	// arg1: shape
+	E_AddrOfBorrowed,	// arg1: variable name
+	E_EmbedElemNotStruct,	// arg1: element type
+	E_NamedRetInitOnStruct,	// arg1: return name
+	E_TransferToNonOwnedField,	// arg1: field name
+	E_ExpiringStructToBorrow,
+	E_TransferFromNonOwner,
+	E_TransferToBorrowSlot,
+	E_TransferShapeMismatch,	// arg1: destination shape, arg2: source shape
+	E_UnsizedArrRowSizeNotConst,
+	E_UnsizedArrRowUnsupported,
+	E_ArrElemShapeMismatch,	// arg1: expected shape, arg2: actual shape
 };
 
 class PlnSaMessage

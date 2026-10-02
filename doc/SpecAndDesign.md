@@ -6,41 +6,14 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-26)
-version: 0.1.37 — what a console Tetris on ncurses needs
+### 2.1 Iteration Goal (2026-09-27)
+version: 0.1.38 — fixing what writing Tetris runs into
 
-The target is a playable ncurses Tetris. A probe compiled but corrupted values at run time and
-needed several workarounds; this iteration removes them.
+No tickets are planned up front. Tetris is written from scratch, and each place where Palan
+gets in the way — a construct that is rejected, crashes, or needs a workaround — becomes a
+ticket when it comes up and is fixed in this iteration.
 
-**Values live across a loop back-edge keep their storage.** `PlnRegAlloc` computes each vreg's
-live range linearly, so a vreg defined before a loop and used inside it could have its stack slot
-reused by a later temporary and be clobbered on the next iteration. The live range of such a vreg
-is extended to the loop's backward jump where the range is computed, so every consumer (temp-slot
-reuse, call-crossing checks) sees the same range.
-
-**`bool` primitive.** A 1-byte type holding 0 or 1. Integer literals convert implicitly with a
-range check (0/1 only); other integers need an explicit `bool(x)`, lowered to `x != 0`. `bool`
-widens implicitly to integer types and is accepted as an `if`/`while` condition. c2ast maps C's
-`_Bool` keyword to it, so `keypad`/`nodelay` become callable.
-
-**C macro constants.** c2ast folds integer literals with `U`/`L`/`UL`/`ULL` suffixes using C's
-usual arithmetic conversions, so the `A_*` attribute macros are exported. A constant folded from
-an unsuffixed, uncast literal carries no `value-type`: it is the same untyped integer literal a
-Palan source literal is, so passing `COLOR_RED` to a `short` parameter is range-checked instead
-of rejected as narrowing.
-
-**Character literals.** gen-ast normalizes `'a'` (escapes `\n` `\t` `\r` `\0` `\\` `\'`)
-to an integer literal, so SA and codegen see no new shape; a non-ASCII character is an error.
-A character the lexer does not recognize is reported as a palan-gen-ast error instead of being
-echoed to stdout.
-
-Non-goals for this iteration: referring to top-level variables from functions; `bool` results
-from comparison/logical operators and `true`/`false` keywords; Palan shift operators;
-assignment-style macros such as `getmaxyx`. `WINDOW` is opaque in ncurses and is used as
-`@!WINDOW`, which already works.
-
-The full design decisions and the ticket breakdown are in
-`localtickets/iteration-2026-09-26-v0137-tetris.md`.
+The ticket list is kept in `localtickets/iteration-2026-09-27-v0138-tetris-writing.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
@@ -309,6 +282,7 @@ palan-sa annotates expressions with their category and uses it to drive free-tra
 - An unused `expiring` value → freed at the end of the statement (or immediately after use).
 - `return expr` where `expr` is `owned` → SA removes it from free-tracking (no free emitted); the caller is responsible for freeing.
 - `val ->> target` (ownership-transfer arr-assign) → SA emits `val = NULL` after the transfer; the scope-end `free(val)` becomes `free(NULL)` which is a no-op.
+- `val -> target` where target is an owned array or struct and `val` is not `expiring` → the contents are copied (owned parts included); neither side's ownership changes.
 
 ### SA determination of expiring
 

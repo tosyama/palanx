@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+[2]@![]$[3]int32 s;
+malloc(24) -> s[0];
+free(s[0]);

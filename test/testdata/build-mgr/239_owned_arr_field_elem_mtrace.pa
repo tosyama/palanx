@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type W { int32 n; [2]int32 w; };
+mtrace();
+{
+	[2]W ws;
+	3 -> ws[1].w[1];
+	[2][2]W g;
+	4 -> g[1][0].w[1];
+	printf("%d %d\n", ws[1].w[1], g[1][0].w[1]);
+}
+muntrace();

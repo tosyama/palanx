@@ -1,0 +1,6 @@
+{
+	type A { @B b; };
+}
+{
+	type B { int32 x; };
+}

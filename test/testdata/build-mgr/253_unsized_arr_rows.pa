@@ -1,0 +1,33 @@
+cinclude <stdio.h>;
+type P { int32 x; int32 y; };
+func fill([][3]int32 a, int64 n) {
+	int64 i = 0;
+	while i < n {
+		int32(i) * 10 -> a[i][0];
+		a[i][0] + 1 -> a[i][1];
+		a[i][1] + 1 -> a[i][2];
+		i + 1 -> i;
+	}
+}
+func pass([][3]int32 a) -> [][3]int32 { return a; }
+func show([][3]int32 a, int64 n) {
+	int64 i = 0;
+	while i < n {
+		printf("%d %d %d\n", a[i][0], a[i][1], a[i][2]);
+		i + 1 -> i;
+	}
+}
+func ps([][2]P q) { printf("%d %d\n", q[0][1].x, q[1][0].y); }
+func es([][2]$P q) { printf("%d %d\n", q[0][1].x, q[1][0].y); }
+[2][3]int32 m;
+fill(m, 2);
+show(pass(m), 2);
+[2][2]P s;
+5 -> s[0][1].x; 6 -> s[1][0].y;
+ps(s);
+[2][2]$P e;
+7 -> e[0][1].x; 8 -> e[1][0].y;
+es(e);
+[2]@![][3]int32 slot;
+m -> slot[0];
+printf("%d\n", slot[0][1][2]);

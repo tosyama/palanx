@@ -1,0 +1,4 @@
+{
+	[2]Foo p;
+	type Foo { int32 x; };
+}

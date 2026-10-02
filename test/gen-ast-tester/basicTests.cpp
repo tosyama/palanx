@@ -83,6 +83,44 @@ TEST(gen_ast, arr_lit_2d_forms) {
 	ASSERT_EQ(stripLoc(a1), stripLoc((*vars)[1]["init"]));
 }
 
+TEST(gen_ast, arr_lit_trailing_comma) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/121_arr_lit_trailing_comma.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	int pairs = 0;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "var-decl") continue;
+		const json& vars = stmt["vars"];
+		ASSERT_EQ(vars.size(), 2);
+		ASSERT_EQ(stripLoc(vars[0]["init"]), stripLoc(vars[1]["init"]));
+		pairs++;
+	}
+	ASSERT_EQ(pairs, 4);
+}
+
+TEST(gen_ast, dict_lit) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/122_dict_lit.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	const json& items = jout["ast"]["statements"][0]["vars"][0]["init"]["items"];
+	ASSERT_EQ(items.size(), 2);
+	ASSERT_EQ(items[0]["expr-type"], "dict-lit");
+	const json& first = items[0]["items"];
+	ASSERT_EQ(first.size(), 2);
+	ASSERT_EQ(first[0]["name"], "x");
+	ASSERT_EQ(first[0]["value"]["expr-type"], "lit-int");
+	ASSERT_EQ(first[1]["name"], "y");
+	ASSERT_EQ(first[1]["value"]["expr-type"], "add");
+	ASSERT_EQ(first[1]["loc"], json::array({1, 22, 1, 30}));
+	// A trailing comma is allowed, as in array literals.
+	ASSERT_EQ(items[1]["items"].size(), 2);
+	ASSERT_EQ(items[1]["items"][0]["name"], "y");
+}
+
 TEST(gen_ast, addition) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/003_addition.pa");
@@ -1548,6 +1586,24 @@ TEST(gen_ast, char_literal) {
 	ASSERT_EQ(stmts[0]["vars"][0]["init"]["loc"], json::parse("[1, 11, 1, 14]"));
 }
 
+TEST(gen_ast, bool_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/124_bool_literal.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	auto& stmts = jout["ast"]["statements"];
+	json bool_type = {{"type-kind", "prim"}, {"type-name", "bool"}};
+	auto& t = stmts[0]["vars"][0]["init"];
+	EXPECT_EQ(t["expr-type"], "lit-int");
+	EXPECT_EQ(t["value"], "1");
+	EXPECT_EQ(t["value-type"], bool_type);
+	EXPECT_EQ(t["loc"], json::parse("[1, 10, 1, 14]"));
+	auto& f = stmts[1]["vars"][0]["init"];
+	EXPECT_EQ(f["value"], "0");
+	EXPECT_EQ(f["value-type"], bool_type);
+}
+
 TEST(gen_ast, macro_fold_duplicate_name) {
 	// Two cincludes defining the same macro name: the first registration
 	// wins and later same-named definitions are ignored.
@@ -1594,4 +1650,46 @@ TEST(gen_ast, return_def_nonprim) {
 	ASSERT_TRUE(found_mkPtr);
 	ASSERT_TRUE(found_mkArr);
 	ASSERT_TRUE(found_sret);
+}
+
+TEST(gen_ast, tapple_assign) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/123_tapple_assign.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const json& stmts = jout["ast"]["statements"];
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "tapple-assign");
+	ASSERT_EQ(stmts[0]["value"]["expr-type"], "call");
+	const json& targets = stmts[0]["targets"];
+	ASSERT_EQ(targets.size(), 3);
+	ASSERT_EQ(targets[0]["expr-type"], "id");
+	ASSERT_EQ(targets[1]["expr-type"], "arr-index");
+	ASSERT_EQ(targets[2]["expr-type"], "field-access");
+	ASSERT_EQ(targets[2]["object"]["expr-type"], "field-access");
+
+	ASSERT_EQ(stmts[1]["stmt-type"], "tapple-assign");
+	ASSERT_EQ(stmts[1]["value"]["expr-type"], "member-call");
+
+	// Only a call can be assigned, and only to storable targets.
+	for (int i = 2; i <= 5; i++)
+		ASSERT_EQ(stmts[i]["stmt-type"], "not-impl") << i;
+}
+
+TEST(gen_ast, field_transfer) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/125_field_transfer.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	ASSERT_EQ(stmts[2]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[2]["object"]["name"], "w");
+	ASSERT_EQ(stmts[2]["field"], "own");
+	ASSERT_EQ(stmts[2]["value"]["name"], "t");
+	ASSERT_EQ(stmts[2].value("ownership-transfer", false), true);
+
+	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
+	ASSERT_FALSE(stmts[3].contains("ownership-transfer"));
 }

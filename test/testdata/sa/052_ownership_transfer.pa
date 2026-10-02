@@ -7,7 +7,7 @@ func testOwnedReturn() -> []int32 {
 
 func testTransfer(int64 i) {
     [3]int32 inner;
-    [5]@![]int32 outer;
+    [5][3]int32 outer;
     inner ->> outer[i];
     testOwnedReturn();
     return;

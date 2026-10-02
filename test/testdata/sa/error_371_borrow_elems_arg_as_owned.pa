@@ -1,0 +1,6 @@
+type P { int32 x; };
+func h([]P x) { P t; t ->> x[0]; }
+P a;
+[1]@!P s;
+@!a -> s[0];
+h(s);

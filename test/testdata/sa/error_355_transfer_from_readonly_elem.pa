@@ -1,0 +1,5 @@
+type P { int32 x; };
+type W { P own; };
+func f(@[2]P s, @!W w) {
+	s[0] ->> w.own;
+}

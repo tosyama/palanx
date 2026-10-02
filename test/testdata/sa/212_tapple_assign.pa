@@ -1,0 +1,7 @@
+type P { int32 x; };
+func f(int32 a) -> int32 q, int64 r { }
+int64 i;
+[3]int64 arr;
+P p;
+f(1) -> (p.x, i);
+f(2) -> (p.x, arr[1]);

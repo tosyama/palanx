@@ -1,0 +1,19 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int32 x; int32 y; };
+type Poly { Point c; [2]int32 w; [2]Point v; };
+mtrace();
+{
+	Poly g;
+	7 -> g.v[1].x;
+	Poly h = g;
+	g -> h;
+	[2]Poly ps;
+	g -> ps[1];
+	[2]Poly qs = ps;
+	[2][2]Point m;
+	[2][2]Point n = m;
+	m[1] -> n[0];
+	printf("%d\n", qs[1].v[1].x);
+}
+muntrace();

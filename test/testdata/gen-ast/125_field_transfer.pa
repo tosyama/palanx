@@ -1,0 +1,4 @@
+W w;
+P t;
+t ->> w.own;
+t -> w.own;

@@ -6,7 +6,7 @@ func test() {
     Point p;
     99 -> p.x;
     Ring r;
-    p -> r.nodes[0];
+    @!p -> r.nodes[0];
     printf("%ld\n", r.nodes[0].x);
     return;
 }

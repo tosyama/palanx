@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+cinclude <math.h> link "m";
+
+const A = 20;
+const B = A;
+const C = 'x';
+
+int32 x = A + 2;
+int16 y = A * 2;
+int16 s = 3;
+int16 z = B + s;
+flo64 f = A;
+putchar(C);
+printf(" %d %d %d %.1f %.1f\n", x, y, z, f, sqrtf(A * 5));

@@ -1,0 +1,4 @@
+const N = 2;
+[N][3]int32 a;
+f(@!a);
+func f(@![N][3]int32 g) { }

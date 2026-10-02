@@ -1,0 +1,11 @@
+type In { int64 v; };
+type P { In o; };
+func getv(@In q) -> int64 n { q.v -> n; }
+func mk() -> In r { }
+In s;
+getv(@s);
+P p;
+getv(@p.o);
+[2]In a;
+getv(@a[1]);
+getv(mk());

@@ -62,6 +62,22 @@ class PlnLexer;
 
 #define LOC(J, L)       J["loc"] = { (int)L.begin.line, (int)L.begin.column, (int)L.end.line, (int)L.end.column }
 #define LOC_BE(J, B, E) J["loc"] = { (int)B.begin.line, (int)B.begin.column, (int)E.end.line, (int)E.end.column }
+
+// An empty rule (e.g. do_export) is located at the end of the previous token,
+// so a rule's start is taken from its first non-empty component instead.
+#define YYLLOC_DEFAULT(Current, Rhs, N)                                   \
+	do {                                                                  \
+		if (N) {                                                          \
+			int yyk = 1;                                                  \
+			while (yyk < (N) && YYRHSLOC(Rhs, yyk).begin.line == YYRHSLOC(Rhs, yyk).end.line \
+			       && YYRHSLOC(Rhs, yyk).begin.column == YYRHSLOC(Rhs, yyk).end.column) \
+				yyk++;                                                    \
+			(Current).begin = YYRHSLOC(Rhs, yyk).begin;                   \
+			(Current).end   = YYRHSLOC(Rhs, N).end;                       \
+		} else {                                                          \
+			(Current).begin = (Current).end = YYRHSLOC(Rhs, 0).end;       \
+		}                                                                 \
+	} while (false)
 }
 
 %locations
@@ -95,6 +111,8 @@ class PlnLexer;
 %token KW_BREAK	"break"
 %token KW_CONTINUE	"continue"
 %token KW_SYSCALL	"syscall"
+%token KW_TRUE	"true"
+%token KW_FALSE	"false"
 %token OPE_LE	"<="
 %token OPE_GE	">="
 %token DBL_GRTR	">>"
@@ -116,8 +134,8 @@ class PlnLexer;
 %type <string>	import_as
 %type <json>	expression func_call term store_loc
 %type <vector<json>>	arguments
-%type <json>	array_desc array_row
-%type <vector<json>>	array_rows array_items
+%type <json>	array_desc array_row dict_desc
+%type <vector<json>>	array_rows array_items dict_items
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
 %type <vector<json>>	var_declarations
@@ -265,6 +283,10 @@ expr_stmt: import
 			$$ = {{"stmt-type", "field-assign"},
 				  {"object", storeLocToExpr($1["base"])}, {"field", move($1["field"])},
 				  {"value", move($1["value"])}};
+			if ($1.value("ownership-transfer", false)) $$["ownership-transfer"] = true;
+			LOC($$, @$);
+		} else if (et == "tapple-assign-expr") {
+			$$ = {{"stmt-type", "tapple-assign"}, {"targets", move($1["targets"])}, {"value", move($1["value"])}};
 			LOC($$, @$);
 		} else if (et != "not-impl") {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
@@ -654,7 +676,7 @@ expression: term
 	| array_desc
 	{ $$ = move($1); }
 	| dict_desc
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = move($1); }
 	| expression '+' expression
 	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '-' expression
@@ -714,6 +736,14 @@ expression: term
 				  {"base", move($3["base"])}, {"field", move($3["field"])},
 				  {"value", move($1)}};
 			LOC($$, @$);
+		} else if ($3.value("kind", "") == "tapple") {
+			string et = $1.value("expr-type", "");
+			if (et == "call" || et == "member-call") {
+				$$ = {{"expr-type", "tapple-assign-expr"}, {"targets", move($3["targets"])}, {"value", move($1)}};
+				LOC($$, @$);
+			} else {
+				$$ = {{"expr-type", "not-impl"}};
+			}
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
 		}
@@ -727,6 +757,11 @@ expression: term
 			LOC(arr_node, @3);
 			$$ = {{"expr-type", "arr-assign-expr"}, {"ownership-transfer", true},
 				  {"target", move(arr_node)}, {"value", move($1)}};
+			LOC($$, @$);
+		} else if ($3.value("kind", "") == "field") {
+			$$ = {{"expr-type", "field-assign-expr"}, {"ownership-transfer", true},
+				  {"base", move($3["base"])}, {"field", move($3["field"])},
+				  {"value", move($1)}};
 			LOC($$, @$);
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
@@ -744,13 +779,17 @@ term: INT
 	{ $$ = {{"expr-type", "lit-flo"}, {"value", move($1)}}; LOC($$, @$); }
 	| STRING
 	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; LOC($$, @$); }
+	| KW_TRUE
+	{ $$ = boolLiteral("1"); LOC($$, @$); }
+	| KW_FALSE
+	{ $$ = boolLiteral("0"); LOC($$, @$); }
 	| ID
 	{ $$ = {{"expr-type", "id"}, {"name", move($1)}}; LOC($$, @$); }
 	| '(' tapple_inner ')'
 	{
 		// Single-expression grouping (e.g. -(2+3)): pass the inner expression through.
-		// Multi-expression tapple (e.g. (a, b)): not yet supported.
-		if ($2.count("not-impl"))
+		// Multi-expression tapple (e.g. (a, b)) is only a multiple-assignment target.
+		if ($2.count("not-impl") || $2.count("tapple-items"))
 			$$ = {{"expr-type", "not-impl"}};
 		else
 			$$ = $2;
@@ -769,7 +808,16 @@ tapple_inner: expression
 	| '-'
 	{ $$ = {{"not-impl", true}}; }
 	| tapple_inner ',' expression
-	{ $$ = {{"not-impl", true}}; }
+	{
+		if ($1.count("not-impl")) {
+			$$ = move($1);
+		} else if ($1.count("tapple-items")) {
+			$$ = move($1);
+			$$["tapple-items"].push_back(move($3));
+		} else {
+			$$ = {{"tapple-items", json::array({move($1), move($3)})}};
+		}
+	}
 	| tapple_inner ',' '-'
 	{ $$ = {{"not-impl", true}}; }
 	;
@@ -829,6 +877,8 @@ array_rows: array_row array_row
 
 array_row: '[' array_items ']'
 	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	| '[' array_items ',' ']'
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
 	;
 
 array_items: expression
@@ -838,10 +888,24 @@ array_items: expression
 	;
 
 dict_desc: '{' dict_items '}'
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	| '{' dict_items ',' '}'
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", move($2)}}; LOC($$, @$); }
 	;
 
 dict_items: ID ':' expression
+	{
+		json item = {{"name", move($1)}, {"value", move($3)}};
+		LOC(item, @$);
+		$$ = {move(item)};
+	}
 	| dict_items ',' ID ':' expression
+	{
+		json item = {{"name", move($3)}, {"value", move($5)}};
+		LOC_BE(item, @3, @5);
+		$$ = move($1);
+		$$.push_back(move(item));
+	}
 	;
 
 store_loc
@@ -856,7 +920,17 @@ store_loc
 	| store_loc '.' ID
 	{ $$ = {{"kind", "field"}, {"base", move($1)}, {"field", move($3)}}; LOC($$, @$); }
 	| '(' tapple_inner ')'
-	{ $$ = {{"kind", "not-impl"}}; }
+	{
+		$$ = {{"kind", "not-impl"}};
+		if ($2.count("tapple-items")) {
+			bool all_ok = true;
+			for (auto& t : $2["tapple-items"]) {
+				string et = t.value("expr-type", "");
+				if (et != "id" && et != "arr-index" && et != "field-access") { all_ok = false; break; }
+			}
+			if (all_ok) $$ = {{"kind", "tapple"}, {"targets", move($2["tapple-items"])}};
+		}
+	}
 	| func_call
 	{ $$ = {{"kind", "not-impl"}}; }
 	;

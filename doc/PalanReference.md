@@ -127,12 +127,14 @@ multi-character, or non-ASCII literal is a compile error.
 
 ### bool
 
+- `true` and `false` are the `bool` literals (reserved words), with the values 1 and 0. They are
+  always `bool`, so `int32 x = true;` is a widening and `true + 1` is 2.
 - An integer literal converts to `bool` implicitly only when it is `0` or `1`. Any other integer
   or float value needs `bool(x)`, which yields 1 for every nonzero value rather than truncating.
 - `bool` widens implicitly to every integer and float type.
 - An operator promotes a `bool` operand to `int32`, as C does, so `b + 1` is 2. Storing such a
   result back into a `bool` needs `bool(...)`.
-- A `bool` can be an `if`/`while` condition. Comparisons and logical operators still yield `int32`.
+- A `bool` can be an `if`/`while` condition. Comparisons and logical operators yield `bool`.
 - A C `_Bool` parameter or field (e.g. ncurses' `keypad`) is a `bool`.
 
 ### Implicit Widening
@@ -185,7 +187,7 @@ adopts the destination's type instead of being checked for narrowing (this is wh
 A pointer or struct operand has no common type with anything under this rule: using one with
 `+ - * / % & | ^` is a compile error (Palan has no pointer arithmetic). A comparison is the
 exception — `p == NULL` and similar pointer comparisons are valid and leave both operands
-unconverted; a comparison's result is always `int32` regardless of operand type.
+unconverted; a comparison's result is always `bool` regardless of operand type.
 
 ### Variadic Argument Promotion
 
@@ -254,12 +256,12 @@ There is no shift operator (`<<`/`>>`) in this version — `>>` is already used 
 ownership-transfer syntax (`->>`, `[n]@![]T`; see [Arrays](#18-arrays)), and reusing it for a
 shift would conflict with that grammar.
 
-Comparison operators produce `int32` (1 if true, 0 if false). Both operands are converted to a
+Comparison operators produce `bool` (1 if true, 0 if false). Both operands are converted to a
 common type first — see [Usual Arithmetic Conversions](#3-type-system) in Type System.
 
 Logical operators `&&` and `||` use **short-circuit evaluation**: the right operand is not
 evaluated if the result is already determined by the left operand. Both operands must be
-integer types (float operands are a compile error). The result is always `int32` (1 if true,
+integer types (float operands are a compile error). The result is always `bool` (1 if true,
 0 if false).
 
 The assignment expression `expr -> var` evaluates `expr`, stores it in `var`, and the result is the stored value.
@@ -275,6 +277,7 @@ printf("%ld\n", x);        // expression statement (function call)
 return;                    // return from function (no value)
 return expr;               // return with single value
 (int64 a, b) = foo();      // tapple declaration (receive multiple return values)
+foo() -> (a, b);           // assign multiple return values to existing variables
 import "lib.pa";           // import Palan source file (see §12)
 if expr { ... }            // conditional (see §10)
 if expr { ... } else { ... }  // conditional with else (see §10)
@@ -331,6 +334,14 @@ func sumsOf(int64 a, int64 b, int64 c) -> int64 ab, int64 bc {
 }
 ```
 
+A named return starts at `0` unless it has an initializer. Initializers are evaluated in order at function entry and can use the parameters:
+
+```palan
+func range(int32 from) -> int32 lo = from, int32 hi = from + 10 { }
+```
+
+A struct-type named return is declared in the body instead, so it can't have an initializer.
+
 ---
 
 ## 8. Receiving Multiple Return Values
@@ -347,6 +358,16 @@ printf("%ld %ld\n", ab, bc);
 ```palan
 (int64 ab, bc) = sumsOf(1, 2, 3);   // bc is also int64
 ```
+
+Each variable is initialized from its return value with the same type rules as a single declaration `int64 ab = ...;` (widening is implicit, narrowing is an error). A returned struct is owned by the variable that receives it.
+
+To store the values into existing variables, array elements or fields instead, assign the call to a parenthesized target list:
+
+```palan
+sumsOf(1, 2, 3) -> (ab, arr[1]);
+```
+
+All return values are received first, then assigned to the targets from left to right, with the same type rules as a single `->` (a struct is copied into its target). So in `f() -> (i, arr[i])`, `arr[i]` uses the newly assigned `i`.
 
 ---
 
@@ -443,7 +464,7 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   ```palan
   cinclude <sys/stat.h>;
   stat st;
-  stat("/etc", st);
+  stat("/etc", @!st);
   if (S_ISDIR(st.st_mode)) { ... }   // error: Undefined function 'S_ISDIR'
   ```
 
@@ -535,8 +556,9 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   printf("%d\n", int32(p.tm_year) + 1900);    // 1970
   ```
 
-  A struct passed *into* a C call follows the same convention as a native struct-typed function
-  parameter: it is passed by pointer, borrowed by the callee, and not freed by it (see
+  A struct passed *into* a C call's struct pointer parameter is borrowed the same way as for a
+  native `@T`/`@!T` parameter: write `@s` for a `const` pointer parameter and `@!s` otherwise
+  (`mktime(@!t)`, `asctime(@t)`; see
   [Struct types in function signatures](#struct-types-in-function-signatures)).
 
 ### Structs Returned By Value
@@ -1016,7 +1038,7 @@ The `%` (modulo) operator is **not** supported on float types; using it is a com
 
 ### Comparison Operators
 
-All six comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) work on float operands and produce `int32` (1 if true, 0 if false), the same as integer comparisons.
+All six comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) work on float operands and produce `bool` (1 if true, 0 if false), the same as integer comparisons.
 
 ```palan
 flo64 x = 1.5;
@@ -1163,7 +1185,17 @@ Expected output:
 `[]T` and `[][]T` can be used as parameter types and return types in function declarations.
 The semantic analyzer resolves them to plain pointer types with no ownership tracking —
 `[]T` becomes a pointer to `T`, and `[][]T` becomes a pointer to a pointer to `T`. The caller
-is responsible for managing the lifetime of the returned pointer.
+is responsible for managing the lifetime of the returned pointer. A struct element is laid out
+as in a sized array: `[]T` takes the elements of a `[n]T` array, and `[]$T` those of a `[n]$T`
+array. `[][m]T` takes the rows of a `[n][m]T` array (and `[][m]$T` those of a `[n][m]$T` struct
+array); `m` must be a constant, and an array whose rows have another size is a compile error.
+`[]@![]T` takes the slots of a `[n]@![]T` array.
+
+Only the outermost size may be left out: the elements must match exactly. An element owned by
+the array (a row, or a struct of `[n]T`) cannot be given as a `@T`/`@!T` pointer slot, or the
+other way around, since one side would free or overwrite what the other one owns. For example,
+a `[n]@![]int32` array is returned as `[]@![]int32`, not as `[][]int32`, and a `[n]P` array
+cannot be passed as `[]@!P`. The same holds for storing an array into a `[n]@![]T` slot.
 
 ```palan
 func sum_arr([]int32 a, int64 n) -> int64 {
@@ -1179,44 +1211,131 @@ func sum_arr([]int32 a, int64 n) -> int64 {
 
 Using `[]T` in a variable declaration is a compile error.
 
+### Borrowing Arrays
+
+`@[n]T` borrows an array read-only and `@![n]T` borrows it writable. Pass the array with
+`@arr` / `@!arr`: the callee asks for a borrow, so the caller writes one. Nothing is copied or
+freed; the array keeps its owner.
+
+```palan
+const H = 3;
+const W = 4;
+
+[H][W]int32 grid;
+fill(@!grid, 7);
+printf("%d\n", sum(@grid));
+
+func sum(@[H][W]int32 g) -> int32 {
+    return g[0][0] + g[H-1][W-1];
+}
+
+func fill(@![H][W]int32 g, int32 x) {
+    x -> g[0][0];
+    x -> g[H-1][W-1];
+}
+```
+
+- The forms are `@[n]T`, `@[n][m]T`, `@[n]$[m]T`, `@[n]$T`, and `@[n][m]$T`, each with the `@!` variant. `T`
+  must be a primitive type, or a struct type in `@[n]T` and `@[n][m]T` (an array of owned structs,
+  `[n]T` / `[n][m]T`) and in `@[n]$T` / `@[n][m]$T` (contiguous struct arrays, `[n]$T` / `[n][m]$T`). Every size must be a constant: an integer literal or a `const`.
+- An array of pointer slots (`[n]@T` / `[n]@!T`) is borrowed as `@[n]@T`, `@![n]@!T`, and so on.
+  The borrow's `@`/`@!` controls writing the slots (`@q -> g[i]`); the element's `@T`/`@!T`
+  controls writing through a pointer (`1 -> g[i].x`). The element permission must match the
+  array's, except that a `@` borrow may take `[n]@!T` as `@[n]@T`.
+- The array's shape must match exactly: the number of dimensions, contiguous (`$`) or not, and
+  every size. An array whose size is only known at run time cannot be borrowed as `@[n]T`.
+- Through `@`, no element can be written, including elements reached through a row
+  (`g[i][j]`) and the fields of a struct element (`g[i].x`). A `@` borrow cannot be passed
+  where `@!` is expected.
+- A struct element is still passed to a `@T`/`@!T` parameter as `@g[i]` / `@!g[i]`.
+- A borrowed array can also be a local variable (`@[4]int64 p = @v;`).
+- A borrowed array is already a borrow, like a `@T`/`@!T` pointer: pass it on, bind it, and
+  rebind it by name (`sum(g)`, `@[4]int64 q = p;`, `q -> p`). `@g` on it is a compile error. A
+  `@!` borrow may be given where `@` is expected. A row (`g[i]`) is part of the borrowed storage,
+  not a borrow of its own, and cannot be given by name.
+- `@!arr` also works where a C function takes a pointer to the elements (`memset(@!v, 0, 32)`).
+- A borrowed array cannot be a return type.
+
 ### Array of Pointer Slots (`[n]@![]T`)
 
 `[n]@![]T` declares an array of `n` writable pointer slots, each capable of holding a `[]T`
 pointer. The outer array is heap-allocated (`malloc(n * 8)`) and automatically freed at scope
-exit. The inner arrays stored in each slot must be freed explicitly or transferred via `->>`.
+exit. A slot borrows what it points to and never owns it: store into it with `->` (for example
+memory from C `malloc`) and free that memory yourself. `->>` into a slot is a compile error.
+`[n]@![]$[m]T` and `[n]@![]$T` are slots the same way, pointing at contiguous rows or structs.
 
 ```palan
 int64 rows = 4;
 [rows]@![]int32 ptrs;   // malloc(rows * 8) — outer array
-// ... store inner arrays into ptrs[i] ...
+malloc(3 * 4) -> ptrs[0];
+// ...
+free(ptrs[0]);
 // free(ptrs) emitted automatically at scope exit
 ```
 
-### Ownership Transfer (`->>`)
+### Copying (`->`)
 
-`val ->> arr[i]` transfers ownership of `val` into the array slot `arr[i]`. The semantic
-analyzer emits a null assignment (`NULL -> val`) immediately after the store, so that the
-automatic `free(val)` at scope exit becomes `free(NULL)` — a no-op by C standard.
+`src -> dst` where `dst` is an array or a struct copies the contents of `src` into the storage
+`dst` already has; the two stay independent. The destination can be a variable, an array
+element or row (`a[i]`, `m[i]`), or a field. Initializing a declaration from another array or
+struct (`[4]$Point p = minos[1];`, `Point q = p;`) copies the same way.
 
 ```palan
-int64 n = 3;
-[n]int32 inner;          // inner: owned, will be freed automatically
-int64 m = 2;
-[m]@![]int32 outer;      // outer: owns the slot array
-
-inner ->> outer[0];      // transfers inner into outer[0]; inner is set to NULL
-// free(inner) at scope exit → free(NULL) = no-op
-// free(outer) at scope exit frees the slot array (inner arrays must be freed separately)
+[2][4]$Point minos = [[0,0][0,1][0,2][0,3], [0,0][0,1][1,1][2,1]];
+[4]$Point mino = minos[1];   // copy row 1
+minos[0][3] -> mino[0];      // copy one struct element
+2 -> mino[1].x;              // minos is unchanged
 ```
+
+- The source must have the same element type and the same sizes as the destination, all known
+  at compile time; otherwise it is a compile error. A source may be borrowed (`@[n]T`, `@T`).
+- What the destination owns is copied too: owned struct fields and arrays, and the structs of a
+  `[n]T` array, get copies of the source's. A `@T`/`@!T` pointer is copied as a pointer.
+- A struct returned by a function is copied the same way, and then freed. A `[]T` return has
+  no size known at compile time, so it cannot be copied into an array.
+
+### Ownership Transfer (`->>`)
+
+`val ->> arr[i]` transfers ownership of `val` into an owned element or row: a struct of a
+`[n]T` array, or a row of an `[m][n]T` array. What the element or row held is freed first. `val`
+is then set to NULL, so that the automatic `free(val)` at scope exit becomes `free(NULL)` — a
+no-op by C standard.
+
+```palan
+[3]int32 inner;
+[2][3]int32 outer;
+
+inner ->> outer[0];      // outer's original row 0 is freed; inner is set to NULL
+// free(inner) at scope exit → free(NULL) = no-op
+```
+
+A row must have the same element type and the same size as `val`, both known at compile time.
+A `@T`/`@!T` pointer slot (including `[n]@![]T`) cannot take ownership; `->>` into one is a
+compile error.
+
+`val ->> obj.field` transfers `val` into an owned struct field (`T` or `[n]T`). What the field
+held is freed first, and `val` is set to NULL as above. Other fields are a compile error.
+
+```palan
+type W { Point pt; };
+W w;
+Point p;
+p ->> w.pt;              // w's original Point is freed; p is set to NULL
+```
+
+The source must own what it gives away: a variable that owns its array or struct, an owned
+field or element (`v.pt ->> w.pt`, `pts[1] ->> w.pt`, `m[1] ->> w.arr`), or a value returned by
+a function. A field or element source is set to NULL like a variable. A borrow (`@T`/`@!T`,
+`@[n]T`), a struct parameter, or a `@T` field is a compile error.
 
 `return` on a tracked array variable also transfers ownership: the variable is removed from
 free-tracking and the caller receives the pointer.
 
 ### Two-Dimensional Arrays (`[m][n]T`)
 
-`[m][n]T` declares a two-dimensional array with `m` rows and `n` columns, where `T` must be a
-primitive type. The outer array is heap-allocated; each row is independently heap-allocated by
-the auto-generated allocator.
+`[m][n]T` declares a two-dimensional array with `m` rows and `n` columns. The outer array is
+heap-allocated; each row is independently heap-allocated by the auto-generated allocator.
+`T` can also be a struct type; see [Struct Arrays](#struct-arrays).
 
 ```palan
 int64 rows = 2;
@@ -1310,6 +1429,30 @@ variable's initializer: implicit narrowing is an error (use an explicit cast suc
 and integer literals are range-checked against the element type. The elements are evaluated
 before the array variable is declared, so they cannot refer to the variable itself.
 
+A trailing comma after the last element of a row is allowed (`[1, 2, 3,]`), which is convenient
+when a literal is written over several lines.
+
+An array of structs (`[n]T`, `[n]$T`, `[m][n]T`, `[m][n]$T`) is initialized the same way, with each element
+written either as its field values in declaration order (`[1, 2]`) or by field name
+(`{y: 2, x: 1}`). Every field must be given exactly once. A struct field (`T` or `$T`) is written
+as a nested struct value; pointer and array fields cannot be initialized by a literal. Since a
+struct element is itself written in brackets, `[0,1][2,3]` is one row of two `Point`s.
+
+```palan
+cinclude <stdio.h>;
+type Point { int32 x; int32 y; };
+type Line { Point a; $Point b; };
+[2][2]Point m = [[0,1][2,3], [4,5][6,7]];
+[]$Point e = [{y: 5, x: 6}, [7, 8]];
+[1]Line l = [[{x: 1, y: 2}, [3, 4]]];
+printf("%d %d %d %d\n", m[1][0].y, e[0].x, l[0].a.y, l[0].b.x);
+```
+
+Expected output:
+```
+5 6 2 3
+```
+
 In a comma-separated declaration, each initializer belongs to its own variable:
 `[2]int16 r, s = [7, 8];` initializes only `s`.
 
@@ -1318,8 +1461,9 @@ In a comma-separated declaration, each initializer belongs to its own variable:
   argument or the source of `->`.
 - A given dimension must be a compile-time constant that matches the literal's element or row
   count, and every row of a 2D literal must have the same length.
-- Only numeric (integer and float) element types are supported. Arrays of structs or pointers,
-  and arrays of three or more dimensions, cannot be initialized with a literal.
+- Only numeric (integer and float) and struct element types are supported. Arrays of pointers
+  and arrays of three or more dimensions cannot be initialized with a literal.
+- A `{name: value}` literal can only be used as a struct element of an array literal.
 - Omitting only the inner dimension (`[2][]T`, `[2]$[]T`) is not supported.
 
 ### Struct Arrays
@@ -1334,6 +1478,9 @@ Palan supports four forms of struct array declarations. All are heap-allocated a
 | `[n]@!T pts` | `malloc(n * 8)`, null-initialized / `free(pts)` | non-owning mutable pointers |
 
 `pts[i]` yields a `T` pointer for all four forms. Fields are accessed with `pts[i].field`.
+
+The pointer-slot forms also take a primitive element type: `[n]@int32` / `[n]@!int32` hold
+`@int32` / `@!int32` pointers, and `pts[i][0]` reads or writes the value one points to.
 
 ```palan
 cinclude <stdio.h>;
@@ -1353,16 +1500,38 @@ printf("%ld\n", pts2[0].x);  // 5
 Point p;
 99 -> p.x;
 [4]@Point rpts;    // read-only slots
-p -> rpts[0];
+@p -> rpts[0];
 printf("%ld\n", rpts[0].x);   // 99
 
 [4]@!Point wpts;   // writable slots
-p -> wpts[0];
+@!p -> wpts[0];
 42 -> wpts[0].x;
 printf("%ld\n", p.x);         // 42 (write-through via pointer)
 ```
 
-**Restriction:** `[n]$T` requires that `T` has no owned sub-struct fields. Use `[n]T` instead when `T` contains owned pointer fields.
+A two-dimensional struct array is declared as `[m][n]T`: each of the `m` rows is an `[n]T` owned
+pointer array. `pts[i][j]` yields a `T` pointer, and `pts[i][j].field` accesses a field.
+
+```palan
+cinclude <stdio.h>;
+type Point { int64 x; int64 y; };
+[2][3]Point grid;
+7 -> grid[1][2].y;
+printf("%ld\n", grid[1][2].y);  // 7
+```
+
+`[m][n]$T` instead makes each row an `[n]$T` contiguous array, so the structs sit in the rows
+themselves. It is accessed the same way.
+
+```palan
+[2][3]$Point tiles;
+7 -> tiles[1][2].y;
+printf("%ld\n", tiles[1][2].y);  // 7
+```
+
+**Restrictions:**
+- `[n]$T` and `[m][n]$T` require that `T` owns no fields (no `U field` or `[k]U field`). Use `[n]T` / `[m][n]T` instead when it does.
+- Other two-dimensional struct array forms (`[m]$[n]T`, `[m]$[n]$T`) are not supported.
 
 Array **fields** (declared inside `type { ... }`, see Section 19) use the same four forms but
 require `n` to be a compile-time integer literal, since struct layout must be statically known.
@@ -1372,7 +1541,7 @@ Array **variables** (this section) allow non-constant `n`.
 
 - Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
 - Boundary checking is not performed.
-- `[n]$T` is not supported when `T` has owned sub-struct fields.
+- `[n]$T` is not supported when `T` owns fields.
 
 ## 19. Struct Types
 
@@ -1422,7 +1591,7 @@ type Point { int64 x; int64 y; };
 Point original;
 5 -> original.x;  10 -> original.y;
 
-@!Point view = original;   // non-owning alias — view and original share the same storage
+@!Point view = @!original;   // non-owning alias — view and original share the same storage
 20 -> view.x;               // write-through
 printf("%ld %ld\n", original.x, original.y);   // 20 10
 ```
@@ -1477,6 +1646,8 @@ printf("%ld %ld\n", l.a.x, l.a.y);   // 10 20
 ```
 
 `$Point` fields are stored directly inside `Line`'s memory block. No separate allocation.
+Because nothing allocates on its behalf, a `$T` field (and a `[n]$T` field) requires that `T`
+owns no fields (no `U field` or `[k]U field`); use `T field` instead.
 
 **`T` — owned struct pointer**
 
@@ -1498,7 +1669,7 @@ type Node { int64 val; @Node next; };
 
 Node n1;  Node n2;
 42 -> n1.val;  100 -> n2.val;
-n2 -> n1.next;                          // set pointer value: OK
+@n2 -> n1.next;                         // set pointer value: OK
 printf("%ld %ld\n", n1.val, n1.next.val);   // 42 100
 ```
 
@@ -1508,7 +1679,7 @@ printf("%ld %ld\n", n1.val, n1.next.val);   // 42 100
 type Node { int64 val; @!Node next; };
 
 Node n1;  Node n2;
-n2 -> n1.next;
+@!n2 -> n1.next;
 42 -> n1.next.val;                      // write through mutable pointer: OK
 printf("%ld\n", n2.val);               // 42
 ```
@@ -1523,6 +1694,25 @@ func getX(Point p) -> int64 x {
 }
 ```
 
+A `@T`/`@!T` parameter borrows a struct, and the caller writes `@s` (read-only) or `@!s`
+(mutable), as with a [borrowed array](#borrowing-arrays):
+
+```palan
+func moveX(@!Point p, int64 dx) {
+    p.x + dx -> p.x;
+}
+
+Point pt;
+moveX(@!pt, 3);
+```
+
+A struct given by name where a `@T`/`@!T` is expected — a parameter, a variable's initializer, an
+assignment, or a pointer field or slot — is a compile error. `@`/`@!` works on a struct variable
+(including a struct-type parameter), an owned (`T`) or embedded (`$T`) struct field, and a struct
+array element (`@!pts[1]`). A `@T`/`@!T` pointer itself is already a borrow and is passed by name; `@` on it is a compile error.
+
+`q -> p` copies struct `q` into `p`, including what `q` owns; see [Copying](#copying--).
+
 A named return of struct type transfers ownership to the caller:
 
 ```palan
@@ -1531,6 +1721,12 @@ func makePoint(int64 x, int64 y) -> Point p {
     x -> p.x;  y -> p.y;
 }
 ```
+
+The caller receives the returned struct with `->` (`Point pt; makePoint(1, 2) -> pt;`). Passed
+directly as an argument (`getX(makePoint(1, 2))`), it is freed right after that call; called as a
+statement on its own, it is freed at once. Binding it to a `@T`/`@!T` — a variable's initializer,
+an assignment, a pointer field or slot, or a return — is a compile error, since nothing would
+own it.
 
 ### Restrictions
 
@@ -1591,13 +1787,15 @@ printf("%ld\n", MaxLen);   // 256
   appear in `sa.json`.
 - A const may reference another const declared earlier (`const B = A;`); this chains naturally
   through inlining.
+- Like the literal it names, a const takes its type from where it is used: `const N = 20;` can be
+  passed to an `int32` parameter, used in `N + 2` for an `int16` variable, or assigned to `flo64`.
 
 ### Restrictions
 
 - There is no name-collision check between a const and a variable — a variable declaration of the
   same name silently shadows a same-named const.
-- A const cannot be used at a point where a function signature is pre-registered, e.g. as an
-  array-size in a parameter type. It is only usable from ordinary statement processing onward.
+- Only a top-level const can size a borrowed array parameter (`@[N]T`); function signatures are
+  registered before any other statement is processed.
 
 ---
 
@@ -1646,7 +1844,7 @@ int64 x = 42;
   cinclude <sys/stat.h>;
 
   stat st;
-  stat("/", st);
+  stat("/", @!st);
   @!timespec atim = @!st.st_atim;   // pointer to the embedded timespec field
   printf("%ld\n", atim.tv_sec);
   ```
@@ -1721,29 +1919,24 @@ int64 x = 42;
 ### Restrictions
 
 `@`/`@!` produces a pointer to one storage slot: a primitive value, or a pointer to a primitive
-(pointer-to-pointer). A struct or array variable is never re-addressed this way, because it's
-already its own pointer to its storage — pass it by name instead (`random_r(st, ...)`, not
-`random_r(@!st, ...)`); `@!st` would build a meaningless `struct T **`.
+(pointer-to-pointer). A struct or array variable is the exception: it is already its own pointer
+to its storage, so `@s`/`@!s` and `@arr`/`@!arr` borrow it as it is (see
+[Struct types in function signatures](#struct-types-in-function-signatures) and
+[Borrowing Arrays](#borrowing-arrays)).
 
-- Not usable on function parameters, or on a whole struct or array variable (`@s`, `@arr`) — see
-  above.
-- On a local variable, usable only when the variable is primitive-typed or itself a pointer to a
-  primitive (`@T`/`@!T`) — a struct-typed local, a pointer-to-struct local, or a plain array
-  variable (`[n]T`, itself a pointer, see above) are all rejected.
+- Not usable on function parameters, except a struct-type parameter.
+- Not usable on a borrow: a struct pointer (`@T`/`@!T` where `T` is a struct) or a borrowed array
+  (`@[n]T`) is passed by name.
+- On a local variable, usable only when the variable is primitive-typed, itself a pointer to a
+  primitive (`@T`/`@!T`), a struct, or an array with primitive, struct, or `@T`/`@!T` pointer
+  elements.
 - On a struct field reached from a local variable, usable only when the leaf field is
-  primitive-typed or an embedded struct (`$T`) — a pointer-typed field (`@T`/`@!T`), an
-  embedded-struct-array element (`[n]$T`), or an owned-pointer field are all rejected.
+  primitive-typed, an embedded struct (`$T`), or an owned struct (`T`) — a pointer-typed field
+  (`@T`/`@!T`) or an array field is rejected.
 - Not usable on a 2D array row (`@mat[i]`) or a pointer-slot array element (`[n]@T`/`[n]@!T`) —
-  only a primitive-typed array element.
+  only a primitive-typed or struct array element.
 - Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
   variable, a field reached from one, or an array element reached from one.
-- A fixed-size array variable (`[n]T`) is, like a struct variable, already a pointer to its own
-  storage — but unlike a struct variable it *is* representable as a plain pointer-to-primitive
-  local, so `@!arr` compiles: it yields the address of the variable's own pointer slot, not a new
-  view into the array's elements. Since the array is freed automatically when its owning scope
-  exits, handing that slot to a C function that overwrites it (e.g. an out-param realloc-style
-  API) will make the automatic free operate on whatever the C call left behind — get this pattern
-  right or avoid it, the compiler does not check it.
 
 ---
 

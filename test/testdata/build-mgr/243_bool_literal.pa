@@ -1,0 +1,17 @@
+cinclude <stdio.h>;
+cinclude <stdbool.h>;
+const ON = true;
+
+func negate(bool b) -> bool { if b { return false; } return true; }
+func pick() -> bool r = true { }
+
+bool a = true;
+bool b = false;
+printf("%d %d %d %d\n", a, b, negate(a), pick());
+false -> a;
+if !a { printf("%d\n", ON); }
+
+int32 x = true;
+flo64 f = true;
+printf("%d %d %g %d\n", x, true + 1, f, -true);
+printf("%d %d\n", true == ON, false || true);

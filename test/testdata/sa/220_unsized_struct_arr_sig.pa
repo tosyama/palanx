@@ -1,0 +1,4 @@
+type P { int32 x; };
+func f([]P a, []$P b, [][]P c) -> []P { return a; }
+[2]@![]P s;
+[2]@![]$P e;

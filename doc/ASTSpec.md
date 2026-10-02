@@ -43,8 +43,8 @@ Function definition model
   1. **palan** - Palan user-defined function
      - export - Boolean, true if declared with `export` keyword (omitted when false)
      - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters)
-     - ret-type - Return variable type (single-return functions only; omitted for void and multi-return)
-     - rets - Return value list (multi-return functions only; omitted for single-return and void)
+     - ret-type - Return variable type (unnamed single return only; omitted for void and named returns)
+     - rets - Named return list (Palan parameter, see below; omitted for an unnamed return and void)
      - block\* - Block object (function body; see Block object below)
 
   2. **c** - C function prototype (from `cinclude`)
@@ -163,6 +163,7 @@ Used in Palan function `parameters` and `rets`.
 
 - name\* - Variable name string
 - var-type\* - Variable type
+- init - Expression node for the initial value (`rets` only; omitted when not written)
 
 C Parameter
 -----------
@@ -310,7 +311,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "block" "if" "while" "break" "continue" "not-impl"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "break" "continue" "not-impl"
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -356,46 +357,52 @@ Statement model
   9. const-decl - native constant declaration (`const Name = <literal>;`; consumed by SA, not emitted to sa.json)
     - name\* - Constant name string
     - value\* - Literal expression model (lit-int, lit-uint, lit-flo, or lit-str; see Expression model)
-  10. field-assign - struct field assignment (`value -> obj.field`)
+  10. field-assign - struct field assignment (`value -> obj.field` or `value ->> obj.field`)
     - object\* - Base object expression model: `id` for a plain variable, `arr-index` or
       `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`)
     - field\*  - Field name string
     - value\*  - Source expression model
+    - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
   11. return - return statement
     - values - Return expression list (omitted for bare `return;`)
   12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function)
-  13. block - standalone block statement (`{ ... }`)
+  13. tapple-assign - multiple return values assigned to existing targets (`call(...) -> (target, ...)`)
+    - targets\* - Target expression model list: `id`, `arr-index` or `field-access` per entry
+    - value\* - Call expression model (must be a call to a multi-return Palan function)
+  14. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
-  14. if - if / if-else statement
+  15. if - if / if-else statement
     - cond\* - Condition expression model
     - then\* - Then-block object (block statement body)
     - else - Else-block object or nested if statement (omitted when absent)
-  15. while - while loop statement
+  16. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  16. break - exit the innermost while loop (no additional fields)
-  17. continue - skip to next iteration of innermost while loop (no additional fields)
-  18. not-impl - a statement the grammar parses but the compiler does not implement (e.g. `for`,
+  17. break - exit the innermost while loop (no additional fields)
+  18. continue - skip to next iteration of innermost while loop (no additional fields)
+  19. not-impl - a statement the grammar parses but the compiler does not implement (e.g. `for`,
       `interface`, `x++`, a type-omitted declaration). Rejected by SA.
     - untyped-var - Name of the first type-omitted variable; present only for a `name = expr;`
       declaration (reserved for type inference; an assignment is `expr -> name`)
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
-    is also emitted as a `lit-int` holding its ASCII code, with no `value-type`
+    is also emitted as a `lit-int` holding its ASCII code, with no `value-type`; `true`/`false`
+    are emitted as a `bool`-typed `lit-int`
     - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128"); a macro
       substitute's value may exceed int64 when its `value-type` is `uint64`
-    - value-type - Variable type; present only when this node is gen-ast's in-place substitute
+    - value-type - Variable type; present only for `true`/`false` (value `"1"`/`"0"`, value-type
+      `bool`) or when this node is gen-ast's in-place substitute
       for a reference to a cinclude'd macro constant that has a `value-type` (see Constant
-      definition model above) — an ordinary source-literal `lit-int` never carries one. Holds the
+      definition model above) — a numeric or character literal never carries one. Holds the
       macro's own `value-type` (e.g. `pntr` for `NULL`), unchanged by the substitution; a macro
       without one substitutes an untyped `lit-int`, identical to a source literal. Substitution
       happens for every `id` reference whose name matches a macro registered by a `cinclude`
@@ -481,6 +488,11 @@ Expression model
     - items\* - Element expression model list. A 2D literal is an `arr-lit` of row `arr-lit`s;
       the concatenated form `[a,b][c,d]` is normalized to the same shape as the nested form
       `[[a,b],[c,d]]` (only `loc` differs)
+  25. dict-lit - Named-value literal (`{x: a, y: b}`); a trailing comma is allowed
+    - items\* - List of named values in source order
+      - name\*  - Name string
+      - value\* - Value expression model
+      - loc\*   - Location Array of `name: value`
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

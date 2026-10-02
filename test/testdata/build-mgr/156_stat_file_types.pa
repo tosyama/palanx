@@ -11,29 +11,29 @@ cinclude <stdio.h>;
 // itself creates via fopen below) and /tmp/pln_156_fifo before running this.
 
 stat d;
-stat("/etc", d);
+stat("/etc", @!d);
 printf("dir=%d\n", (d.st_mode & S_IFMT) == S_IFDIR);
 
 stat c;
-stat("/dev/null", c);
+stat("/dev/null", @!c);
 printf("chr=%d\n", (c.st_mode & S_IFMT) == S_IFCHR);
 
 @!FILE fp = fopen("/tmp/pln_156_reg.txt", "w");
 fputs("0123456789", fp);
 fflush(fp);
 stat r;
-fstat(fileno(fp), r);
+fstat(fileno(fp), @!r);
 printf("reg=%d size=%ld mtime_nonzero=%d\n",
        (r.st_mode & S_IFMT) == S_IFREG, r.st_size, r.st_mtim.tv_sec > 0);
 fclose(fp);
 
 stat lk;
 stat sk;
-lstat("/tmp/pln_156_link", lk);
-stat("/tmp/pln_156_link", sk);
+lstat("/tmp/pln_156_link", @!lk);
+stat("/tmp/pln_156_link", @!sk);
 printf("lnk=%d target_reg=%d\n",
        (lk.st_mode & S_IFMT) == S_IFLNK, (sk.st_mode & S_IFMT) == S_IFREG);
 
 stat fi;
-lstat("/tmp/pln_156_fifo", fi);
+lstat("/tmp/pln_156_fifo", @!fi);
 printf("fifo=%d\n", (fi.st_mode & S_IFMT) == S_IFIFO);

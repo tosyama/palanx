@@ -2,6 +2,6 @@ cinclude <stdio.h>;
 type Point { int64 x; int64 y; };
 Point original;
 5 -> original.x;  10 -> original.y;
-@!Point view = original;
+@!Point view = @!original;
 20 -> view.x;
 printf("%ld %ld\n", original.x, original.y);

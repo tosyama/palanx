@@ -1,0 +1,4 @@
+int64 n = 2;
+[n]int32 a;
+f(@a);
+func f(@[2]int32 g) { }

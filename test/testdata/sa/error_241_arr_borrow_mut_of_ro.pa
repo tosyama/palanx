@@ -1,0 +1,2 @@
+func f(@[2]int32 g) { g2(g); }
+func g2(@![2]int32 g) { }

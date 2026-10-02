@@ -12,6 +12,7 @@
 json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 {
 	json result = json::array();
+	pushStructDefNames(stmts);
 	for (auto& stmt : stmts) {
 		string t = stmt["stmt-type"];
 		if      (t == "import")   sa_import(stmt);
@@ -23,18 +24,25 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "struct-def")   sa_struct_def(stmt);
 		else if (t == "type-alias")   sa_type_alias(stmt);
 		else if (t == "const-decl")   sa_const_decl(stmt);
-		else if (t == "field-assign") result.push_back(sa_field_assign(stmt));
+		else if (t == "field-assign") { for (auto& s : sa_field_assign(stmt)) result.push_back(s); }
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
 				if (stmt.contains("values") && stmt["values"].size() == 1
 						&& stmt["values"][0].value("expr-type","") == "id")
 					removeFromArrayScope(stmt["values"][0]["name"].get<string>());
+				json ret = sa_return_stmt(stmt);
 				json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
+				// The return value may read what the frees release, so it is
+				// evaluated into a temp first.
+				if (!frees.empty() && ret.contains("values"))
+					result.push_back(bindReturnValueToTemp(stmt, ret));
 				for (auto& s : frees) result.push_back(s);
-			}
-			result.push_back(sa_return_stmt(stmt));
+				result.push_back(ret);
+			} else
+				result.push_back(sa_return_stmt(stmt)); // LCOV_EXCL_EXCEPTION_BR_LINE
 		}
-		else if (t == "tapple-decl") result.push_back(sa_tapple_decl(stmt));
+		else if (t == "tapple-decl") { for (auto& s : sa_tapple_decl(stmt)) result.push_back(s); }
+		else if (t == "tapple-assign") result.push_back(sa_tapple_assign(stmt));
 		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
 		else if (t == "while")    result.push_back(sa_while_stmt(stmt));
 		else if (t == "break") {
@@ -68,6 +76,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 			exit(1);
 		}
 	}
+	structDefNameScopes_.pop_back();
 	return result;
 }
 
@@ -183,11 +192,17 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(unsizedArrToPntr(resolveTypeAlias(p["var-type"])))), &funcDef);
+			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(normalizeArrBorrowType(funcDef, unsizedArrToPntr(funcDef, resolveTypeAlias(p["var-type"]))))), &funcDef);
 	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"])
-			if (!isStructType(resolveTypeAlias(r["var-type"])))
-				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(resolveTypeAlias(r["var-type"]))), &funcDef);
+		for (auto& r : funcDef["rets"]) {
+			if (!isStructType(resolveTypeAlias(r["var-type"]))) {
+				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(funcDef, resolveTypeAlias(r["var-type"]))), &funcDef);
+			} else if (r.contains("init")) {
+				// A struct-type named return is declared by the body itself, so there's no variable to initialize here.
+				cerr << locPrefix(r["init"]) << PlnSaMessage::getMessage(E_NamedRetInitOnStruct, r["name"].get<string>()) << endl;
+				exit(1);
+			}
+		}
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
 	enterScope();  // push scope[1] = function body
@@ -210,6 +225,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	json saFunc = funcDef;
 	normalizeUnsizedArrSig(saFunc);
+	normalizeArrBorrowSig(saFunc);
 	validateEmbeddedParams(saFunc);
 	normalizeStructSig(saFunc);
 	validateNativeSig(saFunc);
@@ -217,7 +233,16 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
 
-	json body = sa_statements(blk["body"]);
+	json body = json::array();
+	if (saFunc.contains("rets"))
+		for (auto& r : saFunc["rets"]) {
+			if (!r.contains("init")) continue;
+			json assign = {{"stmt-type", "assign"}, {"name", r["name"]}, {"value", r["init"]},
+			               {"loc", r["init"].value("loc", json::array())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			body.push_back(sa_assign_stmt(assign));
+			r.erase("init");
+		}
+	for (auto& s : sa_statements(blk["body"])) body.push_back(move(s));
 
 	// Append free() for array vars in function body scope (reverse declaration order)
 	json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
@@ -253,7 +278,16 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
+	// A borrowed array variable ("mutable" on its levels) is rebound to what
+	// '@x' names.
+	if (isCopiedByValue(*varType) && !varType->contains("mutable")) {
+		json dst = {{"expr-type","id"},{"name",name},{"var-type",*varType},{"value-type",*varType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return makeCopyStmt(stmt, dst, value);
+	}
+	if (varType->contains("arr-size") && !isInArrayScope(name))
+		checkArrBorrowBinding(stmt, stmt["value"], value, *varType);
 	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
+	checkStructBorrowSource(stmt, value, *varType);
 	if (!ptrPermissionOk(value["value-type"], *varType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -263,46 +297,96 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 {
-	json sa_target = sa_expression(stmt["target"]);
+	json sa_target = sa_expr_arr_index(stmt["target"], /*forWrite=*/true);
+	bool transfer = stmt.value("ownership-transfer", false);
+	if (!isWritableThrough(sa_target["array"]["value-type"])) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+		exit(1);
+	}
+	if (!transfer && isCopiedByValue(sa_target["value-type"]))
+		return json::array({makeCopyStmt(stmt, sa_target, sa_expression(stmt["value"]))}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (sa_target.value("addr-only", false)) {
 		// The element itself is an address computation (e.g. a struct array
 		// element), not a storage slot to overwrite -- assign to its fields instead.
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AssignToWholeStructElem) << endl;
 		exit(1);
 	}
-	if (!isWritableThrough(sa_target["array"]["value-type"])) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+	const json& targetType = sa_target["value-type"];
+	// A borrowed slot never owns what it points to, so it cannot be given anything.
+	if (transfer && isPtrBorrow(targetType)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToBorrowSlot) << endl;
 		exit(1);
 	}
-	const PlnType* toType = registry_.fromJson(sa_target["value-type"]);
+	const PlnType* toType = registry_.fromJson(targetType);
 	json sa_value = sa_expression(stmt["value"], toType);
 	if (!sa_value.contains("value-type")) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
 	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
-	if (!ptrPermissionOk(sa_value["value-type"], sa_target["value-type"])) {
+	checkElemShape(stmt, sa_value, targetType);
+	checkStructBorrowSource(stmt, sa_value, targetType);
+	if (!ptrPermissionOk(sa_value["value-type"], targetType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
 	}
 
 	json arr_assign = {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
-	if (!stmt.value("ownership-transfer", false))
+	if (!transfer)
 		return json::array({arr_assign});
 
-	arr_assign["ownership-transfer"] = true;
-	json result = json::array({arr_assign});
-
-	// Null out the source variable so its scope-exit free is a no-op: C free and
-	// the build-mgr generated __pln_free_* functions all accept NULL.
-	if (sa_value.value("expr-type","") == "id" && sa_value.contains("value-type")) {
-		result.push_back({
-			{"stmt-type", "assign"},
-			{"name", sa_value["name"]},
-			{"value", {{"expr-type","lit-int"},{"value","0"},{"value-type",sa_value["value-type"]}}}
-		});
+	// The row's owner frees it by the row's declared size, which the new row must have.
+	if (isArrLevel(targetType) && !copyShapeMatch(sa_value["value-type"], targetType)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferShapeMismatch,
+			arrShapeName(targetType), arrShapeName(sa_value["value-type"])) << endl;
+		exit(1);
 	}
+	arr_assign["ownership-transfer"] = true;
+	json result = json::array({makeOwnedValueFreeStmt(sa_target), arr_assign}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	appendTransferSourceReset(result, stmt, sa_value);
 	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Only an owner may give its value away, and it then holds NULL so its own free
+// is a no-op: C free and the build-mgr generated __pln_free_* functions all
+// accept NULL. A call result has no owner to reset.
+void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue)
+{
+	if (saValue.value("category", "") == "expiring")
+		return;
+	const json& src = stmt["value"];
+	string et = src.value("expr-type", "");
+	auto nullOf = [](const json& vt) -> json {
+		return {{"expr-type","lit-int"},{"value","0"},{"value-type",vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (et == "id" && saValue.value("category", "") == "owned") {
+		stmts.push_back({{"stmt-type", "assign"}, {"name", saValue["name"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
+		                 {"value", nullOf(saValue["value-type"])}});
+		return;
+	}
+	if (et == "field-access" || et == "arr-index") {
+		json loc = et == "field-access" ? sa_expr_field_access(src, /*forWrite=*/true)
+		                                : sa_expr_arr_index(src, /*forWrite=*/true);
+		if (!loc.value("addr-only", false) && isCopiedByValue(loc["value-type"])) {
+			if (et == "arr-index") {
+				if (!isWritableThrough(loc["array"]["value-type"])) {
+					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+					exit(1);
+				}
+				stmts.push_back({{"stmt-type", "arr-assign"}, {"target", loc}, // LCOV_EXCL_EXCEPTION_BR_LINE
+				                 {"value", nullOf(loc["value-type"])}});
+			} else {
+				json reset = {{"stmt-type", "field-assign"}, {"offset", loc["offset"]},
+				              {"value-type", loc["value-type"]}, {"value", nullOf(loc["value-type"])}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				if (loc.contains("var")) reset["var"] = loc["var"];
+				else reset["ptr-expr"] = loc["ptr-expr"];
+				stmts.push_back(move(reset));
+			}
+			return;
+		}
+	}
+	cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner) << endl;
+	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
@@ -333,6 +417,8 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		json value = sa_expression(stmt["values"][0], toType);
 		if (value.contains("value-type")) {
 			value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
+			checkElemShape(stmt, value, (*currentFunc_)["ret-type"]);
+			checkStructBorrowSource(stmt, value, (*currentFunc_)["ret-type"]);
 			if (!ptrPermissionOk(value["value-type"], (*currentFunc_)["ret-type"])) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);
@@ -348,7 +434,23 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 	return {{"stmt-type", "return"}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
+// Moves ret's single value into a fresh temp var; returns that var's decl and
+// rewrites ret to return the temp.
+json PlnSemanticAnalyzer::bindReturnValueToTemp(const json& stmt, json& ret)
+{
+	json& value = ret["values"][0];
+	json type = value.contains("value-type") ? value["value-type"] : (*currentFunc_)["ret-type"];
+	string name = "__ret_" + to_string(tempVarCounter_++);
+	declareVar(name, type, &stmt);
+	json decl = {
+		{"stmt-type", "var-decl"},
+		{"vars", json::array({{{"name", name}, {"var-type", type}, {"init", value}}})} // LCOV_EXCL_EXCEPTION_BR_LINE
+	}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	value = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return decl;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, size_t recvCount)
 {
 	const json& callExpr = stmt["value"];
 	const json* pFunc = nullptr;
@@ -385,25 +487,88 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleNeedsMultiRet, fname) << endl;
 		exit(1);
 	}
-	if (stmt["vars"].size() != (*pFunc)["rets"].size()) {
+	if (recvCount != (*pFunc)["rets"].size()) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleVarCountMismatch, fname) << endl;
 		exit(1);
 	}
+	return *pFunc;
+}
+
+// A variable whose declared type differs from its return value's receives it
+// through a temp and is declared as `T x = temp;`, so it follows the same
+// conversion rules as a single-value declaration.
+json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
+{
+	const json& rets = findMultiRetFunc(stmt, stmt["vars"].size())["rets"];
 
 	// Process the call expression via sa_expression (resolves func-type, annotates args)
-	json saCall = sa_expression(callExpr);
+	json saCall = sa_expression(stmt["value"]);
 
 	// Add multi-return value-types from the function's rets
 	json valueTypes = json::array();
-	for (auto& r : (*pFunc)["rets"])
+	for (auto& r : rets)
 		valueTypes.push_back(r["var-type"]);
 	saCall["value-types"] = valueTypes;
 
-	// Register declared variables in the symbol table
-	for (size_t i = 0; i < stmt["vars"].size(); i++)
-		declareVar(stmt["vars"][i]["var-name"].get<string>(), (*pFunc)["rets"][i]["var-type"]);
+	json vars = json::array();
+	json convDecls = json::array();
+	for (size_t i = 0; i < stmt["vars"].size(); i++) {
+		const json& v = stmt["vars"][i];
+		const json& retType = rets[i]["var-type"];
+		requireKnownTypeNames(stmt, v["var-type"]);
+		string name = v["var-name"];
+		if (normalizeSigType(v["var-type"]) != retType) {
+			string temp = "__tap_" + to_string(tempVarCounter_++);
+			convDecls.push_back({{"stmt-type", "var-decl"}, {"loc", stmt["loc"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
+				{"vars", json::array({{{"name", name}, {"var-type", v["var-type"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
+					{"init", {{"expr-type", "id"}, {"name", temp}, {"loc", stmt["loc"]}}}}})}});
+			name = temp;
+		}
+		declareVar(name, retType);
+		// A returned struct is owned by the caller.
+		if (isStructStorage(retType))
+			arrayScopeVars_.back().push_back({name, makeStructFreeStmt(name, retType)});
+		vars.push_back({{"var-name", name}, {"var-type", retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
-	return {{"stmt-type", "tapple-decl"}, {"vars", stmt["vars"]}, {"value", saCall}};
+	json result = json::array({{{"stmt-type", "tapple-decl"}, {"vars", vars}, {"value", saCall}}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	for (auto& d : convDecls)
+		for (auto& s : sa_var_decl(d))
+			result.push_back(s);
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// All return values are received into temps first, then assigned left to
+// right through the single-target assignment paths, so `f() -> (i, arr[i])`
+// indexes with the new i. The block limits the temps to this statement and
+// releases a returned struct once it has been copied into its target.
+json PlnSemanticAnalyzer::sa_tapple_assign(const json& stmt)
+{
+	const json& targets = stmt["targets"];
+	const json& rets = findMultiRetFunc(stmt, targets.size())["rets"];
+
+	json decl = {{"stmt-type", "tapple-decl"}, {"vars", json::array()}, {"value", stmt["value"]},
+	             {"loc", stmt["loc"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	vector<string> temps;
+	for (auto& r : rets) {
+		temps.push_back("__tap_" + to_string(tempVarCounter_++));
+		decl["vars"].push_back({{"var-name", temps.back()}, {"var-type", r["var-type"]}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
+	json body = json::array({decl}); // LCOV_EXCL_EXCEPTION_BR_LINE
+
+	for (size_t i = 0; i < targets.size(); i++) {
+		const json& t = targets[i];
+		json value = {{"expr-type", "id"}, {"name", temps[i]}, {"loc", t["loc"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		string et = t["expr-type"];
+		if (et == "id")
+			body.push_back({{"stmt-type", "assign"}, {"name", t["name"]}, {"value", value}, {"loc", t["loc"]}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+		else if (et == "arr-index")
+			body.push_back({{"stmt-type", "arr-assign"}, {"target", t}, {"value", value}, {"loc", t["loc"]}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+		else
+			body.push_back({{"stmt-type", "field-assign"}, {"object", t["object"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
+			                {"field", t["field"]}, {"value", value}, {"loc", t["loc"]}});
+	}
+	return sa_block({{"stmt-type", "block"}, {"body", body}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
@@ -416,6 +581,11 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn, def.keyword()) << endl;
 		exit(1);
 	}
+	bool transfer = stmt.value("ownership-transfer", false);
+	if (transfer && it->typeKind != "struct-ptr" && it->typeKind != "arr-ptr") {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedField, fn) << endl;
+		exit(1);
+	}
 	json fieldType = fieldValueType(*it);
 	const PlnType* toType = registry_.fromJson(fieldType);
 	json value = sa_expression(stmt["value"], toType);
@@ -423,13 +593,27 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
+	if (!transfer && isCopiedByValue(fieldType))
+		return json::array({makeCopyStmt(stmt, makeFieldAccess(chain, *it), value)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	value = convertForBinding(stmt, value, toType, fieldType);
+	checkStructBorrowSource(stmt, value, fieldType);
 	if (!ptrPermissionOk(value["value-type"], fieldType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
 	}
+	if (!transfer)
+		return json::array({makeFieldAssign(chain, *it, move(value))}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	// The field owns what it held, so '->>' releases that before taking over.
+	json result = json::array({makeOwnedValueFreeStmt(makeFieldAccess(chain, *it)), makeFieldAssign(chain, *it, value)}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	appendTransferSourceReset(result, stmt, value);
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value)
+{
 	// LCOV_EXCL_EXCEPTION_BR_START
-	int off = chain.offset + it->offset;
+	int off = chain.offset + field.offset;
+	json fieldType = fieldValueType(field);
 	if (!chain.isPointerBased)
 		return {{"stmt-type","field-assign"},{"var",chain.varName},
 		        {"offset",off},{"value-type",fieldType},{"value",move(value)}};
@@ -437,4 +621,96 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		return {{"stmt-type","field-assign"},{"ptr-expr",chain.ptrExpr},
 		        {"offset",off},{"value-type",fieldType},{"value",move(value)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, const json& src)
+{
+	const json& t = dst["value-type"];
+	const json& st = src["value-type"];
+	// A lone struct may be copied from a '@T' as well as from another struct's storage.
+	bool match = isStructStorage(t)
+		? isStructPntr(st) && st["base-type"] == t["base-type"]
+		: copyShapeMatch(st, t);
+	if (!match) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
+			arrShapeName(t), arrShapeName(st)) << endl;
+		exit(1);
+	}
+
+	// A struct returned by a Palan call is owned by nobody yet: receive it in a
+	// temp, copy from it like from a named value, and free it.
+	if (isExpiringStruct(src)) {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		string temp = "__cpy_" + to_string(tempVarCounter_++);
+		json decl = {{"stmt-type","var-decl"},
+		             {"vars",json::array({{{"name",temp},{"var-type",st},{"init",src}}})}};
+		json tempId = {{"expr-type","id"},{"name",temp},{"var-type",st},{"value-type",st}};
+		json body = json::array({decl, makeCopyStmt(locNode, dst, tempId), makeStructFreeStmt(temp, st)});
+		return {{"stmt-type","block"},{"body",move(body)}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
+
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	auto lit = [&](int64_t v) -> json {
+		return {{"expr-type","lit-uint"},{"value",to_string(v)},{"value-type",uint64_type}};
+	};
+	auto callStmt = [&](const string& name, const string& funcType, json args) -> json {
+		return {{"stmt-type","expr"},{"body",{
+			{"expr-type","call"},{"name",name},{"func-type",funcType},{"args",move(args)}}}};
+	};
+	auto memcpyStmt = [&](int64_t bytes) {
+		return callStmt("memcpy", "c", json::array({dst, src, lit(bytes)}));
+	};
+	auto structHasOwned = [&](const string& name) {
+		const StructDef& def = requireCompleteStruct(name, locNode);
+		return def.ownsFields;
+	};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+
+	if (isStructStorage(t)) {
+		string name = t["base-type"]["type-name"];
+		if (!structHasOwned(name))
+			return memcpyStmt(structDefs_[name].totalSize);
+		recordAllocShape(name);
+		return callStmt("__pln_copy_" + name, "palan", json::array({dst, src})); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
+
+	int64_t n = t["arr-size"];
+	const json& elem = t["base-type"];
+	if (t.value("embedded", false)) {
+		int64_t rowBytes = t.contains("stride") ? t["stride"].get<int64_t>()
+			: t["inner-size"].get<int64_t>() * elemSizeBytes(elem["type-name"]);
+		return memcpyStmt(n * rowBytes);
+	}
+	if (isStructStorage(elem)) {
+		string name = elem["base-type"]["type-name"];
+		recordArrStructShape(name);
+		return callStmt("__pln_copy_arr_" + name, "palan", json::array({dst, src, lit(n)})); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
+	if (isArrLevel(elem)) {
+		int64_t m = elem["arr-size"];
+		const json& leaf = elem["base-type"];
+		if (elem.value("embedded", false) && elem.contains("stride")) {
+			// [n][m]$T: rows are byte blocks, allocated as arr_arr_uint8.
+			recordArrArrShape("uint8");
+			return callStmt("__pln_copy_arr_arr_uint8", "palan",
+				json::array({dst, src, lit(n), lit(m * elem["stride"].get<int64_t>())})); // LCOV_EXCL_EXCEPTION_BR_LINE
+		}
+		if (isStructStorage(leaf)) {
+			string name = leaf["base-type"]["type-name"];
+			recordArrArrStructShape(name);
+			return callStmt("__pln_copy_arr_arr_" + name, "palan", json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
+		}
+		if (leaf.value("type-kind","") == "prim" && !elem.value("embedded", false)) {
+			string leafName = leaf["type-name"];
+			recordArrArrShape(leafName);
+			return callStmt("__pln_copy_arr_arr_" + leafName, "palan", json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
+		}
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, arrShapeName(t)) << endl;
+		exit(1);
+	}
+	// Primitive elements, or '@T' slots whose pointers are copied as they are.
+	int64_t elemBytes = isPtrBorrow(elem) ? 8 : elemSizeBytes(elem["type-name"]);
+	return memcpyStmt(n * elemBytes);
 } // LCOV_EXCL_EXCEPTION_BR_LINE

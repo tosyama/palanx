@@ -4,5 +4,5 @@ cinclude <sys/stat.h>;
 // function-like macros as callable functions, so this must be a clean
 // diagnostic (not an abort) naming the undefined function.
 stat st;
-stat("/etc", st);
+stat("/etc", @!st);
 int32 d = S_ISDIR(st.st_mode);

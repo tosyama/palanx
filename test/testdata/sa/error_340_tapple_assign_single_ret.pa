@@ -1,0 +1,3 @@
+func g(int32 a) -> int32 { return a; }
+int32 i; int64 j;
+g(1) -> (i, j);

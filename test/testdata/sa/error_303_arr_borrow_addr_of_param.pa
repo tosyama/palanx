@@ -1,0 +1,2 @@
+func f(@[2]int32 g) { h(@g); }
+func h(@[2]int32 g) { }

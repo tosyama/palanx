@@ -1,0 +1,4 @@
+type P { int32 x; };
+type W { P own; };
+W w; P t; @!P b = @!t;
+b ->> w.own;

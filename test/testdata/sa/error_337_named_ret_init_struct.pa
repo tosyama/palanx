@@ -1,0 +1,2 @@
+type P { int32 a; };
+func k() -> P p = 1 { P p; }

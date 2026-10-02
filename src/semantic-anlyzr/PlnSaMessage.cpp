@@ -170,8 +170,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_WriteToImmutablePtrField:
 			return "cannot write through read-only pointer field '@T'; use '@!T' for mutable.";
 
-		case E_EmbedArrOwnedSubStruct:
-			return "[n]$T: T has owned sub-struct fields; use [n]T instead.";
+		case E_EmbedOwningStruct:
+			return "cannot embed '" + arg1 + "' with '$': it owns fields; use '" + arg1 + "' without '$'.";
 
 		case E_WriteToReadOnlyArrElem:
 			return "cannot write through read-only pointer array element; use [n]@!T for mutable.";
@@ -194,8 +194,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_AddrOfNotPrimitive:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot take the address of '" + arg1 + "': '@'/'@!' only supports a primitive-typed "
-			       "local variable, a primitive-typed pointer local, a primitive-typed or embedded-struct "
-			       "field, or a primitive-typed array element of a struct/array it names.";
+			       "local variable, a primitive-typed pointer local, a struct or array variable, a "
+			       "primitive-typed, embedded-struct or owned-struct field, or a primitive-typed or struct "
+			       "array element of a struct/array it names.";
 
 		case E_WriteThroughReadOnlyPtr:
 			return "cannot write through read-only pointer '@T'; use '@!T' for mutable.";
@@ -219,8 +220,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_AddrOfNotPrimitiveElem:
 			return "cannot take the address of this array element: it is not a primitive-typed value "
-			       "(e.g. a struct-array element, a 2D row, or a pointer element) -- '@'/'@!' only "
-			       "supports a primitive-typed array element.";
+			       "(e.g. a 2D row, or a pointer element) -- '@'/'@!' only "
+			       "supports a primitive-typed or struct array element.";
 
 		case E_BitwiseOpNotInteger:
 			return "Bitwise operator operand must be an integer type.";
@@ -270,8 +271,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_StructInitNotSupported:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "initializing a '" + arg1 + "' variable from an expression is only supported "
-			       "when the expression is a call to a C function returning '" + arg1
+			return "initializing a '" + arg1 + "' variable from a call is only supported "
+			       "when it is a call to a C function returning '" + arg1
 			       + "' by value; declare it without an initializer and assign to its fields "
 			         "instead.";
 
@@ -356,10 +357,6 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "Integer literal '" + arg1 + "' is out of range for type '" + arg2 + "'.";
 
-		case E_ArrVarInitNotLiteral:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "array variable '" + arg1 + "' can only be initialized with an array literal.";
-
 		case E_ArrLitContext:
 			return "an array literal can only be used as an array variable's initializer in this version.";
 
@@ -379,13 +376,112 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ArrLitElemType:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "array variable '" + arg1 + "' cannot be initialized with an array literal: only numeric element types are supported.";
+			return "array variable '" + arg1 + "' cannot be initialized with an array literal: only numeric and struct element types are supported.";
 
 		case E_ArrLitRowSizeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			BOOST_ASSERT(arg3 != "\x01");
 			return "array variable '" + arg1 + "' has rows of size " + arg2 + " but a row of its array literal has " + arg3 + " elements.";
+
+		case E_ArrBorrowSizeNotConst:
+			return "every size in a borrowed array type ('@[n]T'/'@![n]T') must be a compile-time constant.";
+
+		case E_ArrBorrowUnsupportedElem:
+			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements, and neither a struct nor a pointer inside a '$[m]' row, in this version.";
+
+		case E_ArrBorrowNeedsAddrOf:
+			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name'.";
+
+		case E_ArrBorrowShapeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "array shape '" + arg2 + "' does not match the borrowed array type '" + arg1 + "'.";
+
+		case E_StructBorrowNeedsAddrOf:
+			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'.";
+
+		case E_Unsupported2DStructArr:
+			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
+
+		case E_StructLitFieldCount:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "struct '" + arg1 + "' has " + arg2 + " fields but its literal has " + arg3 + " values.";
+
+		case E_StructLitDupField:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "field '" + arg1 + "' is given more than once in a struct literal.";
+
+		case E_StructLitMissingField:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "the literal of struct '" + arg1 + "' is missing field '" + arg2 + "'.";
+
+		case E_StructLitExpected:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a value of struct '" + arg1 + "' must be written as '[...]' or '{name: value, ...}'.";
+
+		case E_StructLitFieldType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "field '" + arg2 + "' of struct '" + arg1 + "' cannot be initialized by a literal: only numeric and struct fields are supported.";
+
+		case E_DictLitContext:
+			return "a '{name: value}' literal can only be used as a struct element of an array literal.";
+
+		case E_CopyShapeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot copy '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+
+		case E_CopyUnsupportedShape:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "copying '" + arg1 + "' is not supported in this version.";
+
+		case E_AddrOfBorrowed:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is already a borrow ('@T'/'@[n]T'); pass it by name.";
+
+		case E_EmbedElemNotStruct:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'$' applies only to a struct element or a '$[m]' row, not '" + arg1 + "'.";
+
+		case E_NamedRetInitOnStruct:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "struct-type named return '" + arg1 + "' cannot have an initializer.";
+
+		case E_TransferToNonOwnedField:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->>' needs a field that owns its value (T or [n]T); '" + arg1 + "' does not.";
+
+		case E_ExpiringStructToBorrow:
+			return "a struct returned by a call has no owner to borrow from; receive it into a "
+			       "struct variable with '->' and borrow it with '@name' or '@!name'.";
+
+		case E_TransferFromNonOwner:
+			return "'->>' needs a source that owns its value: an owning variable, an owned field "
+			       "or element, or a call result.";
+
+		case E_TransferToBorrowSlot:
+			return "'->>' cannot give ownership to a borrowed pointer slot ('@T'/'@!T'); store into it with '->'.";
+
+		case E_TransferShapeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+
+		case E_UnsizedArrRowSizeNotConst:
+			return "the row size in '[][m]T' must be a compile-time constant.";
+
+		case E_UnsizedArrRowUnsupported:
+			return "'[][m]T' supports only '[m]T' rows of a primitive or struct element and '[m]$T' rows of a struct, in this version.";
+
+		case E_ArrElemShapeMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "array shape '" + arg2 + "' does not match '" + arg1 + "': its elements must have the same size and layout, and be owned by both or by neither.";
 
 		default:
 			BOOST_ASSERT(false);

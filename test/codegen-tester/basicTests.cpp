@@ -361,8 +361,8 @@ TEST(codegen, if_stmt) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // condition: testl + je to end label
-    ASSERT_NE(asm_text.find("testl"),       string::npos);
+    // condition: testb + je to end label
+    ASSERT_NE(asm_text.find("testb"),       string::npos);
     ASSERT_NE(asm_text.find("je "),         string::npos);
     ASSERT_NE(asm_text.find(".Lif0_end:"),  string::npos);
     ASSERT_NE(asm_text.find("call printf"), string::npos);
@@ -380,7 +380,7 @@ TEST(codegen, if_else_stmt) {
 
     string asm_text = readFile(asmf);
     // conditional jump to else label
-    ASSERT_NE(asm_text.find("testl"),            string::npos);
+    ASSERT_NE(asm_text.find("testb"),            string::npos);
     ASSERT_NE(asm_text.find("je "),              string::npos);
     ASSERT_NE(asm_text.find(".Lif0_else:"),      string::npos);
     ASSERT_NE(asm_text.find(".Lif0_end:"),       string::npos);
@@ -463,9 +463,11 @@ TEST(codegen, div_rhs_in_rax) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // rhs of div is in %rax (named return value), must be saved to %r10 before idivq
-    ASSERT_NE(asm_text.find("movq %rax, %r10"), string::npos);
-    ASSERT_NE(asm_text.find("idivq %r10"),      string::npos);
+    // The return value is also the divisor; idivq overwrites %rax, so the
+    // value must live elsewhere until the return.
+    ASSERT_EQ(asm_text.find("movq %rax, %r10"), string::npos);
+    ASSERT_NE(asm_text.find("idivq %rbx"),      string::npos);
+    ASSERT_NE(asm_text.find("movq %rbx, %rax"), string::npos);
 }
 
 TEST(codegen, while_loop) {
@@ -481,7 +483,7 @@ TEST(codegen, while_loop) {
     ASSERT_NE(asm_text.find(".Lwhile0_start:"),      string::npos);
     ASSERT_NE(asm_text.find(".Lwhile0_end:"),        string::npos);
     // condition test and conditional jump to end
-    ASSERT_NE(asm_text.find("testl"),                string::npos);
+    ASSERT_NE(asm_text.find("testb"),                string::npos);
     ASSERT_NE(asm_text.find("je "),                  string::npos);
     // unconditional back-jump to start
     ASSERT_NE(asm_text.find("\tjmp .Lwhile0_start"), string::npos);

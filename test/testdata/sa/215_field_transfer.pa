@@ -1,0 +1,5 @@
+type P { int32 x; };
+type W { [2]P parr; };
+W w;
+[2]P pa;
+pa ->> w.parr;

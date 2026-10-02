@@ -180,7 +180,7 @@ void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
 	for (auto& p : funcDef["parameters"]) {
 		if (!p.contains("var-type")) continue;
 		const auto& vt = p["var-type"];
-		if (vt.value("embedded", false) && !vt.contains("inner-size")) {
+		if (vt.value("embedded", false) && !vt.contains("inner-size") && !vt.contains("stride")) {
 			cerr << locPrefix(funcDef)
 			     << PlnSaMessage::getMessage(E_EmbeddedArrUnsizedInner) << endl;
 			exit(1);
@@ -203,8 +203,7 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 			{"name",              f.name},
 			{"offset",            f.offset},
 			{"struct-name",       f.typeName},
-			{"struct-total-size", sub.totalSize},
-			{"needs-alloc",       sub.hasOwnedStructFields}
+			{"struct-total-size", sub.totalSize}
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 		recordAllocShape(f.typeName);
@@ -218,7 +217,8 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 			{"offset",    f.offset},
 			{"elem-kind", f.elemKind},
 			{"leaf-name", f.typeName},
-			{"count",     f.count}
+			{"count",     f.count},
+			{"elem-size", f.stride}
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 		if (f.elemKind == "struct") {
@@ -267,6 +267,34 @@ bool PlnSemanticAnalyzer::isKnownPointeeTypeName(const string& name) const
 	return isPrimPointeeName(name) || isKnownTypeName(name);
 }
 
+void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json& type) const
+{
+	const json resolved = resolveTypeAliasDeep(type);
+	const json* t = &resolved;
+	bool isPointee = false;
+	while (t->value("type-kind","") == "arr" || t->value("type-kind","") == "pntr") {
+		isPointee = t->value("type-kind","") == "pntr";
+		if (t->value("embedded", false)) {
+			const json& elem = (*t)["base-type"];
+			string ek = elem.value("type-kind","");
+			if (ek == "prim" && !structDefs_.count(elem.value("type-name",""))) { // LCOV_EXCL_EXCEPTION_BR_LINE
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, elem.value("type-name","")) << endl;
+				exit(1);
+			}
+			if (ek != "prim" && ek != "arr") {
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedElemNotStruct, typeDisplayName(elem)) << endl;
+				exit(1);
+			}
+		}
+		t = &(*t)["base-type"];
+	}
+	if (t->value("type-kind","") != "prim") return;
+	string tname = t->value("type-name","");
+	if (isPointee ? isKnownPointeeTypeName(tname) : isKnownTypeName(tname)) return;
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+	exit(1);
+}
+
 json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 {
 	if (!isStructType(type)) return type;
@@ -276,6 +304,80 @@ json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 	        {"base-type",{{"type-kind","struct"},{"type-name",name}}}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A struct element gets the same representation as in the sized array: its own
+// storage in `[]T`, laid out with its stride in `[]$T`.
+json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type)
+{
+	if (type.value("type-kind","") != "arr" || type.value("specifier","") != "raw"
+	    || !type["size-expr"].is_null())
+		return type;
+	if (type.value("embedded", false)) {
+		json embed_bt = resolveTypeAlias(type["base-type"]);  // [m]T or a struct
+		json pntr = {{"type-kind","pntr"},{"embedded",true}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		if (isStructType(embed_bt)) {
+			string tname = embed_bt["type-name"].get<string>();
+			// LCOV_EXCL_EXCEPTION_BR_START
+			pntr["stride"]    = requireCompleteStruct(tname, locNode).totalSize;
+			pntr["base-type"] = {{"type-kind","struct"},{"type-name",tname}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+			return pntr;
+		}
+		bool isRow = embed_bt.value("type-kind","") == "arr";
+		if (isRow && isStructType(resolveTypeAlias(embed_bt["base-type"]))) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_Unsupported2DStructArr) << endl;
+			exit(1);
+		}
+		if (isRow && !embed_bt["size-expr"].is_null()) {
+			const auto& sz = embed_bt["size-expr"];
+			string et = sz.value("expr-type","");
+			if (et == "lit-int" || et == "lit-uint")
+				pntr["inner-size"] = stoll(sz["value"].get<string>());
+			// Variable inner-size: no inner-size field; validateEmbeddedParams catches it
+		}
+		// []$[]T or []$[var]T: no inner-size → validateEmbeddedParams reports error
+		pntr["base-type"] = embed_bt.value("base-type", json{});
+		return pntr;
+	}
+	json bt = resolveTypeAlias(type["base-type"]);
+	if (bt.value("type-kind","") == "arr" && !bt["size-expr"].is_null()) {
+		json leaf = resolveTypeAlias(bt["base-type"]);
+		string lk = leaf.value("type-kind","");
+		if (lk == "arr" || lk == "pntr") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsizedArrRowUnsupported) << endl;
+			exit(1);
+		}
+		return {{"type-kind","pntr"}, {"base-type", sizedArrLevel(locNode, bt, nullopt)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
+	json elem = isStructType(bt) ? toStructPntrType(bt)
+	          : bt.value("type-kind","") == "pntr" ? ptrSlotElemType(locNode, bt)
+	          : unsizedArrToPntr(locNode, type["base-type"]);
+	return {{"type-kind","pntr"}, {"base-type", elem}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A slot to an unsized array ('@![]T') points at the array's elements, so it
+// is that array's pointer carrying the slot's permission.
+json PlnSemanticAnalyzer::ptrSlotElemType(const json& locNode, const json& type)
+{
+	const json& target = type["base-type"];
+	json elem = target.value("type-kind","") == "arr"
+		? unsizedArrToPntr(locNode, target)
+		: json{{"type-kind","pntr"},{"base-type",target}};
+	elem["mutable"] = type.value("mutable", false);
+	return deepNormalizePrimToStruct(elem);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::normalizeUnsizedArrSig(json& funcDef)
+{
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"])
+			p["var-type"] = unsizedArrToPntr(funcDef, p["var-type"]);
+	if (funcDef.contains("ret-type"))
+		funcDef["ret-type"] = unsizedArrToPntr(funcDef, funcDef["ret-type"]);
+	if (funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"])
+			r["var-type"] = unsizedArrToPntr(funcDef, r["var-type"]);
+}
 
 bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
 {
@@ -312,39 +414,27 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 	return resolved;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+json PlnSemanticAnalyzer::normalizeSigType(const json& type) const
+{
+	json t = resolveTypeAlias(type);
+	return isStructType(t) ? toStructPntrType(t) : deepNormalizePrimToStruct(t);
+}
+
 void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 {
 	if (funcDef.contains("parameters"))
-		for (auto& p : funcDef["parameters"]) {
-			p["var-type"] = resolveTypeAlias(p["var-type"]);
-			if (isStructType(p["var-type"]))
-				p["var-type"] = toStructPntrType(p["var-type"]);
-			else
-				p["var-type"] = deepNormalizePrimToStruct(p["var-type"]);
-		}
+		for (auto& p : funcDef["parameters"])
+			p["var-type"] = normalizeSigType(p["var-type"]);
 	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"]) {
-			r["var-type"] = resolveTypeAlias(r["var-type"]);
-			if (isStructType(r["var-type"]))
-				r["var-type"] = toStructPntrType(r["var-type"]);
-			else
-				r["var-type"] = deepNormalizePrimToStruct(r["var-type"]);
-		}
-	if (funcDef.contains("ret-type")) {
-		funcDef["ret-type"] = resolveTypeAlias(funcDef["ret-type"]);
-		if (isStructType(funcDef["ret-type"]))
-			funcDef["ret-type"] = toStructPntrType(funcDef["ret-type"]);
-		else
-			funcDef["ret-type"] = deepNormalizePrimToStruct(funcDef["ret-type"]);
-	}
+		for (auto& r : funcDef["rets"])
+			r["var-type"] = normalizeSigType(r["var-type"]);
+	if (funcDef.contains("ret-type"))
+		funcDef["ret-type"] = normalizeSigType(funcDef["ret-type"]);
 }
 
 // Structural-only counterpart to unrepresentableTypeName for native Palan
-// signatures: unlike a cinclude'd C signature, a "prim" node here may be a
-// not-yet-registered struct name (forward reference or typo), which is left
-// to the more specific E_UnknownStructType/E_IncompleteStructType diagnostics
-// rather than rejected here. Only a type-kind that can never build regardless
-// of name resolution (currently just "arr") is reported.
+// signatures: names were already checked by preregisterFunc, so only a
+// type-kind that can never build (currently just "arr") is reported.
 static string unsupportedNativeSigTypeKind(const json& vt)
 {
 	string k = vt.value("type-kind", "");
@@ -378,6 +468,111 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 		exit(1);
 	}
 }
+
+int64_t PlnSemanticAnalyzer::constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow)
+{
+	int64_t n = sizeExprAst.is_null() ? -1 : constArrSize(sa_arr_size_expr(locNode, sizeExprAst));
+	if (n < 0) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(
+			isBorrow ? E_ArrBorrowSizeNotConst : E_UnsizedArrRowSizeNotConst) << endl;
+		exit(1);
+	}
+	return n;
+}
+
+// A sized array level as the variable holding it is typed, which a borrow of it
+// shares except that every level carries the borrow's permission.
+json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable)
+{
+	json out = {{"type-kind","pntr"},{"arr-size",constLevelSize(locNode, arr["size-expr"], isMutable.has_value())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (isMutable) out["mutable"] = *isMutable;
+	json leaf = arr["base-type"];
+	if (arr.value("embedded", false)) {
+		out["embedded"] = true;
+		if (leaf.value("type-kind","") != "arr") {
+			// [n]$T: the structs themselves are laid out in the array, as in the variable.
+			leaf = resolveTypeAlias(leaf);
+			string tname = leaf.value("type-name","");
+			// LCOV_EXCL_EXCEPTION_BR_START
+			out["stride"]    = requireCompleteStruct(tname, locNode).totalSize;
+			out["base-type"] = {{"type-kind","struct"},{"type-name",tname}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+			return out;
+		}
+		out["inner-size"] = constLevelSize(locNode, leaf["size-expr"], isMutable.has_value());
+		leaf = json(leaf["base-type"]);
+	} else if (leaf.value("type-kind","") == "arr") {
+		out["base-type"] = sizedArrLevel(locNode, leaf, isMutable);
+		return out;
+	}
+	leaf = resolveTypeAlias(leaf);
+	// [n]@T / [n]@!T: the element pointer keeps its own permission.
+	json ptrElem;
+	if (leaf.value("type-kind","") == "pntr" && !out.value("embedded", false)) {
+		ptrElem = {{"type-kind","pntr"},{"mutable",leaf.value("mutable", true)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		leaf = resolveTypeAlias(leaf["base-type"]);
+	}
+	string tname = leaf.value("type-name","");
+	bool isStruct = structDefs_.count(tname) > 0;
+	if (leaf.value("type-kind","") != "prim" || (isStruct && out.value("embedded", false))) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
+		exit(1);
+	}
+	// LCOV_EXCL_EXCEPTION_BR_START
+	if (!ptrElem.is_null()) {
+		ptrElem["base-type"] = isStruct ? json{{"type-kind","struct"},{"type-name",tname}} : leaf;
+		out["base-type"] = move(ptrElem);
+	} else {
+		out["base-type"] = isStruct ? toStructPntrType(leaf) : leaf;
+	}
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+	return out;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json& type)
+{
+	if (type.value("type-kind","") != "pntr" || type["base-type"].value("type-kind","") != "arr")
+		return type;
+	return sizedArrLevel(locNode, type["base-type"], type.value("mutable", false));
+}
+
+// Parameters only: a borrowed array return would outlive the storage it
+// borrows, so it stays rejected by validateNativeSig.
+void PlnSemanticAnalyzer::normalizeArrBorrowSig(json& funcDef)
+{
+	if (!funcDef.contains("parameters")) return;
+	for (auto& p : funcDef["parameters"])
+		p["var-type"] = normalizeArrBorrowType(funcDef, p["var-type"]);
+}
+
+void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json& srcAst,
+		const json& saValue, const json& dstType)
+{
+	bool namesBorrow = saValue.value("expr-type","") == "id" && saValue.contains("var-type")
+	                   && isArrBorrowVar(saValue["var-type"]);
+	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowNeedsAddrOf) << endl;
+		exit(1);
+	}
+	if (!arrShapeMatch(saValue["value-type"], dstType)) {
+		// The owned var-type names the source's levels exactly: a borrowed row
+		// whose size is unknown looks like a '@T' element once it has "mutable".
+		const json& srcType = saValue.contains("var-type") ? saValue["var-type"] : saValue["value-type"];
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowShapeMismatch,
+			arrShapeName(dstType), arrShapeName(srcType)) << endl;
+		exit(1);
+	}
+}
+
+void PlnSemanticAnalyzer::checkElemShape(const json& locNode, const json& saValue, const json& dstType)
+{
+	if (!saValue.contains("value-type") || elemShapeMatch(saValue["value-type"], dstType)) return;
+	json dstShape = dstType;
+	dstShape.erase("mutable");  // a slot reads as the array it points to
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrElemShapeMismatch,
+		arrShapeName(dstShape), arrShapeName(saValue["value-type"])) << endl;
+	exit(1);
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 // Diagnoses a "syscall" declaration against the Linux syscall ABI (<=6
 // GP-register args, no float, single raw-rax return) and folds its number
@@ -454,8 +649,15 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 // whether a loc node is available for a duplicate-definition diagnostic.
 void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
 {
+	for (auto& p : f.value("parameters", json::array()))
+		requireKnownTypeNames(f, p["var-type"]);
+	for (auto& r : f.value("rets", json::array()))
+		requireKnownTypeNames(f, r["var-type"]);
+	if (f.contains("ret-type")) requireKnownTypeNames(f, f["ret-type"]);
+
 	json funcEntry = f;
 	normalizeUnsizedArrSig(funcEntry);
+	normalizeArrBorrowSig(funcEntry);
 	validateEmbeddedParams(funcEntry);
 	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
@@ -464,6 +666,22 @@ void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
 	registerPlnFunc(funcEntry["name"], funcEntry, loc_node);
+}
+
+// A const whose value names a variable can only be diagnosed once variables
+// are declared, so the pre-scan leaves it to step 2.
+bool PlnSemanticAnalyzer::onlyNamesConsts(const json& expr) const
+{
+	if (expr.is_object()) {
+		if (expr.value("expr-type","") == "id" && !constDecls_.count(expr.value("name","")))
+			return false;
+		for (auto& [k, v] : expr.items())
+			if (!onlyNamesConsts(v)) return false;
+	} else if (expr.is_array()) {
+		for (auto& v : expr)
+			if (!onlyNamesConsts(v)) return false;
+	}
+	return true;
 }
 
 void PlnSemanticAnalyzer::analysis(const json &ast)
@@ -478,15 +696,20 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 0. Pre-scan type-alias/struct-def declarations so function signatures
 	//    pre-registered in step 1 see fully-resolved types, not alias names.
 	//    Top-level cinclude types join the scan in source order, since native
-	//    struct fields and signatures can name them; step 2 registering them
-	//    again is a no-op.
-	if (ast["ast"].contains("statements"))
+	//    struct fields and signatures can name them; consts join it so a
+	//    borrowed array parameter can size itself with one. Step 2
+	//    registering them again is a no-op.
+	if (ast["ast"].contains("statements")) {
+		pushStructDefNames(ast["ast"]["statements"]);
 		for (auto& stmt : ast["ast"]["statements"]) {
 			string t = stmt.value("stmt-type", "");
 			if      (t == "type-alias") sa_type_alias(stmt);
 			else if (t == "struct-def") sa_struct_def(stmt);
 			else if (t == "cinclude")   registerCIncludeTypes(stmt);
+			else if (t == "const-decl" && onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
 		}
+		structDefNameScopes_.pop_back();
+	}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"])

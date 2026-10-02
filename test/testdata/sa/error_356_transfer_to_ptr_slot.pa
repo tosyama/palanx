@@ -1,0 +1,3 @@
+type P { int32 x; };
+P t; [2]@!P ps;
+t ->> ps[1];

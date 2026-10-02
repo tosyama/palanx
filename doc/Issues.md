@@ -161,3 +161,15 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 24. gen-ast Parsing Time Grows Quadratically With Statement Count
 
 **Summary:** Bison's GLR C++ skeleton (`glr.cc`) copies each semantic value into its stack state on every shift and reduce. Statement lists (`stmt_list_e`, `stmt_list_b`, `block`) are `vector<json>` values that grow by one statement per reduction, so every added statement copies the whole list so far, even though the grammar actions `move` their operands. Parsing time is quadratic in the number of statements in one list: a function body of 250 simple statements takes about 2.8s and 2000 take about 178s, and the ~170-line ncurses Tetris spends about 3.2s of its 5.3s build in gen-ast's own parsing. A likely fix is to carry lists through the parser stack as a cheap-to-copy handle (for example a `shared_ptr` to the vector) or to accumulate them outside the semantic value, rather than by value.
+
+---
+
+## 25. Contiguous Array Levels Have Two SA Encodings
+
+**Summary:** SA encodes an array level whose elements sit contiguously (`$`) in two ways. `[m]$[n]int32` (and `[]$[n]T`) is a single level with `embedded` + `inner-size`: the row is folded into its parent, and consumers rebuild a row pointer on access. `[n]$P`, and each row of `[m][n]$P`, is a level of its own with `embedded` + `stride`. Both mean "elements of a known byte size placed back to back", but row-size computation, element addressing and shape matching each branch on `inner-size` versus `stride` (`PlnSaExpr.cpp`, `PlnSaStmt.cpp`, `arrShapeMatch`/`copyShapeMatch`). Every shape currently needed works, so this is deferred rather than fixed now. Unify it (one contiguous-level form carrying the element size, with the row kept as its own level) before adding a shape that would need a third case, such as a contiguous 2D struct array `[m]$[n]$T` or a two-dimensional array field in a struct, both rejected today.
+
+---
+
+## 26. An Assignment Nested Inside an Expression Is Not Diagnosed
+
+**Summary:** gen-ast parses `expr -> target` as an expression, but only a statement-level assignment becomes an `assign`/`arr-assign`/`field-assign` statement. Nested inside another expression (`printf("%d\n", 3 -> a)`), the `assign-expr` passes SA untouched and palan-codegen stops with `Unknown expression type in SA file: 'assign-expr'.` Whether an assignment expression yields its value or acts as an lvalue (the target) is undecided, so SA should reject it as not implemented until that is settled.

@@ -1,0 +1,3 @@
+type P { int32 x; };
+func f() -> P p, int32 b { P p; 4 -> b; }
+(int32 q, int32 c) = f();

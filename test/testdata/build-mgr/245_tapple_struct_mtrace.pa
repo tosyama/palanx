@@ -1,0 +1,23 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int64 y; };
+type Q { P p; [3]int32 a; };
+func f(int32 v) -> P p, int32 b { P p; v -> p.x; v * 2 -> p.y; v + 1 -> b; }
+func g(int32 v) -> int32 b, Q q { Q q; v -> q.p.x; v * 3 -> q.a[2]; v + 2 -> b; }
+type R { P p; };
+mtrace();
+{
+    (P s, int32 c) = f(3);
+    printf("%d %ld %d\n", s.x, s.y, c);
+    (int64 d, Q q) = g(4);
+    printf("%ld %d %d\n", d, q.p.x, q.a[2]);
+    int32 n;
+    f(5) -> (s, n);
+    printf("%d %ld %d\n", s.x, s.y, n);
+    g(6) -> (n, q);
+    printf("%d %d %d\n", n, q.p.x, q.a[2]);
+    R r;
+    f(7) -> (r.p, n);
+    printf("%d %d\n", r.p.x, n);
+}
+muntrace();
