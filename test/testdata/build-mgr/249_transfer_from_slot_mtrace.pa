@@ -12,6 +12,9 @@ mtrace();
     s[1] ->> w.own;
     [2][3]int32 m; 9 -> m[1][2];
     m[1] ->> w.arr;
-    printf("%d %d\n", w.own.x, w.arr[2]);
+    printf("%d %d ", w.own.x, w.arr[2]);
+    [2]W ws; 3 -> ws[1].own.x;
+    ws[1].own ->> w.own;
+    printf("%d\n", w.own.x);
 }
 muntrace();

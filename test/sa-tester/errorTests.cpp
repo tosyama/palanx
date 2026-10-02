@@ -2327,6 +2327,7 @@ TEST(sa_error, arr_lit_init)
 		{"error_222_arr_lit_2d_given_1d.pa", ":1:18: error: the array literal's dimensions do not match array variable 'm'."},
 		{"error_223_arr_lit_3d.pa", ":1:1: error: array variable 'm' cannot be initialized with an array literal: only numeric and struct element types are supported."},
 		{"error_224_arr_lit_row_size_not_const.pa", ":2:1: error: array variable 'm' initialized with an array literal must have a compile-time constant size."},
+		{"error_375_struct_lit_void_field.pa", ":3:16: error: Void function call cannot be used as a value."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2544,6 +2545,8 @@ TEST(sa_error, copy)
 		{"error_300_copy_into_ro_elem.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
 		{"error_301_copy_ptr_slots_into_structs.pa", ":4:1: error: cannot copy '[2]@P' into '[2]P'"},
 		{"error_302_copy_unsupported_shape.pa", ":2:2: error: copying '[2][3][4]int32' is not supported in this version."},
+		{"error_374_arr_copy_void_init.pa", ":2:1: error: Void function call cannot be used as a value."},
+		{"error_376_copy_runtime_row_size.pa", ":3:1: error: cannot copy '[3]$[?]int32' into '[3]$[?]int32'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

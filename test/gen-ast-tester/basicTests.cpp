@@ -1672,7 +1672,7 @@ TEST(gen_ast, tapple_assign) {
 	ASSERT_EQ(stmts[1]["value"]["expr-type"], "member-call");
 
 	// Only a call can be assigned, and only to storable targets.
-	for (int i = 2; i <= 4; i++)
+	for (int i = 2; i <= 5; i++)
 		ASSERT_EQ(stmts[i]["stmt-type"], "not-impl") << i;
 }
 

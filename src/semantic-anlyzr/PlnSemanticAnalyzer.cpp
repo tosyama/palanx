@@ -314,7 +314,7 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 		return type;
 	if (type.value("embedded", false)) {
 		json embed_bt = resolveTypeAlias(type["base-type"]);  // [m]T or a struct
-		json pntr = {{"type-kind","pntr"},{"embedded",true}};
+		json pntr = {{"type-kind","pntr"},{"embedded",true}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		if (isStructType(embed_bt)) {
 			string tname = embed_bt["type-name"].get<string>();
 			// LCOV_EXCL_EXCEPTION_BR_START
@@ -347,12 +347,12 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsizedArrRowUnsupported) << endl;
 			exit(1);
 		}
-		return {{"type-kind","pntr"}, {"base-type", sizedArrLevel(locNode, bt, nullopt)}};
+		return {{"type-kind","pntr"}, {"base-type", sizedArrLevel(locNode, bt, nullopt)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	json elem = isStructType(bt) ? toStructPntrType(bt)
 	          : bt.value("type-kind","") == "pntr" ? ptrSlotElemType(locNode, bt)
 	          : unsizedArrToPntr(locNode, type["base-type"]);
-	return {{"type-kind","pntr"}, {"base-type", elem}};
+	return {{"type-kind","pntr"}, {"base-type", elem}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // A slot to an unsized array ('@![]T') points at the array's elements, so it
@@ -371,14 +371,12 @@ void PlnSemanticAnalyzer::normalizeUnsizedArrSig(json& funcDef)
 {
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			if (p.contains("var-type"))
-				p["var-type"] = unsizedArrToPntr(funcDef, p["var-type"]);
+			p["var-type"] = unsizedArrToPntr(funcDef, p["var-type"]);
 	if (funcDef.contains("ret-type"))
 		funcDef["ret-type"] = unsizedArrToPntr(funcDef, funcDef["ret-type"]);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
-			if (r.contains("var-type"))
-				r["var-type"] = unsizedArrToPntr(funcDef, r["var-type"]);
+			r["var-type"] = unsizedArrToPntr(funcDef, r["var-type"]);
 }
 
 bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
@@ -486,7 +484,7 @@ int64_t PlnSemanticAnalyzer::constLevelSize(const json& locNode, const json& siz
 // shares except that every level carries the borrow's permission.
 json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable)
 {
-	json out = {{"type-kind","pntr"},{"arr-size",constLevelSize(locNode, arr["size-expr"], isMutable.has_value())}};
+	json out = {{"type-kind","pntr"},{"arr-size",constLevelSize(locNode, arr["size-expr"], isMutable.has_value())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (isMutable) out["mutable"] = *isMutable;
 	json leaf = arr["base-type"];
 	if (arr.value("embedded", false)) {
@@ -511,7 +509,7 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 	// [n]@T / [n]@!T: the element pointer keeps its own permission.
 	json ptrElem;
 	if (leaf.value("type-kind","") == "pntr" && !out.value("embedded", false)) {
-		ptrElem = {{"type-kind","pntr"},{"mutable",leaf.value("mutable", true)}};
+		ptrElem = {{"type-kind","pntr"},{"mutable",leaf.value("mutable", true)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		leaf = resolveTypeAlias(leaf["base-type"]);
 	}
 	string tname = leaf.value("type-name","");
@@ -544,8 +542,7 @@ void PlnSemanticAnalyzer::normalizeArrBorrowSig(json& funcDef)
 {
 	if (!funcDef.contains("parameters")) return;
 	for (auto& p : funcDef["parameters"])
-		if (p.contains("var-type"))
-			p["var-type"] = normalizeArrBorrowType(funcDef, p["var-type"]);
+		p["var-type"] = normalizeArrBorrowType(funcDef, p["var-type"]);
 }
 
 void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json& srcAst,
@@ -575,7 +572,7 @@ void PlnSemanticAnalyzer::checkElemShape(const json& locNode, const json& saValu
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrElemShapeMismatch,
 		arrShapeName(dstShape), arrShapeName(saValue["value-type"])) << endl;
 	exit(1);
-}
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 // Diagnoses a "syscall" declaration against the Linux syscall ABI (<=6
 // GP-register args, no float, single raw-rax return) and folds its number
@@ -653,7 +650,7 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
 {
 	for (auto& p : f.value("parameters", json::array()))
-		if (p.contains("var-type")) requireKnownTypeNames(f, p["var-type"]);
+		requireKnownTypeNames(f, p["var-type"]);
 	for (auto& r : f.value("rets", json::array()))
 		requireKnownTypeNames(f, r["var-type"]);
 	if (f.contains("ret-type")) requireKnownTypeNames(f, f["ret-type"]);

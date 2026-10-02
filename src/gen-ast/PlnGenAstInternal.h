@@ -86,8 +86,8 @@ inline bool isDeclarableVarType(const json& t)
 inline json boolLiteral(const char* value)
 {
 	return {{"expr-type", "lit-int"}, {"value", value},
-	        {"value-type", {{"type-kind", "prim"}, {"type-name", "bool"}}}};
-}
+	        {"value-type", {{"type-kind", "prim"}, {"type-name", "bool"}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Unary minus on an untyped integer literal becomes one negative literal, so
 // SA's range check sees `-128` as a single value (an int8 `neg(128)` operand

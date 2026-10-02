@@ -404,7 +404,7 @@ int main(int argc, char* argv[])
 					if (hasOwned(name))
 						s += indent + "__pln_init_" + name + "(" + slot + ");\n";
 					return s;
-				};
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 				// Owned struct array allocator/free functions
 				for (auto& shape : arr_struct_shapes) {

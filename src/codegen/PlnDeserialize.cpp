@@ -56,7 +56,7 @@ static void deserializeArgs(const json& call, vector<unique_ptr<Expr>>& args,
         }
         args.push_back(deserializeExpr(arg));
     }
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 static unique_ptr<Expr> deserializeExpr(const json& j)
 {

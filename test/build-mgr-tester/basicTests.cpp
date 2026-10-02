@@ -2197,7 +2197,7 @@ TEST(build_mgr, transfer_from_slot_mtrace) {
 		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
 		"MALLOC_TRACE=" + traceFile + " "
 		"/tmp/palan_transfer_from_slot_mtrace_bin");
-	ASSERT_EQ(output, "5 7 9\n");
+	ASSERT_EQ(output, "5 7 9 3\n");
 
 	string catResult = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;
@@ -2211,7 +2211,7 @@ TEST(build_mgr, transfer_from_slot_mtrace) {
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
 	// The source slots are nulled, so their owners' frees skip what was given away.
-	EXPECT_EQ(allocs, 12) << "expected 12 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 19) << "expected 19 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }

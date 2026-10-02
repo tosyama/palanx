@@ -373,18 +373,6 @@ inline bool copyShapeMatch(const json& from, const json& to) {
 	    && from.value("type-name","") == to.value("type-name","");
 }
 
-inline bool arrElemIsBorrowable(const json& t) {
-	const json* cur = &t;
-	bool inEmbedded = false;
-	while (isArrLevel(*cur)) {
-		inEmbedded = cur->value("embedded", false);
-		cur = &(*cur)["base-type"];
-	}
-	string k = cur->value("type-kind","");
-	return k == "prim" || (k == "struct" && inEmbedded) || isStructStorage(*cur)
-	    || isPtrBorrow(*cur);
-}
-
 // An array is borrowed with one permission for every level down to its
 // elements, so a read-only 2D borrow also makes its rows read-only. A struct
 // element stays the struct's storage; writes to it are checked against the

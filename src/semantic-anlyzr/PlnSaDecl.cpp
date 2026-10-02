@@ -312,7 +312,7 @@ json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt)
 	json result = sa_var_decl_group(declStmt);
 	string name = var["name"];
 	const json& vt = *findVar(name);
-	json dst = {{"expr-type","id"},{"name",name},{"var-type",vt},{"value-type",vt}};
+	json dst = {{"expr-type","id"},{"name",name},{"var-type",vt},{"value-type",vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	result.push_back(makeCopyStmt(stmt, dst, src));
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -429,7 +429,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 	if (base_type.value("type-kind","") == "arr") {
 		const json& leaf_type = base_type["base-type"];
 		string leaf_name = leaf_type.value("type-name","");
-		json row_type = {{"type-kind","pntr"},{"base-type",leaf_type}};
+		json row_type = {{"type-kind","pntr"},{"base-type",leaf_type}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		int64_t row_stride = 1;
 		if (base_type.value("embedded", false)) {
 			// [m][n]$T: a row is n structs laid out in place. $T owns nothing, so a
@@ -462,7 +462,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			json d0_expr = sa_arr_size_expr(stmt, vtype["size-expr"]);
 			json n_expr  = sa_arr_size_expr(stmt, base_type["size-expr"]);
 
-			json pntr_type = {{"type-kind","pntr"},{"base-type",row_type}};
+			json pntr_type = {{"type-kind","pntr"},{"base-type",row_type}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 			setArrSize(pntr_type, d0_expr);
 			setArrSize(pntr_type["base-type"], n_expr);
 			json row_bytes = n_expr;
@@ -488,7 +488,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 
 			json alloc_call = {
 				{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
-				{"args",json::array({d0_id, row_bytes})}, {"value-type",pntr_type}
+				{"args",json::array({d0_id, row_bytes})}, {"value-type",pntr_type} // LCOV_EXCL_EXCEPTION_BR_LINE
 			};
 			json free_stmt_json = {{"stmt-type","expr"},{"body",{
 				{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
@@ -672,8 +672,8 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 		if (structDef)
 			emitStructLitAssigns(elemAst, *structDef, value, result);
 		else
-			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(elemAst)}, {"value", value}});
-	};
+			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(elemAst)}, {"value", value}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	for (size_t i = 0; i < values.size(); i++) {
 		if (!is2d) {
 			assignElem(indexOf(id, i), values[i]);
@@ -760,10 +760,10 @@ void PlnSemanticAnalyzer::emitStructLitAssigns(const json& objAst, const StructD
 			out.push_back(makeFieldAssign(resolveObjectChain(objAst, /*forWrite=*/true), f, values[k]));
 			continue;
 		}
-		json fieldAst = {{"expr-type", "field-access"}, {"object", objAst}, {"field", f.name}};
+		json fieldAst = {{"expr-type", "field-access"}, {"object", objAst}, {"field", f.name}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		emitStructLitAssigns(fieldAst, requireCompleteStruct(f.typeName, objAst), values[k], out);
 	}
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 {
@@ -1085,9 +1085,9 @@ json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 
 json PlnSemanticAnalyzer::makeStructFreeStmt(const string& name, const json& pntrType)
 {
-	json var_id = {{"expr-type","id"},{"name",name},{"var-type",pntrType},{"value-type",pntrType}};
+	json var_id = {{"expr-type","id"},{"name",name},{"var-type",pntrType},{"value-type",pntrType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	return makeStructFreeCall(move(var_id), pntrType["base-type"]["type-name"].get<string>());
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 pair<string, string> PlnSemanticAnalyzer::structFreeFunc(const string& structName)
 {
@@ -1126,7 +1126,7 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value)
 		funcType = "pln";
 		args.push_back({{"expr-type","lit-int"},{"value",to_string(vt["arr-size"].get<int64_t>())},
 		                {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}});
-	}
+	} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	return {{"stmt-type","expr"},{"body",{
 		{"expr-type","call"},{"name",fn},{"func-type",funcType},{"args",move(args)}}}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
@@ -1237,7 +1237,7 @@ void PlnSemanticAnalyzer::recordArrStructShape(const string& structName)
 		if (s.value("shape-key","") == shape_key) return;
 	// struct shape must be present for build-mgr to know the field layout
 	recordAllocShape(structName);
-	sa["alloc-shapes"].push_back({
+	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
 		{"shape-kind","arr-struct"}, {"shape-key",shape_key}, {"struct-name",structName}
 	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1247,9 +1247,9 @@ void PlnSemanticAnalyzer::recordArrArrShape(const string& leafName)
 	string shape_key = "arr_arr_" + leafName;
 	for (auto& s : sa["alloc-shapes"])
 		if (s.value("shape-key","") == shape_key) return;
-	sa["alloc-shapes"].push_back({
+	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
 		{"shape-key", shape_key}, {"leaf-type", leafName},
-		{"leaf-size", elemSizeBytes(leafName)}, {"depth", 2}
+		{"leaf-size", elemSizeBytes(leafName)}, {"depth", 2} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -1260,7 +1260,7 @@ void PlnSemanticAnalyzer::recordArrArrStructShape(const string& structName)
 		if (s.value("shape-key","") == shape_key) return;
 	// The rows are allocated, freed and copied by the [n]T helpers.
 	recordArrStructShape(structName);
-	sa["alloc-shapes"].push_back({
+	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
 		{"shape-kind","arr-arr-struct"}, {"shape-key",shape_key}, {"struct-name",structName}
 	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1374,8 +1374,8 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr2d_var_decl(const json& stmt)
 			return {{"expr-type","id"},{"name",dim_name},
 			        {"var-type",uint64_type},{"value-type",uint64_type}};
 			// LCOV_EXCL_EXCEPTION_BR_STOP
-		};
-		json args = json::array({dimVar("__" + name + "_d0", d0_expr), dimVar("__" + name + "_d1", d1_expr)});
+		}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json args = json::array({dimVar("__" + name + "_d0", d0_expr), dimVar("__" + name + "_d1", d1_expr)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json arr_id = {{"expr-type","id"},{"name",name},

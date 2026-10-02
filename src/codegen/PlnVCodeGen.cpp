@@ -370,7 +370,7 @@ vector<VReg> PlnVCodeGen::lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc&
     for (auto& a : args)
         regs.push_back(lowerExpr(*a, func));
     return regs;
-}
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 void PlnVCodeGen::emitArgReleases(const vector<ArgRelease>& releases, const vector<VReg>& args,
                                   VFunc& func)
