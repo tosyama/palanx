@@ -6,14 +6,23 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-09-27)
-version: 0.1.38 — fixing what writing Tetris runs into
+### 2.1 Iteration Goal (2026-10-02)
+version: 0.1.39 — gen-ast parsing time
 
-No tickets are planned up front. Tetris is written from scratch, and each place where Palan
-gets in the way — a construct that is rejected, crashes, or needs a workaround — becomes a
-ticket when it comes up and is fixed in this iteration.
+gen-ast parsing time is quadratic in the number of statements in one list (Issues.md #24):
+a 1000-statement function body takes about 10s. The cause is that Bison's `glr2.cc` skeleton
+hands grammar actions their right-hand-side values as `const` references, so `move($1)` copies,
+and every statement appended to a list copies the whole list so far. This iteration:
 
-The ticket list is kept in `localtickets/iteration-2026-09-27-v0138-tetris-writing.md`.
+- Makes growing lists cheap to copy and never mutated in place (a persistent list shared by
+  pointer), so parsing is linear in the number of statements and safe under GLR splits.
+- Removes the remaining copy cost proportional to block nesting depth.
+- Reduces grammar ambiguity where the rewrite is purely internal: the accepted language and
+  the emitted AST stay unchanged.
+- Corrects and closes Issues.md #24, recording full LALR(1) conversion and `cinclude`
+  processing time as future topics.
+
+The ticket list is kept in `localtickets/iteration-2026-10-02-v0139-parse-time.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
