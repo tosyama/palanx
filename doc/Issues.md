@@ -173,3 +173,9 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 26. An Assignment Nested Inside an Expression Is Not Diagnosed
 
 **Summary:** gen-ast parses `expr -> target` as an expression, but only a statement-level assignment becomes an `assign`/`arr-assign`/`field-assign` statement. Nested inside another expression (`printf("%d\n", 3 -> a)`), the `assign-expr` passes SA untouched and palan-codegen stops with `Unknown expression type in SA file: 'assign-expr'.` Whether an assignment expression yields its value or acts as an lvalue (the target) is undecided, so SA should reject it as not implemented until that is settled.
+
+---
+
+## 27. gen-ast Aborts When Blocks Nest 62 Levels or Deeper
+
+**Summary:** Nesting blocks 62 levels or deeper (for example 62 nested `while` loops) makes palan-gen-ast abort with `free(): invalid pointer`. Bison 3.8.2's `glr2.cc` grows the GLR stack past `YYINITDEPTH` (200 items) with `std::vector::reserve`. `glr_stack_item`'s copy constructor `memcpy`s the semantic value, and the old item's destructor then frees the same `json`, so the value is freed twice. Fixing this needs either a skeleton change, or setting `YYINITDEPTH` to `YYMAXDEPTH` so the stack never grows (a deeper parse then fails with "memory exhausted" instead of crashing). It is deferred because real code does not nest this deeply.
