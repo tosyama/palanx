@@ -1696,7 +1696,8 @@ TEST(gen_ast, field_transfer) {
 }
 
 // Copying a list on every append made parse time quadratic: 2000 items took
-// 40s+, so execTestCommand's 5s timeout catches a regression.
+// 40s+, so execTestCommand's 5s timeout catches a regression. Copying a block
+// once per enclosing level took 13s+ for 2000 statements at depth 60.
 TEST(gen_ast, linear_parse_time) {
 	cleanTestEnv();
 	const int n = 2000;
@@ -1707,16 +1708,20 @@ TEST(gen_ast, linear_parse_time) {
 		return output[0] == '{' ? json::parse(output) : json();
 	};
 
-	string top, body = "func f() {\nint32 a = 0;\n", arr = "[]int32 a = [", args = "f(";
+	const int depth = 60;
+	string top, body = "func f() {\nint32 a = 0;\n", arr = "[]int32 a = [", args = "f(", nested = "func f() {\n";
+	for (int i = 0; i < depth; i++) nested += "while 1 < 2 {\n";
 	for (int i = 0; i < n; i++) {
 		top += "int32 a" + to_string(i) + " = " + to_string(i) + ";\n";
 		body += "a = a + 1;\n";
+		nested += "a = a + 1;\n";
 		arr += to_string(i) + ",";
 		args += to_string(i) + ",";
 	}
 	body += "}\n";
 	arr += "0];\n";
 	args += "0);\n";
+	nested += string(depth, '}') + "\n}\n";
 
 	json jout = parse("top.pa", top);
 	ASSERT_EQ(jout["ast"]["statements"].size(), n);
@@ -1726,4 +1731,8 @@ TEST(gen_ast, linear_parse_time) {
 	ASSERT_EQ(jout["ast"]["statements"][0]["vars"][0]["init"]["items"].size(), n + 1);
 	jout = parse("args.pa", args);
 	ASSERT_EQ(jout["ast"]["statements"][0]["body"]["args"].size(), n + 1);
+	jout = parse("nested.pa", nested);
+	json* inner = &jout["ast"]["functions"][0]["block"]["body"][0];
+	for (int i = 1; i < depth; i++) inner = &(*inner)["body"][0];
+	ASSERT_EQ((*inner)["body"].size(), n);
 }

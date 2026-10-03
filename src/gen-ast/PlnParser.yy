@@ -71,9 +71,39 @@ template <class T> struct PList {
 	}
 };
 
+// A statement holds its nested blocks by handle and is turned into json once
+// at the end; building json at each reduction would copy a block's contents
+// once per enclosing level.
+struct LazyNode;
+using NodeRef = std::shared_ptr<const LazyNode>;
+struct LazyNode {
+	json self;
+	vector<std::pair<string, NodeRef>> nodes;
+	vector<std::pair<string, PList<NodeRef>>> lists;
+
+	json toJson() const {
+		json j = self;
+		for (auto& [key, node] : nodes) j[key] = node->toJson();
+		for (auto& [key, list] : lists) j[key] = toJsonArray(list);
+		return j;
+	}
+	static json toJsonArray(const PList<NodeRef>& list) {
+		json arr = json::array();
+		for (auto& n : list.toVector()) arr.push_back(n->toJson());
+		return arr;
+	}
+};
+
+inline NodeRef leafNode(json j) { return std::make_shared<const LazyNode>(LazyNode{ std::move(j), {}, {} }); }
+inline NodeRef blockStmtNode(const PList<NodeRef>& body) {
+	return std::make_shared<const LazyNode>(LazyNode{ {{"stmt-type", "block"}}, {}, {{"body", body}} });
+}
+
 struct BodyList {
-	PList<json> functions, body;
-	json toJson() const { return {{"functions", functions.toVector()}, {"body", body.toVector()}}; }
+	PList<NodeRef> functions, body;
+	NodeRef toNode() const {
+		return std::make_shared<const LazyNode>(LazyNode{ json::object(), {}, {{"functions", functions}, {"body", body}} });
+	}
 };
 }
 
@@ -164,9 +194,10 @@ struct BodyList {
 %token OPE_AND	"&&"
 %token OPE_OR	"||"
 
-%type <vector<json>>	statements
-%type <json>	block_stmt expr_stmt
-%type <PList<json>>	stmt_list_e stmt_list_b
+%type <PList<NodeRef>>	statements block
+%type <NodeRef>	block_stmt
+%type <json>	expr_stmt
+%type <PList<NodeRef>>	stmt_list_e stmt_list_b
 %type <BodyList>	body_list_e body_list_b
 %type <json>	import cinclude import_path
 %type <PList<string>>	import_ids link_libs
@@ -179,15 +210,16 @@ struct BodyList {
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
 %type <PList<json>>	var_declarations
-%type <json>	func_def func_item syscall_decl return_def
+%type <NodeRef>	func_def func_item syscall_decl
+%type <json>	return_def
 %type <json>	return
-%type <vector<json>>	block paramaters
+%type <vector<json>>	paramaters
 %type <PList<json>>	expressions
-%type <json>	block_obj standalone_block block_body_items
+%type <NodeRef>	block_obj standalone_block block_body_items
 %type <bool>	move_owner_r do_export
 %type <json>	tapple_decl tapple_inner
 %type <PList<json>>	tapple_decl_inner
-%type <json>	if_stmt else_stmt while_loop
+%type <NodeRef>	if_stmt else_stmt while_loop
 %type <json>		type_decl type_member const_decl
 %type <PList<json>>	type_members
 
@@ -208,30 +240,30 @@ module: statements
 	{
 		if (!ast["ast"].contains("functions"))
 			ast["ast"]["functions"] = json::array();
-		ast["ast"]["statements"] = move($1);
+		ast["ast"]["statements"] = LazyNode::toJsonArray($1);
 	}
 	;
 
 statements: /* empty */
 	{ }
 	| stmt_list_e
-	{ $$ = $1.toVector(); }
+	{ $$ = $1; }
 	| stmt_list_b
-	{ $$ = $1.toVector(); }
+	{ $$ = $1; }
 	| stmt_list_e ';'
-	{ $$ = $1.toVector(); }
+	{ $$ = $1; }
 	;
 
 block_stmt: standalone_block
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| construct_def
-	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
+	{ json j = {{"stmt-type", "not-impl"}}; LOC(j, @$); $$ = leafNode(move(j)); }
 	| for_loop
-	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
+	{ json j = {{"stmt-type", "not-impl"}}; LOC(j, @$); $$ = leafNode(move(j)); }
 	| while_loop
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| if_stmt
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	;
 
 expr_stmt: import
@@ -366,45 +398,45 @@ expr_stmt: import
 	;
 
 stmt_list_e: expr_stmt
-	{ $$ = PList<json>().push($1); }
+	{ $$ = PList<NodeRef>().push(leafNode($1)); }
 	| stmt_list_b expr_stmt
-	{ $$ = $1.push($2); }
+	{ $$ = $1.push(leafNode($2)); }
 	| stmt_list_b ';' expr_stmt
-	{ $$ = $1.push($3); }
+	{ $$ = $1.push(leafNode($3)); }
 	| stmt_list_e ';' expr_stmt
-	{ $$ = $1.push($3); }
+	{ $$ = $1.push(leafNode($3)); }
 	;
 
 stmt_list_b: block_stmt
-	{ $$ = PList<json>().push($1); }
+	{ $$ = PList<NodeRef>().push($1); }
 	| func_item
 	{
-		if (!$1.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($1));
+		if (!$1->self.count("not-impl"))
+			ast["ast"]["functions"].push_back($1->toJson());
 	}
 	| stmt_list_b block_stmt
 	{ $$ = $1.push($2); }
 	| stmt_list_b func_item
 	{
 		$$ = $1;
-		if (!$2.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($2));
+		if (!$2->self.count("not-impl"))
+			ast["ast"]["functions"].push_back($2->toJson());
 	}
 	| stmt_list_b ';' block_stmt
 	{ $$ = $1.push($3); }
 	| stmt_list_b ';' func_item
 	{
 		$$ = $1;
-		if (!$3.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($3));
+		if (!$3->self.count("not-impl"))
+			ast["ast"]["functions"].push_back($3->toJson());
 	}
 	| stmt_list_e ';' block_stmt
 	{ $$ = $1.push($3); }
 	| stmt_list_e ';' func_item
 	{
 		$$ = $1;
-		if (!$3.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($3));
+		if (!$3->self.count("not-impl"))
+			ast["ast"]["functions"].push_back($3->toJson());
 	}
 	;
 
@@ -486,27 +518,27 @@ link_libs: STRING
 	;
 
 block: '{' statements '}'
-	{ $$ = move($2); }
+	{ $$ = $2; }
 	;
 
 body_list_e: expr_stmt
 	{
-		$$.body = $$.body.push($1);
+		$$.body = $$.body.push(leafNode($1));
 	}
 	| body_list_b expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push($2);
+		$$.body = $$.body.push(leafNode($2));
 	}
 	| body_list_b ';' expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push($3);
+		$$.body = $$.body.push(leafNode($3));
 	}
 	| body_list_e ';' expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push($3);
+		$$.body = $$.body.push(leafNode($3));
 	}
 	;
 
@@ -516,7 +548,7 @@ body_list_b: block_stmt
 	}
 	| func_item
 	{
-		if (!$1.count("not-impl"))
+		if (!$1->self.count("not-impl"))
 			$$.functions = $$.functions.push($1);
 	}
 	| body_list_b block_stmt
@@ -527,7 +559,7 @@ body_list_b: block_stmt
 	| body_list_b func_item
 	{
 		$$ = $1;
-		if (!$2.count("not-impl"))
+		if (!$2->self.count("not-impl"))
 			$$.functions = $$.functions.push($2);
 	}
 	| body_list_b ';' block_stmt
@@ -538,7 +570,7 @@ body_list_b: block_stmt
 	| body_list_b ';' func_item
 	{
 		$$ = $1;
-		if (!$3.count("not-impl"))
+		if (!$3->self.count("not-impl"))
 			$$.functions = $$.functions.push($3);
 	}
 	| body_list_e ';' block_stmt
@@ -549,27 +581,32 @@ body_list_b: block_stmt
 	| body_list_e ';' func_item
 	{
 		$$ = $1;
-		if (!$3.count("not-impl"))
+		if (!$3->self.count("not-impl"))
 			$$.functions = $$.functions.push($3);
 	}
 	;
 
 block_body_items: /* empty */
-	{ $$ = {{"functions", json::array()}, {"body", json::array()}}; }
+	{ $$ = BodyList().toNode(); }
 	| body_list_e
-	{ $$ = $1.toJson(); }
+	{ $$ = $1.toNode(); }
 	| body_list_b
-	{ $$ = $1.toJson(); }
+	{ $$ = $1.toNode(); }
 	| body_list_e ';'
-	{ $$ = $1.toJson(); }
+	{ $$ = $1.toNode(); }
 	;
 
 block_obj: '{' block_body_items '}'
-	{ $$ = move($2); }
+	{ $$ = $2; }
 	;
 
 standalone_block: block_obj
-	{ json blk = move($1); blk["stmt-type"] = "block"; $$ = move(blk); LOC($$, @$); }
+	{
+		LazyNode blk = *$1;
+		blk.self["stmt-type"] = "block";
+		LOC(blk.self, @$);
+		$$ = std::make_shared<const LazyNode>(std::move(blk));
+	}
 	;
 
 var_declarations: var_declaration
@@ -961,28 +998,27 @@ func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj
 		for (auto& p : $5)
 			if (p.count("not-impl")) { all_ok = false; break; }
 		if (all_ok) {
-			$$ = {{"name", $3}, {"func-type", "palan"}, {"block", move($8)}, {"parameters", move($5)}};
+			json fn = {{"name", $3}, {"func-type", "palan"}, {"parameters", $5}};
 			if ($7.contains("rets"))
-				$$["rets"] = move($7["rets"]);
+				fn["rets"] = $7["rets"];
 			else if ($7.contains("ret-type"))
-				$$["ret-type"] = move($7["ret-type"]);
-			LOC($$, @$);
+				fn["ret-type"] = $7["ret-type"];
+			LOC(fn, @$);
 			if ($1) {
-				$$["export"] = true;
-				json sig = $$;
-				sig.erase("block");
-				ast["export"].push_back(move(sig));
+				fn["export"] = true;
+				ast["export"].push_back(fn);
 			}
+			$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} });
 		} else {
-			$$ = {{"not-impl", true}};
+			$$ = leafNode({{"not-impl", true}});
 		}
 	}
 	;
 
 func_item: func_def
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| syscall_decl
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	;
 
 // A syscall declaration binds a number to a name callable like any other
@@ -997,19 +1033,19 @@ syscall_decl: do_export KW_SYSCALL ID '(' paramaters ')' return_def '=' expressi
 		for (auto& p : $5)
 			if (p.count("not-impl")) { all_ok = false; break; }
 		if (all_ok) {
-			$$ = {{"name", $3}, {"func-type", "syscall"}, {"parameters", move($5)}, {"syscall-number", move($9)}};
+			json fn = {{"name", $3}, {"func-type", "syscall"}, {"parameters", $5}, {"syscall-number", $9}};
 			if ($7.contains("rets"))
-				$$["rets"] = move($7["rets"]);
+				fn["rets"] = $7["rets"];
 			else if ($7.contains("ret-type"))
-				$$["ret-type"] = move($7["ret-type"]);
-			LOC($$, @$);
+				fn["ret-type"] = $7["ret-type"];
+			LOC(fn, @$);
 			if ($1) {
-				$$["export"] = true;
-				json sig = $$;
-				ast["export"].push_back(move(sig));
+				fn["export"] = true;
+				ast["export"].push_back(fn);
 			}
+			$$ = leafNode(move(fn));
 		} else {
-			$$ = {{"not-impl", true}};
+			$$ = leafNode({{"not-impl", true}});
 		}
 	}
 	;
@@ -1056,26 +1092,28 @@ for_loop: KW_FOR ID ':' expression block
 
 while_loop: KW_WHILE expression block
 	{
-		$$ = {{"stmt-type", "while"}, {"cond", $2}, {"body", move($3)}};
-		LOC($$, @$);
+		json w = {{"stmt-type", "while"}, {"cond", $2}};
+		LOC(w, @$);
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(w), {}, {{"body", $3}} });
 	}
 	;
 
 if_stmt: KW_IF expression block else_stmt
 	{
-		json then_block = {{"stmt-type", "block"}, {"body", move($3)}};
-		$$ = {{"stmt-type", "if"}, {"cond", $2}, {"then", move(then_block)}};
-		if (!$4.is_null()) $$["else"] = move($4);
-		LOC($$, @$);
+		json i = {{"stmt-type", "if"}, {"cond", $2}};
+		LOC(i, @$);
+		vector<std::pair<string, NodeRef>> children = {{"then", blockStmtNode($3)}};
+		if ($4) children.push_back({"else", $4});
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(i), move(children), {} });
 	}
 	;
 
 else_stmt: /* empty */
-	{ $$ = json{}; }
+	{ }
 	| KW_ELSE block
-	{ $$ = {{"stmt-type", "block"}, {"body", move($2)}}; }
+	{ $$ = blockStmtNode($2); }
 	| KW_ELSE if_stmt
-	{ $$ = move($2); }
+	{ $$ = $2; }
 	;
 
 expressions: expression
