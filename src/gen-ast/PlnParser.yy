@@ -36,6 +36,45 @@ using json = nlohmann::json;
 namespace fs = std::filesystem;
 
 class PlnLexer;
+
+// glr2.cc passes $N to actions as const references (GLR stacks may share a
+// value), so `$$ = move($1); $$.push_back(x)` copies the whole list on every
+// append. An immutable list sharing its prefix makes each append O(1).
+template <class T> struct PList {
+	struct Node {
+		T item;
+		// mutable only so the destructor can unlink the chain iteratively;
+		// the default recursive release overflows the stack on long lists.
+		mutable std::shared_ptr<const Node> prev;
+		~Node() {
+			auto p = std::move(prev);
+			while (p && p.use_count() == 1)
+				p = std::move(p->prev);
+		}
+	};
+	std::shared_ptr<const Node> last;
+	size_t size = 0;
+
+	PList push(T item) const { return { std::make_shared<const Node>(Node{ std::move(item), last }), size + 1 }; }
+
+	vector<T> toVector() const {
+		vector<T> v(size);
+		const Node* n = last.get();
+		for (size_t i = size; i > 0; --i, n = n->prev.get()) v[i-1] = n->item;
+		return v;
+	}
+
+	template <class Pred> const T* findLast(Pred pred) const {
+		for (const Node* n = last.get(); n; n = n->prev.get())
+			if (pred(n->item)) return &n->item;
+		return nullptr;
+	}
+};
+
+struct BodyList {
+	PList<json> functions, body;
+	json toJson() const { return {{"functions", functions.toVector()}, {"body", body.toVector()}}; }
+};
 }
 
 %code
@@ -127,27 +166,30 @@ class PlnLexer;
 
 %type <vector<json>>	statements
 %type <json>	block_stmt expr_stmt
-%type <vector<json>>	stmt_list_e stmt_list_b
-%type <json>	body_list_e body_list_b
+%type <PList<json>>	stmt_list_e stmt_list_b
+%type <BodyList>	body_list_e body_list_b
 %type <json>	import cinclude import_path
-%type <vector<string>>	import_ids link_libs link_clause
+%type <PList<string>>	import_ids link_libs
+%type <vector<string>>	link_clause
 %type <string>	import_as
 %type <json>	expression func_call term store_loc
-%type <vector<json>>	arguments
+%type <PList<json>>	arguments
 %type <json>	array_desc array_row dict_desc
-%type <vector<json>>	array_rows array_items dict_items
+%type <PList<json>>	array_rows array_items dict_items
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
-%type <vector<json>>	var_declarations
+%type <PList<json>>	var_declarations
 %type <json>	func_def func_item syscall_decl return_def
 %type <json>	return
-%type <vector<json>>	block paramaters expressions
+%type <vector<json>>	block paramaters
+%type <PList<json>>	expressions
 %type <json>	block_obj standalone_block block_body_items
 %type <bool>	move_owner_r do_export
-%type <json>	tapple_decl tapple_decl_inner tapple_inner
+%type <json>	tapple_decl tapple_inner
+%type <PList<json>>	tapple_decl_inner
 %type <json>	if_stmt else_stmt while_loop
 %type <json>		type_decl type_member const_decl
-%type <vector<json>>	type_members
+%type <PList<json>>	type_members
 
 %left ARROW DBL_ARROW
 %left OPE_OR
@@ -173,11 +215,11 @@ module: statements
 statements: /* empty */
 	{ }
 	| stmt_list_e
-	{ $$ = move($1); }
+	{ $$ = $1.toVector(); }
 	| stmt_list_b
-	{ $$ = move($1); }
+	{ $$ = $1.toVector(); }
 	| stmt_list_e ';'
-	{ $$ = move($1); }
+	{ $$ = $1.toVector(); }
 	;
 
 block_stmt: standalone_block
@@ -226,22 +268,23 @@ expr_stmt: import
 	}
 	| var_declarations
 	{
+		vector<json> vars = $1.toVector();
 		// Detect a tapple-decl emitted by var_declaration
-		if ($1.size() == 1 && $1[0].value("stmt-type", "") == "tapple-decl") {
-			$$ = move($1[0]);
+		if (vars.size() == 1 && vars[0].value("stmt-type", "") == "tapple-decl") {
+			$$ = move(vars[0]);
 			LOC($$, @$);
 		} else {
 			bool all_ok = true;
-			for (auto& v : $1) {
+			for (auto& v : vars) {
 				if (v.count("not-impl") || v.value("stmt-type","") == "tapple-decl"
 					|| v.value("inherit-type", false)) { all_ok = false; break; }
 			}
 			if (all_ok) {
-				$$ = {{"stmt-type", "var-decl"}, {"vars", move($1)}};
+				$$ = {{"stmt-type", "var-decl"}, {"vars", move(vars)}};
 				LOC($$, @$);
 			} else {
 				$$ = {{"stmt-type", "not-impl"}};
-				for (auto& v : $1)
+				for (auto& v : vars)
 					if (v.contains("untyped-var")) { $$["untyped-var"] = v["untyped-var"]; break; }
 				LOC($$, @$);
 			}
@@ -323,43 +366,43 @@ expr_stmt: import
 	;
 
 stmt_list_e: expr_stmt
-	{ $$.push_back(move($1)); }
+	{ $$ = PList<json>().push($1); }
 	| stmt_list_b expr_stmt
-	{ $$ = move($1); $$.push_back(move($2)); }
+	{ $$ = $1.push($2); }
 	| stmt_list_b ';' expr_stmt
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	| stmt_list_e ';' expr_stmt
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	;
 
 stmt_list_b: block_stmt
-	{ $$.push_back(move($1)); }
+	{ $$ = PList<json>().push($1); }
 	| func_item
 	{
 		if (!$1.count("not-impl"))
 			ast["ast"]["functions"].push_back(move($1));
 	}
 	| stmt_list_b block_stmt
-	{ $$ = move($1); $$.push_back(move($2)); }
+	{ $$ = $1.push($2); }
 	| stmt_list_b func_item
 	{
-		$$ = move($1);
+		$$ = $1;
 		if (!$2.count("not-impl"))
 			ast["ast"]["functions"].push_back(move($2));
 	}
 	| stmt_list_b ';' block_stmt
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	| stmt_list_b ';' func_item
 	{
-		$$ = move($1);
+		$$ = $1;
 		if (!$3.count("not-impl"))
 			ast["ast"]["functions"].push_back(move($3));
 	}
 	| stmt_list_e ';' block_stmt
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	| stmt_list_e ';' func_item
 	{
-		$$ = move($1);
+		$$ = $1;
 		if (!$3.count("not-impl"))
 			ast["ast"]["functions"].push_back(move($3));
 	}
@@ -377,18 +420,15 @@ import: KW_IMPORT import_path import_as
 	{
 		ast["import"].emplace_back($4);
 		$$ = move($4);
-		if ($2.size()) { $$["targets"] = move($2); }
+		if ($2.size) { $$["targets"] = $2.toVector(); }
 		if ($5.size()) { $$["alias"] = $5; }
 	}
 	; 
 
 import_ids: ID
-	{ $$.emplace_back($1); }
+	{ $$ = PList<string>().push($1); }
 	| import_ids ',' ID
-	{
-		$$ = move($1);
-		$$.emplace_back($3);
-	}
+	{ $$ = $1.push($3); }
 	;
 
 import_path: PATH
@@ -435,17 +475,14 @@ link_clause: /* empty */
 			throw runtime_error(
 				PlnGenAstMessage::getMessage(E_ExpectedLinkKeyword, $1));
 		}
-		$$ = move($2);
+		$$ = $2.toVector();
 	}
 	;
 
 link_libs: STRING
-	{ $$.emplace_back($1); }
+	{ $$ = PList<string>().push($1); }
 	| link_libs ',' STRING
-	{
-		$$ = move($1);
-		$$.emplace_back($3);
-	}
+	{ $$ = $1.push($3); }
 	;
 
 block: '{' statements '}'
@@ -454,80 +491,77 @@ block: '{' statements '}'
 
 body_list_e: expr_stmt
 	{
-		$$ = {{"functions", json::array()}, {"body", json::array()}};
-		$$["body"].push_back(move($1));
+		$$.body = $$.body.push($1);
 	}
 	| body_list_b expr_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($2));
+		$$ = $1;
+		$$.body = $$.body.push($2);
 	}
 	| body_list_b ';' expr_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($3));
+		$$ = $1;
+		$$.body = $$.body.push($3);
 	}
 	| body_list_e ';' expr_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($3));
+		$$ = $1;
+		$$.body = $$.body.push($3);
 	}
 	;
 
 body_list_b: block_stmt
 	{
-		$$ = {{"functions", json::array()}, {"body", json::array()}};
-		$$["body"].push_back(move($1));
+		$$.body = $$.body.push($1);
 	}
 	| func_item
 	{
-		$$ = {{"functions", json::array()}, {"body", json::array()}};
 		if (!$1.count("not-impl"))
-			$$["functions"].push_back(move($1));
+			$$.functions = $$.functions.push($1);
 	}
 	| body_list_b block_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($2));
+		$$ = $1;
+		$$.body = $$.body.push($2);
 	}
 	| body_list_b func_item
 	{
-		$$ = move($1);
+		$$ = $1;
 		if (!$2.count("not-impl"))
-			$$["functions"].push_back(move($2));
+			$$.functions = $$.functions.push($2);
 	}
 	| body_list_b ';' block_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($3));
+		$$ = $1;
+		$$.body = $$.body.push($3);
 	}
 	| body_list_b ';' func_item
 	{
-		$$ = move($1);
+		$$ = $1;
 		if (!$3.count("not-impl"))
-			$$["functions"].push_back(move($3));
+			$$.functions = $$.functions.push($3);
 	}
 	| body_list_e ';' block_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($3));
+		$$ = $1;
+		$$.body = $$.body.push($3);
 	}
 	| body_list_e ';' func_item
 	{
-		$$ = move($1);
+		$$ = $1;
 		if (!$3.count("not-impl"))
-			$$["functions"].push_back(move($3));
+			$$.functions = $$.functions.push($3);
 	}
 	;
 
 block_body_items: /* empty */
 	{ $$ = {{"functions", json::array()}, {"body", json::array()}}; }
 	| body_list_e
-	{ $$ = move($1); }
+	{ $$ = $1.toJson(); }
 	| body_list_b
-	{ $$ = move($1); }
+	{ $$ = $1.toJson(); }
 	| body_list_e ';'
-	{ $$ = move($1); }
+	{ $$ = $1.toJson(); }
 	;
 
 block_obj: '{' block_body_items '}'
@@ -539,21 +573,17 @@ standalone_block: block_obj
 	;
 
 var_declarations: var_declaration
-	{ $$ = { $1 }; }
+	{ $$ = PList<json>().push($1); }
 	| var_declarations ',' var_declaration   %dprec 1
-	{ $$ = move($1); $$.push_back($3); }
+	{ $$ = $1.push($3); }
 	| var_declarations ',' inherit_var_decl  %dprec 2
 	{
-		$$ = move($1);
-		json next = move($3);
-		for (int i = (int)$$.size() - 1; i >= 0; i--) {
-			if ($$[i].contains("var-type")) {
-				next["var-type"] = $$[i]["var-type"];
-				next.erase("inherit-type");
-				break;
-			}
+		json next = $3;
+		if (auto typed = $1.findLast([](const json& v) { return v.contains("var-type"); })) {
+			next["var-type"] = (*typed)["var-type"];
+			next.erase("inherit-type");
 		}
-		$$.push_back(next);
+		$$ = $1.push(move(next));
 	}
 	;
 
@@ -590,27 +620,23 @@ var_declaration: type_expr move_owner_r ID
 	;
 
 tapple_decl: '(' tapple_decl_inner ')'
-	{ $$ = $2; }
+	{ $$ = $2.toVector(); }
 	;
 
 tapple_decl_inner: type_expr ID
-	{ $$ = json::array();
-	  $$.push_back({{"var-name", $2}, {"var-type", move($1)}}); }
+	{ $$ = PList<json>().push({{"var-name", $2}, {"var-type", $1}}); }
 	| KW_VOID
-	{ $$ = json::array(); }
+	{ }
 	| tapple_decl_inner ',' type_expr ID
-	{ $$ = move($1);
-	  $$.push_back({{"var-name", $4}, {"var-type", move($3)}}); }
+	{ $$ = $1.push({{"var-name", $4}, {"var-type", $3}}); }
 	| tapple_decl_inner ',' KW_VOID
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| tapple_decl_inner ',' ID   %dprec 1
-	{ $$ = move($1);
-	  json vtype;
-	  for (int i = (int)$$.size() - 1; i >= 0; i--) {
-	      if ($$[i].contains("var-type")) { vtype = $$[i]["var-type"]; break; }
-	  }
-	  if (!vtype.is_null())
-	      $$.push_back({{"var-name", $3}, {"var-type", vtype}});
+	{
+	  if (auto typed = $1.findLast([](const json& v) { return v.contains("var-type"); }))
+	      $$ = $1.push({{"var-name", $3}, {"var-type", (*typed)["var-type"]}});
+	  else
+	      $$ = $1;
 	}
 	;
 
@@ -619,7 +645,7 @@ const_decl: KW_CONST ID '=' expression
 	;
 
 type_decl: do_export KW_TYPE ID implememts '{' type_members '}'
-	{ $$ = {{"name", $3}, {"fields", move($6)}}; LOC($$, @$); }
+	{ $$ = {{"name", $3}, {"fields", $6.toVector()}}; LOC($$, @$); }
 	| do_export KW_TYPE ID '=' type_expr
 	{ $$ = {{"name", $3}, {"alias-of", move($5)}}; LOC($$, @$); }
 	| do_export KW_TYPE ID
@@ -640,13 +666,11 @@ implements_type: type_expr
 
 type_members: type_member
 	{
-		$$ = json::array();
-		if (!$1.value("not-impl", false)) $$.push_back(move($1));
+		if (!$1.value("not-impl", false)) $$ = PList<json>().push($1);
 	}
 	| type_members type_member
 	{
-		$$ = move($1);
-		if (!$2.value("not-impl", false)) $$.push_back(move($2));
+		$$ = $2.value("not-impl", false) ? $1 : $1.push($2);
 	}
 	;
 
@@ -825,16 +849,16 @@ tapple_inner: expression
 func_call: ID '(' arguments ')'
 	{
 		if (typeNames.count($1)) {
-			if ($3.size() == 1) {
+			if ($3.size == 1) {
 				$$ = {{"expr-type",   "cast"},
 				      {"target-type", {{"type-kind", "prim"}, {"type-name", move($1)}}},
-				      {"src",         $3[0]}};
+				      {"src",         $3.last->item}};
 				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
 			}
 		} else {
-			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", move($3)}};
+			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}};
 			LOC($$, @$);
 		}
 	}
@@ -843,7 +867,7 @@ func_call: ID '(' arguments ')'
 		$$ = {{"expr-type", "member-call"},
 		      {"object", move($1)},
 		      {"method", move($3)},
-		      {"args", move($5)}};
+		      {"args", $5.toVector()}};
 		LOC($$, @$);
 	}
 	;
@@ -851,12 +875,9 @@ func_call: ID '(' arguments ')'
 arguments: /* empty */
 	{ }
 	| expression move_owner_r
-	{ $$.push_back(move($1)); }
+	{ $$ = PList<json>().push($1); }
 	| arguments ',' expression move_owner_r
-	{
-		$$ = move($1);
-		$$.push_back(move($3));
-	}
+	{ $$ = $1.push($3); }
 	;
 
 array_desc: array_row
@@ -864,47 +885,46 @@ array_desc: array_row
 	| array_rows
 	{
 		// The concatenated form [a,b][c,d] yields the same AST as the nested [[a,b],[c,d]].
-		$$ = {{"expr-type", "arr-lit"}, {"items", move($1)}};
+		$$ = {{"expr-type", "arr-lit"}, {"items", $1.toVector()}};
 		LOC($$, @$);
 	}
 	;
 
 array_rows: array_row array_row
-	{ $$ = {move($1), move($2)}; }
+	{ $$ = PList<json>().push($1).push($2); }
 	| array_rows array_row
-	{ $$ = move($1); $$.push_back(move($2)); }
+	{ $$ = $1.push($2); }
 	;
 
 array_row: '[' array_items ']'
-	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); }
 	| '[' array_items ',' ']'
-	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); }
 	;
 
 array_items: expression
-	{ $$ = {move($1)}; }
+	{ $$ = PList<json>().push($1); }
 	| array_items ',' expression
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	;
 
 dict_desc: '{' dict_items '}'
-	{ $$ = {{"expr-type", "dict-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", $2.toVector()}}; LOC($$, @$); }
 	| '{' dict_items ',' '}'
-	{ $$ = {{"expr-type", "dict-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", $2.toVector()}}; LOC($$, @$); }
 	;
 
 dict_items: ID ':' expression
 	{
 		json item = {{"name", move($1)}, {"value", move($3)}};
 		LOC(item, @$);
-		$$ = {move(item)};
+		$$ = PList<json>().push(move(item));
 	}
 	| dict_items ',' ID ':' expression
 	{
 		json item = {{"name", move($3)}, {"value", move($5)}};
 		LOC_BE(item, @3, @5);
-		$$ = move($1);
-		$$.push_back(move(item));
+		$$ = $1.push(move(item));
 	}
 	;
 
@@ -997,18 +1017,19 @@ syscall_decl: do_export KW_SYSCALL ID '(' paramaters ')' return_def '=' expressi
 paramaters: /* empty */
 	{ }
 	| var_declarations
-	{ $$ = move($1); }
+	{ $$ = $1.toVector(); }
 	;
 
 return_def: /* empty */
 	{ }
 	| ARROW var_declarations
 	{
+		vector<json> rets = $2.toVector();
 		bool all_ok = true;
-		for (auto& v : $2)
+		for (auto& v : rets)
 			if (v.count("not-impl") || v.value("inherit-type", false)) { all_ok = false; break; }
 		if (all_ok)
-			$$["rets"] = move($2);
+			$$["rets"] = move(rets);
 	}
 	| ARROW type_expr
 	{
@@ -1027,7 +1048,7 @@ construct_def: do_export KW_CONSTRUCT type_expr '(' paramaters ')' block
 return: KW_RETURN
 	{ }
 	| KW_RETURN expressions
-	{ $$["values"] = move($2); }
+	{ $$["values"] = $2.toVector(); }
 	;
 
 for_loop: KW_FOR ID ':' expression block
@@ -1058,9 +1079,9 @@ else_stmt: /* empty */
 	;
 
 expressions: expression
-	{ $$.push_back(move($1)); }
+	{ $$ = PList<json>().push($1); }
 	| expressions ',' expression
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	;
 
 type_expr: ID

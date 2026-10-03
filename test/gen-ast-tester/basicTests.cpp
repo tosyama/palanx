@@ -1,3 +1,4 @@
+#include <fstream>
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
@@ -1692,4 +1693,37 @@ TEST(gen_ast, field_transfer) {
 
 	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
 	ASSERT_FALSE(stmts[3].contains("ownership-transfer"));
+}
+
+// Copying a list on every append made parse time quadratic: 2000 items took
+// 40s+, so execTestCommand's 5s timeout catches a regression.
+TEST(gen_ast, linear_parse_time) {
+	cleanTestEnv();
+	const int n = 2000;
+	auto parse = [](const string& name, const string& src) {
+		ofstream("out/" + name) << src;
+		string output = execTestCommand("bin/palan-gen-ast out/" + name);
+		EXPECT_TRUE(checkerr(output)) << name;
+		return output[0] == '{' ? json::parse(output) : json();
+	};
+
+	string top, body = "func f() {\nint32 a = 0;\n", arr = "[]int32 a = [", args = "f(";
+	for (int i = 0; i < n; i++) {
+		top += "int32 a" + to_string(i) + " = " + to_string(i) + ";\n";
+		body += "a = a + 1;\n";
+		arr += to_string(i) + ",";
+		args += to_string(i) + ",";
+	}
+	body += "}\n";
+	arr += "0];\n";
+	args += "0);\n";
+
+	json jout = parse("top.pa", top);
+	ASSERT_EQ(jout["ast"]["statements"].size(), n);
+	jout = parse("body.pa", body);
+	ASSERT_EQ(jout["ast"]["functions"][0]["block"]["body"].size(), n + 1);
+	jout = parse("arr.pa", arr);
+	ASSERT_EQ(jout["ast"]["statements"][0]["vars"][0]["init"]["items"].size(), n + 1);
+	jout = parse("args.pa", args);
+	ASSERT_EQ(jout["ast"]["statements"][0]["body"]["args"].size(), n + 1);
 }
