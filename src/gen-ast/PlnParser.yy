@@ -36,6 +36,75 @@ using json = nlohmann::json;
 namespace fs = std::filesystem;
 
 class PlnLexer;
+
+// glr2.cc passes $N to actions as const references (GLR stacks may share a
+// value), so `$$ = move($1); $$.push_back(x)` copies the whole list on every
+// append. An immutable list sharing its prefix makes each append O(1).
+template <class T> struct PList {
+	struct Node {
+		T item;
+		// mutable only so the destructor can unlink the chain iteratively;
+		// the default recursive release overflows the stack on long lists.
+		mutable std::shared_ptr<const Node> prev;
+		~Node() {
+			auto p = std::move(prev);
+			while (p && p.use_count() == 1)
+				p = std::move(p->prev);
+		}
+	};
+	std::shared_ptr<const Node> last;
+	size_t size = 0;
+
+	PList push(T item) const { return { std::make_shared<const Node>(Node{ std::move(item), last }), size + 1 }; }
+
+	vector<T> toVector() const {
+		vector<T> v(size);
+		const Node* n = last.get();
+		for (size_t i = size; i > 0; --i, n = n->prev.get()) v[i-1] = n->item;
+		return v;
+	}
+
+	template <class Pred> const T* findLast(Pred pred) const {
+		for (const Node* n = last.get(); n; n = n->prev.get())
+			if (pred(n->item)) return &n->item;
+		return nullptr;
+	}
+};
+
+// A statement holds its nested blocks by handle and is turned into json once
+// at the end; building json at each reduction would copy a block's contents
+// once per enclosing level.
+struct LazyNode;
+using NodeRef = std::shared_ptr<const LazyNode>;
+struct LazyNode {
+	json self;
+	vector<std::pair<string, NodeRef>> nodes;
+	vector<std::pair<string, PList<NodeRef>>> lists;
+
+	json toJson() const {
+		json j = self;
+		for (auto& [key, node] : nodes) j[key] = node->toJson();
+		for (auto& [key, list] : lists) j[key] = toJsonArray(list);
+		return j;
+	}
+	static json toJsonArray(const PList<NodeRef>& list) {
+		json arr = json::array();
+		for (auto& n : list.toVector()) arr.push_back(n->toJson());
+		return arr;
+	}
+};
+
+inline NodeRef leafNode(json j) { return std::make_shared<const LazyNode>(LazyNode{ std::move(j), {}, {} }); }
+inline NodeRef blockStmtNode(const PList<NodeRef>& body) {
+	return std::make_shared<const LazyNode>(LazyNode{ {{"stmt-type", "block"}}, {}, {{"body", body}} });
+}
+
+struct BodyList {
+	PList<NodeRef> functions, body;
+	NodeRef toNode() const {
+		return std::make_shared<const LazyNode>(LazyNode{ json::object(), {}, {{"functions", functions}, {"body", body}} });
+	}
+};
 }
 
 %code
@@ -63,7 +132,7 @@ class PlnLexer;
 #define LOC(J, L)       J["loc"] = { (int)L.begin.line, (int)L.begin.column, (int)L.end.line, (int)L.end.column }
 #define LOC_BE(J, B, E) J["loc"] = { (int)B.begin.line, (int)B.begin.column, (int)E.end.line, (int)E.end.column }
 
-// An empty rule (e.g. do_export) is located at the end of the previous token,
+// An empty rule (e.g. arguments) is located at the end of the previous token,
 // so a rule's start is taken from its first non-empty component instead.
 #define YYLLOC_DEFAULT(Current, Rhs, N)                                   \
 	do {                                                                  \
@@ -78,6 +147,25 @@ class PlnLexer;
 			(Current).begin = (Current).end = YYRHSLOC(Rhs, 0).end;       \
 		}                                                                 \
 	} while (false)
+
+	// Returns null when the signature uses a not-impl feature.
+	static json funcDecl(json& ast, bool exported, json fn, const vector<json>& params, const json& ret,
+	                     const palan::PlnParser::location_type& loc)
+	{
+		for (auto& p : params)
+			if (p.count("not-impl")) return nullptr;
+		fn["parameters"] = params;
+		if (ret.contains("rets"))
+			fn["rets"] = ret["rets"];
+		else if (ret.contains("ret-type"))
+			fn["ret-type"] = ret["ret-type"];
+		LOC(fn, loc);
+		if (exported) {
+			fn["export"] = true;
+			ast["export"].push_back(fn);
+		}
+		return fn;
+	}
 }
 
 %locations
@@ -125,29 +213,33 @@ class PlnLexer;
 %token OPE_AND	"&&"
 %token OPE_OR	"||"
 
-%type <vector<json>>	statements
-%type <json>	block_stmt expr_stmt
-%type <vector<json>>	stmt_list_e stmt_list_b
-%type <json>	body_list_e body_list_b
+%type <PList<NodeRef>>	statements block
+%type <NodeRef>	block_stmt
+%type <json>	expr_stmt
+%type <PList<NodeRef>>	stmt_list_e stmt_list_b
+%type <BodyList>	body_list_e body_list_b
 %type <json>	import cinclude import_path
-%type <vector<string>>	import_ids link_libs link_clause
+%type <PList<string>>	import_ids link_libs
+%type <vector<string>>	link_clause
 %type <string>	import_as
 %type <json>	expression func_call term store_loc
-%type <vector<json>>	arguments
+%type <PList<json>>	arguments
 %type <json>	array_desc array_row dict_desc
-%type <vector<json>>	array_rows array_items dict_items
+%type <PList<json>>	array_rows array_items dict_items
 %type <json>	type_expr
 %type <json>	var_declaration inherit_var_decl
-%type <vector<json>>	var_declarations
-%type <json>	func_def func_item syscall_decl return_def
+%type <PList<json>>	var_declarations
+%type <NodeRef>	func_def func_item syscall_decl
+%type <json>	return_def
 %type <json>	return
-%type <vector<json>>	block paramaters expressions
-%type <json>	block_obj standalone_block block_body_items
-%type <bool>	move_owner_r do_export
-%type <json>	tapple_decl tapple_decl_inner tapple_inner
-%type <json>	if_stmt else_stmt while_loop
+%type <vector<json>>	paramaters
+%type <PList<json>>	expressions
+%type <NodeRef>	block_obj standalone_block block_body_items
+%type <json>	tapple_decl tapple_inner
+%type <PList<json>>	tapple_decl_inner
+%type <NodeRef>	if_stmt else_stmt while_loop
 %type <json>		type_decl type_member const_decl
-%type <vector<json>>	type_members
+%type <PList<json>>	type_members
 
 %left ARROW DBL_ARROW
 %left OPE_OR
@@ -166,30 +258,30 @@ module: statements
 	{
 		if (!ast["ast"].contains("functions"))
 			ast["ast"]["functions"] = json::array();
-		ast["ast"]["statements"] = move($1);
+		ast["ast"]["statements"] = LazyNode::toJsonArray($1);
 	}
 	;
 
 statements: /* empty */
 	{ }
 	| stmt_list_e
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| stmt_list_b
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| stmt_list_e ';'
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	;
 
 block_stmt: standalone_block
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| construct_def
-	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
+	{ json j = {{"stmt-type", "not-impl"}}; LOC(j, @$); $$ = leafNode(move(j)); }
 	| for_loop
-	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
+	{ json j = {{"stmt-type", "not-impl"}}; LOC(j, @$); $$ = leafNode(move(j)); }
 	| while_loop
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| if_stmt
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	;
 
 expr_stmt: import
@@ -226,22 +318,23 @@ expr_stmt: import
 	}
 	| var_declarations
 	{
+		vector<json> vars = $1.toVector();
 		// Detect a tapple-decl emitted by var_declaration
-		if ($1.size() == 1 && $1[0].value("stmt-type", "") == "tapple-decl") {
-			$$ = move($1[0]);
+		if (vars.size() == 1 && vars[0].value("stmt-type", "") == "tapple-decl") {
+			$$ = move(vars[0]);
 			LOC($$, @$);
 		} else {
 			bool all_ok = true;
-			for (auto& v : $1) {
+			for (auto& v : vars) {
 				if (v.count("not-impl") || v.value("stmt-type","") == "tapple-decl"
 					|| v.value("inherit-type", false)) { all_ok = false; break; }
 			}
 			if (all_ok) {
-				$$ = {{"stmt-type", "var-decl"}, {"vars", move($1)}};
+				$$ = {{"stmt-type", "var-decl"}, {"vars", move(vars)}};
 				LOC($$, @$);
 			} else {
 				$$ = {{"stmt-type", "not-impl"}};
-				for (auto& v : $1)
+				for (auto& v : vars)
 					if (v.contains("untyped-var")) { $$["untyped-var"] = v["untyped-var"]; break; }
 				LOC($$, @$);
 			}
@@ -323,45 +416,45 @@ expr_stmt: import
 	;
 
 stmt_list_e: expr_stmt
-	{ $$.push_back(move($1)); }
+	{ $$ = PList<NodeRef>().push(leafNode($1)); }
 	| stmt_list_b expr_stmt
-	{ $$ = move($1); $$.push_back(move($2)); }
+	{ $$ = $1.push(leafNode($2)); }
 	| stmt_list_b ';' expr_stmt
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push(leafNode($3)); }
 	| stmt_list_e ';' expr_stmt
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push(leafNode($3)); }
 	;
 
 stmt_list_b: block_stmt
-	{ $$.push_back(move($1)); }
+	{ $$ = PList<NodeRef>().push($1); }
 	| func_item
 	{
-		if (!$1.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($1));
+		if (!$1->self.count("not-impl"))
+			ast["ast"]["functions"].push_back($1->toJson());
 	}
 	| stmt_list_b block_stmt
-	{ $$ = move($1); $$.push_back(move($2)); }
+	{ $$ = $1.push($2); }
 	| stmt_list_b func_item
 	{
-		$$ = move($1);
-		if (!$2.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($2));
+		$$ = $1;
+		if (!$2->self.count("not-impl"))
+			ast["ast"]["functions"].push_back($2->toJson());
 	}
 	| stmt_list_b ';' block_stmt
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	| stmt_list_b ';' func_item
 	{
-		$$ = move($1);
-		if (!$3.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($3));
+		$$ = $1;
+		if (!$3->self.count("not-impl"))
+			ast["ast"]["functions"].push_back($3->toJson());
 	}
 	| stmt_list_e ';' block_stmt
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	| stmt_list_e ';' func_item
 	{
-		$$ = move($1);
-		if (!$3.count("not-impl"))
-			ast["ast"]["functions"].push_back(move($3));
+		$$ = $1;
+		if (!$3->self.count("not-impl"))
+			ast["ast"]["functions"].push_back($3->toJson());
 	}
 	;
 
@@ -377,18 +470,15 @@ import: KW_IMPORT import_path import_as
 	{
 		ast["import"].emplace_back($4);
 		$$ = move($4);
-		if ($2.size()) { $$["targets"] = move($2); }
+		if ($2.size) { $$["targets"] = $2.toVector(); }
 		if ($5.size()) { $$["alias"] = $5; }
 	}
 	; 
 
 import_ids: ID
-	{ $$.emplace_back($1); }
+	{ $$ = PList<string>().push($1); }
 	| import_ids ',' ID
-	{
-		$$ = move($1);
-		$$.emplace_back($3);
-	}
+	{ $$ = $1.push($3); }
 	;
 
 import_path: PATH
@@ -435,125 +525,120 @@ link_clause: /* empty */
 			throw runtime_error(
 				PlnGenAstMessage::getMessage(E_ExpectedLinkKeyword, $1));
 		}
-		$$ = move($2);
+		$$ = $2.toVector();
 	}
 	;
 
 link_libs: STRING
-	{ $$.emplace_back($1); }
+	{ $$ = PList<string>().push($1); }
 	| link_libs ',' STRING
-	{
-		$$ = move($1);
-		$$.emplace_back($3);
-	}
+	{ $$ = $1.push($3); }
 	;
 
 block: '{' statements '}'
-	{ $$ = move($2); }
+	{ $$ = $2; }
 	;
 
 body_list_e: expr_stmt
 	{
-		$$ = {{"functions", json::array()}, {"body", json::array()}};
-		$$["body"].push_back(move($1));
+		$$.body = $$.body.push(leafNode($1));
 	}
 	| body_list_b expr_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($2));
+		$$ = $1;
+		$$.body = $$.body.push(leafNode($2));
 	}
 	| body_list_b ';' expr_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($3));
+		$$ = $1;
+		$$.body = $$.body.push(leafNode($3));
 	}
 	| body_list_e ';' expr_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($3));
+		$$ = $1;
+		$$.body = $$.body.push(leafNode($3));
 	}
 	;
 
 body_list_b: block_stmt
 	{
-		$$ = {{"functions", json::array()}, {"body", json::array()}};
-		$$["body"].push_back(move($1));
+		$$.body = $$.body.push($1);
 	}
 	| func_item
 	{
-		$$ = {{"functions", json::array()}, {"body", json::array()}};
-		if (!$1.count("not-impl"))
-			$$["functions"].push_back(move($1));
+		if (!$1->self.count("not-impl"))
+			$$.functions = $$.functions.push($1);
 	}
 	| body_list_b block_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($2));
+		$$ = $1;
+		$$.body = $$.body.push($2);
 	}
 	| body_list_b func_item
 	{
-		$$ = move($1);
-		if (!$2.count("not-impl"))
-			$$["functions"].push_back(move($2));
+		$$ = $1;
+		if (!$2->self.count("not-impl"))
+			$$.functions = $$.functions.push($2);
 	}
 	| body_list_b ';' block_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($3));
+		$$ = $1;
+		$$.body = $$.body.push($3);
 	}
 	| body_list_b ';' func_item
 	{
-		$$ = move($1);
-		if (!$3.count("not-impl"))
-			$$["functions"].push_back(move($3));
+		$$ = $1;
+		if (!$3->self.count("not-impl"))
+			$$.functions = $$.functions.push($3);
 	}
 	| body_list_e ';' block_stmt
 	{
-		$$ = move($1);
-		$$["body"].push_back(move($3));
+		$$ = $1;
+		$$.body = $$.body.push($3);
 	}
 	| body_list_e ';' func_item
 	{
-		$$ = move($1);
-		if (!$3.count("not-impl"))
-			$$["functions"].push_back(move($3));
+		$$ = $1;
+		if (!$3->self.count("not-impl"))
+			$$.functions = $$.functions.push($3);
 	}
 	;
 
 block_body_items: /* empty */
-	{ $$ = {{"functions", json::array()}, {"body", json::array()}}; }
+	{ $$ = BodyList().toNode(); }
 	| body_list_e
-	{ $$ = move($1); }
+	{ $$ = $1.toNode(); }
 	| body_list_b
-	{ $$ = move($1); }
+	{ $$ = $1.toNode(); }
 	| body_list_e ';'
-	{ $$ = move($1); }
+	{ $$ = $1.toNode(); }
 	;
 
 block_obj: '{' block_body_items '}'
-	{ $$ = move($2); }
+	{ $$ = $2; }
 	;
 
 standalone_block: block_obj
-	{ json blk = move($1); blk["stmt-type"] = "block"; $$ = move(blk); LOC($$, @$); }
+	{
+		LazyNode blk = *$1;
+		blk.self["stmt-type"] = "block";
+		LOC(blk.self, @$);
+		$$ = std::make_shared<const LazyNode>(std::move(blk));
+	}
 	;
 
 var_declarations: var_declaration
-	{ $$ = { $1 }; }
+	{ $$ = PList<json>().push($1); }
 	| var_declarations ',' var_declaration   %dprec 1
-	{ $$ = move($1); $$.push_back($3); }
+	{ $$ = $1.push($3); }
 	| var_declarations ',' inherit_var_decl  %dprec 2
 	{
-		$$ = move($1);
-		json next = move($3);
-		for (int i = (int)$$.size() - 1; i >= 0; i--) {
-			if ($$[i].contains("var-type")) {
-				next["var-type"] = $$[i]["var-type"];
-				next.erase("inherit-type");
-				break;
-			}
+		json next = $3;
+		if (auto typed = $1.findLast([](const json& v) { return v.contains("var-type"); })) {
+			next["var-type"] = (*typed)["var-type"];
+			next.erase("inherit-type");
 		}
-		$$.push_back(next);
+		$$ = $1.push(move(next));
 	}
 	;
 
@@ -563,13 +648,15 @@ inherit_var_decl: ID
 	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}}; }
 	;
 
-var_declaration: type_expr move_owner_r ID
+var_declaration: type_expr ID
 	{
-		if (!$2 && isDeclarableVarType($1))
-			$$ = {{"name", $3}, {"var-type", move($1)}};
+		if (isDeclarableVarType($1))
+			$$ = {{"name", $2}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};
 	}
+	| type_expr DBL_GRTR ID
+	{ $$ = {{"not-impl", true}}; }
 	| type_expr ID '=' expression
 	{
 		if (isDeclarableVarType($1))
@@ -590,27 +677,23 @@ var_declaration: type_expr move_owner_r ID
 	;
 
 tapple_decl: '(' tapple_decl_inner ')'
-	{ $$ = $2; }
+	{ $$ = $2.toVector(); }
 	;
 
 tapple_decl_inner: type_expr ID
-	{ $$ = json::array();
-	  $$.push_back({{"var-name", $2}, {"var-type", move($1)}}); }
+	{ $$ = PList<json>().push({{"var-name", $2}, {"var-type", $1}}); }
 	| KW_VOID
-	{ $$ = json::array(); }
+	{ }
 	| tapple_decl_inner ',' type_expr ID
-	{ $$ = move($1);
-	  $$.push_back({{"var-name", $4}, {"var-type", move($3)}}); }
+	{ $$ = $1.push({{"var-name", $4}, {"var-type", $3}}); }
 	| tapple_decl_inner ',' KW_VOID
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| tapple_decl_inner ',' ID   %dprec 1
-	{ $$ = move($1);
-	  json vtype;
-	  for (int i = (int)$$.size() - 1; i >= 0; i--) {
-	      if ($$[i].contains("var-type")) { vtype = $$[i]["var-type"]; break; }
-	  }
-	  if (!vtype.is_null())
-	      $$.push_back({{"var-name", $3}, {"var-type", vtype}});
+	{
+	  if (auto typed = $1.findLast([](const json& v) { return v.contains("var-type"); }))
+	      $$ = $1.push({{"var-name", $3}, {"var-type", (*typed)["var-type"]}});
+	  else
+	      $$ = $1;
 	}
 	;
 
@@ -618,11 +701,17 @@ const_decl: KW_CONST ID '=' expression
 	{ $$ = {{"name", $2}, {"value", move($4)}}; LOC($$, @$); }
 	;
 
-type_decl: do_export KW_TYPE ID implememts '{' type_members '}'
-	{ $$ = {{"name", $3}, {"fields", move($6)}}; LOC($$, @$); }
-	| do_export KW_TYPE ID '=' type_expr
+type_decl: KW_TYPE ID implememts '{' type_members '}'
+	{ $$ = {{"name", $2}, {"fields", $5.toVector()}}; LOC($$, @$); }
+	| KW_EXPORT KW_TYPE ID implememts '{' type_members '}'
+	{ $$ = {{"name", $3}, {"fields", $6.toVector()}}; LOC($$, @$); }
+	| KW_TYPE ID '=' type_expr
+	{ $$ = {{"name", $2}, {"alias-of", move($4)}}; LOC($$, @$); }
+	| KW_EXPORT KW_TYPE ID '=' type_expr
 	{ $$ = {{"name", $3}, {"alias-of", move($5)}}; LOC($$, @$); }
-	| do_export KW_TYPE ID
+	| KW_TYPE ID
+	{ $$ = json{}; }
+	| KW_EXPORT KW_TYPE ID
 	{ $$ = json{}; }
 	;
 
@@ -640,13 +729,11 @@ implements_type: type_expr
 
 type_members: type_member
 	{
-		$$ = json::array();
-		if (!$1.value("not-impl", false)) $$.push_back(move($1));
+		if (!$1.value("not-impl", false)) $$ = PList<json>().push($1);
 	}
 	| type_members type_member
 	{
-		$$ = move($1);
-		if (!$2.value("not-impl", false)) $$.push_back(move($2));
+		$$ = $2.value("not-impl", false) ? $1 : $1.push($2);
 	}
 	;
 
@@ -660,8 +747,10 @@ long_func_name: ID
 	| long_func_name '.' ID
 	;
 
-interface_decl: do_export KW_INTERFACE ID '{' interface_methods '}'
-	| do_export KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
+interface_decl: KW_INTERFACE ID '{' interface_methods '}'
+	| KW_EXPORT KW_INTERFACE ID '{' interface_methods '}'
+	| KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
+	| KW_EXPORT KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
 	;
 
 interface_methods: /* empty */ 
@@ -825,16 +914,16 @@ tapple_inner: expression
 func_call: ID '(' arguments ')'
 	{
 		if (typeNames.count($1)) {
-			if ($3.size() == 1) {
+			if ($3.size == 1) {
 				$$ = {{"expr-type",   "cast"},
 				      {"target-type", {{"type-kind", "prim"}, {"type-name", move($1)}}},
-				      {"src",         $3[0]}};
+				      {"src",         $3.last->item}};
 				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
 			}
 		} else {
-			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", move($3)}};
+			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}};
 			LOC($$, @$);
 		}
 	}
@@ -843,20 +932,21 @@ func_call: ID '(' arguments ')'
 		$$ = {{"expr-type", "member-call"},
 		      {"object", move($1)},
 		      {"method", move($3)},
-		      {"args", move($5)}};
+		      {"args", $5.toVector()}};
 		LOC($$, @$);
 	}
 	;
 
 arguments: /* empty */
 	{ }
-	| expression move_owner_r
-	{ $$.push_back(move($1)); }
-	| arguments ',' expression move_owner_r
-	{
-		$$ = move($1);
-		$$.push_back(move($3));
-	}
+	| expression
+	{ $$ = PList<json>().push($1); }
+	| expression DBL_GRTR
+	{ $$ = PList<json>().push($1); }
+	| arguments ',' expression
+	{ $$ = $1.push($3); }
+	| arguments ',' expression DBL_GRTR
+	{ $$ = $1.push($3); }
 	;
 
 array_desc: array_row
@@ -864,47 +954,46 @@ array_desc: array_row
 	| array_rows
 	{
 		// The concatenated form [a,b][c,d] yields the same AST as the nested [[a,b],[c,d]].
-		$$ = {{"expr-type", "arr-lit"}, {"items", move($1)}};
+		$$ = {{"expr-type", "arr-lit"}, {"items", $1.toVector()}};
 		LOC($$, @$);
 	}
 	;
 
 array_rows: array_row array_row
-	{ $$ = {move($1), move($2)}; }
+	{ $$ = PList<json>().push($1).push($2); }
 	| array_rows array_row
-	{ $$ = move($1); $$.push_back(move($2)); }
+	{ $$ = $1.push($2); }
 	;
 
 array_row: '[' array_items ']'
-	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); }
 	| '[' array_items ',' ']'
-	{ $$ = {{"expr-type", "arr-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); }
 	;
 
 array_items: expression
-	{ $$ = {move($1)}; }
+	{ $$ = PList<json>().push($1); }
 	| array_items ',' expression
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	;
 
 dict_desc: '{' dict_items '}'
-	{ $$ = {{"expr-type", "dict-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", $2.toVector()}}; LOC($$, @$); }
 	| '{' dict_items ',' '}'
-	{ $$ = {{"expr-type", "dict-lit"}, {"items", move($2)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", $2.toVector()}}; LOC($$, @$); }
 	;
 
 dict_items: ID ':' expression
 	{
 		json item = {{"name", move($1)}, {"value", move($3)}};
 		LOC(item, @$);
-		$$ = {move(item)};
+		$$ = PList<json>().push(move(item));
 	}
 	| dict_items ',' ID ':' expression
 	{
 		json item = {{"name", move($3)}, {"value", move($5)}};
 		LOC_BE(item, @3, @5);
-		$$ = move($1);
-		$$.push_back(move(item));
+		$$ = $1.push(move(item));
 	}
 	;
 
@@ -935,34 +1024,24 @@ store_loc
 	{ $$ = {{"kind", "not-impl"}}; }
 	;
 
-func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj
+func_def: KW_FUNC ID '(' paramaters ')' return_def block_obj
 	{
-		bool all_ok = true;
-		for (auto& p : $5)
-			if (p.count("not-impl")) { all_ok = false; break; }
-		if (all_ok) {
-			$$ = {{"name", $3}, {"func-type", "palan"}, {"block", move($8)}, {"parameters", move($5)}};
-			if ($7.contains("rets"))
-				$$["rets"] = move($7["rets"]);
-			else if ($7.contains("ret-type"))
-				$$["ret-type"] = move($7["ret-type"]);
-			LOC($$, @$);
-			if ($1) {
-				$$["export"] = true;
-				json sig = $$;
-				sig.erase("block");
-				ast["export"].push_back(move(sig));
-			}
-		} else {
-			$$ = {{"not-impl", true}};
-		}
+		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "palan"}}, $4, $6, @$);
+		$$ = fn.is_null() ? leafNode({{"not-impl", true}})
+		                  : std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $7}}, {} });
+	}
+	| KW_EXPORT KW_FUNC ID '(' paramaters ')' return_def block_obj
+	{
+		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$);
+		$$ = fn.is_null() ? leafNode({{"not-impl", true}})
+		                  : std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} });
 	}
 	;
 
 func_item: func_def
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	| syscall_decl
-	{ $$ = move($1); }
+	{ $$ = $1; }
 	;
 
 // A syscall declaration binds a number to a name callable like any other
@@ -971,44 +1050,34 @@ func_item: func_def
 // "= expr" tail (named-return initializer) is forced to fail at ';' instead
 // of surviving as a second GLR parse -- adding parameter defaults or an "="
 // expression operator would break this forced split.
-syscall_decl: do_export KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
+syscall_decl: KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
 	{
-		bool all_ok = true;
-		for (auto& p : $5)
-			if (p.count("not-impl")) { all_ok = false; break; }
-		if (all_ok) {
-			$$ = {{"name", $3}, {"func-type", "syscall"}, {"parameters", move($5)}, {"syscall-number", move($9)}};
-			if ($7.contains("rets"))
-				$$["rets"] = move($7["rets"]);
-			else if ($7.contains("ret-type"))
-				$$["ret-type"] = move($7["ret-type"]);
-			LOC($$, @$);
-			if ($1) {
-				$$["export"] = true;
-				json sig = $$;
-				ast["export"].push_back(move(sig));
-			}
-		} else {
-			$$ = {{"not-impl", true}};
-		}
+		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "syscall"}, {"syscall-number", $8}}, $4, $6, @$);
+		$$ = leafNode(fn.is_null() ? json{{"not-impl", true}} : move(fn));
+	}
+	| KW_EXPORT KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
+	{
+		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "syscall"}, {"syscall-number", $9}}, $5, $7, @$);
+		$$ = leafNode(fn.is_null() ? json{{"not-impl", true}} : move(fn));
 	}
 	;
 
 paramaters: /* empty */
 	{ }
 	| var_declarations
-	{ $$ = move($1); }
+	{ $$ = $1.toVector(); }
 	;
 
 return_def: /* empty */
 	{ }
 	| ARROW var_declarations
 	{
+		vector<json> rets = $2.toVector();
 		bool all_ok = true;
-		for (auto& v : $2)
+		for (auto& v : rets)
 			if (v.count("not-impl") || v.value("inherit-type", false)) { all_ok = false; break; }
 		if (all_ok)
-			$$["rets"] = move($2);
+			$$["rets"] = move(rets);
 	}
 	| ARROW type_expr
 	{
@@ -1021,13 +1090,14 @@ noname_func: KW_FUNC '(' paramaters ')'
 	return_def block
 	;
 
-construct_def: do_export KW_CONSTRUCT type_expr '(' paramaters ')' block
+construct_def: KW_CONSTRUCT type_expr '(' paramaters ')' block
+	| KW_EXPORT KW_CONSTRUCT type_expr '(' paramaters ')' block
 	;
 
 return: KW_RETURN
 	{ }
 	| KW_RETURN expressions
-	{ $$["values"] = move($2); }
+	{ $$["values"] = $2.toVector(); }
 	;
 
 for_loop: KW_FOR ID ':' expression block
@@ -1035,32 +1105,34 @@ for_loop: KW_FOR ID ':' expression block
 
 while_loop: KW_WHILE expression block
 	{
-		$$ = {{"stmt-type", "while"}, {"cond", $2}, {"body", move($3)}};
-		LOC($$, @$);
+		json w = {{"stmt-type", "while"}, {"cond", $2}};
+		LOC(w, @$);
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(w), {}, {{"body", $3}} });
 	}
 	;
 
 if_stmt: KW_IF expression block else_stmt
 	{
-		json then_block = {{"stmt-type", "block"}, {"body", move($3)}};
-		$$ = {{"stmt-type", "if"}, {"cond", $2}, {"then", move(then_block)}};
-		if (!$4.is_null()) $$["else"] = move($4);
-		LOC($$, @$);
+		json i = {{"stmt-type", "if"}, {"cond", $2}};
+		LOC(i, @$);
+		vector<std::pair<string, NodeRef>> children = {{"then", blockStmtNode($3)}};
+		if ($4) children.push_back({"else", $4});
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(i), move(children), {} });
 	}
 	;
 
 else_stmt: /* empty */
-	{ $$ = json{}; }
+	{ }
 	| KW_ELSE block
-	{ $$ = {{"stmt-type", "block"}, {"body", move($2)}}; }
+	{ $$ = blockStmtNode($2); }
 	| KW_ELSE if_stmt
-	{ $$ = move($2); }
+	{ $$ = $2; }
 	;
 
 expressions: expression
-	{ $$.push_back(move($1)); }
+	{ $$ = PList<json>().push($1); }
 	| expressions ',' expression
-	{ $$ = move($1); $$.push_back(move($3)); }
+	{ $$ = $1.push($3); }
 	;
 
 type_expr: ID
@@ -1104,14 +1176,6 @@ type_expr: ID
 temp_ids: ID | temp_ids ',' ID
 	;
 
-
-do_export: /* empty */ { $$ = false; }
-	| KW_EXPORT        { $$ = true; }
-	;
-
-move_owner_r: /* empty */ { $$ = false; }
-	| DBL_GRTR            { $$ = true; }
-	;
 
 %%
 
