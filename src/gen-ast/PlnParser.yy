@@ -132,7 +132,7 @@ struct BodyList {
 #define LOC(J, L)       J["loc"] = { (int)L.begin.line, (int)L.begin.column, (int)L.end.line, (int)L.end.column }
 #define LOC_BE(J, B, E) J["loc"] = { (int)B.begin.line, (int)B.begin.column, (int)E.end.line, (int)E.end.column }
 
-// An empty rule (e.g. do_export) is located at the end of the previous token,
+// An empty rule (e.g. arguments) is located at the end of the previous token,
 // so a rule's start is taken from its first non-empty component instead.
 #define YYLLOC_DEFAULT(Current, Rhs, N)                                   \
 	do {                                                                  \
@@ -147,6 +147,25 @@ struct BodyList {
 			(Current).begin = (Current).end = YYRHSLOC(Rhs, 0).end;       \
 		}                                                                 \
 	} while (false)
+
+	// Returns null when the signature uses a not-impl feature.
+	static json funcDecl(json& ast, bool exported, json fn, const vector<json>& params, const json& ret,
+	                     const palan::PlnParser::location_type& loc)
+	{
+		for (auto& p : params)
+			if (p.count("not-impl")) return nullptr;
+		fn["parameters"] = params;
+		if (ret.contains("rets"))
+			fn["rets"] = ret["rets"];
+		else if (ret.contains("ret-type"))
+			fn["ret-type"] = ret["ret-type"];
+		LOC(fn, loc);
+		if (exported) {
+			fn["export"] = true;
+			ast["export"].push_back(fn);
+		}
+		return fn;
+	}
 }
 
 %locations
@@ -216,7 +235,6 @@ struct BodyList {
 %type <vector<json>>	paramaters
 %type <PList<json>>	expressions
 %type <NodeRef>	block_obj standalone_block block_body_items
-%type <bool>	move_owner_r do_export
 %type <json>	tapple_decl tapple_inner
 %type <PList<json>>	tapple_decl_inner
 %type <NodeRef>	if_stmt else_stmt while_loop
@@ -630,13 +648,15 @@ inherit_var_decl: ID
 	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}}; }
 	;
 
-var_declaration: type_expr move_owner_r ID
+var_declaration: type_expr ID
 	{
-		if (!$2 && isDeclarableVarType($1))
-			$$ = {{"name", $3}, {"var-type", move($1)}};
+		if (isDeclarableVarType($1))
+			$$ = {{"name", $2}, {"var-type", move($1)}};
 		else
 			$$ = {{"not-impl", true}};
 	}
+	| type_expr DBL_GRTR ID
+	{ $$ = {{"not-impl", true}}; }
 	| type_expr ID '=' expression
 	{
 		if (isDeclarableVarType($1))
@@ -681,11 +701,17 @@ const_decl: KW_CONST ID '=' expression
 	{ $$ = {{"name", $2}, {"value", move($4)}}; LOC($$, @$); }
 	;
 
-type_decl: do_export KW_TYPE ID implememts '{' type_members '}'
+type_decl: KW_TYPE ID implememts '{' type_members '}'
+	{ $$ = {{"name", $2}, {"fields", $5.toVector()}}; LOC($$, @$); }
+	| KW_EXPORT KW_TYPE ID implememts '{' type_members '}'
 	{ $$ = {{"name", $3}, {"fields", $6.toVector()}}; LOC($$, @$); }
-	| do_export KW_TYPE ID '=' type_expr
+	| KW_TYPE ID '=' type_expr
+	{ $$ = {{"name", $2}, {"alias-of", move($4)}}; LOC($$, @$); }
+	| KW_EXPORT KW_TYPE ID '=' type_expr
 	{ $$ = {{"name", $3}, {"alias-of", move($5)}}; LOC($$, @$); }
-	| do_export KW_TYPE ID
+	| KW_TYPE ID
+	{ $$ = json{}; }
+	| KW_EXPORT KW_TYPE ID
 	{ $$ = json{}; }
 	;
 
@@ -721,8 +747,10 @@ long_func_name: ID
 	| long_func_name '.' ID
 	;
 
-interface_decl: do_export KW_INTERFACE ID '{' interface_methods '}'
-	| do_export KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
+interface_decl: KW_INTERFACE ID '{' interface_methods '}'
+	| KW_EXPORT KW_INTERFACE ID '{' interface_methods '}'
+	| KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
+	| KW_EXPORT KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
 	;
 
 interface_methods: /* empty */ 
@@ -911,9 +939,13 @@ func_call: ID '(' arguments ')'
 
 arguments: /* empty */
 	{ }
-	| expression move_owner_r
+	| expression
 	{ $$ = PList<json>().push($1); }
-	| arguments ',' expression move_owner_r
+	| expression DBL_GRTR
+	{ $$ = PList<json>().push($1); }
+	| arguments ',' expression
+	{ $$ = $1.push($3); }
+	| arguments ',' expression DBL_GRTR
 	{ $$ = $1.push($3); }
 	;
 
@@ -992,26 +1024,17 @@ store_loc
 	{ $$ = {{"kind", "not-impl"}}; }
 	;
 
-func_def: do_export KW_FUNC ID '(' paramaters ')' return_def block_obj
+func_def: KW_FUNC ID '(' paramaters ')' return_def block_obj
 	{
-		bool all_ok = true;
-		for (auto& p : $5)
-			if (p.count("not-impl")) { all_ok = false; break; }
-		if (all_ok) {
-			json fn = {{"name", $3}, {"func-type", "palan"}, {"parameters", $5}};
-			if ($7.contains("rets"))
-				fn["rets"] = $7["rets"];
-			else if ($7.contains("ret-type"))
-				fn["ret-type"] = $7["ret-type"];
-			LOC(fn, @$);
-			if ($1) {
-				fn["export"] = true;
-				ast["export"].push_back(fn);
-			}
-			$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} });
-		} else {
-			$$ = leafNode({{"not-impl", true}});
-		}
+		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "palan"}}, $4, $6, @$);
+		$$ = fn.is_null() ? leafNode({{"not-impl", true}})
+		                  : std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $7}}, {} });
+	}
+	| KW_EXPORT KW_FUNC ID '(' paramaters ')' return_def block_obj
+	{
+		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$);
+		$$ = fn.is_null() ? leafNode({{"not-impl", true}})
+		                  : std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} });
 	}
 	;
 
@@ -1027,26 +1050,15 @@ func_item: func_def
 // "= expr" tail (named-return initializer) is forced to fail at ';' instead
 // of surviving as a second GLR parse -- adding parameter defaults or an "="
 // expression operator would break this forced split.
-syscall_decl: do_export KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
+syscall_decl: KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
 	{
-		bool all_ok = true;
-		for (auto& p : $5)
-			if (p.count("not-impl")) { all_ok = false; break; }
-		if (all_ok) {
-			json fn = {{"name", $3}, {"func-type", "syscall"}, {"parameters", $5}, {"syscall-number", $9}};
-			if ($7.contains("rets"))
-				fn["rets"] = $7["rets"];
-			else if ($7.contains("ret-type"))
-				fn["ret-type"] = $7["ret-type"];
-			LOC(fn, @$);
-			if ($1) {
-				fn["export"] = true;
-				ast["export"].push_back(fn);
-			}
-			$$ = leafNode(move(fn));
-		} else {
-			$$ = leafNode({{"not-impl", true}});
-		}
+		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "syscall"}, {"syscall-number", $8}}, $4, $6, @$);
+		$$ = leafNode(fn.is_null() ? json{{"not-impl", true}} : move(fn));
+	}
+	| KW_EXPORT KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
+	{
+		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "syscall"}, {"syscall-number", $9}}, $5, $7, @$);
+		$$ = leafNode(fn.is_null() ? json{{"not-impl", true}} : move(fn));
 	}
 	;
 
@@ -1078,7 +1090,8 @@ noname_func: KW_FUNC '(' paramaters ')'
 	return_def block
 	;
 
-construct_def: do_export KW_CONSTRUCT type_expr '(' paramaters ')' block
+construct_def: KW_CONSTRUCT type_expr '(' paramaters ')' block
+	| KW_EXPORT KW_CONSTRUCT type_expr '(' paramaters ')' block
 	;
 
 return: KW_RETURN
@@ -1163,14 +1176,6 @@ type_expr: ID
 temp_ids: ID | temp_ids ',' ID
 	;
 
-
-do_export: /* empty */ { $$ = false; }
-	| KW_EXPORT        { $$ = true; }
-	;
-
-move_owner_r: /* empty */ { $$ = false; }
-	| DBL_GRTR            { $$ = true; }
-	;
 
 %%
 
