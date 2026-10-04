@@ -1,3 +1,4 @@
+#include <fstream>
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
@@ -1692,4 +1693,75 @@ TEST(gen_ast, field_transfer) {
 
 	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
 	ASSERT_FALSE(stmts[3].contains("ownership-transfer"));
+}
+
+// Copying a list on every append made parse time quadratic: 2000 items took
+// 40s+, so execTestCommand's 5s timeout catches a regression. Copying a block
+// once per enclosing level took 13s+ for 2000 statements at depth 60.
+TEST(gen_ast, decl_variants) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/126_decl_variants.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 7);
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "type-alias");
+	ASSERT_EQ(stmts[0]["name"], "Alias");
+	ASSERT_EQ(stmts[0]["loc"], json::array({4, 1, 4, 26}));
+	ASSERT_EQ(stmts[1]["stmt-type"], "not-impl");
+	ASSERT_EQ(stmts[2]["stmt-type"], "struct-def");
+	ASSERT_EQ(stmts[2]["fields"].size(), 1);
+	ASSERT_EQ(stmts[3]["body"]["args"].size(), 2);
+	ASSERT_EQ(stmts[4]["vars"].size(), 1);
+	ASSERT_EQ(stmts[4]["vars"][0]["var-name"], "c");
+	ASSERT_EQ(stmts[5]["vars"].size(), 0);
+	ASSERT_EQ(stmts[6]["stmt-type"], "not-impl");
+
+	// Definitions with an unsupported parameter form are dropped wherever they appear.
+	const auto& funcs = jout["ast"]["functions"];
+	ASSERT_EQ(funcs.size(), 1);
+	ASSERT_EQ(funcs[0]["name"], "outer");
+	ASSERT_EQ(funcs[0]["block"]["functions"].size(), 0);
+	ASSERT_EQ(funcs[0]["block"]["body"].size(), 1);
+	ASSERT_FALSE(jout.contains("export"));
+}
+
+TEST(gen_ast, linear_parse_time) {
+	cleanTestEnv();
+	const int n = 2000;
+	auto parse = [](const string& name, const string& src) {
+		ofstream("out/" + name) << src;
+		string output = execTestCommand("bin/palan-gen-ast out/" + name);
+		EXPECT_TRUE(checkerr(output)) << name;
+		return output[0] == '{' ? json::parse(output) : json();
+	};
+
+	const int depth = 60;
+	string top, body = "func f() {\nint32 a = 0;\n", arr = "[]int32 a = [", args = "f(", nested = "func f() {\n";
+	for (int i = 0; i < depth; i++) nested += "while 1 < 2 {\n";
+	for (int i = 0; i < n; i++) {
+		top += "int32 a" + to_string(i) + " = " + to_string(i) + ";\n";
+		body += "a = a + 1;\n";
+		nested += "a = a + 1;\n";
+		arr += to_string(i) + ",";
+		args += to_string(i) + ",";
+	}
+	body += "}\n";
+	arr += "0];\n";
+	args += "0);\n";
+	nested += string(depth, '}') + "\n}\n";
+
+	json jout = parse("top.pa", top);
+	ASSERT_EQ(jout["ast"]["statements"].size(), n);
+	jout = parse("body.pa", body);
+	ASSERT_EQ(jout["ast"]["functions"][0]["block"]["body"].size(), n + 1);
+	jout = parse("arr.pa", arr);
+	ASSERT_EQ(jout["ast"]["statements"][0]["vars"][0]["init"]["items"].size(), n + 1);
+	jout = parse("args.pa", args);
+	ASSERT_EQ(jout["ast"]["statements"][0]["body"]["args"].size(), n + 1);
+	jout = parse("nested.pa", nested);
+	json* inner = &jout["ast"]["functions"][0]["block"]["body"][0];
+	for (int i = 1; i < depth; i++) inner = &(*inner)["body"][0];
+	ASSERT_EQ((*inner)["body"].size(), n);
 }
