@@ -14,7 +14,9 @@ build/CMakeCache.txt:
 	cd build && cmake -DCMAKE_BUILD_TYPE=Debug ..
 clean:
 	rm -r build
-LCOV_FLAGS = --rc branch_coverage=1
+# lcov reads exclusion markers only from files it treats as C/C++, which by
+# default excludes .yy grammar files.
+LCOV_FLAGS = --rc branch_coverage=1 --rc c_file_extensions=h,c,i,C,H,I,cpp,hpp,icc,cc,hh,cxx,hxx,yy
 LCOV_FILTER = --rc no_exception_branch=1
 coverage: build-cov/CMakeCache.txt
 	find build-cov -name "*.gcda" -delete 2>/dev/null; true

@@ -1698,6 +1698,35 @@ TEST(gen_ast, field_transfer) {
 // Copying a list on every append made parse time quadratic: 2000 items took
 // 40s+, so execTestCommand's 5s timeout catches a regression. Copying a block
 // once per enclosing level took 13s+ for 2000 statements at depth 60.
+TEST(gen_ast, decl_variants) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/126_decl_variants.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 7);
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "type-alias");
+	ASSERT_EQ(stmts[0]["name"], "Alias");
+	ASSERT_EQ(stmts[0]["loc"], json::array({4, 1, 4, 26}));
+	ASSERT_EQ(stmts[1]["stmt-type"], "not-impl");
+	ASSERT_EQ(stmts[2]["stmt-type"], "struct-def");
+	ASSERT_EQ(stmts[2]["fields"].size(), 1);
+	ASSERT_EQ(stmts[3]["body"]["args"].size(), 2);
+	ASSERT_EQ(stmts[4]["vars"].size(), 1);
+	ASSERT_EQ(stmts[4]["vars"][0]["var-name"], "c");
+	ASSERT_EQ(stmts[5]["vars"].size(), 0);
+	ASSERT_EQ(stmts[6]["stmt-type"], "not-impl");
+
+	// Definitions with an unsupported parameter form are dropped wherever they appear.
+	const auto& funcs = jout["ast"]["functions"];
+	ASSERT_EQ(funcs.size(), 1);
+	ASSERT_EQ(funcs[0]["name"], "outer");
+	ASSERT_EQ(funcs[0]["block"]["functions"].size(), 0);
+	ASSERT_EQ(funcs[0]["block"]["body"].size(), 1);
+	ASSERT_FALSE(jout.contains("export"));
+}
+
 TEST(gen_ast, linear_parse_time) {
 	cleanTestEnv();
 	const int n = 2000;

@@ -1,0 +1,21 @@
+func dropFirst(x = 1) { }
+func dropAfterBlock(x = 1) { };
+func dropAfterSemicolon(x = 1) { }
+export type Alias = int32;
+export type Opaque;
+type MethodFirst { func m() { } int32 x; };
+f(a, b>>);
+(int32 c, void) = g();
+(void, d) = g();
+int32(1, 2);
+func untypedFirst(x = 1, y) { }
+export func exportedNotImpl(x = 1) { }
+syscall sysNotImpl(x = 1) = 1;
+export syscall exportedSysNotImpl(x = 1) = 1;
+func outer() {
+	func inner1(x = 1) { }
+	func inner2(x = 1) { };
+	func inner3(x = 1) { }
+	int32 v = 0;
+	func inner4(x = 1) { }
+}
