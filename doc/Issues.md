@@ -158,30 +158,24 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 24. Contiguous Array Levels Have Two SA Encodings
-
-**Summary:** SA encodes an array level whose elements sit contiguously (`$`) in two ways. `[m]$[n]int32` (and `[]$[n]T`) is a single level with `embedded` + `inner-size`: the row is folded into its parent, and consumers rebuild a row pointer on access. `[n]$P`, and each row of `[m][n]$P`, is a level of its own with `embedded` + `stride`. Both mean "elements of a known byte size placed back to back", but row-size computation, element addressing and shape matching each branch on `inner-size` versus `stride` (`PlnSaExpr.cpp`, `PlnSaStmt.cpp`, `arrShapeMatch`/`copyShapeMatch`). Every shape currently needed works, so this is deferred rather than fixed now. Unify it (one contiguous-level form carrying the element size, with the row kept as its own level) before adding a shape that would need a third case, such as a contiguous 2D struct array `[m]$[n]$T` or a two-dimensional array field in a struct, both rejected today.
-
----
-
-## 25. An Assignment Nested Inside an Expression Is Not Diagnosed
+## 24. An Assignment Nested Inside an Expression Is Not Diagnosed
 
 **Summary:** gen-ast parses `expr -> target` as an expression, but only a statement-level assignment becomes an `assign`/`arr-assign`/`field-assign` statement. Nested inside another expression (`printf("%d\n", 3 -> a)`), the `assign-expr` passes SA untouched and palan-codegen stops with `Unknown expression type in SA file: 'assign-expr'.` Whether an assignment expression yields its value or acts as an lvalue (the target) is undecided, so SA should reject it as not implemented until that is settled.
 
 ---
 
-## 26. gen-ast Aborts When Blocks Nest 62 Levels or Deeper
+## 25. gen-ast Aborts When Blocks Nest 62 Levels or Deeper
 
 **Summary:** Nesting blocks 62 levels or deeper (for example 62 nested `while` loops) makes palan-gen-ast abort with `free(): invalid pointer`. Bison 3.8.2's `glr2.cc` grows the GLR stack past `YYINITDEPTH` (200 items) with `std::vector::reserve`. `glr_stack_item`'s copy constructor `memcpy`s the semantic value, and the old item's destructor then frees the same `json`, so the value is freed twice. Fixing this needs either a skeleton change, or setting `YYINITDEPTH` to `YYMAXDEPTH` so the stack never grows (a deeper parse then fails with "memory exhausted" instead of crashing). It is deferred because real code does not nest this deeply.
 
 ---
 
-## 27. Full LALR(1) Conversion of the Palan Grammar
+## 26. Full LALR(1) Conversion of the Palan Grammar
 
-**Summary:** The Palan grammar still has 12 shift/reduce and 86 reduce/reduce conflicts (v0.1.39), so gen-ast stays on Bison's GLR skeleton `glr2.cc`. Removing them all would allow `lalr1.cc`, where grammar actions get non-`const` `$N` that can be moved from, the parser never splits, and #26 disappears with the GLR stack. The remaining conflicts: (a) `'.'` after `term`, `@ store_loc` or `@! store_loc` — field access versus member-call `expression '.' ID '(' ... ')'`, needing two tokens of lookahead; restructuring member-call changes the accepted language (`@a.f()` is rejected as ambiguous today). (b) `'<'` — the reserved, not-implemented generic type syntax `ID<T>` / `interface ID<T>` against the comparison operator; resolving it is a language decision on keeping that syntax. (c) The 86 reduce/reduce conflicts — whether an `ID`, a `func_call` or a parenthesized tuple reduces to `term`/`expression` or to `store_loc`. (d) `'='` — a syscall's named-return initializer (`syscall f() -> int32 r = 1 = 60;`) against its syscall number. LALR state merging leaks it into every initialized typed declaration (`int32 x = 1;`), which accounts for 37 of the 57 GLR splits in `samples/tetris.pa`; `%define lr.type ielr` does not split those states. (e) `']'` — an array type `[expr]T` against an array literal `[expr]`.
+**Summary:** The Palan grammar still has 12 shift/reduce and 86 reduce/reduce conflicts (v0.1.39), so gen-ast stays on Bison's GLR skeleton `glr2.cc`. Removing them all would allow `lalr1.cc`, where grammar actions get non-`const` `$N` that can be moved from, the parser never splits, and #25 disappears with the GLR stack. The remaining conflicts: (a) `'.'` after `term`, `@ store_loc` or `@! store_loc` — field access versus member-call `expression '.' ID '(' ... ')'`, needing two tokens of lookahead; restructuring member-call changes the accepted language (`@a.f()` is rejected as ambiguous today). (b) `'<'` — the reserved, not-implemented generic type syntax `ID<T>` / `interface ID<T>` against the comparison operator; resolving it is a language decision on keeping that syntax. (c) The 86 reduce/reduce conflicts — whether an `ID`, a `func_call` or a parenthesized tuple reduces to `term`/`expression` or to `store_loc`. (d) `'='` — a syscall's named-return initializer (`syscall f() -> int32 r = 1 = 60;`) against its syscall number. LALR state merging leaks it into every initialized typed declaration (`int32 x = 1;`), which accounts for 37 of the 57 GLR splits in `samples/tetris.pa`; `%define lr.type ielr` does not split those states. (e) `']'` — an array type `[expr]T` against an array literal `[expr]`.
 
 ---
 
-## 28. `cinclude` Processing Time
+## 27. `cinclude` Processing Time
 
 **Summary:** Now that gen-ast parses in linear time, `cinclude` dominates its run time. In `samples/tetris.pa` (about 1.45s in gen-ast, Debug build), the four `cinclude`s of `ncurses.h`, `unistd.h`, `stdlib.h` and `time.h` alone take about 1.35s: about 1.0s in the `palan-c2ast` child processes (`ncurses.h` about 0.6s) and the rest in gen-ast ingesting their output. Speeding this up needs profiling c2ast's preprocessing and parsing of system headers, or caching translated headers between builds.

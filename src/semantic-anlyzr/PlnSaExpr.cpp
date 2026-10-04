@@ -739,28 +739,26 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 			if (paramVT) {
 				if (paramVT->contains("arr-size")) {
 					checkArrBorrowBinding(locNode, arg, saArg, *paramVT);
-				} else if (paramVT->value("embedded", false) && paramVT->contains("stride")) {
-					// The type registry can't tell a contiguous struct array from a single struct.
+				} else if (paramVT->value("embedded", false)) {
+					// The type registry can't tell contiguous elements from pointer slots,
+					// nor a contiguous struct array from a single struct.
 					const json& argVT = saArg["value-type"];
-					if (!argVT.value("embedded", false) || !argVT.contains("stride")) {
+					bool argContig = argVT.value("embedded", false) && argVT.contains("stride");
+					const json& paramElem = (*paramVT)["base-type"];
+					if (isArrLevel(paramElem)) {
+						const json* argRow = argContig ? &argVT["base-type"] : nullptr;
+						bool argSized = argRow && isArrLevel(*argRow) && argRow->contains("arr-size");
+						if (!argSized || (*argRow)["arr-size"] != paramElem["arr-size"]) {
+							string actual = argSized
+								? to_string((*argRow)["arr-size"].get<int64_t>()) : "variable";
+							cerr << locPrefix(locNode)
+							     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
+							            to_string(paramElem["arr-size"].get<int64_t>()), actual) << endl;
+							exit(1);
+						}
+					} else if (!argContig) {
 						cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
 							arrShapeName(argVT), arrShapeName(*paramVT)) << endl;
-						exit(1);
-					}
-				} else if (paramVT->value("embedded", false)) {
-					const json& argVT = saArg["value-type"];
-					bool argEmbedded = argVT.value("embedded", false);
-					bool paramHasSize = paramVT->contains("inner-size");
-					bool argHasSize   = argVT.contains("inner-size");
-					if (!argEmbedded || !argHasSize || !paramHasSize
-						|| (*paramVT)["inner-size"] != argVT["inner-size"]) {
-						string expected = paramHasSize
-							? to_string((*paramVT)["inner-size"].get<int64_t>()) : "?";
-						string actual = (argEmbedded && argHasSize)
-							? to_string(argVT["inner-size"].get<int64_t>()) : "variable";
-						cerr << locPrefix(locNode)
-						     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
-						            expected, actual) << endl;
 						exit(1);
 					}
 				}
@@ -947,11 +945,8 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 			return sa_expr;
 		}
 
-		if (elem_type.value("type-kind", "") == "prim"
-				&& !array_type.contains("inner-size") && array_type.contains("stride")) {
+		if (elem_type.value("type-kind", "") == "prim") {
 			// [n]$T embedded array field, primitive leaf: data[i] -> scalar value
-			// (stride carried on array_type distinguishes this from the 2D
-			// inner-size row-access case below).
 			int64_t stride = array_type.value("stride", (int64_t)0);
 			json elem_size_node = {
 				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
@@ -964,19 +959,15 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 			return sa_expr;
 		}
 
-		// Embedded 2D array row access: mat[i] → pntr(T), non-owning
-		// elem-size = stride = inner-size * sizeof(T)  (or __name_d1 * sizeof(T) if variable)
-		int elem_sz = elemSizeBytes(elem_type.value("type-name",""));
-		json row_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
-		if (array_type.contains("mutable")) row_pntr["mutable"] = array_type["mutable"];
+		// [n]$[m]T row access: mat[i] -> the row, laid out in place.
+		// Without a stride the row size is only known at run time, from __name_d1.
 		json elem_size_node;
-
-		if (array_type.contains("inner-size")) {
-			int64_t stride = array_type["inner-size"].get<int64_t>() * elem_sz;
+		if (array_type.contains("stride")) {
 			elem_size_node = {
-				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
+				{"expr-type","lit-uint"},{"value",to_string(array_type["stride"].get<int64_t>())},{"value-type",uint64_type}
 			};
 		} else {
+			int elem_sz = elemSizeBytes(elem_type["base-type"].value("type-name",""));
 			string arr_name = sa_array["name"].get<string>();
 			json d1_id = {{"expr-type","id"},{"name","__"+arr_name+"_d1"},
 			              {"var-type",uint64_type},{"value-type",uint64_type}};
@@ -991,7 +982,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 		sa_expr["array"]      = sa_array;
 		sa_expr["index"]      = sa_index;
 		sa_expr["elem-size"]  = elem_size_node;
-		sa_expr["value-type"] = row_pntr;
+		sa_expr["value-type"] = elem_type;
 		sa_expr["addr-only"]  = true;
 		return sa_expr;
 	}

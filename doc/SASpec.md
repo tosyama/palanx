@@ -232,10 +232,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   **`[n]$[m]T` (contiguous 2D array):** A `var-decl` with outer `arr` type-kind where
   `embedded: true` and `base-type` is an inner `arr(prim T)` is transformed to a single
   contiguous allocation:
-  - `var-type`: changed to `pntr(T, embedded:true [, inner-size:m])`:
-    - `embedded`: always `true`
-    - `inner-size`: present when `m` is a compile-time constant; absent when `m` is a runtime variable
-    - `base-type`: leaf element type `T`
+  - `var-type`: changed to `pntr(pntr(T [, arr-size:m]), embedded:true [, stride:m*sizeof(T)])`:
+    the outer level holds the rows in place, each `stride` bytes; the row is a level of its own.
+    - `stride` and the row's `arr-size` are present when `m` is a compile-time constant; absent
+      when `m` is a runtime variable
   - When `m` is a constant (e.g. `[n]$[4]int32`):
     - `init`: C call `malloc(mul(<n-expr>, lit-uint(m * sizeof(T))))`
   - When `m` is a variable (e.g. `[n]$[cols]int32`):
@@ -245,22 +245,23 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - `n` (row count) is not stored; only `m` (inner dimension) needs to be retained for row indexing.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
-  `pntr(T, embedded:true, inner-size:m)` type as the sized form. The inner dimension `m`
+  `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`
   must be a compile-time constant literal; `[]$[]T` or `[]$[var]T` in a parameter is a
   compile error (`E_EmbeddedArrUnsizedInner`).
 
   **`arr-index` on embedded array (row access):** When the array expression has an embedded
   pntr type (`embedded:true`), `arr[i]` is treated as a row access:
-  - `value-type`: `pntr(T)` — a non-owning transient row pointer (no `embedded` flag)
+  - `value-type`: the row level, `pntr(T [, arr-size:m])`, with `addr-only: true` (the row is
+    laid out in place, not loaded)
   - `elem-size`: the row stride in bytes:
-    - Constant `inner-size`: `lit-uint(inner-size * sizeof(T))`
+    - Constant `m`: `lit-uint(stride)`
     - Variable m: `mul(__<name>_d1, lit-uint(sizeof(T)))`
-  The subsequent `arr[i][j]` operates on the resulting plain `pntr(T)` with elem-size `sizeof(T)`.
+  The subsequent `arr[i][j]` operates on the row like any `pntr(T)` level, with elem-size `sizeof(T)`.
 
   **Function call type compatibility for embedded args:** When an argument is passed to a
-  parameter of type `pntr(T, embedded:true, inner-size:m)`, SA checks (at the raw JSON level):
-  - The argument's `value-type` must also have `embedded:true` and `inner-size:k` where `k == m`.
-  - Mismatch (or variable inner-size in the argument) is a compile error (`E_EmbeddedArrInnerSizeMismatch`).
+  parameter of type `pntr(pntr(T, arr-size:m), embedded:true, stride)`, SA checks (at the raw JSON level):
+  - The argument's `value-type` must also have `embedded:true` and `stride`, with a row of `arr-size:k` where `k == m`.
+  - Mismatch (or a variable row size in the argument) is a compile error (`E_EmbeddedArrInnerSizeMismatch`).
 
   **`arr-size`:** Every `pntr` level that stands for an array dimension carries `arr-size`
   (its element count) when that size is a compile-time constant (a literal or a `const`),
@@ -271,7 +272,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `pntr` whose `base-type` is an `arr` is normalized to the array's own pntr chain, with
   `arr-size` on every level and `mutable` (`false` for `@`, `true` for `@!`) on every level down
   to the elements — `@[n][m]T` becomes `pntr(pntr(T, mutable, arr-size:m), mutable, arr-size:n)`,
-  `@[n]$[m]T` becomes `pntr(T, mutable, embedded:true, inner-size:m, arr-size:n)`. For a struct
+  `@[n]$[m]T` becomes `pntr(pntr(T, mutable, arr-size:m), mutable, embedded:true, stride, arr-size:n)`. For a struct
   `T` in `@[n]T` / `@[n][m]T`, the element is `pntr(struct(T))` without `mutable`, the same
   as in the owned array: it is the struct's storage, and a field write through it is checked
   against the permission of the array level it is indexed from. `@[n]$T` takes the contiguous
@@ -286,7 +287,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   return type of this form stays rejected (`E_UnsupportedParamType`). At a call argument, a
   local's initializer, or an assignment to such a destination, the source must be written as
   `@x`/`@!x` (`E_ArrBorrowNeedsAddrOf`) and its value-type must match depth, `embedded`,
-  `inner-size`, every `arr-size`, whether the element is a stored struct or a pointer, and a
+  every `arr-size`, whether the element is a stored struct or a pointer, and a
   pointer element's `mutable`, which a read-only borrow may narrow from `true` to `false`
   (`E_ArrBorrowShapeMismatch`). A row read through an
   embedded borrow inherits its `mutable`.
@@ -363,7 +364,7 @@ Additional statement kinds emitted by SA:
   The routine's `alloc-shapes` entry is recorded as for a declaration, and build-mgr generates
   the copy function next to that shape's allocator. The source's value-type must match the
   destination's level by level: every `arr-size` present and equal, the same `embedded`,
-  `stride`/`inner-size`, struct storage versus pointer, and the same element type
+  struct storage versus pointer, and the same element type
   (E_CopyShapeMismatch). A lone struct may also be copied from a `@T`/`@!T`.
 
 - **return** - return statement

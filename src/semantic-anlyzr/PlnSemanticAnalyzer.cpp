@@ -180,7 +180,7 @@ void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
 	for (auto& p : funcDef["parameters"]) {
 		if (!p.contains("var-type")) continue;
 		const auto& vt = p["var-type"];
-		if (vt.value("embedded", false) && !vt.contains("inner-size") && !vt.contains("stride")) {
+		if (vt.value("embedded", false) && !vt.contains("stride")) {
 			cerr << locPrefix(funcDef)
 			     << PlnSaMessage::getMessage(E_EmbeddedArrUnsizedInner) << endl;
 			exit(1);
@@ -328,15 +328,19 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_Unsupported2DStructArr) << endl;
 			exit(1);
 		}
+		json leaf = embed_bt.value("base-type", json{});
+		json row = {{"type-kind","pntr"},{"base-type",leaf}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		if (isRow && !embed_bt["size-expr"].is_null()) {
 			const auto& sz = embed_bt["size-expr"];
 			string et = sz.value("expr-type","");
-			if (et == "lit-int" || et == "lit-uint")
-				pntr["inner-size"] = stoll(sz["value"].get<string>());
-			// Variable inner-size: no inner-size field; validateEmbeddedParams catches it
+			if (et == "lit-int" || et == "lit-uint") {
+				int64_t m = stoll(sz["value"].get<string>());
+				row["arr-size"] = m;
+				pntr["stride"]  = m * elemSizeBytes(leaf.value("type-name",""));
+			}
 		}
-		// []$[]T or []$[var]T: no inner-size → validateEmbeddedParams reports error
-		pntr["base-type"] = embed_bt.value("base-type", json{});
+		// []$[]T or []$[var]T: no stride -> validateEmbeddedParams reports it
+		pntr["base-type"] = move(row);
 		return pntr;
 	}
 	json bt = resolveTypeAlias(type["base-type"]);
@@ -499,8 +503,15 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 			return out;
 		}
-		out["inner-size"] = constLevelSize(locNode, leaf["size-expr"], isMutable.has_value());
-		leaf = json(leaf["base-type"]);
+		json row = sizedArrLevel(locNode, leaf, isMutable);
+		const json& rowElem = row["base-type"];
+		if (rowElem.value("type-kind","") != "prim") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
+			exit(1);
+		}
+		out["stride"]    = row["arr-size"].get<int64_t>() * elemSizeBytes(rowElem["type-name"].get<string>());
+		out["base-type"] = move(row);
+		return out;
 	} else if (leaf.value("type-kind","") == "arr") {
 		out["base-type"] = sizedArrLevel(locNode, leaf, isMutable);
 		return out;

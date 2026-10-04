@@ -294,10 +294,8 @@ inline string arrShapeName(const json& t) {
 	const json* cur = &t;
 	while (isArrLevel(*cur)) {
 		out += "[" + (cur->contains("arr-size") ? to_string((*cur)["arr-size"].get<int64_t>()) : string("?")) + "]";
-		if (cur->value("embedded", false) && (*cur)["base-type"].value("type-kind","") == "struct")
+		if (cur->value("embedded", false))
 			out += "$";
-		else if (cur->value("embedded", false))
-			out += "$[" + (cur->contains("inner-size") ? to_string((*cur)["inner-size"].get<int64_t>()) : string("?")) + "]";
 		cur = &(*cur)["base-type"];
 	}
 	if (isStructStorage(*cur)) cur = &(*cur)["base-type"];
@@ -321,11 +319,8 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 		return !isPtrBorrow(to) || isWritableThrough(from) == isWritableThrough(to)
 		    || (!toSlotsMutable && !isWritableThrough(to));
 	}
-	auto sameKey = [&](const char* k) {
-		return from.contains(k) == to.contains(k) && (!to.contains(k) || from[k] == to[k]);
-	};
 	return (!to.contains("arr-size") || (from.contains("arr-size") && from["arr-size"] == to["arr-size"]))
-	    && from.value("embedded", false) == to.value("embedded", false) && sameKey("inner-size")
+	    && from.value("embedded", false) == to.value("embedded", false)
 	    && arrShapeMatch(from["base-type"], to["base-type"], isWritableThrough(to));
 }
 
@@ -356,10 +351,9 @@ inline bool isCopiedByValue(const json& t) { return isStructStorage(t) || isArrL
 inline bool copyShapeMatch(const json& from, const json& to) {
 	if (isArrLevel(to)) {
 		if (!isArrLevel(from) || !to.contains("arr-size") || from.value("arr-size", -1) != to["arr-size"]
-		    || from.value("embedded", false) != to.value("embedded", false)
-		    || from.value("inner-size", -1) != to.value("inner-size", -1))
+		    || from.value("embedded", false) != to.value("embedded", false))
 			return false;
-		if (to.value("embedded", false) && !to.contains("stride") && !to.contains("inner-size"))
+		if (to.value("embedded", false) && !to.contains("stride"))
 			return false;
 		return copyShapeMatch(from["base-type"], to["base-type"]);
 	}

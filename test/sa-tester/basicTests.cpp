@@ -1130,8 +1130,9 @@ TEST(sa, embed_arr_decl_const_inner) {
 	const auto& mat_vtype = body_f[0]["vars"][0]["var-type"];
 	ASSERT_EQ(mat_vtype["type-kind"],   "pntr");
 	ASSERT_TRUE(mat_vtype.value("embedded", false));
-	ASSERT_EQ(mat_vtype["inner-size"],  4);
-	ASSERT_EQ(mat_vtype["base-type"]["type-name"], "int32");
+	ASSERT_EQ(mat_vtype["stride"],      16);
+	ASSERT_EQ(mat_vtype["base-type"]["arr-size"], 4);
+	ASSERT_EQ(mat_vtype["base-type"]["base-type"]["type-name"], "int32");
 
 	const auto& init = body_f[0]["vars"][0]["init"];
 	ASSERT_EQ(init["expr-type"], "call");
@@ -1161,14 +1162,15 @@ TEST(sa, embed_arr_decl_variable_inner) {
 	ASSERT_EQ(body_g[0]["vars"][0]["var-type"]["type-name"], "uint64");
 	ASSERT_EQ(body_g[0]["vars"][0]["init"]["name"], "cols");
 
-	// body[1]: mat = malloc(rows * (__mat_d1 * 4))  — var-type has no inner-size
+	// body[1]: mat = malloc(rows * (__mat_d1 * 4))  — the row size is not in the type
 	ASSERT_EQ(body_g[1]["stmt-type"], "var-decl");
 	ASSERT_EQ(body_g[1]["vars"][0]["name"], "mat");
 	const auto& mat_vtype_g = body_g[1]["vars"][0]["var-type"];
 	ASSERT_EQ(mat_vtype_g["type-kind"], "pntr");
 	ASSERT_TRUE(mat_vtype_g.value("embedded", false));
-	ASSERT_FALSE(mat_vtype_g.contains("inner-size"));
-	ASSERT_EQ(mat_vtype_g["base-type"]["type-name"], "int32");
+	ASSERT_FALSE(mat_vtype_g.contains("stride"));
+	ASSERT_FALSE(mat_vtype_g["base-type"].contains("arr-size"));
+	ASSERT_EQ(mat_vtype_g["base-type"]["base-type"]["type-name"], "int32");
 
 	const auto& init_g = body_g[1]["vars"][0]["init"];
 	ASSERT_EQ(init_g["expr-type"], "call");
@@ -1192,14 +1194,15 @@ TEST(sa, embed_arr_func_param) {
 	ASSERT_TRUE(jout.is_object());
 	ASSERT_GE(jout["functions"].size(), 2u);
 
-	// func process: first param is pntr, embedded:true, inner-size:4
+	// func process: first param is pntr, embedded:true, a 4-element row of 16 bytes
 	const auto& params = jout["functions"][0]["parameters"];
 	ASSERT_EQ(params[0]["name"], "mat");
 	const auto& mat_vt = params[0]["var-type"];
 	ASSERT_EQ(mat_vt["type-kind"], "pntr");
 	ASSERT_TRUE(mat_vt.value("embedded", false));
-	ASSERT_EQ(mat_vt["inner-size"], 4);
-	ASSERT_EQ(mat_vt["base-type"]["type-name"], "int32");
+	ASSERT_EQ(mat_vt["stride"], 16);
+	ASSERT_EQ(mat_vt["base-type"]["arr-size"], 4);
+	ASSERT_EQ(mat_vt["base-type"]["base-type"]["type-name"], "int32");
 
 	// return mat[0][0]: nested arr-index, outer elem-size=16, inner elem-size=4
 	const auto& ret = jout["functions"][0]["body"][0];
@@ -1235,9 +1238,9 @@ TEST(sa, embed_arr_var_row_access) {
 	ASSERT_EQ(body[0]["vars"][0]["name"], "__mat_d1");
 	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "cols");
 
-	// body[1]: mat = malloc(n * (__mat_d1 * 4)), no inner-size field
+	// body[1]: mat = malloc(n * (__mat_d1 * 4)), no stride
 	ASSERT_EQ(body[1]["vars"][0]["name"], "mat");
-	ASSERT_FALSE(body[1]["vars"][0]["var-type"].contains("inner-size"));
+	ASSERT_FALSE(body[1]["vars"][0]["var-type"].contains("stride"));
 
 	// body[2]: mat[0][0] is evaluated into a temp before body[3] frees mat;
 	// the inner arr-index (row access) has mul elem-size

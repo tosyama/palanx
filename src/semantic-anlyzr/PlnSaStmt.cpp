@@ -679,9 +679,7 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	int64_t n = t["arr-size"];
 	const json& elem = t["base-type"];
 	if (t.value("embedded", false)) {
-		int64_t rowBytes = t.contains("stride") ? t["stride"].get<int64_t>()
-			: t["inner-size"].get<int64_t>() * elemSizeBytes(elem["type-name"]);
-		return memcpyStmt(n * rowBytes);
+		return memcpyStmt(n * t["stride"].get<int64_t>());
 	}
 	if (isStructStorage(elem)) {
 		string name = elem["base-type"]["type-name"];

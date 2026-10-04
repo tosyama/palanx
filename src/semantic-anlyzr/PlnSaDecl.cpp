@@ -837,8 +837,8 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 		if (m_val >= 0) {
 			int64_t stride = m_val * elem_size;
 			// LCOV_EXCL_EXCEPTION_BR_START
-			pntr_type = {{"type-kind","pntr"},{"embedded",true},
-			             {"inner-size",m_val},{"base-type",leaf_type}};
+			pntr_type = {{"type-kind","pntr"},{"embedded",true},{"stride",stride},
+			             {"base-type",{{"type-kind","pntr"},{"arr-size",m_val},{"base-type",leaf_type}}}};
 			json stride_lit = {
 				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
 			};
@@ -850,7 +850,8 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 		} else {
 			string d1_name = "__" + name + "_d1";
 			// LCOV_EXCL_EXCEPTION_BR_START
-			pntr_type = {{"type-kind","pntr"},{"embedded",true},{"base-type",leaf_type}};
+			pntr_type = {{"type-kind","pntr"},{"embedded",true},
+			             {"base-type",{{"type-kind","pntr"},{"base-type",leaf_type}}}};
 
 			json d1_id = {{"expr-type","id"},{"name",d1_name},
 			              {"var-type",uint64_type},{"value-type",uint64_type}};
