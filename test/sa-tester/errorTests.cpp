@@ -1165,15 +1165,15 @@ TEST(sa_error, readonly_ptr_to_nonconst_c_param_unnamed)
 	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter '#1'"), string::npos);
 }
 
-TEST(sa_error, addr_of_arr_row_not_addressable)
+TEST(sa_error, addr_of_struct_ptr_elem_not_addressable)
 {
-	// `@!mat[0]` where `mat` is `[2]$[3]int64` -- the row itself is already
-	// an address computation (embedded 2D row access), not a storage slot.
+	// `@p[1]` where `p` is `@P` -- the element is a borrowed struct already;
+	// it is passed on by name, so '@' on it is rejected.
 	// Covers: sa_expr_addr_of arr-index branch, addr-only(true) input -> E_AddrOfNotPrimitiveElem
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_117_addr_of_arr_row.pa -o " + ast_out), "");
+		"bin/palan-gen-ast ../test/testdata/sa/error_117_addr_of_struct_ptr_elem.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot take the address of this array element"), string::npos);
@@ -2684,4 +2684,44 @@ TEST(sa_error, embed_owning_struct)
 		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find("it owns fields"), string::npos) << file << ": " << sa;
 	}
+}
+
+TEST(sa_error, row_borrow_readonly)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_377_row_borrow_readonly.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
+}
+
+TEST(sa_error, row_borrow_size)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_378_row_borrow_size.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("array shape '[3]int32' does not match the borrowed array type '[4]int32'"), string::npos);
+}
+
+TEST(sa_error, row_borrow_runtime_size)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_379_row_borrow_runtime_size.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("array shape '[?]int32' does not match the borrowed array type '[4]int32'"), string::npos);
+}
+
+TEST(sa_error, row_by_name)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_380_row_by_name.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("must be written as '@name' or '@!name'"), string::npos);
 }

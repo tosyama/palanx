@@ -1248,6 +1248,9 @@ func fill(@![H][W]int32 g, int32 x) {
   (`g[i][j]`) and the fields of a struct element (`g[i].x`). A `@` borrow cannot be passed
   where `@!` is expected.
 - A struct element is still passed to a `@T`/`@!T` parameter as `@g[i]` / `@!g[i]`.
+- A row of a multi-dimensional array is borrowed the same way: `@g[i]` / `@!g[i]` gives the row of
+  `[n][m]T`, `[n]$[m]T`, `[n][m]$T` or `[n][m]T` (struct `T`) as `@[m]T`, `@[m]$T` and so on, also
+  when `g` is itself a borrowed array.
 - A borrowed array can also be a local variable (`@[4]int64 p = @v;`).
 - A borrowed array is already a borrow, like a `@T`/`@!T` pointer: pass it on, bind it, and
   rebind it by name (`sum(g)`, `@[4]int64 q = p;`, `q -> p`). `@g` on it is a compile error. A
@@ -1850,7 +1853,8 @@ int64 x = 42;
   ```
 - `@` also takes the address of a primitive-typed array element (`@arr[2]`, `@!arr[2]`),
   including an element of a fixed-size array field (`@!s.data[2]`) and the innermost element of a
-  multi-dimensional array (`@!mat[0][1]`):
+  multi-dimensional array (`@!mat[0][1]`). A row (`@!mat[0]`) is borrowed as an array (see
+  Borrowing Arrays), which also works where a C function takes a pointer to its elements:
 
   ```palan
   [4]int64 arr;

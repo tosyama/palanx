@@ -566,9 +566,11 @@ void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json&
 		exit(1);
 	}
 	if (!arrShapeMatch(saValue["value-type"], dstType)) {
-		// The owned var-type names the source's levels exactly: a borrowed row
+		// The owned type names the source's levels exactly: a borrowed row
 		// whose size is unknown looks like a '@T' element once it has "mutable".
-		const json& srcType = saValue.contains("var-type") ? saValue["var-type"] : saValue["value-type"];
+		const json& srcType = saValue.contains("var-type") ? saValue["var-type"]
+			: saValue.value("expr-type","") == "arr-index" ? saValue["array"]["value-type"]["base-type"]
+			: saValue["value-type"];
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowShapeMismatch,
 			arrShapeName(dstType), arrShapeName(srcType)) << endl;
 		exit(1);

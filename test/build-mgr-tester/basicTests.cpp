@@ -2342,6 +2342,12 @@ TEST(build_mgr, embed_row_copy) {
 	ASSERT_EQ(output, "0 1 2 3\n10 11 12 13\n3\n");
 }
 
+TEST(build_mgr, row_borrow) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/255_row_borrow.pa");
+	ASSERT_EQ(output, "46 13 46\n406 3 200 806\n77 101 3\n10\n5 6\n");
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 

@@ -219,9 +219,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       + "' of C function '" + arg1 + "'; use '@!T' or pass a mutable variable.";
 
 		case E_AddrOfNotPrimitiveElem:
-			return "cannot take the address of this array element: it is not a primitive-typed value "
-			       "(e.g. a 2D row, or a pointer element) -- '@'/'@!' only "
-			       "supports a primitive-typed or struct array element.";
+			return "cannot take the address of this array element: '@'/'@!' only supports a "
+			       "primitive-typed or struct array element, or a row (not, e.g., a pointer element).";
 
 		case E_BitwiseOpNotInteger:
 			return "Bitwise operator operand must be an integer type.";

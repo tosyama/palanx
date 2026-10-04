@@ -233,13 +233,15 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 
 	if (obj_type == "arr-index") {
 		json sa_idx = sa_expr_arr_index(obj, isMutable);
-		// A struct element is already a pointer to its storage, so '@' only
-		// marks it as a borrow. Any other element that is already an address
-		// computation (2D row access) or a pointer (pointer-slot element) is
-		// rejected -- '@' keeps a single meaning ("make a pointer to a storage
-		// slot"), and wrapping those would double the indirection.
+		// A struct element or a row is already a pointer to its storage, so '@'
+		// only marks it as a borrow, as for a whole array variable. Any other
+		// element that is already an address computation or a pointer
+		// (pointer-slot element) is rejected -- '@' keeps a single meaning
+		// ("make a pointer to a storage slot"), and wrapping those would double
+		// the indirection.
 		bool isStructElem = isStructStorage(sa_idx["value-type"]);
-		if (!isStructElem && (sa_idx.value("addr-only", false)
+		bool isRow = isArrLevel(sa_idx["value-type"]);
+		if (!isStructElem && !isRow && (sa_idx.value("addr-only", false)
 		                      || sa_idx["value-type"].value("type-kind","") != "prim")) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitiveElem) << endl;
 			exit(1);
@@ -250,6 +252,8 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		}
 		if (isStructElem) {
 			sa_idx["value-type"]["mutable"] = isMutable;
+		} else if (isRow) {
+			sa_idx["value-type"] = withArrPermission(sa_idx["value-type"], isMutable);
 		} else {
 			sa_idx["addr-only"]  = true;
 			sa_idx["value-type"] = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",sa_idx["value-type"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE

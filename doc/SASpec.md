@@ -484,8 +484,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       and `loc` keys unchanged (unlike the field-access shape above, no new node is built). A
       struct element (value-type `pntr(struct T)` with no `mutable` key, from `[n]T` or `[n]$T`) is
       already a pointer to its storage, so only `mutable` is added to its value-type and
-      `addr-only` keeps its value. For any other element, two checks gate this: the resolved element must not already be `addr-only:true` (a struct-array
-      element, a 2D row, or a contiguous-embedded element are all already addresses) and its
+      `addr-only` keeps its value. A row (an array level, from `[n][m]T`, `[n]$[m]T`, `[n][m]$T`
+      or `[n][m]T` with struct `T`) is likewise its own storage: its value-type gets `mutable` on
+      every array level (as for `@arr` on a whole array) and `addr-only` keeps its value, so it
+      binds to a borrowed array `@[m]...`. For any other element, two checks gate this: the resolved element must not already be `addr-only:true` (a struct
+      element reached through a struct pointer is already an address) and its
       `value-type.type-kind` must be `"prim"` (a pointer-slot element is not) — either failure is
       E_AddrOfNotPrimitiveElem. When `mutable` is requested, `isWritableThrough` is additionally
       checked against the array's own `value-type` — the same rule `sa_arr_assign_stmt` applies to
