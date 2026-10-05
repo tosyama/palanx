@@ -395,6 +395,9 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 
 - `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
 - With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
+- The number of arguments must match the number of parameters; a variadic C function takes at least
+  its fixed parameters. A C function declared with empty parentheses `f()` takes no arguments, the
+  same as `f(void)`.
 
 ### Link Libraries
 

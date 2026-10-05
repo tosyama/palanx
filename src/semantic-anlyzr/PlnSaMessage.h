@@ -118,6 +118,7 @@ enum PlnSaMessageCode {
 	E_UnsizedArrRowSizeNotConst,
 	E_UnsizedArrRowUnsupported,
 	E_ArrElemShapeMismatch,	// arg1: expected shape, arg2: actual shape
+	E_ArgCountMismatch,	// arg1: function name, arg2: expected count, arg3: actual count
 };
 
 class PlnSaMessage

@@ -482,6 +482,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "array shape '" + arg2 + "' does not match '" + arg1 + "': its elements must have the same size and layout, and be owned by both or by neither.";
 
+		case E_ArgCountMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "function '" + arg1 + "' takes " + arg2 + " argument(s), but " + arg3 + " given.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

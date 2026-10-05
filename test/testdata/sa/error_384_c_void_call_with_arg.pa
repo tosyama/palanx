@@ -1,0 +1,2 @@
+cinclude <stdio.h>;
+int32 c = getchar(1);

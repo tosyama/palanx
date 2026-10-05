@@ -2735,3 +2735,74 @@ TEST(sa_error, assign_chain_through_tapple)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":3:1: error: this statement is not supported"), string::npos);
 }
+
+TEST(sa_error, c_call_too_many_args)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_382_c_call_too_many_args.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:11: error: function 'abs' takes 1 argument(s), but 2 given."), string::npos);
+}
+
+TEST(sa_error, c_call_too_few_args)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_383_c_call_too_few_args.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:11: error: function 'abs' takes 1 argument(s), but 0 given."), string::npos);
+}
+
+TEST(sa_error, c_void_call_with_arg)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_384_c_void_call_with_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:11: error: function 'getchar' takes 0 argument(s), but 1 given."), string::npos);
+}
+
+TEST(sa_error, variadic_too_few_args)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_385_variadic_too_few_args.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:1: error: function 'printf' takes at least 1 argument(s), but 0 given."), string::npos);
+}
+
+TEST(sa_error, pln_call_too_few_args)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_386_pln_call_too_few_args.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:1: error: function 'f' takes 2 argument(s), but 1 given."), string::npos);
+}
+
+TEST(sa_error, pln_call_too_many_args)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_387_pln_call_too_many_args.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:1: error: function 'f' takes 0 argument(s), but 1 given."), string::npos);
+}
+
+TEST(sa_error, alias_call_arg_count)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_388_alias_call_arg_count.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:11: error: function 'square' takes 1 argument(s), but 2 given."), string::npos);
+}

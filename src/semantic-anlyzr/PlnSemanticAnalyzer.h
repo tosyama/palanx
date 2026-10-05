@@ -129,9 +129,8 @@ class PlnSemanticAnalyzer {
 	void checkIntLiteralRange(const json& lit);
 	json sa_expr_call(const json& expr);
 	json sa_expr_member_call(const json& expr);
-	// Analyze a call's argument list against the callee's parameter list
-	// (funcParams may be null for a function with no parameters).
-	json saCallArgs(const json& locNode, const json& args, const json* funcParams,
+	// Analyze a call's argument list against the callee's parameter list.
+	json saCallArgs(const json& locNode, const json& args, const json& funcParams,
 	                bool isCFunc, const string& funcName);
 	// Analyze the argument in a `_callback-param` slot: only a bare reference
 	// to a Palan function is accepted, matched by exact ABI identity.

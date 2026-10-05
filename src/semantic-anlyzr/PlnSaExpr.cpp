@@ -661,7 +661,7 @@ void PlnSemanticAnalyzer::applyPlnCalleeSig(json& sa_expr, const json& pFunc)
 json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	json sa_expr = expr;
-	const json* funcParams = nullptr;
+	const json* funcParams;
 	bool isCFunc = false;
 
 	const json* cfunc = findCFunc(expr["name"]);
@@ -672,8 +672,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 		if (cfunc->contains("ret-type")
 				&& (*cfunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*cfunc)["ret-type"];
-		if (cfunc->contains("parameters"))
-			funcParams = &(*cfunc)["parameters"];
+		funcParams = &(*cfunc)["parameters"];
 	} else {
 		const string& callName = expr["name"].get<string>();
 		const json* pFunc = findPlnFunc(callName);
@@ -686,8 +685,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 		}
 		if (pFunc != nullptr) {
 			applyPlnCalleeSig(sa_expr, *pFunc);
-			if (pFunc->contains("parameters"))
-				funcParams = &(*pFunc)["parameters"];
+			funcParams = &(*pFunc)["parameters"];
 		} else {
 			for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
 				for (auto& [als, bucket] : *it)
@@ -703,34 +701,39 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
 
-	if (expr.contains("args"))
-		sa_expr["args"] = saCallArgs(expr, expr["args"], funcParams, isCFunc, expr["name"].get<string>());
+	sa_expr["args"] = saCallArgs(expr, expr["args"], *funcParams, isCFunc, expr["name"].get<string>());
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Shared by sa_expr_call and sa_expr_member_call: these used to duplicate
 // only part of this loop, silently dropping variadic promotion for an
 // aliased call like `S.printf("%f\n", someFlo32)`.
-json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json* funcParams,
+json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json& funcParams,
                                       bool isCFunc, const string& funcName)
 {
 	bool isVariadic = false;
-	if (funcParams)
-		for (auto& p : *funcParams)
-			if (p.value("name", "") == "...") { isVariadic = true; break; }
+	for (auto& p : funcParams)
+		if (p.value("name", "") == "...") { isVariadic = true; break; }
+
+	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
+	// C's `()` arrives as an empty list just like `(void)` and is checked as
+	// `(void)` (as C23 reads it); glibc headers are fully prototyped.
+	if (isVariadic ? args.size() < fixedCount : args.size() != fixedCount) {
+		string expected = (isVariadic ? "at least " : "") + to_string(fixedCount);
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArgCountMismatch,
+			funcName, expected, to_string(args.size())) << endl;
+		exit(1);
+	}
 
 	json saArgs = json::array();
-	size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
 	size_t argIdx = 0;
 	for (auto& arg : args) {
-		const json* paramVT = (funcParams && argIdx < fixedCount)
-			? &(*funcParams)[argIdx]["var-type"] : nullptr;
-		if (funcParams && argIdx < fixedCount
-				&& (*funcParams)[argIdx].value("_callback-param", false)) {
+		const json* paramVT = argIdx < fixedCount ? &funcParams[argIdx]["var-type"] : nullptr;
+		if (argIdx < fixedCount && funcParams[argIdx].value("_callback-param", false)) {
 			// registry_.fromJson (below, and inside sa_expression) throws for a
 			// pntr(func) type -- this parameter's slot never reaches either;
 			// its only legal argument is a bare Palan function name.
-			saArgs.push_back(sa_func_ref_arg(locNode, arg, funcName, (*funcParams)[argIdx]));
+			saArgs.push_back(sa_func_ref_arg(locNode, arg, funcName, funcParams[argIdx]));
 			argIdx++;
 			continue;
 		}
@@ -770,7 +773,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 				saArg = convertCallArg(locNode, saArg, *paramVT);
 				if (!isExpiringStruct(saArg))
 					checkStructBorrowSource(locNode, saArg, *paramVT);
-				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
+				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, funcParams[argIdx], argIdx);
 			} else if (isVariadic) {
 				const PlnType* promoted = variadicPromote(fromType, registry_);
 				if (promoted != fromType)
@@ -1074,9 +1077,6 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
 
-	const json* funcParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
-
-	if (expr.contains("args"))
-		sa_expr["args"] = saCallArgs(expr, expr["args"], funcParams, isCFunc, method);
+	sa_expr["args"] = saCallArgs(expr, expr["args"], (*pFunc)["parameters"], isCFunc, method);
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
