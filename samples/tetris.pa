@@ -26,7 +26,6 @@ const FLD_W = 10;
 const FLD_H = 20;
 @!WINDOW fldwin = newwin(FLD_H + 2, FLD_W * 2 + 2, 1, 0);
 [FLD_H][FLD_W]int32 field;
-
 {
 	int32 i = 0;
 	while i < FLD_H {
@@ -35,6 +34,8 @@ const FLD_H = 20;
 		i + 1 -> i;
 	}
 }
+
+@!WINDOW nextwin = newwin(4, 10, 1, 23);
 
 const NUM_MINO = 7;
 type Point { int32 x; int32 y; };
@@ -53,6 +54,7 @@ bool new_mino = true;
 bool deleting_line = false;
 int32 score = 0;
 int32 mino_no = 0;
+int32 next_mino_no = rand() % NUM_MINO;
 [4]$Point mino, tmp_mino;
 int32 K; // Rotation center parameter for I and O minos
 int32 mx, my;
@@ -65,7 +67,8 @@ while true {
 
 	if (!deleting_line) {
 		if new_mino {
-			rand() % NUM_MINO -> mino_no;
+			next_mino_no -> mino_no;
+			rand() % NUM_MINO -> next_mino_no;
 			minos[mino_no] -> mino;
 			false -> new_mino;
 			if mino_no <= 1 { 1 -> K } else { 0 -> K }
@@ -120,7 +123,10 @@ while true {
 		}
 	}
 
-	draw(fldwin, @field, @mino, mx, my, mino_no+1, score, deleting_line || new_mino);
+	draw(fldwin, nextwin, @field,
+			@mino, mx, my, mino_no,
+			@minos[next_mino_no], next_mino_no,
+			score, deleting_line || new_mino);
 
 	if ch == 'q' { break }
 	if (boost_tick > 0) {
@@ -182,24 +188,29 @@ func placeMino(@![FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my,
 	}
 }
 
-func draw(@!WINDOW win, @[FLD_H][FLD_W]int32 field,
-		@[4]$Point mino, int32 mx, int32 my, int32 mino_color,
+func draw(@!WINDOW win, @!WINDOW nextwin, @[FLD_H][FLD_W]int32 field,
+		@[4]$Point mino, int32 mx, int32 my, int32 mino_no,
+		@[4]$Point next_mino, int32 next_mino_no,
 		int32 score, bool placed)
 {
+	werase(win);
 	box(win, 0, 0);
 
 	drawField(win, field);
-	if !placed { drawMino(win, mino, mx, my, mino_color) }
+	if !placed { drawMino(win, mino, mx * 2, my, mino_no) }
+
+	drawNextMino(nextwin, next_mino, next_mino_no);
 
 	// draw score and controls
 	attron(A_BOLD);
-	mvprintw(2, 24, "Score: %d", score);
+	mvprintw(10, 24, "Score: %d", score);
 	attroff(A_BOLD);
-	mvprintw(4, 24, "<-/->: move  space: rotate");
-	mvprintw(5, 24, "down: fall  up: drop  q: quit");
+	mvprintw(12, 24, "<-/->: move  space: rotate");
+	mvprintw(13, 24, "down: fall  up: drop  q: quit");
 
 	refresh();
 	wrefresh(win);
+	wrefresh(nextwin);
 }
 
 func drawField(@!WINDOW win, @[FLD_H][FLD_W]int32 field)
@@ -208,21 +219,34 @@ func drawField(@!WINDOW win, @[FLD_H][FLD_W]int32 field)
 	while y < FLD_H {
 		int32 x = 0;
 		while x < FLD_W {
-			if field[y][x] != 0 { draw1block(win, x, y, field[y][x]) }
-			else { draw1block(win, x, y, 0) }
+			if field[y][x] != 0 { draw1block(win, x * 2, y, field[y][x]) }
 			x + 1 -> x;
 		}
 		y + 1 -> y;
 	}
 }
 
-func drawMino(@!WINDOW win, @[4]$Point mino, int32 mx, int32 my, int32 color)
+func drawNextMino(@!WINDOW win, @[4]$Point mino, int32 mino_no)
+{
+	werase(win);
+	box(win, 0, 0);
+	mvwprintw(win, 0, 2, " Next ");
+
+	int32 offset_x = 0, offset_y = 0;
+	if mino_no == 0 { -1 -> offset_x }
+	else if mino_no == 1 { -1 -> offset_x; -1 -> offset_y }
+	else if mino_no == 2 { -1 -> offset_y }
+
+	drawMino(win, mino, 3+offset_x, 1+offset_y, mino_no);
+}
+
+func drawMino(@!WINDOW win, @[4]$Point mino, int32 mx, int32 my, int32 mino_no)
 {
 	int32 i = 0;
 	while i < 4 {
-		int32 x = mino[i].x + mx;
+		int32 x = mino[i].x * 2 + mx;
 		int32 y = mino[i].y + my;
-		if y >= 0 { draw1block(win, x, y, color); }
+		if y >= 0 { draw1block(win, x, y, mino_no+1); }
 		i + 1 -> i;
 	}
 }
@@ -230,7 +254,7 @@ func drawMino(@!WINDOW win, @[4]$Point mino, int32 mx, int32 my, int32 color)
 func draw1block(@!WINDOW win, int32 x, int32 y, int32 color)
 {
 	wattron(win, COLOR_PAIR(color));
-	mvwaddstr(win, y + 1, x * 2 + 1, "  ");
+	mvwaddstr(win, y + 1, x + 1, "  ");
 	wattroff(win, COLOR_PAIR(color));
 }
 
