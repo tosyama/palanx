@@ -2725,3 +2725,13 @@ TEST(sa_error, row_by_name)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("must be written as '@name' or '@!name'"), string::npos);
 }
+
+TEST(sa_error, assign_chain_through_tapple)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_381_assign_chain_through_tapple.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: this statement is not supported"), string::npos);
+}

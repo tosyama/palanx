@@ -95,6 +95,14 @@ struct LazyNode {
 };
 
 inline NodeRef leafNode(json j) { return std::make_shared<const LazyNode>(LazyNode{ std::move(j), {}, {} }); } // LCOV_EXCL_EXCEPTION_BR_LINE
+// A chained assignment's expr_stmt carries the statements it expands to.
+inline PList<NodeRef> pushExprStmt(PList<NodeRef> list, const json& stmt) {
+	if (!stmt.contains("stmt-seq"))
+		return list.push(leafNode(stmt)); // LCOV_EXCL_EXCEPTION_BR_LINE
+	for (auto& s : stmt["stmt-seq"])
+		list = list.push(leafNode(s)); // LCOV_EXCL_EXCEPTION_BR_LINE
+	return list;
+}
 inline NodeRef blockStmtNode(const PList<NodeRef>& body) {
 	return std::make_shared<const LazyNode>(LazyNode{ {{"stmt-type", "block"}}, {}, {{"body", body}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -360,27 +368,12 @@ expr_stmt: import
 	| expression
 	{
 		string et = $1.value("expr-type", "");
-		if (et == "assign-expr") {
-			if ($1["value"].value("expr-type", "") != "not-impl") {
-				$$ = {{"stmt-type", "assign"}, {"name", $1["name"]}, {"value", move($1["value"])}};
-				LOC($$, @$);
-			} else {
-				$$ = {{"stmt-type", "not-impl"}};
-				LOC($$, @$);
-			}
-		} else if (et == "arr-assign-expr") {
-			$$ = {{"stmt-type", "arr-assign"}, {"target", move($1["target"])}, {"value", move($1["value"])}};
-			if ($1.value("ownership-transfer", false)) $$["ownership-transfer"] = true;
-			LOC($$, @$);
-		} else if (et == "field-assign-expr") {
-			$$ = {{"stmt-type", "field-assign"},
-				  {"object", storeLocToExpr($1["base"])}, {"field", move($1["field"])},
-				  {"value", move($1["value"])}};
-			if ($1.value("ownership-transfer", false)) $$["ownership-transfer"] = true;
-			LOC($$, @$);
-		} else if (et == "tapple-assign-expr") {
-			$$ = {{"stmt-type", "tapple-assign"}, {"targets", move($1["targets"])}, {"value", move($1["value"])}};
-			LOC($$, @$);
+		if (isAssignExpr($1)) {
+			vector<json> stmts = lowerAssignChain($1);
+			if (stmts.size() == 1)
+				$$ = move(stmts[0]);
+			else
+				$$ = {{"stmt-seq", move(stmts)}};
 		} else if (et != "not-impl") {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
 			LOC($$, @$);
@@ -416,13 +409,13 @@ expr_stmt: import
 	;
 
 stmt_list_e: expr_stmt
-	{ $$ = PList<NodeRef>().push(leafNode($1)); }
+	{ $$ = pushExprStmt(PList<NodeRef>(), $1); }
 	| stmt_list_b expr_stmt
-	{ $$ = $1.push(leafNode($2)); }
+	{ $$ = pushExprStmt($1, $2); }
 	| stmt_list_b ';' expr_stmt
-	{ $$ = $1.push(leafNode($3)); }
+	{ $$ = pushExprStmt($1, $3); }
 	| stmt_list_e ';' expr_stmt
-	{ $$ = $1.push(leafNode($3)); }
+	{ $$ = pushExprStmt($1, $3); }
 	;
 
 stmt_list_b: block_stmt
@@ -541,22 +534,22 @@ block: '{' statements '}'
 
 body_list_e: expr_stmt
 	{
-		$$.body = $$.body.push(leafNode($1));
+		$$.body = pushExprStmt($$.body, $1);
 	}
 	| body_list_b expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push(leafNode($2));
+		$$.body = pushExprStmt($$.body, $2);
 	}
 	| body_list_b ';' expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push(leafNode($3));
+		$$.body = pushExprStmt($$.body, $3);
 	}
 	| body_list_e ';' expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push(leafNode($3));
+		$$.body = pushExprStmt($$.body, $3);
 	}
 	;
 
@@ -1020,7 +1013,12 @@ store_loc
 			if (all_ok) $$ = {{"kind", "tapple"}, {"targets", move($2["tapple-items"])}};
 		}
 	}
-	| func_call
+	// Not func_call: its member-call form starts from an arbitrary expression,
+	// which let every `-> x[i]` also parse as the object of a pending `.f()`
+	// and split the GLR parse exponentially along an assignment chain.
+	| ID '(' arguments ')'
+	{ $$ = {{"kind", "not-impl"}}; }
+	| store_loc '.' ID '(' arguments ')'
 	{ $$ = {{"kind", "not-impl"}}; }
 	;
 

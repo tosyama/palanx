@@ -1695,6 +1695,42 @@ TEST(gen_ast, field_transfer) {
 	ASSERT_FALSE(stmts[3].contains("ownership-transfer"));
 }
 
+// A chain into array elements used to split the GLR parse at every step:
+// 4 steps never finished, so execTestCommand's timeout catches a regression.
+TEST(gen_ast, assign_chain) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/127_assign_chain.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 10);
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[0]["value"]["expr-type"], "lit-int");
+	for (int i = 1; i < 7; i++) {
+		ASSERT_EQ(stmts[i]["stmt-type"], "arr-assign");
+		ASSERT_EQ(stmts[i]["value"], stmts[i-1]["target"]);
+	}
+	ASSERT_EQ(stmts[6]["target"]["index"]["name"], "o");
+
+	ASSERT_EQ(stmts[7]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[7]["value"]["name"], "x");
+	ASSERT_EQ(stmts[8]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[8]["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(stmts[8]["value"]["expr-type"], "field-access");
+	ASSERT_EQ(stmts[8]["value"]["object"]["name"], "s");
+	ASSERT_EQ(stmts[8]["value"]["field"], "a");
+	ASSERT_EQ(stmts[8].value("ownership-transfer", false), true);
+
+	ASSERT_EQ(stmts[9]["stmt-type"], "not-impl");
+
+	const auto& body = jout["ast"]["functions"][0]["block"]["body"];
+	ASSERT_EQ(body.size(), 2);
+	ASSERT_EQ(body[1]["name"], "b");
+	ASSERT_EQ(body[1]["value"]["expr-type"], "id");
+	ASSERT_EQ(body[1]["value"]["name"], "a");
+}
+
 // Copying a list on every append made parse time quadratic: 2000 items took
 // 40s+, so execTestCommand's 5s timeout catches a regression. Copying a block
 // once per enclosing level took 13s+ for 2000 statements at depth 60.

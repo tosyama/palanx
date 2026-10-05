@@ -371,6 +371,9 @@ Statement model
   13. tapple-assign - multiple return values assigned to existing targets (`call(...) -> (target, ...)`)
     - targets\* - Target expression model list: `id`, `arr-index` or `field-access` per entry
     - value\* - Call expression model (must be a call to a multi-return Palan function)
+  - A chained assignment `v -> t1 -> t2` is emitted as consecutive assign / arr-assign /
+    field-assign statements `v -> t1` and `t1 -> t2`: each later value reads back the
+    previous target. A chain with a tapple-assign in it is a single not-impl statement.
   14. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
@@ -459,8 +462,9 @@ Expression model
     Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
   18. addr-of - Address-of a local variable, a struct field reached from one, or an array
       element reached from one (`@` read-only, `@!`/`AT_EXCL` mutable). The operand grammar is
-      `store_loc` — the same vocabulary the left side of `->` accepts (a bare identifier, a
-      `.`-chain of field accesses, a `[expr]` index, or a parenthesized tuple/call) — so `@s.x`,
+      `store_loc` — the same vocabulary the right side of `->` accepts (a bare identifier, a
+      `.`-chain of field accesses, a `[expr]` index, a parenthesized tuple, or a call `f(...)` /
+      `x.f(...)` whose object is itself one of these) — so `@s.x`,
       `@!s.in.v`, and `@arr[i]` all parse; SA decides in sa.json whether the target is
       addressable (see SASpec.md).
     - object\* - Operand expression, one of exactly four shapes depending on which `store_loc`
