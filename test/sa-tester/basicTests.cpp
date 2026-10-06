@@ -4842,3 +4842,24 @@ TEST(sa, unsized_struct_arr_sig) {
 	ASSERT_EQ(stmts[0]["vars"][0]["var-type"]["base-type"], ownedSlot);
 	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"], contigSlot);
 }
+
+TEST(sa, enum_type) {
+	json jout = run_sa("../test/testdata/sa/222_enum.pa");
+	ASSERT_TRUE(jout.is_object());
+	json color = {{"type-kind","prim"},{"type-name","uint32"},{"enum","Color"}};
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["var-type"], color);
+	ASSERT_EQ(stmts[0]["vars"][0]["init"],
+		(json{{"expr-type","lit-int"},{"value","5"},{"value-type",color},{"loc",{9,11,9,19}}}));
+	const auto& widen = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(widen["expr-type"], "convert");
+	ASSERT_EQ(widen["from-type"], color);
+
+	const auto& next = jout["functions"][0];
+	ASSERT_EQ(next["parameters"][0]["var-type"], color);
+	ASSERT_EQ(next["ret-type"], color);
+	// Color(c + 1): the sum is uint32, and only the enum label is put back.
+	json cast = next["body"][0]["values"][0];
+	ASSERT_EQ(cast["expr-type"], "add");
+	ASSERT_EQ(cast["value-type"], color);
+}

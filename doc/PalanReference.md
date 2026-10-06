@@ -137,6 +137,33 @@ multi-character, or non-ASCII literal is a compile error.
 - A `bool` can be an `if`/`while` condition. Comparisons and logical operators yield `bool`.
 - A C `_Bool` parameter or field (e.g. ncurses' `keypad`) is a `bool`.
 
+### enum
+
+```palan
+type Color enum {
+    RED,          // 0
+    GREEN = 5,
+    BLUE          // 6
+};
+
+Color c = Color.GREEN;
+uint32 n = c;           // an enum widens implicitly
+Color d = Color(n + 1); // an integer needs Name(x)
+```
+
+- An enumerator without `=` is the previous value + 1, starting at 0. `=` takes an integer literal
+  or a `const`.
+- Enumerators are referenced as `Name.X`. A type alias of the enum works the same way
+  (`type Shade = Color;` then `Shade.RED`).
+- An enum's base type is the integer type C uses for the same values: `uint32` when none is
+  negative, `int32` otherwise, and the 64-bit type of that signedness when a value does not fit in 32
+  bits. An enum is passed to and from C as its base type.
+- An enum is its own type, like `bool`. It widens implicitly to its base type and to anything its
+  base type widens to. An integer, a `bool`, or a different enum becomes an enum only through
+  `Name(x)`; an integer literal is no exception (`Color c = 5;` is an error).
+- An operator computes an enum operand as its base type, so `Color.RED + 1` is a `uint32`.
+  Storing the result back into a `Color` needs `Color(...)`.
+
 ### Implicit Widening
 
 Within the same signedness group, narrower types widen automatically to wider types:
@@ -232,7 +259,8 @@ and is currently a compile error. It is not an assignment — assignment is writ
 | Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
-| Explicit cast | `type(expr)` | `int32(x)` |
+| Explicit cast | `type(expr)` | `int32(x)`, `Color(n)` |
+| Enumerator | `Name.X` | `Color.RED` |
 | Logical AND | `expr && expr` | `a && b` |
 | Logical OR | `expr \|\| expr` | `a \|\| b` |
 | Logical NOT | `!expr` | `!x` |

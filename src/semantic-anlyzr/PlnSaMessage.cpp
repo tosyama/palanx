@@ -488,6 +488,33 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg3 != "\x01");
 			return "function '" + arg1 + "' takes " + arg2 + " argument(s), but " + arg3 + " given.";
 
+		case E_UnknownEnumerator:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "enum '" + arg2 + "' has no enumerator '" + arg1 + "'.";
+
+		case E_DuplicateEnumerator:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "enumerator '" + arg1 + "' is already defined in enum '" + arg2 + "'.";
+
+		case E_EnumValueNotConst:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "enumerator '" + arg1 + "' must be given an integer literal or a const.";
+
+		case E_EnumValueOutOfRange:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "value " + arg2 + " of enumerator '" + arg1 + "' is out of the int64 range.";
+
+		case E_DuplicateTypeName:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "type '" + arg1 + "' is already defined.";
+
+		case E_CastArgCount:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cast '" + arg1 + "(...)' takes exactly one argument.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

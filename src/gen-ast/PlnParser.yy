@@ -195,6 +195,7 @@ struct BodyList {
 %token KW_AS	"as"
 %token KW_FUNC	"func"
 %token KW_TYPE	"type"
+%token KW_ENUM	"enum"
 %token KW_CONSTRUCT	"construct"
 %token KW_INTERFACE	"interface"
 %token KW_CONST	"const"
@@ -247,7 +248,8 @@ struct BodyList {
 %type <PList<json>>	tapple_decl_inner
 %type <NodeRef>	if_stmt else_stmt while_loop
 %type <json>		type_decl type_member const_decl
-%type <PList<json>>	type_members
+%type <PList<json>>	type_members enumerators
+%type <json>	enumerator
 
 %left ARROW DBL_ARROW
 %left OPE_OR
@@ -354,6 +356,9 @@ expr_stmt: import
 	{
 		if ($1.contains("alias-of")) {
 			$$ = {{"stmt-type", "type-alias"}, {"name", $1["name"]}, {"type", move($1["alias-of"])}};
+			LOC($$, @$);
+		} else if ($1.contains("enumerators")) {
+			$$ = {{"stmt-type", "enum-def"}, {"name", $1["name"]}, {"enumerators", move($1["enumerators"])}};
 			LOC($$, @$);
 		} else if ($1.contains("name")) {
 			$$ = {{"stmt-type", "struct-def"}, {"name", $1["name"]}, {"fields", move($1["fields"])}};
@@ -698,6 +703,10 @@ type_decl: KW_TYPE ID implememts '{' type_members '}'
 	{ $$ = {{"name", $2}, {"fields", $5.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| KW_EXPORT KW_TYPE ID implememts '{' type_members '}'
 	{ $$ = {{"name", $3}, {"fields", $6.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	| KW_TYPE ID KW_ENUM '{' enumerators opt_comma '}'
+	{ $$ = {{"name", $2}, {"enumerators", $5.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	| KW_EXPORT KW_TYPE ID KW_ENUM '{' enumerators opt_comma '}'
+	{ $$ = {{"name", $3}, {"enumerators", $6.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| KW_TYPE ID '=' type_expr
 	{ $$ = {{"name", $2}, {"alias-of", move($4)}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| KW_EXPORT KW_TYPE ID '=' type_expr
@@ -706,6 +715,22 @@ type_decl: KW_TYPE ID implememts '{' type_members '}'
 	{ $$ = json{}; }
 	| KW_EXPORT KW_TYPE ID
 	{ $$ = json{}; }
+	;
+
+enumerators: enumerator
+	{ $$ = PList<json>().push($1); }
+	| enumerators ',' enumerator
+	{ $$ = $1.push($3); }
+	;
+
+enumerator: ID
+	{ $$ = {{"name", move($1)}}; LOC($$, @$); }
+	| ID '=' expression
+	{ $$ = {{"name", move($1)}, {"value", move($3)}}; LOC($$, @$); }
+	;
+
+opt_comma: /* empty */
+	| ','
 	;
 
 implememts: /* empty */

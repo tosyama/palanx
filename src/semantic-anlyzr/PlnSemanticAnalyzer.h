@@ -89,6 +89,10 @@ class PlnSemanticAnalyzer {
 	vector<set<string>>    structDefNameScopes_;
 	// Registered type aliases (name -> fully-resolved base type json)
 	map<string, json>      typeAliases_;
+	// Registered enum types: enumerator values, and the declaration's loc so
+	// the step-2 revisit of a pre-scanned enum-def is told apart from a redefinition.
+	struct EnumDef { map<string, int64_t> values; json loc; };
+	map<string, EnumDef>   enumDefs_;
 	// Registered const declarations (name -> {"value": <SA'd literal expr>, "value-type": <type>})
 	map<string, json>      constDecls_;
 	// Library names collected from cinclude `link` clauses. A set: the same
@@ -179,6 +183,9 @@ class PlnSemanticAnalyzer {
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_
 	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_
+	json sa_enum_def(const json& stmt);           // consume enum-def, register in enumDefs_/typeAliases_
+	json enumTypeNamed(const string& name) const; // enum value-type for a type name, or null
+	json resolveEnumerator(const json& expr);     // `Name.X` as a lit-int, or null for a field access
 	void recordAllocShape(const string& structName);
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
 	json makeStructFreeStmt(const string& name, const json& pntrType);

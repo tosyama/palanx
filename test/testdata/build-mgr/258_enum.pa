@@ -1,0 +1,29 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+
+type Color enum { RED, GREEN = 5, BLUE };
+type Sign enum { NEG = -3, ZERO };
+type Big enum { HUGE = 5000000000 };
+type Shade = Color;
+const BASE = 10;
+type Level enum { LOW = BASE, HIGH };
+
+type Pixel { Color c; int32 n; };
+
+func isBlue(Color c) -> bool { return c == Color.BLUE }
+func pick() -> Shade { return Shade.GREEN }
+
+Color c = Color.RED;
+uint32 u = c;
+uint64 w = Color.BLUE;
+Color d = Color(u + 6);
+printf("%u %ld %u %d\n", c, w, d, isBlue(d));
+printf("%d %ld %u %u\n", Sign.NEG, Big.HUGE, pick(), Level.HIGH);
+printf("%u %d %d\n", Color.GREEN + 1, Sign.ZERO - 1, abs(Sign.NEG));
+
+Pixel p;
+Color.BLUE -> p.c;
+[3]Color arr;
+Color.GREEN -> arr[1];
+@Color r = @arr[1];
+printf("%u %u %u\n", p.c, arr[1], r[0]);

@@ -24,6 +24,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "struct-def")   sa_struct_def(stmt);
 		else if (t == "type-alias")   sa_type_alias(stmt);
 		else if (t == "const-decl")   sa_const_decl(stmt);
+		else if (t == "enum-def")     sa_enum_def(stmt);
 		else if (t == "field-assign") { for (auto& s : sa_field_assign(stmt)) result.push_back(s); }
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {

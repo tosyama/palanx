@@ -2806,3 +2806,143 @@ TEST(sa_error, alias_call_arg_count)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:11: error: function 'square' takes 1 argument(s), but 2 given."), string::npos);
 }
+
+TEST(sa_error, enum_from_literal)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_389_enum_from_literal.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: Implicit conversion from 'uint32' to 'Color' is not allowed; write an explicit cast 'Color(...)'."), string::npos);
+}
+
+TEST(sa_error, enum_from_int)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_390_enum_from_int.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":4:1: error: Implicit conversion from 'int32' to 'Color' is not allowed; write an explicit cast 'Color(...)'."), string::npos);
+}
+
+TEST(sa_error, enum_from_other_enum)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_391_enum_from_other_enum.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: Implicit conversion from 'Fruit' to 'Color' is not allowed; write an explicit cast 'Color(...)'."), string::npos);
+}
+
+TEST(sa_error, enum_to_narrower)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_392_enum_to_narrower.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: Implicit conversion from 'Color' to 'uint8' is not allowed; write an explicit cast 'uint8(...)'."), string::npos);
+}
+
+TEST(sa_error, enum_cast_from_float)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_393_enum_cast_from_float.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:11: error: Cannot cast type 'flo64' to 'Color'."), string::npos);
+}
+
+TEST(sa_error, unknown_enumerator)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_394_unknown_enumerator.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:11: error: enum 'Color' has no enumerator 'PURPLE'."), string::npos);
+}
+
+TEST(sa_error, duplicate_enumerator)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_395_duplicate_enumerator.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:18: error: enumerator 'A' is already defined in enum 'E'."), string::npos);
+}
+
+TEST(sa_error, duplicate_type_name)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_396_duplicate_type_name.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: type 'Color' is already defined."), string::npos);
+}
+
+TEST(sa_error, enum_value_not_const)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_397_enum_value_not_const.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:15: error: enumerator 'A' must be given an integer literal or a const."), string::npos);
+}
+
+TEST(sa_error, enum_value_overflow)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_398_enum_value_overflow.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:40: error: value 9223372036854775808 of enumerator 'B' is out of the int64 range."), string::npos);
+}
+
+TEST(sa_error, enum_cast_arg_count)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_399_enum_cast_arg_count.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:11: error: cast 'Color(...)' takes exactly one argument."), string::npos);
+}
+
+TEST(sa_error, enum_param_from_literal)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_400_enum_param_from_literal.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":4:1: error: Implicit conversion from 'uint32' to 'Color' is not allowed; write an explicit cast 'Color(...)'."), string::npos);
+}
+
+TEST(sa_error, enum_value_out_of_range)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_401_enum_value_out_of_range.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:15: error: value 99999999999999999999 of enumerator 'A' is out of the int64 range."), string::npos);
+}
+
+TEST(sa_error, enum_name_conflicts_struct)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_402_enum_name_conflicts_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: type 'P' is already defined."), string::npos);
+}

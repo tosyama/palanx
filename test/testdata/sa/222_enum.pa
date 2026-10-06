@@ -1,0 +1,11 @@
+type Color enum { RED, GREEN = 5, BLUE };
+type Sign enum { NEG = -1, ZERO };
+type Big enum { HUGE = 5000000000 };
+type Wide enum { LOW = -5000000000 };
+type C2 = Color;
+
+func next(Color c) -> Color { return Color(c + 1) }
+
+Color c = C2.GREEN;
+uint64 u = c;
+Color d = next(c);

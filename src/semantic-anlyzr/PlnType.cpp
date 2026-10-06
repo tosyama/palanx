@@ -62,6 +62,14 @@ const StructType* PlnTypeRegistry::structType(const std::string& name)
     return ins->second.get();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+const EnumType* PlnTypeRegistry::enumType(const std::string& name, const PrimType* base)
+{
+    auto it = enumCache_.find(name);
+    if (it != enumCache_.end()) return it->second.get();
+    auto [ins, ok] = enumCache_.emplace(name, std::make_unique<EnumType>(name, base));
+    return ins->second.get();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // Kept in sync with fromJson's three accepted shapes below by construction:
 // fromJson calls this first and refuses to proceed unless it returns "", so
 // the two cannot silently drift apart the way a second, independently
@@ -99,8 +107,10 @@ std::string typeDisplayName(const json& j)
     if (!j.is_object() || !j.contains("type-kind")) // LCOV_EXCL_BR_LINE -- no real producer emits this
         return "malformed type"; // LCOV_EXCL_LINE
     std::string kind = j["type-kind"].get<std::string>();
-    if (kind == "prim")
+    if (kind == "prim") {
+        if (j.contains("enum")) return j["enum"].get<std::string>();
         return j.value("type-name", "malformed type"); // LCOV_EXCL_BR_LINE -- no real producer emits this
+    }
     if (kind == "pntr") {
         if (!j.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
         bool mut = j.value("mutable", true);
@@ -121,7 +131,9 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
     std::string kind = j["type-kind"].get<std::string>();
     if (kind == "prim") {
         auto& toEnum = PrimTypeNames::instance().toEnum;
-        return prim(toEnum.at(j["type-name"].get<std::string>()));
+        const PrimType* p = prim(toEnum.at(j["type-name"].get<std::string>()));
+        if (j.contains("enum")) return enumType(j["enum"].get<std::string>(), p);
+        return p;
     }
     if (kind == "pntr")
         return ptr(fromJson(j["base-type"]));
@@ -136,6 +148,12 @@ json PlnTypeRegistry::toJson(const PlnType* t)
         const auto* p = static_cast<const PrimType*>(t);
         auto& fromEnum = PrimTypeNames::instance().fromEnum;
         return {{"type-kind", "prim"}, {"type-name", fromEnum.at(p->name)}};
+    }
+    if (t->kind == PlnType::Kind::Enum) {
+        const auto* e = static_cast<const EnumType*>(t);
+        json j = toJson(e->base);
+        j["enum"] = e->name;
+        return j;
     }
     // LCOV_EXCL_START — Ptr/Struct toJson not reachable from current SA flow
     if (t->kind == PlnType::Kind::Ptr) {
@@ -180,9 +198,22 @@ static int primRank(PrimType::Name n)
 }
 
 TypeCompat typeCompat(const PlnType* from, const PlnType* to,
-                      const PlnTypeRegistry& /*registry*/)
+                      const PlnTypeRegistry& registry)
 {
     if (from == to) return TypeCompat::Identical;
+
+    // Like bool, an enum widens out implicitly (as its base type, which shares
+    // its representation), but entering one from anything else needs Name(x).
+    if (to->kind == PlnType::Kind::Enum) {
+        if (from->kind == PlnType::Kind::Enum) return TypeCompat::ExplicitCast;
+        if (from->kind != PlnType::Kind::Prim) return TypeCompat::Incompatible;
+        int g = primGroup(static_cast<const PrimType*>(from)->name);
+        return (g == 0 || g == 1 || g == 3) ? TypeCompat::ExplicitCast : TypeCompat::Incompatible;
+    }
+    if (from->kind == PlnType::Kind::Enum) {
+        TypeCompat c = typeCompat(static_cast<const EnumType*>(from)->base, to, registry);
+        return c == TypeCompat::Identical ? TypeCompat::ImplicitWiden : c;
+    }
 
     if (from->kind == PlnType::Kind::Prim && to->kind == PlnType::Kind::Prim) {
         const auto* pf = static_cast<const PrimType*>(from);
@@ -267,6 +298,9 @@ const PlnType* usualArithConv(const PlnType* a, const PlnType* b)
 
 bool argConvOk(const PlnType* from, const PlnType* to)
 {
+    if (to->kind == PlnType::Kind::Enum) return false;
+    if (from->kind == PlnType::Kind::Enum) from = static_cast<const EnumType*>(from)->base;
+    if (from == to) return true;
     if (usualArithConv(from, to) == to) return true;
     if (from->kind != PlnType::Kind::Prim || to->kind != PlnType::Kind::Prim) return false;
     const auto* pf = static_cast<const PrimType*>(from);

@@ -307,14 +307,21 @@ void PlnSemanticAnalyzer::checkIntLiteralRange(const json& lit)
 	exit(1);
 }
 
-// C's integer promotion, applied to bool only: an operator computes in at
-// least int32 so a bool operand never yields a 1-byte result outside 0/1
-// (`b + 1` is 2). Other narrow types keep their declared width.
+// C's integer promotion, applied to bool and enum only: an operator computes
+// in at least int32 so a bool operand never yields a 1-byte result outside
+// 0/1 (`b + 1` is 2), and an enum computes as its base type. Other narrow
+// types keep their declared width.
 // LCOV_EXCL_EXCEPTION_BR_START
-static json promoteBool(json operand)
+static json promoteOperand(json operand)
 {
 	const json& vt = operand["value-type"];
-	if (vt.value("type-kind", "") != "prim" || vt.value("type-name", "") != "bool") return operand;
+	if (vt.value("type-kind", "") != "prim") return operand;
+	if (vt.contains("enum")) {
+		json base = vt;
+		base.erase("enum");
+		return wrapConvert(operand, base);
+	}
+	if (vt.value("type-name", "") != "bool") return operand;
 	return wrapConvert(operand, {{"type-kind", "prim"}, {"type-name", "int32"}});
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
@@ -338,6 +345,10 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	const json expr = resolveConstRef(rawExpr);
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
+	// A literal bound to an enum takes the base type, so the binding still
+	// rejects it as needing Name(x) instead of silently labeling it.
+	if (expectedType && expectedType->kind == PlnType::Kind::Enum)
+		expectedType = static_cast<const EnumType*>(expectedType)->base;
 
 	if (expr_type == "arr-lit") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLitContext) << endl;
@@ -431,12 +442,12 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		return sa_expr_arith(expr, expectedType);
 
 	} else if (expr_type == "neg") {
-		json operand = promoteBool(sa_expression(expr["operand"], expectedType));
+		json operand = promoteOperand(sa_expression(expr["operand"], expectedType));
 		sa_expr["operand"]    = operand;
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "bitnot") {
-		json operand = promoteBool(sa_expression(expr["operand"], expectedType));
+		json operand = promoteOperand(sa_expression(expr["operand"], expectedType));
 		const PlnType* t = registry_.fromJson(operand["value-type"]);
 		if (!isIntegerPrim(t)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
@@ -446,8 +457,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "cmp") {
-		json left  = promoteBool(sa_expression(expr["left"]));
-		json right = promoteBool(sa_expression(expr["right"]));
+		json left  = promoteOperand(sa_expression(expr["left"]));
+		json right = promoteOperand(sa_expression(expr["right"]));
 		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 		const PlnType* rightType = registry_.fromJson(right["value-type"]);
 		// A pointer/struct pair (usualArithConv returns nullptr) is left
@@ -508,17 +519,32 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		} else {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
 				typeDisplayName(src["value-type"]),
-				expr["target-type"]["type-name"].get<string>()) << endl;
+				typeDisplayName(expr["target-type"])) << endl;
 			exit(1);
 		}
 
 	} else if (expr_type == "call") {
+		// gen-ast only knows the prim keywords as cast targets; an enum name
+		// is a type only SA can see, so its cast arrives shaped as a call.
+		const string& callName = expr["name"].get<string>();
+		json enumType = enumTypeNamed(callName);
+		if (!enumType.is_null() && !findCFunc(callName) && !findPlnFunc(callName)) {
+			if (expr["args"].size() != 1) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastArgCount, callName) << endl;
+				exit(1);
+			}
+			json cast = {{"expr-type", "cast"}, {"target-type", enumType}, {"src", expr["args"][0]}};
+			if (expr.contains("loc")) cast["loc"] = expr["loc"];
+			return sa_expression(cast);
+		}
 		return sa_expr_call(expr);
 
 	} else if (expr_type == "member-call") {
 		return sa_expr_member_call(expr);
 
 	} else if (expr_type == "field-access") {
+		json enumerator = resolveEnumerator(expr);
+		if (!enumerator.is_null()) return enumerator;
 		return sa_expr_field_access(expr, /*forWrite=*/false);
 
 	} else if (expr_type == "arr-index") {
@@ -543,14 +569,14 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 		return other.contains("value-type") ? registry_.fromJson(other["value-type"]) : expectedType;
 	};
 	if (resolveConstRef(expr["left"])["expr-type"] == "lit-int") {
-		right = promoteBool(sa_expression(expr["right"], expectedType));
-		left  = promoteBool(sa_expression(expr["left"],  typeOf(right)));
+		right = promoteOperand(sa_expression(expr["right"], expectedType));
+		left  = promoteOperand(sa_expression(expr["left"],  typeOf(right)));
 	} else if (resolveConstRef(expr["right"])["expr-type"] == "lit-int") {
-		left  = promoteBool(sa_expression(expr["left"],  expectedType));
-		right = promoteBool(sa_expression(expr["right"], typeOf(left)));
+		left  = promoteOperand(sa_expression(expr["left"],  expectedType));
+		right = promoteOperand(sa_expression(expr["right"], typeOf(left)));
 	} else {
-		left  = promoteBool(sa_expression(expr["left"],  expectedType));
-		right = promoteBool(sa_expression(expr["right"], expectedType));
+		left  = promoteOperand(sa_expression(expr["left"],  expectedType));
+		right = promoteOperand(sa_expression(expr["right"], expectedType));
 	}
 	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 	const PlnType* rightType = registry_.fromJson(right["value-type"]);
@@ -602,7 +628,8 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		value = wrapConvert(value, toTypeJson);
 	} else if (compat == TypeCompat::ExplicitCast) {
 		string et = value["expr-type"];
-		if (et != "lit-int" && et != "lit-uint") {
+		bool untypedLit = (et == "lit-int" || et == "lit-uint") && fromType->kind != PlnType::Kind::Enum;
+		if (!untypedLit || toType->kind == PlnType::Kind::Enum) {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
 				typeDisplayName(value["value-type"]), typeDisplayName(toTypeJson)) << endl;
 			exit(1);
@@ -863,7 +890,10 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 	const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 	const PlnType* toType   = registry_.fromJson(paramVT);
 	if (fromType == toType) return saArg;
-	if (fromType->kind == PlnType::Kind::Prim && toType->kind == PlnType::Kind::Prim) {
+	auto isScalar = [](const PlnType* t) {
+		return t->kind == PlnType::Kind::Prim || t->kind == PlnType::Kind::Enum;
+	};
+	if (isScalar(fromType) && isScalar(toType)) {
 		if (argConvOk(fromType, toType))
 			return wrapConvert(saArg, registry_.toJson(toType));
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
@@ -878,6 +908,35 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 	}
 	return saArg;
 }
+
+json PlnSemanticAnalyzer::enumTypeNamed(const string& name) const
+{
+	json t = resolveTypeAlias({{"type-kind", "prim"}, {"type-name", name}});
+	return t.contains("enum") ? t : json();
+}
+
+// `Name.X` where Name is an enum type (or an alias of one) not shadowed by a
+// variable; null when the field access is an ordinary one.
+json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)
+{
+	const json& obj = expr["object"];
+	if (obj.value("expr-type", "") != "id") return json();
+	string typeName = obj["name"].get<string>();
+	if (findVar(typeName) || findCGlobal(typeName)) return json();
+	json enumType = enumTypeNamed(typeName);
+	if (enumType.is_null()) return json();
+
+	const auto& values = enumDefs_.at(enumType["enum"].get<string>()).values;
+	string field = expr["field"].get<string>();
+	auto it = values.find(field);
+	if (it == values.end()) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownEnumerator, field, typeName) << endl;
+		exit(1);
+	}
+	json lit = {{"expr-type", "lit-int"}, {"value", to_string(it->second)}, {"value-type", enumType}};
+	if (expr.contains("loc")) lit["loc"] = expr["loc"];
+	return lit;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)
 {

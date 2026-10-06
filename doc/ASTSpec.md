@@ -311,7 +311,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "break" "continue" "not-impl"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "break" "continue" "not-impl" "enum-def"
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -390,6 +390,13 @@ Statement model
       `interface`, `x++`, a type-omitted declaration). Rejected by SA.
     - untyped-var - Name of the first type-omitted variable; present only for a `name = expr;`
       declaration (reserved for type inference; an assignment is `expr -> name`)
+  20. enum-def - enum type definition (`type Name enum { X, Y = expr, ... }`; consumed by SA, not
+      emitted to sa.json)
+    - name\* - Enum name string
+    - enumerators\* - Enumerator list, in source order
+      - name\* - Enumerator name string
+      - value - Value expression model (omitted when the value is implicit)
+      - loc\* - Location Array
 
 Expression model
 ----------------
@@ -435,7 +442,8 @@ Expression model
   10. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
-  11. cast - Explicit type cast expression (`type-name(expr)` syntax)
+  11. cast - Explicit type cast expression (`type-name(expr)` syntax). Only a built-in type
+    keyword produces one; an enum cast `Name(expr)` is emitted as a `call` and SA treats it as a cast.
     - target-type\* - Target Variable type object
     - src\* - Source expression model
   12. arr-index - Array element access (`arr[i]`)
@@ -450,7 +458,8 @@ Expression model
     - right\* - Right operand expression model
   15. logical-not - Logical NOT (`!a`; result: int32, 0 or 1)
     - operand\* - Operand expression model
-  16. field-access - Struct field read (`obj.field` rvalue)
+  16. field-access - Struct field read (`obj.field` rvalue). An enumerator reference `Name.X` has
+    the same shape (`object` is the `id` `Name`); SA tells them apart.
     - object\* - Base object expression model: `id` for a plain variable, or `arr-index`/
       `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`) — same object vocabulary
       as field-assign's `object` (see Statement model above)

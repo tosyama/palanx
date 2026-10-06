@@ -1058,6 +1058,62 @@ json PlnSemanticAnalyzer::sa_const_decl(const json& stmt)
 	return json::array();
 }
 
+json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
+{
+	string name = stmt["name"].get<string>();
+	auto existing = enumDefs_.find(name);
+	if (existing != enumDefs_.end() && existing->second.loc == stmt["loc"])
+		return json::array();  // step 2 revisiting the pre-scanned definition
+	if (existing != enumDefs_.end() || structDefs_.count(name) || typeAliases_.count(name)
+			|| elemSizeBytes(name) >= 0) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
+		exit(1);
+	}
+
+	EnumDef def;
+	def.loc = stmt["loc"];
+	int64_t next = 0, minV = 0, maxV = 0;
+	bool first = true, nextOverflows = false;
+	for (auto& e : stmt["enumerators"]) {
+		string ename = e["name"].get<string>();
+		int64_t v = next;
+		if (e.contains("value")) {
+			json lit = resolveConstRef(e["value"]);
+			if (lit.value("expr-type", "") != "lit-int" && lit.value("expr-type", "") != "lit-uint") {
+				cerr << locPrefix(e) << PlnSaMessage::getMessage(E_EnumValueNotConst, ename) << endl;
+				exit(1);
+			}
+			string text = lit["value"].get<string>();
+			try { v = stoll(text); }
+			catch (const out_of_range&) {
+				cerr << locPrefix(e) << PlnSaMessage::getMessage(E_EnumValueOutOfRange, ename, text) << endl;
+				exit(1);
+			}
+		} else if (nextOverflows) {
+			cerr << locPrefix(e) << PlnSaMessage::getMessage(E_EnumValueOutOfRange, ename, "9223372036854775808") << endl;
+			exit(1);
+		}
+		if (!def.values.emplace(ename, v).second) {
+			cerr << locPrefix(e) << PlnSaMessage::getMessage(E_DuplicateEnumerator, ename, name) << endl;
+			exit(1);
+		}
+		minV = first ? v : min(minV, v);
+		maxV = first ? v : max(maxV, v);
+		first = false;
+		nextOverflows = v == INT64_MAX;
+		next = nextOverflows ? v : v + 1;
+	}
+
+	// The same base type GCC picks on x86-64, so an enum value passes to and
+	// from C unchanged.
+	string base = minV < 0
+		? (minV >= INT32_MIN && maxV <= INT32_MAX ? "int32" : "int64")
+		: (maxV <= UINT32_MAX ? "uint32" : "uint64");
+	enumDefs_[name] = move(def);
+	typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", base}, {"enum", name}};
+	return json::array();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
 {
 	if (vtype.value("type-kind", "") == "prim") {

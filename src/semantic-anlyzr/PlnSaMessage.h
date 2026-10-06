@@ -119,6 +119,12 @@ enum PlnSaMessageCode {
 	E_UnsizedArrRowUnsupported,
 	E_ArrElemShapeMismatch,	// arg1: expected shape, arg2: actual shape
 	E_ArgCountMismatch,	// arg1: function name, arg2: expected count, arg3: actual count
+	E_UnknownEnumerator,	// arg1: enumerator name, arg2: enum type name
+	E_DuplicateEnumerator,	// arg1: enumerator name, arg2: enum type name
+	E_EnumValueNotConst,	// arg1: enumerator name
+	E_EnumValueOutOfRange,	// arg1: enumerator name, arg2: value
+	E_DuplicateTypeName,	// arg1: type name
+	E_CastArgCount,	// arg1: target type name
 };
 
 class PlnSaMessage

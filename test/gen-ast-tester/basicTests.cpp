@@ -1801,3 +1801,29 @@ TEST(gen_ast, linear_parse_time) {
 	for (int i = 1; i < depth; i++) inner = &(*inner)["body"][0];
 	ASSERT_EQ((*inner)["body"].size(), n);
 }
+
+TEST(gen_ast, enum_def) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/128_enum_def.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "enum-def");
+	ASSERT_EQ(stmts[0]["name"], "Color");
+	const auto& es = stmts[0]["enumerators"];
+	ASSERT_EQ(es.size(), 3);
+	ASSERT_EQ(es[0]["name"], "RED");
+	ASSERT_FALSE(es[0].contains("value"));
+	ASSERT_EQ(es[1]["value"]["value"], "5");
+	ASSERT_EQ(es[2]["name"], "BLUE");
+
+	ASSERT_EQ(stmts[1]["stmt-type"], "enum-def");
+	ASSERT_EQ(stmts[1]["enumerators"][0]["value"]["value"], "-1");
+
+	const auto& init = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["object"]["name"], "Color");
+	ASSERT_EQ(init["field"], "GREEN");
+}

@@ -706,7 +706,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	sa["alloc-shapes"]  = json::array();
 	sa["libs"]          = json::array();
 	enterScope();
-	// 0. Pre-scan type-alias/struct-def declarations so function signatures
+	// 0. Pre-scan type-alias/struct-def/enum-def declarations so function signatures
 	//    pre-registered in step 1 see fully-resolved types, not alias names.
 	//    Top-level cinclude types join the scan in source order, since native
 	//    struct fields and signatures can name them; consts join it so a
@@ -718,6 +718,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 			string t = stmt.value("stmt-type", "");
 			if      (t == "type-alias") sa_type_alias(stmt);
 			else if (t == "struct-def") sa_struct_def(stmt);
+			else if (t == "enum-def")   sa_enum_def(stmt);
 			else if (t == "cinclude")   registerCIncludeTypes(stmt);
 			else if (t == "const-decl" && onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
 		}

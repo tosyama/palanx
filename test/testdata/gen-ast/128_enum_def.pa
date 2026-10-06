@@ -1,0 +1,7 @@
+type Color enum {
+	RED,
+	GREEN = 5,
+	BLUE,
+};
+export type Sign enum { NEG = -1, ZERO };
+Color c = Color.GREEN;

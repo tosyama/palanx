@@ -724,6 +724,9 @@ from the common type each get a `convert` node. The rules, in order:
 preserves the declared width's wraparound rather than promoting to `int`. This also means the
 common type is always one of the two operand types, never a third type.
 
+An enum operand is first relabeled as its base type (no `convert` node), so `Color.RED + 1` is
+the base type.
+
 `bool` is the one exception: before the rules above, SA wraps a `bool` operand of an arithmetic,
 bitwise, or comparison operator, `neg`, or `bitnot` in a `convert` to `int32`, so the result is
 never a 1-byte value outside 0/1 (`b + 1` is 2). `usualArithConv` itself ranks `bool` below every
@@ -766,15 +769,19 @@ Notes:
 - Signed and unsigned are different groups; `int32 → uint32` requires `ExplicitCast`.
 - `bool` is its own group: `bool →` any integer or float is `ImplicitWiden`, and any integer or
   float `→ bool` is `ExplicitCast`.
+- An enum behaves like `bool`: `enum →` a prim is decided as from its base type, with
+  `Identical` becoming `ImplicitWiden`; an integer, `bool`, or another enum `→ enum` is
+  `ExplicitCast`; a float or pointer `→ enum` is `Incompatible`.
 - At a binding site, `ImplicitWiden` inserts a `convert` node; `ExplicitCast` is a compile error
   (E_InvalidNarrowingConv) unless the source expression is an integer literal (`lit-int` /
-  `lit-uint`), which instead adopts the destination type. All five binding sites (var-decl
+  `lit-uint`), which instead adopts the destination type. The exemption does not apply to an
+  enumerator (its type is fixed) or to an enum destination (`Color c = 5;` needs `Color(5)`). All five binding sites (var-decl
   initializer, assignment, array-assignment, return, field-assign) apply this identically —
   there is exactly one narrowing rule, not one strict (initializer) and four permissive ones.
   Writing `ExplicitCast` at a non-literal binding site requires an explicit `type-name(expr)`
   cast in the source.
 - Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32,
-  bool → int32.
+  bool → int32, an enum → its base type.
 
 ### Call arguments
 
@@ -788,7 +795,8 @@ parameter is the callee's declared ABI width, not a variable the caller is namin
 E_InvalidNarrowingConv, the same message a binding site uses. A pointer/struct argument is
 unaffected by this rule (`argConvOk` only applies between two Prim types) and keeps its existing
 `ImplicitWiden`-only check plus `checkArgPtrPermission`. A `bool` parameter accepts no
-reinterpretation: an `int8`/`uint8` argument needs `bool(x)`.
+reinterpretation: an `int8`/`uint8` argument needs `bool(x)`. An enum argument is checked as
+its base type; an enum parameter accepts only the same enum.
 
 A bare integer-literal argument (`lit-int`/`lit-uint`) without its own `value-type` adopts the
 parameter's type directly (SA passes the parameter type down as the literal's `expectedType`)
@@ -874,6 +882,25 @@ statement itself. It is recorded on the entry (`_unsupported-sig` for a function
 (`requireSupportedCGlobal` → E_UnsupportedCGlobalType) — so cincluding a header that happens to
 declare one unsupported function or global does not prevent using the header's other, supported
 declarations.
+
+Enum types
+----------
+`type Name enum { ... }` (an `enum-def` node) is consumed by SA and does not appear in sa.json.
+An enum type is a `prim` of its base integer type with an `enum` key naming it, e.g.
+`{"type-kind":"prim","type-name":"uint32","enum":"Color"}`, and this is the only form it takes:
+SA registers the name in the same table as a type alias, so every place a type name resolves
+(variables, fields, arrays, pointers, parameters, returns, `type X = Name;`) yields this shape.
+Storage and codegen read only `type-name`; the `enum` key matters only to type checking.
+
+- Base type: the one GCC picks on x86-64. `uint32` if no value is negative and all fit, else
+  `int32` if all fit, else `uint64`/`int64`. Values are limited to the int64 range.
+- An enumerator value is the previous one + 1 (0 first) or `= ` an integer literal / const.
+- `Name.X` (an AST `field-access` whose object is an `id` naming an enum type or an alias of
+  one, not shadowed by a variable) becomes `{"expr-type":"lit-int","value":<decimal>,
+  "value-type":<enum type>}`.
+- `Name(x)` (an AST `call` naming an enum type, when no function has that name) is a cast.
+- Removing or adding only the `enum` key never emits a `convert` node: `wrapConvert` rewrites
+  the `value-type` instead.
 
 Struct types
 ------------

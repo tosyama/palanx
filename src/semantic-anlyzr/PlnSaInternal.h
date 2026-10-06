@@ -18,6 +18,14 @@ using namespace std;
 
 // LCOV_EXCL_EXCEPTION_BR_START
 inline json wrapConvert(const json& expr, const json& to_type) {
+	// Adding or dropping an enum label changes no bits, so no convert node.
+	const json& from_type = expr["value-type"];
+	if (to_type.value("type-kind", "") == "prim" && from_type.value("type-kind", "") == "prim"
+	    && to_type["type-name"] == from_type["type-name"]) {
+		json relabeled = expr;
+		relabeled["value-type"] = to_type;
+		return relabeled;
+	}
 	return {
 		{"expr-type",  "convert"},
 		{"value-type", to_type},
@@ -254,6 +262,7 @@ inline json makeFreeStmt(const string& name, const json& pntrType)
 
 inline const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 {
+	if (t->kind == PlnType::Kind::Enum) return variadicPromote(static_cast<const EnumType*>(t)->base, reg);
 	if (t->kind != PlnType::Kind::Prim) return t;
 	const auto* p = static_cast<const PrimType*>(t);
 	using N = PrimType::Name;

@@ -1,0 +1,3 @@
+type Color enum { RED, GREEN };
+type Fruit enum { APPLE };
+uint8 x = Color.RED;
