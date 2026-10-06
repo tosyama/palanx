@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+cinclude "259_c_enum.h";
+Conf c;
+CSpace.CS_RGB -> c.cs;
+M_DEFAULT -> c.method;
+'x' -> c.tag;
+int32 cs = c.cs;
+printf("%d %d %c %d\n", cs, c.method, c.tag, LIMIT);
+CSpace.CS_CMYK -> c.cs;
+printf("%d\n", c.cs);

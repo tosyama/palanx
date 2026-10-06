@@ -1,0 +1,2 @@
+type Color enum { BLUE };
+cinclude "error_404_c_enum_name_conflict.h";

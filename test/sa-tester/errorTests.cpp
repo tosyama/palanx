@@ -1487,13 +1487,8 @@ TEST(sa_error, c_unsupported_union_param)
 
 TEST(sa_error, c_unsupported_enum_param)
 {
-	// `void pick(enum Color c);` -- c2ast discards even a tagged enum to a
-	// bare {"type-kind":"enum"}. (A *tagged* enum
-	// used directly as a top-level return type hits an unrelated c2ast parser
-	// gap -- CParser::declaration's enum branch has no backtrack counterpart
-	// to the struct/union one -- so this exercises the parameter position;
-	// the return-type position is covered by c_unsupported_union_ret below
-	// via a type that does parse there.)
+	// `void pick(enum Color c);` where c2ast can't compute Color's values
+	// (`= sizeof(int)`), so the enum is never registered.
 	// Covers: sa_expr_call -> requireSupportedCFuncSig
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -2945,4 +2940,34 @@ TEST(sa_error, enum_name_conflicts_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_402_enum_name_conflicts_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":3:1: error: type 'P' is already defined."), string::npos);
+}
+
+TEST(sa_error, c_enum_field_from_int)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_403_c_enum_field_from_int.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: Implicit conversion from 'int32' to 'CSpace' is not allowed"), string::npos);
+}
+
+TEST(sa_error, c_enum_name_conflict)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_404_c_enum_name_conflict.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:1: error: type 'Color' is already defined."), string::npos);
+}
+
+TEST(sa_error, enum_field_from_int)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_405_enum_field_from_int.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":4:1: error: Implicit conversion from 'int32' to 'Color' is not allowed"), string::npos);
 }

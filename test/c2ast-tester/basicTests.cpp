@@ -256,12 +256,12 @@ TEST(c2ast, struct_enum_typedef) {
         return nullptr;
     };
 
-    // get_color() returns typedef enum Color -- enum bodies are never
-    // tag-synthesized (tag synthesis is struct-only), so this stays "user".
+    // get_color() returns typedef enum Color -- the anonymous body is named
+    // after the typedef, as for a struct.
     {
         json* f = find_func("get_color");
         ASSERT_NE(f, nullptr);
-        ASSERT_EQ((*f)["ret-type"]["type-kind"], "user");
+        ASSERT_EQ((*f)["ret-type"]["type-kind"], "enum");
         ASSERT_EQ((*f)["ret-type"]["type-name"], "Color");
     }
 
@@ -1462,4 +1462,57 @@ TEST(c2ast, blank_lines) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/034_blank_lines.h");
     ASSERT_EQ(output, "int f(int a);int g(int b);");
+}
+
+TEST(c2ast, enum_capture) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/040_enum.h");
+    json ast = json::parse(output);
+    auto& enums = ast["ast"]["enums"];
+    auto find = [](json& list, const string& name) -> json* {
+        for (auto& e : list)
+            if (e["name"] == name) return &e;
+        return nullptr;
+    };
+    auto enumRef = [](const char* name) { return json{{"type-kind", "enum"}, {"type-name", name}}; };
+
+    json* color = find(enums, "Color");
+    ASSERT_NE(color, nullptr);
+    ASSERT_EQ((*color)["enumerators"], json::parse(R"([
+        {"name":"RED","value":"0"},{"name":"GREEN","value":"5"},{"name":"BLUE","value":"6"},
+        {"name":"NEG","value":"-3"},{"name":"AFTER","value":"7"}])"));
+    ASSERT_NE(find(enums, "CSpace"), nullptr);   // typedef name of an anonymous body
+    ASSERT_NE(find(enums, "Mode"), nullptr);     // the tag, not the typedef name
+    ASSERT_EQ(find(enums, "ModeAlias"), nullptr);
+    ASSERT_EQ(find(enums, "Unknown"), nullptr);  // U1 = sizeof(int) can't be computed
+    ASSERT_EQ(enums.size(), 5u);                 // + two anonymous bodies
+
+    auto& typedefs = ast["ast"]["typedefs"];
+    ASSERT_EQ((*find(typedefs, "ModeAlias"))["var-type"], enumRef("Mode"));
+
+    json* s = find(ast["ast"]["structs"], "S");
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ((*s)["fields"][0]["var-type"], enumRef("Color"));
+    ASSERT_EQ((*s)["fields"][2]["var-type"]["size-expr"], (json{{"expr-type", "lit-int"}, {"value", "7"}}));
+    ASSERT_EQ((*s)["fields"][3]["var-type"]["type-kind"], "enum");
+
+    json* f = find(ast["ast"]["functions"], "get_color");
+    ASSERT_NE(f, nullptr);
+    ASSERT_EQ((*f)["ret-type"], enumRef("Color"));
+    ASSERT_EQ((*find(ast["ast"]["globals"], "g_cs"))["var-type"]["type-name"], "CSpace");
+
+    // Anonymous enumerators are untyped constants; a macro that is just a
+    // named enum's enumerator keeps the enum type, an expression does not.
+    auto& constants = ast["ast"]["constants"];
+    ASSERT_EQ(*find(constants, "ANON_B"), (json{{"name", "ANON_B"}, {"value", "11"}}));
+    ASSERT_EQ(*find(constants, "IN_A"), (json{{"name", "IN_A"}, {"value", "0"}}));
+    ASSERT_EQ(*find(constants, "DEF_COLOR"),
+        (json{{"name", "DEF_COLOR"}, {"value", "5"}, {"value-type", enumRef("Color")}}));
+    ASSERT_EQ(*find(constants, "NEXT_COLOR"), (json{{"name", "NEXT_COLOR"}, {"value", "7"}}));
+    ASSERT_EQ(*find(constants, "MODE_X"),
+        (json{{"name", "MODE_X"}, {"value", "4"}, {"value-type", enumRef("Mode")}}));
+    int anonA = 0;
+    for (auto& c : constants) anonA += c["name"] == "ANON_A";
+    ASSERT_EQ(anonA, 1);
+    ASSERT_EQ(find(constants, "UNKNOWN_M"), nullptr);
 }

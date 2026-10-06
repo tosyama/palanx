@@ -474,8 +474,8 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   for such a typedef's pointee can be declared directly instead, e.g. `@!void t;` in place of a
   `timer_t` local (see `doc/Issues.md` for the underlying limitation).
 - Typedefs that bottom out in a union are usable the same way as struct typedefs (see
-  [Union Types](#union-types) below). Typedefs that bottom out in an enum are not resolved and
-  remain unusable this version.
+  [Union Types](#union-types) below). A typedef of an enum is another name for it (see
+  [C Enum Types](#c-enum-types) below).
 - If multiple cincluded headers introduce the same typedef name resolving to the *same* underlying
   type, the first registration silently wins. If they resolve to *different* underlying types, this
   is a compile error. Because typedef registration is no longer gated on being referenced by some
@@ -553,11 +553,11 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 
 ### C Global Variables
 
-- A file-scope `extern` object declared in a cincluded header, whose type is a primitive or a
-  pointer (e.g. `extern FILE *stdout;`), is captured as a readable Palan variable of the same
+- A file-scope `extern` object declared in a cincluded header, whose type is a primitive, an enum
+  or a pointer (e.g. `extern FILE *stdout;`), is captured as a readable Palan variable of the same
   name, visible from the cinclude point to the end of the enclosing scope — the same rule as a
   cincluded function. `static` declarations, block-scope declarations, and arrays or by-value
-  struct/union/enum globals are not captured.
+  struct/union globals are not captured.
 
   ```palan
   cinclude <stdio.h>;
@@ -767,6 +767,30 @@ Not supported this version:
 - A C11 anonymous member with no member name (`struct S { int k; union { int a; float b; }; };`)
   — a header containing one cannot be cincluded. An anonymous body that *does* have a member name
   (`union { ... } u;`) works; its fields are reached through that name.
+
+### C Enum Types
+
+A C enum from a cincluded header is a Palan [enum](#enum): its enumerators are referenced as
+`Name.X`, and it follows the same type rules. `Name` is the tag (`enum Tag { ... }`) or the
+typedef name (`typedef enum { ... } Name;`); when the enum has both, either name works. It can be
+the type of a variable, a struct field, a C function's parameter or return value, and a C global.
+
+```palan
+cinclude <jpeglib.h>;
+
+jpeg_compress_struct cinfo;
+J_COLOR_SPACE.JCS_RGB -> cinfo.in_color_space;
+JDCT_DEFAULT -> cinfo.dct_method;    // #define JDCT_DEFAULT JDCT_ISLOW
+int32 cs = cinfo.in_color_space;     // widens to its base type
+```
+
+- A macro that is just one enumerator (`#define JDCT_DEFAULT JDCT_ISLOW`, or glibc's
+  `#define SOCK_STREAM SOCK_STREAM`) has the enum's type. A macro computing with enumerators
+  (`#define X (A + 1)`) is a plain integer constant, like any other [macro constant](#macro-constants).
+- The enumerators of an enum with neither a tag nor a typedef name (`enum { A, B };`) are
+  referenced without qualification (`A`), as plain integer constants.
+- An enum with an enumerator whose value can't be computed at compile time (e.g. `= sizeof(int)`)
+  is not available; a function or struct using it is treated as unsupported.
 
 ### Incomplete Struct Types (Opaque Handles)
 

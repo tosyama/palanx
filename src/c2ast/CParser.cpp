@@ -109,7 +109,7 @@ string CParser::synthesizeAnonTag(const CToken* at)
 		+ ":" + to_string(t0.pos + 1);
 	// Tokens from one macro body share a location across expansions.
 	string tag = base;
-	for (int n = 2; structIndex_.count(tag); n++)
+	for (int n = 2; structIndex_.count(tag) || enumIndex_.count(tag); n++)
 		tag = base + "#" + to_string(n);
 	return tag;
 }
@@ -395,33 +395,54 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 	return true;
 }
 
-bool CParser::enum_definition(json &ast, const vector<CToken*> &tokens, int &result_index)
+bool CParser::enum_definition(string &name, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
 
-	if (CONSUME(TT_ID)) {
-		// enum with tag
+	bool anonymous = !CONSUME(TT_ID);
+	if (!anonymous) {
+		name = *tokens[index-1]->info.id;
 		if (!CONSUME_PUNC('{')) {
 			// enum with tag only
 			result_index = index;
 			return true;
 		}
 	} else {
-		// anonymous enum
+		if (index >= tokens.size()) return false;
+		name = synthesizeAnonTag(tokens[index]);
 		EXPECT_PUNC('{');
 	}
 
+	// A redefinition of a tag is a C error; the first body stays.
+	bool capture = !enumIndex_.count(name);
+	int enumIndex = (int)capturedEnums_.size();
+	CapturedEnum captured = {name, anonymous, true, {}};
+	long long next = 0;
+	bool nextKnown = true;
 	do {
-		if (CONSUME(TT_ID)) {
-			if (CONSUME_PUNC('=')) {
-				json enum_value;
-				if (!constant_expression(enum_value, tokens, index)) {
-					return false;
-				}
+		if (!CONSUME(TT_ID)) break;
+		string ename = *tokens[index-1]->info.id;
+		long long v = next;
+		bool known = nextKnown;
+		if (CONSUME_PUNC('=')) {
+			json enum_value;
+			if (!constant_expression(enum_value, tokens, index)) {
+				return false;
 			}
-		} else {
-			break;
+			known = enum_value.is_object() && enum_value.value("expr-type", "") == "lit-int";
+			if (known) {
+				try { v = stoll(enum_value["value"].get<string>()); }
+				catch (const out_of_range&) { known = false; }
+			}
 		}
+		if (!known) {
+			captured.evaluable = false;
+		} else if (capture) {
+			captured.values.push_back({ename, v});
+			enumerators_[ename] = {v, enumIndex};
+		}
+		nextKnown = known && v != LLONG_MAX;
+		if (nextKnown) next = v + 1;
 
 		if (!CONSUME_PUNC(',')) {
 			break;
@@ -430,8 +451,31 @@ bool CParser::enum_definition(json &ast, const vector<CToken*> &tokens, int &res
 	} while (true);
 
 	EXPECT_PUNC('}');
+	if (capture) {
+		if (!captured.evaluable)
+			for (auto &[ename, v] : captured.values) enumerators_.erase(ename);
+		enumIndex_[name] = enumIndex;
+		capturedEnums_.push_back(move(captured));
+	}
 	result_index = index;
 	return true;
+}
+
+// "typedef enum { ... } Name;" names the anonymous body after the typedef, as
+// declaration() does for an anonymous struct, unless the name is already a
+// type's.
+void CParser::nameAnonEnumByTypedef(json &vt, const string &typedefName)
+{
+	auto it = enumIndex_.find(vt["type-name"].get<string>());
+	if (it == enumIndex_.end()) return;
+	CapturedEnum &e = capturedEnums_[it->second];
+	if (!e.anonymous || enumIndex_.count(typedefName) || structIndex_.count(typedefName)) return;
+	int idx = it->second;
+	enumIndex_.erase(it);
+	enumIndex_[typedefName] = idx;
+	e.name = typedefName;
+	e.anonymous = false;
+	vt["type-name"] = typedefName;
 }
 
 bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, int &result_index)
@@ -523,8 +567,9 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	}
 
 	if (CONSUME_KW(TK_ENUM)) {
-		if (enum_definition(ast, tokens, index)) {
-			set_vt({{"type-kind", "enum"}});
+		string name;
+		if (enum_definition(name, tokens, index)) {
+			set_vt({{"type-kind", "enum"}, {"type-name", name}});
 			result_index = index;
 			return true;
 		}
@@ -782,20 +827,18 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 			// — backtrack and let it fall through to be parsed as a type specifier.
 			index = struct_union_save_index;
 		}
-
-		// just declaration of enum
-		if (CONSUME_KW(TK_ENUM)) {
-			if (enum_definition(ast, tokens, index)) {
-				EXPECT_PUNC(';');
-				result_index = index;
-				return true;
-			}
-		}
 	}
 
 	json local;
 	if (declaration_specifiers(local, tokens, index)) {
 		json base_vt = local.value("var-type", json{});
+		// Just a declaration of an enum. Recognized after the specifier rather
+		// than ahead of it, so "enum Tag f(void);" needs no backtrack that
+		// would capture the body twice.
+		if (base_vt.value("type-kind", "") == "enum" && CONSUME_PUNC(';')) {
+			result_index = index;
+			return true;
+		}
 		vector<json> decls;
 		decls.push_back({{"var-type", base_vt}});
 		if (declarator(decls.back(), tokens, index, false)) {
@@ -840,6 +883,9 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 						}
 					}
 				}
+
+				if (is_typedef && decls.size() == 1 && decls[0]["var-type"].value("type-kind", "") == "enum")
+					nameAnonEnumByTypedef(decls[0]["var-type"], decls[0]["name"].get<string>());
 
 				for (auto &d : decls) {
 					emitDeclarator(ast, d, is_typedef, is_static, is_extern, is_top_level);
@@ -895,8 +941,8 @@ void CParser::emitDeclarator(json &ast, json &decl,
 	} else if (is_typedef) {
 		if (tk == "prim" || tk == "pntr") {
 			registerTypedef(decl["name"].get<string>(), vt);
-		} else if ((tk == "strct" || tk == "union") && vt.contains("type-name")) {
-			// typedef struct/union Tag X; -- register X as an alias for the tag
+		} else if ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")) {
+			// typedef struct/union/enum Tag X; -- register X as an alias for the tag
 			// itself (SA resolves it the same way it resolves any other
 			// struct-bottomed type alias). This also covers a single,
 			// non-derived typedef of an anonymous body (typedef struct/union {...}
@@ -911,15 +957,15 @@ void CParser::emitDeclarator(json &ast, json &decl,
 				registerTypedef(decl["name"].get<string>(), it->second);
 			}
 		}
-		// Remaining anonymous strct/union/enum/func underlying types -- a
-		// multi/derived-declarator anonymous struct/union body, any enum body,
-		// or a name declaration()'s tag synthesis skipped because it was
-		// already taken by an unrelated struct -- are not registered, left as
-		// unresolved "user" at reference sites (unchanged behavior).
-	} else if (is_extern && is_top_level && (tk == "prim" || tk == "pntr")) {
+		// Remaining anonymous strct/union/func underlying types -- a
+		// multi/derived-declarator anonymous struct/union body, or a name
+		// declaration()'s tag synthesis skipped because it was already taken
+		// by an unrelated struct -- are not registered, left as unresolved
+		// "user" at reference sites (unchanged behavior).
+	} else if (is_extern && is_top_level && (tk == "prim" || tk == "pntr" || tk == "enum")) {
 		// A file-scope "extern" object declaration with external linkage, of a
 		// type Palan can represent without heap/embedded-array semantics
-		// (e.g. "extern FILE *stdout;"). Array and by-value struct/union/enum
+		// (e.g. "extern FILE *stdout;"). Array and by-value struct/union
 		// globals are left unregistered -- same non-goal as elsewhere in this
 		// iteration.
 		ast["ast"]["globals"].push_back({
@@ -1220,7 +1266,11 @@ bool CParser::primary_expression(json &value, const vector<CToken*> &tokens, int
 	int index = result_index;
 
 	if (CONSUME(TT_ID)) {
-		value = json{};
+		auto it = enumerators_.find(*tokens[index-1]->info.id);
+		if (it != enumerators_.end())
+			value = {{"expr-type", "lit-int"}, {"value", to_string(it->second.value)}};
+		else
+			value = json{};
 		result_index = index;
 		return true;
 	}
@@ -1686,6 +1736,9 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 {
 	for (CMacro* m : macros) {
 		if (m->type != MT_OBJ) continue;
+		// "#define X X" over an anonymous enum's X: parse() already exported X.
+		auto en = enumerators_.find(m->name);
+		if (en != enumerators_.end() && capturedEnums_[en->second.enumIndex].anonymous) continue;
 
 		vector<CToken*> expanded = cpp.expandObjectMacroBody(m);
 
@@ -1695,6 +1748,14 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 
 		json value, type;
 		if (ok) ok = resolveConstValue(expr_value, value, type);
+		// A macro that is just a named enum's enumerator stands for that
+		// enumerator, so it keeps the enum's type; any expression over one
+		// computes as a plain integer.
+		if (ok && expanded.size() == 1 && expanded[0]->type == TT_ID) {
+			const CapturedEnum &e = capturedEnums_[enumerators_.at(*expanded[0]->info.id).enumIndex];
+			if (!e.anonymous)
+				type = {{"type-kind", "enum"}, {"type-name", e.name}};
+		}
 
 		for (CToken* t : expanded) delete t;
 		if (!ok) continue;
@@ -1743,13 +1804,27 @@ int CParser::parse(json &ast)
 		if (!capturedStructs_.empty())
 			ast["ast"]["structs"] = capturedStructs_;
 
+		json enums = json::array();
+		for (const CapturedEnum &e : capturedEnums_) {
+			if (!e.evaluable) continue;
+			json enumerators = json::array();
+			for (auto &[ename, v] : e.values) {
+				enumerators.push_back({{"name", ename}, {"value", to_string(v)}});
+				if (e.anonymous)
+					ast["ast"]["constants"].push_back({{"name", ename}, {"value", to_string(v)}});
+			}
+			enums.push_back({{"name", e.name}, {"enumerators", move(enumerators)}});
+		}
+		if (!enums.empty())
+			ast["ast"]["enums"] = move(enums);
+
 		json typedefs = json::array();
 		for (const auto &[name, vt] : typedefs_) {
 			// Pointer-bottomed typedefs stay unregistered this version: naming
 			// one would force a decision about which side of the @/@! mutability
 			// split a bare pointer alias falls on.
 			string tk = vt.value("type-kind", "");
-			if (tk == "prim" || ((tk == "strct" || tk == "union") && vt.contains("type-name")))
+			if (tk == "prim" || ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")))
 				typedefs.push_back({{"name", name}, {"var-type", vt}});
 		}
 		if (!typedefs.empty())

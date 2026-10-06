@@ -4871,3 +4871,25 @@ TEST(sa, enum_type) {
 	ASSERT_EQ(cast["expr-type"], "add");
 	ASSERT_EQ(cast["value-type"], color);
 }
+
+TEST(sa, c_enum) {
+	json jout = run_sa("../test/testdata/sa/223_c_enum.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto enumType = [](const char* name) {
+		return json{{"type-kind","prim"},{"type-name","int32"},{"enum",name}};
+	};
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[1]["value-type"], enumType("Color"));
+	ASSERT_EQ(stmts[1]["value"]["value"], "6");
+	ASSERT_EQ(stmts[2]["value-type"], enumType("CSpace"));
+	ASSERT_EQ(stmts[3]["target"]["array"]["value-type"]["base-type"], enumType("Mode"));
+	const auto& args = stmts[5]["vars"][0]["init"]["args"];
+	ASSERT_EQ(args[0]["value-type"], enumType("Color"));   // DEF_COLOR macro
+	ASSERT_EQ(args[0]["value"], "5");
+	ASSERT_EQ(args[1]["value-type"], enumType("Mode"));
+	ASSERT_EQ(stmts[5]["vars"][0]["var-type"], enumType("CSpace"));
+	ASSERT_EQ(stmts[6]["vars"][0]["init"]["value"], "10");    // anonymous enumerator
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["value-type"], enumType("CSpace"));
+	ASSERT_EQ(stmts[8]["vars"][0]["init"]["value-type"], enumType("Color"));
+	ASSERT_EQ(stmts[9]["vars"][0]["init"]["value-type"], enumType("Color"));
+}

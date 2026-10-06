@@ -87,6 +87,13 @@ equality/logical/ternary expression, unary `~`/`!`, or a reference to an unresol
 is not exported here — referencing such a macro name from Palan is `Undefined function` or
 `Undefined variable`, not a compiler abort.
 
+An enumerator (see Enum definition model below) is an integer operand in these expressions,
+untyped like an unsuffixed literal. A body that is exactly one enumerator of a named enum
+(`#define JDCT_DEFAULT JDCT_ISLOW`, glibc's `#define SOCK_STREAM SOCK_STREAM`) stands for that
+enumerator and keeps the enum's type. The list also holds the enumerators of an anonymous enum,
+which C code references unqualified, as untyped constants; a `#define X X` over one of them is
+not exported a second time.
+
 - name\* - Macro name string
 - value\* - Decimal string (e.g. "10")
 - value-type - Variable type (see below). Present only when C fixes the type: for a body with a
@@ -94,7 +101,23 @@ is not exported here — referencing such a macro name from Palan is `Undefined 
   type, including `typedef-name`, when the cast is outermost); for a pointer-cast body, the
   cast's own target type (e.g. `pntr` for `NULL`). Omitted otherwise (e.g. `#define MAGIC 42`,
   `#define ERR (-1)`), so the constant is an untyped literal that takes its type from the
-  context, same as a Palan source literal
+  context, same as a Palan source literal. A body that is one named enum's enumerator has an
+  `enum` reference here (`{"type-kind":"enum","type-name":<enum name>}`)
+
+Enum definition model
+---------------------
+Captured from every enum body palan-c2ast sees in a `cinclude`d C header, into its own
+top-level `ast.enums` list (lifted onto the `cinclude` statement's `enums` field by gen-ast,
+like `structs`). c2ast computes each enumerator's value; an enum with a value it cannot compute
+(e.g. `= sizeof(int)`) is not captured, and references to it stay unrepresentable in SA. The base
+integer type is not given here; SA chooses it by the same rule as for a Palan enum (SASpec.md).
+
+- name\* - Enum name string: the tag, or for `typedef enum { ... } Name;` (a single, non-derived
+  declarator) the typedef name, as for a struct. An anonymous body otherwise gets a synthesized
+  `anon@<file>:<line>:<col>` name (see Struct definition model's `name`).
+- enumerators\* - Enumerator list, in source order
+  - name\* - Enumerator name string
+  - value\* - Decimal string, within the int64 range
 
 Struct definition model
 ------------------------
@@ -127,9 +150,9 @@ AST in. Same field-list shape as the native `struct-def` statement.
 Global variable model
 ----------------------
 Captured from file-scope `extern` object declarations in a `cinclude`d C header (e.g.
-`extern FILE *stdout;`) whose type is `prim` or `pntr` — the only shapes Palan can
+`extern FILE *stdout;`) whose type is `prim`, `pntr` or `enum` — the only shapes Palan can
 represent without heap or embedded-array semantics. `static` declarations, block-scope
-declarations, and `extern` declarations of array or by-value struct/union/enum type are
+declarations, and `extern` declarations of array or by-value struct/union type are
 not captured. palan-c2ast collects these into its own top-level `ast.globals` list;
 gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals` field
 (see Statement model below) when merging the header's AST in.
@@ -140,9 +163,9 @@ gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals`
 Typedef definition model
 -------------------------
 Captured from every `typedef` declaration in a `cinclude`d C header whose resolved
-underlying type is `prim`, or a `strct`/`union` that carries a `type-name` (including a tag
-synthesized for a single, non-derived typedef of an otherwise tagless struct/union body — see
-Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef void
+underlying type is `prim`, or a `strct`/`union`/`enum` that carries a `type-name` (including a
+name synthesized for a single, non-derived typedef of an otherwise tagless struct/union/enum
+body — see Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef void
 *timer_t;`) is deliberately not captured here — see the `typedef-name` Note below.
 `typedef`s are captured regardless of whether any C function or global in the header
 references them, so a header of pure typedefs and no functions (e.g. `stdint.h`) still
@@ -272,17 +295,17 @@ Variable type
      fields are in its Struct definition model entry (`"union": true`). SA folds it to
      `struct` at ingestion, the same as `strct`.
     - type-name - Union tag name string; omitted only for a genuinely untagged reference
-  7. enum - Enum type, from a C `enum Name { ... }`-typed field/parameter/return. c2ast parses
-     the enumerator list (names and values) but does not capture it — every reference emits
-     the bare shape below. Unrepresentable in SA this version (see SASpec.md's C-origin
-     signature admission).
-     (carries no fields beyond `type-kind`)
+  7. enum - Enum type reference (by name), from a C enum-typed field/parameter/return/global.
+     Its enumerators are in its Enum definition model entry. SA resolves it to the enum's own
+     type at ingestion; a reference to an enum not captured there stays unrepresentable (see
+     SASpec.md's C-origin signature admission).
+    - type-name\* - Enum name string (see Enum definition model's `name`)
   8. func - Function type
     - parameters - Parameter list
     - ret-type\* - Return variable type
   9. user - An identifier used as a type that c2ast could not resolve to a recognized keyword
-     or a previously-registered typedef — including a typedef that bottoms out in an
-     anonymous enum/function-pointer body, or an anonymous struct/union body via a
+     or a previously-registered typedef — including a typedef that bottoms out in a
+     function-pointer body, or an anonymous struct/union body via a
      multi-declarator or derived-declarator typedef (see type-kind "strct" above for the one
      struct/union-body shape c2ast does register), none of which c2ast registers.
      Unrepresentable in SA this version (see SASpec.md's C-origin signature admission).
@@ -322,6 +345,8 @@ Statement model
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
     - functions - Function definition model list (C prototypes from the header)
+    - enums - Enum definition model list (see Enum definition model above); omitted when the
+      header defines no capturable enum
     - structs - Struct definition model list (see Struct definition model above); omitted
       when the header defines no capturable structs
     - globals - Global variable model list (see Global variable model above); omitted

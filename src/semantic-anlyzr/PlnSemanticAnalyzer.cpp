@@ -816,6 +816,11 @@ static bool isValidLinkLibName(const string& name)
 
 void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 {
+	// Before structs, whose fields can be of an enum type.
+	if (stmt.contains("enums"))
+		for (auto& e : stmt["enums"])
+			registerCEnum(stmt, e);
+
 	if (stmt.contains("structs"))
 		for (auto& s : stmt["structs"])
 			registerCStruct(s);
@@ -826,8 +831,14 @@ void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 		for (auto& td : stmt["typedefs"]) {
 			const json& vt = td["var-type"];
 			// LCOV_EXCL_EXCEPTION_BR_START
-			registerTypeAliasChecked(td["name"].get<string>(),
-				{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
+			if (vt.value("type-kind", "") == "enum") {
+				json enumType = enumTypeNamed(vt["type-name"].get<string>());
+				if (!enumType.is_null())
+					registerTypeAliasChecked(td["name"].get<string>(), enumType);
+			} else {
+				registerTypeAliasChecked(td["name"].get<string>(),
+					{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
+			}
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -853,6 +864,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& g : stmt["globals"]) {
 			json entry = g;
 			registerTypedefAliasInType(entry["var-type"]);
+			resolveCEnumRefs(entry["var-type"]);
 			normalizeCGlobal(entry);
 			registerCGlobal(entry["name"].get<string>(), entry);
 		}
@@ -865,6 +877,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 				string fname = f["name"].get<string>();
 				json entry = f;
 				registerCFuncTypedefAliases(entry);
+				resolveCEnumRefs(entry);
 				normalizeCFuncSig(entry);
 				entry["_c-func"] = true;
 				currentScope[alias][fname] = entry;
@@ -873,6 +886,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			for (auto& f : stmt["functions"]) {
 				json entry = f;
 				registerCFuncTypedefAliases(entry);
+				resolveCEnumRefs(entry);
 				normalizeCFuncSig(entry);
 				registerCFunc(entry["name"].get<string>(), entry);
 			}

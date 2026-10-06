@@ -30,6 +30,8 @@ struct FieldLayout {
 	int64_t count    = 0;   // element count n (compile-time constant)
 	string  elemKind = "";  // "prim" | "struct"; also set for typeKind == "raw-ptr" (pointee kind)
 	int     stride   = 0;   // bytes per element
+
+	string  enumName = "";  // enum the primitive leaf is typed as, if any
 };
 
 struct StructDef {
@@ -90,7 +92,8 @@ class PlnSemanticAnalyzer {
 	// Registered type aliases (name -> fully-resolved base type json)
 	map<string, json>      typeAliases_;
 	// Registered enum types: enumerator values, and the declaration's loc so
-	// the step-2 revisit of a pre-scanned enum-def is told apart from a redefinition.
+	// the step-2 revisit of a pre-scanned enum-def is told apart from a
+	// redefinition. A cinclude'd C enum has a null loc.
 	struct EnumDef { map<string, int64_t> values; json loc; };
 	map<string, EnumDef>   enumDefs_;
 	// Registered const declarations (name -> {"value": <SA'd literal expr>, "value-type": <type>})
@@ -184,6 +187,9 @@ class PlnSemanticAnalyzer {
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_
 	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_
 	json sa_enum_def(const json& stmt);           // consume enum-def, register in enumDefs_/typeAliases_
+	void registerEnum(const string& name, map<string, int64_t> values, const json& loc);
+	void registerCEnum(const json& cincludeStmt, const json& e);
+	void resolveCEnumRefs(json& node) const;      // C enum references -> the enum's SA type
 	json enumTypeNamed(const string& name) const; // enum value-type for a type name, or null
 	json resolveEnumerator(const json& expr);     // `Name.X` as a lit-int, or null for a field access
 	void recordAllocShape(const string& structName);

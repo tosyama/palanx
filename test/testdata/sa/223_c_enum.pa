@@ -1,0 +1,11 @@
+cinclude "223_c_enum.h";
+S s;
+Color.BLUE -> s.c;
+CSpace.CS_B -> s.cs;
+ModeAlias.MODE_X -> s.m[0];
+Mode.MODE_X -> s.m[1];
+CSpace r = cs_of(DEF_COLOR, Mode.MODE_X);
+int32 a = ANON_A;
+CSpace g = g_cs;
+Color c = get_color();
+Color d = s.c;

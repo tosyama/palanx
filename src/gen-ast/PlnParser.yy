@@ -311,6 +311,9 @@ expr_stmt: import
 			if (c_ast["ast"].contains("functions")) {
 				$$["functions"] = move(c_ast["ast"]["functions"]);
 			}
+			if (c_ast["ast"].contains("enums")) {
+				$$["enums"] = move(c_ast["ast"]["enums"]);
+			}
 			if (c_ast["ast"].contains("structs")) {
 				$$["structs"] = move(c_ast["ast"]["structs"]);
 			}

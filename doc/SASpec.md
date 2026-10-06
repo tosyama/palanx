@@ -844,7 +844,7 @@ a named `strct`/`union`→`struct`) and then check every type against `unreprese
   the typedef name for a single, non-derived `typedef struct { ... } Name;`, so this is a
   multi-declarator/derived-declarator typedef of such a body, not every anonymous struct),
   and `user` (an identifier c2ast could not resolve to a known type — including a typedef
-  that bottoms out in an anonymous union/enum/function-pointer body, or an anonymous struct
+  that bottoms out in an anonymous union/function-pointer body, or an anonymous struct
   body via one of those two unsynthesized typedef shapes).
 - A `struct` type-kind carrying a `type-name` is always representable here, whether or not it
   is complete — an incomplete struct's layout is enforced later, only where a layout is actually
@@ -903,6 +903,18 @@ Storage and codegen read only `type-name`; the `enum` key matters only to type c
 - `Name(x)` (an AST `call` naming an enum type, when no function has that name) is a cast.
 - Removing or adding only the `enum` key never emits a `convert` node: `wrapConvert` rewrites
   the `value-type` instead.
+- A struct field keeps its enum type (`FieldLayout::enumName`), so a field read has the enum
+  type and a field store is checked as a binding.
+
+A C enum (a `cinclude` statement's `enums`) registers into the same tables with the same
+base-type rule; a cinclude'd enum of a name already taken is skipped when it is itself a C enum
+(the same header included again) and E_DuplicateTypeName otherwise. An AST `enum` reference
+(`{"type-kind":"enum","type-name":N}`) is resolved to the enum's type where C types enter SA:
+function signatures and globals (before `normalizeCFuncSig`/`normalizeCGlobal`), struct fields
+(`registerCStruct`), typedefs, and a macro constant's `value-type` on a gen-ast-folded
+`lit-int`. A reference to an enum c2ast did not capture stays `enum`, which
+`unrepresentableTypeName` reports. A C typedef of an enum is an alias of it, so both `Tag.X` and
+`Typedef.X` resolve.
 
 Struct types
 ------------

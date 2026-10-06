@@ -2396,3 +2396,9 @@ TEST(build_mgr, enum_type) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/258_enum.pa");
 	ASSERT_EQ(output, "0 6 6 1\n-3 5000000000 5 11\n6 -3 3\n6 5 5\n");
 }
+
+TEST(build_mgr, c_enum) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/259_c_enum.pa");
+	ASSERT_EQ(output, "2 1 x 100\n-1\n");
+}

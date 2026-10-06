@@ -61,7 +61,7 @@ static StructDef buildStructDef(const string& name,
 				int at = place(sz, sz);
 				def.fields.push_back({.name=fieldName, .typeKind="prim",
 				                      .typeName=tname, .isMutable=false,
-				                      .offset=at, .size=sz});
+				                      .offset=at, .size=sz, .enumName=vtype.value("enum", "")});
 			}
 		} else if (tk == "embed") {
 			string structName = vtype["base-type"]["type-name"].get<string>();
@@ -96,7 +96,8 @@ static StructDef buildStructDef(const string& name,
 			int at = place(sz, align);
 			def.fields.push_back({.name=fieldName, .typeKind="raw-ptr",
 			                      .typeName=baseName, .isMutable=isMut,
-			                      .offset=at, .size=sz, .elemKind=elemKind});
+			                      .offset=at, .size=sz, .elemKind=elemKind,
+			                      .enumName=vtype["base-type"].value("enum", "")});
 		} else if (tk == "arr") {
 			const json& size_expr = vtype["size-expr"];
 			if (size_expr.is_null()) {
@@ -125,7 +126,8 @@ static StructDef buildStructDef(const string& name,
 					def.fields.push_back({.name=fieldName, .typeKind="embed-ptr-arr",
 					                      .typeName=leaf_name, .isMutable=isMut,
 					                      .offset=at, .size=(int)(count*8),
-					                      .count=count, .elemKind=elemKind, .stride=8});
+					                      .count=count, .elemKind=elemKind, .stride=8,
+					                      .enumName=base_wrap["base-type"].value("enum", "")});
 					continue;
 				}
 				if (base_kind != "prim") {
@@ -147,7 +149,8 @@ static StructDef buildStructDef(const string& name,
 					def.fields.push_back({.name=fieldName, .typeKind="arr-ptr",
 					                      .typeName=leaf_name, .isMutable=false,
 					                      .offset=at, .size=8,
-					                      .count=count, .elemKind="prim", .stride=stride});
+					                      .count=count, .elemKind="prim", .stride=stride,
+					                      .enumName=base_wrap.value("enum", "")});
 					def.ownsFields = true;
 					continue;
 				}
@@ -213,7 +216,8 @@ static StructDef buildStructDef(const string& name,
 			def.fields.push_back({.name=fieldName, .typeKind="embed-arr",
 			                      .typeName=leaf_name, .isMutable=false,
 			                      .offset=at, .size=(int)(count*stride),
-			                      .count=count, .elemKind=elemKind, .stride=stride});
+			                      .count=count, .elemKind=elemKind, .stride=stride,
+			                      .enumName=base.value("enum", "")});
 		} else {
 			cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 			exit(1);
@@ -1015,7 +1019,9 @@ void PlnSemanticAnalyzer::registerCStruct(const json& s)
 
 	json fields = json::array();
 	for (auto& f : s["fields"]) {
-		json vt = cFieldVarType(f["var-type"]);
+		json vt = f["var-type"];
+		resolveCEnumRefs(vt);
+		vt = cFieldVarType(vt);
 		if (!isSupportedCFieldType(vt, structDefs_, name)) {
 			// Register the tag as an incomplete struct rather than not at all: the
 			// name is real (glibc defines it), only its layout is unavailable this
@@ -1070,10 +1076,9 @@ json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 		exit(1);
 	}
 
-	EnumDef def;
-	def.loc = stmt["loc"];
-	int64_t next = 0, minV = 0, maxV = 0;
-	bool first = true, nextOverflows = false;
+	map<string, int64_t> values;
+	int64_t next = 0;
+	bool nextOverflows = false;
 	for (auto& e : stmt["enumerators"]) {
 		string ename = e["name"].get<string>();
 		int64_t v = next;
@@ -1093,26 +1098,69 @@ json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 			cerr << locPrefix(e) << PlnSaMessage::getMessage(E_EnumValueOutOfRange, ename, "9223372036854775808") << endl;
 			exit(1);
 		}
-		if (!def.values.emplace(ename, v).second) {
+		if (!values.emplace(ename, v).second) {
 			cerr << locPrefix(e) << PlnSaMessage::getMessage(E_DuplicateEnumerator, ename, name) << endl;
 			exit(1);
 		}
-		minV = first ? v : min(minV, v);
-		maxV = first ? v : max(maxV, v);
-		first = false;
 		nextOverflows = v == INT64_MAX;
 		next = nextOverflows ? v : v + 1;
 	}
+	registerEnum(name, move(values), stmt["loc"]);
+	return json::array();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
+void PlnSemanticAnalyzer::registerEnum(const string& name, map<string, int64_t> values, const json& loc)
+{
+	int64_t minV = 0, maxV = 0;
+	bool first = true;
+	for (auto& [ename, v] : values) {
+		minV = first ? v : min(minV, v);
+		maxV = first ? v : max(maxV, v);
+		first = false;
+	}
 	// C types an enumerator as int when it fits, and GCC widens past that the
 	// same way; the width always matches the C enum's, so values pass to and
 	// from C unchanged.
 	string base = minV >= INT32_MIN && maxV <= INT32_MAX ? "int32"
 		: minV >= 0 && maxV <= UINT32_MAX ? "uint32"
 		: minV < 0 ? "int64" : "uint64";
-	enumDefs_[name] = move(def);
+	enumDefs_[name] = {move(values), loc};
 	typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", base}, {"enum", name}};
-	return json::array();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::registerCEnum(const json& cincludeStmt, const json& e)
+{
+	string name = e["name"].get<string>();
+	auto existing = enumDefs_.find(name);
+	if (existing != enumDefs_.end() && existing->second.loc.is_null())
+		return;  // first definition wins, as for a C struct
+	if (existing != enumDefs_.end() || structDefs_.count(name) || typeAliases_.count(name)) {
+		cerr << locPrefix(cincludeStmt) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
+		exit(1);
+	}
+	map<string, int64_t> values;
+	for (auto& en : e["enumerators"])
+		values[en["name"].get<string>()] = stoll(en["value"].get<string>());
+	registerEnum(name, move(values), json());
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// An unregistered one (c2ast couldn't compute its values) stays "enum",
+// reported as unrepresentable where it is used.
+void PlnSemanticAnalyzer::resolveCEnumRefs(json& node) const
+{
+	if (node.is_array()) {
+		for (auto& e : node) resolveCEnumRefs(e);
+		return;
+	}
+	if (!node.is_object()) return;
+	if (node.value("type-kind", "") == "enum" && node.contains("type-name")) {
+		json t = enumTypeNamed(node["type-name"].get<string>());
+		if (t.is_null()) return;
+		if (node.value("const", false)) t["const"] = true;
+		node = move(t);
+		return;
+	}
+	for (auto& [key, val] : node.items()) resolveCEnumRefs(val);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const

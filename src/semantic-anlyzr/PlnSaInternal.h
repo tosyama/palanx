@@ -107,20 +107,27 @@ inline bool isExpiringStruct(const json& v)
 }
 
 // LCOV_EXCL_EXCEPTION_BR_START
+inline json fieldPrimLeaf(const FieldLayout& f)
+{
+	json t = {{"type-kind","prim"},{"type-name",f.typeName}};
+	if (!f.enumName.empty()) t["enum"] = f.enumName;
+	return t;
+}
+
 inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
-		return {{"type-kind","prim"},{"type-name",f.typeName}};
+		return fieldPrimLeaf(f);
 	if (f.typeKind == "embed-arr") {
 		json bt = (f.elemKind == "struct")
 			? json{{"type-kind","struct"},{"type-name",f.typeName}}
-			: json{{"type-kind","prim"},{"type-name",f.typeName}};
+			: fieldPrimLeaf(f);
 		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"arr-size",f.count},{"base-type",bt}};
 	}
 	if (f.typeKind == "embed-ptr-arr") {
 		json bt = (f.elemKind == "struct")
 			? json{{"type-kind","struct"},{"type-name",f.typeName}}
-			: json{{"type-kind","prim"},{"type-name",f.typeName}};
+			: fieldPrimLeaf(f);
 		json elem_pntr = {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
 		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
 	}
@@ -136,11 +143,11 @@ inline json fieldValueType(const FieldLayout& f)
 			json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
 			return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
 		}
-		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
+		json bt = fieldPrimLeaf(f);
 		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",bt}};
 	}
 	if (f.typeKind == "raw-ptr" && f.elemKind == "prim") {
-		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
+		json bt = fieldPrimLeaf(f);
 		return {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
 	}
 	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
