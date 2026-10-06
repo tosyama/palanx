@@ -14,16 +14,16 @@ func isBlue(Color c) -> bool { return c == Color.BLUE }
 func pick() -> Shade { return Shade.GREEN }
 
 Color c = Color.RED;
-uint32 u = c;
-uint64 w = Color.BLUE;
-Color d = Color(u + 6);
-printf("%u %ld %u %d\n", c, w, d, isBlue(d));
-printf("%d %ld %u %u\n", Sign.NEG, Big.HUGE, pick(), Level.HIGH);
-printf("%u %d %d\n", Color.GREEN + 1, Sign.ZERO - 1, abs(Sign.NEG));
+int32 n = c;
+int64 w = Color.BLUE;
+Color d = Color(n + 6);
+printf("%d %ld %d %d\n", c, w, d, isBlue(d));
+printf("%d %ld %d %d\n", Sign.NEG, Big.HUGE, pick(), Level.HIGH);
+printf("%d %d %d\n", Color.GREEN + 1, Sign.ZERO - 1, abs(Sign.NEG));
 
 Pixel p;
 Color.BLUE -> p.c;
 [3]Color arr;
 Color.GREEN -> arr[1];
 @Color r = @arr[1];
-printf("%u %u %u\n", p.c, arr[1], r[0]);
+printf("%d %d %d\n", p.c, arr[1], r[0]);

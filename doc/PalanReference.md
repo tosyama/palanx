@@ -147,7 +147,7 @@ type Color enum {
 };
 
 Color c = Color.GREEN;
-uint32 n = c;           // an enum widens implicitly
+int32 n = c;            // an enum widens implicitly
 Color d = Color(n + 1); // an integer needs Name(x)
 ```
 
@@ -155,13 +155,13 @@ Color d = Color(n + 1); // an integer needs Name(x)
   or a `const`.
 - Enumerators are referenced as `Name.X`. A type alias of the enum works the same way
   (`type Shade = Color;` then `Shade.RED`).
-- An enum's base type is the integer type C uses for the same values: `uint32` when none is
-  negative, `int32` otherwise, and the 64-bit type of that signedness when a value does not fit in 32
-  bits. An enum is passed to and from C as its base type.
+- An enum's base type is the type C gives its enumerators: `int32` when every value fits, which
+  covers almost every enum. Otherwise it is `uint32` (no negative value, all fit), else `int64` or
+  `uint64`. An enum is passed to and from C as its base type.
 - An enum is its own type, like `bool`. It widens implicitly to its base type and to anything its
   base type widens to. An integer, a `bool`, or a different enum becomes an enum only through
   `Name(x)`; an integer literal is no exception (`Color c = 5;` is an error).
-- An operator computes an enum operand as its base type, so `Color.RED + 1` is a `uint32`.
+- An operator computes an enum operand as its base type, so `Color.RED + 1` is an `int32`.
   Storing the result back into a `Color` needs `Color(...)`.
 
 ### Implicit Widening

@@ -1,5 +1,6 @@
 type Color enum { RED, GREEN = 5, BLUE };
 type Sign enum { NEG = -1, ZERO };
+type Flags enum { TOP = 3000000000 };
 type Big enum { HUGE = 5000000000 };
 type Wide enum { LOW = -5000000000 };
 type C2 = Color;
@@ -7,5 +8,9 @@ type C2 = Color;
 func next(Color c) -> Color { return Color(c + 1) }
 
 Color c = C2.GREEN;
-uint64 u = c;
+int64 w = c;
 Color d = next(c);
+Sign s = Sign.NEG;
+Flags f = Flags.TOP;
+Big b = Big.HUGE;
+Wide l = Wide.LOW;

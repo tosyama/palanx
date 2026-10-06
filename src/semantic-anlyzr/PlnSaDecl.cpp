@@ -1104,11 +1104,12 @@ json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 		next = nextOverflows ? v : v + 1;
 	}
 
-	// The same base type GCC picks on x86-64, so an enum value passes to and
+	// C types an enumerator as int when it fits, and GCC widens past that the
+	// same way; the width always matches the C enum's, so values pass to and
 	// from C unchanged.
-	string base = minV < 0
-		? (minV >= INT32_MIN && maxV <= INT32_MAX ? "int32" : "int64")
-		: (maxV <= UINT32_MAX ? "uint32" : "uint64");
+	string base = minV >= INT32_MIN && maxV <= INT32_MAX ? "int32"
+		: minV >= 0 && maxV <= UINT32_MAX ? "uint32"
+		: minV < 0 ? "int64" : "uint64";
 	enumDefs_[name] = move(def);
 	typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", base}, {"enum", name}};
 	return json::array();

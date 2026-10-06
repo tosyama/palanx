@@ -887,13 +887,15 @@ Enum types
 ----------
 `type Name enum { ... }` (an `enum-def` node) is consumed by SA and does not appear in sa.json.
 An enum type is a `prim` of its base integer type with an `enum` key naming it, e.g.
-`{"type-kind":"prim","type-name":"uint32","enum":"Color"}`, and this is the only form it takes:
+`{"type-kind":"prim","type-name":"int32","enum":"Color"}`, and this is the only form it takes:
 SA registers the name in the same table as a type alias, so every place a type name resolves
 (variables, fields, arrays, pointers, parameters, returns, `type X = Name;`) yields this shape.
 Storage and codegen read only `type-name`; the `enum` key matters only to type checking.
 
-- Base type: the one GCC picks on x86-64. `uint32` if no value is negative and all fit, else
-  `int32` if all fit, else `uint64`/`int64`. Values are limited to the int64 range.
+- Base type: C's enumerator type. `int32` if every value fits, else `uint32` if none is negative
+  and all fit, else `int64`/`uint64` (GCC's widening). Its width always equals GCC's choice for
+  the enum type itself (which may differ in signedness, e.g. `unsigned int` for a non-negative
+  enum), so the ABI is unaffected. Values are limited to the int64 range.
 - An enumerator value is the previous one + 1 (0 first) or `= ` an integer literal / const.
 - `Name.X` (an AST `field-access` whose object is an `id` naming an enum type or an alias of
   one, not shadowed by a variable) becomes `{"expr-type":"lit-int","value":<decimal>,

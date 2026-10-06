@@ -2814,7 +2814,7 @@ TEST(sa_error, enum_from_literal)
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_389_enum_from_literal.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find(":3:1: error: Implicit conversion from 'uint32' to 'Color' is not allowed; write an explicit cast 'Color(...)'."), string::npos);
+	ASSERT_NE(sa.find(":3:1: error: Implicit conversion from 'int32' to 'Color' is not allowed; write an explicit cast 'Color(...)'."), string::npos);
 }
 
 TEST(sa_error, enum_from_int)
@@ -2924,7 +2924,7 @@ TEST(sa_error, enum_param_from_literal)
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_400_enum_param_from_literal.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find(":4:1: error: Implicit conversion from 'uint32' to 'Color' is not allowed; write an explicit cast 'Color(...)'."), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: Implicit conversion from 'int32' to 'Color' is not allowed; write an explicit cast 'Color(...)'."), string::npos);
 }
 
 TEST(sa_error, enum_value_out_of_range)

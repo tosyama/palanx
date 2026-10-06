@@ -4846,19 +4846,27 @@ TEST(sa, unsized_struct_arr_sig) {
 TEST(sa, enum_type) {
 	json jout = run_sa("../test/testdata/sa/222_enum.pa");
 	ASSERT_TRUE(jout.is_object());
-	json color = {{"type-kind","prim"},{"type-name","uint32"},{"enum","Color"}};
+	auto enumType = [](const char* base, const char* name) {
+		return json{{"type-kind","prim"},{"type-name",base},{"enum",name}};
+	};
+	json color = enumType("int32", "Color");
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts[0]["vars"][0]["var-type"], color);
 	ASSERT_EQ(stmts[0]["vars"][0]["init"],
-		(json{{"expr-type","lit-int"},{"value","5"},{"value-type",color},{"loc",{9,11,9,19}}}));
+		(json{{"expr-type","lit-int"},{"value","5"},{"value-type",color},{"loc",{10,11,10,19}}}));
 	const auto& widen = stmts[1]["vars"][0]["init"];
 	ASSERT_EQ(widen["expr-type"], "convert");
 	ASSERT_EQ(widen["from-type"], color);
+	// The base type is C's enumerator type: int32 whenever every value fits.
+	ASSERT_EQ(stmts[3]["vars"][0]["var-type"], enumType("int32", "Sign"));
+	ASSERT_EQ(stmts[4]["vars"][0]["var-type"], enumType("uint32", "Flags"));
+	ASSERT_EQ(stmts[5]["vars"][0]["var-type"], enumType("uint64", "Big"));
+	ASSERT_EQ(stmts[6]["vars"][0]["var-type"], enumType("int64", "Wide"));
 
 	const auto& next = jout["functions"][0];
 	ASSERT_EQ(next["parameters"][0]["var-type"], color);
 	ASSERT_EQ(next["ret-type"], color);
-	// Color(c + 1): the sum is uint32, and only the enum label is put back.
+	// Color(c + 1): the sum is int32, and only the enum label is put back.
 	json cast = next["body"][0]["values"][0];
 	ASSERT_EQ(cast["expr-type"], "add");
 	ASSERT_EQ(cast["value-type"], color);
