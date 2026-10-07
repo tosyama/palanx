@@ -1673,8 +1673,11 @@ TEST(gen_ast, tapple_assign) {
 	ASSERT_EQ(stmts[1]["value"]["expr-type"], "member-call");
 
 	// Only a call can be assigned, and only to storable targets.
-	for (int i = 2; i <= 5; i++)
-		ASSERT_EQ(stmts[i]["stmt-type"], "not-impl") << i;
+	for (int i = 2; i <= 5; i++) {
+		ASSERT_EQ(stmts[i]["stmt-type"], "expr") << i;
+		ASSERT_EQ(stmts[i]["body"]["expr-type"], "not-impl") << i;
+		ASSERT_EQ(stmts[i]["body"]["loc"], stmts[i]["loc"]) << i;
+	}
 }
 
 TEST(gen_ast, field_transfer) {
@@ -1752,7 +1755,9 @@ TEST(gen_ast, decl_variants) {
 	ASSERT_EQ(stmts[4]["vars"].size(), 1);
 	ASSERT_EQ(stmts[4]["vars"][0]["var-name"], "c");
 	ASSERT_EQ(stmts[5]["vars"].size(), 0);
-	ASSERT_EQ(stmts[6]["stmt-type"], "not-impl");
+	ASSERT_EQ(stmts[6]["stmt-type"], "expr");
+	ASSERT_EQ(stmts[6]["body"]["expr-type"], "not-impl");
+	ASSERT_EQ(stmts[6]["body"]["loc"], json::array({10, 1, 10, 12}));
 
 	// Definitions with an unsupported parameter form are dropped wherever they appear.
 	const auto& funcs = jout["ast"]["functions"];

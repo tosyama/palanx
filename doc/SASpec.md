@@ -161,7 +161,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   are inlined at each reference site (see Constant Declarations /
   Restrictions in PalanReference.md)
 - not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
-  the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise
+  the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise; a not-impl expression in
+  value position is rejected as `E_ExprNotImplemented`
 - var-type resolved on id expressions (see Expression model below)
 - assign and return statements are emitted as-is with SA-annotated expressions
 

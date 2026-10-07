@@ -47,10 +47,7 @@ inline json assignExprToStmt(const json& e)
 	string et = e["expr-type"];
 	json s;
 	if (et == "assign-expr") {
-		if (e["value"].value("expr-type", "") != "not-impl")
-			s = {{"stmt-type", "assign"}, {"name", e["name"]}, {"value", e["value"]}};
-		else
-			s = {{"stmt-type", "not-impl"}};
+		s = {{"stmt-type", "assign"}, {"name", e["name"]}, {"value", e["value"]}};
 	} else if (et == "arr-assign-expr") {
 		s = {{"stmt-type", "arr-assign"}, {"target", e["target"]}, {"value", e["value"]}};
 	} else if (et == "field-assign-expr") {

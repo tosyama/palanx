@@ -429,7 +429,7 @@ Statement model
 Expression model
 ----------------
 - expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit" "sizeof"
-- loc\* - Location Array (omitted for "not-impl" and "assign-expr")
+- loc\* - Location Array
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
@@ -510,10 +510,11 @@ Expression model
       or `not-impl` for anything else (a tuple grouping or a bare call — these are not
       addressable, so SA rejects them without needing to inspect their shape further)
     - mutable\* - `true` for `@!`, `false` for `@`
-  19. not-impl - Placeholder for a `store_loc` shape that carries no addressable location (a
-      parenthesized tuple or a bare function call reached via `@`/`@!`, or `field-access`'s
-      chain root when it isn't itself addressable). Carries no fields beyond `expr-type`; SA
-      rejects any expression of this shape.
+  19. not-impl - An expression the grammar parses but the compiler does not implement (e.g. a
+      tuple `(a, b)` used as a value, `sizeof` of a `[#n]` type), or a `store_loc` shape that
+      carries no addressable location (a parenthesized tuple or a bare function call reached via
+      `@`/`@!`, or `field-access`'s chain root when it isn't itself addressable). Carries no
+      fields beyond `expr-type` and `loc`; SA rejects any expression of this shape.
   20. bitand - Binary bitwise AND (`a & b`; integer operands only)
     - left\*  - Left operand expression model
     - right\* - Right operand expression model

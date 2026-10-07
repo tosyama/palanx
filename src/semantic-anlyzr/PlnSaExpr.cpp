@@ -358,6 +358,10 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
 		exit(1);
 	}
+	if (expr_type == "not-impl") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExprNotImplemented) << endl;
+		exit(1);
+	}
 
 	if (expr_type == "sizeof") {
 		requireKnownTypeNames(expr, expr["type"]);

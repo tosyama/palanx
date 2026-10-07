@@ -376,38 +376,23 @@ expr_stmt: import
 	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
 	| expression
 	{
-		string et = $1.value("expr-type", "");
 		if (isAssignExpr($1)) {
 			vector<json> stmts = lowerAssignChain($1);
 			if (stmts.size() == 1)
 				$$ = move(stmts[0]);
 			else
 				$$ = {{"stmt-seq", move(stmts)}};
-		} else if (et != "not-impl") {
-			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
-			LOC($$, @$);
 		} else {
-			$$ = {{"stmt-type", "not-impl"}};
+			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
 			LOC($$, @$);
 		}
 	}
 	| return
 	{
 		$$ = {{"stmt-type", "return"}};
-		if ($1.contains("values")) {
-			bool all_ok = true;
-			for (auto& v : $1["values"])
-				if (v.value("expr-type", "") == "not-impl") { all_ok = false; break; }
-			if (all_ok) {
-				$$["values"] = move($1["values"]);
-				LOC($$, @$);
-			} else {
-				$$ = {{"stmt-type", "not-impl"}};
-				LOC($$, @$);
-			}
-		} else {
-			LOC($$, @$);
-		}
+		if ($1.contains("values"))
+			$$["values"] = move($1["values"]);
+		LOC($$, @$);
 	}
 	| term DBL_PLUS
 	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
@@ -854,9 +839,11 @@ expression: term
 				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
+				LOC($$, @$);
 			}
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
+			LOC($$, @$);
 		}
 	}
 	| expression DBL_ARROW store_loc
@@ -876,10 +863,11 @@ expression: term
 			LOC($$, @$);
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
+			LOC($$, @$);
 		}
 	}
 	| noname_func
-	{ $$ = {{"expr-type", "not-impl"}}; }
+	{ $$ = {{"expr-type", "not-impl"}}; LOC($$, @$); }
 	;
 
 term: INT
@@ -901,6 +889,7 @@ term: INT
 			LOC($$, @$);
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
+			LOC($$, @$);
 		}
 	}
 	| ID
@@ -909,10 +898,12 @@ term: INT
 	{
 		// Single-expression grouping (e.g. -(2+3)): pass the inner expression through.
 		// Multi-expression tapple (e.g. (a, b)) is only a multiple-assignment target.
-		if ($2.count("not-impl") || $2.count("tapple-items"))
+		if ($2.count("not-impl") || $2.count("tapple-items")) {
 			$$ = {{"expr-type", "not-impl"}};
-		else
+			LOC($$, @$);
+		} else {
 			$$ = $2;
+		}
 	}
 	| term '.' ID
 	{ $$ = {{"expr-type", "field-access"}, {"object", move($1)}, {"field", move($3)}}; LOC($$, @$); }
@@ -952,6 +943,7 @@ func_call: ID '(' arguments ')'
 				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
+				LOC($$, @$);
 			}
 		} else {
 			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1050,14 +1042,15 @@ store_loc
 			}
 			if (all_ok) $$ = {{"kind", "tapple"}, {"targets", move($2["tapple-items"])}};
 		}
+		LOC($$, @$);
 	}
 	// Not func_call: its member-call form starts from an arbitrary expression,
 	// which let every `-> x[i]` also parse as the object of a pending `.f()`
 	// and split the GLR parse exponentially along an assignment chain.
 	| ID '(' arguments ')'
-	{ $$ = {{"kind", "not-impl"}}; }
+	{ $$ = {{"kind", "not-impl"}}; LOC($$, @$); }
 	| store_loc '.' ID '(' arguments ')'
-	{ $$ = {{"kind", "not-impl"}}; }
+	{ $$ = {{"kind", "not-impl"}}; LOC($$, @$); }
 	;
 
 func_def: KW_FUNC ID '(' paramaters ')' return_def block_obj

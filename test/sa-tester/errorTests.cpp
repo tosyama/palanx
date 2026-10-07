@@ -2991,3 +2991,23 @@ TEST(sa_error, sizeof)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, expr_not_implemented)
+{
+	const pair<string, string> cases[] = {
+		{"error_412_expr_not_impl_var_init.pa", ":1:11: error: this expression is not supported"},
+		{"error_413_expr_not_impl_sizeof.pa", ":1:12: error: this expression is not supported"},
+		{"error_414_expr_not_impl_nested_arg.pa", ":2:16: error: this expression is not supported"},
+		{"error_415_expr_not_impl_return.pa", ":3:9: error: this expression is not supported"},
+		{"error_416_expr_not_impl_assign.pa", ":2:1: error: this expression is not supported"},
+		{"error_417_expr_not_impl_stmt.pa", ":1:1: error: this expression is not supported"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

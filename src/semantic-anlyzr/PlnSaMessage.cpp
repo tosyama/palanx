@@ -351,6 +351,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_StmtNotImplemented:
 			return "this statement is not supported in this version.";
 
+		case E_ExprNotImplemented:
+			return "this expression is not supported in this version.";
+
 		case E_IntLiteralOutOfRange:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");

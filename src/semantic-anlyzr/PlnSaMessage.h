@@ -86,6 +86,7 @@ enum PlnSaMessageCode {
 	E_SyscallUnsupportedParamType,	// arg1: syscall name, arg2: unsupported type display name
 	E_VarTypeInferenceNotImpl,	// arg1: variable name
 	E_StmtNotImplemented,
+	E_ExprNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
 	E_ArrLitContext,
 	E_ArrLitCountMismatch,	// arg1: variable name, arg2: declared size, arg3: literal element count
