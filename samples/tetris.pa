@@ -61,6 +61,8 @@ int32 mx, my;
 int32 tick = 0;
 int32 boost_tick = 0;
 int32 lowest_del_y = 0;
+int32 total_deleted_num = 0;
+int32 level = 1;
 
 while true {
 	int32 ch = getch();
@@ -105,6 +107,7 @@ while true {
 				clearLines (@!field) -> (deleted_num, lowest_del_y);
 				if deleted_num > 0 {
 					score + deleted_num * deleted_num * 100 -> score;
+					total_deleted_num + deleted_num -> total_deleted_num;
 					true -> deleting_line;
 				} else {
 					true -> new_mino;
@@ -117,6 +120,7 @@ while true {
 	} else {	// deleting line
 		if tick > 50 { // wait for a while to show the deleted line
 			pressDown(@!field, lowest_del_y);
+			total_deleted_num / 10 + 1 -> level;
 			true -> new_mino;
 			false -> deleting_line;
 			0 -> tick;
@@ -126,13 +130,16 @@ while true {
 	draw(fldwin, nextwin, @field,
 			@mino, mx, my, mino_no,
 			@minos[next_mino_no], next_mino_no,
-			score, deleting_line || new_mino);
+			score, level, deleting_line || new_mino);
 
 	if ch == 'q' { break }
+
+	int32 speed = 20000 - (level - 1) * 1000;
+	if speed < 500 { 500 -> speed }
 	if (boost_tick > 0) {
-		usleep(500);
+		usleep(speed / 20);
 	} else {
-		usleep(20000);
+		usleep(speed);
 	}
 
 	tick + 1 -> tick;
@@ -170,11 +177,11 @@ func fits(@[FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my)
 	while i < 4 {
 		int32 x = mino[i].x + mx;
 		int32 y = mino[i].y + my;
-		if x < 0 || x >= FLD_W || y >= FLD_H { return 0; }
-		if y >= 0 && field[y][x] != 0 { return 0; }
+		if x < 0 || x >= FLD_W || y >= FLD_H { return false }
+		if y >= 0 && field[y][x] != 0 { return false }
 		i + 1 -> i;
 	}
-	return 1;
+	return true;
 }
 
 func placeMino(@![FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my, int32 color)
@@ -191,7 +198,7 @@ func placeMino(@![FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my,
 func draw(@!WINDOW win, @!WINDOW nextwin, @[FLD_H][FLD_W]int32 field,
 		@[4]$Point mino, int32 mx, int32 my, int32 mino_no,
 		@[4]$Point next_mino, int32 next_mino_no,
-		int32 score, bool placed)
+		int32 score, int32 level, bool placed)
 {
 	werase(win);
 	box(win, 0, 0);
@@ -203,10 +210,11 @@ func draw(@!WINDOW win, @!WINDOW nextwin, @[FLD_H][FLD_W]int32 field,
 
 	// draw score and controls
 	attron(A_BOLD);
-	mvprintw(10, 24, "Score: %d", score);
+	mvprintw(6, 24, "Level: %d", level);
+	mvprintw(7, 24, "Score: %d", score);
 	attroff(A_BOLD);
-	mvprintw(12, 24, "<-/->: move  space: rotate");
-	mvprintw(13, 24, "down: fall  up: drop  q: quit");
+	mvprintw(9, 24, "<-/->: move  space: rotate");
+	mvprintw(10, 24, "down: fall  up: drop  q: quit");
 
 	refresh();
 	wrefresh(win);
