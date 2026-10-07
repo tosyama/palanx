@@ -125,6 +125,7 @@ enum PlnSaMessageCode {
 	E_EnumValueOutOfRange,	// arg1: enumerator name, arg2: value
 	E_DuplicateTypeName,	// arg1: type name
 	E_CastArgCount,	// arg1: target type name
+	E_SizeofArrSizeNotConst,
 };
 
 class PlnSaMessage

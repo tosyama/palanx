@@ -4913,3 +4913,18 @@ TEST(sa, cross_cinclude_typedef) {
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["array"]["value-type"]["base-type"], constU64);
 	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value-type"], u64);   // ((my_size)8) macro
 }
+
+TEST(sa, sizeof) {
+	json jout = run_sa("../test/testdata/sa/225_sizeof.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const char* sizes[] = {"2", "16", "4", "12", "8", "12", "12", "24", "36", "32", "16", "12", "12"};
+	for (size_t i = 0; i < size(sizes); i++) {
+		const auto& init = stmts[i]["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "lit-uint") << i;
+		ASSERT_EQ(init["value"], sizes[i]) << i;
+	}
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value-type"]["type-name"], "uint64");
+	ASSERT_EQ(stmts[12]["vars"][0]["init"]["value-type"]["type-name"], "uint32");
+	ASSERT_EQ(stmts[13]["vars"][0]["var-type"]["arr-size"], 16);
+}

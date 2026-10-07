@@ -515,6 +515,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cast '" + arg1 + "(...)' takes exactly one argument.";
 
+		case E_SizeofArrSizeNotConst:
+			return "every array size in the type of 'sizeof' must be a compile-time constant.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

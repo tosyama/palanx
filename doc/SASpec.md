@@ -401,6 +401,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     declaration, not by where the expression appears
   - lit-uint: adopts the expected uint type when in a uint-typed context (e.g. `uint32 x = 1u;` → uint32);
     defaults to uint64 when no expected uint type is available
+  - sizeof: replaced by a `lit-uint` of the type's byte size, typed as above; it never reaches
+    sa.json. A struct is its C ABI layout size (incomplete → `E_IncompleteStructType`), an enum its
+    base type's, a pointer 8. An array is `n * element size`, where a `$` element is stored in
+    place and a struct or row element without `$` is an 8-byte pointer slot; every size must be
+    a compile-time constant (`E_SizeofArrSizeNotConst`)
   - Range check (lit-int without its own `value-type`, and lit-uint): once the type is decided, a
     value outside that integer type's range (including a negative value adopting an unsigned type)
     is rejected with `E_IntLiteralOutOfRange`. A literal operand of a binary operator is typed only

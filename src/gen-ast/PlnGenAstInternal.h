@@ -110,6 +110,17 @@ inline json voidTypeExpr()
 	return json{{"type-kind","prim"},{"type-name","void"}};
 }
 
+// Whether a type_expr result has no not-impl part ('T<...>') and no array
+// level other than a plain '[n]'/'[]' one ('[#n]'/'[+n]' are not implemented).
+inline bool isImplementedTypeExpr(const json& t)
+{
+	if (t.contains("not-impl"))
+		return false;
+	if (t.value("type-kind", "") == "arr" && t.value("specifier", "") != "raw")
+		return false;
+	return !t.contains("base-type") || isImplementedTypeExpr(t["base-type"]);
+}
+
 // Whether a type_expr result is one gen-ast currently knows how to carry as
 // a declared variable's type (a bare, uninitialized var_declaration). Shared
 // by var_declaration and return_def (ARROW type_expr) so a bare-return-type

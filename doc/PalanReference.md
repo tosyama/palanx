@@ -261,6 +261,7 @@ and is currently a compile error. It is not an assignment — assignment is writ
 | Function call | `name(args)` | `add(3, 4)` |
 | Explicit cast | `type(expr)` | `int32(x)`, `Color(n)` |
 | Enumerator | `Name.X` | `Color.RED` |
+| Type size | `sizeof(type)` | `sizeof(Vec3f)` |
 | Logical AND | `expr && expr` | `a && b` |
 | Logical OR | `expr \|\| expr` | `a \|\| b` |
 | Logical NOT | `!expr` | `!x` |
@@ -300,6 +301,19 @@ A target followed by another `->` is read back as the next value, so its index i
 twice (`v -> arr[f()] -> x` calls `f` twice). Targets are stored left to right: in
 `n -> i -> arr[i]`, `arr[i]` uses the `i` just stored. An assignment used inside any other
 expression is not supported.
+
+`sizeof(type)` is the byte size of a type, as C's `sizeof` gives it, and is typed like an
+unsigned integer literal (`uint64` unless the context is another unsigned type). Its operand is
+a type, not an expression. A struct, including a `cinclude`d one, has its C layout size; an
+incomplete struct such as `FILE` is an error. An array is the total size of its elements, and
+every size must be a compile-time constant. Only a `$` element is stored in the array itself:
+a struct or row element without `$` is a pointer, so `sizeof([3]Vec3f)` is `3 * 8` while
+`sizeof([3]$Vec3f)` is `3 * sizeof(Vec3f)`.
+
+```palan
+jpeg_compress_struct cinfo;
+jpeg_CreateCompress(@!cinfo, JPEG_LIB_VERSION, sizeof(jpeg_compress_struct));
+```
 
 ---
 

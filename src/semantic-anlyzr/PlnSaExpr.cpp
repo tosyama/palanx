@@ -359,6 +359,13 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		exit(1);
 	}
 
+	if (expr_type == "sizeof") {
+		requireKnownTypeNames(expr, expr["type"]);
+		json lit = {{"expr-type", "lit-uint"}, {"value", to_string(typeByteSize(expr, expr["type"]))}};
+		if (expr.contains("loc")) lit["loc"] = expr["loc"];
+		return sa_expression(lit, expectedType);
+	}
+
 	if (expr_type == "lit-int") {
 		// A lit-int already carrying a value-type is a macro constant folded
 		// in by gen-ast (a plain source literal never has one) -- its type
@@ -915,6 +922,44 @@ json PlnSemanticAnalyzer::enumTypeNamed(const string& name) const
 {
 	json t = resolveTypeAlias({{"type-kind", "prim"}, {"type-name", name}});
 	return t.contains("enum") ? t : json();
+}
+
+// C's sizeof of the type as Palan lays it out: an array holds its elements
+// inline, but only a '$' element is stored in place -- a struct or row
+// element without '$' is a pointer slot.
+int64_t PlnSemanticAnalyzer::typeByteSize(const json& locNode, const json& type)
+{
+	json t = resolveTypeAlias(type);
+	string tk = t.value("type-kind", "");
+	if (tk == "pntr")
+		return 8;
+	if (tk == "embed") {
+		json base = resolveTypeAlias(t["base-type"]);
+		if (base.value("type-kind", "") == "prim" && !isStructType(base)) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, base.value("type-name", "")) << endl;
+			exit(1);
+		}
+		if (!isStructType(base)) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedElemNotStruct, typeDisplayName(base)) << endl;
+			exit(1);
+		}
+		return typeByteSize(locNode, base);
+	}
+	if (tk == "arr") {
+		int64_t n = t["size-expr"].is_null() ? -1 : constArrSize(sa_arr_size_expr(locNode, t["size-expr"]));
+		if (n < 0) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_SizeofArrSizeNotConst) << endl;
+			exit(1);
+		}
+		json elem = resolveTypeAlias(t["base-type"]);
+		bool inPlace = t.value("embedded", false)
+		            || (elem.value("type-kind", "") == "prim" && !isStructType(elem));
+		return n * (inPlace ? typeByteSize(locNode, elem) : 8);
+	}
+	string name = t["type-name"].get<string>();
+	if (structDefs_.count(name))
+		return requireCompleteStruct(name, locNode).totalSize;
+	return elemSizeBytes(name);
 }
 
 // `Name.X` where Name is an enum type (or an alias of one) not shadowed by a

@@ -1827,3 +1827,19 @@ TEST(gen_ast, enum_def) {
 	ASSERT_EQ(init["object"]["name"], "Color");
 	ASSERT_EQ(init["field"], "GREEN");
 }
+
+TEST(gen_ast, sizeof) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/129_sizeof.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	const auto& a = stmts[0]["vars"][0]["init"];
+	ASSERT_EQ(a["expr-type"], "sizeof");
+	ASSERT_EQ(a["type"]["type-name"], "int32");
+	const auto& b = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(b["type"]["type-kind"], "arr");
+	ASSERT_EQ(b["type"]["embedded"], true);
+	ASSERT_EQ(b["type"]["base-type"]["type-name"], "Vec3f");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["expr-type"], "not-impl");
+}

@@ -49,6 +49,7 @@ enum {
 	KW_BREAK = PlnParser::token::KW_BREAK,
 	KW_CONTINUE = PlnParser::token::KW_CONTINUE,
 	KW_SYSCALL = PlnParser::token::KW_SYSCALL,
+	KW_SIZEOF = PlnParser::token::KW_SIZEOF,
 	KW_TRUE = PlnParser::token::KW_TRUE,
 	KW_FALSE = PlnParser::token::KW_FALSE,
 	OPE_LE =	PlnParser::token::OPE_LE,
@@ -149,6 +150,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>"break" { return KW_BREAK; }
 <*>"continue" { return KW_CONTINUE; }
 <*>"syscall" { return KW_SYSCALL; }
+<*>"sizeof" { return KW_SIZEOF; }
 <*>"true" { return KW_TRUE; }
 <*>"false" { return KW_FALSE; }
 <*>{ID} {

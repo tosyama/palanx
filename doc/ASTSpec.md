@@ -428,7 +428,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit" "sizeof"
 - loc\* - Location Array (omitted for "not-impl" and "assign-expr")
   1. lit-str - String literal
     - value\* - String value
@@ -534,6 +534,9 @@ Expression model
       - name\*  - Name string
       - value\* - Value expression model
       - loc\*   - Location Array of `name: value`
+  26. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
+      template argument is emitted as `not-impl` instead
+    - type\* - Type model
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

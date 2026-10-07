@@ -2971,3 +2971,23 @@ TEST(sa_error, enum_field_from_int)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":4:1: error: Implicit conversion from 'int32' to 'Color' is not allowed"), string::npos);
 }
+
+TEST(sa_error, sizeof)
+{
+	const pair<string, string> cases[] = {
+		{"error_406_sizeof_unknown_type.pa", ":1:12: error: unknown struct type 'Foo'."},
+		{"error_407_sizeof_incomplete_struct.pa", ":2:12: error: struct '_IO_FILE' has no known layout"},
+		{"error_408_sizeof_unsized_arr.pa", ":1:12: error: every array size in the type of 'sizeof' must be a compile-time constant."},
+		{"error_409_sizeof_arr_size_not_const.pa", ":2:12: error: every array size in the type of 'sizeof' must be a compile-time constant."},
+		{"error_410_sizeof_embed_prim.pa", ":1:12: error: unknown struct type 'int32'."},
+		{"error_411_sizeof_embed_ptr.pa", ":1:12: error: '$' applies only to a struct element or a '$[m]' row, not '@int32'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

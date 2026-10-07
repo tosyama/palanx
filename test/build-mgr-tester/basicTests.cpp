@@ -2408,3 +2408,9 @@ TEST(build_mgr, cross_cinclude_typedef) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/260_cross_cinclude_typedef.pa");
 	ASSERT_EQ(output, "ok\n5\n");
 }
+
+TEST(build_mgr, sizeof) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/261_sizeof.pa");
+	ASSERT_EQ(output, "56 32 16\n");
+}
