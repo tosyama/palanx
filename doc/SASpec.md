@@ -845,7 +845,9 @@ a named `strct`/`union`→`struct`) and then check every type against `unreprese
   multi-declarator/derived-declarator typedef of such a body, not every anonymous struct),
   and `user` (an identifier c2ast could not resolve to a known type — including a typedef
   that bottoms out in an anonymous union/function-pointer body, or an anonymous struct
-  body via one of those two unsynthesized typedef shapes).
+  body via one of those two unsynthesized typedef shapes). A `user` naming a typedef an
+  earlier cinclude exported in `ast.typedefs` never gets here: `resolveCTypeRefs` replaces it
+  with that typedef's type when the cinclude is ingested, as it does for an enum reference.
 - A `struct` type-kind carrying a `type-name` is always representable here, whether or not it
   is complete — an incomplete struct's layout is enforced later, only where a layout is actually
   needed (see "Incomplete struct types" below), not at signature-admission time. This applies to

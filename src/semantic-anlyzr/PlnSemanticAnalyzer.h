@@ -91,6 +91,9 @@ class PlnSemanticAnalyzer {
 	vector<set<string>>    structDefNameScopes_;
 	// Registered type aliases (name -> fully-resolved base type json)
 	map<string, json>      typeAliases_;
+	// cinclude'd C typedefs (name -> var-type, its own references resolved), for
+	// resolving a later header's "user" reference to one of them.
+	map<string, json>      cTypedefs_;
 	// Registered enum types: enumerator values, and the declaration's loc so
 	// the step-2 revisit of a pre-scanned enum-def is told apart from a
 	// redefinition. A cinclude'd C enum has a null loc.
@@ -189,7 +192,7 @@ class PlnSemanticAnalyzer {
 	json sa_enum_def(const json& stmt);           // consume enum-def, register in enumDefs_/typeAliases_
 	void registerEnum(const string& name, map<string, int64_t> values, const json& loc);
 	void registerCEnum(const json& cincludeStmt, const json& e);
-	void resolveCEnumRefs(json& node) const;      // C enum references -> the enum's SA type
+	void resolveCTypeRefs(json& node) const;      // C enum/earlier-cinclude typedef references -> SA type
 	json enumTypeNamed(const string& name) const; // enum value-type for a type name, or null
 	json resolveEnumerator(const json& expr);     // `Name.X` as a lit-int, or null for a field access
 	void recordAllocShape(const string& structName);

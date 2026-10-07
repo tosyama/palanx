@@ -4893,3 +4893,23 @@ TEST(sa, c_enum) {
 	ASSERT_EQ(stmts[8]["vars"][0]["init"]["value-type"], enumType("Color"));
 	ASSERT_EQ(stmts[9]["vars"][0]["init"]["value-type"], enumType("Color"));
 }
+
+TEST(sa, cross_cinclude_typedef) {
+	json jout = run_sa("../test/testdata/sa/224_cross_cinclude_typedef.pa");
+	ASSERT_TRUE(jout.is_object());
+	json u64 = {{"type-kind","prim"},{"type-name","uint64"}};
+	json kind = {{"type-kind","prim"},{"type-name","int32"},{"enum","Kind"}};
+	const auto& stmts = jout["statements"];
+	const auto& call = stmts[2]["vars"][0]["init"];   // box_len(@r, b.n, Kind.K_B)
+	ASSERT_EQ(call["value-type"], u64);
+	ASSERT_EQ(call["args"][0]["value-type"]["base-type"]["type-name"], "Rec");
+	ASSERT_EQ(call["args"][1]["value-type"], u64);
+	ASSERT_EQ(call["args"][2]["value-type"], kind);
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"], u64);    // count_t: a typedef of my_size
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["offset"], 16);
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"], kind);
+	json constU64 = u64;
+	constU64["const"] = true;
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["array"]["value-type"]["base-type"], constU64);
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value-type"], u64);   // ((my_size)8) macro
+}

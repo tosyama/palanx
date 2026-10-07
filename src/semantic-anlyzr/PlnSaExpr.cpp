@@ -365,7 +365,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		// was fixed by the C declaration, not by this expression's context,
 		// so expectedType must not override it.
 		if (expr.contains("value-type")) {
-			resolveCEnumRefs(sa_expr["value-type"]);
+			resolveCTypeRefs(sa_expr["value-type"]);
 		} else {
 			if (expectedType && expectedType->kind == PlnType::Kind::Prim)
 				sa_expr["value-type"] = registry_.toJson(expectedType);

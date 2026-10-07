@@ -2402,3 +2402,9 @@ TEST(build_mgr, c_enum) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/259_c_enum.pa");
 	ASSERT_EQ(output, "2 1 x 100\n-1\n");
 }
+
+TEST(build_mgr, cross_cinclude_typedef) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/260_cross_cinclude_typedef.pa");
+	ASSERT_EQ(output, "ok\n5\n");
+}

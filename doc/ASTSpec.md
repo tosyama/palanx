@@ -163,7 +163,7 @@ gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals`
 Typedef definition model
 -------------------------
 Captured from every `typedef` declaration in a `cinclude`d C header whose resolved
-underlying type is `prim`, or a `strct`/`union`/`enum` that carries a `type-name` (including a
+underlying type is `prim`, `user`, or a `strct`/`union`/`enum` that carries a `type-name` (including a
 name synthesized for a single, non-derived typedef of an otherwise tagless struct/union/enum
 body — see Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef void
 *timer_t;`) is deliberately not captured here — see the `typedef-name` Note below.
@@ -307,8 +307,11 @@ Variable type
      or a previously-registered typedef — including a typedef that bottoms out in a
      function-pointer body, or an anonymous struct/union body via a
      multi-declarator or derived-declarator typedef (see type-kind "strct" above for the one
-     struct/union-body shape c2ast does register), none of which c2ast registers.
-     Unrepresentable in SA this version (see SASpec.md's C-origin signature admission).
+     struct/union-body shape c2ast does register), none of which c2ast registers. Each
+     cinclude is translated separately, so it is also a typedef from an earlier cinclude
+     (`size_t` in a header that relies on `stdio.h` being included first); SA replaces such a
+     reference with that typedef's type at ingestion. Otherwise unrepresentable in SA this
+     version (see SASpec.md's C-origin signature admission).
     - type-name\* - The unresolved identifier string
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).

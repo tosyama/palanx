@@ -1020,7 +1020,7 @@ void PlnSemanticAnalyzer::registerCStruct(const json& s)
 	json fields = json::array();
 	for (auto& f : s["fields"]) {
 		json vt = f["var-type"];
-		resolveCEnumRefs(vt);
+		resolveCTypeRefs(vt);
 		vt = cFieldVarType(vt);
 		if (!isSupportedCFieldType(vt, structDefs_, name)) {
 			// Register the tag as an incomplete struct rather than not at all: the
@@ -1144,15 +1144,26 @@ void PlnSemanticAnalyzer::registerCEnum(const json& cincludeStmt, const json& e)
 	registerEnum(name, move(values), json());
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// An unregistered one (c2ast couldn't compute its values) stays "enum",
-// reported as unrepresentable where it is used.
-void PlnSemanticAnalyzer::resolveCEnumRefs(json& node) const
+// Each cinclude is a separate c2ast run, so a header relying on an earlier
+// one's typedef (jpeglib.h on stdio.h's size_t) gets "user" for it; that is
+// replaced here by what c2ast would have emitted had both been one
+// translation unit. An unregistered enum (c2ast couldn't compute its values)
+// or unknown "user" name stays as is, reported as unrepresentable where used.
+void PlnSemanticAnalyzer::resolveCTypeRefs(json& node) const
 {
 	if (node.is_array()) {
-		for (auto& e : node) resolveCEnumRefs(e);
+		for (auto& e : node) resolveCTypeRefs(e);
 		return;
 	}
 	if (!node.is_object()) return;
+	if (node.value("type-kind", "") == "user" && node.contains("type-name")) {
+		auto it = cTypedefs_.find(node["type-name"].get<string>());
+		if (it == cTypedefs_.end()) return;
+		bool isConst = node.value("const", false);
+		node = it->second;
+		if (isConst) node["const"] = true;
+		return;
+	}
 	if (node.value("type-kind", "") == "enum" && node.contains("type-name")) {
 		json t = enumTypeNamed(node["type-name"].get<string>());
 		if (t.is_null()) return;
@@ -1160,7 +1171,7 @@ void PlnSemanticAnalyzer::resolveCEnumRefs(json& node) const
 		node = move(t);
 		return;
 	}
-	for (auto& [key, val] : node.items()) resolveCEnumRefs(val);
+	for (auto& [key, val] : node.items()) resolveCTypeRefs(val);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const

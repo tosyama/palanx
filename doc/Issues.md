@@ -179,3 +179,9 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 27. `cinclude` Processing Time
 
 **Summary:** Now that gen-ast parses in linear time, `cinclude` dominates its run time. In `samples/tetris.pa` (about 1.45s in gen-ast, Debug build), the four `cinclude`s of `ncurses.h`, `unistd.h`, `stdlib.h` and `time.h` alone take about 1.35s: about 1.0s in the `palan-c2ast` child processes (`ncurses.h` about 0.6s) and the rest in gen-ast ingesting their output. Speeding this up needs profiling c2ast's preprocessing and parsing of system headers, or caching translated headers between builds.
+
+---
+
+## 28. A `cinclude`d Header Cannot See Earlier `cinclude`s' Macros
+
+**Summary:** Each `cinclude` is translated by its own palan-c2ast run, so a header written to follow another header in the same C translation unit does not see that header's macros: an `#ifdef`/`#if` on a macro the earlier header defines takes the other branch, and a macro it uses is not expanded. Typedefs are resolved across `cinclude`s by SA, but macros act during preprocessing, before SA. Supporting this needs a way to pass the macros in effect at the `cinclude` point (for example the earlier headers, or their resulting macro table) to palan-c2ast.

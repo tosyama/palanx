@@ -1516,3 +1516,14 @@ TEST(c2ast, enum_capture) {
     ASSERT_EQ(anonA, 1);
     ASSERT_EQ(find(constants, "UNKNOWN_M"), nullptr);
 }
+
+TEST(c2ast, undeclared_typedef) {
+    // The undeclared name may be an earlier cinclude's typedef, which SA resolves.
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/041_undeclared_typedef.h");
+    json ast = json::parse(output);
+    ASSERT_EQ(ast["ast"]["typedefs"], json::parse(R"([
+        {"name":"X","var-type":{"type-kind":"user","type-name":"undeclared_t"}}])"));
+    ASSERT_EQ(ast["ast"]["functions"][0]["parameters"][0]["var-type"], json::parse(R"(
+        {"type-kind":"user","type-name":"undeclared_t","typedef-name":"X"})"));
+}

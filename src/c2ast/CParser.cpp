@@ -952,10 +952,9 @@ void CParser::emitDeclarator(json &ast, json &decl,
 			// indistinguishable here.
 			registerTypedef(decl["name"].get<string>(), vt);
 		} else if (tk == "user") {
-			auto it = typedefs_.find(vt["type-name"].get<string>());
-			if (it != typedefs_.end()) {
-				registerTypedef(decl["name"].get<string>(), it->second);
-			}
+			// An unresolved name may be an earlier cinclude's typedef, which SA
+			// resolves; registering keeps this typedef's references pointing at it.
+			registerTypedef(decl["name"].get<string>(), vt);
 		}
 		// Remaining anonymous strct/union/func underlying types -- a
 		// multi/derived-declarator anonymous struct/union body, or a name
@@ -1824,7 +1823,7 @@ int CParser::parse(json &ast)
 			// one would force a decision about which side of the @/@! mutability
 			// split a bare pointer alias falls on.
 			string tk = vt.value("type-kind", "");
-			if (tk == "prim" || ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")))
+			if (tk == "prim" || tk == "user" || ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")))
 				typedefs.push_back({{"name", name}, {"var-type", vt}});
 		}
 		if (!typedefs.empty())

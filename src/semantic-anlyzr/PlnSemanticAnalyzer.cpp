@@ -829,16 +829,20 @@ void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 	// registerTypedefAliasInType's per-reference-site calls wouldn't reach.
 	if (stmt.contains("typedefs"))
 		for (auto& td : stmt["typedefs"]) {
-			const json& vt = td["var-type"];
+			json vt = td["var-type"];
+			resolveCTypeRefs(vt);
+			// Still "user"/"enum": its underlying type is unknown here too, so
+			// there is nothing to alias. Keeping such entries out of cTypedefs_
+			// also means a substitution never yields another one to resolve.
+			string tk = vt.value("type-kind", "");
+			if (tk == "user" || tk == "enum") continue;
+			string name = td["name"].get<string>();
+			cTypedefs_[name] = vt;
 			// LCOV_EXCL_EXCEPTION_BR_START
-			if (vt.value("type-kind", "") == "enum") {
-				json enumType = enumTypeNamed(vt["type-name"].get<string>());
-				if (!enumType.is_null())
-					registerTypeAliasChecked(td["name"].get<string>(), enumType);
-			} else {
-				registerTypeAliasChecked(td["name"].get<string>(),
-					{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
-			}
+			if (vt.contains("enum"))
+				registerTypeAliasChecked(name, vt);
+			else
+				registerTypeAliasChecked(name, {{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -864,7 +868,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		for (auto& g : stmt["globals"]) {
 			json entry = g;
 			registerTypedefAliasInType(entry["var-type"]);
-			resolveCEnumRefs(entry["var-type"]);
+			resolveCTypeRefs(entry["var-type"]);
 			normalizeCGlobal(entry);
 			registerCGlobal(entry["name"].get<string>(), entry);
 		}
@@ -877,7 +881,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 				string fname = f["name"].get<string>();
 				json entry = f;
 				registerCFuncTypedefAliases(entry);
-				resolveCEnumRefs(entry);
+				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				entry["_c-func"] = true;
 				currentScope[alias][fname] = entry;
@@ -886,7 +890,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			for (auto& f : stmt["functions"]) {
 				json entry = f;
 				registerCFuncTypedefAliases(entry);
-				resolveCEnumRefs(entry);
+				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				registerCFunc(entry["name"].get<string>(), entry);
 			}

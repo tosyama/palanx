@@ -476,6 +476,10 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 - Typedefs that bottom out in a union are usable the same way as struct typedefs (see
   [Union Types](#union-types) below). A typedef of an enum is another name for it (see
   [C Enum Types](#c-enum-types) below).
+- A header may use a typedef from a header cincluded before it, as in C where both are included
+  into one translation unit: `cinclude <stdio.h>; cinclude <jpeglib.h>;` lets `jpeglib.h`'s
+  declarations use `size_t` and `FILE`. Typedefs that bottom out in a pointer type are not carried
+  over this way, and neither are macros (see `doc/Issues.md`).
 - If multiple cincluded headers introduce the same typedef name resolving to the *same* underlying
   type, the first registration silently wins. If they resolve to *different* underlying types, this
   is a compile error. Because typedef registration is no longer gated on being referenced by some

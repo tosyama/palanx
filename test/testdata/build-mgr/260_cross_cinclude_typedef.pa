@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+cinclude "260_cross_cinclude_typedef.h";
+Span sp;
+strlen("hello") -> sp.len;
+fputs("ok\n", stdout);
+printf("%lu\n", sp.len);
