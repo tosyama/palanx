@@ -789,6 +789,25 @@ Notes:
 - Variadic arguments undergo caller promotion: int8/int16 → int32, uint8/uint16 → uint32,
   bool → int32, an enum → its base type.
 
+### Method-form calls
+
+An AST `member-call` `aa.f(args)` is either a module-alias call or a method-form call.
+`normalizeMethodCall` resolves it where SA takes it in (an expression, or the value of a
+multiple-return declaration/assignment):
+
+- If `object` is an `id` that is neither a variable nor a C global, it is a module-alias call
+  `L.f(args)`, resolved through the alias as before (an unknown name is E_UnknownAlias). A
+  variable therefore shadows an alias of the same name, as it does an enum name in `Name.X`.
+- Otherwise it is rewritten to the plain `call` `f(recv, args)` and analyzed as any other call
+  (callee lookup, argument count/type/permission checks). `f` must have a first parameter whose
+  `var-type` has `mutable: true` — a Palan `@!T`/`@![n]T`, or a C non-const pointer — or it is
+  E_MethodNeedsMutableFirstParam.
+- `recv` is `addr-of` (`@!aa`) of the object, so the object must be addressable as for `@!`. An
+  object that is already a borrow (a `@T`/`@!T`/`@[n]T`/`@![n]T` variable, parameter or field) is
+  passed as is; a read-only one is then rejected by the usual permission check.
+
+sa.json carries only the resulting `call`; `member-call` is never emitted.
+
 ### Call arguments
 
 A fixed (non-variadic) call argument is checked against its parameter's type by `argConvOk(from,

@@ -84,7 +84,8 @@ while true {
 
 		if ch == ' ' {
 			mino -> tmp_mino;
-			rotateMino(@!tmp_mino, K);
+			tmp_mino.rotateMino(K);
+
 			if fits(@field, @tmp_mino, mx, my) { tmp_mino -> mino }
 		} else if ch == KEY_LEFT {
 			if fits(@field, @mino, mx - 1, my) { mx - 1 -> mx }
@@ -103,8 +104,9 @@ while true {
 			if fits(@field, @mino, mx, my + 1) { my + 1 -> my }
 			else {
 				int32 deleted_num = 0;
-				placeMino(@!field, @mino, mx, my, mino_no + 1);
-				clearLines (@!field) -> (deleted_num, lowest_del_y);
+				field.placeMino(@mino, mx, my, mino_no + 1);
+				field.clearLines() -> (deleted_num, lowest_del_y);
+
 				if deleted_num > 0 {
 					score + deleted_num * deleted_num * 100 -> score;
 					total_deleted_num + deleted_num -> total_deleted_num;
@@ -119,7 +121,7 @@ while true {
 
 	} else {	// deleting line
 		if tick > 50 { // wait for a while to show the deleted line
-			pressDown(@!field, lowest_del_y);
+			field.pressDown(lowest_del_y);
 			total_deleted_num / 10 + 1 -> level;
 			true -> new_mino;
 			false -> deleting_line;
@@ -200,13 +202,13 @@ func draw(@!WINDOW win, @!WINDOW nextwin, @[FLD_H][FLD_W]int32 field,
 		@[4]$Point next_mino, int32 next_mino_no,
 		int32 score, int32 level, bool placed)
 {
-	werase(win);
-	box(win, 0, 0);
+	win.werase();
+	win.box(0, 0);
 
-	drawField(win, field);
-	if !placed { drawMino(win, mino, mx * 2, my, mino_no) }
+	win.drawField(field);
+	if !placed { win.drawMino(mino, mx * 2, my, mino_no) }
 
-	drawNextMino(nextwin, next_mino, next_mino_no);
+	nextwin.drawNextMino(next_mino, next_mino_no);
 
 	// draw score and controls
 	attron(A_BOLD);
@@ -217,8 +219,8 @@ func draw(@!WINDOW win, @!WINDOW nextwin, @[FLD_H][FLD_W]int32 field,
 	mvprintw(10, 24, "down: fall  up: drop  q: quit");
 
 	refresh();
-	wrefresh(win);
-	wrefresh(nextwin);
+	win.wrefresh();
+	nextwin.wrefresh();
 }
 
 func drawField(@!WINDOW win, @[FLD_H][FLD_W]int32 field)
@@ -236,16 +238,16 @@ func drawField(@!WINDOW win, @[FLD_H][FLD_W]int32 field)
 
 func drawNextMino(@!WINDOW win, @[4]$Point mino, int32 mino_no)
 {
-	werase(win);
-	box(win, 0, 0);
-	mvwprintw(win, 0, 2, " Next ");
+	win.werase();
+	win.box( 0, 0);
+	win.mvwprintw(0, 2, " Next ");
 
 	int32 offset_x = 0, offset_y = 0;
 	if mino_no == 0 { -1 -> offset_x }
 	else if mino_no == 1 { -1 -> offset_x; -1 -> offset_y }
 	else if mino_no == 2 { -1 -> offset_y }
 
-	drawMino(win, mino, 3+offset_x, 1+offset_y, mino_no);
+	win.drawMino(mino, 3+offset_x, 1+offset_y, mino_no);
 }
 
 func drawMino(@!WINDOW win, @[4]$Point mino, int32 mx, int32 my, int32 mino_no)
@@ -254,16 +256,16 @@ func drawMino(@!WINDOW win, @[4]$Point mino, int32 mx, int32 my, int32 mino_no)
 	while i < 4 {
 		int32 x = mino[i].x * 2 + mx;
 		int32 y = mino[i].y + my;
-		if y >= 0 { draw1block(win, x, y, mino_no+1); }
+		if y >= 0 { win.draw1block(x, y, mino_no+1); }
 		i + 1 -> i;
 	}
 }
 
 func draw1block(@!WINDOW win, int32 x, int32 y, int32 color)
 {
-	wattron(win, COLOR_PAIR(color));
-	mvwaddstr(win, y + 1, x + 1, "  ");
-	wattroff(win, COLOR_PAIR(color));
+	win.wattron(COLOR_PAIR(color));
+	win.mvwaddstr(y + 1, x + 1, "  ");
+	win.wattroff(COLOR_PAIR(color));
 }
 
 func clearLines(@![FLD_H][FLD_W]int32 field)
@@ -305,13 +307,13 @@ func pressDown(@![FLD_H][FLD_W]int32 field, int32 dst_y)
 				if field[src_y][x] != 0 { 0 -> empty; break; }
 				x + 1 -> x;
 			}
-			if !empty { break; }
+			if !empty { break }
 			src_y - 1 -> src_y;
 		}
 
 		if src_y < 0 {
 			// fill the remaining lines with empty
-			if last_src_y < 0 { return; }
+			if last_src_y < 0 { return }
 			while dst_y >= last_src_y {
 				int32 x = 0;
 				while x < FLD_W {

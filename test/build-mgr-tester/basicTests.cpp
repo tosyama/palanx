@@ -2414,3 +2414,9 @@ TEST(build_mgr, sizeof) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/261_sizeof.pa");
 	ASSERT_EQ(output, "56 32 16\n");
 }
+
+TEST(build_mgr, method_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/262_method_call.pa");
+	ASSERT_EQ(output, "121 5\n7\n1 1\n");
+}

@@ -553,7 +553,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		return sa_expr_call(expr);
 
 	} else if (expr_type == "member-call") {
-		return sa_expr_member_call(expr);
+		json call = normalizeMethodCall(expr);
+		return call["expr-type"] == "call" ? sa_expr_call(call) : sa_expr_member_call(expr);
 
 	} else if (expr_type == "field-access") {
 		json enumerator = resolveEnumerator(expr);
@@ -1145,6 +1146,53 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 	sa_expr["value-type"] = elem_type;
 	sa_expr["addr-only"]  = false;
 	return sa_expr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Rewrites a method-form call `aa.f(args)` to the call `f(@!aa, args)`. Any
+// other expression, including a module-alias call `L.f(args)`, is returned as
+// is; a variable takes precedence over an alias of the same name, as it does
+// over an enum name.
+json PlnSemanticAnalyzer::normalizeMethodCall(const json& expr)
+{
+	if (expr["expr-type"] != "member-call") return expr;
+	const json& obj = expr["object"];
+	if (obj.value("expr-type", "") == "id") {
+		const string& name = obj["name"].get<string>();
+		if (!findVar(name) && !findCGlobal(name)) return expr;
+	}
+
+	const string& method = expr["method"].get<string>();
+	const json* pFunc = findCFunc(method);
+	if (!pFunc) pFunc = findPlnFunc(method);
+	if (!pFunc) pFunc = findImportFunc(method);
+	// An unknown or ambiguous callee is reported by sa_expr_call.
+	if (pFunc && !pFunc->empty()) {
+		const json& params = (*pFunc)["parameters"];
+		if (params.empty() || !params[0]["var-type"].value("mutable", false)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_MethodNeedsMutableFirstParam, method) << endl;
+			exit(1);
+		}
+	}
+
+	// A receiver that is already a borrow is passed as is: '@!' on it would
+	// be rejected (or would mean a pointer to the borrow's slot). An inline
+	// struct field is storage and cannot be evaluated as a value.
+	json recvType;
+	if (obj.value("expr-type", "") == "field-access") {
+		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/false);
+		const FieldLayout& fld = findFieldOrExit(chain.structName, obj["field"].get<string>(), obj);
+		if (fld.typeKind != "embed") recvType = fieldValueType(fld);
+	} else {
+		recvType = sa_expression(obj).value("value-type", json());
+	}
+	bool isBorrow = !recvType.is_null() && (isPtrBorrow(recvType) || isArrBorrowVar(recvType));
+	json recv = isBorrow ? obj : json{{"expr-type", "addr-of"}, {"mutable", true}, {"object", obj}};
+	if (!isBorrow && obj.contains("loc")) recv["loc"] = obj["loc"];
+
+	json call = {{"expr-type", "call"}, {"name", method}, {"args", json::array({recv})}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	for (auto& a : expr["args"]) call["args"].push_back(a);
+	if (expr.contains("loc")) call["loc"] = expr["loc"];
+	return call;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)

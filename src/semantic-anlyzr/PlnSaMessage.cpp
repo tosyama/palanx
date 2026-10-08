@@ -138,7 +138,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_UnknownAlias:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "Unknown module alias '" + arg1 + "'.";
+			return "Undefined variable or module alias '" + arg1 + "'.";
 
 		case E_UnqualifiedAliasCall:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -520,6 +520,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_SizeofArrSizeNotConst:
 			return "every array size in the type of 'sizeof' must be a compile-time constant.";
+
+		case E_MethodNeedsMutableFirstParam:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' cannot be called as a method: its first parameter must be a writable borrow ('@!').";
 
 		default:
 			BOOST_ASSERT(false);

@@ -4928,3 +4928,67 @@ TEST(sa, sizeof) {
 	ASSERT_EQ(stmts[12]["vars"][0]["init"]["value-type"]["type-name"], "uint32");
 	ASSERT_EQ(stmts[13]["vars"][0]["var-type"]["arr-size"], 16);
 }
+
+static void collectCalls(const json& node, const string& name, vector<json>& out)
+{
+	if (node.is_object()) {
+		if (node.value("expr-type", "") == "call" && node.value("name", "") == name)
+			out.push_back(node);
+		for (auto& [k, v] : node.items()) collectCalls(v, name, out);
+	} else if (node.is_array()) {
+		for (auto& v : node) collectCalls(v, name, out);
+	}
+}
+
+TEST(sa, method_call) {
+	json jout = run_sa("../test/testdata/sa/226_method_call.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto calls = [&](const string& name) { vector<json> v; collectCalls(jout, name, v); return v; };
+
+	// Every receiver is passed as a mutable borrow in the first argument.
+	auto setx = calls("setx");
+	ASSERT_EQ(setx.size(), 2u);
+	for (auto& c : setx) {
+		ASSERT_EQ(c["args"].size(), 2u);
+		ASSERT_EQ(c["args"][0]["value-type"]["mutable"], true);
+		ASSERT_EQ(c["args"][0]["value-type"]["base-type"]["type-name"], "Outer");
+	}
+	auto setv = calls("setv");
+	ASSERT_EQ(setv.size(), 4u);
+	for (auto& c : setv)
+		ASSERT_EQ(c["args"][0]["value-type"]["mutable"], true);
+	ASSERT_EQ(setv[0]["args"][0]["expr-type"], "field-access");	// o.inner.setv() inside setx
+	ASSERT_EQ(setv[2]["args"][0]["expr-type"], "arr-index");	// ins[1].setv()
+	ASSERT_FALSE(setv[3]["args"][0].value("addr-only", false));	// h.p.setv() loads the borrow
+	auto fill = calls("fill");
+	ASSERT_EQ(fill.size(), 2u);
+	for (auto& c : fill) {
+		ASSERT_EQ(c["args"][0]["value-type"]["mutable"], true);
+		ASSERT_EQ(c["args"][0]["value-type"]["arr-size"], 3);
+	}
+
+	auto swapxy = calls("swapxy");
+	ASSERT_EQ(swapxy.size(), 2u);
+	ASSERT_EQ(swapxy[0]["value-types"].size(), 2u);
+	ASSERT_EQ(swapxy[0]["args"][0]["name"], "o");
+
+	auto mktime = calls("mktime");
+	ASSERT_EQ(mktime.size(), 1u);
+	ASSERT_EQ(mktime[0]["func-type"], "c");
+	ASSERT_EQ(mktime[0]["args"][0]["name"], "t");
+	ASSERT_EQ(mktime[0]["args"][0]["value-type"]["mutable"], true);
+}
+
+TEST(sa, method_call_alias) {
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/227_method_call_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	vector<json> v;
+	collectCalls(jout, "square", v);
+	ASSERT_EQ(v.size(), 2u);
+	// The block's variable M shadows the alias M; outside it, M is the alias.
+	ASSERT_EQ(v[0]["args"][0]["name"], "M");
+	ASSERT_EQ(v[0]["args"][0]["value-type"]["base-type"]["type-name"], "T");
+	ASSERT_EQ(v[1]["args"][0]["expr-type"], "lit-int");
+}

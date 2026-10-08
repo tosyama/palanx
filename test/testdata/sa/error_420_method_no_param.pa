@@ -1,0 +1,4 @@
+type T { int32 x; };
+func f() { }
+T t;
+t.f();

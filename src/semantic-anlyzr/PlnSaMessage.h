@@ -127,6 +127,7 @@ enum PlnSaMessageCode {
 	E_DuplicateTypeName,	// arg1: type name
 	E_CastArgCount,	// arg1: target type name
 	E_SizeofArrSizeNotConst,
+	E_MethodNeedsMutableFirstParam,	// arg1: function name
 };
 
 class PlnSaMessage

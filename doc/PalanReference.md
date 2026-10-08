@@ -391,6 +391,29 @@ func range(int32 from) -> int32 lo = from, int32 hi = from + 10 { }
 
 A struct-type named return is declared in the body instead, so it can't have an initializer.
 
+### Method-Form Calls
+
+A function whose first parameter is a writable borrow (`@!T`, `@![n]T`, or a C function's
+non-const pointer) can also be called as `x.f(args)`, which is the same as `f(@!x, args)`:
+
+```palan
+type Counter { int32 n; };
+func add(@!Counter c, int32 d) { c.n + d -> c.n; }
+
+Counter c;
+c.add(1);               // add(@!c, 1)
+
+jpeg_compress_struct cinfo;  // cinclude <jpeglib.h>
+cinfo.jpeg_set_defaults();  // jpeg_set_defaults(@!cinfo)
+```
+
+- `x` must be something `@!` can be applied to: a variable, a struct field, or an array element.
+- If `x` is already a borrow (a `@!T` variable, parameter or field), it is passed as it is, so a
+  function taking `@!Counter c` can write `c.add(1)`. A read-only `@T` borrow is a compile error.
+- A function whose first parameter is not `@!` (a value, `@T`, or no parameters) cannot be called
+  this way.
+- If `x` is both a variable and a module alias (§12), the variable is used.
+
 ---
 
 ## 8. Receiving Multiple Return Values
@@ -953,6 +976,7 @@ printf("%ld\n", L.cube(2));    // 8
 ```
 
 - All calls must use the `L.f()` qualified form. Unqualified `square()` is a compile error.
+- A variable named `L` hides the alias: `L.f()` is then a method-form call on the variable (see §7).
 
 ### Selective alias import
 

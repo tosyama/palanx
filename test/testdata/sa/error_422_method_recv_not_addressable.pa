@@ -1,0 +1,4 @@
+type T { int32 x; };
+func g(@!T a) { }
+func mk() -> T r { }
+mk().g();

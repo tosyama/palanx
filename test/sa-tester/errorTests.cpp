@@ -363,7 +363,7 @@ TEST(sa_error, unknown_alias)
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_056_unknown_alias.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find("Unknown module alias"), string::npos);
+	ASSERT_NE(sa.find("Undefined variable or module alias 'X'"), string::npos);
 }
 
 TEST(sa_error, import_block_scope_out)
@@ -3001,6 +3001,27 @@ TEST(sa_error, expr_not_implemented)
 		{"error_415_expr_not_impl_return.pa", ":3:9: error: this expression is not supported"},
 		{"error_416_expr_not_impl_assign.pa", ":2:1: error: this expression is not supported"},
 		{"error_417_expr_not_impl_stmt.pa", ":1:1: error: this expression is not supported"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, method_call)
+{
+	const string notMethod = "cannot be called as a method: its first parameter must be a writable borrow ('@!').";
+	const pair<string, string> cases[] = {
+		{"error_418_method_ro_first_param.pa", ":4:1: error: 'f' " + notMethod},
+		{"error_419_method_value_first_param.pa", ":3:1: error: 'f' " + notMethod},
+		{"error_420_method_no_param.pa", ":4:1: error: 'f' " + notMethod},
+		{"error_421_method_c_const_first_param.pa", ":3:11: error: 'strlen' " + notMethod},
+		{"error_422_method_recv_not_addressable.pa", ":4:1: error: cannot take the address of this expression"},
+		{"error_423_method_recv_ro_borrow.pa", ":4:2: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

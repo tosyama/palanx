@@ -1,0 +1,36 @@
+cinclude <time.h>;
+
+type Inner { int32 v; };
+type Outer { int32 x; $Inner inner; };
+type Holder { @!Inner p; };
+
+func setv(@!Inner a, int32 v) { v -> a.v; }
+func setx(@!Outer o, int32 x) {
+	x -> o.x;
+	o.inner.setv(x * 2);
+}
+func swapxy(@!Outer o) -> int32 a, int32 b {
+	o.x -> a;
+	o.inner.v -> b;
+}
+func fill(@![3]int32 a, int32 v) { v -> a[0]; }
+func setall(@!Outer o, @![3]int32 a) {
+	o.setx(6);
+	a.fill(7);
+}
+
+Outer o;
+o.setx(1);
+o.inner.setv(3);
+[2]$Inner ins;
+ins[1].setv(4);
+Holder h;
+@!ins[0] -> h.p;
+h.p.setv(8);
+[3]int32 arr;
+arr.fill(5);
+o.setall(@!arr);
+(int32 a, int32 b) = o.swapxy();
+o.swapxy() -> (a, b);
+tm t;
+t.mktime();

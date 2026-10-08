@@ -451,9 +451,8 @@ json PlnSemanticAnalyzer::bindReturnValueToTemp(const json& stmt, json& ret)
 	return decl;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, size_t recvCount)
+const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount)
 {
-	const json& callExpr = stmt["value"];
 	const json* pFunc = nullptr;
 	string fname;
 
@@ -500,10 +499,11 @@ const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, size_t recvC
 // conversion rules as a single-value declaration.
 json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 {
-	const json& rets = findMultiRetFunc(stmt, stmt["vars"].size())["rets"];
+	json callExpr = normalizeMethodCall(stmt["value"]);
+	const json& rets = findMultiRetFunc(stmt, callExpr, stmt["vars"].size())["rets"];
 
 	// Process the call expression via sa_expression (resolves func-type, annotates args)
-	json saCall = sa_expression(stmt["value"]);
+	json saCall = sa_expression(callExpr);
 
 	// Add multi-return value-types from the function's rets
 	json valueTypes = json::array();
@@ -546,9 +546,10 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 json PlnSemanticAnalyzer::sa_tapple_assign(const json& stmt)
 {
 	const json& targets = stmt["targets"];
-	const json& rets = findMultiRetFunc(stmt, targets.size())["rets"];
+	json callExpr = normalizeMethodCall(stmt["value"]);
+	const json& rets = findMultiRetFunc(stmt, callExpr, targets.size())["rets"];
 
-	json decl = {{"stmt-type", "tapple-decl"}, {"vars", json::array()}, {"value", stmt["value"]},
+	json decl = {{"stmt-type", "tapple-decl"}, {"vars", json::array()}, {"value", callExpr},
 	             {"loc", stmt["loc"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	vector<string> temps;
 	for (auto& r : rets) {

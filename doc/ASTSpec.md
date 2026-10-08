@@ -492,11 +492,14 @@ Expression model
       `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`) — same object vocabulary
       as field-assign's `object` (see Statement model above)
     - field\*  - Field name string
-  17. member-call - Qualified function call (`L.f(args)` syntax; consumed by SA, not emitted to sa.json)
-    - object\* - Object expression (typically `id` for module alias; SA rejects non-`id` in v0.1.22)
+  17. member-call - `x.f(args)`: a module-alias call `L.f(args)` or a method-form call
+    `aa.f(args)` (`f(@!aa, args)`); gen-ast does not tell them apart (consumed by SA, not
+    emitted to sa.json)
+    - object\* - Object expression: an `id` naming a module alias, or the receiver expression
     - method\* - Method/function name string
-    - args - Argument expression list
-    Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
+    - args - Argument expression list (without the receiver)
+    Note: SA resolves `member-call` and emits a regular `call` node in sa.json (see SASpec.md
+    "Method-form calls").
   18. addr-of - Address-of a local variable, a struct field reached from one, or an array
       element reached from one (`@` read-only, `@!`/`AT_EXCL` mutable). The operand grammar is
       `store_loc` — the same vocabulary the right side of `->` accepts (a bare identifier, a
