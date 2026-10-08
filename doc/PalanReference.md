@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.34
+**Version:** v0.1.40
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -1849,7 +1849,7 @@ own it.
 
 ## 20. Type Aliases
 
-Declare an alias for a primitive type with `type`:
+Declare an alias for a type with `type`:
 
 ```palan
 type MyInt = int64;
@@ -1861,14 +1861,12 @@ func addOne(MyInt n) -> MyInt result {
 }
 ```
 
-- The alias may be used in variable declarations and function signatures.
-- Only aliasing a primitive type is supported this version.
+- The target may be a primitive, struct, or array type (`type PT = Point;`, `type Row = [3]int32;`).
+- The alias may be used wherever a type is written: variable declarations, function signatures,
+  struct field types, and array element types (`[n]MyInt`).
 
 ### Restrictions
 
-- Alias use inside array element types (`[n]MyInt`) is not supported.
-- Alias use inside struct field types is not supported.
-- The alias target being a struct type is not supported — the target must resolve to a primitive.
 - Unlike primitive types' `int64(x)` cast syntax, there is no constructor-cast syntax `MyAlias(x)`.
 
 ---
