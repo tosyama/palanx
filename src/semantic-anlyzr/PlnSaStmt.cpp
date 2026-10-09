@@ -96,7 +96,7 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInBlock, f["name"].get<string>()) << endl;
 			exit(1);
 		}
-		preregisterFunc(f, &f);
+		preregisterFunc(f);
 	}
 
 	// analyze block-local func bodies -> appended to sa["functions"]
@@ -217,7 +217,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInFunction, f["name"].get<string>()) << endl;
 			exit(1);
 		}
-		preregisterFunc(f, &f);
+		preregisterFunc(f);
 	}
 
 	// analyze inner func bodies -> appended to sa["functions"]

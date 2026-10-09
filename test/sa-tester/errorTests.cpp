@@ -810,7 +810,7 @@ TEST(sa_error, cinclude_typedef_conflict)
 		"bin/palan-gen-ast ../test/testdata/sa/error_089_cinclude_typedef_conflict.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("conflict"), string::npos);
+	ASSERT_NE(sa.find(":2:1: error: Typedef 'size_t' conflicts"), string::npos);
 }
 
 TEST(sa_error, const_not_literal)
@@ -2200,7 +2200,7 @@ TEST(sa_error, syscall_duplicate)
 		"bin/palan-gen-ast ../test/testdata/sa/error_181_syscall_duplicate.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("already defined"), string::npos);
+	ASSERT_NE(sa.find(":2:1: error: Function 'foo' is already defined."), string::npos);
 }
 
 TEST(sa_error, syscall_call_narrowing)

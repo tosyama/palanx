@@ -138,7 +138,7 @@ class PlnSemanticAnalyzer {
 	void        registerCGlobal(const string& name, const json& def);
 	const json* findCGlobal(const string& name) const;
 
-	void        registerPlnFunc(const string& name, const json& def, const json* loc_node = nullptr);
+	void        registerPlnFunc(const string& name, const json& def, const json& locNode);
 	const json* findPlnFunc(const string& name) const;
 	const json* findImportFunc(const string& fname) const;
 	const json* findImportFuncByAlias(const string& alias, const string& fname) const;
@@ -275,12 +275,12 @@ class PlnSemanticAnalyzer {
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);
 	void  checkStructBorrowSource(const json& locNode, const json& saValue, const json& dstType);
-	void  registerTypeAliasChecked(const string& aliasName, const json& resolved);
-	void  registerTypedefAliasInType(json& vtype);
-	void  registerCFuncTypedefAliases(json& funcEntry);
+	void  registerTypeAliasChecked(const json& locNode, const string& aliasName, const json& resolved);
+	void  registerTypedefAliasInType(const json& locNode, json& vtype);
+	void  registerCFuncTypedefAliases(const json& locNode, json& funcEntry);
 	// Shared function pre-registration sequence (normalize + validate + register)
 	// used by top-level, block-local, and function-nested func-defs alike.
-	void  preregisterFunc(const json& f, const json* loc_node = nullptr);
+	void  preregisterFunc(const json& f);
 	json  normalizeFuncSig(const json& f);
 	// Diagnose Linux syscall ABI constraints on a syscall declaration
 	// (funcDef must already be normalizeStructSig'd) and fold its

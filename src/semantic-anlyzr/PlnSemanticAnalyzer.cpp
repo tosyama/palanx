@@ -130,11 +130,11 @@ const json* PlnSemanticAnalyzer::findCGlobal(const string& name) const
 	return nullptr;
 }
 
-void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json* loc_node)
+void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json& locNode)
 {
 	for (auto& scope : plnFuncScopes)
 		if (scope.count(name)) {
-			cerr << locPrefix(loc_node ? *loc_node : json{})
+			cerr << locPrefix(locNode)
 			     << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
 			exit(1);
 		}
@@ -695,13 +695,10 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 	return funcEntry;
 }
 
-// Shared by top-level, block-local (sa_block), and function-nested
-// (sa_function) func-defs -- the only difference between call sites is
-// whether a loc node is available for a duplicate-definition diagnostic.
-void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
+void PlnSemanticAnalyzer::preregisterFunc(const json& f)
 {
 	json funcEntry = normalizeFuncSig(f);
-	registerPlnFunc(funcEntry["name"], funcEntry, loc_node);
+	registerPlnFunc(funcEntry["name"], funcEntry, f);
 }
 
 // A const whose value names a variable can only be diagnosed once variables
@@ -781,13 +778,13 @@ const json& PlnSemanticAnalyzer::result()
 
 // Registers a typedef name as an alias, same first-wins/conflict-diagnosed
 // policy as a native "type X = ...;" alias.
-void PlnSemanticAnalyzer::registerTypeAliasChecked(const string& aliasName, const json& resolved)
+void PlnSemanticAnalyzer::registerTypeAliasChecked(const json& locNode, const string& aliasName, const json& resolved)
 {
 	auto it = typeAliases_.find(aliasName);
 	if (it == typeAliases_.end()) {
 		typeAliases_[aliasName] = resolved;
 	} else if (it->second != resolved) {
-		cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
 		exit(1);
 	}
 }
@@ -797,40 +794,40 @@ void PlnSemanticAnalyzer::registerTypeAliasChecked(const string& aliasName, cons
 // type alias so Palan code can reference the typedef name, and strip the
 // hint so it doesn't leak into sa.json (e.g. via sa_expr_call copying a C
 // function's ret-type into a call's value-type).
-void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
+void PlnSemanticAnalyzer::registerTypedefAliasInType(const json& locNode, json& vtype)
 {
 	string tk = vtype.value("type-kind", "");
 	if (tk == "prim" && vtype.contains("typedef-name")) {
 		string aliasName = vtype["typedef-name"].get<string>();
-		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
+		registerTypeAliasChecked(locNode, aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
 	} else if (isCRecordTag(vtype) && vtype.contains("typedef-name")) {
 		// typedef struct/union Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
 		// as a type alias for the tag, same prim(Tag) representation a native
 		// "type A = SomeStruct;" alias uses.
 		string aliasName = vtype["typedef-name"].get<string>();
-		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
+		registerTypeAliasChecked(locNode, aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
 	} else if (tk == "pntr" && vtype.contains("base-type")) {
-		registerTypedefAliasInType(vtype["base-type"]);
+		registerTypedefAliasInType(locNode, vtype["base-type"]);
 	} else if (tk == "func") {
 		if (vtype.contains("ret-type"))
-			registerTypedefAliasInType(vtype["ret-type"]);
+			registerTypedefAliasInType(locNode, vtype["ret-type"]);
 		if (vtype.contains("parameters"))
 			for (auto& p : vtype["parameters"])
 				if (p.contains("var-type"))
-					registerTypedefAliasInType(p["var-type"]);
+					registerTypedefAliasInType(locNode, p["var-type"]);
 	}
 } // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
-void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
+void PlnSemanticAnalyzer::registerCFuncTypedefAliases(const json& locNode, json& funcEntry)
 {
 	if (funcEntry.contains("ret-type"))
-		registerTypedefAliasInType(funcEntry["ret-type"]);
+		registerTypedefAliasInType(locNode, funcEntry["ret-type"]);
 	if (funcEntry.contains("parameters"))
 		for (auto& p : funcEntry["parameters"])
 			if (p.contains("var-type"))
-				registerTypedefAliasInType(p["var-type"]);
+				registerTypedefAliasInType(locNode, p["var-type"]);
 }
 
 // A `link` library name is concatenated onto "-l" with no separator, so this
@@ -874,9 +871,9 @@ void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 			cTypedefs_[name] = vt;
 			// LCOV_EXCL_EXCEPTION_BR_START
 			if (vt.contains("enum"))
-				registerTypeAliasChecked(name, vt);
+				registerTypeAliasChecked(stmt, name, vt);
 			else
-				registerTypeAliasChecked(name, {{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
+				registerTypeAliasChecked(stmt, name, {{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -901,7 +898,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 	if (stmt.contains("globals"))
 		for (auto& g : stmt["globals"]) {
 			json entry = g;
-			registerTypedefAliasInType(entry["var-type"]);
+			registerTypedefAliasInType(stmt, entry["var-type"]);
 			resolveCTypeRefs(entry["var-type"]);
 			normalizeCGlobal(entry);
 			registerCGlobal(entry["name"].get<string>(), entry);
@@ -914,7 +911,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			for (auto& f : stmt["functions"]) {
 				string fname = f["name"].get<string>();
 				json entry = f;
-				registerCFuncTypedefAliases(entry);
+				registerCFuncTypedefAliases(stmt, entry);
 				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				entry["_c-func"] = true;
@@ -923,7 +920,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		} else {
 			for (auto& f : stmt["functions"]) {
 				json entry = f;
-				registerCFuncTypedefAliases(entry);
+				registerCFuncTypedefAliases(stmt, entry);
 				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				registerCFunc(entry["name"].get<string>(), entry);
