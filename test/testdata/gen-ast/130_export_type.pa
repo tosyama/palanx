@@ -1,0 +1,8 @@
+export type vec3 { flo32 x; };
+export type Color enum { Red };
+export type MyInt = int64;
+type Priv { int32 a; };
+V.vec3 p;
+[3]V.vec3 arr;
+type S { $V.vec3 e; };
+uint64 n = sizeof(V.vec3);

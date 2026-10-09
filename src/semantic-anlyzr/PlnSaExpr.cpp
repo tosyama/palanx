@@ -537,22 +537,19 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		}
 
 	} else if (expr_type == "call") {
-		// gen-ast only knows the prim keywords as cast targets; an enum name
-		// is a type only SA can see, so its cast arrives shaped as a call.
 		const string& callName = expr["name"].get<string>();
-		json enumType = enumTypeNamed(callName);
-		if (!enumType.is_null() && !findCFunc(callName) && !findPlnFunc(callName)) {
-			if (expr["args"].size() != 1) {
-				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastArgCount, callName) << endl;
-				exit(1);
-			}
-			json cast = {{"expr-type", "cast"}, {"target-type", enumType}, {"src", expr["args"][0]}};
-			if (expr.contains("loc")) cast["loc"] = expr["loc"];
-			return sa_expression(cast);
+		if (!findCFunc(callName) && !findPlnFunc(callName)) {
+			json cast = enumCast(expr, callName);
+			if (!cast.is_null()) return cast;
 		}
 		return sa_expr_call(expr);
 
 	} else if (expr_type == "member-call") {
+		string qualified = typeNameWritten(expr["object"]);
+		if (!qualified.empty()) {
+			json cast = enumCast(expr, qualified + "." + expr["method"].get<string>());
+			if (!cast.is_null()) return cast;
+		}
 		json call = normalizeMethodCall(expr);
 		return call["expr-type"] == "call" ? sa_expr_call(call) : sa_expr_member_call(expr);
 
@@ -969,12 +966,43 @@ int64_t PlnSemanticAnalyzer::typeByteSize(const json& locNode, const json& type)
 
 // `Name.X` where Name is an enum type (or an alias of one) not shadowed by a
 // variable; null when the field access is an ordinary one.
+// The type name `T` or `V.T` an expression spells, if it names no variable;
+// empty otherwise.
+string PlnSemanticAnalyzer::typeNameWritten(const json& obj) const
+{
+	string et = obj.value("expr-type", "");
+	if (et == "field-access") {
+		string qualifier = typeNameWritten(obj["object"]);
+		return qualifier.empty() || qualifier.find('.') != string::npos
+		       ? "" : qualifier + "." + obj["field"].get<string>();
+	}
+	if (et != "id") return "";
+	string name = obj["name"].get<string>();
+	return findVar(name) || findCGlobal(name) ? "" : name;
+}
+
+// gen-ast only knows the prim keywords as cast targets; an enum name is a
+// type only SA can see, so its cast arrives shaped as a call. Null when
+// `typeName` is no enum.
+json PlnSemanticAnalyzer::enumCast(const json& expr, const string& typeName)
+{
+	requireNameableType(expr, {{"type-kind", "prim"}, {"type-name", typeName}});
+	json enumType = enumTypeNamed(typeName);
+	if (enumType.is_null()) return json();
+	if (expr["args"].size() != 1) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastArgCount, typeName) << endl;
+		exit(1);
+	}
+	json cast = {{"expr-type", "cast"}, {"target-type", enumType}, {"src", expr["args"][0]}};
+	if (expr.contains("loc")) cast["loc"] = expr["loc"];
+	return sa_expression(cast);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)
 {
-	const json& obj = expr["object"];
-	if (obj.value("expr-type", "") != "id") return json();
-	string typeName = obj["name"].get<string>();
-	if (findVar(typeName) || findCGlobal(typeName)) return json();
+	string typeName = typeNameWritten(expr["object"]);
+	if (typeName.empty()) return json();
+	requireNameableType(expr, {{"type-kind", "prim"}, {"type-name", typeName}});
 	json enumType = enumTypeNamed(typeName);
 	if (enumType.is_null()) return json();
 

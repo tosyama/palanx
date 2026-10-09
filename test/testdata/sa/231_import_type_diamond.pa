@@ -1,0 +1,5 @@
+import "lib_sa_types.pa";
+import "lib_sa_types_mid.pa";
+Vec p;
+setX(@!p, 3);
+int32 x = getX(@p);

@@ -6,9 +6,11 @@
 #pragma once
 #include <string>
 #include <map>
+#include <memory>
 #include <set>
 #include <vector>
 #include <optional>
+#include <filesystem>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
 
@@ -63,6 +65,7 @@ class PlnSemanticAnalyzer {
 	string astFileName;
 	string c2astPath;
 	string inputFilePath;
+	string moduleId_;  // canonical path of the source file, a type's origin
 	json sa;
 	PlnTypeRegistry registry_;
 	map<string, string> strLiteralLabels;  // value -> label
@@ -99,6 +102,17 @@ class PlnSemanticAnalyzer {
 	// redefinition. A cinclude'd C enum has a null loc.
 	struct EnumDef { map<string, int64_t> values; json loc; };
 	map<string, EnumDef>   enumDefs_;
+	// Defining module of each Palan type name. Type names are program-wide
+	// identities (build-mgr keys struct allocators by them), so a name may come
+	// from one module only. A C type has no entry.
+	map<string, string>    typeOrigins_;
+	// Imported type names source may not write unqualified: the module alias
+	// to write them with, or "" for a type that was not selected or not
+	// exported, registered only because an imported type depends on it.
+	map<string, string>    hiddenTypeNames_;
+	// Modules whose types are being pre-scanned, shared with the analyzers
+	// created for imports so a circular import stops.
+	shared_ptr<set<string>> typeImportsInProgress_ = make_shared<set<string>>();
 	// Registered const declarations (name -> {"value": <SA'd literal expr>, "value-type": <type>})
 	map<string, json>      constDecls_;
 	// Library names collected from cinclude `link` clauses. A set: the same
@@ -130,6 +144,24 @@ class PlnSemanticAnalyzer {
 	const json* findImportFuncByAlias(const string& alias, const string& fname) const;
 
 	json sa_statements(const json& stmts);
+	void beginModule(const json& ast);
+	void prescanTypes(const json& stmts);
+	json loadImportAst(const json& stmt, filesystem::path& impPath) const;
+	// An analyzer holding the imported module's pre-scanned types, or null
+	// while that module is itself being pre-scanned (a circular import).
+	unique_ptr<PlnSemanticAnalyzer> importTypeContext(const json& impAst, const filesystem::path& impPath) const;
+	void importTypes(const json& stmt);
+	void adoptExportedTypes(const json& stmt, const json& impAst, const PlnSemanticAnalyzer& sub);
+	void adoptStruct(const PlnSemanticAnalyzer& sub, const string& name, bool nameable, const string& alias,
+	                 const json& locNode);
+	void adoptEnum(const PlnSemanticAnalyzer& sub, const string& name, bool nameable, const string& alias,
+	               const json& locNode);
+	void adoptTypeDeps(const PlnSemanticAnalyzer& sub, const json& type, const json& locNode);
+	void setTypeNameable(const string& name, bool isNew, bool nameable, const string& alias);
+	// Records `name` as defined by `origin`; false if it already was, exits if
+	// another module defined it.
+	bool claimTypeName(const string& name, const string& origin, const json& locNode);
+	void requireNameableType(const json& locNode, const json& type) const;
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
@@ -195,6 +227,8 @@ class PlnSemanticAnalyzer {
 	void registerCEnum(const json& cincludeStmt, const json& e);
 	void resolveCTypeRefs(json& node) const;      // C enum/earlier-cinclude typedef references -> SA type
 	json enumTypeNamed(const string& name) const; // enum value-type for a type name, or null
+	string typeNameWritten(const json& obj) const;
+	json enumCast(const json& expr, const string& typeName);
 	json resolveEnumerator(const json& expr);     // `Name.X` as a lit-int, or null for a field access
 	int64_t typeByteSize(const json& locNode, const json& type);  // `sizeof(type)`
 	void recordAllocShape(const string& structName);
@@ -211,6 +245,7 @@ class PlnSemanticAnalyzer {
 	// Exits with E_UnknownStructType if a name at the leaf of `type` (through arr/pntr levels) is unknown,
 	// or if a `$` element is not a struct or a `$[m]` row. Struct fields don't pass through here:
 	// a `[n]$int32` field is an inline array, which a variable has no counterpart of.
+	// `type` must be as written in source (see requireNameableType).
 	void requireKnownTypeNames(const json& locNode, const json& type) const;
 	json  toStructPntrType(const json& type) const;
 	json  unsizedArrToPntr(const json& locNode, const json& type);
@@ -246,6 +281,7 @@ class PlnSemanticAnalyzer {
 	// Shared function pre-registration sequence (normalize + validate + register)
 	// used by top-level, block-local, and function-nested func-defs alike.
 	void  preregisterFunc(const json& f, const json* loc_node = nullptr);
+	json  normalizeFuncSig(const json& f);
 	// Diagnose Linux syscall ABI constraints on a syscall declaration
 	// (funcDef must already be normalizeStructSig'd) and fold its
 	// "syscall-number" expression node into a plain JSON integer.

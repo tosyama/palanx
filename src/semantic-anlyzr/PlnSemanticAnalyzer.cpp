@@ -267,8 +267,25 @@ bool PlnSemanticAnalyzer::isKnownPointeeTypeName(const string& name) const
 	return isPrimPointeeName(name) || isKnownTypeName(name);
 }
 
+// `type` is as written in source: an imported name's visibility is a
+// property of how it was written, gone once an alias is resolved.
+void PlnSemanticAnalyzer::requireNameableType(const json& locNode, const json& type) const
+{
+	const json* t = &type;
+	while (t->contains("base-type")) t = &(*t)["base-type"];
+	string tname = t->value("type-name", "");
+	auto it = hiddenTypeNames_.find(tname);
+	if (it == hiddenTypeNames_.end()) return;
+	if (it->second.empty())
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+	else
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnqualifiedAliasType, tname, it->second) << endl;
+	exit(1);
+}
+
 void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json& type) const
 {
+	requireNameableType(locNode, type);
 	const json resolved = resolveTypeAliasDeep(type);
 	const json* t = &resolved;
 	bool isPointee = false;
@@ -657,10 +674,7 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 	}
 }
 
-// Shared by top-level, block-local (sa_block), and function-nested
-// (sa_function) func-defs -- the only difference between call sites is
-// whether a loc node is available for a duplicate-definition diagnostic.
-void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
+json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 {
 	for (auto& p : f.value("parameters", json::array()))
 		requireKnownTypeNames(f, p["var-type"]);
@@ -678,6 +692,15 @@ void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
 	validateNativeSig(funcEntry);
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
+	return funcEntry;
+}
+
+// Shared by top-level, block-local (sa_block), and function-nested
+// (sa_function) func-defs -- the only difference between call sites is
+// whether a loc node is available for a duplicate-definition diagnostic.
+void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
+{
+	json funcEntry = normalizeFuncSig(f);
 	registerPlnFunc(funcEntry["name"], funcEntry, loc_node);
 }
 
@@ -697,33 +720,44 @@ bool PlnSemanticAnalyzer::onlyNamesConsts(const json& expr) const
 	return true;
 }
 
-void PlnSemanticAnalyzer::analysis(const json &ast)
+void PlnSemanticAnalyzer::beginModule(const json& ast)
 {
-	this->inputFilePath = ast["original"];
+	inputFilePath = ast["original"];
+	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
 	sa["original"]      = ast["original"];
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
 	sa["libs"]          = json::array();
 	enterScope();
-	// 0. Pre-scan type-alias/struct-def/enum-def declarations so function signatures
-	//    pre-registered in step 1 see fully-resolved types, not alias names.
-	//    Top-level cinclude types join the scan in source order, since native
-	//    struct fields and signatures can name them; consts join it so a
-	//    borrowed array parameter can size itself with one. Step 2
-	//    registering them again is a no-op.
-	if (ast["ast"].contains("statements")) {
-		pushStructDefNames(ast["ast"]["statements"]);
-		for (auto& stmt : ast["ast"]["statements"]) {
-			string t = stmt.value("stmt-type", "");
-			if      (t == "type-alias") sa_type_alias(stmt);
-			else if (t == "struct-def") sa_struct_def(stmt);
-			else if (t == "enum-def")   sa_enum_def(stmt);
-			else if (t == "cinclude")   registerCIncludeTypes(stmt);
-			else if (t == "const-decl" && onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
-		}
-		structDefNameScopes_.pop_back();
+}
+
+// Pre-scan type-alias/struct-def/enum-def declarations so function signatures
+// pre-registered in step 1 see fully-resolved types, not alias names.
+// Top-level cinclude and import types join the scan in source order, since
+// native struct fields and signatures can name them; consts join it so a
+// borrowed array parameter can size itself with one. Step 2 registering them
+// again is a no-op.
+void PlnSemanticAnalyzer::prescanTypes(const json& stmts)
+{
+	pushStructDefNames(stmts);
+	for (auto& stmt : stmts) {
+		string t = stmt.value("stmt-type", "");
+		if      (t == "type-alias") sa_type_alias(stmt);
+		else if (t == "struct-def") sa_struct_def(stmt);
+		else if (t == "enum-def")   sa_enum_def(stmt);
+		else if (t == "cinclude")   registerCIncludeTypes(stmt);
+		else if (t == "import")     importTypes(stmt);
+		else if (t == "const-decl" && onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
 	}
+	structDefNameScopes_.pop_back();
+}
+
+void PlnSemanticAnalyzer::analysis(const json &ast)
+{
+	beginModule(ast);
+	if (ast["ast"].contains("statements"))
+		prescanTypes(ast["ast"]["statements"]);
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"])
@@ -907,21 +941,56 @@ static bool is_absolute(filesystem::path &path)
 	return false;
 }
 
-void PlnSemanticAnalyzer::sa_import(const json& stmt)
+// Null for an import of a non-Palan file.
+json PlnSemanticAnalyzer::loadImportAst(const json& stmt, filesystem::path& impPath) const
 {
-	filesystem::path imp_path = stmt["path"];
-	if (stmt["path-type"] == "src" && !is_absolute(imp_path))
-		imp_path = basePath + '/' + imp_path.string();
+	impPath = stmt["path"].get<string>();
+	if (stmt["path-type"] == "src" && !is_absolute(impPath))
+		impPath = basePath + '/' + impPath.string();
 
-	if (!imp_path.string().ends_with(".pa")) return;
-	imp_path += ".ast.json";
+	if (!impPath.string().ends_with(".pa")) return json();
+	filesystem::path astPath = impPath;
+	astPath += ".ast.json";
 
-	ifstream astfile(imp_path.string());
+	ifstream astfile(astPath.string());
 	if (!astfile.is_open()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, imp_path.string()) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, astPath.string()) << endl;
 		exit(1);
 	}
-	json imp_ast = json::parse(astfile);
+	return json::parse(astfile);
+}
+
+unique_ptr<PlnSemanticAnalyzer> PlnSemanticAnalyzer::importTypeContext(const json& impAst,
+		const filesystem::path& impPath) const
+{
+	auto sub = make_unique<PlnSemanticAnalyzer>(impPath.parent_path().string(), "", c2astPath);
+	sub->typeImportsInProgress_ = typeImportsInProgress_;
+	sub->beginModule(impAst);
+	if (!typeImportsInProgress_->insert(sub->moduleId_).second) return nullptr;
+	if (impAst["ast"].contains("statements"))
+		sub->prescanTypes(impAst["ast"]["statements"]);
+	typeImportsInProgress_->erase(sub->moduleId_);
+	return sub;
+}
+
+void PlnSemanticAnalyzer::importTypes(const json& stmt)
+{
+	filesystem::path impPath;
+	json impAst = loadImportAst(stmt, impPath);
+	if (impAst.is_null()) return;
+	if (auto sub = importTypeContext(impAst, impPath))
+		adoptExportedTypes(stmt, impAst, *sub);
+}
+
+void PlnSemanticAnalyzer::sa_import(const json& stmt)
+{
+	filesystem::path imp_path;
+	json imp_ast = loadImportAst(stmt, imp_path);
+	if (imp_ast.is_null()) return;
+
+	// Never null: no pre-scan is in progress once statements are analyzed.
+	auto sub = importTypeContext(imp_ast, imp_path);
+	adoptExportedTypes(stmt, imp_ast, *sub);
 
 	if (!imp_ast.contains("export")) return;
 
@@ -940,12 +1009,14 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 		string fname = f["name"].get<string>();
 		if (selective && !targets.count(fname)) continue;
 
-		json funcEntry = f;
-		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets")
-				&& funcEntry["rets"].size() == 1)
-			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		if (funcEntry.value("func-type", "") == "syscall")
-			validateSyscallDecl(funcEntry);
+		// Resolved in the exporting module, where the type names it uses mean
+		// what its author meant.
+		json funcEntry = sub->normalizeFuncSig(f);
+		for (auto& p : funcEntry.value("parameters", json::array()))
+			adoptTypeDeps(*sub, p["var-type"], stmt);
+		for (auto& r : funcEntry.value("rets", json::array()))
+			adoptTypeDeps(*sub, r["var-type"], stmt);
+		if (funcEntry.contains("ret-type")) adoptTypeDeps(*sub, funcEntry["ret-type"], stmt);
 
 		if (hasAlias) {
 			currentScope[alias][fname] = funcEntry;

@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+type Inner { int32 a; };
+export type Color enum { Red, Green = 5 };
+export type Vec { flo64 x; flo64 y; $Inner in; Inner owned; Color c; };
+export type Pair = [2]Vec;
+export func len2(@Vec v) -> flo64 {
+	return v.x * v.x + v.y * v.y;
+}
+export func setX(@!Vec v, flo64 x) {
+	x -> v.x;
+	7 -> v.owned.a;
+}
+export func show(@Vec v) {
+	printf("%.1f %d %d\n", v.x, v.owned.a, int32(v.c));
+}

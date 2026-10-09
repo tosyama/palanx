@@ -371,6 +371,7 @@ expr_stmt: import
 			$$ = {{"stmt-type", "not-impl"}};
 			LOC($$, @$);
 		}
+		if ($1.contains("export")) $$["export"] = true;
 	}
 	| interface_decl
 	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
@@ -691,15 +692,15 @@ const_decl: KW_CONST ID '=' expression
 type_decl: KW_TYPE ID implememts '{' type_members '}'
 	{ $$ = {{"name", $2}, {"fields", $5.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| KW_EXPORT KW_TYPE ID implememts '{' type_members '}'
-	{ $$ = {{"name", $3}, {"fields", $6.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"name", $3}, {"fields", $6.toVector()}, {"export", true}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| KW_TYPE ID KW_ENUM '{' enumerators opt_comma '}'
 	{ $$ = {{"name", $2}, {"enumerators", $5.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| KW_EXPORT KW_TYPE ID KW_ENUM '{' enumerators opt_comma '}'
-	{ $$ = {{"name", $3}, {"enumerators", $6.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"name", $3}, {"enumerators", $6.toVector()}, {"export", true}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| KW_TYPE ID '=' type_expr
 	{ $$ = {{"name", $2}, {"alias-of", move($4)}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| KW_EXPORT KW_TYPE ID '=' type_expr
-	{ $$ = {{"name", $3}, {"alias-of", move($5)}}; LOC($$, @$); }
+	{ $$ = {{"name", $3}, {"alias-of", move($5)}, {"export", true}}; LOC($$, @$); }
 	| KW_TYPE ID
 	{ $$ = json{}; }
 	| KW_EXPORT KW_TYPE ID
@@ -1166,6 +1167,8 @@ expressions: expression
 
 type_expr: ID
 	{ $$ = {{"type-kind","prim"},{"type-name",move($1)}}; }
+	| ID '.' ID
+	{ $$ = {{"type-kind","prim"},{"type-name",$1 + "." + $3}}; }
 	| ID '<' temp_ids '>'
 	{ $$ = {{"not-impl",true}}; }
 	| '@' type_expr

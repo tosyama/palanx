@@ -1848,3 +1848,26 @@ TEST(gen_ast, sizeof) {
 	ASSERT_EQ(b["type"]["base-type"]["type-name"], "Vec3f");
 	ASSERT_EQ(stmts[2]["vars"][0]["init"]["expr-type"], "not-impl");
 }
+
+TEST(gen_ast, export_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/130_export_type.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts[0]["stmt-type"], "struct-def");
+	ASSERT_EQ(stmts[0]["export"], true);
+	ASSERT_EQ(stmts[1]["stmt-type"], "enum-def");
+	ASSERT_EQ(stmts[1]["export"], true);
+	ASSERT_EQ(stmts[2]["stmt-type"], "type-alias");
+	ASSERT_EQ(stmts[2]["export"], true);
+	ASSERT_FALSE(stmts[3].contains("export"));
+	ASSERT_FALSE(jout["ast"].contains("export"));
+
+	ASSERT_EQ(stmts[4]["vars"][0]["var-type"]["type-name"], "V.vec3");
+	ASSERT_EQ(stmts[5]["vars"][0]["var-type"]["base-type"]["type-name"], "V.vec3");
+	const auto& e = stmts[6]["fields"][0]["var-type"];
+	ASSERT_EQ(e["type-kind"], "embed");
+	ASSERT_EQ(e["base-type"]["type-name"], "V.vec3");
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["type"]["type-name"], "V.vec3");
+}

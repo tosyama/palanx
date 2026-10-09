@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+import "lib_import_type.pa";
+import "lib_import_type.pa" as T;
+
+Vec p;
+4.0 -> p.y;
+p.setX(3.0);
+Color.Green -> p.c;
+printf("%.1f\n", len2(@p));
+show(@p);
+
+T.Pair q;
+1.0 -> q[1].x;
+T.Color.Green -> q[1].c;
+T.show(@q[1]);

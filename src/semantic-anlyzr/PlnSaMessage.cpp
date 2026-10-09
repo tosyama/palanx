@@ -525,6 +525,11 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'" + arg1 + "' cannot be called as a method: its first parameter must be a writable borrow ('@!').";
 
+		case E_UnqualifiedAliasType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "type '" + arg1 + "' requires a module alias qualifier: '" + arg2 + "." + arg1 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

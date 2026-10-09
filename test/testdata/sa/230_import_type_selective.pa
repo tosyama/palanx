@@ -1,0 +1,3 @@
+import Vec, getX from "lib_sa_types.pa";
+Vec p;
+int32 x = getX(@p);

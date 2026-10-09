@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+type Inner { int32 a; };
+type Priv = int32;
+export type Color enum { Red, Green = 5 };
+export type Vec { int64 x; $Inner in; Color c; @!FILE f; };
+export type Row = [2]Vec;
+export type MyInt = int64;
+export func getX(@Vec v) -> Priv r {
+	int32(v.x) -> r;
+}

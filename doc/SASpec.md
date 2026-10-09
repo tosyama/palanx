@@ -153,7 +153,24 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   particular global does, with `E_UnsupportedCGlobalType` (mirrors
   `_unsupported-sig`/`E_UnsupportedCFuncSignature` for C functions).
 - import statements are consumed by SA and not emitted; imported functions are
-  registered in the current scope and become callable from the point of import
+  registered in the current scope and become callable from the point of import.
+  Exported types and function signatures are resolved in the exporting module: SA
+  pre-scans that module's types (its cinclude, const, type and import declarations)
+  with a separate analyzer and copies the results over.
+  - A top-level import's types join the pre-scan in source order, like a native type
+    declaration. A block-scoped import's types are registered at the import, like a
+    struct-def at that position.
+  - A struct comes with every struct and enum its fields use, and a signature with every
+    type it names. A Palan type that is not nameable is registered but hidden: one written
+    `V.T` under an alias (registered as the alias `"V.T"` for `T`), one not selected, or
+    one not exported. A hidden name written in a type position is `E_UnqualifiedAliasType`
+    (alias) or `E_UnknownStructType`. C types are copied without hiding; they are global as
+    in C.
+  - Type names are program-wide identities (build-mgr keys struct allocators by them).
+    Each Palan type name records its defining module, so the same name from a second
+    module, or a local declaration of an imported name, is `E_DuplicateTypeName`.
+  - Types are not imported from a module whose types are being pre-scanned (a circular
+    import).
 - type-alias statements are consumed by SA and not emitted; the alias is
   registered and resolved inline at each reference site (see Type Aliases
   in PalanReference.md)

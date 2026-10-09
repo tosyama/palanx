@@ -2420,3 +2420,9 @@ TEST(build_mgr, method_call) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/262_method_call.pa");
 	ASSERT_EQ(output, "121 5\n7\n1 1\n");
 }
+
+TEST(build_mgr, import_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/263_import_type.pa");
+	ASSERT_EQ(output, "25.0\n3.0 7 5\n1.0 0 5\n");
+}

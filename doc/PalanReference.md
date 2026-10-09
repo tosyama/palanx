@@ -922,7 +922,7 @@ Palan function definitions inside a block are block-scoped and support forward r
 
 ## 12. Modules (import / export)
 
-Palan supports multi-file compilation. Functions declared with `export` are visible to other files that `import` the declaring file.
+Palan supports multi-file compilation. Functions and types declared with `export` are visible to other files that `import` the declaring file.
 
 ### Exporting a function
 
@@ -988,6 +988,39 @@ import square from "lib_math.pa" as L;
 
 printf("%ld\n", L.square(5));  // 25
 ```
+
+### Exporting types
+
+A struct, enum, or type alias declared with `export type` can be imported like a function:
+
+```palan
+// vec3.pa
+export type vec3 { flo32 x; flo32 y; flo32 z; };
+export type Color enum { Red, Green };
+export type Row = [3]vec3;
+export func len2(@vec3 v) -> flo32 {
+    return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+```
+
+```palan
+// main.pa
+import "vec3.pa";
+vec3 p;
+Color c = Color.Green;
+flo32 l = len2(@p);
+```
+
+- An exported type is visible in the whole importing file, like a type declared in it. A
+  type imported inside a block is visible from the `import` on.
+- Under an alias import, write the type with the alias: `V.vec3`, `V.Color.Green`,
+  `V.Color(1)`. The unqualified name is a compile error.
+- A selective import lists types alongside functions: `import vec3, len2 from "vec3.pa";`.
+- An exported type may use the declaring file's non-exported types, consts, and cincluded
+  headers; those are not made nameable in the importing file.
+- A type name must be unique in the program: declaring or importing a type whose name another
+  file already defines is a compile error.
+- If two files import each other, types can be imported in one direction only.
 
 ---
 

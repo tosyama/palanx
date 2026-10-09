@@ -264,8 +264,8 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	json stmt2 = stmt;
 	for (auto& var : stmt2["vars"])
 		if (var.contains("var-type")) {
-			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
 			requireKnownTypeNames(stmt2, var["var-type"]);
+			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
 		}
 
 	auto isArrInit = [](const json& var) {
@@ -910,8 +910,11 @@ void PlnSemanticAnalyzer::pushStructDefNames(const json& stmts)
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
+	claimTypeName(name, moduleId_, stmt);
 	json fields = stmt["fields"];
 	for (auto& f : fields) {
+		requireNameableType(stmt, f["var-type"]);
+		const json written = f["var-type"];
 		f["var-type"] = resolveTypeAliasDeep(f["var-type"]);
 		// Only a pointee may name a struct that is not registered yet; every
 		// other field type is checked by buildStructDef against structDefs_.
@@ -922,7 +925,7 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		string pointee = (*t)["base-type"].value("type-name", "");
 		bool laterDef = pointee == name || any_of(structDefNameScopes_.begin(), structDefNameScopes_.end(),
 			[&](const set<string>& names) { return names.count(pointee) > 0; });
-		if (!laterDef) requireKnownTypeNames(stmt, f["var-type"]);
+		if (!laterDef) requireKnownTypeNames(stmt, written);
 	}
 	structDefs_[name] = buildStructDef(name, fields, structDefs_);
 	return json::array();
@@ -1042,6 +1045,8 @@ void PlnSemanticAnalyzer::registerCStruct(const json& s)
 json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
+	claimTypeName(name, moduleId_, stmt);
+	requireNameableType(stmt, stmt["type"]);
 	// Resolve one level so chains of aliases (alias-of-alias) collapse to the
 	// base type at registration time; later lookups need only one map access.
 	typeAliases_[name] = resolveTypeAlias(stmt["type"]);
@@ -1067,6 +1072,7 @@ json PlnSemanticAnalyzer::sa_const_decl(const json& stmt)
 json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
+	claimTypeName(name, moduleId_, stmt);
 	auto existing = enumDefs_.find(name);
 	if (existing != enumDefs_.end() && existing->second.loc == stmt["loc"])
 		return json::array();  // step 2 revisiting the pre-scanned definition
@@ -1198,6 +1204,116 @@ json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 	if ((tk == "pntr" || tk == "arr" || tk == "embed") && resolved.contains("base-type"))
 		resolved["base-type"] = resolveTypeAliasDeep(resolved["base-type"]);
 	return resolved;
+}
+
+bool PlnSemanticAnalyzer::claimTypeName(const string& name, const string& origin, const json& locNode)
+{
+	auto [it, isNew] = typeOrigins_.emplace(name, origin);
+	if (!isNew && it->second != origin) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
+		exit(1);
+	}
+	return isNew;
+}
+
+void PlnSemanticAnalyzer::setTypeNameable(const string& name, bool isNew, bool nameable, const string& alias)
+{
+	if (nameable) {
+		hiddenTypeNames_.erase(name);
+	} else if (isNew) {
+		hiddenTypeNames_[name] = alias;
+	} else {
+		auto it = hiddenTypeNames_.find(name);
+		if (it != hiddenTypeNames_.end() && it->second.empty()) it->second = alias;
+	}
+}
+
+// Registers the types `stmt` imports, as the exporting module resolved them.
+void PlnSemanticAnalyzer::adoptExportedTypes(const json& stmt, const json& impAst, const PlnSemanticAnalyzer& sub)
+{
+	if (!impAst["ast"].contains("statements")) return;
+	string alias = stmt.value("alias", "");
+	set<string> targets;
+	bool selective = stmt.contains("targets");
+	if (selective)
+		for (auto& t : stmt["targets"])
+			targets.insert(t.get<string>());
+
+	for (auto& d : impAst["ast"]["statements"]) {
+		if (!d.value("export", false)) continue;
+		string name = d["name"].get<string>();
+		if (selective && !targets.count(name)) continue;
+		string kind = d["stmt-type"].get<string>();
+		if (kind == "struct-def") {
+			adoptStruct(sub, name, alias.empty(), alias, stmt);
+			if (!alias.empty())
+				typeAliases_[alias + "." + name] = {{"type-kind", "prim"}, {"type-name", name}};
+		} else if (kind == "enum-def") {
+			adoptEnum(sub, name, alias.empty(), alias, stmt);
+			if (!alias.empty())
+				typeAliases_[alias + "." + name] = sub.typeAliases_.at(name);
+		} else {
+			const json& t = sub.typeAliases_.at(name);
+			adoptTypeDeps(sub, t, stmt);
+			if (alias.empty()) {
+				claimTypeName(name, sub.typeOrigins_.at(name), stmt);
+				typeAliases_[name] = t;
+			} else {
+				typeAliases_[alias + "." + name] = t;
+			}
+		}
+	}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A struct comes with every struct and enum its fields use, nameable or not:
+// its layout and allocator need them.
+void PlnSemanticAnalyzer::adoptStruct(const PlnSemanticAnalyzer& sub, const string& name, bool nameable,
+		const string& alias, const json& locNode)
+{
+	const StructDef& def = sub.structDefs_.at(name);
+	bool adopted;
+	auto origin = sub.typeOrigins_.find(name);
+	if (origin == sub.typeOrigins_.end()) {
+		// A C struct, global as in C: first complete definition wins, as for a cinclude.
+		auto it = structDefs_.find(name);
+		adopted = it == structDefs_.end() || (!it->second.isComplete && def.isComplete);
+		if (adopted) structDefs_[name] = def;
+	} else {
+		adopted = claimTypeName(name, origin->second, locNode);
+		if (adopted) structDefs_[name] = def;
+		setTypeNameable(name, adopted, nameable, alias);
+	}
+	if (!adopted) return;
+	for (auto& f : def.fields) {
+		if (sub.structDefs_.count(f.typeName)) adoptStruct(sub, f.typeName, false, "", locNode);
+		if (!f.enumName.empty()) adoptEnum(sub, f.enumName, false, "", locNode);
+	}
+}
+
+void PlnSemanticAnalyzer::adoptEnum(const PlnSemanticAnalyzer& sub, const string& name, bool nameable,
+		const string& alias, const json& locNode)
+{
+	auto origin = sub.typeOrigins_.find(name);
+	if (origin == sub.typeOrigins_.end()) {
+		if (!enumDefs_.count(name)) {
+			enumDefs_[name]   = sub.enumDefs_.at(name);
+			typeAliases_[name] = sub.typeAliases_.at(name);
+		}
+		return;
+	}
+	bool adopted = claimTypeName(name, origin->second, locNode);
+	if (adopted) enumDefs_[name] = sub.enumDefs_.at(name);
+	if (nameable) typeAliases_[name] = sub.typeAliases_.at(name);
+	setTypeNameable(name, adopted, nameable, alias);
+}
+
+void PlnSemanticAnalyzer::adoptTypeDeps(const PlnSemanticAnalyzer& sub, const json& type, const json& locNode)
+{
+	const json* t = &type;
+	while (t->contains("base-type")) t = &(*t)["base-type"];
+	string tname = t->value("type-name", "");
+	if (sub.structDefs_.count(tname)) adoptStruct(sub, tname, false, "", locNode);
+	if (t->contains("enum")) adoptEnum(sub, (*t)["enum"].get<string>(), false, "", locNode);
 }
 
 json PlnSemanticAnalyzer::makeStructFreeStmt(const string& name, const json& pntrType)

@@ -4992,3 +4992,66 @@ TEST(sa, method_call_alias) {
 	ASSERT_EQ(v[0]["args"][0]["value-type"]["base-type"]["type-name"], "T");
 	ASSERT_EQ(v[1]["args"][0]["expr-type"], "lit-int");
 }
+
+static void genLibSaTypes()
+{
+	for (string lib : {"lib_sa_types", "lib_sa_types_mid", "lib_sa_types2"})
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
+}
+
+TEST(sa, import_type)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/228_import_type.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// Laid out from the exporting module, where the non-exported Inner and
+	// the cinclude'd FILE are known.
+	const auto& p = stmts[0]["vars"][0]["init"];
+	ASSERT_EQ(p["name"], "calloc");
+	ASSERT_EQ(p["args"][1]["value"], "24");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["name"], "__pln_alloc_arr_Vec");
+	ASSERT_EQ(stmts[3]["vars"][0]["var-type"]["type-name"], "int64");
+	ASSERT_EQ(stmts[4]["vars"][0]["var-type"]["enum"], "Color");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value"], "5");
+	// getX's return type is the exporting module's non-exported alias Priv.
+	const auto& x = stmts[5]["vars"][0]["init"];
+	ASSERT_EQ(x["name"], "getX");
+	ASSERT_EQ(x["value-type"]["type-name"], "int32");
+	ASSERT_EQ(x["args"][0]["value-type"]["base-type"]["type-name"], "Vec");
+}
+
+TEST(sa, import_type_alias)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/229_import_type_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["args"][1]["value"], "24");
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["type-name"], "int64");
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["enum"], "Color");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["value"], "5");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["enum"], "Color");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["name"], "getX");
+}
+
+TEST(sa, import_type_selective)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/230_import_type_selective.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"][1]["vars"][0]["init"]["name"], "getX");
+}
+
+TEST(sa, import_type_diamond)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/231_import_type_diamond.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"][1]["body"]["name"], "setX");
+	ASSERT_EQ(jout["statements"][2]["vars"][0]["init"]["name"], "getX");
+}

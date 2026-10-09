@@ -21,6 +21,8 @@ Export declaration list
 -------------------------
 Each entry is a Function definition model (see below) for an `export func` or `export syscall`
 declaration, with the `block` field omitted (signature only; a `syscall` declaration has none).
+An exported type is not listed here: its `struct-def`/`type-alias`/`enum-def` statement carries
+`export` instead, since an importer needs the module's other declarations to resolve it.
 
 - name\* - Function name string
 - func-type\* - Function type string: "palan" "syscall"
@@ -227,6 +229,9 @@ Variable type
         signature (a C `void *` parameter/return/field); native syntax `@void`/`@!void` now
         produces the same shape directly (`'@' KW_VOID` / `AT_EXCL KW_VOID` in the grammar), so
         `pntr(prim(void))` no longer has a single origin.
+      - A type name the parser can't classify (a struct, alias, or enum) also arrives as `prim`;
+        SA resolves it. A type imported under a module alias is written `V.T` and arrives as the
+        single string `"V.T"`.
   2. pntr - Pointer type
     - base-type\* - Base variable type
     - mutable - Boolean, true for a writable pointer (`@!` syntax), false for a read-only
@@ -376,11 +381,13 @@ Statement model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
   7. struct-def - struct type definition (`type Name { field_decl... }`; consumed by SA, not emitted to sa.json)
     - name\* - Struct name string
+    - export - Boolean, true if declared with `export` (omitted when false)
     - fields\* - Field list (each entry: `name`, `var-type`)
       - name\* - Field name string
       - var-type\* - Field type (same Variable type object format)
   8. type-alias - native type alias declaration (`type Name = type_expr;`; consumed by SA, not emitted to sa.json)
     - name\* - Alias name string
+    - export - Boolean, true if declared with `export` (omitted when false)
     - type\* - Aliased type (same Variable type object format)
   9. const-decl - native constant declaration (`const Name = <literal>;`; consumed by SA, not emitted to sa.json)
     - name\* - Constant name string
@@ -421,6 +428,7 @@ Statement model
   20. enum-def - enum type definition (`type Name enum { X, Y = expr, ... }`; consumed by SA, not
       emitted to sa.json)
     - name\* - Enum name string
+    - export - Boolean, true if declared with `export` (omitted when false)
     - enumerators\* - Enumerator list, in source order
       - name\* - Enumerator name string
       - value - Value expression model (omitted when the value is implicit)

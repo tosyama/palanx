@@ -3032,3 +3032,25 @@ TEST(sa_error, method_call)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, import_type)
+{
+	const pair<string, string> cases[] = {
+		{"error_424_import_type_unqualified.pa", ":2:1: error: type 'Vec' requires a module alias qualifier: 'V.Vec'."},
+		{"error_425_import_enum_unqualified.pa", ":2:17: error: type 'Color' requires a module alias qualifier: 'V.Color'."},
+		{"error_426_import_type_not_selected.pa", ":2:1: error: unknown struct type 'Vec'."},
+		{"error_427_import_type_private_dep.pa", ":2:1: error: unknown struct type 'Inner'."},
+		{"error_428_import_type_local_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
+		{"error_429_import_type_module_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		for (string lib : {"lib_sa_types", "lib_sa_types2"})
+			execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
