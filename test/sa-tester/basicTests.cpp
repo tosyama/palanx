@@ -5055,3 +5055,19 @@ TEST(sa, import_type_diamond)
 	ASSERT_EQ(jout["statements"][1]["body"]["name"], "setX");
 	ASSERT_EQ(jout["statements"][2]["vars"][0]["init"]["name"], "getX");
 }
+
+TEST(sa, import_type_field)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/232_import_type_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	json shape;
+	for (auto& s : jout["alloc-shapes"])
+		if (s.value("shape-name", "") == "S") shape = s;
+	// e $Vec 24 + o Vec 8 + arr [2]$Vec 48 + c Color 4 (+4 padding) + q $V.Vec 24
+	ASSERT_EQ(shape["total-size"], 112);
+	ASSERT_EQ(shape["owned-fields"].size(), 1u);
+	ASSERT_EQ(shape["owned-fields"][0]["name"], "o");
+	ASSERT_EQ(shape["owned-fields"][0]["struct-name"], "Vec");
+}

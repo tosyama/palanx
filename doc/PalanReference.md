@@ -1020,7 +1020,9 @@ flo32 l = len2(@p);
   headers; those are not made nameable in the importing file.
 - A type name must be unique in the program: declaring or importing a type whose name another
   file already defines is a compile error.
-- If two files import each other, types can be imported in one direction only.
+- If two files import each other, a type declaration (a struct field or an alias target) in
+  either file cannot use a type from the other. Function signatures and bodies can use each
+  other's types.
 
 ---
 

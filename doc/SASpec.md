@@ -170,7 +170,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     Each Palan type name records its defining module, so the same name from a second
     module, or a local declaration of an imported name, is `E_DuplicateTypeName`.
   - Types are not imported from a module whose types are being pre-scanned (a circular
-    import).
+    import). Pre-scanning a module re-scans its imports, so around a cycle each module's
+    declarations are reached once without the other's types: a type declaration that uses a
+    type across a circular import is unknown there. Signatures are not pre-scanned.
 - type-alias statements are consumed by SA and not emitted; the alias is
   registered and resolved inline at each reference site (see Type Aliases
   in PalanReference.md)

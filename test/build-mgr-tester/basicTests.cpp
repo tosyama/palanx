@@ -2426,3 +2426,9 @@ TEST(build_mgr, import_type) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/263_import_type.pa");
 	ASSERT_EQ(output, "25.0\n3.0 7 5\n1.0 0 5\n");
 }
+
+TEST(build_mgr, import_type_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/264_import_type_field.pa");
+	ASSERT_EQ(output, "1.0 2.0 7 3.0 5 4.0\n");
+}

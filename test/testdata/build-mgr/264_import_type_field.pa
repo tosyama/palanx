@@ -1,0 +1,12 @@
+cinclude <stdio.h>;
+import "lib_import_type.pa";
+import "lib_import_type.pa" as T;
+
+type S { $Pt e; Vec o; [2]$Pt arr; Color c; $T.Pt q; };
+S s;
+1.0 -> s.e.x;
+s.o.setX(2.0);
+3.0 -> s.arr[1].x;
+Color.Green -> s.c;
+4.0 -> s.q.x;
+printf("%.1f %.1f %d %.1f %d %.1f\n", s.e.x, s.o.x, s.o.owned.a, s.arr[1].x, int32(s.c), s.q.x);

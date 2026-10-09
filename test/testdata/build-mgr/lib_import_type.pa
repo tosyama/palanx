@@ -3,6 +3,7 @@ type Inner { int32 a; };
 export type Color enum { Red, Green = 5 };
 export type Vec { flo64 x; flo64 y; $Inner in; Inner owned; Color c; };
 export type Pair = [2]Vec;
+export type Pt { flo64 x; };
 export func len2(@Vec v) -> flo64 {
 	return v.x * v.x + v.y * v.y;
 }
