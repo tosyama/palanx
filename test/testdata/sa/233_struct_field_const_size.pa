@@ -1,0 +1,12 @@
+const N = 3;
+type Point { int32 x; int32 y; };
+type Row = [N]$int16;
+type S { [N]$int32 a; [N]$Point b; [N]@Point c; [N]Point d; [N]int64 e; Row r; [sizeof(Point)]$uint8 z; };
+S s;
+
+func f()
+{
+	const M = 2;
+	type L { [M]$int32 v; [M]int32 w; };
+	L l;
+}

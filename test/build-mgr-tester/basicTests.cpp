@@ -2432,3 +2432,9 @@ TEST(build_mgr, import_type_field) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/264_import_type_field.pa");
 	ASSERT_EQ(output, "1.0 2.0 7 3.0 5 4.0\n");
 }
+
+TEST(build_mgr, struct_field_const_size) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/265_struct_field_const_size.pa");
+	ASSERT_EQ(output, "2 20 200 48\n");
+}

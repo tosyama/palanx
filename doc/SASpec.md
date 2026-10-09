@@ -966,6 +966,8 @@ Struct types
 ------------
 `type Name { field_decl... }` defines a struct type. The SA processes `struct-def` nodes and
 registers the type in its internal registry; the node is consumed and does not appear in sa.json.
+An array field's `size-expr` is evaluated like any array size (a const reference or `sizeof` folds
+to a literal); a size that is not a compile-time integer is an error.
 
 A struct captured from a `cinclude`d C header (ASTSpec.md's `cinclude` statement `structs`
 field) registers into this exact same internal registry — there is no separate representation

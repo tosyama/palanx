@@ -2252,17 +2252,16 @@ TEST(sa_error, macro_backref_undefined)
 TEST(sa_error, macro_backref_arr_field)
 {
 	// Same loc-order gate as macro_backref_undefined, but for a struct
-	// field array size -- the un-folded "id" reaches buildStructDef's "arr"
-	// branch instead of a lit-int/lit-uint, hitting the pre-existing
-	// not-constant diagnostic rather than a new one.
-	// Covers: foldMacroConstants loc-order gate, E_ArrFieldSizeNotConstant
+	// field array size -- the un-folded "id" is evaluated like any other
+	// array size expression.
+	// Covers: foldMacroConstants loc-order gate
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_186_macro_backref_arr_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: struct field array size must be a compile-time constant"), string::npos);
+	ASSERT_NE(sa.find(":1:13: error: Undefined variable 'ARR_N'."), string::npos);
 }
 
 TEST(sa_error, untyped_var_decl)
@@ -3049,6 +3048,22 @@ TEST(sa_error, import_type)
 		cleanTestEnv();
 		for (string lib : {"lib_sa_types", "lib_sa_types2", "lib_sa_bad_struct"})
 			execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, struct_field_size)
+{
+	const pair<string, string> cases[] = {
+		{"error_431_struct_field_var_size.pa", ":4:2: error: struct field array size must be a compile-time constant integer."},
+		{"error_432_struct_field_const_after.pa", ":1:11: error: Undefined variable 'N'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");

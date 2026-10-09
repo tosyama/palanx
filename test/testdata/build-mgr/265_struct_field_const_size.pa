@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+
+const N = 3;
+type Point { int32 x; int32 y; };
+type S { [N]$int32 a; [N]$Point b; [N]int64 c; };
+
+S s;
+int32 i = 0;
+while i < N {
+	i -> s.a[i];
+	i * 10 -> s.b[i].y;
+	i * 100 -> s.c[i];
+	i + 1 -> i;
+}
+printf("%d %d %ld %lu\n", s.a[2], s.b[2].y, s.c[2], sizeof(S));

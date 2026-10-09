@@ -5071,3 +5071,22 @@ TEST(sa, import_type_field)
 	ASSERT_EQ(shape["owned-fields"][0]["name"], "o");
 	ASSERT_EQ(shape["owned-fields"][0]["struct-name"], "Vec");
 }
+
+TEST(sa, struct_field_const_size)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/233_struct_field_const_size.pa");
+	ASSERT_TRUE(jout.is_object());
+	map<string, json> shapes;
+	for (auto& s : jout["alloc-shapes"])
+		if (s.value("shape-kind", "") == "struct") shapes[s["shape-name"]] = s;
+	// a [3]$int32 12 + b [3]$Point 24 (+4) + c [3]@Point 24 + d 8 + e 8
+	// + r [3]$int16 6 + z [8]$uint8 8 (+2)
+	ASSERT_EQ(shapes["S"]["total-size"], 96);
+	ASSERT_EQ(shapes["S"]["owned-array-fields"].size(), 2u);
+	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["name"], "d");
+	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["count"], 3);
+	ASSERT_EQ(shapes["S"]["owned-array-fields"][1]["offset"], 72);
+	ASSERT_EQ(shapes["L"]["total-size"], 16);
+	ASSERT_EQ(shapes["L"]["owned-array-fields"][0]["count"], 2);
+}

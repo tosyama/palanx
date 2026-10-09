@@ -1,0 +1,2 @@
+type S { [N]$int32 v; };
+const N = 3;

@@ -106,12 +106,11 @@ static StructDef buildStructDef(const string& name,
 				cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 				exit(1);
 			}
-			string set = size_expr.value("expr-type", "");
-			if (set != "lit-int" && set != "lit-uint") {
+			int64_t count = constArrSize(size_expr);
+			if (count < 0) {
 				cerr << errPrefix << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant) << endl;
 				exit(1);
 			}
-			int64_t count = stoll(size_expr["value"].get<string>());
 
 			if (!vtype.value("embedded", false)) {
 				const json& base_wrap = vtype["base-type"];
@@ -917,6 +916,9 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		requireNameableType(stmt, f["var-type"]);
 		const json written = f["var-type"];
 		f["var-type"] = resolveTypeAliasDeep(f["var-type"]);
+		json& vt = f["var-type"];
+		if (vt.value("type-kind", "") == "arr" && !vt["size-expr"].is_null())
+			vt["size-expr"] = sa_arr_size_expr(stmt, vt["size-expr"]);
 		// Only a pointee may name a struct that is not registered yet; every
 		// other field type is checked by buildStructDef against structDefs_.
 		const json* t = &f["var-type"];

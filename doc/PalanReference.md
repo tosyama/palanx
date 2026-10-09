@@ -1747,7 +1747,8 @@ printf("%ld %ld\n", original.x, original.y);   // 20 10
 | `[n]@T field` | Non-owning read-only pointer-slot array   | parent's block (slots only)      |
 | `[n]@!T field`| Non-owning mutable pointer-slot array     | parent's block (slots only)      |
 
-`T` may be a primitive type or a struct name. `n` must be a compile-time integer literal.
+`T` may be a primitive type or a struct name. `n` must be a compile-time integer: a literal, a
+[const](#21-constant-declarations) declared before the struct, or `sizeof(T)`.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 
@@ -1914,6 +1915,7 @@ Declare a compile-time constant with `const`:
 const MaxLen = 256;
 
 [MaxLen]uint8 buf;
+type Msg { [MaxLen]$uint8 body; };
 printf("%ld\n", MaxLen);   // 256
 ```
 
