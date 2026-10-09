@@ -67,13 +67,13 @@ TEST(build_mgr_error, unknown_field) {
 TEST(build_mgr_error, recursive_embed) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_050_recursive_embed.pa");
-	ASSERT_NE(out.find("recursively contains itself"), string::npos);
+	ASSERT_NE(out.find(":1:1: error: struct 'A' recursively contains itself"), string::npos);
 }
 
 TEST(build_mgr_error, unsupported_field) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_051_unsupported_field.pa");
-	ASSERT_NE(out.find("unsupported struct field type"), string::npos);
+	ASSERT_NE(out.find(":1:1: error: unsupported struct field type"), string::npos);
 }
 
 TEST(build_mgr_error, inline_as_value) {

@@ -1,0 +1,2 @@
+type Ok { int32 a; };
+type Bad { [4]$[2]int64 f; };

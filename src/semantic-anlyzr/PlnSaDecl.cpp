@@ -14,6 +14,7 @@ static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1)
 static StructDef buildStructDef(const string& name,
                                 const json& fields,
                                 const map<string, StructDef>& structDefs,
+                                const string& errPrefix,
                                 bool isUnion = false)
 {
 	StructDef def;
@@ -42,7 +43,7 @@ static StructDef buildStructDef(const string& name,
 			if (structDefs.count(tname)) {
 				const StructDef& target = structDefs.at(tname);
 				if (!target.isComplete) {
-					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, tname,
+					cerr << errPrefix << PlnSaMessage::getMessage(E_IncompleteStructType, tname,
 					                                  target.incompleteReason, target.keyword()) << endl;
 					exit(1);
 				}
@@ -55,7 +56,7 @@ static StructDef buildStructDef(const string& name,
 			} else {
 				int sz = elemSizeBytes(tname);
 				if (sz < 0) {
-					cerr << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+					cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
 					exit(1);
 				}
 				int at = place(sz, sz);
@@ -66,21 +67,21 @@ static StructDef buildStructDef(const string& name,
 		} else if (tk == "embed") {
 			string structName = vtype["base-type"]["type-name"].get<string>();
 			if (structName == name) {
-				cerr << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;
+				cerr << errPrefix << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;
 				exit(1);
 			}
 			if (!structDefs.count(structName)) {
-				cerr << PlnSaMessage::getMessage(E_UnknownStructType, structName) << endl;
+				cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownStructType, structName) << endl;
 				exit(1);
 			}
 			const StructDef& sub = structDefs.at(structName);
 			if (!sub.isComplete) {
-				cerr << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
+				cerr << errPrefix << PlnSaMessage::getMessage(E_IncompleteStructType, structName,
 				                                  sub.incompleteReason, sub.keyword()) << endl;
 				exit(1);
 			}
 			if (sub.ownsFields) {
-				cerr << PlnSaMessage::getMessage(E_EmbedOwningStruct, structName) << endl;
+				cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningStruct, structName) << endl;
 				exit(1);
 			}
 			int align = sub.maxAlign;
@@ -102,12 +103,12 @@ static StructDef buildStructDef(const string& name,
 			const json& size_expr = vtype["size-expr"];
 			if (size_expr.is_null()) {
 				// []T (unsized array) -- not a valid struct field form
-				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+				cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 				exit(1);
 			}
 			string set = size_expr.value("expr-type", "");
 			if (set != "lit-int" && set != "lit-uint") {
-				cerr << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant) << endl;
+				cerr << errPrefix << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant) << endl;
 				exit(1);
 			}
 			int64_t count = stoll(size_expr["value"].get<string>());
@@ -132,7 +133,7 @@ static StructDef buildStructDef(const string& name,
 				}
 				if (base_kind != "prim") {
 					// [n][m]T / [n][m]$T nested -- not supported
-					cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+					cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 					exit(1);
 				}
 				// [n]T: owned pointer array (field is an 8B pointer, cascade alloc/free)
@@ -141,7 +142,7 @@ static StructDef buildStructDef(const string& name,
 					// primitive leaf
 					int stride = elemSizeBytes(leaf_name);
 					if (stride < 0) {
-						cerr << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
+						cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
 						exit(1);
 					}
 					int align = 8;
@@ -158,7 +159,7 @@ static StructDef buildStructDef(const string& name,
 				// existing __pln_alloc_arr_T/__pln_free_arr_T allocator helpers
 				const StructDef& leafDef = structDefs.at(leaf_name);
 				if (!leafDef.isComplete) {
-					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
+					cerr << errPrefix << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
 					                                  leafDef.incompleteReason, leafDef.keyword()) << endl;
 					exit(1);
 				}
@@ -180,13 +181,13 @@ static StructDef buildStructDef(const string& name,
 			string elemKind;
 			int align;
 			if (base_kind == "prim" && leaf_name == name) {
-				cerr << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;
+				cerr << errPrefix << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;
 				exit(1);
 			} else if (base_kind == "prim" && !structDefs.count(leaf_name)) {
 				// primitive leaf
 				stride = elemSizeBytes(leaf_name);
 				if (stride < 0) {
-					cerr << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
+					cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
 					exit(1);
 				}
 				elemKind = "prim";
@@ -195,12 +196,12 @@ static StructDef buildStructDef(const string& name,
 				// struct leaf ([n]$Point)
 				const StructDef& leafDef = structDefs.at(leaf_name);
 				if (!leafDef.isComplete) {
-					cerr << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
+					cerr << errPrefix << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
 					                                  leafDef.incompleteReason, leafDef.keyword()) << endl;
 					exit(1);
 				}
 				if (leafDef.ownsFields) {
-					cerr << PlnSaMessage::getMessage(E_EmbedOwningStruct, leaf_name) << endl;
+					cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningStruct, leaf_name) << endl;
 					exit(1);
 				}
 				stride = leafDef.totalSize;
@@ -208,7 +209,7 @@ static StructDef buildStructDef(const string& name,
 				align = leafDef.maxAlign;
 			} else {
 				// base_kind == "arr" ([n]$[m]T nested) -- not supported
-				cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+				cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 				exit(1);
 			}
 
@@ -219,7 +220,7 @@ static StructDef buildStructDef(const string& name,
 			                      .count=count, .elemKind=elemKind, .stride=stride,
 			                      .enumName=base.value("enum", "")});
 		} else {
-			cerr << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+			cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 			exit(1);
 		}
 	}
@@ -927,7 +928,7 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 			[&](const set<string>& names) { return names.count(pointee) > 0; });
 		if (!laterDef) requireKnownTypeNames(stmt, written);
 	}
-	structDefs_[name] = buildStructDef(name, fields, structDefs_);
+	structDefs_[name] = buildStructDef(name, fields, structDefs_, locPrefix(stmt));
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -999,7 +1000,7 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 	return tk == "pntr";
 }
 
-void PlnSemanticAnalyzer::registerCStruct(const json& s)
+void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& s)
 {
 	string name = s["name"].get<string>();
 	auto existing = structDefs_.find(name);
@@ -1039,7 +1040,7 @@ void PlnSemanticAnalyzer::registerCStruct(const json& s)
 		}
 		fields.push_back({{"name", f["name"]}, {"var-type", vt}});
 	}
-	structDefs_[name] = buildStructDef(name, fields, structDefs_, s.value("union", false));
+	structDefs_[name] = buildStructDef(name, fields, structDefs_, locPrefix(cincludeStmt), s.value("union", false));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)

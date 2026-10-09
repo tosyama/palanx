@@ -857,7 +857,7 @@ void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 
 	if (stmt.contains("structs"))
 		for (auto& s : stmt["structs"])
-			registerCStruct(s);
+			registerCStruct(stmt, s);
 
 	// Covers a typedef no C function/global actually references, which
 	// registerTypedefAliasInType's per-reference-site calls wouldn't reach.

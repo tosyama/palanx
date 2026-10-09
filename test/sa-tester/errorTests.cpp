@@ -426,7 +426,7 @@ TEST(sa_error, non_prim_struct_field)
 		"bin/palan-gen-ast ../test/testdata/sa/error_062_non_prim_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unsupported struct field type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unsupported struct field type"), string::npos);
 }
 
 TEST(sa_error, recursive_struct)
@@ -437,7 +437,7 @@ TEST(sa_error, recursive_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_069_recursive_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("recursively contains itself"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: struct 'A' recursively contains itself"), string::npos);
 }
 
 TEST(sa_error, field_assign_undef_var)
@@ -549,7 +549,7 @@ TEST(sa_error, struct_field_unknown_type)
 		"bin/palan-gen-ast ../test/testdata/sa/error_073_struct_field_unknown_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
 }
 
 TEST(sa_error, embed_unknown_struct)
@@ -562,7 +562,7 @@ TEST(sa_error, embed_unknown_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_074_embed_unknown_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
 }
 
 TEST(sa_error, alias_unknown_method)
@@ -674,7 +674,7 @@ TEST(sa_error, arr_field_size_not_constant)
 		"bin/palan-gen-ast ../test/testdata/sa/error_080_arr_field_size_not_constant.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("must be a compile-time constant"), string::npos);
+	ASSERT_NE(sa.find(":2:1: error: struct field array size must be a compile-time constant"), string::npos);
 }
 
 TEST(sa_error, embed_arr_field_owned_substruct)
@@ -688,7 +688,7 @@ TEST(sa_error, embed_arr_field_owned_substruct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_081_embed_arr_field_owned_substruct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("it owns fields"), string::npos) << sa;
+	ASSERT_NE(sa.find(":4:1: error: cannot embed 'Rect' with '$': it owns fields"), string::npos) << sa;
 }
 
 TEST(sa_error, recursive_arr_field)
@@ -701,7 +701,7 @@ TEST(sa_error, recursive_arr_field)
 		"bin/palan-gen-ast ../test/testdata/sa/error_082_recursive_arr_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("recursively contains itself"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: struct 'A' recursively contains itself"), string::npos);
 }
 
 TEST(sa_error, write_readonly_arr_field_elem)
@@ -764,7 +764,7 @@ TEST(sa_error, struct_arr_ptr_field_unknown_prim_type)
 		"bin/palan-gen-ast ../test/testdata/sa/error_086_arr_ptr_field_unknown_prim_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
 }
 
 TEST(sa_error, struct_embed_arr_field_unknown_prim_type)
@@ -778,7 +778,7 @@ TEST(sa_error, struct_embed_arr_field_unknown_prim_type)
 		"bin/palan-gen-ast ../test/testdata/sa/error_087_embed_arr_field_unknown_prim_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
 }
 
 TEST(sa_error, struct_nested_embed_arr_field_unsupported)
@@ -792,7 +792,7 @@ TEST(sa_error, struct_nested_embed_arr_field_unsupported)
 		"bin/palan-gen-ast ../test/testdata/sa/error_088_nested_embed_arr_field_unsupported.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unsupported struct field type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unsupported struct field type"), string::npos);
 }
 
 TEST(sa_error, cinclude_typedef_conflict)
@@ -1293,7 +1293,7 @@ TEST(sa_error, struct_def_before_cinclude)
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_189_struct_def_before_cinclude.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find("unknown struct type 'timespec'"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown struct type 'timespec'"), string::npos);
 }
 
 TEST(sa_error, incomplete_struct_owned_arr)
@@ -1339,7 +1339,7 @@ TEST(sa_error, incomplete_struct_native_embed)
 		"bin/palan-gen-ast ../test/testdata/sa/error_126_incomplete_struct_native_embed.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
 
 TEST(sa_error, incomplete_struct_field_access)
@@ -1391,7 +1391,7 @@ TEST(sa_error, incomplete_struct_native_owned_field)
 		"bin/palan-gen-ast ../test/testdata/sa/error_129_incomplete_struct_native_owned_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
 
 TEST(sa_error, incomplete_struct_native_owned_arr)
@@ -1406,7 +1406,7 @@ TEST(sa_error, incomplete_struct_native_owned_arr)
 		"bin/palan-gen-ast ../test/testdata/sa/error_130_incomplete_struct_native_owned_arr.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
 
 TEST(sa_error, incomplete_struct_native_embed_arr)
@@ -1424,7 +1424,7 @@ TEST(sa_error, incomplete_struct_native_embed_arr)
 		"bin/palan-gen-ast ../test/testdata/sa/error_131_incomplete_struct_native_embed_arr.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
+	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
 
 TEST(sa_error, sized_arr_param)
@@ -2262,7 +2262,7 @@ TEST(sa_error, macro_backref_arr_field)
 		"bin/palan-gen-ast ../test/testdata/sa/error_186_macro_backref_arr_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("must be a compile-time constant"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: struct field array size must be a compile-time constant"), string::npos);
 }
 
 TEST(sa_error, untyped_var_decl)
@@ -2645,18 +2645,18 @@ TEST(sa_error, embed_elem_not_struct)
 
 TEST(sa_error, field_2d_arr_unsupported)
 {
-	const char* files[] = {
-		"error_323_field_2d_arr.pa",
-		"error_324_field_2d_embed_prim.pa",
-		"error_325_field_2d_embed_struct.pa",
+	const pair<string, string> cases[] = {
+		{"error_323_field_2d_arr.pa", ":1:1: error: unsupported struct field type."},
+		{"error_324_field_2d_embed_prim.pa", ":1:1: error: unsupported struct field type."},
+		{"error_325_field_2d_embed_struct.pa", ":2:1: error: unsupported struct field type."},
 	};
-	for (auto file : files) {
+	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			string("bin/palan-gen-ast ../test/testdata/sa/") + file + " -o " + ast_out), "");
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-		ASSERT_NE(sa.find("unsupported struct field type"), string::npos) << file << ": " << sa;
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
 
@@ -2664,20 +2664,20 @@ TEST(sa_error, embed_owning_struct)
 {
 	// Owned array fields count as owning just like owned struct fields,
 	// and a plain $T field is rejected the same way as [n]$T.
-	const char* files[] = {
-		"error_326_embed_arr_owning_arr_field.pa",
-		"error_327_embed_arr_2d_owning_arr_field.pa",
-		"error_328_embed_arr_field_owning_arr_field.pa",
-		"error_329_embed_field_owning_arr_field.pa",
-		"error_330_embed_field_owning_struct_field.pa",
+	const pair<string, string> cases[] = {
+		{"error_326_embed_arr_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns fields"},
+		{"error_327_embed_arr_2d_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns fields"},
+		{"error_328_embed_arr_field_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns fields"},
+		{"error_329_embed_field_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns fields"},
+		{"error_330_embed_field_owning_struct_field.pa", ":3:1: error: cannot embed 'Rect' with '$': it owns fields"},
 	};
-	for (auto file : files) {
+	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			string("bin/palan-gen-ast ../test/testdata/sa/") + file + " -o " + ast_out), "");
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-		ASSERT_NE(sa.find("it owns fields"), string::npos) << file << ": " << sa;
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
 
@@ -3042,10 +3042,12 @@ TEST(sa_error, import_type)
 		{"error_427_import_type_private_dep.pa", ":2:1: error: unknown struct type 'Inner'."},
 		{"error_428_import_type_local_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
 		{"error_429_import_type_module_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
+		// The imported module's own path and line, not the importer's.
+		{"error_430_import_bad_struct_def.pa", "lib_sa_bad_struct.pa:2:1: error: unsupported struct field type."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
-		for (string lib : {"lib_sa_types", "lib_sa_types2"})
+		for (string lib : {"lib_sa_types", "lib_sa_types2", "lib_sa_bad_struct"})
 			execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
