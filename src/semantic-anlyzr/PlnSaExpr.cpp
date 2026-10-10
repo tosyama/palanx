@@ -539,7 +539,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	} else if (expr_type == "call") {
 		const string& callName = expr["name"].get<string>();
 		if (!findCFunc(callName) && !findPlnFunc(callName)) {
-			json cast = enumCast(expr, callName);
+			json cast = aliasCast(expr, callName);
 			if (!cast.is_null()) return cast;
 		}
 		return sa_expr_call(expr);
@@ -547,7 +547,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	} else if (expr_type == "member-call") {
 		string qualified = typeNameWritten(expr["object"]);
 		if (!qualified.empty()) {
-			json cast = enumCast(expr, qualified + "." + expr["method"].get<string>());
+			json cast = aliasCast(expr, qualified + "." + expr["method"].get<string>());
 			if (!cast.is_null()) return cast;
 		}
 		json call = normalizeMethodCall(expr);
@@ -981,19 +981,24 @@ string PlnSemanticAnalyzer::typeNameWritten(const json& obj) const
 	return findVar(name) || findCGlobal(name) ? "" : name;
 }
 
-// gen-ast only knows the prim keywords as cast targets; an enum name is a
-// type only SA can see, so its cast arrives shaped as a call. Null when
-// `typeName` is no enum.
-json PlnSemanticAnalyzer::enumCast(const json& expr, const string& typeName)
+// gen-ast only knows the prim keywords as cast targets; an alias (an enum
+// included) is a type only SA can see, so its cast arrives shaped as a call.
+// Null when `typeName` is no alias.
+json PlnSemanticAnalyzer::aliasCast(const json& expr, const string& typeName)
 {
-	requireNameableType(expr, {{"type-kind", "prim"}, {"type-name", typeName}});
-	json enumType = enumTypeNamed(typeName);
-	if (enumType.is_null()) return json();
+	json written = {{"type-kind", "prim"}, {"type-name", typeName}};
+	requireNameableType(expr, written);
+	json target = resolveTypeAlias(written);
+	if (target == written) return json();
+	if (target.value("type-kind", "") != "prim" || isStructType(target)) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastTargetNotPrim, typeName) << endl;
+		exit(1);
+	}
 	if (expr["args"].size() != 1) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastArgCount, typeName) << endl;
 		exit(1);
 	}
-	json cast = {{"expr-type", "cast"}, {"target-type", enumType}, {"src", expr["args"][0]}};
+	json cast = {{"expr-type", "cast"}, {"target-type", target}, {"src", expr["args"][0]}};
 	if (expr.contains("loc")) cast["loc"] = expr["loc"];
 	return sa_expression(cast);
 } // LCOV_EXCL_EXCEPTION_BR_LINE

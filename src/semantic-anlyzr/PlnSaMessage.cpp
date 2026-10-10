@@ -535,6 +535,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "type '" + arg1 + "' depends on itself: " + arg2 + ".";
 
+		case E_CastTargetNotPrim:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot cast to '" + arg1 + "': only a primitive or enum type can be a cast target.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+type U8 = uint8;
+type Level enum { Low, High };
+type Lv = Level;
+int32 n = 300;
+flo64 f = 2.75;
+U8 a = U8(n);
+size_t b = size_t(f);
+Lv c = Lv(1);
+printf("%d %lu %d\n", a, b, c == Level.High);

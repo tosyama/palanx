@@ -1,0 +1,9 @@
+cinclude <stdio.h>;
+import "lib_sa_types.pa" as V;
+type U8 = uint8;
+type C2 = V.Color;
+flo64 x = 300.5;
+U8 a = U8(x);
+size_t b = size_t(x);
+C2 c = C2(5);
+V.MyInt d = V.MyInt(x);

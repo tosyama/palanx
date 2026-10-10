@@ -267,7 +267,7 @@ class PlnSemanticAnalyzer {
 	void resolveCTypeRefs(json& node) const;      // C enum/earlier-cinclude typedef references -> SA type
 	json enumTypeNamed(const string& name) const; // enum value-type for a type name, or null
 	string typeNameWritten(const json& obj) const;
-	json enumCast(const json& expr, const string& typeName);
+	json aliasCast(const json& expr, const string& typeName);
 	json resolveEnumerator(const json& expr);     // `Name.X` as a lit-int, or null for a field access
 	int64_t typeByteSize(const json& locNode, const json& type);  // `sizeof(type)`
 	void recordAllocShape(const string& structName);

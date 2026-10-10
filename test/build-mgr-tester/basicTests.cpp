@@ -2444,3 +2444,9 @@ TEST(build_mgr, import_mutual_type) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/266_import_mutual_type.pa");
 	ASSERT_EQ(output, "4.5 4.0 2 9\n");
 }
+
+TEST(build_mgr, alias_cast) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/267_alias_cast.pa");
+	ASSERT_EQ(output, "44 2 1\n");
+}

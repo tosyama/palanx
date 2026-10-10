@@ -3065,6 +3065,24 @@ TEST(sa_error, circular_type_decl)
 	}
 }
 
+TEST(sa_error, alias_cast)
+{
+	const pair<string, string> cases[] = {
+		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a primitive or enum type can be a cast target."},
+		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a primitive or enum type can be a cast target."},
+		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a primitive or enum type can be a cast target."},
+		{"error_439_cast_alias_arg_count.pa", ":2:8: error: cast 'U8(...)' takes exactly one argument."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
 TEST(sa_error, struct_field_size)
 {
 	const pair<string, string> cases[] = {

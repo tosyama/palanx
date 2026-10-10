@@ -130,6 +130,7 @@ enum PlnSaMessageCode {
 	E_MethodNeedsMutableFirstParam,	// arg1: function name
 	E_UnqualifiedAliasType,	// arg1: type name, arg2: module alias
 	E_CircularTypeDecl,	// arg1: type name, arg2: dependency path
+	E_CastTargetNotPrim,	// arg1: target type name
 };
 
 class PlnSaMessage

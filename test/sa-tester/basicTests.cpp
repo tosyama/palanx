@@ -5114,3 +5114,17 @@ TEST(sa, import_mutual_type)
 	// Pair: n $Node (id 4 (+4) + leaf 16 + pair 8) + ls [2]$Leaf 32
 	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "64");
 }
+
+TEST(sa, alias_cast)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/236_alias_cast.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["expr-type"], "convert");
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["value-type"]["type-name"], "uint8");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["value-type"]["type-name"], "uint64");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["enum"], "Color");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value-type"]["type-name"], "int64");
+}

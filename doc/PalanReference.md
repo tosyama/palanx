@@ -180,6 +180,9 @@ int64 x = 100;
 printf("%d\n", int32(x));   // explicit narrowing cast
 ```
 
+The target may also be a type alias, including a C typedef such as `size_t`, when it names a
+primitive or enum type (`MyInt(x)`).
+
 ### Usual Arithmetic Conversions (Binary Operators and Comparisons)
 
 A binary arithmetic operator (`+ - * / % & | ^`) or a comparison (`< <= > >= == !=`) first
@@ -259,7 +262,7 @@ and is currently a compile error. It is not an assignment — assignment is writ
 | Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
-| Explicit cast | `type(expr)` | `int32(x)`, `Color(n)` |
+| Explicit cast | `type(expr)` | `int32(x)`, `Color(n)`, `MyInt(x)` |
 | Enumerator | `Name.X` | `Color.RED` |
 | Type size | `sizeof(type)` | `sizeof(Vec3f)` |
 | Logical AND | `expr && expr` | `a && b` |
@@ -1914,10 +1917,6 @@ func addOne(MyInt n) -> MyInt result {
 - The target may be a primitive, struct, or array type (`type PT = Point;`, `type Row = [3]int32;`).
 - The alias may be used wherever a type is written: variable declarations, function signatures,
   struct field types, and array element types (`[n]MyInt`).
-
-### Restrictions
-
-- Unlike primitive types' `int64(x)` cast syntax, there is no constructor-cast syntax `MyAlias(x)`.
 
 ---
 
