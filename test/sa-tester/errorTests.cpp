@@ -1284,18 +1284,6 @@ TEST(sa_error, c_union_forward_declared)
 	ASSERT_NE(sa.find("union 'F' is only forward-declared in this header"), string::npos);
 }
 
-TEST(sa_error, struct_def_before_cinclude)
-{
-	// The cinclude pre-scan keeps source order: a struct defined above the
-	// cinclude cannot see its types.
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_189_struct_def_before_cinclude.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type 'timespec'"), string::npos);
-}
-
 TEST(sa_error, incomplete_struct_owned_arr)
 {
 	// Same incomplete Tag as above; `[3]Tag a;` (owned pointer array) needs
@@ -2958,7 +2946,8 @@ TEST(sa_error, c_enum_name_conflict)
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_404_c_enum_name_conflict.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find(":2:1: error: type 'Color' is already defined."), string::npos);
+	// A top-level cinclude's types are registered before any Palan declaration.
+	ASSERT_NE(sa.find(":1:1: error: type 'Color' is already defined."), string::npos);
 }
 
 TEST(sa_error, enum_field_from_int)
@@ -3056,11 +3045,30 @@ TEST(sa_error, import_type)
 	}
 }
 
+TEST(sa_error, circular_type_decl)
+{
+	const pair<string, string> cases[] = {
+		// Reported where the cycle closes: A, reached from the import of B.
+		{"error_433_import_mutual_embed.pa", "error_433_import_mutual_embed.pa:2:1: error: type 'B' depends on itself: B -> A -> B."},
+		{"error_434_owned_cycle.pa", ":2:1: error: type 'P' depends on itself: P -> Q -> P."},
+		{"error_435_alias_cycle.pa", ":2:1: error: type 'X' depends on itself: X -> Y -> X."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		for (string f : {"lib_sa_mutual_cycle", "error_433_import_mutual_embed"})
+			execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
 TEST(sa_error, struct_field_size)
 {
 	const pair<string, string> cases[] = {
 		{"error_431_struct_field_var_size.pa", ":4:2: error: struct field array size must be a compile-time constant integer."},
-		{"error_432_struct_field_const_after.pa", ":1:11: error: Undefined variable 'N'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

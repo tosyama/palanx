@@ -10,6 +10,7 @@
 #include <set>
 #include <vector>
 #include <optional>
+#include <functional>
 #include <filesystem>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
@@ -97,9 +98,8 @@ class PlnSemanticAnalyzer {
 	// cinclude'd C typedefs (name -> var-type, its own references resolved), for
 	// resolving a later header's "user" reference to one of them.
 	map<string, json>      cTypedefs_;
-	// Registered enum types: enumerator values, and the declaration's loc so
-	// the step-2 revisit of a pre-scanned enum-def is told apart from a
-	// redefinition. A cinclude'd C enum has a null loc.
+	// Registered enum types: enumerator values, and the declaration's loc,
+	// null for a cinclude'd C enum (whose first definition wins).
 	struct EnumDef { map<string, int64_t> values; json loc; };
 	map<string, EnumDef>   enumDefs_;
 	// Defining module of each Palan type name. Type names are program-wide
@@ -110,9 +110,34 @@ class PlnSemanticAnalyzer {
 	// to write them with, or "" for a type that was not selected or not
 	// exported, registered only because an imported type depends on it.
 	map<string, string>    hiddenTypeNames_;
-	// Modules whose types are being pre-scanned, shared with the analyzers
-	// created for imports so a circular import stops.
-	shared_ptr<set<string>> typeImportsInProgress_ = make_shared<set<string>>();
+	// A top-level struct/enum/alias/const declaration, resolved when first
+	// needed, so neither source order nor which of two files importing each
+	// other is analyzed first decides whether a type is known yet.
+	struct TopDecl {
+		const json* stmt;
+		enum State { Pending, Resolving, Done } state = Pending;
+	};
+	map<string, TopDecl>   topDecls_;
+	// A type a top-level import makes writable here, keyed by how it is
+	// written (`T` or `V.T`).
+	struct ImportedType {
+		const json*          importStmt;
+		PlnSemanticAnalyzer* module;
+		const json*          decl;  // the exporting module's declaration
+		bool                 adopted = false;
+	};
+	map<string, ImportedType> importedTypes_;
+	// Struct names declared at the top level here or imported, resolved or
+	// not: a pointer may name one before its layout is known.
+	set<string>            declaredStructs_;
+	// Top-level declarations the pre-scan resolved; step 2 skips them.
+	set<const json*>       prescannedDecls_;
+	// Program-wide type resolution state, shared by every module's analyzer.
+	struct TypeProgram;
+	unique_ptr<TypeProgram> ownedProgram_;
+	TypeProgram*            program_;
+	json                    moduleAst_;  // an imported module's AST, which topDecls_ point into
+	const json*             moduleAstRoot_ = nullptr;  // this module's AST, wherever it is held
 	// Registered const declarations (name -> {"value": <SA'd literal expr>, "value-type": <type>})
 	map<string, json>      constDecls_;
 	// Library names collected from cinclude `link` clauses. A set: the same
@@ -146,17 +171,31 @@ class PlnSemanticAnalyzer {
 	json sa_statements(const json& stmts);
 	void beginModule(const json& ast);
 	void prescanTypes(const json& stmts);
+	void indexTopDecls(const json& stmts);
 	json loadImportAst(const json& stmt, filesystem::path& impPath) const;
-	// An analyzer holding the imported module's pre-scanned types, or null
-	// while that module is itself being pre-scanned (a circular import).
-	unique_ptr<PlnSemanticAnalyzer> importTypeContext(const json& impAst, const filesystem::path& impPath) const;
-	void importTypes(const json& stmt);
-	void adoptExportedTypes(const json& stmt, const json& impAst, const PlnSemanticAnalyzer& sub);
-	void adoptStruct(const PlnSemanticAnalyzer& sub, const string& name, bool nameable, const string& alias,
+	// The imported module's type context, shared program-wide; its types are
+	// resolved only as they are needed.
+	PlnSemanticAnalyzer& importTypeContext(json impAst, const filesystem::path& impPath);
+	// Resolves the type or const `name` (as written in this module) if a
+	// top-level declaration or import provides it and it is not resolved yet.
+	// Through a pointer, a struct only has to exist.
+	void ensureTypeName(const string& name, bool viaPointer);
+	// ensureTypeName for every type and const name `node` refers to.
+	void ensureTypeRefs(const json& node, bool viaPointer = false);
+	// ensureTypeName for a struct by its program-wide name.
+	void ensureStructDef(const string& name);
+	void resolveTopDecl(const string& name, TopDecl& d);
+	void adoptImportedType(ImportedType& t, const string& alias);
+	// Runs `f` once no declaration is being resolved: resolving a pointee
+	// earlier could report a cycle a pointer breaks.
+	void whenSettled(function<void()> f);
+	void adoptExportedTypes(const json& stmt, const json& impAst, PlnSemanticAnalyzer& sub);
+	void adoptExportedType(const json& stmt, const json& decl, PlnSemanticAnalyzer& sub);
+	void adoptStruct(PlnSemanticAnalyzer& sub, const string& name, bool nameable, const string& alias,
 	                 const json& locNode);
 	void adoptEnum(const PlnSemanticAnalyzer& sub, const string& name, bool nameable, const string& alias,
 	               const json& locNode);
-	void adoptTypeDeps(const PlnSemanticAnalyzer& sub, const json& type, const json& locNode);
+	void adoptTypeDeps(PlnSemanticAnalyzer& sub, const json& type, const json& locNode);
 	void setTypeNameable(const string& name, bool isNew, bool nameable, const string& alias);
 	// Records `name` as defined by `origin`; false if it already was, exits if
 	// another module defined it.
@@ -330,6 +369,7 @@ class PlnSemanticAnalyzer {
 
 public:
 	PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path);
+	~PlnSemanticAnalyzer();
 	void analysis(const json &ast);
 	const json& result();
 };

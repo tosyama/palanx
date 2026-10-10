@@ -1,0 +1,4 @@
+import "lib_sa_mutual.pa";
+export type Node { int32 id; $Leaf leaf; @Pair pair; };
+type Box { $Pair p; };
+Box b;

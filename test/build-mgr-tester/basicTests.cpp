@@ -2438,3 +2438,9 @@ TEST(build_mgr, struct_field_const_size) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/265_struct_field_const_size.pa");
 	ASSERT_EQ(output, "2 20 200 48\n");
 }
+
+TEST(build_mgr, import_mutual_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/266_import_mutual_type.pa");
+	ASSERT_EQ(output, "4.5 4.0 2 9\n");
+}

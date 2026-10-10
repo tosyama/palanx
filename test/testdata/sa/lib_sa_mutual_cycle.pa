@@ -1,0 +1,2 @@
+import "error_433_import_mutual_embed.pa";
+export type B { int32 y; $A a; };

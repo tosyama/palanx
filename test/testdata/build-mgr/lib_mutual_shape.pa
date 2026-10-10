@@ -1,0 +1,6 @@
+import "lib_mutual_group.pa";
+export type Shape { int32 kind; $Pos at; @!Group g; };
+export func moveTo(@!Shape s, flo64 x, flo64 y) {
+	x -> s.at.x;
+	y -> s.at.y;
+}

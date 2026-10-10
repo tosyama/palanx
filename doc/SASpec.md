@@ -127,10 +127,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   independent sections of the header's AST -- a header exporting only some of
   them (e.g. `stdint.h` with only `typedefs`) still has each present section
   registered; none is gated on another's presence. For a top-level cinclude,
-  `structs` and `typedefs` are registered early, in the same source-order
-  pre-scan as native `type-alias`/`struct-def` statements and before Palan
-  function signatures are pre-registered, so a native struct field or a Palan
-  function signature below the cinclude can name a C type. `functions` and
+  `structs` and `typedefs` are registered early, before any native type
+  declaration is resolved and before Palan function signatures are
+  pre-registered, so a native struct field or a Palan function signature
+  anywhere at the top level can name a C type. `functions` and
   `globals` are still registered at the statement's own position. A cinclude's `libs` (ASTSpec.md's
   Statement model, from a `link` clause) is handled differently from the
   sections above: instead of being registered into a table and discarded, each
@@ -154,12 +154,18 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `_unsupported-sig`/`E_UnsupportedCFuncSignature` for C functions).
 - import statements are consumed by SA and not emitted; imported functions are
   registered in the current scope and become callable from the point of import.
-  Exported types and function signatures are resolved in the exporting module: SA
-  pre-scans that module's types (its cinclude, const, type and import declarations)
-  with a separate analyzer and copies the results over.
-  - A top-level import's types join the pre-scan in source order, like a native type
-    declaration. A block-scoped import's types are registered at the import, like a
-    struct-def at that position.
+  Exported types and function signatures are resolved in the exporting module: each
+  module has one analyzer for the whole program, which resolves that module's
+  declarations as they are needed, and SA copies the results over.
+  - Top-level type and const declarations are resolved on first need, by name: a
+    module's own declaration, or a type a top-level import brings in. A pre-scan
+    resolves all of them (imports first) before function signatures are pre-registered,
+    so their order in the source does not matter. A block-scoped import's types are
+    registered at the import, like a struct-def at that position.
+  - Reaching a declaration that is still being resolved is a cycle, reported as
+    `E_CircularTypeDecl` at the declaration that reached it. A struct named through a
+    pointer only has to be declared; it is resolved once no declaration is being
+    resolved, so a pointer may close a cycle.
   - A struct comes with every struct and enum its fields use, and a signature with every
     type it names. A Palan type that is not nameable is registered but hidden: one written
     `V.T` under an alias (registered as the alias `"V.T"` for `T`), one not selected, or
@@ -169,10 +175,6 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Type names are program-wide identities (build-mgr keys struct allocators by them).
     Each Palan type name records its defining module, so the same name from a second
     module, or a local declaration of an imported name, is `E_DuplicateTypeName`.
-  - Types are not imported from a module whose types are being pre-scanned (a circular
-    import). Pre-scanning a module re-scans its imports, so around a cycle each module's
-    declarations are reached once without the other's types: a type declaration that uses a
-    type across a circular import is unknown there. Signatures are not pre-scanned.
 - type-alias statements are consumed by SA and not emitted; the alias is
   registered and resolved inline at each reference site (see Type Aliases
   in PalanReference.md)

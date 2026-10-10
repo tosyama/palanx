@@ -1020,9 +1020,8 @@ flo32 l = len2(@p);
   headers; those are not made nameable in the importing file.
 - A type name must be unique in the program: declaring or importing a type whose name another
   file already defines is a compile error.
-- If two files import each other, a type declaration (a struct field or an alias target) in
-  either file cannot use a type from the other. Function signatures and bodies can use each
-  other's types.
+- Two files may import each other and use each other's types anywhere, including in type
+  declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
 
 ---
 
@@ -1748,7 +1747,7 @@ printf("%ld %ld\n", original.x, original.y);   // 20 10
 | `[n]@!T field`| Non-owning mutable pointer-slot array     | parent's block (slots only)      |
 
 `T` may be a primitive type or a struct name. `n` must be a compile-time integer: a literal, a
-[const](#21-constant-declarations) declared before the struct, or `sizeof(T)`.
+[const](#21-constant-declarations), or `sizeof(T)`.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 
@@ -1871,6 +1870,21 @@ statement on its own, it is freed at once. Binding it to a `@T`/`@!T` — a vari
 an assignment, a pointer field or slot, or a return — is a compile error, since nothing would
 own it.
 
+### Declaration order
+
+A top-level struct, enum, type alias, or const may be used before its declaration, and so may
+the C types of a top-level `cinclude`. A declaration inside a block is visible from that point
+on.
+
+```palan
+type Shape { $Pos at; @Shape next; };   // Pos is declared below
+type Pos { flo64 x; flo64 y; };
+```
+
+A type must not contain itself. Embedding or owning in a cycle (`type A { $B b; };` with
+`type B { $A a; };`, possibly across files that import each other) or an alias cycle is a
+compile error. A pointer field (`@T`/`@!T`) may close a cycle.
+
 ### Restrictions
 
 - Nested/2D array fields (`[n]$[m]T field`, etc.) are not supported.
@@ -1927,8 +1941,7 @@ printf("%ld\n", MaxLen);   // 256
   declaration itself accepts.
 - Every reference to the constant is inlined with the literal value; the constant's name does not
   appear in `sa.json`.
-- A const may reference another const declared earlier (`const B = A;`); this chains naturally
-  through inlining.
+- A const may reference another const (`const B = A;`); this chains naturally through inlining.
 - Like the literal it names, a const takes its type from where it is used: `const N = 20;` can be
   passed to an `int32` parameter, used in `N + 2` for an `int16` variable, or assigned to `flo64`.
 

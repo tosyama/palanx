@@ -5090,3 +5090,27 @@ TEST(sa, struct_field_const_size)
 	ASSERT_EQ(shapes["L"]["total-size"], 16);
 	ASSERT_EQ(shapes["L"]["owned-array-fields"][0]["count"], 2);
 }
+
+TEST(sa, top_decl_order)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/234_top_decl_order.pa");
+	ASSERT_TRUE(jout.is_object());
+	json shape;
+	for (auto& s : jout["alloc-shapes"])
+		if (s.value("shape-name", "") == "S") shape = s;
+	// a 8 + ts 16 + v [3]$int32 12 + t 4 + u 8 + al 8 + e 4 (+4) + p 8
+	ASSERT_EQ(shape["total-size"], 72);
+	ASSERT_EQ(shape["owned-fields"][0]["struct-name"], "U");
+}
+
+TEST(sa, import_mutual_type)
+{
+	cleanTestEnv();
+	for (string f : {"lib_sa_mutual", "235_import_mutual_type"})
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/235_import_mutual_type.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Pair: n $Node (id 4 (+4) + leaf 16 + pair 8) + ls [2]$Leaf 32
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "64");
+}

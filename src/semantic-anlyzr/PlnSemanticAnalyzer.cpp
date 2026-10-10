@@ -7,10 +7,19 @@
 #include <fstream>
 #include <filesystem>
 #include <set>
+#include <deque>
 #include <stdexcept>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
+
+struct PlnSemanticAnalyzer::TypeProgram {
+	map<string, PlnSemanticAnalyzer*> modules;  // moduleId -> its type context, the root's included
+	vector<unique_ptr<PlnSemanticAnalyzer>> imported;
+	struct Resolving { PlnSemanticAnalyzer* module; string name; const json* stmt; };
+	vector<Resolving> resolving;
+	deque<function<void()>> settled;
+};
 
 // Collect free() stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
 json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx)
@@ -25,9 +34,12 @@ json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx)
 }
 
 PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
-	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path), inputFilePath("")
+	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path), inputFilePath(""),
+	  ownedProgram_(make_unique<TypeProgram>()), program_(ownedProgram_.get())
 {
 }
+
+PlnSemanticAnalyzer::~PlnSemanticAnalyzer() = default;
 
 void PlnSemanticAnalyzer::enterScope()
 {
@@ -677,6 +689,11 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 {
 	for (auto& p : f.value("parameters", json::array()))
+		ensureTypeRefs(p["var-type"]);
+	for (auto& r : f.value("rets", json::array()))
+		ensureTypeRefs(r["var-type"]);
+	if (f.contains("ret-type")) ensureTypeRefs(f["ret-type"]);
+	for (auto& p : f.value("parameters", json::array()))
 		requireKnownTypeNames(f, p["var-type"]);
 	for (auto& r : f.value("rets", json::array()))
 		requireKnownTypeNames(f, r["var-type"]);
@@ -726,28 +743,185 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
 	sa["libs"]          = json::array();
+	program_->modules[moduleId_] = this;
+	moduleAstRoot_ = &ast;
 	enterScope();
 }
 
-// Pre-scan type-alias/struct-def/enum-def declarations so function signatures
-// pre-registered in step 1 see fully-resolved types, not alias names.
-// Top-level cinclude and import types join the scan in source order, since
-// native struct fields and signatures can name them; consts join it so a
-// borrowed array parameter can size itself with one. Step 2 registering them
-// again is a no-op.
+// Resolve every top-level type and const declaration, and the types
+// top-level imports bring in, so function signatures pre-registered in
+// step 1 see fully-resolved types, not alias names. A const whose value
+// names a variable is left to step 2.
 void PlnSemanticAnalyzer::prescanTypes(const json& stmts)
 {
-	pushStructDefNames(stmts);
+	indexTopDecls(stmts);
+	// Imports first, so a type they hide is known as hidden by the time a
+	// declaration here writes it.
+	for (auto& stmt : stmts)
+		if (stmt.value("stmt-type", "") == "import")
+			for (auto& [key, t] : importedTypes_)
+				if (t.importStmt == &stmt) ensureTypeName(key, false);
+	for (auto& stmt : stmts) {
+		auto d = topDecls_.find(stmt.value("name", ""));
+		if (d != topDecls_.end() && d->second.stmt == &stmt) ensureTypeName(d->first, false);
+	}
+}
+
+// C types depend on no Palan type, so a top-level cinclude's are registered
+// here, ahead of any Palan declaration that may use them.
+void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
+{
 	for (auto& stmt : stmts) {
 		string t = stmt.value("stmt-type", "");
-		if      (t == "type-alias") sa_type_alias(stmt);
-		else if (t == "struct-def") sa_struct_def(stmt);
-		else if (t == "enum-def")   sa_enum_def(stmt);
-		else if (t == "cinclude")   registerCIncludeTypes(stmt);
-		else if (t == "import")     importTypes(stmt);
-		else if (t == "const-decl" && onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
+		if (t == "struct-def" || t == "enum-def" || t == "type-alias" || t == "const-decl") {
+			string name = stmt["name"].get<string>();
+			topDecls_.emplace(name, TopDecl{&stmt});
+			if (t == "struct-def") declaredStructs_.insert(name);
+		} else if (t == "cinclude") {
+			registerCIncludeTypes(stmt);
+		} else if (t == "import") {
+			filesystem::path impPath;
+			json impAst = loadImportAst(stmt, impPath);
+			if (impAst.is_null()) continue;
+			PlnSemanticAnalyzer& mod = importTypeContext(move(impAst), impPath);
+			if (!(*mod.moduleAstRoot_)["ast"].contains("statements")) continue;
+			string alias = stmt.value("alias", "");
+			set<string> targets;
+			if (stmt.contains("targets"))
+				for (auto& tg : stmt["targets"]) targets.insert(tg.get<string>());
+			for (auto& d : (*mod.moduleAstRoot_)["ast"]["statements"]) {
+				if (!d.value("export", false)) continue;
+				string name = d["name"].get<string>();
+				if (stmt.contains("targets") && !targets.count(name)) continue;
+				importedTypes_.emplace(alias.empty() ? name : alias + "." + name, ImportedType{&stmt, &mod, &d});
+				if (d["stmt-type"] == "struct-def") declaredStructs_.insert(name);
+			}
+		}
 	}
-	structDefNameScopes_.pop_back();
+}
+
+void PlnSemanticAnalyzer::ensureTypeName(const string& name, bool viaPointer)
+{
+	auto d = topDecls_.find(name);
+	if (d != topDecls_.end()) {
+		if (viaPointer && (*d->second.stmt)["stmt-type"] == "struct-def")
+			whenSettled([this, name] { ensureTypeName(name, false); });
+		else
+			resolveTopDecl(name, d->second);
+		return;
+	}
+	auto t = importedTypes_.find(name);
+	if (t == importedTypes_.end() || t->second.adopted) return;
+	size_t dot = name.find('.');
+	string alias = dot == string::npos ? "" : name.substr(0, dot);
+	const json& decl = *t->second.decl;
+	if (viaPointer && decl["stmt-type"] == "struct-def") {
+		// The pointer's type names the struct by its program-wide name now;
+		// its layout comes with the adoption.
+		if (!alias.empty())
+			typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", decl["name"]}};
+		ImportedType* it = &t->second;
+		whenSettled([this, it, alias] { if (!it->adopted) adoptImportedType(*it, alias); });
+		return;
+	}
+	adoptImportedType(t->second, alias);
+}
+
+void PlnSemanticAnalyzer::ensureTypeRefs(const json& node, bool viaPointer)
+{
+	if (node.is_array()) {
+		for (auto& e : node) ensureTypeRefs(e, viaPointer);
+		return;
+	}
+	if (!node.is_object()) return;
+	string tk = node.value("type-kind", "");
+	if (!tk.empty()) {
+		viaPointer = viaPointer || tk == "pntr";
+		if (node.contains("type-name") && node["type-name"].is_string())
+			ensureTypeName(node["type-name"].get<string>(), viaPointer);
+		// A size expression (`[N]@T`) is evaluated whatever the element is.
+		for (auto& [k, v] : node.items())
+			ensureTypeRefs(v, k == "base-type" && viaPointer);
+		return;
+	}
+	string et = node.value("expr-type", "");
+	if (et == "id" || et == "call") {
+		if (node.contains("name") && node["name"].is_string())
+			ensureTypeName(node["name"].get<string>(), false);
+	} else if (et == "field-access") {
+		// `V.Color.Red`: the object spells the imported type `V.Color`.
+		const json& obj = node["object"];
+		if (obj.value("expr-type", "") == "id")
+			ensureTypeName(obj["name"].get<string>() + "." + node["field"].get<string>(), false);
+	}
+	for (auto& [k, v] : node.items()) ensureTypeRefs(v, false);
+}
+
+void PlnSemanticAnalyzer::ensureStructDef(const string& name)
+{
+	if (topDecls_.count(name)) {
+		ensureTypeName(name, false);
+		return;
+	}
+	for (auto& [key, t] : importedTypes_)
+		if ((*t.decl)["name"] == name) {
+			ensureTypeName(key, false);
+			return;
+		}
+}
+
+void PlnSemanticAnalyzer::resolveTopDecl(const string& name, TopDecl& d)
+{
+	if (d.state == TopDecl::Done) return;
+	auto& resolving = program_->resolving;
+	if (d.state == TopDecl::Resolving) {
+		// A struct embedding itself is E_RecursiveStruct's to report.
+		if (resolving.back().module == this && resolving.back().name == name) return;
+		string path;
+		bool inCycle = false;
+		for (auto& r : resolving) {
+			inCycle = inCycle || (r.module == this && r.name == name);
+			if (inCycle) path += r.name + " -> ";
+		}
+		auto& closer = resolving.back();
+		cerr << closer.module->locPrefix(*closer.stmt)
+		     << PlnSaMessage::getMessage(E_CircularTypeDecl, name, path + name) << endl;
+		exit(1);
+	}
+	d.state = TopDecl::Resolving;
+	resolving.push_back({this, name, d.stmt});
+	const json& stmt = *d.stmt;
+	ensureTypeRefs(stmt);
+	string t = stmt["stmt-type"].get<string>();
+	bool resolved = true;
+	if      (t == "struct-def") sa_struct_def(stmt);
+	else if (t == "enum-def")   sa_enum_def(stmt);
+	else if (t == "type-alias") sa_type_alias(stmt);
+	else if (onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
+	else resolved = false;
+	if (resolved) prescannedDecls_.insert(&stmt);
+	resolving.pop_back();
+	d.state = TopDecl::Done;
+	while (resolving.empty() && !program_->settled.empty()) {
+		auto f = move(program_->settled.front());
+		program_->settled.pop_front();
+		f();
+	}
+}
+
+void PlnSemanticAnalyzer::adoptImportedType(ImportedType& t, const string& alias)
+{
+	adoptExportedType(*t.importStmt, *t.decl, *t.module);
+	if (!alias.empty() && (*t.decl)["stmt-type"] == "struct-def")
+		typeAliases_[alias + "." + (*t.decl)["name"].get<string>()] =
+			{{"type-kind", "prim"}, {"type-name", (*t.decl)["name"]}};
+	t.adopted = true;
+}
+
+void PlnSemanticAnalyzer::whenSettled(function<void()> f)
+{
+	if (program_->resolving.empty()) f();
+	else program_->settled.push_back(move(f));
 }
 
 void PlnSemanticAnalyzer::analysis(const json &ast)
@@ -957,26 +1131,20 @@ json PlnSemanticAnalyzer::loadImportAst(const json& stmt, filesystem::path& impP
 	return json::parse(astfile);
 }
 
-unique_ptr<PlnSemanticAnalyzer> PlnSemanticAnalyzer::importTypeContext(const json& impAst,
-		const filesystem::path& impPath) const
+PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst, const filesystem::path& impPath)
 {
+	auto known = program_->modules.find(filesystem::weakly_canonical(impAst["original"].get<string>()).string());
+	if (known != program_->modules.end()) return *known->second;
 	auto sub = make_unique<PlnSemanticAnalyzer>(impPath.parent_path().string(), "", c2astPath);
-	sub->typeImportsInProgress_ = typeImportsInProgress_;
-	sub->beginModule(impAst);
-	if (!typeImportsInProgress_->insert(sub->moduleId_).second) return nullptr;
-	if (impAst["ast"].contains("statements"))
-		sub->prescanTypes(impAst["ast"]["statements"]);
-	typeImportsInProgress_->erase(sub->moduleId_);
-	return sub;
-}
-
-void PlnSemanticAnalyzer::importTypes(const json& stmt)
-{
-	filesystem::path impPath;
-	json impAst = loadImportAst(stmt, impPath);
-	if (impAst.is_null()) return;
-	if (auto sub = importTypeContext(impAst, impPath))
-		adoptExportedTypes(stmt, impAst, *sub);
+	sub->ownedProgram_.reset();
+	sub->program_ = program_;
+	sub->moduleAst_ = move(impAst);
+	sub->beginModule(sub->moduleAst_);
+	PlnSemanticAnalyzer& mod = *sub;
+	program_->imported.push_back(move(sub));
+	if (mod.moduleAst_["ast"].contains("statements"))
+		mod.indexTopDecls(mod.moduleAst_["ast"]["statements"]);
+	return mod;
 }
 
 void PlnSemanticAnalyzer::sa_import(const json& stmt)
@@ -985,9 +1153,8 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 	json imp_ast = loadImportAst(stmt, imp_path);
 	if (imp_ast.is_null()) return;
 
-	// Never null: no pre-scan is in progress once statements are analyzed.
-	auto sub = importTypeContext(imp_ast, imp_path);
-	adoptExportedTypes(stmt, imp_ast, *sub);
+	PlnSemanticAnalyzer& sub = importTypeContext(imp_ast, imp_path);
+	adoptExportedTypes(stmt, imp_ast, sub);
 
 	if (!imp_ast.contains("export")) return;
 
@@ -1008,12 +1175,12 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 
 		// Resolved in the exporting module, where the type names it uses mean
 		// what its author meant.
-		json funcEntry = sub->normalizeFuncSig(f);
+		json funcEntry = sub.normalizeFuncSig(f);
 		for (auto& p : funcEntry.value("parameters", json::array()))
-			adoptTypeDeps(*sub, p["var-type"], stmt);
+			adoptTypeDeps(sub, p["var-type"], stmt);
 		for (auto& r : funcEntry.value("rets", json::array()))
-			adoptTypeDeps(*sub, r["var-type"], stmt);
-		if (funcEntry.contains("ret-type")) adoptTypeDeps(*sub, funcEntry["ret-type"], stmt);
+			adoptTypeDeps(sub, r["var-type"], stmt);
+		if (funcEntry.contains("ret-type")) adoptTypeDeps(sub, funcEntry["ret-type"], stmt);
 
 		if (hasAlias) {
 			currentScope[alias][fname] = funcEntry;

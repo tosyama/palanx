@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+import "lib_mutual_shape.pa";
+import "lib_mutual_group.pa";
+Group g;
+9 -> g.id;
+2 -> g.items[1].kind;
+moveTo(@!g.items[0], 1.5, 2.0);
+moveTo(@!g.items[1], 3.0, 4.0);
+@!g -> g.items[1].g;
+printf("%.1f %.1f %d %d\n", sumX(@g), g.items[1].at.y, g.items[1].kind, g.items[1].g.id);

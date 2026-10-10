@@ -1,0 +1,2 @@
+type P { int32 x; Q q; };
+type Q { int32 y; P p; };

@@ -129,6 +129,7 @@ enum PlnSaMessageCode {
 	E_SizeofArrSizeNotConst,
 	E_MethodNeedsMutableFirstParam,	// arg1: function name
 	E_UnqualifiedAliasType,	// arg1: type name, arg2: module alias
+	E_CircularTypeDecl,	// arg1: type name, arg2: dependency path
 };
 
 class PlnSaMessage
