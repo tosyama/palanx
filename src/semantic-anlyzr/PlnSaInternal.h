@@ -98,6 +98,11 @@ inline bool isArrBorrowVar(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && vt.contains("arr-size");
 }
+inline bool isAggregateLit(const json& expr)
+{
+	string et = expr.value("expr-type", "");
+	return et == "arr-lit" || et == "dict-lit";
+}
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 // A struct returned by a Palan call, owned by whoever receives it.

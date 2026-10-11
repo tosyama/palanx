@@ -1,0 +1,4 @@
+type V { int64 x; int64 y; };
+V a;
+@!V p = @!a;
+[1, 2] -> p;

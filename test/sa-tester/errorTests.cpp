@@ -2271,7 +2271,7 @@ TEST(sa_error, arr_lit_func_arg)
 		"bin/palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array variable's initializer in this version."), string::npos);
+	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array or struct variable's initializer, or as the source of '->' to a struct, in this version."), string::npos);
 }
 
 TEST(sa_error, arr_lit_init)
@@ -2465,8 +2465,8 @@ TEST(sa_error, struct_arr_lit)
 		{"error_266_struct_lit_unknown_field.pa", ":2:21: error: struct 'Point' has no field 'z'."},
 		{"error_267_struct_lit_ptr_field.pa", ":2:15: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric and struct fields are supported."},
 		{"error_268_struct_lit_narrowing.pa", ":3:17: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
-		{"error_269_dict_lit_prim_elem.pa", ":1:15: error: a '{name: value}' literal can only be used as a struct element of an array literal."},
-		{"error_270_dict_lit_context.pa", ":2:11: error: a '{name: value}' literal can only be used as a struct element of an array literal."},
+		{"error_269_dict_lit_prim_elem.pa", ":1:15: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, or an element of an array literal."},
+		{"error_270_dict_lit_context.pa", ":3:5: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, or an element of an array literal."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3087,6 +3087,26 @@ TEST(sa_error, struct_ptr_elem_copy)
 {
 	const pair<string, string> cases[] = {
 		{"error_440_copy_to_readonly_ptr_elem.pa", ":2:24: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, struct_lit_init_assign)
+{
+	const pair<string, string> cases[] = {
+		{"error_441_struct_lit_to_borrow.pa", ":4:1: error: a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy into the struct it points to."},
+		{"error_442_struct_lit_init_borrow.pa", ":3:1: error: a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy into the struct it points to."},
+		{"error_443_struct_lit_to_readonly_elem.pa", ":2:16: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
+		{"error_444_struct_lit_assign_count.pa", ":3:1: error: struct 'V' has 2 fields but its literal has 3 values."},
+		{"error_445_struct_lit_assign_ptr_field.pa", ":4:2: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric and struct fields are supported."},
+		{"error_446_struct_lit_transfer.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

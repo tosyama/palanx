@@ -271,24 +271,28 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	auto isArrInit = [](const json& var) {
 		return var["var-type"].value("type-kind", "") == "arr" && var.contains("init");
 	};
+	auto isLitInit = [](const json& var) { return var.contains("init") && isAggregateLit(var["init"]); };
+	auto ownRun = [&](const json& var) { return isArrInit(var) || isLitInit(var); };
 
 	// The lowering paths below apply one var-type to every var in a statement,
 	// so the declaration is split into runs of equal var-type. The comparison
 	// includes loc, so only vars inheriting the same source type node (`[f()]int32 a, b`)
 	// share one evaluation of its size expression. Each array literal fixes its own
 	// variable's size (`[]int32 a = [1,2], b = [1,2,3]`), so it always gets its own run,
-	// as does an array initialized by copying another one.
+	// as does an array initialized by copying another one or a struct literal.
 	json result = json::array();
 	const json& vars = stmt2["vars"];
 	size_t begin = 0;
 	for (size_t i = 1; i <= vars.size(); i++) {
 		if (i < vars.size() && vars[i]["var-type"] == vars[i-1]["var-type"]
-				&& !isArrInit(vars[i]) && !isArrInit(vars[i-1]))
+				&& !ownRun(vars[i]) && !ownRun(vars[i-1]))
 			continue;
 		json run = stmt2;
 		run["vars"] = json(vars.begin() + begin, vars.begin() + i);
 		json lowered;
-		if (!isArrInit(vars[begin]))
+		if (isLitInit(vars[begin]) && !isArrInit(vars[begin]))
+			lowered = sa_struct_lit_var_decl(run);
+		else if (!isArrInit(vars[begin]))
 			lowered = sa_var_decl_group(run);
 		else if (vars[begin]["init"].value("expr-type", "") == "arr-lit")
 			lowered = sa_arr_lit_var_decl(run);
@@ -686,6 +690,31 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 		for (size_t j = 0; j < values[i].size(); j++)
 			assignElem(indexOf(indexOf(id, i), j), values[i][j]);
 	}
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_struct_lit_var_decl(const json& stmt)
+{
+	const json& var = stmt["vars"][0];
+	const json& vtype = var["var-type"];
+	auto isStructName = [&](const json& t) {
+		return t.value("type-kind", "") == "prim" && structDefs_.count(t.value("type-name", ""));
+	};
+	if (vtype.value("type-kind", "") == "pntr" && isStructName(vtype["base-type"])) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructLitTarget) << endl;
+		exit(1);
+	}
+	if (!isStructName(vtype))
+		return sa_var_decl_group(stmt);
+
+	const StructDef& def = requireCompleteStruct(vtype["type-name"].get<string>(), stmt);
+	// Evaluated before the declaration so the variable is not in scope in its
+	// own initializer.
+	json values = sa_struct_lit(var["init"], def);
+	json declStmt = stmt;
+	declStmt["vars"][0].erase("init");
+	json result = sa_var_decl_group(declStmt);
+	emitStructLitAssigns({{"expr-type", "id"}, {"name", var["name"]}}, def, values, result); // LCOV_EXCL_EXCEPTION_BR_LINE
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

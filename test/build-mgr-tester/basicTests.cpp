@@ -2456,3 +2456,9 @@ TEST(build_mgr, struct_ptr_elem_copy) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/268_struct_ptr_elem_copy.pa");
 	ASSERT_EQ(output, "1 2\n5 6\n0 10\n");
 }
+
+TEST(build_mgr, struct_lit_init_assign) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/269_struct_lit_init_assign.pa");
+	ASSERT_EQ(output, "1 2 3 / 4 5 6 / 1 2 7\n2 1 / 9 3\n5 1\n5 4\n3 4\n");
+}

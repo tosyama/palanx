@@ -360,7 +360,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "Integer literal '" + arg1 + "' is out of range for type '" + arg2 + "'.";
 
 		case E_ArrLitContext:
-			return "an array literal can only be used as an array variable's initializer in this version.";
+			return "an array literal can only be used as an array or struct variable's initializer, "
+			       "or as the source of '->' to a struct, in this version.";
 
 		case E_ArrLitCountMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -431,7 +432,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "field '" + arg2 + "' of struct '" + arg1 + "' cannot be initialized by a literal: only numeric and struct fields are supported.";
 
 		case E_DictLitContext:
-			return "a '{name: value}' literal can only be used as a struct element of an array literal.";
+			return "a '{name: value}' literal can only be used as a struct value: a struct variable's "
+			       "initializer, the source of '->' to a struct, or an element of an array literal.";
+
+		case E_StructLitTarget:
+			return "a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy "
+			       "into the struct it points to.";
 
 		case E_CopyShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");

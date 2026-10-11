@@ -1,0 +1,3 @@
+type V { int64 x; int64 y; };
+V a;
+@V p = [1, 2];

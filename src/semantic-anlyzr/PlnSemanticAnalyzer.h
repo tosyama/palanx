@@ -246,6 +246,7 @@ class PlnSemanticAnalyzer {
 	json sa_arr_var_decl(const json& stmt);       // returns array of statements
 	json sa_arr_lit_var_decl(const json& stmt);   // single var; returns array of statements
 	json sa_arr_copy_var_decl(const json& stmt);  // single var; returns array of statements
+	json sa_struct_lit_var_decl(const json& stmt); // single var; returns array of statements
 	json sa_struct_lit(const json& item, const StructDef& def);
 	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
@@ -355,6 +356,8 @@ class PlnSemanticAnalyzer {
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
 	json sa_arr_assign_stmt(const json& stmt);  // returns json::array()
+	// `[...] -> target` / `{...} -> target` for a struct-typed target; returns a block.
+	json sa_struct_lit_assign(const json& stmt, const json& targetAst, const json& targetType);
 	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);

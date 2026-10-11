@@ -5144,3 +5144,39 @@ TEST(sa, struct_ptr_elem_copy)
 	ASSERT_EQ(borrow["expr-type"], "arr-index");
 	ASSERT_EQ(borrow["value-type"]["mutable"], true);
 }
+
+TEST(sa, struct_lit_init_assign)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/238_struct_lit_init_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["name"], "calloc");
+	ASSERT_EQ(stmts[1]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[1]["var"], "a");
+	ASSERT_EQ(stmts[3]["offset"], 8);
+	// {z: 6, x: 4, y: 5} is stored in field order.
+	ASSERT_EQ(stmts[5]["offset"], 0);
+	ASSERT_EQ(stmts[5]["value"]["value"], "4");
+	// s.a is an owned struct reached through its pointer; s.b is embedded at offset 8.
+	ASSERT_TRUE(stmts[9].contains("ptr-expr"));
+	ASSERT_EQ(stmts[12]["var"], "s");
+	ASSERT_EQ(stmts[12]["offset"], 8);
+
+	// Values first, then the target's address, then the stores through it.
+	const auto& swap = stmts[15];
+	ASSERT_EQ(swap["stmt-type"], "block");
+	ASSERT_EQ(swap["body"].size(), 7);
+	ASSERT_EQ(swap["body"][0]["vars"][0]["init"]["offset"], 4);
+	ASSERT_EQ(swap["body"][3]["vars"][0]["var-type"]["mutable"], true);
+	ASSERT_EQ(swap["body"][4]["stmt-type"], "field-assign");
+	ASSERT_EQ(swap["body"][4]["value"]["name"], swap["body"][0]["vars"][0]["name"]);
+	ASSERT_EQ(stmts[16]["stmt-type"], "block");
+	ASSERT_EQ(stmts[18]["stmt-type"], "block");
+	ASSERT_EQ(stmts[18]["body"][3]["vars"][0]["init"]["expr-type"], "arr-index");
+
+	const auto& fbody = jout["functions"][0]["body"];
+	ASSERT_EQ(fbody[0]["stmt-type"], "block");
+	ASSERT_EQ(fbody[0]["body"][3]["vars"][0]["init"]["expr-type"], "arr-index");
+}

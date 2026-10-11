@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <functional>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -274,6 +275,8 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 		exit(1);
 	}
+	if (isAggregateLit(stmt["value"]) && isStructPntr(*varType))
+		return sa_struct_lit_assign(stmt, {{"expr-type", "id"}, {"name", name}}, *varType); // LCOV_EXCL_EXCEPTION_BR_LINE
 	const PlnType* toType = registry_.fromJson(*varType);
 	json value = sa_expression(stmt["value"], toType);
 	if (!value.contains("value-type")) {
@@ -305,6 +308,8 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
 		exit(1);
 	}
+	if (isAggregateLit(stmt["value"]) && isStructPntr(sa_target["value-type"]))
+		return json::array({sa_struct_lit_assign(stmt, stmt["target"], sa_target["value-type"])}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (!transfer && isCopiedByValue(sa_target["value-type"]))
 		return json::array({makeCopyStmt(stmt, sa_target, sa_expression(stmt["value"]))}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (sa_target.value("addr-only", false)) {
@@ -347,6 +352,53 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	json result = json::array({makeOwnedValueFreeStmt(sa_target), arr_assign}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	appendTransferSourceReset(result, stmt, sa_value);
 	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Every value is evaluated into a temp before anything is written, so
+// `[v.y, v.x] -> v[0]` swaps, and the target's address is taken once, so an
+// index expression in it is evaluated once rather than once per field.
+json PlnSemanticAnalyzer::sa_struct_lit_assign(const json& stmt, const json& targetAst, const json& targetType)
+{
+	if (stmt.value("ownership-transfer", false)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner) << endl;
+		exit(1);
+	}
+	if (!isStructStorage(targetType)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructLitTarget) << endl;
+		exit(1);
+	}
+	const StructDef& def = requireCompleteStruct(targetType["base-type"]["type-name"].get<string>(), stmt);
+	json values = sa_struct_lit(stmt["value"], def);
+
+	enterScope();
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json body = json::array();
+	auto bindTemp = [&](json init) -> string {
+		string name = "__lit_" + to_string(tempVarCounter_++);
+		const json type = init["value-type"];
+		declareVar(name, type);
+		body.push_back({{"stmt-type", "var-decl"},
+		                {"vars", json::array({{{"name", name}, {"var-type", type}, {"init", move(init)}}})}});
+		return name;
+	};
+	function<void(json&)> bindLeaves = [&](json& vals) {
+		for (auto& v : vals) {
+			if (v.is_array()) {
+				bindLeaves(v);
+				continue;
+			}
+			const json type = v["value-type"];
+			v = {{"expr-type", "id"}, {"name", bindTemp(move(v))}, {"var-type", type}, {"value-type", type}};
+		}
+	};
+	bindLeaves(values);
+	string target = bindTemp(sa_expression({{"expr-type", "addr-of"}, {"mutable", true}, {"object", targetAst}}));
+	json obj = {{"expr-type", "arr-index"}, {"array", {{"expr-type", "id"}, {"name", target}}},
+	            {"index", {{"expr-type", "lit-uint"}, {"value", "0"}}}};
+	emitStructLitAssigns(obj, def, values, body);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+	leaveScope();
+	return {{"stmt-type", "block"}, {"body", move(body)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Only an owner may give its value away, and it then holds NULL so its own free
@@ -590,6 +642,10 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		exit(1);
 	}
 	json fieldType = fieldValueType(*it);
+	if (isAggregateLit(stmt["value"]) && isStructPntr(fieldType)) {
+		json fieldAst = {{"expr-type", "field-access"}, {"object", stmt["object"]}, {"field", fn}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return json::array({sa_struct_lit_assign(stmt, fieldAst, fieldType)}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
 	const PlnType* toType = registry_.fromJson(fieldType);
 	json value = sa_expression(stmt["value"], toType);
 	if (!value.contains("value-type")) {

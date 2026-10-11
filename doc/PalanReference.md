@@ -1602,12 +1602,14 @@ In a comma-separated declaration, each initializer belongs to its own variable:
 
 **Restrictions:**
 - An array literal can only be used as an array variable's initializer — not as a function
-  argument or the source of `->`.
+  argument or the source of `->`. A struct value can also be used where a struct is expected;
+  see [Struct literals](#struct-literals).
 - A given dimension must be a compile-time constant that matches the literal's element or row
   count, and every row of a 2D literal must have the same length.
 - Only numeric (integer and float) and struct element types are supported. Arrays of pointers
   and arrays of three or more dimensions cannot be initialized with a literal.
-- A `{name: value}` literal can only be used as a struct element of an array literal.
+- A `{name: value}` literal can only be used as a struct value (an element of an array literal, or
+  a [struct literal](#struct-literals)).
 - Omitting only the inner dimension (`[2][]T`, `[2]$[]T`) is not supported.
 
 ### Struct Arrays
@@ -1706,6 +1708,24 @@ printf("%ld %ld\n", p.x, p.y);   // 10 20
 
 - **Memory management**: heap-allocated (zero-initialized); automatically freed at scope exit.
 - **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
+
+### Struct literals
+
+A struct value written as in an array literal's struct element (`[1, 2]` or `{y: 2, x: 1}`) can
+initialize a struct variable and be the source of `->` to a struct:
+
+```palan
+type Point { int64 x; int64 y; };
+Point p = {x: 10, y: 20};
+[p.y, p.x] -> p;              // every value is read before any field is written: swaps
+func reset(@!Point q) { [0, 0] -> q[0]; }
+```
+
+- The target of `->` must be the struct itself: a struct variable, a `$T`/`T` field, a struct
+  array element, or `q[0]` for what a borrow `q` points to. Giving a literal to the borrow `q`
+  itself is an error, since `->` to a borrow rebinds it.
+- The field rules are those of an array literal's struct element: every field exactly once,
+  struct fields as nested values, no pointer or array fields.
 
 ### Field types
 
