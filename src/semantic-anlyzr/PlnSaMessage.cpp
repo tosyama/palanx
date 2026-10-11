@@ -65,8 +65,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_ReturnOutsideFunction:
 			return "Return statement outside of function.";
 
-		case E_MultiRetBareReturn:
-			return "Multi-return function requires bare 'return;' statement.";
+		case E_NamedRetBareReturn:
+			return "Function with named return values requires bare 'return;' statement.";
 
 		case E_SingleRetOneExpr:
 			return "Single-return function requires exactly one return expression.";

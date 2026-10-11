@@ -467,9 +467,9 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 	bool hasValues = stmt.contains("values");
 
 	if (hasRets) {
-		// Multiple return values: bare return only
+		// Named return values: bare return only
 		if (hasValues) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_MultiRetBareReturn) << endl;
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_NamedRetBareReturn) << endl;
 			exit(1);
 		}
 		return {{"stmt-type", "return"}};

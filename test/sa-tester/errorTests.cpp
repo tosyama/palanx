@@ -120,7 +120,7 @@ TEST(sa_error, multi_ret_bare_return) {
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/029_multi_ret_bare_return.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find("Multi-return function requires bare"), string::npos);
+	ASSERT_NE(sa.find("Function with named return values requires bare"), string::npos);
 }
 
 TEST(sa_error, single_ret_one_expr) {
@@ -3132,4 +3132,14 @@ TEST(sa_error, named_ret_struct_redecl)
 		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
+}
+
+TEST(sa_error, named_ret_single_return_value)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_449_named_ret_single_return_value.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:2: error: Function with named return values requires bare 'return;' statement."), string::npos) << sa;
 }

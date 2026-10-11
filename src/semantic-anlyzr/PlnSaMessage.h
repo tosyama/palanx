@@ -20,7 +20,7 @@ enum PlnSaMessageCode {
 	E_ExportInFunction,		// arg1: function name
 	E_UndefinedVariable,	// arg1: variable name
 	E_ReturnOutsideFunction,
-	E_MultiRetBareReturn,
+	E_NamedRetBareReturn,
 	E_SingleRetOneExpr,
 	E_VoidBareReturn,
 	E_VoidCallUsedAsValue,
