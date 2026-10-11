@@ -1,4 +1,0 @@
-type P { int32 x; };
-func f(@P p) {
-	@P q = @p[1];
-}

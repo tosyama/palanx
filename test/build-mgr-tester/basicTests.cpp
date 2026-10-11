@@ -2450,3 +2450,9 @@ TEST(build_mgr, alias_cast) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/267_alias_cast.pa");
 	ASSERT_EQ(output, "44 2 1\n");
 }
+
+TEST(build_mgr, struct_ptr_elem_copy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/268_struct_ptr_elem_copy.pa");
+	ASSERT_EQ(output, "1 2\n5 6\n0 10\n");
+}

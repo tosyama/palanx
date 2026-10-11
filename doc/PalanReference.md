@@ -2064,6 +2064,9 @@ int64 x = 42;
   1972 -> p[0].tm_year;
   printf("%d\n", p.tm_year);   // p[0] and p name the same pointee — prints 1972
   ```
+
+  `p[i]` names the struct itself, like an element of an `[n]$T` array: `w -> p[0]` copies the
+  struct `w` into the pointee (only through `@!T`), and `@p[i]`/`@!p[i]` borrows the element.
 - The pointer returned by `@`/`@!` is a borrowed reference: taking it never allocates or frees
   anything, and the storage it points into keeps its own ownership and free timing unchanged.
   Nothing checks that the pointer does not outlive that storage — if it escapes the scope that

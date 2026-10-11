@@ -1141,9 +1141,10 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 	if (elem_type.value("type-kind", "") == "struct") {
 		// `p[i]` on a struct pointee is an address computation (base +
 		// i*sizeof(T)), not a load -- Palan has no register-sized struct value.
+		// The element is the struct's storage, like a struct stored in an
+		// array; writes are checked against p's own permission.
 		int64_t stride = requireCompleteStruct(elem_type["type-name"].get<string>(), expr).totalSize;
-		json elem_pntr = {{"type-kind","pntr"},{"mutable",array_type.value("mutable", true)},
-		                  {"base-type",elem_type}};
+		json elem_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
 		json elem_size_node = {
 			{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
 		};

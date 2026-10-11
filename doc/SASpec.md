@@ -638,10 +638,10 @@ SA-only expression kinds (added to AST nodes):
   `struct(T)` (i.e. `p` is `@T`/`@!T` where `T` is a struct — not an `[n]$T`/`[n]T`/`[n]@T`/
   `[n]@!T` array, which are covered by the table below), Palan has no register-sized
   representation of a struct value: every struct-typed expression is itself a `pntr(struct)`. So
-  `p[i]` is an address computation, not a load: `value-type` is `pntr(struct(T), mutable=<array's
-  mutable>)`, `elem-size` is `T.totalSize`, and `addr-only` is `true`. `mutable` is inherited from
-  `array`'s value-type (defaulting to `true` when absent) so that `p[i].field` write-through is
-  enforced by the existing field-chain rules exactly as for `p.field` on the same `p`. `p[0]` is
+  `p[i]` is an address computation, not a load: `value-type` is `pntr(struct(T))` without
+  `mutable` -- the struct's storage, as for an `[n]$T` element -- `elem-size` is `T.totalSize`,
+  and `addr-only` is `true`. Writes through it (`p[i].field`, a whole-struct copy `w -> p[i]`)
+  are checked against `array`'s value-type `mutable`. `p[0]` is
   the degenerate case of this — reachable via the field-access chain (`resolveObjectChain`),
   not by loading a struct value.
 

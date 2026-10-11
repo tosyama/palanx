@@ -602,7 +602,7 @@ TEST(sa_error, write_readonly_arr_elem)
 		"bin/palan-gen-ast ../test/testdata/sa/error_077_write_readonly_arr_elem.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("read-only pointer array element"), string::npos);
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
 }
 
 TEST(sa_error, field_access_on_arr_index_non_struct)
@@ -717,7 +717,7 @@ TEST(sa_error, write_readonly_arr_field_elem)
 		"bin/palan-gen-ast ../test/testdata/sa/error_083_write_readonly_arr_field_elem.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("read-only pointer array element"), string::npos);
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
 }
 
 TEST(sa_error, field_access_on_prim_arr_field_elem)
@@ -1067,9 +1067,8 @@ TEST(sa_error, ptr_mutability_upgrade_call_arg)
 
 TEST(sa_error, assign_whole_struct_elem)
 {
-	// `other -> pt[0];` -- `pt[0]` on a struct pointer is an address
-	// computation (addr-only), not a pointer slot; writing the whole element
-	// is rejected. Guards the struct-deref addr-only path.
+	// `other ->> pt[0];` -- `pt[0]` is the struct's storage, not a pointer
+	// slot, so it cannot take over another struct's ownership.
 	// Covers: sa_arr_assign_stmt addr-only guard (E_AssignToWholeStructElem)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1083,16 +1082,16 @@ TEST(sa_error, assign_whole_struct_elem)
 TEST(sa_error, write_readonly_struct_ptr_field)
 {
 	// `42 -> ro[0].x;` where ro is `@Point` -- writing a field through a
-	// read-only struct pointer via `p[i].field` is rejected, same as the
-	// existing `[n]@Point` array-element case.
-	// Covers: resolveObjectChain(forWrite=true) arr-index branch (E_WriteToReadOnlyArrElem)
+	// read-only struct pointer via `p[i].field` is rejected, same as for a
+	// struct stored in a read-only borrowed array.
+	// Covers: resolveObjectChain(forWrite=true) arr-index branch (E_WriteThroughReadOnlyPtr)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_103_write_readonly_struct_ptr_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("read-only pointer array element"), string::npos);
+	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
 }
 
 TEST(sa_error, deref_unknown_struct_ptr)
@@ -1163,20 +1162,6 @@ TEST(sa_error, readonly_ptr_to_nonconst_c_param_unnamed)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter '#1'"), string::npos);
-}
-
-TEST(sa_error, addr_of_struct_ptr_elem_not_addressable)
-{
-	// `@p[1]` where `p` is `@P` -- the element is a borrowed struct already;
-	// it is passed on by name, so '@' on it is rejected.
-	// Covers: sa_expr_addr_of arr-index branch, addr-only(true) input -> E_AddrOfNotPrimitiveElem
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_117_addr_of_struct_ptr_elem.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot take the address of this array element"), string::npos);
 }
 
 TEST(sa_error, addr_of_ptr_elem_not_addressable)
@@ -3087,6 +3072,21 @@ TEST(sa_error, struct_field_size)
 {
 	const pair<string, string> cases[] = {
 		{"error_431_struct_field_var_size.pa", ":4:2: error: struct field array size must be a compile-time constant integer."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, struct_ptr_elem_copy)
+{
+	const pair<string, string> cases[] = {
+		{"error_440_copy_to_readonly_ptr_elem.pa", ":2:24: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

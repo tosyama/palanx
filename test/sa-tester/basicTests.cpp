@@ -3502,7 +3502,7 @@ TEST(sa, deref_struct_ptr_field_rw)
 	ASSERT_EQ(write_ptr["elem-size"]["value"], "16");
 	ASSERT_EQ(write_ptr["value-type"]["type-kind"], "pntr");
 	ASSERT_EQ(write_ptr["value-type"]["base-type"]["type-kind"], "struct");
-	ASSERT_EQ(write_ptr["value-type"]["mutable"], true);
+	ASSERT_FALSE(write_ptr["value-type"].contains("mutable"));
 
 	const auto& v = jout["statements"][2]["vars"][0];
 	ASSERT_EQ(v["init"]["expr-type"], "field-access");
@@ -3521,7 +3521,8 @@ TEST(sa, deref_readonly_struct_ptr_field_read)
 	const auto& v = jout["statements"][2]["vars"][0];
 	const auto& ptr_expr = v["init"]["ptr-expr"];
 	ASSERT_EQ(ptr_expr["addr-only"], true);
-	ASSERT_EQ(ptr_expr["value-type"]["mutable"], false);
+	ASSERT_FALSE(ptr_expr["value-type"].contains("mutable"));
+	ASSERT_EQ(ptr_expr["array"]["value-type"]["mutable"], false);
 }
 
 TEST(sa, cinclude_arr_field_prim)
@@ -5127,4 +5128,19 @@ TEST(sa, alias_cast)
 	ASSERT_EQ(stmts[2]["vars"][0]["init"]["value-type"]["type-name"], "uint64");
 	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["enum"], "Color");
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, struct_ptr_elem_copy)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/237_struct_ptr_elem_copy.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& funcs = jout["functions"];
+	const auto& copy = funcs[0]["body"][0]["body"];
+	ASSERT_EQ(copy["expr-type"], "call");
+	ASSERT_EQ(copy["name"], "memcpy");
+	ASSERT_EQ(copy["args"][0]["expr-type"], "arr-index");
+	const auto& borrow = funcs[1]["body"][0]["vars"][0]["init"];
+	ASSERT_EQ(borrow["expr-type"], "arr-index");
+	ASSERT_EQ(borrow["value-type"]["mutable"], true);
 }

@@ -1,0 +1,2 @@
+type V { int64 x; int64 y; };
+func set(@V r, @V w) { w -> r[0]; }

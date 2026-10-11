@@ -1,0 +1,24 @@
+cinclude <stdio.h>;
+type V { int64 x; int64 y; };
+type Own { V v; int64 n; };
+
+func set(@!V v, @V w) { w -> v[0]; }
+func setOwn(@!Own o, @Own w) { w -> o[0]; }
+func bump(@!V v) { v.x + 10 -> v.x; }
+
+V a; V b;
+1 -> b.x; 2 -> b.y;
+set(@!a, @b);
+3 -> b.x;
+printf("%ld %ld\n", a.x, a.y);
+
+Own o; Own w;
+5 -> w.v.x; 6 -> w.n;
+setOwn(@!o, @w);
+7 -> w.v.x;
+printf("%ld %ld\n", o.v.x, o.n);
+
+[2]$V arr;
+@!V p = @!arr[0];
+bump(@!p[1]);
+printf("%ld %ld\n", arr[0].x, arr[1].x);
