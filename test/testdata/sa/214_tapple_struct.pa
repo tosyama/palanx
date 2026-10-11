@@ -1,5 +1,5 @@
 type P { int32 x; };
-func f() -> P p, int32 b { P p; 4 -> b; }
+func f() -> P p, int32 b { 4 -> b; }
 {
 	(P s, int32 c) = f();
 	int32 n;

@@ -321,8 +321,7 @@ int main(int argc, char* argv[])
 					auto& ownedArr = shape["owned-array-fields"];
 
 					out << "\nexport func __pln_alloc_" << name
-					    << "() -> " << name << " p {\n"
-					    << "    " << name << " p;\n";
+					    << "() -> " << name << " p {\n";
 					if (hasOwned(name))
 						out << "    __pln_init_" << name << "(@!p);\n";
 					out << "}\n";

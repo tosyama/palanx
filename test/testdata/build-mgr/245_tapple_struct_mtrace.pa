@@ -2,8 +2,8 @@ cinclude <stdio.h>;
 cinclude <mcheck.h>;
 type P { int32 x; int64 y; };
 type Q { P p; [3]int32 a; };
-func f(int32 v) -> P p, int32 b { P p; v -> p.x; v * 2 -> p.y; v + 1 -> b; }
-func g(int32 v) -> int32 b, Q q { Q q; v -> q.p.x; v * 3 -> q.a[2]; v + 2 -> b; }
+func f(int32 v) -> P p, int32 b { v -> p.x; v * 2 -> p.y; v + 1 -> b; }
+func g(int32 v) -> int32 b, Q q { v -> q.p.x; v * 3 -> q.a[2]; v + 2 -> b; }
 type R { P p; };
 mtrace();
 {

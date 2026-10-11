@@ -1495,8 +1495,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 			        {"args",json::array()},{"value-type",pntr_type}};
 		}
 
-		if (!isNamedReturnVar(name))
-			arrayScopeVars_.back().push_back({name, makeStructFreeStmt(name, pntr_type)});
+		arrayScopeVars_.back().push_back({name, makeStructFreeStmt(name, pntr_type)});
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
 		if (!structRetCall.is_null())
 			initStmts.push_back(structRetCall);

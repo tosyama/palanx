@@ -292,7 +292,6 @@ class PlnSemanticAnalyzer {
 	// A '@T'/'@!T' array element (a pointer slot) as SA represents it.
 	json  ptrSlotElemType(const json& locNode, const json& type);
 	void  normalizeUnsizedArrSig(json& funcDef);
-	bool  isNamedReturnVar(const string& varName) const;
 	json  deepNormalizePrimToStruct(const json& type) const;
 	json  resolveTypeAlias(const json& vtype) const;
 	json  resolveTypeAliasDeep(const json& vtype) const;

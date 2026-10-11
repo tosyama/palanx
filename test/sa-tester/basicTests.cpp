@@ -5180,3 +5180,20 @@ TEST(sa, struct_lit_init_assign)
 	ASSERT_EQ(fbody[0]["stmt-type"], "block");
 	ASSERT_EQ(fbody[0]["body"][3]["vars"][0]["init"]["expr-type"], "arr-index");
 }
+
+TEST(sa, named_ret_struct_auto_decl)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/239_named_ret_struct_auto_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Allocated at entry and handed to the caller, so no free follows.
+	const auto& fbody = jout["functions"][0]["body"];
+	ASSERT_EQ(fbody.size(), 2);
+	ASSERT_EQ(fbody[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(fbody[0]["vars"][0]["name"], "p");
+	ASSERT_EQ(fbody[0]["vars"][0]["init"]["name"], "calloc");
+	const auto& gbody = jout["functions"][1]["body"];
+	ASSERT_EQ(gbody.size(), 3);
+	ASSERT_EQ(gbody[0]["vars"][0]["name"], "o");
+	ASSERT_EQ(gbody[0]["vars"][0]["init"]["name"], "__pln_alloc_O");
+}

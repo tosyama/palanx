@@ -412,25 +412,6 @@ void PlnSemanticAnalyzer::normalizeUnsizedArrSig(json& funcDef)
 			r["var-type"] = unsizedArrToPntr(funcDef, r["var-type"]);
 }
 
-bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
-{
-	if (!currentFunc_ || !currentFunc_->contains("rets")) return false;
-	for (auto& r : (*currentFunc_)["rets"]) {
-		// LCOV_EXCL_EXCEPTION_BR_START
-		if (r["name"].get<string>() != varName) continue;
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-		const auto& vt = r["var-type"];
-		if (isStructType(vt)) return true;
-		// Also accept the normalized pntr(struct(Name)) form produced by normalizeStructSig
-		// LCOV_EXCL_EXCEPTION_BR_START
-		if (vt.value("type-kind","") == "pntr" && vt.contains("base-type") &&
-		    vt["base-type"].value("type-kind","") == "struct")
-			return true;
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-	}
-	return false;
-}
-
 json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 {
 	// Resolves type aliases and converts prim(Name) -> struct(Name) at every

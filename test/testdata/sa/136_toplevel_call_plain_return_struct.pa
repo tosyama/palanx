@@ -1,7 +1,6 @@
 type Point { int64 x; int64 y; };
 
 func makePoint() -> Point ret {
-	Point ret;
 	5 -> ret.x;
 }
 

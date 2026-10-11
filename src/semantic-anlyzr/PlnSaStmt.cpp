@@ -201,7 +201,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 			if (!isStructType(resolveTypeAlias(r["var-type"]))) {
 				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(funcDef, resolveTypeAlias(r["var-type"]))), &funcDef);
 			} else if (r.contains("init")) {
-				// A struct-type named return is declared by the body itself, so there's no variable to initialize here.
+				// A struct-type named return is allocated at body entry, where an initializer can't run yet.
 				cerr << locPrefix(r["init"]) << PlnSaMessage::getMessage(E_NamedRetInitOnStruct, r["name"].get<string>()) << endl;
 				exit(1);
 			}
@@ -237,6 +237,19 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
 
 	json body = json::array();
+	if (funcDef.contains("rets")) {
+		auto& bodyScopeVars = arrayScopeVars_[funcBodyScopeIdx_];
+		size_t nonRetVars = bodyScopeVars.size();
+		for (auto& r : funcDef["rets"]) {
+			if (!isStructType(resolveTypeAlias(r["var-type"]))) continue;
+			json decl = {{"stmt-type", "var-decl"},
+			             {"vars", json::array({{{"name", r["name"]}, {"var-type", r["var-type"]}}})},
+			             {"loc", r.value("loc", json::array())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			for (auto& s : sa_var_decl(decl)) body.push_back(move(s));
+		}
+		// The caller takes over the named returns, so they are not freed here.
+		bodyScopeVars.resize(nonRetVars);
+	}
 	if (saFunc.contains("rets"))
 		for (auto& r : saFunc["rets"]) {
 			if (!r.contains("init")) continue;

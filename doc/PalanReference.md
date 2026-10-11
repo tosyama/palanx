@@ -392,7 +392,7 @@ A named return starts at `0` unless it has an initializer. Initializers are eval
 func range(int32 from) -> int32 lo = from, int32 hi = from + 10 { }
 ```
 
-A struct-type named return is declared in the body instead, so it can't have an initializer.
+A struct-type named return is allocated at function entry and can't have an initializer. Declaring it again in the body is an error.
 
 ### Method-Form Calls
 
@@ -1882,7 +1882,6 @@ A named return of struct type transfers ownership to the caller:
 
 ```palan
 func makePoint(int64 x, int64 y) -> Point p {
-    Point p;
     x -> p.x;  y -> p.y;
 }
 ```
