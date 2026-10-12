@@ -1147,11 +1147,13 @@ Palan supports 32-bit and 64-bit IEEE 754 floating-point types:
 
 ### Declaration and Initialization
 
-Float variables are declared like integer variables. The literal format requires digits on both sides of the decimal point.
+Float variables are declared like integer variables. A float literal has digits on both sides of the decimal point, an exponent, or both. A number followed directly by other letters (`1.5f`, `100px`) is an error.
 
 ```palan
 flo64 pi = 3.14159;
 flo32 half = 0.5;
+flo64 big = 1e10;
+flo64 small = 2.5e-3;
 flo64 f;              // uninitialized
 ```
 

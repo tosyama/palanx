@@ -1871,3 +1871,18 @@ TEST(gen_ast, export_type) {
 	ASSERT_EQ(e["base-type"]["type-name"], "V.vec3");
 	ASSERT_EQ(stmts[7]["vars"][0]["init"]["type"]["type-name"], "V.vec3");
 }
+
+TEST(gen_ast, float_exponent_no_point) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/131_float_exponent_no_point.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	const char* values[] = {"1e10", "1E-3", "2e+5"};
+	for (int i = 0; i < 3; i++) {
+		const auto& init = stmts[i]["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "lit-flo");
+		ASSERT_EQ(init["value"], values[i]);
+	}
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["expr-type"], "lit-uint");
+}

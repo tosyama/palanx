@@ -2493,3 +2493,9 @@ TEST(build_mgr, named_ret_struct_mtrace) {
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
+
+TEST(build_mgr, float_exponent_no_point) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/271_float_exponent_no_point.pa");
+	ASSERT_EQ(output, "10000000000.0 0.001 200000.0 600.0\n");
+}

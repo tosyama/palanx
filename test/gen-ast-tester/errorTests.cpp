@@ -142,6 +142,21 @@ TEST(gen_ast_error, invalid_char_literal) {
 	}
 }
 
+TEST(gen_ast_error, invalid_number_literal) {
+	cleanTestEnv();
+	const char* cases[][2] = {
+		{"error_014_number_literal_bare_exponent.pa", ":2:12: error: Invalid number literal '1e'."},
+		{"error_015_number_literal_int_suffix.pa", ":2:12: error: Invalid number literal '100px'."},
+		{"error_016_number_literal_float_suffix.pa", ":2:12: error: Invalid number literal '1.5f'."},
+		{"error_017_number_literal_exponent_suffix.pa", ":2:12: error: Invalid number literal '1e10x'."},
+	};
+	for (auto& c : cases) {
+		string out = execTestCommand(string("bin/palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
+		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
+		EXPECT_NE(out.find(c[1]), string::npos) << out;
+	}
+}
+
 TEST(gen_ast_error, cinclude_local_path_injection) {
 	// Same shell-metacharacter-injection risk as cinclude_sys_path_injection
 	// above, for the "..." local-path branch (fs::path(base_dir) / resolved).

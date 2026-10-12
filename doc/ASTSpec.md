@@ -459,7 +459,7 @@ Expression model
       to whichever registered it first.
   3. lit-uint - Unsigned integer literal (corresponds to UINT token)
     - value\* - Decimal string (e.g. "10")
-  4. lit-flo - Floating-point literal (corresponds to FLO token; format: digits.digits)
+  4. lit-flo - Floating-point literal (corresponds to FLO token; format: digits.digits with an optional exponent, or digits with an exponent; the value string is kept as written, e.g. "1e10")
     - value\* - Decimal string (e.g. "3.14")
   5. id - Identifier (variable reference)
     - name\* - Identifier name string

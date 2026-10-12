@@ -85,7 +85,8 @@ PlnLexer::PlnLexer(const string& input_file)
 
 DIGIT	[0-9]+
 UDIGIT	[0-9]+"u"
-FLOAT	[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?
+FLOAT	[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+
+BADNUM	[0-9]+(\.[0-9]+)?[a-zA-Z_][0-9a-zA-Z_]*
 ID	[a-zA-Z_][0-9a-zA-Z_]*
 DEMILITER	"{"|"}"|"("|")"|"["|"]"|","|";"|":"|"="|"+"|"-"|"*"|"/"|"%"|"<"|">"|"!"|"?"|"&"|"@"|"."|"$"|"#"|"|"|"^"|"~"
 STRING	"\""(\\.|\\\n|[^\\\"])*"\""
@@ -111,6 +112,11 @@ COMMENT1	\/\/[^\n]*\n
 <*>{DIGIT} {
 		lval.build<string>() = yytext;
 		return INT;
+	}
+<*>{BADNUM} {
+		throw runtime_error(PlnGenAstMessage::locatedError(inputFile,
+			loc.begin.line, loc.begin.column,
+			PlnGenAstMessage::getMessage(E_InvalidNumberLiteral, yytext)));
 	}
 <*>"export" { return KW_EXPORT; }
 <*>"import" {
