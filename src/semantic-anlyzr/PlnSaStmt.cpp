@@ -293,8 +293,8 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 		exit(1);
 	}
-	if (isAggregateLit(stmt["value"]) && isStructPntr(*varType))
-		return sa_struct_lit_assign(stmt, {{"expr-type", "id"}, {"name", name}}, *varType); // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (isAggregateLit(stmt["value"]) && (isStructPntr(*varType) || isArrLevel(*varType)))
+		return sa_aggregate_lit_assign(stmt, {{"expr-type", "id"}, {"name", name}}, *varType); // LCOV_EXCL_EXCEPTION_BR_LINE
 	const PlnType* toType = registry_.fromJson(*varType);
 	json value = sa_expression(stmt["value"], toType);
 	if (!value.contains("value-type")) {
@@ -326,8 +326,8 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
 		exit(1);
 	}
-	if (isAggregateLit(stmt["value"]) && isStructPntr(sa_target["value-type"]))
-		return json::array({sa_struct_lit_assign(stmt, stmt["target"], sa_target["value-type"])}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (isAggregateLit(stmt["value"]) && (isStructPntr(sa_target["value-type"]) || isArrLevel(sa_target["value-type"])))
+		return json::array({sa_aggregate_lit_assign(stmt, stmt["target"], sa_target["value-type"])}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (!transfer && isCopiedByValue(sa_target["value-type"]))
 		return json::array({makeCopyStmt(stmt, sa_target, sa_expression(stmt["value"]))}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (sa_target.value("addr-only", false)) {
@@ -372,21 +372,56 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// The name an array-literal diagnostic gives the target: the variable or
+// field that holds it (a row's array).
+static string arrLitTargetName(const json& ast)
+{
+	string et = ast.value("expr-type", "");
+	if (et == "field-access")
+		return ast["field"].get<string>();
+	if (et == "arr-index")
+		return arrLitTargetName(ast["array"]);
+	return ast["name"].get<string>();
+}
+
 // Every value is evaluated into a temp before anything is written, so
 // `[v.y, v.x] -> v[0]` swaps, and the target's address is taken once, so an
-// index expression in it is evaluated once rather than once per field.
-json PlnSemanticAnalyzer::sa_struct_lit_assign(const json& stmt, const json& targetAst, const json& targetType)
+// index expression in it is evaluated once rather than once per element.
+json PlnSemanticAnalyzer::sa_aggregate_lit_assign(const json& stmt, const json& targetAst, const json& targetType)
 {
 	if (stmt.value("ownership-transfer", false)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner) << endl;
 		exit(1);
 	}
-	if (!isStructStorage(targetType)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructLitTarget) << endl;
-		exit(1);
+	bool isStruct = isStructPntr(targetType);
+	const StructDef* def = nullptr;
+	ArrLitShape shape;
+	json values;
+	if (isStruct) {
+		if (!isStructStorage(targetType)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructLitTarget) << endl;
+			exit(1);
+		}
+		def = &requireCompleteStruct(targetType["base-type"]["type-name"].get<string>(), stmt);
+		values = sa_struct_lit(stmt["value"], *def);
+	} else {
+		string name = arrLitTargetName(targetAst);
+		// A row reached through a borrowed array has the same type, but it is
+		// the borrowed storage itself, so only the variable is a borrow.
+		if (targetAst.value("expr-type", "") == "id" && isArrBorrowVar(targetType)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitTarget, name) << endl;
+			exit(1);
+		}
+		const json& lit = stmt["value"];
+		if (lit.value("expr-type", "") != "arr-lit") {
+			cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
+			exit(1);
+		}
+		shape = arrLitShape(stmt, name, targetType);
+		values = sa_arr_lit_values(lit, shape, name);
+		checkArrLitCount(stmt, lit["items"], name, shape.is2d, targetType["arr-size"].get<uint64_t>(),
+		                 shape.is2d ? targetType["base-type"]["arr-size"].get<uint64_t>() : 0);
 	}
-	const StructDef& def = requireCompleteStruct(targetType["base-type"]["type-name"].get<string>(), stmt);
-	json values = sa_struct_lit(stmt["value"], def);
 
 	enterScope();
 	// LCOV_EXCL_EXCEPTION_BR_START
@@ -410,10 +445,15 @@ json PlnSemanticAnalyzer::sa_struct_lit_assign(const json& stmt, const json& tar
 		}
 	};
 	bindLeaves(values);
-	string target = bindTemp(sa_expression({{"expr-type", "addr-of"}, {"mutable", true}, {"object", targetAst}}));
-	json obj = {{"expr-type", "arr-index"}, {"array", {{"expr-type", "id"}, {"name", target}}},
-	            {"index", {{"expr-type", "lit-uint"}, {"value", "0"}}}};
-	emitStructLitAssigns(obj, def, values, body);
+	json target = {{"expr-type", "id"},
+	               {"name", bindTemp(sa_expression({{"expr-type", "addr-of"}, {"mutable", true}, {"object", targetAst}}))}};
+	if (isStruct) {
+		json obj = {{"expr-type", "arr-index"}, {"array", target},
+		            {"index", {{"expr-type", "lit-uint"}, {"value", "0"}}}};
+		emitStructLitAssigns(obj, *def, values, body);
+	} else {
+		emitArrLitAssigns(target, shape, values, body);
+	}
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	leaveScope();
 	return {{"stmt-type", "block"}, {"body", move(body)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -680,9 +720,9 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		exit(1);
 	}
 	json fieldType = fieldValueType(*it);
-	if (isAggregateLit(stmt["value"]) && isStructPntr(fieldType)) {
+	if (isAggregateLit(stmt["value"]) && (isStructPntr(fieldType) || isArrLevel(fieldType))) {
 		json fieldAst = {{"expr-type", "field-access"}, {"object", stmt["object"]}, {"field", fn}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		return json::array({sa_struct_lit_assign(stmt, fieldAst, fieldType)}); // LCOV_EXCL_EXCEPTION_BR_LINE
+		return json::array({sa_aggregate_lit_assign(stmt, fieldAst, fieldType)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	const PlnType* toType = registry_.fromJson(fieldType);
 	json value = sa_expression(stmt["value"], toType);

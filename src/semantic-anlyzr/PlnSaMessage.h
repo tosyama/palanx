@@ -132,6 +132,7 @@ enum PlnSaMessageCode {
 	E_CircularTypeDecl,	// arg1: type name, arg2: dependency path
 	E_CastTargetNotPrim,	// arg1: target type name
 	E_StructLitTarget,
+	E_ArrLitTarget,	// arg1: variable name
 };
 
 class PlnSaMessage

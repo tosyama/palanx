@@ -251,6 +251,14 @@ class PlnSemanticAnalyzer {
 	json sa_struct_lit(const json& item, const StructDef& def);
 	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
+	// Where an array literal's elements go: numeric leaf values, or structs
+	// (structDef set) given as struct literals.
+	struct ArrLitShape { bool is2d; json leaf; const StructDef* structDef; };
+	ArrLitShape arrLitShape(const json& locNode, const string& name, const json& saType);
+	json sa_arr_lit_values(const json& lit, const ArrLitShape& shape, const string& name);
+	void checkArrLitCount(const json& locNode, const json& items, const string& name,
+	                      bool is2d, uint64_t size, uint64_t rowSize);
+	void emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out);
 	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_owned_struct_arr_var_decl(const json& stmt); // returns array of statements
 	json sa_owned_struct_arr2d_var_decl(const json& stmt); // returns array of statements
@@ -356,8 +364,8 @@ class PlnSemanticAnalyzer {
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
 	json sa_arr_assign_stmt(const json& stmt);  // returns json::array()
-	// `[...] -> target` / `{...} -> target` for a struct-typed target; returns a block.
-	json sa_struct_lit_assign(const json& stmt, const json& targetAst, const json& targetType);
+	// `[...] -> target` / `{...} -> target` for a struct or array target; returns a block.
+	json sa_aggregate_lit_assign(const json& stmt, const json& targetAst, const json& targetType);
 	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);

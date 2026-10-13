@@ -1,0 +1,4 @@
+type M { [4]flo32 albedo; };
+func f(@!M m) {
+	[1, 2] -> m.albedo;
+}

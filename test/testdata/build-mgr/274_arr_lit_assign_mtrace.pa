@@ -1,0 +1,40 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type O { P p; int32 n; };
+type M { [4]flo32 albedo; [2]$P ps; [2]O os; };
+func fill(@![4]flo32 a) { 9 -> a[0]; 6 -> a[3]; }
+func next(@!int32 c) -> int32 { c[0] + 1 -> c[0]; return 1; }
+mtrace();
+{
+	[4]int32 a = [0, 0, 0, 0];
+	[1, 2, 3, 4] -> a;
+	[a[1], a[0], a[3], a[2]] -> a;
+	printf("%d %d %d %d\n", a[0], a[1], a[2], a[3]);
+
+	M m;
+	[1, 0, 0.5, 0.25] -> m.albedo;
+	printf("%.2f %.2f %.2f %.2f\n", m.albedo[0], m.albedo[1], m.albedo[2], m.albedo[3]);
+	[[1, 2], {y: 4, x: 3}] -> m.ps;
+	[[[5, 6], 7], [[8, 9], 10]] -> m.os;
+	[[m.os[1].p.x, 0], 0] -> m.os[0];
+	printf("%d %d %d %d %d %d %d %d\n", m.ps[0].x, m.ps[0].y, m.ps[1].x, m.ps[1].y,
+		m.os[0].p.x, m.os[0].n, m.os[1].p.y, m.os[1].n);
+
+	int32 cnt = 0;
+	[3][2]int32 g = [0, 0][0, 0][0, 0];
+	[5, 6] -> g[next(@!cnt)];
+	printf("%d %d %d cnt=%d\n", g[0][0], g[1][0], g[1][1], cnt);
+	[1, 2][3, 4][5, 6] -> g;
+	[2]$[2]int32 h = [0, 0][0, 0];
+	[7, 8] -> h[next(@!cnt)];
+	printf("%d %d %d %d %d %d cnt=%d\n", g[0][0], g[2][1], h[0][0], h[0][1], h[1][0], h[1][1], cnt);
+
+	fill(@!m.albedo);
+	[4]flo32 src = [2, 3, 4, 5];
+	memcpy(@!m.albedo, @src, 8);
+	memcpy(@!m.ps, @m.ps[1], 8);
+	printf("%.0f %.0f %.0f %d %d\n", m.albedo[0], m.albedo[1], m.albedo[3], m.ps[0].x, m.ps[0].y);
+}
+muntrace();

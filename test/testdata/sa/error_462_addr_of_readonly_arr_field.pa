@@ -1,0 +1,4 @@
+type M { [2]int32 v; };
+func f(@M m) {
+	@![2]int32 p = @!m.v;
+}

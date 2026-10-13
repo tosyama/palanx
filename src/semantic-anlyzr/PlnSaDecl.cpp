@@ -619,14 +619,56 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
 		exit(1);
 	}
-	const StructDef* structDef = isStructLeaf ? &requireCompleteStruct(leafName, stmt) : nullptr;
-	const PlnType* elemType = isStructLeaf ? nullptr : registry_.fromJson(leaf);
+	ArrLitShape shape = {is2d, leaf, isStructLeaf ? &requireCompleteStruct(leafName, stmt) : nullptr};
 
 	// Elements are analyzed before the variable is declared, so an element
 	// cannot read the array it is initializing.
+	json values = sa_arr_lit_values(var["init"], shape, name);
+
+	json declStmt = stmt;
+	json& declVar = declStmt["vars"][0];
+	declVar.erase("init");
+	json& declType = declVar["var-type"];
+	string declared = arrLitDimSize(stmt, name, declType["size-expr"], items.size());
+	string rowSize = is2d ? arrLitDimSize(stmt, name, declType["base-type"]["size-expr"], items[0]["items"].size()) : "0";
+	checkArrLitCount(stmt, items, name, is2d, stoull(declared), stoull(rowSize));
+
+	json result = sa_var_decl_group(declStmt);
+	emitArrLitAssigns({{"expr-type", "id"}, {"name", name}}, shape, values, result); // LCOV_EXCL_EXCEPTION_BR_LINE
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The levels of an already declared array, down to the elements a literal can
+// give: numeric values or structs (stored in place or owned), in one or two
+// levels whose sizes are compile-time constants.
+PlnSemanticAnalyzer::ArrLitShape PlnSemanticAnalyzer::arrLitShape(const json& locNode, const string& name, const json& saType)
+{
+	bool is2d = isArrLevel(saType["base-type"]);
+	const json& leaf = is2d ? saType["base-type"]["base-type"] : saType["base-type"];
+	if (!saType.contains("arr-size") || (is2d && !saType["base-type"].contains("arr-size"))) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLitSizeNotConst, name) << endl;
+		exit(1);
+	}
+	string leafKind = leaf.value("type-kind", "");
+	if (isStructStorage(leaf))
+		return {is2d, leaf, &requireCompleteStruct(leaf["base-type"]["type-name"].get<string>(), locNode)};
+	if (leafKind == "struct")
+		return {is2d, leaf, &requireCompleteStruct(leaf["type-name"].get<string>(), locNode)};
+	if (leafKind != "prim") {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
+		exit(1);
+	}
+	return {is2d, leaf, nullptr};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// values[i] is one element (1D) or one row of elements (2D); a struct
+// element is the array sa_struct_lit gives.
+json PlnSemanticAnalyzer::sa_arr_lit_values(const json& lit, const ArrLitShape& shape, const string& name)
+{
+	const PlnType* elemType = shape.structDef ? nullptr : registry_.fromJson(shape.leaf);
 	auto elemValue = [&](const json& item) {
-		if (structDef)
-			return sa_struct_lit(item, *structDef);
+		if (shape.structDef)
+			return sa_struct_lit(item, *shape.structDef);
 		if (item.value("expr-type", "") == "arr-lit") {
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, name) << endl;
 			exit(1);
@@ -636,13 +678,12 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 			exit(1);
 		}
-		return convertForBinding(item, value, elemType, leaf);
+		return convertForBinding(item, value, elemType, shape.leaf);
 	};
 
-	// values[i] is one element (1D) or one row of elements (2D).
 	json values = json::array();
-	for (auto& item : items) {
-		if (!is2d) {
+	for (auto& item : lit["items"]) {
+		if (!shape.is2d) {
 			values.push_back(elemValue(item));
 			continue;
 		}
@@ -655,49 +696,48 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 			row.push_back(elemValue(elem));
 		values.push_back(row);
 	}
+	return values;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
-	json declStmt = stmt;
-	json& declVar = declStmt["vars"][0];
-	declVar.erase("init");
-	json& declType = declVar["var-type"];
-	string declared = arrLitDimSize(stmt, name, declType["size-expr"], items.size());
-	if (stoull(declared) != items.size()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitCountMismatch,
-		                                  name, declared, to_string(items.size())) << endl;
+void PlnSemanticAnalyzer::checkArrLitCount(const json& locNode, const json& items, const string& name,
+                                           bool is2d, uint64_t size, uint64_t rowSize)
+{
+	if (size != items.size()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLitCountMismatch,
+		                                  name, to_string(size), to_string(items.size())) << endl;
 		exit(1);
 	}
-	if (is2d) {
-		string rowSize = arrLitDimSize(stmt, name, declType["base-type"]["size-expr"], items[0]["items"].size());
-		for (auto& row : items) {
-			if (stoull(rowSize) != row["items"].size()) {
-				cerr << locPrefix(row) << PlnSaMessage::getMessage(E_ArrLitRowSizeMismatch,
-				                                 name, rowSize, to_string(row["items"].size())) << endl;
-				exit(1);
-			}
+	if (!is2d)
+		return;
+	for (auto& row : items) {
+		if (rowSize != row["items"].size()) {
+			cerr << locPrefix(row) << PlnSaMessage::getMessage(E_ArrLitRowSizeMismatch,
+			                                 name, to_string(rowSize), to_string(row["items"].size())) << endl;
+			exit(1);
 		}
 	}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
-	json result = sa_var_decl_group(declStmt);
+void PlnSemanticAnalyzer::emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out)
+{
 	auto indexOf = [](json array, size_t i) -> json {
 		return {{"expr-type", "arr-index"}, {"array", move(array)},
 		        {"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}};
 	};
-	json id = {{"expr-type", "id"}, {"name", name}};
 	auto assignElem = [&](const json& elemAst, const json& value) {
-		if (structDef)
-			emitStructLitAssigns(elemAst, *structDef, value, result);
+		if (shape.structDef)
+			emitStructLitAssigns(elemAst, *shape.structDef, value, out);
 		else
-			result.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(elemAst)}, {"value", value}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+			out.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(elemAst)}, {"value", value}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	for (size_t i = 0; i < values.size(); i++) {
-		if (!is2d) {
-			assignElem(indexOf(id, i), values[i]);
+		if (!shape.is2d) {
+			assignElem(indexOf(arrAst, i), values[i]);
 			continue;
 		}
 		for (size_t j = 0; j < values[i].size(); j++)
-			assignElem(indexOf(indexOf(id, i), j), values[i][j]);
+			assignElem(indexOf(indexOf(arrAst, i), j), values[i][j]);
 	}
-	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_struct_lit_var_decl(const json& stmt)

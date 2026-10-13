@@ -5237,3 +5237,37 @@ TEST(sa, return_struct_lit)
 			ASSERT_NE(s.value("stmt-type", ""), "free") << s;
 	}
 }
+
+TEST(sa, arr_lit_assign)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/242_arr_lit_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// Values first, then the target's address as a mutable borrow, then the stores through it.
+	auto check = [&](int i, const string& targetExpr, const string& store, size_t count) {
+		const auto& body = stmts[i]["body"];
+		ASSERT_EQ(stmts[i]["stmt-type"], "block");
+		ASSERT_EQ(body.size(), 2 * count + 1);
+		const auto& target = body[count]["vars"][0];
+		ASSERT_EQ(target["init"]["expr-type"], targetExpr);
+		ASSERT_EQ(target["var-type"]["mutable"], true);
+		for (size_t k = count + 1; k < body.size(); k++)
+			ASSERT_EQ(body[k]["stmt-type"], store);
+	};
+	check(3, "id", "arr-assign", 2);
+	ASSERT_EQ(stmts[3]["body"][3]["value"]["name"], stmts[3]["body"][0]["vars"][0]["name"]);
+	ASSERT_EQ(stmts[3]["body"][3]["target"]["array"]["name"], stmts[3]["body"][2]["vars"][0]["name"]);
+	// The owned array field's pointer is read; the embedded one's address is computed.
+	check(5, "field-access", "arr-assign", 4);
+	ASSERT_EQ(stmts[5]["body"][4]["vars"][0]["init"]["addr-only"], false);
+	check(6, "field-access", "field-assign", 4);
+	ASSERT_EQ(stmts[6]["body"][4]["vars"][0]["init"]["addr-only"], true);
+	check(13, "arr-index", "arr-assign", 2);
+
+	const auto& q = stmts[14]["vars"][0]["init"];
+	ASSERT_EQ(q["expr-type"], "field-access");
+	ASSERT_EQ(q["value-type"]["embedded"], true);
+	ASSERT_EQ(q["value-type"]["mutable"], true);
+}
+

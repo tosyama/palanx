@@ -206,7 +206,8 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
 		string fn = obj["field"].get<string>();
 		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
-		if (fld.typeKind != "prim" && fld.typeKind != "embed" && fld.typeKind != "struct-ptr") {
+		bool isArrField = fld.typeKind == "arr-ptr" || fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr";
+		if (fld.typeKind != "prim" && fld.typeKind != "embed" && fld.typeKind != "struct-ptr" && !isArrField) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
 			exit(1);
 		}
@@ -218,11 +219,19 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		// that pointer rather than computing the field's address.
 		// A prim field's value-type is the bare prim, so it still needs the
 		// usual pntr(...) wrap to become "address of this prim slot".
-		bool addrOnly = fld.typeKind != "struct-ptr";
-		json pntr_type = (fld.typeKind == "prim")
-			? json{{"type-kind","pntr"},{"base-type",fieldValueType(fld)}}
-			: fieldValueType(fld);
-		pntr_type["mutable"] = isMutable;
+		// An array field is borrowed as an array, like an array variable: an
+		// owned one ([n]T) holds the pointer to its elements, an embedded one
+		// is the elements.
+		bool addrOnly = fld.typeKind != "struct-ptr" && fld.typeKind != "arr-ptr";
+		json pntr_type;
+		if (isArrField) {
+			pntr_type = withArrPermission(fieldValueType(fld), isMutable);
+		} else {
+			pntr_type = (fld.typeKind == "prim")
+				? json{{"type-kind","pntr"},{"base-type",fieldValueType(fld)}}
+				: fieldValueType(fld);
+			pntr_type["mutable"] = isMutable;
+		}
 		int off = chain.offset + fld.offset;
 		json out = chain.isPointerBased
 			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",addrOnly}}

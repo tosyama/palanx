@@ -2249,29 +2249,29 @@ TEST(sa_error, arr_lit_func_arg)
 		"bin/palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array or struct variable's initializer, the source of '->' to a struct, or the value returned from a function returning a struct, in this version."), string::npos);
+	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array or struct variable's initializer, the source of '->' to a struct or an array, or the value returned from a function returning a struct, in this version."), string::npos);
 }
 
 TEST(sa_error, arr_lit_init)
 {
 	const pair<string, string> cases[] = {
-		{"error_209_arr_lit_count_mismatch.pa", ":1:1: error: array variable 'a' has size 3 but its array literal has 2 elements."},
-		{"error_210_arr_lit_size_not_const.pa", ":2:1: error: array variable 'a' initialized with an array literal must have a compile-time constant size."},
-		{"error_211_arr_lit_dim_mismatch.pa", ":1:15: error: the array literal's dimensions do not match array variable 'a'."},
+		{"error_209_arr_lit_count_mismatch.pa", ":1:1: error: array 'a' has size 3 but its array literal has 2 elements."},
+		{"error_210_arr_lit_size_not_const.pa", ":2:1: error: array 'a' given an array literal must have a compile-time constant size."},
+		{"error_211_arr_lit_dim_mismatch.pa", ":1:15: error: the array literal's dimensions do not match array 'a'."},
 		{"error_212_arr_lit_elem_type.pa", ":2:11: error: a value of struct 'P' must be written as '[...]' or '{name: value, ...}'."},
 		{"error_213_arr_lit_elem_narrowing.pa", ":2:17: error: Implicit conversion from 'int16' to 'int8' is not allowed"},
 		{"error_214_arr_lit_elem_range.pa", ":1:17: error: Integer literal '300' is out of range for type 'int8'."},
 		// Elements are analyzed before the array is declared.
 		{"error_215_arr_lit_self_ref.pa", ":1:18: error: Undefined variable 'a'."},
-		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array variable 'a' cannot be initialized with an array literal: only numeric and struct element types are supported."},
+		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array 'a' cannot be given an array literal: only numeric and struct element types are supported."},
 		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_218_arr_lit_void_elem.pa", ":2:15: error: Void function call cannot be used as a value."},
-		{"error_219_arr_lit_row_size.pa", ":1:24: error: array variable 'm' has rows of size 3 but a row of its array literal has 2 elements."},
-		{"error_220_arr_lit_row_size_declared.pa", ":1:19: error: array variable 'm' has rows of size 3 but a row of its array literal has 2 elements."},
-		{"error_221_arr_lit_row_count.pa", ":1:1: error: array variable 'm' has size 3 but its array literal has 2 elements."},
-		{"error_222_arr_lit_2d_given_1d.pa", ":1:18: error: the array literal's dimensions do not match array variable 'm'."},
-		{"error_223_arr_lit_3d.pa", ":1:1: error: array variable 'm' cannot be initialized with an array literal: only numeric and struct element types are supported."},
-		{"error_224_arr_lit_row_size_not_const.pa", ":2:1: error: array variable 'm' initialized with an array literal must have a compile-time constant size."},
+		{"error_219_arr_lit_row_size.pa", ":1:24: error: array 'm' has rows of size 3 but a row of its array literal has 2 elements."},
+		{"error_220_arr_lit_row_size_declared.pa", ":1:19: error: array 'm' has rows of size 3 but a row of its array literal has 2 elements."},
+		{"error_221_arr_lit_row_count.pa", ":1:1: error: array 'm' has size 3 but its array literal has 2 elements."},
+		{"error_222_arr_lit_2d_given_1d.pa", ":1:18: error: the array literal's dimensions do not match array 'm'."},
+		{"error_223_arr_lit_3d.pa", ":1:1: error: array 'm' cannot be given an array literal: only numeric and struct element types are supported."},
+		{"error_224_arr_lit_row_size_not_const.pa", ":2:1: error: array 'm' given an array literal must have a compile-time constant size."},
 		{"error_375_struct_lit_void_field.pa", ":3:16: error: Void function call cannot be used as a value."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -3162,3 +3162,28 @@ TEST(sa_error, return_struct_lit_field_count)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:24: error: struct 'P' has 2 fields but its literal has 1 values."), string::npos) << sa;
 }
+
+TEST(sa_error, arr_lit_assign)
+{
+	const pair<string, string> cases[] = {
+		{"error_454_arr_lit_assign_count.pa", ":3:2: error: array 'albedo' has size 4 but its array literal has 2 elements."},
+		{"error_455_arr_lit_assign_row_size.pa", ":2:7: error: array 'g' has rows of size 2 but a row of its array literal has 3 elements."},
+		{"error_456_arr_lit_assign_size_not_const.pa", ":3:1: error: array 'a' given an array literal must have a compile-time constant size."},
+		{"error_457_arr_lit_assign_param.pa", ":2:2: error: array 'p' given an array literal must have a compile-time constant size."},
+		{"error_458_arr_lit_assign_borrow.pa", ":2:2: error: an array literal cannot be given to the borrowed array 'b'; '->' to a borrow rebinds it, so write to its elements instead."},
+		{"error_459_arr_lit_assign_ptr_elem.pa", ":3:1: error: array 'a' cannot be given an array literal: only numeric and struct element types are supported."},
+		{"error_460_arr_lit_assign_transfer.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
+		{"error_461_arr_lit_assign_readonly_field.pa", ":3:12: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
+		{"error_462_addr_of_readonly_arr_field.pa", ":3:19: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
+		{"error_463_arr_lit_assign_dict.pa", ":2:1: error: a '{name: value}' literal can only be used as a struct value"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+

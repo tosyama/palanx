@@ -1394,6 +1394,8 @@ func fill(@![H][W]int32 g, int32 x) {
 - A row of a multi-dimensional array is borrowed the same way: `@g[i]` / `@!g[i]` gives the row of
   `[n][m]T`, `[n]$[m]T`, `[n][m]$T` or `[n][m]T` (struct `T`) as `@[m]T`, `@[m]$T` and so on, also
   when `g` is itself a borrowed array.
+- An array field is borrowed the same way: `@s.v` / `@!s.v` gives a `[n]T`, `[n]$T` or `[n]@T`
+  field as `@[n]T`, `@[n]$T` or `@[n]@T`.
 - A borrowed array can also be a local variable (`@[4]int64 p = @v;`).
 - A borrowed array is already a borrow, like a `@T`/`@!T` pointer: pass it on, bind it, and
   rebind it by name (`sum(g)`, `@[4]int64 q = p;`, `q -> p`). `@g` on it is a compile error. A
@@ -1603,11 +1605,14 @@ In a comma-separated declaration, each initializer belongs to its own variable:
 `[2]int16 r, s = [7, 8];` initializes only `s`.
 
 **Restrictions:**
-- An array literal can only be used as an array variable's initializer — not as a function
-  argument or the source of `->`. A struct value can also be used where a struct is expected;
-  see [Struct literals](#struct-literals).
-- A given dimension must be a compile-time constant that matches the literal's element or row
-  count, and every row of a 2D literal must have the same length.
+- An array literal can only be used as an array variable's initializer or the source of `->` to
+  an array (a variable, a field, or a row) — not as a function argument. A struct value can also
+  be used where a struct is expected; see [Struct literals](#struct-literals).
+- As with a struct literal, `[a[1], a[0]] -> a` reads every value before writing any element, and
+  the target of `->` must be the array itself: giving a literal to a borrowed array variable is an
+  error, since `->` to a borrow rebinds it.
+- A given dimension, or every size of the target of `->`, must be a compile-time constant that
+  matches the literal's element or row count, and every row of a 2D literal must have the same length.
 - Only numeric (integer and float) and struct element types are supported. Arrays of pointers
   and arrays of three or more dimensions cannot be initialized with a literal.
 - A `{name: value}` literal can only be used as a struct value (an element of an array literal, or
@@ -2029,8 +2034,8 @@ int64 x = 42;
   ```
 - `@` also takes the address of a primitive-typed array element (`@arr[2]`, `@!arr[2]`),
   including an element of a fixed-size array field (`@!s.data[2]`) and the innermost element of a
-  multi-dimensional array (`@!mat[0][1]`). A row (`@!mat[0]`) is borrowed as an array (see
-  Borrowing Arrays), which also works where a C function takes a pointer to its elements:
+  multi-dimensional array (`@!mat[0][1]`). A row (`@!mat[0]`) and an array field (`@!s.data`) are
+  borrowed as an array (see Borrowing Arrays), which also works where a C function takes a pointer to its elements:
 
   ```palan
   [4]int64 arr;

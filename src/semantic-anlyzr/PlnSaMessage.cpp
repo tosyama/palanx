@@ -359,31 +359,31 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ArrLitContext:
 			return "an array literal can only be used as an array or struct variable's initializer, "
-			       "the source of '->' to a struct, or the value returned from a function returning a struct, in this version.";
+			       "the source of '->' to a struct or an array, or the value returned from a function returning a struct, in this version.";
 
 		case E_ArrLitCountMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			BOOST_ASSERT(arg3 != "\x01");
-			return "array variable '" + arg1 + "' has size " + arg2 + " but its array literal has " + arg3 + " elements.";
+			return "array '" + arg1 + "' has size " + arg2 + " but its array literal has " + arg3 + " elements.";
 
 		case E_ArrLitSizeNotConst:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "array variable '" + arg1 + "' initialized with an array literal must have a compile-time constant size.";
+			return "array '" + arg1 + "' given an array literal must have a compile-time constant size.";
 
 		case E_ArrLitDimMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "the array literal's dimensions do not match array variable '" + arg1 + "'.";
+			return "the array literal's dimensions do not match array '" + arg1 + "'.";
 
 		case E_ArrLitElemType:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "array variable '" + arg1 + "' cannot be initialized with an array literal: only numeric and struct element types are supported.";
+			return "array '" + arg1 + "' cannot be given an array literal: only numeric and struct element types are supported.";
 
 		case E_ArrLitRowSizeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			BOOST_ASSERT(arg3 != "\x01");
-			return "array variable '" + arg1 + "' has rows of size " + arg2 + " but a row of its array literal has " + arg3 + " elements.";
+			return "array '" + arg1 + "' has rows of size " + arg2 + " but a row of its array literal has " + arg3 + " elements.";
 
 		case E_ArrBorrowSizeNotConst:
 			return "every size in a borrowed array type ('@[n]T'/'@![n]T') must be a compile-time constant.";
@@ -436,6 +436,11 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_StructLitTarget:
 			return "a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy "
 			       "into the struct it points to.";
+
+		case E_ArrLitTarget:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "an array literal cannot be given to the borrowed array '" + arg1 + "'; '->' to a borrow "
+			       "rebinds it, so write to its elements instead.";
 
 		case E_CopyShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
