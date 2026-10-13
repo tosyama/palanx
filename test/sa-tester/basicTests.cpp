@@ -5216,3 +5216,24 @@ TEST(sa, struct_init_from_call)
 	}
 }
 
+
+TEST(sa, return_struct_lit)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/241_return_struct_lit.pa");
+	ASSERT_TRUE(jout.is_object());
+	// The literal initializes a temp that is returned like a variable: not freed.
+	for (int i = 0; i < 3; i++) {
+		const auto& body = jout["functions"][i]["body"];
+		ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+		string name = body[0]["vars"][0]["name"];
+		ASSERT_EQ(name.rfind("__ret_", 0), 0);
+		const auto& ret = body[body.size() - 1];
+		ASSERT_EQ(ret["stmt-type"], "return");
+		ASSERT_EQ(ret["values"][0]["expr-type"], "id");
+		ASSERT_EQ(ret["values"][0]["name"], name);
+		for (auto& s : body)
+			ASSERT_NE(s.value("stmt-type", ""), "free") << s;
+	}
+}

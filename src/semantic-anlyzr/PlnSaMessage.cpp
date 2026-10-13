@@ -359,7 +359,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ArrLitContext:
 			return "an array literal can only be used as an array or struct variable's initializer, "
-			       "or as the source of '->' to a struct, in this version.";
+			       "the source of '->' to a struct, or the value returned from a function returning a struct, in this version.";
 
 		case E_ArrLitCountMismatch:
 			BOOST_ASSERT(arg1 != "\x01");

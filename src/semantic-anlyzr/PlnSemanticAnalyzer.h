@@ -71,6 +71,7 @@ class PlnSemanticAnalyzer {
 	PlnTypeRegistry registry_;
 	map<string, string> strLiteralLabels;  // value -> label
 	const json*       currentFunc_    = nullptr;  // null = _start level
+	const json*       currentFuncDef_ = nullptr;  // currentFunc_'s types as written in source
 	int               loopDepth_     = 0;        // nesting depth of while loops
 	size_t            funcBodyScopeIdx_ = 0;     // 0 = top-level (no function)
 
@@ -360,6 +361,7 @@ class PlnSemanticAnalyzer {
 	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
+	json bindReturnStructLit(json& stmt);
 	const json& findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount);
 	json sa_tapple_decl(const json& stmt);       // returns array of statements
 	json sa_tapple_assign(const json& stmt);

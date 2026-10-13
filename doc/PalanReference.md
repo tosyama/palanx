@@ -1714,13 +1714,15 @@ printf("%ld %ld\n", p.x, p.y);   // 10 20
 ### Struct literals
 
 A struct value written as in an array literal's struct element (`[1, 2]` or `{y: 2, x: 1}`) can
-initialize a struct variable and be the source of `->` to a struct:
+initialize a struct variable, be the source of `->` to a struct, and be returned from a function
+returning a struct:
 
 ```palan
 type Point { int64 x; int64 y; };
 Point p = {x: 10, y: 20};
 [p.y, p.x] -> p;              // every value is read before any field is written: swaps
 func reset(@!Point q) { [0, 0] -> q[0]; }
+func sub(@Point a, @Point b) -> Point { return [a.x - b.x, a.y - b.y]; }
 ```
 
 - The target of `->` must be the struct itself: a struct variable, a `$T`/`T` field, a struct

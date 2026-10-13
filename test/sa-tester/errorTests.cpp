@@ -2249,7 +2249,7 @@ TEST(sa_error, arr_lit_func_arg)
 		"bin/palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array or struct variable's initializer, or as the source of '->' to a struct, in this version."), string::npos);
+	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array or struct variable's initializer, the source of '->' to a struct, or the value returned from a function returning a struct, in this version."), string::npos);
 }
 
 TEST(sa_error, arr_lit_init)
@@ -3141,4 +3141,24 @@ TEST(sa_error, struct_init_other_struct_ret)
 		"bin/palan-gen-ast ../test/testdata/sa/error_451_struct_init_other_struct_ret.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":4:1: error: cannot copy 'Q' into 'P'"), string::npos) << sa;
+}
+
+TEST(sa_error, return_arr_lit_non_struct)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_452_return_arr_lit_non_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":1:28: error: an array literal can only be used as"), string::npos) << sa;
+}
+
+TEST(sa_error, return_struct_lit_field_count)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_453_return_struct_lit_field_count.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:24: error: struct 'P' has 2 fields but its literal has 1 values."), string::npos) << sa;
 }

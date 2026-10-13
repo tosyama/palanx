@@ -1,0 +1,27 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type O { P p; int32 n; };
+func mid(@P a, @P b) -> P {
+	P t = [a.x + b.x, a.y + b.y];
+	if t.x > 100 { return [0, 0]; }
+	return {y: t.y / 2, x: t.x / 2};
+}
+func wrap(int32 v) -> O { return [[v, v * 2], 1]; }
+mtrace();
+{
+	P a = [2, 10], b = [4, 20];
+	P m = mid(@a, @b);
+	printf("%d %d\n", m.x, m.y);
+	P z = [200, 0];
+	P n = mid(@z, @a);
+	printf("%d %d\n", n.x, n.y);
+	int32 i = 0;
+	while i < 3 {
+		O o = wrap(i);
+		printf("%d %d %d ", o.p.x, o.p.y, o.n);
+		i + 1 -> i;
+	}
+	printf("\n");
+}
+muntrace();

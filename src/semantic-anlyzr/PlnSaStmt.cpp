@@ -30,15 +30,17 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "field-assign") { for (auto& s : sa_field_assign(stmt)) result.push_back(s); }
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
-				if (stmt.contains("values") && stmt["values"].size() == 1
-						&& stmt["values"][0].value("expr-type","") == "id")
-					removeFromArrayScope(stmt["values"][0]["name"].get<string>());
-				json ret = sa_return_stmt(stmt);
+				json retStmt = stmt;
+				for (auto& s : bindReturnStructLit(retStmt)) result.push_back(s);
+				if (retStmt.contains("values") && retStmt["values"].size() == 1
+						&& retStmt["values"][0].value("expr-type","") == "id")
+					removeFromArrayScope(retStmt["values"][0]["name"].get<string>());
+				json ret = sa_return_stmt(retStmt);
 				json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
 				// The return value may read what the frees release, so it is
 				// evaluated into a temp first.
 				if (!frees.empty() && ret.contains("values"))
-					result.push_back(bindReturnValueToTemp(stmt, ret));
+					result.push_back(bindReturnValueToTemp(retStmt, ret));
 				for (auto& s : frees) result.push_back(s);
 				result.push_back(ret);
 			} else
@@ -187,6 +189,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	// Save var scopes and use a fresh function scope instead
 	auto savedVarScopes      = varScopes;
 	auto savedCurrentFunc    = currentFunc_;
+	auto savedCurrentFuncDef = currentFuncDef_;
 	auto savedArrayScopeVars = arrayScopeVars_;
 	auto savedFuncBodyIdx    = funcBodyScopeIdx_;
 
@@ -208,6 +211,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		}
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
+	currentFuncDef_ = &funcDef;
 	enterScope();  // push scope[1] = function body
 	funcBodyScopeIdx_ = arrayScopeVars_.size() - 1;  // = 1
 
@@ -272,6 +276,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	arrayScopeVars_  = savedArrayScopeVars;
 	funcBodyScopeIdx_ = savedFuncBodyIdx;
 	currentFunc_     = savedCurrentFunc;
+	currentFuncDef_  = savedCurrentFuncDef;
 
 	sa["functions"].push_back(saFunc);
 }
@@ -515,6 +520,26 @@ json PlnSemanticAnalyzer::bindReturnValueToTemp(const json& stmt, json& ret)
 	}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	value = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	return decl;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// `return [..];` from a function returning a struct becomes
+// `T __ret_N = [..]; return __ret_N;`, so the literal goes through the
+// struct initializer and the return through the path of a returned variable.
+// The declared type is the one written in source: the normalized ret-type is
+// the struct's storage pointer, and its name may be reachable only by an alias.
+json PlnSemanticAnalyzer::bindReturnStructLit(json& stmt)
+{
+	if (!currentFunc_->contains("ret-type") || !isStructStorage((*currentFunc_)["ret-type"])
+			|| !stmt.contains("values") || stmt["values"].size() != 1
+			|| !isAggregateLit(stmt["values"][0]))
+		return json::array();
+	string name = "__ret_" + to_string(tempVarCounter_++);
+	json& value = stmt["values"][0];
+	const json loc = stmt.value("loc", json::array());
+	json decl = {{"stmt-type", "var-decl"}, {"loc", loc}, // LCOV_EXCL_EXCEPTION_BR_LINE
+		{"vars", json::array({{{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}, {"init", value}}})}};
+	value = {{"expr-type", "id"}, {"name", name}, {"loc", value.value("loc", loc)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return sa_var_decl(decl);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount)

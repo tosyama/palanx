@@ -1,0 +1,5 @@
+import "lib_sa_types2.pa" as W;
+type P { int32 x; int32 y; };
+func pos(int32 v) -> P { return [v, v + 1]; }
+func named(int32 v) -> P { return {y: v, x: 0}; }
+func wrap(int32 v) -> W.Vec { return [v]; }
