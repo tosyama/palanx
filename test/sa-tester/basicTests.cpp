@@ -5296,3 +5296,34 @@ TEST(sa, struct_lit_arr_field)
 	checkStores(stmts, 17);
 }
 
+TEST(sa, struct_lit_struct_expr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/244_struct_lit_struct_expr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// Q q = [v, mk(3)]: copy from v, and from the call result through a freed temp.
+	ASSERT_EQ(stmts[4]["body"]["name"], "memcpy");
+	ASSERT_EQ(stmts[4]["body"]["args"][1]["name"], "v");
+	ASSERT_EQ(stmts[5]["body"][0]["vars"][0]["init"]["name"], "mk");
+
+	// [q.b, @q.a] -> q: both values are copied into temp structs before the
+	// stores, which copy from the temps; the temps are freed at the end.
+	const auto& body = stmts[6]["body"];
+	ASSERT_EQ(body.size(), 9);
+	string t0 = body[0]["vars"][0]["name"], t1 = body[2]["vars"][0]["name"];
+	ASSERT_EQ(body[1]["body"]["args"][1]["expr-type"], "field-access");
+	ASSERT_EQ(body[3]["body"]["args"][1]["value-type"]["mutable"], false);
+	ASSERT_EQ(body[5]["body"]["args"][1]["name"], t0);
+	ASSERT_EQ(body[6]["body"]["args"][1]["name"], t1);
+	ASSERT_EQ(body[7]["body"]["args"][0]["name"], t1);
+	ASSERT_EQ(body[8]["body"]["args"][0]["name"], t0);
+
+	// [os[1], os[0]] -> os: struct elements go through temps as well.
+	ASSERT_EQ(stmts[14]["body"][7]["body"]["name"], "free");
+
+	// return [p, mk(1)] from f: copies from the '@P' parameter.
+	const auto& fbody = jout["functions"][1]["body"];
+	ASSERT_EQ(fbody[1]["body"]["args"][1]["name"], "p");
+}
+

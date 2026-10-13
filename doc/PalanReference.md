@@ -1607,7 +1607,8 @@ In a comma-separated declaration, each initializer belongs to its own variable:
 **Restrictions:**
 - An array literal can only be used as an array variable's initializer or the source of `->` to
   an array (a variable, a field, or a row) — not as a function argument. A struct value can also
-  be used where a struct is expected; see [Struct literals](#struct-literals).
+  be used where a struct is expected; see [Struct literals](#struct-literals). A struct element
+  may also be a struct expression, which is copied (`[os[1], os[0]] -> os` swaps).
 - As with a struct literal, `[a[1], a[0]] -> a` reads every value before writing any element, and
   the target of `->` must be the array itself: giving a literal to a borrowed array variable is an
   error, since `->` to a borrow rebinds it.
@@ -1736,6 +1737,9 @@ func sub(@Point a, @Point b) -> Point { return [a.x - b.x, a.y - b.y]; }
 - The field rules are those of an array literal's struct element: every field exactly once,
   struct fields as nested values, array fields as array literals (`[[1, 2, 3], 4]`), no pointer
   fields or arrays of pointers.
+- A struct field's value may also be a struct expression of that type — a struct variable, a
+  `T` field, an array element, a `@T`/`@!T`, or a call result: `Q q = [p, mk(3)];` copies it. With `->`
+  it is read before any write too, so `[q.b, @q.a] -> q` swaps.
 
 ### Field types
 

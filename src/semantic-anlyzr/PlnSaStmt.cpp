@@ -434,14 +434,32 @@ json PlnSemanticAnalyzer::sa_aggregate_lit_assign(const json& stmt, const json& 
 		                {"vars", json::array({{{"name", name}, {"var-type", type}, {"init", move(init)}}})}});
 		return name;
 	};
+	// A struct value is copied into a temp struct of its own, so a source
+	// overlapping the target (`[q.b, q.a] -> q`) is read before any write.
+	auto bindStructTemp = [&](json v) -> string {
+		if (isExpiringStruct(v)) {
+			string name = bindTemp(v);
+			arrayScopeVars_.back().push_back({name, makeStructFreeStmt(name, v["value-type"])});
+			return name;
+		}
+		string name = "__lit_" + to_string(tempVarCounter_++);
+		json decl = {{"stmt-type", "var-decl"}, {"loc", stmt.value("loc", json::array())},
+			{"vars", json::array({{{"name", name},
+				{"var-type", {{"type-kind", "prim"}, {"type-name", v["value-type"]["base-type"]["type-name"]}}}}})}};
+		for (auto& s : sa_struct_var_decl(decl)) body.push_back(s);
+		const json type = *findVar(name);
+		body.push_back(makeCopyStmt(stmt, {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}}, v));
+		return name;
+	};
 	function<void(json&)> bindLeaves = [&](json& vals) {
 		for (auto& v : vals) {
 			if (v.is_array()) {
 				bindLeaves(v);
 				continue;
 			}
-			const json type = v["value-type"];
-			v = {{"expr-type", "id"}, {"name", bindTemp(move(v))}, {"var-type", type}, {"value-type", type}};
+			string name = isStructPntr(v["value-type"]) ? bindStructTemp(move(v)) : bindTemp(move(v));
+			const json type = *findVar(name);
+			v = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}};
 		}
 	};
 	bindLeaves(values);
@@ -454,6 +472,8 @@ json PlnSemanticAnalyzer::sa_aggregate_lit_assign(const json& stmt, const json& 
 	} else {
 		emitArrLitAssigns(target, shape, values, body);
 	}
+	size_t idx = arrayScopeVars_.size() - 1;
+	for (auto& s : collectFreeStmts(idx, idx + 1)) body.push_back(s);
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	leaveScope();
 	return {{"stmt-type", "block"}, {"body", move(body)}}; // LCOV_EXCL_EXCEPTION_BR_LINE

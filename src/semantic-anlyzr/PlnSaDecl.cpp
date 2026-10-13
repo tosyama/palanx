@@ -725,7 +725,9 @@ void PlnSemanticAnalyzer::emitArrLitAssigns(const json& arrAst, const ArrLitShap
 		        {"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}};
 	};
 	auto assignElem = [&](const json& elemAst, const json& value) {
-		if (shape.structDef)
+		if (shape.structDef && value.is_object())
+			out.push_back(makeCopyStmt(elemAst, sa_expression(elemAst), value));
+		else if (shape.structDef)
 			emitStructLitAssigns(elemAst, *shape.structDef, value, out);
 		else
 			out.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(elemAst)}, {"value", value}}); // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -767,14 +769,27 @@ json PlnSemanticAnalyzer::sa_struct_lit_var_decl(const json& stmt)
 
 // Normalizes a struct value written in field order (`[0, 1]`) or by name
 // (`{x: 0, y: 1}`) to one array of analyzed values in field declaration
-// order; an entry for a struct field is itself such an array, and one for an
-// array field is what sa_arr_lit_values gives.
+// order; an entry for a struct field is itself such a value, and one for an
+// array field is what sa_arr_lit_values gives. A struct value written as an
+// expression stays that analyzed expression (an object, not an array): it is
+// copied from, like the source of '->' to a struct.
 json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 {
 	string et = item.value("expr-type", "");
 	if (et != "arr-lit" && et != "dict-lit") {
-		cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitExpected, def.name) << endl;
-		exit(1);
+		json value = sa_expression(item);
+		if (!value.contains("value-type") || !isStructPntr(value["value-type"])) {
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitExpected, def.name) << endl;
+			exit(1);
+		}
+		const json& vt = value["value-type"];
+		if (vt["base-type"]["type-name"] != def.name) {
+			json dstType = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "struct"}, {"type-name", def.name}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
+				arrShapeName(dstType), arrShapeName(vt)) << endl;
+			exit(1);
+		}
+		return value;
 	}
 	const json& items = item["items"];
 	vector<const json*> given(def.fields.size(), nullptr);
@@ -859,6 +874,8 @@ void PlnSemanticAnalyzer::emitStructLitAssigns(const json& objAst, const StructD
 		json fieldAst = {{"expr-type", "field-access"}, {"object", objAst}, {"field", f.name}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		if (f.typeKind == "embed-arr" || f.typeKind == "arr-ptr")
 			emitArrLitAssigns(fieldAst, arrLitShape(objAst, f.name, fieldValueType(f)), values[k], out); // LCOV_EXCL_EXCEPTION_BR_LINE
+		else if (values[k].is_object())
+			out.push_back(makeCopyStmt(objAst, makeFieldAccess(resolveObjectChain(objAst, /*forWrite=*/true), f), values[k])); // LCOV_EXCL_EXCEPTION_BR_LINE
 		else
 			emitStructLitAssigns(fieldAst, requireCompleteStruct(f.typeName, objAst), values[k], out);
 	}
