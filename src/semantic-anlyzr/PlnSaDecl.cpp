@@ -767,7 +767,8 @@ json PlnSemanticAnalyzer::sa_struct_lit_var_decl(const json& stmt)
 
 // Normalizes a struct value written in field order (`[0, 1]`) or by name
 // (`{x: 0, y: 1}`) to one array of analyzed values in field declaration
-// order; an entry for a struct field is itself such an array.
+// order; an entry for a struct field is itself such an array, and one for an
+// array field is what sa_arr_lit_values gives.
 json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 {
 	string et = item.value("expr-type", "");
@@ -816,6 +817,21 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 			values.push_back(sa_struct_lit(v, requireCompleteStruct(f.typeName, v)));
 			continue;
 		}
+		if (f.typeKind == "embed-arr" || f.typeKind == "arr-ptr") {
+			string vet = v.value("expr-type", "");
+			if (vet == "dict-lit") {
+				cerr << locPrefix(v) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
+				exit(1);
+			}
+			if (vet != "arr-lit") {
+				cerr << locPrefix(v) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, f.name) << endl;
+				exit(1);
+			}
+			ArrLitShape shape = arrLitShape(v, f.name, fieldValueType(f));
+			values.push_back(sa_arr_lit_values(v, shape, f.name));
+			checkArrLitCount(v, v["items"], f.name, false, f.count, 0);
+			continue;
+		}
 		if (f.typeKind != "prim") {
 			cerr << locPrefix(v) << PlnSaMessage::getMessage(E_StructLitFieldType, def.name, f.name) << endl;
 			exit(1);
@@ -841,7 +857,10 @@ void PlnSemanticAnalyzer::emitStructLitAssigns(const json& objAst, const StructD
 			continue;
 		}
 		json fieldAst = {{"expr-type", "field-access"}, {"object", objAst}, {"field", f.name}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		emitStructLitAssigns(fieldAst, requireCompleteStruct(f.typeName, objAst), values[k], out);
+		if (f.typeKind == "embed-arr" || f.typeKind == "arr-ptr")
+			emitArrLitAssigns(fieldAst, arrLitShape(objAst, f.name, fieldValueType(f)), values[k], out); // LCOV_EXCL_EXCEPTION_BR_LINE
+		else
+			emitStructLitAssigns(fieldAst, requireCompleteStruct(f.typeName, objAst), values[k], out);
 	}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

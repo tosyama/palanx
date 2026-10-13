@@ -1734,7 +1734,8 @@ func sub(@Point a, @Point b) -> Point { return [a.x - b.x, a.y - b.y]; }
   array element, or `q[0]` for what a borrow `q` points to. Giving a literal to the borrow `q`
   itself is an error, since `->` to a borrow rebinds it.
 - The field rules are those of an array literal's struct element: every field exactly once,
-  struct fields as nested values, no pointer or array fields.
+  struct fields as nested values, array fields as array literals (`[[1, 2, 3], 4]`), no pointer
+  fields or arrays of pointers.
 
 ### Field types
 

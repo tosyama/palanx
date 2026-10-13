@@ -5271,3 +5271,28 @@ TEST(sa, arr_lit_assign)
 	ASSERT_EQ(q["value-type"]["mutable"], true);
 }
 
+TEST(sa, struct_lit_arr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/243_struct_lit_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// Field order: c[0..2] and v[0..1] are element stores; ps and os elements are struct field stores.
+	auto checkStores = [](const json& list, size_t from) {
+		for (size_t k = 0; k < 13; k++)
+			ASSERT_EQ(list[from + k]["stmt-type"], (k < 3 || k >= 11) ? "arr-assign" : "field-assign");
+	};
+	checkStores(stmts, 1);
+	ASSERT_EQ(stmts[1]["target"]["array"]["expr-type"], "field-access");
+	ASSERT_EQ(stmts[1]["target"]["array"]["var"], "m");
+
+	// '->': all 13 values go to temps before the target's address and the stores.
+	const auto& body = stmts[14]["body"];
+	ASSERT_EQ(stmts[14]["stmt-type"], "block");
+	ASSERT_EQ(body.size(), 27);
+	checkStores(body, 14);
+	ASSERT_EQ(body[26]["value"]["name"], body[12]["vars"][0]["name"]);
+
+	checkStores(stmts, 17);
+}
+

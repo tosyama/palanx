@@ -2441,7 +2441,7 @@ TEST(sa_error, struct_arr_lit)
 		{"error_264_struct_lit_dup_field.pa", ":2:26: error: field 'x' is given more than once in a struct literal."},
 		{"error_265_struct_lit_missing_field.pa", ":2:15: error: the literal of struct 'Point' is missing field 'y'."},
 		{"error_266_struct_lit_unknown_field.pa", ":2:21: error: struct 'Point' has no field 'z'."},
-		{"error_267_struct_lit_ptr_field.pa", ":2:15: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric and struct fields are supported."},
+		{"error_267_struct_lit_ptr_field.pa", ":2:15: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
 		{"error_268_struct_lit_narrowing.pa", ":3:17: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_269_dict_lit_prim_elem.pa", ":1:15: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, or an element of an array literal."},
 		{"error_270_dict_lit_context.pa", ":3:5: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, or an element of an array literal."},
@@ -3083,7 +3083,7 @@ TEST(sa_error, struct_lit_init_assign)
 		{"error_442_struct_lit_init_borrow.pa", ":3:1: error: a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy into the struct it points to."},
 		{"error_443_struct_lit_to_readonly_elem.pa", ":2:16: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 		{"error_444_struct_lit_assign_count.pa", ":3:1: error: struct 'V' has 2 fields but its literal has 3 values."},
-		{"error_445_struct_lit_assign_ptr_field.pa", ":4:2: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric and struct fields are supported."},
+		{"error_445_struct_lit_assign_ptr_field.pa", ":4:2: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
 		{"error_446_struct_lit_transfer.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -3176,6 +3176,10 @@ TEST(sa_error, arr_lit_assign)
 		{"error_461_arr_lit_assign_readonly_field.pa", ":3:12: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 		{"error_462_addr_of_readonly_arr_field.pa", ":3:19: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 		{"error_463_arr_lit_assign_dict.pa", ":2:1: error: a '{name: value}' literal can only be used as a struct value"},
+		{"error_464_struct_lit_arr_field_count.pa", ":2:8: error: array 'albedo' has size 4 but its array literal has 2 elements."},
+		{"error_465_struct_lit_arr_field_not_lit.pa", ":3:8: error: the array literal's dimensions do not match array 'v'."},
+		{"error_466_struct_lit_arr_field_dict.pa", ":2:8: error: a '{name: value}' literal can only be used as a struct value"},
+		{"error_467_struct_lit_ptr_arr_field.pa", ":3:8: error: field 'ps' of struct 'M' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

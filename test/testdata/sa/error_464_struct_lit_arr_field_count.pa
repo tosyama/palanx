@@ -1,0 +1,2 @@
+type M { [4]flo32 albedo; int32 n; };
+M m = [[1, 2], 0];
