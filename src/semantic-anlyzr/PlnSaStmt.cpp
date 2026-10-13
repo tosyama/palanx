@@ -32,10 +32,14 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 			if (funcBodyScopeIdx_ > 0) {
 				json retStmt = stmt;
 				for (auto& s : bindReturnStructLit(retStmt)) result.push_back(s);
-				if (retStmt.contains("values") && retStmt["values"].size() == 1
-						&& retStmt["values"][0].value("expr-type","") == "id")
+				bool ownedVar = retStmt.contains("values") && retStmt["values"].size() == 1
+						&& retStmt["values"][0].value("expr-type","") == "id"
+						&& isInArrayScope(retStmt["values"][0]["name"].get<string>());
+				if (ownedVar)
 					removeFromArrayScope(retStmt["values"][0]["name"].get<string>());
 				json ret = sa_return_stmt(retStmt);
+				if (!ownedVar)
+					for (auto& s : copyReturnStruct(retStmt, ret)) result.push_back(s);
 				json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
 				// The return value may read what the frees release, so it is
 				// evaluated into a temp first.
@@ -600,6 +604,28 @@ json PlnSemanticAnalyzer::bindReturnStructLit(json& stmt)
 		{"vars", json::array({{{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}, {"init", value}}})}};
 	value = {{"expr-type", "id"}, {"name", name}, {"loc", value.value("loc", loc)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	return sa_var_decl(decl);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A returned struct is freed by the caller, so one the function doesn't own
+// (a parameter, a field, an element) is returned as a copy. The copy is made
+// after sa_return_stmt so a wrong value is still reported as a return error.
+json PlnSemanticAnalyzer::copyReturnStruct(const json& stmt, json& ret)
+{
+	if (!ret.contains("values") || !isStructStorage((*currentFunc_)["ret-type"]))
+		return json::array();
+	json& value = ret["values"][0];
+	if (!value.contains("value-type") || !isStructPntr(value["value-type"]) || isExpiringStruct(value))
+		return json::array();
+	string name = "__ret_" + to_string(tempVarCounter_++);
+	json decl = {{"stmt-type", "var-decl"}, {"loc", stmt.value("loc", json::array())}, // LCOV_EXCL_EXCEPTION_BR_LINE
+		{"vars", json::array({{{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}}})}};
+	json result = sa_var_decl(decl);
+	removeFromArrayScope(name);
+	const json type = *findVar(name);
+	json dst = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	result.push_back(makeCopyStmt(stmt, dst, value));
+	value = dst;
+	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount)

@@ -370,6 +370,7 @@ class PlnSemanticAnalyzer {
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
 	json bindReturnStructLit(json& stmt);
+	json copyReturnStruct(const json& stmt, json& ret);
 	const json& findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount);
 	json sa_tapple_decl(const json& stmt);       // returns array of statements
 	json sa_tapple_assign(const json& stmt);

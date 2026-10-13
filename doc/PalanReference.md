@@ -1908,6 +1908,9 @@ statement on its own, it is freed at once. Binding it to a `@T`/`@!T` — a vari
 an assignment, a pointer field or slot, or a return — is a compile error, since nothing would
 own it.
 
+Returning a struct the function doesn't own — a parameter, a field, or an array element — returns
+a copy of it (including what it owns), which the caller owns.
+
 ### Declaration order
 
 A top-level struct, enum, type alias, or const may be used before its declaration, and so may

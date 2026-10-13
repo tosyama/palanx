@@ -5327,3 +5327,50 @@ TEST(sa, struct_lit_struct_expr)
 	ASSERT_EQ(fbody[1]["body"]["args"][1]["name"], "p");
 }
 
+
+TEST(sa, return_unowned_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/245_return_unowned_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto func = [&](const string& name) -> const json& {
+		for (auto& f : jout["functions"])
+			if (f["name"] == name) return f["body"];
+		throw runtime_error("no function " + name);
+	};
+	// A struct the function doesn't own is copied into a fresh one, which is returned.
+	for (string name : {"ra", "rb", "rc", "rf"}) {
+		const auto& body = func(name);
+		ASSERT_EQ(body.size(), 3) << name;
+		string ret = body[0]["vars"][0]["name"];
+		ASSERT_EQ(body[1]["body"]["name"], "memcpy") << name;
+		ASSERT_EQ(body[1]["body"]["args"][0]["name"], ret) << name;
+		ASSERT_EQ(body[2]["values"][0]["name"], ret) << name;
+	}
+	ASSERT_EQ(func("ra")[1]["body"]["args"][1]["name"], "p");
+	ASSERT_EQ(func("rc")[1]["body"]["args"][1]["expr-type"], "field-access");
+
+	// From a local: the copy is made before the local is freed.
+	const auto& rd = func("rd");
+	ASSERT_EQ(rd[5]["body"]["name"], "memcpy");
+	ASSERT_EQ(rd[7]["body"]["name"], "__pln_free_Q");
+	ASSERT_EQ(func("re")[5]["body"]["name"], "memcpy");
+
+	// A struct owning fields is copied with what it owns.
+	const auto& rg = func("rg");
+	ASSERT_EQ(rg[0]["vars"][0]["init"]["name"], "__pln_alloc_Q");
+	ASSERT_EQ(rg[1]["body"]["name"], "__pln_copy_Q");
+	ASSERT_EQ(rg[1]["body"]["args"][1]["name"], "q");
+
+	// A local struct variable and a call result are returned as they are.
+	const auto& rh = func("rh");
+	ASSERT_EQ(rh.back()["values"][0]["name"], "l");
+	const auto& ri = func("ri");
+	ASSERT_EQ(ri.size(), 1);
+	ASSERT_EQ(ri[0]["values"][0]["name"], "mk");
+
+	// A returned borrow stays a borrow.
+	const auto& rj = func("rj");
+	ASSERT_EQ(rj.size(), 1);
+	ASSERT_EQ(rj[0]["values"][0]["name"], "p");
+}
