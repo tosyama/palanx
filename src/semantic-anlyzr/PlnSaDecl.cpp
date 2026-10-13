@@ -272,7 +272,11 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 		return var["var-type"].value("type-kind", "") == "arr" && var.contains("init");
 	};
 	auto isLitInit = [](const json& var) { return var.contains("init") && isAggregateLit(var["init"]); };
-	auto ownRun = [&](const json& var) { return isArrInit(var) || isLitInit(var); };
+	auto isStructInit = [&](const json& var) {
+		return var["var-type"].value("type-kind", "") == "prim" && var.contains("init")
+			&& structDefs_.count(var["var-type"].value("type-name", ""));
+	};
+	auto ownRun = [&](const json& var) { return isArrInit(var) || isLitInit(var) || isStructInit(var); };
 
 	// The lowering paths below apply one var-type to every var in a statement,
 	// so the declaration is split into runs of equal var-type. The comparison
@@ -280,6 +284,9 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	// share one evaluation of its size expression. Each array literal fixes its own
 	// variable's size (`[]int32 a = [1,2], b = [1,2,3]`), so it always gets its own run,
 	// as does an array initialized by copying another one or a struct literal.
+	// An initialized struct gets its own run too: a call it takes over runs in its
+	// var-decl, while copies and C struct-ret calls run after the var-decl, so a
+	// shared run would break left-to-right order (`Pair a = b, c = mutate(@!b);`).
 	json result = json::array();
 	const json& vars = stmt2["vars"];
 	size_t begin = 0;
@@ -1427,14 +1434,15 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	bool useSimpleCalloc = !def.ownsFields || inOwnAllocator;
 	json result = json::array();
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
-	// Accumulated separately so `Pair p = f(), q = g();` allocates storage for
-	// both before either struct-ret call or copy runs.
+	// sa_var_decl gives each initialized var its own run, so these only follow
+	// the var-decl that allocates their storage.
 	json initStmts = json::array();
 	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"].get<string>();
 		json structRetCall;  // stays null unless `var` has a valid struct-returning C call initializer
 		json copySrc;        // stays null unless `var` is initialized by copying another struct
+		json takenOver;      // stays null unless `var` takes over a struct returned by a Palan call
 		if (var.contains("init")) {
 			// Evaluate before declareVar: the initializer must not see the
 			// variable it is initializing (same rule as sa_var_decl).
@@ -1444,10 +1452,14 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 				&& userInit.value("func-type", "") == "c"
 				&& userInit["value-type"].value("type-kind","") == "struct"
 				&& userInit["value-type"].value("type-name","") == structName;
-			if (!isStructRetCall) {
-				// Copying a returned struct would allocate the variable only to
-				// copy over it; taking the struct over in a declaration is undecided.
-				if (!userInit.contains("value-type") || userInit.value("category", "") == "expiring") {
+			if (isExpiringStruct(userInit) && userInit["value-type"]["base-type"] == pntr_type["base-type"]) {
+				// The variable becomes the owner of the returned struct, as in
+				// `(T v) = f()`, instead of allocating storage only to copy over it.
+				takenOver = move(userInit);
+			} else if (!isStructRetCall) {
+				// A struct of another type is left to makeCopyStmt's shape check.
+				if (!userInit.contains("value-type")
+						|| (userInit.value("category", "") == "expiring" && !isExpiringStruct(userInit))) {
 					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructInitNotSupported, structName) << endl;
 					exit(1);
 				}
@@ -1481,7 +1493,9 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 		declareVar(name, pntr_type, &stmt);
 
 		json init;
-		if (useSimpleCalloc) {
+		if (!takenOver.is_null()) {
+			init = move(takenOver);
+		} else if (useSimpleCalloc) {
 			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 			json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
 			                 {"value-type",uint64_type}};

@@ -1710,28 +1710,6 @@ TEST(sa_error, assign_narrowing)
 }
 
 
-TEST(sa_error, toplevel_call_plain_return_struct)
-{
-	// `Point p2 = makePoint();` used to reach
-	// sa_struct_var_decl, which silently discarded var["init"] and
-	// fabricated its own calloc-init instead of ever emitting `call
-	// makePoint` -- a former sa.toplevel_call_plain_return_struct test in
-	// basicTests.cpp asserted on that fabricated calloc-shaped init as if it
-	// were correct. Struct-typed initializers are now rejected outright.
-	// A later ticket admits the one shape it can actually
-	// implement -- a C function's SysV-classified struct-by-value return --
-	// but `makePoint` here is a native Palan function (func-type "palan"),
-	// which stays rejected either way.
-	// Covers: sa_struct_var_decl init rejection, E_StructInitNotSupported
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/136_toplevel_call_plain_return_struct.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("initializing a 'Point' variable from a call is only supported"), string::npos);
-}
-
 TEST(sa_error, call_arg_ptr_mismatch_native)
 {
 	// convertCallArg used to pass any non-Prim
@@ -3142,4 +3120,25 @@ TEST(sa_error, named_ret_single_return_value)
 		"bin/palan-gen-ast ../test/testdata/sa/error_449_named_ret_single_return_value.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:2: error: Function with named return values requires bare 'return;' statement."), string::npos) << sa;
+}
+
+TEST(sa_error, struct_init_from_c_ptr_ret)
+{
+	// A C pointer return has no owner to take over, unlike a Palan struct return.
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_450_struct_init_from_c_ptr_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: a 'tm' variable can only be initialized from a call that returns a 'tm' (a Palan function, or a C function returning it by value)."), string::npos) << sa;
+}
+
+TEST(sa_error, struct_init_other_struct_ret)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_451_struct_init_other_struct_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":4:1: error: cannot copy 'Q' into 'P'"), string::npos) << sa;
 }

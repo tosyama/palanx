@@ -270,10 +270,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_StructInitNotSupported:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "initializing a '" + arg1 + "' variable from a call is only supported "
-			       "when it is a call to a C function returning '" + arg1
-			       + "' by value; declare it without an initializer and assign to its fields "
-			         "instead.";
+			return "a '" + arg1 + "' variable can only be initialized from a call that returns a '"
+			       + arg1 + "' (a Palan function, or a C function returning it by value).";
 
 		case E_IncompatibleTypes:
 			BOOST_ASSERT(arg1 != "\x01");

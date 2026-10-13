@@ -1,0 +1,28 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type Bucket { [3]int64 vals; int32 n; };
+func mkp(int32 v) -> P p { v -> p.x; v + 1 -> p.y; }
+func mkb(int64 v) -> Bucket {
+	Bucket r;
+	v -> r.vals[0]; v * 2 -> r.vals[1]; v * 3 -> r.vals[2]; 3 -> r.n;
+	return r;
+}
+func bump(@!P p) -> P q { p.x + 1 -> p.x; p.x -> q.x; }
+mtrace();
+{
+	P p = mkp(3);
+	printf("%d %d\n", p.x, p.y);
+	Bucket b = mkb(4);
+	printf("%ld %ld %ld %d\n", b.vals[0], b.vals[1], b.vals[2], b.n);
+	P s = p, t = bump(@!p);
+	printf("%d %d\n", s.x, t.x);
+	int32 i = 0;
+	while i < 3 {
+		P q = mkp(i);
+		printf("%d ", q.y);
+		i + 1 -> i;
+	}
+	printf("\n");
+}
+muntrace();

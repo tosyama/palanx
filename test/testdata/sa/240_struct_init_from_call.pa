@@ -1,0 +1,5 @@
+type P { int32 x; int32 y; };
+func named(int32 v) -> P p { v -> p.x; }
+func plain(int32 v) -> P { P r; v -> r.x; return r; }
+P a = named(1);
+P b = plain(2), c = named(3);

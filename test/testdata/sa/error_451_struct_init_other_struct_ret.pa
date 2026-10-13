@@ -1,0 +1,4 @@
+type P { int32 x; };
+type Q { int32 x; };
+func mkq() -> Q q { 1 -> q.x; }
+P p = mkq();

@@ -1102,6 +1102,11 @@ above>}`, whose `struct-ret.var` names the just-declared variable. Discarding su
 bare statement with no destination (not immediately following a matching var-decl) is
 E_ByvalStructRetDiscarded.
 
+When the initializer is a call to a Palan function returning the same struct (`Point p =
+makePoint();`), the call itself is the var-decl's `init` in place of `calloc`: the variable takes
+over the returned storage and frees it at scope exit. A struct variable with an initializer is
+always emitted as its own var-decl, so `Point a = b, c = f();` evaluates left to right.
+
 ### field-assign statement → sa.json
 
 `10 -> p.x` (inline or `$T` chain — no pointer indirection) produces:

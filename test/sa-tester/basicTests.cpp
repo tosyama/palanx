@@ -5197,3 +5197,22 @@ TEST(sa, named_ret_struct_auto_decl)
 	ASSERT_EQ(gbody[0]["vars"][0]["name"], "o");
 	ASSERT_EQ(gbody[0]["vars"][0]["init"]["name"], "__pln_alloc_O");
 }
+
+TEST(sa, struct_init_from_call)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/240_struct_init_from_call.pa");
+	ASSERT_TRUE(jout.is_object());
+	// The variable takes over the returned struct: no calloc, no copy.
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+	const char* expected[][2] = {{"a", "named"}, {"b", "plain"}, {"c", "named"}};
+	for (int i = 0; i < 3; i++) {
+		ASSERT_EQ(stmts[i]["stmt-type"], "var-decl");
+		ASSERT_EQ(stmts[i]["vars"].size(), 1);
+		ASSERT_EQ(stmts[i]["vars"][0]["name"], expected[i][0]);
+		ASSERT_EQ(stmts[i]["vars"][0]["init"]["expr-type"], "call");
+		ASSERT_EQ(stmts[i]["vars"][0]["init"]["name"], expected[i][1]);
+	}
+}
+
