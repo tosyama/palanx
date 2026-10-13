@@ -308,10 +308,29 @@ inline bool isArrLevel(const json& t) {
 	return t.value("type-kind","") == "pntr" && !isStructStorage(t) && !isPtrBorrow(t);
 }
 
-// Renders an array pntr chain as source-like shape text ("[20][10]int32",
-// "[3]$[?]int32") for diagnostics; an unknown size shows as "?".
-inline string arrShapeName(const json& t) {
-	string out;
+// Renders an SA type as source-like text for diagnostics: a struct's own
+// storage as "T", a borrow as "@T"/"@!T", an array as "[20][10]int32" or
+// "[3]$[?]int32" (an unknown size shows as "?"), with a borrowed array's
+// "@"/"@!" once in front although each of its levels carries "mutable".
+inline string typeDisplayName(const json& t) {
+	if (!t.is_object() || !t.contains("type-kind")) // LCOV_EXCL_BR_LINE -- no real producer emits this
+		return "malformed type"; // LCOV_EXCL_LINE
+	const string kind = t["type-kind"].get<string>();
+	if (kind == "prim") {
+		if (t.contains("enum")) return t["enum"].get<string>();
+		return t.value("type-name", "malformed type"); // LCOV_EXCL_BR_LINE -- no real producer emits this
+	}
+	if (kind == "struct")
+		return t.value("type-name", "anonymous struct");
+	if (kind != "pntr")
+		return unrepresentableTypeName(t);
+	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
+	auto perm = [](const json& p) { return string(isWritableThrough(p) ? "@!" : "@"); };
+	if (isStructStorage(t))
+		return typeDisplayName(t["base-type"]);
+	if (isPtrBorrow(t))
+		return perm(t) + typeDisplayName(t["base-type"]);
+	string out = t.contains("mutable") ? perm(t) : "";
 	const json* cur = &t;
 	while (isArrLevel(*cur)) {
 		out += "[" + (cur->contains("arr-size") ? to_string((*cur)["arr-size"].get<int64_t>()) : string("?")) + "]";
@@ -319,9 +338,8 @@ inline string arrShapeName(const json& t) {
 			out += "$";
 		cur = &(*cur)["base-type"];
 	}
-	if (isStructStorage(*cur)) cur = &(*cur)["base-type"];
 	return out + typeDisplayName(*cur);
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Shape equality for binding an array to a borrowed array type: same depth,
 // same embedded layout, every size `to` names known and equal (a borrowed

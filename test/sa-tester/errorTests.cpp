@@ -514,7 +514,7 @@ TEST(sa_error, inline_as_value)
 		"bin/palan-gen-ast ../test/testdata/sa/error_070_inline_as_value.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":5:1: error: cannot convert"), string::npos);
+	ASSERT_NE(sa.find(":5:1: error: cannot convert 'Point' to 'int64'."), string::npos);
 }
 
 TEST(sa_error, field_on_prim)
@@ -2348,11 +2348,11 @@ TEST(sa_error, arr_borrow)
 		{"error_232_arr_borrow_write_ro_embed.pa", ":1:27: error: cannot write through read-only pointer"},
 		{"error_233_arr_borrow_ro_to_mut.pa", ":2:1: error: cannot bind a read-only pointer"},
 		{"error_234_arr_borrow_no_addr_of.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as"},
-		{"error_235_arr_borrow_size_mismatch.pa", "array shape '[3][4]int32' does not match the borrowed array type '[3][5]int32'."},
-		{"error_236_arr_borrow_runtime_size.pa", "array shape '[?]int32' does not match the borrowed array type '[2]int32'."},
-		{"error_237_arr_borrow_embed_mismatch.pa", "array shape '[2]$[3]int32' does not match the borrowed array type '[2][3]int32'."},
+		{"error_235_arr_borrow_size_mismatch.pa", "array shape '[3][4]int32' does not match the borrowed array type '@[3][5]int32'."},
+		{"error_236_arr_borrow_runtime_size.pa", "array shape '[?]int32' does not match the borrowed array type '@[2]int32'."},
+		{"error_237_arr_borrow_embed_mismatch.pa", "array shape '[2]$[3]int32' does not match the borrowed array type '@[2][3]int32'."},
 		{"error_238_arr_borrow_size_not_const.pa", ":2:1: error: every size in a borrowed array type"},
-		{"error_239_addr_of_struct_arr.pa", "array shape '[2]P' does not match the borrowed array type '[2]int32'."},
+		{"error_239_addr_of_struct_arr.pa", "array shape '[2]P' does not match the borrowed array type '@[2]int32'."},
 		{"error_240_arr_borrow_struct_elem.pa", "neither a struct nor a pointer inside a '$[m]' row"},
 		{"error_241_arr_borrow_mut_of_ro.pa", "cannot bind a read-only pointer"},
 		{"error_242_arr_borrow_local_no_addr_of.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as"},
@@ -2363,13 +2363,13 @@ TEST(sa_error, arr_borrow)
 		{"error_271_struct_arr_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer"},
 		{"error_272_struct_arr_borrow_mut_elem_of_ro.pa", ":3:10: error: cannot write through read-only pointer"},
 		{"error_273_struct_arr_borrow_elem_no_addr_of.pa", ":3:2: error: a struct given to a '@T'/'@!T' pointer must be written as"},
-		{"error_274_struct_arr_borrow_ptr_slots.pa", "array shape '[2]@P' does not match the borrowed array type '[2]P'."},
-		{"error_275_struct_arr_borrow_size_mismatch.pa", "array shape '[2][4]P' does not match the borrowed array type '[2][3]P'."},
+		{"error_274_struct_arr_borrow_ptr_slots.pa", "array shape '[2]@P' does not match the borrowed array type '@[2]P'."},
+		{"error_275_struct_arr_borrow_size_mismatch.pa", "array shape '[2][4]P' does not match the borrowed array type '@[2][3]P'."},
 		{"error_276_embed_struct_arr_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer"},
 		{"error_277_embed_struct_arr_borrow_mut_elem_of_ro.pa", ":3:10: error: cannot write through read-only pointer"},
-		{"error_278_embed_struct_arr_borrow_owned_arr.pa", "array shape '[2]P' does not match the borrowed array type '[2]$P'."},
-		{"error_279_struct_arr_borrow_embed_arr.pa", "array shape '[2]$P' does not match the borrowed array type '[2]P'."},
-		{"error_280_embed_struct_arr_borrow_size_mismatch.pa", "array shape '[3]$P' does not match the borrowed array type '[2]$P'."},
+		{"error_278_embed_struct_arr_borrow_owned_arr.pa", "array shape '[2]P' does not match the borrowed array type '@[2]$P'."},
+		{"error_279_struct_arr_borrow_embed_arr.pa", "array shape '[2]$P' does not match the borrowed array type '@[2]P'."},
+		{"error_280_embed_struct_arr_borrow_size_mismatch.pa", "array shape '[3]$P' does not match the borrowed array type '@[2]$P'."},
 		{"error_281_embed_struct_arr_field_access.pa", ":3:11: error: field access on non-struct variable."},
 		{"error_303_arr_borrow_addr_of_param.pa", ":1:25: error: 'g' is already a borrow"},
 		{"error_304_arr_borrow_addr_of_local.pa", ":3:16: error: 'g' is already a borrow"},
@@ -2419,9 +2419,9 @@ TEST(sa_error, struct_arr_2d)
 		{"error_262_struct_arr_2d_embed_both.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
 		{"error_360_unsized_struct_arr_2d_embed.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
 		{"error_291_embed_struct_arr_2d_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer '@T'"},
-		{"error_292_embed_struct_arr_2d_borrow_owned.pa", "array shape '[2][3]$Point' does not match the borrowed array type '[2][3]Point'."},
-		{"error_293_struct_arr_2d_borrow_embed.pa", "array shape '[2][3]Point' does not match the borrowed array type '[2][3]$Point'."},
-		{"error_294_embed_struct_arr_2d_borrow_size.pa", "array shape '[2][4]$Point' does not match the borrowed array type '[2][3]$Point'."},
+		{"error_292_embed_struct_arr_2d_borrow_owned.pa", "array shape '[2][3]$Point' does not match the borrowed array type '@[2][3]Point'."},
+		{"error_293_struct_arr_2d_borrow_embed.pa", "array shape '[2][3]Point' does not match the borrowed array type '@[2][3]$Point'."},
+		{"error_294_embed_struct_arr_2d_borrow_size.pa", "array shape '[2][4]$Point' does not match the borrowed array type '@[2][3]$Point'."},
 		{"error_295_embed_struct_arr_2d_owned_sub.pa", ":3:1: error: cannot embed 'Box' with '$': it owns fields; use 'Box' without '$'."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -2460,14 +2460,14 @@ TEST(sa_error, ptr_slot_arr)
 {
 	const pair<string, string> cases[] = {
 		{"error_282_prim_ptr_slot_arr_write_ro.pa", ":4:1: error: cannot write through read-only pointer '@T'"},
-		{"error_283_ptr_slot_arr_borrow_elem_upgrade.pa", "array shape '[2]@P' does not match the borrowed array type '[2]@!P'."},
-		{"error_284_ptr_slot_arr_borrow_narrow_mut_slots.pa", "array shape '[2]@!P' does not match the borrowed array type '[2]@P'."},
-		{"error_285_ptr_slot_arr_borrow_owned_arr.pa", "array shape '[2]P' does not match the borrowed array type '[2]@P'."},
+		{"error_283_ptr_slot_arr_borrow_elem_upgrade.pa", "array shape '[2]@P' does not match the borrowed array type '@[2]@!P'."},
+		{"error_284_ptr_slot_arr_borrow_narrow_mut_slots.pa", "array shape '[2]@!P' does not match the borrowed array type '@![2]@P'."},
+		{"error_285_ptr_slot_arr_borrow_owned_arr.pa", "array shape '[2]P' does not match the borrowed array type '@[2]@P'."},
 		{"error_286_ptr_slot_arr_borrow_write_ro_slot.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
 		{"error_287_ptr_slot_arr_borrow_write_ro_elem.pa", ":3:7: error: cannot write through read-only pointer array element"},
-		{"error_288_prim_ptr_slot_arr_borrow_as_prim.pa", "array shape '[2]@int32' does not match the borrowed array type '[2]int32'."},
+		{"error_288_prim_ptr_slot_arr_borrow_as_prim.pa", "array shape '[2]@int32' does not match the borrowed array type '@[2]int32'."},
 		{"error_289_arr_borrow_embed_ptr_elem.pa", "neither a struct nor a pointer inside a '$[m]' row"},
-		{"error_290_arr_borrow_runtime_inner_size.pa", "array shape '[2][?]int32' does not match the borrowed array type '[2][3]int32'."},
+		{"error_290_arr_borrow_runtime_inner_size.pa", "array shape '[2][?]int32' does not match the borrowed array type '@[2][3]int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2489,7 +2489,7 @@ TEST(sa_error, copy)
 		{"error_299_copy_struct_type.pa", ":5:1: error: cannot copy 'P' into 'Q'"},
 		{"error_300_copy_into_ro_elem.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
 		{"error_301_copy_ptr_slots_into_structs.pa", ":4:1: error: cannot copy '[2]@P' into '[2]P'"},
-		{"error_302_copy_unsupported_shape.pa", ":2:2: error: copying '[2][3][4]int32' is not supported in this version."},
+		{"error_302_copy_unsupported_shape.pa", ":2:2: error: copying '@![2][3][4]int32' is not supported in this version."},
 		{"error_374_arr_copy_void_init.pa", ":2:1: error: Void function call cannot be used as a value."},
 		{"error_376_copy_runtime_row_size.pa", ":3:1: error: cannot copy '[3]$[?]int32' into '[3]$[?]int32'"},
 	};
@@ -2532,7 +2532,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_339_tapple_assign_count.pa", ":3:1: error: Variable count does not match return count of 'f'."},
 		{"error_340_tapple_assign_single_ret.pa", ":3:1: error: Function 'g' does not have multiple return values."},
 		{"error_341_tapple_decl_narrowing.pa", ":2:1: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
-		{"error_342_tapple_decl_struct_mismatch.pa", ":3:1: error: cannot convert '@!P' to 'int32'."},
+		{"error_342_tapple_decl_struct_mismatch.pa", ":3:1: error: cannot convert 'P' to 'int32'."},
 		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown struct type 'Foo'."},
 		{"error_344_transfer_non_owned_field.pa", ":3:1: error: '->>' needs a field that owns its value (T or [n]T); 'n' does not."},
 		{"error_345_unsized_ret_copy.pa", ":3:1: error: cannot copy '[?]int32' into '[3]int32'"},
@@ -2558,7 +2558,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_366_unsized_rows_size_not_const.pa", ":2:1: error: the row size in '[][m]T' must be a compile-time constant."},
 		{"error_367_unsized_rows_3d.pa", ":1:1: error: '[][m]T' supports only"},
 		{"error_368_unsized_rows_ptr_elem.pa", ":2:1: error: '[][m]T' supports only"},
-		{"error_369_unsized_rows_1d_borrow.pa", ":3:1: error: array shape '[3]int32' does not match '[?][3]int32'"},
+		{"error_369_unsized_rows_1d_borrow.pa", ":3:1: error: array shape '@[3]int32' does not match '[?][3]int32'"},
 		{"error_370_slot_arr_ret_as_owned_rows.pa", ":3:2: error: array shape '[?]@!int32' does not match '[?][?]int32'"},
 		{"error_371_borrow_elems_arg_as_owned.pa", ":6:1: error: array shape '[1]@!P' does not match '[?]P'"},
 		{"error_372_owned_elems_arg_as_borrow.pa", ":5:1: error: array shape '[2]P' does not match '[?]@!P'"},
@@ -2648,7 +2648,7 @@ TEST(sa_error, row_borrow_size)
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_378_row_borrow_size.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find("array shape '[3]int32' does not match the borrowed array type '[4]int32'"), string::npos);
+	ASSERT_NE(sa.find("array shape '[3]int32' does not match the borrowed array type '@[4]int32'"), string::npos);
 }
 
 TEST(sa_error, row_borrow_runtime_size)
@@ -2658,7 +2658,7 @@ TEST(sa_error, row_borrow_runtime_size)
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_379_row_borrow_runtime_size.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find("array shape '[?]int32' does not match the borrowed array type '[4]int32'"), string::npos);
+	ASSERT_NE(sa.find("array shape '[?]int32' does not match the borrowed array type '@[4]int32'"), string::npos);
 }
 
 TEST(sa_error, row_by_name)
@@ -3183,6 +3183,17 @@ TEST(sa_error, arr_lit_assign)
 		{"error_468_struct_lit_not_struct.pa", ":3:8: error: a value of struct 'P' must be written as '[...]' or '{name: value, ...}'."},
 		{"error_469_struct_lit_other_struct.pa", ":4:12: error: cannot copy 'R' into 'P'"},
 		{"error_470_embed_field_to_borrow.pa", ":4:1: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'."},
+		{"error_471_display_struct_value.pa", ":3:1: error: cannot convert 'P' to 'int64'."},
+		{"error_472_display_struct_param.pa", ":3:1: error: cannot convert 'int64' to 'P'."},
+		{"error_473_display_arr.pa", ":2:1: error: cannot convert '[3]int32' to 'int64'."},
+		{"error_474_display_arr_2d.pa", ":2:1: error: cannot convert '[2][3]int32' to 'int64'."},
+		{"error_475_display_arr_contig.pa", ":2:1: error: cannot convert '[2]$[3]int32' to 'int64'."},
+		{"error_476_display_struct_arr.pa", ":3:1: error: cannot convert '[2]P' to 'int64'."},
+		{"error_477_display_embed_struct_arr.pa", ":3:1: error: cannot convert '[2]$P' to 'int64'."},
+		{"error_478_display_slot_arr.pa", ":2:1: error: cannot convert '[3]@!int32' to 'int64'."},
+		{"error_479_display_arr_borrow.pa", ":2:2: error: cannot convert '@[2][3]int32' to 'int64'."},
+		{"error_480_display_arr_borrow_row.pa", ":2:2: error: cannot convert '@[3]int32' to 'int64'."},
+		{"error_481_display_cast_struct.pa", ":3:11: error: Cannot cast type 'P' to 'int64'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

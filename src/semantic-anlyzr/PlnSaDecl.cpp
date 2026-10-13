@@ -786,7 +786,7 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 		if (vt["base-type"]["type-name"] != def.name) {
 			json dstType = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "struct"}, {"type-name", def.name}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
-				arrShapeName(dstType), arrShapeName(vt)) << endl;
+				typeDisplayName(dstType), typeDisplayName(vt)) << endl;
 			exit(1);
 		}
 		return value;

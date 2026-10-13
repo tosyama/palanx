@@ -102,27 +102,6 @@ std::string unrepresentableTypeName(const json& j)
     return kind;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-std::string typeDisplayName(const json& j)
-{
-    if (!j.is_object() || !j.contains("type-kind")) // LCOV_EXCL_BR_LINE -- no real producer emits this
-        return "malformed type"; // LCOV_EXCL_LINE
-    std::string kind = j["type-kind"].get<std::string>();
-    if (kind == "prim") {
-        if (j.contains("enum")) return j["enum"].get<std::string>();
-        return j.value("type-name", "malformed type"); // LCOV_EXCL_BR_LINE -- no real producer emits this
-    }
-    if (kind == "pntr") {
-        if (!j.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
-        bool mut = j.value("mutable", true);
-        return (mut ? "@!" : "@") + typeDisplayName(j["base-type"]);
-    }
-    if (kind == "struct")
-        return j.value("type-name", "anonymous struct");
-    // Every other kind is already unrepresentable; its display name there is
-    // exactly what a diagnostic needs here too.
-    return unrepresentableTypeName(j);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-
 const PlnType* PlnTypeRegistry::fromJson(const json& j)
 {
     std::string bad = unrepresentableTypeName(j);

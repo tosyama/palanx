@@ -812,7 +812,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 						}
 					} else if (!argContig) {
 						cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
-							arrShapeName(argVT), arrShapeName(*paramVT)) << endl;
+							typeDisplayName(argVT), typeDisplayName(*paramVT)) << endl;
 						exit(1);
 					}
 				}

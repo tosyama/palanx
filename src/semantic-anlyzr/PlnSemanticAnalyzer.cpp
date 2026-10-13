@@ -582,7 +582,7 @@ void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json&
 			: saValue.value("expr-type","") == "arr-index" ? saValue["array"]["value-type"]["base-type"]
 			: saValue["value-type"];
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowShapeMismatch,
-			arrShapeName(dstType), arrShapeName(srcType)) << endl;
+			typeDisplayName(dstType), typeDisplayName(srcType)) << endl;
 		exit(1);
 	}
 }
@@ -593,7 +593,7 @@ void PlnSemanticAnalyzer::checkElemShape(const json& locNode, const json& saValu
 	json dstShape = dstType;
 	dstShape.erase("mutable");  // a slot reads as the array it points to
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrElemShapeMismatch,
-		arrShapeName(dstShape), arrShapeName(saValue["value-type"])) << endl;
+		typeDisplayName(dstShape), typeDisplayName(saValue["value-type"])) << endl;
 	exit(1);
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 

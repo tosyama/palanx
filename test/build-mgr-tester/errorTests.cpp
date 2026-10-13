@@ -79,7 +79,7 @@ TEST(build_mgr_error, unsupported_field) {
 TEST(build_mgr_error, inline_as_value) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_052_inline_as_value.pa");
-	ASSERT_NE(out.find(":5:1: error: cannot convert"), string::npos);
+	ASSERT_NE(out.find(":5:1: error: cannot convert 'Point' to 'int64'."), string::npos);
 }
 
 TEST(build_mgr_error, cinclude_2d_arr_field) {

@@ -1,0 +1,3 @@
+type P { int32 x; int32 y; };
+P p;
+int64 v = p;

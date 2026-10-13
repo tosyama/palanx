@@ -367,7 +367,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	// The row's owner frees it by the row's declared size, which the new row must have.
 	if (isArrLevel(targetType) && !copyShapeMatch(sa_value["value-type"], targetType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferShapeMismatch,
-			arrShapeName(targetType), arrShapeName(sa_value["value-type"])) << endl;
+			typeDisplayName(targetType), typeDisplayName(sa_value["value-type"])) << endl;
 		exit(1);
 	}
 	arr_assign["ownership-transfer"] = true;
@@ -816,7 +816,7 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 		: copyShapeMatch(st, t);
 	if (!match) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
-			arrShapeName(t), arrShapeName(st)) << endl;
+			typeDisplayName(t), typeDisplayName(st)) << endl;
 		exit(1);
 	}
 
@@ -888,7 +888,7 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 			recordArrArrShape(leafName);
 			return callStmt("__pln_copy_arr_arr_" + leafName, "palan", json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
 		}
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, arrShapeName(t)) << endl;
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, typeDisplayName(t)) << endl;
 		exit(1);
 	}
 	// Primitive elements, or '@T' slots whose pointers are copied as they are.
