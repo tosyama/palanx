@@ -1,0 +1,4 @@
+type P { int32 x; int32 y; };
+type Q { $P a; P b; };
+Q q;
+@P bp = q.a;

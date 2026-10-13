@@ -1827,6 +1827,7 @@ printf("%ld %ld\n", l.a.x, l.a.y);   // 10 20
 `$Point` fields are stored directly inside `Line`'s memory block. No separate allocation.
 Because nothing allocates on its behalf, a `$T` field (and a `[n]$T` field) requires that `T`
 owns no fields (no `U field` or `[k]U field`); use `T field` instead.
+A `$T` field can be read as a struct value (`l.a -> p;`, `Point p = l.a;`), which copies it.
 
 **`T` — owned struct pointer**
 

@@ -5374,3 +5374,30 @@ TEST(sa, return_unowned_struct)
 	ASSERT_EQ(rj.size(), 1);
 	ASSERT_EQ(rj[0]["values"][0]["name"], "p");
 }
+
+TEST(sa, embed_field_value)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/246_embed_field_value.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto isEmbedA = [](const json& e) {
+		return e["expr-type"] == "field-access" && e["addr-only"] == true && e["offset"] == 0;
+	};
+	// q.a -> v and P w = q.a: copied from the field's address.
+	ASSERT_EQ(stmts[6]["body"]["name"], "memcpy");
+	ASSERT_TRUE(isEmbedA(stmts[6]["body"]["args"][1]));
+	ASSERT_EQ(stmts[8]["body"]["name"], "memcpy");
+	ASSERT_TRUE(isEmbedA(stmts[8]["body"]["args"][1]));
+	// g(q.a): passed as a struct argument.
+	ASSERT_TRUE(isEmbedA(stmts[9]["vars"][0]["init"]["args"][0]));
+	// [q.b, q.a] -> q: q.a is copied into a temp struct first.
+	ASSERT_TRUE(isEmbedA(stmts[10]["body"][3]["body"]["args"][1]));
+	// return q.a: copied into the returned struct.
+	const auto& ra = jout["functions"][1]["body"];
+	ASSERT_EQ(ra[1]["body"]["name"], "memcpy");
+	ASSERT_EQ(ra[1]["body"]["args"][1]["addr-only"], true);
+	// An embedded field of a cinclude'd struct.
+	ASSERT_EQ(stmts[14]["body"]["name"], "memcpy");
+	ASSERT_EQ(stmts[14]["body"]["args"][1]["addr-only"], true);
+}

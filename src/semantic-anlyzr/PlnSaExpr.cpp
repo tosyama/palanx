@@ -1036,12 +1036,7 @@ json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)
 {
 	FieldChain chain = resolveObjectChain(expr["object"], forWrite);
 	string fn = expr["field"].get<string>();
-	const FieldLayout& fld = findFieldOrExit(chain.structName, fn, expr);
-	if (fld.typeKind == "embed") {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InlineStructAsValue) << endl;
-		exit(1);
-	}
-	return makeFieldAccess(chain, fld);
+	return makeFieldAccess(chain, findFieldOrExit(chain.structName, fn, expr));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::makeFieldAccess(const FieldChain& chain, const FieldLayout& fld)

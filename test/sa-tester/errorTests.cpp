@@ -514,7 +514,7 @@ TEST(sa_error, inline_as_value)
 		"bin/palan-gen-ast ../test/testdata/sa/error_070_inline_as_value.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("inline struct field"), string::npos);
+	ASSERT_NE(sa.find(":5:1: error: cannot convert"), string::npos);
 }
 
 TEST(sa_error, field_on_prim)
@@ -3182,6 +3182,7 @@ TEST(sa_error, arr_lit_assign)
 		{"error_467_struct_lit_ptr_arr_field.pa", ":3:8: error: field 'ps' of struct 'M' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
 		{"error_468_struct_lit_not_struct.pa", ":3:8: error: a value of struct 'P' must be written as '[...]' or '{name: value, ...}'."},
 		{"error_469_struct_lit_other_struct.pa", ":4:12: error: cannot copy 'R' into 'P'"},
+		{"error_470_embed_field_to_borrow.pa", ":4:1: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

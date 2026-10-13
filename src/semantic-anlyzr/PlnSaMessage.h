@@ -48,7 +48,6 @@ enum PlnSaMessageCode {
 	E_UnsupportedStructFieldType,
 	E_RecursiveStruct,			// arg1: struct name
 	E_FieldAccessOnNonStruct,
-	E_InlineStructAsValue,
 	E_WriteToImmutablePtrField,
 	E_EmbedOwningStruct,			// arg1: struct name
 	E_WriteToReadOnlyArrElem,
