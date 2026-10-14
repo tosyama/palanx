@@ -1,0 +1,39 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+
+type color { flo32 r; flo32 g; flo32 b; };
+type Q { int32 n; [2]int32 v; };
+
+func mul_color(@!color c, flo32 f) -> @!color
+{
+	[c.r * f, c.g * f, c.b * f] -> c[0];
+	return c;
+}
+
+func add_color(@!color c1, @color c2) -> @!color
+{
+	[c1.r + c2.r, c1.g + c2.g, c1.b + c2.b] -> c1[0];
+	return c1;
+}
+
+func mk(flo32 x) -> color c { [x, x, x] -> c; }
+func sum(@color c) -> flo32 { return c.r + c.g + c.b; }
+func red(color c) -> flo32 { return c.r; }
+func qsum(@!Q q) -> int32 { 5 -> q.v[0]; return q.n + q.v[0] + q.v[1]; }
+func corner(@![2][2]int32 a) -> int32 { 10 -> a[1][1]; return a[0][0] + a[1][1]; }
+func first(@[3]int32 a) -> int32 { return a[0]; }
+
+mtrace();
+{
+	color c = [1, 2, 3];
+	color d;
+	c.mul_color(2).add_color(mul_color(@![1, 1, 1], 0.5)) -> d;
+	printf("%.1f %.1f %.1f\n", d.r, d.g, d.b);
+	printf("%.1f %.1f\n", sum(@{b: 1, r: 2, g: 3}), red([4, 5, 6]));
+	printf("%.1f\n", sum(@[sum(@mk(1)), 0, 0]));
+	printf("%d %d\n", qsum(@!{n: 1, v: [2, 3]}), corner(@![1, 2][3, 4]));
+	int32 i = 0;
+	while first(@[i, 0, 0]) < 3 { i + 1 -> i; }
+	if i == 3 && first(@[i, 1, 2]) == 3 { printf("and\n"); }
+}
+muntrace();

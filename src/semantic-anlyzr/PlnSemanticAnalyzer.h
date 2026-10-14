@@ -323,6 +323,9 @@ class PlnSemanticAnalyzer {
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);
 	json  sa_call_borrow_arg(const json& arg);
+	json  sa_lit_arg(const json& arg, const json* paramVT, const string& paramName,
+	                 json& argAst, json& body, json& release);
+	json  bindCallTemp(json saArg);
 	void  checkBorrowSource(const json& locNode, const json& saValue, const json& dstType);
 	void  registerTypeAliasChecked(const json& locNode, const string& aliasName, const json& resolved);
 	void  registerTypedefAliasInType(const json& locNode, json& vtype);

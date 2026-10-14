@@ -214,7 +214,6 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
             func.instrs.push_back(CallC{e.name, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-            queueArgReleases(e.releases, args);
             return dst;
         }
         case ExprKind::PlnCall: {
@@ -223,7 +222,6 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
             func.instrs.push_back(CallPln{e.name, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-            queueArgReleases(e.releases, args);
             return dst;
         }
         case ExprKind::SysCall: {
@@ -232,7 +230,6 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
             func.instrs.push_back(CallSys{e.sysNum, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-            queueArgReleases(e.releases, args);
             return dst;
         }
         case ExprKind::LogicalNot: {
@@ -303,6 +300,8 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(Label{endLabel});
             return dst;
         }
+        case ExprKind::Temp:
+            return lowerTempExpr(static_cast<const TempExpr&>(expr), func);
         case ExprKind::ArrIndex:
             return lowerArrIndexExpr(static_cast<const ArrIndexExpr&>(expr), func);
         case ExprKind::FieldAccess: {
@@ -330,7 +329,6 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
         // args as an ordinary first argument for the MEMORY case, so the
         // callee writes the whole struct through it directly; no dsts needed.
         func.instrs.push_back(CallC{expr.name, args, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-        queueArgReleases(expr.releases, args);
         return;
     }
     // Register-class struct return (<=16B): the call writes each eightbyte
@@ -346,7 +344,6 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
         types.push_back(t);
     }
     func.instrs.push_back(CallC{expr.name, args, dsts, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
-    queueArgReleases(expr.releases, args);
     int offset = 0;
     for (size_t i = 0; i < dsts.size(); i++) {
         func.instrs.push_back(DerefStore{dstPtr, offset, dsts[i], types[i]});
@@ -358,14 +355,12 @@ void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 {
     vector<VReg> args = lowerArgs(expr.args, func);
     func.instrs.push_back(CallPln{expr.name, args, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-    queueArgReleases(expr.releases, args);
 }
 
 void PlnVCodeGen::lowerSysCallExpr(const SysCallExpr& expr, VFunc& func)
 {
     vector<VReg> args = lowerArgs(expr.args, func);
     func.instrs.push_back(CallSys{expr.sysNum, args, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-    queueArgReleases(expr.releases, args);
 }
 
 vector<VReg> PlnVCodeGen::lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc& func)
@@ -376,21 +371,26 @@ vector<VReg> PlnVCodeGen::lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc&
     return regs;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
-void PlnVCodeGen::queueArgReleases(const vector<ArgRelease>& releases, const vector<VReg>& args)
+VReg PlnVCodeGen::lowerTempExpr(const TempExpr& e, VFunc& func)
 {
-    for (auto& r : releases)
-        pendingReleases_.push_back({r.funcName, r.plnFunc, args[r.arg]}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    // Each body statement releases only the temps of its own values; the
+    // ones already pending belong to the enclosing full expression.
+    vector<const Stmt*> outer = move(pendingReleases_);
+    pendingReleases_.clear();
+    for (auto& s : e.body)
+        lowerStmt(*s, func);
+    pendingReleases_ = move(outer);
+    for (auto& s : e.release)
+        pendingReleases_.push_back(s.get()); // LCOV_EXCL_EXCEPTION_BR_LINE
+    return lowerExpr(*e.value, func);
 }
 
 void PlnVCodeGen::flushReleases(VFunc& func)
 {
-    for (auto& r : pendingReleases_) {
-        if (r.plnFunc)
-            func.instrs.push_back(CallPln{r.funcName, {r.reg}, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-        else
-            func.instrs.push_back(CallC{r.funcName, {r.reg}, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-    }
+    vector<const Stmt*> releases = move(pendingReleases_);
     pendingReleases_.clear();
+    for (auto s : releases)
+        lowerStmt(*s, func);
 }
 
 void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
@@ -497,7 +497,6 @@ void PlnVCodeGen::lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func)
         declareVar(stmt.vars[j].name, r);
     }
     func.instrs.push_back(CallPln{stmt.funcName, args, move(dsts), move(types)}); // LCOV_EXCL_EXCEPTION_BR_LINE
-    queueArgReleases(stmt.releases, args);
 }
 
 void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)

@@ -1,0 +1,12 @@
+type P { int32 x; int32 y; };
+type Q { int32 n; [2]int32 v; };
+func gb(@P p) -> int32 { return p.x; }
+func gm(@!P p) -> @!P { return p; }
+func gv(P p) -> int32 { return p.y; }
+func gq(@Q q) -> int32 { return q.n; }
+func ga(@![2][2]int32 a) -> int32 { return a[0][0]; }
+gb(@[1, 2]);
+gb(gm(@!{y: 2, x: 1}));
+gv([3, 4]);
+gq(@[1, [2, 3]]);
+ga(@![1, 2][3, 4]);

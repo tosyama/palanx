@@ -1,0 +1,4 @@
+type P { int32 x; int32 y; };
+func gb(@P p) -> int32 { return p.x; }
+func gs(@[2]@P a) { }
+gs(@[[1, 2], [3, 4]]);

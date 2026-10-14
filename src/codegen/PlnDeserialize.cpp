@@ -43,19 +43,14 @@ static VRegType toVRegType(const json& vt) {
 }
 
 static unique_ptr<Expr> deserializeExpr(const json& j);
+static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr);
 
-static void deserializeArgs(const json& call, vector<unique_ptr<Expr>>& args,
-                            vector<ArgRelease>& releases)
+static void deserializeArgs(const json& call, vector<unique_ptr<Expr>>& args)
 {
     if (!call.contains("args"))
         return;
-    for (auto& arg : call["args"]) {
-        if (arg.contains("release-temp")) {
-            const json& r = arg["release-temp"];
-            releases.push_back({args.size(), r["name"].get<string>(), r["func-type"] != "c"});
-        }
+    for (auto& arg : call["args"])
         args.push_back(deserializeExpr(arg));
-    }
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 static unique_ptr<Expr> deserializeExpr(const json& j)
@@ -94,6 +89,13 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     if (expr_type == "id") {
         auto e = make_unique<IdExpr>();
         e->name = j["name"];
+        return e;
+    }
+    if (expr_type == "temp") {
+        auto e = make_unique<TempExpr>();
+        e->body    = deserializeStatements(j["body"]);
+        e->value   = deserializeExpr(j["value"]);
+        e->release = deserializeStatements(j["release"]);
         return e;
     }
     if (expr_type == "addr-of") {
@@ -209,7 +211,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
                 for (auto& eb : sr["eightbytes"])
                     e->structRetEightbytes.push_back(eightbyteToVRegType(eb));
             }
-            deserializeArgs(j, e->args, e->releases);
+            deserializeArgs(j, e->args);
             return e;
         } else if (func_type == "syscall") {
             auto e = make_unique<SysCallExpr>();
@@ -218,7 +220,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
                 e->hasRet  = true;
                 e->retType = toVRegType(j["value-type"]);
             }
-            deserializeArgs(j, e->args, e->releases);
+            deserializeArgs(j, e->args);
             return e;
         } else {
             auto e = make_unique<PlnCallExpr>();
@@ -227,7 +229,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
                 e->hasRet  = true;
                 e->retType = toVRegType(j["value-type"]);
             }
-            deserializeArgs(j, e->args, e->releases);
+            deserializeArgs(j, e->args);
             return e;
         }
     }
@@ -286,8 +288,6 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     exit(1);
 }
 
-static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr);  // forward declaration
-
 static unique_ptr<Stmt> deserializeStmt(const json& j)
 {
     string stmt_type = j["stmt-type"];
@@ -330,7 +330,7 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
         s->funcName = j["value"]["name"];
         for (auto& jv : j["vars"])
             s->vars.push_back({jv["var-name"], toVRegType(jv["var-type"])});
-        deserializeArgs(j["value"], s->args, s->releases);
+        deserializeArgs(j["value"], s->args);
         for (auto& vt : j["value"]["value-types"])
             s->retTypes.push_back(toVRegType(vt));
         return s;

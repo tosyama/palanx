@@ -1946,3 +1946,33 @@ TEST(gen_ast, float_exponent_no_point) {
 	}
 	ASSERT_EQ(stmts[3]["vars"][0]["init"]["expr-type"], "lit-uint");
 }
+
+TEST(gen_ast, addr_of_lit) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/134_addr_of_lit.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	const auto& ro = stmts[0]["body"]["args"][0];
+	ASSERT_EQ(ro["expr-type"], "addr-of");
+	ASSERT_EQ(ro["mutable"], false);
+	ASSERT_EQ(ro["object"]["expr-type"], "arr-lit");
+	ASSERT_EQ(ro["object"]["items"].size(), 2);
+	ASSERT_TRUE(ro.contains("loc"));
+
+	// The row sequence is one 2D literal under '@!'.
+	const auto& rows = stmts[1]["body"]["args"][0];
+	ASSERT_EQ(rows["mutable"], true);
+	ASSERT_EQ(rows["object"]["items"].size(), 2);
+	ASSERT_EQ(rows["object"]["items"][1]["items"][0]["value"], "3");
+
+	ASSERT_EQ(stmts[2]["body"]["args"][0]["object"]["expr-type"], "dict-lit");
+	const auto& args = stmts[3]["body"]["args"];
+	ASSERT_EQ(args[0]["mutable"], true);
+	ASSERT_EQ(args[0]["object"]["expr-type"], "dict-lit");
+	// '@' binds tighter than a binary operator.
+	ASSERT_EQ(args[1]["expr-type"], "add");
+	ASSERT_EQ(args[1]["left"]["expr-type"], "addr-of");
+}

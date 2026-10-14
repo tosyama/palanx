@@ -1605,9 +1605,12 @@ In a comma-separated declaration, each initializer belongs to its own variable:
 `[2]int16 r, s = [7, 8];` initializes only `s`.
 
 **Restrictions:**
-- An array literal can only be used as an array variable's initializer or the source of `->` to
-  an array (a variable, a field, or a row) — not as a function argument. A struct value can also
-  be used where a struct is expected; see [Struct literals](#struct-literals). A struct element
+- An array literal can only be used as an array variable's initializer, the source of `->` to
+  an array (a variable, a field, or a row), or an argument for a [borrowed array](#borrowing-arrays)
+  parameter, written `@[..]` / `@![..]` as for an array variable (`sum(@[1, 2, 3])`). The argument
+  is a temporary array of the parameter's type, freed as a struct returned by a call and given as
+  an argument is (see [Struct types in function signatures](#struct-types-in-function-signatures)).
+  A struct value can also be used where a struct is expected; see [Struct literals](#struct-literals). A struct element
   may also be a struct expression, which is copied (`[os[1], os[0]] -> os` swaps).
 - As with a struct literal, `[a[1], a[0]] -> a` reads every value before writing any element, and
   the target of `->` must be the array itself: giving a literal to a borrowed array variable is an
@@ -1720,8 +1723,8 @@ printf("%ld %ld\n", p.x, p.y);   // 10 20
 ### Struct literals
 
 A struct value written as in an array literal's struct element (`[1, 2]` or `{y: 2, x: 1}`) can
-initialize a struct variable, be the source of `->` to a struct, and be returned from a function
-returning a struct:
+initialize a struct variable, be the source of `->` to a struct, be returned from a function
+returning a struct, and be passed as an argument:
 
 ```palan
 type Point { int64 x; int64 y; };
@@ -1729,7 +1732,14 @@ Point p = {x: 10, y: 20};
 [p.y, p.x] -> p;              // every value is read before any field is written: swaps
 func reset(@!Point q) { [0, 0] -> q[0]; }
 func sub(@Point a, @Point b) -> Point { return [a.x - b.x, a.y - b.y]; }
+reset(@![1, 2]);
 ```
+
+- As an argument, the literal is a temporary struct, written as a struct variable would be:
+  `@[..]` / `@![..]` (`@{..}` / `@!{..}`) for a `@T`/`@!T` parameter, and without `@` for a `T`
+  parameter. It is freed as a struct returned by a call and given as an argument is (see
+  [Struct types in function signatures](#struct-types-in-function-signatures)). A C function's
+  parameter cannot take a literal.
 
 - The target of `->` must be the struct itself: a struct variable, a `$T`/`T` field, a struct
   array element, or `q[0]` for what a borrow `q` points to. Giving a literal to the borrow `q`

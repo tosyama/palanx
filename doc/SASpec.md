@@ -483,10 +483,12 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       element keeps its own). Its leaf element must be `prim`, a struct, or a `@T`/`@!T` pointer
       (E_AddrOfNotPrimitive), and `@!x` needs a writable array (E_WriteThroughReadOnlyPtr).
     - `object.expr-type == "call"` or `"member-call"` (`@f()` / `@!f()`): only as a call argument,
-      and only for a call returning a struct (`category: "expiring"`); emitted as that `call` with
-      `mutable` added to its `value-type`, as for a struct variable. It is released after the
-      enclosing full expression (`release-temp`). Elsewhere it is E_ExpiringStructToBorrow; a call
+      and only for a call returning a struct (`category: "expiring"`); the call gets
+      `mutable` added to its `value-type`, as for a struct variable, and is held in a `temp` (see
+      Temp arguments below). Elsewhere it is E_ExpiringStructToBorrow; a call
       returning anything else is E_AddrOfNotAddressable.
+    - `object.expr-type == "arr-lit"` or `"dict-lit"` (`@[1, 2]` / `@!{x: 1}`): only as a call
+      argument (Temp arguments below); elsewhere E_ArrLitContext / E_DictLitContext.
     - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
       `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
       field-access section below), then re-emitted as `{"expr-type":"field-access","var"|
@@ -550,7 +552,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     store, an array-slot store, or a return — is a compile error (E_StructBorrowNeedsAddrOf); the
     source must be written `@x`/`@!x`. A call result (`category: "expiring"`) has no owner, so binding it to a borrow is
     E_ExpiringStructToBorrow, except as a call argument written `@f()`/`@!f()` (see the addr-of
-    call shape above and `release-temp` below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
+    call shape above and Temp arguments below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
     `mutable` as `true`. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
     an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules
     below for how mutability is enforced separately from type compatibility.
@@ -558,17 +560,25 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).
 
-    **`release-temp`:** a call argument that is a struct returned by a Palan call
-    (`category: "expiring"`, with `mutable` in its `value-type` when written `@f()`/`@!f()`) carries `"release-temp":{"name":<fn>,"func-type":"c"|"pln"}`,
-    and codegen calls `<fn>(arg)` (`free`, or `__pln_free_T` for a struct with owned fields) once the
-    enclosing full expression has been evaluated, since the callee may return a borrow of it: at the
-    end of the statement (before a `return`'s `ret`), or, in an `if`/`while` condition or a
-    `&&`/`||` operand, when that operand's value is known and before it branches. Such a struct
-    discarded as an `expr` statement becomes a `block` of a temp `var-decl` initialized by the
-    call and the temp's free.
+    **Temp arguments:** an argument with no owner is emitted as a `temp` (below), since the callee
+    may return a borrow of it:
+    - a struct returned by a Palan call (`category: "expiring"`, with `mutable` in its
+      `value-type` when written `@f()`/`@!f()`): `body` is a `var-decl` of `__tmp_N` initialized
+      by the call, `release` its `free` / `__pln_free_T`.
+    - a literal (`[..]`/`{..}` for a struct parameter `T`, `@[..]`/`@![..]`/`@{..}`/`@!{..}` for
+      a `@T`/`@!T` or a borrowed array `@[n]T`/`@![n]T` parameter): `body` declares `__lit_N` of
+      the parameter's struct or (owned) array type and initializes it as a variable's initializer
+      would; `release` is that variable's scope-end free. `value` is `__lit_N` analyzed as
+      written in the literal's place (`@__lit_N`), so the argument is checked as that variable would
+      be: a missing `@` is E_StructBorrowNeedsAddrOf / E_ArrBorrowNeedsAddrOf, and `@` for `@!` is a
+      permission error. A literal for any other parameter (numeric, `[]T`, a C function's) is
+      E_ArrLitContext / E_DictLitContext.
+
+    A struct returned by a call and discarded as an `expr` statement becomes a `block` of a temp
+    `var-decl` initialized by the call and the temp's free.
 
     A call returning a `@T`/`@!T` (one of its `value-types` for a `tapple-decl`) with a
-    `release-temp` argument, directly or through a nested call of the same kind, may return a
+    `temp` argument, directly or through a nested call of the same kind, may return a
     pointer to that temp, so binding its result — where E_StructBorrowNeedsAddrOf is checked, or a
     `tapple-decl` — is E_BorrowOfTempEscapes.
 
@@ -604,6 +614,17 @@ SA-only expression kinds (not present in AST JSON):
     "src": {"expr-type": "id", "name": "x", ...}
   }
   ```
+
+- temp - A call argument held in a temp variable (see Temp arguments above).
+  - expr-type\*: "temp"
+  - body\*: statements that declare and initialize the temp; each releases the temps of its own
+    values at its end
+  - value\*: the temp as the argument (`id`)
+  - release\*: statements that free the temp; codegen runs them once the enclosing full
+    expression has been evaluated: at the end of the statement (before a `return`'s `ret`), or,
+    in an `if`/`while` condition or a `&&`/`||` operand, when that operand's value is known and
+    before it branches
+  - value-type\*: `value`'s
 
 SA-only expression kinds (added to AST nodes):
 

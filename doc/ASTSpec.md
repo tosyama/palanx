@@ -513,11 +513,12 @@ Expression model
       `store_loc` — the same vocabulary the right side of `->` accepts (a bare identifier, a
       `.`-chain of field accesses, a `[expr]` index, a parenthesized tuple, or a call `f(...)` /
       `x.f(...)` whose object is itself one of these) — so `@s.x`,
-      `@!s.in.v`, and `@arr[i]` all parse; SA decides in sa.json whether the target is
+      `@!s.in.v`, and `@arr[i]` all parse — or an array literal or `{name: value}` literal
+      (`@[1, 2]`, `@![1, 2][3, 4]`, `@{x: 1}`); SA decides in sa.json whether the target is
       addressable (see SASpec.md). `@` binds looser than `.`, so `@x.f()` is `@(x.f())`, never
       `(@x).f()`.
-    - object\* - Operand expression, one of exactly six shapes depending on which `store_loc`
-      alternative was used: `id` for a plain variable, `field-access` for a `.`-chain (nested
+    - object\* - Operand expression: `arr-lit` or `dict-lit` for a literal, otherwise one of six
+      shapes depending on which `store_loc` alternative was used: `id` for a plain variable, `field-access` for a `.`-chain (nested
       chains produce nested `field-access` objects), `arr-index` for a `[expr]`-indexed target,
       `call` for a whole call `f(...)` (`@f()`), `member-call` for a whole method-form or
       module-qualified call `x.f(...)` (`@v.f()`, `@M.f()`, `@f().g()`), or `not-impl` for

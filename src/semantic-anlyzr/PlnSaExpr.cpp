@@ -154,6 +154,10 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	const json& obj = expr["object"];
 	string obj_type = obj.value("expr-type", "");
 
+	// A literal operand is accepted only as a call argument (sa_lit_arg).
+	if (isAggregateLit(obj))
+		sa_expression(obj);
+
 	if (obj_type == "id") {
 		string name = obj["name"].get<string>();
 		const json* varType = findVar(name);
@@ -281,8 +285,34 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// LCOV_EXCL_EXCEPTION_BR_START
+static json makeTempExpr(json body, json value, json release)
+{
+	json vt = value["value-type"];
+	return {{"expr-type","temp"},{"body",move(body)},{"value",move(value)},
+	        {"release",move(release)},{"value-type",move(vt)}};
+}
+// LCOV_EXCL_EXCEPTION_BR_STOP
+
+// A struct returned by a call and given as an argument is held in a temp,
+// since the callee may return a borrow of it.
+json PlnSemanticAnalyzer::bindCallTemp(json saArg)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	string name = "__tmp_" + to_string(tempVarCounter_++);
+	json storage = saArg["value-type"];
+	storage.erase("mutable");
+	json valueType = saArg["value-type"];
+	json decl = {{"stmt-type","var-decl"},
+	             {"vars",json::array({{{"name",name},{"var-type",storage},{"init",move(saArg)}}})}};
+	json value = {{"expr-type","id"},{"name",name},{"var-type",storage},{"value-type",move(valueType)}};
+	return makeTempExpr(json::array({move(decl)}), move(value),
+	                    json::array({makeStructFreeStmt(name, storage)}));
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // '@f()'/'@!f()' as a call argument: the returned struct is borrowed for the
-// call and released right after it.
+// call, held in a temp (bindCallTemp).
 json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
 {
 	json saArg = sa_expression(arg["object"]);
@@ -291,6 +321,91 @@ json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
 		exit(1);
 	}
 	saArg["value-type"]["mutable"] = arg["mutable"];
+	return saArg;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The source type that declares an owned array of the levels of saType (a
+// borrowed array parameter); null when an element is not one a literal gives.
+static json astArrType(const json& saType)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json out = {{"type-kind","arr"},{"specifier","raw"},
+		{"size-expr",{{"expr-type","lit-uint"},{"value",to_string(saType["arr-size"].get<int64_t>())}}}};
+	if (saType.value("embedded", false))
+		out["embedded"] = true;
+	const json& base = saType["base-type"];
+	json elem;
+	if (isArrLevel(base) && base.contains("arr-size"))
+		elem = astArrType(base);
+	else if (base.value("type-kind","") == "struct")
+		elem = {{"type-kind","prim"},{"type-name",base["type-name"]}};
+	else if (isStructStorage(base))
+		elem = {{"type-kind","prim"},{"type-name",base["base-type"]["type-name"]}};
+	else if (base.value("type-kind","") == "prim")
+		elem = base;
+	if (elem.is_null())
+		return nullptr;
+	out["base-type"] = move(elem);
+	return out;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A literal argument ('[..]', '{..}', or one under '@'/'@!') becomes a temp of
+// the parameter's struct or array type, initialized by body; the argument is
+// then analyzed as the temp written in its place ('@__lit_N'), returned with
+// argAst set to that form.
+json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const string& paramName,
+                                     json& argAst, json& body, json& release)
+{
+	bool isAddrOf = arg.value("expr-type", "") == "addr-of";
+	const json& lit = isAddrOf ? arg["object"] : arg;
+	auto rejectContext = [&]() {
+		cerr << locPrefix(lit) << PlnSaMessage::getMessage(
+			lit["expr-type"] == "arr-lit" ? E_ArrLitContext : E_DictLitContext) << endl;
+		exit(1);
+	};
+	if (!paramVT)
+		rejectContext();
+	bool isStruct = isStructPntr(*paramVT);
+	json declType = isStruct
+		? json{{"type-kind","prim"},{"type-name",(*paramVT)["base-type"]["type-name"]}} // LCOV_EXCL_EXCEPTION_BR_LINE
+		: paramVT->contains("arr-size") ? astArrType(*paramVT) : json();
+	if (declType.is_null()) {
+		if (!paramVT->contains("arr-size"))
+			rejectContext();
+		cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_ArrLitElemType, paramName) << endl;
+		exit(1);
+	}
+
+	enterScope();
+	// LCOV_EXCL_EXCEPTION_BR_START
+	string name = "__lit_" + to_string(tempVarCounter_++);
+	json decl = {{"stmt-type","var-decl"},{"loc",lit.value("loc", json::array())},
+		{"vars",json::array({{{"name",name},{"var-type",declType}}})}};
+	body = sa_var_decl(decl);
+	json target = {{"expr-type","id"},{"name",name}};
+	const json varType = *findVar(name);
+	if (isStruct) {
+		const StructDef& def = requireCompleteStruct(varType["base-type"]["type-name"].get<string>(), lit);
+		emitStructLitAssigns(target, def, sa_struct_lit(lit, def), body);
+	} else {
+		if (lit["expr-type"] != "arr-lit") {
+			cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
+			exit(1);
+		}
+		ArrLitShape shape = arrLitShape(lit, paramName, varType);
+		json values = sa_arr_lit_values(lit, shape, paramName);
+		checkArrLitCount(lit, lit["items"], paramName, shape.is2d, varType["arr-size"].get<uint64_t>(),
+		                 shape.is2d ? varType["base-type"]["arr-size"].get<uint64_t>() : 0);
+		emitArrLitAssigns(target, shape, values, body);
+	}
+	argAst = isAddrOf ? json{{"expr-type","addr-of"},{"object",target},{"mutable",arg["mutable"]},{"loc",arg.value("loc", json::array())}}
+	                  : target;
+	json saArg = sa_expression(argAst);
+	size_t idx = arrayScopeVars_.size() - 1;
+	release = collectFreeStmts(idx, idx + 1);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+	leaveScope();
 	return saArg;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -807,17 +922,23 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 			argIdx++;
 			continue;
 		}
+		json argAst = arg;
+		json litBody, litRelease;
+		bool isLit = isAggregateLit(arg)
+			|| (arg.value("expr-type", "") == "addr-of" && isAggregateLit(arg["object"]));
 		// A bare integer literal argument adopts the parameter's type here
 		// instead of defaulting to int64/uint64, avoiding a spurious narrowing
 		// rejection below.
-		json saArg = isCallBorrow(arg) ? sa_call_borrow_arg(arg)
+		json saArg = isLit ? sa_lit_arg(arg, isCFunc ? nullptr : paramVT,
+		                                paramVT ? funcParams[argIdx].value("name", "") : "", argAst, litBody, litRelease)
+		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
 		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
 		bool expiring = isCallBorrow(arg) || isExpiringStruct(saArg);
 		if (saArg.contains("value-type")) {
 			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 			if (paramVT) {
 				if (paramVT->contains("arr-size")) {
-					checkArrBorrowBinding(locNode, arg, saArg, *paramVT);
+					checkArrBorrowBinding(locNode, argAst, saArg, *paramVT);
 				} else if (paramVT->value("embedded", false)) {
 					// The type registry can't tell contiguous elements from pointer slots,
 					// nor a contiguous struct array from a single struct.
@@ -854,12 +975,10 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 					saArg = wrapConvert(saArg, registry_.toJson(promoted));
 			}
 		}
-		// The callee may return a borrow of it, so codegen releases it only
-		// once the enclosing full expression has been evaluated.
-		if (expiring) {
-			auto [fn, funcType] = structFreeFunc(saArg["value-type"]["base-type"]["type-name"].get<string>());
-			saArg["release-temp"] = {{"name",fn},{"func-type",funcType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+		if (isLit)
+			saArg = makeTempExpr(move(litBody), move(saArg), move(litRelease));
+		else if (expiring)
+			saArg = bindCallTemp(move(saArg));
 		saArgs.push_back(saArg);
 		argIdx++;
 	}

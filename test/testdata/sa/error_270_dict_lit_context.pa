@@ -1,3 +1,3 @@
 type Point { int32 x; int32 y; };
-func foo(@Point p) { }
+func foo(int32 p) { }
 foo({x:1, y:2});

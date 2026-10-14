@@ -356,7 +356,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ArrLitContext:
 			return "an array literal can only be used as an array or struct variable's initializer, "
-			       "the source of '->' to a struct or an array, or the value returned from a function returning a struct, in this version.";
+			       "the source of '->' to a struct or an array, the value returned from a function returning a struct, "
+			       "or an argument for a struct or borrowed array parameter, in this version.";
 
 		case E_ArrLitCountMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -389,7 +390,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements, and neither a struct nor a pointer inside a '$[m]' row, in this version.";
 
 		case E_ArrBorrowNeedsAddrOf:
-			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name'.";
+			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' "
+			       "('@[..]' or '@![..]' for a literal).";
 
 		case E_ArrBorrowShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -398,7 +400,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_StructBorrowNeedsAddrOf:
 			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' "
-			       "('@f()' or '@!f()' for a call returning it).";
+			       "('@f()' or '@!f()' for a call returning it, '@[..]' or '@![..]' for a literal).";
 
 		case E_Unsupported2DStructArr:
 			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
@@ -429,7 +431,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_DictLitContext:
 			return "a '{name: value}' literal can only be used as a struct value: a struct variable's "
-			       "initializer, the source of '->' to a struct, or an element of an array literal.";
+			       "initializer, the source of '->' to a struct, an element of an array literal, or an "
+			       "argument for a struct parameter.";
 
 		case E_StructLitTarget:
 			return "a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy "

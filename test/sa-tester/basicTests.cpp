@@ -24,6 +24,17 @@ static json run_sa(const string& pa_file)
 	return json::parse(f);
 }
 
+// A call argument held in a temp: the call that initializes it, and the
+// function that releases it.
+static const json& tempInit(const json& arg)
+{
+	return arg.at("body").at(0).at("vars").at(0).at("init");
+}
+static string tempRelease(const json& arg)
+{
+	return arg.at("release").at(0).at("body").at("name");
+}
+
 TEST(sa, helloworld_sa) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
@@ -4468,10 +4479,9 @@ TEST(sa, struct_borrow)
 	ASSERT_EQ(args[2]["value-type"]["mutable"], false);
 
 	// '@mk()' borrows the returned struct for the call, which then releases it.
-	ASSERT_EQ(args[3]["expr-type"], "call");
-	ASSERT_EQ(args[3]["category"], "expiring");
-	ASSERT_EQ(args[3]["value-type"]["mutable"], false);
-	ASSERT_EQ(args[3]["release-temp"]["name"], "free");
+	ASSERT_EQ(args[3]["value"]["value-type"]["mutable"], false);
+	ASSERT_EQ(tempInit(args[3])["category"], "expiring");
+	ASSERT_EQ(tempRelease(args[3]), "free");
 
 	vector<json> setArgs;
 	for (auto& st : jout["statements"])
@@ -4480,8 +4490,8 @@ TEST(sa, struct_borrow)
 	// 'setv(@!mk())' and the method form 'mk().setv()'.
 	ASSERT_EQ(setArgs.size(), 2u);
 	for (auto& a : setArgs) {
-		ASSERT_EQ(a["value-type"]["mutable"], true);
-		ASSERT_EQ(a["release-temp"]["name"], "free");
+		ASSERT_EQ(a["value"]["value-type"]["mutable"], true);
+		ASSERT_EQ(tempRelease(a), "free");
 	}
 }
 
@@ -4797,13 +4807,13 @@ TEST(sa, struct_ret_temp) {
 	json jout = run_sa("../test/testdata/sa/217_struct_ret_temp.pa");
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 3);
-	// A returned struct passed as an argument is marked for release.
+	// A returned struct passed as an argument is held in a temp and released.
 	const auto& argP = stmts[0]["vars"][0]["init"]["args"][0];
-	ASSERT_EQ(argP["release-temp"]["name"], "free");
-	ASSERT_EQ(argP["release-temp"]["func-type"], "c");
+	ASSERT_EQ(tempRelease(argP), "free");
+	ASSERT_EQ(argP["release"][0]["body"]["func-type"], "c");
 	const auto& argQ = stmts[1]["vars"][0]["init"]["args"][0];
-	ASSERT_EQ(argQ["release-temp"]["name"], "__pln_free_Q");
-	ASSERT_EQ(argQ["release-temp"]["func-type"], "pln");
+	ASSERT_EQ(tempRelease(argQ), "__pln_free_Q");
+	ASSERT_EQ(argQ["release"][0]["body"]["func-type"], "pln");
 	// A discarded one is received in a temp and freed.
 	const auto& blk = stmts[2];
 	ASSERT_EQ(blk["stmt-type"], "block");
@@ -5432,13 +5442,51 @@ TEST(sa, member_call_borrow)
 	const char* names[] = {"scaled", "scaled", "mk", "mk", "scaled"};
 	const bool muts[] = {false, true, false, true, false};
 	for (size_t i = 0; i < args.size(); i++) {
-		ASSERT_EQ(args[i]["expr-type"], "call") << i;
-		ASSERT_EQ(args[i]["name"], names[i]) << i;
-		ASSERT_EQ(args[i]["category"], "expiring") << i;
-		ASSERT_EQ(args[i]["value-type"]["mutable"], muts[i]) << i;
-		ASSERT_EQ(args[i]["release-temp"]["name"], "free") << i;
+		const json& call = tempInit(args[i]);
+		ASSERT_EQ(call["name"], names[i]) << i;
+		ASSERT_EQ(call["category"], "expiring") << i;
+		ASSERT_EQ(args[i]["value"]["value-type"]["mutable"], muts[i]) << i;
+		ASSERT_EQ(tempRelease(args[i]), "free") << i;
 	}
-	const auto& inner = args[4]["args"][0];
-	ASSERT_EQ(inner["name"], "mk");
-	ASSERT_EQ(inner["release-temp"]["name"], "free");
+	const auto& inner = tempInit(args[4])["args"][0];
+	ASSERT_EQ(tempInit(inner)["name"], "mk");
+	ASSERT_EQ(tempRelease(inner), "free");
+}
+
+TEST(sa, lit_arg)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/248_lit_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	// '@[1, 2]': a temp initialized like a struct variable, passed as '@temp'.
+	const auto& ro = stmts[0]["body"]["args"][0];
+	ASSERT_EQ(ro["expr-type"], "temp");
+	string temp = ro["body"][0]["vars"][0]["name"];
+	ASSERT_EQ(ro["body"].size(), 3);
+	ASSERT_EQ(ro["body"][2]["stmt-type"], "field-assign");
+	ASSERT_EQ(ro["body"][2]["var"], temp);
+	ASSERT_EQ(ro["value"]["name"], temp);
+	ASSERT_EQ(ro["value"]["value-type"]["mutable"], false);
+	ASSERT_EQ(tempRelease(ro), "free");
+	ASSERT_EQ(ro["release"][0]["body"]["args"][0]["name"], temp);
+
+	const auto& inner = stmts[1]["body"]["args"][0]["args"][0];
+	ASSERT_EQ(inner["expr-type"], "temp");
+	ASSERT_EQ(inner["value"]["value-type"]["mutable"], true);
+
+	// A 'T' parameter takes the literal without '@'.
+	const auto& byVal = stmts[2]["body"]["args"][0];
+	ASSERT_EQ(byVal["expr-type"], "temp");
+	ASSERT_FALSE(byVal["value"]["value-type"].contains("mutable"));
+
+	ASSERT_EQ(tempRelease(stmts[3]["body"]["args"][0]), "__pln_free_Q");
+
+	// A borrowed array is released with its sizes, as at a variable's scope end.
+	const auto& arr = stmts[4]["body"]["args"][0];
+	ASSERT_EQ(arr["value"]["value-type"]["mutable"], true);
+	ASSERT_EQ(tempRelease(arr), "__pln_free_arr_arr_int32");
+	ASSERT_EQ(arr["release"][0]["body"]["args"].size(), 2);
 }

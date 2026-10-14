@@ -1,0 +1,2 @@
+func ga(@[3]int32 a) -> int32 { return a[0]; }
+ga(@{x: 1});

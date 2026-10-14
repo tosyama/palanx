@@ -2780,3 +2780,39 @@ TEST(build_mgr, call_temp_borrow_mtrace)
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
+
+// A literal argument is a temp of the parameter's type, released like a
+// returned struct given as an argument.
+TEST(build_mgr, lit_arg_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_lit_arg_bin "
+		"../test/testdata/build-mgr/280_lit_arg_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_lit_arg_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_lit_arg_bin");
+	ASSERT_EQ(output, "2.5 4.5 6.5\n"
+	                  "6.0 4.0\n"
+	                  "3.0\n"
+	                  "9 11\n"
+	                  "and\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 17) << "expected 17 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}

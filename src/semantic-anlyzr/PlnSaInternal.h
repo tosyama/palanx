@@ -123,7 +123,7 @@ inline bool holdsCallTemps(const json& v)
 	if (!retBorrow)
 		return false;
 	for (auto& a : v["args"])
-		if (a.contains("release-temp") || holdsCallTemps(a))
+		if (a.value("expr-type", "") == "temp" || holdsCallTemps(a))
 			return true;
 	return false;
 }

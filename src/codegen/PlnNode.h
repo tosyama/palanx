@@ -44,6 +44,7 @@ enum class ExprKind {
     AddrOf,
     CGlobal,
     FuncRef,
+    Temp,
 };
 
 struct Expr {
@@ -188,17 +189,12 @@ struct ConvertExpr : Expr {
     unique_ptr<Expr> src;
 };
 
-// An argument released once its full expression is evaluated: a struct
-// returned by another Palan call that nothing else owns.
-struct ArgRelease { size_t arg; string funcName; bool plnFunc; };
-
 struct CCCallExpr : Expr {
     CCCallExpr() : Expr(ExprKind::CCCall) {}
     string name;
     bool     hasRet = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
-    vector<ArgRelease>       releases;
     // Set when sa.json's call node carries a "struct-ret" descriptor (a C
     // function returning a struct by value, classified per the System V
     // AMD64 ABI by palan-sa). Mutually exclusive with hasRet: this call has
@@ -218,7 +214,6 @@ struct PlnCallExpr : Expr {
     bool     hasRet  = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
-    vector<ArgRelease>       releases;
 };
 
 // A raw Linux syscall call (Linux syscall ABI, not System V) -- resolved by
@@ -230,7 +225,18 @@ struct SysCallExpr : Expr {
     bool     hasRet  = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
-    vector<ArgRelease>       releases;
+};
+
+struct Stmt;
+
+// A temp declared and initialized by body, read as value. Its release runs
+// only once the enclosing full expression has been evaluated, since a call
+// it is given to may return a borrow of it.
+struct TempExpr : Expr {
+    TempExpr() : Expr(ExprKind::Temp) {}
+    vector<unique_ptr<Stmt>> body;
+    unique_ptr<Expr>         value;
+    vector<unique_ptr<Stmt>> release;
 };
 
 struct VarDef { string name; VRegType type; };
@@ -292,7 +298,6 @@ struct TappleDeclStmt : Stmt {
     vector<VarDef>           vars;
     string                   funcName;
     vector<unique_ptr<Expr>> args;
-    vector<ArgRelease>       releases;
     vector<VRegType>         retTypes;
 };
 
