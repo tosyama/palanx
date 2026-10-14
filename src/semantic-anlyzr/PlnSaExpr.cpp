@@ -1443,12 +1443,17 @@ json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool 
 {
 	if (!paramVT || value.value("expr-type", "") == "addr-of") return value;
 	if (paramVT->value("type-kind", "") != "pntr" || paramVT->value("mutable", true)) return value;
-	json vt = operandValueType(value);
-	if (vt.is_null()) return value;
-	bool ownedArr = isArrLevel(vt) && !isArrBorrowVar(vt);
-	if (!isStructStorage(vt) && vt.value("type-kind", "") != "prim"
-			&& !(ownedArr && !isCFunc && isArrBorrowVar(*paramVT)))
-		return value;
+	// A literal has no type of its own until it is given a target, so it is
+	// borrowed as '@[..]'/'@{..}' and checked against the parameter.
+	string et = value.value("expr-type", "");
+	if (et != "arr-lit" && et != "dict-lit") {
+		json vt = operandValueType(value);
+		if (vt.is_null()) return value;
+		bool ownedArr = isArrLevel(vt) && !isArrBorrowVar(vt);
+		if (!isStructStorage(vt) && vt.value("type-kind", "") != "prim"
+				&& !(ownedArr && !isCFunc && isArrBorrowVar(*paramVT)))
+			return value;
+	}
 	json out = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}};
 	if (value.contains("loc")) out["loc"] = value["loc"];
 	return out;

@@ -5550,3 +5550,23 @@ TEST(sa, chain_call)
 	ASSERT_EQ(stmts[15]["stmt-type"], "tapple-decl");
 	ASSERT_EQ(stmts[15]["value"]["args"][0]["value"], "9");
 }
+
+TEST(sa, chain_lit)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/250_chain_lit.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+
+	// A literal chained to a read-only borrow parameter is passed as '@[..]'.
+	const char* callees[] = {"len2", "len2", "first"};
+	for (int i = 0; i < 3; i++) {
+		const auto& call = stmts[i]["body"];
+		ASSERT_EQ(call["name"], callees[i]) << i;
+		const auto& temp = call["args"][0];
+		ASSERT_EQ(temp["expr-type"], "temp") << i;
+		ASSERT_EQ(temp["value"]["value-type"]["mutable"], false) << i;
+		ASSERT_EQ(tempRelease(temp), "free") << i;
+	}
+}
