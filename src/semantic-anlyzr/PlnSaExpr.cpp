@@ -271,8 +271,27 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		return sa_idx;
 	}
 
+	// A call operand is accepted only as a call argument (sa_call_borrow_arg):
+	// elsewhere nothing would release the returned struct.
+	if (isCallBorrow(expr) && isExpiringStruct(sa_expression(obj))) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExpiringStructToBorrow) << endl;
+		exit(1);
+	}
 	cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
 	exit(1);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// '@f()'/'@!f()' as a call argument: the returned struct is borrowed for the
+// call and released right after it.
+json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
+{
+	json saArg = sa_expression(arg["object"]);
+	if (!isExpiringStruct(saArg)) {
+		cerr << locPrefix(arg) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
+		exit(1);
+	}
+	saArg["value-type"]["mutable"] = arg["mutable"];
+	return saArg;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 static bool intLiteralFits(const string& value, PrimType::Name pn)
@@ -787,7 +806,9 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		// A bare integer literal argument adopts the parameter's type here
 		// instead of defaulting to int64/uint64, avoiding a spurious narrowing
 		// rejection below.
-		json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		json saArg = isCallBorrow(arg) ? sa_call_borrow_arg(arg)
+		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		bool expiring = isCallBorrow(arg) || isExpiringStruct(saArg);
 		if (saArg.contains("value-type")) {
 			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 			if (paramVT) {
@@ -818,8 +839,10 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 				}
 				checkElemShape(locNode, saArg, *paramVT);
 				saArg = convertCallArg(locNode, saArg, *paramVT);
-				if (!isExpiringStruct(saArg))
-					checkStructBorrowSource(locNode, saArg, *paramVT);
+				if (isStructBorrow(*paramVT) && isStructStorage(saArg["value-type"])) {
+					cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StructBorrowNeedsAddrOf) << endl;
+					exit(1);
+				}
 				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, funcParams[argIdx], argIdx);
 			} else if (isVariadic) {
 				const PlnType* promoted = variadicPromote(fromType, registry_);
@@ -830,7 +853,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		// The callee only borrows an argument, and an argument evaluated
 		// conditionally (a '&&' operand, a loop condition) can't be released
 		// by a statement around it, so the call itself releases it.
-		if (isExpiringStruct(saArg)) {
+		if (expiring) {
 			auto [fn, funcType] = structFreeFunc(saArg["value-type"]["base-type"]["type-name"].get<string>());
 			saArg["release-after-call"] = {{"name",fn},{"func-type",funcType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		} // LCOV_EXCL_LINE -- only exception cleanup is attributed here

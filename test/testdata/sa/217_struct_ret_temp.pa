@@ -4,6 +4,6 @@ func g() -> P p { 3 -> p.x; }
 func h() -> Q q { 5 -> q.a[1]; }
 func k(@P q) -> int32 r { q.x -> r; }
 func kq(@Q q) -> int32 r { q.a[1] -> r; }
-int32 a = k(g());
-int32 b = kq(h());
+int32 a = k(@g());
+int32 b = kq(@h());
 g();

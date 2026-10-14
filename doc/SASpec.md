@@ -482,6 +482,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       `value-type` is the variable's type with `mutable` set on every array level (a `@T`/`@!T`
       element keeps its own). Its leaf element must be `prim`, a struct, or a `@T`/`@!T` pointer
       (E_AddrOfNotPrimitive), and `@!x` needs a writable array (E_WriteThroughReadOnlyPtr).
+    - `object.expr-type == "call"` or `"member-call"` (`@f()` / `@!f()`): only as a call argument,
+      and only for a call returning a struct (`category: "expiring"`); emitted as that `call` with
+      `mutable` added to its `value-type`, as for a struct variable. It is released after the
+      outer call (`release-after-call`). Elsewhere it is E_ExpiringStructToBorrow; a call
+      returning anything else is E_AddrOfNotAddressable.
     - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
       `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
       field-access section below), then re-emitted as `{"expr-type":"field-access","var"|
@@ -544,7 +549,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     destination — a call argument (Palan or C), a local's initializer, an assignment, a field
     store, an array-slot store, or a return — is a compile error (E_StructBorrowNeedsAddrOf); the
     source must be written `@x`/`@!x`. A call result (`category: "expiring"`) has no owner, so binding it to a borrow is
-    E_ExpiringStructToBorrow, except as a call argument (see `release-after-call` below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
+    E_ExpiringStructToBorrow, except as a call argument written `@f()`/`@!f()` (see the addr-of
+    call shape above and `release-after-call` below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
     `mutable` as `true`. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
     an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules
     below for how mutability is enforced separately from type compatibility.
@@ -553,7 +559,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     for freeing the returned pointer (expiring ownership).
 
     **`release-after-call`:** a call argument that is a struct returned by a Palan call
-    (`category: "expiring"`) carries `"release-after-call":{"name":<fn>,"func-type":"c"|"pln"}`,
+    (`category: "expiring"`, with `mutable` in its `value-type` when written `@f()`/`@!f()`) carries `"release-after-call":{"name":<fn>,"func-type":"c"|"pln"}`,
     and codegen calls `<fn>(arg)` right after the call returns (`free`, or `__pln_free_T` for a
     struct with owned fields). Releasing at the call rather than around its statement keeps a
     conditionally evaluated call (a `&&`/`||` operand, a loop condition) correct. Such a struct
@@ -823,7 +829,8 @@ multiple-return declaration/assignment):
   (callee lookup, argument count/type/permission checks). `f` must have a first parameter whose
   `var-type` has `mutable: true` — a Palan `@!T`/`@![n]T`, or a C non-const pointer — or it is
   E_MethodNeedsMutableFirstParam.
-- `recv` is `addr-of` (`@!aa`) of the object, so the object must be addressable as for `@!`. An
+- `recv` is `addr-of` (`@!aa`) of the object, so the object must be addressable as for `@!` (a
+  call returning a struct is, as a call argument). An
   object that is already a borrow (a `@T`/`@!T`/`@[n]T`/`@![n]T` variable, parameter or field) is
   passed as is; a read-only one is then rejected by the usual permission check.
 

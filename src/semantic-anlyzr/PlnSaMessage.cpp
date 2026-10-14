@@ -206,8 +206,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_AddrOfNotAddressable:
 			return "cannot take the address of this expression: '@'/'@!' supports a local variable, a "
-			       "primitive-typed or embedded-struct field of a struct it names, or a primitive-typed "
-			       "array element.";
+			       "primitive-typed or embedded-struct field of a struct it names, a primitive-typed "
+			       "array element, or a call returning a struct given as a call argument.";
 
 		case E_ReadOnlyPtrToNonConstCParam:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -397,7 +397,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "array shape '" + arg2 + "' does not match the borrowed array type '" + arg1 + "'.";
 
 		case E_StructBorrowNeedsAddrOf:
-			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'.";
+			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' "
+			       "('@f()' or '@!f()' for a call returning it).";
 
 		case E_Unsupported2DStructArr:
 			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
@@ -466,7 +467,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ExpiringStructToBorrow:
 			return "a struct returned by a call has no owner to borrow from; receive it into a "
-			       "struct variable with '->' and borrow it with '@name' or '@!name'.";
+			       "struct variable with '->' and borrow it with '@name' or '@!name' (only a call "
+			       "argument can borrow it directly, as '@f()' or '@!f()').";
 
 		case E_TransferFromNonOwner:
 			return "'->>' needs a source that owns its value: an owning variable, an owned field "

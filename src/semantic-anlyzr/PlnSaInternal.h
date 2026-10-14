@@ -110,6 +110,12 @@ inline bool isExpiringStruct(const json& v)
 {
 	return v.value("category", "") == "expiring" && isStructStorage(v["value-type"]);
 }
+inline bool isCallBorrow(const json& expr)
+{
+	if (expr.value("expr-type", "") != "addr-of") return false;
+	string et = expr["object"].value("expr-type", "");
+	return et == "call" || et == "member-call";
+}
 
 // LCOV_EXCL_EXCEPTION_BR_START
 inline json fieldPrimLeaf(const FieldLayout& f)

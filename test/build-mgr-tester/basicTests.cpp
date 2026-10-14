@@ -2288,7 +2288,7 @@ TEST(build_mgr, struct_ret_temp_mtrace) {
 		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
 		"MALLOC_TRACE=" + traceFile + " "
 		"/tmp/palan_struct_ret_temp_mtrace_bin");
-	ASSERT_EQ(output, "3 4 5 6\nyes\n3 3 13\n");
+	ASSERT_EQ(output, "3 4 5 6\n103 103\nyes\n3 3 13\n");
 
 	string catResult = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;
@@ -2301,7 +2301,7 @@ TEST(build_mgr, struct_ret_temp_mtrace) {
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 16) << "expected 16 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 18) << "expected 18 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }

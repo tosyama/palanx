@@ -926,8 +926,7 @@ TEST(sa_error, addr_of_unknown_field)
 
 TEST(sa_error, addr_of_call_not_addressable)
 {
-	// `@f();` -- a call expression is not an addressable location.
-	// Covers: sa_expr_addr_of fallback branch, "not-impl" object case -> E_AddrOfNotAddressable
+	// `@f();` -- a call returning a non-struct, outside a call argument.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -3182,7 +3181,7 @@ TEST(sa_error, arr_lit_assign)
 		{"error_467_struct_lit_ptr_arr_field.pa", ":3:8: error: field 'ps' of struct 'M' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
 		{"error_468_struct_lit_not_struct.pa", ":3:8: error: a value of struct 'P' must be written as '[...]' or '{name: value, ...}'."},
 		{"error_469_struct_lit_other_struct.pa", ":4:12: error: cannot copy 'R' into 'P'"},
-		{"error_470_embed_field_to_borrow.pa", ":4:1: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'."},
+		{"error_470_embed_field_to_borrow.pa", ":4:1: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' ('@f()' or '@!f()' for a call returning it)."},
 		{"error_471_display_struct_value.pa", ":3:1: error: cannot convert 'P' to 'int64'."},
 		{"error_472_display_struct_param.pa", ":3:1: error: cannot convert 'int64' to 'P'."},
 		{"error_473_display_arr.pa", ":2:1: error: cannot convert '[3]int32' to 'int64'."},
@@ -3194,6 +3193,10 @@ TEST(sa_error, arr_lit_assign)
 		{"error_479_display_arr_borrow.pa", ":2:2: error: cannot convert '@[2][3]int32' to 'int64'."},
 		{"error_480_display_arr_borrow_row.pa", ":2:2: error: cannot convert '@[3]int32' to 'int64'."},
 		{"error_481_display_cast_struct.pa", ":3:11: error: Cannot cast type 'P' to 'int64'."},
+		{"error_482_call_borrow_needs_at.pa", ":4:11: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' ('@f()' or '@!f()' for a call returning it)."},
+		{"error_483_call_borrow_decl.pa", ":3:8: error: a struct returned by a call has no owner to borrow from"},
+		{"error_484_call_borrow_ro_to_mut.pa", ":4:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_485_call_borrow_not_struct.pa", ":3:3: error: cannot take the address of this expression"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

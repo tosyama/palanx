@@ -813,9 +813,9 @@ expression: term
 	| '!' expression
 	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); }
 	| '@' store_loc
-	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", false}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", addrOfObject($2)}, {"mutable", false}}; LOC($$, @$); }
 	| AT_EXCL store_loc
-	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", true}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", addrOfObject($2)}, {"mutable", true}}; LOC($$, @$); }
 	| expression ARROW store_loc
 	{
 		if ($3.value("kind", "") == "var") {
@@ -1049,7 +1049,15 @@ store_loc
 	// which let every `-> x[i]` also parse as the object of a pending `.f()`
 	// and split the GLR parse exponentially along an assignment chain.
 	| ID '(' arguments ')'
-	{ $$ = {{"kind", "not-impl"}}; LOC($$, @$); }
+	{
+		$$ = {{"kind", "not-impl"}};
+		if (!typeNames.count($1)) {
+			$$ = {{"kind", "call"},
+			      {"call", {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			LOC($$["call"], @$);
+		}
+		LOC($$, @$);
+	}
 	| store_loc '.' ID '(' arguments ')'
 	{ $$ = {{"kind", "not-impl"}}; LOC($$, @$); }
 	;

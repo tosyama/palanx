@@ -4467,8 +4467,22 @@ TEST(sa, struct_borrow)
 	ASSERT_EQ(args[2]["expr-type"], "arr-index");
 	ASSERT_EQ(args[2]["value-type"]["mutable"], false);
 
-	// A call result has no name to write '@' on and binds as it is.
+	// '@mk()' borrows the returned struct for the call, which then releases it.
+	ASSERT_EQ(args[3]["expr-type"], "call");
 	ASSERT_EQ(args[3]["category"], "expiring");
+	ASSERT_EQ(args[3]["value-type"]["mutable"], false);
+	ASSERT_EQ(args[3]["release-after-call"]["name"], "free");
+
+	vector<json> setArgs;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr" && st["body"]["name"] == "setv")
+			setArgs.push_back(st["body"]["args"][0]);
+	// 'setv(@!mk())' and the method form 'mk().setv()'.
+	ASSERT_EQ(setArgs.size(), 2u);
+	for (auto& a : setArgs) {
+		ASSERT_EQ(a["value-type"]["mutable"], true);
+		ASSERT_EQ(a["release-after-call"]["name"], "free");
+	}
 }
 
 TEST(sa, ptr_arr_field_permission)

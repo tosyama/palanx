@@ -1904,7 +1904,8 @@ func makePoint(int64 x, int64 y) -> Point p {
 The caller receives the returned struct with `->` (`Point pt; makePoint(1, 2) -> pt;`), or as a
 variable's initializer (`Point pt = makePoint(1, 2);`), where the variable takes it over without a
 copy. Passed
-directly as an argument (`getX(makePoint(1, 2))`), it is freed right after that call; called as a
+directly as an argument (`getX(makePoint(1, 2))`, or `moveX(@!makePoint(1, 2), 3)` for a `@T`/`@!T`
+parameter, written with `@`/`@!` as for a variable), it is freed right after that call; called as a
 statement on its own, it is freed at once. Binding it to a `@T`/`@!T` — a variable's initializer,
 an assignment, a pointer field or slot, or a return — is a compile error, since nothing would
 own it.
@@ -2132,8 +2133,10 @@ to its storage, so `@s`/`@!s` and `@arr`/`@!arr` borrow it as it is (see
   (`@T`/`@!T`) or an array field is rejected.
 - Not usable on a 2D array row (`@mat[i]`) or a pointer-slot array element (`[n]@T`/`[n]@!T`) —
   only a primitive-typed or struct array element.
-- Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
-  variable, a field reached from one, or an array element reached from one.
+- Not usable on a general expression (a parenthesized tuple, etc.) — only a local variable, a
+  field reached from one, or an array element reached from one. A call returning a struct is the
+  exception, as a call argument only (`f(@g())`); see
+  [Struct types in function signatures](#struct-types-in-function-signatures).
 
 ---
 

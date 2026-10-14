@@ -837,6 +837,31 @@ TEST(gen_ast, addr_of_arr_index) {
 	ASSERT_EQ(addr_wp["object"]["index"]["value"], "2");
 }
 
+TEST(gen_ast, addr_of_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/132_addr_of_call.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	const auto& ro = stmts[0]["body"]["args"][0];
+	ASSERT_EQ(ro["expr-type"], "addr-of");
+	ASSERT_EQ(ro["mutable"], false);
+	ASSERT_EQ(ro["object"]["expr-type"], "call");
+	ASSERT_EQ(ro["object"]["name"], "g");
+	ASSERT_EQ(ro["object"]["args"].size(), 1);
+	ASSERT_TRUE(ro["object"].contains("loc"));
+
+	const auto& rw = stmts[1]["body"]["args"][0];
+	ASSERT_EQ(rw["mutable"], true);
+	ASSERT_EQ(rw["object"]["expr-type"], "call");
+
+	// Only a whole call is borrowed; a call as an index base and a cast stay unsupported.
+	ASSERT_EQ(stmts[2]["body"]["args"][0]["object"]["array"]["expr-type"], "not-impl");
+	ASSERT_EQ(stmts[3]["body"]["args"][0]["object"]["expr-type"], "not-impl");
+}
+
 TEST(gen_ast, addr_of_type_alias_mix) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/105_addr_of_type_alias_mix.pa");

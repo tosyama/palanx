@@ -9,16 +9,18 @@ func k(@P q) -> int32 r { q.x -> r; }
 func kp(P q) -> int32 r { q.x + 1 -> r; }
 func kq(@Q q) -> int32 r { q.a[1] -> r; }
 func g2(@P q) -> P p { q.x * 2 -> p.x; }
+func bump(@!P q) -> int32 r { q.x + 100 -> q.x; q.x -> r; }
 func two(@P q) -> int32 a, int32 b { q.x -> a; q.x + 10 -> b; }
 mtrace();
 {
-    printf("%d %d %d %d\n", k(g()), kp(g()), kq(h()), k(g2(g())));
+    printf("%d %d %d %d\n", k(@g()), kp(g()), kq(@h()), k(@g2(@g())));
+    printf("%d %d\n", bump(@!g()), g().bump());
     bool f = false;
-    if f && k(g()) > 0 { printf("no\n"); }
-    if !f && k(g()) > 0 { printf("yes\n"); }
+    if f && k(@g()) > 0 { printf("no\n"); }
+    if !f && k(@g()) > 0 { printf("yes\n"); }
     int32 i = 0;
-    while k(g()) + i < 6 { i + 1 -> i; }
-    (int32 a, int32 b) = two(g());
+    while k(@g()) + i < 6 { i + 1 -> i; }
+    (int32 a, int32 b) = two(@g());
     memset(g(), 0, 4);
     g(); h();
     printf("%d %d %d\n", i, a, b);

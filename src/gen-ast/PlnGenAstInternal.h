@@ -26,13 +26,17 @@ inline json storeLocToExpr(const json& loc)
 		e = {{"expr-type", "field-access"},
 		     {"object", storeLocToExpr(loc["base"])}, {"field", loc["field"]}};
 	} else {
-		// store_loc's tapple/func_call alternatives ("not-impl") reach here e.g.
-		// via '@' store_loc when the operand is a call expression (`@f()`); SA
-		// rejects the resulting addr-of/not-impl object as not addressable.
+		// A call is only a whole '@' operand (addrOfObject); as the base of an
+		// index or field, or as a store target, it stays unsupported.
 		e = {{"expr-type", "not-impl"}};
 	}
 	if (loc.contains("loc")) e["loc"] = loc["loc"];
 	return e;
+}
+
+inline json addrOfObject(const json& loc)
+{
+	return loc.value("kind", "") == "call" ? loc["call"] : storeLocToExpr(loc);
 }
 
 inline bool isAssignExpr(const json& e)
