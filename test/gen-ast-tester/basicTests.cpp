@@ -1976,3 +1976,42 @@ TEST(gen_ast, addr_of_lit) {
 	ASSERT_EQ(args[1]["expr-type"], "add");
 	ASSERT_EQ(args[1]["left"]["expr-type"], "addr-of");
 }
+
+TEST(gen_ast, chain_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/135_chain_call.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 11);
+
+	const auto& plain = stmts[0]["body"];
+	ASSERT_EQ(plain["expr-type"], "chain-call");
+	ASSERT_EQ(plain["value"]["name"], "x");
+	ASSERT_EQ(plain["call"]["name"], "f");
+	ASSERT_EQ(plain["call"]["args"].size(), 1);
+	ASSERT_TRUE(plain["call"].contains("loc"));
+
+	ASSERT_EQ(stmts[1]["body"]["value"]["expr-type"], "addr-of");
+	ASSERT_EQ(stmts[1]["body"]["value"]["object"]["name"], "f");
+	ASSERT_EQ(stmts[2]["body"]["call"]["expr-type"], "member-call");
+	ASSERT_EQ(stmts[2]["body"]["call"]["object"]["name"], "M");
+
+	// A call followed by '->' is evaluated once, as the assigned value.
+	ASSERT_EQ(stmts[3]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[3]["value"]["expr-type"], "chain-call");
+
+	// An assignment feeding a call is its own statement; the call reads it back.
+	ASSERT_EQ(stmts[4]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[5]["body"]["value"]["name"], "v");
+	ASSERT_EQ(stmts[6]["name"], "v");
+	ASSERT_EQ(stmts[7]["name"], "w");
+	ASSERT_EQ(stmts[7]["value"]["value"]["name"], "v");
+	ASSERT_EQ(stmts[8]["body"]["value"]["name"], "w");
+	ASSERT_EQ(stmts[8]["body"]["call"]["name"], "g");
+
+	ASSERT_EQ(stmts[9]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[9]["value"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[10]["stmt-type"], "tapple-assign");
+	ASSERT_EQ(stmts[10]["value"]["expr-type"], "chain-call");
+}

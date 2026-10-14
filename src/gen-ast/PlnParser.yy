@@ -377,8 +377,8 @@ expr_stmt: import
 	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
 	| expression
 	{
-		if (isAssignExpr($1)) {
-			vector<json> stmts = lowerAssignChain($1);
+		if (isAssignExpr($1) || $1.value("expr-type", "") == "chain-call") {
+			vector<json> stmts = lowerExprStmt($1);
 			if (stmts.size() == 1)
 				$$ = move(stmts[0]);
 			else
@@ -657,7 +657,7 @@ var_declaration: type_expr ID
 	| tapple_decl '=' expression
 	{
 		string et = $3.value("expr-type","");
-		if ($1.is_array() && (et == "call" || et == "member-call"))
+		if ($1.is_array() && (et == "call" || et == "member-call" || et == "chain-call"))
 			$$ = {{"stmt-type", "tapple-decl"}, {"vars", $1}, {"value", $3}};
 		else
 			$$ = {{"not-impl", true}};
@@ -843,13 +843,16 @@ expression: term
 			LOC($$, @$);
 		} else if ($3.value("kind", "") == "tapple") {
 			string et = $1.value("expr-type", "");
-			if (et == "call" || et == "member-call") {
+			if (et == "call" || et == "member-call" || et == "chain-call") {
 				$$ = {{"expr-type", "tapple-assign-expr"}, {"targets", move($3["targets"])}, {"value", move($1)}};
 				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
 				LOC($$, @$);
 			}
+		} else if ($3.value("kind", "") == "call") {
+			$$ = {{"expr-type", "chain-call"}, {"value", move($1)}, {"call", move($3["call"])}};
+			LOC($$, @$);
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
 			LOC($$, @$);

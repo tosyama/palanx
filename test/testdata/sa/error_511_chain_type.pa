@@ -1,0 +1,4 @@
+type V { flo32 x; };
+func add(int32 a, int32 b) -> int32 { return a + b; }
+V v = [1];
+v -> add(1);

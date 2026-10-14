@@ -304,6 +304,7 @@ A target followed by another `->` is read back as the next value, so its index i
 twice (`v -> arr[f()] -> x` calls `f` twice). Targets are stored left to right: in
 `n -> i -> arr[i]`, `arr[i]` uses the `i` just stored. An assignment used inside any other
 expression is not supported.
+A call can follow `->` too; see [Chained Calls](#chained-calls).
 
 `sizeof(type)` is the byte size of a type, as C's `sizeof` gives it, and is typed like an
 unsigned integer literal (`uint64` unless the context is another unsigned type). Its operand is
@@ -416,6 +417,27 @@ cinfo.jpeg_set_defaults();  // jpeg_set_defaults(@!cinfo)
 - A function whose first parameter is not `@!` (a value, `@T`, or no parameters) cannot be called
   this way.
 - If `x` is both a variable and a module alias (§12), the variable is used.
+
+### Chained Calls
+
+`v -> f(args)` calls `f` with `v` in front of the arguments, `f(v, args)`, and can be continued
+like an assignment chain:
+
+```palan
+x -> add(4) -> y;                              // add(x, 4) -> y
+reflect(d, @n) -> normalized() -> dir;         // normalized(@vec3 v)
+divmod(17, 5) -> add3(100);                    // add3(q, r, 100)
+```
+
+- `v` is any value: a variable, a field, a call, an arithmetic expression. A call returning
+  several values gives all of them, in order.
+- The arguments are then checked as in a plain call: the count must match, and each value must
+  fit its parameter.
+- For a read-only borrow parameter (`@T`, `@[n]T`, or a C function's const pointer), `@` may be
+  omitted: `v -> len()` is `len(@v)`. `@!` must be written: `@!v -> scale(2)`.
+- As a statement, `x -> v -> f()` stores `x` in `v`, then calls `f(v)`. A call is evaluated once.
+- Not supported in this version: `->>` to a call, a method-form call after `->` (`v -> s.f()`),
+  and receiving the return values of a call given several chained values with `(a, b) = ...`.
 
 ---
 

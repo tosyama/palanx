@@ -110,17 +110,23 @@ inline bool isExpiringStruct(const json& v)
 {
 	return v.value("category", "") == "expiring" && isStructStorage(v["value-type"]);
 }
+inline bool returnsBorrow(const json& call)
+{
+	bool retBorrow = call.contains("value-type") && isPtrBorrow(call["value-type"]);
+	if (call.contains("value-types"))
+		for (auto& t : call["value-types"])
+			retBorrow = retBorrow || isPtrBorrow(t);
+	return retBorrow;
+}
 // A call returning a borrow that may point to a temp struct given as one of its
-// arguments, directly or through a nested call of the same kind.
+// arguments, directly or through a nested call of the same kind. A temp holding
+// a call (a chained call's return values) may hold the temps it was given.
 inline bool holdsCallTemps(const json& v)
 {
-	if (v.value("expr-type", "") != "call" || !v.contains("args"))
-		return false;
-	bool retBorrow = v.contains("value-type") && isPtrBorrow(v["value-type"]);
-	if (v.contains("value-types"))
-		for (auto& t : v["value-types"])
-			retBorrow = retBorrow || isPtrBorrow(t);
-	if (!retBorrow)
+	string et = v.value("expr-type", "");
+	if (et == "temp")
+		return v["value"].value("expr-type", "") == "call" && returnsBorrow(v["value"]);
+	if (et != "call" || !v.contains("args") || !returnsBorrow(v))
 		return false;
 	for (auto& a : v["args"])
 		if (a.value("expr-type", "") == "temp" || holdsCallTemps(a))
@@ -131,7 +137,7 @@ inline bool isCallBorrow(const json& expr)
 {
 	if (expr.value("expr-type", "") != "addr-of") return false;
 	string et = expr["object"].value("expr-type", "");
-	return et == "call" || et == "member-call";
+	return et == "call" || et == "member-call" || et == "chain-call";
 }
 
 // LCOV_EXCL_EXCEPTION_BR_START

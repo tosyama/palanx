@@ -1,0 +1,24 @@
+type V { flo32 x; flo32 y; };
+func add(int32 a, int32 b) -> int32 { return a + b; }
+func mk(flo32 x, flo32 y) -> V { return [x, y]; }
+func len2(@V v) -> flo32 { return v.x * v.x + v.y * v.y; }
+func setx(@!V v, flo32 x) { x -> v.x; }
+func divmod(int32 a, int32 b) -> int32 q, int32 r { a / b -> q; a % b -> r; }
+func show(int32 a, int32 b, int32 c) { }
+func mkpair(flo32 a) -> V v, int32 n { [a, a] -> v; 7 -> n; }
+func vn(@V v, int32 n) -> flo32 { return v.x * n; }
+func swap(int32 a, int32 b) -> int32 p, int32 q { b -> p; a -> q; }
+int32 x = 3;
+V v = [1, 2];
+@V b = @v;
+x -> add(4);
+v -> len2();
+@v -> len2();
+b -> len2();
+@!v -> setx(1);
+mk(1, 2) -> len2();
+divmod(7, 2) -> show(1);
+mkpair(2) -> vn();
+divmod(7, 2) -> swap() -> show(1);
+x -> add(1) -> add(2);
+(int32 a, int32 c) = 9 -> divmod(2);

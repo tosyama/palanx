@@ -65,35 +65,80 @@ inline json assignExprToStmt(const json& e)
 	return s;
 }
 
-// `v -> t1 -> t2` is `v -> t1; t1 -> t2;`: each later step reads back the
-// target the previous step stored, so SA only ever sees plain assignments.
-inline std::vector<json> lowerAssignChain(const json& e)
+// The target an assignment expression stored, read back as an expression.
+inline json assignTargetExpr(const json& v)
 {
-	const json& v = e["value"];
-	if (!isAssignExpr(v))
-		return {assignExprToStmt(e)};
-
-	json notImpl = {{"stmt-type", "not-impl"}};
-	if (e.contains("loc")) notImpl["loc"] = e["loc"];
 	string vt = v["expr-type"];
-	if (vt == "tapple-assign-expr")
-		return {notImpl};
-	std::vector<json> stmts = lowerAssignChain(v);
-	if (stmts.back()["stmt-type"] == "not-impl")
-		return {notImpl};
-
 	json readBack;
 	if (vt == "assign-expr")
 		readBack = {{"expr-type", "id"}, {"name", v["name"]}};
 	else if (vt == "arr-assign-expr")
 		readBack = v["target"];
-	else
+	else if (vt == "field-assign-expr")
 		readBack = {{"expr-type", "field-access"}, {"object", storeLocToExpr(v["base"])}, {"field", v["field"]}};
+	else
+		readBack = {{"expr-type", "not-impl"}};
 	if (!readBack.contains("loc") && v.contains("loc")) readBack["loc"] = v["loc"];
+	return readBack;
+}
 
+inline std::vector<json> lowerAssignChain(const json& e);
+
+// `x -> v -> f()` is `x -> v; v -> f()`: an assignment feeding a chained call
+// is moved out in front as statements, and the call reads its target back.
+inline void hoistChainAssigns(json& e, std::vector<json>& stmts)
+{
+	if (e.value("expr-type", "") != "chain-call")
+		return;
+	json& v = e["value"];
+	if (v.value("expr-type", "") == "chain-call") {
+		hoistChainAssigns(v, stmts);
+	} else if (isAssignExpr(v)) {
+		for (auto& s : lowerAssignChain(v))
+			stmts.push_back(s);
+		v = assignTargetExpr(v);
+	}
+}
+
+// `v -> t1 -> t2` is `v -> t1; t1 -> t2;`: each later step reads back the
+// target the previous step stored, so SA only ever sees plain assignments.
+inline std::vector<json> lowerAssignChain(const json& e)
+{
+	std::vector<json> stmts;
 	json step = e;
-	step["value"] = std::move(readBack);
+	hoistChainAssigns(step["value"], stmts);
+	const json& v = step["value"];
+	if (!isAssignExpr(v)) {
+		stmts.push_back(assignExprToStmt(step));
+		return stmts;
+	}
+
+	json notImpl = {{"stmt-type", "not-impl"}};
+	if (e.contains("loc")) notImpl["loc"] = e["loc"];
+	if (v["expr-type"] == "tapple-assign-expr")
+		return {notImpl};
+	for (auto& s : lowerAssignChain(v))
+		stmts.push_back(s);
+	if (stmts.back()["stmt-type"] == "not-impl")
+		return {notImpl};
+
+	step["value"] = assignTargetExpr(v);
 	stmts.push_back(assignExprToStmt(step));
+	return stmts;
+}
+
+// The statements an assignment or a chained call written as a statement
+// expands to.
+inline std::vector<json> lowerExprStmt(const json& e)
+{
+	if (isAssignExpr(e))
+		return lowerAssignChain(e);
+	std::vector<json> stmts;
+	json call = e;
+	hoistChainAssigns(call, stmts);
+	json stmt = {{"stmt-type", "expr"}, {"body", std::move(call)}};
+	if (e.contains("loc")) stmt["loc"] = e["loc"];
+	stmts.push_back(std::move(stmt));
 	return stmts;
 }
 

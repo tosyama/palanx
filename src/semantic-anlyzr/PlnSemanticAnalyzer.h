@@ -212,6 +212,16 @@ class PlnSemanticAnalyzer {
 	json sa_expr_call(const json& expr);
 	json sa_expr_member_call(const json& expr);
 	json normalizeMethodCall(const json& expr);
+	bool isMethodForm(const json& memberCall) const;
+	const json* findCalleeByName(const string& name, bool& isCFunc) const;
+	const json* findCallee(const json& call, bool& isCFunc) const;
+	json operandValueType(const json& obj);
+	json chainArg(const json& value, const json* paramVT, bool isCFunc);
+	size_t chainRetCount(const json& value) const;
+	json normalizeChainCall(const json& expr);
+	json chainMultiCall(const json& chain, json& body);
+	json sa_expr_chain_call(const json& expr);
+	json tappleCallExpr(const json& stmt);
 	// Analyze a call's argument list against the callee's parameter list.
 	json saCallArgs(const json& locNode, const json& args, const json& funcParams,
 	                bool isCFunc, const string& funcName);
@@ -242,6 +252,7 @@ class PlnSemanticAnalyzer {
 	// expectedType unconditionally.
 	json sa_arr_size_expr(const json& stmt, const json& sizeExprAst);
 	json sa_expression_stmt(const json& stmt);
+	json discardedValueStmt(const json& stmt, json body);
 	json sa_var_decl(const json& stmt);           // returns array of statements
 	json sa_var_decl_group(const json& stmt);     // all vars share one var-type; returns array of statements
 	json sa_arr_var_decl(const json& stmt);       // returns array of statements

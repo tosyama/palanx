@@ -288,9 +288,11 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 // LCOV_EXCL_EXCEPTION_BR_START
 static json makeTempExpr(json body, json value, json release)
 {
-	json vt = value["value-type"];
-	return {{"expr-type","temp"},{"body",move(body)},{"value",move(value)},
-	        {"release",move(release)},{"value-type",move(vt)}};
+	json out = {{"expr-type","temp"},{"body",move(body)},{"release",move(release)}};
+	if (value.contains("value-type")) out["value-type"] = value["value-type"];
+	if (value.contains("category")) out["category"] = value["category"];
+	out["value"] = move(value);
+	return out;
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
@@ -702,6 +704,9 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		}
 		json call = normalizeMethodCall(expr);
 		return call["expr-type"] == "call" ? sa_expr_call(call) : sa_expr_member_call(expr);
+
+	} else if (expr_type == "chain-call") {
+		return sa_expr_chain_call(expr);
 
 	} else if (expr_type == "field-access") {
 		json enumerator = resolveEnumerator(expr);
@@ -1340,25 +1345,69 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// A member-call whose object is a variable (or C global) is a method-form
+// call; otherwise it is a module-alias call `L.f(args)`. A variable takes
+// precedence over an alias of the same name, as it does over an enum name.
+bool PlnSemanticAnalyzer::isMethodForm(const json& memberCall) const
+{
+	const json& obj = memberCall["object"];
+	if (obj.value("expr-type", "") != "id") return true;
+	const string& name = obj["name"].get<string>();
+	return findVar(name) || findCGlobal(name);
+}
+
+// The function a call names, looked up as sa_expr_call does; null when it is
+// unknown or ambiguous, which sa_expr_call reports.
+const json* PlnSemanticAnalyzer::findCalleeByName(const string& name, bool& isCFunc) const
+{
+	const json* pFunc = findCFunc(name);
+	isCFunc = pFunc != nullptr;
+	if (!pFunc) pFunc = findPlnFunc(name);
+	if (!pFunc) pFunc = findImportFunc(name);
+	return pFunc && !pFunc->empty() ? pFunc : nullptr;
+}
+
+// The function a call, a module-alias call, or a chained call (its last call)
+// names; null otherwise.
+const json* PlnSemanticAnalyzer::findCallee(const json& call, bool& isCFunc) const
+{
+	isCFunc = false;
+	string et = call.value("expr-type", "");
+	if (et == "chain-call")
+		return findCallee(call["call"], isCFunc);
+	if (et == "call")
+		return findCalleeByName(call["name"].get<string>(), isCFunc);
+	if (et != "member-call" || isMethodForm(call))
+		return nullptr;
+	const json* pFunc = findImportFuncByAlias(call["object"]["name"].get<string>(), call["method"].get<string>());
+	if (pFunc) isCFunc = pFunc->value("_c-func", false);
+	return pFunc;
+}
+
+// The value type of a method-form receiver or a chained value; null when it
+// has none (a void call). An inline struct field is storage and cannot be
+// evaluated as a value, so its type comes from the layout.
+json PlnSemanticAnalyzer::operandValueType(const json& obj)
+{
+	if (obj.value("expr-type", "") == "field-access") {
+		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/false);
+		return fieldValueType(findFieldOrExit(chain.structName, obj["field"].get<string>(), obj));
+	}
+	return sa_expression(obj).value("value-type", json());
+}
+
 // Rewrites a method-form call `aa.f(args)` to the call `f(@!aa, args)`. Any
 // other expression, including a module-alias call `L.f(args)`, is returned as
-// is; a variable takes precedence over an alias of the same name, as it does
-// over an enum name.
+// is.
 json PlnSemanticAnalyzer::normalizeMethodCall(const json& expr)
 {
-	if (expr["expr-type"] != "member-call") return expr;
+	if (expr["expr-type"] != "member-call" || !isMethodForm(expr)) return expr;
 	const json& obj = expr["object"];
-	if (obj.value("expr-type", "") == "id") {
-		const string& name = obj["name"].get<string>();
-		if (!findVar(name) && !findCGlobal(name)) return expr;
-	}
 
 	const string& method = expr["method"].get<string>();
-	const json* pFunc = findCFunc(method);
-	if (!pFunc) pFunc = findPlnFunc(method);
-	if (!pFunc) pFunc = findImportFunc(method);
-	// An unknown or ambiguous callee is reported by sa_expr_call.
-	if (pFunc && !pFunc->empty()) {
+	bool isCFunc;
+	const json* pFunc = findCalleeByName(method, isCFunc);
+	if (pFunc) {
 		const json& params = (*pFunc)["parameters"];
 		if (params.empty() || !params[0]["var-type"].value("mutable", false)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_MethodNeedsMutableFirstParam, method) << endl;
@@ -1367,17 +1416,9 @@ json PlnSemanticAnalyzer::normalizeMethodCall(const json& expr)
 	}
 
 	// A receiver that is already a borrow is passed as is: '@!' on it would
-	// be rejected (or would mean a pointer to the borrow's slot). An inline
-	// struct field is storage and cannot be evaluated as a value.
-	json recvType;
-	if (obj.value("expr-type", "") == "field-access") {
-		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/false);
-		const FieldLayout& fld = findFieldOrExit(chain.structName, obj["field"].get<string>(), obj);
-		if (fld.typeKind != "embed") recvType = fieldValueType(fld);
-	} else {
-		recvType = sa_expression(obj).value("value-type", json());
-	}
-	bool isBorrow = !recvType.is_null() && (isPtrBorrow(recvType) || isArrBorrowVar(recvType));
+	// be rejected (or would mean a pointer to the borrow's slot).
+	json recvType = operandValueType(obj);
+	bool isBorrow = isPtrBorrow(recvType) || isArrBorrowVar(recvType);
 	json recv = isBorrow ? obj : json{{"expr-type", "addr-of"}, {"mutable", true}, {"object", obj}};
 	if (!isBorrow && obj.contains("loc")) recv["loc"] = obj["loc"];
 
@@ -1385,6 +1426,114 @@ json PlnSemanticAnalyzer::normalizeMethodCall(const json& expr)
 	for (auto& a : expr["args"]) call["args"].push_back(a);
 	if (expr.contains("loc")) call["loc"] = expr["loc"];
 	return call;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+static const json* fixedParamType(const json* callee, size_t idx)
+{
+	if (!callee || idx >= (*callee)["parameters"].size()) return nullptr;
+	const json& param = (*callee)["parameters"][idx];
+	if (param.value("name", "") == "..." || param.value("_callback-param", false)) return nullptr;
+	return &param["var-type"];
+}
+
+// A chained value given for a parameter: '@' may be omitted for a read-only
+// borrow, so it is added here, while '@!' stays explicit so a write is
+// visible at the call. A C function takes an array as it is.
+json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool isCFunc)
+{
+	if (!paramVT || value.value("expr-type", "") == "addr-of") return value;
+	if (paramVT->value("type-kind", "") != "pntr" || paramVT->value("mutable", true)) return value;
+	json vt = operandValueType(value);
+	if (vt.is_null()) return value;
+	bool ownedArr = isArrLevel(vt) && !isArrBorrowVar(vt);
+	if (!isStructStorage(vt) && vt.value("type-kind", "") != "prim"
+			&& !(ownedArr && !isCFunc && isArrBorrowVar(*paramVT)))
+		return value;
+	json out = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}};
+	if (value.contains("loc")) out["loc"] = value["loc"];
+	return out;
+}
+
+size_t PlnSemanticAnalyzer::chainRetCount(const json& value) const
+{
+	bool isCFunc;
+	const json* callee = findCallee(value, isCFunc);
+	return callee && callee->contains("rets") ? (*callee)["rets"].size() : 0;
+}
+
+// Rewrites a chained call `v -> f(args)` to `f(v, args)`. A value that is a
+// call returning several values is left as a chain-call, received into temps
+// by sa_expr_chain_call.
+json PlnSemanticAnalyzer::normalizeChainCall(const json& expr)
+{
+	json value = expr["value"];
+	if (value.value("expr-type", "") == "chain-call")
+		value = normalizeChainCall(value);
+	json call = expr["call"];
+	if (call["expr-type"] == "member-call" && isMethodForm(call)) {
+		cerr << locPrefix(call) << PlnSaMessage::getMessage(E_ChainToMethodCall) << endl;
+		exit(1);
+	}
+	if (chainRetCount(value) >= 2) {
+		json out = expr;
+		out["value"] = move(value);
+		return out;
+	}
+	bool isCFunc;
+	const json* callee = findCallee(call, isCFunc);
+	json arg = chainArg(value, fixedParamType(callee, 0), isCFunc);
+	call["args"].insert(call["args"].begin(), move(arg));
+	return call;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Receives the return values of a chained call's value into temps, appending
+// their declarations to body, and returns the call with the temps in front of
+// its arguments.
+json PlnSemanticAnalyzer::chainMultiCall(const json& chain, json& body)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json value = chain["value"];
+	if (value["expr-type"] == "chain-call")
+		value = chainMultiCall(value, body);
+	bool isCFunc;
+	const json& rets = (*findCallee(value, isCFunc))["rets"];
+	json loc = chain.value("loc", json::array());
+	json decl = {{"stmt-type", "tapple-decl"}, {"vars", json::array()}, {"value", value}, {"loc", loc}};
+	vector<string> temps;
+	for (auto& r : rets) {
+		temps.push_back("__tap_" + to_string(tempVarCounter_++));
+		decl["vars"].push_back({{"var-name", temps.back()}, {"var-type", r["var-type"]}});
+	}
+	for (auto& s : sa_tapple_decl(decl))
+		body.push_back(s);
+
+	json call = chain["call"];
+	const json* callee = findCallee(call, isCFunc);
+	json args = json::array();
+	for (size_t i = 0; i < temps.size(); i++) {
+		json temp = {{"expr-type", "id"}, {"name", temps[i]}, {"loc", loc}};
+		args.push_back(chainArg(temp, fixedParamType(callee, i), isCFunc));
+	}
+	for (auto& a : call["args"])
+		args.push_back(a);
+	call["args"] = move(args);
+	return call;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_chain_call(const json& expr)
+{
+	json norm = normalizeChainCall(expr);
+	if (norm["expr-type"] != "chain-call")
+		return sa_expression(norm);
+
+	enterScope();
+	json body = json::array();
+	json saCall = sa_expression(chainMultiCall(norm, body));
+	size_t idx = arrayScopeVars_.size() - 1;
+	json release = collectFreeStmts(idx, idx + 1);
+	leaveScope();
+	return makeTempExpr(move(body), move(saCall), move(release));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)

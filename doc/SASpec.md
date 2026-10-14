@@ -615,16 +615,21 @@ SA-only expression kinds (not present in AST JSON):
   }
   ```
 
-- temp - A call argument held in a temp variable (see Temp arguments above).
+- temp - A call argument held in a temp variable (see Temp arguments above), or a chained call
+  given return values (see Chained calls).
   - expr-type\*: "temp"
   - body\*: statements that declare and initialize the temp; each releases the temps of its own
     values at its end
-  - value\*: the temp as the argument (`id`)
+  - value\*: the temp as the argument (`id`), or the chained `call` taking the temps
   - release\*: statements that free the temp; codegen runs them once the enclosing full
     expression has been evaluated: at the end of the statement (before a `return`'s `ret`), or,
     in an `if`/`while` condition or a `&&`/`||` operand, when that operand's value is known and
     before it branches
-  - value-type\*: `value`'s
+  - value-type: `value`'s (absent for a void `call`); `category` is `value`'s too
+
+  A `temp` holding a call that returns a borrow may point to its temps (E_BorrowOfTempEscapes when
+  bound). One discarded as an `expr` statement becomes a `block` of its `body`, the call's
+  statement and its `release`.
 
 SA-only expression kinds (added to AST nodes):
 
@@ -862,6 +867,26 @@ multiple-return declaration/assignment):
   passed as is; a read-only one is then rejected by the usual permission check.
 
 sa.json carries only the resulting `call`; `member-call` is never emitted.
+
+### Chained calls
+
+An AST `chain-call` `v -> f(args)` is rewritten where SA takes it in (an expression, or the value
+of a multiple-return declaration/assignment) by `normalizeChainCall`, after its `value` (a nested
+`chain-call` first):
+
+- `call` must not be a method-form call (E_ChainToMethodCall); a module-alias call is kept.
+- If `value` is not a call returning several values, the result is `call` with `value` inserted as
+  its first argument, analyzed as any other call. For a read-only borrow parameter (`@T`, `@[n]T`,
+  a C const pointer) a struct, numeric value or (for a Palan function) owned array is wrapped in
+  `addr-of` (`@v`), so `@` may be omitted; a call returning a struct then becomes a temp as
+  `@f()` does. `@!` is never added.
+- Otherwise the return values are received into temps `__tap_N` by a `tapple-decl` and placed in
+  front of the arguments the same way; a chain of such calls adds one `tapple-decl` per call. The
+  result is a `temp` whose `body` is the `tapple-decl`s, `value` the last `call`, and `release`
+  the frees of returned structs. As a multiple-return declaration/assignment's value this is
+  E_ChainMultiToTapple.
+
+sa.json never carries `chain-call`.
 
 ### Call arguments
 

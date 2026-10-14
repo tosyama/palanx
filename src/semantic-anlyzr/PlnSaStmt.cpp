@@ -671,12 +671,27 @@ const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, const json& 
 	return *pFunc;
 }
 
+// The call whose return values a multiple-return declaration or assignment
+// receives.
+json PlnSemanticAnalyzer::tappleCallExpr(const json& stmt)
+{
+	json value = stmt["value"];
+	if (value.value("expr-type", "") == "chain-call") {
+		value = normalizeChainCall(value);
+		if (value["expr-type"] == "chain-call") {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ChainMultiToTapple) << endl;
+			exit(1);
+		}
+	}
+	return normalizeMethodCall(value);
+}
+
 // A variable whose declared type differs from its return value's receives it
 // through a temp and is declared as `T x = temp;`, so it follows the same
 // conversion rules as a single-value declaration.
 json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 {
-	json callExpr = normalizeMethodCall(stmt["value"]);
+	json callExpr = tappleCallExpr(stmt);
 	const json& rets = findMultiRetFunc(stmt, callExpr, stmt["vars"].size())["rets"];
 
 	// Process the call expression via sa_expression (resolves func-type, annotates args)
@@ -727,7 +742,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 json PlnSemanticAnalyzer::sa_tapple_assign(const json& stmt)
 {
 	const json& targets = stmt["targets"];
-	json callExpr = normalizeMethodCall(stmt["value"]);
+	json callExpr = tappleCallExpr(stmt);
 	const json& rets = findMultiRetFunc(stmt, callExpr, targets.size())["rets"];
 
 	json decl = {{"stmt-type", "tapple-decl"}, {"vars", json::array()}, {"value", callExpr},

@@ -5490,3 +5490,63 @@ TEST(sa, lit_arg)
 	ASSERT_EQ(tempRelease(arr), "__pln_free_arr_arr_int32");
 	ASSERT_EQ(arr["release"][0]["body"]["args"].size(), 2);
 }
+
+TEST(sa, chain_call)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/249_chain_call.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 16);
+
+	const auto& plain = stmts[5]["body"];
+	ASSERT_EQ(plain["name"], "add");
+	ASSERT_EQ(plain["args"][0]["name"], "x");
+	ASSERT_EQ(plain["args"][1]["value"], "4");
+
+	// '@' may be omitted for a '@T' parameter; a borrow is passed as it is.
+	for (int i : {6, 7}) {
+		const auto& arg = stmts[i]["body"]["args"][0];
+		ASSERT_EQ(arg["name"], "v") << i;
+		ASSERT_EQ(arg["value-type"]["mutable"], false) << i;
+	}
+	ASSERT_EQ(stmts[8]["body"]["args"][0]["name"], "b");
+	ASSERT_EQ(stmts[9]["body"]["args"][0]["value-type"]["mutable"], true);
+
+	const auto& temp = stmts[10]["body"]["args"][0];
+	ASSERT_EQ(tempInit(temp)["name"], "mk");
+	ASSERT_EQ(temp["value"]["value-type"]["mutable"], false);
+	ASSERT_EQ(tempRelease(temp), "free");
+
+	// Return values are received into temps for the statement.
+	const auto& multi = stmts[11];
+	ASSERT_EQ(multi["stmt-type"], "block");
+	ASSERT_EQ(multi["body"][0]["stmt-type"], "tapple-decl");
+	const auto& show = multi["body"][1]["body"];
+	ASSERT_EQ(show["name"], "show");
+	ASSERT_EQ(show["args"][0]["name"], multi["body"][0]["vars"][0]["var-name"]);
+	ASSERT_EQ(show["args"][1]["name"], multi["body"][0]["vars"][1]["var-name"]);
+	ASSERT_EQ(show["args"][2]["value"], "1");
+
+	// A returned struct is borrowed for a '@T' parameter and freed after the call.
+	const auto& structRet = stmts[12]["body"];
+	ASSERT_EQ(structRet.size(), 3);
+	string vtemp = structRet[0]["vars"][0]["var-name"];
+	ASSERT_EQ(structRet[1]["body"]["args"][0]["name"], vtemp);
+	ASSERT_EQ(structRet[1]["body"]["args"][0]["value-type"]["mutable"], false);
+	ASSERT_EQ(structRet[2]["body"]["name"], "free");
+	ASSERT_EQ(structRet[2]["body"]["args"][0]["name"], vtemp);
+
+	const auto& twice = stmts[13]["body"];
+	ASSERT_EQ(twice[0]["value"]["name"], "divmod");
+	ASSERT_EQ(twice[1]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(twice[1]["value"]["name"], "swap");
+	ASSERT_EQ(twice[2]["body"]["args"][0]["name"], twice[1]["vars"][0]["var-name"]);
+
+	const auto& nested = stmts[14]["body"];
+	ASSERT_EQ(nested["args"][0]["name"], "add");
+	ASSERT_EQ(nested["args"][0]["args"][0]["name"], "x");
+
+	ASSERT_EQ(stmts[15]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[15]["value"]["args"][0]["value"], "9");
+}

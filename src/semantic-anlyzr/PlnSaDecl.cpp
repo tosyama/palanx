@@ -231,7 +231,22 @@ static StructDef buildStructDef(const string& name,
 
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
-	json body = sa_expression(stmt["body"]);
+	return discardedValueStmt(stmt, sa_expression(stmt["body"]));
+}
+
+json PlnSemanticAnalyzer::discardedValueStmt(const json& stmt, json body)
+{
+	// A temp holding a call (a chained call's return values) becomes a block,
+	// since only a call is lowered as an expression statement.
+	if (body.value("expr-type", "") == "temp") {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json stmts = body["body"];
+		stmts.push_back(discardedValueStmt(stmt, body["value"]));
+		for (auto& r : body["release"])
+			stmts.push_back(r);
+		return {{"stmt-type","block"},{"body",move(stmts)}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
 	// A bare `struct` value-type only comes from a C function's by-value
 	// struct return; discarding it as a statement has no codegen lowering,
 	// so it's rejected here rather than adding one.

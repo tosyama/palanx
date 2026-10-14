@@ -3278,3 +3278,28 @@ TEST(sa_error, void_call_arg)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+
+TEST(sa_error, chain_call)
+{
+	const pair<string, string> cases[] = {
+		{"error_511_chain_type.pa", ":4:6: error: cannot convert 'V' to 'int32'."},
+		{"error_512_chain_too_many.pa", ":3:6: error: function 'add' takes 2 argument(s), but 3 given."},
+		{"error_513_chain_too_few.pa", ":3:17: error: function 'show' takes 3 argument(s), but 2 given."},
+		{"error_514_chain_mut_needs_at.pa", ":4:6: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'"},
+		{"error_515_chain_multi_to_mut.pa", ":3:17: error: cannot convert 'int32' to '@!int32'."},
+		{"error_516_chain_void_value.pa", ":3:14: error: Void function call cannot be used as a value."},
+		{"error_517_chain_transfer.pa", ":3:1: error: this expression is not supported in this version."},
+		{"error_518_chain_method_form.pa", ":5:6: error: '->' cannot pass a value to a method-form call 'x.f()'"},
+		{"error_519_chain_multi_to_tapple.pa", ":3:1: error: the return values of a call chained with '->' into a multiple-return call cannot be received"},
+		{"error_520_chain_multi_borrow_escapes.pa", ":4:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

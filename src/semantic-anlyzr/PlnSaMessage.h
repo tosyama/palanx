@@ -134,6 +134,8 @@ enum PlnSaMessageCode {
 	E_ArrLitTarget,	// arg1: variable name
 	E_BorrowOfTempEscapes,
 	E_AssignInExpr,
+	E_ChainToMethodCall,
+	E_ChainMultiToTapple,
 };
 
 class PlnSaMessage

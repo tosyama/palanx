@@ -481,6 +481,13 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_AssignInExpr:
 			return "an assignment cannot be used inside an expression; write it as its own statement.";
 
+		case E_ChainToMethodCall:
+			return "'->' cannot pass a value to a method-form call 'x.f()'; name the function, as '-> f(..)'.";
+
+		case E_ChainMultiToTapple:
+			return "the return values of a call chained with '->' into a multiple-return call cannot be "
+			       "received with '(..)' in this version.";
+
 		case E_TransferFromNonOwner:
 			return "'->>' needs a source that owns its value: an owning variable, an owned field "
 			       "or element, or a call result.";

@@ -402,13 +402,17 @@ Statement model
     - values - Return expression list (omitted for bare `return;`)
   12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
-    - value\* - Call expression model (must be a call to a multi-return Palan function)
+    - value\* - Call expression model (must be a call to a multi-return Palan function), or a
+      `chain-call` whose last call is one
   13. tapple-assign - multiple return values assigned to existing targets (`call(...) -> (target, ...)`)
     - targets\* - Target expression model list: `id`, `arr-index` or `field-access` per entry
-    - value\* - Call expression model (must be a call to a multi-return Palan function)
+    - value\* - Call expression model (must be a call to a multi-return Palan function), or a
+      `chain-call` whose last call is one
   - A chained assignment `v -> t1 -> t2` is emitted as consecutive assign / arr-assign /
     field-assign statements `v -> t1` and `t1 -> t2`: each later value reads back the
     previous target. A chain with a tapple-assign in it is a single not-impl statement.
+    An assignment feeding a chained call (`x -> v -> f()`) is likewise emitted before it, and
+    the `chain-call` reads the target back (`x -> v` then the statement for `v -> f()`).
   14. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
@@ -436,7 +440,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit" "sizeof"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call"
 - loc\* - Location Array
   1. lit-str - String literal
     - value\* - String value
@@ -553,6 +557,11 @@ Expression model
   26. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
       template argument is emitted as `not-impl` instead
     - type\* - Type model
+  27. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
+      consumed by SA, not emitted to sa.json (see SASpec.md "Chained calls")
+    - value\* - Expression model whose value (or return values) come first in the arguments; a
+      nested `chain-call` for `x -> f() -> g()`
+    - call\* - `call` or `member-call` expression model, its `args` without the chained value
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a
