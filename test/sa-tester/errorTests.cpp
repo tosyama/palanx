@@ -3197,6 +3197,14 @@ TEST(sa_error, arr_lit_assign)
 		{"error_483_call_borrow_decl.pa", ":3:8: error: a struct returned by a call has no owner to borrow from"},
 		{"error_484_call_borrow_ro_to_mut.pa", ":4:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 		{"error_485_call_borrow_not_struct.pa", ":3:3: error: cannot take the address of this expression"},
+		{"error_486_temp_borrow_decl.pa", ":5:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_487_temp_borrow_assign.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_488_temp_borrow_return.pa", ":5:29: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_489_temp_borrow_field.pa", ":7:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_490_temp_borrow_slot.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_491_temp_borrow_nested.pa", ":5:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_492_temp_borrow_prim.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_493_temp_borrow_tapple.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

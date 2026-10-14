@@ -2742,3 +2742,41 @@ TEST(build_mgr, embed_field_value_mtrace)
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
+
+// A borrow a call returns may point to a temp struct given to it, so the temp
+// lives until its full expression is done; inside a condition that is each
+// short-circuit operand, and each evaluation of a loop condition.
+TEST(build_mgr, call_temp_borrow_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_call_temp_borrow_bin "
+		"../test/testdata/build-mgr/279_call_temp_borrow_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_call_temp_borrow_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_call_temp_borrow_bin");
+	ASSERT_EQ(output, "76\n"
+	                  "38\n"
+	                  "76\n"
+	                  "4 6 8\n"
+	                  "and\n"
+	                  "8\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 17) << "expected 17 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}

@@ -110,6 +110,23 @@ inline bool isExpiringStruct(const json& v)
 {
 	return v.value("category", "") == "expiring" && isStructStorage(v["value-type"]);
 }
+// A call returning a borrow that may point to a temp struct given as one of its
+// arguments, directly or through a nested call of the same kind.
+inline bool holdsCallTemps(const json& v)
+{
+	if (v.value("expr-type", "") != "call" || !v.contains("args"))
+		return false;
+	bool retBorrow = v.contains("value-type") && isPtrBorrow(v["value-type"]);
+	if (v.contains("value-types"))
+		for (auto& t : v["value-types"])
+			retBorrow = retBorrow || isPtrBorrow(t);
+	if (!retBorrow)
+		return false;
+	for (auto& a : v["args"])
+		if (a.contains("release-temp") || holdsCallTemps(a))
+			return true;
+	return false;
+}
 inline bool isCallBorrow(const json& expr)
 {
 	if (expr.value("expr-type", "") != "addr-of") return false;

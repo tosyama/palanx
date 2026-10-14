@@ -485,7 +485,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     - `object.expr-type == "call"` or `"member-call"` (`@f()` / `@!f()`): only as a call argument,
       and only for a call returning a struct (`category: "expiring"`); emitted as that `call` with
       `mutable` added to its `value-type`, as for a struct variable. It is released after the
-      outer call (`release-after-call`). Elsewhere it is E_ExpiringStructToBorrow; a call
+      enclosing full expression (`release-temp`). Elsewhere it is E_ExpiringStructToBorrow; a call
       returning anything else is E_AddrOfNotAddressable.
     - `object.expr-type == "field-access"` (`@s.x` / `@!s.in.v`): resolved via the same
       `resolveObjectChain` field-chain machinery as an ordinary field-access read (see the
@@ -550,7 +550,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     store, an array-slot store, or a return — is a compile error (E_StructBorrowNeedsAddrOf); the
     source must be written `@x`/`@!x`. A call result (`category: "expiring"`) has no owner, so binding it to a borrow is
     E_ExpiringStructToBorrow, except as a call argument written `@f()`/`@!f()` (see the addr-of
-    call shape above and `release-after-call` below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
+    call shape above and `release-temp` below). The check reads the raw JSON, since `PlnTypeRegistry` interns a missing
     `mutable` as `true`. Writing through a `false` (read-only) pointer — via `p[0]` deref, a field access, or
     an array-element write — is a compile error (E_WriteThroughReadOnlyPtr); see typeCompat rules
     below for how mutability is enforced separately from type compatibility.
@@ -558,13 +558,19 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     When `ret-type` is `pntr(T)` derived from a `[]T` signature, the caller is responsible
     for freeing the returned pointer (expiring ownership).
 
-    **`release-after-call`:** a call argument that is a struct returned by a Palan call
-    (`category: "expiring"`, with `mutable` in its `value-type` when written `@f()`/`@!f()`) carries `"release-after-call":{"name":<fn>,"func-type":"c"|"pln"}`,
-    and codegen calls `<fn>(arg)` right after the call returns (`free`, or `__pln_free_T` for a
-    struct with owned fields). Releasing at the call rather than around its statement keeps a
-    conditionally evaluated call (a `&&`/`||` operand, a loop condition) correct. Such a struct
+    **`release-temp`:** a call argument that is a struct returned by a Palan call
+    (`category: "expiring"`, with `mutable` in its `value-type` when written `@f()`/`@!f()`) carries `"release-temp":{"name":<fn>,"func-type":"c"|"pln"}`,
+    and codegen calls `<fn>(arg)` (`free`, or `__pln_free_T` for a struct with owned fields) once the
+    enclosing full expression has been evaluated, since the callee may return a borrow of it: at the
+    end of the statement (before a `return`'s `ret`), or, in an `if`/`while` condition or a
+    `&&`/`||` operand, when that operand's value is known and before it branches. Such a struct
     discarded as an `expr` statement becomes a `block` of a temp `var-decl` initialized by the
     call and the temp's free.
+
+    A call returning a `@T`/`@!T` (one of its `value-types` for a `tapple-decl`) with a
+    `release-temp` argument, directly or through a nested call of the same kind, may return a
+    pointer to that temp, so binding its result — where E_StructBorrowNeedsAddrOf is checked, or a
+    `tapple-decl` — is E_BorrowOfTempEscapes.
 
 SA-only expression kinds (not present in AST JSON):
 

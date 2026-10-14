@@ -4471,7 +4471,7 @@ TEST(sa, struct_borrow)
 	ASSERT_EQ(args[3]["expr-type"], "call");
 	ASSERT_EQ(args[3]["category"], "expiring");
 	ASSERT_EQ(args[3]["value-type"]["mutable"], false);
-	ASSERT_EQ(args[3]["release-after-call"]["name"], "free");
+	ASSERT_EQ(args[3]["release-temp"]["name"], "free");
 
 	vector<json> setArgs;
 	for (auto& st : jout["statements"])
@@ -4481,7 +4481,7 @@ TEST(sa, struct_borrow)
 	ASSERT_EQ(setArgs.size(), 2u);
 	for (auto& a : setArgs) {
 		ASSERT_EQ(a["value-type"]["mutable"], true);
-		ASSERT_EQ(a["release-after-call"]["name"], "free");
+		ASSERT_EQ(a["release-temp"]["name"], "free");
 	}
 }
 
@@ -4797,13 +4797,13 @@ TEST(sa, struct_ret_temp) {
 	json jout = run_sa("../test/testdata/sa/217_struct_ret_temp.pa");
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 3);
-	// A returned struct passed as an argument is released by the call.
+	// A returned struct passed as an argument is marked for release.
 	const auto& argP = stmts[0]["vars"][0]["init"]["args"][0];
-	ASSERT_EQ(argP["release-after-call"]["name"], "free");
-	ASSERT_EQ(argP["release-after-call"]["func-type"], "c");
+	ASSERT_EQ(argP["release-temp"]["name"], "free");
+	ASSERT_EQ(argP["release-temp"]["func-type"], "c");
 	const auto& argQ = stmts[1]["vars"][0]["init"]["args"][0];
-	ASSERT_EQ(argQ["release-after-call"]["name"], "__pln_free_Q");
-	ASSERT_EQ(argQ["release-after-call"]["func-type"], "pln");
+	ASSERT_EQ(argQ["release-temp"]["name"], "__pln_free_Q");
+	ASSERT_EQ(argQ["release-temp"]["func-type"], "pln");
 	// A discarded one is received in a temp and freed.
 	const auto& blk = stmts[2];
 	ASSERT_EQ(blk["stmt-type"], "block");

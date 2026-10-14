@@ -470,6 +470,11 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       "struct variable with '->' and borrow it with '@name' or '@!name' (only a call "
 			       "argument can borrow it directly, as '@f()' or '@!f()').";
 
+		case E_BorrowOfTempEscapes:
+			return "a borrow returned by a call given a temporary struct may point to that struct, "
+			       "which is freed before the statement ends; receive the struct into a variable "
+			       "with '->' and pass it as '@name' or '@!name'.";
+
 		case E_TransferFromNonOwner:
 			return "'->>' needs a source that owns its value: an owning variable, an owned field "
 			       "or element, or a call result.";

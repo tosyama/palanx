@@ -702,9 +702,13 @@ void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& 
 
 // A struct returned by a call is owned by nobody, and a borrow never frees
 // what it points to.
-void PlnSemanticAnalyzer::checkStructBorrowSource(const json& locNode, const json& saValue,
+void PlnSemanticAnalyzer::checkBorrowSource(const json& locNode, const json& saValue,
 		const json& dstType)
 {
+	if (holdsCallTemps(saValue)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
+		exit(1);
+	}
 	if (!isStructBorrow(dstType) || !isStructStorage(saValue["value-type"]))
 		return;
 	if (isExpiringStruct(saValue)) {
@@ -850,12 +854,11 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 					saArg = wrapConvert(saArg, registry_.toJson(promoted));
 			}
 		}
-		// The callee only borrows an argument, and an argument evaluated
-		// conditionally (a '&&' operand, a loop condition) can't be released
-		// by a statement around it, so the call itself releases it.
+		// The callee may return a borrow of it, so codegen releases it only
+		// once the enclosing full expression has been evaluated.
 		if (expiring) {
 			auto [fn, funcType] = structFreeFunc(saArg["value-type"]["base-type"]["type-name"].get<string>());
-			saArg["release-after-call"] = {{"name",fn},{"func-type",funcType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			saArg["release-temp"] = {{"name",fn},{"func-type",funcType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 		saArgs.push_back(saArg);
 		argIdx++;

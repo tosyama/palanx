@@ -50,8 +50,8 @@ static void deserializeArgs(const json& call, vector<unique_ptr<Expr>>& args,
     if (!call.contains("args"))
         return;
     for (auto& arg : call["args"]) {
-        if (arg.contains("release-after-call")) {
-            const json& r = arg["release-after-call"];
+        if (arg.contains("release-temp")) {
+            const json& r = arg["release-temp"];
             releases.push_back({args.size(), r["name"].get<string>(), r["func-type"] != "c"});
         }
         args.push_back(deserializeExpr(arg));

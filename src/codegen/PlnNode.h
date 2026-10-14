@@ -188,8 +188,8 @@ struct ConvertExpr : Expr {
     unique_ptr<Expr> src;
 };
 
-// An argument the call releases right after it returns: a struct returned by
-// another Palan call that nothing else owns.
+// An argument released once its full expression is evaluated: a struct
+// returned by another Palan call that nothing else owns.
 struct ArgRelease { size_t arg; string funcName; bool plnFunc; };
 
 struct CCCallExpr : Expr {

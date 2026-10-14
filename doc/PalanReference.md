@@ -1905,10 +1905,12 @@ The caller receives the returned struct with `->` (`Point pt; makePoint(1, 2) ->
 variable's initializer (`Point pt = makePoint(1, 2);`), where the variable takes it over without a
 copy. Passed
 directly as an argument (`getX(makePoint(1, 2))`, or `moveX(@!makePoint(1, 2), 3)` for a `@T`/`@!T`
-parameter, written with `@`/`@!` as for a variable), it is freed right after that call; called as a
+parameter, written with `@`/`@!` as for a variable), it is freed when the statement has been
+evaluated — in an `if`/`while` condition or a `&&`/`||` operand, when that operand has; called as a
 statement on its own, it is freed at once. Binding it to a `@T`/`@!T` — a variable's initializer,
 an assignment, a pointer field or slot, or a return — is a compile error, since nothing would
-own it.
+own it. So is binding a pointer returned by a call that was given such a struct
+(`@vec3 p = scale(@!sub(@a, @b), 2);`), since that pointer may point to it.
 
 Returning a struct the function doesn't own — a parameter, a field, or an array element — returns
 a copy of it (including what it owns), which the caller owns.

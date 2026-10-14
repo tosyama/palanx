@@ -314,7 +314,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	if (varType->contains("arr-size") && !isInArrayScope(name))
 		checkArrBorrowBinding(stmt, stmt["value"], value, *varType);
 	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
-	checkStructBorrowSource(stmt, value, *varType);
+	checkBorrowSource(stmt, value, *varType);
 	if (!ptrPermissionOk(value["value-type"], *varType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -354,7 +354,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	}
 	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
 	checkElemShape(stmt, sa_value, targetType);
-	checkStructBorrowSource(stmt, sa_value, targetType);
+	checkBorrowSource(stmt, sa_value, targetType);
 	if (!ptrPermissionOk(sa_value["value-type"], targetType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);
@@ -554,7 +554,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		if (value.contains("value-type")) {
 			value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 			checkElemShape(stmt, value, (*currentFunc_)["ret-type"]);
-			checkStructBorrowSource(stmt, value, (*currentFunc_)["ret-type"]);
+			checkBorrowSource(stmt, value, (*currentFunc_)["ret-type"]);
 			if (!ptrPermissionOk(value["value-type"], (*currentFunc_)["ret-type"])) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 				exit(1);
@@ -687,6 +687,10 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 	for (auto& r : rets)
 		valueTypes.push_back(r["var-type"]);
 	saCall["value-types"] = valueTypes;
+	if (holdsCallTemps(saCall)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
+		exit(1);
+	}
 
 	json vars = json::array();
 	json convDecls = json::array();
@@ -779,7 +783,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 	if (!transfer && isCopiedByValue(fieldType))
 		return json::array({makeCopyStmt(stmt, makeFieldAccess(chain, *it), value)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	value = convertForBinding(stmt, value, toType, fieldType);
-	checkStructBorrowSource(stmt, value, fieldType);
+	checkBorrowSource(stmt, value, fieldType);
 	if (!ptrPermissionOk(value["value-type"], fieldType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
 		exit(1);

@@ -132,6 +132,7 @@ enum PlnSaMessageCode {
 	E_CastTargetNotPrim,	// arg1: target type name
 	E_StructLitTarget,
 	E_ArrLitTarget,	// arg1: variable name
+	E_BorrowOfTempEscapes,
 };
 
 class PlnSaMessage
