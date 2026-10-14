@@ -5415,3 +5415,30 @@ TEST(sa, embed_field_value)
 	ASSERT_EQ(stmts[14]["body"]["name"], "memcpy");
 	ASSERT_EQ(stmts[14]["body"]["args"][1]["addr-only"], true);
 }
+
+TEST(sa, member_call_borrow)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_mk.pa -o out/lib_sa_mk.pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/247_member_call_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	vector<json> args;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr")
+			args.push_back(st["body"]["args"][0]);
+	// @s.scaled(), @!s.scaled(), @M.mk(), @!M.mk(), @M.mk().scaled()
+	ASSERT_EQ(args.size(), 5u);
+	const char* names[] = {"scaled", "scaled", "mk", "mk", "scaled"};
+	const bool muts[] = {false, true, false, true, false};
+	for (size_t i = 0; i < args.size(); i++) {
+		ASSERT_EQ(args[i]["expr-type"], "call") << i;
+		ASSERT_EQ(args[i]["name"], names[i]) << i;
+		ASSERT_EQ(args[i]["category"], "expiring") << i;
+		ASSERT_EQ(args[i]["value-type"]["mutable"], muts[i]) << i;
+		ASSERT_EQ(args[i]["release-temp"]["name"], "free") << i;
+	}
+	const auto& inner = args[4]["args"][0];
+	ASSERT_EQ(inner["name"], "mk");
+	ASSERT_EQ(inner["release-temp"]["name"], "free");
+}

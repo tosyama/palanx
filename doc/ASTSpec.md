@@ -514,12 +514,14 @@ Expression model
       `.`-chain of field accesses, a `[expr]` index, a parenthesized tuple, or a call `f(...)` /
       `x.f(...)` whose object is itself one of these) — so `@s.x`,
       `@!s.in.v`, and `@arr[i]` all parse; SA decides in sa.json whether the target is
-      addressable (see SASpec.md).
-    - object\* - Operand expression, one of exactly five shapes depending on which `store_loc`
+      addressable (see SASpec.md). `@` binds looser than `.`, so `@x.f()` is `@(x.f())`, never
+      `(@x).f()`.
+    - object\* - Operand expression, one of exactly six shapes depending on which `store_loc`
       alternative was used: `id` for a plain variable, `field-access` for a `.`-chain (nested
       chains produce nested `field-access` objects), `arr-index` for a `[expr]`-indexed target,
-      `call` for a whole call `f(...)` (`@f()`), or `not-impl` for anything else (a tuple
-      grouping, a cast, a call as an index or field base, or `x.f(...)` — SA rejects these
+      `call` for a whole call `f(...)` (`@f()`), `member-call` for a whole method-form or
+      module-qualified call `x.f(...)` (`@v.f()`, `@M.f()`, `@f().g()`), or `not-impl` for
+      anything else (a tuple grouping, a cast, a call as an index or field base — SA rejects these
       without needing to inspect their shape further)
     - mutable\* - `true` for `@!`, `false` for `@`
   19. not-impl - An expression the grammar parses but the compiler does not implement (e.g. a

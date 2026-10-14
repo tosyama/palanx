@@ -1,0 +1,2 @@
+export type In { int64 v; };
+export func mk() -> In r { }

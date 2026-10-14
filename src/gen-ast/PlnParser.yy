@@ -812,9 +812,9 @@ expression: term
 	{ $$ = {{"expr-type", "logical-or"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| '!' expression
 	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); }
-	| '@' store_loc
+	| '@' store_loc %prec UNARY_MINUS
 	{ $$ = {{"expr-type", "addr-of"}, {"object", addrOfObject($2)}, {"mutable", false}}; LOC($$, @$); }
-	| AT_EXCL store_loc
+	| AT_EXCL store_loc %prec UNARY_MINUS
 	{ $$ = {{"expr-type", "addr-of"}, {"object", addrOfObject($2)}, {"mutable", true}}; LOC($$, @$); }
 	| expression ARROW store_loc
 	{
@@ -1059,7 +1059,17 @@ store_loc
 		LOC($$, @$);
 	}
 	| store_loc '.' ID '(' arguments ')'
-	{ $$ = {{"kind", "not-impl"}}; LOC($$, @$); }
+	{
+		$$ = {{"kind", "not-impl"}};
+		json obj = addrOfObject($1);
+		if (obj.value("expr-type", "") != "not-impl") {
+			$$ = {{"kind", "call"},
+			      {"call", {{"expr-type", "member-call"}, {"object", move(obj)},
+			                {"method", move($3)}, {"args", $5.toVector()}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			LOC($$["call"], @$);
+		}
+		LOC($$, @$);
+	}
 	;
 
 func_def: KW_FUNC ID '(' paramaters ')' return_def block_obj

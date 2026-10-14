@@ -862,6 +862,41 @@ TEST(gen_ast, addr_of_call) {
 	ASSERT_EQ(stmts[3]["body"]["args"][0]["object"]["expr-type"], "not-impl");
 }
 
+TEST(gen_ast, addr_of_member_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/133_addr_of_member_call.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	// '@v.f()' is '@(v.f())' as '@v.x' is '@(v.x)', not '(@v).f()'.
+	const auto& ro = stmts[0]["body"]["args"][0];
+	ASSERT_EQ(ro["expr-type"], "addr-of");
+	ASSERT_EQ(ro["mutable"], false);
+	ASSERT_EQ(ro["object"]["expr-type"], "member-call");
+	ASSERT_EQ(ro["object"]["object"]["name"], "v");
+	ASSERT_EQ(ro["object"]["method"], "f");
+	ASSERT_TRUE(ro["object"].contains("loc"));
+
+	const auto& rw = stmts[1]["body"]["args"][0];
+	ASSERT_EQ(rw["mutable"], true);
+	ASSERT_EQ(rw["object"]["expr-type"], "member-call");
+	ASSERT_EQ(rw["object"]["object"]["name"], "M");
+	ASSERT_EQ(rw["object"]["args"].size(), 1);
+
+	const auto& chained = stmts[2]["body"]["args"][0]["object"];
+	ASSERT_EQ(chained["expr-type"], "member-call");
+	ASSERT_EQ(chained["object"]["expr-type"], "call");
+	ASSERT_EQ(chained["object"]["name"], "mk");
+
+	ASSERT_EQ(stmts[3]["body"]["args"][0]["object"]["expr-type"], "not-impl");
+
+	const auto& neg = stmts[4]["vars"][0]["init"];
+	ASSERT_EQ(neg["expr-type"], "neg");
+	ASSERT_EQ(neg["operand"]["expr-type"], "member-call");
+}
+
 TEST(gen_ast, addr_of_type_alias_mix) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/105_addr_of_type_alias_mix.pa");

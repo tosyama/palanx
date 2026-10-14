@@ -1,0 +1,4 @@
+type In { int64 v; };
+func mk(@!In q) -> In r { }
+In s;
+@In p = @s.mk();

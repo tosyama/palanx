@@ -3205,6 +3205,7 @@ TEST(sa_error, arr_lit_assign)
 		{"error_491_temp_borrow_nested.pa", ":5:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_492_temp_borrow_prim.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_493_temp_borrow_tapple.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_494_member_call_borrow_not_arg.pa", ":4:9: error: a struct returned by a call has no owner to borrow from"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

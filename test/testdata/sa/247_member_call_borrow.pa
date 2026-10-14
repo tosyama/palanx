@@ -1,0 +1,10 @@
+import "lib_sa_mk.pa" as M;
+func scaled(@!M.In q) -> M.In r { q.v * 2 -> r.v; }
+func getv(@M.In q) -> int64 n { q.v -> n; }
+func setv(@!M.In q) { 1 -> q.v; }
+M.In s;
+getv(@s.scaled());
+setv(@!s.scaled());
+getv(@M.mk());
+setv(@!M.mk());
+getv(@M.mk().scaled());
