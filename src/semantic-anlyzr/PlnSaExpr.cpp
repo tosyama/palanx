@@ -501,6 +501,13 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
 		exit(1);
 	}
+	// gen-ast lowers an assignment written as a statement, so one reaching
+	// here is nested in another expression.
+	if (expr_type == "assign-expr" || expr_type == "arr-assign-expr"
+			|| expr_type == "field-assign-expr" || expr_type == "tapple-assign-expr") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AssignInExpr) << endl;
+		exit(1);
+	}
 	if (expr_type == "not-impl") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExprNotImplemented) << endl;
 		exit(1);

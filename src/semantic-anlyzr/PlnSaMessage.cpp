@@ -478,6 +478,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       "which is freed before the statement ends; receive the struct into a variable "
 			       "with '->' and pass it as '@name' or '@!name'.";
 
+		case E_AssignInExpr:
+			return "an assignment cannot be used inside an expression; write it as its own statement.";
+
 		case E_TransferFromNonOwner:
 			return "'->>' needs a source that owns its value: an owning variable, an owned field "
 			       "or element, or a call result.";

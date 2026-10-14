@@ -133,6 +133,7 @@ enum PlnSaMessageCode {
 	E_StructLitTarget,
 	E_ArrLitTarget,	// arg1: variable name
 	E_BorrowOfTempEscapes,
+	E_AssignInExpr,
 };
 
 class PlnSaMessage

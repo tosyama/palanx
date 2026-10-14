@@ -3242,3 +3242,22 @@ TEST(sa_error, lit_arg)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+
+TEST(sa_error, assign_in_expr)
+{
+	const string msg = "error: an assignment cannot be used inside an expression";
+	const pair<string, string> cases[] = {
+		{"error_506_assign_in_init.pa", ":3:11: " + msg},
+		{"error_507_assign_in_arg.pa", ":3:3: " + msg},
+		{"error_508_assign_in_cond.pa", ":3:5: " + msg},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
