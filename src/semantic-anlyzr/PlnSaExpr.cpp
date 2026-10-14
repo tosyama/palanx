@@ -940,47 +940,49 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		                                paramVT ? funcParams[argIdx].value("name", "") : "", argAst, litBody, litRelease)
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
 		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		if (!saArg.contains("value-type")) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+			exit(1);
+		}
 		bool expiring = isCallBorrow(arg) || isExpiringStruct(saArg);
-		if (saArg.contains("value-type")) {
-			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-			if (paramVT) {
-				if (paramVT->contains("arr-size")) {
-					checkArrBorrowBinding(locNode, argAst, saArg, *paramVT);
-				} else if (paramVT->value("embedded", false)) {
-					// The type registry can't tell contiguous elements from pointer slots,
-					// nor a contiguous struct array from a single struct.
-					const json& argVT = saArg["value-type"];
-					bool argContig = argVT.value("embedded", false) && argVT.contains("stride");
-					const json& paramElem = (*paramVT)["base-type"];
-					if (isArrLevel(paramElem)) {
-						const json* argRow = argContig ? &argVT["base-type"] : nullptr;
-						bool argSized = argRow && isArrLevel(*argRow) && argRow->contains("arr-size");
-						if (!argSized || (*argRow)["arr-size"] != paramElem["arr-size"]) {
-							string actual = argSized
-								? to_string((*argRow)["arr-size"].get<int64_t>()) : "variable";
-							cerr << locPrefix(locNode)
-							     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
-							            to_string(paramElem["arr-size"].get<int64_t>()), actual) << endl;
-							exit(1);
-						}
-					} else if (!argContig) {
-						cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
-							typeDisplayName(argVT), typeDisplayName(*paramVT)) << endl;
+		const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+		if (paramVT) {
+			if (paramVT->contains("arr-size")) {
+				checkArrBorrowBinding(locNode, argAst, saArg, *paramVT);
+			} else if (paramVT->value("embedded", false)) {
+				// The type registry can't tell contiguous elements from pointer slots,
+				// nor a contiguous struct array from a single struct.
+				const json& argVT = saArg["value-type"];
+				bool argContig = argVT.value("embedded", false) && argVT.contains("stride");
+				const json& paramElem = (*paramVT)["base-type"];
+				if (isArrLevel(paramElem)) {
+					const json* argRow = argContig ? &argVT["base-type"] : nullptr;
+					bool argSized = argRow && isArrLevel(*argRow) && argRow->contains("arr-size");
+					if (!argSized || (*argRow)["arr-size"] != paramElem["arr-size"]) {
+						string actual = argSized
+							? to_string((*argRow)["arr-size"].get<int64_t>()) : "variable";
+						cerr << locPrefix(locNode)
+						     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
+						            to_string(paramElem["arr-size"].get<int64_t>()), actual) << endl;
 						exit(1);
 					}
-				}
-				checkElemShape(locNode, saArg, *paramVT);
-				saArg = convertCallArg(locNode, saArg, *paramVT);
-				if (isStructBorrow(*paramVT) && isStructStorage(saArg["value-type"])) {
-					cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StructBorrowNeedsAddrOf) << endl;
+				} else if (!argContig) {
+					cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
+						typeDisplayName(argVT), typeDisplayName(*paramVT)) << endl;
 					exit(1);
 				}
-				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, funcParams[argIdx], argIdx);
-			} else if (isVariadic) {
-				const PlnType* promoted = variadicPromote(fromType, registry_);
-				if (promoted != fromType)
-					saArg = wrapConvert(saArg, registry_.toJson(promoted));
 			}
+			checkElemShape(locNode, saArg, *paramVT);
+			saArg = convertCallArg(locNode, saArg, *paramVT);
+			if (isStructBorrow(*paramVT) && isStructStorage(saArg["value-type"])) {
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StructBorrowNeedsAddrOf) << endl;
+				exit(1);
+			}
+			checkArgPtrPermission(locNode, funcName, isCFunc, saArg, funcParams[argIdx], argIdx);
+		} else if (isVariadic) {
+			const PlnType* promoted = variadicPromote(fromType, registry_);
+			if (promoted != fromType)
+				saArg = wrapConvert(saArg, registry_.toJson(promoted));
 		}
 		if (isLit)
 			saArg = makeTempExpr(move(litBody), move(saArg), move(litRelease));

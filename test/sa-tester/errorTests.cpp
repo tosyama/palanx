@@ -3261,3 +3261,20 @@ TEST(sa_error, assign_in_expr)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+
+TEST(sa_error, void_call_arg)
+{
+	const pair<string, string> cases[] = {
+		{"error_509_void_call_arg.pa", ":3:11: error: Void function call cannot be used as a value."},
+		{"error_510_void_call_variadic_arg.pa", ":3:1: error: Void function call cannot be used as a value."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
