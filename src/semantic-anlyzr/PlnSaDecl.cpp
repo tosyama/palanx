@@ -11,12 +11,23 @@
 
 static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1); }
 
-// Only a cinclude'd struct can have such a field; Palan has no function type.
-static string unsupportedPointee(const json& pntr)
+// The non-pointer type a pointer field finally points to, and the mutability
+// of each pointer level passed on the way (excluding the field's own).
+struct PointeeLeaf { const json* type; vector<bool> innerPtrMutable; };
+static PointeeLeaf pointeeLeaf(const json& pntr)
 {
-	const json* t = &pntr;
-	while (t->value("type-kind", "") == "pntr") t = &(*t)["base-type"];
-	return t->value("type-kind", "") == "func" ? "function pointer" : "";
+	PointeeLeaf leaf{&pntr["base-type"], {}};
+	while (leaf.type->value("type-kind", "") == "pntr") {
+		leaf.innerPtrMutable.push_back(leaf.type->value("mutable", false));
+		leaf.type = &(*leaf.type)["base-type"];
+	}
+	return leaf;
+}
+
+// Only a cinclude'd struct can have such a field; Palan has no function type.
+static string unsupportedPointee(const PointeeLeaf& leaf)
+{
+	return leaf.type->value("type-kind", "") == "func" ? "function pointer" : "";
 }
 
 static StructDef buildStructDef(const string& name,
@@ -99,15 +110,17 @@ static StructDef buildStructDef(const string& name,
 			                      .offset=at, .size=sub.totalSize});
 		} else if (tk == "pntr") {
 			int sz = 8, align = 8;
-			string baseName = vtype["base-type"].value("type-name", "");
+			PointeeLeaf leaf = pointeeLeaf(vtype);
+			string baseName = leaf.type->value("type-name", "");
 			bool isMut = vtype.value("mutable", false);
 			string elemKind = isPrimPointeeName(baseName) ? "prim" : "struct";
 			int at = place(sz, align);
 			def.fields.push_back({.name=fieldName, .typeKind="raw-ptr",
 			                      .typeName=baseName, .isMutable=isMut,
 			                      .offset=at, .size=sz, .elemKind=elemKind,
-			                      .enumName=vtype["base-type"].value("enum", ""),
-			                      .unsupported=unsupportedPointee(vtype)});
+			                      .enumName=leaf.type->value("enum", ""),
+			                      .innerPtrMutable=leaf.innerPtrMutable,
+			                      .unsupported=unsupportedPointee(leaf)});
 		} else if (tk == "arr") {
 			const json& size_expr = vtype["size-expr"];
 			if (size_expr.is_null()) {
@@ -127,7 +140,8 @@ static StructDef buildStructDef(const string& name,
 				if (base_kind == "pntr") {
 					// [n]@T / [n]@!T: embedded array of n non-owning pointer slots (8B each)
 					bool isMut = base_wrap.value("mutable", false);
-					string leaf_name = base_wrap["base-type"].value("type-name", "");
+					PointeeLeaf leaf = pointeeLeaf(base_wrap);
+					string leaf_name = leaf.type->value("type-name", "");
 					string elemKind = isPrimPointeeName(leaf_name) ? "prim" : "struct";
 
 					int align = 8;
@@ -136,8 +150,9 @@ static StructDef buildStructDef(const string& name,
 					                      .typeName=leaf_name, .isMutable=isMut,
 					                      .offset=at, .size=(int)(count*8),
 					                      .count=count, .elemKind=elemKind, .stride=8,
-					                      .enumName=base_wrap["base-type"].value("enum", ""),
-					                      .unsupported=unsupportedPointee(base_wrap)});
+					                      .enumName=leaf.type->value("enum", ""),
+					                      .innerPtrMutable=leaf.innerPtrMutable,
+					                      .unsupported=unsupportedPointee(leaf)});
 					continue;
 				}
 				if (base_kind != "prim") {
@@ -1062,7 +1077,7 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		if (t->value("type-kind", "") == "arr" && !t->value("embedded", false))
 			t = &(*t)["base-type"];
 		if (t->value("type-kind", "") != "pntr") continue;
-		string pointee = (*t)["base-type"].value("type-name", "");
+		string pointee = pointeeLeaf(*t).type->value("type-name", "");
 		bool laterDef = pointee == name || declaredStructs_.count(pointee)
 			|| any_of(structDefNameScopes_.begin(), structDefNameScopes_.end(),
 			[&](const set<string>& names) { return names.count(pointee) > 0; });

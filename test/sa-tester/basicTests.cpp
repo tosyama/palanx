@@ -5626,3 +5626,42 @@ TEST(sa, c_func_ptr_field)
 	ASSERT_EQ(stmts[1]["stmt-type"], "field-assign");
 	ASSERT_EQ(stmts[1]["offset"], 24);
 }
+
+TEST(sa, ptr_ptr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/255_ptr_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& pp = stmts[1]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(pp["mutable"], true);
+	ASSERT_EQ(pp["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["base-type"]["mutable"], true);
+	ASSERT_EQ(pp["base-type"]["base-type"]["type-name"], "int32");
+	const auto& slot = stmts[2]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(slot["mutable"], false);
+	ASSERT_EQ(slot["base-type"]["mutable"], true);
+	ASSERT_EQ(slot["base-type"]["base-type"]["type-name"], "int32");
+	const auto& pl = stmts[3]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(pl["mutable"], true);
+	ASSERT_EQ(pl["base-type"]["mutable"], false);
+	ASSERT_EQ(pl["base-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(pl["base-type"]["base-type"]["type-name"], "Later");
+}
+
+TEST(sa, c_ptr_ptr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/256_c_ptr_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& pp = stmts[1]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(pp["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["base-type"]["base-type"]["type-name"], "int32");
+	const auto& pt = stmts[2]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(pt["base-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(pt["base-type"]["base-type"]["type-name"], "T");
+	const auto& slot = stmts[3]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(slot["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(slot["base-type"]["base-type"]["type-name"], "int64");
+}

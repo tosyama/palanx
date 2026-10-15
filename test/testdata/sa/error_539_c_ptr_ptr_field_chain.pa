@@ -1,0 +1,3 @@
+cinclude "256_c_ptr_ptr_field.h";
+CS s;
+int32 v = s.pt.v;

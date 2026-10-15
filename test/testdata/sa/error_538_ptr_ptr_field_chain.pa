@@ -1,0 +1,4 @@
+type Point { int32 x; int32 y; };
+type S { @@Point pp; };
+S s;
+int32 x = s.pp.x;

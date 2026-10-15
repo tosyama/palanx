@@ -3354,3 +3354,19 @@ TEST(sa_error, unsupported_c_field)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, ptr_ptr_field_chain)
+{
+	const pair<string, string> cases[] = {
+		{"error_538_ptr_ptr_field_chain.pa", ":4:11: error: field access on non-struct variable."},
+		{"error_539_c_ptr_ptr_field_chain.pa", ":3:11: error: field access on non-struct variable."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

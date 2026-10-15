@@ -1792,6 +1792,9 @@ Struct-type fields are written with a prefix that controls ownership and memory 
 | `@T field` | Non-owning read-only pointer — 8-byte null pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
 | `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
 
+The pointee of `@T`/`@!T` may itself be a pointer, each level with its own permission
+(`@!@int32 pp;` is a mutable pointer to a read-only pointer to `int32`).
+
 `@T`/`@!T` are general pointer-type expressions, not exclusive to struct fields — they may
 also be used as a plain local variable's declared type, as a non-owning alias into existing
 storage (no allocation, no automatic freeing at scope exit). Field access on such a variable

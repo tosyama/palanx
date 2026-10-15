@@ -148,6 +148,17 @@ inline json fieldPrimLeaf(const FieldLayout& f)
 	return t;
 }
 
+// What a raw-ptr field / embed-ptr-arr slot points to.
+inline json fieldPointeeType(const FieldLayout& f)
+{
+	json t = (f.elemKind == "struct")
+		? json{{"type-kind","struct"},{"type-name",f.typeName}}
+		: fieldPrimLeaf(f);
+	for (auto m = f.innerPtrMutable.rbegin(); m != f.innerPtrMutable.rend(); ++m)
+		t = {{"type-kind","pntr"},{"base-type",t},{"mutable",*m}};
+	return t;
+}
+
 inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
@@ -159,10 +170,7 @@ inline json fieldValueType(const FieldLayout& f)
 		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"arr-size",f.count},{"base-type",bt}};
 	}
 	if (f.typeKind == "embed-ptr-arr") {
-		json bt = (f.elemKind == "struct")
-			? json{{"type-kind","struct"},{"type-name",f.typeName}}
-			: fieldPrimLeaf(f);
-		json elem_pntr = {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
+		json elem_pntr = {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
 		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
 	}
 	if (f.typeKind == "arr-ptr") {
@@ -180,15 +188,9 @@ inline json fieldValueType(const FieldLayout& f)
 		json bt = fieldPrimLeaf(f);
 		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",bt}};
 	}
-	if (f.typeKind == "raw-ptr" && f.elemKind == "prim") {
-		json bt = fieldPrimLeaf(f);
-		return {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
-	}
-	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
-	json pntr = {{"type-kind","pntr"},{"base-type",bt}};
 	if (f.typeKind == "raw-ptr")
-		pntr["mutable"] = f.isMutable;
-	return pntr;
+		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
+	return {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",f.typeName}}}};
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 

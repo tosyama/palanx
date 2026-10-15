@@ -35,6 +35,9 @@ struct FieldLayout {
 	int     stride   = 0;   // bytes per element
 
 	string  enumName = "";  // enum the primitive leaf is typed as, if any
+	// raw-ptr/embed-ptr-arr: mutability of each pointer level between the
+	// field's own pointer and the leaf (typeName), outermost first; empty = @T.
+	vector<bool> innerPtrMutable;
 	// A C type this version cannot represent (e.g. "function pointer"): the
 	// field keeps its place in the layout but cannot be accessed.
 	string  unsupported = "";

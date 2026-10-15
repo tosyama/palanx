@@ -71,10 +71,11 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToImmutablePtrField) << endl;
 		exit(1);
 	}
-	if (it->typeKind == "raw-ptr" && it->elemKind == "prim") {
-		// A pointer-to-primitive field (e.g. `@!int64 p;`) has nothing further to
-		// chain into -- this hop must be the chain's terminal, typed by the
-		// caller via fieldValueType, not resolveObjectChain's own pntr(struct(...)).
+	if (it->typeKind == "raw-ptr" && (it->elemKind == "prim" || !it->innerPtrMutable.empty())) {
+		// A pointer-to-primitive (e.g. `@!int64 p;`) or pointer-to-pointer field
+		// has nothing further to chain into -- this hop must be the chain's
+		// terminal, typed by the caller via fieldValueType, not
+		// resolveObjectChain's own pntr(struct(...)).
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 		exit(1);
 	}

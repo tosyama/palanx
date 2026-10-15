@@ -1,0 +1,22 @@
+cinclude <stdio.h>;
+cinclude "284_ptr_ptr_field.h";
+
+type S { @!@!int32 pp; [2]@@int64 slots; };
+
+int32 x = 5;
+int64 y = 6;
+@!int32 q = @!x;
+@int64 r = @y;
+
+S s;
+@!q -> s.pp;
+@r -> s.slots[1];
+7 -> s.pp[0][0];
+@@int64 e = s.slots[1];
+printf("%d %ld\n", x, e[0][0]);
+
+CS c;
+@q -> c.pp;
+@r -> c.slots[0];
+@@int32 cp = c.pp;
+printf("%d %ld\n", cp[0][0], c.slots[0][0][0]);

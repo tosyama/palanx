@@ -2914,3 +2914,9 @@ TEST(build_mgr, lit_arg_struct_arr_mtrace)
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
+
+TEST(build_mgr, ptr_ptr_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/284_ptr_ptr_field.pa");
+	ASSERT_EQ(output, "7 6\n7 6\n");
+}
