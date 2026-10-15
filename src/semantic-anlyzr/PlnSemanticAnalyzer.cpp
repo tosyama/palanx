@@ -935,6 +935,7 @@ const json& PlnSemanticAnalyzer::result()
 // policy as a native "type X = ...;" alias.
 void PlnSemanticAnalyzer::registerTypeAliasChecked(const json& locNode, const string& aliasName, const json& resolved)
 {
+	requireNotPalanType(aliasName, locNode);
 	auto it = typeAliases_.find(aliasName);
 	if (it == typeAliases_.end()) {
 		typeAliases_[aliasName] = resolved;

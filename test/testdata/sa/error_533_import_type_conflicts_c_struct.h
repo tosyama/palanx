@@ -1,0 +1,1 @@
+struct Vec { int a; };

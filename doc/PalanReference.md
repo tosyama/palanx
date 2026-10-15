@@ -1953,6 +1953,10 @@ A top-level struct, enum, type alias, or const may be used before its declaratio
 the C types of a top-level `cinclude`. A declaration inside a block is visible from that point
 on.
 
+A type name may be declared only once in a file, even in different blocks, and must not be the
+name of a type a cincluded header introduces (a struct, union, or enum tag, or a typedef name).
+Either is a compile error.
+
 ```palan
 type Shape { $Pos at; @Shape next; };   // Pos is declared below
 type Pos { flo64 x; flo64 y; };

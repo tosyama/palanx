@@ -199,8 +199,10 @@ class PlnSemanticAnalyzer {
 	void adoptTypeDeps(PlnSemanticAnalyzer& sub, const json& type, const json& locNode);
 	void setTypeNameable(const string& name, bool isNew, bool nameable, const string& alias);
 	// Records `name` as defined by `origin`; false if it already was, exits if
-	// another module defined it.
+	// another module or a cincluded header defined it.
 	bool claimTypeName(const string& name, const string& origin, const json& locNode);
+	void declareTypeName(const string& name, const json& stmt);
+	void requireNotPalanType(const string& name, const json& locNode) const;
 	void requireNameableType(const json& locNode, const json& type) const;
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);

@@ -797,20 +797,14 @@ TEST(sa_error, struct_nested_embed_arr_field_unsupported)
 
 TEST(sa_error, cinclude_typedef_conflict)
 {
-	// type size_t = int32; then cinclude <string.h>; which resolves size_t to uint64
-	// Covers: registerTypeAliasChecked's E_ConflictingTypedef branch.
-	// sa_cinclude's unconditional ast.typedefs loop is what
-	// actually triggers this conflict (registerTypeAliasChecked is called
-	// directly from that loop, not via registerTypedefAliasInType) -- the
-	// per-reference-site path (e.g. strlen's size_t return) would hit the same
-	// conflict too, but the typedefs-section registration runs first.
+	// Two headers typedef the same name to different types.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_089_cinclude_typedef_conflict.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":2:1: error: Typedef 'size_t' conflicts"), string::npos);
+	ASSERT_NE(sa.find(":2:1: error: Typedef 'myint' conflicts"), string::npos);
 }
 
 TEST(sa_error, const_not_literal)
@@ -2923,6 +2917,29 @@ TEST(sa_error, c_enum_name_conflict)
 		"bin/palan-gen-ast ../test/testdata/sa/error_525_c_enum_name_conflict_nested.pa -o " + ast_out), "");
 	sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":3:2: error: type 'Color' is already defined."), string::npos);
+}
+
+TEST(sa_error, type_name_conflict)
+{
+	const pair<string, string> cases[] = {
+		{"error_526_struct_name_conflicts_c_struct.pa", ":1:1: error: type 'tm' is already defined."},
+		{"error_527_struct_name_conflicts_c_enum.pa", ":1:1: error: type 'Color' is already defined."},
+		{"error_528_alias_name_conflicts_c_typedef.pa", ":1:1: error: type 'time_t' is already defined."},
+		{"error_529_struct_name_duplicate.pa", ":2:1: error: type 'P' is already defined."},
+		{"error_530_alias_name_conflicts_struct.pa", ":2:1: error: type 'P' is already defined."},
+		{"error_531_c_struct_name_conflict_nested.pa", ":3:2: error: type 'tm' is already defined."},
+		{"error_532_c_typedef_name_conflict_nested.pa", ":3:2: error: type 'time_t' is already defined."},
+		{"error_533_import_type_conflicts_c_struct.pa", ":1:1: error: type 'Vec' is already defined."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_types2.pa -o out/lib_sa_types2.pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
 }
 
 TEST(sa_error, enum_field_from_int)

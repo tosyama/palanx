@@ -1,0 +1,4 @@
+type tm { int32 a; };
+{
+	cinclude <time.h>;
+}

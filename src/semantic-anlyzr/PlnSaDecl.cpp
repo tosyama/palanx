@@ -1037,7 +1037,7 @@ void PlnSemanticAnalyzer::pushStructDefNames(const json& stmts)
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	claimTypeName(name, moduleId_, stmt);
+	declareTypeName(name, stmt);
 	json fields = stmt["fields"];
 	for (auto& f : fields) {
 		requireNameableType(stmt, f["var-type"]);
@@ -1133,6 +1133,7 @@ static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef
 void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& s)
 {
 	string name = s["name"].get<string>();
+	requireNotPalanType(name, cincludeStmt);
 	auto existing = structDefs_.find(name);
 	if (existing != structDefs_.end() && existing->second.isComplete)
 		return;  // first complete definition wins
@@ -1176,7 +1177,7 @@ void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& 
 json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	claimTypeName(name, moduleId_, stmt);
+	declareTypeName(name, stmt);
 	requireNameableType(stmt, stmt["type"]);
 	// Resolve one level so chains of aliases (alias-of-alias) collapse to the
 	// base type at registration time; later lookups need only one map access.
@@ -1203,12 +1204,7 @@ json PlnSemanticAnalyzer::sa_const_decl(const json& stmt)
 json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	claimTypeName(name, moduleId_, stmt);
-	if (enumDefs_.count(name) || structDefs_.count(name) || typeAliases_.count(name)
-			|| elemSizeBytes(name) >= 0) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
-		exit(1);
-	}
+	declareTypeName(name, stmt);
 
 	map<string, int64_t> values;
 	int64_t next = 0;
@@ -1337,11 +1333,34 @@ json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 bool PlnSemanticAnalyzer::claimTypeName(const string& name, const string& origin, const json& locNode)
 {
 	auto [it, isNew] = typeOrigins_.emplace(name, origin);
-	if (!isNew && it->second != origin) {
+	// Every Palan type is in typeOrigins_, so a new name already registered
+	// here is a C type or a primitive.
+	bool taken = isNew && (structDefs_.count(name) || enumDefs_.count(name)
+		|| typeAliases_.count(name) || elemSizeBytes(name) >= 0);
+	if (taken || (!isNew && it->second != origin)) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
 		exit(1);
 	}
 	return isNew;
+}
+
+// Unlike an import, which may bring the same type in twice, a declaration
+// claims its name exactly once.
+void PlnSemanticAnalyzer::declareTypeName(const string& name, const json& stmt)
+{
+	if (!claimTypeName(name, moduleId_, stmt)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
+		exit(1);
+	}
+}
+
+// A cinclude inside a block runs after the Palan types are declared.
+void PlnSemanticAnalyzer::requireNotPalanType(const string& name, const json& locNode) const
+{
+	if (typeOrigins_.count(name)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
+		exit(1);
+	}
 }
 
 void PlnSemanticAnalyzer::setTypeNameable(const string& name, bool isNew, bool nameable, const string& alias)

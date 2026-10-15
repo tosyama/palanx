@@ -1,3 +1,2 @@
-type size_t = int32;
-cinclude <string.h>;
-size_t n = strlen("hello");
+cinclude "error_089_cinclude_typedef_conflict_a.h";
+cinclude "error_089_cinclude_typedef_conflict_b.h";

@@ -1,0 +1,2 @@
+type P { int32 a; };
+type P = int32;
