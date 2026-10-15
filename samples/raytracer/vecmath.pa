@@ -1,0 +1,56 @@
+cinclude <math.h> link "m";
+
+export type vec3 {
+	flo32 x;
+	flo32 y;
+	flo32 z;
+};
+
+export func norm(@vec3 v) -> flo32
+{
+	return sqrtf(v.x*v.x + v.y*v.y + v.z*v.z);
+}
+
+export func normalized(@vec3 v) -> vec3
+{
+	flo32 len = norm(v);
+	return [v.x/len, v.y/len, v.z/len];
+}
+
+export func dot(@vec3 v1, @vec3 v2) -> flo32
+{
+	return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
+}
+
+export func add(@vec3 v1, @vec3 v2) -> vec3
+{
+	return [v1.x + v2.x, v1.y + v2.y, v1.z + v2.z];
+}
+
+export func sub(@vec3 v1, @vec3 v2) -> vec3
+{
+	return [v1.x - v2.x, v1.y - v2.y, v1.z - v2.z];
+}
+
+export func mul(@vec3 v, flo32 f) -> vec3
+{
+	return [v.x * f, v.y * f, v.z * f];
+}
+
+export type color {
+	flo32 r;
+	flo32 g;
+	flo32 b;
+};
+
+export func mul_color(@!color c, flo32 f) -> @!color
+{
+	[c.r * f, c.g * f, c.b * f] -> c[0];
+	return c;
+}
+
+export func add_color(@!color c1, @color c2) -> @!color
+{
+	[c1.r + c2.r, c1.g + c2.g, c1.b + c2.b] -> c1[0];
+	return c1;
+}

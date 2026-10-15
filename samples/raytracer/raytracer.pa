@@ -1,0 +1,215 @@
+// Ray tracer in Palan
+// original source: https://github.com/ssloy/tinyraytracer
+
+cinclude <stdio.h>;
+cinclude <math.h> link "m";
+cinclude <jpeglib.h> link "jpeg";
+import "vecmath.pa";
+
+type Light {
+	vec3 position;
+	flo32 intensity;
+};
+
+const LN = 3;
+[LN]Light lights = [
+	[[-20, 20, 20], 1.5],
+	[[30, 50, -25], 1.8],
+	[[30, 20, 30], 1.7]
+];
+
+type Material {
+	flo32 refractive_index;
+	[4]flo32 albedo;
+	color diffuse_color;
+	flo32 specular_exponent;
+};
+
+Material ivory = [1.0, [0.9, 0.5, 0.1, 0.0], [0.4, 0.4, 0.3], 50.0];
+Material glass = [1.5, [0.0, 0.9, 0.1, 0.8], [0.6, 0.7, 0.8], 125.0];
+Material mirror = [1.0, [0.0, 10.0, 0.8, 0.0], [1.0, 1.0, 1.0], 1425.0];
+Material red_rubber = [1.0, [1.4, 0.3, 0.0, 0.0], [0.3, 0.1, 0.1], 10.0];
+
+type Sphere {
+	vec3 center;
+	flo32 radius;
+	Material material;
+};
+
+const SN = 4;
+[SN]Sphere spheres = [
+	[[-3, 0, -16], 2, ivory],
+	[[-1.0, -1.5, -12], 2, glass],
+	[[1.5, -0.5, -18], 3, red_rubber],
+	[[7.0, 5.0, -18.0], 4, mirror]
+];
+
+const width = 1024;
+const height = 768;
+const fov = 1.05;	// 60 degrees field of view in radians
+
+[width*height]color framebuffer;
+int32 pix = 0;
+vec3 orig = [0, 0, 0]; // camera origin
+
+while pix < width*height { // actual rendering loop
+	flo32 dir_x = (pix % width + 0.5) - width / 2.0;
+	flo32 dir_y = -(pix / width + 0.5) + height / 2.0;
+	flo32 dir_z = -height / (2.0 * tanf(fov / 2.0));
+	vec3 dir = [dir_x, dir_y, dir_z] -> normalized();
+
+	cast_ray(@orig, @dir, @lights, @spheres, 0) -> framebuffer[pix];
+
+	pix + 1 -> pix;
+}
+
+// save framebuffer to JPEG file
+jpeg_compress_struct cinfo;
+cinfo.jpeg_CreateCompress(JPEG_LIB_VERSION, sizeof(jpeg_compress_struct));
+
+jpeg_error_mgr jerr;
+jerr.jpeg_std_error() -> cinfo.err;
+
+width -> cinfo.image_width;
+height -> cinfo.image_height;
+3 -> cinfo.input_components;
+J_COLOR_SPACE.JCS_RGB -> cinfo.in_color_space;
+
+cinfo.jpeg_set_defaults();
+cinfo.jpeg_set_quality(90, true);
+
+@!FILE f = fopen("ray.jpg", "wb");
+
+cinfo.jpeg_stdio_dest(f);
+cinfo.jpeg_start_compress(true);
+
+[1][width*3]JSAMPLE jbuffer;
+int32 i = 0;
+while i < height {
+	int32 j = 0;
+	while j < width {
+		JSAMPLE(fmin(fmax(framebuffer[i*width+j].r, 0),1) * 255) -> jbuffer[0][j*3+0];
+		JSAMPLE(fmin(fmax(framebuffer[i*width+j].g, 0),1) * 255) -> jbuffer[0][j*3+1];
+		JSAMPLE(fmin(fmax(framebuffer[i*width+j].b, 0),1) * 255) -> jbuffer[0][j*3+2];
+		j + 1 -> j;
+	}
+	cinfo.jpeg_write_scanlines(@!jbuffer, 1);
+	i+1 -> i;
+}
+
+cinfo.jpeg_finish_compress();
+cinfo.jpeg_destroy_compress();
+
+f.fclose();
+
+// end of program
+
+func cast_ray(@vec3 orig, @vec3 dir, @[LN]Light lights, @[SN]Sphere spheres, int32 depth) -> color c
+{
+	(bool hit, vec3 point, vec3 N, Material material) = scene_intersect(orig, dir, spheres);
+
+	if (depth > 4 || !hit) {
+		[0.2, 0.7, 0.8] -> c; // background color
+		return;
+	}
+
+	vec3 reflect_dir = reflect(dir, @N)->normalized();
+	color reflect_color = cast_ray(@point, @reflect_dir, lights, spheres, depth + 1);
+
+	vec3 refract_dir = refract(dir, @N, material.refractive_index, 1.0)->normalized();
+	color refract_color = cast_ray(@point, @refract_dir, lights, spheres, depth + 1);
+
+	flo32 diffuse_light_intensity = 0, specular_light_intensity = 0;
+	int32 i = 0;
+	while i < LN {	// check if the point lies in shadow of the light source
+		@Light l = @lights[i];
+		vec3 light_dir = sub(@l.position, @point) -> normalized();
+		(bool shadow_hit, vec3 shadow_pt, vec3 trashnm, Material trashmat) = scene_intersect(@point, @light_dir, spheres);
+		if shadow_hit && norm(@sub(@shadow_pt, @point)) < norm(@sub(@l.position, @point)) {
+			i + 1 -> i;
+			continue;
+		}
+		diffuse_light_intensity + (l.intensity * fmaxf(0, dot(@light_dir, @N))) -> diffuse_light_intensity;
+		specular_light_intensity + powf(fmaxf(0, dot(@reflect(@light_dir, @N), dir)), material.specular_exponent) * l.intensity -> specular_light_intensity;
+		i + 1 -> i;
+	}
+
+	material.diffuse_color -> c;
+	c.mul_color(diffuse_light_intensity * material.albedo[0])
+		.add_color(mul_color(@![1, 1, 1], specular_light_intensity * material.albedo[1]))
+		.add_color(mul_color(@!reflect_color, material.albedo[2]))
+		.add_color(mul_color(@!refract_color, material.albedo[3]));
+}
+
+func scene_intersect(@vec3 orig, @vec3 dir, @[SN]Sphere spheres)
+	-> bool hit, vec3 pt, vec3 N, Material material
+{
+	false -> hit;
+	[0, 0, 0] -> material.diffuse_color;
+	flo32 nearest_dist = 1.0e10;
+
+	if fabsf(dir.y) > 0.001 { // intersect ray with checkerboard, avoid division by zero
+		flo32 d = -(orig.y + 4) / dir.y; // the checkerboard plane has equation y = -4
+		vec3 p = mul(dir, d)->add(orig);
+		if (d > 0.001 && d < nearest_dist && fabsf(p.x) < 10 && p.z < -10 && p.z > -30) {
+			d -> nearest_dist;
+			p -> pt;
+			[0, 1, 0] -> N;
+			if ((int32(0.5 * pt.x + 1000) + int32(0.5 * pt.z)) & 1) {
+				[0.3, 0.3, 0.3] -> material.diffuse_color;
+			} else {
+				[0.3, 0.2, 0.1] -> material.diffuse_color;
+			}
+			[1, 0, 0, 0] -> material.albedo;
+			0 -> material.specular_exponent;
+			1 -> material.refractive_index;
+		}
+	}
+
+	int32 i = 0;
+	while i < SN {	// intersect ray with all spheres
+		@Sphere s = @spheres[i];
+		(bool intersect, flo32 d) = ray_intersect_sphere(orig, dir, s);
+		if (intersect && d < nearest_dist) {
+			d -> nearest_dist;
+			[orig.x + dir.x * d, orig.y + dir.y * d, orig.z + dir.z * d] -> pt;
+			sub(@pt, @s.center)-> normalized() -> N;
+			s.material -> material;
+		}
+		i + 1 -> i;
+	}
+
+	nearest_dist < 1000 -> hit;
+}
+
+func ray_intersect_sphere(@vec3 orig, @vec3 dir, @Sphere s)
+	-> bool intersect, flo32 dist_i
+{
+	false -> intersect;
+	0 -> dist_i;
+
+	vec3 L = sub(@s.center, orig);
+	flo32 tca = dot(@L, dir);
+	flo32 d2 = dot(@L, @L) - tca * tca;
+	flo32 r2 = s.radius * s.radius;
+	if d2 > r2 { return; }
+	flo32 thc = sqrtf(r2 - d2);
+	flo32 t0 = tca - thc, t1 = tca + thc;
+	if t0 > 0.001 { true -> intersect; t0 -> dist_i; }
+	else if t1 > 0.001 { true -> intersect; t1 -> dist_i; }
+}
+
+func reflect(@vec3 I, @vec3 N) -> vec3
+{
+	return sub(I, @mul(N, 2 * dot(I, N)));
+}
+
+func refract(@vec3 I, @vec3 N, flo32 eta_t, flo32 eta_i) -> vec3
+{
+	flo32 cosi = -fmaxf(-1, fminf(1, dot(I, N)));
+	if cosi < 0 { return refract(I, @mul(N, -1), eta_i, eta_t); }
+	flo32 eta = eta_i / eta_t;
+	flo32 k = 1 - eta * eta * (1 - cosi * cosi);
+	if k < 0 { return [1, 0, 0]; } // total internal reflection
+	return add(@mul(I, eta), @mul(N, (eta * cosi - sqrtf(k))));
+}
