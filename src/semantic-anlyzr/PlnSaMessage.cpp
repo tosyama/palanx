@@ -65,8 +65,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_ReturnOutsideFunction:
 			return "Return statement outside of function.";
 
-		case E_MultiRetBareReturn:
-			return "Multi-return function requires bare 'return;' statement.";
+		case E_NamedRetBareReturn:
+			return "Function with named return values requires bare 'return;' statement.";
 
 		case E_SingleRetOneExpr:
 			return "Single-return function requires exactly one return expression.";
@@ -138,7 +138,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_UnknownAlias:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "Unknown module alias '" + arg1 + "'.";
+			return "Undefined variable or module alias '" + arg1 + "'.";
 
 		case E_UnqualifiedAliasCall:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -164,9 +164,6 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_FieldAccessOnNonStruct:
 			return "field access on non-struct variable.";
 
-		case E_InlineStructAsValue:
-			return "inline struct field cannot be used as a standalone value.";
-
 		case E_WriteToImmutablePtrField:
 			return "cannot write through read-only pointer field '@T'; use '@!T' for mutable.";
 
@@ -177,7 +174,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "cannot write through read-only pointer array element; use [n]@!T for mutable.";
 
 		case E_ArrFieldSizeNotConstant:
-			return "struct field array size must be a compile-time constant integer literal.";
+			return "struct field array size must be a compile-time constant integer.";
 
 		case E_ConflictingTypedef:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -209,8 +206,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_AddrOfNotAddressable:
 			return "cannot take the address of this expression: '@'/'@!' supports a local variable, a "
-			       "primitive-typed or embedded-struct field of a struct it names, or a primitive-typed "
-			       "array element.";
+			       "primitive-typed or embedded-struct field of a struct it names, a primitive-typed "
+			       "array element, or a call returning a struct given as a call argument.";
 
 		case E_ReadOnlyPtrToNonConstCParam:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -219,9 +216,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       + "' of C function '" + arg1 + "'; use '@!T' or pass a mutable variable.";
 
 		case E_AddrOfNotPrimitiveElem:
-			return "cannot take the address of this array element: it is not a primitive-typed value "
-			       "(e.g. a 2D row, or a pointer element) -- '@'/'@!' only "
-			       "supports a primitive-typed or struct array element.";
+			return "cannot take the address of this array element: '@'/'@!' only supports a "
+			       "primitive-typed or struct array element, or a row (not, e.g., a pointer element).";
 
 		case E_BitwiseOpNotInteger:
 			return "Bitwise operator operand must be an integer type.";
@@ -271,10 +267,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_StructInitNotSupported:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "initializing a '" + arg1 + "' variable from a call is only supported "
-			       "when it is a call to a C function returning '" + arg1
-			       + "' by value; declare it without an initializer and assign to its fields "
-			         "instead.";
+			return "a '" + arg1 + "' variable can only be initialized from a call that returns a '"
+			       + arg1 + "' (a Palan function, or a C function returning it by value).";
 
 		case E_IncompatibleTypes:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -352,37 +346,42 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_StmtNotImplemented:
 			return "this statement is not supported in this version.";
 
+		case E_ExprNotImplemented:
+			return "this expression is not supported in this version.";
+
 		case E_IntLiteralOutOfRange:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "Integer literal '" + arg1 + "' is out of range for type '" + arg2 + "'.";
 
 		case E_ArrLitContext:
-			return "an array literal can only be used as an array variable's initializer in this version.";
+			return "an array literal can only be used as an array or struct variable's initializer, "
+			       "the source of '->' to a struct or an array, the value returned from a function returning a struct, "
+			       "or an argument for a struct or borrowed array parameter, in this version.";
 
 		case E_ArrLitCountMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			BOOST_ASSERT(arg3 != "\x01");
-			return "array variable '" + arg1 + "' has size " + arg2 + " but its array literal has " + arg3 + " elements.";
+			return "array '" + arg1 + "' has size " + arg2 + " but its array literal has " + arg3 + " elements.";
 
 		case E_ArrLitSizeNotConst:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "array variable '" + arg1 + "' initialized with an array literal must have a compile-time constant size.";
+			return "array '" + arg1 + "' given an array literal must have a compile-time constant size.";
 
 		case E_ArrLitDimMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "the array literal's dimensions do not match array variable '" + arg1 + "'.";
+			return "the array literal's dimensions do not match array '" + arg1 + "'.";
 
 		case E_ArrLitElemType:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "array variable '" + arg1 + "' cannot be initialized with an array literal: only numeric and struct element types are supported.";
+			return "array '" + arg1 + "' cannot be given an array literal: only numeric and struct element types are supported.";
 
 		case E_ArrLitRowSizeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			BOOST_ASSERT(arg3 != "\x01");
-			return "array variable '" + arg1 + "' has rows of size " + arg2 + " but a row of its array literal has " + arg3 + " elements.";
+			return "array '" + arg1 + "' has rows of size " + arg2 + " but a row of its array literal has " + arg3 + " elements.";
 
 		case E_ArrBorrowSizeNotConst:
 			return "every size in a borrowed array type ('@[n]T'/'@![n]T') must be a compile-time constant.";
@@ -391,7 +390,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements, and neither a struct nor a pointer inside a '$[m]' row, in this version.";
 
 		case E_ArrBorrowNeedsAddrOf:
-			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name'.";
+			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' "
+			       "('@[..]' or '@![..]' for a literal).";
 
 		case E_ArrBorrowShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -399,7 +399,8 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "array shape '" + arg2 + "' does not match the borrowed array type '" + arg1 + "'.";
 
 		case E_StructBorrowNeedsAddrOf:
-			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'.";
+			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' "
+			       "('@f()' or '@!f()' for a call returning it, '@[..]' or '@![..]' for a literal).";
 
 		case E_Unsupported2DStructArr:
 			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
@@ -426,10 +427,21 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_StructLitFieldType:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "field '" + arg2 + "' of struct '" + arg1 + "' cannot be initialized by a literal: only numeric and struct fields are supported.";
+			return "field '" + arg2 + "' of struct '" + arg1 + "' cannot be initialized by a literal: only numeric, struct and array fields are supported.";
 
 		case E_DictLitContext:
-			return "a '{name: value}' literal can only be used as a struct element of an array literal.";
+			return "a '{name: value}' literal can only be used as a struct value: a struct variable's "
+			       "initializer, the source of '->' to a struct, an element of an array literal, or an "
+			       "argument for a struct parameter.";
+
+		case E_StructLitTarget:
+			return "a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy "
+			       "into the struct it points to.";
+
+		case E_ArrLitTarget:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "an array literal cannot be given to the borrowed array '" + arg1 + "'; '->' to a borrow "
+			       "rebinds it, so write to its elements instead.";
 
 		case E_CopyShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -458,7 +470,23 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ExpiringStructToBorrow:
 			return "a struct returned by a call has no owner to borrow from; receive it into a "
-			       "struct variable with '->' and borrow it with '@name' or '@!name'.";
+			       "struct variable with '->' and borrow it with '@name' or '@!name' (only a call "
+			       "argument can borrow it directly, as '@f()' or '@!f()').";
+
+		case E_BorrowOfTempEscapes:
+			return "a borrow returned by a call given a temporary struct may point to that struct, "
+			       "which is freed before the statement ends; receive the struct into a variable "
+			       "with '->' and pass it as '@name' or '@!name'.";
+
+		case E_AssignInExpr:
+			return "an assignment cannot be used inside an expression; write it as its own statement.";
+
+		case E_ChainToMethodCall:
+			return "'->' cannot pass a value to a method-form call 'x.f()'; name the function, as '-> f(..)'.";
+
+		case E_ChainMultiToTapple:
+			return "the return values of a call chained with '->' into a multiple-return call cannot be "
+			       "received with '(..)' in this version.";
 
 		case E_TransferFromNonOwner:
 			return "'->>' needs a source that owns its value: an owning variable, an owned field "
@@ -482,6 +510,73 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "array shape '" + arg2 + "' does not match '" + arg1 + "': its elements must have the same size and layout, and be owned by both or by neither.";
+
+		case E_ArgCountMismatch:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "function '" + arg1 + "' takes " + arg2 + " argument(s), but " + arg3 + " given.";
+
+		case E_UnknownEnumerator:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "enum '" + arg2 + "' has no enumerator '" + arg1 + "'.";
+
+		case E_DuplicateEnumerator:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "enumerator '" + arg1 + "' is already defined in enum '" + arg2 + "'.";
+
+		case E_EnumValueNotConst:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "enumerator '" + arg1 + "' must be given an integer literal or a const.";
+
+		case E_EnumValueOutOfRange:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "value " + arg2 + " of enumerator '" + arg1 + "' is out of the int64 range.";
+
+		case E_DuplicateTypeName:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "type '" + arg1 + "' is already defined.";
+
+		case E_CastArgCount:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cast '" + arg1 + "(...)' takes exactly one argument.";
+
+		case E_SizeofArrSizeNotConst:
+			return "every array size in the type of 'sizeof' must be a compile-time constant.";
+
+		case E_MethodNeedsMutableFirstParam:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' cannot be called as a method: its first parameter must be a writable borrow ('@!').";
+
+		case E_UnqualifiedAliasType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "type '" + arg1 + "' requires a module alias qualifier: '" + arg2 + "." + arg1 + "'.";
+
+		case E_CircularTypeDecl:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "type '" + arg1 + "' depends on itself: " + arg2 + ".";
+
+		case E_CastTargetNotPrim:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot cast to '" + arg1 + "': only a primitive or enum type can be a cast target.";
+
+		case E_UnsupportedCFieldType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "cannot access field '" + arg2 + "' of '" + arg1 + "': its type uses '" + arg3
+			       + "', a C type this version cannot represent.";
+
+		case E_PtrInnerPermissionNarrowing:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot bind '" + arg1 + "' to '" + arg2
+			       + "': a pointer reached through a mutable pointer '@!' must keep its permission.";
 
 		default:
 			BOOST_ASSERT(false);

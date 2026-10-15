@@ -1,0 +1,32 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type Q { $P a; P b; };
+func mk(int32 n) -> P { return [n, n + 1]; }
+func ra(P p) -> P { return p; }
+func rb(@P p) -> P { return p[0]; }
+func rc(@Q q) -> P { return q.b; }
+func rd() -> P { Q l = [[1, 2], mk(3)]; return l.b; }
+func re() -> P { [2]P l = [mk(5), mk(7)]; return l[1]; }
+func rf(@[2]$P es) -> P { return es[1]; }
+func rg(Q q) -> Q { return q; }
+func rh() -> P { P l = [9, 10]; return l; }
+func ri() -> P { return mk(11); }
+func show(@P p) { printf("%d %d\n", p.x, p.y); }
+mtrace();
+{
+	P v = [20, 21];
+	Q q = [[22, 23], mk(24)];
+	[2]$P es = [mk(26), mk(28)];
+	P a = ra(v);  show(@a);
+	P b = rb(@v); show(@b);
+	P c = rc(@q); show(@c);
+	P d = rd();   show(@d);
+	P e = re();   show(@e);
+	P f = rf(@es); show(@f);
+	Q g = rg(q);  show(@g.b);
+	P h = rh();   show(@h);
+	P i = ri();   show(@i);
+	show(@v); show(@q.b); show(@es[1]);
+}
+muntrace();

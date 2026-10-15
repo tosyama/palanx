@@ -1,0 +1,6 @@
+import "lib_mutual_shape.pa";
+export type Pos { flo64 x; flo64 y; };
+export type Group { int32 id; [2]$Shape items; };
+export func sumX(@Group g) -> flo64 {
+	return g.items[0].at.x + g.items[1].at.x;
+}

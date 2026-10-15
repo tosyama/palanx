@@ -1,0 +1,2 @@
+cinclude <stdio.h>;
+int32 n = FILE(0);

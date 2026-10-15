@@ -21,7 +21,7 @@ enum class TypeCompat {
 
 // Type base class
 struct PlnType {
-    enum class Kind { Prim, Ptr, Struct } kind;
+    enum class Kind { Prim, Ptr, Struct, Enum } kind;
     virtual ~PlnType() = default;
 protected:
     PlnType(Kind k) : kind(k) {}
@@ -51,15 +51,24 @@ struct StructType : PlnType {
     StructType(std::string n) : PlnType(Kind::Struct), name(std::move(n)) {}
 };
 
+// Enum type: stored as its base integer prim, but a distinct type for checking.
+struct EnumType : PlnType {
+    std::string name;
+    const PrimType* base;
+    EnumType(std::string n, const PrimType* b) : PlnType(Kind::Enum), name(std::move(n)), base(b) {}
+};
+
 // Type registry — owns all type instances and interns them
 class PlnTypeRegistry {
     std::map<PrimType::Name, std::unique_ptr<PrimType>>  primCache_;
     std::map<const PlnType*, std::unique_ptr<PtrType>>   ptrCache_;
     std::map<std::string, std::unique_ptr<StructType>>   structCache_;
+    std::map<std::string, std::unique_ptr<EnumType>>     enumCache_;
 public:
     const PrimType*  prim(PrimType::Name name);
     const PtrType*   ptr(const PlnType* base);
     const StructType* structType(const std::string& name);
+    const EnumType*  enumType(const std::string& name, const PrimType* base);
     const PlnType*   fromJson(const json& j);
     json             toJson(const PlnType* t);
 };
@@ -71,16 +80,6 @@ public:
 // fromJson(j) would succeed; otherwise a short display name for the first
 // unrepresentable node found (recursing through a pntr chain's base-type).
 std::string unrepresentableTypeName(const json& j);
-
-// Render a type-value JSON node as a short human-readable name for use in
-// diagnostics (e.g. "int32", "@!int32", "MyStruct"). Unlike
-// unrepresentableTypeName, this always returns a non-empty string, including
-// for representable types -- prim renders as its type-name, pntr as "@"/"@!"
-// (per the "mutable" key, defaulting to true the same way
-// isWritableThrough/ptrPermissionOk do) followed by the recursively rendered
-// base type, and struct as its type-name. Every other kind (already
-// unrepresentable) reuses unrepresentableTypeName's display name for it.
-std::string typeDisplayName(const json& j);
 
 // Type compatibility check
 TypeCompat typeCompat(const PlnType* from, const PlnType* to,

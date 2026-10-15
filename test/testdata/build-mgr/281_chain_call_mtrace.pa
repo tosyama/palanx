@@ -1,0 +1,33 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+cinclude <math.h> link "m";
+
+type vec3 { flo32 x; flo32 y; flo32 z; };
+
+func sub(@vec3 a, @vec3 b) -> vec3 { return [a.x - b.x, a.y - b.y, a.z - b.z]; }
+func normalized(@vec3 v) -> vec3
+{
+	flo32 len = sqrtf(v.x*v.x + v.y*v.y + v.z*v.z);
+	return [v.x/len, v.y/len, v.z/len];
+}
+func scale(@!vec3 v, flo32 f) { [v.x*f, v.y*f, v.z*f] -> v[0]; }
+func split(flo32 f) -> vec3 v, int32 n { [f, f, f] -> v; 2 -> n; }
+func times(@vec3 v, int32 n) -> flo32 { return (v.x + v.y + v.z) * n; }
+func divmod(int32 a, int32 b) -> int32 q, int32 r { a / b -> q; a % b -> r; }
+func add3(int32 a, int32 b, int32 c) -> int32 { return a + b + c; }
+
+mtrace();
+{
+	vec3 a = [4, 0, 3];
+	vec3 b = [1, 0, -1];
+	vec3 n = sub(@a, @b) -> normalized();
+	printf("%.1f %.1f %.1f\n", n.x, n.y, n.z);
+	@!n -> scale(10);
+	printf("%.1f\n", n -> normalized() -> times(1));
+	printf("%.1f\n", split(1.5) -> times());
+	printf("%d\n", divmod(17, 5) -> add3(100));
+	int32 r;
+	17 -> divmod(5) -> (r, r);
+	if (a -> sub(@b) -> times(1)) > 6 { printf("%d\n", r); }
+}
+muntrace();

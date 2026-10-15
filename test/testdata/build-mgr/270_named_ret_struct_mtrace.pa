@@ -1,0 +1,33 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type B { int64 a; int64 b; int64 c; };
+type O { P p; int32 n; };
+func mkp(int32 v) -> P p { v -> p.x; v + 1 -> p.y; }
+func mkb(int64 v) -> B b { v -> b.a; v * 2 -> b.b; v * 3 -> b.c; }
+func mko(int32 v) -> O o, int32 k { v -> o.p.x; v * 10 -> o.n; v + 1 -> k; }
+func early(int32 v) -> P p {
+	1 -> p.x;
+	if v > 0 { v -> p.y; return; }
+	{
+		P t;
+		mkp(7) -> t;
+		t.y -> p.y;
+	}
+}
+mtrace();
+{
+	P p;
+	mkp(3) -> p;
+	printf("%d %d\n", p.x, p.y);
+	B b;
+	mkb(4) -> b;
+	printf("%ld %ld %ld\n", b.a, b.b, b.c);
+	(O o, int32 k) = mko(5);
+	printf("%d %d %d\n", o.p.x, o.n, k);
+	early(9) -> p;
+	printf("%d %d\n", p.x, p.y);
+	early(0) -> p;
+	printf("%d %d\n", p.x, p.y);
+}
+muntrace();

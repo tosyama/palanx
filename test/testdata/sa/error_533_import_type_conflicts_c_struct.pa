@@ -1,0 +1,2 @@
+import Vec from "lib_sa_types2.pa";
+cinclude "error_533_import_type_conflicts_c_struct.h";

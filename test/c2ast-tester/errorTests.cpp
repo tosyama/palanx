@@ -135,6 +135,13 @@ TEST(c2ast_error, if_expr_unexpected_end) {
 	ASSERT_NE(out.find("unexpected end of expression"), string::npos);
 }
 
+TEST(c2ast_error, enum_value_missing) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_015_enum_value_missing.h");
+	ASSERT_NE(out.find("unexpected token"), string::npos);
+}
+
 // --- Input file errors ---
 
 TEST(c2ast_error, input_system_header_not_found) {

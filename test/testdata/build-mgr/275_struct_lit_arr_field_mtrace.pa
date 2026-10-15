@@ -1,0 +1,25 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type M { [3]flo32 c; [2]$P ps; [2]P os; [2]int32 v; };
+func mk(int32 n) -> M { return [[0.5, 1, 2], [[n, 1], [2, n]], [[n, 3], [4, n]], [n, 5]]; }
+func show(@M m)
+{
+	printf("%.1f %.1f %.1f %d %d %d %d %d %d %d %d %d %d\n", m.c[0], m.c[1], m.c[2],
+		m.ps[0].x, m.ps[0].y, m.ps[1].x, m.ps[1].y,
+		m.os[0].x, m.os[0].y, m.os[1].x, m.os[1].y, m.v[0], m.v[1]);
+}
+mtrace();
+{
+	M m = [[1, 2, 3], [[1, 2], {y: 4, x: 3}], [[5, 6], [7, 8]], [9, 10]];
+	show(@m);
+	[[m.c[2], m.c[1], m.c[0]], [[m.ps[1].y, m.ps[1].x], [m.ps[0].y, m.ps[0].x]],
+		[[m.os[1].y, m.os[1].x], [m.os[0].y, m.os[0].x]], [m.v[1], m.v[0]]] -> m;
+	show(@m);
+	M r = mk(7);
+	show(@r);
+	[2]M ms = [[[1, 1, 1], [[1, 1], [1, 1]], [[1, 1], [1, 1]], [1, 1]],
+		{v: [2, 2], os: [[2, 2], [2, 2]], ps: [[2, 2], [2, 2]], c: [2, 2, 2]}];
+	show(@ms[1]);
+}
+muntrace();

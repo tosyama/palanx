@@ -6,23 +6,16 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-10-02)
-version: 0.1.39 — gen-ast parsing time
+### 2.1 Iteration Goal (2026-10-04)
+version: 0.1.40 — filling gaps found by writing samples
 
-gen-ast parsing time is quadratic in the number of statements in one list (Issues.md #24):
-a 1000-statement function body takes about 10s. The cause is that Bison's `glr2.cc` skeleton
-hands grammar actions their right-hand-side values as `const` references, so `move($1)` copies,
-and every statement appended to a list copies the whole list so far. This iteration:
+As in v0.1.38, tickets are not planned up front. Gaps found while writing two sample programs
+are ticketed and fixed as they come up, along with related Issues.md items:
 
-- Makes growing lists cheap to copy and never mutated in place (a persistent list shared by
-  pointer), so parsing is linear in the number of statements and safe under GLR splits.
-- Removes the remaining copy cost proportional to block nesting depth.
-- Reduces grammar ambiguity where the rewrite is purely internal: the accepted language and
-  the emitted AST stay unchanged.
-- Corrects and closes Issues.md #24, recording full LALR(1) conversion and `cinclude`
-  processing time as future topics.
+- `samples/tetris.pa`: continuing the ncurses Tetris (e.g. a "Next" mino preview).
+- A simple ray tracer that writes its image as JPEG through libjpeg (`cinclude "jpeglib.h"`).
 
-The ticket list is kept in `localtickets/iteration-2026-10-02-v0139-parse-time.md`.
+The ticket list is kept in `localtickets/iteration-2026-10-04-v0140-samples.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design

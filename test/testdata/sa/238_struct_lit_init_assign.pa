@@ -1,0 +1,11 @@
+type vec3 { flo32 x; flo32 y; flo32 z; };
+type Seg { vec3 a; $vec3 b; };
+type V3 = vec3;
+vec3 a = [1, 2, 3];
+V3 b = {z: 6, x: 4, y: 5};
+Seg s = [[1, 1, 1], {x: 2, y: 2, z: 2}];
+[a.y, a.x, a.z] -> a;
+{x: 3, y: 3, z: 3} -> s.b;
+[3]$vec3 arr;
+[5, 5, 5] -> arr[1];
+func swapxy(@!vec3 v) { [v.y, v.x, v.z] -> v[0]; }

@@ -1,0 +1,3 @@
+import "235_import_mutual_type.pa";
+export type Leaf { int64 v; @Node up; };
+export type Pair { $Node n; [2]$Leaf ls; };

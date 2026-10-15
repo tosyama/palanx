@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.34
+ver. 0.1.40
 
 \* - Required
 
@@ -21,6 +21,8 @@ Export declaration list
 -------------------------
 Each entry is a Function definition model (see below) for an `export func` or `export syscall`
 declaration, with the `block` field omitted (signature only; a `syscall` declaration has none).
+An exported type is not listed here: its `struct-def`/`type-alias`/`enum-def` statement carries
+`export` instead, since an importer needs the module's other declarations to resolve it.
 
 - name\* - Function name string
 - func-type\* - Function type string: "palan" "syscall"
@@ -87,6 +89,13 @@ equality/logical/ternary expression, unary `~`/`!`, or a reference to an unresol
 is not exported here — referencing such a macro name from Palan is `Undefined function` or
 `Undefined variable`, not a compiler abort.
 
+An enumerator (see Enum definition model below) is an integer operand in these expressions,
+untyped like an unsuffixed literal. A body that is exactly one enumerator of a named enum
+(`#define JDCT_DEFAULT JDCT_ISLOW`, glibc's `#define SOCK_STREAM SOCK_STREAM`) stands for that
+enumerator and keeps the enum's type. The list also holds the enumerators of an anonymous enum,
+which C code references unqualified, as untyped constants; a `#define X X` over one of them is
+not exported a second time.
+
 - name\* - Macro name string
 - value\* - Decimal string (e.g. "10")
 - value-type - Variable type (see below). Present only when C fixes the type: for a body with a
@@ -94,7 +103,23 @@ is not exported here — referencing such a macro name from Palan is `Undefined 
   type, including `typedef-name`, when the cast is outermost); for a pointer-cast body, the
   cast's own target type (e.g. `pntr` for `NULL`). Omitted otherwise (e.g. `#define MAGIC 42`,
   `#define ERR (-1)`), so the constant is an untyped literal that takes its type from the
-  context, same as a Palan source literal
+  context, same as a Palan source literal. A body that is one named enum's enumerator has an
+  `enum` reference here (`{"type-kind":"enum","type-name":<enum name>}`)
+
+Enum definition model
+---------------------
+Captured from every enum body palan-c2ast sees in a `cinclude`d C header, into its own
+top-level `ast.enums` list (lifted onto the `cinclude` statement's `enums` field by gen-ast,
+like `structs`). c2ast computes each enumerator's value; an enum with a value it cannot compute
+(e.g. `= sizeof(int)`) is not captured, and references to it stay unrepresentable in SA. The base
+integer type is not given here; SA chooses it by the same rule as for a Palan enum (SASpec.md).
+
+- name\* - Enum name string: the tag, or for `typedef enum { ... } Name;` (a single, non-derived
+  declarator) the typedef name, as for a struct. An anonymous body otherwise gets a synthesized
+  `anon@<file>:<line>:<col>` name (see Struct definition model's `name`).
+- enumerators\* - Enumerator list, in source order
+  - name\* - Enumerator name string
+  - value\* - Decimal string, within the int64 range
 
 Struct definition model
 ------------------------
@@ -127,9 +152,9 @@ AST in. Same field-list shape as the native `struct-def` statement.
 Global variable model
 ----------------------
 Captured from file-scope `extern` object declarations in a `cinclude`d C header (e.g.
-`extern FILE *stdout;`) whose type is `prim` or `pntr` — the only shapes Palan can
+`extern FILE *stdout;`) whose type is `prim`, `pntr` or `enum` — the only shapes Palan can
 represent without heap or embedded-array semantics. `static` declarations, block-scope
-declarations, and `extern` declarations of array or by-value struct/union/enum type are
+declarations, and `extern` declarations of array or by-value struct/union type are
 not captured. palan-c2ast collects these into its own top-level `ast.globals` list;
 gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals` field
 (see Statement model below) when merging the header's AST in.
@@ -140,9 +165,9 @@ gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals`
 Typedef definition model
 -------------------------
 Captured from every `typedef` declaration in a `cinclude`d C header whose resolved
-underlying type is `prim`, or a `strct`/`union` that carries a `type-name` (including a tag
-synthesized for a single, non-derived typedef of an otherwise tagless struct/union body — see
-Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef void
+underlying type is `prim`, `user`, or a `strct`/`union`/`enum` that carries a `type-name` (including a
+name synthesized for a single, non-derived typedef of an otherwise tagless struct/union/enum
+body — see Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef void
 *timer_t;`) is deliberately not captured here — see the `typedef-name` Note below.
 `typedef`s are captured regardless of whether any C function or global in the header
 references them, so a header of pure typedefs and no functions (e.g. `stdint.h`) still
@@ -204,6 +229,9 @@ Variable type
         signature (a C `void *` parameter/return/field); native syntax `@void`/`@!void` now
         produces the same shape directly (`'@' KW_VOID` / `AT_EXCL KW_VOID` in the grammar), so
         `pntr(prim(void))` no longer has a single origin.
+      - A type name the parser can't classify (a struct, alias, or enum) also arrives as `prim`;
+        SA resolves it. A type imported under a module alias is written `V.T` and arrives as the
+        single string `"V.T"`.
   2. pntr - Pointer type
     - base-type\* - Base variable type
     - mutable - Boolean, true for a writable pointer (`@!` syntax), false for a read-only
@@ -272,20 +300,23 @@ Variable type
      fields are in its Struct definition model entry (`"union": true`). SA folds it to
      `struct` at ingestion, the same as `strct`.
     - type-name - Union tag name string; omitted only for a genuinely untagged reference
-  7. enum - Enum type, from a C `enum Name { ... }`-typed field/parameter/return. c2ast parses
-     the enumerator list (names and values) but does not capture it — every reference emits
-     the bare shape below. Unrepresentable in SA this version (see SASpec.md's C-origin
-     signature admission).
-     (carries no fields beyond `type-kind`)
+  7. enum - Enum type reference (by name), from a C enum-typed field/parameter/return/global.
+     Its enumerators are in its Enum definition model entry. SA resolves it to the enum's own
+     type at ingestion; a reference to an enum not captured there stays unrepresentable (see
+     SASpec.md's C-origin signature admission).
+    - type-name\* - Enum name string (see Enum definition model's `name`)
   8. func - Function type
     - parameters - Parameter list
     - ret-type\* - Return variable type
   9. user - An identifier used as a type that c2ast could not resolve to a recognized keyword
-     or a previously-registered typedef — including a typedef that bottoms out in an
-     anonymous enum/function-pointer body, or an anonymous struct/union body via a
+     or a previously-registered typedef — including a typedef that bottoms out in a
+     function-pointer body, or an anonymous struct/union body via a
      multi-declarator or derived-declarator typedef (see type-kind "strct" above for the one
-     struct/union-body shape c2ast does register), none of which c2ast registers.
-     Unrepresentable in SA this version (see SASpec.md's C-origin signature admission).
+     struct/union-body shape c2ast does register), none of which c2ast registers. Each
+     cinclude is translated separately, so it is also a typedef from an earlier cinclude
+     (`size_t` in a header that relies on `stdio.h` being included first); SA replaces such a
+     reference with that typedef's type at ingestion. Otherwise unrepresentable in SA this
+     version (see SASpec.md's C-origin signature admission).
     - type-name\* - The unresolved identifier string
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
@@ -311,7 +342,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "break" "continue" "not-impl"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "break" "continue" "not-impl" "enum-def"
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -322,6 +353,8 @@ Statement model
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
     - functions - Function definition model list (C prototypes from the header)
+    - enums - Enum definition model list (see Enum definition model above); omitted when the
+      header defines no capturable enum
     - structs - Struct definition model list (see Struct definition model above); omitted
       when the header defines no capturable structs
     - globals - Global variable model list (see Global variable model above); omitted
@@ -348,11 +381,13 @@ Statement model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
   7. struct-def - struct type definition (`type Name { field_decl... }`; consumed by SA, not emitted to sa.json)
     - name\* - Struct name string
+    - export - Boolean, true if declared with `export` (omitted when false)
     - fields\* - Field list (each entry: `name`, `var-type`)
       - name\* - Field name string
       - var-type\* - Field type (same Variable type object format)
   8. type-alias - native type alias declaration (`type Name = type_expr;`; consumed by SA, not emitted to sa.json)
     - name\* - Alias name string
+    - export - Boolean, true if declared with `export` (omitted when false)
     - type\* - Aliased type (same Variable type object format)
   9. const-decl - native constant declaration (`const Name = <literal>;`; consumed by SA, not emitted to sa.json)
     - name\* - Constant name string
@@ -367,10 +402,17 @@ Statement model
     - values - Return expression list (omitted for bare `return;`)
   12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
     - vars\* - Variable declaration list (name, var-type per entry)
-    - value\* - Call expression model (must be a call to a multi-return Palan function)
+    - value\* - Call expression model (must be a call to a multi-return Palan function), or a
+      `chain-call` whose last call is one
   13. tapple-assign - multiple return values assigned to existing targets (`call(...) -> (target, ...)`)
     - targets\* - Target expression model list: `id`, `arr-index` or `field-access` per entry
-    - value\* - Call expression model (must be a call to a multi-return Palan function)
+    - value\* - Call expression model (must be a call to a multi-return Palan function), or a
+      `chain-call` whose last call is one
+  - A chained assignment `v -> t1 -> t2` is emitted as consecutive assign / arr-assign /
+    field-assign statements `v -> t1` and `t1 -> t2`: each later value reads back the
+    previous target. A chain with a tapple-assign in it is a single not-impl statement.
+    An assignment feeding a chained call (`x -> v -> f()`) is likewise emitted before it, and
+    the `chain-call` reads the target back (`x -> v` then the statement for `v -> f()`).
   14. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
@@ -387,11 +429,19 @@ Statement model
       `interface`, `x++`, a type-omitted declaration). Rejected by SA.
     - untyped-var - Name of the first type-omitted variable; present only for a `name = expr;`
       declaration (reserved for type inference; an assignment is `expr -> name`)
+  20. enum-def - enum type definition (`type Name enum { X, Y = expr, ... }`; consumed by SA, not
+      emitted to sa.json)
+    - name\* - Enum name string
+    - export - Boolean, true if declared with `export` (omitted when false)
+    - enumerators\* - Enumerator list, in source order
+      - name\* - Enumerator name string
+      - value - Value expression model (omitted when the value is implicit)
+      - loc\* - Location Array
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit"
-- loc\* - Location Array (omitted for "not-impl" and "assign-expr")
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call"
+- loc\* - Location Array
   1. lit-str - String literal
     - value\* - String value
   2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
@@ -413,7 +463,7 @@ Expression model
       to whichever registered it first.
   3. lit-uint - Unsigned integer literal (corresponds to UINT token)
     - value\* - Decimal string (e.g. "10")
-  4. lit-flo - Floating-point literal (corresponds to FLO token; format: digits.digits)
+  4. lit-flo - Floating-point literal (corresponds to FLO token; format: digits.digits with an optional exponent, or digits with an exponent; the value string is kept as written, e.g. "1e10")
     - value\* - Decimal string (e.g. "3.14")
   5. id - Identifier (variable reference)
     - name\* - Identifier name string
@@ -432,7 +482,8 @@ Expression model
   10. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
-  11. cast - Explicit type cast expression (`type-name(expr)` syntax)
+  11. cast - Explicit type cast expression (`type-name(expr)` syntax). Only a built-in type
+    keyword produces one; an enum cast `Name(expr)` is emitted as a `call` and SA treats it as a cast.
     - target-type\* - Target Variable type object
     - src\* - Source expression model
   12. arr-index - Array element access (`arr[i]`)
@@ -447,32 +498,42 @@ Expression model
     - right\* - Right operand expression model
   15. logical-not - Logical NOT (`!a`; result: int32, 0 or 1)
     - operand\* - Operand expression model
-  16. field-access - Struct field read (`obj.field` rvalue)
+  16. field-access - Struct field read (`obj.field` rvalue). An enumerator reference `Name.X` has
+    the same shape (`object` is the `id` `Name`); SA tells them apart.
     - object\* - Base object expression model: `id` for a plain variable, or `arr-index`/
       `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`) — same object vocabulary
       as field-assign's `object` (see Statement model above)
     - field\*  - Field name string
-  17. member-call - Qualified function call (`L.f(args)` syntax; consumed by SA, not emitted to sa.json)
-    - object\* - Object expression (typically `id` for module alias; SA rejects non-`id` in v0.1.22)
+  17. member-call - `x.f(args)`: a module-alias call `L.f(args)` or a method-form call
+    `aa.f(args)` (`f(@!aa, args)`); gen-ast does not tell them apart (consumed by SA, not
+    emitted to sa.json)
+    - object\* - Object expression: an `id` naming a module alias, or the receiver expression
     - method\* - Method/function name string
-    - args - Argument expression list
-    Note: SA resolves `member-call` and emits a regular `call` node in sa.json.
+    - args - Argument expression list (without the receiver)
+    Note: SA resolves `member-call` and emits a regular `call` node in sa.json (see SASpec.md
+    "Method-form calls").
   18. addr-of - Address-of a local variable, a struct field reached from one, or an array
       element reached from one (`@` read-only, `@!`/`AT_EXCL` mutable). The operand grammar is
-      `store_loc` — the same vocabulary the left side of `->` accepts (a bare identifier, a
-      `.`-chain of field accesses, a `[expr]` index, or a parenthesized tuple/call) — so `@s.x`,
-      `@!s.in.v`, and `@arr[i]` all parse; SA decides in sa.json whether the target is
-      addressable (see SASpec.md).
-    - object\* - Operand expression, one of exactly four shapes depending on which `store_loc`
-      alternative was used: `id` for a plain variable, `field-access` for a `.`-chain (nested
+      `store_loc` — the same vocabulary the right side of `->` accepts (a bare identifier, a
+      `.`-chain of field accesses, a `[expr]` index, a parenthesized tuple, or a call `f(...)` /
+      `x.f(...)` whose object is itself one of these) — so `@s.x`,
+      `@!s.in.v`, and `@arr[i]` all parse — or an array literal or `{name: value}` literal
+      (`@[1, 2]`, `@![1, 2][3, 4]`, `@{x: 1}`); SA decides in sa.json whether the target is
+      addressable (see SASpec.md). `@` binds looser than `.`, so `@x.f()` is `@(x.f())`, never
+      `(@x).f()`.
+    - object\* - Operand expression: `arr-lit` or `dict-lit` for a literal, otherwise one of six
+      shapes depending on which `store_loc` alternative was used: `id` for a plain variable, `field-access` for a `.`-chain (nested
       chains produce nested `field-access` objects), `arr-index` for a `[expr]`-indexed target,
-      or `not-impl` for anything else (a tuple grouping or a bare call — these are not
-      addressable, so SA rejects them without needing to inspect their shape further)
+      `call` for a whole call `f(...)` (`@f()`), `member-call` for a whole method-form or
+      module-qualified call `x.f(...)` (`@v.f()`, `@M.f()`, `@f().g()`), or `not-impl` for
+      anything else (a tuple grouping, a cast, a call as an index or field base — SA rejects these
+      without needing to inspect their shape further)
     - mutable\* - `true` for `@!`, `false` for `@`
-  19. not-impl - Placeholder for a `store_loc` shape that carries no addressable location (a
-      parenthesized tuple or a bare function call reached via `@`/`@!`, or `field-access`'s
-      chain root when it isn't itself addressable). Carries no fields beyond `expr-type`; SA
-      rejects any expression of this shape.
+  19. not-impl - An expression the grammar parses but the compiler does not implement (e.g. a
+      tuple `(a, b)` used as a value, `sizeof` of a `[#n]` type), or a `store_loc` shape that
+      carries no addressable location (a parenthesized tuple or a bare function call reached via
+      `@`/`@!`, or `field-access`'s chain root when it isn't itself addressable). Carries no
+      fields beyond `expr-type` and `loc`; SA rejects any expression of this shape.
   20. bitand - Binary bitwise AND (`a & b`; integer operands only)
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
@@ -493,6 +554,14 @@ Expression model
       - name\*  - Name string
       - value\* - Value expression model
       - loc\*   - Location Array of `name: value`
+  26. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
+      template argument is emitted as `not-impl` instead
+    - type\* - Type model
+  27. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
+      consumed by SA, not emitted to sa.json (see SASpec.md "Chained calls")
+    - value\* - Expression model whose value (or return values) come first in the arguments; a
+      nested `chain-call` for `x -> f() -> g()`
+    - call\* - `call` or `member-call` expression model, its `args` without the chained value
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

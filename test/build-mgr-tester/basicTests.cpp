@@ -2288,7 +2288,7 @@ TEST(build_mgr, struct_ret_temp_mtrace) {
 		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
 		"MALLOC_TRACE=" + traceFile + " "
 		"/tmp/palan_struct_ret_temp_mtrace_bin");
-	ASSERT_EQ(output, "3 4 5 6\nyes\n3 3 13\n");
+	ASSERT_EQ(output, "3 4 5 6\n103 103\nyes\n3 3 13\n");
 
 	string catResult = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;
@@ -2301,7 +2301,7 @@ TEST(build_mgr, struct_ret_temp_mtrace) {
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 16) << "expected 16 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 18) << "expected 18 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -2336,9 +2336,587 @@ TEST(build_mgr, unsized_arr_rows) {
 	ASSERT_EQ(output, "0 1 2\n10 11 12\n5 6\n7 8\n12\n");
 }
 
+TEST(build_mgr, embed_row_copy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/254_embed_row_copy.pa");
+	ASSERT_EQ(output, "0 1 2 3\n10 11 12 13\n3\n");
+}
+
+TEST(build_mgr, row_borrow) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/255_row_borrow.pa");
+	ASSERT_EQ(output, "46 13 46\n406 3 200 806\n77 101 3\n10\n5 6\n");
+}
+
+TEST(build_mgr, assign_chain) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/256_assign_chain.pa");
+	// `c[2] + 1 -> i -> c[i]` indexes with the i just stored.
+	ASSERT_EQ(output, "7 7\n3 3 3 3 3\n9 9 9 9\n4 4\n");
+}
+
+TEST(build_mgr, assign_chain_transfer_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_assign_chain_transfer_mtrace_bin "
+		"../test/testdata/build-mgr/257_assign_chain_transfer_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_assign_chain_transfer_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_assign_chain_transfer_mtrace_bin");
+	ASSERT_EQ(output, "4 6 5\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 14) << "expected 14 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, clean) {
 	cleanTestEnv();
 
 	string output = execTestCommand("bin/palan --clean");
 	ASSERT_EQ(output, "");
+}
+
+TEST(build_mgr, enum_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/258_enum.pa");
+	ASSERT_EQ(output, "0 6 6 1\n-3 5000000000 5 11\n6 -3 3\n6 5 5\n");
+}
+
+TEST(build_mgr, c_enum) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/259_c_enum.pa");
+	ASSERT_EQ(output, "2 1 x 100\n-1\n");
+}
+
+TEST(build_mgr, cross_cinclude_typedef) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/260_cross_cinclude_typedef.pa");
+	ASSERT_EQ(output, "ok\n5\n");
+}
+
+TEST(build_mgr, sizeof) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/261_sizeof.pa");
+	ASSERT_EQ(output, "56 32 16\n");
+}
+
+TEST(build_mgr, method_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/262_method_call.pa");
+	ASSERT_EQ(output, "121 5\n7\n1 1\n");
+}
+
+TEST(build_mgr, import_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/263_import_type.pa");
+	ASSERT_EQ(output, "25.0\n3.0 7 5\n1.0 0 5\n");
+}
+
+TEST(build_mgr, import_type_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/264_import_type_field.pa");
+	ASSERT_EQ(output, "1.0 2.0 7 3.0 5 4.0\n");
+}
+
+TEST(build_mgr, struct_field_const_size) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/265_struct_field_const_size.pa");
+	ASSERT_EQ(output, "2 20 200 48\n");
+}
+
+TEST(build_mgr, import_mutual_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/266_import_mutual_type.pa");
+	ASSERT_EQ(output, "4.5 4.0 2 9\n");
+}
+
+TEST(build_mgr, alias_cast) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/267_alias_cast.pa");
+	ASSERT_EQ(output, "44 2 1\n");
+}
+
+TEST(build_mgr, struct_ptr_elem_copy) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/268_struct_ptr_elem_copy.pa");
+	ASSERT_EQ(output, "1 2\n5 6\n0 10\n");
+}
+
+TEST(build_mgr, struct_lit_init_assign) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/269_struct_lit_init_assign.pa");
+	ASSERT_EQ(output, "1 2 3 / 4 5 6 / 1 2 7\n2 1 / 9 3\n5 1\n5 4\n3 4\n");
+}
+
+// Struct-type named returns are allocated at function entry and handed to the
+// caller on every path, including an early return.
+TEST(build_mgr, named_ret_struct_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_named_ret_struct_mtrace_bin "
+		"../test/testdata/build-mgr/270_named_ret_struct_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_named_ret_struct_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_named_ret_struct_mtrace_bin");
+	ASSERT_EQ(output, "3 4\n4 8 12\n5 50 6\n1 9\n1 8\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 10) << "expected 10 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, float_exponent_no_point) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/271_float_exponent_no_point.pa");
+	ASSERT_EQ(output, "10000000000.0 0.001 200000.0 600.0\n");
+}
+
+TEST(build_mgr, struct_init_from_call_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_struct_init_from_call_bin "
+		"../test/testdata/build-mgr/272_struct_init_from_call_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_struct_init_from_call_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_struct_init_from_call_bin");
+	// s copies p before bump(@!p) runs.
+	ASSERT_EQ(output, "3 4\n4 8 12 3\n3 4\n1 2 3 \n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 8) << "expected 8 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+
+TEST(build_mgr, return_struct_lit_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_return_struct_lit_bin "
+		"../test/testdata/build-mgr/273_return_struct_lit_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_return_struct_lit_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_return_struct_lit_bin");
+	// The returned literal reads t before t is freed.
+	ASSERT_EQ(output, "3 15\n0 0\n0 0 1 1 2 1 2 4 1 \n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 13) << "expected 13 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, arr_lit_assign_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_arr_lit_assign_bin "
+		"../test/testdata/build-mgr/274_arr_lit_assign_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_arr_lit_assign_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_arr_lit_assign_bin");
+	// Every value is read before any element is written (swaps), and the index
+	// in a row target is evaluated once (cnt).
+	ASSERT_EQ(output, "2 1 4 3\n1.00 0.00 0.50 0.25\n1 2 3 4 8 0 9 10\n0 5 6 cnt=1\n"
+	                  "1 6 0 0 7 8 cnt=2\n2 3 6 3 4\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 14) << "expected 14 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, struct_lit_arr_field_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_struct_lit_arr_field_bin "
+		"../test/testdata/build-mgr/275_struct_lit_arr_field_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_struct_lit_arr_field_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_struct_lit_arr_field_bin");
+	ASSERT_EQ(output, "1.0 2.0 3.0 1 2 3 4 5 6 7 8 9 10\n"
+	                  "3.0 2.0 1.0 4 3 2 1 8 7 6 5 10 9\n"
+	                  "0.5 1.0 2.0 7 1 2 7 7 3 4 7 7 5\n"
+	                  "2.0 2.0 2.0 2 2 2 2 2 2 2 2 2 2\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 25) << "expected 25 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, struct_lit_struct_expr_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_struct_lit_struct_expr_bin "
+		"../test/testdata/build-mgr/276_struct_lit_struct_expr_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_struct_lit_struct_expr_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_struct_lit_struct_expr_bin");
+	ASSERT_EQ(output, "1 2 3 4\n"
+	                  "3 4 1 2\n"
+	                  "5 6 1 2\n"
+	                  "1 2 9 10\n"
+	                  "1 2 7 8\n"
+	                  "7 8 11 12\n"
+	                  "30 30 30 2 1 2\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 42) << "expected 42 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+
+TEST(build_mgr, return_unowned_struct_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_return_unowned_struct_bin "
+		"../test/testdata/build-mgr/277_return_unowned_struct_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_return_unowned_struct_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_return_unowned_struct_bin");
+	ASSERT_EQ(output, "20 21\n"
+	                  "20 21\n"
+	                  "24 25\n"
+	                  "3 4\n"
+	                  "7 8\n"
+	                  "28 29\n"
+	                  "24 25\n"
+	                  "9 10\n"
+	                  "11 12\n"
+	                  "20 21\n"
+	                  "24 25\n"
+	                  "28 29\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 25) << "expected 25 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, embed_field_value_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_embed_field_value_bin "
+		"../test/testdata/build-mgr/278_embed_field_value_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_embed_field_value_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_embed_field_value_bin");
+	ASSERT_EQ(output, "1 2\n"
+	                  "1 2\n"
+	                  "3\n"
+	                  "3 4\n"
+	                  "1 2\n"
+	                  "3 4\n"
+	                  "3 4\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 7) << "expected 7 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+// A borrow a call returns may point to a temp struct given to it, so the temp
+// lives until its full expression is done; inside a condition that is each
+// short-circuit operand, and each evaluation of a loop condition.
+TEST(build_mgr, call_temp_borrow_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_call_temp_borrow_bin "
+		"../test/testdata/build-mgr/279_call_temp_borrow_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_call_temp_borrow_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_call_temp_borrow_bin");
+	ASSERT_EQ(output, "76\n"
+	                  "38\n"
+	                  "76\n"
+	                  "4 6 8\n"
+	                  "and\n"
+	                  "8\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 17) << "expected 17 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+// A literal argument is a temp of the parameter's type, released like a
+// returned struct given as an argument.
+TEST(build_mgr, lit_arg_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_lit_arg_bin "
+		"../test/testdata/build-mgr/280_lit_arg_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_lit_arg_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_lit_arg_bin");
+	ASSERT_EQ(output, "2.5 4.5 6.5\n"
+	                  "6.0 4.0\n"
+	                  "3.0\n"
+	                  "9 11\n"
+	                  "and\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 17) << "expected 17 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, chain_call_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_chain_call_bin "
+		"../test/testdata/build-mgr/281_chain_call_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_chain_call_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_chain_call_bin");
+	ASSERT_EQ(output, "0.6 0.0 0.8\n"
+	                  "1.4\n"
+	                  "9.0\n"
+	                  "105\n"
+	                  "2\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 7) << "expected 7 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, chain_lit_mtrace)
+{
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_chain_lit_bin "
+		"../test/testdata/build-mgr/282_chain_lit_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_chain_lit_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_chain_lit_bin");
+	ASSERT_EQ(output, "2.0 4.0 6.0\n"
+	                  "18.0\n"
+	                  "7\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 5) << "expected 5 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, lit_arg_struct_arr_mtrace)
+{
+	// '@[2]$P' takes one block of inline structs; '@[2]P' a slot array plus a
+	// struct per element.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_lit_struct_arr_bin "
+		"../test/testdata/build-mgr/283_lit_arg_struct_arr_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_lit_struct_arr_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_lit_struct_arr_bin");
+	ASSERT_EQ(output, "4 8\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, ptr_ptr_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/284_ptr_ptr_field.pa");
+	ASSERT_EQ(output, "7 6\n7 6\n");
 }

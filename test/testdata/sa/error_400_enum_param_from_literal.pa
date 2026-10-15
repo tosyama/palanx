@@ -1,0 +1,4 @@
+type Color enum { RED, GREEN };
+type Fruit enum { APPLE };
+func f(Color c) {}
+f(0);

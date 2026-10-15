@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+
+type P { int32 x; int32 y; };
+
+func fe(@[2]$P a) -> int32 r { a[1].y -> r; }
+func fp(@[2]P a) -> int32 r { a[1].y -> r; }
+
+mtrace();
+printf("%d %d\n", fe(@[[1, 2], [3, 4]]), fp(@[[5, 6], [7, 8]]));
+muntrace();

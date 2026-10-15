@@ -1,0 +1,18 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+
+type vec3 { flo32 x; flo32 y; flo32 z; };
+
+func scaled(@vec3 v, flo32 f) -> vec3 { return [v.x*f, v.y*f, v.z*f]; }
+func sum(@vec3 v) -> flo32 { return v.x + v.y + v.z; }
+func first(@[3]int32 a) -> int32 { return a[0]; }
+
+mtrace();
+{
+	flo32 h = 2;
+	vec3 d = [1, h, 3] -> scaled(2);
+	printf("%.1f %.1f %.1f\n", d.x, d.y, d.z);
+	printf("%.1f\n", {x: 1, y: 2, z: 3} -> scaled(3) -> sum());
+	printf("%d\n", [7, 8, 9] -> first());
+}
+muntrace();

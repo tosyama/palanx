@@ -18,6 +18,7 @@ enum PlnMessageCode {
 	E_ExpectedLinkKeyword,		// identifier
 	E_UnexpectedChar,		// character
 	E_InvalidCharLiteral,		// literal text
+	E_InvalidNumberLiteral,		// literal text
 };
 
 class PlnGenAstMessage

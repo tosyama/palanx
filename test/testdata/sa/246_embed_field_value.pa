@@ -1,0 +1,14 @@
+cinclude <sys/stat.h>;
+type P { int32 x; int32 y; };
+type Q { $P a; P b; };
+func g(P p) -> int32 { return p.x; }
+func ra(@Q q) -> P { return q.a; }
+Q q = [[1, 2], [3, 4]];
+P v;
+q.a -> v;
+P w = q.a;
+int32 n = g(q.a);
+[q.b, q.a] -> q;
+P r = ra(@q);
+stat st;
+timespec t = st.st_atim;

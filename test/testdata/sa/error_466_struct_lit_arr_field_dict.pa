@@ -1,0 +1,2 @@
+type M { [2]int32 v; int32 n; };
+M a = [{x: 1}, 0];

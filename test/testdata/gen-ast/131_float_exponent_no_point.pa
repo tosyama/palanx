@@ -1,0 +1,4 @@
+flo64 a = 1e10;
+flo32 b = 1E-3;
+flo64 c = 2e+5;
+int32 d = 1u;

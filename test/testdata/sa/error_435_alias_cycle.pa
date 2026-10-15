@@ -1,0 +1,2 @@
+type X = [2]Y;
+type Y = [2]X;

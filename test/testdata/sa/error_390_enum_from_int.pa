@@ -1,0 +1,4 @@
+type Color enum { RED, GREEN };
+type Fruit enum { APPLE };
+int32 n = 1;
+Color c = n;

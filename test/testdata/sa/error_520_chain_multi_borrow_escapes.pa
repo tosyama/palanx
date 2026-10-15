@@ -1,0 +1,4 @@
+type V { flo32 x; };
+func mkpair(flo32 a) -> V v, int32 n { [a] -> v; 7 -> n; }
+func pick(@V v, int32 n) -> @V { return v; }
+@V p = mkpair(1) -> pick();

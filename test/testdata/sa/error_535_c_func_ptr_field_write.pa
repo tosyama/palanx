@@ -1,0 +1,3 @@
+cinclude "254_c_func_ptr_field.h";
+CB c;
+c.fn -> c.fn;

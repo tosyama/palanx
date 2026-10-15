@@ -1,0 +1,5 @@
+type T { int32 x; };
+func g(@!T a) { }
+func h(@T a) {
+	a.g();
+}

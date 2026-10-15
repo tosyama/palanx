@@ -1,0 +1,35 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type Q { $P a; P b; };
+type O { [2]int32 v; int32 n; };
+type H { O o; int32 k; };
+func mk(int32 n) -> P { return [n, n + 1]; }
+func f(@P p) -> Q { return [p, mk(9)]; }
+func mko(int32 n) -> O { return [[n, n], n]; }
+func showq(@Q q) { printf("%d %d %d %d\n", q.a.x, q.a.y, q.b.x, q.b.y); }
+mtrace();
+{
+	P v = [1, 2];
+	Q q = [v, mk(3)];
+	showq(@q);
+	[q.b, @q.a] -> q;
+	showq(@q);
+	[mk(5), q.b] -> q;
+	showq(@q);
+	Q r = f(@v);
+	showq(@r);
+	[2]P os = [mk(7), v];
+	[os[1], os[0]] -> os;
+	printf("%d %d %d %d\n", os[0].x, os[0].y, os[1].x, os[1].y);
+	[2]$P es = [os[1], mk(11)];
+	printf("%d %d %d %d\n", es[0].x, es[0].y, es[1].x, es[1].y);
+	O o = [[20, 21], 22];
+	H h = [o, 1];
+	[mko(30), h.k] -> h;
+	H g = [h.o, 2];
+	[2]H hs = [g, h];
+	[hs[1], hs[0]] -> hs;
+	printf("%d %d %d %d %d %d\n", h.o.v[0], h.o.n, g.o.v[1], g.k, hs[0].k, hs[1].k);
+}
+muntrace();

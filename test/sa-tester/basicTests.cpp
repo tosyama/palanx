@@ -24,6 +24,17 @@ static json run_sa(const string& pa_file)
 	return json::parse(f);
 }
 
+// A call argument held in a temp: the call that initializes it, and the
+// function that releases it.
+static const json& tempInit(const json& arg)
+{
+	return arg.at("body").at(0).at("vars").at(0).at("init");
+}
+static string tempRelease(const json& arg)
+{
+	return arg.at("release").at(0).at("body").at("name");
+}
+
 TEST(sa, helloworld_sa) {
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
@@ -1130,8 +1141,9 @@ TEST(sa, embed_arr_decl_const_inner) {
 	const auto& mat_vtype = body_f[0]["vars"][0]["var-type"];
 	ASSERT_EQ(mat_vtype["type-kind"],   "pntr");
 	ASSERT_TRUE(mat_vtype.value("embedded", false));
-	ASSERT_EQ(mat_vtype["inner-size"],  4);
-	ASSERT_EQ(mat_vtype["base-type"]["type-name"], "int32");
+	ASSERT_EQ(mat_vtype["stride"],      16);
+	ASSERT_EQ(mat_vtype["base-type"]["arr-size"], 4);
+	ASSERT_EQ(mat_vtype["base-type"]["base-type"]["type-name"], "int32");
 
 	const auto& init = body_f[0]["vars"][0]["init"];
 	ASSERT_EQ(init["expr-type"], "call");
@@ -1161,14 +1173,15 @@ TEST(sa, embed_arr_decl_variable_inner) {
 	ASSERT_EQ(body_g[0]["vars"][0]["var-type"]["type-name"], "uint64");
 	ASSERT_EQ(body_g[0]["vars"][0]["init"]["name"], "cols");
 
-	// body[1]: mat = malloc(rows * (__mat_d1 * 4))  — var-type has no inner-size
+	// body[1]: mat = malloc(rows * (__mat_d1 * 4))  — the row size is not in the type
 	ASSERT_EQ(body_g[1]["stmt-type"], "var-decl");
 	ASSERT_EQ(body_g[1]["vars"][0]["name"], "mat");
 	const auto& mat_vtype_g = body_g[1]["vars"][0]["var-type"];
 	ASSERT_EQ(mat_vtype_g["type-kind"], "pntr");
 	ASSERT_TRUE(mat_vtype_g.value("embedded", false));
-	ASSERT_FALSE(mat_vtype_g.contains("inner-size"));
-	ASSERT_EQ(mat_vtype_g["base-type"]["type-name"], "int32");
+	ASSERT_FALSE(mat_vtype_g.contains("stride"));
+	ASSERT_FALSE(mat_vtype_g["base-type"].contains("arr-size"));
+	ASSERT_EQ(mat_vtype_g["base-type"]["base-type"]["type-name"], "int32");
 
 	const auto& init_g = body_g[1]["vars"][0]["init"];
 	ASSERT_EQ(init_g["expr-type"], "call");
@@ -1192,14 +1205,15 @@ TEST(sa, embed_arr_func_param) {
 	ASSERT_TRUE(jout.is_object());
 	ASSERT_GE(jout["functions"].size(), 2u);
 
-	// func process: first param is pntr, embedded:true, inner-size:4
+	// func process: first param is pntr, embedded:true, a 4-element row of 16 bytes
 	const auto& params = jout["functions"][0]["parameters"];
 	ASSERT_EQ(params[0]["name"], "mat");
 	const auto& mat_vt = params[0]["var-type"];
 	ASSERT_EQ(mat_vt["type-kind"], "pntr");
 	ASSERT_TRUE(mat_vt.value("embedded", false));
-	ASSERT_EQ(mat_vt["inner-size"], 4);
-	ASSERT_EQ(mat_vt["base-type"]["type-name"], "int32");
+	ASSERT_EQ(mat_vt["stride"], 16);
+	ASSERT_EQ(mat_vt["base-type"]["arr-size"], 4);
+	ASSERT_EQ(mat_vt["base-type"]["base-type"]["type-name"], "int32");
 
 	// return mat[0][0]: nested arr-index, outer elem-size=16, inner elem-size=4
 	const auto& ret = jout["functions"][0]["body"][0];
@@ -1235,9 +1249,9 @@ TEST(sa, embed_arr_var_row_access) {
 	ASSERT_EQ(body[0]["vars"][0]["name"], "__mat_d1");
 	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "cols");
 
-	// body[1]: mat = malloc(n * (__mat_d1 * 4)), no inner-size field
+	// body[1]: mat = malloc(n * (__mat_d1 * 4)), no stride
 	ASSERT_EQ(body[1]["vars"][0]["name"], "mat");
-	ASSERT_FALSE(body[1]["vars"][0]["var-type"].contains("inner-size"));
+	ASSERT_FALSE(body[1]["vars"][0]["var-type"].contains("stride"));
 
 	// body[2]: mat[0][0] is evaluated into a temp before body[3] frees mat;
 	// the inner arr-index (row access) has mul elem-size
@@ -3499,7 +3513,7 @@ TEST(sa, deref_struct_ptr_field_rw)
 	ASSERT_EQ(write_ptr["elem-size"]["value"], "16");
 	ASSERT_EQ(write_ptr["value-type"]["type-kind"], "pntr");
 	ASSERT_EQ(write_ptr["value-type"]["base-type"]["type-kind"], "struct");
-	ASSERT_EQ(write_ptr["value-type"]["mutable"], true);
+	ASSERT_FALSE(write_ptr["value-type"].contains("mutable"));
 
 	const auto& v = jout["statements"][2]["vars"][0];
 	ASSERT_EQ(v["init"]["expr-type"], "field-access");
@@ -3518,7 +3532,8 @@ TEST(sa, deref_readonly_struct_ptr_field_read)
 	const auto& v = jout["statements"][2]["vars"][0];
 	const auto& ptr_expr = v["init"]["ptr-expr"];
 	ASSERT_EQ(ptr_expr["addr-only"], true);
-	ASSERT_EQ(ptr_expr["value-type"]["mutable"], false);
+	ASSERT_FALSE(ptr_expr["value-type"].contains("mutable"));
+	ASSERT_EQ(ptr_expr["array"]["value-type"]["mutable"], false);
 }
 
 TEST(sa, cinclude_arr_field_prim)
@@ -4463,8 +4478,21 @@ TEST(sa, struct_borrow)
 	ASSERT_EQ(args[2]["expr-type"], "arr-index");
 	ASSERT_EQ(args[2]["value-type"]["mutable"], false);
 
-	// A call result has no name to write '@' on and binds as it is.
-	ASSERT_EQ(args[3]["category"], "expiring");
+	// '@mk()' borrows the returned struct for the call, which then releases it.
+	ASSERT_EQ(args[3]["value"]["value-type"]["mutable"], false);
+	ASSERT_EQ(tempInit(args[3])["category"], "expiring");
+	ASSERT_EQ(tempRelease(args[3]), "free");
+
+	vector<json> setArgs;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr" && st["body"]["name"] == "setv")
+			setArgs.push_back(st["body"]["args"][0]);
+	// 'setv(@!mk())' and the method form 'mk().setv()'.
+	ASSERT_EQ(setArgs.size(), 2u);
+	for (auto& a : setArgs) {
+		ASSERT_EQ(a["value"]["value-type"]["mutable"], true);
+		ASSERT_EQ(tempRelease(a), "free");
+	}
 }
 
 TEST(sa, ptr_arr_field_permission)
@@ -4779,13 +4807,13 @@ TEST(sa, struct_ret_temp) {
 	json jout = run_sa("../test/testdata/sa/217_struct_ret_temp.pa");
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 3);
-	// A returned struct passed as an argument is released by the call.
+	// A returned struct passed as an argument is held in a temp and released.
 	const auto& argP = stmts[0]["vars"][0]["init"]["args"][0];
-	ASSERT_EQ(argP["release-after-call"]["name"], "free");
-	ASSERT_EQ(argP["release-after-call"]["func-type"], "c");
+	ASSERT_EQ(tempRelease(argP), "free");
+	ASSERT_EQ(argP["release"][0]["body"]["func-type"], "c");
 	const auto& argQ = stmts[1]["vars"][0]["init"]["args"][0];
-	ASSERT_EQ(argQ["release-after-call"]["name"], "__pln_free_Q");
-	ASSERT_EQ(argQ["release-after-call"]["func-type"], "pln");
+	ASSERT_EQ(tempRelease(argQ), "__pln_free_Q");
+	ASSERT_EQ(argQ["release"][0]["body"]["func-type"], "pln");
 	// A discarded one is received in a temp and freed.
 	const auto& blk = stmts[2];
 	ASSERT_EQ(blk["stmt-type"], "block");
@@ -4838,4 +4866,809 @@ TEST(sa, unsized_struct_arr_sig) {
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts[0]["vars"][0]["var-type"]["base-type"], ownedSlot);
 	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"], contigSlot);
+}
+
+TEST(sa, enum_type) {
+	json jout = run_sa("../test/testdata/sa/222_enum.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto enumType = [](const char* base, const char* name) {
+		return json{{"type-kind","prim"},{"type-name",base},{"enum",name}};
+	};
+	json color = enumType("int32", "Color");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["var-type"], color);
+	ASSERT_EQ(stmts[0]["vars"][0]["init"],
+		(json{{"expr-type","lit-int"},{"value","5"},{"value-type",color},{"loc",{10,11,10,19}}}));
+	const auto& widen = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(widen["expr-type"], "convert");
+	ASSERT_EQ(widen["from-type"], color);
+	// The base type is C's enumerator type: int32 whenever every value fits.
+	ASSERT_EQ(stmts[3]["vars"][0]["var-type"], enumType("int32", "Sign"));
+	ASSERT_EQ(stmts[4]["vars"][0]["var-type"], enumType("uint32", "Flags"));
+	ASSERT_EQ(stmts[5]["vars"][0]["var-type"], enumType("uint64", "Big"));
+	ASSERT_EQ(stmts[6]["vars"][0]["var-type"], enumType("int64", "Wide"));
+
+	const auto& next = jout["functions"][0];
+	ASSERT_EQ(next["parameters"][0]["var-type"], color);
+	ASSERT_EQ(next["ret-type"], color);
+	// Color(c + 1): the sum is int32, and only the enum label is put back.
+	json cast = next["body"][0]["values"][0];
+	ASSERT_EQ(cast["expr-type"], "add");
+	ASSERT_EQ(cast["value-type"], color);
+}
+
+TEST(sa, c_enum) {
+	json jout = run_sa("../test/testdata/sa/223_c_enum.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto enumType = [](const char* name) {
+		return json{{"type-kind","prim"},{"type-name","int32"},{"enum",name}};
+	};
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[1]["value-type"], enumType("Color"));
+	ASSERT_EQ(stmts[1]["value"]["value"], "6");
+	ASSERT_EQ(stmts[2]["value-type"], enumType("CSpace"));
+	ASSERT_EQ(stmts[3]["target"]["array"]["value-type"]["base-type"], enumType("Mode"));
+	const auto& args = stmts[5]["vars"][0]["init"]["args"];
+	ASSERT_EQ(args[0]["value-type"], enumType("Color"));   // DEF_COLOR macro
+	ASSERT_EQ(args[0]["value"], "5");
+	ASSERT_EQ(args[1]["value-type"], enumType("Mode"));
+	ASSERT_EQ(stmts[5]["vars"][0]["var-type"], enumType("CSpace"));
+	ASSERT_EQ(stmts[6]["vars"][0]["init"]["value"], "10");    // anonymous enumerator
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["value-type"], enumType("CSpace"));
+	ASSERT_EQ(stmts[8]["vars"][0]["init"]["value-type"], enumType("Color"));
+	ASSERT_EQ(stmts[9]["vars"][0]["init"]["value-type"], enumType("Color"));
+}
+
+TEST(sa, cross_cinclude_typedef) {
+	json jout = run_sa("../test/testdata/sa/224_cross_cinclude_typedef.pa");
+	ASSERT_TRUE(jout.is_object());
+	json u64 = {{"type-kind","prim"},{"type-name","uint64"}};
+	json kind = {{"type-kind","prim"},{"type-name","int32"},{"enum","Kind"}};
+	const auto& stmts = jout["statements"];
+	const auto& call = stmts[2]["vars"][0]["init"];   // box_len(@r, b.n, Kind.K_B)
+	ASSERT_EQ(call["value-type"], u64);
+	ASSERT_EQ(call["args"][0]["value-type"]["base-type"]["type-name"], "Rec");
+	ASSERT_EQ(call["args"][1]["value-type"], u64);
+	ASSERT_EQ(call["args"][2]["value-type"], kind);
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"], u64);    // count_t: a typedef of my_size
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["offset"], 16);
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"], kind);
+	json constU64 = u64;
+	constU64["const"] = true;
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["array"]["value-type"]["base-type"], constU64);
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value-type"], u64);   // ((my_size)8) macro
+}
+
+TEST(sa, sizeof) {
+	json jout = run_sa("../test/testdata/sa/225_sizeof.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const char* sizes[] = {"2", "16", "4", "12", "8", "12", "12", "24", "36", "32", "16", "12", "12"};
+	for (size_t i = 0; i < size(sizes); i++) {
+		const auto& init = stmts[i]["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "lit-uint") << i;
+		ASSERT_EQ(init["value"], sizes[i]) << i;
+	}
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value-type"]["type-name"], "uint64");
+	ASSERT_EQ(stmts[12]["vars"][0]["init"]["value-type"]["type-name"], "uint32");
+	ASSERT_EQ(stmts[13]["vars"][0]["var-type"]["arr-size"], 16);
+}
+
+static void collectCalls(const json& node, const string& name, vector<json>& out)
+{
+	if (node.is_object()) {
+		if (node.value("expr-type", "") == "call" && node.value("name", "") == name)
+			out.push_back(node);
+		for (auto& [k, v] : node.items()) collectCalls(v, name, out);
+	} else if (node.is_array()) {
+		for (auto& v : node) collectCalls(v, name, out);
+	}
+}
+
+TEST(sa, method_call) {
+	json jout = run_sa("../test/testdata/sa/226_method_call.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto calls = [&](const string& name) { vector<json> v; collectCalls(jout, name, v); return v; };
+
+	// Every receiver is passed as a mutable borrow in the first argument.
+	auto setx = calls("setx");
+	ASSERT_EQ(setx.size(), 2u);
+	for (auto& c : setx) {
+		ASSERT_EQ(c["args"].size(), 2u);
+		ASSERT_EQ(c["args"][0]["value-type"]["mutable"], true);
+		ASSERT_EQ(c["args"][0]["value-type"]["base-type"]["type-name"], "Outer");
+	}
+	auto setv = calls("setv");
+	ASSERT_EQ(setv.size(), 4u);
+	for (auto& c : setv)
+		ASSERT_EQ(c["args"][0]["value-type"]["mutable"], true);
+	ASSERT_EQ(setv[0]["args"][0]["expr-type"], "field-access");	// o.inner.setv() inside setx
+	ASSERT_EQ(setv[2]["args"][0]["expr-type"], "arr-index");	// ins[1].setv()
+	ASSERT_FALSE(setv[3]["args"][0].value("addr-only", false));	// h.p.setv() loads the borrow
+	auto fill = calls("fill");
+	ASSERT_EQ(fill.size(), 2u);
+	for (auto& c : fill) {
+		ASSERT_EQ(c["args"][0]["value-type"]["mutable"], true);
+		ASSERT_EQ(c["args"][0]["value-type"]["arr-size"], 3);
+	}
+
+	auto swapxy = calls("swapxy");
+	ASSERT_EQ(swapxy.size(), 2u);
+	ASSERT_EQ(swapxy[0]["value-types"].size(), 2u);
+	ASSERT_EQ(swapxy[0]["args"][0]["name"], "o");
+
+	auto mktime = calls("mktime");
+	ASSERT_EQ(mktime.size(), 1u);
+	ASSERT_EQ(mktime[0]["func-type"], "c");
+	ASSERT_EQ(mktime[0]["args"][0]["name"], "t");
+	ASSERT_EQ(mktime[0]["args"][0]["value-type"]["mutable"], true);
+}
+
+TEST(sa, method_call_alias) {
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/227_method_call_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	vector<json> v;
+	collectCalls(jout, "square", v);
+	ASSERT_EQ(v.size(), 2u);
+	// The block's variable M shadows the alias M; outside it, M is the alias.
+	ASSERT_EQ(v[0]["args"][0]["name"], "M");
+	ASSERT_EQ(v[0]["args"][0]["value-type"]["base-type"]["type-name"], "T");
+	ASSERT_EQ(v[1]["args"][0]["expr-type"], "lit-int");
+}
+
+static void genLibSaTypes()
+{
+	for (string lib : {"lib_sa_types", "lib_sa_types_mid", "lib_sa_types2"})
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
+}
+
+TEST(sa, import_type)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/228_import_type.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// Laid out from the exporting module, where the non-exported Inner and
+	// the cinclude'd FILE are known.
+	const auto& p = stmts[0]["vars"][0]["init"];
+	ASSERT_EQ(p["name"], "calloc");
+	ASSERT_EQ(p["args"][1]["value"], "24");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["name"], "__pln_alloc_arr_Vec");
+	ASSERT_EQ(stmts[3]["vars"][0]["var-type"]["type-name"], "int64");
+	ASSERT_EQ(stmts[4]["vars"][0]["var-type"]["enum"], "Color");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value"], "5");
+	// getX's return type is the exporting module's non-exported alias Priv.
+	const auto& x = stmts[5]["vars"][0]["init"];
+	ASSERT_EQ(x["name"], "getX");
+	ASSERT_EQ(x["value-type"]["type-name"], "int32");
+	ASSERT_EQ(x["args"][0]["value-type"]["base-type"]["type-name"], "Vec");
+}
+
+TEST(sa, import_type_alias)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/229_import_type_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["args"][1]["value"], "24");
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["type-name"], "int64");
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["enum"], "Color");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["value"], "5");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["enum"], "Color");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["name"], "getX");
+	// A top-level const names the enumerator through the alias.
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value"], "5");
+	// A module-alias call chained into a call is its first argument.
+	const auto& z = stmts[6]["vars"][0]["init"];
+	ASSERT_EQ(z["name"], "id");
+	ASSERT_EQ(z["args"][0]["name"], "getX");
+}
+
+TEST(sa, import_type_selective)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/230_import_type_selective.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"][1]["vars"][0]["init"]["name"], "getX");
+}
+
+TEST(sa, import_type_diamond)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/231_import_type_diamond.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"][1]["body"]["name"], "setX");
+	ASSERT_EQ(jout["statements"][2]["vars"][0]["init"]["name"], "getX");
+}
+
+TEST(sa, import_type_field)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/232_import_type_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	json shape;
+	for (auto& s : jout["alloc-shapes"])
+		if (s.value("shape-name", "") == "S") shape = s;
+	// e $Vec 24 + o Vec 8 + arr [2]$Vec 48 + c Color 4 (+4 padding) + q $V.Vec 24
+	ASSERT_EQ(shape["total-size"], 112);
+	ASSERT_EQ(shape["owned-fields"].size(), 1u);
+	ASSERT_EQ(shape["owned-fields"][0]["name"], "o");
+	ASSERT_EQ(shape["owned-fields"][0]["struct-name"], "Vec");
+}
+
+TEST(sa, struct_field_const_size)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/233_struct_field_const_size.pa");
+	ASSERT_TRUE(jout.is_object());
+	map<string, json> shapes;
+	for (auto& s : jout["alloc-shapes"])
+		if (s.value("shape-kind", "") == "struct") shapes[s["shape-name"]] = s;
+	// a [3]$int32 12 + b [3]$Point 24 (+4) + c [3]@Point 24 + d 8 + e 8
+	// + r [3]$int16 6 + z [8]$uint8 8 (+2)
+	ASSERT_EQ(shapes["S"]["total-size"], 96);
+	ASSERT_EQ(shapes["S"]["owned-array-fields"].size(), 2u);
+	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["name"], "d");
+	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["count"], 3);
+	ASSERT_EQ(shapes["S"]["owned-array-fields"][1]["offset"], 72);
+	ASSERT_EQ(shapes["L"]["total-size"], 16);
+	ASSERT_EQ(shapes["L"]["owned-array-fields"][0]["count"], 2);
+}
+
+TEST(sa, top_decl_order)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/234_top_decl_order.pa");
+	ASSERT_TRUE(jout.is_object());
+	json shape;
+	for (auto& s : jout["alloc-shapes"])
+		if (s.value("shape-name", "") == "S") shape = s;
+	// a 8 + ts 16 + v [3]$int32 12 + t 4 + u 8 + al 8 + e 4 (+4) + p 8
+	ASSERT_EQ(shape["total-size"], 72);
+	ASSERT_EQ(shape["owned-fields"][0]["struct-name"], "U");
+}
+
+TEST(sa, import_mutual_type)
+{
+	cleanTestEnv();
+	for (string f : {"lib_sa_mutual", "235_import_mutual_type"})
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/235_import_mutual_type.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Pair: n $Node (id 4 (+4) + leaf 16 + pair 8) + ls [2]$Leaf 32
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "64");
+}
+
+TEST(sa, import_mutual_alias)
+{
+	// Leaf points at the importer's Node through an alias, and at a private
+	// struct that embeds Node, so both resolve only after Node is settled.
+	cleanTestEnv();
+	for (string f : {"lib_sa_mutual_alias", "252_import_mutual_alias"})
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/252_import_mutual_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Node: id 4 (+4) + leaf (v 8 + up 8 + o 8)
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "32");
+}
+
+TEST(sa, import_c_enum_field)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_c_enum.pa -o out/lib_sa_c_enum.pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/251_import_c_enum_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& init = jout["statements"].back()["vars"][0]["init"];
+	ASSERT_EQ(init["src"]["value-type"]["enum"], "Color");
+}
+
+TEST(sa, alias_cast)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/236_alias_cast.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["expr-type"], "convert");
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["value-type"]["type-name"], "uint8");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["value-type"]["type-name"], "uint64");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["enum"], "Color");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value-type"]["type-name"], "int64");
+}
+
+TEST(sa, struct_ptr_elem_copy)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/237_struct_ptr_elem_copy.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& funcs = jout["functions"];
+	const auto& copy = funcs[0]["body"][0]["body"];
+	ASSERT_EQ(copy["expr-type"], "call");
+	ASSERT_EQ(copy["name"], "memcpy");
+	ASSERT_EQ(copy["args"][0]["expr-type"], "arr-index");
+	const auto& borrow = funcs[1]["body"][0]["vars"][0]["init"];
+	ASSERT_EQ(borrow["expr-type"], "arr-index");
+	ASSERT_EQ(borrow["value-type"]["mutable"], true);
+}
+
+TEST(sa, struct_lit_init_assign)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/238_struct_lit_init_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["name"], "calloc");
+	ASSERT_EQ(stmts[1]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[1]["var"], "a");
+	ASSERT_EQ(stmts[3]["offset"], 8);
+	// {z: 6, x: 4, y: 5} is stored in field order.
+	ASSERT_EQ(stmts[5]["offset"], 0);
+	ASSERT_EQ(stmts[5]["value"]["value"], "4");
+	// s.a is an owned struct reached through its pointer; s.b is embedded at offset 8.
+	ASSERT_TRUE(stmts[9].contains("ptr-expr"));
+	ASSERT_EQ(stmts[12]["var"], "s");
+	ASSERT_EQ(stmts[12]["offset"], 8);
+
+	// Values first, then the target's address, then the stores through it.
+	const auto& swap = stmts[15];
+	ASSERT_EQ(swap["stmt-type"], "block");
+	ASSERT_EQ(swap["body"].size(), 7);
+	ASSERT_EQ(swap["body"][0]["vars"][0]["init"]["offset"], 4);
+	ASSERT_EQ(swap["body"][3]["vars"][0]["var-type"]["mutable"], true);
+	ASSERT_EQ(swap["body"][4]["stmt-type"], "field-assign");
+	ASSERT_EQ(swap["body"][4]["value"]["name"], swap["body"][0]["vars"][0]["name"]);
+	ASSERT_EQ(stmts[16]["stmt-type"], "block");
+	ASSERT_EQ(stmts[18]["stmt-type"], "block");
+	ASSERT_EQ(stmts[18]["body"][3]["vars"][0]["init"]["expr-type"], "arr-index");
+
+	const auto& fbody = jout["functions"][0]["body"];
+	ASSERT_EQ(fbody[0]["stmt-type"], "block");
+	ASSERT_EQ(fbody[0]["body"][3]["vars"][0]["init"]["expr-type"], "arr-index");
+}
+
+TEST(sa, named_ret_struct_auto_decl)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/239_named_ret_struct_auto_decl.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Allocated at entry and handed to the caller, so no free follows.
+	const auto& fbody = jout["functions"][0]["body"];
+	ASSERT_EQ(fbody.size(), 2);
+	ASSERT_EQ(fbody[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(fbody[0]["vars"][0]["name"], "p");
+	ASSERT_EQ(fbody[0]["vars"][0]["init"]["name"], "calloc");
+	const auto& gbody = jout["functions"][1]["body"];
+	ASSERT_EQ(gbody.size(), 3);
+	ASSERT_EQ(gbody[0]["vars"][0]["name"], "o");
+	ASSERT_EQ(gbody[0]["vars"][0]["init"]["name"], "__pln_alloc_O");
+}
+
+TEST(sa, struct_init_from_call)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/240_struct_init_from_call.pa");
+	ASSERT_TRUE(jout.is_object());
+	// The variable takes over the returned struct: no calloc, no copy.
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+	const char* expected[][2] = {{"a", "named"}, {"b", "plain"}, {"c", "named"}};
+	for (int i = 0; i < 3; i++) {
+		ASSERT_EQ(stmts[i]["stmt-type"], "var-decl");
+		ASSERT_EQ(stmts[i]["vars"].size(), 1);
+		ASSERT_EQ(stmts[i]["vars"][0]["name"], expected[i][0]);
+		ASSERT_EQ(stmts[i]["vars"][0]["init"]["expr-type"], "call");
+		ASSERT_EQ(stmts[i]["vars"][0]["init"]["name"], expected[i][1]);
+	}
+}
+
+
+TEST(sa, return_struct_lit)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/241_return_struct_lit.pa");
+	ASSERT_TRUE(jout.is_object());
+	// The literal initializes a temp that is returned like a variable: not freed.
+	for (int i = 0; i < 3; i++) {
+		const auto& body = jout["functions"][i]["body"];
+		ASSERT_EQ(body[0]["stmt-type"], "var-decl");
+		string name = body[0]["vars"][0]["name"];
+		ASSERT_EQ(name.rfind("__ret_", 0), 0);
+		const auto& ret = body[body.size() - 1];
+		ASSERT_EQ(ret["stmt-type"], "return");
+		ASSERT_EQ(ret["values"][0]["expr-type"], "id");
+		ASSERT_EQ(ret["values"][0]["name"], name);
+		for (auto& s : body)
+			ASSERT_NE(s.value("stmt-type", ""), "free") << s;
+	}
+}
+
+TEST(sa, arr_lit_assign)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/242_arr_lit_assign.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// Values first, then the target's address as a mutable borrow, then the stores through it.
+	auto check = [&](int i, const string& targetExpr, const string& store, size_t count) {
+		const auto& body = stmts[i]["body"];
+		ASSERT_EQ(stmts[i]["stmt-type"], "block");
+		ASSERT_EQ(body.size(), 2 * count + 1);
+		const auto& target = body[count]["vars"][0];
+		ASSERT_EQ(target["init"]["expr-type"], targetExpr);
+		ASSERT_EQ(target["var-type"]["mutable"], true);
+		for (size_t k = count + 1; k < body.size(); k++)
+			ASSERT_EQ(body[k]["stmt-type"], store);
+	};
+	check(3, "id", "arr-assign", 2);
+	ASSERT_EQ(stmts[3]["body"][3]["value"]["name"], stmts[3]["body"][0]["vars"][0]["name"]);
+	ASSERT_EQ(stmts[3]["body"][3]["target"]["array"]["name"], stmts[3]["body"][2]["vars"][0]["name"]);
+	// The owned array field's pointer is read; the embedded one's address is computed.
+	check(5, "field-access", "arr-assign", 4);
+	ASSERT_EQ(stmts[5]["body"][4]["vars"][0]["init"]["addr-only"], false);
+	check(6, "field-access", "field-assign", 4);
+	ASSERT_EQ(stmts[6]["body"][4]["vars"][0]["init"]["addr-only"], true);
+	check(13, "arr-index", "arr-assign", 2);
+
+	const auto& q = stmts[14]["vars"][0]["init"];
+	ASSERT_EQ(q["expr-type"], "field-access");
+	ASSERT_EQ(q["value-type"]["embedded"], true);
+	ASSERT_EQ(q["value-type"]["mutable"], true);
+}
+
+TEST(sa, struct_lit_arr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/243_struct_lit_arr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// Field order: c[0..2] and v[0..1] are element stores; ps and os elements are struct field stores.
+	auto checkStores = [](const json& list, size_t from) {
+		for (size_t k = 0; k < 13; k++)
+			ASSERT_EQ(list[from + k]["stmt-type"], (k < 3 || k >= 11) ? "arr-assign" : "field-assign");
+	};
+	checkStores(stmts, 1);
+	ASSERT_EQ(stmts[1]["target"]["array"]["expr-type"], "field-access");
+	ASSERT_EQ(stmts[1]["target"]["array"]["var"], "m");
+
+	// '->': all 13 values go to temps before the target's address and the stores.
+	const auto& body = stmts[14]["body"];
+	ASSERT_EQ(stmts[14]["stmt-type"], "block");
+	ASSERT_EQ(body.size(), 27);
+	checkStores(body, 14);
+	ASSERT_EQ(body[26]["value"]["name"], body[12]["vars"][0]["name"]);
+
+	checkStores(stmts, 17);
+}
+
+TEST(sa, struct_lit_struct_expr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/244_struct_lit_struct_expr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// Q q = [v, mk(3)]: copy from v, and from the call result through a freed temp.
+	ASSERT_EQ(stmts[4]["body"]["name"], "memcpy");
+	ASSERT_EQ(stmts[4]["body"]["args"][1]["name"], "v");
+	ASSERT_EQ(stmts[5]["body"][0]["vars"][0]["init"]["name"], "mk");
+
+	// [q.b, @q.a] -> q: both values are copied into temp structs before the
+	// stores, which copy from the temps; the temps are freed at the end.
+	const auto& body = stmts[6]["body"];
+	ASSERT_EQ(body.size(), 9);
+	string t0 = body[0]["vars"][0]["name"], t1 = body[2]["vars"][0]["name"];
+	ASSERT_EQ(body[1]["body"]["args"][1]["expr-type"], "field-access");
+	ASSERT_EQ(body[3]["body"]["args"][1]["value-type"]["mutable"], false);
+	ASSERT_EQ(body[5]["body"]["args"][1]["name"], t0);
+	ASSERT_EQ(body[6]["body"]["args"][1]["name"], t1);
+	ASSERT_EQ(body[7]["body"]["args"][0]["name"], t1);
+	ASSERT_EQ(body[8]["body"]["args"][0]["name"], t0);
+
+	// [os[1], os[0]] -> os: struct elements go through temps as well.
+	ASSERT_EQ(stmts[14]["body"][7]["body"]["name"], "free");
+
+	// return [p, mk(1)] from f: copies from the '@P' parameter.
+	const auto& fbody = jout["functions"][1]["body"];
+	ASSERT_EQ(fbody[1]["body"]["args"][1]["name"], "p");
+}
+
+
+TEST(sa, return_unowned_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/245_return_unowned_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto func = [&](const string& name) -> const json& {
+		for (auto& f : jout["functions"])
+			if (f["name"] == name) return f["body"];
+		throw runtime_error("no function " + name);
+	};
+	// A struct the function doesn't own is copied into a fresh one, which is returned.
+	for (string name : {"ra", "rb", "rc", "rf"}) {
+		const auto& body = func(name);
+		ASSERT_EQ(body.size(), 3) << name;
+		string ret = body[0]["vars"][0]["name"];
+		ASSERT_EQ(body[1]["body"]["name"], "memcpy") << name;
+		ASSERT_EQ(body[1]["body"]["args"][0]["name"], ret) << name;
+		ASSERT_EQ(body[2]["values"][0]["name"], ret) << name;
+	}
+	ASSERT_EQ(func("ra")[1]["body"]["args"][1]["name"], "p");
+	ASSERT_EQ(func("rc")[1]["body"]["args"][1]["expr-type"], "field-access");
+
+	// From a local: the copy is made before the local is freed.
+	const auto& rd = func("rd");
+	ASSERT_EQ(rd[5]["body"]["name"], "memcpy");
+	ASSERT_EQ(rd[7]["body"]["name"], "__pln_free_Q");
+	ASSERT_EQ(func("re")[5]["body"]["name"], "memcpy");
+
+	// A struct owning fields is copied with what it owns.
+	const auto& rg = func("rg");
+	ASSERT_EQ(rg[0]["vars"][0]["init"]["name"], "__pln_alloc_Q");
+	ASSERT_EQ(rg[1]["body"]["name"], "__pln_copy_Q");
+	ASSERT_EQ(rg[1]["body"]["args"][1]["name"], "q");
+
+	// A local struct variable and a call result are returned as they are.
+	const auto& rh = func("rh");
+	ASSERT_EQ(rh.back()["values"][0]["name"], "l");
+	const auto& ri = func("ri");
+	ASSERT_EQ(ri.size(), 1);
+	ASSERT_EQ(ri[0]["values"][0]["name"], "mk");
+
+	// A returned borrow stays a borrow.
+	const auto& rj = func("rj");
+	ASSERT_EQ(rj.size(), 1);
+	ASSERT_EQ(rj[0]["values"][0]["name"], "p");
+}
+
+TEST(sa, embed_field_value)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/246_embed_field_value.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto isEmbedA = [](const json& e) {
+		return e["expr-type"] == "field-access" && e["addr-only"] == true && e["offset"] == 0;
+	};
+	// q.a -> v and P w = q.a: copied from the field's address.
+	ASSERT_EQ(stmts[6]["body"]["name"], "memcpy");
+	ASSERT_TRUE(isEmbedA(stmts[6]["body"]["args"][1]));
+	ASSERT_EQ(stmts[8]["body"]["name"], "memcpy");
+	ASSERT_TRUE(isEmbedA(stmts[8]["body"]["args"][1]));
+	// g(q.a): passed as a struct argument.
+	ASSERT_TRUE(isEmbedA(stmts[9]["vars"][0]["init"]["args"][0]));
+	// [q.b, q.a] -> q: q.a is copied into a temp struct first.
+	ASSERT_TRUE(isEmbedA(stmts[10]["body"][3]["body"]["args"][1]));
+	// return q.a: copied into the returned struct.
+	const auto& ra = jout["functions"][1]["body"];
+	ASSERT_EQ(ra[1]["body"]["name"], "memcpy");
+	ASSERT_EQ(ra[1]["body"]["args"][1]["addr-only"], true);
+	// An embedded field of a cinclude'd struct.
+	ASSERT_EQ(stmts[14]["body"]["name"], "memcpy");
+	ASSERT_EQ(stmts[14]["body"]["args"][1]["addr-only"], true);
+}
+
+TEST(sa, member_call_borrow)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_mk.pa -o out/lib_sa_mk.pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/247_member_call_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+
+	vector<json> args;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr")
+			args.push_back(st["body"]["args"][0]);
+	// @s.scaled(), @!s.scaled(), @M.mk(), @!M.mk(), @M.mk().scaled()
+	ASSERT_EQ(args.size(), 5u);
+	const char* names[] = {"scaled", "scaled", "mk", "mk", "scaled"};
+	const bool muts[] = {false, true, false, true, false};
+	for (size_t i = 0; i < args.size(); i++) {
+		const json& call = tempInit(args[i]);
+		ASSERT_EQ(call["name"], names[i]) << i;
+		ASSERT_EQ(call["category"], "expiring") << i;
+		ASSERT_EQ(args[i]["value"]["value-type"]["mutable"], muts[i]) << i;
+		ASSERT_EQ(tempRelease(args[i]), "free") << i;
+	}
+	const auto& inner = tempInit(args[4])["args"][0];
+	ASSERT_EQ(tempInit(inner)["name"], "mk");
+	ASSERT_EQ(tempRelease(inner), "free");
+}
+
+TEST(sa, lit_arg)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/248_lit_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	// '@[1, 2]': a temp initialized like a struct variable, passed as '@temp'.
+	const auto& ro = stmts[0]["body"]["args"][0];
+	ASSERT_EQ(ro["expr-type"], "temp");
+	string temp = ro["body"][0]["vars"][0]["name"];
+	ASSERT_EQ(ro["body"].size(), 3);
+	ASSERT_EQ(ro["body"][2]["stmt-type"], "field-assign");
+	ASSERT_EQ(ro["body"][2]["var"], temp);
+	ASSERT_EQ(ro["value"]["name"], temp);
+	ASSERT_EQ(ro["value"]["value-type"]["mutable"], false);
+	ASSERT_EQ(tempRelease(ro), "free");
+	ASSERT_EQ(ro["release"][0]["body"]["args"][0]["name"], temp);
+
+	const auto& inner = stmts[1]["body"]["args"][0]["args"][0];
+	ASSERT_EQ(inner["expr-type"], "temp");
+	ASSERT_EQ(inner["value"]["value-type"]["mutable"], true);
+
+	// A 'T' parameter takes the literal without '@'.
+	const auto& byVal = stmts[2]["body"]["args"][0];
+	ASSERT_EQ(byVal["expr-type"], "temp");
+	ASSERT_FALSE(byVal["value"]["value-type"].contains("mutable"));
+
+	ASSERT_EQ(tempRelease(stmts[3]["body"]["args"][0]), "__pln_free_Q");
+
+	// A borrowed array is released with its sizes, as at a variable's scope end.
+	const auto& arr = stmts[4]["body"]["args"][0];
+	ASSERT_EQ(arr["value"]["value-type"]["mutable"], true);
+	ASSERT_EQ(tempRelease(arr), "__pln_free_arr_arr_int32");
+	ASSERT_EQ(arr["release"][0]["body"]["args"].size(), 2);
+}
+
+TEST(sa, chain_call)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/249_chain_call.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 16);
+
+	const auto& plain = stmts[5]["body"];
+	ASSERT_EQ(plain["name"], "add");
+	ASSERT_EQ(plain["args"][0]["name"], "x");
+	ASSERT_EQ(plain["args"][1]["value"], "4");
+
+	// '@' may be omitted for a '@T' parameter; a borrow is passed as it is.
+	for (int i : {6, 7}) {
+		const auto& arg = stmts[i]["body"]["args"][0];
+		ASSERT_EQ(arg["name"], "v") << i;
+		ASSERT_EQ(arg["value-type"]["mutable"], false) << i;
+	}
+	ASSERT_EQ(stmts[8]["body"]["args"][0]["name"], "b");
+	ASSERT_EQ(stmts[9]["body"]["args"][0]["value-type"]["mutable"], true);
+
+	const auto& temp = stmts[10]["body"]["args"][0];
+	ASSERT_EQ(tempInit(temp)["name"], "mk");
+	ASSERT_EQ(temp["value"]["value-type"]["mutable"], false);
+	ASSERT_EQ(tempRelease(temp), "free");
+
+	// Return values are received into temps for the statement.
+	const auto& multi = stmts[11];
+	ASSERT_EQ(multi["stmt-type"], "block");
+	ASSERT_EQ(multi["body"][0]["stmt-type"], "tapple-decl");
+	const auto& show = multi["body"][1]["body"];
+	ASSERT_EQ(show["name"], "show");
+	ASSERT_EQ(show["args"][0]["name"], multi["body"][0]["vars"][0]["var-name"]);
+	ASSERT_EQ(show["args"][1]["name"], multi["body"][0]["vars"][1]["var-name"]);
+	ASSERT_EQ(show["args"][2]["value"], "1");
+
+	// A returned struct is borrowed for a '@T' parameter and freed after the call.
+	const auto& structRet = stmts[12]["body"];
+	ASSERT_EQ(structRet.size(), 3);
+	string vtemp = structRet[0]["vars"][0]["var-name"];
+	ASSERT_EQ(structRet[1]["body"]["args"][0]["name"], vtemp);
+	ASSERT_EQ(structRet[1]["body"]["args"][0]["value-type"]["mutable"], false);
+	ASSERT_EQ(structRet[2]["body"]["name"], "free");
+	ASSERT_EQ(structRet[2]["body"]["args"][0]["name"], vtemp);
+
+	const auto& twice = stmts[13]["body"];
+	ASSERT_EQ(twice[0]["value"]["name"], "divmod");
+	ASSERT_EQ(twice[1]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(twice[1]["value"]["name"], "swap");
+	ASSERT_EQ(twice[2]["body"]["args"][0]["name"], twice[1]["vars"][0]["var-name"]);
+
+	const auto& nested = stmts[14]["body"];
+	ASSERT_EQ(nested["args"][0]["name"], "add");
+	ASSERT_EQ(nested["args"][0]["args"][0]["name"], "x");
+
+	ASSERT_EQ(stmts[15]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[15]["value"]["args"][0]["value"], "9");
+}
+
+TEST(sa, chain_lit)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/250_chain_lit.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+
+	// A literal chained to a read-only borrow parameter is passed as '@[..]'.
+	const char* callees[] = {"len2", "len2", "first"};
+	for (int i = 0; i < 3; i++) {
+		const auto& call = stmts[i]["body"];
+		ASSERT_EQ(call["name"], callees[i]) << i;
+		const auto& temp = call["args"][0];
+		ASSERT_EQ(temp["expr-type"], "temp") << i;
+		ASSERT_EQ(temp["value"]["value-type"]["mutable"], false) << i;
+		ASSERT_EQ(tempRelease(temp), "free") << i;
+	}
+}
+
+TEST(sa, lit_arg_struct_arr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/253_lit_arg_struct_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+	const auto& embedded = stmts[0]["vars"][0]["init"]["args"][0]["value"]["value-type"];
+	ASSERT_EQ(embedded["embedded"], true);
+	ASSERT_EQ(embedded["base-type"]["type-name"], "P");
+	const auto& slots = stmts[1]["vars"][0]["init"]["args"][0]["value"]["value-type"];
+	ASSERT_FALSE(slots.contains("embedded"));
+	ASSERT_EQ(slots["base-type"]["base-type"]["type-name"], "P");
+}
+
+TEST(sa, c_func_ptr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/254_c_func_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// The function pointer fields keep their 8-byte slots.
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["args"][1]["value"], "32");
+	ASSERT_EQ(stmts[1]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[1]["offset"], 24);
+}
+
+TEST(sa, ptr_ptr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/255_ptr_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& pp = stmts[1]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(pp["mutable"], true);
+	ASSERT_EQ(pp["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["base-type"]["mutable"], true);
+	ASSERT_EQ(pp["base-type"]["base-type"]["type-name"], "int32");
+	const auto& slot = stmts[2]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(slot["mutable"], false);
+	ASSERT_EQ(slot["base-type"]["mutable"], true);
+	ASSERT_EQ(slot["base-type"]["base-type"]["type-name"], "int32");
+	const auto& pl = stmts[3]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(pl["mutable"], true);
+	ASSERT_EQ(pl["base-type"]["mutable"], false);
+	ASSERT_EQ(pl["base-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(pl["base-type"]["base-type"]["type-name"], "Later");
+}
+
+TEST(sa, ptr_inner_permission)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/257_ptr_inner_permission.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
+TEST(sa, c_ptr_ptr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/256_c_ptr_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& pp = stmts[1]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(pp["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(pp["base-type"]["base-type"]["type-name"], "int32");
+	const auto& pt = stmts[2]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(pt["base-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(pt["base-type"]["base-type"]["type-name"], "T");
+	const auto& slot = stmts[3]["vars"][0]["init"]["value-type"];
+	ASSERT_EQ(slot["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(slot["base-type"]["base-type"]["type-name"], "int64");
 }

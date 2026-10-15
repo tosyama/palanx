@@ -1,0 +1,4 @@
+type Color { int32 a; };
+{
+	cinclude "error_404_c_enum_name_conflict.h";
+}

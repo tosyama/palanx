@@ -20,7 +20,7 @@ enum PlnSaMessageCode {
 	E_ExportInFunction,		// arg1: function name
 	E_UndefinedVariable,	// arg1: variable name
 	E_ReturnOutsideFunction,
-	E_MultiRetBareReturn,
+	E_NamedRetBareReturn,
 	E_SingleRetOneExpr,
 	E_VoidBareReturn,
 	E_VoidCallUsedAsValue,
@@ -48,7 +48,6 @@ enum PlnSaMessageCode {
 	E_UnsupportedStructFieldType,
 	E_RecursiveStruct,			// arg1: struct name
 	E_FieldAccessOnNonStruct,
-	E_InlineStructAsValue,
 	E_WriteToImmutablePtrField,
 	E_EmbedOwningStruct,			// arg1: struct name
 	E_WriteToReadOnlyArrElem,
@@ -86,6 +85,7 @@ enum PlnSaMessageCode {
 	E_SyscallUnsupportedParamType,	// arg1: syscall name, arg2: unsupported type display name
 	E_VarTypeInferenceNotImpl,	// arg1: variable name
 	E_StmtNotImplemented,
+	E_ExprNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
 	E_ArrLitContext,
 	E_ArrLitCountMismatch,	// arg1: variable name, arg2: declared size, arg3: literal element count
@@ -118,6 +118,26 @@ enum PlnSaMessageCode {
 	E_UnsizedArrRowSizeNotConst,
 	E_UnsizedArrRowUnsupported,
 	E_ArrElemShapeMismatch,	// arg1: expected shape, arg2: actual shape
+	E_ArgCountMismatch,	// arg1: function name, arg2: expected count, arg3: actual count
+	E_UnknownEnumerator,	// arg1: enumerator name, arg2: enum type name
+	E_DuplicateEnumerator,	// arg1: enumerator name, arg2: enum type name
+	E_EnumValueNotConst,	// arg1: enumerator name
+	E_EnumValueOutOfRange,	// arg1: enumerator name, arg2: value
+	E_DuplicateTypeName,	// arg1: type name
+	E_CastArgCount,	// arg1: target type name
+	E_SizeofArrSizeNotConst,
+	E_MethodNeedsMutableFirstParam,	// arg1: function name
+	E_UnqualifiedAliasType,	// arg1: type name, arg2: module alias
+	E_CircularTypeDecl,	// arg1: type name, arg2: dependency path
+	E_CastTargetNotPrim,	// arg1: target type name
+	E_StructLitTarget,
+	E_ArrLitTarget,	// arg1: variable name
+	E_BorrowOfTempEscapes,
+	E_AssignInExpr,
+	E_ChainToMethodCall,
+	E_ChainMultiToTapple,
+	E_UnsupportedCFieldType,	// arg1: struct name, arg2: field name, arg3: unsupported type display name
+	E_PtrInnerPermissionNarrowing,	// arg1: from type display name, arg2: to type display name
 };
 
 class PlnSaMessage

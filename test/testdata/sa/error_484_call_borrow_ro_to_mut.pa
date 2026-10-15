@@ -1,0 +1,4 @@
+type P { int32 x; };
+func g() -> P p { 3 -> p.x; }
+func k(@!P q) { 1 -> q.x; }
+k(@g());

@@ -1,0 +1,2 @@
+int32 n = 3;
+uint64 s = sizeof([n]int32);

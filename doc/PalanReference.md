@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.34
+**Version:** v0.1.40
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -137,6 +137,33 @@ multi-character, or non-ASCII literal is a compile error.
 - A `bool` can be an `if`/`while` condition. Comparisons and logical operators yield `bool`.
 - A C `_Bool` parameter or field (e.g. ncurses' `keypad`) is a `bool`.
 
+### enum
+
+```palan
+type Color enum {
+    RED,          // 0
+    GREEN = 5,
+    BLUE          // 6
+};
+
+Color c = Color.GREEN;
+int32 n = c;            // an enum widens implicitly
+Color d = Color(n + 1); // an integer needs Name(x)
+```
+
+- An enumerator without `=` is the previous value + 1, starting at 0. `=` takes an integer literal
+  or a `const`.
+- Enumerators are referenced as `Name.X`. A type alias of the enum works the same way
+  (`type Shade = Color;` then `Shade.RED`).
+- An enum's base type is the type C gives its enumerators: `int32` when every value fits, which
+  covers almost every enum. Otherwise it is `uint32` (no negative value, all fit), else `int64` or
+  `uint64`. An enum is passed to and from C as its base type.
+- An enum is its own type, like `bool`. It widens implicitly to its base type and to anything its
+  base type widens to. An integer, a `bool`, or a different enum becomes an enum only through
+  `Name(x)`; an integer literal is no exception (`Color c = 5;` is an error).
+- An operator computes an enum operand as its base type, so `Color.RED + 1` is an `int32`.
+  Storing the result back into a `Color` needs `Color(...)`.
+
 ### Implicit Widening
 
 Within the same signedness group, narrower types widen automatically to wider types:
@@ -152,6 +179,9 @@ Narrowing conversions and signed↔unsigned conversions require an explicit cast
 int64 x = 100;
 printf("%d\n", int32(x));   // explicit narrowing cast
 ```
+
+The target may also be a type alias, including a C typedef such as `size_t`, when it names a
+primitive or enum type (`MyInt(x)`).
 
 ### Usual Arithmetic Conversions (Binary Operators and Comparisons)
 
@@ -232,7 +262,9 @@ and is currently a compile error. It is not an assignment — assignment is writ
 | Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
-| Explicit cast | `type(expr)` | `int32(x)` |
+| Explicit cast | `type(expr)` | `int32(x)`, `Color(n)`, `MyInt(x)` |
+| Enumerator | `Name.X` | `Color.RED` |
+| Type size | `sizeof(type)` | `sizeof(Vec3f)` |
 | Logical AND | `expr && expr` | `a && b` |
 | Logical OR | `expr \|\| expr` | `a \|\| b` |
 | Logical NOT | `!expr` | `!x` |
@@ -265,6 +297,27 @@ integer types (float operands are a compile error). The result is always `bool` 
 0 if false).
 
 The assignment expression `expr -> var` evaluates `expr`, stores it in `var`, and the result is the stored value.
+
+Assignments chain as a statement: `v -> a -> b;` is `v -> a; a -> b;`, and the same holds
+for `->>` (`x ->> s.p ->> t.p;` moves ownership from `x` to `s.p`, then from `s.p` to `t.p`).
+A target followed by another `->` is read back as the next value, so its index is evaluated
+twice (`v -> arr[f()] -> x` calls `f` twice). Targets are stored left to right: in
+`n -> i -> arr[i]`, `arr[i]` uses the `i` just stored. An assignment used inside any other
+expression is not supported.
+A call can follow `->` too; see [Chained Calls](#chained-calls).
+
+`sizeof(type)` is the byte size of a type, as C's `sizeof` gives it, and is typed like an
+unsigned integer literal (`uint64` unless the context is another unsigned type). Its operand is
+a type, not an expression. A struct, including a `cinclude`d one, has its C layout size; an
+incomplete struct such as `FILE` is an error. An array is the total size of its elements, and
+every size must be a compile-time constant. Only a `$` element is stored in the array itself:
+a struct or row element without `$` is a pointer, so `sizeof([3]Vec3f)` is `3 * 8` while
+`sizeof([3]$Vec3f)` is `3 * sizeof(Vec3f)`.
+
+```palan
+jpeg_compress_struct cinfo;
+jpeg_CreateCompress(@!cinfo, JPEG_LIB_VERSION, sizeof(jpeg_compress_struct));
+```
 
 ---
 
@@ -340,7 +393,51 @@ A named return starts at `0` unless it has an initializer. Initializers are eval
 func range(int32 from) -> int32 lo = from, int32 hi = from + 10 { }
 ```
 
-A struct-type named return is declared in the body instead, so it can't have an initializer.
+A struct-type named return is allocated at function entry and can't have an initializer. Declaring it again in the body is an error.
+
+### Method-Form Calls
+
+A function whose first parameter is a writable borrow (`@!T`, `@![n]T`, or a C function's
+non-const pointer) can also be called as `x.f(args)`, which is the same as `f(@!x, args)`:
+
+```palan
+type Counter { int32 n; };
+func add(@!Counter c, int32 d) { c.n + d -> c.n; }
+
+Counter c;
+c.add(1);               // add(@!c, 1)
+
+jpeg_compress_struct cinfo;  // cinclude <jpeglib.h>
+cinfo.jpeg_set_defaults();  // jpeg_set_defaults(@!cinfo)
+```
+
+- `x` must be something `@!` can be applied to: a variable, a struct field, or an array element.
+- If `x` is already a borrow (a `@!T` variable, parameter or field), it is passed as it is, so a
+  function taking `@!Counter c` can write `c.add(1)`. A read-only `@T` borrow is a compile error.
+- A function whose first parameter is not `@!` (a value, `@T`, or no parameters) cannot be called
+  this way.
+- If `x` is both a variable and a module alias (§12), the variable is used.
+
+### Chained Calls
+
+`v -> f(args)` calls `f` with `v` in front of the arguments, `f(v, args)`, and can be continued
+like an assignment chain:
+
+```palan
+x -> add(4) -> y;                              // add(x, 4) -> y
+reflect(d, @n) -> normalized() -> dir;         // normalized(@vec3 v)
+divmod(17, 5) -> add3(100);                    // add3(q, r, 100)
+```
+
+- `v` is any value: a variable, a field, a call, an arithmetic expression. A call returning
+  several values gives all of them, in order.
+- The arguments are then checked as in a plain call: the count must match, and each value must
+  fit its parameter.
+- For a read-only borrow parameter (`@T`, `@[n]T`, or a C function's const pointer), `@` may be
+  omitted: `v -> len()` is `len(@v)`. `@!` must be written: `@!v -> scale(2)`.
+- As a statement, `x -> v -> f()` stores `x` in `v`, then calls `f(v)`. A call is evaluated once.
+- Not supported in this version: `->>` to a call, a method-form call after `->` (`v -> s.f()`),
+  and receiving the return values of a call given several chained values with `(a, b) = ...`.
 
 ---
 
@@ -388,6 +485,9 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 
 - `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
 - With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
+- The number of arguments must match the number of parameters; a variadic C function takes at least
+  its fixed parameters. A C function declared with empty parentheses `f()` takes no arguments, the
+  same as `f(void)`.
 
 ### Link Libraries
 
@@ -436,8 +536,12 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   for such a typedef's pointee can be declared directly instead, e.g. `@!void t;` in place of a
   `timer_t` local (see `doc/Issues.md` for the underlying limitation).
 - Typedefs that bottom out in a union are usable the same way as struct typedefs (see
-  [Union Types](#union-types) below). Typedefs that bottom out in an enum are not resolved and
-  remain unusable this version.
+  [Union Types](#union-types) below). A typedef of an enum is another name for it (see
+  [C Enum Types](#c-enum-types) below).
+- A header may use a typedef from a header cincluded before it, as in C where both are included
+  into one translation unit: `cinclude <stdio.h>; cinclude <jpeglib.h>;` lets `jpeglib.h`'s
+  declarations use `size_t` and `FILE`. Typedefs that bottom out in a pointer type are not carried
+  over this way, and neither are macros (see `doc/Issues.md`).
 - If multiple cincluded headers introduce the same typedef name resolving to the *same* underlying
   type, the first registration silently wins. If they resolve to *different* underlying types, this
   is a compile error. Because typedef registration is no longer gated on being referenced by some
@@ -515,11 +619,11 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 
 ### C Global Variables
 
-- A file-scope `extern` object declared in a cincluded header, whose type is a primitive or a
-  pointer (e.g. `extern FILE *stdout;`), is captured as a readable Palan variable of the same
+- A file-scope `extern` object declared in a cincluded header, whose type is a primitive, an enum
+  or a pointer (e.g. `extern FILE *stdout;`), is captured as a readable Palan variable of the same
   name, visible from the cinclude point to the end of the enclosing scope — the same rule as a
   cincluded function. `static` declarations, block-scope declarations, and arrays or by-value
-  struct/union/enum globals are not captured.
+  struct/union globals are not captured.
 
   ```palan
   cinclude <stdio.h>;
@@ -543,6 +647,8 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   to a struct declared natively with `type Name { ... }`. A tag that is only forward-declared, or
   whose full definition can't be captured, is still usable under its name — see [Incomplete
   Struct Types](#incomplete-struct-types-opaque-handles) below.
+- A function pointer field (or an array of them) keeps its place in the struct's layout, but it
+  cannot be read, written, or have its address taken.
 - A struct pointer *returned* by a C function should be bound to a non-owning `@T`/`@!T`-typed
   local variable, not a named return — the pointer may be owned by C (e.g. a static internal
   buffer), so no automatic freeing is registered for it:
@@ -730,6 +836,30 @@ Not supported this version:
   — a header containing one cannot be cincluded. An anonymous body that *does* have a member name
   (`union { ... } u;`) works; its fields are reached through that name.
 
+### C Enum Types
+
+A C enum from a cincluded header is a Palan [enum](#enum): its enumerators are referenced as
+`Name.X`, and it follows the same type rules. `Name` is the tag (`enum Tag { ... }`) or the
+typedef name (`typedef enum { ... } Name;`); when the enum has both, either name works. It can be
+the type of a variable, a struct field, a C function's parameter or return value, and a C global.
+
+```palan
+cinclude <jpeglib.h>;
+
+jpeg_compress_struct cinfo;
+J_COLOR_SPACE.JCS_RGB -> cinfo.in_color_space;
+JDCT_DEFAULT -> cinfo.dct_method;    // #define JDCT_DEFAULT JDCT_ISLOW
+int32 cs = cinfo.in_color_space;     // widens to its base type
+```
+
+- A macro that is just one enumerator (`#define JDCT_DEFAULT JDCT_ISLOW`, or glibc's
+  `#define SOCK_STREAM SOCK_STREAM`) has the enum's type. A macro computing with enumerators
+  (`#define X (A + 1)`) is a plain integer constant, like any other [macro constant](#macro-constants).
+- The enumerators of an enum with neither a tag nor a typedef name (`enum { A, B };`) are
+  referenced without qualification (`A`), as plain integer constants.
+- An enum with an enumerator whose value can't be computed at compile time (e.g. `= sizeof(int)`)
+  is not available; a function or struct using it is treated as unsupported.
+
 ### Incomplete Struct Types (Opaque Handles)
 
 A struct tag whose full layout isn't known to Palan — either because the header only
@@ -819,7 +949,7 @@ Palan function definitions inside a block are block-scoped and support forward r
 
 ## 12. Modules (import / export)
 
-Palan supports multi-file compilation. Functions declared with `export` are visible to other files that `import` the declaring file.
+Palan supports multi-file compilation. Functions and types declared with `export` are visible to other files that `import` the declaring file.
 
 ### Exporting a function
 
@@ -873,6 +1003,7 @@ printf("%ld\n", L.cube(2));    // 8
 ```
 
 - All calls must use the `L.f()` qualified form. Unqualified `square()` is a compile error.
+- A variable named `L` hides the alias: `L.f()` is then a method-form call on the variable (see §7).
 
 ### Selective alias import
 
@@ -884,6 +1015,40 @@ import square from "lib_math.pa" as L;
 
 printf("%ld\n", L.square(5));  // 25
 ```
+
+### Exporting types
+
+A struct, enum, or type alias declared with `export type` can be imported like a function:
+
+```palan
+// vec3.pa
+export type vec3 { flo32 x; flo32 y; flo32 z; };
+export type Color enum { Red, Green };
+export type Row = [3]vec3;
+export func len2(@vec3 v) -> flo32 {
+    return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+```
+
+```palan
+// main.pa
+import "vec3.pa";
+vec3 p;
+Color c = Color.Green;
+flo32 l = len2(@p);
+```
+
+- An exported type is visible in the whole importing file, like a type declared in it. A
+  type imported inside a block is visible from the `import` on.
+- Under an alias import, write the type with the alias: `V.vec3`, `V.Color.Green`,
+  `V.Color(1)`. The unqualified name is a compile error.
+- A selective import lists types alongside functions: `import vec3, len2 from "vec3.pa";`.
+- An exported type may use the declaring file's non-exported types, consts, and cincluded
+  headers; those are not made nameable in the importing file.
+- A type name must be unique in the program: declaring or importing a type whose name another
+  file already defines is a compile error.
+- Two files may import each other and use each other's types anywhere, including in type
+  declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
 
 ---
 
@@ -1006,11 +1171,13 @@ Palan supports 32-bit and 64-bit IEEE 754 floating-point types:
 
 ### Declaration and Initialization
 
-Float variables are declared like integer variables. The literal format requires digits on both sides of the decimal point.
+Float variables are declared like integer variables. A float literal has digits on both sides of the decimal point, an exponent, or both. A number followed directly by other letters (`1.5f`, `100px`) is an error.
 
 ```palan
 flo64 pi = 3.14159;
 flo32 half = 0.5;
+flo64 big = 1e10;
+flo64 small = 2.5e-3;
 flo64 f;              // uninitialized
 ```
 
@@ -1248,6 +1415,11 @@ func fill(@![H][W]int32 g, int32 x) {
   (`g[i][j]`) and the fields of a struct element (`g[i].x`). A `@` borrow cannot be passed
   where `@!` is expected.
 - A struct element is still passed to a `@T`/`@!T` parameter as `@g[i]` / `@!g[i]`.
+- A row of a multi-dimensional array is borrowed the same way: `@g[i]` / `@!g[i]` gives the row of
+  `[n][m]T`, `[n]$[m]T`, `[n][m]$T` or `[n][m]T` (struct `T`) as `@[m]T`, `@[m]$T` and so on, also
+  when `g` is itself a borrowed array.
+- An array field is borrowed the same way: `@s.v` / `@!s.v` gives a `[n]T`, `[n]$T` or `[n]@T`
+  field as `@[n]T`, `@[n]$T` or `@[n]@T`.
 - A borrowed array can also be a local variable (`@[4]int64 p = @v;`).
 - A borrowed array is already a borrow, like a `@T`/`@!T` pointer: pass it on, bind it, and
   rebind it by name (`sum(g)`, `@[4]int64 q = p;`, `q -> p`). `@g` on it is a compile error. A
@@ -1457,13 +1629,22 @@ In a comma-separated declaration, each initializer belongs to its own variable:
 `[2]int16 r, s = [7, 8];` initializes only `s`.
 
 **Restrictions:**
-- An array literal can only be used as an array variable's initializer — not as a function
-  argument or the source of `->`.
-- A given dimension must be a compile-time constant that matches the literal's element or row
-  count, and every row of a 2D literal must have the same length.
+- An array literal can only be used as an array variable's initializer, the source of `->` to
+  an array (a variable, a field, or a row), or an argument for a [borrowed array](#borrowing-arrays)
+  parameter, written `@[..]` / `@![..]` as for an array variable (`sum(@[1, 2, 3])`). The argument
+  is a temporary array of the parameter's type, freed as a struct returned by a call and given as
+  an argument is (see [Struct types in function signatures](#struct-types-in-function-signatures)).
+  A struct value can also be used where a struct is expected; see [Struct literals](#struct-literals). A struct element
+  may also be a struct expression, which is copied (`[os[1], os[0]] -> os` swaps).
+- As with a struct literal, `[a[1], a[0]] -> a` reads every value before writing any element, and
+  the target of `->` must be the array itself: giving a literal to a borrowed array variable is an
+  error, since `->` to a borrow rebinds it.
+- A given dimension, or every size of the target of `->`, must be a compile-time constant that
+  matches the literal's element or row count, and every row of a 2D literal must have the same length.
 - Only numeric (integer and float) and struct element types are supported. Arrays of pointers
   and arrays of three or more dimensions cannot be initialized with a literal.
-- A `{name: value}` literal can only be used as a struct element of an array literal.
+- A `{name: value}` literal can only be used as a struct value (an element of an array literal, or
+  a [struct literal](#struct-literals)).
 - Omitting only the inner dimension (`[2][]T`, `[2]$[]T`) is not supported.
 
 ### Struct Arrays
@@ -1563,6 +1744,37 @@ printf("%ld %ld\n", p.x, p.y);   // 10 20
 - **Memory management**: heap-allocated (zero-initialized); automatically freed at scope exit.
 - **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
 
+### Struct literals
+
+A struct value written as in an array literal's struct element (`[1, 2]` or `{y: 2, x: 1}`) can
+initialize a struct variable, be the source of `->` to a struct, be returned from a function
+returning a struct, and be passed as an argument:
+
+```palan
+type Point { int64 x; int64 y; };
+Point p = {x: 10, y: 20};
+[p.y, p.x] -> p;              // every value is read before any field is written: swaps
+func reset(@!Point q) { [0, 0] -> q[0]; }
+func sub(@Point a, @Point b) -> Point { return [a.x - b.x, a.y - b.y]; }
+reset(@![1, 2]);
+```
+
+- As an argument, the literal is a temporary struct, written as a struct variable would be:
+  `@[..]` / `@![..]` (`@{..}` / `@!{..}`) for a `@T`/`@!T` parameter, and without `@` for a `T`
+  parameter. It is freed as a struct returned by a call and given as an argument is (see
+  [Struct types in function signatures](#struct-types-in-function-signatures)). A C function's
+  parameter cannot take a literal.
+
+- The target of `->` must be the struct itself: a struct variable, a `$T`/`T` field, a struct
+  array element, or `q[0]` for what a borrow `q` points to. Giving a literal to the borrow `q`
+  itself is an error, since `->` to a borrow rebinds it.
+- The field rules are those of an array literal's struct element: every field exactly once,
+  struct fields as nested values, array fields as array literals (`[[1, 2, 3], 4]`), no pointer
+  fields or arrays of pointers.
+- A struct field's value may also be a struct expression of that type — a struct variable, a
+  `T` field, an array element, a `@T`/`@!T`, or a call result: `Q q = [p, mk(3)];` copies it. With `->`
+  it is read before any write too, so `[q.b, @q.a] -> q` swaps.
+
 ### Field types
 
 Integer and float primitives (`int8`–`int64`, `uint8`–`uint64`, `flo32`, `flo64`) are declared without a prefix:
@@ -1579,6 +1791,9 @@ Struct-type fields are written with a prefix that controls ownership and memory 
 | `T field`  | Owned pointer — 8-byte pointer; T is auto-allocated/freed with parent | `__pln_alloc_T` |
 | `@T field` | Non-owning read-only pointer — 8-byte null pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
 | `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
+
+The pointee of `@T`/`@!T` may itself be a pointer, each level with its own permission
+(`@!@int32 pp;` is a mutable pointer to a read-only pointer to `int32`).
 
 `@T`/`@!T` are general pointer-type expressions, not exclusive to struct fields — they may
 also be used as a plain local variable's declared type, as a non-owning alias into existing
@@ -1605,7 +1820,8 @@ printf("%ld %ld\n", original.x, original.y);   // 20 10
 | `[n]@T field` | Non-owning read-only pointer-slot array   | parent's block (slots only)      |
 | `[n]@!T field`| Non-owning mutable pointer-slot array     | parent's block (slots only)      |
 
-`T` may be a primitive type or a struct name. `n` must be a compile-time integer literal.
+`T` may be a primitive type or a struct name. `n` must be a compile-time integer: a literal, a
+[const](#21-constant-declarations), or `sizeof(T)`.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 
@@ -1648,6 +1864,7 @@ printf("%ld %ld\n", l.a.x, l.a.y);   // 10 20
 `$Point` fields are stored directly inside `Line`'s memory block. No separate allocation.
 Because nothing allocates on its behalf, a `$T` field (and a `[n]$T` field) requires that `T`
 owns no fields (no `U field` or `[k]U field`); use `T field` instead.
+A `$T` field can be read as a struct value (`l.a -> p;`, `Point p = l.a;`), which copies it.
 
 **`T` — owned struct pointer**
 
@@ -1717,16 +1934,42 @@ A named return of struct type transfers ownership to the caller:
 
 ```palan
 func makePoint(int64 x, int64 y) -> Point p {
-    Point p;
     x -> p.x;  y -> p.y;
 }
 ```
 
-The caller receives the returned struct with `->` (`Point pt; makePoint(1, 2) -> pt;`). Passed
-directly as an argument (`getX(makePoint(1, 2))`), it is freed right after that call; called as a
+The caller receives the returned struct with `->` (`Point pt; makePoint(1, 2) -> pt;`), or as a
+variable's initializer (`Point pt = makePoint(1, 2);`), where the variable takes it over without a
+copy. Passed
+directly as an argument (`getX(makePoint(1, 2))`, or `moveX(@!makePoint(1, 2), 3)` for a `@T`/`@!T`
+parameter, written with `@`/`@!` as for a variable), it is freed when the statement has been
+evaluated — in an `if`/`while` condition or a `&&`/`||` operand, when that operand has; called as a
 statement on its own, it is freed at once. Binding it to a `@T`/`@!T` — a variable's initializer,
 an assignment, a pointer field or slot, or a return — is a compile error, since nothing would
-own it.
+own it. So is binding a pointer returned by a call that was given such a struct
+(`@vec3 p = scale(@!sub(@a, @b), 2);`), since that pointer may point to it.
+
+Returning a struct the function doesn't own — a parameter, a field, or an array element — returns
+a copy of it (including what it owns), which the caller owns.
+
+### Declaration order
+
+A top-level struct, enum, type alias, or const may be used before its declaration, and so may
+the C types of a top-level `cinclude`. A declaration inside a block is visible from that point
+on.
+
+A type name may be declared only once in a file, even in different blocks, and must not be the
+name of a type a cincluded header introduces (a struct, union, or enum tag, or a typedef name).
+Either is a compile error.
+
+```palan
+type Shape { $Pos at; @Shape next; };   // Pos is declared below
+type Pos { flo64 x; flo64 y; };
+```
+
+A type must not contain itself. Embedding or owning in a cycle (`type A { $B b; };` with
+`type B { $A a; };`, possibly across files that import each other) or an alias cycle is a
+compile error. A pointer field (`@T`/`@!T`) may close a cycle.
 
 ### Restrictions
 
@@ -1742,7 +1985,7 @@ own it.
 
 ## 20. Type Aliases
 
-Declare an alias for a primitive type with `type`:
+Declare an alias for a type with `type`:
 
 ```palan
 type MyInt = int64;
@@ -1754,15 +1997,9 @@ func addOne(MyInt n) -> MyInt result {
 }
 ```
 
-- The alias may be used in variable declarations and function signatures.
-- Only aliasing a primitive type is supported this version.
-
-### Restrictions
-
-- Alias use inside array element types (`[n]MyInt`) is not supported.
-- Alias use inside struct field types is not supported.
-- The alias target being a struct type is not supported — the target must resolve to a primitive.
-- Unlike primitive types' `int64(x)` cast syntax, there is no constructor-cast syntax `MyAlias(x)`.
+- The target may be a primitive, struct, or array type (`type PT = Point;`, `type Row = [3]int32;`).
+- The alias may be used wherever a type is written: variable declarations, function signatures,
+  struct field types, and array element types (`[n]MyInt`).
 
 ---
 
@@ -1774,6 +2011,7 @@ Declare a compile-time constant with `const`:
 const MaxLen = 256;
 
 [MaxLen]uint8 buf;
+type Msg { [MaxLen]$uint8 body; };
 printf("%ld\n", MaxLen);   // 256
 ```
 
@@ -1785,8 +2023,7 @@ printf("%ld\n", MaxLen);   // 256
   declaration itself accepts.
 - Every reference to the constant is inlined with the literal value; the constant's name does not
   appear in `sa.json`.
-- A const may reference another const declared earlier (`const B = A;`); this chains naturally
-  through inlining.
+- A const may reference another const (`const B = A;`); this chains naturally through inlining.
 - Like the literal it names, a const takes its type from where it is used: `const N = 20;` can be
   passed to an `int32` parameter, used in `N + 2` for an `int16` variable, or assigned to `flo64`.
 
@@ -1850,7 +2087,8 @@ int64 x = 42;
   ```
 - `@` also takes the address of a primitive-typed array element (`@arr[2]`, `@!arr[2]`),
   including an element of a fixed-size array field (`@!s.data[2]`) and the innermost element of a
-  multi-dimensional array (`@!mat[0][1]`):
+  multi-dimensional array (`@!mat[0][1]`). A row (`@!mat[0]`) and an array field (`@!s.data`) are
+  borrowed as an array (see Borrowing Arrays), which also works where a C function takes a pointer to its elements:
 
   ```palan
   [4]int64 arr;
@@ -1881,6 +2119,11 @@ int64 x = 42;
   passed where the C parameter is `const`-qualified (as `ctime`'s `const time_t*` is above);
   passing `@T` to a non-`const` parameter — an out-param like `clock_getcpuclockid`'s second
   argument — is a compile error, same as passing `@T` where a Palan function expects `@!T`.
+- For a pointer to a pointer, the rule applies at every level, and a level may narrow `@!` to
+  `@` only while every level above it is `@`: `@!@!int32` binds to `@@int32` but not to
+  `@!@int32` — through the latter, a read-only pointer could be stored where the original still
+  treats it as mutable. This matches C, where `int **` converts to `const int * const *` but not
+  to `const int **`.
 - It can also be dereferenced from Palan code itself, using `p[i]` — subscript notation, not a
   separate operator, since Palan already represents an array as a pointer plus attributes and a
   plain pointer as a bare pointer. `p[0]` reads or writes the pointee; `@T` (read-only) allows only
@@ -1909,6 +2152,9 @@ int64 x = 42;
   1972 -> p[0].tm_year;
   printf("%d\n", p.tm_year);   // p[0] and p name the same pointee — prints 1972
   ```
+
+  `p[i]` names the struct itself, like an element of an `[n]$T` array: `w -> p[0]` copies the
+  struct `w` into the pointee (only through `@!T`), and `@p[i]`/`@!p[i]` borrows the element.
 - The pointer returned by `@`/`@!` is a borrowed reference: taking it never allocates or frees
   anything, and the storage it points into keeps its own ownership and free timing unchanged.
   Nothing checks that the pointer does not outlive that storage — if it escapes the scope that
@@ -1935,8 +2181,10 @@ to its storage, so `@s`/`@!s` and `@arr`/`@!arr` borrow it as it is (see
   (`@T`/`@!T`) or an array field is rejected.
 - Not usable on a 2D array row (`@mat[i]`) or a pointer-slot array element (`[n]@T`/`[n]@!T`) —
   only a primitive-typed or struct array element.
-- Not usable on a general expression (a call result, a parenthesized tuple, etc.) — only a local
-  variable, a field reached from one, or an array element reached from one.
+- Not usable on a general expression (a parenthesized tuple, etc.) — only a local variable, a
+  field reached from one, or an array element reached from one. A call returning a struct is the
+  exception, as a call argument only (`f(@g())`); see
+  [Struct types in function signatures](#struct-types-in-function-signatures).
 
 ---
 

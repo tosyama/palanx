@@ -1,0 +1,2 @@
+import "lib_sa_bad_struct.pa";
+int32 x = 1;

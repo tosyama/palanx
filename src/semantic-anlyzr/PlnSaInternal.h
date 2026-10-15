@@ -18,6 +18,14 @@ using namespace std;
 
 // LCOV_EXCL_EXCEPTION_BR_START
 inline json wrapConvert(const json& expr, const json& to_type) {
+	// Adding or dropping an enum label changes no bits, so no convert node.
+	const json& from_type = expr["value-type"];
+	if (to_type.value("type-kind", "") == "prim" && from_type.value("type-kind", "") == "prim"
+	    && to_type["type-name"] == from_type["type-name"]) {
+		json relabeled = expr;
+		relabeled["value-type"] = to_type;
+		return relabeled;
+	}
 	return {
 		{"expr-type",  "convert"},
 		{"value-type", to_type},
@@ -54,14 +62,33 @@ inline bool isFloatPrim(const PlnType* t) {
 // struct/array variables, which carry no read-only concept of their own.
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
-// True unless binding `from` to `to` would upgrade a read-only pointer to a
-// mutable one (assigning `@T` to a `@!T`-typed destination). Non-pointer
-// types, and narrowing a mutable pointer to read-only, are always fine.
+enum class PtrPermission { Ok, Upgrade, InnerNarrowing };
+
+// Checks binding `from` to `to` level by level down their pointer chains.
+// Upgrade: some level would turn read-only (`@T`) into mutable (`@!T`).
+// InnerNarrowing: a level narrows `@!` to `@` below a mutable level -- through
+// a `@!@int32` made from a `@!@!int32`, a read-only pointer could be stored
+// where the original still treats it as mutable (C's `int**` -> `const int**`).
+// Non-pointer types, and narrowing while every level above is read-only, are fine.
+inline PtrPermission ptrPermission(const json& from, const json& to)
+{
+	bool aboveAllReadOnly = true, innerNarrowing = false;
+	const json* f = &from;
+	const json* t = &to;
+	while (f->value("type-kind","") == "pntr" && t->value("type-kind","") == "pntr") {
+		bool fw = isWritableThrough(*f), tw = isWritableThrough(*t);
+		if (!fw && tw) return PtrPermission::Upgrade;
+		if (fw && !tw && !aboveAllReadOnly) innerNarrowing = true;
+		if (tw) aboveAllReadOnly = false;
+		f = &(*f)["base-type"];
+		t = &(*t)["base-type"];
+	}
+	return innerNarrowing ? PtrPermission::InnerNarrowing : PtrPermission::Ok;
+}
+
 inline bool ptrPermissionOk(const json& from, const json& to)
 {
-	if (from.value("type-kind","") != "pntr" || to.value("type-kind","") != "pntr")
-		return true;
-	return isWritableThrough(from) || !isWritableThrough(to);
+	return ptrPermission(from, to) == PtrPermission::Ok;
 }
 
 // A pntr(struct) with no "mutable" key is a struct's own storage (a struct
@@ -90,6 +117,11 @@ inline bool isArrBorrowVar(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && vt.contains("arr-size");
 }
+inline bool isAggregateLit(const json& expr)
+{
+	string et = expr.value("expr-type", "");
+	return et == "arr-lit" || et == "dict-lit";
+}
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 // A struct returned by a Palan call, owned by whoever receives it.
@@ -97,23 +129,67 @@ inline bool isExpiringStruct(const json& v)
 {
 	return v.value("category", "") == "expiring" && isStructStorage(v["value-type"]);
 }
+inline bool returnsBorrow(const json& call)
+{
+	bool retBorrow = call.contains("value-type") && isPtrBorrow(call["value-type"]);
+	if (call.contains("value-types"))
+		for (auto& t : call["value-types"])
+			retBorrow = retBorrow || isPtrBorrow(t);
+	return retBorrow;
+}
+// A call returning a borrow that may point to a temp struct given as one of its
+// arguments, directly or through a nested call of the same kind. A temp holding
+// a call (a chained call's return values) may hold the temps it was given.
+inline bool holdsCallTemps(const json& v)
+{
+	string et = v.value("expr-type", "");
+	if (et == "temp")
+		return v["value"].value("expr-type", "") == "call" && returnsBorrow(v["value"]);
+	if (et != "call" || !v.contains("args") || !returnsBorrow(v))
+		return false;
+	for (auto& a : v["args"])
+		if (a.value("expr-type", "") == "temp" || holdsCallTemps(a))
+			return true;
+	return false;
+}
+inline bool isCallBorrow(const json& expr)
+{
+	if (expr.value("expr-type", "") != "addr-of") return false;
+	string et = expr["object"].value("expr-type", "");
+	return et == "call" || et == "member-call" || et == "chain-call";
+}
 
 // LCOV_EXCL_EXCEPTION_BR_START
+inline json fieldPrimLeaf(const FieldLayout& f)
+{
+	json t = {{"type-kind","prim"},{"type-name",f.typeName}};
+	if (!f.enumName.empty()) t["enum"] = f.enumName;
+	return t;
+}
+
+// What a raw-ptr field / embed-ptr-arr slot points to.
+inline json fieldPointeeType(const FieldLayout& f)
+{
+	json t = (f.elemKind == "struct")
+		? json{{"type-kind","struct"},{"type-name",f.typeName}}
+		: fieldPrimLeaf(f);
+	for (auto m = f.innerPtrMutable.rbegin(); m != f.innerPtrMutable.rend(); ++m)
+		t = {{"type-kind","pntr"},{"base-type",t},{"mutable",*m}};
+	return t;
+}
+
 inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
-		return {{"type-kind","prim"},{"type-name",f.typeName}};
+		return fieldPrimLeaf(f);
 	if (f.typeKind == "embed-arr") {
 		json bt = (f.elemKind == "struct")
 			? json{{"type-kind","struct"},{"type-name",f.typeName}}
-			: json{{"type-kind","prim"},{"type-name",f.typeName}};
+			: fieldPrimLeaf(f);
 		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"arr-size",f.count},{"base-type",bt}};
 	}
 	if (f.typeKind == "embed-ptr-arr") {
-		json bt = (f.elemKind == "struct")
-			? json{{"type-kind","struct"},{"type-name",f.typeName}}
-			: json{{"type-kind","prim"},{"type-name",f.typeName}};
-		json elem_pntr = {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
+		json elem_pntr = {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
 		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
 	}
 	if (f.typeKind == "arr-ptr") {
@@ -128,18 +204,12 @@ inline json fieldValueType(const FieldLayout& f)
 			json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
 			return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
 		}
-		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
+		json bt = fieldPrimLeaf(f);
 		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",bt}};
 	}
-	if (f.typeKind == "raw-ptr" && f.elemKind == "prim") {
-		json bt = {{"type-kind","prim"},{"type-name",f.typeName}};
-		return {{"type-kind","pntr"},{"base-type",bt},{"mutable",f.isMutable}};
-	}
-	json bt = {{"type-kind","struct"},{"type-name",f.typeName}};
-	json pntr = {{"type-kind","pntr"},{"base-type",bt}};
 	if (f.typeKind == "raw-ptr")
-		pntr["mutable"] = f.isMutable;
-	return pntr;
+		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
+	return {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",f.typeName}}}};
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
@@ -254,6 +324,7 @@ inline json makeFreeStmt(const string& name, const json& pntrType)
 
 inline const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 {
+	if (t->kind == PlnType::Kind::Enum) return variadicPromote(static_cast<const EnumType*>(t)->base, reg);
 	if (t->kind != PlnType::Kind::Prim) return t;
 	const auto* p = static_cast<const PrimType*>(t);
 	using N = PrimType::Name;
@@ -287,22 +358,38 @@ inline bool isArrLevel(const json& t) {
 	return t.value("type-kind","") == "pntr" && !isStructStorage(t) && !isPtrBorrow(t);
 }
 
-// Renders an array pntr chain as source-like shape text ("[20][10]int32",
-// "[3]$[?]int32") for diagnostics; an unknown size shows as "?".
-inline string arrShapeName(const json& t) {
-	string out;
+// Renders an SA type as source-like text for diagnostics: a struct's own
+// storage as "T", a borrow as "@T"/"@!T", an array as "[20][10]int32" or
+// "[3]$[?]int32" (an unknown size shows as "?"), with a borrowed array's
+// "@"/"@!" once in front although each of its levels carries "mutable".
+inline string typeDisplayName(const json& t) {
+	if (!t.is_object() || !t.contains("type-kind")) // LCOV_EXCL_BR_LINE -- no real producer emits this
+		return "malformed type"; // LCOV_EXCL_LINE
+	const string kind = t["type-kind"].get<string>();
+	if (kind == "prim") {
+		if (t.contains("enum")) return t["enum"].get<string>();
+		return t.value("type-name", "malformed type"); // LCOV_EXCL_BR_LINE -- no real producer emits this
+	}
+	if (kind == "struct")
+		return t.value("type-name", "anonymous struct");
+	if (kind != "pntr")
+		return unrepresentableTypeName(t);
+	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
+	auto perm = [](const json& p) { return string(isWritableThrough(p) ? "@!" : "@"); };
+	if (isStructStorage(t))
+		return typeDisplayName(t["base-type"]);
+	if (isPtrBorrow(t))
+		return perm(t) + typeDisplayName(t["base-type"]);
+	string out = t.contains("mutable") ? perm(t) : "";
 	const json* cur = &t;
 	while (isArrLevel(*cur)) {
 		out += "[" + (cur->contains("arr-size") ? to_string((*cur)["arr-size"].get<int64_t>()) : string("?")) + "]";
-		if (cur->value("embedded", false) && (*cur)["base-type"].value("type-kind","") == "struct")
+		if (cur->value("embedded", false))
 			out += "$";
-		else if (cur->value("embedded", false))
-			out += "$[" + (cur->contains("inner-size") ? to_string((*cur)["inner-size"].get<int64_t>()) : string("?")) + "]";
 		cur = &(*cur)["base-type"];
 	}
-	if (isStructStorage(*cur)) cur = &(*cur)["base-type"];
 	return out + typeDisplayName(*cur);
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Shape equality for binding an array to a borrowed array type: same depth,
 // same embedded layout, every size `to` names known and equal (a borrowed
@@ -321,11 +408,8 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 		return !isPtrBorrow(to) || isWritableThrough(from) == isWritableThrough(to)
 		    || (!toSlotsMutable && !isWritableThrough(to));
 	}
-	auto sameKey = [&](const char* k) {
-		return from.contains(k) == to.contains(k) && (!to.contains(k) || from[k] == to[k]);
-	};
 	return (!to.contains("arr-size") || (from.contains("arr-size") && from["arr-size"] == to["arr-size"]))
-	    && from.value("embedded", false) == to.value("embedded", false) && sameKey("inner-size")
+	    && from.value("embedded", false) == to.value("embedded", false)
 	    && arrShapeMatch(from["base-type"], to["base-type"], isWritableThrough(to));
 }
 
@@ -356,10 +440,9 @@ inline bool isCopiedByValue(const json& t) { return isStructStorage(t) || isArrL
 inline bool copyShapeMatch(const json& from, const json& to) {
 	if (isArrLevel(to)) {
 		if (!isArrLevel(from) || !to.contains("arr-size") || from.value("arr-size", -1) != to["arr-size"]
-		    || from.value("embedded", false) != to.value("embedded", false)
-		    || from.value("inner-size", -1) != to.value("inner-size", -1))
+		    || from.value("embedded", false) != to.value("embedded", false))
 			return false;
-		if (to.value("embedded", false) && !to.contains("stride") && !to.contains("inner-size"))
+		if (to.value("embedded", false) && !to.contains("stride"))
 			return false;
 		return copyShapeMatch(from["base-type"], to["base-type"]);
 	}

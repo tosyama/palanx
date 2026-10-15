@@ -1,0 +1,24 @@
+cinclude <stdio.h>;
+cinclude <time.h>;
+type vec3 { flo32 x; flo32 y; flo32 z; };
+type Seg { vec3 a; $vec3 b; int32 n; };
+type V3 = vec3;
+int32 calls = 0;
+func idx(@!int32 c) -> int32 r { c[0] + 1 -> c[0]; 1 -> r; }
+func swapxy(@!vec3 v) { [v.y, v.x, v.z] -> v[0]; }
+
+vec3 a = [1, 2, 3];
+V3 b = {z: 6, x: 4, y: 5};
+Seg s = [[1, 1, 1], {x: 2, y: 2, z: 2}, 7];
+printf("%.0f %.0f %.0f / %.0f %.0f %.0f / %.0f %.0f %d\n", a.x, a.y, a.z, b.x, b.y, b.z, s.a.z, s.b.y, s.n);
+[a.y, a.x, a.z] -> a;
+[9, 8, 7] -> s.a;
+{x: 3, y: 3, z: 3} -> s.b;
+printf("%.0f %.0f / %.0f %.0f\n", a.x, a.y, s.a.x, s.b.z);
+[3]$vec3 arr;
+[5, 5, 5] -> arr[idx(@!calls)];
+printf("%.0f %d\n", arr[1].y, calls);
+swapxy(@!b);
+printf("%.0f %.0f\n", b.x, b.y);
+timespec ts = {tv_sec: 3, tv_nsec: 4};
+printf("%ld %ld\n", ts.tv_sec, ts.tv_nsec);

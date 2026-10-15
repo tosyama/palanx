@@ -1,0 +1,10 @@
+type S { int64 a; $timespec ts; [N]$int32 v; $T t; U u; A al; E e; @Later p; };
+cinclude <time.h>;
+const N = M;
+const M = 3;
+type T { int32 x; };
+type U { int32 y; };
+type A = [2]T;
+type E enum { X = N };
+type Later { int32 z; };
+S s;

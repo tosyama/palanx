@@ -1,0 +1,6 @@
+type P { int32 x; };
+func f(int32 v) -> P p {
+	if v > 0 {
+		P p;
+	}
+}

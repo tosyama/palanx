@@ -1,0 +1,6 @@
+type V { flo32 x; flo32 y; };
+func len2(@V v) -> flo32 { return v.x * v.x + v.y * v.y; }
+func first(@[3]int32 a) -> int32 { return a[0]; }
+[1, 2] -> len2();
+{x: 1, y: 2} -> len2();
+[4, 5, 6] -> first();

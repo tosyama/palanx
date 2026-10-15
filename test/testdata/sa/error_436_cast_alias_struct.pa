@@ -1,0 +1,3 @@
+type Point { int32 x; };
+type PT = Point;
+int32 n = PT(1);

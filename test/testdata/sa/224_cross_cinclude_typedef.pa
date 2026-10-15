@@ -1,0 +1,8 @@
+cinclude "224_cross_cinclude_typedef_base.h";
+cinclude "224_cross_cinclude_typedef.h";
+Box b;
+RecT r;
+count_t n = box_len(@r, b.n, Kind.K_B);
+Kind k = b.k;
+my_size g = g_size[0];
+my_size s = SZ;

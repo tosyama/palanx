@@ -1,0 +1,6 @@
+type vec3 { flo32 x; flo32 y; };
+func sub(@vec3 a, @vec3 b) -> vec3 { return [a.x - b.x, a.y - b.y]; }
+func scale(@!vec3 v, flo32 f) -> @!vec3 { return v; }
+vec3 a = [3, 4];
+func two(@!vec3 v) -> @!vec3 p, int32 n { v -> p; 1 -> n; }
+(@!vec3 p, int32 n) = two(@!sub(@a, @a));

@@ -1,0 +1,3 @@
+import "lib_sa_c_enum.pa";
+Box b;
+int64 y = b.c;

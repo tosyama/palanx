@@ -1,0 +1,2 @@
+cinclude <string.h>;
+memset(@![1, 2], 0, 8);

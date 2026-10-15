@@ -1,0 +1,10 @@
+type P { int32 x; int32 y; };
+type Q { $P a; P b; };
+func mk(int32 n) -> P { return [n, n]; }
+func f(@P p) -> Q { return [p, mk(1)]; }
+P v = [1, 2];
+Q q = [v, mk(3)];
+[q.b, @q.a] -> q;
+[2]$P es = [v, mk(4)];
+[2]P os = [mk(5), v];
+[os[1], os[0]] -> os;

@@ -33,6 +33,10 @@ class PlnVCodeGen {
     const PlnFunc* currentPlnFunc_ = nullptr;  // set while lowering a Palan function body
     vector<vector<VReg>> blockVarStack_;
 
+    // A temp's release statements, held until its full expression has been
+    // evaluated (TempExpr).
+    vector<const Stmt*> pendingReleases_;
+
     struct LoopLabels { string start; string end; };
     vector<LoopLabels> loopStack_;  // push/pop in lowerWhileStmt
 
@@ -50,7 +54,8 @@ class PlnVCodeGen {
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
     void lowerSysCallExpr(const SysCallExpr& expr, VFunc& func);
     vector<VReg> lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc& func);
-    void emitArgReleases(const vector<ArgRelease>& releases, const vector<VReg>& args, VFunc& func);
+    VReg lowerTempExpr(const TempExpr& expr, VFunc& func);
+    void flushReleases(VFunc& func);
     void lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func);
     void lowerBlockStmt(const BlockStmt& stmt, VFunc& func);
     void lowerBranchCond(const Expr& expr, VFunc& func, const std::string& falseLabel);

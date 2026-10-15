@@ -1,0 +1,4 @@
+type P { int32 x; int32 y; };
+type O { P p; int32 n; };
+func f(int32 v) -> P p { v -> p.x; }
+func g(int32 v) -> O o, int32 b { v -> o.p.x; v -> b; }

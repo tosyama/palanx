@@ -1,0 +1,2 @@
+cinclude <stdio.h>;
+uint64 s = sizeof(FILE);

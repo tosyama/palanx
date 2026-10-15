@@ -8,4 +8,7 @@ P p;
 getv(@p.o);
 [2]In a;
 getv(@a[1]);
-getv(mk());
+getv(@mk());
+func setv(@!In q) { 1 -> q.v; }
+setv(@!mk());
+mk().setv();

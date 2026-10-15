@@ -7,10 +7,19 @@
 #include <fstream>
 #include <filesystem>
 #include <set>
+#include <deque>
 #include <stdexcept>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
+
+struct PlnSemanticAnalyzer::TypeProgram {
+	map<string, PlnSemanticAnalyzer*> modules;  // moduleId -> its type context, the root's included
+	vector<unique_ptr<PlnSemanticAnalyzer>> imported;
+	struct Resolving { PlnSemanticAnalyzer* module; string name; const json* stmt; };
+	vector<Resolving> resolving;
+	deque<function<void()>> settled;
+};
 
 // Collect free() stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
 json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx)
@@ -25,9 +34,12 @@ json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx)
 }
 
 PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
-	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path), inputFilePath("")
+	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path), inputFilePath(""),
+	  ownedProgram_(make_unique<TypeProgram>()), program_(ownedProgram_.get())
 {
 }
+
+PlnSemanticAnalyzer::~PlnSemanticAnalyzer() = default;
 
 void PlnSemanticAnalyzer::enterScope()
 {
@@ -130,11 +142,11 @@ const json* PlnSemanticAnalyzer::findCGlobal(const string& name) const
 	return nullptr;
 }
 
-void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json* loc_node)
+void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json& locNode)
 {
 	for (auto& scope : plnFuncScopes)
 		if (scope.count(name)) {
-			cerr << locPrefix(loc_node ? *loc_node : json{})
+			cerr << locPrefix(locNode)
 			     << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
 			exit(1);
 		}
@@ -180,7 +192,7 @@ void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
 	for (auto& p : funcDef["parameters"]) {
 		if (!p.contains("var-type")) continue;
 		const auto& vt = p["var-type"];
-		if (vt.value("embedded", false) && !vt.contains("inner-size") && !vt.contains("stride")) {
+		if (vt.value("embedded", false) && !vt.contains("stride")) {
 			cerr << locPrefix(funcDef)
 			     << PlnSaMessage::getMessage(E_EmbeddedArrUnsizedInner) << endl;
 			exit(1);
@@ -267,8 +279,25 @@ bool PlnSemanticAnalyzer::isKnownPointeeTypeName(const string& name) const
 	return isPrimPointeeName(name) || isKnownTypeName(name);
 }
 
+// `type` is as written in source: an imported name's visibility is a
+// property of how it was written, gone once an alias is resolved.
+void PlnSemanticAnalyzer::requireNameableType(const json& locNode, const json& type) const
+{
+	const json* t = &type;
+	while (t->contains("base-type")) t = &(*t)["base-type"];
+	string tname = t->value("type-name", "");
+	auto it = hiddenTypeNames_.find(tname);
+	if (it == hiddenTypeNames_.end()) return;
+	if (it->second.empty())
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+	else
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnqualifiedAliasType, tname, it->second) << endl;
+	exit(1);
+}
+
 void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json& type) const
 {
+	requireNameableType(locNode, type);
 	const json resolved = resolveTypeAliasDeep(type);
 	const json* t = &resolved;
 	bool isPointee = false;
@@ -328,15 +357,19 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_Unsupported2DStructArr) << endl;
 			exit(1);
 		}
+		json leaf = embed_bt.value("base-type", json{});
+		json row = {{"type-kind","pntr"},{"base-type",leaf}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		if (isRow && !embed_bt["size-expr"].is_null()) {
 			const auto& sz = embed_bt["size-expr"];
 			string et = sz.value("expr-type","");
-			if (et == "lit-int" || et == "lit-uint")
-				pntr["inner-size"] = stoll(sz["value"].get<string>());
-			// Variable inner-size: no inner-size field; validateEmbeddedParams catches it
+			if (et == "lit-int" || et == "lit-uint") {
+				int64_t m = stoll(sz["value"].get<string>());
+				row["arr-size"] = m;
+				pntr["stride"]  = m * elemSizeBytes(leaf.value("type-name",""));
+			}
 		}
-		// []$[]T or []$[var]T: no inner-size → validateEmbeddedParams reports error
-		pntr["base-type"] = embed_bt.value("base-type", json{});
+		// []$[]T or []$[var]T: no stride -> validateEmbeddedParams reports it
+		pntr["base-type"] = move(row);
 		return pntr;
 	}
 	json bt = resolveTypeAlias(type["base-type"]);
@@ -377,25 +410,6 @@ void PlnSemanticAnalyzer::normalizeUnsizedArrSig(json& funcDef)
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
 			r["var-type"] = unsizedArrToPntr(funcDef, r["var-type"]);
-}
-
-bool PlnSemanticAnalyzer::isNamedReturnVar(const string& varName) const
-{
-	if (!currentFunc_ || !currentFunc_->contains("rets")) return false;
-	for (auto& r : (*currentFunc_)["rets"]) {
-		// LCOV_EXCL_EXCEPTION_BR_START
-		if (r["name"].get<string>() != varName) continue;
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-		const auto& vt = r["var-type"];
-		if (isStructType(vt)) return true;
-		// Also accept the normalized pntr(struct(Name)) form produced by normalizeStructSig
-		// LCOV_EXCL_EXCEPTION_BR_START
-		if (vt.value("type-kind","") == "pntr" && vt.contains("base-type") &&
-		    vt["base-type"].value("type-kind","") == "struct")
-			return true;
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-	}
-	return false;
 }
 
 json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
@@ -499,8 +513,15 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 			return out;
 		}
-		out["inner-size"] = constLevelSize(locNode, leaf["size-expr"], isMutable.has_value());
-		leaf = json(leaf["base-type"]);
+		json row = sizedArrLevel(locNode, leaf, isMutable);
+		const json& rowElem = row["base-type"];
+		if (rowElem.value("type-kind","") != "prim") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
+			exit(1);
+		}
+		out["stride"]    = row["arr-size"].get<int64_t>() * elemSizeBytes(rowElem["type-name"].get<string>());
+		out["base-type"] = move(row);
+		return out;
 	} else if (leaf.value("type-kind","") == "arr") {
 		out["base-type"] = sizedArrLevel(locNode, leaf, isMutable);
 		return out;
@@ -555,11 +576,13 @@ void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json&
 		exit(1);
 	}
 	if (!arrShapeMatch(saValue["value-type"], dstType)) {
-		// The owned var-type names the source's levels exactly: a borrowed row
+		// The owned type names the source's levels exactly: a borrowed row
 		// whose size is unknown looks like a '@T' element once it has "mutable".
-		const json& srcType = saValue.contains("var-type") ? saValue["var-type"] : saValue["value-type"];
+		const json& srcType = saValue.contains("var-type") ? saValue["var-type"]
+			: saValue.value("expr-type","") == "arr-index" ? saValue["array"]["value-type"]["base-type"]
+			: saValue["value-type"];
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowShapeMismatch,
-			arrShapeName(dstType), arrShapeName(srcType)) << endl;
+			typeDisplayName(dstType), typeDisplayName(srcType)) << endl;
 		exit(1);
 	}
 }
@@ -570,7 +593,7 @@ void PlnSemanticAnalyzer::checkElemShape(const json& locNode, const json& saValu
 	json dstShape = dstType;
 	dstShape.erase("mutable");  // a slot reads as the array it points to
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrElemShapeMismatch,
-		arrShapeName(dstShape), arrShapeName(saValue["value-type"])) << endl;
+		typeDisplayName(dstShape), typeDisplayName(saValue["value-type"])) << endl;
 	exit(1);
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
@@ -644,11 +667,13 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 	}
 }
 
-// Shared by top-level, block-local (sa_block), and function-nested
-// (sa_function) func-defs -- the only difference between call sites is
-// whether a loc node is available for a duplicate-definition diagnostic.
-void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
+json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 {
+	for (auto& p : f.value("parameters", json::array()))
+		ensureTypeRefs(p["var-type"]);
+	for (auto& r : f.value("rets", json::array()))
+		ensureTypeRefs(r["var-type"]);
+	if (f.contains("ret-type")) ensureTypeRefs(f["ret-type"]);
 	for (auto& p : f.value("parameters", json::array()))
 		requireKnownTypeNames(f, p["var-type"]);
 	for (auto& r : f.value("rets", json::array()))
@@ -665,7 +690,13 @@ void PlnSemanticAnalyzer::preregisterFunc(const json& f, const json* loc_node)
 	validateNativeSig(funcEntry);
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
-	registerPlnFunc(funcEntry["name"], funcEntry, loc_node);
+	return funcEntry;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+void PlnSemanticAnalyzer::preregisterFunc(const json& f)
+{
+	json funcEntry = normalizeFuncSig(f);
+	registerPlnFunc(funcEntry["name"], funcEntry, f);
 }
 
 // A const whose value names a variable can only be diagnosed once variables
@@ -684,32 +715,201 @@ bool PlnSemanticAnalyzer::onlyNamesConsts(const json& expr) const
 	return true;
 }
 
-void PlnSemanticAnalyzer::analysis(const json &ast)
+void PlnSemanticAnalyzer::beginModule(const json& ast)
 {
-	this->inputFilePath = ast["original"];
+	inputFilePath = ast["original"];
+	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
 	sa["original"]      = ast["original"];
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
 	sa["libs"]          = json::array();
+	program_->modules[moduleId_] = this;
+	moduleAstRoot_ = &ast;
 	enterScope();
-	// 0. Pre-scan type-alias/struct-def declarations so function signatures
-	//    pre-registered in step 1 see fully-resolved types, not alias names.
-	//    Top-level cinclude types join the scan in source order, since native
-	//    struct fields and signatures can name them; consts join it so a
-	//    borrowed array parameter can size itself with one. Step 2
-	//    registering them again is a no-op.
-	if (ast["ast"].contains("statements")) {
-		pushStructDefNames(ast["ast"]["statements"]);
-		for (auto& stmt : ast["ast"]["statements"]) {
-			string t = stmt.value("stmt-type", "");
-			if      (t == "type-alias") sa_type_alias(stmt);
-			else if (t == "struct-def") sa_struct_def(stmt);
-			else if (t == "cinclude")   registerCIncludeTypes(stmt);
-			else if (t == "const-decl" && onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
-		}
-		structDefNameScopes_.pop_back();
+}
+
+// Resolve every top-level type and const declaration, and the types
+// top-level imports bring in, so function signatures pre-registered in
+// step 1 see fully-resolved types, not alias names. A const whose value
+// names a variable is left to step 2.
+void PlnSemanticAnalyzer::prescanTypes(const json& stmts)
+{
+	indexTopDecls(stmts);
+	// Imports first, so a type they hide is known as hidden by the time a
+	// declaration here writes it.
+	for (auto& stmt : stmts)
+		if (stmt.value("stmt-type", "") == "import")
+			for (auto& [key, t] : importedTypes_)
+				if (t.importStmt == &stmt) ensureTypeName(key, false);
+	for (auto& stmt : stmts) {
+		auto d = topDecls_.find(stmt.value("name", ""));
+		if (d != topDecls_.end() && d->second.stmt == &stmt) ensureTypeName(d->first, false);
 	}
+}
+
+// C types depend on no Palan type, so a top-level cinclude's are registered
+// here, ahead of any Palan declaration that may use them.
+void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
+{
+	for (auto& stmt : stmts) {
+		string t = stmt.value("stmt-type", "");
+		if (t == "struct-def" || t == "enum-def" || t == "type-alias" || t == "const-decl") {
+			string name = stmt["name"].get<string>();
+			topDecls_.emplace(name, TopDecl{&stmt});
+			if (t == "struct-def") declaredStructs_.insert(name);
+		} else if (t == "cinclude") {
+			registerCIncludeTypes(stmt);
+		} else if (t == "import") {
+			filesystem::path impPath;
+			json impAst = loadImportAst(stmt, impPath);
+			if (impAst.is_null()) continue;
+			PlnSemanticAnalyzer& mod = importTypeContext(move(impAst), impPath);
+			if (!(*mod.moduleAstRoot_)["ast"].contains("statements")) continue;
+			string alias = stmt.value("alias", "");
+			set<string> targets;
+			if (stmt.contains("targets"))
+				for (auto& tg : stmt["targets"]) targets.insert(tg.get<string>());
+			for (auto& d : (*mod.moduleAstRoot_)["ast"]["statements"]) {
+				if (!d.value("export", false)) continue;
+				string name = d["name"].get<string>();
+				if (stmt.contains("targets") && !targets.count(name)) continue;
+				importedTypes_.emplace(alias.empty() ? name : alias + "." + name, ImportedType{&stmt, &mod, &d});
+				if (d["stmt-type"] == "struct-def") declaredStructs_.insert(name);
+			}
+		}
+	}
+}
+
+void PlnSemanticAnalyzer::ensureTypeName(const string& name, bool viaPointer)
+{
+	auto d = topDecls_.find(name);
+	if (d != topDecls_.end()) {
+		if (viaPointer && (*d->second.stmt)["stmt-type"] == "struct-def")
+			whenSettled([this, name] { ensureTypeName(name, false); });
+		else
+			resolveTopDecl(name, d->second);
+		return;
+	}
+	auto t = importedTypes_.find(name);
+	if (t == importedTypes_.end() || t->second.adopted) return;
+	size_t dot = name.find('.');
+	string alias = dot == string::npos ? "" : name.substr(0, dot);
+	const json& decl = *t->second.decl;
+	if (viaPointer && decl["stmt-type"] == "struct-def") {
+		// The pointer's type names the struct by its program-wide name now;
+		// its layout comes with the adoption.
+		if (!alias.empty())
+			typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", decl["name"]}};
+		ImportedType* it = &t->second;
+		whenSettled([this, it, alias] { if (!it->adopted) adoptImportedType(*it, alias); });
+		return;
+	}
+	adoptImportedType(t->second, alias);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::ensureTypeRefs(const json& node, bool viaPointer)
+{
+	if (node.is_array()) {
+		for (auto& e : node) ensureTypeRefs(e, viaPointer);
+		return;
+	}
+	if (!node.is_object()) return;
+	string tk = node.value("type-kind", "");
+	if (!tk.empty()) {
+		viaPointer = viaPointer || tk == "pntr";
+		if (node.contains("type-name") && node["type-name"].is_string())
+			ensureTypeName(node["type-name"].get<string>(), viaPointer);
+		// A size expression (`[N]@T`) is evaluated whatever the element is.
+		for (auto& [k, v] : node.items())
+			ensureTypeRefs(v, k == "base-type" && viaPointer);
+		return;
+	}
+	string et = node.value("expr-type", "");
+	if (et == "id" || et == "call") {
+		if (node.contains("name") && node["name"].is_string())
+			ensureTypeName(node["name"].get<string>(), false);
+	} else if (et == "field-access") {
+		// `V.Color.Red`: the object spells the imported type `V.Color`.
+		const json& obj = node["object"];
+		if (obj.value("expr-type", "") == "id")
+			ensureTypeName(obj["name"].get<string>() + "." + node["field"].get<string>(), false);
+	}
+	for (auto& [k, v] : node.items()) ensureTypeRefs(v, false);
+}
+
+void PlnSemanticAnalyzer::ensureStructDef(const string& name)
+{
+	if (topDecls_.count(name)) {
+		ensureTypeName(name, false);
+		return;
+	}
+	for (auto& [key, t] : importedTypes_)
+		if ((*t.decl)["name"] == name) {
+			ensureTypeName(key, false);
+			return;
+		}
+}
+
+void PlnSemanticAnalyzer::resolveTopDecl(const string& name, TopDecl& d)
+{
+	if (d.state == TopDecl::Done) return;
+	auto& resolving = program_->resolving;
+	if (d.state == TopDecl::Resolving) {
+		// A struct embedding itself is E_RecursiveStruct's to report.
+		if (resolving.back().module == this && resolving.back().name == name) return;
+		string path;
+		bool inCycle = false;
+		for (auto& r : resolving) {
+			inCycle = inCycle || (r.module == this && r.name == name);
+			if (inCycle) path += r.name + " -> ";
+		}
+		auto& closer = resolving.back();
+		cerr << closer.module->locPrefix(*closer.stmt)
+		     << PlnSaMessage::getMessage(E_CircularTypeDecl, name, path + name) << endl;
+		exit(1);
+	} // LCOV_EXCL_LINE -- only cleanup skipped by exit(1) is attributed here
+	d.state = TopDecl::Resolving;
+	resolving.push_back({this, name, d.stmt});
+	const json& stmt = *d.stmt;
+	ensureTypeRefs(stmt);
+	string t = stmt["stmt-type"].get<string>();
+	bool resolved = true;
+	if      (t == "struct-def") sa_struct_def(stmt);
+	else if (t == "enum-def")   sa_enum_def(stmt);
+	else if (t == "type-alias") sa_type_alias(stmt);
+	else if (onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
+	else resolved = false;
+	if (resolved) prescannedDecls_.insert(&stmt);
+	resolving.pop_back();
+	d.state = TopDecl::Done;
+	while (resolving.empty() && !program_->settled.empty()) {
+		auto f = move(program_->settled.front());
+		program_->settled.pop_front();
+		f();
+	}
+}
+
+void PlnSemanticAnalyzer::adoptImportedType(ImportedType& t, const string& alias)
+{
+	adoptExportedType(*t.importStmt, *t.decl, *t.module);
+	if (!alias.empty() && (*t.decl)["stmt-type"] == "struct-def")
+		typeAliases_[alias + "." + (*t.decl)["name"].get<string>()] =
+			{{"type-kind", "prim"}, {"type-name", (*t.decl)["name"]}};
+	t.adopted = true;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::whenSettled(function<void()> f)
+{
+	if (program_->resolving.empty()) f();
+	else program_->settled.push_back(move(f));
+}
+
+void PlnSemanticAnalyzer::analysis(const json &ast)
+{
+	beginModule(ast);
+	if (ast["ast"].contains("statements"))
+		prescanTypes(ast["ast"]["statements"]);
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"])
@@ -733,13 +933,14 @@ const json& PlnSemanticAnalyzer::result()
 
 // Registers a typedef name as an alias, same first-wins/conflict-diagnosed
 // policy as a native "type X = ...;" alias.
-void PlnSemanticAnalyzer::registerTypeAliasChecked(const string& aliasName, const json& resolved)
+void PlnSemanticAnalyzer::registerTypeAliasChecked(const json& locNode, const string& aliasName, const json& resolved)
 {
+	requireNotPalanType(aliasName, locNode);
 	auto it = typeAliases_.find(aliasName);
 	if (it == typeAliases_.end()) {
 		typeAliases_[aliasName] = resolved;
 	} else if (it->second != resolved) {
-		cerr << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ConflictingTypedef, aliasName) << endl;
 		exit(1);
 	}
 }
@@ -749,40 +950,40 @@ void PlnSemanticAnalyzer::registerTypeAliasChecked(const string& aliasName, cons
 // type alias so Palan code can reference the typedef name, and strip the
 // hint so it doesn't leak into sa.json (e.g. via sa_expr_call copying a C
 // function's ret-type into a call's value-type).
-void PlnSemanticAnalyzer::registerTypedefAliasInType(json& vtype)
+void PlnSemanticAnalyzer::registerTypedefAliasInType(const json& locNode, json& vtype)
 {
 	string tk = vtype.value("type-kind", "");
 	if (tk == "prim" && vtype.contains("typedef-name")) {
 		string aliasName = vtype["typedef-name"].get<string>();
-		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
+		registerTypeAliasChecked(locNode, aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
 	} else if (isCRecordTag(vtype) && vtype.contains("typedef-name")) {
 		// typedef struct/union Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
 		// as a type alias for the tag, same prim(Tag) representation a native
 		// "type A = SomeStruct;" alias uses.
 		string aliasName = vtype["typedef-name"].get<string>();
-		registerTypeAliasChecked(aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
+		registerTypeAliasChecked(locNode, aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
 		vtype.erase("typedef-name");
 	} else if (tk == "pntr" && vtype.contains("base-type")) {
-		registerTypedefAliasInType(vtype["base-type"]);
+		registerTypedefAliasInType(locNode, vtype["base-type"]);
 	} else if (tk == "func") {
 		if (vtype.contains("ret-type"))
-			registerTypedefAliasInType(vtype["ret-type"]);
+			registerTypedefAliasInType(locNode, vtype["ret-type"]);
 		if (vtype.contains("parameters"))
 			for (auto& p : vtype["parameters"])
 				if (p.contains("var-type"))
-					registerTypedefAliasInType(p["var-type"]);
+					registerTypedefAliasInType(locNode, p["var-type"]);
 	}
 } // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
-void PlnSemanticAnalyzer::registerCFuncTypedefAliases(json& funcEntry)
+void PlnSemanticAnalyzer::registerCFuncTypedefAliases(const json& locNode, json& funcEntry)
 {
 	if (funcEntry.contains("ret-type"))
-		registerTypedefAliasInType(funcEntry["ret-type"]);
+		registerTypedefAliasInType(locNode, funcEntry["ret-type"]);
 	if (funcEntry.contains("parameters"))
 		for (auto& p : funcEntry["parameters"])
 			if (p.contains("var-type"))
-				registerTypedefAliasInType(p["var-type"]);
+				registerTypedefAliasInType(locNode, p["var-type"]);
 }
 
 // A `link` library name is concatenated onto "-l" with no separator, so this
@@ -802,18 +1003,33 @@ static bool isValidLinkLibName(const string& name)
 
 void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 {
+	// Before structs, whose fields can be of an enum type.
+	if (stmt.contains("enums"))
+		for (auto& e : stmt["enums"])
+			registerCEnum(stmt, e);
+
 	if (stmt.contains("structs"))
 		for (auto& s : stmt["structs"])
-			registerCStruct(s);
+			registerCStruct(stmt, s);
 
 	// Covers a typedef no C function/global actually references, which
 	// registerTypedefAliasInType's per-reference-site calls wouldn't reach.
 	if (stmt.contains("typedefs"))
 		for (auto& td : stmt["typedefs"]) {
-			const json& vt = td["var-type"];
+			json vt = td["var-type"];
+			resolveCTypeRefs(vt);
+			// Still "user"/"enum": its underlying type is unknown here too, so
+			// there is nothing to alias. Keeping such entries out of cTypedefs_
+			// also means a substitution never yields another one to resolve.
+			string tk = vt.value("type-kind", "");
+			if (tk == "user" || tk == "enum") continue;
+			string name = td["name"].get<string>();
+			cTypedefs_[name] = vt;
 			// LCOV_EXCL_EXCEPTION_BR_START
-			registerTypeAliasChecked(td["name"].get<string>(),
-				{{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
+			if (vt.contains("enum"))
+				registerTypeAliasChecked(stmt, name, vt);
+			else
+				registerTypeAliasChecked(stmt, name, {{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 		}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -838,7 +1054,8 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 	if (stmt.contains("globals"))
 		for (auto& g : stmt["globals"]) {
 			json entry = g;
-			registerTypedefAliasInType(entry["var-type"]);
+			registerTypedefAliasInType(stmt, entry["var-type"]);
+			resolveCTypeRefs(entry["var-type"]);
 			normalizeCGlobal(entry);
 			registerCGlobal(entry["name"].get<string>(), entry);
 		}
@@ -850,7 +1067,8 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 			for (auto& f : stmt["functions"]) {
 				string fname = f["name"].get<string>();
 				json entry = f;
-				registerCFuncTypedefAliases(entry);
+				registerCFuncTypedefAliases(stmt, entry);
+				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				entry["_c-func"] = true;
 				currentScope[alias][fname] = entry;
@@ -858,7 +1076,8 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 		} else {
 			for (auto& f : stmt["functions"]) {
 				json entry = f;
-				registerCFuncTypedefAliases(entry);
+				registerCFuncTypedefAliases(stmt, entry);
+				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				registerCFunc(entry["name"].get<string>(), entry);
 			}
@@ -875,21 +1094,49 @@ static bool is_absolute(filesystem::path &path)
 	return false;
 }
 
-void PlnSemanticAnalyzer::sa_import(const json& stmt)
+// Null for an import of a non-Palan file.
+json PlnSemanticAnalyzer::loadImportAst(const json& stmt, filesystem::path& impPath) const
 {
-	filesystem::path imp_path = stmt["path"];
-	if (stmt["path-type"] == "src" && !is_absolute(imp_path))
-		imp_path = basePath + '/' + imp_path.string();
+	impPath = stmt["path"].get<string>();
+	if (stmt["path-type"] == "src" && !is_absolute(impPath))
+		impPath = basePath + '/' + impPath.string();
 
-	if (!imp_path.string().ends_with(".pa")) return;
-	imp_path += ".ast.json";
+	if (!impPath.string().ends_with(".pa")) return json();
+	filesystem::path astPath = impPath;
+	astPath += ".ast.json";
 
-	ifstream astfile(imp_path.string());
+	ifstream astfile(astPath.string());
 	if (!astfile.is_open()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, imp_path.string()) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, astPath.string()) << endl;
 		exit(1);
 	}
-	json imp_ast = json::parse(astfile);
+	return json::parse(astfile);
+}
+
+PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst, const filesystem::path& impPath)
+{
+	auto known = program_->modules.find(filesystem::weakly_canonical(impAst["original"].get<string>()).string());
+	if (known != program_->modules.end()) return *known->second;
+	auto sub = make_unique<PlnSemanticAnalyzer>(impPath.parent_path().string(), "", c2astPath);
+	sub->ownedProgram_.reset();
+	sub->program_ = program_;
+	sub->moduleAst_ = move(impAst);
+	sub->beginModule(sub->moduleAst_);
+	PlnSemanticAnalyzer& mod = *sub;
+	program_->imported.push_back(move(sub));
+	if (mod.moduleAst_["ast"].contains("statements"))
+		mod.indexTopDecls(mod.moduleAst_["ast"]["statements"]);
+	return mod;
+}
+
+void PlnSemanticAnalyzer::sa_import(const json& stmt)
+{
+	filesystem::path imp_path;
+	json imp_ast = loadImportAst(stmt, imp_path);
+	if (imp_ast.is_null()) return;
+
+	PlnSemanticAnalyzer& sub = importTypeContext(imp_ast, imp_path);
+	adoptExportedTypes(stmt, imp_ast, sub);
 
 	if (!imp_ast.contains("export")) return;
 
@@ -908,12 +1155,14 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 		string fname = f["name"].get<string>();
 		if (selective && !targets.count(fname)) continue;
 
-		json funcEntry = f;
-		if (!funcEntry.contains("ret-type") && funcEntry.contains("rets")
-				&& funcEntry["rets"].size() == 1)
-			funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-		if (funcEntry.value("func-type", "") == "syscall")
-			validateSyscallDecl(funcEntry);
+		// Resolved in the exporting module, where the type names it uses mean
+		// what its author meant.
+		json funcEntry = sub.normalizeFuncSig(f);
+		for (auto& p : funcEntry.value("parameters", json::array()))
+			adoptTypeDeps(sub, p["var-type"], stmt);
+		for (auto& r : funcEntry.value("rets", json::array()))
+			adoptTypeDeps(sub, r["var-type"], stmt);
+		if (funcEntry.contains("ret-type")) adoptTypeDeps(sub, funcEntry["ret-type"], stmt);
 
 		if (hasAlias) {
 			currentScope[alias][fname] = funcEntry;

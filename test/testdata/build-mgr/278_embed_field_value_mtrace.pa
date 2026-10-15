@@ -1,0 +1,21 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type Q { $P a; P b; };
+func g(P p) -> int32 { return p.x + p.y; }
+func ra(@Q q) -> P { return q.a; }
+func show(@P p) { printf("%d %d\n", p.x, p.y); }
+mtrace();
+{
+	Q q = [[1, 2], [3, 4]];
+	P v;
+	q.a -> v;  show(@v);
+	P w = q.a; show(@w);
+	printf("%d\n", g(q.a));
+	[q.b, q.a] -> q;
+	show(@q.a); show(@q.b);
+	P r = ra(@q); show(@r);
+	10 -> r.x;
+	show(@q.a);
+}
+muntrace();

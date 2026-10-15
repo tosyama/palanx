@@ -1,0 +1,4 @@
+import "lib_sa_types.pa";
+export func setX(@!Vec v, int64 x) {
+	x -> v.x;
+}

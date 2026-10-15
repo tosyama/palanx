@@ -62,12 +62,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	}
 	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
-	const StructDef& def = requireCompleteStruct(base.structName, obj);
-	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
-	if (it == def.fields.end()) {
-		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UnknownField, base.structName, fn, def.keyword()) << endl;
-		exit(1);
-	}
+	const FieldLayout* it = &findFieldOrExit(base.structName, fn, obj);
 	if (it->typeKind == "prim") {
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 		exit(1);
@@ -76,10 +71,11 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToImmutablePtrField) << endl;
 		exit(1);
 	}
-	if (it->typeKind == "raw-ptr" && it->elemKind == "prim") {
-		// A pointer-to-primitive field (e.g. `@!int64 p;`) has nothing further to
-		// chain into -- this hop must be the chain's terminal, typed by the
-		// caller via fieldValueType, not resolveObjectChain's own pntr(struct(...)).
+	if (it->typeKind == "raw-ptr" && (it->elemKind == "prim" || !it->innerPtrMutable.empty())) {
+		// A pointer-to-primitive (e.g. `@!int64 p;`) or pointer-to-pointer field
+		// has nothing further to chain into -- this hop must be the chain's
+		// terminal, typed by the caller via fieldValueType, not
+		// resolveObjectChain's own pntr(struct(...)).
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 		exit(1);
 	}
@@ -108,6 +104,10 @@ const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fieldName; });
 	if (it == def.fields.end()) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownField, structName, fieldName, def.keyword()) << endl;
+		exit(1);
+	}
+	if (!it->unsupported.empty()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsupportedCFieldType, structName, fieldName, it->unsupported) << endl;
 		exit(1);
 	}
 	return *it;
@@ -153,6 +153,10 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	bool isMutable = expr.value("mutable", false);
 	const json& obj = expr["object"];
 	string obj_type = obj.value("expr-type", "");
+
+	// A literal operand is accepted only as a call argument (sa_lit_arg).
+	if (isAggregateLit(obj))
+		sa_expression(obj);
 
 	if (obj_type == "id") {
 		string name = obj["name"].get<string>();
@@ -206,7 +210,8 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
 		string fn = obj["field"].get<string>();
 		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
-		if (fld.typeKind != "prim" && fld.typeKind != "embed" && fld.typeKind != "struct-ptr") {
+		bool isArrField = fld.typeKind == "arr-ptr" || fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr";
+		if (fld.typeKind != "prim" && fld.typeKind != "embed" && fld.typeKind != "struct-ptr" && !isArrField) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
 			exit(1);
 		}
@@ -218,11 +223,19 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		// that pointer rather than computing the field's address.
 		// A prim field's value-type is the bare prim, so it still needs the
 		// usual pntr(...) wrap to become "address of this prim slot".
-		bool addrOnly = fld.typeKind != "struct-ptr";
-		json pntr_type = (fld.typeKind == "prim")
-			? json{{"type-kind","pntr"},{"base-type",fieldValueType(fld)}}
-			: fieldValueType(fld);
-		pntr_type["mutable"] = isMutable;
+		// An array field is borrowed as an array, like an array variable: an
+		// owned one ([n]T) holds the pointer to its elements, an embedded one
+		// is the elements.
+		bool addrOnly = fld.typeKind != "struct-ptr" && fld.typeKind != "arr-ptr";
+		json pntr_type;
+		if (isArrField) {
+			pntr_type = withArrPermission(fieldValueType(fld), isMutable);
+		} else {
+			pntr_type = (fld.typeKind == "prim")
+				? json{{"type-kind","pntr"},{"base-type",fieldValueType(fld)}}
+				: fieldValueType(fld);
+			pntr_type["mutable"] = isMutable;
+		}
 		int off = chain.offset + fld.offset;
 		json out = chain.isPointerBased
 			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",addrOnly}}
@@ -233,13 +246,15 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 
 	if (obj_type == "arr-index") {
 		json sa_idx = sa_expr_arr_index(obj, isMutable);
-		// A struct element is already a pointer to its storage, so '@' only
-		// marks it as a borrow. Any other element that is already an address
-		// computation (2D row access) or a pointer (pointer-slot element) is
-		// rejected -- '@' keeps a single meaning ("make a pointer to a storage
-		// slot"), and wrapping those would double the indirection.
+		// A struct element or a row is already a pointer to its storage, so '@'
+		// only marks it as a borrow, as for a whole array variable. Any other
+		// element that is already an address computation or a pointer
+		// (pointer-slot element) is rejected -- '@' keeps a single meaning
+		// ("make a pointer to a storage slot"), and wrapping those would double
+		// the indirection.
 		bool isStructElem = isStructStorage(sa_idx["value-type"]);
-		if (!isStructElem && (sa_idx.value("addr-only", false)
+		bool isRow = isArrLevel(sa_idx["value-type"]);
+		if (!isStructElem && !isRow && (sa_idx.value("addr-only", false)
 		                      || sa_idx["value-type"].value("type-kind","") != "prim")) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitiveElem) << endl;
 			exit(1);
@@ -250,6 +265,8 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		}
 		if (isStructElem) {
 			sa_idx["value-type"]["mutable"] = isMutable;
+		} else if (isRow) {
+			sa_idx["value-type"] = withArrPermission(sa_idx["value-type"], isMutable);
 		} else {
 			sa_idx["addr-only"]  = true;
 			sa_idx["value-type"] = {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",sa_idx["value-type"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -258,8 +275,140 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		return sa_idx;
 	}
 
+	// A call operand is accepted only as a call argument (sa_call_borrow_arg):
+	// elsewhere nothing would release the returned struct.
+	if (isCallBorrow(expr) && isExpiringStruct(sa_expression(obj))) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExpiringStructToBorrow) << endl;
+		exit(1);
+	}
 	cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
 	exit(1);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// LCOV_EXCL_EXCEPTION_BR_START
+static json makeTempExpr(json body, json value, json release)
+{
+	json out = {{"expr-type","temp"},{"body",move(body)},{"release",move(release)}};
+	if (value.contains("value-type")) out["value-type"] = value["value-type"];
+	if (value.contains("category")) out["category"] = value["category"];
+	out["value"] = move(value);
+	return out;
+}
+// LCOV_EXCL_EXCEPTION_BR_STOP
+
+// A struct returned by a call and given as an argument is held in a temp,
+// since the callee may return a borrow of it.
+json PlnSemanticAnalyzer::bindCallTemp(json saArg)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	string name = "__tmp_" + to_string(tempVarCounter_++);
+	json storage = saArg["value-type"];
+	storage.erase("mutable");
+	json valueType = saArg["value-type"];
+	json decl = {{"stmt-type","var-decl"},
+	             {"vars",json::array({{{"name",name},{"var-type",storage},{"init",move(saArg)}}})}};
+	json value = {{"expr-type","id"},{"name",name},{"var-type",storage},{"value-type",move(valueType)}};
+	return makeTempExpr(json::array({move(decl)}), move(value),
+	                    json::array({makeStructFreeStmt(name, storage)}));
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// '@f()'/'@!f()' as a call argument: the returned struct is borrowed for the
+// call, held in a temp (bindCallTemp).
+json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
+{
+	json saArg = sa_expression(arg["object"]);
+	if (!isExpiringStruct(saArg)) {
+		cerr << locPrefix(arg) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
+		exit(1);
+	}
+	saArg["value-type"]["mutable"] = arg["mutable"];
+	return saArg;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+// The source type that declares an owned array of the levels of saType (a
+// borrowed array parameter); null when an element is not one a literal gives.
+static json astArrType(const json& saType)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json out = {{"type-kind","arr"},{"specifier","raw"},
+		{"size-expr",{{"expr-type","lit-uint"},{"value",to_string(saType["arr-size"].get<int64_t>())}}}};
+	if (saType.value("embedded", false))
+		out["embedded"] = true;
+	const json& base = saType["base-type"];
+	json elem;
+	if (isArrLevel(base) && base.contains("arr-size"))
+		elem = astArrType(base);
+	else if (base.value("type-kind","") == "struct")
+		elem = {{"type-kind","prim"},{"type-name",base["type-name"]}};
+	else if (isStructStorage(base))
+		elem = {{"type-kind","prim"},{"type-name",base["base-type"]["type-name"]}};
+	else if (base.value("type-kind","") == "prim")
+		elem = base;
+	if (elem.is_null())
+		return nullptr;
+	out["base-type"] = move(elem);
+	return out;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A literal argument ('[..]', '{..}', or one under '@'/'@!') becomes a temp of
+// the parameter's struct or array type, initialized by body; the argument is
+// then analyzed as the temp written in its place ('@__lit_N'), returned with
+// argAst set to that form.
+json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const string& paramName,
+                                     json& argAst, json& body, json& release)
+{
+	bool isAddrOf = arg.value("expr-type", "") == "addr-of";
+	const json& lit = isAddrOf ? arg["object"] : arg;
+	auto rejectContext = [&]() {
+		cerr << locPrefix(lit) << PlnSaMessage::getMessage(
+			lit["expr-type"] == "arr-lit" ? E_ArrLitContext : E_DictLitContext) << endl;
+		exit(1);
+	};
+	if (!paramVT)
+		rejectContext();
+	bool isStruct = isStructPntr(*paramVT);
+	json declType = isStruct
+		? json{{"type-kind","prim"},{"type-name",(*paramVT)["base-type"]["type-name"]}} // LCOV_EXCL_EXCEPTION_BR_LINE
+		: paramVT->contains("arr-size") ? astArrType(*paramVT) : json();
+	if (declType.is_null()) {
+		if (!paramVT->contains("arr-size"))
+			rejectContext();
+		cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_ArrLitElemType, paramName) << endl;
+		exit(1);
+	}
+
+	enterScope();
+	// LCOV_EXCL_EXCEPTION_BR_START
+	string name = "__lit_" + to_string(tempVarCounter_++);
+	json decl = {{"stmt-type","var-decl"},{"loc",lit.value("loc", json::array())},
+		{"vars",json::array({{{"name",name},{"var-type",declType}}})}};
+	body = sa_var_decl(decl);
+	json target = {{"expr-type","id"},{"name",name}};
+	const json varType = *findVar(name);
+	if (isStruct) {
+		const StructDef& def = requireCompleteStruct(varType["base-type"]["type-name"].get<string>(), lit);
+		emitStructLitAssigns(target, def, sa_struct_lit(lit, def), body);
+	} else {
+		if (lit["expr-type"] != "arr-lit") {
+			cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
+			exit(1);
+		}
+		ArrLitShape shape = arrLitShape(lit, paramName, varType);
+		json values = sa_arr_lit_values(lit, shape, paramName);
+		checkArrLitCount(lit, lit["items"], paramName, shape.is2d, varType["arr-size"].get<uint64_t>(),
+		                 shape.is2d ? varType["base-type"]["arr-size"].get<uint64_t>() : 0);
+		emitArrLitAssigns(target, shape, values, body);
+	}
+	argAst = isAddrOf ? json{{"expr-type","addr-of"},{"object",target},{"mutable",arg["mutable"]},{"loc",arg.value("loc", json::array())}}
+	                  : target;
+	json saArg = sa_expression(argAst);
+	size_t idx = arrayScopeVars_.size() - 1;
+	release = collectFreeStmts(idx, idx + 1);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+	leaveScope();
+	return saArg;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 static bool intLiteralFits(const string& value, PrimType::Name pn)
@@ -303,14 +452,21 @@ void PlnSemanticAnalyzer::checkIntLiteralRange(const json& lit)
 	exit(1);
 }
 
-// C's integer promotion, applied to bool only: an operator computes in at
-// least int32 so a bool operand never yields a 1-byte result outside 0/1
-// (`b + 1` is 2). Other narrow types keep their declared width.
+// C's integer promotion, applied to bool and enum only: an operator computes
+// in at least int32 so a bool operand never yields a 1-byte result outside
+// 0/1 (`b + 1` is 2), and an enum computes as its base type. Other narrow
+// types keep their declared width.
 // LCOV_EXCL_EXCEPTION_BR_START
-static json promoteBool(json operand)
+static json promoteOperand(json operand)
 {
 	const json& vt = operand["value-type"];
-	if (vt.value("type-kind", "") != "prim" || vt.value("type-name", "") != "bool") return operand;
+	if (vt.value("type-kind", "") != "prim") return operand;
+	if (vt.contains("enum")) {
+		json base = vt;
+		base.erase("enum");
+		return wrapConvert(operand, base);
+	}
+	if (vt.value("type-name", "") != "bool") return operand;
 	return wrapConvert(operand, {{"type-kind", "prim"}, {"type-name", "int32"}});
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
@@ -334,6 +490,10 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	const json expr = resolveConstRef(rawExpr);
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
+	// A literal bound to an enum takes the base type, so the binding still
+	// rejects it as needing Name(x) instead of silently labeling it.
+	if (expectedType && expectedType->kind == PlnType::Kind::Enum)
+		expectedType = static_cast<const EnumType*>(expectedType)->base;
 
 	if (expr_type == "arr-lit") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLitContext) << endl;
@@ -343,13 +503,33 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
 		exit(1);
 	}
+	// gen-ast lowers an assignment written as a statement, so one reaching
+	// here is nested in another expression.
+	if (expr_type == "assign-expr" || expr_type == "arr-assign-expr"
+			|| expr_type == "field-assign-expr" || expr_type == "tapple-assign-expr") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AssignInExpr) << endl;
+		exit(1);
+	}
+	if (expr_type == "not-impl") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExprNotImplemented) << endl;
+		exit(1);
+	}
+
+	if (expr_type == "sizeof") {
+		requireKnownTypeNames(expr, expr["type"]);
+		json lit = {{"expr-type", "lit-uint"}, {"value", to_string(typeByteSize(expr, expr["type"]))}};
+		if (expr.contains("loc")) lit["loc"] = expr["loc"];
+		return sa_expression(lit, expectedType);
+	}
 
 	if (expr_type == "lit-int") {
 		// A lit-int already carrying a value-type is a macro constant folded
 		// in by gen-ast (a plain source literal never has one) -- its type
 		// was fixed by the C declaration, not by this expression's context,
 		// so expectedType must not override it.
-		if (!expr.contains("value-type")) {
+		if (expr.contains("value-type")) {
+			resolveCTypeRefs(sa_expr["value-type"]);
+		} else {
 			if (expectedType && expectedType->kind == PlnType::Kind::Prim)
 				sa_expr["value-type"] = registry_.toJson(expectedType);
 			else
@@ -427,12 +607,12 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		return sa_expr_arith(expr, expectedType);
 
 	} else if (expr_type == "neg") {
-		json operand = promoteBool(sa_expression(expr["operand"], expectedType));
+		json operand = promoteOperand(sa_expression(expr["operand"], expectedType));
 		sa_expr["operand"]    = operand;
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "bitnot") {
-		json operand = promoteBool(sa_expression(expr["operand"], expectedType));
+		json operand = promoteOperand(sa_expression(expr["operand"], expectedType));
 		const PlnType* t = registry_.fromJson(operand["value-type"]);
 		if (!isIntegerPrim(t)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
@@ -442,8 +622,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "cmp") {
-		json left  = promoteBool(sa_expression(expr["left"]));
-		json right = promoteBool(sa_expression(expr["right"]));
+		json left  = promoteOperand(sa_expression(expr["left"]));
+		json right = promoteOperand(sa_expression(expr["right"]));
 		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 		const PlnType* rightType = registry_.fromJson(right["value-type"]);
 		// A pointer/struct pair (usualArithConv returns nullptr) is left
@@ -504,17 +684,33 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		} else {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
 				typeDisplayName(src["value-type"]),
-				expr["target-type"]["type-name"].get<string>()) << endl;
+				typeDisplayName(expr["target-type"])) << endl;
 			exit(1);
 		}
 
 	} else if (expr_type == "call") {
+		const string& callName = expr["name"].get<string>();
+		if (!findCFunc(callName) && !findPlnFunc(callName)) {
+			json cast = aliasCast(expr, callName);
+			if (!cast.is_null()) return cast;
+		}
 		return sa_expr_call(expr);
 
 	} else if (expr_type == "member-call") {
-		return sa_expr_member_call(expr);
+		string qualified = typeNameWritten(expr["object"]);
+		if (!qualified.empty()) {
+			json cast = aliasCast(expr, qualified + "." + expr["method"].get<string>());
+			if (!cast.is_null()) return cast;
+		}
+		json call = normalizeMethodCall(expr);
+		return call["expr-type"] == "call" ? sa_expr_call(call) : sa_expr_member_call(expr);
+
+	} else if (expr_type == "chain-call") {
+		return sa_expr_chain_call(expr);
 
 	} else if (expr_type == "field-access") {
+		json enumerator = resolveEnumerator(expr);
+		if (!enumerator.is_null()) return enumerator;
 		return sa_expr_field_access(expr, /*forWrite=*/false);
 
 	} else if (expr_type == "arr-index") {
@@ -539,14 +735,14 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 		return other.contains("value-type") ? registry_.fromJson(other["value-type"]) : expectedType;
 	};
 	if (resolveConstRef(expr["left"])["expr-type"] == "lit-int") {
-		right = promoteBool(sa_expression(expr["right"], expectedType));
-		left  = promoteBool(sa_expression(expr["left"],  typeOf(right)));
+		right = promoteOperand(sa_expression(expr["right"], expectedType));
+		left  = promoteOperand(sa_expression(expr["left"],  typeOf(right)));
 	} else if (resolveConstRef(expr["right"])["expr-type"] == "lit-int") {
-		left  = promoteBool(sa_expression(expr["left"],  expectedType));
-		right = promoteBool(sa_expression(expr["right"], typeOf(left)));
+		left  = promoteOperand(sa_expression(expr["left"],  expectedType));
+		right = promoteOperand(sa_expression(expr["right"], typeOf(left)));
 	} else {
-		left  = promoteBool(sa_expression(expr["left"],  expectedType));
-		right = promoteBool(sa_expression(expr["right"], expectedType));
+		left  = promoteOperand(sa_expression(expr["left"],  expectedType));
+		right = promoteOperand(sa_expression(expr["right"], expectedType));
 	}
 	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 	const PlnType* rightType = registry_.fromJson(right["value-type"]);
@@ -587,7 +783,7 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 // Shared narrowing rule for every binding site. An integer/uint literal is
 // exempt from the ExplicitCast rejection below, since its width/sign was
 // never fixed by source syntax; pointer mutability is checked separately by
-// each call site via ptrPermissionOk.
+// each call site via checkPtrPermission.
 json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		const PlnType* toType, const json& toTypeJson)
 {
@@ -598,7 +794,8 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		value = wrapConvert(value, toTypeJson);
 	} else if (compat == TypeCompat::ExplicitCast) {
 		string et = value["expr-type"];
-		if (et != "lit-int" && et != "lit-uint") {
+		bool untypedLit = (et == "lit-int" || et == "lit-uint") && fromType->kind != PlnType::Kind::Enum;
+		if (!untypedLit || toType->kind == PlnType::Kind::Enum) {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
 				typeDisplayName(value["value-type"]), typeDisplayName(toTypeJson)) << endl;
 			exit(1);
@@ -611,30 +808,47 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 	return value;
 }
 
-// Enforce ptrPermissionOk() at one call argument; the diagnostic differs by
-// callee kind, since a C parameter's permission comes from const-qualification
-// while a Palan parameter's comes from `@!T`.
+// An upgrade's diagnostic differs by callee kind, since a C parameter's
+// permission comes from const-qualification while a Palan parameter's comes
+// from `@!T`.
 void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& funcName,
 		bool isCFunc, const json& saArg, const json& param, size_t argIdx)
 {
-	if (ptrPermissionOk(saArg["value-type"], param["var-type"]))
-		return;
-	if (isCFunc) {
+	if (isCFunc && ptrPermission(saArg["value-type"], param["var-type"]) == PtrPermission::Upgrade) {
 		string paramName = param.value("name", "");
 		if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
 		cerr << locPrefix(expr)
 		     << PlnSaMessage::getMessage(E_ReadOnlyPtrToNonConstCParam, funcName, paramName) << endl;
-	} else {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+		exit(1);
+	}
+	checkPtrPermission(expr, saArg["value-type"], param["var-type"]);
+}
+
+void PlnSemanticAnalyzer::checkPtrPermission(const json& locNode, const json& from, const json& to)
+{
+	switch (ptrPermission(from, to)) {
+	case PtrPermission::Ok:
+		return;
+	case PtrPermission::Upgrade:
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+		break;
+	case PtrPermission::InnerNarrowing:
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_PtrInnerPermissionNarrowing,
+			typeDisplayName(from), typeDisplayName(to)) << endl;
+		break;
 	}
 	exit(1);
 }
 
 // A struct returned by a call is owned by nobody, and a borrow never frees
 // what it points to.
-void PlnSemanticAnalyzer::checkStructBorrowSource(const json& locNode, const json& saValue,
+void PlnSemanticAnalyzer::checkBorrowSource(const json& locNode, const json& saValue,
 		const json& dstType)
 {
+	if (holdsCallTemps(saValue)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
+		exit(1);
+	}
 	if (!isStructBorrow(dstType) || !isStructStorage(saValue["value-type"]))
 		return;
 	if (isExpiringStruct(saValue)) {
@@ -657,7 +871,7 @@ void PlnSemanticAnalyzer::applyPlnCalleeSig(json& sa_expr, const json& pFunc)
 json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	json sa_expr = expr;
-	const json* funcParams = nullptr;
+	const json* funcParams;
 	bool isCFunc = false;
 
 	const json* cfunc = findCFunc(expr["name"]);
@@ -668,8 +882,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 		if (cfunc->contains("ret-type")
 				&& (*cfunc)["ret-type"].value("type-name", "") != "void")
 			sa_expr["value-type"] = (*cfunc)["ret-type"];
-		if (cfunc->contains("parameters"))
-			funcParams = &(*cfunc)["parameters"];
+		funcParams = &(*cfunc)["parameters"];
 	} else {
 		const string& callName = expr["name"].get<string>();
 		const json* pFunc = findPlnFunc(callName);
@@ -682,8 +895,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 		}
 		if (pFunc != nullptr) {
 			applyPlnCalleeSig(sa_expr, *pFunc);
-			if (pFunc->contains("parameters"))
-				funcParams = &(*pFunc)["parameters"];
+			funcParams = &(*pFunc)["parameters"];
 		} else {
 			for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
 				for (auto& [als, bucket] : *it)
@@ -699,89 +911,101 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
 
-	if (expr.contains("args"))
-		sa_expr["args"] = saCallArgs(expr, expr["args"], funcParams, isCFunc, expr["name"].get<string>());
+	sa_expr["args"] = saCallArgs(expr, expr["args"], *funcParams, isCFunc, expr["name"].get<string>());
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Shared by sa_expr_call and sa_expr_member_call: these used to duplicate
 // only part of this loop, silently dropping variadic promotion for an
 // aliased call like `S.printf("%f\n", someFlo32)`.
-json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json* funcParams,
+json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json& funcParams,
                                       bool isCFunc, const string& funcName)
 {
 	bool isVariadic = false;
-	if (funcParams)
-		for (auto& p : *funcParams)
-			if (p.value("name", "") == "...") { isVariadic = true; break; }
+	for (auto& p : funcParams)
+		if (p.value("name", "") == "...") { isVariadic = true; break; }
+
+	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
+	// C's `()` arrives as an empty list just like `(void)` and is checked as
+	// `(void)` (as C23 reads it); glibc headers are fully prototyped.
+	if (isVariadic ? args.size() < fixedCount : args.size() != fixedCount) {
+		string expected = (isVariadic ? "at least " : "") + to_string(fixedCount);
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArgCountMismatch,
+			funcName, expected, to_string(args.size())) << endl;
+		exit(1);
+	} // LCOV_EXCL_LINE -- only cleanup skipped by exit(1) is attributed here
 
 	json saArgs = json::array();
-	size_t fixedCount = funcParams ? (funcParams->size() - (isVariadic ? 1 : 0)) : 0;
 	size_t argIdx = 0;
 	for (auto& arg : args) {
-		const json* paramVT = (funcParams && argIdx < fixedCount)
-			? &(*funcParams)[argIdx]["var-type"] : nullptr;
-		if (funcParams && argIdx < fixedCount
-				&& (*funcParams)[argIdx].value("_callback-param", false)) {
+		const json* paramVT = argIdx < fixedCount ? &funcParams[argIdx]["var-type"] : nullptr;
+		if (argIdx < fixedCount && funcParams[argIdx].value("_callback-param", false)) {
 			// registry_.fromJson (below, and inside sa_expression) throws for a
 			// pntr(func) type -- this parameter's slot never reaches either;
 			// its only legal argument is a bare Palan function name.
-			saArgs.push_back(sa_func_ref_arg(locNode, arg, funcName, (*funcParams)[argIdx]));
+			saArgs.push_back(sa_func_ref_arg(locNode, arg, funcName, funcParams[argIdx]));
 			argIdx++;
 			continue;
 		}
+		json argAst = arg;
+		json litBody, litRelease;
+		bool isLit = isAggregateLit(arg)
+			|| (arg.value("expr-type", "") == "addr-of" && isAggregateLit(arg["object"]));
 		// A bare integer literal argument adopts the parameter's type here
 		// instead of defaulting to int64/uint64, avoiding a spurious narrowing
 		// rejection below.
-		json saArg = sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-		if (saArg.contains("value-type")) {
-			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
-			if (paramVT) {
-				if (paramVT->contains("arr-size")) {
-					checkArrBorrowBinding(locNode, arg, saArg, *paramVT);
-				} else if (paramVT->value("embedded", false) && paramVT->contains("stride")) {
-					// The type registry can't tell a contiguous struct array from a single struct.
-					const json& argVT = saArg["value-type"];
-					if (!argVT.value("embedded", false) || !argVT.contains("stride")) {
-						cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
-							arrShapeName(argVT), arrShapeName(*paramVT)) << endl;
-						exit(1);
-					}
-				} else if (paramVT->value("embedded", false)) {
-					const json& argVT = saArg["value-type"];
-					bool argEmbedded = argVT.value("embedded", false);
-					bool paramHasSize = paramVT->contains("inner-size");
-					bool argHasSize   = argVT.contains("inner-size");
-					if (!argEmbedded || !argHasSize || !paramHasSize
-						|| (*paramVT)["inner-size"] != argVT["inner-size"]) {
-						string expected = paramHasSize
-							? to_string((*paramVT)["inner-size"].get<int64_t>()) : "?";
-						string actual = (argEmbedded && argHasSize)
-							? to_string(argVT["inner-size"].get<int64_t>()) : "variable";
+		json saArg = isLit ? sa_lit_arg(arg, isCFunc ? nullptr : paramVT,
+		                                paramVT ? funcParams[argIdx].value("name", "") : "", argAst, litBody, litRelease)
+		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
+		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		if (!saArg.contains("value-type")) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+			exit(1);
+		}
+		bool expiring = isCallBorrow(arg) || isExpiringStruct(saArg);
+		const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+		if (paramVT) {
+			if (paramVT->contains("arr-size")) {
+				checkArrBorrowBinding(locNode, argAst, saArg, *paramVT);
+			} else if (paramVT->value("embedded", false)) {
+				// The type registry can't tell contiguous elements from pointer slots,
+				// nor a contiguous struct array from a single struct.
+				const json& argVT = saArg["value-type"];
+				bool argContig = argVT.value("embedded", false) && argVT.contains("stride");
+				const json& paramElem = (*paramVT)["base-type"];
+				if (isArrLevel(paramElem)) {
+					const json* argRow = argContig ? &argVT["base-type"] : nullptr;
+					bool argSized = argRow && isArrLevel(*argRow) && argRow->contains("arr-size");
+					if (!argSized || (*argRow)["arr-size"] != paramElem["arr-size"]) {
+						string actual = argSized
+							? to_string((*argRow)["arr-size"].get<int64_t>()) : "variable";
 						cerr << locPrefix(locNode)
 						     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
-						            expected, actual) << endl;
+						            to_string(paramElem["arr-size"].get<int64_t>()), actual) << endl;
 						exit(1);
 					}
+				} else if (!argContig) {
+					cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
+						typeDisplayName(argVT), typeDisplayName(*paramVT)) << endl;
+					exit(1);
 				}
-				checkElemShape(locNode, saArg, *paramVT);
-				saArg = convertCallArg(locNode, saArg, *paramVT);
-				if (!isExpiringStruct(saArg))
-					checkStructBorrowSource(locNode, saArg, *paramVT);
-				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, (*funcParams)[argIdx], argIdx);
-			} else if (isVariadic) {
-				const PlnType* promoted = variadicPromote(fromType, registry_);
-				if (promoted != fromType)
-					saArg = wrapConvert(saArg, registry_.toJson(promoted));
 			}
+			checkElemShape(locNode, saArg, *paramVT);
+			saArg = convertCallArg(locNode, saArg, *paramVT);
+			if (isStructBorrow(*paramVT) && isStructStorage(saArg["value-type"])) {
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StructBorrowNeedsAddrOf) << endl;
+				exit(1);
+			}
+			checkArgPtrPermission(locNode, funcName, isCFunc, saArg, funcParams[argIdx], argIdx);
+		} else if (isVariadic) {
+			const PlnType* promoted = variadicPromote(fromType, registry_);
+			if (promoted != fromType)
+				saArg = wrapConvert(saArg, registry_.toJson(promoted));
 		}
-		// The callee only borrows an argument, and an argument evaluated
-		// conditionally (a '&&' operand, a loop condition) can't be released
-		// by a statement around it, so the call itself releases it.
-		if (isExpiringStruct(saArg)) {
-			auto [fn, funcType] = structFreeFunc(saArg["value-type"]["base-type"]["type-name"].get<string>());
-			saArg["release-after-call"] = {{"name",fn},{"func-type",funcType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+		if (isLit)
+			saArg = makeTempExpr(move(litBody), move(saArg), move(litRelease));
+		else if (expiring)
+			saArg = bindCallTemp(move(saArg));
 		saArgs.push_back(saArg);
 		argIdx++;
 	}
@@ -858,7 +1082,10 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 	const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 	const PlnType* toType   = registry_.fromJson(paramVT);
 	if (fromType == toType) return saArg;
-	if (fromType->kind == PlnType::Kind::Prim && toType->kind == PlnType::Kind::Prim) {
+	auto isScalar = [](const PlnType* t) {
+		return t->kind == PlnType::Kind::Prim || t->kind == PlnType::Kind::Enum;
+	};
+	if (isScalar(fromType) && isScalar(toType)) {
 		if (argConvOk(fromType, toType))
 			return wrapConvert(saArg, registry_.toJson(toType));
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
@@ -874,16 +1101,114 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 	return saArg;
 }
 
+json PlnSemanticAnalyzer::enumTypeNamed(const string& name) const
+{
+	json t = resolveTypeAlias({{"type-kind", "prim"}, {"type-name", name}});
+	return t.contains("enum") ? t : json();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// C's sizeof of the type as Palan lays it out: an array holds its elements
+// inline, but only a '$' element is stored in place -- a struct or row
+// element without '$' is a pointer slot.
+int64_t PlnSemanticAnalyzer::typeByteSize(const json& locNode, const json& type)
+{
+	json t = resolveTypeAlias(type);
+	string tk = t.value("type-kind", "");
+	if (tk == "pntr")
+		return 8;
+	if (tk == "embed") {
+		json base = resolveTypeAlias(t["base-type"]);
+		if (base.value("type-kind", "") == "prim" && !isStructType(base)) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, base.value("type-name", "")) << endl;
+			exit(1);
+		}
+		if (!isStructType(base)) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedElemNotStruct, typeDisplayName(base)) << endl;
+			exit(1);
+		}
+		return typeByteSize(locNode, base);
+	}
+	if (tk == "arr") {
+		int64_t n = t["size-expr"].is_null() ? -1 : constArrSize(sa_arr_size_expr(locNode, t["size-expr"]));
+		if (n < 0) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_SizeofArrSizeNotConst) << endl;
+			exit(1);
+		}
+		json elem = resolveTypeAlias(t["base-type"]);
+		bool inPlace = t.value("embedded", false)
+		            || (elem.value("type-kind", "") == "prim" && !isStructType(elem));
+		return n * (inPlace ? typeByteSize(locNode, elem) : 8);
+	}
+	string name = t["type-name"].get<string>();
+	if (structDefs_.count(name))
+		return requireCompleteStruct(name, locNode).totalSize;
+	return elemSizeBytes(name);
+}
+
+// `Name.X` where Name is an enum type (or an alias of one) not shadowed by a
+// variable; null when the field access is an ordinary one.
+// The type name `T` or `V.T` an expression spells, if it names no variable;
+// empty otherwise.
+string PlnSemanticAnalyzer::typeNameWritten(const json& obj) const
+{
+	string et = obj.value("expr-type", "");
+	if (et == "field-access") {
+		string qualifier = typeNameWritten(obj["object"]);
+		return qualifier.empty() || qualifier.find('.') != string::npos
+		       ? "" : qualifier + "." + obj["field"].get<string>();
+	}
+	if (et != "id") return "";
+	string name = obj["name"].get<string>();
+	return findVar(name) || findCGlobal(name) ? "" : name;
+}
+
+// gen-ast only knows the prim keywords as cast targets; an alias (an enum
+// included) is a type only SA can see, so its cast arrives shaped as a call.
+// Null when `typeName` is no alias.
+json PlnSemanticAnalyzer::aliasCast(const json& expr, const string& typeName)
+{
+	json written = {{"type-kind", "prim"}, {"type-name", typeName}};
+	requireNameableType(expr, written);
+	json target = resolveTypeAlias(written);
+	if (target == written) return json();
+	if (target.value("type-kind", "") != "prim" || isStructType(target)) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastTargetNotPrim, typeName) << endl;
+		exit(1);
+	}
+	if (expr["args"].size() != 1) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastArgCount, typeName) << endl;
+		exit(1);
+	}
+	json cast = {{"expr-type", "cast"}, {"target-type", target}, {"src", expr["args"][0]}};
+	if (expr.contains("loc")) cast["loc"] = expr["loc"];
+	return sa_expression(cast);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)
+{
+	string typeName = typeNameWritten(expr["object"]);
+	if (typeName.empty()) return json();
+	requireNameableType(expr, {{"type-kind", "prim"}, {"type-name", typeName}});
+	json enumType = enumTypeNamed(typeName);
+	if (enumType.is_null()) return json();
+
+	const auto& values = enumDefs_.at(enumType["enum"].get<string>()).values;
+	string field = expr["field"].get<string>();
+	auto it = values.find(field);
+	if (it == values.end()) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownEnumerator, field, typeName) << endl;
+		exit(1);
+	}
+	json lit = {{"expr-type", "lit-int"}, {"value", to_string(it->second)}, {"value-type", enumType}};
+	if (expr.contains("loc")) lit["loc"] = expr["loc"];
+	return lit;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)
 {
 	FieldChain chain = resolveObjectChain(expr["object"], forWrite);
 	string fn = expr["field"].get<string>();
-	const FieldLayout& fld = findFieldOrExit(chain.structName, fn, expr);
-	if (fld.typeKind == "embed") {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InlineStructAsValue) << endl;
-		exit(1);
-	}
-	return makeFieldAccess(chain, fld);
+	return makeFieldAccess(chain, findFieldOrExit(chain.structName, fn, expr));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::makeFieldAccess(const FieldChain& chain, const FieldLayout& fld)
@@ -947,11 +1272,8 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 			return sa_expr;
 		}
 
-		if (elem_type.value("type-kind", "") == "prim"
-				&& !array_type.contains("inner-size") && array_type.contains("stride")) {
+		if (elem_type.value("type-kind", "") == "prim") {
 			// [n]$T embedded array field, primitive leaf: data[i] -> scalar value
-			// (stride carried on array_type distinguishes this from the 2D
-			// inner-size row-access case below).
 			int64_t stride = array_type.value("stride", (int64_t)0);
 			json elem_size_node = {
 				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
@@ -964,19 +1286,15 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 			return sa_expr;
 		}
 
-		// Embedded 2D array row access: mat[i] → pntr(T), non-owning
-		// elem-size = stride = inner-size * sizeof(T)  (or __name_d1 * sizeof(T) if variable)
-		int elem_sz = elemSizeBytes(elem_type.value("type-name",""));
-		json row_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
-		if (array_type.contains("mutable")) row_pntr["mutable"] = array_type["mutable"];
+		// [n]$[m]T row access: mat[i] -> the row, laid out in place.
+		// Without a stride the row size is only known at run time, from __name_d1.
 		json elem_size_node;
-
-		if (array_type.contains("inner-size")) {
-			int64_t stride = array_type["inner-size"].get<int64_t>() * elem_sz;
+		if (array_type.contains("stride")) {
 			elem_size_node = {
-				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
+				{"expr-type","lit-uint"},{"value",to_string(array_type["stride"].get<int64_t>())},{"value-type",uint64_type}
 			};
 		} else {
+			int elem_sz = elemSizeBytes(elem_type["base-type"].value("type-name",""));
 			string arr_name = sa_array["name"].get<string>();
 			json d1_id = {{"expr-type","id"},{"name","__"+arr_name+"_d1"},
 			              {"var-type",uint64_type},{"value-type",uint64_type}};
@@ -991,7 +1309,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 		sa_expr["array"]      = sa_array;
 		sa_expr["index"]      = sa_index;
 		sa_expr["elem-size"]  = elem_size_node;
-		sa_expr["value-type"] = row_pntr;
+		sa_expr["value-type"] = elem_type;
 		sa_expr["addr-only"]  = true;
 		return sa_expr;
 	}
@@ -999,9 +1317,10 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 	if (elem_type.value("type-kind", "") == "struct") {
 		// `p[i]` on a struct pointee is an address computation (base +
 		// i*sizeof(T)), not a load -- Palan has no register-sized struct value.
+		// The element is the struct's storage, like a struct stored in an
+		// array; writes are checked against p's own permission.
 		int64_t stride = requireCompleteStruct(elem_type["type-name"].get<string>(), expr).totalSize;
-		json elem_pntr = {{"type-kind","pntr"},{"mutable",array_type.value("mutable", true)},
-		                  {"base-type",elem_type}};
+		json elem_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
 		json elem_size_node = {
 			{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
 		};
@@ -1037,6 +1356,202 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 	sa_expr["value-type"] = elem_type;
 	sa_expr["addr-only"]  = false;
 	return sa_expr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A member-call whose object is a variable (or C global) is a method-form
+// call; otherwise it is a module-alias call `L.f(args)`. A variable takes
+// precedence over an alias of the same name, as it does over an enum name.
+bool PlnSemanticAnalyzer::isMethodForm(const json& memberCall) const
+{
+	const json& obj = memberCall["object"];
+	if (obj.value("expr-type", "") != "id") return true;
+	const string& name = obj["name"].get<string>();
+	return findVar(name) || findCGlobal(name);
+}
+
+// The function a call names, looked up as sa_expr_call does; null when it is
+// unknown or ambiguous, which sa_expr_call reports.
+const json* PlnSemanticAnalyzer::findCalleeByName(const string& name, bool& isCFunc) const
+{
+	const json* pFunc = findCFunc(name);
+	isCFunc = pFunc != nullptr;
+	if (!pFunc) pFunc = findPlnFunc(name);
+	if (!pFunc) pFunc = findImportFunc(name);
+	return pFunc && !pFunc->empty() ? pFunc : nullptr;
+}
+
+// The function a call, a module-alias call, or a chained call (its last call)
+// names; null otherwise.
+const json* PlnSemanticAnalyzer::findCallee(const json& call, bool& isCFunc) const
+{
+	isCFunc = false;
+	string et = call.value("expr-type", "");
+	if (et == "chain-call")
+		return findCallee(call["call"], isCFunc);
+	if (et == "call")
+		return findCalleeByName(call["name"].get<string>(), isCFunc);
+	if (et != "member-call" || isMethodForm(call))
+		return nullptr;
+	const json* pFunc = findImportFuncByAlias(call["object"]["name"].get<string>(), call["method"].get<string>());
+	if (pFunc) isCFunc = pFunc->value("_c-func", false);
+	return pFunc;
+}
+
+// The value type of a method-form receiver or a chained value; null when it
+// has none (a void call). An inline struct field is storage and cannot be
+// evaluated as a value, so its type comes from the layout.
+json PlnSemanticAnalyzer::operandValueType(const json& obj)
+{
+	if (obj.value("expr-type", "") == "field-access") {
+		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/false);
+		return fieldValueType(findFieldOrExit(chain.structName, obj["field"].get<string>(), obj));
+	}
+	return sa_expression(obj).value("value-type", json());
+}
+
+// Rewrites a method-form call `aa.f(args)` to the call `f(@!aa, args)`. Any
+// other expression, including a module-alias call `L.f(args)`, is returned as
+// is.
+json PlnSemanticAnalyzer::normalizeMethodCall(const json& expr)
+{
+	if (expr["expr-type"] != "member-call" || !isMethodForm(expr)) return expr;
+	const json& obj = expr["object"];
+
+	const string& method = expr["method"].get<string>();
+	bool isCFunc;
+	const json* pFunc = findCalleeByName(method, isCFunc);
+	if (pFunc) {
+		const json& params = (*pFunc)["parameters"];
+		if (params.empty() || !params[0]["var-type"].value("mutable", false)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_MethodNeedsMutableFirstParam, method) << endl;
+			exit(1);
+		}
+	}
+
+	// A receiver that is already a borrow is passed as is: '@!' on it would
+	// be rejected (or would mean a pointer to the borrow's slot).
+	json recvType = operandValueType(obj);
+	bool isBorrow = isPtrBorrow(recvType) || isArrBorrowVar(recvType);
+	json recv = isBorrow ? obj : json{{"expr-type", "addr-of"}, {"mutable", true}, {"object", obj}};
+	if (!isBorrow && obj.contains("loc")) recv["loc"] = obj["loc"];
+
+	json call = {{"expr-type", "call"}, {"name", method}, {"args", json::array({recv})}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	for (auto& a : expr["args"]) call["args"].push_back(a);
+	if (expr.contains("loc")) call["loc"] = expr["loc"];
+	return call;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+static const json* fixedParamType(const json* callee, size_t idx)
+{
+	if (!callee || idx >= (*callee)["parameters"].size()) return nullptr;
+	const json& param = (*callee)["parameters"][idx];
+	if (param.value("name", "") == "..." || param.value("_callback-param", false)) return nullptr;
+	return &param["var-type"];
+}
+
+// A chained value given for a parameter: '@' may be omitted for a read-only
+// borrow, so it is added here, while '@!' stays explicit so a write is
+// visible at the call. A C function takes an array as it is.
+json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool isCFunc)
+{
+	if (!paramVT || value.value("expr-type", "") == "addr-of") return value;
+	if (paramVT->value("type-kind", "") != "pntr" || paramVT->value("mutable", true)) return value;
+	// A literal has no type of its own until it is given a target, so it is
+	// borrowed as '@[..]'/'@{..}' and checked against the parameter.
+	string et = value.value("expr-type", "");
+	if (et != "arr-lit" && et != "dict-lit") {
+		json vt = operandValueType(value);
+		if (vt.is_null()) return value;
+		bool ownedArr = isArrLevel(vt) && !isArrBorrowVar(vt);
+		if (!isStructStorage(vt) && vt.value("type-kind", "") != "prim"
+				&& !(ownedArr && !isCFunc && isArrBorrowVar(*paramVT)))
+			return value;
+	}
+	json out = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}};
+	if (value.contains("loc")) out["loc"] = value["loc"];
+	return out;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+size_t PlnSemanticAnalyzer::chainRetCount(const json& value) const
+{
+	bool isCFunc;
+	const json* callee = findCallee(value, isCFunc);
+	return callee && callee->contains("rets") ? (*callee)["rets"].size() : 0;
+}
+
+// Rewrites a chained call `v -> f(args)` to `f(v, args)`. A value that is a
+// call returning several values is left as a chain-call, received into temps
+// by sa_expr_chain_call.
+json PlnSemanticAnalyzer::normalizeChainCall(const json& expr)
+{
+	json value = expr["value"];
+	if (value.value("expr-type", "") == "chain-call")
+		value = normalizeChainCall(value);
+	json call = expr["call"];
+	if (call["expr-type"] == "member-call" && isMethodForm(call)) {
+		cerr << locPrefix(call) << PlnSaMessage::getMessage(E_ChainToMethodCall) << endl;
+		exit(1);
+	}
+	if (chainRetCount(value) >= 2) {
+		json out = expr;
+		out["value"] = move(value);
+		return out;
+	}
+	bool isCFunc;
+	const json* callee = findCallee(call, isCFunc);
+	json arg = chainArg(value, fixedParamType(callee, 0), isCFunc);
+	call["args"].insert(call["args"].begin(), move(arg));
+	return call;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Receives the return values of a chained call's value into temps, appending
+// their declarations to body, and returns the call with the temps in front of
+// its arguments.
+json PlnSemanticAnalyzer::chainMultiCall(const json& chain, json& body)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json value = chain["value"];
+	if (value["expr-type"] == "chain-call")
+		value = chainMultiCall(value, body);
+	bool isCFunc;
+	const json& rets = (*findCallee(value, isCFunc))["rets"];
+	json loc = chain.value("loc", json::array());
+	json decl = {{"stmt-type", "tapple-decl"}, {"vars", json::array()}, {"value", value}, {"loc", loc}};
+	vector<string> temps;
+	for (auto& r : rets) {
+		temps.push_back("__tap_" + to_string(tempVarCounter_++));
+		decl["vars"].push_back({{"var-name", temps.back()}, {"var-type", r["var-type"]}});
+	}
+	for (auto& s : sa_tapple_decl(decl))
+		body.push_back(s);
+
+	json call = chain["call"];
+	const json* callee = findCallee(call, isCFunc);
+	json args = json::array();
+	for (size_t i = 0; i < temps.size(); i++) {
+		json temp = {{"expr-type", "id"}, {"name", temps[i]}, {"loc", loc}};
+		args.push_back(chainArg(temp, fixedParamType(callee, i), isCFunc));
+	}
+	for (auto& a : call["args"])
+		args.push_back(a);
+	call["args"] = move(args);
+	return call;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_chain_call(const json& expr)
+{
+	json norm = normalizeChainCall(expr);
+	if (norm["expr-type"] != "chain-call")
+		return sa_expression(norm);
+
+	enterScope();
+	json body = json::array();
+	json saCall = sa_expression(chainMultiCall(norm, body));
+	size_t idx = arrayScopeVars_.size() - 1;
+	json release = collectFreeStmts(idx, idx + 1);
+	leaveScope();
+	return makeTempExpr(move(body), move(saCall), move(release));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
@@ -1079,9 +1594,6 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
 
-	const json* funcParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
-
-	if (expr.contains("args"))
-		sa_expr["args"] = saCallArgs(expr, expr["args"], funcParams, isCFunc, method);
+	sa_expr["args"] = saCallArgs(expr, expr["args"], (*pFunc)["parameters"], isCFunc, method);
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE

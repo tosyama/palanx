@@ -1,0 +1,23 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type vec3 { flo32 x; flo32 y; flo32 z; };
+func sub(@vec3 a, @vec3 b) -> vec3 { return [a.x - b.x, a.y - b.y, a.z - b.z]; }
+func scale(@!vec3 v, flo32 f) -> @!vec3 { [v.x*f, v.y*f, v.z*f] -> v[0]; return v; }
+func dot(@vec3 a, @vec3 b) -> flo32 { return a.x*b.x + a.y*b.y + a.z*b.z; }
+mtrace();
+{
+	vec3 a = [3, 4, 5];
+	vec3 b = [1, 1, 1];
+	vec3 c;
+	printf("%.0f\n", dot(scale(@!sub(@a, @b), 2), @a));
+	printf("%.0f\n", dot(scale(scale(@!sub(@a, @b), 2), 0.5), @a));
+	printf("%.0f\n", dot(sub(@a, @b).scale(2), @a));
+	scale(@!sub(@a, @b), 2) -> c;
+	printf("%.0f %.0f %.0f\n", c.x, c.y, c.z);
+	if dot(@a, @b) < 0.0 && dot(scale(@!sub(@a, @b), 2), @a) > 0.0 { printf("no\n"); }
+	if dot(@a, @b) > 0.0 && dot(scale(@!sub(@a, @b), 2), @a) > 75.0 { printf("and\n"); }
+	int32 i = 0;
+	while dot(scale(@!sub(@a, @b), 2), @a) > flo32(i * 10) { i + 1 -> i; }
+	printf("%d\n", i);
+}
+muntrace();

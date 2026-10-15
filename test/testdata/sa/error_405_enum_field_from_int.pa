@@ -1,0 +1,4 @@
+type Color enum { A, B };
+type S { Color c; };
+S s;
+1 -> s.c;

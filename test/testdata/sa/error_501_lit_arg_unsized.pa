@@ -1,0 +1,2 @@
+func gu([]int32 a) -> int32 { return a[0]; }
+gu(@[1, 2]);

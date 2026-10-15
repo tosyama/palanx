@@ -1,0 +1,2 @@
+type V { int64 x; int64 y; };
+func f(@V r) { [1, 2] -> r[0]; }

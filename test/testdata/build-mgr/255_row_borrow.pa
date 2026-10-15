@@ -1,0 +1,42 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+type P { int32 x; int32 y; };
+
+func sum4(@[4]int32 r) -> int32 {
+	return r[0] + r[1] + r[2] + r[3];
+}
+func fill4(@![4]int32 r, int32 v) {
+	int32 j = 0;
+	while j < 4 { v + j -> r[j]; j + 1 -> j; }
+}
+func sumPts(@[2]$P r) -> int32 {
+	return r[0].x + r[0].y + r[1].x + r[1].y;
+}
+func setPts(@![2]P r) {
+	5 -> r[0].x;
+	6 -> r[1].y;
+}
+func sumRow(@[3][4]int32 g) -> int32 {
+	return sum4(@g[1]);
+}
+
+[3][4]int32 a;
+fill4(@!a[1], 10);
+printf("%d %d %d\n", sum4(@a[1]), a[1][3], sumRow(@a));
+
+[3]$[4]int32 c;
+fill4(@!c[0], 0);
+fill4(@!c[1], 100);
+fill4(@!c[2], 200);
+printf("%d %d %d %d\n", sum4(@c[1]), c[0][3], c[2][0], sum4(@c[2]));
+int32 v = 77;
+memcpy(@!c[1], @v, 4);
+printf("%d %d %d\n", c[1][0], c[1][1], c[0][3]);
+
+[2][2]$P sp;
+1 -> sp[1][0].x; 2 -> sp[1][0].y; 3 -> sp[1][1].x; 4 -> sp[1][1].y;
+printf("%d\n", sumPts(@sp[1]));
+
+[2][2]P op;
+setPts(@!op[0]);
+printf("%d %d\n", op[0][0].x, op[0][1].y);

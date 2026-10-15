@@ -35,6 +35,7 @@ enum {
 	KW_AS	=	PlnParser::token::KW_AS,
 	KW_FUNC =	PlnParser::token::KW_FUNC,
 	KW_TYPE =	PlnParser::token::KW_TYPE,
+	KW_ENUM =	PlnParser::token::KW_ENUM,
 	KW_CONSTRUCT =	PlnParser::token::KW_CONSTRUCT,
 	KW_INTERFACE =	PlnParser::token::KW_INTERFACE,
 	KW_CONST =	PlnParser::token::KW_CONST,
@@ -48,6 +49,7 @@ enum {
 	KW_BREAK = PlnParser::token::KW_BREAK,
 	KW_CONTINUE = PlnParser::token::KW_CONTINUE,
 	KW_SYSCALL = PlnParser::token::KW_SYSCALL,
+	KW_SIZEOF = PlnParser::token::KW_SIZEOF,
 	KW_TRUE = PlnParser::token::KW_TRUE,
 	KW_FALSE = PlnParser::token::KW_FALSE,
 	OPE_LE =	PlnParser::token::OPE_LE,
@@ -83,7 +85,8 @@ PlnLexer::PlnLexer(const string& input_file)
 
 DIGIT	[0-9]+
 UDIGIT	[0-9]+"u"
-FLOAT	[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?
+FLOAT	[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+
+BADNUM	[0-9]+(\.[0-9]+)?[a-zA-Z_][0-9a-zA-Z_]*
 ID	[a-zA-Z_][0-9a-zA-Z_]*
 DEMILITER	"{"|"}"|"("|")"|"["|"]"|","|";"|":"|"="|"+"|"-"|"*"|"/"|"%"|"<"|">"|"!"|"?"|"&"|"@"|"."|"$"|"#"|"|"|"^"|"~"
 STRING	"\""(\\.|\\\n|[^\\\"])*"\""
@@ -110,6 +113,11 @@ COMMENT1	\/\/[^\n]*\n
 		lval.build<string>() = yytext;
 		return INT;
 	}
+<*>{BADNUM} {
+		throw runtime_error(PlnGenAstMessage::locatedError(inputFile,
+			loc.begin.line, loc.begin.column,
+			PlnGenAstMessage::getMessage(E_InvalidNumberLiteral, yytext)));
+	}
 <*>"export" { return KW_EXPORT; }
 <*>"import" {
 		BEGIN(import);
@@ -135,6 +143,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>"as"	{ return KW_AS; }
 <*>"func" { return KW_FUNC; }
 <*>"type" { return KW_TYPE; }
+<*>"enum" { return KW_ENUM; }
 <*>"construct" { return KW_CONSTRUCT; }
 <*>"interface" { return KW_INTERFACE; }
 <*>"const" { return KW_CONST; }
@@ -147,6 +156,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>"break" { return KW_BREAK; }
 <*>"continue" { return KW_CONTINUE; }
 <*>"syscall" { return KW_SYSCALL; }
+<*>"sizeof" { return KW_SIZEOF; }
 <*>"true" { return KW_TRUE; }
 <*>"false" { return KW_FALSE; }
 <*>{ID} {

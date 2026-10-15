@@ -1,0 +1,4 @@
+func f(int32 a) -> int32
+{
+	return (a, 1);
+}

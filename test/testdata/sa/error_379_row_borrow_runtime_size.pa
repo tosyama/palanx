@@ -1,0 +1,5 @@
+func g(@[4]int32 r) {}
+func f(int32 k) {
+	[2]$[k]int32 c;
+	g(@c[0]);
+}

@@ -1,0 +1,17 @@
+cinclude <stdio.h>;
+type P { int32 x; int64 y; };
+[5]int32 c;
+[2][3]int64 g;
+int16 s = 7;
+int32 a;
+int64 b;
+P p;
+int32 i = 1;
+s -> a -> b;
+printf("%d %ld\n", a, b);
+3 -> c[0] -> c[i] -> c[2] -> c[3] -> c[4] -> c[0] -> c[1];
+printf("%d %d %d %d %d\n", c[0], c[1], c[2], c[3], c[4]);
+9 -> p.x -> p.y -> g[1][2] -> b;
+printf("%d %ld %ld %ld\n", p.x, p.y, g[1][2], b);
+c[2] + 1 -> i -> c[i];
+printf("%d %d\n", i, c[4]);

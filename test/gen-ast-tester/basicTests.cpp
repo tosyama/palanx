@@ -837,6 +837,66 @@ TEST(gen_ast, addr_of_arr_index) {
 	ASSERT_EQ(addr_wp["object"]["index"]["value"], "2");
 }
 
+TEST(gen_ast, addr_of_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/132_addr_of_call.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	const auto& ro = stmts[0]["body"]["args"][0];
+	ASSERT_EQ(ro["expr-type"], "addr-of");
+	ASSERT_EQ(ro["mutable"], false);
+	ASSERT_EQ(ro["object"]["expr-type"], "call");
+	ASSERT_EQ(ro["object"]["name"], "g");
+	ASSERT_EQ(ro["object"]["args"].size(), 1);
+	ASSERT_TRUE(ro["object"].contains("loc"));
+
+	const auto& rw = stmts[1]["body"]["args"][0];
+	ASSERT_EQ(rw["mutable"], true);
+	ASSERT_EQ(rw["object"]["expr-type"], "call");
+
+	// Only a whole call is borrowed; a call as an index base and a cast stay unsupported.
+	ASSERT_EQ(stmts[2]["body"]["args"][0]["object"]["array"]["expr-type"], "not-impl");
+	ASSERT_EQ(stmts[3]["body"]["args"][0]["object"]["expr-type"], "not-impl");
+}
+
+TEST(gen_ast, addr_of_member_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/133_addr_of_member_call.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	// '@v.f()' is '@(v.f())' as '@v.x' is '@(v.x)', not '(@v).f()'.
+	const auto& ro = stmts[0]["body"]["args"][0];
+	ASSERT_EQ(ro["expr-type"], "addr-of");
+	ASSERT_EQ(ro["mutable"], false);
+	ASSERT_EQ(ro["object"]["expr-type"], "member-call");
+	ASSERT_EQ(ro["object"]["object"]["name"], "v");
+	ASSERT_EQ(ro["object"]["method"], "f");
+	ASSERT_TRUE(ro["object"].contains("loc"));
+
+	const auto& rw = stmts[1]["body"]["args"][0];
+	ASSERT_EQ(rw["mutable"], true);
+	ASSERT_EQ(rw["object"]["expr-type"], "member-call");
+	ASSERT_EQ(rw["object"]["object"]["name"], "M");
+	ASSERT_EQ(rw["object"]["args"].size(), 1);
+
+	const auto& chained = stmts[2]["body"]["args"][0]["object"];
+	ASSERT_EQ(chained["expr-type"], "member-call");
+	ASSERT_EQ(chained["object"]["expr-type"], "call");
+	ASSERT_EQ(chained["object"]["name"], "mk");
+
+	ASSERT_EQ(stmts[3]["body"]["args"][0]["object"]["expr-type"], "not-impl");
+
+	const auto& neg = stmts[4]["vars"][0]["init"];
+	ASSERT_EQ(neg["expr-type"], "neg");
+	ASSERT_EQ(neg["operand"]["expr-type"], "member-call");
+}
+
 TEST(gen_ast, addr_of_type_alias_mix) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/105_addr_of_type_alias_mix.pa");
@@ -1673,8 +1733,11 @@ TEST(gen_ast, tapple_assign) {
 	ASSERT_EQ(stmts[1]["value"]["expr-type"], "member-call");
 
 	// Only a call can be assigned, and only to storable targets.
-	for (int i = 2; i <= 5; i++)
-		ASSERT_EQ(stmts[i]["stmt-type"], "not-impl") << i;
+	for (int i = 2; i <= 5; i++) {
+		ASSERT_EQ(stmts[i]["stmt-type"], "expr") << i;
+		ASSERT_EQ(stmts[i]["body"]["expr-type"], "not-impl") << i;
+		ASSERT_EQ(stmts[i]["body"]["loc"], stmts[i]["loc"]) << i;
+	}
 }
 
 TEST(gen_ast, field_transfer) {
@@ -1693,6 +1756,42 @@ TEST(gen_ast, field_transfer) {
 
 	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
 	ASSERT_FALSE(stmts[3].contains("ownership-transfer"));
+}
+
+// A chain into array elements used to split the GLR parse at every step:
+// 4 steps never finished, so execTestCommand's timeout catches a regression.
+TEST(gen_ast, assign_chain) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/127_assign_chain.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 10);
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[0]["value"]["expr-type"], "lit-int");
+	for (int i = 1; i < 7; i++) {
+		ASSERT_EQ(stmts[i]["stmt-type"], "arr-assign");
+		ASSERT_EQ(stmts[i]["value"], stmts[i-1]["target"]);
+	}
+	ASSERT_EQ(stmts[6]["target"]["index"]["name"], "o");
+
+	ASSERT_EQ(stmts[7]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[7]["value"]["name"], "x");
+	ASSERT_EQ(stmts[8]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[8]["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(stmts[8]["value"]["expr-type"], "field-access");
+	ASSERT_EQ(stmts[8]["value"]["object"]["name"], "s");
+	ASSERT_EQ(stmts[8]["value"]["field"], "a");
+	ASSERT_EQ(stmts[8].value("ownership-transfer", false), true);
+
+	ASSERT_EQ(stmts[9]["stmt-type"], "not-impl");
+
+	const auto& body = jout["ast"]["functions"][0]["block"]["body"];
+	ASSERT_EQ(body.size(), 2);
+	ASSERT_EQ(body[1]["name"], "b");
+	ASSERT_EQ(body[1]["value"]["expr-type"], "id");
+	ASSERT_EQ(body[1]["value"]["name"], "a");
 }
 
 // Copying a list on every append made parse time quadratic: 2000 items took
@@ -1716,7 +1815,9 @@ TEST(gen_ast, decl_variants) {
 	ASSERT_EQ(stmts[4]["vars"].size(), 1);
 	ASSERT_EQ(stmts[4]["vars"][0]["var-name"], "c");
 	ASSERT_EQ(stmts[5]["vars"].size(), 0);
-	ASSERT_EQ(stmts[6]["stmt-type"], "not-impl");
+	ASSERT_EQ(stmts[6]["stmt-type"], "expr");
+	ASSERT_EQ(stmts[6]["body"]["expr-type"], "not-impl");
+	ASSERT_EQ(stmts[6]["body"]["loc"], json::array({10, 1, 10, 12}));
 
 	// Definitions with an unsupported parameter form are dropped wherever they appear.
 	const auto& funcs = jout["ast"]["functions"];
@@ -1764,4 +1865,153 @@ TEST(gen_ast, linear_parse_time) {
 	json* inner = &jout["ast"]["functions"][0]["block"]["body"][0];
 	for (int i = 1; i < depth; i++) inner = &(*inner)["body"][0];
 	ASSERT_EQ((*inner)["body"].size(), n);
+}
+
+TEST(gen_ast, enum_def) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/128_enum_def.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 3);
+
+	ASSERT_EQ(stmts[0]["stmt-type"], "enum-def");
+	ASSERT_EQ(stmts[0]["name"], "Color");
+	const auto& es = stmts[0]["enumerators"];
+	ASSERT_EQ(es.size(), 3);
+	ASSERT_EQ(es[0]["name"], "RED");
+	ASSERT_FALSE(es[0].contains("value"));
+	ASSERT_EQ(es[1]["value"]["value"], "5");
+	ASSERT_EQ(es[2]["name"], "BLUE");
+
+	ASSERT_EQ(stmts[1]["stmt-type"], "enum-def");
+	ASSERT_EQ(stmts[1]["enumerators"][0]["value"]["value"], "-1");
+
+	const auto& init = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "field-access");
+	ASSERT_EQ(init["object"]["name"], "Color");
+	ASSERT_EQ(init["field"], "GREEN");
+}
+
+TEST(gen_ast, sizeof) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/129_sizeof.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	const auto& a = stmts[0]["vars"][0]["init"];
+	ASSERT_EQ(a["expr-type"], "sizeof");
+	ASSERT_EQ(a["type"]["type-name"], "int32");
+	const auto& b = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(b["type"]["type-kind"], "arr");
+	ASSERT_EQ(b["type"]["embedded"], true);
+	ASSERT_EQ(b["type"]["base-type"]["type-name"], "Vec3f");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["expr-type"], "not-impl");
+}
+
+TEST(gen_ast, export_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/130_export_type.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts[0]["stmt-type"], "struct-def");
+	ASSERT_EQ(stmts[0]["export"], true);
+	ASSERT_EQ(stmts[1]["stmt-type"], "enum-def");
+	ASSERT_EQ(stmts[1]["export"], true);
+	ASSERT_EQ(stmts[2]["stmt-type"], "type-alias");
+	ASSERT_EQ(stmts[2]["export"], true);
+	ASSERT_FALSE(stmts[3].contains("export"));
+	ASSERT_FALSE(jout["ast"].contains("export"));
+
+	ASSERT_EQ(stmts[4]["vars"][0]["var-type"]["type-name"], "V.vec3");
+	ASSERT_EQ(stmts[5]["vars"][0]["var-type"]["base-type"]["type-name"], "V.vec3");
+	const auto& e = stmts[6]["fields"][0]["var-type"];
+	ASSERT_EQ(e["type-kind"], "embed");
+	ASSERT_EQ(e["base-type"]["type-name"], "V.vec3");
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["type"]["type-name"], "V.vec3");
+}
+
+TEST(gen_ast, float_exponent_no_point) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/131_float_exponent_no_point.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	const char* values[] = {"1e10", "1E-3", "2e+5"};
+	for (int i = 0; i < 3; i++) {
+		const auto& init = stmts[i]["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "lit-flo");
+		ASSERT_EQ(init["value"], values[i]);
+	}
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["expr-type"], "lit-uint");
+}
+
+TEST(gen_ast, addr_of_lit) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/134_addr_of_lit.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	const auto& ro = stmts[0]["body"]["args"][0];
+	ASSERT_EQ(ro["expr-type"], "addr-of");
+	ASSERT_EQ(ro["mutable"], false);
+	ASSERT_EQ(ro["object"]["expr-type"], "arr-lit");
+	ASSERT_EQ(ro["object"]["items"].size(), 2);
+	ASSERT_TRUE(ro.contains("loc"));
+
+	// The row sequence is one 2D literal under '@!'.
+	const auto& rows = stmts[1]["body"]["args"][0];
+	ASSERT_EQ(rows["mutable"], true);
+	ASSERT_EQ(rows["object"]["items"].size(), 2);
+	ASSERT_EQ(rows["object"]["items"][1]["items"][0]["value"], "3");
+
+	ASSERT_EQ(stmts[2]["body"]["args"][0]["object"]["expr-type"], "dict-lit");
+	const auto& args = stmts[3]["body"]["args"];
+	ASSERT_EQ(args[0]["mutable"], true);
+	ASSERT_EQ(args[0]["object"]["expr-type"], "dict-lit");
+	// '@' binds tighter than a binary operator.
+	ASSERT_EQ(args[1]["expr-type"], "add");
+	ASSERT_EQ(args[1]["left"]["expr-type"], "addr-of");
+}
+
+TEST(gen_ast, chain_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/135_chain_call.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 11);
+
+	const auto& plain = stmts[0]["body"];
+	ASSERT_EQ(plain["expr-type"], "chain-call");
+	ASSERT_EQ(plain["value"]["name"], "x");
+	ASSERT_EQ(plain["call"]["name"], "f");
+	ASSERT_EQ(plain["call"]["args"].size(), 1);
+	ASSERT_TRUE(plain["call"].contains("loc"));
+
+	ASSERT_EQ(stmts[1]["body"]["value"]["expr-type"], "addr-of");
+	ASSERT_EQ(stmts[1]["body"]["value"]["object"]["name"], "f");
+	ASSERT_EQ(stmts[2]["body"]["call"]["expr-type"], "member-call");
+	ASSERT_EQ(stmts[2]["body"]["call"]["object"]["name"], "M");
+
+	// A call followed by '->' is evaluated once, as the assigned value.
+	ASSERT_EQ(stmts[3]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[3]["value"]["expr-type"], "chain-call");
+
+	// An assignment feeding a call is its own statement; the call reads it back.
+	ASSERT_EQ(stmts[4]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[5]["body"]["value"]["name"], "v");
+	ASSERT_EQ(stmts[6]["name"], "v");
+	ASSERT_EQ(stmts[7]["name"], "w");
+	ASSERT_EQ(stmts[7]["value"]["value"]["name"], "v");
+	ASSERT_EQ(stmts[8]["body"]["value"]["name"], "w");
+	ASSERT_EQ(stmts[8]["body"]["call"]["name"], "g");
+
+	ASSERT_EQ(stmts[9]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[9]["value"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[10]["stmt-type"], "tapple-assign");
+	ASSERT_EQ(stmts[10]["value"]["expr-type"], "chain-call");
 }

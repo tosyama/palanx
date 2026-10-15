@@ -1,0 +1,6 @@
+cinclude "256_c_ptr_ptr_field.h";
+
+CS s;
+@@int32 a = s.pp;
+@@T b = s.pt;
+@@int64 c = s.slots[1];

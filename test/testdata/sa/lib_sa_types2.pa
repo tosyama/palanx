@@ -1,0 +1,1 @@
+export type Vec { int32 q; };

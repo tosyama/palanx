@@ -1,0 +1,3 @@
+func divmod(int32 a, int32 b) -> int32 q, int32 r { a / b -> q; a % b -> r; }
+func incr(@!int32 a, int32 b) { a + b -> a; }
+divmod(7, 2) -> incr();

@@ -53,6 +53,10 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Invalid character literal " + arg1 + ".";
 
+		case E_InvalidNumberLiteral:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Invalid number literal '" + arg1 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

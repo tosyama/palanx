@@ -1,0 +1,3 @@
+import "lib_sa_mutual_alias.pa";
+export type Node { int32 id; $Leaf leaf; };
+Node n;

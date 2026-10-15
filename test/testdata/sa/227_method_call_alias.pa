@@ -1,0 +1,8 @@
+import "lib_sa_import.pa" as M;
+type T { int64 v; };
+func square(@!T t) { t.v * t.v -> t.v; }
+{
+	T M;
+	M.square();
+}
+int64 a = M.square(3);

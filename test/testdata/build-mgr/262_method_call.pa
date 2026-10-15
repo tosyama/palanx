@@ -1,0 +1,42 @@
+cinclude <stdio.h>;
+cinclude <time.h>;
+
+type Inner { int32 v; };
+type Counter { int32 n; $Inner inner; };
+
+func add(@!Counter c, int32 d) {
+	c.n + d -> c.n;
+	c.inner.bump();
+}
+func bump(@!Inner i) { i.v + 1 -> i.v; }
+func twice(@!Counter c) {
+	c.add(10);
+	c.add(10);
+}
+func split(@!Counter c) -> int32 n, int32 v {
+	c.n -> n;
+	c.inner.v -> v;
+}
+func set0(@![3]int32 a, int32 v) { v -> a[0]; }
+
+Counter c;
+c.add(1);
+c.twice();
+c.inner.bump();
+@!Counter pc = @!c;
+pc.add(100);
+(int32 n, int32 v) = c.split();
+printf("%d %d\n", n, v);
+
+[3]int32 arr;
+arr.set0(7);
+printf("%d\n", arr[0]);
+
+tm t;
+2026 - 1900 -> t.tm_year;
+0 -> t.tm_mon;
+32 -> t.tm_mday;
+12 -> t.tm_hour;
+-1 -> t.tm_isdst;
+t.mktime();
+printf("%d %d\n", t.tm_mon, t.tm_mday);

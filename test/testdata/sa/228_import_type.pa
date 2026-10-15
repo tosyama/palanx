@@ -1,0 +1,6 @@
+import "lib_sa_types.pa";
+Vec p;
+Row r;
+MyInt m = 1;
+Color c = Color.Green;
+int32 x = getX(@p);

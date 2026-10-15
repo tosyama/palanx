@@ -1,0 +1,3 @@
+type Color enum { RED, GREEN };
+type Fruit enum { APPLE };
+type E enum { A = 1 + 2 };

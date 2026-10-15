@@ -1,0 +1,7 @@
+type S { @!@!int32 pp; [2]@@!int32 slots; @!@Later pl; };
+type Later { int64 v; };
+
+S s;
+@!@!int32 a = s.pp;
+@@!int32 b = s.slots[1];
+@!@Later c = s.pl;

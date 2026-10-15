@@ -1,0 +1,5 @@
+cinclude "error_543_c_ptr_inner_narrowing.h";
+int32 x = 1;
+@!int32 q = @!x;
+@!@!int32 qq = @!q;
+set_ro(qq);

@@ -33,6 +33,25 @@ class CParser {
 	void captureStructTag(const string &name, const json *fields, bool is_union);
 	string synthesizeAnonTag(const CToken* at);
 
+	// Every enum body seen while parsing, in first-appearance order. An
+	// anonymous body is named by synthesizeAnonTag until a typedef renames it;
+	// one no typedef names stays "anonymous", and C code references its
+	// enumerators unqualified. A body with an enumerator whose value can't be
+	// computed is not "evaluable" and is never exported.
+	struct CapturedEnum {
+		string name;
+		bool anonymous;
+		bool evaluable;
+		vector<pair<string, long long>> values;
+	};
+	vector<CapturedEnum> capturedEnums_;
+	map<string, int> enumIndex_;  // enum name -> index into capturedEnums_
+	// Enumerators share C's ordinary identifier scope, so a constant expression
+	// anywhere later in the header can reference them.
+	struct Enumerator { long long value; int enumIndex; };
+	map<string, Enumerator> enumerators_;
+	void nameAnonEnumByTypedef(json &vt, const string &typedefName);
+
 	int parse(json &ast, const vector<CToken*>& tokens);
 
 	bool declaration(json &ast, const vector<CToken*> &tokens, int &index, bool is_top_level);
@@ -43,7 +62,7 @@ class CParser {
 	bool declarator_tail(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index);
 	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_struct);
-	bool enum_definition(json &ast, const vector<CToken*> &tokens, int &result_index);
+	bool enum_definition(string &name, const vector<CToken*> &tokens, int &result_index);
 
 	bool statement(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool jump_statement(json &ast, const vector<CToken*> &tokens, int &result_index);

@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+
+flo64 a = 1e10;
+flo32 b = 1e-3;
+flo64 c = 2E+5;
+printf("%.1f %.3f %.1f %.1f\n", a, flo64(b), c, 3e2 * 2);

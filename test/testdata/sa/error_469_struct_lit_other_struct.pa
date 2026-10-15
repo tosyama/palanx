@@ -1,0 +1,4 @@
+type P { int32 x; int32 y; };
+type R { int32 x; int32 y; };
+R r = [1, 2];
+[1]P ps = [r];

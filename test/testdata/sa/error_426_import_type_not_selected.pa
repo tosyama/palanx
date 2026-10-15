@@ -1,0 +1,2 @@
+import getX from "lib_sa_types.pa";
+Vec p;

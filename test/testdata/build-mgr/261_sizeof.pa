@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+cinclude <time.h>;
+type Pair { int8 a; int64 b; };
+printf("%lu %lu %lu\n", sizeof(tm), sizeof([2]$Pair), sizeof([2]Pair));
