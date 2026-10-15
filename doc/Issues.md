@@ -140,9 +140,9 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 21. Array Literals Are Limited to Array Variable Initializers
+## 21. Array Literals Are Limited to Positions With a Known Target
 
-**Summary:** v0.1.36 accepts an array literal (`[1, 2, 3]`, and 2D in either `[1,2][3,4]` or `[[1,2],[3,4]]` form) only as an array variable's declaration initializer. Anywhere else — a function argument, the source of `->` — SA rejects it with `E_ArrLitContext`. The initializer form is lowered to the variable's ordinary allocation plus one store per element, so the variable itself owns the storage and frees it at scope exit. A struct value (`[1, 2]`/`{x: 1, y: 2}`) is also accepted as a struct variable's initializer and as the source of `->` to a struct's storage (v0.1.40), since it is stored into storage that already exists; as a function argument it is still rejected. A literal in any other position has no such owner: it would need a temporary array whose allocation and free timing (or ownership transfer to the callee) are designed first. The same lowering also means an all-constant literal is built at run time rather than placed in `.rodata`.
+**Summary:** An array literal (`[1, 2, 3]`, 2D in either `[1,2][3,4]` or `[[1,2],[3,4]]` form) and a struct value (`[1, 2]`/`{x: 1, y: 2}`) are accepted only where they fill storage of a known type: an array or struct variable's initializer, the source of `->` to an array or a struct, the value returned from a function returning a struct, and an argument for a Palan `T`, `@T`/`@!T` or borrowed array parameter (v0.1.40), for which SA builds a temporary of the parameter's type. Anywhere else, such as an operand (`[1, 2][0]`) or a C function's pointer parameter (`strlen(@[104, 0])`), SA rejects it with `E_ArrLitContext`. Every literal is built at run time with one store per element, so an all-constant literal is not placed in `.rodata`.
 
 ---
 
@@ -158,30 +158,24 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 24. An Assignment Nested Inside an Expression Is Not Diagnosed
-
-**Summary:** gen-ast parses `expr -> target` as an expression, but only a statement-level assignment becomes an `assign`/`arr-assign`/`field-assign` statement. Nested inside another expression (`printf("%d\n", 3 -> a)`), the `assign-expr` passes SA untouched and palan-codegen stops with `Unknown expression type in SA file: 'assign-expr'.` Whether an assignment expression yields its value or acts as an lvalue (the target) is undecided, so SA should reject it as not implemented until that is settled.
-
----
-
-## 25. gen-ast Aborts When Blocks Nest 62 Levels or Deeper
+## 24. gen-ast Aborts When Blocks Nest 62 Levels or Deeper
 
 **Summary:** Nesting blocks 62 levels or deeper (for example 62 nested `while` loops) makes palan-gen-ast abort with `free(): invalid pointer`. Bison 3.8.2's `glr2.cc` grows the GLR stack past `YYINITDEPTH` (200 items) with `std::vector::reserve`. `glr_stack_item`'s copy constructor `memcpy`s the semantic value, and the old item's destructor then frees the same `json`, so the value is freed twice. Fixing this needs either a skeleton change, or setting `YYINITDEPTH` to `YYMAXDEPTH` so the stack never grows (a deeper parse then fails with "memory exhausted" instead of crashing). It is deferred because real code does not nest this deeply.
 
 ---
 
-## 26. Full LALR(1) Conversion of the Palan Grammar
+## 25. Full LALR(1) Conversion of the Palan Grammar
 
-**Summary:** The Palan grammar still has 12 shift/reduce and 7 reduce/reduce conflicts (v0.1.40), so gen-ast stays on Bison's GLR skeleton `glr2.cc`. Removing them all would allow `lalr1.cc`, where grammar actions get non-`const` `$N` that can be moved from, the parser never splits, and #25 disappears with the GLR stack. The remaining conflicts: (a) `'.'` after `term`, `@ store_loc` or `@! store_loc` — field access versus member-call `expression '.' ID '(' ... ')'`, needing two tokens of lookahead; restructuring member-call changes the accepted language (`@a.f()` is rejected as ambiguous today). (b) `'<'` — the reserved, not-implemented generic type syntax `ID<T>` / `interface ID<T>` against the comparison operator; resolving it is a language decision on keeping that syntax. (c) The 7 reduce/reduce conflicts — after `ID '=' expression` in a declaration list, whether it is an `inherit_var_decl` or a `var_declaration`. (d) `'='` — a syscall's named-return initializer (`syscall f() -> int32 r = 1 = 60;`) against its syscall number. LALR state merging leaks it into every initialized typed declaration (`int32 x = 1;`), which accounts for 41 of the 53 GLR splits in `samples/tetris.pa`; `%define lr.type ielr` does not split those states. (e) `']'` — an array type `[expr]T` against an array literal `[expr]`.
+**Summary:** The Palan grammar still has 14 shift/reduce and 7 reduce/reduce conflicts (v0.1.40), so gen-ast stays on Bison's GLR skeleton `glr2.cc`. Removing them all would allow `lalr1.cc`, where grammar actions get non-`const` `$N` that can be moved from, the parser never splits, and #24 disappears with the GLR stack. The remaining conflicts: (a) `'.'` after `term` or a store location — field access versus member-call `expression '.' ID '(' ... ')'`, needing two tokens of lookahead; after a bare `ID`, also versus a module-qualified type name `M.T`. (b) `'<'` — the reserved, not-implemented generic type syntax `ID<T>` / `interface ID<T>` against the comparison operator; resolving it is a language decision on keeping that syntax. (c) The 7 reduce/reduce conflicts and 2 of the `'='` shift/reduce conflicts — after `ID '=' expression` in a declaration list, whether it is an `inherit_var_decl` or a `var_declaration`. (d) `'='` — a syscall's named-return initializer (`syscall f() -> int32 r = 1 = 60;`) against its syscall number. LALR state merging leaks it into every initialized typed declaration (`int32 x = 1;`), which accounts for 41 of the 53 GLR splits in `samples/tetris.pa`; `%define lr.type ielr` does not split those states. (e) `']'` — an array type `[expr]T` against an array literal `[expr]`.
 
 ---
 
-## 27. `cinclude` Processing Time
+## 26. `cinclude` Processing Time
 
 **Summary:** Now that gen-ast parses in linear time, `cinclude` dominates its run time. In `samples/tetris.pa` (about 1.45s in gen-ast, Debug build), the four `cinclude`s of `ncurses.h`, `unistd.h`, `stdlib.h` and `time.h` alone take about 1.35s: about 1.0s in the `palan-c2ast` child processes (`ncurses.h` about 0.6s) and the rest in gen-ast ingesting their output. Speeding this up needs profiling c2ast's preprocessing and parsing of system headers, or caching translated headers between builds.
 
 ---
 
-## 28. A `cinclude`d Header Cannot See Earlier `cinclude`s' Macros
+## 27. A `cinclude`d Header Cannot See Earlier `cinclude`s' Macros
 
 **Summary:** Each `cinclude` is translated by its own palan-c2ast run, so a header written to follow another header in the same C translation unit does not see that header's macros: an `#ifdef`/`#if` on a macro the earlier header defines takes the other branch, and a macro it uses is not expanded. Typedefs are resolved across `cinclude`s by SA, but macros act during preprocessing, before SA. Supporting this needs a way to pass the macros in effect at the `cinclude` point (for example the earlier headers, or their resulting macro table) to palan-c2ast.
