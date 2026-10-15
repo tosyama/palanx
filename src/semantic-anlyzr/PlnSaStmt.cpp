@@ -773,12 +773,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 {
 	FieldChain chain = resolveObjectChain(stmt["object"], /*forWrite=*/true);
 	string fn = stmt["field"].get<string>();
-	const StructDef& def = requireCompleteStruct(chain.structName, stmt);
-	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fn; });
-	if (it == def.fields.end()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownField, chain.structName, fn, def.keyword()) << endl;
-		exit(1);
-	}
+	const FieldLayout* it = &findFieldOrExit(chain.structName, fn, stmt);
 	bool transfer = stmt.value("ownership-transfer", false);
 	if (transfer && it->typeKind != "struct-ptr" && it->typeKind != "arr-ptr") {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedField, fn) << endl;

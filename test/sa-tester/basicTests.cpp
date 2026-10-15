@@ -5614,3 +5614,15 @@ TEST(sa, lit_arg_struct_arr)
 	ASSERT_FALSE(slots.contains("embedded"));
 	ASSERT_EQ(slots["base-type"]["base-type"]["type-name"], "P");
 }
+
+TEST(sa, c_func_ptr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/254_c_func_ptr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// The function pointer fields keep their 8-byte slots.
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["args"][1]["value"], "32");
+	ASSERT_EQ(stmts[1]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[1]["offset"], 24);
+}

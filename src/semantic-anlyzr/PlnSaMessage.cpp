@@ -565,6 +565,13 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot cast to '" + arg1 + "': only a primitive or enum type can be a cast target.";
 
+		case E_UnsupportedCFieldType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "cannot access field '" + arg2 + "' of '" + arg1 + "': its type uses '" + arg3
+			       + "', a C type this version cannot represent.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

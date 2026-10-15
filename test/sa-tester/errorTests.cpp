@@ -3335,3 +3335,22 @@ TEST(sa_error, chain_call)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, unsupported_c_field)
+{
+	const string msg = "of 'CB': its type uses 'function pointer', a C type this version cannot represent.";
+	const pair<string, string> cases[] = {
+		{"error_534_c_func_ptr_field_read.pa", ":3:11: error: cannot access field 'fn' " + msg},
+		{"error_535_c_func_ptr_field_write.pa", ":3:1: error: cannot access field 'fn' " + msg},
+		{"error_536_c_func_ptr_field_elem.pa", ":3:11: error: cannot access field 'fns' " + msg},
+		{"error_537_c_func_ptr_field_addr.pa", ":3:15: error: cannot access field 'fn' " + msg},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

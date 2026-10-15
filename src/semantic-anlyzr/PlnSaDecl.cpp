@@ -11,6 +11,14 @@
 
 static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1); }
 
+// Only a cinclude'd struct can have such a field; Palan has no function type.
+static string unsupportedPointee(const json& pntr)
+{
+	const json* t = &pntr;
+	while (t->value("type-kind", "") == "pntr") t = &(*t)["base-type"];
+	return t->value("type-kind", "") == "func" ? "function pointer" : "";
+}
+
 static StructDef buildStructDef(const string& name,
                                 const json& fields,
                                 const map<string, StructDef>& structDefs,
@@ -98,7 +106,8 @@ static StructDef buildStructDef(const string& name,
 			def.fields.push_back({.name=fieldName, .typeKind="raw-ptr",
 			                      .typeName=baseName, .isMutable=isMut,
 			                      .offset=at, .size=sz, .elemKind=elemKind,
-			                      .enumName=vtype["base-type"].value("enum", "")});
+			                      .enumName=vtype["base-type"].value("enum", ""),
+			                      .unsupported=unsupportedPointee(vtype)});
 		} else if (tk == "arr") {
 			const json& size_expr = vtype["size-expr"];
 			if (size_expr.is_null()) {
@@ -127,7 +136,8 @@ static StructDef buildStructDef(const string& name,
 					                      .typeName=leaf_name, .isMutable=isMut,
 					                      .offset=at, .size=(int)(count*8),
 					                      .count=count, .elemKind=elemKind, .stride=8,
-					                      .enumName=base_wrap["base-type"].value("enum", "")});
+					                      .enumName=base_wrap["base-type"].value("enum", ""),
+					                      .unsupported=unsupportedPointee(base_wrap)});
 					continue;
 				}
 				if (base_kind != "prim") {
