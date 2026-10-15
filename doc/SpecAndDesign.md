@@ -6,16 +6,20 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-10-04)
-version: 0.1.40 — filling gaps found by writing samples
+### 2.1 Iteration Goal (2026-10-15)
+version: 0.2.0 — release preparation
 
-As in v0.1.38, tickets are not planned up front. Gaps found while writing two sample programs
-are ticketed and fixed as they come up, along with related Issues.md items:
+No new language features are planned. The iteration brings the existing implementation and
+its documentation into a consistent, releasable state:
 
-- `samples/tetris.pa`: continuing the ncurses Tetris (e.g. a "Next" mino preview).
-- A simple ray tracer that writes its image as JPEG through libjpeg (`cinclude "jpeglib.h"`).
+- Triage `doc/Issues.md` and fix the items that should not remain in 0.2.0.
+- Verify that the examples in `doc/PalanReference.md` work as written, and correct stale
+  descriptions in the other documents.
+- Rewrite `README.md` as an introduction to the language.
+- Shorten the test suite's running time without lowering coverage.
 
-The ticket list is kept in `localtickets/iteration-2026-10-04-v0140-samples.md`.
+Other rough edges found along the way are ticketed and fixed as they come up.
+The ticket list is kept in `localtickets/iteration-2026-10-15-v0200-release.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
