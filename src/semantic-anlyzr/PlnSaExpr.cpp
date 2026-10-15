@@ -324,7 +324,7 @@ json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
 	}
 	saArg["value-type"]["mutable"] = arg["mutable"];
 	return saArg;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 // The source type that declares an owned array of the levels of saType (a
 // borrowed array parameter); null when an element is not one a literal gives.
@@ -920,7 +920,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArgCountMismatch,
 			funcName, expected, to_string(args.size())) << endl;
 		exit(1);
-	}
+	} // LCOV_EXCL_LINE -- only cleanup skipped by exit(1) is attributed here
 
 	json saArgs = json::array();
 	size_t argIdx = 0;
@@ -1092,7 +1092,7 @@ json PlnSemanticAnalyzer::enumTypeNamed(const string& name) const
 {
 	json t = resolveTypeAlias({{"type-kind", "prim"}, {"type-name", name}});
 	return t.contains("enum") ? t : json();
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // C's sizeof of the type as Palan lays it out: an array holds its elements
 // inline, but only a '$' element is stored in place -- a struct or row
@@ -1457,7 +1457,7 @@ json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool 
 	json out = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}};
 	if (value.contains("loc")) out["loc"] = value["loc"];
 	return out;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 size_t PlnSemanticAnalyzer::chainRetCount(const json& value) const
 {

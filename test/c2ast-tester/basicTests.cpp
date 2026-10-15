@@ -1485,6 +1485,7 @@ TEST(c2ast, enum_capture) {
     ASSERT_NE(find(enums, "Mode"), nullptr);     // the tag, not the typedef name
     ASSERT_EQ(find(enums, "ModeAlias"), nullptr);
     ASSERT_EQ(find(enums, "Unknown"), nullptr);  // U1 = sizeof(int) can't be computed
+    ASSERT_EQ(find(enums, "Huge"), nullptr);     // H1 overflows long long
     ASSERT_EQ(enums.size(), 5u);                 // + two anonymous bodies
 
     auto& typedefs = ast["ast"]["typedefs"];

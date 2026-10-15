@@ -1,0 +1,2 @@
+cinclude "223_c_enum.h";
+export type Box { Color c; int32 x; };

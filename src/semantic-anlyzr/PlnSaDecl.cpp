@@ -246,7 +246,7 @@ json PlnSemanticAnalyzer::discardedValueStmt(const json& stmt, json body)
 			stmts.push_back(r);
 		return {{"stmt-type","block"},{"body",move(stmts)}};
 		// LCOV_EXCL_EXCEPTION_BR_STOP
-	}
+	} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	// A bare `struct` value-type only comes from a C function's by-value
 	// struct return; discarding it as a statement has no codegen lowering,
 	// so it's rejected here rather than adding one.
@@ -712,7 +712,7 @@ json PlnSemanticAnalyzer::sa_arr_lit_values(const json& lit, const ArrLitShape& 
 		values.push_back(row);
 	}
 	return values;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 void PlnSemanticAnalyzer::checkArrLitCount(const json& locNode, const json& items, const string& name,
                                            bool is2d, uint64_t size, uint64_t rowSize)
@@ -803,7 +803,7 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
 				typeDisplayName(dstType), typeDisplayName(vt)) << endl;
 			exit(1);
-		}
+		} // LCOV_EXCL_LINE -- only cleanup skipped by exit(1) is attributed here
 		return value;
 	}
 	const json& items = item["items"];
@@ -1227,7 +1227,7 @@ json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 			catch (const out_of_range&) {
 				cerr << locPrefix(e) << PlnSaMessage::getMessage(E_EnumValueOutOfRange, ename, text) << endl;
 				exit(1);
-			}
+			} // LCOV_EXCL_LINE -- only cleanup skipped by exit(1) is attributed here
 		} else if (nextOverflows) {
 			cerr << locPrefix(e) << PlnSaMessage::getMessage(E_EnumValueOutOfRange, ename, "9223372036854775808") << endl;
 			exit(1);

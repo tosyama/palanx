@@ -455,7 +455,7 @@ json PlnSemanticAnalyzer::sa_aggregate_lit_assign(const json& stmt, const json& 
 		body.push_back(makeCopyStmt(stmt, {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}}, v));
 		return name;
 	};
-	function<void(json&)> bindLeaves = [&](json& vals) {
+	function<void(json&)> bindLeaves = [&](json& vals) { // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 		for (auto& v : vals) {
 			if (v.is_array()) {
 				bindLeaves(v);

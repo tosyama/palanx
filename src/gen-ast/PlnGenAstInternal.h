@@ -32,7 +32,7 @@ inline json storeLocToExpr(const json& loc)
 	}
 	if (loc.contains("loc")) e["loc"] = loc["loc"];
 	return e;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 inline json addrOfObject(const json& loc)
 {
@@ -63,7 +63,7 @@ inline json assignExprToStmt(const json& e)
 	if (e.value("ownership-transfer", false)) s["ownership-transfer"] = true;
 	if (e.contains("loc")) s["loc"] = e["loc"];
 	return s;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // The target an assignment expression stored, read back as an expression.
 inline json assignTargetExpr(const json& v)
@@ -80,7 +80,7 @@ inline json assignTargetExpr(const json& v)
 		readBack = {{"expr-type", "not-impl"}};
 	if (!readBack.contains("loc") && v.contains("loc")) readBack["loc"] = v["loc"];
 	return readBack;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 inline std::vector<json> lowerAssignChain(const json& e);
 
@@ -125,7 +125,7 @@ inline std::vector<json> lowerAssignChain(const json& e)
 	step["value"] = assignTargetExpr(v);
 	stmts.push_back(assignExprToStmt(step));
 	return stmts;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // The statements an assignment or a chained call written as a statement
 // expands to.
@@ -140,13 +140,13 @@ inline std::vector<json> lowerExprStmt(const json& e)
 	if (e.contains("loc")) stmt["loc"] = e["loc"];
 	stmts.push_back(std::move(stmt));
 	return stmts;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Build a pointer type node. `mut` distinguishes @T (false) from @!T (true).
 inline json pntrTypeExpr(json base, bool mut)
 {
 	return {{"type-kind","pntr"},{"mutable",mut},{"base-type",std::move(base)}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // The base-type node for @void/@!void -- C's void*, spelled directly instead
 // of via a primitive pointee like @!int8 (pntr(void) is bidirectionally
@@ -154,7 +154,7 @@ inline json pntrTypeExpr(json base, bool mut)
 inline json voidTypeExpr()
 {
 	return json{{"type-kind","prim"},{"type-name","void"}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Whether a type_expr result has no not-impl part ('T<...>') and no array
 // level other than a plain '[n]'/'[]' one ('[#n]'/'[+n]' are not implemented).
@@ -219,4 +219,4 @@ inline json negateExpr(json operand)
 		return operand;
 	}
 	return {{"expr-type", "neg"}, {"operand", std::move(operand)}};
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE

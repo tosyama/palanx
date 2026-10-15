@@ -1,0 +1,3 @@
+import "252_import_mutual_alias.pa" as M;
+export type Leaf { int64 v; @M.Node up; @Other o; };
+type Other { int32 x; $M.Node n; };

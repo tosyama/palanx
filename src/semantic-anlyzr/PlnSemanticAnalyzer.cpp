@@ -691,7 +691,7 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
 	return funcEntry;
-}
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 void PlnSemanticAnalyzer::preregisterFunc(const json& f)
 {
@@ -806,7 +806,7 @@ void PlnSemanticAnalyzer::ensureTypeName(const string& name, bool viaPointer)
 		return;
 	}
 	adoptImportedType(t->second, alias);
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::ensureTypeRefs(const json& node, bool viaPointer)
 {
@@ -868,7 +868,7 @@ void PlnSemanticAnalyzer::resolveTopDecl(const string& name, TopDecl& d)
 		cerr << closer.module->locPrefix(*closer.stmt)
 		     << PlnSaMessage::getMessage(E_CircularTypeDecl, name, path + name) << endl;
 		exit(1);
-	}
+	} // LCOV_EXCL_LINE -- only cleanup skipped by exit(1) is attributed here
 	d.state = TopDecl::Resolving;
 	resolving.push_back({this, name, d.stmt});
 	const json& stmt = *d.stmt;
@@ -897,7 +897,7 @@ void PlnSemanticAnalyzer::adoptImportedType(ImportedType& t, const string& alias
 		typeAliases_[alias + "." + (*t.decl)["name"].get<string>()] =
 			{{"type-kind", "prim"}, {"type-name", (*t.decl)["name"]}};
 	t.adopted = true;
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::whenSettled(function<void()> f)
 {

@@ -5060,6 +5060,12 @@ TEST(sa, import_type_alias)
 	ASSERT_EQ(stmts[2]["vars"][0]["init"]["value"], "5");
 	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["enum"], "Color");
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["name"], "getX");
+	// A top-level const names the enumerator through the alias.
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value"], "5");
+	// A module-alias call chained into a call is its first argument.
+	const auto& z = stmts[6]["vars"][0]["init"];
+	ASSERT_EQ(z["name"], "id");
+	ASSERT_EQ(z["args"][0]["name"], "getX");
 }
 
 TEST(sa, import_type_selective)
@@ -5138,6 +5144,29 @@ TEST(sa, import_mutual_type)
 	ASSERT_TRUE(jout.is_object());
 	// Pair: n $Node (id 4 (+4) + leaf 16 + pair 8) + ls [2]$Leaf 32
 	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "64");
+}
+
+TEST(sa, import_mutual_alias)
+{
+	// Leaf points at the importer's Node through an alias, and at a private
+	// struct that embeds Node, so both resolve only after Node is settled.
+	cleanTestEnv();
+	for (string f : {"lib_sa_mutual_alias", "252_import_mutual_alias"})
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/252_import_mutual_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Node: id 4 (+4) + leaf (v 8 + up 8 + o 8)
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["args"][1]["value"], "32");
+}
+
+TEST(sa, import_c_enum_field)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_c_enum.pa -o out/lib_sa_c_enum.pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/251_import_c_enum_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& init = jout["statements"].back()["vars"][0]["init"];
+	ASSERT_EQ(init["src"]["value-type"]["enum"], "Color");
 }
 
 TEST(sa, alias_cast)
@@ -5569,4 +5598,19 @@ TEST(sa, chain_lit)
 		ASSERT_EQ(temp["value"]["value-type"]["mutable"], false) << i;
 		ASSERT_EQ(tempRelease(temp), "free") << i;
 	}
+}
+
+TEST(sa, lit_arg_struct_arr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/253_lit_arg_struct_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+	const auto& embedded = stmts[0]["vars"][0]["init"]["args"][0]["value"]["value-type"];
+	ASSERT_EQ(embedded["embedded"], true);
+	ASSERT_EQ(embedded["base-type"]["type-name"], "P");
+	const auto& slots = stmts[1]["vars"][0]["init"]["args"][0]["value"]["value-type"];
+	ASSERT_FALSE(slots.contains("embedded"));
+	ASSERT_EQ(slots["base-type"]["base-type"]["type-name"], "P");
 }

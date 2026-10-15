@@ -4,3 +4,7 @@ V.MyInt m = 1;
 V.Color c = V.Color.Green;
 V.Color d = V.Color(0);
 int32 x = V.getX(@p);
+const G = V.Color.Green;
+V.Color e = G;
+func id(int32 a) -> int32 r { a -> r; }
+int32 z = V.getX(@p) -> id();

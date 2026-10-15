@@ -1813,7 +1813,7 @@ int CParser::parse(json &ast)
 					ast["ast"]["constants"].push_back({{"name", ename}, {"value", to_string(v)}});
 			}
 			enums.push_back({{"name", e.name}, {"enumerators", move(enumerators)}});
-		}
+		} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 		if (!enums.empty())
 			ast["ast"]["enums"] = move(enums);
 

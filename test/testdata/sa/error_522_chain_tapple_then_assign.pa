@@ -1,0 +1,3 @@
+func f() -> int32 a, int32 b { 1 -> a; 2 -> b; }
+int32 a, b, c, d;
+f() -> (a, b) -> c -> d;

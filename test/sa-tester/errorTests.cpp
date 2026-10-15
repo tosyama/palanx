@@ -2238,6 +2238,12 @@ TEST(sa_error, stmt_not_implemented)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":2:1: error: this statement is not supported"), string::npos);
+
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_522_chain_tapple_then_assign.pa -o " + ast_out), "");
+	sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:1: error: this statement is not supported"), string::npos);
 }
 
 TEST(sa_error, arr_lit_func_arg)
@@ -2598,6 +2604,7 @@ TEST(sa_error, field_2d_arr_unsupported)
 		{"error_323_field_2d_arr.pa", ":1:1: error: unsupported struct field type."},
 		{"error_324_field_2d_embed_prim.pa", ":1:1: error: unsupported struct field type."},
 		{"error_325_field_2d_embed_struct.pa", ":2:1: error: unsupported struct field type."},
+		{"error_524_field_generic_type.pa", ":1:1: error: unsupported struct field type."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2910,6 +2917,12 @@ TEST(sa_error, c_enum_name_conflict)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	// A top-level cinclude's types are registered before any Palan declaration.
 	ASSERT_NE(sa.find(":1:1: error: type 'Color' is already defined."), string::npos);
+
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_525_c_enum_name_conflict_nested.pa -o " + ast_out), "");
+	sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:2: error: type 'Color' is already defined."), string::npos);
 }
 
 TEST(sa_error, enum_field_from_int)
@@ -2951,6 +2964,8 @@ TEST(sa_error, expr_not_implemented)
 		{"error_415_expr_not_impl_return.pa", ":3:9: error: this expression is not supported"},
 		{"error_416_expr_not_impl_assign.pa", ":2:1: error: this expression is not supported"},
 		{"error_417_expr_not_impl_stmt.pa", ":1:1: error: this expression is not supported"},
+		{"error_521_chain_tapple_value.pa", ":4:1: error: this expression is not supported"},
+		{"error_523_expr_not_impl_sizeof_generic.pa", ":1:12: error: this expression is not supported"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
