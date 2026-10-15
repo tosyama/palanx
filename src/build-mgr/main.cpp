@@ -236,13 +236,19 @@ int main(int argc, char* argv[])
 			string alloc_o   = alloc_pa + ".o";
 
 			{
-				// This synthesized source only ever cinclude's stdlib.h with
-				// no `link` clause, so its sa.json can never contribute to
-				// link_libs; it does not need to join the aggregation loop
-				// above.
+				// The struct types below are named after the program's own,
+				// and a system header could bring a C type of any of those
+				// names into this module, so it declares only what it calls.
+				// With no `link` clause, its sa.json never contributes to
+				// link_libs and need not join the aggregation loop above.
+				ofstream hdr(workdir + "/__allocators.h");
+				hdr << "#define NULL ((void *)0)\n"
+				    << "void *malloc(unsigned long size);\n"
+				    << "void *calloc(unsigned long nmemb, unsigned long size);\n"
+				    << "void free(void *ptr);\n"
+				    << "void *memcpy(void *dest, const void *src, unsigned long n);\n";
 				ofstream out(alloc_pa);
-				out << "cinclude <stdlib.h>;\n"
-				    << "cinclude <string.h>;\n";
+				out << "cinclude \"__allocators.h\";\n";
 
 				map<string, const json*> struct_by_name;
 				for (auto& shape : struct_shapes)
