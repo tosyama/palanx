@@ -3370,3 +3370,24 @@ TEST(sa_error, ptr_ptr_field_chain)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, ptr_inner_permission)
+{
+	const string upgrade = "error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'.";
+	const string narrowing = "error: cannot bind '@!@!int32' to '@!@int32': "
+		"a pointer reached through a mutable pointer '@!' must keep its permission.";
+	const pair<string, string> cases[] = {
+		{"error_540_ptr_inner_upgrade.pa", ":4:1: " + upgrade},
+		{"error_541_ptr_inner_narrowing.pa", ":4:1: " + narrowing},
+		{"error_542_ptr_ptr_field_inner_upgrade.pa", ":3:1: " + upgrade},
+		{"error_543_c_ptr_inner_narrowing.pa", ":5:1: " + narrowing},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

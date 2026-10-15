@@ -62,14 +62,33 @@ inline bool isFloatPrim(const PlnType* t) {
 // struct/array variables, which carry no read-only concept of their own.
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
-// True unless binding `from` to `to` would upgrade a read-only pointer to a
-// mutable one (assigning `@T` to a `@!T`-typed destination). Non-pointer
-// types, and narrowing a mutable pointer to read-only, are always fine.
+enum class PtrPermission { Ok, Upgrade, InnerNarrowing };
+
+// Checks binding `from` to `to` level by level down their pointer chains.
+// Upgrade: some level would turn read-only (`@T`) into mutable (`@!T`).
+// InnerNarrowing: a level narrows `@!` to `@` below a mutable level -- through
+// a `@!@int32` made from a `@!@!int32`, a read-only pointer could be stored
+// where the original still treats it as mutable (C's `int**` -> `const int**`).
+// Non-pointer types, and narrowing while every level above is read-only, are fine.
+inline PtrPermission ptrPermission(const json& from, const json& to)
+{
+	bool aboveAllReadOnly = true, innerNarrowing = false;
+	const json* f = &from;
+	const json* t = &to;
+	while (f->value("type-kind","") == "pntr" && t->value("type-kind","") == "pntr") {
+		bool fw = isWritableThrough(*f), tw = isWritableThrough(*t);
+		if (!fw && tw) return PtrPermission::Upgrade;
+		if (fw && !tw && !aboveAllReadOnly) innerNarrowing = true;
+		if (tw) aboveAllReadOnly = false;
+		f = &(*f)["base-type"];
+		t = &(*t)["base-type"];
+	}
+	return innerNarrowing ? PtrPermission::InnerNarrowing : PtrPermission::Ok;
+}
+
 inline bool ptrPermissionOk(const json& from, const json& to)
 {
-	if (from.value("type-kind","") != "pntr" || to.value("type-kind","") != "pntr")
-		return true;
-	return isWritableThrough(from) || !isWritableThrough(to);
+	return ptrPermission(from, to) == PtrPermission::Ok;
 }
 
 // A pntr(struct) with no "mutable" key is a struct's own storage (a struct

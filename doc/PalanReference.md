@@ -2119,6 +2119,11 @@ int64 x = 42;
   passed where the C parameter is `const`-qualified (as `ctime`'s `const time_t*` is above);
   passing `@T` to a non-`const` parameter — an out-param like `clock_getcpuclockid`'s second
   argument — is a compile error, same as passing `@T` where a Palan function expects `@!T`.
+- For a pointer to a pointer, the rule applies at every level, and a level may narrow `@!` to
+  `@` only while every level above it is `@`: `@!@!int32` binds to `@@int32` but not to
+  `@!@int32` — through the latter, a read-only pointer could be stored where the original still
+  treats it as mutable. This matches C, where `int **` converts to `const int * const *` but not
+  to `const int **`.
 - It can also be dereferenced from Palan code itself, using `p[i]` — subscript notation, not a
   separate operator, since Palan already represents an array as a pointer plus attributes and a
   plain pointer as a bare pointer. `p[0]` reads or writes the pointee; `@T` (read-only) allows only

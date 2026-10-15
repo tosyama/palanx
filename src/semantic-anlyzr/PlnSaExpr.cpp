@@ -783,7 +783,7 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 // Shared narrowing rule for every binding site. An integer/uint literal is
 // exempt from the ExplicitCast rejection below, since its width/sign was
 // never fixed by source syntax; pointer mutability is checked separately by
-// each call site via ptrPermissionOk.
+// each call site via checkPtrPermission.
 json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		const PlnType* toType, const json& toTypeJson)
 {
@@ -808,21 +808,34 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 	return value;
 }
 
-// Enforce ptrPermissionOk() at one call argument; the diagnostic differs by
-// callee kind, since a C parameter's permission comes from const-qualification
-// while a Palan parameter's comes from `@!T`.
+// An upgrade's diagnostic differs by callee kind, since a C parameter's
+// permission comes from const-qualification while a Palan parameter's comes
+// from `@!T`.
 void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& funcName,
 		bool isCFunc, const json& saArg, const json& param, size_t argIdx)
 {
-	if (ptrPermissionOk(saArg["value-type"], param["var-type"]))
-		return;
-	if (isCFunc) {
+	if (isCFunc && ptrPermission(saArg["value-type"], param["var-type"]) == PtrPermission::Upgrade) {
 		string paramName = param.value("name", "");
 		if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
 		cerr << locPrefix(expr)
 		     << PlnSaMessage::getMessage(E_ReadOnlyPtrToNonConstCParam, funcName, paramName) << endl;
-	} else {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+		exit(1);
+	}
+	checkPtrPermission(expr, saArg["value-type"], param["var-type"]);
+}
+
+void PlnSemanticAnalyzer::checkPtrPermission(const json& locNode, const json& from, const json& to)
+{
+	switch (ptrPermission(from, to)) {
+	case PtrPermission::Ok:
+		return;
+	case PtrPermission::Upgrade:
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+		break;
+	case PtrPermission::InnerNarrowing:
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_PtrInnerPermissionNarrowing,
+			typeDisplayName(from), typeDisplayName(to)) << endl;
+		break;
 	}
 	exit(1);
 }

@@ -572,6 +572,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "cannot access field '" + arg2 + "' of '" + arg1 + "': its type uses '" + arg3
 			       + "', a C type this version cannot represent.";
 
+		case E_PtrInnerPermissionNarrowing:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot bind '" + arg1 + "' to '" + arg2
+			       + "': a pointer reached through a mutable pointer '@!' must keep its permission.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

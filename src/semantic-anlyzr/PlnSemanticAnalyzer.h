@@ -239,6 +239,7 @@ class PlnSemanticAnalyzer {
 	                      const string& cFuncName, const json& param);
 	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
 	                           const json& saArg, const json& param, size_t argIdx);
+	void checkPtrPermission(const json& locNode, const json& from, const json& to);
 	// Shared narrowing rule for every binding site.
 	json convertForBinding(const json& locNode, json value, const PlnType* toType, const json& toTypeJson);
 	// Convert a single call argument to a parameter's type, diagnosing

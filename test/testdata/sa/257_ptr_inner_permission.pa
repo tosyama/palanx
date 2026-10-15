@@ -1,0 +1,11 @@
+cinclude "257_ptr_inner_permission.h";
+type S { @!@!@!int32 p3; };
+
+int32 x = 1;
+@!int32 q = @!x;
+@!@!int32 qq = @!q;
+@@int32 a = qq;
+@!@!int32 b = qq;
+S s;
+@@@int32 c = s.p3;
+read_all(qq);

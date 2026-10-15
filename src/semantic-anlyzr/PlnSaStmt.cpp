@@ -315,10 +315,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		checkArrBorrowBinding(stmt, stmt["value"], value, *varType);
 	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 	checkBorrowSource(stmt, value, *varType);
-	if (!ptrPermissionOk(value["value-type"], *varType)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
-		exit(1);
-	}
+	checkPtrPermission(stmt, value["value-type"], *varType);
 	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -355,10 +352,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)
 	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
 	checkElemShape(stmt, sa_value, targetType);
 	checkBorrowSource(stmt, sa_value, targetType);
-	if (!ptrPermissionOk(sa_value["value-type"], targetType)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
-		exit(1);
-	}
+	checkPtrPermission(stmt, sa_value["value-type"], targetType);
 
 	json arr_assign = {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
 	if (!transfer)
@@ -555,10 +549,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 			value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 			checkElemShape(stmt, value, (*currentFunc_)["ret-type"]);
 			checkBorrowSource(stmt, value, (*currentFunc_)["ret-type"]);
-			if (!ptrPermissionOk(value["value-type"], (*currentFunc_)["ret-type"])) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
-				exit(1);
-			}
+			checkPtrPermission(stmt, value["value-type"], (*currentFunc_)["ret-type"]);
 		}
 		return {{"stmt-type", "return"}, {"values", json::array({value})}};
 	}
@@ -794,10 +785,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt)
 		return json::array({makeCopyStmt(stmt, makeFieldAccess(chain, *it), value)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	value = convertForBinding(stmt, value, toType, fieldType);
 	checkBorrowSource(stmt, value, fieldType);
-	if (!ptrPermissionOk(value["value-type"], fieldType)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
-		exit(1);
-	}
+	checkPtrPermission(stmt, value["value-type"], fieldType);
 	if (!transfer)
 		return json::array({makeFieldAssign(chain, *it, move(value))}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	// The field owns what it held, so '->>' releases that before taking over.

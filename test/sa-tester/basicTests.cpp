@@ -5649,6 +5649,13 @@ TEST(sa, ptr_ptr_field)
 	ASSERT_EQ(pl["base-type"]["base-type"]["type-name"], "Later");
 }
 
+TEST(sa, ptr_inner_permission)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/257_ptr_inner_permission.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
 TEST(sa, c_ptr_ptr_field)
 {
 	cleanTestEnv();
