@@ -1,3 +1,8 @@
+/// codegen unit tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include "PlnRegAlloc.h"
 #include "PlnX86Internal.h"

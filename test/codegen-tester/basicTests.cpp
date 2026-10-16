@@ -1,3 +1,8 @@
+/// codegen tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include <fstream>
 #include <sstream>

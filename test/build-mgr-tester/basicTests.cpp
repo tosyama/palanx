@@ -1,3 +1,8 @@
+/// palan build manager tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include <filesystem>
 #include "../test-base/testBase.h"

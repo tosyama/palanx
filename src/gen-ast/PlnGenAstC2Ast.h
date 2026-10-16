@@ -1,7 +1,7 @@
 /// palan-c2ast invocation for cinclude'd C headers.
 ///
-/// @file		PlnGenAstC2Ast.h
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnGenAstC2Ast.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
 

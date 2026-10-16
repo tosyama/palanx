@@ -1,3 +1,8 @@
+/// semantic analyzer unit tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include "PlnType.h"
 #include "PlnSaInternal.h"

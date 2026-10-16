@@ -1,3 +1,8 @@
+/// x86-64 code generation: VProg + RegMap -> AT&T assembly.
+///
+/// @file PlnX86CodeGen.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include "PlnX86CodeGen.h"
 #include "PlnX86Internal.h"
 #include <cstdint>

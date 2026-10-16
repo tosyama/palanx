@@ -1,3 +1,8 @@
+/// C preprocessor: directives, macro expansion and #include handling.
+///
+/// @file CPreprocessor.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 class CPreprocessError : public runtime_error {
 public:
 	int lexer_no;

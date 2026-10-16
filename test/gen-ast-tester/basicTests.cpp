@@ -1,3 +1,8 @@
+/// gen-ast tests
+///
+/// @file basicTests.cpp
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
+
 #include <fstream>
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"

@@ -1,7 +1,7 @@
 /// Palan common definitions.
 ///
-/// @file		PlnDefs.h
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnDefs.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
 

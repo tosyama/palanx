@@ -1,3 +1,8 @@
+/// C lexer: splits a C header into preprocessing tokens.
+///
+/// @file CLexer.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <vector>
 #include <string>
 #include <fstream>

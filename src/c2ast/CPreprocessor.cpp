@@ -1,3 +1,8 @@
+/// C preprocessor: directives, macro expansion and #include handling.
+///
+/// @file CPreprocessor.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <string>
 #include <vector>
 #include <list>

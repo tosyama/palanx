@@ -1,7 +1,7 @@
 /// Palan Semantic Analyzer
 ///
 /// @file PlnSemanticAnalyzer.h
-/// @copyright 2024 YAMAGUCHI Toshinobu
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
 #include <string>

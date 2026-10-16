@@ -1,3 +1,8 @@
+/// C parser: recursive descent parser for C declarations.
+///
+/// @file CParser.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <string>
 #include <map>
 #include <set>

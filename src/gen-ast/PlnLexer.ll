@@ -4,7 +4,7 @@
 /// PlnLexer.cpp will be created by flex.
 ///
 /// @file PlnLexer.ll
-/// @copyright 2024 YAMAGUCHI Toshinobu
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 #include <string>
 #include <fstream>

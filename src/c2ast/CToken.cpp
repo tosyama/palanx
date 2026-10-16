@@ -1,3 +1,8 @@
+/// C token definitions.
+///
+/// @file CToken.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <vector>
 #include <string>
 #include <boost/assert.hpp>

@@ -2,8 +2,8 @@
 ///
 /// Manage output message descriptions.
 ///
-/// @file		PlnC2AstMessage.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnC2AstMessage.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnC2AstMessage.h"
 #include "../common/PlnDefs.h"

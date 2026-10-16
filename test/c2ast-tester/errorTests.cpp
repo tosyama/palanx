@@ -1,7 +1,7 @@
 /// c2ast error case tests
 ///
-/// @file	errorTests.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file errorTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"

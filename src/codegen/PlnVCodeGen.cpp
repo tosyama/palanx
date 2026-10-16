@@ -1,3 +1,8 @@
+/// Virtual code generation: AST (Module) -> VProg.
+///
+/// @file PlnVCodeGen.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include "PlnVCodeGen.h"
 #include <boost/assert.hpp>
 

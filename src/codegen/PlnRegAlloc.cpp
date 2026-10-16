@@ -1,3 +1,8 @@
+/// Register allocation: VProg -> RegMap.
+///
+/// @file PlnRegAlloc.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include "PlnRegAlloc.h"
 #include <algorithm>
 

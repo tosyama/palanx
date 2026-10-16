@@ -2,8 +2,8 @@
 ///
 /// Manage output message descriptions.
 ///
-/// @file		PlnCodegenMessage.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnCodegenMessage.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnCodegenMessage.h"
 #include "../common/PlnDefs.h"

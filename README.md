@@ -62,3 +62,7 @@ Palan compilation is performed by a pipeline of independent CLI tools:
 | `palan` | `.pa` source | `a.out` | Build manager (orchestrates above) |
 
 See [doc/SpecAndDesign.md](doc/SpecAndDesign.md) for full specification and design details.
+
+## License
+
+MIT License — see [LICENSE](LICENSE). The bundled [nlohmann/json](lib/json) is distributed under its own MIT license (`lib/json/LICENSE.MIT`).

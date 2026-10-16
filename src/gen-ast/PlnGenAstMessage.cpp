@@ -2,8 +2,8 @@
 ///
 /// Manage output message descripitons.
 ///
-/// @file		PlnGenAstMessage.h
-/// @copyright	2024 YAMAGUCHI Toshinobu
+/// @file PlnGenAstMessage.cpp
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 #include "PlnGenAstMessage.h"
 #include "../common/PlnDefs.h"

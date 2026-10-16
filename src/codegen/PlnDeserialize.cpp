@@ -1,3 +1,8 @@
+/// Deserialize sa.json into the codegen AST (Module).
+///
+/// @file PlnDeserialize.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include "PlnDeserialize.h"
 #include "PlnCodegenMessage.h"
 #include <boost/assert.hpp>

@@ -2,8 +2,8 @@
 ///
 /// Manage output message descripitons class.
 ///
-/// @file		PlnGenAstMessage.h
-/// @copyright	2024 YAMAGUCHI Toshinobu
+/// @file PlnGenAstMessage.h
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 #include <string>
 using std::string;

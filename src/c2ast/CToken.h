@@ -1,3 +1,8 @@
+/// C token definitions.
+///
+/// @file CToken.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 typedef enum {
 	TT0_ID,
 	TT0_PUNCTUATOR,

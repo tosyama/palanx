@@ -2,8 +2,8 @@
 ///
 /// Manage output message descriptions.
 ///
-/// @file		PlnSaMessage.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnSaMessage.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnSaMessage.h"
 #include "../common/PlnDefs.h"

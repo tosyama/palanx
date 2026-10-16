@@ -1,3 +1,8 @@
+/// Source file loading and include-path search for C headers.
+///
+/// @file CFileInfo.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <vector>
 #include <string>
 #include <fstream>

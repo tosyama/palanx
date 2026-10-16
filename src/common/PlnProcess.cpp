@@ -1,7 +1,7 @@
 /// Child process launcher.
 ///
-/// @file		PlnProcess.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnProcess.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnProcess.h"
 

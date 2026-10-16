@@ -1,3 +1,8 @@
+/// Shared test helpers.
+///
+/// @file testBase.cpp
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
+
 #include "testBase.h"
 
 #include <iostream>

@@ -1,7 +1,7 @@
 /// palan-c2ast invocation for cinclude'd C headers.
 ///
-/// @file		PlnGenAstC2Ast.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnGenAstC2Ast.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnGenAstC2Ast.h"
 

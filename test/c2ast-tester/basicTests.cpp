@@ -1,3 +1,8 @@
+/// c2ast tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include <set>
 #include "../test-base/testBase.h"

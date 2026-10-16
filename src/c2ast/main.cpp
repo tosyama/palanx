@@ -2,7 +2,7 @@
 /// Command line tool main.
 ///
 /// @file main.cpp
-/// @copyright 2024 YAMAGUCHI Toshinobu
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <vector>
 #include <list>

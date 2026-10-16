@@ -1,7 +1,7 @@
 /// Palan Semantic Analyzer — core: scope management, registry, analysis entry
 ///
 /// @file PlnSemanticAnalyzer.cpp
-/// @copyright 2024 YAMAGUCHI Toshinobu
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <iostream>
 #include <fstream>

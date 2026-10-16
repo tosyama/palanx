@@ -1,7 +1,7 @@
 /// Palan Parser
 ///
 /// @file PlnParser.yy
-/// @copyright 2024-2025 YAMAGUCHI Toshinobu
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 %glr-parser
 %language "c++"
