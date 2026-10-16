@@ -167,9 +167,9 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Function '" + arg1 + "' requires a module alias qualifier.";
 
-		case E_UnknownStructType:
+		case E_UnknownType:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "unknown struct type '" + arg1 + "'.";
+			return "unknown type '" + arg1 + "'.";
 
 		case E_UnknownField:
 			BOOST_ASSERT(arg1 != "\x01");

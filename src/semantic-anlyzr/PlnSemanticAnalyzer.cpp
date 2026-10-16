@@ -289,7 +289,7 @@ void PlnSemanticAnalyzer::requireNameableType(const json& locNode, const json& t
 	auto it = hiddenTypeNames_.find(tname);
 	if (it == hiddenTypeNames_.end()) return;
 	if (it->second.empty())
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, tname) << endl;
 	else
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnqualifiedAliasType, tname, it->second) << endl;
 	exit(1);
@@ -306,11 +306,12 @@ void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json&
 		if (t->value("embedded", false)) {
 			const json& elem = (*t)["base-type"];
 			string ek = elem.value("type-kind","");
-			if (ek == "prim" && !structDefs_.count(elem.value("type-name",""))) { // LCOV_EXCL_EXCEPTION_BR_LINE
-				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, elem.value("type-name","")) << endl;
+			string ename = elem.value("type-name","");
+			if (ek == "prim" && !isKnownTypeName(ename)) { // LCOV_EXCL_EXCEPTION_BR_LINE
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, ename) << endl;
 				exit(1);
 			}
-			if (ek != "prim" && ek != "arr") {
+			if ((ek == "prim" && !structDefs_.count(ename)) || (ek != "prim" && ek != "arr")) {
 				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedElemNotStruct, typeDisplayName(elem)) << endl;
 				exit(1);
 			}
@@ -320,7 +321,7 @@ void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json&
 	if (t->value("type-kind","") != "prim") return;
 	string tname = t->value("type-name","");
 	if (isPointee ? isKnownPointeeTypeName(tname) : isKnownTypeName(tname)) return;
-	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, tname) << endl;
 	exit(1);
 }
 

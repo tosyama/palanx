@@ -409,7 +409,7 @@ TEST(sa_error, unknown_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_060_unknown_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find("unknown type"), string::npos);
 }
 
 TEST(sa_error, unknown_field)
@@ -547,27 +547,27 @@ TEST(sa_error, write_readonly_ptr)
 TEST(sa_error, struct_field_unknown_type)
 {
 	// type Foo { BadType x; } — prim field with unknown type name
-	// Covers: buildStructDef E_UnknownStructType for prim field (sz < 0 branch)
+	// Covers: buildStructDef E_UnknownType for prim field (sz < 0 branch)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_073_struct_field_unknown_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
 TEST(sa_error, embed_unknown_struct)
 {
 	// type Foo { $Unknown a; } — embed field with undefined struct name
-	// Covers: buildStructDef E_UnknownStructType for embed field
+	// Covers: buildStructDef E_UnknownType for embed field
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_074_embed_unknown_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
 TEST(sa_error, alias_unknown_method)
@@ -762,28 +762,28 @@ TEST(sa_error, struct_arr_ptr_field_unknown_prim_type)
 {
 	// type T { [4]NoSuchType field; }; -- [n]T owned pointer array, prim leaf unknown
 	// Covers: buildStructDef "arr" branch, non-embedded arr-ptr prim-leaf case,
-	// E_UnknownStructType
+	// E_UnknownType
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_086_arr_ptr_field_unknown_prim_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
 TEST(sa_error, struct_embed_arr_field_unknown_prim_type)
 {
 	// type T { [4]$NoSuchType field; }; -- [n]$T embed-arr, prim leaf unknown
 	// Covers: buildStructDef "arr" branch, embed-arr prim-leaf case,
-	// E_UnknownStructType
+	// E_UnknownType
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_087_embed_arr_field_unknown_prim_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
 TEST(sa_error, struct_nested_embed_arr_field_unsupported)
@@ -1103,14 +1103,14 @@ TEST(sa_error, deref_unknown_struct_ptr)
 	// A local `@!Foo p;` var decl is
 	// now rejected at declaration time (sa_var_decl), so only a parameter's
 	// pointee (unchecked at signature normalization) still reaches this guard.
-	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownStructType)
+	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownType)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_104_deref_unknown_struct_ptr.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find("unknown type"), string::npos);
 }
 
 TEST(sa_error, readonly_ptr_to_nonconst_c_param)
@@ -1200,14 +1200,14 @@ TEST(sa_error, ptr_decl_unknown_type)
 	// initializer, this used to compile silently and leave `p` referencing a
 	// nonexistent type.
 	// Covers: sa_var_decl pntr branch (incl. pntr-of-pntr walk), unknown
-	// pointee prim name -> E_UnknownStructType
+	// pointee prim name -> E_UnknownType
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_120_ptr_decl_unknown_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find("unknown type"), string::npos);
 }
 
 TEST(sa_error, incomplete_struct_var_decl)
@@ -1216,7 +1216,7 @@ TEST(sa_error, incomplete_struct_var_decl)
 	// then `Tag t;` -- an owned declaration needs Tag's totalSize to calloc it.
 	// registerCStruct downgrades Tag to an incomplete struct
 	// (opaque handle) instead of leaving the tag unregistered, so this is a
-	// diagnosed E_IncompleteStructType, not "unknown struct type".
+	// diagnosed E_IncompleteStructType, not "unknown type".
 	// Covers: sa_struct_var_decl -> requireCompleteStruct
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1301,7 +1301,7 @@ TEST(sa_error, incomplete_struct_native_embed)
 	// declared inside a function body so it is only processed by sa_statements
 	// (pass 3), after cinclude registers Tag (pass 2) -- at top level a struct-def
 	// is also pre-scanned in pass 0, before cinclude, which would hit the
-	// separate "name not yet registered" E_UnknownStructType path instead of
+	// separate "name not yet registered" E_UnknownType path instead of
 	// this one.
 	// Covers: buildStructDef "embed" branch, sub.isComplete check
 	cleanTestEnv();
@@ -1955,7 +1955,7 @@ TEST(sa_error, deref_void_pointer)
 {
 	// `p[0]` where p is @!void -- void has no size, so
 	// this must give a dedicated diagnostic rather than the misleading
-	// "unknown struct type 'void'." that the shared sz<0 guard in
+	// "unknown type 'void'." that the shared sz<0 guard in
 	// sa_expr_arr_index would otherwise produce.
 	// Covers: sa_expr_arr_index void-pointee guard, E_DerefVoidPointer
 	cleanTestEnv();
@@ -1987,7 +1987,7 @@ TEST(sa_error, field_access_through_prim_ptr_field)
 	// raw-ptr field with a primitive pointee (`@!int64 p;`) has nothing to
 	// chain into -- resolveObjectChain must reject it as a non-struct hop,
 	// not build a bogus pntr(struct("int64")) and fail later with an
-	// unrelated "unknown struct type 'int64'." from requireCompleteStruct.
+	// unrelated "unknown type 'int64'." from requireCompleteStruct.
 	// Covers: resolveObjectChain raw-ptr elemKind=="prim" guard,
 	// E_FieldAccessOnNonStruct
 	cleanTestEnv();
@@ -2267,7 +2267,7 @@ TEST(sa_error, arr_lit_init)
 		// Elements are analyzed before the array is declared.
 		{"error_215_arr_lit_self_ref.pa", ":1:18: error: Undefined variable 'a'."},
 		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array 'a' cannot be given an array literal: only numeric and struct element types are supported."},
-		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown type 'Foo'."},
 		{"error_218_arr_lit_void_elem.pa", ":2:15: error: Void function call cannot be used as a value."},
 		{"error_219_arr_lit_row_size.pa", ":1:24: error: array 'm' has rows of size 3 but a row of its array literal has 2 elements."},
 		{"error_220_arr_lit_row_size_declared.pa", ":1:19: error: array 'm' has rows of size 3 but a row of its array literal has 2 elements."},
@@ -2362,7 +2362,7 @@ TEST(sa_error, arr_borrow)
 		{"error_243_arr_borrow_assign_mismatch.pa", ":4:1: error: array shape '[3]int32' does not match"},
 		{"error_244_arr_borrow_unsized.pa", "every size in a borrowed array type"},
 		{"error_245_arr_borrow_return.pa", "cannot represent: 'array'"},
-		{"error_246_arr_borrow_embed_prim.pa", ":1:1: error: unknown struct type 'int32'."},
+		{"error_246_arr_borrow_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 		{"error_271_struct_arr_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer"},
 		{"error_272_struct_arr_borrow_mut_elem_of_ro.pa", ":3:10: error: cannot write through read-only pointer"},
 		{"error_273_struct_arr_borrow_elem_no_addr_of.pa", ":3:2: error: a struct given to a '@T'/'@!T' pointer must be written as"},
@@ -2509,24 +2509,24 @@ TEST(sa_error, copy)
 TEST(sa_error, unknown_type_name)
 {
 	const pair<string, string> cases[] = {
-		{"error_306_unknown_arr_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_307_unknown_ptr_slot_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_308_unknown_ptr_slot_unsized_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_309_unknown_arr2d_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_310_unknown_arr2d_embed_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_311_unknown_arr_borrow_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_312_unknown_arr_elem_via_alias.pa", ":2:1: error: unknown struct type 'Foo'."},
-		{"error_314_unknown_unsized_param.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_315_unknown_param.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_316_unknown_arr_borrow_param.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_317_unknown_named_ret.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_331_unknown_ptr_field.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_332_unknown_ptr_slot_field.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_306_unknown_arr_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_307_unknown_ptr_slot_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_308_unknown_ptr_slot_unsized_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_309_unknown_arr2d_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_310_unknown_arr2d_embed_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_311_unknown_arr_borrow_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_312_unknown_arr_elem_via_alias.pa", ":2:1: error: unknown type 'Foo'."},
+		{"error_314_unknown_unsized_param.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_315_unknown_param.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_316_unknown_arr_borrow_param.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_317_unknown_named_ret.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_331_unknown_ptr_field.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_332_unknown_ptr_slot_field.pa", ":1:1: error: unknown type 'Foo'."},
 		// A block's types are not visible from a sibling block.
-		{"error_333_ptr_field_sibling_block_def.pa", ":2:2: error: unknown struct type 'B'."},
+		{"error_333_ptr_field_sibling_block_def.pa", ":2:2: error: unknown type 'B'."},
 		// A declaration after another statement starts at its own first token.
-		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
-		{"error_335_unknown_param_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
+		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown type 'Foo'."},
+		{"error_335_unknown_param_after_stmt.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_336_named_ret_init_narrowing.pa", ":1:30: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_337_named_ret_init_struct.pa", ":2:19: error: struct-type named return 'p' cannot have an initializer."},
 		{"error_338_tapple_assign_narrowing.pa", ":3:13: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
@@ -2534,7 +2534,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_340_tapple_assign_single_ret.pa", ":3:1: error: Function 'g' does not have multiple return values."},
 		{"error_341_tapple_decl_narrowing.pa", ":2:1: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_342_tapple_decl_struct_mismatch.pa", ":3:1: error: cannot convert 'P' to 'int32'."},
-		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown struct type 'Foo'."},
+		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_344_transfer_non_owned_field.pa", ":3:1: error: '->>' needs a field that owns its value (T or [n]T); 'n' does not."},
 		{"error_345_unsized_ret_copy.pa", ":3:1: error: cannot copy '[?]int32' into '[3]int32'"},
 		{"error_346_ret_struct_borrow_decl.pa", ":3:1: error: a struct returned by a call has no owner to borrow from"},
@@ -2578,11 +2578,12 @@ TEST(sa_error, unknown_type_name)
 TEST(sa_error, embed_elem_not_struct)
 {
 	const pair<string, string> cases[] = {
-		{"error_318_embed_prim_2d_var.pa", ":1:1: error: unknown struct type 'int32'."},
-		{"error_319_embed_prim_row_elem.pa", ":1:1: error: unknown struct type 'int32'."},
-		{"error_320_embed_prim_alias.pa", ":2:1: error: unknown struct type 'int32'."},
-		{"error_321_embed_prim_param.pa", ":1:1: error: unknown struct type 'int32'."},
+		{"error_318_embed_prim_2d_var.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
+		{"error_319_embed_prim_row_elem.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
+		{"error_320_embed_prim_alias.pa", ":2:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
+		{"error_321_embed_prim_param.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 		{"error_322_embed_ptr_elem.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not '@int32'."},
+		{"error_572_embed_prim_field.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2957,12 +2958,13 @@ TEST(sa_error, enum_field_from_int)
 TEST(sa_error, sizeof)
 {
 	const pair<string, string> cases[] = {
-		{"error_406_sizeof_unknown_type.pa", ":1:12: error: unknown struct type 'Foo'."},
+		{"error_406_sizeof_unknown_type.pa", ":1:12: error: unknown type 'Foo'."},
 		{"error_407_sizeof_incomplete_struct.pa", ":2:12: error: struct '_IO_FILE' has no known layout"},
 		{"error_408_sizeof_unsized_arr.pa", ":1:12: error: every array size in the type of 'sizeof' must be a compile-time constant."},
 		{"error_409_sizeof_arr_size_not_const.pa", ":2:12: error: every array size in the type of 'sizeof' must be a compile-time constant."},
-		{"error_410_sizeof_embed_prim.pa", ":1:12: error: unknown struct type 'int32'."},
+		{"error_410_sizeof_embed_prim.pa", ":1:12: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 		{"error_411_sizeof_embed_ptr.pa", ":1:12: error: '$' applies only to a struct element or a '$[m]' row, not '@int32'."},
+		{"error_573_sizeof_embed_unknown.pa", ":1:12: error: unknown type 'Foo'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3051,17 +3053,17 @@ TEST(sa_error, import_type)
 	const pair<string, string> cases[] = {
 		{"error_424_import_type_unqualified.pa", ":2:1: error: type 'Vec' requires a module alias qualifier: 'V.Vec'."},
 		{"error_425_import_enum_unqualified.pa", ":2:17: error: type 'Color' requires a module alias qualifier: 'V.Color'."},
-		{"error_426_import_type_not_selected.pa", ":2:1: error: unknown struct type 'Vec'."},
-		{"error_427_import_type_private_dep.pa", ":2:1: error: unknown struct type 'Inner'."},
+		{"error_426_import_type_not_selected.pa", ":2:1: error: unknown type 'Vec'."},
+		{"error_427_import_type_private_dep.pa", ":2:1: error: unknown type 'Inner'."},
 		{"error_428_import_type_local_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
 		{"error_429_import_type_module_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
 		// The imported module's own path and line, not the importer's.
 		{"error_430_import_bad_struct_def.pa", "lib_sa_bad_struct.pa:2:1: error: unsupported struct field type."},
 		// A block's import makes its types writable only in that block.
-		{"error_568_block_import_type_outside.pa", ":4:1: error: unknown struct type 'Vec'."},
-		{"error_569_block_import_alias_outside.pa", ":4:1: error: unknown struct type 'MyInt'."},
-		{"error_570_block_import_enum_outside.pa", ":4:11: error: unknown struct type 'Color'."},
-		{"error_571_block_import_qualified_outside.pa", ":4:1: error: unknown struct type 'V.Vec'."},
+		{"error_568_block_import_type_outside.pa", ":4:1: error: unknown type 'Vec'."},
+		{"error_569_block_import_alias_outside.pa", ":4:1: error: unknown type 'MyInt'."},
+		{"error_570_block_import_enum_outside.pa", ":4:11: error: unknown type 'Color'."},
+		{"error_571_block_import_qualified_outside.pa", ":4:1: error: unknown type 'V.Vec'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3132,9 +3134,9 @@ TEST(sa_error, struct_field_size)
 TEST(sa_error, block_decl_scope)
 {
 	const pair<string, string> cases[] = {
-		{"error_556_block_type_outside.pa", ":4:1: error: unknown struct type 'Foo'."},
+		{"error_556_block_type_outside.pa", ":4:1: error: unknown type 'Foo'."},
 		{"error_557_block_const_outside.pa", ":4:11: error: Undefined variable 'N'."},
-		{"error_558_block_alias_outside.pa", ":4:1: error: unknown struct type 'I'."},
+		{"error_558_block_alias_outside.pa", ":4:1: error: unknown type 'I'."},
 		{"error_559_block_enum_outside.pa", ":4:11: error: Undefined variable 'E'."},
 		{"error_560_block_type_shadow_top.pa", ":3:2: error: type 'Foo' is already defined."},
 		{"error_561_block_type_shadow_c.pa", ":3:2: error: type 'FILE' is already defined."},

@@ -43,7 +43,7 @@ enum PlnSaMessageCode {
 	E_AmbiguousCall,			// arg1: function name
 	E_UnknownAlias,				// arg1: alias name
 	E_UnqualifiedAliasCall,			// arg1: function name
-	E_UnknownStructType,			// arg1: struct type name
+	E_UnknownType,				// arg1: type name
 	E_UnknownField,				// arg1: struct name, arg2: field name
 	E_UnsupportedStructFieldType,
 	E_RecursiveStruct,			// arg1: struct name

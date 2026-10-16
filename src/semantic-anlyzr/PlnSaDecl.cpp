@@ -75,7 +75,7 @@ static StructDef buildStructDef(const string& name,
 			} else {
 				int sz = elemSizeBytes(tname);
 				if (sz < 0) {
-					cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownStructType, tname) << endl;
+					cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownType, tname) << endl;
 					exit(1);
 				}
 				int at = place(sz, sz);
@@ -90,7 +90,8 @@ static StructDef buildStructDef(const string& name,
 				exit(1);
 			}
 			if (!structDefs.count(structName)) {
-				cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownStructType, structName) << endl;
+				PlnSaMessageCode code = elemSizeBytes(structName) >= 0 ? E_EmbedElemNotStruct : E_UnknownType;
+				cerr << errPrefix << PlnSaMessage::getMessage(code, structName) << endl;
 				exit(1);
 			}
 			const StructDef& sub = structDefs.at(structName);
@@ -166,7 +167,7 @@ static StructDef buildStructDef(const string& name,
 					// primitive leaf
 					int stride = elemSizeBytes(leaf_name);
 					if (stride < 0) {
-						cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
+						cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownType, leaf_name) << endl;
 						exit(1);
 					}
 					int align = 8;
@@ -211,7 +212,7 @@ static StructDef buildStructDef(const string& name,
 				// primitive leaf
 				stride = elemSizeBytes(leaf_name);
 				if (stride < 0) {
-					cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownStructType, leaf_name) << endl;
+					cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownType, leaf_name) << endl;
 					exit(1);
 				}
 				elemKind = "prim";

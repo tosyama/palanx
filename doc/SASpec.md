@@ -170,7 +170,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     type it names. A Palan type that is not nameable is registered but hidden: one written
     `V.T` under an alias (registered as the alias `"V.T"` for `T`), one not selected, or
     one not exported. A hidden name written in a type position is `E_UnqualifiedAliasType`
-    (alias) or `E_UnknownStructType`. C types are copied without hiding; they are global as
+    (alias) or `E_UnknownType`. C types are copied without hiding; they are global as
     in C.
   - Type names are program-wide identities (build-mgr keys struct allocators by them).
     Each Palan type name records its defining module, so the same name from a second
@@ -661,7 +661,7 @@ SA-only expression kinds (added to AST nodes):
   - If the array operand's value-type is not `pntr` → compile error (E_NotArrayType)
   - If the index expression resolves to flo32 or flo64 → compile error (E_ArrayIndexNotInteger)
   - If a non-struct element's byte size cannot be determined → compile error
-    (E_UnknownStructType). Reachable because gen-ast has no symbol table: a name it doesn't
+    (E_UnknownType). Reachable because gen-ast has no symbol table: a name it doesn't
     recognize as a struct in native syntax (e.g. `@!Foo p;` where `Foo` was never declared)
     still parses as `{"type-kind":"prim","type-name":"Foo"}`, so this is the first point SA can
     reject it. This guards the SA/codegen boundary: without it, a name that fails to resolve
@@ -986,7 +986,7 @@ a named `strct`/`union`→`struct`) and then check every type against `unreprese
 
 This differs from a native Palan signature's check (`validateNativeSig`): a native signature only
 rejects a structural type-kind `PlnTypeRegistry::fromJson` can never build (currently just a bare
-`arr`), and defers a not-yet-registered struct name to the more specific E_UnknownStructType /
+`arr`), and defers a not-yet-registered struct name to the more specific E_UnknownType /
 E_IncompleteStructType diagnosed at the point of use — a cinclude'd C signature has no such later
 resolution step to defer to, since c2ast's typedef registration has already resolved anything
 resolvable before the signature is emitted.
@@ -1068,7 +1068,7 @@ at all). `incompleteReason` is one of exactly two values:
 - `"unsupported-field"` — the header gives the tag a field list, but at least one field is
   rejected by "C-origin field admission" (below).
 
-Either way the tag name still resolves — referencing it is not E_UnknownStructType, the "no such
+Either way the tag name still resolves — referencing it is not E_UnknownType, the "no such
 type" error — but any use that requires a known layout is E_IncompleteStructType instead:
 
 - Field-chain resolution, including a plain field read or an intermediate hop in a longer chain

@@ -1118,8 +1118,8 @@ int64_t PlnSemanticAnalyzer::typeByteSize(const json& locNode, const json& type)
 		return 8;
 	if (tk == "embed") {
 		json base = resolveTypeAlias(t["base-type"]);
-		if (base.value("type-kind", "") == "prim" && !isStructType(base)) {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownStructType, base.value("type-name", "")) << endl;
+		if (base.value("type-kind", "") == "prim" && !isKnownTypeName(base.value("type-name", ""))) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, base.value("type-name", "")) << endl;
 			exit(1);
 		}
 		if (!isStructType(base)) {
@@ -1333,7 +1333,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 	}
 
 	if (elem_type.value("type-kind","") == "prim" && elem_type.value("type-name","") == "void") {
-		// `void` has no size; unlike E_UnknownStructType below (an unrecognized
+		// `void` has no size; unlike E_UnknownType below (an unrecognized
 		// name), this pointee name IS recognized -- it's just not indexable.
 		// Covers read (p[i]), write (v -> p[i] via sa_arr_assign_stmt), and
 		// element-address-of (@p[i], reached before its own guard runs).
@@ -1343,7 +1343,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 	int sz = (elem_type.value("type-kind","") == "pntr") ? 8
 		: elemSizeBytes(elem_type.value("type-name",""));
 	if (sz < 0) {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownStructType, elem_type.value("type-name","")) << endl;
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownType, elem_type.value("type-name","")) << endl;
 		exit(1);
 	}
 	json elem_size_node = {

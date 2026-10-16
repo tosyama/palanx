@@ -322,7 +322,7 @@ class PlnSemanticAnalyzer {
 	bool isKnownTypeName(const string& name) const;
 	// isKnownTypeName plus "void", valid only as a pointer pointee, never a standalone value type.
 	bool isKnownPointeeTypeName(const string& name) const;
-	// Exits with E_UnknownStructType if a name at the leaf of `type` (through arr/pntr levels) is unknown,
+	// Exits with E_UnknownType if a name at the leaf of `type` (through arr/pntr levels) is unknown,
 	// or if a `$` element is not a struct or a `$[m]` row. Struct fields don't pass through here:
 	// a `[n]$int32` field is an inline array, which a variable has no counterpart of.
 	// `type` must be as written in source (see requireNameableType).

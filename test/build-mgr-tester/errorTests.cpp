@@ -55,7 +55,7 @@ TEST(build_mgr_error, ambiguous_call) {
 TEST(build_mgr_error, unknown_struct_type) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_048_unknown_struct.pa");
-	ASSERT_NE(out.find("unknown struct type"), string::npos);
+	ASSERT_NE(out.find("unknown type"), string::npos);
 }
 
 TEST(build_mgr_error, unknown_field) {
