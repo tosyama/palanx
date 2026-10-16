@@ -13,7 +13,6 @@
 json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 {
 	json result = json::array();
-	pushStructDefNames(stmts);
 	for (auto& stmt : stmts) {
 		string t = stmt["stmt-type"];
 		if      (t == "import")   sa_import(stmt);
@@ -85,7 +84,6 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 			exit(1);
 		}
 	}
-	structDefNameScopes_.pop_back();
 	return result;
 }
 
@@ -97,6 +95,8 @@ void PlnSemanticAnalyzer::sa_functions(const json& funcs)
 json PlnSemanticAnalyzer::sa_block(const json& stmt)
 {
 	enterScope();
+	// Before the functions, whose signatures may name the block's types.
+	enterBlockDecls(stmt["body"]);
 
 	// pre-register block-local func-defs (forward reference support)
 	for (auto& f : stmt.value("functions", json::array())) {
@@ -119,6 +119,7 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 	json frees = collectFreeStmts(idx, idx + 1);
 	for (auto& s : frees) body.push_back(s);
 
+	leaveBlockDecls();
 	leaveScope();
 	return {{"stmt-type", "block"}, {"body", move(body)}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -149,6 +150,7 @@ json PlnSemanticAnalyzer::sa_while_stmt(const json& stmt)
 	enterScope();
 	whileScopeStack_.push_back(arrayScopeVars_.size() - 1);
 	loopDepth_++;
+	enterBlockDecls(stmt["body"]);
 
 	json body = sa_statements(stmt["body"]);
 
@@ -157,6 +159,7 @@ json PlnSemanticAnalyzer::sa_while_stmt(const json& stmt)
 	json frees = collectFreeStmts(idx, idx + 1);
 	for (auto& s : frees) body.push_back(s);
 
+	leaveBlockDecls();
 	loopDepth_--;
 	whileScopeStack_.pop_back();
 	leaveScope();
@@ -220,6 +223,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	funcBodyScopeIdx_ = arrayScopeVars_.size() - 1;  // = 1
 
 	const json& blk = funcDef["block"];
+	enterBlockDecls(blk["body"]);
 
 	// pre-register inner func-defs (visible only within this function)
 	for (auto& f : blk.value("functions", json::array())) {
@@ -275,6 +279,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	saFunc["body"] = move(body);
 	saFunc.erase("block");
 
+	leaveBlockDecls();
 	leaveScope();
 	varScopes        = savedVarScopes;
 	arrayScopeVars_  = savedArrayScopeVars;

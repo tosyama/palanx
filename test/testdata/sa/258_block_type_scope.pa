@@ -1,0 +1,25 @@
+cinclude <stdio.h>;
+
+func f() -> int64 r {
+	func inner(@P p) -> int64 { return p.x; }
+	P p;
+	N -> p.x;
+	inner(@p) -> r;
+	type P { int64 x; @!P next; };
+	const N = 3;
+}
+
+{
+	type P { int32 y; };
+	type I = int16;
+	type E enum { A, B };
+	[2]P a;
+	I i = int16(E.B);
+	while i < 3 {
+		type W { I v; };
+		W w;
+		i -> w.v;
+		i + 1 -> i;
+	}
+}
+f();

@@ -2201,8 +2201,7 @@ TEST(sa_error, macro_backref_undefined)
 TEST(sa_error, macro_backref_arr_field)
 {
 	// Same loc-order gate as macro_backref_undefined, but for a struct
-	// field array size -- the un-folded "id" is evaluated like any other
-	// array size expression.
+	// field array size -- the un-folded "id" names no const.
 	// Covers: foldMacroConstants loc-order gate
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -2210,7 +2209,7 @@ TEST(sa_error, macro_backref_arr_field)
 		"bin/palan-gen-ast ../test/testdata/sa/error_186_macro_backref_arr_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:13: error: Undefined variable 'ARR_N'."), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: struct field array size must be a compile-time constant integer."), string::npos) << sa;
 }
 
 TEST(sa_error, untyped_var_decl)
@@ -2517,15 +2516,13 @@ TEST(sa_error, unknown_type_name)
 		{"error_310_unknown_arr2d_embed_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_311_unknown_arr_borrow_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_312_unknown_arr_elem_via_alias.pa", ":2:1: error: unknown struct type 'Foo'."},
-		// A block-local struct is visible only after its definition, as for a scalar `Foo p;`.
-		{"error_313_unknown_arr_elem_before_def.pa", ":2:2: error: unknown struct type 'Foo'."},
 		{"error_314_unknown_unsized_param.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_315_unknown_param.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_316_unknown_arr_borrow_param.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_317_unknown_named_ret.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_331_unknown_ptr_field.pa", ":1:1: error: unknown struct type 'Foo'."},
 		{"error_332_unknown_ptr_slot_field.pa", ":1:1: error: unknown struct type 'Foo'."},
-		// A pointer field may name a struct defined later only in its own or an enclosing statement list.
+		// A block's types are not visible from a sibling block.
 		{"error_333_ptr_field_sibling_block_def.pa", ":2:2: error: unknown struct type 'B'."},
 		// A declaration after another statement starts at its own first token.
 		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
@@ -3060,6 +3057,11 @@ TEST(sa_error, import_type)
 		{"error_429_import_type_module_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
 		// The imported module's own path and line, not the importer's.
 		{"error_430_import_bad_struct_def.pa", "lib_sa_bad_struct.pa:2:1: error: unsupported struct field type."},
+		// A block's import makes its types writable only in that block.
+		{"error_568_block_import_type_outside.pa", ":4:1: error: unknown struct type 'Vec'."},
+		{"error_569_block_import_alias_outside.pa", ":4:1: error: unknown struct type 'MyInt'."},
+		{"error_570_block_import_enum_outside.pa", ":4:11: error: unknown struct type 'Color'."},
+		{"error_571_block_import_qualified_outside.pa", ":4:1: error: unknown struct type 'V.Vec'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3115,6 +3117,33 @@ TEST(sa_error, struct_field_size)
 {
 	const pair<string, string> cases[] = {
 		{"error_431_struct_field_var_size.pa", ":4:2: error: struct field array size must be a compile-time constant integer."},
+		{"error_567_struct_field_var_size_top.pa", ":2:1: error: struct field array size must be a compile-time constant integer."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, block_decl_scope)
+{
+	const pair<string, string> cases[] = {
+		{"error_556_block_type_outside.pa", ":4:1: error: unknown struct type 'Foo'."},
+		{"error_557_block_const_outside.pa", ":4:11: error: Undefined variable 'N'."},
+		{"error_558_block_alias_outside.pa", ":4:1: error: unknown struct type 'I'."},
+		{"error_559_block_enum_outside.pa", ":4:11: error: Undefined variable 'E'."},
+		{"error_560_block_type_shadow_top.pa", ":3:2: error: type 'Foo' is already defined."},
+		{"error_561_block_type_shadow_c.pa", ":3:2: error: type 'FILE' is already defined."},
+		{"error_562_block_type_shadow_outer_block.pa", ":4:3: error: type 'Foo' is already defined."},
+		{"error_563_block_const_shadow.pa", ":4:3: error: Constant 'N' is already defined."},
+		{"error_564_block_dup_decl.pa", ":3:2: error: Constant 'Foo' is already defined."},
+		// A C type a block's cinclude brings in clashes with the block's own.
+		{"error_565_block_type_then_cinclude.pa", ":3:2: error: type 'tm' is already defined."},
+		{"error_566_block_type_display_name.pa", ":4:2: error: cannot convert 'Foo' to 'int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

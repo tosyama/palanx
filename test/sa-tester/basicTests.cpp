@@ -7,6 +7,8 @@
 #include <fstream>
 #include <algorithm>
 #include <map>
+#include <set>
+#include <regex>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -5116,6 +5118,12 @@ TEST(sa, struct_field_const_size)
 	map<string, json> shapes;
 	for (auto& s : jout["alloc-shapes"])
 		if (s.value("shape-kind", "") == "struct") shapes[s["shape-name"]] = s;
+	auto blockShape = [&](const string& name) {
+		for (auto& [n, s] : shapes)
+			if (n.size() > name.size() && n.compare(n.size() - name.size() - 1, string::npos, "_" + name) == 0)
+				return s;
+		return json();
+	};
 	// a [3]$int32 12 + b [3]$Point 24 (+4) + c [3]@Point 24 + d 8 + e 8
 	// + r [3]$int16 6 + z [8]$uint8 8 (+2)
 	ASSERT_EQ(shapes["S"]["total-size"], 96);
@@ -5123,8 +5131,8 @@ TEST(sa, struct_field_const_size)
 	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["name"], "d");
 	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["count"], 3);
 	ASSERT_EQ(shapes["S"]["owned-array-fields"][1]["offset"], 72);
-	ASSERT_EQ(shapes["L"]["total-size"], 16);
-	ASSERT_EQ(shapes["L"]["owned-array-fields"][0]["count"], 2);
+	ASSERT_EQ(blockShape("L")["total-size"], 16);
+	ASSERT_EQ(blockShape("L")["owned-array-fields"][0]["count"], 2);
 }
 
 TEST(sa, top_decl_order)
@@ -5676,4 +5684,37 @@ TEST(sa, c_ptr_ptr_field)
 	const auto& slot = stmts[3]["vars"][0]["init"]["value-type"];
 	ASSERT_EQ(slot["base-type"]["type-kind"], "pntr");
 	ASSERT_EQ(slot["base-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, block_type_scope)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/258_block_type_scope.pa");
+	ASSERT_TRUE(jout.is_object());
+	// The two block-local P's get distinct program-wide names; the written
+	// name reaches no type.
+	string out = jout.dump();
+	regex internal("__pln_L[0-9a-f]{16}_[0-9]+_P\\b");
+	set<string> ps;
+	for (sregex_iterator it(out.begin(), out.end(), internal), end; it != end; ++it)
+		ps.insert(it->str());
+	ASSERT_EQ(ps.size(), 2u);
+	ASSERT_EQ(out.find("\"type-name\":\"P\""), string::npos);
+}
+
+TEST(sa, block_type_before_def)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/259_block_type_before_def.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
+TEST(sa, block_import_type)
+{
+	// A block's import makes the types writable only in that block, so a
+	// later block imports them again.
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/260_block_import_type.pa");
+	ASSERT_TRUE(jout.is_object());
 }

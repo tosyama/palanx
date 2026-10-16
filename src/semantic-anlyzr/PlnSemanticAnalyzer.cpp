@@ -737,6 +737,9 @@ bool PlnSemanticAnalyzer::onlyNamesConsts(const json& expr) const
 	if (expr.is_object()) {
 		if (expr.value("expr-type","") == "id" && !constDecls_.count(expr.value("name","")))
 			return false;
+		if (expr.value("expr-type","") == "field-access"
+		    && !enumTypeNamed(typeNameWritten(expr["object"])).is_null())
+			return true;
 		for (auto& [k, v] : expr.items())
 			if (!onlyNamesConsts(v)) return false;
 	} else if (expr.is_array()) {

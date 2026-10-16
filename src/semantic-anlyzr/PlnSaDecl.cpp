@@ -1047,18 +1047,67 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-void PlnSemanticAnalyzer::pushStructDefNames(const json& stmts)
+void PlnSemanticAnalyzer::enterBlockDecls(const json& stmts)
 {
-	set<string> names;
-	for (auto& stmt : stmts)
-		if (stmt.value("stmt-type", "") == "struct-def")
-			names.insert(stmt["name"].get<string>());
-	structDefNameScopes_.push_back(names);
+	vector<string> names;
+	for (auto& stmt : stmts) {
+		string t = stmt.value("stmt-type", "");
+		if (t != "struct-def" && t != "enum-def" && t != "type-alias" && t != "const-decl") continue;
+		string name = stmt["name"].get<string>();
+		if (isDeclNameTaken(name) || find(names.begin(), names.end(), name) != names.end()) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(
+				t == "const-decl" ? E_DuplicateConstDecl : E_DuplicateTypeName, name) << endl;
+			exit(1);
+		}
+		names.push_back(name);
+		topDecls_.emplace(name, TopDecl{&stmt});
+		if (t != "struct-def" && t != "enum-def") continue;
+		string internal = PlnSaMessage::blockTypeName(moduleId_, ++blockTypeSeq_, name);
+		blockTypeNames_[name] = internal;
+		// A pointer may name the struct before its layout is resolved.
+		if (t == "struct-def") {
+			typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", internal}};
+			declaredStructs_.insert(internal);
+		}
+	}
+	blockDeclNames_.push_back(names);
+	blockImportedTypes_.emplace_back();
+	for (auto& name : names) ensureTypeName(name, false);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::leaveBlockDecls()
+{
+	for (auto& name : blockDeclNames_.back()) {
+		topDecls_.erase(name);
+		typeAliases_.erase(name);
+		constDecls_.erase(name);
+		blockTypeNames_.erase(name);
+	}
+	blockDeclNames_.pop_back();
+	// An imported type stays registered: a type the block used may depend on it.
+	for (auto& written : blockImportedTypes_.back()) {
+		if (written.find('.') != string::npos) typeAliases_.erase(written);
+		else hiddenTypeNames_[written] = "";
+	}
+	blockImportedTypes_.pop_back();
+}
+
+string PlnSemanticAnalyzer::declaredTypeName(const string& written) const
+{
+	auto it = blockTypeNames_.find(written);
+	return it == blockTypeNames_.end() ? written : it->second;
+}
+
+bool PlnSemanticAnalyzer::isDeclNameTaken(const string& name) const
+{
+	return topDecls_.count(name) || importedTypes_.count(name) || typeOrigins_.count(name)
+		|| structDefs_.count(name) || enumDefs_.count(name) || typeAliases_.count(name)
+		|| constDecls_.count(name) || elemSizeBytes(name) >= 0;
 }
 
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
-	string name = stmt["name"].get<string>();
+	string name = declaredTypeName(stmt["name"].get<string>());
 	declareTypeName(name, stmt);
 	json fields = stmt["fields"];
 	for (auto& f : fields) {
@@ -1066,8 +1115,14 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		const json written = f["var-type"];
 		f["var-type"] = resolveTypeAliasDeep(f["var-type"]);
 		json& vt = f["var-type"];
-		if (vt.value("type-kind", "") == "arr" && !vt["size-expr"].is_null())
+		if (vt.value("type-kind", "") == "arr" && !vt["size-expr"].is_null()) {
+			// A type is resolved before the variables of its block are declared.
+			if (!onlyNamesConsts(vt["size-expr"])) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant) << endl;
+				exit(1);
+			}
 			vt["size-expr"] = sa_arr_size_expr(stmt, vt["size-expr"]);
+		}
 		// Only a pointee may name a struct that is not registered yet; every
 		// other field type is checked by buildStructDef against structDefs_.
 		const json* t = &f["var-type"];
@@ -1075,9 +1130,7 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 			t = &(*t)["base-type"];
 		if (t->value("type-kind", "") != "pntr") continue;
 		string pointee = pointeeLeaf(*t).type->value("type-name", "");
-		bool laterDef = pointee == name || declaredStructs_.count(pointee)
-			|| any_of(structDefNameScopes_.begin(), structDefNameScopes_.end(),
-			[&](const set<string>& names) { return names.count(pointee) > 0; });
+		bool laterDef = pointee == name || declaredStructs_.count(pointee);
 		if (!laterDef) requireKnownTypeNames(stmt, written);
 	}
 	structDefs_[name] = buildStructDef(name, fields, structDefs_, locPrefix(stmt));
@@ -1225,7 +1278,8 @@ json PlnSemanticAnalyzer::sa_const_decl(const json& stmt)
 
 json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 {
-	string name = stmt["name"].get<string>();
+	string written = stmt["name"].get<string>();
+	string name = declaredTypeName(written);
 	declareTypeName(name, stmt);
 
 	map<string, int64_t> values;
@@ -1257,11 +1311,12 @@ json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 		nextOverflows = v == INT64_MAX;
 		next = nextOverflows ? v : v + 1;
 	}
-	registerEnum(name, move(values), stmt["loc"]);
+	registerEnum(name, move(values), stmt["loc"], written);
 	return json::array();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-void PlnSemanticAnalyzer::registerEnum(const string& name, map<string, int64_t> values, const json& loc)
+void PlnSemanticAnalyzer::registerEnum(const string& name, map<string, int64_t> values, const json& loc,
+                                       const string& written)
 {
 	int64_t minV = 0, maxV = 0;
 	bool first = true;
@@ -1277,7 +1332,7 @@ void PlnSemanticAnalyzer::registerEnum(const string& name, map<string, int64_t> 
 		: minV >= 0 && maxV <= UINT32_MAX ? "uint32"
 		: minV < 0 ? "int64" : "uint64";
 	enumDefs_[name] = {move(values), loc};
-	typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", base}, {"enum", name}};
+	typeAliases_[written] = {{"type-kind", "prim"}, {"type-name", base}, {"enum", name}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::registerCEnum(const json& cincludeStmt, const json& e)
@@ -1293,7 +1348,7 @@ void PlnSemanticAnalyzer::registerCEnum(const json& cincludeStmt, const json& e)
 	map<string, int64_t> values;
 	for (auto& en : e["enumerators"])
 		values[en["name"].get<string>()] = stoll(en["value"].get<string>());
-	registerEnum(name, move(values), json());
+	registerEnum(name, move(values), json(), name);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Each cinclude is a separate c2ast run, so a header relying on an earlier
@@ -1379,7 +1434,7 @@ void PlnSemanticAnalyzer::declareTypeName(const string& name, const json& stmt)
 // A cinclude inside a block runs after the Palan types are declared.
 void PlnSemanticAnalyzer::requireNotPalanType(const string& name, const json& locNode) const
 {
-	if (typeOrigins_.count(name)) {
+	if (typeOrigins_.count(name) || blockTypeNames_.count(name)) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
 		exit(1);
 	}
@@ -1407,10 +1462,16 @@ void PlnSemanticAnalyzer::adoptExportedTypes(const json& stmt, const json& impAs
 		for (auto& t : stmt["targets"])
 			targets.insert(t.get<string>());
 
+	string alias = stmt.value("alias", "");
 	for (auto& d : impAst["ast"]["statements"]) {
 		if (!d.value("export", false)) continue;
-		if (selective && !targets.count(d["name"].get<string>())) continue;
+		string name = d["name"].get<string>();
+		if (selective && !targets.count(name)) continue;
+		string written = alias.empty() ? name : alias + "." + name;
+		bool wasWritable = (structDefs_.count(written) || typeAliases_.count(written))
+			&& !hiddenTypeNames_.count(written);
 		adoptExportedType(stmt, d, sub);
+		if (!blockImportedTypes_.empty() && !wasWritable) blockImportedTypes_.back().push_back(written);
 	}
 }
 
@@ -1432,7 +1493,7 @@ void PlnSemanticAnalyzer::adoptExportedType(const json& stmt, const json& decl, 
 		const json& t = sub.typeAliases_.at(name);
 		adoptTypeDeps(sub, t, stmt);
 		if (alias.empty()) {
-			claimTypeName(name, sub.typeOrigins_.at(name), stmt);
+			setTypeNameable(name, claimTypeName(name, sub.typeOrigins_.at(name), stmt), true, alias);
 			typeAliases_[name] = t;
 		} else {
 			typeAliases_[alias + "." + name] = t;

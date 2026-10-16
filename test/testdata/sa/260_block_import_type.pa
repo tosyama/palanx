@@ -1,0 +1,16 @@
+{
+	import "lib_sa_types.pa";
+	Vec v;
+	MyInt m = 1;
+	int32 g = Color.Green;
+}
+{
+	import "lib_sa_types.pa" as V;
+	V.Vec v;
+	V.MyInt m = 2;
+}
+{
+	import "lib_sa_types.pa";
+	Vec w;
+	MyInt n = 3;
+}

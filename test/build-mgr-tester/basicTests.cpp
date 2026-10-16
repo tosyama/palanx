@@ -2920,6 +2920,37 @@ TEST(build_mgr, lit_arg_struct_arr_mtrace)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, block_type_scope_mtrace) {
+	// Same-named block-local structs of different layouts each get their own
+	// allocator.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_block_type_scope_bin "
+		"../test/testdata/build-mgr/285_block_type_scope_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_block_type_scope_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_block_type_scope_bin");
+	ASSERT_EQ(output, "5 2\n7\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_GT(allocs, 0);
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, ptr_ptr_field) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/284_ptr_ptr_field.pa");

@@ -161,7 +161,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     module's own declaration, or a type a top-level import brings in. A pre-scan
     resolves all of them (imports first) before function signatures are pre-registered,
     so their order in the source does not matter. A block-scoped import's types are
-    registered at the import, like a struct-def at that position.
+    registered at the import and writable until the end of the block.
   - Reaching a declaration that is still being resolved is a cycle, reported as
     `E_CircularTypeDecl` at the declaration that reached it. A struct named through a
     pointer only has to be declared; it is resolved once no declaration is being
@@ -203,6 +203,11 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     block. Shadowing of C function names is permitted.
   - Palan function definitions inside a block are pre-registered (pass 1) to
     support forward references within the same block.
+  - Struct, enum, type-alias, and const declarations inside a block (a function body
+    included) are resolved on entry, before its functions are pre-registered, and are
+    not visible outside it; nor are the type names a block's import makes writable.
+    A block's struct or enum is named `__pln_L<module hash>_<n>_<Name>` wherever the
+    type appears in sa.json (`type-name`, `alloc-shapes`), so blocks may reuse a name.
 
 - **if** - if / if-else statement
   - stmt-type\*: "if"

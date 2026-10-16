@@ -1,0 +1,4 @@
+func f() {
+	type E enum { A };
+}
+int32 n = E.A;

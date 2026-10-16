@@ -943,6 +943,8 @@ Shadowing — declaring a variable or Palan function with the same name as one i
 
 Palan function definitions inside a block are block-scoped and support forward references within the same block.
 
+Types and consts declared inside a block follow the same rules (see [Declaration order](#declaration-order)).
+
 `cinclude` inside a block makes the imported C functions available only within that block. Shadowing of C function names is allowed.
 
 ---
@@ -1954,13 +1956,14 @@ a copy of it (including what it owns), which the caller owns.
 
 ### Declaration order
 
-A top-level struct, enum, type alias, or const may be used before its declaration, and so may
-the C types of a top-level `cinclude`. A declaration inside a block is visible from that point
-on.
+A struct, enum, type alias, or const may be used anywhere in the scope that declares it, before
+its declaration too, and so may the C types of a top-level `cinclude`. One declared in a block or
+function body is not visible outside it; neither are the types an `import` inside a block brings
+in.
 
-A type name may be declared only once in a file, even in different blocks, and must not be the
-name of a type a cincluded header introduces (a struct, union, or enum tag, or a typedef name).
-Either is a compile error.
+Declaring a type or const with the name of one visible from an outer scope, or twice in the same
+block, is a compile error; separate blocks may reuse a name. So is declaring a type with the name
+of a type a cincluded header introduces (a struct, union, or enum tag, or a typedef name).
 
 ```palan
 type Shape { $Pos at; @Shape next; };   // Pos is declared below

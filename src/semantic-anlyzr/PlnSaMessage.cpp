@@ -8,8 +8,31 @@
 #include "PlnSaMessage.h"
 #include "../common/PlnDefs.h"
 #include <boost/assert.hpp>
+#include <cstdio>
+#include <regex>
+
+using std::regex;
+using std::to_string;
+
+static const char blockTypePrefix[] = "__pln_L";
+
+string PlnSaMessage::blockTypeName(const string& moduleId, int seq, const string& name)
+{
+	// FNV-1a: the module's part must be the same in every build of it.
+	uint64_t h = 14695981039346656037ull;
+	for (unsigned char c : moduleId) h = (h ^ c) * 1099511628211ull;
+	char hex[17];
+	snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
+	return blockTypePrefix + string(hex) + "_" + to_string(seq) + "_" + name;
+}
 
 string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
+{
+	static const regex blockTypePart(string(blockTypePrefix) + "[0-9a-f]{16}_[0-9]+_");
+	return regex_replace(format(msg_code, arg1, arg2, arg3), blockTypePart, "");
+}
+
+string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
 {
 	switch (msg_code) {
 		case M_Help:
@@ -550,6 +573,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_DuplicateTypeName:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "type '" + arg1 + "' is already defined.";
+
+		case E_DuplicateConstDecl:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Constant '" + arg1 + "' is already defined.";
 
 		case E_CastArgCount:
 			BOOST_ASSERT(arg1 != "\x01");

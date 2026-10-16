@@ -97,9 +97,6 @@ class PlnSemanticAnalyzer {
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
-	// struct-def names of each statement list being analyzed, innermost last:
-	// a pointer field may name a struct defined later in an enclosing list.
-	vector<set<string>>    structDefNameScopes_;
 	// Registered type aliases (name -> fully-resolved base type json)
 	map<string, json>      typeAliases_;
 	// cinclude'd C typedefs (name -> var-type, its own references resolved), for
@@ -139,6 +136,16 @@ class PlnSemanticAnalyzer {
 	set<string>            declaredStructs_;
 	// Top-level declarations the pre-scan resolved; step 2 skips them.
 	set<const json*>       prescannedDecls_;
+	// A block's declarations join topDecls_, typeAliases_ and constDecls_
+	// under their written names while the block is analyzed. Shadowing is an
+	// error, so leaving the block erases them without hiding an outer entry.
+	vector<vector<string>> blockDeclNames_;
+	// Written name -> program-wide name of each struct/enum of the enclosing
+	// blocks. Blocks may reuse a name, the allocators and sa.json may not.
+	map<string, string>    blockTypeNames_;
+	int                    blockTypeSeq_ = 0;
+	// Type names (`T` or `V.T`) each enclosing block's imports made writable.
+	vector<vector<string>> blockImportedTypes_;
 	// Program-wide type resolution state, shared by every module's analyzer.
 	struct TypeProgram;
 	unique_ptr<TypeProgram> ownedProgram_;
@@ -285,14 +292,18 @@ class PlnSemanticAnalyzer {
 	void recordArrStructShape(const string& structName);
 	void recordArrArrShape(const string& leafName);
 	void recordArrArrStructShape(const string& structName);
-	void pushStructDefNames(const json& stmts);
+	void enterBlockDecls(const json& stmts);
+	void leaveBlockDecls();
+	string declaredTypeName(const string& written) const;
+	bool isDeclNameTaken(const string& name) const;
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	void registerCStruct(const json& cincludeStmt, const json& s);  // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt);    // returns array of statements
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_
 	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_
 	json sa_enum_def(const json& stmt);           // consume enum-def, register in enumDefs_/typeAliases_
-	void registerEnum(const string& name, map<string, int64_t> values, const json& loc);
+	// `written` is how source names it, `name` its program-wide name.
+	void registerEnum(const string& name, map<string, int64_t> values, const json& loc, const string& written);
 	void registerCEnum(const json& cincludeStmt, const json& e);
 	void resolveCTypeRefs(json& node) const;      // C enum/earlier-cinclude typedef references -> SA type
 	json enumTypeNamed(const string& name) const; // enum value-type for a type name, or null
