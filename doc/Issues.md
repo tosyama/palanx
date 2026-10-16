@@ -142,7 +142,7 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ## 26. `cinclude` Processing Time
 
-**Summary:** Now that gen-ast parses in linear time, `cinclude` dominates its run time. In `samples/tetris.pa` (about 1.45s in gen-ast, Debug build), the four `cinclude`s of `ncurses.h`, `unistd.h`, `stdlib.h` and `time.h` alone take about 1.35s: about 1.0s in the `palan-c2ast` child processes (`ncurses.h` about 0.6s) and the rest in gen-ast ingesting their output. Speeding this up needs profiling c2ast's preprocessing and parsing of system headers, or caching translated headers between builds.
+**Summary:** Now that gen-ast parses in linear time, `cinclude` dominates its run time. In `samples/tetris.pa`, gen-ast took about 1.45s in a Debug build, of which the four `cinclude`s of `ncurses.h`, `unistd.h`, `stdlib.h` and `time.h` took about 1.35s (about 1.0s in the `palan-c2ast` child processes, `ncurses.h` about 0.6s). Building the tools with `-O2` (what `make` does since v0.2.0) brings the whole gen-ast run down to about 0.22s, so this is no longer a practical problem. If it becomes one again, the next steps are profiling c2ast's preprocessing and parsing of system headers, or caching translated headers between builds.
 
 ---
 

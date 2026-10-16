@@ -13,10 +13,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-# Build all targets and run all tests
+# Build all targets and run all tests (build/, -O2 -g with assertions enabled)
 make
 
-# Clean build artifacts
+# Unoptimized build for debugging with gdb (build-debug/, build only)
+make debug
+
+# Clean build artifacts (build/ and build-debug/)
 make clean
 
 # Generate coverage report (lcov.info in build-cov/)
@@ -26,7 +29,7 @@ make coverage-sa        # semantic analyzer only (faster)
 make coverage-reset     # full clean rebuild of build-cov/
 ```
 
-Coverage targets intentionally run only the end-to-end testers, not `sa-unit-tester`/`codegen-unit-tester` — the goal is measuring what's reachable through the real binaries and finding dead code; unit tests would exercise paths a real binary never reaches. `make` (no coverage) runs all seven testers.
+Coverage targets intentionally run only the end-to-end testers, not `sa-unit-tester`/`codegen-unit-tester` — the goal is measuring what's reachable through the real binaries and finding dead code; unit tests would exercise paths a real binary never reaches. `make` (no coverage) runs all seven testers. `build/` is optimized because the end-to-end testers spend most of their time running the tools themselves (an unoptimized build makes the test run about 3x slower); an existing `build/` configured as Debug needs `make clean` first.
 
 **Dependencies:** g++ (C++20), CMake 3.16+, Flex, Bison 3.8+, libboost-dev, libfl-dev, lcov
 

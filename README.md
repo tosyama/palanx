@@ -37,6 +37,9 @@ bin/palan -o hello hello.pa
 # Build and run all tests
 make
 
+# Unoptimized build for debugging (build-debug/)
+make debug
+
 # Clean build artifacts
 make clean
 
