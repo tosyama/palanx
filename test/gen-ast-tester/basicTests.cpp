@@ -1881,6 +1881,24 @@ TEST(gen_ast, linear_parse_time) {
 	ASSERT_EQ((*inner)["body"].size(), n);
 }
 
+TEST(gen_ast, deep_nesting) {
+	// Deeper than the GLR stack's original initial size of 200 items, where
+	// growing the stack used to double-free semantic values.
+	cleanTestEnv();
+	const int depth = 100;
+	string src = "func f() {\nint32 a = 0;\n";
+	for (int i = 0; i < depth; i++) src += "while 1 < 2 {\n";
+	src += "a + 1 -> a;\n" + string(depth, '}') + "\n}\n";
+	ofstream("out/deep_nesting.pa") << src;
+
+	string output = execTestCommand("bin/palan-gen-ast out/deep_nesting.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	json* inner = &jout["ast"]["functions"][0]["block"]["body"][1];
+	for (int i = 1; i < depth; i++) inner = &(*inner)["body"][0];
+	ASSERT_EQ((*inner)["body"][0]["stmt-type"], "assign");
+}
+
 TEST(gen_ast, enum_def) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/128_enum_def.pa");

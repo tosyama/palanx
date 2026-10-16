@@ -137,6 +137,13 @@ struct BodyList {
 		return lexer.yylex(*yylval, *location);
 	}
 
+// glr2.cc grows the GLR stack by memcpy-ing items and then destroying the
+// originals, which frees each semantic value twice. Reserve the maximum depth
+// up front and never grow; a deeper parse reports "memory exhausted".
+#define YYMAXDEPTH 10000
+#define YYINITDEPTH YYMAXDEPTH
+#define YYSTACKEXPANDABLE 0
+
 #define LOC(J, L)       J["loc"] = { (int)L.begin.line, (int)L.begin.column, (int)L.end.line, (int)L.end.column }
 #define LOC_BE(J, B, E) J["loc"] = { (int)B.begin.line, (int)B.begin.column, (int)E.end.line, (int)E.end.column }
 

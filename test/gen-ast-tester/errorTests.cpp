@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include <filesystem>
+#include <fstream>
 #include "../test-base/testBase.h"
 
 using namespace std;
@@ -166,4 +167,17 @@ TEST(gen_ast_error, cinclude_local_path_injection) {
 		"bin/palan-gen-ast ../test/testdata/gen-ast/error_005_cinclude_local_injection.pa");
 	ASSERT_NE(out.find("Failed to read C header"), string::npos);
 	ASSERT_FALSE(fs::exists("PWNED"));
+}
+
+TEST(gen_ast_error, nesting_too_deep) {
+	cleanTestEnv();
+	const int depth = 4000;
+	string src = "func f() {\nint32 a = 0;\n";
+	for (int i = 0; i < depth; i++) src += "while 1 < 2 {\n";
+	src += "a + 1 -> a;\n" + string(depth, '}') + "\n}\n";
+	ofstream("out/nesting_too_deep.pa") << src;
+
+	string out = execTestCommand("bin/palan-gen-ast out/nesting_too_deep.pa");
+	EXPECT_EQ(out.rfind("return1::", 0), 0u) << out.substr(0, 200);
+	EXPECT_NE(out.find("error: memory exhausted"), string::npos) << out.substr(0, 200);
 }
