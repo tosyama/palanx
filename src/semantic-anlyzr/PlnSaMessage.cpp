@@ -349,6 +349,17 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_ExprNotImplemented:
 			return "this expression is not supported in this version.";
 
+		case E_ParamDefaultNotImpl:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "parameter '" + arg1 + "' has a default value; default values are not "
+			       "supported yet.";
+
+		case E_ParamNotImplemented:
+			return "this parameter is not supported in this version.";
+
+		case E_RetNotImplemented:
+			return "this return value is not supported in this version.";
+
 		case E_IntLiteralOutOfRange:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");

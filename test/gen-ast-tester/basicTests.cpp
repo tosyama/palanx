@@ -1817,6 +1817,8 @@ TEST(gen_ast, decl_variants) {
 	ASSERT_EQ(stmts[2]["stmt-type"], "struct-def");
 	ASSERT_EQ(stmts[2]["fields"].size(), 1);
 	ASSERT_EQ(stmts[3]["body"]["args"].size(), 2);
+	ASSERT_EQ(stmts[3]["body"]["args"][1]["expr-type"], "not-impl");
+	ASSERT_EQ(stmts[3]["body"]["args"][1]["loc"], json::array({7, 6, 7, 9}));
 	ASSERT_EQ(stmts[4]["vars"].size(), 1);
 	ASSERT_EQ(stmts[4]["vars"][0]["var-name"], "c");
 	ASSERT_EQ(stmts[5]["vars"].size(), 0);
@@ -1824,13 +1826,20 @@ TEST(gen_ast, decl_variants) {
 	ASSERT_EQ(stmts[6]["body"]["expr-type"], "not-impl");
 	ASSERT_EQ(stmts[6]["body"]["loc"], json::array({10, 1, 10, 12}));
 
-	// Definitions with an unsupported parameter form are dropped wherever they appear.
+	// Definitions with an unsupported parameter form are kept wherever they
+	// appear, so SA can reject them where they are defined.
 	const auto& funcs = jout["ast"]["functions"];
-	ASSERT_EQ(funcs.size(), 1);
-	ASSERT_EQ(funcs[0]["name"], "outer");
-	ASSERT_EQ(funcs[0]["block"]["functions"].size(), 0);
-	ASSERT_EQ(funcs[0]["block"]["body"].size(), 1);
-	ASSERT_FALSE(jout.contains("export"));
+	ASSERT_EQ(funcs.size(), 8);
+	ASSERT_EQ(funcs[0]["name"], "dropFirst");
+	ASSERT_EQ(funcs[0]["parameters"][0],
+	          json({{"not-impl", true}, {"untyped-var", "x"}, {"loc", {1, 16, 1, 21}}}));
+	ASSERT_EQ(funcs[3]["name"], "untypedFirst");
+	ASSERT_EQ(funcs[3]["parameters"].size(), 2);
+	ASSERT_EQ(funcs[6]["name"], "exportedSysNotImpl");
+	ASSERT_EQ(funcs[7]["name"], "outer");
+	ASSERT_EQ(funcs[7]["block"]["functions"].size(), 4);
+	ASSERT_EQ(funcs[7]["block"]["body"].size(), 1);
+	ASSERT_EQ(jout["export"].size(), 2);
 }
 
 TEST(gen_ast, linear_parse_time) {

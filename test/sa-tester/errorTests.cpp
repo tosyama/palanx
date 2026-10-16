@@ -2988,9 +2988,38 @@ TEST(sa_error, expr_not_implemented)
 		{"error_417_expr_not_impl_stmt.pa", ":1:1: error: this expression is not supported"},
 		{"error_521_chain_tapple_value.pa", ":4:1: error: this expression is not supported"},
 		{"error_523_expr_not_impl_sizeof_generic.pa", ":1:12: error: this expression is not supported"},
+		{"error_553_arg_move_owner.pa", ":3:3: error: this expression is not supported"},
+		{"error_554_c_arg_move_owner.pa", ":3:16: error: this expression is not supported"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+// None of these functions is called: the signature alone must be rejected.
+TEST(sa_error, sig_not_implemented)
+{
+	const string defaultNotImpl = "has a default value; default values are not supported yet.";
+	const pair<string, string> cases[] = {
+		{"error_544_param_untyped_default.pa", ":1:8: error: parameter 'x' " + defaultNotImpl},
+		{"error_545_param_typed_default.pa", ":1:18: error: parameter 'x' " + defaultNotImpl},
+		{"error_546_param_inherit_default.pa", ":1:21: error: parameter 'b' " + defaultNotImpl},
+		{"error_547_param_move_owner.pa", ":1:8: error: this parameter is not supported in this version."},
+		{"error_548_param_generic_type.pa", ":1:8: error: this parameter is not supported in this version."},
+		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
+		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
+		{"error_551_ret_generic_type.pa", ":1:13: error: this return value is not supported in this version."},
+		{"error_552_ret_untyped.pa", ":1:13: error: this return value is not supported in this version."},
+		{"error_555_import_not_impl_sig.pa", "lib_sa_not_impl_sig.pa:1:15: error: this parameter is not supported in this version."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_not_impl_sig.pa -o out/lib_sa_not_impl_sig.pa.ast.json");
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");

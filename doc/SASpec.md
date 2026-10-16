@@ -184,6 +184,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 - not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
   the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise; a not-impl expression in
   value position is rejected as `E_ExprNotImplemented`
+- a function signature holding a not-impl parameter or return (ASTSpec.md's Palan Parameter) is
+  rejected where the function is registered, whether called or not, local or imported:
+  `E_ParamDefaultNotImpl` for a parameter with a default value, `E_ParamNotImplemented` for any
+  other parameter, `E_RetNotImplemented` for a return
 - var-type resolved on id expressions (see Expression model below)
 - assign and return statements are emitted as-is with SA-annotated expressions
 

@@ -156,12 +156,11 @@ struct BodyList {
 		}                                                                 \
 	} while (false)
 
-	// Returns null when the signature uses a not-impl feature.
+	// A parameter or return the compiler does not implement stays in the
+	// signature as is, so SA can reject the function where it is defined.
 	static json funcDecl(json& ast, bool exported, json fn, const vector<json>& params, const json& ret,
 	                     const palan::PlnParser::location_type& loc)
 	{
-		for (auto& p : params)
-			if (p.count("not-impl")) return nullptr;
 		fn["parameters"] = params;
 		if (ret.contains("rets"))
 			fn["rets"] = ret["rets"];
@@ -416,33 +415,27 @@ stmt_list_e: expr_stmt
 stmt_list_b: block_stmt
 	{ $$ = PList<NodeRef>().push($1); }
 	| func_item
-	{
-		if (!$1->self.count("not-impl"))
-			ast["ast"]["functions"].push_back($1->toJson());
-	}
+	{ ast["ast"]["functions"].push_back($1->toJson()); }
 	| stmt_list_b block_stmt
 	{ $$ = $1.push($2); }
 	| stmt_list_b func_item
 	{
 		$$ = $1;
-		if (!$2->self.count("not-impl"))
-			ast["ast"]["functions"].push_back($2->toJson());
+		ast["ast"]["functions"].push_back($2->toJson());
 	}
 	| stmt_list_b ';' block_stmt
 	{ $$ = $1.push($3); }
 	| stmt_list_b ';' func_item
 	{
 		$$ = $1;
-		if (!$3->self.count("not-impl"))
-			ast["ast"]["functions"].push_back($3->toJson());
+		ast["ast"]["functions"].push_back($3->toJson());
 	}
 	| stmt_list_e ';' block_stmt
 	{ $$ = $1.push($3); }
 	| stmt_list_e ';' func_item
 	{
 		$$ = $1;
-		if (!$3->self.count("not-impl"))
-			ast["ast"]["functions"].push_back($3->toJson());
+		ast["ast"]["functions"].push_back($3->toJson());
 	}
 	;
 
@@ -553,10 +546,7 @@ body_list_b: block_stmt
 		$$.body = $$.body.push($1);
 	}
 	| func_item
-	{
-		if (!$1->self.count("not-impl"))
-			$$.functions = $$.functions.push($1);
-	}
+	{ $$.functions = $$.functions.push($1); }
 	| body_list_b block_stmt
 	{
 		$$ = $1;
@@ -565,8 +555,7 @@ body_list_b: block_stmt
 	| body_list_b func_item
 	{
 		$$ = $1;
-		if (!$2->self.count("not-impl"))
-			$$.functions = $$.functions.push($2);
+		$$.functions = $$.functions.push($2);
 	}
 	| body_list_b ';' block_stmt
 	{
@@ -576,8 +565,7 @@ body_list_b: block_stmt
 	| body_list_b ';' func_item
 	{
 		$$ = $1;
-		if (!$3->self.count("not-impl"))
-			$$.functions = $$.functions.push($3);
+		$$.functions = $$.functions.push($3);
 	}
 	| body_list_e ';' block_stmt
 	{
@@ -587,8 +575,7 @@ body_list_b: block_stmt
 	| body_list_e ';' func_item
 	{
 		$$ = $1;
-		if (!$3->self.count("not-impl"))
-			$$.functions = $$.functions.push($3);
+		$$.functions = $$.functions.push($3);
 	}
 	;
 
@@ -638,22 +625,26 @@ inherit_var_decl: ID
 
 var_declaration: type_expr ID
 	{
-		if (isDeclarableVarType($1))
+		if (isDeclarableVarType($1)) {
 			$$ = {{"name", $2}, {"var-type", move($1)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		else
+		} else {
 			$$ = {{"not-impl", true}};
+			LOC($$, @$);
+		}
 	}
 	| type_expr DBL_GRTR ID
-	{ $$ = {{"not-impl", true}}; } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"not-impl", true}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| type_expr ID '=' expression
 	{
-		if (isDeclarableVarType($1))
+		if (isDeclarableVarType($1)) {
 			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}};
-		else
+		} else {
 			$$ = {{"not-impl", true}};
+			LOC($$, @$);
+		}
 	}
 	| ID '=' expression
-	{ $$ = {{"not-impl", true}, {"untyped-var", $1}}; }
+	{ $$ = {{"not-impl", true}, {"untyped-var", $1}}; LOC($$, @$); }
 	| tapple_decl '=' expression
 	{
 		string et = $3.value("expr-type","");
@@ -661,6 +652,7 @@ var_declaration: type_expr ID
 			$$ = {{"stmt-type", "tapple-decl"}, {"vars", $1}, {"value", $3}};
 		else
 			$$ = {{"not-impl", true}};
+		LOC($$, @$);
 	}
 	;
 
@@ -977,11 +969,19 @@ arguments: /* empty */
 	| expression
 	{ $$ = PList<json>().push($1); }
 	| expression DBL_GRTR
-	{ $$ = PList<json>().push($1); }
+	{
+		json arg = {{"expr-type", "not-impl"}};
+		LOC(arg, @$);
+		$$ = PList<json>().push(move(arg));
+	}
 	| arguments ',' expression
 	{ $$ = $1.push($3); }
 	| arguments ',' expression DBL_GRTR
-	{ $$ = $1.push($3); }
+	{
+		json arg = {{"expr-type", "not-impl"}};
+		LOC_BE(arg, @3, @4);
+		$$ = $1.push(move(arg));
+	}
 	;
 
 array_desc: array_row
@@ -1086,14 +1086,12 @@ store_loc
 func_def: KW_FUNC ID '(' paramaters ')' return_def block_obj
 	{
 		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "palan"}}, $4, $6, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = fn.is_null() ? leafNode({{"not-impl", true}}) // LCOV_EXCL_EXCEPTION_BR_LINE
-		                  : std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $7}}, {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $7}}, {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	| KW_EXPORT KW_FUNC ID '(' paramaters ')' return_def block_obj
 	{
 		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = fn.is_null() ? leafNode({{"not-impl", true}}) // LCOV_EXCL_EXCEPTION_BR_LINE
-		                  : std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	;
 
@@ -1112,12 +1110,12 @@ func_item: func_def
 syscall_decl: KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
 	{
 		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "syscall"}, {"syscall-number", $8}}, $4, $6, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = leafNode(fn.is_null() ? json{{"not-impl", true}} : move(fn)); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = leafNode(move(fn)); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	| KW_EXPORT KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
 	{
 		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "syscall"}, {"syscall-number", $9}}, $5, $7, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = leafNode(fn.is_null() ? json{{"not-impl", true}} : move(fn)); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = leafNode(move(fn)); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	;
 
@@ -1130,18 +1128,15 @@ paramaters: /* empty */
 return_def: /* empty */
 	{ }
 	| ARROW var_declarations
-	{
-		vector<json> rets = $2.toVector();
-		bool all_ok = true;
-		for (auto& v : rets)
-			if (v.count("not-impl") || v.value("inherit-type", false)) { all_ok = false; break; }
-		if (all_ok)
-			$$["rets"] = move(rets);
-	}
+	{ $$["rets"] = $2.toVector(); }
 	| ARROW type_expr
 	{
-		if (isDeclarableVarType($2))
+		if (isDeclarableVarType($2)) {
 			$$["ret-type"] = move($2);
+		} else {
+			$$["ret-type"] = {{"not-impl", true}};
+			LOC($$["ret-type"], @2);
+		}
 	}
 	;
 

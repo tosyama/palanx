@@ -86,6 +86,9 @@ enum PlnSaMessageCode {
 	E_VarTypeInferenceNotImpl,	// arg1: variable name
 	E_StmtNotImplemented,
 	E_ExprNotImplemented,
+	E_ParamDefaultNotImpl,	// arg1: parameter name
+	E_ParamNotImplemented,
+	E_RetNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
 	E_ArrLitContext,
 	E_ArrLitCountMismatch,	// arg1: variable name, arg2: declared size, arg3: literal element count

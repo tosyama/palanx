@@ -667,8 +667,39 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 	}
 }
 
+// gen-ast keeps a parameter or return it parses but does not implement in the
+// signature (see ASTSpec.md); every Palan signature, local or imported, is
+// checked here before anything reads its types.
+void PlnSemanticAnalyzer::rejectNotImplSig(const json& f)
+{
+	for (auto& p : f["parameters"]) {
+		const json& at = p.contains("loc") ? p : f;
+		if (p.contains("init") || p.contains("untyped-var")) {
+			string name = p.contains("untyped-var") ? p["untyped-var"] : p["name"];
+			cerr << locPrefix(p.contains("init") ? p["init"] : at)
+			     << PlnSaMessage::getMessage(E_ParamDefaultNotImpl, name) << endl;
+			exit(1);
+		}
+		if (!p.contains("var-type")) {
+			cerr << locPrefix(at) << PlnSaMessage::getMessage(E_ParamNotImplemented) << endl;
+			exit(1);
+		}
+	}
+	for (auto& r : f.value("rets", json::array()))
+		if (!r.contains("var-type")) {
+			cerr << locPrefix(r.contains("loc") ? r : f)
+			     << PlnSaMessage::getMessage(E_RetNotImplemented) << endl;
+			exit(1);
+		}
+	if (f.contains("ret-type") && f["ret-type"].contains("not-impl")) {
+		cerr << locPrefix(f["ret-type"]) << PlnSaMessage::getMessage(E_RetNotImplemented) << endl;
+		exit(1);
+	}
+}
+
 json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 {
+	rejectNotImplSig(f);
 	for (auto& p : f.value("parameters", json::array()))
 		ensureTypeRefs(p["var-type"]);
 	for (auto& r : f.value("rets", json::array()))

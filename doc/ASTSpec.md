@@ -188,7 +188,14 @@ Used in Palan function `parameters` and `rets`.
 
 - name\* - Variable name string
 - var-type\* - Variable type
-- init - Expression node for the initial value (`rets` only; omitted when not written)
+- init - Expression node for the initial value (omitted when not written; SA rejects it on a
+  parameter, since default values are not implemented)
+
+A parameter or return the grammar parses but the compiler does not implement (`T >> name`, an
+untyped `name = expr`, a type with no declarable form such as `T<U>`) stays in the list as
+`{"not-impl": true, "loc": ...}`, plus `untyped-var` (the name) for `name = expr`; SA rejects
+the function at its definition. An unimplemented unnamed return type is a `ret-type` of the
+same shape.
 
 C Parameter
 -----------
@@ -530,7 +537,7 @@ Expression model
       without needing to inspect their shape further)
     - mutable\* - `true` for `@!`, `false` for `@`
   19. not-impl - An expression the grammar parses but the compiler does not implement (e.g. a
-      tuple `(a, b)` used as a value, `sizeof` of a `[#n]` type), or a `store_loc` shape that
+      tuple `(a, b)` used as a value, `sizeof` of a `[#n]` type, a call argument `x>>`), or a `store_loc` shape that
       carries no addressable location (a parenthesized tuple or a bare function call reached via
       `@`/`@!`, or `field-access`'s chain root when it isn't itself addressable). Carries no
       fields beyond `expr-type` and `loc`; SA rejects any expression of this shape.

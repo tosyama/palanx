@@ -110,12 +110,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 20. Function Definitions With an Unsupported Parameter Form Are Silently Dropped
-
-**Summary:** When any parameter of a `func` or `syscall` declaration parses into a `not-impl` form (e.g. `func f(x = 1) { ... }` — an untyped defaulted parameter, or a `>>`-marked parameter), gen-ast's `func_def`/`syscall_decl` actions yield `{"not-impl": true}` and every `func_item` consumer in `src/gen-ast/PlnParser.yy` (`stmt_list_b`, `body_list_b`, ...) discards it (`if (!$1.count("not-impl"))`) instead of emitting it. The function simply vanishes: an uncalled one produces no diagnostic at all, and a call to it reports a misleading `Undefined function 'f'.`. This is the declaration-level counterpart of v0.1.35's statement-level `not-impl` rejection — the fix is to keep the dropped item in the AST with its `loc` (as statements now do) and have SA reject it with a diagnostic naming the unsupported parameter, rather than letting gen-ast erase it.
-
----
-
 ## 21. Array Literals Are Limited to Positions With a Known Target
 
 **Summary:** An array literal (`[1, 2, 3]`, 2D in either `[1,2][3,4]` or `[[1,2],[3,4]]` form) and a struct value (`[1, 2]`/`{x: 1, y: 2}`) are accepted only where they fill storage of a known type: an array or struct variable's initializer, the source of `->` to an array or a struct, the value returned from a function returning a struct, and an argument for a Palan `T`, `@T`/`@!T` or borrowed array parameter (v0.1.40), for which SA builds a temporary of the parameter's type. Anywhere else, such as an operand (`[1, 2][0]`) or a C function's pointer parameter (`strlen(@[104, 0])`), SA rejects it with `E_ArrLitContext`. Every literal is built at run time with one store per element, so an all-constant literal is not placed in `.rodata`.
