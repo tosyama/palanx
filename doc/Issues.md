@@ -12,24 +12,6 @@ e.g. How should `[]int32(x)` or similar constructs be written?
 
 ---
 
-## 2. Move Short-Circuit Optimization Hint to SA
-
-**Summary:** The branch-context detection for `&&` / `||` / `!` (deciding between `lowerBranchCond` and `lowerBranchCondTrue`) is currently implemented as look-ahead logic inside codegen. It may be cleaner to annotate this information in the SA phase to better separate concerns.
-
----
-
-## 3. Multi-Dimensional Array Syntax `[,]`
-
-**Summary:** It is undecided whether to allow multi-dimensional array syntax such as `[m, n]T` for raw arrays. Currently only 1D arrays are supported.
-
----
-
-## 4. Top-Level Code and Modules
-
-**Summary:** The behavior is undefined when top-level executable code exists in both the entry file and an imported module. It is unclear how multiple top-level code blocks should be ordered and executed.
-
----
-
 ## 5. `type` Definition Scope
 
 **Summary:** `type` definitions are currently registered globally regardless of where they appear in the source. They should follow the same scope rules as variable declarations — visible only from the point of definition to the end of the enclosing scope.
@@ -80,9 +62,9 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 11. Shift Operators (`<<`/`>>`) and the Move-Owner Token Conflict
+## 11. Shift Operators (`<<<`/`>>>`)
 
-**Summary:** v0.1.29 added the bitwise operators `&`/`|`/`^`/`~` but deliberately left out shift operators. `<<` has no token in Palan's lexer at all. `>>` is already `DBL_GRTR`, used exclusively as the move-owner operator (`[n]@![]T` array declarations, `->>` ownership-transfer assignment — see `src/gen-ast/PlnLexer.ll`/`PlnParser.yy`) — reusing it as a shift operator would collide with that existing grammar. Introducing shift support needs either an alternative token/syntax for one of the two roles, or a grammar-level disambiguation, decided before implementation.
+**Summary:** v0.1.29 added the bitwise operators `&`/`|`/`^`/`~` but deliberately left out shift operators. `<<` has no token in Palan's lexer at all. `>>` is already `DBL_GRTR`, the move-owner mark on a call argument (`f(x>>)`) and on a parameter (`T >> name`); `->>` is a separate token. Shift operators will be spelled `<<<` (left) and `>>>` (logical right), so they do not collide with it. There is no arithmetic right shift; division by a power of two serves instead.
 
 ---
 
@@ -106,7 +88,7 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ## 15. No CRT Startup Objects Are Linked — `palan-codegen` Supplies ELF/libc Glue Itself
 
-**Summary:** The build manager links a binary with a bare `ld <objs> -lc [-l<lib>...]` (`src/build-mgr/main.cpp`; the `-l<lib>` flags come from `link` clauses on `cinclude`, v0.1.31), never crt1.o/crti.o/crtbegin.o, and `palan-codegen` emits `_start` itself. This works for ordinary programs, but v0.1.30's `atexit` support surfaced two gaps those missing CRT objects would otherwise have closed: `__dso_handle` was undefined (glibc's `atexit` forwards to `__cxa_atexit(func, arg, __dso_handle)`), and `.note.GNU-stack` was never emitted (so linking any note-carrying libc object made `ld` mark the whole binary's stack executable, `PT_GNU_STACK` RWE, with a linker warning). Both are now patched over by `PlnX86CodeGen::emitElfCrtGlue()`, which emits `__dso_handle` on the entry object and `.note.GNU-stack` unconditionally on every object (see SpecAndDesign.md §3.5). This closes the two gaps v0.1.30 actually hit, but a real CRT strategy — linking via crtbegin/crtend, PIE support, or driving the link through `cc` instead of bare `ld` — remains undesigned; the next libc-glue requirement this same root cause produces will need one.
+**Summary:** The build manager links a binary with a bare `ld <objs> -lc [-l<lib>...]` (`src/build-mgr/main.cpp`; the `-l<lib>` flags come from `link` clauses on `cinclude`, v0.1.31), never crt1.o/crti.o/crtbegin.o, and `palan-codegen` emits `_start` itself. This works for ordinary programs, but v0.1.30's `atexit` support surfaced two gaps those missing CRT objects would otherwise have closed: `__dso_handle` was undefined (glibc's `atexit` forwards to `__cxa_atexit(func, arg, __dso_handle)`), and `.note.GNU-stack` was never emitted (so linking any note-carrying libc object made `ld` mark the whole binary's stack executable, `PT_GNU_STACK` RWE, with a linker warning). Both are now patched over by `PlnX86CodeGen::emitElfCrtGlue()`, which emits `__dso_handle` on the entry object and `.note.GNU-stack` unconditionally on every object (see SpecAndDesign.md §3.5). This closes the two gaps v0.1.30 actually hit, but a real CRT strategy — linking via crtbegin/crtend, PIE support, or driving the link through `cc` instead of bare `ld` — remains undesigned; the next libc-glue requirement this same root cause produces will need one. To be revisited together with the design for receiving command-line arguments, since switching to a C `main` linked through `cc` changes the program's entry point.
 
 ---
 
@@ -119,12 +101,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 17. Pointer-Bottomed C Typedefs Are Not Registered As Type Names
 
 **Summary:** IT-2026-09-16-3103/3104 (v0.1.31) generalized cincluded typedef registration so that any `prim`- or tagged-`strct`-bottomed typedef a header defines becomes usable as a Palan type name, regardless of whether some C function in the header references it. Pointer-bottomed typedefs (`typedef void *timer_t;`, `typedef int *P;`) were deliberately excluded from the new `ast.typedefs` section (`src/c2ast/CParser.cpp`'s flush filter in `CParser::parse()`) — registering one would force a premature decision about which side of the `@`/`@!` mutability split a bare pointer alias falls on. The per-reference-site path (`registerTypedefAliasInType`'s `pntr` branch, `src/semantic-anlyzr/PlnSemanticAnalyzer.cpp`) doesn't rescue this either: it only recurses into the pointee's own base type, never registers the pointer typedef's own name. So a pointer-bottomed typedef's name is unusable as a Palan type in every path, and referencing it (`P p;`) produces the generic `E_UnknownStructType` message (`"unknown struct type 'P'."`) — accurate in that the name is unresolved, but misleading wording for a pointer alias rather than a struct. `E_UnknownStructType` is a cross-cutting message used from 8 call sites for various "unknown type name" cases, so a wording fix belongs to a separate, broader ticket, not to a pointer-typedef-specific one. Workaround: address-of a variable of the pointee's own type (`@!void t;` in place of a `timer_t` local) — this is a spelling limitation, not a missing capability.
-
----
-
-## 18. `unistd.h`'s `syscall()` Wrapper Is Shadowed by the `syscall` Reserved Word
-
-**Summary:** v0.1.32 makes `syscall` a globally reserved word to introduce the raw syscall declaration (`PlnParser.yy:874-894`), which shadows `unistd.h`'s own `long syscall(long, ...)` wrapper (`unistd.h:1091`) — a file that cinclude's `<unistd.h>` and uses a native `syscall` declaration cannot also call that libc wrapper by name. This is a deliberate trade-off, not an oversight: `link` (v0.1.31) hit the same collision and was resolved as a contextual keyword recognized only in `cinclude`'s trailing clause, a position (after `import_as`) where no other production can start. `syscall` can't reuse that trick — it appears statement-leading, where `ID ID '(' ...` is ambiguous between a variable declaration, an ordinary call-expression statement, and the new declaration, so disambiguating it contextually would need lookahead machinery this grammar doesn't have. Reserving it globally was judged acceptable because a native syscall declaration makes the libc wrapper largely redundant once the same syscall is declared directly. If a future need for both in the same file arises, the fix is the same contextual-keyword approach `link` used, scoped to the statement-leading position.
 
 ---
 
@@ -152,15 +128,9 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 23. Functions Cannot Reference Top-Level Variables
+## 24. gen-ast Aborts When Blocks Nest 65 Levels or Deeper
 
-**Summary:** A variable declared at the top level is a local of the generated `_start`, so a function body cannot see it (`Undefined variable`). Shared state such as a game board must be passed as arguments. Making top-level variables global needs a decision on storage (`.data`/`.bss` or heap), on initialization order, and on how an imported module's top-level variables relate to the entry file's, which is the same open question as #4.
-
----
-
-## 24. gen-ast Aborts When Blocks Nest 62 Levels or Deeper
-
-**Summary:** Nesting blocks 62 levels or deeper (for example 62 nested `while` loops) makes palan-gen-ast abort with `free(): invalid pointer`. Bison 3.8.2's `glr2.cc` grows the GLR stack past `YYINITDEPTH` (200 items) with `std::vector::reserve`. `glr_stack_item`'s copy constructor `memcpy`s the semantic value, and the old item's destructor then frees the same `json`, so the value is freed twice. Fixing this needs either a skeleton change, or setting `YYINITDEPTH` to `YYMAXDEPTH` so the stack never grows (a deeper parse then fails with "memory exhausted" instead of crashing). It is deferred because real code does not nest this deeply.
+**Summary:** Nesting blocks 65 levels or deeper (for example 65 nested `while` loops) makes palan-gen-ast abort with `free(): invalid pointer`. Bison 3.8.2's `glr2.cc` grows the GLR stack past `YYINITDEPTH` (200 items) with `std::vector::reserve`. `glr_stack_item`'s copy constructor `memcpy`s the semantic value, and the old item's destructor then frees the same `json`, so the value is freed twice. Fixing this needs either a skeleton change, or setting `YYINITDEPTH` to `YYMAXDEPTH` so the stack never grows (a deeper parse then fails with "memory exhausted" instead of crashing). It is deferred because real code does not nest this deeply.
 
 ---
 
