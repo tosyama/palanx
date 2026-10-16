@@ -482,7 +482,8 @@ inline json normalizeCType(const json& type);
 
 // Rewrites a named C struct/union tag to SA's canonical "struct", and folds a
 // pointee's "const" into SA's own "mutable" pointer-permission flag
-// (recursing into `func` nodes so callback pointer parameters get it too).
+// (recursing into `func` nodes so callback pointer parameters get it too, and
+// into `arr` nodes for a struct field's pointer-slot array).
 inline json normalizeCType(const json& type) {
 	if (type.value("type-kind","") == "pntr") {
 		json t = type;
@@ -494,6 +495,11 @@ inline json normalizeCType(const json& type) {
 	if (isCRecordTag(type)) {
 		json t = type;
 		t["type-kind"] = "struct";
+		return t;
+	}
+	if (type.value("type-kind","") == "arr" && type.contains("base-type")) {
+		json t = type;
+		t["base-type"] = normalizeCType(type["base-type"]);
 		return t;
 	}
 	if (type.value("type-kind","") == "func") {

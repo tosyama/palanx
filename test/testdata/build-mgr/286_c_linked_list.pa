@@ -1,0 +1,17 @@
+cinclude <stdio.h>;
+cinclude "286_c_linked_list.h";
+
+Node a, b, c;
+1 -> a.v;
+2 -> b.v;
+3 -> c.v;
+@!b -> a.next;
+@!c -> b.next;
+
+@!Node p = @!a;
+while p.next != NULL {
+	p.next.v * 10 -> p.next.v;
+	p.next -> p;
+}
+
+printf("%d %d %d\n", a.v, b.v, c.v);

@@ -5686,6 +5686,18 @@ TEST(sa, c_ptr_ptr_field)
 	ASSERT_EQ(slot["base-type"]["base-type"]["type-name"], "int64");
 }
 
+TEST(sa, c_ptr_field_mutable)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/261_c_ptr_field_mutable.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	for (int i : {1, 2, 3, 4})
+		EXPECT_EQ(stmts[i]["vars"][0]["init"]["value-type"]["mutable"], true) << "stmt " << i;
+	EXPECT_EQ(stmts[4]["vars"][0]["init"]["value-type"]["base-type"]["mutable"], true);
+	EXPECT_EQ(stmts[5]["vars"][0]["init"]["value-type"]["mutable"], false);
+}
+
 TEST(sa, block_type_scope)
 {
 	cleanTestEnv();

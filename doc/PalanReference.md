@@ -647,6 +647,8 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   to a struct declared natively with `type Name { ... }`. A tag that is only forward-declared, or
   whose full definition can't be captured, is still usable under its name — see [Incomplete
   Struct Types](#incomplete-struct-types-opaque-handles) below.
+- A C pointer field (`T *f;`, or a pointer array `T *f[n];`) is `@!T` when its pointee is not
+  `const` and `@T` when it is (`const T *f;`), the same rule as a C function's pointer parameters.
 - A function pointer field (or an array of them) keeps its place in the struct's layout, but it
   cannot be read, written, or have its address taken.
 - A struct pointer *returned* by a C function should be bound to a non-owning `@T`/`@!T`-typed

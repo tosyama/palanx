@@ -3420,6 +3420,23 @@ TEST(sa_error, unsupported_c_field)
 	}
 }
 
+TEST(sa_error, c_const_ptr_field)
+{
+	const pair<string, string> cases[] = {
+		{"error_574_c_const_ptr_field_write.pa", ":3:1: error: cannot write through read-only pointer '@T'"},
+		{"error_575_c_const_ptr_field_hop.pa", ":3:6: error: cannot write through read-only pointer field '@T'"},
+		{"error_576_c_ptr_field_bind_read_only.pa", ":4:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
 TEST(sa_error, ptr_ptr_field_chain)
 {
 	const pair<string, string> cases[] = {

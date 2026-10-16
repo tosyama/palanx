@@ -1139,11 +1139,12 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // c2ast has no concept of Palan's $T inline-embedding sugar, so it represents
-// a C struct/union-by-value field as a plain tag; translate to the "embed" shape
-// buildStructDef expects.
+// a C struct/union-by-value field as a plain tag; translate the normalizeCType'd
+// "struct" to the "embed" shape buildStructDef expects.
 static json cFieldVarType(const json& vtype)
 {
-	if (isCRecordTag(vtype)) {
+	auto isStruct = [](const json& t) { return t.value("type-kind", "") == "struct"; };
+	if (isStruct(vtype)) {
 		return {{"type-kind", "embed"},
 		        {"base-type", {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}}};
 	}
@@ -1152,7 +1153,7 @@ static json cFieldVarType(const json& vtype)
 		json& bt = v["base-type"];
 		// Inside an array, a struct-by-value leaf is Palan's [n]$Foo / [n]Foo
 		// shape, named with a plain prim type-name rather than wrapped in "embed".
-		if (isCRecordTag(bt)) {
+		if (isStruct(bt)) {
 			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}};
 		} else if (bt.value("type-kind", "") == "pntr") {
 			// An inline array of pointer slots ("T *field[n];") is Palan's
@@ -1160,7 +1161,7 @@ static json cFieldVarType(const json& vtype)
 			// syntax, so strip it for a single embed-ptr-arr shape either way.
 			v.erase("embedded");
 			json& leaf = bt["base-type"];
-			if (isCRecordTag(leaf)) {
+			if (isStruct(leaf)) {
 				leaf = {{"type-kind", "prim"}, {"type-name", leaf["type-name"]}};
 			}
 		}
@@ -1232,7 +1233,7 @@ void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& 
 	for (auto& f : s["fields"]) {
 		json vt = f["var-type"];
 		resolveCTypeRefs(vt);
-		vt = cFieldVarType(vt);
+		vt = cFieldVarType(normalizeCType(vt));
 		if (!isSupportedCFieldType(vt, structDefs_, name)) {
 			// Register the tag as an incomplete struct rather than not at all: the
 			// name is real (glibc defines it), only its layout is unavailable this

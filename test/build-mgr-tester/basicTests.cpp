@@ -2956,3 +2956,9 @@ TEST(build_mgr, ptr_ptr_field) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/284_ptr_ptr_field.pa");
 	ASSERT_EQ(output, "7 6\n7 6\n");
 }
+
+TEST(build_mgr, c_linked_list) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/286_c_linked_list.pa");
+	ASSERT_EQ(output, "1 20 30\n");
+}

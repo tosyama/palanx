@@ -938,8 +938,8 @@ cast.
     writable — there is no read-only concept for those forms in this iteration.
   - A C parameter or return type's own `mutable` comes from its pointee's `const` qualification
     (`base-type.const`), folded in by `normalizeCType` at the point a `cinclude`d function
-    signature is registered (`PlnSaInternal.h`) — `const T *` normalizes to `mutable: false`,
-    `T *` to `mutable: true`. This is the same ingestion-boundary treatment struct/array
+    signature, global, or struct field is registered (`PlnSaInternal.h`) — `const T *`
+    normalizes to `mutable: false`, `T *` to `mutable: true`. This is the same ingestion-boundary treatment struct/array
     variables get elsewhere: SA's own permission checks only ever need to understand `mutable`,
     never c2ast's `const` vocabulary.
 
@@ -1092,15 +1092,17 @@ happens: a tag already complete keeps its layout regardless of what a later head
 ### C-origin field admission
 
 Before a C-origin field list is registered, each field's `var-type` (ASTSpec.md's c2ast
-representation) is normalized to the same vocabulary a native `struct-def` field would use, then
-checked for support; a field the check rejects causes the *whole* struct to be registered as an
-incomplete struct (see "Incomplete struct types" below) rather than being dropped individually or
-the tag going unregistered — fields up to and including the failing one are discarded, and no
-partial layout is kept:
+representation) is first passed through `normalizeCType` (so every pointer level, including a
+pointer-slot array's slot and the levels under it, gets `mutable` from its pointee's `const`:
+`T *f;` is `@!T`, `const T *f;` is `@T`), then normalized to the same vocabulary a native
+`struct-def` field would use, and checked for support; a field the check rejects causes the
+*whole* struct to be registered as an incomplete struct (see "Incomplete struct types" below)
+rather than being dropped individually or the tag going unregistered — fields up to and including
+the failing one are discarded, and no partial layout is kept:
 
-- A by-value struct or union leaf (`type-kind:"strct"`/`"union"`, from `struct Foo f;`) is rewritten to
-  `type-kind:"embed"` — same shape a native `$Foo` field produces. A by-value struct leaf inside
-  an array (`struct Foo arr[n];`) is instead rewritten to a plain `prim` type-name leaf, matching
+- A by-value struct or union leaf (`type-kind:"struct"` after `normalizeCType`, from
+  `struct Foo f;`) is rewritten to `type-kind:"embed"` — same shape a native `$Foo` field
+  produces. A by-value struct leaf inside an array (`struct Foo arr[n];`) is instead rewritten to a plain `prim` type-name leaf, matching
   the native `[n]$Foo` shape (`buildStructDef`'s array case looks the leaf up in the struct
   registry by name, not by a distinct type-kind).
 - A `prim` field is supported iff `elemSizeBytes` resolves its type-name.
@@ -1120,10 +1122,7 @@ partial layout is kept:
     c2ast always stamps on a raw C array declarator is stripped during this same normalization
     step — both origins reach the struct layout code as the single canonical (no-`embedded`)
     shape. A by-value struct leaf under the pointer (`struct Foo *field[n];`) is rewritten to a
-    plain `prim` type-name leaf, same as the direct-array case above. The slot's `mutable` flag
-    is left absent (defaults to `false`, i.e. read-only) — C-origin pointer fields have no
-    const/non-const distinction carried this deep, so they are conservatively read-only, same
-    as a scalar C pointer field.
+    plain `prim` type-name leaf, same as the direct-array case above.
 
 ### C ABI layout
 

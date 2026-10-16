@@ -32,12 +32,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 7. C Struct Pointer Fields Are Always Read-Only
-
-**Summary:** A C struct field whose type is a pointer — either a scalar pointer field (`T *field;`, SA's `raw-ptr`) or a pointer-slot array field (`T *field[n];`, SA's `embed-ptr-arr`) — is always registered with `mutable:false`, regardless of whether the C declaration's pointee was `const`-qualified. `normalizeCType` (the single point that folds C's pointee-`const` into SA's `mutable` vocabulary) is applied to `cinclude`d function signatures and, as of v0.1.29, C global variable types, but not to struct field types, so a non-const C pointer field (e.g. `struct Foo *next;`) is conservatively treated the same as a const one. Extending `normalizeCType` (or an equivalent) to struct field registration would let non-const C pointer fields be written through, matching their actual C semantics.
-
----
-
 ## 8. `_IO_FILE` Could Be Completed With `sizeof` Support
 
 **Summary:** `FILE` (`_IO_FILE`) is registered as an incomplete struct (see SASpec.md's Incomplete struct types) because one field's array size expression, `char _unused2[15*sizeof(int) - 4*sizeof(void*) - sizeof(size_t)];`, cannot be evaluated — c2ast's constant-expression evaluator (v0.1.29's macro-constant folding, see ASTSpec.md's Constant definition model) has no `sizeof` operator. Adding `sizeof` evaluation there (knowing each primitive/pointer type's size) would let `_IO_FILE` register as a complete struct, closing the specific gap the incomplete-type mechanism was introduced to paper over. This is genuinely separate work from the fold added in v0.1.29: that fold only handles literals and the arithmetic/bitwise operators, not a type-querying operator.
