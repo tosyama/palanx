@@ -530,11 +530,9 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   with no tag of its own (`typedef struct { int quot; int rem; } div_t;`) — the typedef's own name
   is used as the struct's tag, so `div_t`/`ldiv_t`/`lldiv_t` (from `stdlib.h`'s `div`/`ldiv`/`lldiv`)
   are usable struct types exactly like a tagged one.
-- Typedefs that bottom out in a pointer type (e.g. `timer_t`, `typedef void *timer_t;`) are *not*
-  registered as a usable Palan type alias name — only resolved at the C function signatures that
-  reference them (e.g. `timer_delete(timer_t)` can still be called). A local variable standing in
-  for such a typedef's pointee can be declared directly instead, e.g. `@!void t;` in place of a
-  `timer_t` local (see `doc/Issues.md` for the underlying limitation).
+- Typedefs that bottom out in a pointer type are usable as a pointer type alias: `@!T` when the
+  pointee is not `const`, `@T` when it is (`typedef void *timer_t;` is `@!void`, `typedef const
+  char *CS;` is `@int8`). A typedef of a function pointer is not usable yet.
 - Typedefs that bottom out in a union are usable the same way as struct typedefs (see
   [Union Types](#union-types) below). A typedef of an enum is another name for it (see
   [C Enum Types](#c-enum-types) below).

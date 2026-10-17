@@ -2962,3 +2962,9 @@ TEST(build_mgr, c_linked_list) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/286_c_linked_list.pa");
 	ASSERT_EQ(output, "1 20 30\n");
 }
+
+TEST(build_mgr, c_ptr_typedef_timer) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/287_c_ptr_typedef_timer.pa");
+	ASSERT_EQ(output, "0\n0\n0\n1\n0\n");
+}

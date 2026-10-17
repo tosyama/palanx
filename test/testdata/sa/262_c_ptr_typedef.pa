@@ -1,0 +1,13 @@
+cinclude "262_c_ptr_typedef.h";
+cinclude <time.h>;
+
+int32 x = 1;
+P p = @!x;
+CP q = p;
+PC pc = p;
+PA pa = get_p();
+PP pp;
+SP s = get_s();
+timer_t t;
+5 -> p[0];
+7 -> s.a;

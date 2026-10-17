@@ -86,12 +86,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 17. Pointer-Bottomed C Typedefs Are Not Registered As Type Names
-
-**Summary:** IT-2026-09-16-3103/3104 (v0.1.31) generalized cincluded typedef registration so that any `prim`- or tagged-`strct`-bottomed typedef a header defines becomes usable as a Palan type name, regardless of whether some C function in the header references it. Pointer-bottomed typedefs (`typedef void *timer_t;`, `typedef int *P;`) were deliberately excluded from the new `ast.typedefs` section (`src/c2ast/CParser.cpp`'s flush filter in `CParser::parse()`) — registering one would force a premature decision about which side of the `@`/`@!` mutability split a bare pointer alias falls on. The per-reference-site path (`registerTypedefAliasInType`'s `pntr` branch, `src/semantic-anlyzr/PlnSemanticAnalyzer.cpp`) doesn't rescue this either: it only recurses into the pointee's own base type, never registers the pointer typedef's own name. So a pointer-bottomed typedef's name is unusable as a Palan type in every path, and referencing it (`P p;`) produces the generic `E_UnknownType` message (`"unknown type 'P'."`). Workaround: address-of a variable of the pointee's own type (`@!void t;` in place of a `timer_t` local) — this is a spelling limitation, not a missing capability.
-
----
-
 ## 19. C11 Anonymous Members Without a Member Name Fail to Parse
 
 **Summary:** c2ast's struct/union field parser requires a declarator after every member's type, so a C11 anonymous member (`struct S { int k; union { int a; float b; }; };`) is a parse error ("unexpected token") that fails the whole `cinclude`, for struct and union bodies alike. An anonymous body that has a member name (`union { ... } u;`) works since v0.1.34 (c2ast synthesizes a tag for it). Supporting the unnamed form would need both the parse and promoted field access (`s.a` reaching into the anonymous member), which SA's field resolution has no concept of. None of the headers targeted so far (including glibc's `pthread.h`) uses this form.

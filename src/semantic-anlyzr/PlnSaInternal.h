@@ -514,6 +514,22 @@ inline json normalizeCType(const json& type) {
 	return type;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// typeAliases_ holds types in native syntax's shape (what `type A = ...;`
+// writes), so a normalizeCType'd C typedef is written back into it: a struct
+// tag as prim(Tag), and the pointee's "const" dropped once "mutable" carries it.
+inline json cTypeAsAlias(const json& type) {
+	string tk = type.value("type-kind", "");
+	if (tk == "pntr")
+		return {{"type-kind", "pntr"}, {"mutable", type["mutable"]},
+		        {"base-type", cTypeAsAlias(type["base-type"])}};
+	if (tk == "struct")
+		return {{"type-kind", "prim"}, {"type-name", type["type-name"]}};
+	json t = type;
+	t.erase("const");
+	t.erase("typedef-name");
+	return t;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // True if every parameter/return type of a `func` node (already
 // normalizeCType'd) can be represented, i.e. is a signature a Palan function
 // can actually be checked against.

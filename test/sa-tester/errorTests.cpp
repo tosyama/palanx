@@ -3426,6 +3426,7 @@ TEST(sa_error, c_const_ptr_field)
 		{"error_574_c_const_ptr_field_write.pa", ":3:1: error: cannot write through read-only pointer '@T'"},
 		{"error_575_c_const_ptr_field_hop.pa", ":3:6: error: cannot write through read-only pointer field '@T'"},
 		{"error_576_c_ptr_field_bind_read_only.pa", ":4:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_577_c_const_ptr_typedef_write.pa", ":4:1: error: cannot write through read-only pointer '@T'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3435,6 +3436,16 @@ TEST(sa_error, c_const_ptr_field)
 		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
+}
+
+TEST(sa_error, c_func_ptr_typedef)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_578_c_func_ptr_typedef.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:1: error: unknown type 'FP'."), string::npos) << sa;
 }
 
 TEST(sa_error, ptr_ptr_field_chain)

@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+cinclude <time.h>;
+
+timer_t t;
+printf("%d\n", timer_create(CLOCK_MONOTONIC, NULL, @!t));
+
+itimerspec its;
+0 -> its.it_interval.tv_sec;   0 -> its.it_interval.tv_nsec;
+100 -> its.it_value.tv_sec;    0 -> its.it_value.tv_nsec;
+printf("%d\n", timer_settime(t, 0, @its, NULL));
+
+itimerspec cur;
+printf("%d\n", timer_gettime(t, @!cur));
+printf("%d\n", cur.it_value.tv_sec > 0);
+printf("%d\n", timer_delete(t));

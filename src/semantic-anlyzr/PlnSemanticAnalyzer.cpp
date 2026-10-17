@@ -1061,7 +1061,12 @@ void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 			string name = td["name"].get<string>();
 			cTypedefs_[name] = vt;
 			// LCOV_EXCL_EXCEPTION_BR_START
-			if (vt.contains("enum"))
+			if (tk == "pntr") {
+				// An unrepresentable pointee (e.g. a function) leaves the name unknown.
+				json n = normalizeCType(vt);
+				if (unrepresentableTypeName(n).empty())
+					registerTypeAliasChecked(stmt, name, cTypeAsAlias(n));
+			} else if (vt.contains("enum"))
 				registerTypeAliasChecked(stmt, name, vt);
 			else
 				registerTypeAliasChecked(stmt, name, {{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});

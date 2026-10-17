@@ -165,10 +165,10 @@ gen-ast then lifts that list onto the enclosing `cinclude` statement's `globals`
 Typedef definition model
 -------------------------
 Captured from every `typedef` declaration in a `cinclude`d C header whose resolved
-underlying type is `prim`, `user`, or a `strct`/`union`/`enum` that carries a `type-name` (including a
-name synthesized for a single, non-derived typedef of an otherwise tagless struct/union/enum
-body — see Variable type's `strct` case below). A pointer-bottomed typedef (e.g. `typedef void
-*timer_t;`) is deliberately not captured here — see the `typedef-name` Note below.
+underlying type is `prim`, `pntr` (e.g. `typedef void *timer_t;`), `user`, or a
+`strct`/`union`/`enum` that carries a `type-name` (including a name synthesized for a single,
+non-derived typedef of an otherwise tagless struct/union/enum body — see Variable type's `strct`
+case below).
 `typedef`s are captured regardless of whether any C function or global in the header
 references them, so a header of pure typedefs and no functions (e.g. `stdint.h`) still
 exports its types. palan-c2ast collects these into its own top-level `ast.typedefs` list,
@@ -333,8 +333,8 @@ or "pntr" for a pointer-bottomed typedef chain, e.g. `typedef void *timer_t;`) m
 `typedef-name` field — the original C typedef identifier (e.g. `"size_t"`). This is a
 c2ast/cinclude-only annotation. For type-kind "prim", SA registers it as a native type alias (see
 PalanReference.md §20 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
-For type-kind "pntr", the field is left in place; it is not registered as an explicit Palan alias
-type name and never reaches sa.json (C function signatures themselves aren't serialized there).
+For type-kind "pntr", the field is left in place and never reaches sa.json (C function signatures
+themselves aren't serialized there); the name itself is registered through `ast.typedefs`.
 This annotation is specific to the var-type node at the reference site that looked the typedef
 name up (a function parameter/return, a global, or a further typedef's underlying type as parsed)
 — it is never present on an `ast.typedefs` entry's own `var-type` (see Typedef definition model

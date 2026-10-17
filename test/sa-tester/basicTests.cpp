@@ -5698,6 +5698,28 @@ TEST(sa, c_ptr_field_mutable)
 	EXPECT_EQ(stmts[5]["vars"][0]["init"]["value-type"]["mutable"], false);
 }
 
+TEST(sa, c_ptr_typedef)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/262_c_ptr_typedef.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto pntr = [](json base, bool mut) {
+		return json{{"type-kind", "pntr"}, {"mutable", mut}, {"base-type", base}};
+	};
+	json i32 = {{"type-kind", "prim"}, {"type-name", "int32"}};
+	EXPECT_EQ(stmts[1]["vars"][0]["var-type"], pntr(i32, true));    // P
+	EXPECT_EQ(stmts[2]["vars"][0]["var-type"], pntr(i32, false));   // CP
+	EXPECT_EQ(stmts[3]["vars"][0]["var-type"], pntr(i32, true));    // PC: the pointer's own const is not a pointee permission
+	EXPECT_EQ(stmts[4]["vars"][0]["var-type"], pntr(i32, true));    // PA
+	EXPECT_EQ(stmts[5]["vars"][0]["var-type"],
+		pntr(pntr({{"type-kind", "prim"}, {"type-name", "int8"}}, true), true));    // PP
+	EXPECT_EQ(stmts[6]["vars"][0]["var-type"],
+		pntr({{"type-kind", "struct"}, {"type-name", "S"}}, true));    // SP
+	EXPECT_EQ(stmts[7]["vars"][0]["var-type"],
+		pntr({{"type-kind", "prim"}, {"type-name", "void"}}, true));    // timer_t
+}
+
 TEST(sa, block_type_scope)
 {
 	cleanTestEnv();

@@ -29,8 +29,6 @@ itimerspec its;
 1 -> its.it_value.tv_sec;      0 -> its.it_value.tv_nsec;
 printf("%ld\n", its.it_value.tv_sec);
 
-// timer_settime/timer_gettime need a real timer_t handle, but timer_create
-// is out of scope (struct sigevent has no field list) -- exercise the
-// signature with an invalid handle and check for the error return, same
-// pattern as timer_delete/timer_getoverrun in 124_time_h_category_a.pa.
+// An invalid handle exercises timer_gettime's itimerspec parameter without
+// creating a timer.
 printf("%d\n", timer_gettime(NULL, @!its) != int32(0));

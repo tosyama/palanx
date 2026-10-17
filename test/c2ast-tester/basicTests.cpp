@@ -459,6 +459,10 @@ TEST(c2ast, typedef_pointer_chain) {
     ASSERT_EQ((*g)["ret-type"]["base-type"]["type-kind"], "prim");
     ASSERT_EQ((*g)["ret-type"]["base-type"]["type-name"], "void");
     ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
+
+    ASSERT_EQ(ast["ast"]["typedefs"], json::parse(R"([
+        {"name":"level1_t","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"void"}}},
+        {"name":"level2_t","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"void"}}}])"));
 }
 
 TEST(c2ast, typedef_struct_tag) {
@@ -1346,11 +1350,13 @@ TEST(c2ast, typedef_section) {
         ASSERT_EQ((*anon)["var-type"]["type-name"], "Anon");
     }
 
-    // typedef void *P; -- pointer-bottomed typedefs are deliberately excluded
-    // from this section this version.
-    ASSERT_EQ(find_typedef("P"), nullptr);
+    {
+        json* p = find_typedef("P");
+        ASSERT_NE(p, nullptr);
+        ASSERT_EQ((*p)["var-type"]["type-kind"], "pntr");
+    }
 
-    ASSERT_EQ(typedefs.size(), 6u);
+    ASSERT_EQ(typedefs.size(), 7u);
 }
 
 // A header whose typedefs are never referenced by any C function -- stdint.h
@@ -1521,6 +1527,22 @@ TEST(c2ast, enum_capture) {
     for (auto& c : constants) anonA += c["name"] == "ANON_A";
     ASSERT_EQ(anonA, 1);
     ASSERT_EQ(find(constants, "UNKNOWN_M"), nullptr);
+}
+
+TEST(c2ast, typedef_pointer) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/042_typedef_pointer.h");
+    json ast = json::parse(output);
+    ASSERT_EQ(ast["ast"]["typedefs"], json::parse(R"([
+        {"name":"CP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int32","const":true}}},
+        {"name":"FP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"func",
+            "ret-type":{"type-kind":"prim","type-name":"int32"},
+            "parameters":[{"var-type":{"type-kind":"prim","type-name":"int32"}}]}}},
+        {"name":"P","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int32"}}},
+        {"name":"PC","var-type":{"type-kind":"pntr","const":true,"base-type":{"type-kind":"prim","type-name":"int32"}}},
+        {"name":"PP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int8"}}}},
+        {"name":"SP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"strct","type-name":"S"}}},
+        {"name":"VP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"void"}}}])"));
 }
 
 TEST(c2ast, undeclared_typedef) {

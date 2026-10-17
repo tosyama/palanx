@@ -1824,11 +1824,8 @@ int CParser::parse(json &ast)
 
 		json typedefs = json::array();
 		for (const auto &[name, vt] : typedefs_) {
-			// Pointer-bottomed typedefs stay unregistered this version: naming
-			// one would force a decision about which side of the @/@! mutability
-			// split a bare pointer alias falls on.
 			string tk = vt.value("type-kind", "");
-			if (tk == "prim" || tk == "user" || ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")))
+			if (tk == "prim" || tk == "pntr" || tk == "user" || ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")))
 				typedefs.push_back({{"name", name}, {"var-type", vt}});
 		}
 		if (!typedefs.empty())
