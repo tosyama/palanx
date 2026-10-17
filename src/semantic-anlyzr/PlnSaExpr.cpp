@@ -664,29 +664,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 
 	} else if (expr_type == "cast") {
-		const PlnType* target  = registry_.fromJson(expr["target-type"]);
-		json src               = sa_expression(expr["src"]);
-		const PlnType* srcType = registry_.fromJson(src["value-type"]);
-		TypeCompat compat      = typeCompat(srcType, target, registry_);
-		if (compat == TypeCompat::Identical) {
-			return src;
-		} else if (compat == TypeCompat::ExplicitCast && isBoolPrim(target)) {
-			// C's conversion to _Bool: any nonzero value is 1, not a truncation.
-			// LCOV_EXCL_EXCEPTION_BR_START
-			json zero = isFloatPrim(srcType)
-				? json{{"expr-type", "lit-flo"}, {"value", "0.0"}, {"value-type", src["value-type"]}}
-				: json{{"expr-type", "lit-int"}, {"value", "0"}, {"value-type", src["value-type"]}};
-			return {{"expr-type", "cmp"}, {"op", "!="}, {"left", src}, {"right", zero},
-			        {"value-type", expr["target-type"]}};
-			// LCOV_EXCL_EXCEPTION_BR_STOP
-		} else if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast) {
-			return wrapConvert(src, registry_.toJson(target));
-		} else {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
-				typeDisplayName(src["value-type"]),
-				typeDisplayName(expr["target-type"])) << endl;
-			exit(1);
-		}
+		return sa_expr_cast(expr);
 
 	} else if (expr_type == "call") {
 		const string& callName = expr["name"].get<string>();
@@ -1171,17 +1149,82 @@ json PlnSemanticAnalyzer::aliasCast(const json& expr, const string& typeName)
 	requireNameableType(expr, written);
 	json target = resolveTypeAlias(written);
 	if (target == written) return json();
-	if (target.value("type-kind", "") != "prim" || isStructType(target)) {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastTargetNotPrim, typeName) << endl;
-		exit(1);
-	}
 	if (expr["args"].size() != 1) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastArgCount, typeName) << endl;
 		exit(1);
 	}
-	json cast = {{"expr-type", "cast"}, {"target-type", target}, {"src", expr["args"][0]}};
+	json cast = {{"expr-type", "cast"}, {"target-type", written}, {"src", expr["args"][0]}};
 	if (expr.contains("loc")) cast["loc"] = expr["loc"];
 	return sa_expression(cast);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
+{
+	const json& written = expr["target-type"];
+	requireKnownTypeNames(expr, written);
+	json resolved = resolveTypeAliasDeep(written);
+	string tk = resolved.value("type-kind", "");
+	if (written.value("type-kind", "") == "arr") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastToOwnedArr) << endl;
+		exit(1);
+	}
+	if (tk == "arr" || isStructType(resolved)) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InvalidCastTarget, typeDisplayName(written)) << endl;
+		exit(1);
+	}
+	json src = sa_expression(expr["src"]);
+	if (!src.contains("value-type")) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+		exit(1);
+	}
+	const json& from = src["value-type"];
+	// A struct value is held as a pointer to its storage, but it is not one.
+	bool fromPntr = from.value("type-kind", "") == "pntr" && !isStructStorage(from);
+	auto incompatible = [&](const json& target) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
+			typeDisplayName(from), typeDisplayName(target)) << endl;
+		exit(1);
+	};
+
+	// A pointer cast changes no bits: it may retarget the pointee, change its
+	// permission, or view the memory as a borrowed array, unchecked as `p[i]` is.
+	// A pointer only fits a 64-bit integer, so narrower integers are rejected
+	// rather than silently dropping the upper half.
+	auto isWord = [](const json& t) {
+		string n = t.value("type-kind", "") == "prim" && !t.contains("enum") ? t.value("type-name", "") : "";
+		return n == "int64" || n == "uint64";
+	};
+	if (tk == "pntr") {
+		json target = deepNormalizePrimToStruct(normalizeArrBorrowType(expr, resolved));
+		if (from == target) return src;
+		bool toArr = target.contains("arr-size");
+		if (!fromPntr && (toArr || !isWord(from))) incompatible(target);
+		return wrapConvert(src, target);
+	}
+	if (fromPntr) {
+		if (!isWord(resolved)) incompatible(resolved);
+		return wrapConvert(src, resolved);
+	}
+
+	const PlnType* target  = registry_.fromJson(resolved);
+	const PlnType* srcType = registry_.fromJson(from);
+	TypeCompat compat      = typeCompat(srcType, target, registry_);
+	if (compat == TypeCompat::Identical) {
+		return src;
+	} else if (compat == TypeCompat::ExplicitCast && isBoolPrim(target)) {
+		// C's conversion to _Bool: any nonzero value is 1, not a truncation.
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json zero = isFloatPrim(srcType)
+			? json{{"expr-type", "lit-flo"}, {"value", "0.0"}, {"value-type", from}}
+			: json{{"expr-type", "lit-int"}, {"value", "0"}, {"value-type", from}};
+		return {{"expr-type", "cmp"}, {"op", "!="}, {"left", src}, {"right", zero},
+		        {"value-type", resolved}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	} else if (compat == TypeCompat::ImplicitWiden || compat == TypeCompat::ExplicitCast) {
+		return wrapConvert(src, registry_.toJson(target));
+	}
+	incompatible(resolved);
+	return json(); // LCOV_EXCL_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)

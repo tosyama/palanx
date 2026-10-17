@@ -2047,3 +2047,32 @@ TEST(gen_ast, chain_call) {
 	ASSERT_EQ(stmts[10]["stmt-type"], "tapple-assign");
 	ASSERT_EQ(stmts[10]["value"]["expr-type"], "chain-call");
 }
+
+TEST(gen_ast, as_cast) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/136_as_cast.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 7);
+
+	const auto& prim = stmts[0]["body"];
+	ASSERT_EQ(prim["expr-type"], "cast");
+	ASSERT_EQ(prim["target-type"]["type-name"], "int32");
+	ASSERT_EQ(prim["src"]["name"], "x");
+	ASSERT_TRUE(prim.contains("loc"));
+
+	const auto& borrow = stmts[1]["body"]["target-type"];
+	ASSERT_EQ(borrow["type-kind"], "pntr");
+	ASSERT_EQ(borrow["mutable"], true);
+	ASSERT_EQ(borrow["base-type"]["type-kind"], "arr");
+
+	// 'as' binds tighter than a binary operator and looser than a unary one.
+	ASSERT_EQ(stmts[2]["body"]["expr-type"], "add");
+	ASSERT_EQ(stmts[2]["body"]["right"]["expr-type"], "cast");
+	ASSERT_EQ(stmts[3]["body"]["expr-type"], "cast");
+	ASSERT_EQ(stmts[4]["body"]["expr-type"], "cmp");
+	ASSERT_EQ(stmts[4]["body"]["left"]["expr-type"], "cast");
+	ASSERT_EQ(stmts[5]["body"]["array"]["expr-type"], "cast");
+	ASSERT_EQ(stmts[6]["body"]["target-type"]["type-name"], "L.T");
+}

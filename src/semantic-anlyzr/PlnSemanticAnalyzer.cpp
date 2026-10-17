@@ -572,7 +572,9 @@ void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json&
 {
 	bool namesBorrow = saValue.value("expr-type","") == "id" && saValue.contains("var-type")
 	                   && isArrBorrowVar(saValue["var-type"]);
-	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow) {
+	// Only an explicit cast converts into a borrowed array type.
+	bool castBorrow = saValue.value("expr-type","") == "convert";
+	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow && !castBorrow) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowNeedsAddrOf) << endl;
 		exit(1);
 	}

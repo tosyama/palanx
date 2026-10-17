@@ -5196,6 +5196,27 @@ TEST(sa, alias_cast)
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value-type"]["type-name"], "int64");
 }
 
+TEST(sa, as_cast)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/263_as_cast.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto init = [&](size_t i) -> const json& { return stmts[i]["vars"][0]["init"]; };
+	// '@T' -> '@!T' is allowed by an explicit cast.
+	ASSERT_EQ(init(2)["expr-type"], "convert");
+	ASSERT_EQ(init(2)["value-type"]["mutable"], true);
+	ASSERT_EQ(init(3)["value-type"]["type-name"], "uint64");
+	ASSERT_EQ(init(4)["from-type"]["type-name"], "uint64");
+	ASSERT_EQ(init(6)["value-type"]["arr-size"], 4);
+	ASSERT_EQ(init(6)["value-type"]["base-type"]["type-name"], "int32");
+	// A pointer alias casts like the type it names.
+	ASSERT_EQ(init(8)["value-type"]["base-type"]["type-name"], "int32");
+	ASSERT_EQ(init(9)["value-type"]["type-name"], "int32");
+	// A cast to the source's own type leaves no convert node.
+	ASSERT_EQ(init(10)["expr-type"], "id");
+}
+
 TEST(sa, struct_ptr_elem_copy)
 {
 	cleanTestEnv();

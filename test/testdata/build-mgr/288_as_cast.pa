@@ -1,0 +1,36 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+
+// Retarget the pointee: read an int64's low and high halves.
+int64 big = 4294967298;
+@!int32 halves = @!big as @!int32;
+printf("%d %d\n", halves[0], halves[1]);
+
+// Drop read-only permission for a C parameter that is not const.
+@int8 env = "PALAN_AS_CAST=ok";
+putenv(env as @!int8);
+printf("%s\n", getenv("PALAN_AS_CAST"));
+
+// Round-trip through a 64-bit integer.
+int32 x = 7;
+uint64 addr = @!x as uint64;
+@!int32 back = addr as @!int32;
+printf("%d %d\n", back[0], addr == @!x as uint64);
+
+// View a flat buffer as a 2D borrowed array.
+@!uint8 pix = calloc(uint64(6), uint64(1));
+@![2]$[3]uint8 img = pix as @![2]$[3]uint8;
+9 -> img[1][2];
+printf("%d\n", pix[5]);
+
+// Pass a pointer where a sized borrowed array is expected, and copy it out.
+func fill(@![4]int32 arr) {
+	40 -> arr[3];
+}
+@!int32 buf = calloc(uint64(4), uint64(4));
+fill(buf as @![4]int32);
+[4]int32 copy;
+buf as @[4]int32 -> copy;
+printf("%d %d\n", copy[3], buf as @!int32 == NULL);
+free(pix);
+free(buf);

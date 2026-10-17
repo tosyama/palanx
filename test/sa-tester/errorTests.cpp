@@ -3100,10 +3100,32 @@ TEST(sa_error, circular_type_decl)
 TEST(sa_error, alias_cast)
 {
 	const pair<string, string> cases[] = {
-		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a primitive or enum type can be a cast target."},
-		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a primitive or enum type can be a cast target."},
-		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a primitive or enum type can be a cast target."},
+		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
 		{"error_439_cast_alias_arg_count.pa", ":2:8: error: cast 'U8(...)' takes exactly one argument."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, as_cast)
+{
+	const pair<string, string> cases[] = {
+		{"error_579_cast_owned_arr.pa", ":2:14: error: cannot cast to an owned array: only a borrowed array ('@[n]T'/'@![n]T') can be a cast target."},
+		{"error_580_cast_ptr_to_narrow_int.pa", ":3:11: error: Cannot cast type '@!int32' to 'int32'."},
+		{"error_581_cast_int_to_ptr.pa", ":2:13: error: Cannot cast type 'int32' to '@!int32'."},
+		{"error_582_cast_int_to_borrowed_arr.pa", ":2:16: error: Cannot cast type 'uint64' to '@![4]int32'."},
+		{"error_583_cast_struct_value.pa", ":3:7: error: cannot cast to 'P': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_584_cast_struct_to_ptr.pa", ":3:13: error: Cannot cast type 'P' to '@!uint8'."},
+		{"error_585_cast_enum_to_ptr.pa", ":3:13: error: Cannot cast type 'Big' to '@!int32'."},
+		{"error_586_cast_ptr_to_enum.pa", ":3:9: error: Cannot cast type '@!int32' to 'Big'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

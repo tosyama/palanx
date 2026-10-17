@@ -599,9 +599,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "type '" + arg1 + "' depends on itself: " + arg2 + ".";
 
-		case E_CastTargetNotPrim:
+		case E_CastToOwnedArr:
+			return "cannot cast to an owned array: only a borrowed array ('@[n]T'/'@![n]T') can be a cast target.";
+
+		case E_InvalidCastTarget:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot cast to '" + arg1 + "': only a primitive or enum type can be a cast target.";
+			return "cannot cast to '" + arg1 + "': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target.";
 
 		case E_UnsupportedCFieldType:
 			BOOST_ASSERT(arg1 != "\x01");

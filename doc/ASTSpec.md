@@ -489,8 +489,9 @@ Expression model
   10. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
-  11. cast - Explicit type cast expression (`type-name(expr)` syntax). Only a built-in type
-    keyword produces one; an enum cast `Name(expr)` is emitted as a `call` and SA treats it as a cast.
+  11. cast - Explicit type cast expression (`expr as type` or `type-name(expr)`). `as` takes any
+    type a declaration accepts; `type-name(expr)` produces a `cast` only for a built-in type
+    keyword — an alias or enum cast `Name(expr)` is emitted as a `call` and SA treats it as a cast.
     - target-type\* - Target Variable type object
     - src\* - Source expression model
   12. arr-index - Array element access (`arr[i]`)
@@ -533,7 +534,7 @@ Expression model
       chains produce nested `field-access` objects), `arr-index` for a `[expr]`-indexed target,
       `call` for a whole call `f(...)` (`@f()`), `member-call` for a whole method-form or
       module-qualified call `x.f(...)` (`@v.f()`, `@M.f()`, `@f().g()`), or `not-impl` for
-      anything else (a tuple grouping, a cast, a call as an index or field base — SA rejects these
+      anything else (a tuple grouping, a call as an index or field base — SA rejects these
       without needing to inspect their shape further)
     - mutable\* - `true` for `@!`, `false` for `@`
   19. not-impl - An expression the grammar parses but the compiler does not implement (e.g. a

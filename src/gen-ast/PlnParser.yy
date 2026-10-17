@@ -265,6 +265,7 @@ struct BodyList {
 %left '<' '>' OPE_LE OPE_GE
 %left '+' '-'
 %left '*' '/' '%' '&' '|' '^'
+%left KW_AS
 %right UNARY_MINUS '!' '~'
 %left '.'
 
@@ -791,6 +792,8 @@ expression: term
 	{ $$ = {{"expr-type", "bitor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '^' expression
 	{ $$ = {{"expr-type", "bitxor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression KW_AS type_expr
+	{ $$ = {{"expr-type", "cast"}, {"target-type", move($3)}, {"src", move($1)}}; LOC($$, @$); }
 	| '~' expression %prec UNARY_MINUS
 	{ $$ = {{"expr-type", "bitnot"}, {"operand", $2}}; LOC($$, @$); }
 	| expression OPE_LE expression

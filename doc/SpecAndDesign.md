@@ -132,7 +132,8 @@ Design:
  resolved to C functions) and emitted to sa.json.
  Type checking is performed during expression processing. When an implicit widening conversion is required
  (e.g., int32 value used in an int64 context), palan-sa inserts a `convert` expression node into sa.json.
- Explicit casts (`type-name(expr)`) allow narrowing and signed↔unsigned conversions; palan-sa resolves
+ Explicit casts (`expr as type`, or `type-name(expr)` for a named type) allow narrowing, signed↔unsigned,
+ and pointer conversions; palan-sa resolves
  the `cast` AST node to a `convert` node (or removes it for identical types) and emits `convert` to sa.json.
 
 ### 3.5 Code Generator (palan-codegen)

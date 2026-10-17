@@ -4,14 +4,6 @@ Open issues and topics for future consideration.
 
 ---
 
-## 1. Cast Syntax with Compound Types
-
-**Summary:** The current cast syntax is `type-name(expr)`, but the grammar is undefined when array types (`[]T`) or reference types are involved.
-
-e.g. How should `[]int32(x)` or similar constructs be written?
-
----
-
 ## 6. Borrowed Pointer Lifetimes Are Unchecked
 
 **Summary:** The address-of operators (`@`/`@!`) produce a borrowed pointer that is never allocated and never freed on its own — the object it points into keeps its own ownership and free timing unchanged. There is currently no check that the pointer does not outlive that object. A pointer taken from a struct field or array element inside a block can be assigned to a variable declared outside the block; once the block ends and the owning variable is freed, the outer pointer is left dangling with no diagnostic, e.g.:

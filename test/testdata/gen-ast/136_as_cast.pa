@@ -1,0 +1,7 @@
+x as int32;
+p as @![4]int32;
+a + b as int64;
+-x as uint32;
+p as @!int32 == q;
+(p as @!int8)[0];
+x as L.T;

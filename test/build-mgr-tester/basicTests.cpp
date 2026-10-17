@@ -2968,3 +2968,9 @@ TEST(build_mgr, c_ptr_typedef_timer) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/287_c_ptr_typedef_timer.pa");
 	ASSERT_EQ(output, "0\n0\n0\n1\n0\n");
 }
+
+TEST(build_mgr, as_cast) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/288_as_cast.pa");
+	ASSERT_EQ(output, "2 1\nok\n7 1\n9\n40 0\n");
+}

@@ -171,17 +171,50 @@ Within the same signedness group, narrower types widen automatically to wider ty
 - `int8` → `int16` → `int32` → `int64`
 - `uint8` → `uint16` → `uint32` → `uint64`
 
-### Explicit Cast (Narrowing / Sign Conversion)
+### Explicit Cast
 
-Narrowing conversions and signed↔unsigned conversions require an explicit cast using the `type(expr)` syntax:
+An explicit cast is written `expr as T`, where `T` is any type as a declaration writes it. A
+type with a name — a primitive, an enum, or a type alias — can also be written `T(expr)`; the
+two forms mean the same thing:
 
 ```palan
 int64 x = 100;
-printf("%d\n", int32(x));   // explicit narrowing cast
+printf("%d\n", x as int32);   // explicit narrowing cast
+printf("%d\n", int32(x));     // the same cast
 ```
 
-The target may also be a type alias, including a C typedef such as `size_t`, when it names a
-primitive or enum type (`MyInt(x)`).
+A cast can convert:
+
+- Between primitive and enum types — narrowing, a signed↔unsigned change, float↔integer, or
+  into `bool` (any nonzero value becomes 1) or an enum.
+- From a pointer to another pointer type, with any pointee type and either permission —
+  `@T as @!T` drops the read-only restriction, for a C function whose parameter is not
+  `const` but which doesn't write through it. No bits change; reading or writing through the
+  result as the new type is the programmer's responsibility, as in C.
+- Between a pointer and `int64`/`uint64`, in either direction. A narrower integer is rejected
+  rather than dropping the upper half of the address.
+- From a pointer or an array to a borrowed array (`@[n]T`/`@![n]T`, including `@[n]$[m]T`),
+  which views the memory with sizes known at compile time — to pass it where a sized borrowed
+  array is expected, copy it into an array with `->`, or index it in two dimensions. As with
+  `p[i]`, nothing checks that the memory really holds that many elements.
+
+```palan
+cinclude <stdlib.h>;
+
+@!uint8 pix = calloc(uint64(640 * 480), uint64(1));
+@![480]$[640]uint8 img = pix as @![480]$[640]uint8;
+255 -> img[10][20];
+```
+
+An owned array (`[n]T`) or a struct value can't be a cast target — a cast never creates
+ownership — and a struct value can't be cast into a pointer: take its address first
+(`@!s as @!uint8`).
+
+`as` binds tighter than every binary operator and looser than a unary one: `p as @!int32 == NULL`
+compares the cast pointer, `a + b as int64` casts only `b`, and `-x as uint32` casts `-x`.
+Indexing binds tighter than `as`, so index a cast pointer as `(p as @!int32)[0]`. The result of a
+cast can be read and indexed, but writing through it (`5 -> (p as @!int32)[0]`) or accessing a
+field of it is not supported in this version: bind it to a variable first.
 
 ### Usual Arithmetic Conversions (Binary Operators and Comparisons)
 
@@ -262,7 +295,7 @@ and is currently a compile error. It is not an assignment — assignment is writ
 | Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
-| Explicit cast | `type(expr)` | `int32(x)`, `Color(n)`, `MyInt(x)` |
+| Explicit cast | `expr as type`, `type(expr)` | `p as @!int32`, `int32(x)`, `Color(n)` |
 | Enumerator | `Name.X` | `Color.RED` |
 | Type size | `sizeof(type)` | `sizeof(Vec3f)` |
 | Logical AND | `expr && expr` | `a && b` |
@@ -270,8 +303,8 @@ and is currently a compile error. It is not an assignment — assignment is writ
 | Logical NOT | `!expr` | `!x` |
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
 
-Operator precedence (high to low): unary minus / `!` / `~`, `* / % & | ^`, `+ -`, comparisons,
-`&&`, `||`, `->`. All binary operators are left-associative.
+Operator precedence (high to low): unary minus / `!` / `~`, `as`, `* / % & | ^`, `+ -`,
+comparisons, `&&`, `||`, `->`. All binary operators are left-associative.
 
 Note the bitwise operators `&`/`|`/`^` share a precedence class with `*`/`/`/`%` — one level
 **above** `+`/`-` — rather than C's much lower placement below comparisons. This is a deliberate
@@ -758,8 +791,8 @@ printf("%d %d %d %d\n", arr[0], arr[1], arr[2], arr[3]);   // 1 3 4 5
   `void` can only appear as a pointer's pointee (`@void`/`@!void`) — a bare `void x;` variable is
   still rejected. A `@void`/`@!void` value is compatible with any other pointer type in both
   directions, so assigning it to a concretely-typed pointer variable (as `@int32 x = a;` does
-  above) gives it a type to read or write through. Indexing or dereferencing a void pointer
-  directly (`a[0]`) without first assigning it a concrete pointer type is a compile error.
+  above) gives it a type to read or write through, as does a cast (`(a as @int32)[0]`). Indexing
+  or dereferencing a void pointer directly (`a[0]`) is a compile error.
 - A function registered with `atexit`/`at_quick_exit` must not read or write any of the calling
   scope's Palan-owned local variables: program exit frees all still-live owned locals before
   invoking the registered handlers, so by the time the handler runs, that storage is gone.

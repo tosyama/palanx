@@ -595,7 +595,7 @@ SA-only expression kinds (not present in AST JSON):
 
 - convert - Type conversion inserted by SA. Wraps an expression whose value-type
   differs from the required type. Used for both implicit widening and explicit casts
-  (narrowing, signed↔unsigned). The `cast` AST node is consumed by SA and replaced
+  (narrowing, signed↔unsigned, and the pointer casts below). The `cast` AST node is consumed by SA and replaced
   by `convert` (or removed if Identical); it does not appear in sa.json. A cast to `bool`
   from any other numeric type becomes `convert(cmp(src != 0))` (`0.0` for a float source), so a
   nonzero value yields 1 instead of being truncated.
@@ -613,6 +613,12 @@ SA-only expression kinds (not present in AST JSON):
     "src": {"expr-type": "id", "name": "x", ...}
   }
   ```
+
+  A cast whose target is a pointer type is not decided by `typeCompat`: from a pointer (not a
+  struct value) or an `int64`/`uint64`, any pointer type and permission is accepted, and a
+  borrowed array target (`pntr` with `arr-size`) only from a pointer or array. A pointer casts to
+  a prim only when that is `int64`/`uint64`. Codegen lowers every such `convert` to a plain
+  64-bit move. A borrowed array binding accepts a `convert` as its source, alongside `@name`.
 
   Example: `int32(x)` where x is int64 (explicit narrowing cast)
   ```json

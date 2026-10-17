@@ -1,0 +1,13 @@
+cinclude <stdlib.h>;
+type IP = @!int32;
+int32 x = 5;
+@int32 r = @x;
+@!int32 w = r as @!int32;
+uint64 a = w as uint64;
+@!int32 b = a as @!int32;
+@!uint8 raw = malloc(uint64(16));
+@![4]int32 v = raw as @![4]int32;
+@!void vp = @!x;
+@!int32 c = IP(vp);
+int32 n = 3.5 as int32;
+@!int32 d = w as @!int32;
