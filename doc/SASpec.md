@@ -1062,7 +1062,7 @@ keeps an `isUnion` flag used only by the layout computation and by diagnostic wo
 ### Incomplete struct types
 
 A registered struct tag may be *incomplete* — its name is known but no field layout is available,
-the same distinction C makes for a forward-declared or opaque tag (e.g. `FILE`). `StructDef` has
+the same distinction C makes for a forward-declared or opaque tag (e.g. `DIR`). `StructDef` has
 `bool isComplete` and `string incompleteReason`; when `!isComplete`, `fields` is empty and
 `totalSize` is `-1` (there is no partial layout — either the layout is fully known or not known
 at all). `incompleteReason` is one of exactly two values:

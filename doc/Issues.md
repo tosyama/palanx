@@ -24,12 +24,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 8. `_IO_FILE` Could Be Completed With `sizeof` Support
-
-**Summary:** `FILE` (`_IO_FILE`) is registered as an incomplete struct (see SASpec.md's Incomplete struct types) because one field's array size expression, `char _unused2[15*sizeof(int) - 4*sizeof(void*) - sizeof(size_t)];`, cannot be evaluated — c2ast's constant-expression evaluator (v0.1.29's macro-constant folding, see ASTSpec.md's Constant definition model) has no `sizeof` operator. Adding `sizeof` evaluation there (knowing each primitive/pointer type's size) would let `_IO_FILE` register as a complete struct, closing the specific gap the incomplete-type mechanism was introduced to paper over. This is genuinely separate work from the fold added in v0.1.29: that fold only handles literals and the arithmetic/bitwise operators, not a type-querying operator.
-
----
-
 ## 9. Function-Like Macro Export
 
 **Summary:** Only object-like `#define` macros are ever exported as Palan constants (see ASTSpec.md's Constant definition model). A function-like macro such as `S_ISDIR(m)` (`sys/stat.h`) is not exported in any form — referencing its name from Palan is `Undefined function 'S_ISDIR'`, a normal diagnostic, not a compiler abort. `S_IFMT`/`S_IFDIR` etc. are already exported as plain constants, so `(m & S_IFMT) == S_IFDIR` can be written directly with v0.1.29's bitwise operators; a dedicated export mechanism for the macro-as-function form itself would need to translate arbitrary C macro bodies into Palan expressions, which is a new capability, not an extension of the constant-folding added this iteration.
@@ -69,12 +63,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 15. No CRT Startup Objects Are Linked — `palan-codegen` Supplies ELF/libc Glue Itself
 
 **Summary:** The build manager links a binary with a bare `ld <objs> -lc [-l<lib>...]` (`src/build-mgr/main.cpp`; the `-l<lib>` flags come from `link` clauses on `cinclude`, v0.1.31), never crt1.o/crti.o/crtbegin.o, and `palan-codegen` emits `_start` itself. This works for ordinary programs, but v0.1.30's `atexit` support surfaced two gaps those missing CRT objects would otherwise have closed: `__dso_handle` was undefined (glibc's `atexit` forwards to `__cxa_atexit(func, arg, __dso_handle)`), and `.note.GNU-stack` was never emitted (so linking any note-carrying libc object made `ld` mark the whole binary's stack executable, `PT_GNU_STACK` RWE, with a linker warning). Both are now patched over by `PlnX86CodeGen::emitElfCrtGlue()`, which emits `__dso_handle` on the entry object and `.note.GNU-stack` unconditionally on every object (see SpecAndDesign.md §3.5). This closes the two gaps v0.1.30 actually hit, but a real CRT strategy — linking via crtbegin/crtend, PIE support, or driving the link through `cc` instead of bare `ld` — remains undesigned; the next libc-glue requirement this same root cause produces will need one. To be revisited together with the design for receiving command-line arguments, since switching to a C `main` linked through `cc` changes the program's entry point.
-
----
-
-## 16. `select`/`pselect` Remain Unusable — `fd_set`'s `sizeof`-Sized Array Field
-
-**Summary:** v0.1.30's anonymous-struct-typedef support (c2ast synthesizing a struct tag from a typedef name) makes `fd_set`'s and `__sigset_t`'s typedef names resolve, and `select`/`pselect`'s signatures now type-check. But `fd_set`'s only field is an array sized by a `sizeof`-based constant expression (`__FD_SETSIZE / __NFDBITS`, ultimately involving `sizeof`), which c2ast's constant-expression evaluator still cannot fold — the same root cause as item 8's `_IO_FILE` gap. Without a folded size, the field has no known layout, so `fd_set` registers as an incomplete struct and cannot actually be allocated or written to, leaving `select`/`pselect` callable in name only. Resolved by the same fix item 8 calls for: `sizeof` evaluation in c2ast's constant folder.
 
 ---
 

@@ -1459,7 +1459,7 @@ TEST(sa_error, c_unsupported_union_param)
 TEST(sa_error, c_unsupported_enum_param)
 {
 	// `void pick(enum Color c);` where c2ast can't compute Color's values
-	// (`= sizeof(int)`), so the enum is never registered.
+	// (`= sizeof(struct Opaque)`, an incomplete type), so the enum is never registered.
 	// Covers: sa_expr_call -> requireSupportedCFuncSig
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -2959,7 +2959,7 @@ TEST(sa_error, sizeof)
 {
 	const pair<string, string> cases[] = {
 		{"error_406_sizeof_unknown_type.pa", ":1:12: error: unknown type 'Foo'."},
-		{"error_407_sizeof_incomplete_struct.pa", ":2:12: error: struct '_IO_FILE' has no known layout"},
+		{"error_407_sizeof_incomplete_struct.pa", ":2:12: error: struct '__dirstream' is only forward-declared"},
 		{"error_408_sizeof_unsized_arr.pa", ":1:12: error: every array size in the type of 'sizeof' must be a compile-time constant."},
 		{"error_409_sizeof_arr_size_not_const.pa", ":2:12: error: every array size in the type of 'sizeof' must be a compile-time constant."},
 		{"error_410_sizeof_embed_prim.pa", ":1:12: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},

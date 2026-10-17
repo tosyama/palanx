@@ -1,0 +1,22 @@
+cinclude <sys/select.h>;
+cinclude <unistd.h>;
+cinclude <stdio.h>;
+
+[2]int32 fds;
+pipe(fds);
+write(fds[1], "x", 1);
+
+// No shift operator yet: build the descriptor's bit by doubling.
+int64 bit = 1;
+int32 i = 0;
+while i < fds[0] {
+	bit * 2 -> bit;
+	i + 1 -> i;
+}
+
+fd_set rfds;
+bit -> rfds.__fds_bits[0];
+printf("%d\n", select(fds[0] + 1, @!rfds, NULL, NULL, NULL));
+printf("%d\n", rfds.__fds_bits[0] == bit);
+close(fds[0]);
+close(fds[1]);

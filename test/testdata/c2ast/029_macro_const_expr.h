@@ -11,7 +11,7 @@
 #define DIVZERO  (1 / 0)              /* skipped */
 #define BIGSHIFT (1 << 64)            /* skipped */
 #define OVERFLOWED (0x7fffffffffffffff * 2)  /* skipped */
-#define SIZED  (4 * sizeof(int))      /* skipped: sizeof stays null */
+#define SIZED  (4 * sizeof(int))      /* 16, typed size_t */
 #define IDENT  (UNKNOWN_NAME + 1)     /* skipped: identifier stays null */
 #define SUFFIXED (1L + 1)             /* 2, typed long */
 int f(void);

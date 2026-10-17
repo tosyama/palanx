@@ -1148,13 +1148,11 @@ TEST(build_mgr, bitwise_ops) {
 }
 
 TEST(build_mgr, incomplete_struct_handle) {
-	// Regression: registerCStruct used to drop the whole tag when one field
-	// (glibc's "_unused2", a size-expr c2ast can't evaluate) couldn't be laid
-	// out. It now registers _IO_FILE as incomplete, so a non-owning pointer
-	// declaration (no layout needed) builds and runs.
+	// A forward-declared-only tag from a real header is usable through a
+	// non-owning pointer, which needs no layout.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/147_incomplete_struct_handle.pa");
-	ASSERT_EQ(output, "ok\n");
+	ASSERT_EQ(output, "0\n");
 }
 
 TEST(build_mgr, file_handle) {
@@ -2973,4 +2971,16 @@ TEST(build_mgr, as_cast) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/288_as_cast.pa");
 	ASSERT_EQ(output, "2 1\nok\n7 1\n9\n40 0\n");
+}
+
+TEST(build_mgr, select_fd_set) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/289_select_fd_set.pa");
+	ASSERT_EQ(output, "1\n1\n");
+}
+
+TEST(build_mgr, file_layout) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/290_file_layout.pa");
+	ASSERT_EQ(output, "1\n");
 }

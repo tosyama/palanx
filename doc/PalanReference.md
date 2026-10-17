@@ -342,7 +342,7 @@ A call can follow `->` too; see [Chained Calls](#chained-calls).
 `sizeof(type)` is the byte size of a type, as C's `sizeof` gives it, and is typed like an
 unsigned integer literal (`uint64` unless the context is another unsigned type). Its operand is
 a type, not an expression. A struct, including a `cinclude`d one, has its C layout size; an
-incomplete struct such as `FILE` is an error. An array is the total size of its elements, and
+incomplete struct such as `DIR` is an error. An array is the total size of its elements, and
 every size must be a compile-time constant. Only a `$` element is stored in the array itself:
 a struct or row element without `$` is a pointer, so `sizeof([3]Vec3f)` is `3 * 8` while
 `sizeof([3]$Vec3f)` is `3 * sizeof(Vec3f)`.
@@ -559,7 +559,7 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   [Type Aliases](#20-type-aliases)). Typedefs that resolve to a struct (e.g. `FILE`, `typedef struct
   _IO_FILE FILE;`, including a multi-level chain) are registered and usable the same way as a
   native struct type — see [Incomplete Struct Types](#incomplete-struct-types-opaque-handles) below
-  for the common case where the struct's own layout isn't fully known. This includes a struct body
+  for the case where the struct's own layout isn't known. This includes a struct body
   with no tag of its own (`typedef struct { int quot; int rem; } div_t;`) — the typedef's own name
   is used as the struct's tag, so `div_t`/`ldiv_t`/`lldiv_t` (from `stdlib.h`'s `div`/`ldiv`/`lldiv`)
   are usable struct types exactly like a tagged one.
@@ -589,7 +589,10 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   bare integer literal, a pointer-cast of one (e.g. `#define NULL ((void *)0)`), and an
   arithmetic or bitwise expression built from `| & ^ << >> + - * / %` over such forms (e.g.
   `sys/stat.h`'s `S_IRWXU`, defined as `(S_IREAD|S_IWRITE|S_IEXEC)`) — including one that
-  references another already-defined macro (`#define S_IFDIR __S_IFDIR`).
+  references another already-defined macro (`#define S_IFDIR __S_IFDIR`). An operand may be
+  C's `sizeof(type)`, which folds to the type's size as `size_t` when its layout is known (e.g.
+  `sys/select.h`'s `__NFDBITS`, `(8 * (int) sizeof (__fd_mask))`). The same folding sizes a C
+  struct's array fields, so `fd_set` is a complete struct and `select` can be called with it.
 - A macro whose body doesn't fold this way — a function-like macro referenced without a call
   (e.g. `S_ISDIR`, which takes an argument), a string literal, a relational/equality/logical/
   ternary expression, or a reference to an identifier that never resolves — is left untouched.
@@ -626,8 +629,8 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   `st.st_mode & S_IFMT` is `uint32` because `S_IFMT` takes `st_mode`'s type, and ncurses'
   `init_pair(1, COLOR_RED, COLOR_BLACK)` passes the constants to `short` parameters without a
   cast.
-- A macro constant whose type C fixes — an unsigned or long suffix (`1U`, `5L`) or an integer
-  cast, as in ncurses' `A_REVERSE` (`unsigned int`) — keeps that type, and meets other operands
+- A macro constant whose type C fixes — an unsigned or long suffix (`1U`, `5L`), `sizeof`, or an
+  integer cast, as in ncurses' `A_REVERSE` (`unsigned int`) — keeps that type, and meets other operands
   through the [usual arithmetic conversions](#3-type-system) like any typed value.
 - Substitution is text-order only, not lexically scoped like a cincluded C function or `const`:
   a reference resolves against whichever cincluded header defines the name first, textually
@@ -890,8 +893,8 @@ int32 cs = cinfo.in_color_space;     // widens to its base type
   (`#define X (A + 1)`) is a plain integer constant, like any other [macro constant](#macro-constants).
 - The enumerators of an enum with neither a tag nor a typedef name (`enum { A, B };`) are
   referenced without qualification (`A`), as plain integer constants.
-- An enum with an enumerator whose value can't be computed at compile time (e.g. `= sizeof(int)`)
-  is not available; a function or struct using it is treated as unsupported.
+- An enum with an enumerator whose value can't be computed at compile time (e.g. `= sizeof(struct
+  Opaque)` for a forward-declared struct) is not available; a function or struct using it is treated as unsupported.
 
 ### Incomplete Struct Types (Opaque Handles)
 
@@ -899,22 +902,21 @@ A struct tag whose full layout isn't known to Palan — either because the heade
 forward-declares it, or because one of its fields uses a shape [C Array Fields](#c-array-fields)
 above doesn't support — is registered as an **incomplete struct**: its name resolves and it can
 be used, but only through a pointer (`@T`/`@!T`), the same restriction C itself places on an
-incomplete type. `FILE` (from `stdio.h`) is the running example: its underlying `struct _IO_FILE`
-has a field c2ast can't size, so `FILE` is incomplete, and `fopen`/`fprintf`/etc. all work with it
-purely as an opaque handle:
+incomplete type. `DIR` (from `dirent.h`) is the running example: its underlying `struct
+__dirstream` is only forward-declared, so `DIR` is incomplete, and `opendir`/`readdir`/`closedir`
+all work with it purely as an opaque handle:
 
 ```palan
-cinclude <stdio.h>;
-@!FILE f = fopen("/tmp/out.txt", "w");
-fputs("hello\n", f);
-fclose(f);
+cinclude <dirent.h>;
+@!DIR d = opendir(".");
+closedir(d);
 ```
 
-`@!FILE f = fopen(...)` is **not** automatically freed at scope exit — unlike an owning struct
-pointer variable, the pointee here belongs to C (closed by `fclose`, not Palan's own allocator).
+`@!DIR d = opendir(...)` is **not** automatically freed at scope exit — unlike an owning struct
+pointer variable, the pointee here belongs to C (closed by `closedir`, not Palan's own allocator).
 
 An incomplete struct cannot be used anywhere a full layout is required: a by-value variable
-declaration (`FILE f;`), an owned or embedded array of it (`[n]FILE`/`[n]$FILE`), a field access
+declaration (`DIR d;`), an owned or embedded array of it (`[n]DIR`/`[n]$DIR`), a field access
 through it, subscripting an array of it, or embedding it in another struct. Each of these is a
 compile error naming the struct and the reason (forward-declared in the header, or a field type
 this version can't represent) — never a compiler crash.
@@ -2012,8 +2014,8 @@ compile error. A pointer field (`@T`/`@!T`) may close a cycle.
 - Nested/2D array fields (`[n]$[m]T field`, etc.) are not supported.
 - Recursive embedding (`type A { $A a; }`) is a compile error.
 - An [incomplete struct type](#incomplete-struct-types-opaque-handles) — a tag whose layout
-  isn't known, e.g. a cincluded `FILE` — cannot be used as a by-value variable (`FILE f;`), an
-  owned or embedded array (`[n]FILE`/`[n]$FILE`), an embedded field (`$FILE field;`), or an
+  isn't known, e.g. a cincluded `DIR` — cannot be used as a by-value variable (`DIR d;`), an
+  owned or embedded array (`[n]DIR`/`[n]$DIR`), an embedded field (`$DIR field;`), or an
   array-of-struct element (`arr[i]`/`p[i]` subscripting). It is usable only through a pointer
   (`@T`/`@!T`) — as a local variable, function parameter, or return type.
 

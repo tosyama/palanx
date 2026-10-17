@@ -5773,3 +5773,14 @@ TEST(sa, block_import_type)
 	json jout = run_sa("../test/testdata/sa/260_block_import_type.pa");
 	ASSERT_TRUE(jout.is_object());
 }
+
+TEST(sa, c_fd_set)
+{
+	// fd_set's array field is sized with sizeof, so it is a complete struct.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/264_c_fd_set.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& init = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(init["name"], "calloc");
+	ASSERT_EQ(init["args"][1]["value"], "128");
+}

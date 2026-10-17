@@ -746,8 +746,7 @@ TEST(c2ast, macro_const_fold_expr) {
     ASSERT_EQ(find_const("MODZERO"), nullptr);
     ASSERT_EQ(find_const("BIGSHIFT"), nullptr);
     ASSERT_EQ(find_const("OVERFLOWED"), nullptr);
-    // sizeof is never evaluated, so any expression containing it stays null.
-    ASSERT_EQ(find_const("SIZED"), nullptr);
+    expect_value("SIZED", "16");
     // An unresolved identifier keeps the whole expression null.
     ASSERT_EQ(find_const("IDENT"), nullptr);
     json* suffixed = find_const("SUFFIXED");
@@ -1085,13 +1084,74 @@ TEST(c2ast, array_size_expr_fold) {
     ASSERT_EQ((*a)["var-type"]["size-expr"]["expr-type"], "lit-int");
     ASSERT_EQ((*a)["var-type"]["size-expr"]["value"], "87");
 
-    // char b[4 * sizeof(int) - 2]; -- sizeof is never evaluated, so null must
-    // still propagate through the surrounding fold (this is what keeps a
-    // struct like FILE, whose glibc layout size expressions involve sizeof,
-    // an incomplete type instead of resolving to a wrong size).
+    // char b[4 * sizeof(int) - 2]; -- sizeof is size_t, so the result is too.
     json* b = find_field((*sizes)["fields"], "b");
     ASSERT_NE(b, nullptr);
-    ASSERT_TRUE((*b)["var-type"]["size-expr"].is_null());
+    ASSERT_EQ((*b)["var-type"]["size-expr"]["value"], "14");
+    ASSERT_EQ((*b)["var-type"]["size-expr"]["value-type"]["type-name"], "uint64");
+}
+
+TEST(c2ast, sizeof_fold) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/043_sizeof.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+    auto expect_const = [&](const string& name, const string& value, const string& type_name) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+        ASSERT_EQ((*c)["value-type"]["type-name"], type_name) << "for " << name;
+    };
+
+    // Expected values are what gcc gives on x86-64.
+    expect_const("SZ_CHAR", "1", "uint64");
+    expect_const("SZ_SHORT", "2", "uint64");
+    expect_const("SZ_INT", "4", "uint64");
+    expect_const("SZ_LONG", "8", "uint64");
+    expect_const("SZ_DOUBLE", "8", "uint64");
+    expect_const("SZ_LDOUBLE", "16", "uint64");
+    expect_const("SZ_BOOL", "1", "uint64");
+    expect_const("SZ_PTR", "8", "uint64");
+    expect_const("SZ_FUNCPTR", "8", "uint64");
+    expect_const("SZ_TYPEDEF", "8", "uint64");
+    expect_const("SZ_TDPTR", "8", "uint64");
+    expect_const("SZ_ARR", "24", "uint64");
+    expect_const("SZ_PAD", "24", "uint64");
+    expect_const("SZ_UNION", "8", "uint64");
+    expect_const("SZ_NEST", "48", "uint64");
+    expect_const("SZ_FLEX", "8", "uint64");
+    expect_const("SZ_SMALL", "4", "uint64");
+    expect_const("SZ_BIG", "8", "uint64");
+    expect_const("SZ_ARRS", "64", "uint64");
+    expect_const("SZ_CAST", "64", "int32");
+    expect_const("SZ_EXPR", "20", "uint64");
+    ASSERT_EQ(find_const("SZ_VOID"), nullptr);
+    ASSERT_EQ(find_const("SZ_OPAQUE"), nullptr);
+    ASSERT_EQ(find_const("SZ_UNKNOWN"), nullptr);
+}
+
+TEST(c2ast, sizeof_fd_set) {
+    // fd_set's array size and __NFDBITS are both built from sizeof.
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s sys/select.h");
+    json ast = json::parse(output);
+    json* fd_set = nullptr;
+    for (auto& s : ast["ast"]["structs"])
+        if (s["name"] == "fd_set") { fd_set = &s; break; }
+    ASSERT_NE(fd_set, nullptr);
+    ASSERT_EQ((*fd_set)["fields"][0]["var-type"]["size-expr"]["value"], "16");
+
+    json* nfdbits = nullptr;
+    for (auto& c : ast["ast"]["constants"])
+        if (c["name"] == "__NFDBITS") { nfdbits = &c; break; }
+    ASSERT_NE(nfdbits, nullptr);
+    ASSERT_EQ((*nfdbits)["value"], "64");
+    ASSERT_EQ((*nfdbits)["value-type"]["type-name"], "int32");
 }
 
 TEST(c2ast, typedef_anon_struct) {
@@ -1495,7 +1555,7 @@ TEST(c2ast, enum_capture) {
     ASSERT_NE(find(enums, "CSpace"), nullptr);   // typedef name of an anonymous body
     ASSERT_NE(find(enums, "Mode"), nullptr);     // the tag, not the typedef name
     ASSERT_EQ(find(enums, "ModeAlias"), nullptr);
-    ASSERT_EQ(find(enums, "Unknown"), nullptr);  // U1 = sizeof(int) can't be computed
+    ASSERT_EQ(find(enums, "Unknown"), nullptr);  // sizeof of an incomplete struct can't be computed
     ASSERT_EQ(find(enums, "Huge"), nullptr);     // H1 overflows long long
     ASSERT_EQ(enums.size(), 5u);                 // + two anonymous bodies
 

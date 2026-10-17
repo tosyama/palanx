@@ -78,7 +78,11 @@ integer value is exported here. The body may be a bare integer literal (e.g. `#d
 42`), a unary `+`/`-` of one, or a binary expression built from `| & ^ << >> + - * / %` over such
 forms (e.g. `#define S_IRWXU (S_IREAD|S_IWRITE|S_IEXEC)`) — evaluated left-to-right within each
 precedence level. Literals may carry C's `U`/`L`/`LL` suffixes, and any operand may be an integer
-cast (e.g. ncurses' `((chtype)(1U) << 18)`). An operation with no suffixed or cast operand uses
+cast (e.g. ncurses' `((chtype)(1U) << 18)`) or `sizeof(type)`, typed `uint64` (`size_t`). `sizeof`
+folds for a primitive, pointer, typedef, array of a folded size, enum, or a struct/union whose
+body is in the same header, laid out by the x86-64 C rules (`__attribute__((packed))` and
+`aligned` are not seen); for anything else (an incomplete struct, `void`, a typedef from an earlier
+`cinclude`) it doesn't fold. An operation with no suffixed or cast operand uses
 exact signed 64-bit arithmetic; otherwise it follows C's integer promotions and usual arithmetic
 conversions (LP64), with unsigned results wrapping to their width. An operation that would
 overflow a signed type, divide/mod by zero, or shift by a negative or out-of-range count does not
@@ -111,7 +115,7 @@ Enum definition model
 Captured from every enum body palan-c2ast sees in a `cinclude`d C header, into its own
 top-level `ast.enums` list (lifted onto the `cinclude` statement's `enums` field by gen-ast,
 like `structs`). c2ast computes each enumerator's value; an enum with a value it cannot compute
-(e.g. `= sizeof(int)`) is not captured, and references to it stay unrepresentable in SA. The base
+(e.g. `= sizeof(struct Opaque)` for a forward-declared struct) is not captured, and references to it stay unrepresentable in SA. The base
 integer type is not given here; SA chooses it by the same rule as for a Palan enum (SASpec.md).
 
 - name\* - Enum name string: the tag, or for `typedef enum { ... } Name;` (a single, non-derived

@@ -1256,12 +1256,83 @@ static json foldNegate(const json &node)
 	return makeTypedLitInt(0 - bits, intPrimType(width, is_signed));
 }
 
+// C's own x86-64 layout rules, not SA's buildStructDef: that one lays out only the
+// shapes Palan can represent, while sizeof must size any type C allows.
+bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
+{
+	string tk = vt.value("type-kind", "");
+	if (tk == "prim") {
+		static const map<string, int> sizes = {
+			{"int8", 1}, {"uint8", 1}, {"bool", 1}, {"int16", 2}, {"uint16", 2},
+			{"int32", 4}, {"uint32", 4}, {"flo32", 4}, {"int64", 8}, {"uint64", 8},
+			{"flo64", 8}, {"flt128", 16},
+		};
+		auto it = sizes.find(vt.value("type-name", ""));
+		if (it == sizes.end()) return false;
+		size = align = it->second;
+		return true;
+	}
+	if (tk == "pntr") {
+		size = align = 8;
+		return true;
+	}
+	if (tk == "arr") {
+		const json &n = vt["size-expr"];
+		if (!isLitInt(n) || n["value"].get_ref<const string&>()[0] == '-') return false;
+		unsigned long long count = stoull(n["value"].get<string>());
+		long long elem_size;
+		if (!typeSizeAlign(vt["base-type"], elem_size, align)) return false;
+		if (elem_size && count > (unsigned long long)LLONG_MAX / elem_size) return false;
+		size = (long long)count * elem_size;
+		return true;
+	}
+	if (tk == "strct" || tk == "union") {
+		auto it = structIndex_.find(vt.value("type-name", ""));
+		if (it == structIndex_.end()) return false;
+		const json &entry = capturedStructs_[it->second];
+		if (!entry.contains("fields")) return false;
+		const json &fields = entry["fields"];
+		bool is_union = tk == "union";
+		long long offset = 0, max_align = 1;
+		for (size_t i = 0; i < fields.size(); i++) {
+			const json &fvt = fields[i]["var-type"];
+			long long fsize, falign;
+			// A flexible array member adds only its alignment.
+			if (!is_union && i == fields.size() - 1 && fvt.value("type-kind", "") == "arr"
+					&& fvt["size-expr"].is_null()) {
+				long long elem_size;
+				if (!typeSizeAlign(fvt["base-type"], elem_size, falign)) return false;
+				fsize = 0;
+			} else if (!typeSizeAlign(fvt, fsize, falign)) {
+				return false;
+			}
+			max_align = max(max_align, falign);
+			if (is_union) offset = max(offset, fsize);
+			else offset = (offset + falign - 1) / falign * falign + fsize;
+		}
+		size = (offset + max_align - 1) / max_align * max_align;
+		align = max_align;
+		return true;
+	}
+	if (tk == "enum") {
+		auto it = enumIndex_.find(vt.value("type-name", ""));
+		if (it == enumIndex_.end()) return false;
+		const CapturedEnum &e = capturedEnums_[it->second];
+		if (!e.evaluable) return false;
+		size = align = 4;
+		for (auto &v : e.values)
+			if (v.second < INT32_MIN || v.second > UINT32_MAX) size = align = 8;
+		return true;
+	}
+	return false;
+}
+
 // Each function in this expression chain (primary_expression .. expression) recognizes
 // C expression grammar and, when the (sub)expression is one of a small set of computable
-// forms (integer literal, unary +/-, parenthesization, explicit cast, or a folded binary
-// arithmetic/bitwise operation), also builds a value-AST node into `value`
-// ("expr-type": "lit-int" | "cast", mirroring the convention documented in
-// doc/ASTSpec.md). Anything else (calls, identifiers, sizeof, ...) is still recognized
+// forms (integer literal, unary +/-, parenthesization, explicit cast, sizeof of a type
+// whose layout is known, or a folded binary arithmetic/bitwise operation), also builds a
+// value-AST node into `value` ("expr-type": "lit-int" | "cast", mirroring the convention
+// documented in doc/ASTSpec.md). Anything else (calls, identifiers, ...) is still recognized
 // syntactically (grammar TODOs elsewhere in this chain are unaffected), but `value` is
 // left null to signal "not a compile-time constant we can evaluate".
 bool CParser::primary_expression(json &value, const vector<CToken*> &tokens, int &result_index)
@@ -1365,7 +1436,11 @@ bool CParser::unary_expression(json &value, const vector<CToken*> &tokens, int &
 		}
 
 		EXPECT_PUNC(')');
-		value = json{}; // sizeof value not computed (no target type-size table)
+		long long size, align;
+		if (typeSizeAlign(sdecl["var-type"], size, align))
+			value = makeTypedLitInt(size, intPrimType(64, false));
+		else
+			value = json{};
 		result_index = index;
 		return true;
 	}

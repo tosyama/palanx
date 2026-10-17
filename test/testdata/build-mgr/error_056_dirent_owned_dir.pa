@@ -1,0 +1,8 @@
+cinclude <dirent.h>;
+cinclude <stdio.h>;
+
+// `DIR` is a typedef for `struct __dirstream`, which dirent.h only
+// forward-declares, so an owned declaration (which needs a layout) must be
+// rejected. The diagnostic names the underlying tag, not the alias.
+DIR d;
+printf("unreachable\n");

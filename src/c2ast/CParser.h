@@ -73,8 +73,8 @@ class CParser {
 	bool jump_statement(json &ast, const vector<CToken*> &tokens, int &result_index);
 
 	// This subtree (primary_expression .. expression) builds a value-AST node into
-	// `value` for the small set of forms we can compute (literal, +/-, cast); otherwise
-	// `value` is left null. See CParser.cpp for the "expr-type" node shapes used.
+	// `value` for the small set of forms we can compute (literal, +/-, cast, sizeof);
+	// otherwise `value` is left null. See CParser.cpp for the "expr-type" node shapes used.
 	bool primary_expression(json &value, const vector<CToken*> &tokens, int &index);
 	bool postfix_expression(json &value, const vector<CToken*> &tokens, int &result_index);
 	bool unary_expression(json &value, const vector<CToken*> &tokens, int &result_index);
@@ -95,6 +95,7 @@ class CParser {
 	bool expression(json &value, const vector<CToken*> &tokens, int &result_index);
 
 	bool resolveConstValue(const json &node, json &value, json &type);
+	bool typeSizeAlign(const json &vt, long long &size, long long &align);
 
 	// void debug_token(const CToken* token);
 
