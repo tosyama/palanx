@@ -371,6 +371,11 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 				string tag = synthesizeAnonTag(tokens[field_start]);
 				captureStructTag(tag, &flocal["fields"], btk == "union");
 				base_vt["type-name"] = tag;
+				// C11 anonymous member: no member name, its fields belong to the owner.
+				if (CONSUME_PUNC(';')) {
+					fields.push_back({{"var-type", base_vt}});
+					continue;
+				}
 			}
 			json field = {{"var-type", base_vt}};
 			if (!declarator(field, tokens, index, false)) {

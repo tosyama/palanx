@@ -48,12 +48,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 19. C11 Anonymous Members Without a Member Name Fail to Parse
-
-**Summary:** c2ast's struct/union field parser requires a declarator after every member's type, so a C11 anonymous member (`struct S { int k; union { int a; float b; }; };`) is a parse error ("unexpected token") that fails the whole `cinclude`, for struct and union bodies alike. An anonymous body that has a member name (`union { ... } u;`) works since v0.1.34 (c2ast synthesizes a tag for it). Supporting the unnamed form would need both the parse and promoted field access (`s.a` reaching into the anonymous member), which SA's field resolution has no concept of. None of the headers targeted so far (including glibc's `pthread.h`) uses this form.
-
----
-
 ## 21. Array Literals Are Limited to Positions With a Known Target
 
 **Summary:** An array literal (`[1, 2, 3]`, 2D in either `[1,2][3,4]` or `[[1,2],[3,4]]` form) and a struct value (`[1, 2]`/`{x: 1, y: 2}`) are accepted only where they fill storage of a known type: an array or struct variable's initializer, the source of `->` to an array or a struct, the value returned from a function returning a struct, and an argument for a Palan `T`, `@T`/`@!T` or borrowed array parameter (v0.1.40) or a C function's by-value struct parameter, for which SA builds a temporary of the parameter's type. Anywhere else, such as an operand (`[1, 2][0]`) or a C function's pointer parameter (`strlen(@[104, 0])`), SA rejects it with `E_ArrLitContext`. Every literal is built at run time with one store per element, so an all-constant literal is not placed in `.rodata`.

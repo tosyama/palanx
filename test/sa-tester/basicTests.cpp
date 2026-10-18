@@ -1727,6 +1727,22 @@ TEST(sa, cinclude_union)
 	ASSERT_EQ(call["args"][0]["name"], "m");
 }
 
+TEST(sa, cinclude_anon_member)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/273_c_anon_member.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& st = jout["statements"];
+
+	// struct S { char k; union { int a; double d; struct { short lo; short hi; }; }; char t; }
+	ASSERT_EQ(st[0]["vars"][0]["init"]["args"][1]["value"], "24");
+	ASSERT_EQ(st[1]["offset"], 0);   // s.k
+	ASSERT_EQ(st[2]["offset"], 8);   // s.a
+	ASSERT_EQ(st[3]["offset"], 10);  // s.hi
+	ASSERT_EQ(st[4]["offset"], 16);  // s.t
+	ASSERT_EQ(st[5]["vars"][0]["init"]["offset"], 8);  // read s.a
+}
+
 TEST(sa, cinclude_null_constant)
 {
 	cleanTestEnv();

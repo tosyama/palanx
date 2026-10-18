@@ -902,11 +902,10 @@ printf("%ld\n", s.count);    // 2
 `PTHREAD_MUTEX_INITIALIZER` and the other `*_INITIALIZER` macros expand to a brace initializer,
 which Palan has no syntax for; call the matching `_init` function instead.
 
-Not supported this version:
-
-- A C11 anonymous member with no member name (`struct S { int k; union { int a; float b; }; };`)
-  — a header containing one cannot be cincluded. An anonymous body that *does* have a member name
-  (`union { ... } u;`) works; its fields are reached through that name.
+The fields of a C11 anonymous member, a struct or union body with no member name
+(`struct S { int k; union { int a; float b; }; };`), are fields of the enclosing type:
+`s.a` and `s.b` read and write the union directly. An anonymous body that has a member name
+(`union { ... } u;`) is reached through that name (`s.u.a`).
 
 ### C Enum Types
 

@@ -68,7 +68,7 @@ static StructDef buildStructDef(const string& name,
 	for (auto& f : fields) {
 		const json& vtype = f["var-type"];
 		string tk = vtype.value("type-kind", "");
-		string fieldName = f["name"].get<string>();
+		string fieldName = f.value("name", "");
 
 		if (tk == "prim") {
 			string tname = vtype["type-name"].get<string>();
@@ -119,6 +119,16 @@ static StructDef buildStructDef(const string& name,
 			}
 			int align = sub.maxAlign;
 			int at = place(sub.totalSize, align);
+			if (!f.contains("name")) {
+				// A C11 anonymous member: promote its fields so every consumer
+				// finds s.a as an ordinary field of the owner. sub was registered
+				// first, so its own anonymous members are already promoted.
+				for (FieldLayout fl : sub.fields) {
+					fl.offset += at;
+					def.fields.push_back(fl);
+				}
+				continue;
+			}
 			def.fields.push_back({.name=fieldName, .typeKind="embed",
 			                      .typeName=structName, .isMutable=false,
 			                      .offset=at, .size=sub.totalSize});
@@ -1186,7 +1196,7 @@ static json cFieldVarType(const json& vtype)
 	return vtype;
 }
 
-// An unsupported field type (e.g. a C bitfield/anonymous union) registers its
+// An unsupported field type (e.g. a C bitfield) registers its
 // owning tag as an incomplete struct -- usable only through @T/@!T -- rather
 // than exit(1), since cinclude pulls in glibc-internal structs never
 // referenced by Palan interop code. A field naming a still-incomplete struct
@@ -1262,7 +1272,9 @@ void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& 
 			structDefs_[name] = def;
 			return;
 		}
-		fields.push_back({{"name", f["name"]}, {"var-type", vt}});
+		json field = {{"var-type", vt}};
+		if (f.contains("name")) field["name"] = f["name"];
+		fields.push_back(field);
 	}
 	structDefs_[name] = buildStructDef(name, fields, structDefs_, locPrefix(cincludeStmt), s.value("union", false));
 } // LCOV_EXCL_EXCEPTION_BR_LINE

@@ -1485,6 +1485,14 @@ TEST(build_mgr, c_struct_byval) {
 		"variadic_after 0.5 7 2.25 9\n");
 }
 
+TEST(build_mgr, c_anon_member) {
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("298_c_anon_member"),
+		"1 2 3 4\n5 2.5 6\n"
+		"v 1 2 3.5\n11 12 13.5\n"
+		"f 1.5 2.5\n2.5 3.5\n");
+}
+
 TEST(build_mgr, fopencookie) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/297_fopencookie.pa");

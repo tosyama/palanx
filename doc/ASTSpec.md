@@ -138,7 +138,7 @@ its own top-level `ast.structs` list; gen-ast then lifts that list onto the encl
 AST in. Same field-list shape as the native `struct-def` statement.
 
 - name\* - Struct tag name string. An anonymous struct/union body used as a member
-  (`struct { ... } name;` inside another struct/union) is given a synthesized tag
+  (`struct { ... } name;` or `struct { ... };` inside another struct/union) is given a synthesized tag
   `anon@<file>:<line>:<col>` (the body's source location, with `#2`, `#3`, ... appended when several
   bodies share one location, as every expansion of one macro body does). Named by location rather than a counter so the
   same body gets the same tag in every cinclude's separate c2ast run. The name contains
@@ -148,7 +148,9 @@ AST in. Same field-list shape as the native `struct-def` statement.
 - fields - Field list; omitted when this header never gives the tag a body (forward
   declaration or bare reference only). SA registers such a tag as an incomplete struct
   (usable only through a pointer) rather than leaving the name unresolved — see SASpec.md.
-  - name\* - Field name string
+  - name - Field name string; omitted for a C11 anonymous member (`union { ... };` with no
+    member name), whose `var-type` names the body's synthesized tag. SA promotes that body's
+    fields into the enclosing struct at the member's offset.
   - var-type\* - Field type (same Variable type object format; a C array declarator, e.g.
     `char name[16];`, produces an `arr` type-kind field — see `embedded` above and SASpec.md's
     C-origin field admission rules for which array shapes SA accepts)

@@ -1349,6 +1349,40 @@ TEST(c2ast, anon_member_tag) {
     }
 }
 
+TEST(c2ast, anon_member_unnamed) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/044_anon_member_unnamed.h");
+    json ast = json::parse(output);
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+    auto anon_body = [&](const json& field) -> json* {
+        if (field.contains("name")) return nullptr;
+        return find_struct(field["var-type"]["type-name"].get<string>());
+    };
+
+    json* s = find_struct("S");
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ((*s)["fields"].size(), 2u);
+    json* u = anon_body((*s)["fields"][1]);
+    ASSERT_NE(u, nullptr);
+    ASSERT_EQ((*u)["union"], true);
+    ASSERT_EQ((*u)["fields"].size(), 3u);
+    json* lohi = anon_body((*u)["fields"][2]);
+    ASSERT_NE(lohi, nullptr);
+    ASSERT_EQ((*lohi)["fields"][1]["name"], "hi");
+
+    json* pair = find_struct("pair_t");
+    ASSERT_NE(pair, nullptr);
+    json* xy = anon_body((*pair)["fields"][1]);
+    ASSERT_NE(xy, nullptr);
+    ASSERT_EQ((*xy)["fields"][0]["name"], "x");
+}
+
 // A header's typedefs are flushed into their own
 // ast.typedefs section regardless of whether any C function references them
 // -- this is what lets a header like stdint.h (zero functions, all typedefs)
