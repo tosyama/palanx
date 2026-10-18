@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+cinclude "295_link_obj.h" link "295_link_obj.o";
+
+printf("%d\n", add3(1, 2, 3));

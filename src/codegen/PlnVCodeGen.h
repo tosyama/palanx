@@ -53,6 +53,9 @@ class PlnVCodeGen {
     void lowerArrAssignStmt(const ArrAssignStmt& stmt, VFunc& func);
     void lowerReturnStmt(const ReturnStmt& stmt, VFunc& func);
     void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
+    vector<VReg> lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func);
+    VReg loadEightbyte(VReg ptr, int offset, const Eightbyte& eb, VFunc& func);
+    void storeEightbyte(VReg ptr, int offset, VReg src, const Eightbyte& eb, VFunc& func);
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
     void lowerSysCallExpr(const SysCallExpr& expr, VFunc& func);
     vector<VReg> lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc& func);

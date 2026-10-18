@@ -557,6 +557,11 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   different modules) is deduplicated.
 - A header may be cincluded with `link` in one place and without it elsewhere in the same program —
   the library is added to the link step regardless of which cincluding site names it.
+- A name ending in `.o` is an object file to link instead of a library, such as one compiled from
+  your own C source: `cinclude "util.h" link "util.o";`. A relative path is relative to the
+  directory of the source file, as a local `cinclude` header is. A missing file is a compile error.
+  Object files and libraries can be mixed in one clause (`link "m", "lib/util.o"`), and object
+  files are collected and deduplicated across the whole program in the same way.
 - `link` is not a reserved word — it is only recognized as introducing this clause immediately after
   a `cinclude` path (and optional `as` alias). `unistd.h`'s `link()` function, for example, remains
   callable as an ordinary C function.
@@ -745,13 +750,37 @@ printf("%d %d\n", d.quot, d.rem);   // 3 1
   initializer — as a bare statement, discarding the result — is a compile error: the call still
   has to happen, but there is nowhere to write the result, so the compiler rejects it instead of
   silently dropping the call.
-- Not supported: a struct whose size classifies into an eightbyte of fractional width other than
-  1, 2, 4, or 8 bytes (e.g. a 3-byte struct) is diagnosed rather than miscompiled. Passing a
-  struct *to* a C function by value (the reverse direction, e.g. `stdio.h`'s `fopencookie`) is
-  also not supported — the C function itself is rejected as having an unsupported signature, so
-  the mismatch is caught at the `cinclude` boundary rather than at the call site. Native Palan
-  functions do not gain a struct-by-value return syntax from this — this feature is about
-  receiving a C function's by-value return, not a Palan-side language addition.
+- Native Palan functions do not gain a struct-by-value return syntax from this — this feature is
+  about receiving a C function's by-value return, not a Palan-side language addition.
+
+### Structs Passed By Value
+
+A C function that takes a struct **by value** is called with the struct written by name, as for a
+native struct-type parameter; the function receives a copy:
+
+```palan
+cinclude <stdio.h>;
+
+func cwrite(@!void cookie, @int8 buf, uint64 size) -> int64 n {
+    printf("[%.*s]", int32(size), buf);
+    int64(size) -> n;
+}
+
+cookie_io_functions_t io;
+cwrite -> io.write;
+@!FILE f = fopencookie(NULL, "w", io);
+fprintf(f, "hello");                 // [hello]
+fclose(f);
+```
+
+- The argument can be a struct variable, a struct field or array element, a struct returned by a
+  call, a struct literal (`{x: 1, y: 2}`), or a `@T`/`@!T` pointer to the struct — a read-only
+  `@T` is fine, since only a copy is passed. Changes the C function makes to its copy are not
+  seen by the caller.
+- The struct is passed the way a C caller would pass it under the System V AMD64 ABI: in
+  registers when it is 16 bytes or less and its parts fit in the remaining argument registers,
+  on the stack otherwise. A union is passed the same way.
+- A C function that takes a struct by value cannot be used as a function pointer.
 
 ### Passing a Palan Function as a Callback
 
@@ -875,8 +904,6 @@ which Palan has no syntax for; call the matching `_init` function instead.
 
 Not supported this version:
 
-- Passing a union by value to a C function — like a struct, calling such a function is a compile
-  error.
 - A C11 anonymous member with no member name (`struct S { int k; union { int a; float b; }; };`)
   — a header containing one cannot be cincluded. An anonymous body that *does* have a member name
   (`union { ... } u;`) works; its fields are reached through that name.
@@ -1819,8 +1846,9 @@ reset(@![1, 2]);
 - As an argument, the literal is a temporary struct, written as a struct variable would be:
   `@[..]` / `@![..]` (`@{..}` / `@!{..}`) for a `@T`/`@!T` parameter, and without `@` for a `T`
   parameter. It is freed as a struct returned by a call and given as an argument is (see
-  [Struct types in function signatures](#struct-types-in-function-signatures)). A C function's
-  parameter cannot take a literal.
+  [Struct types in function signatures](#struct-types-in-function-signatures)). Of a C function's
+  parameters, only one taking a struct by value can take a literal (see
+  [Structs Passed By Value](#structs-passed-by-value)).
 
 - The target of `->` must be the struct itself: a struct variable, a `$T`/`T` field, a struct
   array element, or `q[0]` for what a borrow `q` points to. Giving a literal to the borrow `q`

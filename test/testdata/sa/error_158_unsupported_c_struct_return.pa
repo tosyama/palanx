@@ -1,3 +1,0 @@
-cinclude "error_158_unsupported_c_struct_return.h";
-
-Odd3 o = get_odd();

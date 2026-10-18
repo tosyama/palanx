@@ -792,6 +792,7 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
 	sa["libs"]          = json::array();
+	sa["objs"]          = json::array();
 	program_->modules[moduleId_] = this;
 	moduleAstRoot_ = &ast;
 	enterScope();
@@ -991,6 +992,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 4. Emit the libraries collected from cinclude `link` clauses, after
 	//    steps 2-3 since a cinclude may sit inside a block or function body.
 	for (auto& lib : linkLibs_) sa["libs"].push_back(lib);
+	for (auto& obj : linkObjs_) sa["objs"].push_back(obj);
 	leaveScope();
 }
 
@@ -1118,6 +1120,16 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 				exit(1);
 			}
 			linkLibs_.insert(lib);
+		}
+	if (stmt.contains("objs"))
+		for (auto& o : stmt["objs"]) {
+			string obj = o.get<string>();
+			if (!filesystem::is_regular_file(obj)) {
+				cerr << locPrefix(stmt)
+				     << PlnSaMessage::getMessage(E_LinkObjNotFound, obj) << endl;
+				exit(1);
+			}
+			linkObjs_.insert(obj);
 		}
 
 	// Must run before functions: PlnTypeRegistry::fromJson needs structDefs_

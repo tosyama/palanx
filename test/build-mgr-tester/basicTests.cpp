@@ -1443,6 +1443,54 @@ TEST(build_mgr, link_import) {
 	ASSERT_EQ(output, "11\n");
 }
 
+// Copies <base>.pa and <base>.h into out/ and compiles <base>.c there with
+// gcc, so the program's `link "<base>.o"` finds the object without a build
+// artifact in the source tree. Returns the program's output.
+static string runWithCObj(const string& base)
+{
+	string src = "../test/testdata/build-mgr/" + base;
+	string err = execTestCommand("cp " + src + ".pa " + src + ".h out/ && gcc -c -O1 "
+		+ src + ".c -o out/" + base + ".o");
+	if (err != "") return err;
+	return execTestCommand("bin/palan out/" + base + ".pa");
+}
+
+TEST(build_mgr, link_obj) {
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("295_link_obj"), "6\n");
+}
+
+TEST(build_mgr, c_struct_byval) {
+	// Each shape is checked against gcc's own code on the other side: the
+	// callee prints what it received and returns a changed copy, and the
+	// caller's struct stays unchanged.
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("296_struct_byval"),
+		"i8 1 2\n11 12 / 1 2\n"
+		"i16 3 4\n13 14\n"
+		"f2 1.5 2.5\n2.5 3.5\n"
+		"d2 1.5 2.5\n2.5 3.5\n"
+		"mix 0.5 7\n1.5 8\n"
+		"mix2 5 0.5\n6 1.5\n"
+		"b3 1 2 3\n11 2 13\n"
+		"b5 1 2 3 4 5\n11 2 3 4 15\n"
+		"b6 1000 2000 3000\n1001 2000 3001\n"
+		"b7 1 2 3 4 5 6 7\n11 2 3 4 5 6 17\n"
+		"b11 1 9 11\n11 9 21\n"
+		"big 1 2 3\n11 2 13 / 1\n"
+		"big20 1 20\n11 30\n"
+		"u 3f800000\n3f800001\n"
+		"int_regs_full 1 2 3 4 5 3 4 7\n"
+		"flt_regs_full 1 2 3 4 5 6 7 1.5 2.5 9\n"
+		"variadic_after 0.5 7 2.25 9\n");
+}
+
+TEST(build_mgr, fopencookie) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/297_fopencookie.pa");
+	ASSERT_EQ(output, "[hello 42]\n");
+}
+
 TEST(build_mgr, math_functions) {
 	// Broad libm coverage (sqrt/pow/sin/.../hypot) run through the `link`
 	// clause, including a variable and a nested expression as arguments.

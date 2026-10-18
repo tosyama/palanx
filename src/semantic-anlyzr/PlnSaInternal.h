@@ -263,9 +263,9 @@ inline bool isPrimPointeeName(const string& name)
 	return name == "void" || elemSizeBytes(name) >= 0;
 }
 
-// SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct return value.
+// SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct passed or returned by value.
 enum class EightbyteClass { Integer, Sse };
-struct EightbyteRet { EightbyteClass cls; int size; };  // size in {1,2,4,8}; only the last eightbyte may be <8
+struct Eightbyte { EightbyteClass cls; int size; };  // only the last eightbyte may be <8
 
 // Recursively marks the eightbytes covered by one field as INTEGER; SSE is
 // `cls`'s initial value, so an all-float field simply leaves it unmarked
@@ -309,34 +309,34 @@ inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
 	}
 }
 
-// Classifies a struct's return value per the System V AMD64 ABI (§3.2.3):
-// over 16 bytes is MEMORY class (an empty vector here); 16 bytes or less
-// returns in up to two eightbytes, each INTEGER (%rax/%rdx) or SSE
-// (%xmm0/%xmm1). Sets `ok` to false and returns an empty vector if any
-// eightbyte's natural width isn't 1/2/4/8 bytes (e.g. a trailing `char
-// a[3]` field), for callers to reject with a dedicated diagnostic.
-inline vector<EightbyteRet> classifySysVStructRet(const StructDef& def,
-                                                   const map<string, StructDef>& defs,
-                                                   bool& ok)
+// Classifies a struct passed or returned by value per the System V AMD64 ABI
+// (§3.2.3): over 16 bytes is MEMORY class (an empty vector here); 16 bytes or
+// less travels in up to two eightbytes, each INTEGER or SSE.
+inline vector<Eightbyte> classifySysVStruct(const StructDef& def, const map<string, StructDef>& defs)
 {
-	ok = true;
 	if (def.totalSize > 16) return {};  // MEMORY class
 
 	int nEightbytes = (def.totalSize + 7) / 8;
 	int tailWidth = def.totalSize - 8 * (nEightbytes - 1);
-	if (tailWidth != 1 && tailWidth != 2 && tailWidth != 4 && tailWidth != 8) {
-		ok = false;
-		return {};
-	}
 
 	vector<EightbyteClass> cls(nEightbytes, EightbyteClass::Sse);
 	classifySysVWalk(def, 0, nEightbytes, defs, cls);
 
-	vector<EightbyteRet> result;
+	vector<Eightbyte> result;
 	for (int i = 0; i < nEightbytes; i++)
 		result.push_back({cls[i], (i == nEightbytes - 1) ? tailWidth : 8});
 	return result;
 }
+
+// The "eightbytes" list of a "struct-ret" or "struct-arg" descriptor; empty
+// for MEMORY class.
+inline json eightbytesJson(const StructDef& def, const map<string, StructDef>& defs)
+{
+	json ebs = json::array();
+	for (auto& eb : classifySysVStruct(def, defs))
+		ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}});
+	return ebs;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Builds a synthetic free() expression statement for the named pointer variable
 // LCOV_EXCL_EXCEPTION_BR_START
@@ -586,23 +586,20 @@ inline json cTypeAsAlias(const json& type) {
 
 // An unrepresentable parameter/return type is recorded as "_unsupported-sig"
 // rather than rejected here, so cinclude'ing the header is not itself an
-// error -- only calling the function is. A by-value struct parameter is
-// flagged explicitly (unrepresentableTypeName alone can't tell it apart from
-// a pointer once normalizeCType strips the pntr).
+// error -- only calling the function is. A by-value struct parameter takes
+// the shape of a native `T` parameter, so a call checks its argument the same
+// way; the call then passes a copy (saCallArgs marks it "struct-arg").
 inline void normalizeCFuncSig(json& funcDef) {
 	string bad;
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
 			if (p.contains("var-type")) {
-				p["var-type"] = normalizeCType(p["var-type"]);
-				const json& vt = p["var-type"];
-				string paramBad;
-				if (vt.value("type-kind", "") == "struct") {
-					paramBad = "by-value struct parameter";
-				} else {
-					paramBad = unrepresentableTypeName(vt);
-				}
-				if (bad.empty()) bad = paramBad;
+				json vt = normalizeCType(p["var-type"]);
+				if (bad.empty()) bad = unrepresentableTypeName(vt);
+				if (vt.value("type-kind", "") == "struct")
+					vt = {{"type-kind","pntr"},
+					      {"base-type",{{"type-kind","struct"},{"type-name",vt["type-name"]}}}};
+				p["var-type"] = move(vt);
 			}
 	if (funcDef.contains("ret-type")) {
 		funcDef["ret-type"] = normalizeCType(funcDef["ret-type"]);

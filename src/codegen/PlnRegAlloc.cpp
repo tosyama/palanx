@@ -54,24 +54,22 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         // scratch register (phys.scratch) cannot be bound directly either, since
         // other instructions between this def and the call may clobber it --
         // it falls through to addUse, same as an out-of-table slot.
-        auto addCallArgs = [&](const vector<VReg>& args, const vector<string>& argRegs) {
-            int int_idx = 0;
-            for (auto vr : args) {
-                VRegType t = meta.count(vr) ? meta[vr].type : VRegType::Int64;
-                bool is_flt = (t == VRegType::Float32 || t == VRegType::Float64);
-                if (is_flt) {
-                    // Float args go to XMM registers, not intArgs. Track only liveness.
+        auto addCallArgs = [&](const vector<VReg>& args, const vector<string>& argRegs,
+                               const vector<StructArgSpan>& spans) {
+            vector<VRegType> types;
+            for (auto vr : args)
+                types.push_back(meta.count(vr) ? meta[vr].type : VRegType::Int64);
+            vector<int> slots = placeCallArgs(types, spans, (int)argRegs.size(), (int)phys.floatArgs.size());
+            for (size_t k = 0; k < args.size(); k++) {
+                VReg vr = args[k];
+                // Float args go to XMM registers, not intArgs. Track only liveness.
+                bool in_table = !isFloat(types[k]) && slots[k] >= 0;
+                bool is_scratch = in_table && find(phys.scratch.begin(), phys.scratch.end(),
+                                                     argRegs[slots[k]]) != phys.scratch.end();
+                if (in_table && !is_scratch)
+                    meta[vr].call_uses.push_back({i, argRegs[slots[k]]});
+                else
                     addUse(vr);
-                } else {
-                    bool in_table = int_idx < (int)argRegs.size();
-                    bool is_scratch = in_table && find(phys.scratch.begin(), phys.scratch.end(),
-                                                         argRegs[int_idx]) != phys.scratch.end();
-                    if (in_table && !is_scratch)
-                        meta[vr].call_uses.push_back({i, argRegs[int_idx]});
-                    else
-                        addUse(vr);
-                    int_idx++;
-                }
             }
         };
 
@@ -97,13 +95,13 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const CallC& c) {
                 call_indices.push_back(i);
                 if (c.callee) addUse(*c.callee);
-                addCallArgs(c.args, phys.intArgs);
+                addCallArgs(c.args, phys.intArgs, c.structArgs);
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
             [&](const CallPln& c) {
                 call_indices.push_back(i);
-                addCallArgs(c.args, phys.intArgs);
+                addCallArgs(c.args, phys.intArgs, {});
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
@@ -114,7 +112,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // see IT-3206 status notes for the tradeoff).
             [&](const CallSys& c) {
                 call_indices.push_back(i);
-                addCallArgs(c.args, phys.syscallArgs);
+                addCallArgs(c.args, phys.syscallArgs, {});
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },

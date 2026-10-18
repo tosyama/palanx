@@ -379,7 +379,10 @@ Statement model
     - libs - Link library name string list, in source order (from the `link` clause);
       omitted when the statement has no `link` clause. See SASpec.md's Root `libs` for
       how these are aggregated (sorted, deduplicated, and unioned across scopes and
-      modules) once SA processes them.
+      modules) once SA processes them. An entry ending in `.o` goes to `objs` instead.
+    - objs - Object file path string list from the `link` clause, each made absolute against
+      the source file's directory; omitted when the clause names none. Aggregated like `libs`
+      (SASpec.md's Root `objs`).
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement

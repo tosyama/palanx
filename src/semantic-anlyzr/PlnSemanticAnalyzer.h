@@ -168,6 +168,7 @@ class PlnSemanticAnalyzer {
 	// library named by two cinclude statements is emitted once, and the
 	// ordering makes the sa.json "libs" section deterministic.
 	set<string>            linkLibs_;
+	set<string>            linkObjs_;  // absolute paths, resolved by gen-ast
 
 	void enterScope();
 	void leaveScope();

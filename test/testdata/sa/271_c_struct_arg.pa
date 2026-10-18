@@ -1,0 +1,14 @@
+cinclude "271_c_struct_arg.h";
+
+func makeI8() -> I8 r {
+	1 -> r.a;
+}
+
+I8 v;
+Big b;
+Odd o;
+take_i8(v);
+take_big(b);
+take_odd(o);
+take_i8({a: 1, b: 2});
+take_i8(makeI8());

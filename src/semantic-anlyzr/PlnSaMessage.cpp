@@ -298,12 +298,6 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot convert '" + arg1 + "' to '" + arg2 + "'.";
 
-		case E_UnsupportedCStructReturn:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot receive the return value of a C function returning '" + arg1
-			       + "' by value: this version cannot classify its layout for a "
-			         "register-based return.";
-
 		case E_ByvalStructRetDiscarded:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "the return value of this call (a '" + arg1 + "' returned by value) is "
@@ -336,6 +330,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "invalid library name '" + arg1 + "' in a cinclude link clause; a name "
 			       "may only contain letters, digits, '_', '.', '+' and '-', since it is "
 			       "passed to the linker as -l<name>.";
+
+		case E_LinkObjNotFound:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "object file '" + arg1 + "' in a cinclude link clause is not found.";
 
 		case E_SyscallNumberNotConstant:
 			BOOST_ASSERT(arg1 != "\x01");

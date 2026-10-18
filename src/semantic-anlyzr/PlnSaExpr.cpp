@@ -1216,6 +1216,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 	size_t argIdx = 0;
 	for (auto& arg : args) {
 		const json* paramVT = argIdx < fixedCount ? &funcParams[argIdx]["var-type"] : nullptr;
+		bool byValStruct = isCFunc && paramVT && isStructStorage(*paramVT);
 		json argAst = arg;
 		json litBody, litRelease;
 		bool isLit = isAggregateLit(arg)
@@ -1223,7 +1224,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		// A bare integer literal argument adopts the parameter's type here
 		// instead of defaulting to int64/uint64, avoiding a spurious narrowing
 		// rejection below.
-		json saArg = isLit ? sa_lit_arg(arg, isCFunc ? nullptr : paramVT,
+		json saArg = isLit ? sa_lit_arg(arg, isCFunc && !byValStruct ? nullptr : paramVT,
 		                                paramVT ? funcParams[argIdx].value("name", "") : "", argAst, litBody, litRelease)
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
 		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
@@ -1265,7 +1266,9 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StructBorrowNeedsAddrOf) << endl;
 				exit(1);
 			}
-			checkArgPtrPermission(locNode, funcName, isCFunc, saArg, funcParams[argIdx], argIdx);
+			// A by-value struct is only read, to copy it, so a read-only source is fine.
+			if (!byValStruct)
+				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, funcParams[argIdx], argIdx);
 		} else if (isVariadic) {
 			const PlnType* promoted = variadicPromote(fromType, registry_);
 			if (promoted != fromType)
@@ -1275,6 +1278,10 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 			saArg = makeTempExpr(move(litBody), move(saArg), move(litRelease));
 		else if (expiring)
 			saArg = bindCallTemp(move(saArg));
+		if (byValStruct) {
+			const StructDef& def = requireCompleteStruct((*paramVT)["base-type"]["type-name"].get<string>(), locNode);
+			saArg["struct-arg"] = {{"size", def.totalSize}, {"eightbytes", eightbytesJson(def, structDefs_)}};
+		}
 		saArgs.push_back(saArg);
 		argIdx++;
 	}

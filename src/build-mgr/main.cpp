@@ -150,6 +150,7 @@ int main(int argc, char* argv[])
 	// module. Declared here (not scoped to the aggregation block below) so it
 	// is still alive when the ld command line is built.
 	set<string> link_libs;
+	set<string> link_objs;
 
 	for (int i=0; i<ast_files.size(); i++) {
 		string ast_file = ast_files[i];
@@ -197,6 +198,7 @@ int main(int argc, char* argv[])
 			// is needed. Read before the alloc-shapes continue below: a
 			// module can carry libs without carrying alloc-shapes.
 			for (auto& l : sa["libs"]) link_libs.insert(l.get<string>());
+			for (auto& o : sa["objs"]) link_objs.insert(o.get<string>());
 			if (!sa.contains("alloc-shapes")) continue;
 			for (auto& shape : sa["alloc-shapes"]) {
 				string key;
@@ -550,6 +552,7 @@ int main(int argc, char* argv[])
 	// dependencies were ever supported.
 	vector<string> ldArgv{"ld"};
 	for (auto& obj : obj_files) ldArgv.push_back(obj);
+	for (auto& obj : link_objs) ldArgv.push_back(obj);
 	ldArgv.push_back("-lc");
 	for (auto& lib : link_libs) ldArgv.push_back("-l" + lib);
 	ldArgv.push_back("-dynamic-linker");

@@ -22,7 +22,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to);
     void emitCallC(const string& name, int nFloatArgs = 0, bool indirect = false);
     int  emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs,
-                      const PhysLoc* callee = nullptr);
+                      const PhysLoc* callee = nullptr, const vector<StructArgSpan>& structArgs = {});
     void emitExit(int code);
 
     // Per-function prologue

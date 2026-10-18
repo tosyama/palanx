@@ -1732,24 +1732,6 @@ TEST(sa_error, call_arg_ptr_mismatch_c)
 	ASSERT_NE(sa.find("cannot convert '@!int32' to '@!int64'"), string::npos);
 }
 
-TEST(sa_error, c_by_value_struct_param)
-{
-	// normalizeCFuncSig used to accept a
-	// top-level by-value struct parameter (indistinguishable from a
-	// pntr-wrapped struct base-type to unrepresentableTypeName alone),
-	// letting a call like this type-check with the wrong ABI. Real-world
-	// case: stdio.h's fopencookie(..., cookie_io_functions_t).
-	// Covers: normalizeCFuncSig by-value struct detection, E_UnsupportedCFuncSignature
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_155_c_by_value_struct_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot call C function 'point_sum'"), string::npos);
-	ASSERT_NE(sa.find("by-value struct parameter"), string::npos);
-}
-
 TEST(sa_error, convert_for_binding_ptr_mismatch)
 {
 	// Same Incompatible gap as call_arg_ptr_mismatch_native, but through
@@ -1778,21 +1760,6 @@ TEST(sa_error, byval_struct_ret_discarded)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("the return value of this call (a 'div_t' returned by value) is discarded"), string::npos);
-}
-
-TEST(sa_error, unsupported_c_struct_return)
-{
-	// `Odd3 o = get_odd();` where Odd3 is `{ char a[3]; }`
-	// -- classifySysVStructRet rejects the 3-byte tail eightbyte (not 1/2/4/8
-	// wide) rather than guessing at a partial-eightbyte store.
-	// Covers: sa_struct_var_decl struct-ret classification rejection, E_UnsupportedCStructReturn
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_158_unsupported_c_struct_return.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot receive the return value of a C function returning 'Odd3' by value"), string::npos);
 }
 
 TEST(sa_error, callback_arg_not_func)
@@ -1969,6 +1936,17 @@ TEST(sa_error, invalid_link_lib_name)
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(": error:"), string::npos);
 	ASSERT_NE(sa.find("invalid library name"), string::npos);
+}
+
+TEST(sa_error, link_obj_not_found)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_611_link_obj_not_found.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":1:1: error: object file '"), string::npos);
+	ASSERT_NE(sa.find("/test/testdata/sa/error_611_missing.o' in a cinclude link clause is not found."), string::npos);
 }
 
 TEST(sa_error, empty_link_lib_name)
@@ -3523,6 +3501,25 @@ TEST(sa_error, func_ptr)
 		{"error_609_func_ptr_permission.pa",
 		 ":2:1: error: cannot convert '@func(@!int32) -> int32' to '@func(@int32) -> int32'."},
 		{"error_610_func_ptr_arg_count.pa", ":3:1: error: function 'f' takes 1 argument(s), but 2 given."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, c_struct_arg)
+{
+	const pair<string, string> cases[] = {
+		{"error_155_c_by_value_struct_param.pa", ":3:11: error: cannot convert 'int64' to 'Point'."},
+		{"error_612_c_struct_arg_func_ref.pa",
+		 ":3:25: error: function 'take_i8' cannot be used as a function pointer: its parameter type 'I8' cannot be passed through one."},
+		// Only a by-value struct parameter takes a literal; a pointer parameter still doesn't.
+		{"error_613_c_ptr_param_lit.pa", ":4:13: error: a '{name: value}' literal can only be used as a struct value"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

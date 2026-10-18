@@ -206,6 +206,11 @@ struct ConvertExpr : Expr {
     unique_ptr<Expr> src;
 };
 
+// One eightbyte of a struct passed or returned by value: the register type
+// it travels in, and how many of its bytes belong to the struct (1-8; a width
+// other than 1/2/4/8 is read or written piecewise).
+struct Eightbyte { VRegType type; int size; };
+
 struct CCCallExpr : Expr {
     CCCallExpr() : Expr(ExprKind::CCCall) {}
     string name;
@@ -220,9 +225,14 @@ struct CCCallExpr : Expr {
     // structRetEightbytes lists the classified eightbytes in order (empty
     // means MEMORY class -- the destination pointer was already prepended to
     // args as an ordinary argument, so no further lowering is needed here).
-    bool             hasStructRet = false;
-    string           structRetVar;
-    vector<VRegType> structRetEightbytes;
+    bool              hasStructRet = false;
+    string            structRetVar;
+    vector<Eightbyte> structRetEightbytes;
+    // Parallel to args: set for an argument passed to a by-value struct
+    // parameter, whose expression yields a pointer to the struct to copy.
+    // Empty eightbytes means MEMORY class (copied to the stack).
+    struct StructArg { int size; vector<Eightbyte> eightbytes; };
+    vector<std::optional<StructArg>> structArgs;
 };
 
 struct PlnCallExpr : Expr {

@@ -507,9 +507,15 @@ cinclude: KW_CINCLUDE import_path import_as link_clause
 		if ($3.size()) {
 			$$["alias"] = $3;
 		}
-		if ($4.size()) {
-			$$["libs"] = move($4);
+		json libs = json::array(), objs = json::array();
+		for (auto& name : $4) {
+			if (isLinkObjName(name))
+				objs.push_back(resolveLinkObjPath(name, lexer.inputFile));
+			else
+				libs.push_back(name);
 		}
+		if (libs.size()) $$["libs"] = move(libs);
+		if (objs.size()) $$["objs"] = move(objs);
 	}
 	;
 

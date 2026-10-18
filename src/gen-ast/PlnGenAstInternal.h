@@ -4,6 +4,7 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
+#include <filesystem>
 #include <vector>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -229,3 +230,19 @@ inline json negateExpr(json operand)
 	}
 	return {{"expr-type", "neg"}, {"operand", std::move(operand)}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A `link` clause entry ending in ".o" names an object file rather than a -l
+// library. Resolved here, against the source file's directory as a local
+// cinclude header is, so everything downstream sees only absolute paths.
+inline bool isLinkObjName(const string& name)
+{
+	return name.size() > 2 && name.compare(name.size() - 2, 2, ".o") == 0;
+}
+
+inline string resolveLinkObjPath(const string& name, const string& inputFile)
+{
+	std::filesystem::path p = name;
+	if (!p.is_absolute())
+		p = std::filesystem::absolute(std::filesystem::path(inputFile).parent_path() / p);
+	return p.lexically_normal().string();
+}

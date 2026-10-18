@@ -1,0 +1,13 @@
+cinclude <stdio.h>;
+
+func cwrite(@!void cookie, @int8 buf, uint64 size) -> int64 n {
+	printf("[%.*s]", int32(size), buf);
+	int64(size) -> n;
+}
+
+cookie_io_functions_t io;
+cwrite -> io.write;
+@!FILE f = fopencookie(NULL, "w", io);
+fprintf(f, "hello %d", 42);
+fclose(f);
+printf("\n");

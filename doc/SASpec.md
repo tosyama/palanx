@@ -19,6 +19,9 @@ Root
   (sorted, deduplicated). Empty array when none. Each module's sa.json carries only its
   own libraries; the build manager unions this list across all modules and appends
   `-l<name>` to the `ld` invocation for each entry.
+- objs\* - Absolute object file path list from `link` clauses, collected like `libs` (sorted,
+  deduplicated; empty array when none). Each file must exist (`E_LinkObjNotFound`). The build
+  manager unions it across modules and passes each path to `ld` after the program's own objects.
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
   Four entry kinds:
@@ -774,16 +777,23 @@ Additional fields per expression kind:
   - struct-ret added instead of value-type when a C function returns a struct **by value**
     (SysV AMD64 classification, see "Struct variable declaration → sa.json" below for how this
     call is placed): `{"var":<destination variable name string>,"struct-name":<struct tag
-    name>,"size":<total struct size in bytes>,"eightbytes":[{"class":"int"|"sse","size":1|2|4|
-    8}, ...]}`. Each array entry is one eightbyte of the classified return value in order — its
+    name>,"size":<total struct size in bytes>,"eightbytes":[{"class":"int"|"sse","size":1..8},
+    ...]}`. Each array entry is one eightbyte of the classified return value in order — its
     byte offset within the struct is implied by its index (`index * 8`), there is no explicit
     `offset` key; `size` on the last entry is the tail width when the struct isn't a multiple of
-    8 bytes (only 1/2/4/8 are supported — any other tail width is E_UnsupportedCStructReturn). A
+    8 bytes (codegen writes a width other than 1/2/4/8 piecewise). A
     struct over 16 bytes (the System V AMD64 MEMORY class) is `"eightbytes":[]`, and the hidden
     destination pointer is prepended by SA as an ordinary first entry in the call's own `args`
     array (an `id` expression of type `pntr(struct)`) — codegen has no MEMORY-specific lowering,
     it is just another argument. When `struct-ret` is present the call node never carries
     `value-type`/`value-types` (SA removes it) since the call has no ordinary return-value slot.
+  - struct-arg added on an argument (in `args`) given to a C function's by-value struct
+    parameter: `{"size":<total struct size in bytes>,"eightbytes":[...]}`, with `eightbytes` as
+    in `struct-ret` (`[]` for MEMORY class). The argument expression itself is a pointer to the
+    struct to copy — a variable, field, array element, or a `temp` holding a literal or a
+    returned struct — and codegen reads the eightbytes through it: each goes to a register of
+    its class when all of the struct's eightbytes fit in the remaining argument registers,
+    otherwise the whole struct is copied to the stack, as a MEMORY-class one always is.
 
 Promotion rules
 ---------------
@@ -988,11 +998,11 @@ a named `strct`/`union`→`struct`) and then check every type against `unreprese
   needed (see "Incomplete struct types" below), not at signature-admission time. This applies to
   a struct **return** type, including one that requires the full System V AMD64 by-value return
   classification at the call site (see the call expression's `struct-ret` entry above) — the
-  return direction is fully representable. A by-value struct type-kind used as a top-level
-  **parameter** (not behind a pointer), by contrast, is rejected here with the reason
-  `"by-value struct parameter"` — this direction has no ABI implementation (a C function like
-  `stdio.h`'s `fopencookie`, which takes a `cookie_io_functions_t` by value, is unsupported for
-  this reason).
+  return direction is fully representable. A by-value struct used as a top-level
+  **parameter** is rewritten to the shape of a native struct parameter (`pntr` to `struct`
+  without `mutable`), so a call checks its argument as for a native function; the call's
+  argument then carries `struct-arg` (see the call expression above). Unlike a native struct
+  parameter, a read-only `@T` is accepted, since the callee receives a copy.
 - `normalizeCType` folds a `pntr` to a `func` to `"mutable":false` whatever C's `const` says,
   drops the parameters' `name`s and the node's `typedef-name`, and recurses into the return type
   and parameters, so a C function pointer has the same shape as a native `@func(...)`. A C

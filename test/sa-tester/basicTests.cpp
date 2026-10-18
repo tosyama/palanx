@@ -9,6 +9,7 @@
 #include <map>
 #include <set>
 #include <regex>
+#include <filesystem>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -4242,6 +4243,51 @@ TEST(sa, link_libs_sorted) {
 	ASSERT_EQ(jout["libs"].size(), 2u);
 	ASSERT_EQ(jout["libs"][0], "m");
 	ASSERT_EQ(jout["libs"][1], "rt");
+}
+
+TEST(sa, link_objs) {
+	// The same object file named twice, once inside a block, is linked once.
+	cleanTestEnv();
+	system("cp ../test/testdata/sa/270_link_obj.pa out/ && touch out/270_link_obj.o");
+	json jout = run_sa("out/270_link_obj.pa");
+	ASSERT_TRUE(jout.is_object());
+	string obj = filesystem::absolute("out/270_link_obj.o").lexically_normal().string();
+	ASSERT_EQ(jout["objs"], json::array({obj}));
+	ASSERT_EQ(jout["libs"], json::array({"m"}));
+}
+
+TEST(sa, c_struct_arg) {
+	// A by-value struct argument is marked with its SysV classification; the
+	// argument itself stays a pointer to the struct to copy.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/271_c_struct_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+	vector<json> calls;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "expr") calls.push_back(s["body"]);
+	ASSERT_EQ(calls.size(), 5u);
+
+	json i8 = {{"size", 8}, {"eightbytes", json::array({{{"class", "int"}, {"size", 8}}})}};
+	ASSERT_EQ(calls[0]["args"][0]["expr-type"], "id");
+	ASSERT_EQ(calls[0]["args"][0]["struct-arg"], i8);
+	ASSERT_EQ(calls[1]["args"][0]["struct-arg"], json({{"size", 24}, {"eightbytes", json::array()}}));
+	ASSERT_EQ(calls[2]["args"][0]["struct-arg"],
+		json({{"size", 3}, {"eightbytes", json::array({{{"class", "int"}, {"size", 3}}})}}));
+	// A literal and a returned struct are held in a temp, which carries the mark.
+	ASSERT_EQ(calls[3]["args"][0]["expr-type"], "temp");
+	ASSERT_EQ(calls[3]["args"][0]["struct-arg"], i8);
+	ASSERT_EQ(calls[4]["args"][0]["expr-type"], "temp");
+	ASSERT_EQ(calls[4]["args"][0]["struct-arg"], i8);
+}
+
+TEST(sa, c_struct_arg_read_only) {
+	// The callee gets a copy, so a read-only pointer is accepted.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/272_c_struct_arg_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+	const json& call = jout["statements"].back()["body"];
+	ASSERT_EQ(call["name"], "take_i8");
+	ASSERT_TRUE(call["args"][0].contains("struct-arg"));
 }
 
 TEST(sa, link_libs_absent) {

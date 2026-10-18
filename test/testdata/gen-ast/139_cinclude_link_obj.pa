@@ -1,0 +1,2 @@
+cinclude "112_cinclude_link.h" link "m", "abi.o", "sub/../lib/x.o";
+cinclude "112_cinclude_link.h" link "/opt/y.o";

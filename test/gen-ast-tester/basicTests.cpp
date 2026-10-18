@@ -4,6 +4,7 @@
 /// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 #include <fstream>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
@@ -1465,6 +1466,24 @@ TEST(gen_ast, cinclude_link) {
 
 	ASSERT_EQ(stmts[3]["stmt-type"], "cinclude");
 	ASSERT_FALSE(stmts[3].contains("libs"));
+}
+
+TEST(gen_ast, cinclude_link_obj) {
+	// A ".o" entry becomes an absolute path relative to the source file's
+	// directory, so downstream tools never depend on the process cwd.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/139_cinclude_link_obj.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	string dir = std::filesystem::absolute("../test/testdata/gen-ast").lexically_normal().string();
+	ASSERT_EQ(stmts[0]["libs"], json::array({"m"}));
+	ASSERT_EQ(stmts[0]["objs"], json::array({dir + "/abi.o", dir + "/lib/x.o"}));
+
+	ASSERT_FALSE(stmts[1].contains("libs"));
+	ASSERT_EQ(stmts[1]["objs"], json::array({"/opt/y.o"}));
 }
 
 TEST(gen_ast, link_as_identifier) {

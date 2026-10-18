@@ -72,7 +72,6 @@ enum PlnSaMessageCode {
 	E_ArithOpNotNumeric,
 	E_StructInitNotSupported,	// arg1: struct type name
 	E_IncompatibleTypes,		// arg1: from type display name, arg2: to type display name
-	E_UnsupportedCStructReturn,	// arg1: struct type name
 	E_ByvalStructRetDiscarded,	// arg1: struct type name
 	E_FuncNotValue,		// arg1: function name, arg2: the reason
 	E_FuncPtrMutable,
@@ -80,6 +79,7 @@ enum PlnSaMessageCode {
 	E_AmbiguousFuncPtrCall,	// arg1: the name called
 	E_DerefVoidPointer,		// no args
 	E_InvalidLinkLibName,		// arg1: the library name as written
+	E_LinkObjNotFound,			// arg1: the object file's absolute path
 	E_SyscallNumberNotConstant,	// arg1: syscall name
 	E_SyscallNumberOutOfRange,	// arg1: syscall name, arg2: the number as written
 	E_SyscallTooManyParams,		// arg1: syscall name, arg2: parameter count

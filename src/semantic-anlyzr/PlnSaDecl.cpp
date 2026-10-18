@@ -1681,19 +1681,12 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 				}
 				copySrc = move(userInit);
 			} else {
-				bool ok;
-				vector<EightbyteRet> eightbytes = classifySysVStructRet(def, structDefs_, ok);
-				if (!ok || !useSimpleCalloc) {
-					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnsupportedCStructReturn, structName) << endl;
-					exit(1);
-				}
 				userInit.erase("value-type");
-				json ebs = json::array();
-				for (auto& eb : eightbytes)
-					ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}});
+				json ebs = eightbytesJson(def, structDefs_);
+				bool inMemory = ebs.empty();
 				userInit["struct-ret"] = {{"var",name}, {"struct-name",structName},
-				                          {"size",def.totalSize}, {"eightbytes",ebs}};
-				if (eightbytes.empty()) {
+				                          {"size",def.totalSize}, {"eightbytes",move(ebs)}};
+				if (inMemory) {
 					// MEMORY class (>16 bytes): prepend the destination pointer as an
 					// ordinary first argument -- the callee writes the whole struct
 					// through it directly, so codegen needs no struct-ret-specific
