@@ -798,6 +798,16 @@ TEST(c2ast, macro_const_suffix) {
     expect_const("LU5", "5", "uint64");
     expect_const("HEXL", "18446744073709551615", "uint64");
     expect_const("SNARROW", "-25536", "int16");
+    expect_const("UNOT", "4294967295", "uint32");
+    expect_const("ULNOT", "18446744073709551615", "uint64");
+    expect_const("UCNOT", "-1", "int32");
+    expect_const("AATTR", "4294967040", "uint32");
+    for (auto [name, value] : {pair{"INOT", "-6"}, pair{"LNOT", "-4294967297"}}) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << name;
+        ASSERT_EQ((*c)["value"], value) << name;
+        ASSERT_FALSE(c->contains("value-type")) << name;
+    }
 
     for (const char* name : {"BIGSH", "SOVF", "BIGDEC", "FLO", "UCMP", "UDIVZ", "UMODZ",
                              "TOOBIG", "UNTBIG", "SSHNEG", "LSHOVF"})
@@ -1585,7 +1595,8 @@ TEST(c2ast, enum_capture) {
     ASSERT_NE(color, nullptr);
     ASSERT_EQ((*color)["enumerators"], json::parse(R"([
         {"name":"RED","value":"0"},{"name":"GREEN","value":"5"},{"name":"BLUE","value":"6"},
-        {"name":"NEG","value":"-3"},{"name":"AFTER","value":"7"}])"));
+        {"name":"NEG","value":"-3"},{"name":"AFTER","value":"7"},
+        {"name":"NOTV","value":"-1"}])"));
     ASSERT_NE(find(enums, "CSpace"), nullptr);   // typedef name of an anonymous body
     ASSERT_NE(find(enums, "Mode"), nullptr);     // the tag, not the typedef name
     ASSERT_EQ(find(enums, "ModeAlias"), nullptr);

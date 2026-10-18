@@ -75,7 +75,7 @@ never reaches gen-ast's own `ast.json`.
 An object-like `#define` macro whose body, after fully expanding any references to other
 object-like macros (e.g. `#define S_IFDIR __S_IFDIR`), folds down to a single compile-time
 integer value is exported here. The body may be a bare integer literal (e.g. `#define MAGIC
-42`), a unary `+`/`-` of one, or a binary expression built from `| & ^ << >> + - * / %` over such
+42`), a unary `+`/`-`/`~` of one, or a binary expression built from `| & ^ << >> + - * / %` over such
 forms (e.g. `#define S_IRWXU (S_IREAD|S_IWRITE|S_IEXEC)`) — evaluated left-to-right within each
 precedence level. Literals may carry C's `U`/`L`/`LL` suffixes, and any operand may be an integer
 cast (e.g. ncurses' `((chtype)(1U) << 18)`) or `sizeof(type)`, typed `uint64` (`size_t`). `sizeof`
@@ -89,7 +89,7 @@ overflow a signed type, divide/mod by zero, or shift by a negative or out-of-ran
 fold (same "not exported" outcome as an unsupported form). The body may also be a pointer-cast of
 any of these folded forms (e.g. `#define NULL ((void *)0)`). A form that doesn't fold this way (a
 function-like macro referenced without a call, a string or floating literal, a relational/
-equality/logical/ternary expression, unary `~`/`!`, or a reference to an unresolved identifier)
+equality/logical/ternary expression, unary `!`, or a reference to an unresolved identifier)
 is not exported here — referencing such a macro name from Palan is `Undefined function` or
 `Undefined variable`, not a compiler abort.
 

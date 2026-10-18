@@ -54,12 +54,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 22. C Macro Constants Using Unary `~` Are Not Exported
-
-**Summary:** c2ast's macro-constant folding (ASTSpec.md's Constant definition model) recognizes unary `~` syntactically but does not fold it, so a macro whose body uses it is not exported. For example, ncurses' `A_ATTRIBUTES` (`NCURSES_BITS(~(1U - 1U),0)`) is unavailable, while the other `A_*` attributes are exported. The typed folding added in v0.1.37 already carries each operand's C type, so `~` could fold as a bitwise complement at the promoted operand's width, with the result typed like the operand. An untyped operand has no fixed width, so it needs its own rule, for example taking the C type the literal would have.
-
----
-
 ## 24. gen-ast Nesting Depth Limit
 
 **Summary:** gen-ast reserves its GLR stack at the maximum depth (`YYMAXDEPTH`, 10000 items) and never grows it, so nesting blocks about 3330 levels deep (for example nested `while` loops) fails with "memory exhausted". Bison 3.8.2's `glr2.cc` grows the stack by `memcpy`-ing each `glr_stack_item` and then destroying the original, which frees the semantic value twice; this used to abort gen-ast at 65 nesting levels. Lifting the limit needs a skeleton change or the LALR conversion (#25). Real code does not nest this deeply.

@@ -1,4 +1,4 @@
-enum Color { RED, GREEN = 5, BLUE, NEG = -3, AFTER = BLUE + 1 };
+enum Color { RED, GREEN = 5, BLUE, NEG = -3, AFTER = BLUE + 1, NOTV = ~0 };
 typedef enum { CS_A, CS_B } CSpace;
 typedef enum Mode { MODE_X = 1 << 2 } ModeAlias;
 enum { ANON_A = 10, ANON_B };

@@ -1261,6 +1261,18 @@ static json foldNegate(const json &node)
 	return makeTypedLitInt(0 - bits, intPrimType(width, is_signed));
 }
 
+// An untyped operand is int or long, both signed, so ~v keeps its width and fits as is.
+static json foldBitNot(const json &node)
+{
+	if (!isLitInt(node)) return json{};
+	if (!node.contains("value-type"))
+		return {{"expr-type", "lit-int"}, {"value", to_string(~stoll(node["value"].get<string>()))}};
+	int width;
+	bool is_signed;
+	promotedIntType(node, width, is_signed);
+	return makeTypedLitInt(~litIntBits(node), intPrimType(width, is_signed));
+}
+
 // C's own x86-64 layout rules, not SA's buildStructDef: that one lays out only the
 // shapes Palan can represent, while sizeof must size any type C allows.
 bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
@@ -1403,7 +1415,7 @@ bool CParser::postfix_expression(json &value, const vector<CToken*> &tokens, int
 
 bool CParser::unary_expression(json &value, const vector<CToken*> &tokens, int &result_index)
 {
-	// TODO: prefix increment and decrement, unary &, unary *, bitwise NOT, logical NOT
+	// TODO: prefix increment and decrement, unary &, unary *, logical NOT
 	int index = result_index;
 
 	if (postfix_expression(value, tokens, index)) {
@@ -1424,6 +1436,16 @@ bool CParser::unary_expression(json &value, const vector<CToken*> &tokens, int &
 		} else {
 			value = inner_value; // unary plus: value unchanged
 		}
+		result_index = index;
+		return true;
+	}
+
+	if (CONSUME_PUNC('~')) {
+		json inner_value;
+		if (!cast_expression(inner_value, tokens, index)) {
+			return false;
+		}
+		value = foldBitNot(inner_value);
 		result_index = index;
 		return true;
 	}
