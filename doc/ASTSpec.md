@@ -90,8 +90,11 @@ fold (same "not exported" outcome as an unsupported form). The body may also be 
 any of these folded forms (e.g. `#define NULL ((void *)0)`). A form that doesn't fold this way (a
 function-like macro referenced without a call, a string or floating literal, a relational/
 equality/logical/ternary expression, unary `!`, or a reference to an unresolved identifier)
-is not exported here — referencing such a macro name from Palan is `Undefined function` or
-`Undefined variable`, not a compiler abort.
+is not exported here; it goes to the `ast.unexported-macros` list instead, as `{name}` or, for a
+function-like macro, `{name, "function-like": true}`. gen-ast registers these into the same macro
+table (first cinclude wins on a name, as among constants) and, instead of folding, sets `c-macro`
+on a later `id` or `call` that names one (see Expression model's `id`), so SA reports the macro
+rather than an undefined name.
 
 An enumerator (see Enum definition model below) is an integer operand in these expressions,
 untyped like an unsuffixed literal. A body that is exactly one enumerator of a named enum
@@ -487,6 +490,9 @@ Expression model
     - value\* - Decimal string (e.g. "3.14")
   5. id - Identifier (variable reference)
     - name\* - Identifier name string
+    - c-macro - Set by gen-ast when the name is a cinclude'd macro c2ast could not export (see
+      Constant definition model): "function-like" or "not-constant". SA reads it only to word the
+      error when the name resolves to nothing else. A `call` carries it the same way.
   6. add - Binary addition
     - left\*  - Left operand expression model
     - right\* - Right operand expression model

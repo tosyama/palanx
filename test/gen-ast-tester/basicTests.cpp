@@ -1310,6 +1310,24 @@ TEST(gen_ast, cinclude_constant) {
 	ASSERT_FALSE(add_left.contains("value-type"));
 }
 
+TEST(gen_ast, cinclude_unexported_macro) {
+	cleanTestEnv();
+	// Only references after the cinclude are marked, and the first cinclude
+	// wins over a later one's constant of the same name, as among constants.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/140_cinclude_unexported_macro.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	auto& stmts = jout["ast"]["statements"];
+
+	ASSERT_FALSE(stmts[0]["vars"][0]["init"].contains("c-macro"));
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["c-macro"], "not-constant");
+
+	auto& after = stmts[4]["vars"][0]["init"];
+	ASSERT_EQ(after["left"]["c-macro"], "not-constant");
+	ASSERT_EQ(after["right"]["c-macro"], "function-like");
+	ASSERT_EQ(after["right"]["args"][0]["c-macro"], "not-constant");
+}
+
 TEST(gen_ast, cinclude_global) {
 	cleanTestEnv();
 	// c2ast exports file-scope "extern" object declarations into

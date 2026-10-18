@@ -1141,8 +1141,10 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		json& vt = f["var-type"];
 		if (vt.value("type-kind", "") == "arr" && !vt["size-expr"].is_null()) {
 			// A type is resolved before the variables of its block are declared.
-			if (!onlyNamesConsts(vt["size-expr"])) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant) << endl;
+			if (const json* id = firstNonConstName(vt["size-expr"])) {
+				if (id->contains("c-macro")) undefinedNameError(stmt, *id, E_UndefinedVariable);
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant,
+					(*id)["name"].get<string>()) << endl;
 				exit(1);
 			}
 			vt["size-expr"] = sa_arr_size_expr(stmt, vt["size-expr"]);

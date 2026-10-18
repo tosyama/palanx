@@ -142,6 +142,18 @@ const json* PlnSemanticAnalyzer::findCGlobal(const string& name) const
 	return nullptr;
 }
 
+// gen-ast marks a reference to a cinclude'd macro c2ast could not export, so it
+// is not reported as an undefined name the header plainly defines.
+void PlnSemanticAnalyzer::undefinedNameError(const json& at, const json& ref, PlnSaMessageCode undefinedCode) const
+{
+	string macro = ref.value("c-macro", "");
+	PlnSaMessageCode code = macro == "function-like" ? E_CMacroFuncLike
+	                      : macro == "not-constant" ? E_CMacroNotConstant
+	                      : undefinedCode;
+	cerr << locPrefix(at) << PlnSaMessage::getMessage(code, ref["name"].get<string>()) << endl;
+	exit(1);
+}
+
 void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json& locNode)
 {
 	for (auto& scope : plnFuncScopes)
@@ -766,21 +778,21 @@ void PlnSemanticAnalyzer::preregisterFunc(const json& f)
 
 // A const whose value names a variable can only be diagnosed once variables
 // are declared, so the pre-scan leaves it to step 2.
-bool PlnSemanticAnalyzer::onlyNamesConsts(const json& expr) const
+const json* PlnSemanticAnalyzer::firstNonConstName(const json& expr) const
 {
 	if (expr.is_object()) {
 		if (expr.value("expr-type","") == "id" && !constDecls_.count(expr.value("name","")))
-			return false;
+			return &expr;
 		if (expr.value("expr-type","") == "field-access"
 		    && !enumTypeNamed(typeNameWritten(expr["object"])).is_null())
-			return true;
+			return nullptr;
 		for (auto& [k, v] : expr.items())
-			if (!onlyNamesConsts(v)) return false;
+			if (const json* id = firstNonConstName(v)) return id;
 	} else if (expr.is_array()) {
 		for (auto& v : expr)
-			if (!onlyNamesConsts(v)) return false;
+			if (const json* id = firstNonConstName(v)) return id;
 	}
-	return true;
+	return nullptr;
 }
 
 void PlnSemanticAnalyzer::beginModule(const json& ast)
@@ -947,7 +959,7 @@ void PlnSemanticAnalyzer::resolveTopDecl(const string& name, TopDecl& d)
 	if      (t == "struct-def") sa_struct_def(stmt);
 	else if (t == "enum-def")   sa_enum_def(stmt);
 	else if (t == "type-alias") sa_type_alias(stmt);
-	else if (onlyNamesConsts(stmt["value"])) sa_const_decl(stmt);
+	else if (!firstNonConstName(stmt["value"])) sa_const_decl(stmt);
 	else resolved = false;
 	if (resolved) prescannedDecls_.insert(&stmt);
 	resolving.pop_back();

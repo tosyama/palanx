@@ -21,8 +21,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 				cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_CGlobalNotAddressable, varName) << endl;
 				exit(1);
 			}
-			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_UndefinedVariable, varName) << endl;
-			exit(1);
+			undefinedNameError(obj, obj, E_UndefinedVariable);
 		}
 		if (!isStructPntr(*vt)) {
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
@@ -167,8 +166,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CGlobalNotAddressable, name) << endl;
 				exit(1);
 			}
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
-			exit(1);
+			undefinedNameError(expr, obj, E_UndefinedVariable);
 		}
 		// '@' on a borrow would name its variable's slot; only a primitive
 		// pointer has a use for that (a C 'T **' out-param).
@@ -754,8 +752,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 			} else {
 				json ref = sa_func_ref(expr);
 				if (!ref.is_null()) return ref;
-				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
-				exit(1);
+				undefinedNameError(expr, expr, E_UndefinedVariable);
 			}
 		}
 
@@ -1184,8 +1181,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 						cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnqualifiedAliasCall, callName) << endl;
 						exit(1);
 					}
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedFunction, callName) << endl;
-			exit(1);
+			undefinedNameError(expr, expr, E_UndefinedFunction);
 		}
 	}
 

@@ -142,7 +142,7 @@ TEST(build_mgr_error, stat_func_macro) {
 	// macros, so this must be a clean diagnostic, not an abort.
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_059_stat_func_macro.pa");
-	ASSERT_NE(out.find("Undefined function 'S_ISDIR'"), string::npos);
+	ASSERT_NE(out.find("C macro 'S_ISDIR' is function-like; Palan cannot use it."), string::npos);
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
 

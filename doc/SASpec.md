@@ -125,7 +125,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   of v0.1.33: every reference is already folded to a `lit-int` by
   gen-ast (ASTSpec.md's Constant definition model and `lit-int` entries), so
   a `cinclude` statement never carries a `constants` field by the time SA
-  sees it, and SA has no macro-name table of its own.
+  sees it, and SA has no macro-name table of its own (a macro c2ast could not
+  export reaches SA only as the `c-macro` mark on a reference).
   `functions`, `globals`, `structs` and `typedefs` are
   independent sections of the header's AST -- a header exporting only some of
   them (e.g. `stdint.h` with only `typedefs`) still has each present section

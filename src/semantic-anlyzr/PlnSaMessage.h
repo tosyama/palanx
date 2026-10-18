@@ -5,6 +5,7 @@
 /// @file PlnSaMessage.h
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
+#pragma once
 #include <string>
 using std::string;
 
@@ -51,7 +52,7 @@ enum PlnSaMessageCode {
 	E_WriteToImmutablePtrField,
 	E_EmbedOwningStruct,			// arg1: struct name
 	E_WriteToReadOnlyArrElem,
-	E_ArrFieldSizeNotConstant,
+	E_ArrFieldSizeNotConstant,	// arg1 (optional): the name that is not a const
 	E_ConflictingTypedef,			// arg1: typedef name
 	E_ConstNotCompileTimeValue,		// arg1: const name
 	E_AddrOfNotLocalVar,			// arg1: variable name
@@ -150,6 +151,8 @@ enum PlnSaMessageCode {
 	E_PtrInnerPermissionNarrowing,	// arg1: from type display name, arg2: to type display name
 	E_ConstExprOverflow,
 	E_ConstExprDivByZero,
+	E_CMacroFuncLike,	// arg1: macro name
+	E_CMacroNotConstant,	// arg1: macro name
 };
 
 class PlnSaMessage

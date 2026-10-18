@@ -343,6 +343,9 @@ expr_stmt: import
 		if (c_ast.is_object() && c_ast.contains("ast") && c_ast["ast"].contains("constants")) {
 			registerMacroConstants(macros, c_ast["ast"]["constants"], $$["loc"]);
 		}
+		if (c_ast.is_object() && c_ast.contains("ast") && c_ast["ast"].contains("unexported-macros")) {
+			registerUnexportedMacros(macros, c_ast["ast"]["unexported-macros"], $$["loc"]);
+		}
 	}
 	| var_declarations
 	{

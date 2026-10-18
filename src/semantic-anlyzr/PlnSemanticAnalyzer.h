@@ -14,6 +14,7 @@
 #include <filesystem>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
+#include "PlnSaMessage.h"
 
 using namespace std;
 
@@ -187,6 +188,7 @@ class PlnSemanticAnalyzer {
 
 	void        registerCGlobal(const string& name, const json& def);
 	const json* findCGlobal(const string& name) const;
+	[[noreturn]] void undefinedNameError(const json& at, const json& ref, PlnSaMessageCode undefinedCode) const;
 
 	void        registerPlnFunc(const string& name, const json& def, const json& locNode);
 	const json* findPlnFunc(const string& name) const;
@@ -366,7 +368,7 @@ class PlnSemanticAnalyzer {
 	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable);
 	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);
 	void  normalizeArrBorrowSig(json& funcDef);
-	bool  onlyNamesConsts(const json& expr) const;
+	const json* firstNonConstName(const json& expr) const;
 	void  checkElemShape(const json& locNode, const json& saValue, const json& dstType);
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);

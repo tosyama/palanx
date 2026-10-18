@@ -1840,8 +1840,12 @@ bool CParser::resolveConstValue(const json &node, json &value, json &type)
 
 void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPreprocessor &cpp)
 {
+	json unexported = json::array();
 	for (CMacro* m : macros) {
-		if (m->type != MT_OBJ) continue;
+		if (m->type != MT_OBJ) {
+			unexported.push_back({{"name", m->name}, {"function-like", true}});
+			continue;
+		}
 		// "#define X X" over an anonymous enum's X: parse() already exported X.
 		auto en = enumerators_.find(m->name);
 		if (en != enumerators_.end() && capturedEnums_[en->second.enumIndex].anonymous) continue;
@@ -1863,13 +1867,21 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 				type = {{"type-kind", "enum"}, {"type-name", e.name}};
 		}
 
+		// "#define stderr stderr": the name means whatever C declares under it.
+		bool self_ref = expanded.size() == 1 && expanded[0]->type == TT_ID
+		                && *expanded[0]->info.id == m->name;
 		for (CToken* t : expanded) delete t;
-		if (!ok) continue;
+		if (!ok) {
+			if (!self_ref) unexported.push_back({{"name", m->name}});
+			continue;
+		}
 
 		json constant = {{"name", m->name}, {"value", value}};
 		if (!type.is_null()) constant["value-type"] = type;
 		ast["ast"]["constants"].push_back(constant);
 	}
+	if (!unexported.empty())
+		ast["ast"]["unexported-macros"] = move(unexported);
 }
 
 // Starting point of parsing (top level & included file)

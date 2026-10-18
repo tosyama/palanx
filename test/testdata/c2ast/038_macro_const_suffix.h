@@ -39,3 +39,5 @@ typedef unsigned int chtype;
 #define UNTBIG 0xFFFFFFFFFFFFFFFF            /* skipped: an untyped literal is limited to int64 */
 #define SSHNEG ((int)-1 << 1)                /* skipped: negative signed left operand */
 #define LSHOVF (1L << 63)                    /* skipped: signed shift overflow */
+#define FMAC(x) (x)
+#define SELF SELF

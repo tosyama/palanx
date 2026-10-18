@@ -197,6 +197,9 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "cannot write through read-only pointer array element; use [n]@!T for mutable.";
 
 		case E_ArrFieldSizeNotConstant:
+			if (arg1 != "\x01")
+				return "struct field array size must be a compile-time constant integer; '" + arg1
+				       + "' is not a const.";
 			return "struct field array size must be a compile-time constant integer.";
 
 		case E_ConflictingTypedef:
@@ -481,6 +484,14 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "parameter '" + arg1 + "' of type '" + arg2 + "' cannot take a '{name: value}' literal: "
 			       "only a struct parameter can.";
+
+		case E_CMacroFuncLike:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "C macro '" + arg1 + "' is function-like; Palan cannot use it.";
+
+		case E_CMacroNotConstant:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "C macro '" + arg1 + "' cannot be used: it does not expand to an integer constant.";
 
 		case E_LitArgCFunc:
 			BOOST_ASSERT(arg1 != "\x01");

@@ -810,8 +810,14 @@ TEST(c2ast, macro_const_suffix) {
     }
 
     for (const char* name : {"BIGSH", "SOVF", "BIGDEC", "FLO", "UCMP", "UDIVZ", "UMODZ",
-                             "TOOBIG", "UNTBIG", "SSHNEG", "LSHOVF"})
+                             "TOOBIG", "UNTBIG", "SSHNEG", "LSHOVF"}) {
         ASSERT_EQ(find_const(name), nullptr) << name;
+        ASSERT_NE(find(ast["ast"]["unexported-macros"].begin(), ast["ast"]["unexported-macros"].end(),
+                       json{{"name", name}}), ast["ast"]["unexported-macros"].end()) << name;
+    }
+    ASSERT_NE(find(ast["ast"]["unexported-macros"].begin(), ast["ast"]["unexported-macros"].end(),
+                   json{{"name", "FMAC"}, {"function-like", true}}), ast["ast"]["unexported-macros"].end());
+    for (auto& m : ast["ast"]["unexported-macros"]) ASSERT_NE(m["name"], "SELF");
 }
 
 TEST(c2ast, int_constant_width) {
@@ -1630,6 +1636,7 @@ TEST(c2ast, enum_capture) {
         (json{{"name", "MODE_X"}, {"value", "4"}, {"value-type", enumRef("Mode")}}));
     int anonA = 0;
     for (auto& c : constants) anonA += c["name"] == "ANON_A";
+    for (auto& m : ast["ast"]["unexported-macros"]) ASSERT_NE(m["name"], "ANON_A");
     ASSERT_EQ(anonA, 1);
     ASSERT_EQ(find(constants, "UNKNOWN_M"), nullptr);
 }

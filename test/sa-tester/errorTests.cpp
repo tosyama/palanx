@@ -2143,7 +2143,7 @@ TEST(sa_error, macro_backref_arr_field)
 		"bin/palan-gen-ast ../test/testdata/sa/error_186_macro_backref_arr_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: struct field array size must be a compile-time constant integer."), string::npos) << sa;
+	ASSERT_NE(sa.find(":1:1: error: struct field array size must be a compile-time constant integer; 'ARR_N' is not a const."), string::npos) << sa;
 }
 
 TEST(sa_error, untyped_var_decl)
@@ -3076,8 +3076,8 @@ TEST(sa_error, as_cast)
 TEST(sa_error, struct_field_size)
 {
 	const pair<string, string> cases[] = {
-		{"error_431_struct_field_var_size.pa", ":4:2: error: struct field array size must be a compile-time constant integer."},
-		{"error_567_struct_field_var_size_top.pa", ":2:1: error: struct field array size must be a compile-time constant integer."},
+		{"error_431_struct_field_var_size.pa", ":4:2: error: struct field array size must be a compile-time constant integer; 'n' is not a const."},
+		{"error_567_struct_field_var_size_top.pa", ":2:1: error: struct field array size must be a compile-time constant integer; 'n' is not a const."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3290,6 +3290,23 @@ TEST(sa_error, lit_arg)
 		{"error_614_arr_lit_scalar_param.pa", ":2:4: error: parameter 'a' of type 'int32' cannot take an array literal: only a struct or fixed-size array parameter can."},
 		{"error_615_arr_lit_ptr_param.pa", ":2:6: error: parameter 'p' of type '@!int32' cannot take an array literal: only a struct or fixed-size array parameter can."},
 		{"error_616_lit_arg_c_variadic.pa", ":2:16: error: a literal cannot be passed to C function 'printf': only a by-value struct parameter takes one."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, c_macro_unexported)
+{
+	const pair<string, string> cases[] = {
+		{"error_617_c_macro_func_like.pa", ":2:11: error: C macro 'FMAC' is function-like; Palan cannot use it."},
+		{"error_618_c_macro_not_constant.pa", ":2:11: error: C macro 'NOFOLD' cannot be used: it does not expand to an integer constant."},
+		{"error_619_c_macro_arr_field.pa", ":2:1: error: C macro 'NOFOLD' cannot be used: it does not expand to an integer constant."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

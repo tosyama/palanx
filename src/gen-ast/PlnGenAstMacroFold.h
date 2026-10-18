@@ -16,10 +16,13 @@ using std::map;
 // value-type (null when C left it untyped) as c2ast reported them, and the
 // `loc` of the cinclude statement that registered it, used to decide whether
 // a given reference appears textually after this registration.
+// A macro c2ast could not export has no value; `unexported` names why
+// ("function-like" or "not-constant").
 struct MacroEntry {
 	json value;
 	json valueType;
 	json loc;
+	string unexported;
 };
 
 using MacroTable = map<string, MacroEntry>;
@@ -29,11 +32,16 @@ using MacroTable = map<string, MacroEntry>;
 // a given name wins -- a later cinclude with the same macro name is ignored.
 void registerMacroConstants(MacroTable& macros, const json& constants, const json& cincludeLoc);
 
+// Register `unexported` (c2ast's {name, function-like} array) the same way, so
+// a reference can be told apart from an undefined name.
+void registerUnexportedMacros(MacroTable& macros, const json& unexported, const json& cincludeLoc);
+
 // Recursively replace `id` expression nodes in `node` whose name matches a
 // registered macro constant, and whose reference `loc` is textually after
 // that macro's cinclude `loc`, with a `lit-int` node carrying the macro's
 // value, plus its value-type only when it has one. Does not descend into
 // `cinclude` statement subtrees (their `functions`/`structs`/etc. are C
 // declarations, not Palan references). Leaves earlier (pre-cinclude)
-// references as `id` untouched.
+// references as `id` untouched. A later `id` or call naming an unexported
+// macro keeps its form and gets `c-macro` set to the entry's reason.
 void foldMacroConstants(json& node, const MacroTable& macros);
