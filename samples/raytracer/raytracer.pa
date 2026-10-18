@@ -93,7 +93,7 @@ while i < height {
 		JSAMPLE(fmin(fmax(framebuffer[i*width+j].b, 0),1) * 255) -> jbuffer[0][j*3+2];
 		j + 1 -> j;
 	}
-	cinfo.jpeg_write_scanlines(@!jbuffer, 1);
+	cinfo.jpeg_write_scanlines(@!jbuffer as JSAMPARRAY, 1);
 	i+1 -> i;
 }
 

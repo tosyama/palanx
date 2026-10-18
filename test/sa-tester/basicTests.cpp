@@ -5808,3 +5808,12 @@ TEST(sa, const_expr)
 	ASSERT_EQ(init(12)["expr-type"], "lit-int");
 	ASSERT_EQ(init(12)["value"], "2147483648");
 }
+
+TEST(sa, owned_rows_ro_slots)
+{
+	// Owned rows and structs may be lent as read-only '@T' slots; a C 'T**'
+	// that does not write takes them through 'as'.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/266_owned_rows_ro_slots.pa");
+	ASSERT_TRUE(jout.is_object());
+}

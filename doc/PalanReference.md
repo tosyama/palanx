@@ -1397,10 +1397,21 @@ array); `m` must be a constant, and an array whose rows have another size is a c
 `[]@![]T` takes the slots of a `[n]@![]T` array.
 
 Only the outermost size may be left out: the elements must match exactly. An element owned by
-the array (a row, or a struct of `[n]T`) cannot be given as a `@T`/`@!T` pointer slot, or the
+the array (a row, or a struct of `[n]T`) cannot be given as a `@!T` pointer slot, or the
 other way around, since one side would free or overwrite what the other one owns. For example,
 a `[n]@![]int32` array is returned as `[]@![]int32`, not as `[][]int32`, and a `[n]P` array
 cannot be passed as `[]@!P`. The same holds for storing an array into a `[n]@![]T` slot.
+This does not depend on whether the sizes are known at compile time.
+
+An owned element can be lent as a read-only `@T` slot when the slots are read-only too
+(`@[n]@P`, or a C `const T * const *`): the callee can neither replace it nor free a borrow.
+A C function that declares `T **` without `const` but does not write the slots takes the owned
+rows through a cast, which states that the C declaration is looser than its use:
+
+```palan
+[1][width*3]JSAMPLE row;
+cinfo.jpeg_write_scanlines(@!row as JSAMPARRAY, 1);   // JSAMPARRAY is JSAMPLE **
+```
 
 ```palan
 func sum_arr([]int32 a, int64 n) -> int64 {

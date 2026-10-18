@@ -103,11 +103,12 @@ inline bool isStructPntr(const json& vt)
 }
 // A '@T'/'@!T' pointer to any T, including one to contiguous rows or structs of
 // unknown count (a '[n]@![]$T' slot). A borrowed array level also has
-// "mutable", but always with "arr-size"; an owned array level has no "mutable".
+// "mutable", but with "arr-size" or, when its size is known only at run time,
+// "unsized"; an owned array level has no "mutable".
 inline bool isPtrBorrow(const json& vt)
 {
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
-	    && !vt.contains("arr-size");
+	    && !vt.contains("arr-size") && !vt.contains("unsized");
 }
 // A variable or parameter declared as a borrowed array ('@[n]T'/'@![n]T').
 // Checked on its var-type: a row reached through it also carries "mutable" but
@@ -399,9 +400,15 @@ inline string typeDisplayName(const json& t) {
 // from a pointer to one and ignores pointer permissions. A pointer element
 // keeps its permission, except that read-only slots may narrow '@!T' to '@T':
 // with writable slots the callee could store a '@T' where the caller expects
-// a '@!T'.
+// a '@!T'. An owned element (a row or a struct's storage) may be lent to a
+// read-only '@T' slot when the slots are read-only too: the callee can neither
+// replace it nor free a borrow.
 inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable = true) {
 	bool fp = isArrLevel(from), tp = isArrLevel(to);
+	if (!toSlotsMutable && isPtrBorrow(to) && !isWritableThrough(to)) {
+		if (fp) return arrShapeMatch(from["base-type"], to["base-type"], false);
+		if (isStructStorage(from)) return true;
+	}
 	if (!fp || !tp) {
 		if (fp != tp || isStructStorage(from) != isStructStorage(to) || isPtrBorrow(from) != isPtrBorrow(to))
 			return false;
@@ -463,6 +470,7 @@ inline bool copyShapeMatch(const json& from, const json& to) {
 inline json withArrPermission(json t, bool isMutable) {
 	json* cur = &t;
 	while (isArrLevel(*cur)) {
+		if (!cur->contains("arr-size")) (*cur)["unsized"] = true;
 		(*cur)["mutable"] = isMutable;
 		cur = &(*cur)["base-type"];
 	}

@@ -314,7 +314,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   its `arr[i]` is the same struct storage. Because of `embedded`, that form is an array, not a
   struct pointer. For `@[n]@T` / `@[n]@!T`, the element is `pntr(T, mutable)` without
   `arr-size`, as in the owned `[n]@T`; the borrow's `mutable` stops at the slots. A `pntr` with
-  `mutable` and neither `arr-size` nor `embedded` is a `@T`/`@!T` pointer, never an array level.
+  `mutable` and none of `arr-size`, `embedded` and `unsized` is a `@T`/`@!T` pointer, never an
+  array level. `@name` of an array whose size is known only at run time marks each such level
+  `"unsized": true` beside its `mutable`, so it stays an array level.
   Every size must be constant
   (`E_ArrBorrowSizeNotConst`) and `T` primitive, struct or a pointer to one, with neither a
   struct nor a pointer inside a `$[m]` row (`E_ArrBorrowUnsupportedElem`). A

@@ -2990,3 +2990,9 @@ TEST(build_mgr, const_expr) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/291_const_expr.pa");
 	ASSERT_EQ(output, "28 5 4.5\n");
 }
+
+TEST(build_mgr, owned_rows_ro_slots) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/292_owned_rows_ro_slots.pa");
+	ASSERT_EQ(output, "3 4\n7\n");
+}

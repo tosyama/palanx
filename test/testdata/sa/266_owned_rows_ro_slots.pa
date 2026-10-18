@@ -1,0 +1,11 @@
+cinclude "266_owned_rows_ro_slots.h";
+type P { int32 x; };
+func g(@[2]@P s) { }
+int64 n = 4;
+[1][4]uint8 b;
+[1][n]uint8 a;
+[2]P ps;
+put_ro(@b, 1);
+put_ro(@a, 1);
+put(@!b as @!@!uint8, 1);
+g(@ps);

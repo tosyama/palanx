@@ -1,0 +1,4 @@
+cinclude "error_594_owned_rows_c_ptrptr.h";
+int64 n = 4;
+[1][n]uint8 a;
+put(@!a, 1);
