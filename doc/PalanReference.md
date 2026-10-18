@@ -86,7 +86,8 @@ The build manager (`palan`) orchestrates the full pipeline: parse → semantic a
 A literal must fit the type it adopts from its context (the declared variable, parameter, or the
 other operand); otherwise it is a compile error — `int8 x = 300;` and `uint8 y = -1;` are both
 rejected. A minus sign directly on an integer literal is part of the value, so `int8 x = -128;`
-is accepted.
+is accepted. A constant expression (see [Constant Declarations](#21-constant-declarations)) is
+folded first, so its result is what must fit: `int8 x = 100 + 100;` is rejected.
 
 **Character literals:** `'a'` is an integer literal whose value is the character's ASCII code, so
 it follows the same rules as any other integer literal (`int8 c = 'a';` is accepted). Only
@@ -151,8 +152,8 @@ int32 n = c;            // an enum widens implicitly
 Color d = Color(n + 1); // an integer needs Name(x)
 ```
 
-- An enumerator without `=` is the previous value + 1, starting at 0. `=` takes an integer literal
-  or a `const`.
+- An enumerator without `=` is the previous value + 1, starting at 0. `=` takes an integer
+  constant expression (`= A + 1`).
 - Enumerators are referenced as `Name.X`. A type alias of the enum works the same way
   (`type Shade = Color;` then `Shade.RED`).
 - An enum's base type is the type C gives its enumerators: `int32` when every value fits, which
@@ -2053,12 +2054,19 @@ type Msg { [MaxLen]$uint8 body; };
 printf("%ld\n", MaxLen);   // 256
 ```
 
-- Only a compile-time literal value is accepted — `lit-int`, `lit-uint`, `lit-flo`, or `lit-str` —
-  not an arbitrary compile-time-constant expression (e.g. `const X = 1 + 2;` is not supported).
-  This is unrelated to the C macro-constant folding described under [C Library
-  Integration](#macro-constants) — that folds a *C preprocessor* macro body during header
-  ingestion, using C's own integer semantics; it does not extend what a Palan `const`
-  declaration itself accepts.
+- The value is a literal or a constant expression: literals, consts and `sizeof(type)` combined
+  with `+ - * / %`, `& | ^`, unary `-` and `~` (`const W = N * 2 + 1;`). A cast, a variable, an
+  enumerator or a call is not constant.
+- A constant expression is folded wherever it is written, not only in a const: an array size
+  (`[N + 1]int32 a;`, a struct field `[N * 2]$int32 v;`), an enumerator value, or an ordinary
+  expression (`x * (N + 1)` folds `N + 1`).
+- Integers are computed in `int64`, or in `uint64` once a `u` literal or `sizeof` is an operand. A
+  value outside that range, a negative value in `uint64`, or a division by zero is a compile
+  error. Division truncates toward zero, and `%` takes the sign of the dividend.
+- A float operand makes the whole operation `flo64`; `%`, `&`, `|`, `^` and `~` on a float are errors.
+- The result is untyped like a literal and must fit the type of the place it is used.
+- A `cinclude`d macro constant inside a constant expression drops its C type and is computed like
+  any other literal.
 - Every reference to the constant is inlined with the literal value; the constant's name does not
   appear in `sa.json`.
 - A const may reference another const (`const B = A;`); this chains naturally through inlining.

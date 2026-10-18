@@ -6,6 +6,7 @@
 #include <iostream>
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -471,23 +472,173 @@ static json promoteOperand(json operand)
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
+static const set<string> foldableOps = {
+	"add", "sub", "mul", "div", "mod", "bitand", "bitor", "bitxor", "neg", "bitnot", "sizeof"
+};
+
 // A variable shadows a same-named const, so this can only be decided at
 // the reference site, not by rewriting the AST up front.
-json PlnSemanticAnalyzer::resolveConstRef(const json& expr) const
+// A folded result is untyped like a source literal, so the context types it
+// and checkIntLiteralRange rejects what does not fit there.
+json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 {
-	if (expr.value("expr-type", "") != "id") return expr;
-	string name = expr["name"].get<string>();
-	if (findVar(name) != nullptr) return expr;
-	auto cit = constDecls_.find(name);
-	if (cit == constDecls_.end()) return expr;
-	json lit = cit->second;
+	string et = expr.value("expr-type", "");
+	json lit;
+	if (et == "id") {
+		string name = expr["name"].get<string>();
+		if (findVar(name) != nullptr) return expr;
+		auto cit = constDecls_.find(name);
+		if (cit == constDecls_.end()) return expr;
+		lit = cit->second;
+	} else if (foldableOps.count(et)) {
+		optional<ConstVal> v = evalConst(expr);
+		if (!v) return expr;
+		switch (v->kind) {
+			case ConstVal::Kind::Int:  lit = {{"expr-type", "lit-int"},  {"value", to_string(v->i)}}; break;
+			case ConstVal::Kind::Uint: lit = {{"expr-type", "lit-uint"}, {"value", to_string(v->u)}}; break;
+			case ConstVal::Kind::Flo: {
+				char buf[32];
+				auto r = to_chars(buf, buf + sizeof(buf), v->f);
+				string s(buf, r.ptr);
+				if (s.find_first_of(".e") == string::npos) s += ".0";
+				lit = {{"expr-type", "lit-flo"}, {"value", s}};
+				break;
+			}
+		}
+	} else {
+		return expr;
+	}
 	if (expr.contains("loc")) lit["loc"] = expr["loc"];
 	return lit;
 }
 
+// Evaluates in int64, or uint64 once a 'u' operand joins, like the usual
+// arithmetic conversions; a C macro constant's own type is dropped here.
+// The right operand goes first: a left-associative chain over a variable
+// (`a + b + c`) then fails at each level without walking the whole chain.
+optional<ConstVal> PlnSemanticAnalyzer::evalConst(const json& expr)
+{
+	using K = ConstVal::Kind;
+	string et = expr.value("expr-type", "");
+	auto overflow = [&]() {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ConstExprOverflow) << endl;
+		exit(1);
+	};
+	if (et == "lit-int" || et == "lit-uint") {
+		string text = expr["value"].get<string>();
+		ConstVal v{et == "lit-int" ? K::Int : K::Uint};
+		const char* first = text.data();
+		const char* last = text.data() + text.size();
+		bool ok = v.kind == K::Int ? from_chars(first, last, v.i).ec == errc()
+		                           : from_chars(first, last, v.u).ec == errc();
+		if (!ok) overflow();
+		return v;
+	}
+	if (et == "lit-flo") {
+		ConstVal v{K::Flo};
+		string text = expr["value"].get<string>();
+		from_chars(text.data(), text.data() + text.size(), v.f);
+		return v;
+	}
+	if (et == "sizeof") {
+		requireKnownTypeNames(expr, expr["type"]);
+		return ConstVal{K::Uint, 0, (uint64_t)typeByteSize(expr, expr["type"])};
+	}
+	if (et == "id") {
+		json lit = foldConstExpr(expr);
+		if (lit.value("expr-type", "") == "id" || lit.value("expr-type", "") == "lit-str") return nullopt;
+		return evalConst(lit);
+	}
+	if (et == "neg" || et == "bitnot") {
+		optional<ConstVal> v = evalConst(expr["operand"]);
+		if (!v) return nullopt;
+		if (et == "bitnot") {
+			if (v->kind == K::Flo) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
+				exit(1);
+			}
+			v->i = ~v->i;
+			v->u = ~v->u;
+		} else if (v->kind == K::Flo) {
+			v->f = -v->f;
+		} else if (v->kind == K::Uint) {
+			if (v->u != 0) overflow();
+		} else {
+			if (__builtin_sub_overflow((int64_t)0, v->i, &v->i)) overflow();
+		}
+		return v;
+	}
+	if (!foldableOps.count(et)) return nullopt;
+
+	optional<ConstVal> r = evalConst(expr["right"]);
+	if (!r) return nullopt;
+	optional<ConstVal> l = evalConst(expr["left"]);
+	if (!l) return nullopt;
+
+	bool isBit = et == "bitand" || et == "bitor" || et == "bitxor";
+	if (l->kind == K::Flo || r->kind == K::Flo) {
+		if (isBit) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
+			exit(1);
+		}
+		if (et == "mod") {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_FloatModulo) << endl;
+			exit(1);
+		}
+		auto toF = [](const ConstVal& v) {
+			return v.kind == K::Flo ? v.f : v.kind == K::Uint ? (double)v.u : (double)v.i;
+		};
+		double a = toF(*l), b = toF(*r);
+		ConstVal v{K::Flo};
+		v.f = et == "add" ? a + b : et == "sub" ? a - b : et == "mul" ? a * b : a / b;
+		if (!isfinite(v.f)) {
+			if (et == "div" && b == 0) {
+				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ConstExprDivByZero) << endl;
+				exit(1);
+			}
+			overflow();
+		}
+		return v;
+	}
+
+	if ((et == "div" || et == "mod") && (r->kind == K::Int ? r->i == 0 : r->u == 0)) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ConstExprDivByZero) << endl;
+		exit(1);
+	}
+	if (l->kind == K::Uint || r->kind == K::Uint) {
+		for (ConstVal* v : {&*l, &*r}) {
+			if (v->kind != K::Int) continue;
+			if (v->i < 0) overflow();
+			v->u = v->i;
+		}
+		uint64_t a = l->u, b = r->u;
+		ConstVal v{K::Uint};
+		if      (et == "add") { if (__builtin_add_overflow(a, b, &v.u)) overflow(); }
+		else if (et == "sub") { if (__builtin_sub_overflow(a, b, &v.u)) overflow(); }
+		else if (et == "mul") { if (__builtin_mul_overflow(a, b, &v.u)) overflow(); }
+		else if (et == "div") v.u = a / b;
+		else if (et == "mod") v.u = a % b;
+		else if (et == "bitand") v.u = a & b;
+		else if (et == "bitor")  v.u = a | b;
+		else                     v.u = a ^ b;
+		return v;
+	}
+	int64_t a = l->i, b = r->i;
+	ConstVal v{K::Int};
+	if      (et == "add") { if (__builtin_add_overflow(a, b, &v.i)) overflow(); }
+	else if (et == "sub") { if (__builtin_sub_overflow(a, b, &v.i)) overflow(); }
+	else if (et == "mul") { if (__builtin_mul_overflow(a, b, &v.i)) overflow(); }
+	else if (et == "div") { if (a == INT64_MIN && b == -1) overflow(); v.i = a / b; }
+	else if (et == "mod") v.i = b == -1 ? 0 : a % b;
+	else if (et == "bitand") v.i = a & b;
+	else if (et == "bitor")  v.i = a | b;
+	else                     v.i = a ^ b;
+	return v;
+}
+
 json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expectedType)
 {
-	const json expr = resolveConstRef(rawExpr);
+	const json expr = foldConstExpr(rawExpr);
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
 	// A literal bound to an enum takes the base type, so the binding still
@@ -513,13 +664,6 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	if (expr_type == "not-impl") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExprNotImplemented) << endl;
 		exit(1);
-	}
-
-	if (expr_type == "sizeof") {
-		requireKnownTypeNames(expr, expr["type"]);
-		json lit = {{"expr-type", "lit-uint"}, {"value", to_string(typeByteSize(expr, expr["type"]))}};
-		if (expr.contains("loc")) lit["loc"] = expr["loc"];
-		return sa_expression(lit, expectedType);
 	}
 
 	if (expr_type == "lit-int") {
@@ -712,10 +856,10 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	auto typeOf = [&](const json& other) {
 		return other.contains("value-type") ? registry_.fromJson(other["value-type"]) : expectedType;
 	};
-	if (resolveConstRef(expr["left"])["expr-type"] == "lit-int") {
+	if (foldConstExpr(expr["left"])["expr-type"] == "lit-int") {
 		right = promoteOperand(sa_expression(expr["right"], expectedType));
 		left  = promoteOperand(sa_expression(expr["left"],  typeOf(right)));
-	} else if (resolveConstRef(expr["right"])["expr-type"] == "lit-int") {
+	} else if (foldConstExpr(expr["right"])["expr-type"] == "lit-int") {
 		left  = promoteOperand(sa_expression(expr["left"],  expectedType));
 		right = promoteOperand(sa_expression(expr["right"], typeOf(left)));
 	} else {

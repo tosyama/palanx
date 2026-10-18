@@ -30,12 +30,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 10. Palan `const` Constant-Expression Evaluation
-
-**Summary:** A native Palan `const Name = expr;` declaration only accepts a bare compile-time literal (`lit-int`, `lit-uint`, `lit-flo`, `lit-str`) — `const X = 1 + 2;` is not supported (see PalanReference.md §21 Constant Declarations). This is a different mechanism from the C macro constant-folding introduced in v0.1.29 (ASTSpec.md's Constant definition model), which folds *C preprocessor* macro bodies during header ingestion, not Palan's own `const` syntax during ordinary statement processing. Extending Palan's `const` to accept an arbitrary compile-time expression would be separate work with its own evaluation rules (Palan's own type/overflow semantics, not C's).
-
----
-
 ## 11. Shift Operators (`<<<`/`>>>`)
 
 **Summary:** v0.1.29 added the bitwise operators `&`/`|`/`^`/`~` but deliberately left out shift operators. `<<` has no token in Palan's lexer at all. `>>` is already `DBL_GRTR`, the move-owner mark on a call argument (`f(x>>)`) and on a parameter (`T >> name`); `->>` is a separate token. Shift operators will be spelled `<<<` (left) and `>>>` (logical right), so they do not collide with it. There is no arithmetic right shift; division by a power of two serves instead.

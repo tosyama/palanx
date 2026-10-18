@@ -205,7 +205,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ConstNotCompileTimeValue:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "const '" + arg1 + "' must be initialized with a compile-time constant literal.";
+			return "const '" + arg1 + "' must be initialized with a compile-time constant.";
 
 		case E_AddrOfNotLocalVar:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -563,7 +563,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_EnumValueNotConst:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "enumerator '" + arg1 + "' must be given an integer literal or a const.";
+			return "enumerator '" + arg1 + "' must be given an integer constant expression.";
 
 		case E_EnumValueOutOfRange:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -618,6 +618,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot bind '" + arg1 + "' to '" + arg2
 			       + "': a pointer reached through a mutable pointer '@!' must keep its permission.";
+
+		case E_ConstExprOverflow:
+			return "constant expression overflows its 64-bit range.";
+
+		case E_ConstExprDivByZero:
+			return "division by zero in a constant expression.";
 
 		default:
 			BOOST_ASSERT(false);

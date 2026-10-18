@@ -3924,17 +3924,15 @@ TEST(sa, neg_lit_expected_type)
 	json jout = run_sa("../test/testdata/sa/167_neg_lit_expected_type.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// A negative integer literal is folded into one lit-int by gen-ast; a
-	// float literal still goes through `neg`.
 	auto& a = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(a["init"]["expr-type"], "lit-int");
 	ASSERT_EQ(a["init"]["value"], "-1");
 	ASSERT_EQ(a["init"]["value-type"]["type-name"], "int32");
 
 	auto& f = jout["statements"][1]["vars"][0];
-	ASSERT_EQ(f["init"]["expr-type"], "neg");
+	ASSERT_EQ(f["init"]["expr-type"], "lit-flo");
+	ASSERT_EQ(f["init"]["value"], "-1.5");
 	ASSERT_EQ(f["init"]["value-type"]["type-name"], "flo32");
-	ASSERT_EQ(f["init"]["operand"]["value-type"]["type-name"], "flo32");
 
 	auto& s = jout["statements"][3]["vars"][0];
 	ASSERT_EQ(s["init"]["value-type"]["type-name"], "int16");
@@ -5783,4 +5781,30 @@ TEST(sa, c_fd_set)
 	const auto& init = jout["statements"][0]["vars"][0]["init"];
 	ASSERT_EQ(init["name"], "calloc");
 	ASSERT_EQ(init["args"][1]["value"], "128");
+}
+
+TEST(sa, const_expr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/265_const_expr.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto& st = jout["statements"];
+	auto init = [&](int i) { return st[i]["vars"][0]["init"]; };
+	const pair<string, string> lits[] = {
+		{"lit-int", "11"}, {"lit-int", "1"}, {"lit-int", "-3"}, {"lit-int", "255"},
+		{"lit-flo", "3.0"}, {"lit-flo", "3.25"}, {"lit-uint", "8"}, {"lit-uint", "13"},
+		{"lit-int", "5"},
+	};
+	for (int i = 0; i < 9; i++) {
+		ASSERT_EQ(init(i)["expr-type"], lits[i].first) << i;
+		ASSERT_EQ(init(i)["value"], lits[i].second) << i;
+	}
+	// S { [A + 1]$int32 v; } is 16 bytes.
+	ASSERT_EQ(init(9)["args"][1]["value"], "16");
+	ASSERT_EQ(st[10]["vars"][0]["var-type"]["arr-size"], 6);
+	// Only an all-constant subtree folds; `b + 1 + 2` is (b + 1) + 2.
+	ASSERT_EQ(init(11)["expr-type"], "add");
+	// A typed C macro constant loses its type inside a constant expression.
+	ASSERT_EQ(init(12)["expr-type"], "lit-int");
+	ASSERT_EQ(init(12)["value"], "2147483648");
 }

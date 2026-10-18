@@ -67,6 +67,14 @@ struct FieldChain {
 	string structName;      // struct type currently being resolved
 };
 
+// The value of a constant expression under evaluation.
+struct ConstVal {
+	enum class Kind { Int, Uint, Flo } kind;
+	int64_t  i = 0;
+	uint64_t u = 0;
+	double   f = 0;
+};
+
 class PlnSemanticAnalyzer {
 	string basePath;
 	string astFileName;
@@ -220,7 +228,8 @@ class PlnSemanticAnalyzer {
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
-	json resolveConstRef(const json& expr) const;
+	json foldConstExpr(const json& expr);
+	optional<ConstVal> evalConst(const json& expr);
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
 	void checkIntLiteralRange(const json& lit);

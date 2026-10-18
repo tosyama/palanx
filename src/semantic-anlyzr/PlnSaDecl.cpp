@@ -1265,14 +1265,14 @@ json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)
 json PlnSemanticAnalyzer::sa_const_decl(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
-	string et = sa_expression(stmt["value"]).value("expr-type", "");
+	// Stored untyped so each reference is typed by its own context, exactly
+	// like the literal written in place of the name.
+	json value = foldConstExpr(stmt["value"]);
+	string et = sa_expression(value).value("expr-type", "");
 	if (et != "lit-int" && et != "lit-uint" && et != "lit-flo" && et != "lit-str") {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ConstNotCompileTimeValue, name) << endl;
 		exit(1);
 	}
-	// Stored untyped so each reference is typed by its own context, exactly
-	// like the literal written in place of the name.
-	json value = resolveConstRef(stmt["value"]);
 	value.erase("loc");
 	constDecls_[name] = value;
 	return json::array();
@@ -1291,7 +1291,7 @@ json PlnSemanticAnalyzer::sa_enum_def(const json& stmt)
 		string ename = e["name"].get<string>();
 		int64_t v = next;
 		if (e.contains("value")) {
-			json lit = resolveConstRef(e["value"]);
+			json lit = foldConstExpr(e["value"]);
 			if (lit.value("expr-type", "") != "lit-int" && lit.value("expr-type", "") != "lit-uint") {
 				cerr << locPrefix(e) << PlnSaMessage::getMessage(E_EnumValueNotConst, ename) << endl;
 				exit(1);

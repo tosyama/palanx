@@ -2984,3 +2984,9 @@ TEST(build_mgr, file_layout) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/290_file_layout.pa");
 	ASSERT_EQ(output, "1\n");
 }
+
+TEST(build_mgr, const_expr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/291_const_expr.pa");
+	ASSERT_EQ(output, "28 5 4.5\n");
+}

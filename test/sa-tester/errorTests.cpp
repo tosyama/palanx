@@ -671,7 +671,7 @@ TEST(sa_error, field_access_on_tuple_base)
 
 TEST(sa_error, arr_field_size_not_constant)
 {
-	// type Buf { [1+1]$int64 data; }; -- size-expr is not a lit-int/lit-uint literal
+	// type Buf { [int64(2) + 1]$int64 data; }; -- a cast is not folded as a constant expression
 	// Covers: buildStructDef "arr" branch, E_ArrFieldSizeNotConstant
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -2296,11 +2296,13 @@ TEST(sa_error, int_literal_out_of_range)
 		{"error_201_int_lit_range_uint32.pa", "'5000000000' is out of range for type 'uint32'"},
 		{"error_202_int_lit_range_int64.pa", "'99999999999999999999' is out of range for type 'int64'"},
 		{"error_203_int_lit_range_uint64.pa", "'18446744073709551616' is out of range for type 'uint64'"},
-		{"error_204_int_lit_range_arith.pa", ":1:14: error: Integer literal '300' is out of range for type 'int8'."},
+		{"error_204_int_lit_range_arith.pa", ":2:14: error: Integer literal '300' is out of range for type 'int8'."},
 		{"error_205_int_lit_range_neg_unsigned.pa", "'-1' is out of range for type 'uint32'"},
 		// An unsuffixed cinclude macro is an untyped literal, typed from its context.
 		{"error_225_macro_untyped_range.pa", ":5:3: error: Integer literal '300' is out of range for type 'int8'."},
 		{"error_247_int_lit_range_const.pa", ":2:10: error: Integer literal '300' is out of range for type 'int8'."},
+		// A constant expression is folded first, so the sum is what must fit.
+		{"error_593_int_lit_range_folded.pa", ":1:10: error: Integer literal '200' is out of range for type 'int8'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2842,7 +2844,7 @@ TEST(sa_error, enum_value_not_const)
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_397_enum_value_not_const.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find(":3:15: error: enumerator 'A' must be given an integer literal or a const."), string::npos);
+	ASSERT_NE(sa.find(":3:15: error: enumerator 'A' must be given an integer constant expression."), string::npos);
 }
 
 TEST(sa_error, enum_value_overflow)
@@ -3496,6 +3498,28 @@ TEST(sa_error, ptr_inner_permission)
 		{"error_541_ptr_inner_narrowing.pa", ":4:1: " + narrowing},
 		{"error_542_ptr_ptr_field_inner_upgrade.pa", ":3:1: " + upgrade},
 		{"error_543_c_ptr_inner_narrowing.pa", ":5:1: " + narrowing},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, const_expr)
+{
+	const string overflow = "error: constant expression overflows its 64-bit range.";
+	const string divZero = "error: division by zero in a constant expression.";
+	const pair<string, string> cases[] = {
+		{"error_587_const_expr_overflow.pa", ":1:11: " + overflow},
+		{"error_588_const_expr_uint_overflow.pa", ":1:11: " + overflow},
+		{"error_589_const_expr_div_zero.pa", ":1:11: " + divZero},
+		{"error_590_const_expr_flo_div_zero.pa", ":1:11: " + divZero},
+		{"error_591_const_expr_flo_bitop.pa", ":1:11: error: Bitwise operator operand must be an integer type."},
+		{"error_592_const_expr_flo_mod.pa", ":1:11: error: '%' operator is not supported for float types."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -178,9 +178,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 - type-alias statements are consumed by SA and not emitted; the alias is
   registered and resolved inline at each reference site (see Type Aliases
   in PalanReference.md)
-- const-decl statements are consumed by SA and not emitted; literal values
-  are inlined at each reference site (see Constant Declarations /
-  Restrictions in PalanReference.md)
+- const-decl statements are consumed by SA and not emitted; the value is
+  folded to an untyped literal and inlined at each reference site (see
+  Constant Declarations in PalanReference.md)
+- a constant expression (literals, consts and `sizeof` under the arithmetic and bitwise
+  operators) is folded to one untyped `lit-int`/`lit-uint`/`lit-flo` before it is typed, in every
+  expression position; `E_ConstExprOverflow`/`E_ConstExprDivByZero` reject an invalid one
 - not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
   the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise; a not-impl expression in
   value position is rejected as `E_ExprNotImplemented`
@@ -1042,8 +1045,8 @@ Struct types
 ------------
 `type Name { field_decl... }` defines a struct type. The SA processes `struct-def` nodes and
 registers the type in its internal registry; the node is consumed and does not appear in sa.json.
-An array field's `size-expr` is evaluated like any array size (a const reference or `sizeof` folds
-to a literal); a size that is not a compile-time integer is an error.
+An array field's `size-expr` is evaluated like any array size (a constant expression folds to a
+literal); a size that is not a compile-time integer is an error.
 
 A struct captured from a `cinclude`d C header (ASTSpec.md's `cinclude` statement `structs`
 field) registers into this exact same internal registry — there is no separate representation
