@@ -101,7 +101,11 @@ static void emitSafeRegMoves(ostream& out, vector<RegMove> moves, const string& 
 // own register sequence, and overflow of either class goes to the stack in
 // argument order. Returns the stack space reserved (to release after the call)
 // and sets nFloatArgs to the float-class count (for C variadic %al).
-int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs)
+// A callee pointer joins the register shuffle into %rax, which is no argument
+// register and no stack argument's scratch, so no argument move overwrites it
+// before it is read.
+int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs,
+                                const PhysLoc* callee)
 {
     int n_int_regs = (int)x86PhysRegs.intArgs.size();
     int n_flt_regs = (int)x86PhysRegs.floatArgs.size();
@@ -152,6 +156,7 @@ int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int&
             }
         }
     }
+    if (callee) intMoves.push_back(makeIntArgMove(*callee, "%rax"));
     emitSafeRegMoves(out, intMoves, "%r11");
     nFloatArgs = flt_idx;
     return stack_space;
@@ -160,8 +165,8 @@ int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int&
 void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
 {
     int flt_idx;
-    int stack_space = emitCallArgs(i.args, rm, flt_idx);
-    emitCallC(i.name, flt_idx);
+    int stack_space = emitCallArgs(i.args, rm, flt_idx, i.callee ? &rm.at(*i.callee) : nullptr);
+    emitCallC(i.name, flt_idx, i.callee.has_value());
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
     // Move return value(s) to destination(s). An ordinary scalar/pointer
@@ -281,12 +286,19 @@ void PlnX86CodeGen::emitInstrRetPln(const RetPln& r, const RegMap& rm, const vec
     out << "\tret\n";
 }
 
-void PlnX86CodeGen::emitCallC(const string& name, int nFloatArgs)
+// indirect: the callee pointer is in %rax (see emitCallArgs), and moves to
+// %r11 to free %al.
+void PlnX86CodeGen::emitCallC(const string& name, int nFloatArgs, bool indirect)
 {
+    if (indirect)
+        out << "\tmovq %rax, %r11\n";
     // For variadic C functions, al = number of XMM registers used for float args.
     if (nFloatArgs == 0)
         out << "\txorl %eax, %eax\n";
     else
         out << "\tmovl $" << nFloatArgs << ", %eax\n";
-    out << "\tcall " << name << "\n";
+    if (indirect)
+        out << "\tcall *%r11\n";
+    else
+        out << "\tcall " << name << "\n";
 }

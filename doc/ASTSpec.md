@@ -316,12 +316,16 @@ Variable type
      type at ingestion; a reference to an enum not captured there stays unrepresentable (see
      SASpec.md's C-origin signature admission).
     - type-name\* - Enum name string (see Enum definition model's `name`)
-  8. func - Function type
-    - parameters - Parameter list
-    - ret-type\* - Return variable type
+  8. func - Function type, only as a `pntr`'s `base-type` (a function pointer)
+    - parameters\* - Parameter list; a native `@func(...)` entry has only `var-type`
+    - ret-type\* - Return variable type; `prim(void)` when nothing is returned
+    - Native `@func(T1, T2) -> R` is `pntr` (`mutable: false`) to this node, the same shape
+      c2ast gives a C function pointer; `@!func(...)` arrives with `mutable: true` for SA to
+      reject. A function's return type is taken greedily, so `e as @func(T) -> X` is a cast
+      to a function returning `X`. A C typedef of a function type is expanded where it is
+      referenced (not listed in `typedefs`).
   9. user - An identifier used as a type that c2ast could not resolve to a recognized keyword
-     or a previously-registered typedef — including a typedef that bottoms out in a
-     function-pointer body, or an anonymous struct/union body via a
+     or a previously-registered typedef — including an anonymous struct/union body via a
      multi-declarator or derived-declarator typedef (see type-kind "strct" above for the one
      struct/union-body shape c2ast does register), none of which c2ast registers. Each
      cinclude is translated separately, so it is also a typedef from an earlier cinclude

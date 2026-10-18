@@ -60,6 +60,7 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 21. [Constant Declarations](#21-constant-declarations)
 22. [Address-Of Operator](#22-address-of-operator)
 23. [Raw Syscalls](#23-raw-syscalls)
+24. [Function Pointers](#24-function-pointers)
 
 ---
 
@@ -578,7 +579,8 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   are usable struct types exactly like a tagged one.
 - Typedefs that bottom out in a pointer type are usable as a pointer type alias: `@!T` when the
   pointee is not `const`, `@T` when it is (`typedef void *timer_t;` is `@!void`, `typedef const
-  char *CS;` is `@int8`). A typedef of a function pointer is not usable yet.
+  char *CS;` is `@int8`). A typedef of a function pointer is a [function pointer
+  type](#24-function-pointers) (`__compar_fn_t` is `@func(@void, @void) -> int32`).
 - Typedefs that bottom out in a union are usable the same way as struct typedefs (see
   [Union Types](#union-types) below). A typedef of an enum is another name for it (see
   [C Enum Types](#c-enum-types) below).
@@ -696,8 +698,10 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   Struct Types](#incomplete-struct-types-opaque-handles) below.
 - A C pointer field (`T *f;`, or a pointer array `T *f[n];`) is `@!T` when its pointee is not
   `const` and `@T` when it is (`const T *f;`), the same rule as a C function's pointer parameters.
-- A function pointer field (or an array of them) keeps its place in the struct's layout, but it
-  cannot be read, written, or have its address taken.
+- A function pointer field (or an array of them) is a [function pointer](#24-function-pointers)
+  field, and `s.f(args)` calls through it. One whose signature can't be expressed as `@func(...)`
+  (a variadic one, for example) keeps its place in the layout but cannot be read, written, or have
+  its address taken.
 - A struct pointer *returned* by a C function should be bound to a non-owning `@T`/`@!T`-typed
   local variable, not a named return — the pointer may be owned by C (e.g. a static internal
   buffer), so no automatic freeing is registered for it:
@@ -767,18 +771,10 @@ qsort(arr, uint64(4), uint64(4), cmp);
 printf("%d %d %d %d\n", arr[0], arr[1], arr[2], arr[3]);   // 1 3 4 5
 ```
 
-- This is narrowly scoped to *passing* a function name where a C parameter expects a function
-  pointer. There is no first-class function-pointer type, no function-pointer variable, and no
-  way to call through one from Palan code — a bare function name written anywhere other than a C
-  callback argument position is an ordinary `Undefined variable` error, not an address.
-- The Palan function's signature must match the C parameter's function-pointer signature exactly:
-  the same number of parameters, each Palan parameter type identical to the corresponding C
-  parameter type (no implicit widening or narrowing — there is no place to insert a conversion,
-  since the C library calls the Palan function directly), matching pointer mutability (a `const`
-  C parameter accepts a Palan `@T`/`@void`; a non-`const` one accepts `@T` or `@!T`), and a
-  matching return type, including a `void` C parameter type requiring a `void` Palan return and
-  vice versa. A Palan function with multiple named returns can't be used as a callback. Any
-  mismatch is a compile error naming both functions.
+- The C parameter is a [function pointer](#24-function-pointers) (`int (*)(const void *, const
+  void *)` is `@func(@void, @void) -> int32`), and the function name is a value of that type. The
+  rules for which functions match are in that section; in short, the parameter and return types
+  must be the same, with no widening, since the C library calls the Palan function directly.
 - `@void`/`@!void` — a pointer whose pointee type is `void` — exists to write the callback
   signatures C itself uses generically, such as `qsort`'s and `bsearch`'s `const void *`
   comparator arguments:
@@ -2294,5 +2290,57 @@ syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
   variable is never touched.
 - `syscall` is a reserved word, so a cinclude'd `<unistd.h>`'s `syscall()` wrapper function
   cannot be called from a file that uses this feature.
+
+---
+
+## 24. Function Pointers
+
+`@func(T1, T2) -> R` is a pointer to a function taking `T1`, `T2` and returning `R`. Without
+`-> R` the function returns nothing. A function's name is a value of its function pointer type,
+and a function pointer is called like a function:
+
+```palan
+cinclude <stdio.h>;
+
+func twice(int32 x) -> int32 { return x * 2; }
+func plus1(int32 x) -> int32 { return x + 1; }
+func apply(@func(int32) -> int32 f, int32 x) -> int32 { return f(x); }
+
+@func(int32) -> int32 g = twice;
+printf("%d\n", g(5));              // 10
+plus1 -> g;
+printf("%d\n", g(5));              // 6
+printf("%d\n", apply(twice, 21));  // 42
+
+type Ops { @func(int32) -> int32 op; };
+Ops o;
+twice -> o.op;
+printf("%d\n", o.op(4));           // 8
+```
+
+- A function pointer can be a variable, a parameter, a return type, a struct field, or an array
+  element (`[4]@func(int32) -> int32`). Parameter names are not written.
+- It is read-only like `@T`: code is never written through it, so `@!func(...)` is an error.
+  The variable itself can be given another function with `->`.
+- A parameter or return type must be a primitive or a borrowed pointer (`@T`/`@!T`, including
+  another function pointer). A struct or an array passed or returned by value is not allowed.
+- A function becomes a function pointer by writing its name where a value is expected. This works
+  for a Palan function returning nothing or one value (a single named return counts as one), an
+  imported function, and a C function that is not variadic. A function with several return
+  values, a variadic C function, and a `syscall` cannot be used this way. A variable of the same
+  name is used in preference to the function.
+- A function fits a function pointer type when the parameter count is the same, each parameter
+  and the return type are the same type (no widening: `int32` does not fit `int64`), and pointer
+  permissions flow the right way: a function taking `@!T` does not fit a pointer that passes
+  `@T`, while a function taking `@T` fits one that passes `@!T`. A `@void` parameter or return
+  matches any pointer, as it does elsewhere.
+- A function pointer is a pointer otherwise: it can be `NULL` and compared with `==`/`!=`, a
+  `@void` converts to it, and `as` converts it to `@void` or `int64`/`uint64` and back. Calling a
+  `NULL` function pointer is not checked.
+- `f(x)` when both a function pointer `f` and a function `f` are visible is an error, and so is
+  `s.f(x)` when `s` has a function pointer field `f` and a function `f` could take `s` as a method
+  (its first parameter is `@!`).
+- Not supported in this version: calling the result of an expression directly, such as
+  `tbl[0](3)` or `pick(true)(3)`; store it in a variable first.
 
 ---

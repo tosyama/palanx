@@ -303,6 +303,10 @@ void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json&
 	bool isPointee = false;
 	while (t->value("type-kind","") == "arr" || t->value("type-kind","") == "pntr") {
 		isPointee = t->value("type-kind","") == "pntr";
+		if (isFuncPtr(*t) && t->value("mutable", false)) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_FuncPtrMutable) << endl;
+			exit(1);
+		}
 		if (t->value("embedded", false)) {
 			const json& elem = (*t)["base-type"];
 			string ek = elem.value("type-kind","");
@@ -318,11 +322,32 @@ void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json&
 		}
 		t = &(*t)["base-type"];
 	}
+	if (t->value("type-kind","") == "func") {
+		requireFuncSigTypes(locNode, *t);
+		return;
+	}
 	if (t->value("type-kind","") != "prim") return;
 	string tname = t->value("type-name","");
 	if (isPointee ? isKnownPointeeTypeName(tname) : isKnownTypeName(tname)) return;
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, tname) << endl;
 	exit(1);
+}
+
+// `func` is a function type as written, its names already resolved.
+void PlnSemanticAnalyzer::requireFuncSigTypes(const json& locNode, const json& func) const
+{
+	auto check = [&](const json& t, bool isRet) {
+		string tk = t.value("type-kind","");
+		bool ok = tk == "prim" ? (isRet || t.value("type-name","") != "void") && !isStructType(t)
+		        : tk == "pntr" && t["base-type"].value("type-kind","") != "arr";
+		if (!ok) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_FuncPtrSigType, typeDisplayName(t)) << endl;
+			exit(1);
+		}
+		if (!(isRet && t.value("type-name","") == "void")) requireKnownTypeNames(locNode, t);
+	};
+	for (auto& p : func["parameters"]) check(p["var-type"], false);
+	check(func["ret-type"], true);
 }
 
 json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
@@ -424,6 +449,12 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 		t["base-type"] = deepNormalizePrimToStruct(resolved["base-type"]);
 		return t;
 	}
+	if (resolved.value("type-kind","") == "func") {
+		json t = resolved;
+		for (auto& p : t["parameters"]) p["var-type"] = deepNormalizePrimToStruct(p["var-type"]);
+		t["ret-type"] = deepNormalizePrimToStruct(t["ret-type"]);
+		return t;
+	}
 	if (isStructType(resolved))
 		return {{"type-kind","struct"},{"type-name",resolved["type-name"]}};
 	return resolved;
@@ -449,13 +480,14 @@ void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
 
 // Structural-only counterpart to unrepresentableTypeName for native Palan
 // signatures: names were already checked by preregisterFunc, so only a
-// type-kind that can never build (currently just "arr") is reported.
+// type-kind that can never build (currently just "arr") is reported. A
+// function type's own parameters were checked by requireFuncSigTypes.
 static string unsupportedNativeSigTypeKind(const json& vt)
 {
 	string k = vt.value("type-kind", "");
 	if (k == "pntr")
 		return vt.contains("base-type") ? unsupportedNativeSigTypeKind(vt["base-type"]) : "";
-	if (k == "prim" || k == "struct" || k.empty())
+	if (k == "prim" || k == "struct" || k == "func" || k.empty())
 		return "";
 	return k == "arr" ? "array" : k;
 }

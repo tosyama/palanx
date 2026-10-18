@@ -72,7 +72,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteToImmutablePtrField) << endl;
 		exit(1);
 	}
-	if (it->typeKind == "raw-ptr" && (it->elemKind == "prim" || !it->innerPtrMutable.empty())) {
+	if (it->typeKind == "raw-ptr" && (it->elemKind != "struct" || !it->innerPtrMutable.empty())) {
 		// A pointer-to-primitive (e.g. `@!int64 p;`) or pointer-to-pointer field
 		// has nothing further to chain into -- this hop must be the chain's
 		// terminal, typed by the caller via fieldValueType, not
@@ -748,6 +748,8 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 				sa_expr = {{"expr-type", "c-global"}, {"label", name}, {"value-type", (*cglobal)["var-type"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 				if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
 			} else {
+				json ref = sa_func_ref(expr);
+				if (!ref.is_null()) return ref;
 				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UndefinedVariable, expr["name"]) << endl;
 				exit(1);
 			}
@@ -838,6 +840,9 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 			json cast = aliasCast(expr, qualified + "." + expr["method"].get<string>());
 			if (!cast.is_null()) return cast;
 		}
+		json field = funcPtrField(expr);
+		if (!field.is_null())
+			return sa_expr_call_ptr(expr, sa_expression(field), expr["method"].get<string>());
 		json call = normalizeMethodCall(expr);
 		return call["expr-type"] == "call" ? sa_expr_call(call) : sa_expr_member_call(expr);
 
@@ -994,6 +999,10 @@ void PlnSemanticAnalyzer::checkPtrPermission(const json& locNode, const json& fr
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_PtrInnerPermissionNarrowing,
 			typeDisplayName(from), typeDisplayName(to)) << endl;
 		break;
+	case PtrPermission::FuncSigMismatch:
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
+			typeDisplayName(from), typeDisplayName(to)) << endl;
+		break;
 	}
 	exit(1);
 }
@@ -1026,11 +1035,121 @@ void PlnSemanticAnalyzer::applyPlnCalleeSig(json& sa_expr, const json& pFunc)
 		sa_expr["syscall-number"] = pFunc["syscall-number"];
 }
 
+// A function named as a value: its address, typed as the `@func` it can be
+// called through. Null if `expr` names no function.
+json PlnSemanticAnalyzer::sa_func_ref(const json& expr)
+{
+	const string& name = expr["name"].get<string>();
+	auto reject = [&](const string& reason) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_FuncNotValue, name, reason) << endl;
+		exit(1);
+	};
+	json func = {{"type-kind","func"},{"parameters",json::array()}};
+	const json* cfunc = findCFunc(name);
+	const json* pFunc = cfunc;
+	if (cfunc) {
+		requireSupportedCFuncSig(*cfunc, name, expr);
+		func["ret-type"] = (*cfunc)["ret-type"];
+	} else {
+		pFunc = findPlnFunc(name);
+		if (!pFunc) pFunc = findImportFunc(name);
+		if (!pFunc) return json();
+		if (pFunc->empty()) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AmbiguousCall, name) << endl;
+			exit(1);
+		}
+		if (pFunc->value("func-type", "") == "syscall") reject("it is a syscall");
+		if (pFunc->contains("rets") && (*pFunc)["rets"].size() > 1) reject("it returns multiple values");
+		func["ret-type"] = pFunc->contains("ret-type") ? (*pFunc)["ret-type"]
+		                 : pFunc->contains("rets") ? (*pFunc)["rets"][0]["var-type"]
+		                 : json{{"type-kind","prim"},{"type-name","void"}};
+	}
+	for (auto& p : (*pFunc)["parameters"]) {
+		if (p.value("name", "") == "...") reject("it takes variable arguments");
+		func["parameters"].push_back({{"var-type", p["var-type"]}});
+	}
+	const json& ret = func["ret-type"];
+	bool retOk = ret.value("type-name", "") == "void" || isFuncSigType(ret);
+	for (auto& p : func["parameters"])
+		if (!isFuncSigType(p["var-type"]))
+			reject("its parameter type '" + typeDisplayName(p["var-type"]) + "' cannot be passed through one");
+	if (!retOk)
+		reject("its return type '" + typeDisplayName(ret) + "' cannot be returned through one");
+	json out = {{"expr-type", "func-ref"}, {"name", name},
+	            {"value-type", {{"type-kind","pntr"},{"mutable",false},{"base-type",move(func)}}}};
+	if (expr.contains("loc")) out["loc"] = expr["loc"];
+	return out;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The function pointer variable a call names, or null. A function of the same
+// name makes the call ambiguous.
+const json* PlnSemanticAnalyzer::findFuncPtrVar(const json& call) const
+{
+	const string& name = call["name"].get<string>();
+	const json* vt = findVar(name);
+	if (!vt) {
+		const json* g = findCGlobal(name);
+		if (g) vt = &(*g)["var-type"];
+	}
+	if (!vt || !isFuncPtr(*vt)) return nullptr;
+	if (findCFunc(name) || findPlnFunc(name) || findImportFunc(name)) {
+		cerr << locPrefix(call) << PlnSaMessage::getMessage(E_AmbiguousFuncPtrCall, name) << endl;
+		exit(1);
+	}
+	return vt;
+}
+
+// `s.f(args)` calls the function pointer field `f` of `s`, if it has one: the
+// field access, or null. A function `f` the call could also be the method
+// form of makes it ambiguous.
+json PlnSemanticAnalyzer::funcPtrField(const json& memberCall)
+{
+	if (!isMethodForm(memberCall)) return json();
+	const json& obj = memberCall["object"];
+	const string& method = memberCall["method"].get<string>();
+	json vt = operandValueType(obj);
+	if (!isStructPntr(vt)) return json();
+	auto def = structDefs_.find(vt["base-type"]["type-name"].get<string>());
+	if (def == structDefs_.end()) return json();
+	auto& fields = def->second.fields;
+	auto f = find_if(fields.begin(), fields.end(), [&](const FieldLayout& f) { return f.name == method; });
+	if (f == fields.end() || !f->unsupported.empty() || !isFuncPtr(fieldValueType(*f))) return json();
+	bool isCFunc;
+	const json* pFunc = findCalleeByName(method, isCFunc);
+	if (pFunc && !(*pFunc)["parameters"].empty() && (*pFunc)["parameters"][0]["var-type"].value("mutable", false)) {
+		cerr << locPrefix(memberCall) << PlnSaMessage::getMessage(E_AmbiguousFuncPtrCall, method) << endl;
+		exit(1);
+	}
+	json access = {{"expr-type", "field-access"}, {"object", obj}, {"field", method}};
+	if (memberCall.contains("loc")) access["loc"] = memberCall["loc"];
+	return access;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A call through a function pointer. Its arguments follow a Palan function's
+// rules whatever the pointer came from: the pointer's type is all that is
+// known of the callee.
+json PlnSemanticAnalyzer::sa_expr_call_ptr(const json& expr, json callee, const string& funcName)
+{
+	const json& func = callee["value-type"]["base-type"];
+	json sa_expr = {{"expr-type", "call-ptr"}, {"callee", callee}};
+	if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
+	if (func["ret-type"].value("type-name", "") != "void")
+		sa_expr["value-type"] = func["ret-type"];
+	sa_expr["args"] = saCallArgs(expr, expr["args"], func["parameters"], false, funcName);
+	return sa_expr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	json sa_expr = expr;
 	const json* funcParams;
 	bool isCFunc = false;
+
+	if (findFuncPtrVar(expr)) {
+		json id = {{"expr-type", "id"}, {"name", expr["name"]}};
+		if (expr.contains("loc")) id["loc"] = expr["loc"];
+		return sa_expr_call_ptr(expr, sa_expression(id), expr["name"].get<string>());
+	}
 
 	const json* cfunc = findCFunc(expr["name"]);
 	if (cfunc) {
@@ -1097,14 +1216,6 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 	size_t argIdx = 0;
 	for (auto& arg : args) {
 		const json* paramVT = argIdx < fixedCount ? &funcParams[argIdx]["var-type"] : nullptr;
-		if (argIdx < fixedCount && funcParams[argIdx].value("_callback-param", false)) {
-			// registry_.fromJson (below, and inside sa_expression) throws for a
-			// pntr(func) type -- this parameter's slot never reaches either;
-			// its only legal argument is a bare Palan function name.
-			saArgs.push_back(sa_func_ref_arg(locNode, arg, funcName, funcParams[argIdx]));
-			argIdx++;
-			continue;
-		}
 		json argAst = arg;
 		json litBody, litRelease;
 		bool isLit = isAggregateLit(arg)
@@ -1168,68 +1279,6 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		argIdx++;
 	}
 	return saArgs;
-}
-
-// Analyze the argument in a `_callback-param` slot (a C function pointer
-// parameter, e.g. qsort's comparator): only a bare Palan function reference
-// is legal, matched by exact ABI identity since glibc calls it directly with
-// no Palan-side conversion step. Pointer permission is checked in the
-// direction each value flows, so it's reversed for the return vs. each parameter.
-json PlnSemanticAnalyzer::sa_func_ref_arg(const json& locNode, const json& arg,
-                                           const string& cFuncName, const json& param)
-{
-	string spelling = arg.value("expr-type", "") == "id" ? arg["name"].get<string>() : "<expression>";
-	const json* pFunc = nullptr;
-	if (arg.value("expr-type", "") == "id" && findVar(spelling) == nullptr)
-		pFunc = findPlnFunc(spelling);
-	if (pFunc == nullptr) {
-		cerr << locPrefix(locNode)
-		     << PlnSaMessage::getMessage(E_CallbackArgRequiresFunc, cFuncName, spelling) << endl;
-		exit(1);
-	}
-
-	auto mismatch = [&]() {
-		cerr << locPrefix(locNode)
-		     << PlnSaMessage::getMessage(E_CallbackSignatureMismatch, spelling, cFuncName) << endl;
-		exit(1);
-	};
-
-	const json& cFuncType = param["var-type"]["base-type"]; // {"type-kind":"func",...}
-	const json* cParams = cFuncType.contains("parameters") ? &cFuncType["parameters"] : nullptr;
-	const json* pParams = pFunc->contains("parameters") ? &(*pFunc)["parameters"] : nullptr;
-	size_t cCount = cParams ? cParams->size() : 0;
-	size_t pCount = pParams ? pParams->size() : 0;
-	if (cCount != pCount) mismatch();
-	for (size_t i = 0; i < cCount; i++) {
-		const json& cp = (*cParams)[i];
-		const json& pp = (*pParams)[i];
-		if (!cp.contains("var-type") || !pp.contains("var-type")) mismatch(); // e.g. C "..." marker
-		const json& cvt = cp["var-type"];
-		const json& pvt = pp["var-type"];
-		if (typeCompat(registry_.fromJson(cvt), registry_.fromJson(pvt), registry_) != TypeCompat::Identical)
-			mismatch();
-		if (!ptrPermissionOk(cvt, pvt)) mismatch();
-	}
-
-	bool cVoidRet = !cFuncType.contains("ret-type")
-		|| cFuncType["ret-type"].value("type-name", "") == "void";
-	bool pMultiRet = pFunc->contains("rets") && (*pFunc)["rets"].size() > 1;
-	bool pHasRet = pFunc->contains("ret-type");
-	if (pMultiRet) mismatch();
-	if (cVoidRet) {
-		if (pHasRet) mismatch();
-	} else {
-		if (!pHasRet) mismatch();
-		const json& cRetVT = cFuncType["ret-type"];
-		const json& pRetVT = (*pFunc)["ret-type"];
-		if (typeCompat(registry_.fromJson(pRetVT), registry_.fromJson(cRetVT), registry_) != TypeCompat::Identical)
-			mismatch();
-		if (!ptrPermissionOk(pRetVT, cRetVT)) mismatch();
-	}
-
-	json out = {{"expr-type", "func-ref"}, {"name", spelling}};
-	if (locNode.contains("loc")) out["loc"] = locNode["loc"];
-	return out;
 }
 
 // Convert a single call argument to a parameter's type. Embedded-array shape
@@ -1668,7 +1717,7 @@ static const json* fixedParamType(const json* callee, size_t idx)
 {
 	if (!callee || idx >= (*callee)["parameters"].size()) return nullptr;
 	const json& param = (*callee)["parameters"][idx];
-	if (param.value("name", "") == "..." || param.value("_callback-param", false)) return nullptr;
+	if (param.value("name", "") == "...") return nullptr;
 	return &param["var-type"];
 }
 

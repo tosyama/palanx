@@ -2096,3 +2096,35 @@ TEST(gen_ast, shift) {
 	// '>>' stays the move-owner mark.
 	ASSERT_EQ(stmts[4]["body"]["args"][0]["expr-type"], "not-impl");
 }
+
+TEST(gen_ast, func_ptr_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/138_func_ptr_type.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	const auto& f = stmts[0]["vars"][0]["var-type"];
+	ASSERT_EQ(f["type-kind"], "pntr");
+	ASSERT_EQ(f["mutable"], false);
+	ASSERT_EQ(f["base-type"]["type-kind"], "func");
+	ASSERT_EQ(f["base-type"]["parameters"].size(), 2);
+	ASSERT_EQ(f["base-type"]["parameters"][1]["var-type"]["mutable"], true);
+	ASSERT_EQ(f["base-type"]["ret-type"]["type-name"], "int32");
+	// No return is a void return, as c2ast writes a C function type.
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"]["ret-type"]["type-name"], "void");
+	// `@!func` is kept for SA to reject.
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["mutable"], true);
+	ASSERT_EQ(stmts[3]["vars"][0]["var-type"]["type-kind"], "arr");
+	ASSERT_EQ(stmts[3]["vars"][0]["var-type"]["base-type"]["base-type"]["ret-type"]["type-kind"], "pntr");
+
+	const auto& fn = jout["ast"]["functions"][0];
+	ASSERT_EQ(fn["parameters"][0]["var-type"]["base-type"]["type-kind"], "func");
+	ASSERT_EQ(fn["ret-type"]["base-type"]["ret-type"]["type-name"], "int32");
+
+	// The return of a type after `as` is taken greedily, so this is a cast
+	// to a function returning int32, then chained into f.
+	ASSERT_EQ(stmts[4]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[4]["value"]["target-type"]["base-type"]["ret-type"]["type-name"], "int32");
+}

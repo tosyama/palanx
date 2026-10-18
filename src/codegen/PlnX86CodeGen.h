@@ -20,8 +20,9 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitLeaLabel(const string& reg, const string& label);
     void emitMovImm(const string& dst, bool dst_is_mem, VRegType type, long long value);
     void emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to);
-    void emitCallC(const string& name, int nFloatArgs = 0);
-    int  emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs);
+    void emitCallC(const string& name, int nFloatArgs = 0, bool indirect = false);
+    int  emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs,
+                      const PhysLoc* callee = nullptr);
     void emitExit(int code);
 
     // Per-function prologue

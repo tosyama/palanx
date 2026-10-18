@@ -309,19 +309,23 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "the return value of this call (a '" + arg1 + "' returned by value) is "
 			       "discarded; assign it to a newly declared '" + arg1 + "' variable instead.";
 
-		case E_CallbackArgRequiresFunc:
+		case E_FuncNotValue:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "argument '" + arg2 + "' to C function '" + arg1 + "' must be the bare name of "
-			       "a Palan function to use as a callback; this version does not support passing "
-			       "a variable or any other expression here.";
+			return "function '" + arg1 + "' cannot be used as a function pointer: " + arg2 + ".";
 
-		case E_CallbackSignatureMismatch:
+		case E_FuncPtrMutable:
+			return "a function pointer is read-only; write '@func(...)', not '@!func(...)'.";
+
+		case E_FuncPtrSigType:
 			BOOST_ASSERT(arg1 != "\x01");
-			BOOST_ASSERT(arg2 != "\x01");
-			return "function '" + arg1 + "' cannot be used as a callback for C function '" + arg2
-			       + "': its parameter types, return type, or pointer mutability do not exactly "
-			         "match the callback signature C expects.";
+			return "'" + arg1 + "' cannot be a parameter or return type of a function pointer; "
+			       "use a primitive type or a borrowed pointer ('@T'/'@!T').";
+
+		case E_AmbiguousFuncPtrCall:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "call to '" + arg1 + "' is ambiguous: it names both a function pointer and a "
+			       "function.";
 
 		case E_DerefVoidPointer:
 			return "cannot index or dereference a void pointer; assign it to a typed pointer "

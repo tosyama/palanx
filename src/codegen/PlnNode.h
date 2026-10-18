@@ -45,6 +45,7 @@ enum class ExprKind {
     AddrOf,
     CGlobal,
     FuncRef,
+    PtrCall,
     Temp,
 };
 
@@ -68,15 +69,22 @@ struct CGlobalExpr : Expr {
     VRegType type = VRegType::Ptr64;
 };
 
-// Reference to a Palan function's address, to pass as a C callback argument
-// (e.g. qsort's comparator). A Palan function is emitted
-// as an unmangled assembly label (see PlnVCodeGen::generate), so this is
-// just the address of that label -- lowered to a bare LeaLabel, same as
-// StrLitExpr, with no dereference. No first-class function-pointer value
-// exists in this version, so there is no value-type to carry here.
+// A function's address, as a function pointer value. Functions are emitted
+// as unmangled assembly labels (see PlnVCodeGen::generate), so this is just
+// the address of that label -- lowered to a bare LeaLabel, same as
+// StrLitExpr, with no dereference.
 struct FuncRefExpr : Expr {
     FuncRefExpr() : Expr(ExprKind::FuncRef) {}
     string name;
+};
+
+// A call through a function pointer.
+struct PtrCallExpr : Expr {
+    PtrCallExpr() : Expr(ExprKind::PtrCall) {}
+    unique_ptr<Expr> callee;
+    bool     hasRet  = false;
+    VRegType retType = VRegType::Int64;
+    vector<unique_ptr<Expr>> args;
 };
 
 struct IntLitExpr : Expr {

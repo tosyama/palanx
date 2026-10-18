@@ -85,9 +85,6 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             return dst;
         }
         case ExprKind::FuncRef: {
-            // A Palan function is emitted as an unmangled label (see
-            // generate() below), so its address is just LeaLabel of that
-            // label -- same shape as StrLit, no dereference.
             auto& e = static_cast<const FuncRefExpr&>(expr);
             VReg r = allocVReg();
             func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.name});
@@ -256,6 +253,15 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
             func.instrs.push_back(CallPln{e.name, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            return dst;
+        }
+        case ExprKind::PtrCall: {
+            auto& e = static_cast<const PtrCallExpr&>(expr);
+            BOOST_ASSERT(e.hasRet);
+            VReg callee = lowerExpr(*e.callee, func);
+            vector<VReg> args = lowerArgs(e.args, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(CallC{"", args, {dst}, {e.retType}, callee}); // LCOV_EXCL_EXCEPTION_BR_LINE
             return dst;
         }
         case ExprKind::SysCall: {
@@ -545,6 +551,13 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
         case ExprKind::SysCall:
             lowerSysCallExpr(static_cast<const SysCallExpr&>(*stmt.body), func);
             return;
+        case ExprKind::PtrCall: {
+            auto& e = static_cast<const PtrCallExpr&>(*stmt.body);
+            VReg callee = lowerExpr(*e.callee, func);
+            vector<VReg> args = lowerArgs(e.args, func);
+            func.instrs.push_back(CallC{"", args, {}, {}, callee}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            return;
+        }
         default:
             BOOST_ASSERT(false);  // only call expressions are valid as statements
     }

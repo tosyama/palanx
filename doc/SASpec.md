@@ -463,21 +463,25 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "bool"}`; operand must be integer type
-  - func-ref: a bare Palan function name written where a C function parameter marked
-    `_callback-param` (see "C-origin signature admission" below) expects it. Emitted as
-    `{"expr-type":"func-ref","name":<Palan function name>}` (plus `loc` when present on the
-    source node) — no `value-type` key at all, since this version has no first-class
-    function-pointer type to give it. `name` must resolve to an existing Palan function (not a
-    variable) via an ordinary function lookup, with matching arity, per-parameter `typeCompat ==
-    Identical` (no widening/narrowing — there is no conversion point once the C library calls
-    the function directly) plus matching pointer-mutability direction against the callback's
-    parameter types, and a matching return type (including a void/non-void mismatch, and a
-    multi-return Palan function is always rejected) — otherwise E_CallbackArgRequiresFunc (not
-    a bare function-name argument) or E_CallbackSignatureMismatch (signature mismatch). Lowered
-    by codegen to the same `LeaLabel` instruction a string literal or C global address uses,
-    since a Palan function is emitted as an unmangled assembly label — no indirect-call
-    machinery or new instruction is introduced; the callback is invoked by the C library's own
-    compiled code, never by Palan.
+  - func-ref: a function name written where a value is expected (an `id` naming no variable or
+    C global). Emitted as `{"expr-type":"func-ref","name":<function name>,"value-type":<its
+    function pointer type>}` (plus `loc`). The type is `{"type-kind":"pntr","mutable":false,
+    "base-type":{"type-kind":"func","parameters":[{"var-type":T}...],"ret-type":R}}`, built from
+    the function's signature; a function returning nothing has a `void` prim `ret-type`, and a
+    single named return gives its type. The function must be a Palan function (local or imported)
+    or a non-variadic C function, and every parameter and the return must be a primitive or a
+    borrowed pointer (`isFuncSigType`); otherwise E_FuncNotValue (multiple returns, variadic,
+    syscall, or a type that can't pass through a function pointer). Lowered by codegen to the
+    `LeaLabel` of the function's label.
+  - call-ptr: a call through a function pointer, `{"expr-type":"call-ptr","callee":<expression of
+    a function pointer type>,"args":[...],"value-type":R}` (`value-type` absent for a void
+    return). A `call` whose name is a function pointer variable, parameter or C global becomes
+    one with an `id` callee, and a `member-call` `s.f(args)` whose object's struct has a function
+    pointer field `f` becomes one with a `field-access` callee. If a function of the same name is
+    visible (for `s.f(args)`, one whose first parameter is `@!`, i.e. a method-form candidate) the
+    call is E_AmbiguousFuncPtrCall. Arguments are checked against the function type's parameters
+    by the rules for a Palan callee, whatever the pointer's origin. Lowered to a C-convention
+    indirect call.
   - addr-of: SA dispatches on the AST node's `object` (see ASTSpec.md) and emits one of three
     shapes — the `addr-of` expr-type only ever appears for the plain-variable case; a struct-field
     or array-element target lowers to an ordinary `field-access`/`arr-index` node instead:
@@ -968,7 +972,9 @@ a named `strct`/`union`→`struct`) and then check every type against `unreprese
 - A `prim` type-name not resolved to a known Palan primitive (e.g. `flt128` for C's `long
   double` when no typedef maps it to something usable).
 - `arr` (a bare array type-kind — the `[n]@T`/`[n]@!T` pointer-slot-array shape has already
-  normalized to `pntr` by this point), `func` (a function-pointer type), a `strct`/`union`
+  normalized to `pntr` by this point), a `func` whose parameters or return are not all
+  primitives or pointers representable by these same rules (a variadic one, or one taking a
+  struct by value), a `strct`/`union`
   with no `type-name` (a genuinely untagged struct reference — c2ast synthesizes a tag from
   the typedef name for a single, non-derived `typedef struct { ... } Name;`, so this is a
   multi-declarator/derived-declarator typedef of such a body, not every anonymous struct),
@@ -987,17 +993,11 @@ a named `strct`/`union`→`struct`) and then check every type against `unreprese
   `"by-value struct parameter"` — this direction has no ABI implementation (a C function like
   `stdio.h`'s `fopencookie`, which takes a `cookie_io_functions_t` by value, is unsupported for
   this reason).
-- A `pntr` whose `base-type` is `func` (a function-pointer parameter) is representable, as a
-  narrow exception, when the inner function signature is itself fully representable by the same
-  rules applied recursively (no by-value struct parameter, no nested function pointer, no other
-  unrepresentable parameter or return type) — such a parameter is marked `"_callback-param":true`
-  on the parameter's own JSON object (an SA-internal marker, never emitted in sa.json) and its
-  argument position accepts a bare Palan function name as a `func-ref` expression (see the
-  Expression model entry above) instead of an ordinary expression. A function-pointer parameter
-  whose inner signature is not representable this way still contributes `"function pointer"` to
-  `_unsupported-sig`, same as before this marker existed. `normalizeCType` recurses into a `func`
-  type-kind's own return type and parameters, so pointee `const` folds to `mutable` on the inner
-  signature's pointers exactly as it does at the top level.
+- `normalizeCType` folds a `pntr` to a `func` to `"mutable":false` whatever C's `const` says,
+  drops the parameters' `name`s and the node's `typedef-name`, and recurses into the return type
+  and parameters, so a C function pointer has the same shape as a native `@func(...)`. A C
+  typedef of a function type (not a pointer, e.g. `cookie_read_function_t`) is expanded by
+  c2ast where it is referenced, so `cookie_read_function_t *` arrives as a `pntr` to a `func`.
 
 This differs from a native Palan signature's check (`validateNativeSig`): a native signature only
 rejects a structural type-kind `PlnTypeRegistry::fromJson` can never build (currently just a bare

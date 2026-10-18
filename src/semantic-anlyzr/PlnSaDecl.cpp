@@ -24,10 +24,23 @@ static PointeeLeaf pointeeLeaf(const json& pntr)
 	return leaf;
 }
 
-// Only a cinclude'd struct can have such a field; Palan has no function type.
+// Only a cinclude'd struct can have such a field: a native function type is
+// checked where it is written.
 static string unsupportedPointee(const PointeeLeaf& leaf)
 {
-	return leaf.type->value("type-kind", "") == "func" ? "function pointer" : "";
+	return leaf.type->value("type-kind", "") == "func" && !unrepresentableTypeName(*leaf.type).empty()
+		? "function pointer" : "";
+}
+
+static string pointeeElemKind(const PointeeLeaf& leaf)
+{
+	if (leaf.type->value("type-kind", "") == "func") return "func";
+	return isPrimPointeeName(leaf.type->value("type-name", "")) ? "prim" : "struct";
+}
+
+static json pointeeFuncType(const PointeeLeaf& leaf)
+{
+	return leaf.type->value("type-kind", "") == "func" ? *leaf.type : json();
 }
 
 static StructDef buildStructDef(const string& name,
@@ -114,14 +127,14 @@ static StructDef buildStructDef(const string& name,
 			PointeeLeaf leaf = pointeeLeaf(vtype);
 			string baseName = leaf.type->value("type-name", "");
 			bool isMut = vtype.value("mutable", false);
-			string elemKind = isPrimPointeeName(baseName) ? "prim" : "struct";
 			int at = place(sz, align);
 			def.fields.push_back({.name=fieldName, .typeKind="raw-ptr",
 			                      .typeName=baseName, .isMutable=isMut,
-			                      .offset=at, .size=sz, .elemKind=elemKind,
+			                      .offset=at, .size=sz, .elemKind=pointeeElemKind(leaf),
 			                      .enumName=leaf.type->value("enum", ""),
 			                      .innerPtrMutable=leaf.innerPtrMutable,
-			                      .unsupported=unsupportedPointee(leaf)});
+			                      .unsupported=unsupportedPointee(leaf),
+			                      .funcType=pointeeFuncType(leaf)});
 		} else if (tk == "arr") {
 			const json& size_expr = vtype["size-expr"];
 			if (size_expr.is_null()) {
@@ -143,17 +156,17 @@ static StructDef buildStructDef(const string& name,
 					bool isMut = base_wrap.value("mutable", false);
 					PointeeLeaf leaf = pointeeLeaf(base_wrap);
 					string leaf_name = leaf.type->value("type-name", "");
-					string elemKind = isPrimPointeeName(leaf_name) ? "prim" : "struct";
 
 					int align = 8;
 					int at = place(count*8, align);
 					def.fields.push_back({.name=fieldName, .typeKind="embed-ptr-arr",
 					                      .typeName=leaf_name, .isMutable=isMut,
 					                      .offset=at, .size=(int)(count*8),
-					                      .count=count, .elemKind=elemKind, .stride=8,
+					                      .count=count, .elemKind=pointeeElemKind(leaf), .stride=8,
 					                      .enumName=leaf.type->value("enum", ""),
 					                      .innerPtrMutable=leaf.innerPtrMutable,
-					                      .unsupported=unsupportedPointee(leaf)});
+					                      .unsupported=unsupportedPointee(leaf),
+					                      .funcType=pointeeFuncType(leaf)});
 					continue;
 				}
 				if (base_kind != "prim") {
@@ -1133,6 +1146,9 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		string pointee = pointeeLeaf(*t).type->value("type-name", "");
 		bool laterDef = pointee == name || declaredStructs_.count(pointee);
 		if (!laterDef) requireKnownTypeNames(stmt, written);
+		json* leaf = const_cast<json*>(t);
+		while (leaf->value("type-kind", "") == "pntr") leaf = &(*leaf)["base-type"];
+		if (leaf->value("type-kind", "") == "func") *leaf = deepNormalizePrimToStruct(*leaf);
 	}
 	structDefs_[name] = buildStructDef(name, fields, structDefs_, locPrefix(stmt));
 	return json::array();
@@ -1406,6 +1422,10 @@ json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
 	string tk = resolved.value("type-kind", "");
 	if ((tk == "pntr" || tk == "arr" || tk == "embed") && resolved.contains("base-type"))
 		resolved["base-type"] = resolveTypeAliasDeep(resolved["base-type"]);
+	if (tk == "func") {
+		for (auto& p : resolved["parameters"]) p["var-type"] = resolveTypeAliasDeep(p["var-type"]);
+		resolved["ret-type"] = resolveTypeAliasDeep(resolved["ret-type"]);
+	}
 	return resolved;
 }
 
@@ -1537,6 +1557,7 @@ void PlnSemanticAnalyzer::adoptStruct(PlnSemanticAnalyzer& sub, const string& na
 			});
 		}
 		if (!f.enumName.empty()) adoptEnum(sub, f.enumName, false, "", locNode);
+		if (f.elemKind == "func") adoptTypeDeps(sub, f.funcType, locNode);
 	}
 }
 

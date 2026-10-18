@@ -244,7 +244,8 @@ struct BodyList {
 %type <PList<json>>	arguments
 %type <json>	array_desc array_row dict_desc
 %type <PList<json>>	array_rows array_items dict_items
-%type <json>	type_expr
+%type <json>	type_expr fptr_ret
+%type <PList<json>>	fptr_params fptr_param_list
 %type <json>	var_declaration inherit_var_decl
 %type <PList<json>>	var_declarations
 %type <NodeRef>	func_def func_item syscall_decl
@@ -260,6 +261,9 @@ struct BodyList {
 %type <PList<json>>	type_members enumerators
 %type <json>	enumerator
 
+// A function pointer type's return is taken greedily: `e as @func(T) -> X`
+// casts to a type returning X rather than chaining the cast into X.
+%precedence FPTR_NORET
 %left ARROW DBL_ARROW
 %left OPE_OR
 %left OPE_AND
@@ -1220,6 +1224,10 @@ type_expr: ID
 	{ $$ = pntrTypeExpr(voidTypeExpr(), false); }
 	| AT_EXCL KW_VOID
 	{ $$ = pntrTypeExpr(voidTypeExpr(), true); }
+	| '@' KW_FUNC '(' fptr_params ')' fptr_ret
+	{ $$ = pntrTypeExpr(funcTypeExpr($4.toVector(), move($6)), false); }
+	| AT_EXCL KW_FUNC '(' fptr_params ')' fptr_ret
+	{ $$ = pntrTypeExpr(funcTypeExpr($4.toVector(), move($6)), true); }
 	| '$' type_expr
 	{ $$ = {{"type-kind","embed"},{"base-type",move($2)}}; }
 	| '[' expression ']' type_expr
@@ -1244,6 +1252,24 @@ type_expr: ID
 	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr},{"base-type",move($4)}}; }
 	| '[' '+' expression ']' type_expr
 	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",move($3)},{"base-type",move($5)}}; }
+	;
+
+fptr_params: /* empty */
+	{ }
+	| fptr_param_list
+	{ $$ = $1; }
+	;
+
+fptr_param_list: type_expr
+	{ $$ = PList<json>().push({{"var-type", move($1)}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	| fptr_param_list ',' type_expr
+	{ $$ = $1.push({{"var-type", move($3)}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	;
+
+fptr_ret: /* empty */ %prec FPTR_NORET
+	{ $$ = voidTypeExpr(); }
+	| ARROW type_expr
+	{ $$ = move($2); }
 	;
 
 temp_ids: ID | temp_ids ',' ID

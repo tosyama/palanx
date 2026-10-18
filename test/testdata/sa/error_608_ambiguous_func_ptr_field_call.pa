@@ -1,0 +1,4 @@
+type S { @func(int32) run; };
+func run(@!S s, int32 x) { }
+S s;
+s.run(1);

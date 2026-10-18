@@ -1491,14 +1491,8 @@ TEST(sa_error, c_unsupported_union_ret)
 
 TEST(sa_error, c_unsupported_func_param)
 {
-	// `void set_cb(int (*cb)(long double));` -- a function-pointer parameter
-	// whose own inner signature is unrepresentable (long double) is still
-	// rejected wholesale as "function pointer": the callback exception only
-	// exempts a callback parameter from the blanket rejection when
-	// callbackSigRepresentable finds every inner parameter/return type
-	// representable, which is not the case here.
-	// Covers: normalizeCFuncSig -> callbackSigRepresentable (false branch),
-	// sa_expr_call -> requireSupportedCFuncSig
+	// `void set_cb(int (*cb)(long double));` -- a function pointer whose own
+	// parameter is unrepresentable makes the whole signature unsupported.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -1803,80 +1797,58 @@ TEST(sa_error, unsupported_c_struct_return)
 
 TEST(sa_error, callback_arg_not_func)
 {
-	// `qsort(arr, 4, 4, x);` where `x` is a local
-	// variable, not a function name -- the "_callback-param" slot only
-	// accepts a bare reference resolved by findPlnFunc, not findVar.
-	// Covers: sa_func_ref_arg's arg.expr-type=="id" + findVar/findPlnFunc
-	// dispatch, E_CallbackArgRequiresFunc
+	// A variable of another type in a C function's function pointer parameter.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_159_callback_arg_not_func.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("argument 'x' to C function 'qsort' must be the bare name of a Palan function"),
-		string::npos);
+	ASSERT_NE(sa.find(":5:1: error: cannot convert 'int64' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_sig_arity_mismatch)
 {
-	// `func cmp(@int32 a) -> int32` passed where qsort
-	// expects a 2-parameter comparator -- arity mismatch between the C
-	// callback signature and the Palan function's own signature.
-	// Covers: sa_func_ref_arg's cCount != pCount check, E_CallbackSignatureMismatch
+	// A function with fewer parameters than qsort's comparator.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_160_callback_sig_arity_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32) -> int32' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_sig_ptr_permission)
 {
-	// `func cmp(@!int32 a, @!int32 b) -> int32` passed to
-	// qsort, whose comparator parameters are `const void*` -- C passes a
-	// read-only value INTO the callback, so a Palan `@!T` (which could write
-	// through it) is not a valid match even though the pointee types agree.
-	// Covers: sa_func_ref_arg's ptrPermissionOk(cvt, pvt) direction (value
-	// flows from C into the callback parameter), E_CallbackSignatureMismatch
+	// qsort passes `const void*`: a function that may write through its
+	// parameters can't take them.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_161_callback_ptr_permission.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@!int32, @!int32) -> int32' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_sig_width_mismatch)
 {
-	// `func cb(int64 status, @int8 arg)` passed to
-	// on_exit, whose handler's first parameter is a plain `int` (int32) --
-	// typeCompat(int32, int64) is ImplicitWiden, not Identical, and this
-	// call site requires Identical because glibc calls the Palan function
-	// directly with no conversion step to widen through at the ABI
-	// boundary. Proves callback matching is strict Identical-only, unlike
-	// every other call site in this file (which tolerate ImplicitWiden).
-	// Covers: sa_func_ref_arg's typeCompat(...) != Identical check for a
-	// non-pointer parameter, E_CallbackSignatureMismatch
+	// The callee is called with no conversion step, so int32 does not widen
+	// to an int64 parameter as it would in a direct call.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_162_callback_sig_width_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cb' cannot be used as a callback for C function 'on_exit'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(int64, @int8)' to '@func(int32, @!void)'."), string::npos) << sa;
 }
 
 TEST(sa_error, c_unsupported_func_ret)
 {
-	// `void set_cb(long double (*cb)(int));` -- a callback whose parameters
-	// are all representable but whose OWN return type is not (long double).
-	// Distinct from c_unsupported_func_param (which has an unrepresentable
-	// parameter): this exercises callbackSigRepresentable's ret-type check.
-	// Covers: normalizeCFuncSig -> callbackSigRepresentable (ret-type branch)
+	// `void set_cb(long double (*cb)(int));` -- the function pointer's return
+	// type, not a parameter, is unrepresentable.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -1889,66 +1861,50 @@ TEST(sa_error, c_unsupported_func_ret)
 
 TEST(sa_error, callback_ret_void_mismatch)
 {
-	// `func cb() -> int32 { ... }` passed to atexit,
-	// whose handler returns void -- the callback's own return value flows
-	// nowhere (glibc's atexit dispatcher discards it), so a Palan function
-	// with a return value cannot stand in for a void C callback.
-	// Covers: sa_func_ref_arg's cVoidRet==true / pHasRet==true branch,
-	// E_CallbackSignatureMismatch
+	// A function returning a value where a void function is expected.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_164_callback_ret_void_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cb' cannot be used as a callback for C function 'atexit'"), string::npos);
+	ASSERT_NE(sa.find(":3:1: error: cannot convert '@func() -> int32' to '@func()'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_ret_type_mismatch)
 {
-	// `func cmp(@int32 a, @int32 b) -> int64` passed to
-	// qsort, whose comparator returns `int` (int32) -- parameters match
-	// exactly, but the non-void return types differ.
-	// Covers: sa_func_ref_arg's non-void return-type typeCompat(...) !=
-	// Identical branch, E_CallbackSignatureMismatch
+	// Matching parameters, different non-void return type.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_165_callback_ret_type_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32, @int32) -> int64' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_multi_ret_mismatch)
 {
-	// A Palan function with multiple named returns has no single ABI return
-	// value a C callback slot could bind to -- rejected before even looking
-	// at qsort's own (single, non-void) return type.
-	// Covers: sa_func_ref_arg's pMultiRet branch, E_CallbackSignatureMismatch
+	// Multiple named returns have no single return register to bind to.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_169_callback_multi_ret_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:34: error: function 'cmp' cannot be used as a function pointer: it returns multiple values."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_ret_missing_mismatch)
 {
-	// `func cmp(@int32 a, @int32 b) { }` has matching parameters but no
-	// return value at all, while qsort's comparator expects a non-void
-	// `int` return -- the mirror image of callback_ret_void_mismatch.
-	// Covers: sa_func_ref_arg's cVoidRet==false / pHasRet==false branch,
-	// E_CallbackSignatureMismatch
+	// A void function where qsort's comparator returns int.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_170_callback_ret_missing_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32, @int32)' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, deref_void_pointer)
@@ -3427,6 +3383,7 @@ TEST(sa_error, chain_call)
 
 TEST(sa_error, unsupported_c_field)
 {
+	// A variadic function pointer can't be typed as `@func`.
 	const string msg = "of 'CB': its type uses 'function pointer', a C type this version cannot represent.";
 	const pair<string, string> cases[] = {
 		{"error_534_c_func_ptr_field_read.pa", ":3:11: error: cannot access field 'fn' " + msg},
@@ -3460,16 +3417,6 @@ TEST(sa_error, c_const_ptr_field)
 		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
-}
-
-TEST(sa_error, c_func_ptr_typedef)
-{
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_578_c_func_ptr_typedef.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find(":2:1: error: unknown type 'FP'."), string::npos) << sa;
 }
 
 TEST(sa_error, ptr_ptr_field_chain)
@@ -3541,6 +3488,41 @@ TEST(sa_error, owned_rows_c_ptrptr)
 		{"error_594_owned_rows_c_ptrptr.pa", ":3:1: error: array shape '@![1][4]uint8' " + mismatch},
 		{"error_595_owned_unsized_rows_c_ptrptr.pa", ":4:1: error: array shape '@![1][?]uint8' " + mismatch},
 		{"error_596_owned_rows_runtime_outer_c_ptrptr.pa", ":4:1: error: array shape '@![?][4]uint8' " + mismatch},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, func_ptr)
+{
+	const string sigType = " cannot be a parameter or return type of a function pointer;";
+	const pair<string, string> cases[] = {
+		{"error_599_mutable_func_ptr.pa",
+		 ":1:1: error: a function pointer is read-only; write '@func(...)', not '@!func(...)'."},
+		{"error_600_func_ptr_struct_param.pa", ":2:1: error: 'P'" + sigType},
+		{"error_601_func_ptr_arr_param.pa", ":1:1: error: 'array'" + sigType},
+		{"error_602_func_ptr_alias_struct_param.pa", ":3:1: error: 'P'" + sigType},
+		{"error_603_variadic_func_value.pa",
+		 ":2:27: error: function 'printf' cannot be used as a function pointer: it takes variable arguments."},
+		{"error_604_syscall_func_value.pa",
+		 ":2:27: error: function 'wr' cannot be used as a function pointer: it is a syscall."},
+		{"error_605_owned_param_func_value.pa",
+		 ":3:15: error: function 'g' cannot be used as a function pointer: its parameter type 'P' cannot be passed through one."},
+		{"error_606_owned_ret_func_value.pa",
+		 ":3:19: error: function 'g' cannot be used as a function pointer: its return type 'P' cannot be returned through one."},
+		{"error_607_ambiguous_func_ptr_call.pa",
+		 ":5:1: error: call to 'f3' is ambiguous: it names both a function pointer and a function."},
+		{"error_608_ambiguous_func_ptr_field_call.pa",
+		 ":4:1: error: call to 'run' is ambiguous: it names both a function pointer and a function."},
+		{"error_609_func_ptr_permission.pa",
+		 ":2:1: error: cannot convert '@func(@!int32) -> int32' to '@func(@int32) -> int32'."},
+		{"error_610_func_ptr_arg_count.pa", ":3:1: error: function 'f' takes 1 argument(s), but 2 given."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

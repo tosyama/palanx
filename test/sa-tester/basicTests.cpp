@@ -4174,13 +4174,8 @@ TEST(sa, struct_ret_embed_arr_sse_field) {
 }
 
 TEST(sa, c_callback_arg) {
-	// `qsort(arr, 4, 4, cmp);` where `cmp` matches
-	// qsort's `int (*)(const void*, const void*)` comparator exactly --
-	// normalizeCFuncSig marks the comparator parameter "_callback-param"
-	// (its inner signature is fully representable), and sa_func_ref_arg
-	// resolves the bare name `cmp` via findPlnFunc (not findVar) into a
-	// "func-ref" node carrying only the function's name -- no value-type,
-	// since this version has no first-class function-pointer value.
+	// `cmp` takes `@int32`s where qsort's comparator takes `const void*`:
+	// a void pointer matches any pointer in a function type too.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/173_c_callback_arg.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -4192,15 +4187,16 @@ TEST(sa, c_callback_arg) {
 	const auto& cb = call["args"][3];
 	ASSERT_EQ(cb["expr-type"], "func-ref");
 	ASSERT_EQ(cb["name"], "cmp");
-	ASSERT_FALSE(cb.contains("value-type"));
+	ASSERT_EQ(cb["value-type"]["mutable"], false);
+	const auto& fn = cb["value-type"]["base-type"];
+	ASSERT_EQ(fn["type-kind"], "func");
+	ASSERT_EQ(fn["parameters"][0]["var-type"]["base-type"]["type-name"], "int32");
+	ASSERT_EQ(fn["ret-type"]["type-name"], "int32");
 }
 
 TEST(sa, c_callback_void) {
-	// `atexit(on_exit_cb);` where both atexit's handler
-	// type and `on_exit_cb` return void -- exercises sa_func_ref_arg's
-	// cVoidRet==true path (distinct from c_callback_arg's non-void qsort
-	// comparator), proving a void-returning callback is accepted without a
-	// spurious return-type mismatch.
+	// `atexit(on_exit_cb);`: a function returning nothing matches a void
+	// C function pointer.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/174_c_callback_void.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -5833,4 +5829,45 @@ TEST(sa, shift)
 	// An untyped constant shifts at 64 bits.
 	ASSERT_EQ(init(4)["value"], "1099511627776");
 	ASSERT_EQ(init(5)["value"], "9223372036854775804");
+}
+
+TEST(sa, c_func_ptr_typedef)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/268_c_func_ptr_typedef.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& vt = stmts[0]["vars"][0]["var-type"];
+	ASSERT_EQ(vt["mutable"], false);
+	ASSERT_EQ(vt["base-type"]["type-kind"], "func");
+	ASSERT_EQ(vt["base-type"]["parameters"][0]["var-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["expr-type"], "call-ptr");
+}
+
+TEST(sa, func_ptr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/269_func_ptr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& ref = stmts[0]["vars"][0]["init"];
+	ASSERT_EQ(ref["expr-type"], "func-ref");
+	ASSERT_EQ(ref["name"], "twice");
+	// A single named return is the function's return value.
+	ASSERT_EQ(stmts[1]["value"]["name"], "one");
+	ASSERT_EQ(stmts[1]["value"]["value-type"]["base-type"]["ret-type"]["type-name"], "int32");
+
+	const auto& call = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(call["expr-type"], "call-ptr");
+	ASSERT_EQ(call["callee"]["name"], "f");
+	ASSERT_EQ(call["value-type"]["type-name"], "int32");
+	ASSERT_EQ(call["args"].size(), 1);
+
+	ASSERT_EQ(stmts[4]["stmt-type"], "field-assign");
+	const auto& fieldCall = stmts[5]["vars"][0]["init"];
+	ASSERT_EQ(fieldCall["expr-type"], "call-ptr");
+	ASSERT_EQ(fieldCall["callee"]["expr-type"], "field-access");
+
+	ASSERT_EQ(stmts[6]["stmt-type"], "expr");
+	ASSERT_EQ(stmts[6]["body"]["expr-type"], "call-ptr");
 }

@@ -31,7 +31,8 @@ struct FieldLayout {
 
 	// Array-field-only members (valid when typeKind == "embed-arr", "embed-ptr-arr", or "arr-ptr")
 	int64_t count    = 0;   // element count n (compile-time constant)
-	string  elemKind = "";  // "prim" | "struct"; also set for typeKind == "raw-ptr" (pointee kind)
+	string  elemKind = "";  // "prim" | "struct"; also set for typeKind == "raw-ptr" (pointee kind);
+	                        // "func" for a function pointer (see funcType)
 	int     stride   = 0;   // bytes per element
 
 	string  enumName = "";  // enum the primitive leaf is typed as, if any
@@ -41,6 +42,7 @@ struct FieldLayout {
 	// A C type this version cannot represent (e.g. "function pointer"): the
 	// field keeps its place in the layout but cannot be accessed.
 	string  unsupported = "";
+	json    funcType;  // elemKind == "func": the pointee function type
 };
 
 struct StructDef {
@@ -235,6 +237,10 @@ class PlnSemanticAnalyzer {
 	json sa_expr_shift(const json& expr, const PlnType* expectedType);
 	void checkIntLiteralRange(const json& lit);
 	json sa_expr_call(const json& expr);
+	json sa_func_ref(const json& expr);
+	const json* findFuncPtrVar(const json& call) const;
+	json funcPtrField(const json& memberCall);
+	json sa_expr_call_ptr(const json& expr, json callee, const string& funcName);
 	json sa_expr_member_call(const json& expr);
 	json normalizeMethodCall(const json& expr);
 	bool isMethodForm(const json& memberCall) const;
@@ -250,10 +256,6 @@ class PlnSemanticAnalyzer {
 	// Analyze a call's argument list against the callee's parameter list.
 	json saCallArgs(const json& locNode, const json& args, const json& funcParams,
 	                bool isCFunc, const string& funcName);
-	// Analyze the argument in a `_callback-param` slot: only a bare reference
-	// to a Palan function is accepted, matched by exact ABI identity.
-	json sa_func_ref_arg(const json& locNode, const json& arg,
-	                      const string& cFuncName, const json& param);
 	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
 	                           const json& saArg, const json& param, size_t argIdx);
 	void checkPtrPermission(const json& locNode, const json& from, const json& to);
@@ -338,6 +340,9 @@ class PlnSemanticAnalyzer {
 	// a `[n]$int32` field is an inline array, which a variable has no counterpart of.
 	// `type` must be as written in source (see requireNameableType).
 	void requireKnownTypeNames(const json& locNode, const json& type) const;
+	// Exits unless each parameter/return of a function type is one a function
+	// pointer can carry (isFuncSigType) and names known types.
+	void requireFuncSigTypes(const json& locNode, const json& func) const;
 	json  toStructPntrType(const json& type) const;
 	json  unsizedArrToPntr(const json& locNode, const json& type);
 	// A '@T'/'@!T' array element (a pointer slot) as SA represents it.

@@ -3002,3 +3002,9 @@ TEST(build_mgr, shift) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/293_shift.pa");
 	ASSERT_EQ(output, "2147483644 144 2 2\n15 40\n-1 -3 -56 -56\n3 5 116\n-64 0 -2305843009213693952\n");
 }
+
+TEST(build_mgr, func_ptr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/294_func_ptr.pa");
+	ASSERT_EQ(output, "10 6 42 8\nhello\n8 4\n36 4.5 -7\n1 0\n1 2 3\nvia puts\n30\n");
+}

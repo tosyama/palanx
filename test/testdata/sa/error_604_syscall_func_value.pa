@@ -1,0 +1,2 @@
+syscall wr(int32 fd) -> int64 = 1;
+@func(int32) -> int64 f = wr;

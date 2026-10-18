@@ -944,7 +944,7 @@ void CParser::emitDeclarator(json &ast, json &decl,
 			{"parameters", move(vt["parameters"])}
 		});
 	} else if (is_typedef) {
-		if (tk == "prim" || tk == "pntr") {
+		if (tk == "prim" || tk == "pntr" || tk == "func") {
 			registerTypedef(decl["name"].get<string>(), vt);
 		} else if ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")) {
 			// typedef struct/union/enum Tag X; -- register X as an alias for the tag
@@ -961,7 +961,7 @@ void CParser::emitDeclarator(json &ast, json &decl,
 			// resolves; registering keeps this typedef's references pointing at it.
 			registerTypedef(decl["name"].get<string>(), vt);
 		}
-		// Remaining anonymous strct/union/func underlying types -- a
+		// Remaining anonymous strct/union underlying types -- a
 		// multi/derived-declarator anonymous struct/union body, or a name
 		// declaration()'s tag synthesis skipped because it was already taken
 		// by an unrelated struct -- are not registered, left as unresolved

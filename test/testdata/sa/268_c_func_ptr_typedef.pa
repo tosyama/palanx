@@ -1,0 +1,3 @@
+cinclude "268_c_func_ptr_typedef.h";
+FP fp;
+int32 r = fp(1);

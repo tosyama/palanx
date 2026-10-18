@@ -96,6 +96,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const Convert& c)  { setDef(c.dst, c.to); addUse(c.src); },
             [&](const CallC& c) {
                 call_indices.push_back(i);
+                if (c.callee) addUse(*c.callee);
                 addCallArgs(c.args, phys.intArgs);
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);

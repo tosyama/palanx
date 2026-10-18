@@ -156,6 +156,13 @@ inline json voidTypeExpr()
 	return json{{"type-kind","prim"},{"type-name","void"}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// The pointee of @func(...): the same shape c2ast gives a C function type, so
+// a native function pointer and a cinclude'd one reach SA identically.
+inline json funcTypeExpr(std::vector<json> params, json ret)
+{
+	return {{"type-kind","func"},{"parameters",std::move(params)},{"ret-type",std::move(ret)}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // Whether a type_expr result has no not-impl part ('T<...>') and no array
 // level other than a plain '[n]'/'[]' one ('[#n]'/'[+n]' are not implemented).
 inline bool isImplementedTypeExpr(const json& t)
@@ -194,6 +201,8 @@ inline bool isDeclarableVarType(const json& t)
 	}
 	if (btk == "pntr" && bt["base-type"].value("type-kind", "") == "prim")
 		return true;  // array of struct-record pointers (@T elements)
+	if (btk == "pntr" && bt["base-type"].value("type-kind", "") == "func")
+		return true;  // array of function pointers
 	if (btk == "arr" && bt.value("specifier", "") == "raw" && !bt["size-expr"].is_null()
 		&& bt["base-type"].value("type-kind", "") == "prim")
 		return true;  // fixed-size multidim array (also covers embedded-struct arrays)

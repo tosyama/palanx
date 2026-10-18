@@ -8,6 +8,7 @@
 #include <vector>
 #include <variant>
 #include <utility>
+#include <optional>
 
 using std::string;
 using std::vector;
@@ -78,7 +79,10 @@ struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (t
 // %xmm0/%xmm1, then a DerefStore writes it into the destination struct) VRegs
 // -- the same shape as CallPln, so both share PlnRegAlloc's CallPln visitor
 // logic.
-struct CallC    { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
+// With callee set, the call goes through that function pointer instead of
+// name: a call through a pointer always uses the C convention.
+struct CallC    { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes;
+                  std::optional<VReg> callee = std::nullopt; };
 struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
 // Same dsts/retTypes shape as CallC/CallPln, but always 0 or 1 (palan-sa's
 // validateSyscallDecl rejects multi-return syscall declarations) and no

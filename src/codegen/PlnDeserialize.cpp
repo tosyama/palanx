@@ -109,11 +109,18 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         return e;
     }
     if (expr_type == "func-ref") {
-        // No "value-type" to read here (toVRegType would reject a "func"
-        // type-kind) -- this version has no first-class function-pointer
-        // value, just the callback slot's raw address (see FuncRefExpr).
         auto e = make_unique<FuncRefExpr>();
         e->name = j["name"];
+        return e;
+    }
+    if (expr_type == "call-ptr") {
+        auto e = make_unique<PtrCallExpr>();
+        e->callee = deserializeExpr(j["callee"]);
+        if (j.contains("value-type")) {
+            e->hasRet  = true;
+            e->retType = toVRegType(j["value-type"]);
+        }
+        deserializeArgs(j, e->args);
         return e;
     }
     if (expr_type == "convert") {

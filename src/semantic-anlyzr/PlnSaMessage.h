@@ -74,8 +74,10 @@ enum PlnSaMessageCode {
 	E_IncompatibleTypes,		// arg1: from type display name, arg2: to type display name
 	E_UnsupportedCStructReturn,	// arg1: struct type name
 	E_ByvalStructRetDiscarded,	// arg1: struct type name
-	E_CallbackArgRequiresFunc,	// arg1: C function name, arg2: the argument as written
-	E_CallbackSignatureMismatch,	// arg1: Palan function name, arg2: C function name
+	E_FuncNotValue,		// arg1: function name, arg2: the reason
+	E_FuncPtrMutable,
+	E_FuncPtrSigType,	// arg1: type display name
+	E_AmbiguousFuncPtrCall,	// arg1: the name called
 	E_DerefVoidPointer,		// no args
 	E_InvalidLinkLibName,		// arg1: the library name as written
 	E_SyscallNumberNotConstant,	// arg1: syscall name

@@ -1,0 +1,2 @@
+cinclude <stdio.h>;
+@func(@int8) -> int32 f = printf;

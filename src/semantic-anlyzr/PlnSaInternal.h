@@ -62,7 +62,7 @@ inline bool isFloatPrim(const PlnType* t) {
 // struct/array variables, which carry no read-only concept of their own.
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
-enum class PtrPermission { Ok, Upgrade, InnerNarrowing };
+enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 
 // Checks binding `from` to `to` level by level down their pointer chains.
 // Upgrade: some level would turn read-only (`@T`) into mutable (`@!T`).
@@ -70,6 +70,9 @@ enum class PtrPermission { Ok, Upgrade, InnerNarrowing };
 // a `@!@int32` made from a `@!@!int32`, a read-only pointer could be stored
 // where the original still treats it as mutable (C's `int**` -> `const int**`).
 // Non-pointer types, and narrowing while every level above is read-only, are fine.
+// FuncSigMismatch: the function types reached differ in a pointer permission.
+inline bool funcSigPermissionOk(const json& from, const json& to);
+
 inline PtrPermission ptrPermission(const json& from, const json& to)
 {
 	bool aboveAllReadOnly = true, innerNarrowing = false;
@@ -83,12 +86,28 @@ inline PtrPermission ptrPermission(const json& from, const json& to)
 		f = &(*f)["base-type"];
 		t = &(*t)["base-type"];
 	}
+	if (!funcSigPermissionOk(*f, *t)) return PtrPermission::FuncSigMismatch;
 	return innerNarrowing ? PtrPermission::InnerNarrowing : PtrPermission::Ok;
 }
 
 inline bool ptrPermissionOk(const json& from, const json& to)
 {
 	return ptrPermission(from, to) == PtrPermission::Ok;
+}
+
+// A function stored as `to` is called with `to`'s arguments and its result is
+// read as `to`'s, so permissions are checked in the direction each value
+// flows: reversed for the parameters. Types themselves are compared by the
+// registry; here only the counts must agree for the walk to line up.
+inline bool funcSigPermissionOk(const json& from, const json& to)
+{
+	if (from.value("type-kind","") != "func" || to.value("type-kind","") != "func") return true;
+	const json& fp = from["parameters"];
+	const json& tp = to["parameters"];
+	if (fp.size() != tp.size()) return true;
+	for (size_t i = 0; i < fp.size(); i++)
+		if (!ptrPermissionOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
+	return ptrPermissionOk(from["ret-type"], to["ret-type"]);
 }
 
 // A pntr(struct) with no "mutable" key is a struct's own storage (a struct
@@ -122,6 +141,19 @@ inline bool isAggregateLit(const json& expr)
 {
 	string et = expr.value("expr-type", "");
 	return et == "arr-lit" || et == "dict-lit";
+}
+// A type a function pointer's parameter or return may have: a scalar or a
+// borrow. An owned struct or array passes ownership by a convention the
+// function pointer does not carry.
+inline bool isFuncSigType(const json& vt)
+{
+	string tk = vt.value("type-kind","");
+	return (tk == "prim" && vt.value("type-name","") != "void") || (tk == "pntr" && vt.contains("mutable"));
+}
+inline bool isFuncPtr(const json& vt)
+{
+	return vt.value("type-kind","") == "pntr" && vt.contains("base-type")
+	    && vt["base-type"].value("type-kind","") == "func";
 }
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
@@ -171,8 +203,8 @@ inline json fieldPrimLeaf(const FieldLayout& f)
 // What a raw-ptr field / embed-ptr-arr slot points to.
 inline json fieldPointeeType(const FieldLayout& f)
 {
-	json t = (f.elemKind == "struct")
-		? json{{"type-kind","struct"},{"type-name",f.typeName}}
+	json t = f.elemKind == "func" ? f.funcType
+		: f.elemKind == "struct" ? json{{"type-kind","struct"},{"type-name",f.typeName}}
 		: fieldPrimLeaf(f);
 	for (auto m = f.innerPtrMutable.rbegin(); m != f.innerPtrMutable.rend(); ++m)
 		t = {{"type-kind","pntr"},{"base-type",t},{"mutable",*m}};
@@ -373,6 +405,16 @@ inline string typeDisplayName(const json& t) {
 	}
 	if (kind == "struct")
 		return t.value("type-name", "anonymous struct");
+	if (kind == "func") {
+		string out = "func(";
+		for (auto& p : t["parameters"]) {
+			if (out.back() != '(') out += ", ";
+			out += p.contains("var-type") ? typeDisplayName(p["var-type"]) : "...";
+		}
+		out += ")";
+		if (t["ret-type"].value("type-name", "") != "void") out += " -> " + typeDisplayName(t["ret-type"]);
+		return out;
+	}
 	if (kind != "pntr")
 		return unrepresentableTypeName(t);
 	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
@@ -496,7 +538,9 @@ inline json normalizeCType(const json& type) {
 	if (type.value("type-kind","") == "pntr") {
 		json t = type;
 		json base = normalizeCType(type["base-type"]);
-		t["mutable"] = !base.value("const", false);
+		// Code is never written through a function pointer, so it is `@func`
+		// whatever C says.
+		t["mutable"] = base.value("type-kind","") != "func" && !base.value("const", false);
 		t["base-type"] = move(base);
 		return t;
 	}
@@ -512,11 +556,13 @@ inline json normalizeCType(const json& type) {
 	}
 	if (type.value("type-kind","") == "func") {
 		json t = type;
+		t.erase("typedef-name");
 		t["ret-type"] = normalizeCType(type["ret-type"]);
-		if (t.contains("parameters"))
-			for (auto& p : t["parameters"])
-				if (p.contains("var-type"))
-					p["var-type"] = normalizeCType(p["var-type"]);
+		for (auto& p : t["parameters"]) {
+			if (!p.contains("var-type")) continue; // "..." variadic marker
+			p.erase("name");
+			p["var-type"] = normalizeCType(p["var-type"]);
+		}
 		return t;
 	}
 	return type;
@@ -538,29 +584,11 @@ inline json cTypeAsAlias(const json& type) {
 	return t;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// True if every parameter/return type of a `func` node (already
-// normalizeCType'd) can be represented, i.e. is a signature a Palan function
-// can actually be checked against.
-inline bool callbackSigRepresentable(const json& funcType) {
-	if (funcType.contains("parameters"))
-		for (auto& ip : funcType["parameters"]) {
-			if (!ip.contains("var-type")) continue; // "..." variadic marker
-			const json& ivt = ip["var-type"];
-			if (ivt.value("type-kind", "") == "struct") return false;
-			if (!unrepresentableTypeName(ivt).empty()) return false;
-		}
-	if (funcType.contains("ret-type") && !unrepresentableTypeName(funcType["ret-type"]).empty())
-		return false;
-	return true;
-}
-
 // An unrepresentable parameter/return type is recorded as "_unsupported-sig"
 // rather than rejected here, so cinclude'ing the header is not itself an
 // error -- only calling the function is. A by-value struct parameter is
 // flagged explicitly (unrepresentableTypeName alone can't tell it apart from
-// a pointer once normalizeCType strips the pntr); a representable
-// `pntr(func(...))` parameter is marked "_callback-param" instead, checked
-// later at the call site.
+// a pointer once normalizeCType strips the pntr).
 inline void normalizeCFuncSig(json& funcDef) {
 	string bad;
 	if (funcDef.contains("parameters"))
@@ -569,14 +597,7 @@ inline void normalizeCFuncSig(json& funcDef) {
 				p["var-type"] = normalizeCType(p["var-type"]);
 				const json& vt = p["var-type"];
 				string paramBad;
-				bool isCallback = vt.value("type-kind", "") == "pntr" && vt.contains("base-type")
-					&& vt["base-type"].value("type-kind", "") == "func";
-				if (isCallback) {
-					if (callbackSigRepresentable(vt["base-type"]))
-						p["_callback-param"] = true;
-					else
-						paramBad = "function pointer";
-				} else if (vt.value("type-kind", "") == "struct") {
+				if (vt.value("type-kind", "") == "struct") {
 					paramBad = "by-value struct parameter";
 				} else {
 					paramBad = unrepresentableTypeName(vt);
