@@ -2186,7 +2186,7 @@ TEST(sa_error, arr_lit_func_arg)
 		"bin/palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array or struct variable's initializer, the source of '->' to a struct or an array, the value returned from a function returning a struct, or an argument for a struct or borrowed array parameter, in this version."), string::npos);
+	ASSERT_NE(sa.find(":2:5: error: parameter 'a' of type '[?]int32' cannot take an array literal: only a struct or fixed-size array parameter can."), string::npos);
 }
 
 TEST(sa_error, arr_lit_init)
@@ -2383,7 +2383,7 @@ TEST(sa_error, struct_arr_lit)
 		{"error_267_struct_lit_ptr_field.pa", ":2:15: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
 		{"error_268_struct_lit_narrowing.pa", ":3:17: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_269_dict_lit_prim_elem.pa", ":1:15: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, an element of an array literal, or an argument for a struct parameter."},
-		{"error_270_dict_lit_context.pa", ":3:5: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, an element of an array literal, or an argument for a struct parameter."},
+		{"error_270_dict_lit_context.pa", ":3:5: error: parameter 'p' of type 'int32' cannot take a '{name: value}' literal: only a struct parameter can."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3280,13 +3280,16 @@ TEST(sa_error, lit_arg)
 		{"error_496_arr_lit_arg_needs_at.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' ('@[..]' or '@![..]' for a literal)."},
 		{"error_497_lit_arg_count.pa", ":2:5: error: array 'a' has size 3 but its array literal has 2 elements."},
 		{"error_498_lit_arg_field_count.pa", ":3:5: error: struct 'P' has 2 fields but its literal has 1 values."},
-		{"error_499_dict_lit_arr_arg.pa", ":2:5: error: a '{name: value}' literal can only be used as a struct value"},
-		{"error_500_lit_arg_c_func.pa", ":2:10: error: an array literal can only be used as"},
-		{"error_501_lit_arg_unsized.pa", ":2:5: error: an array literal can only be used as"},
+		{"error_499_dict_lit_arr_arg.pa", ":2:5: error: parameter 'a' of type '@[3]int32' cannot take a '{name: value}' literal: only a struct parameter can."},
+		{"error_500_lit_arg_c_func.pa", ":2:10: error: a literal cannot be passed to C function 'memset': only a by-value struct parameter takes one."},
+		{"error_501_lit_arg_unsized.pa", ":2:5: error: parameter 'a' of type '[?]int32' cannot take an array literal: only a struct or fixed-size array parameter can."},
 		{"error_502_lit_arg_ptr_slot.pa", ":4:5: error: array 'a' cannot be given an array literal: only numeric and struct element types are supported."},
 		{"error_503_lit_borrow_not_arg.pa", ":3:9: error: an array literal can only be used as"},
 		{"error_504_lit_arg_borrow_escapes.pa", ":4:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_505_lit_arg_read_only.pa", ":4:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_614_arr_lit_scalar_param.pa", ":2:4: error: parameter 'a' of type 'int32' cannot take an array literal: only a struct or fixed-size array parameter can."},
+		{"error_615_arr_lit_ptr_param.pa", ":2:6: error: parameter 'p' of type '@!int32' cannot take an array literal: only a struct or fixed-size array parameter can."},
+		{"error_616_lit_arg_c_variadic.pa", ":2:16: error: a literal cannot be passed to C function 'printf': only a by-value struct parameter takes one."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3519,7 +3522,7 @@ TEST(sa_error, c_struct_arg)
 		{"error_612_c_struct_arg_func_ref.pa",
 		 ":3:25: error: function 'take_i8' cannot be used as a function pointer: its parameter type 'I8' cannot be passed through one."},
 		// Only a by-value struct parameter takes a literal; a pointer parameter still doesn't.
-		{"error_613_c_ptr_param_lit.pa", ":4:13: error: a '{name: value}' literal can only be used as a struct value"},
+		{"error_613_c_ptr_param_lit.pa", ":4:13: error: a literal cannot be passed to C function 'take_i8_ptr': only a by-value struct parameter takes one."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -592,8 +592,9 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       would; `release` is that variable's scope-end free. `value` is `__lit_N` analyzed as
       written in the literal's place (`@__lit_N`), so the argument is checked as that variable would
       be: a missing `@` is E_StructBorrowNeedsAddrOf / E_ArrBorrowNeedsAddrOf, and `@` for `@!` is a
-      permission error. A literal for any other parameter (numeric, `[]T`, a C function's) is
-      E_ArrLitContext / E_DictLitContext.
+      permission error. A literal for any other parameter (numeric, a non-struct `@T`/`@!T`,
+      `[]T`) is E_ArrLitArgType / E_DictLitArgType, naming the parameter and its type; one for
+      a C function's parameter other than a by-value struct is E_LitArgCFunc.
 
     A struct returned by a call and discarded as an `expr` statement becomes a `block` of a temp
     `var-decl` initialized by the call and the temp's free.

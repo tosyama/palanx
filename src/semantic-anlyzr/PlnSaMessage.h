@@ -110,6 +110,9 @@ enum PlnSaMessageCode {
 	E_StructLitExpected,	// arg1: struct name
 	E_StructLitFieldType,	// arg1: struct name, arg2: field name
 	E_DictLitContext,
+	E_ArrLitArgType,	// arg1: parameter name, arg2: parameter type
+	E_DictLitArgType,	// arg1: parameter name, arg2: parameter type
+	E_LitArgCFunc,	// arg1: C function name
 	E_CopyShapeMismatch,	// arg1: destination shape, arg2: source shape
 	E_CopyUnsupportedShape,	// arg1: shape
 	E_AddrOfBorrowed,	// arg1: variable name

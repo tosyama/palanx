@@ -356,16 +356,22 @@ static json astArrType(const json& saType)
 // A literal argument ('[..]', '{..}', or one under '@'/'@!') becomes a temp of
 // the parameter's struct or array type, initialized by body; the argument is
 // then analyzed as the temp written in its place ('@__lit_N'), returned with
-// argAst set to that form.
+// argAst set to that form. A null paramVT is a C function's parameter.
 json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const string& paramName,
-                                     json& argAst, json& body, json& release)
+                                     const string& funcName, json& argAst, json& body, json& release)
 {
 	bool isAddrOf = arg.value("expr-type", "") == "addr-of";
 	const json& lit = isAddrOf ? arg["object"] : arg;
-	auto rejectContext = [&]() {
-		cerr << locPrefix(lit) << PlnSaMessage::getMessage(
-			lit["expr-type"] == "arr-lit" ? E_ArrLitContext : E_DictLitContext) << endl;
+	auto rejectParamType = [&](PlnSaMessageCode code) {
+		cerr << locPrefix(lit) << PlnSaMessage::getMessage(code, paramName, typeDisplayName(*paramVT)) << endl;
 		exit(1);
+	};
+	auto rejectContext = [&]() {
+		if (!paramVT) {
+			cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_LitArgCFunc, funcName) << endl;
+			exit(1);
+		}
+		rejectParamType(lit["expr-type"] == "arr-lit" ? E_ArrLitArgType : E_DictLitArgType);
 	};
 	if (!paramVT)
 		rejectContext();
@@ -392,10 +398,8 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 		const StructDef& def = requireCompleteStruct(varType["base-type"]["type-name"].get<string>(), lit);
 		emitStructLitAssigns(target, def, sa_struct_lit(lit, def), body);
 	} else {
-		if (lit["expr-type"] != "arr-lit") {
-			cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
-			exit(1);
-		}
+		if (lit["expr-type"] != "arr-lit")
+			rejectParamType(E_DictLitArgType);
 		ArrLitShape shape = arrLitShape(lit, paramName, varType);
 		json values = sa_arr_lit_values(lit, shape, paramName);
 		checkArrLitCount(lit, lit["items"], paramName, shape.is2d, varType["arr-size"].get<uint64_t>(),
@@ -1225,7 +1229,8 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		// instead of defaulting to int64/uint64, avoiding a spurious narrowing
 		// rejection below.
 		json saArg = isLit ? sa_lit_arg(arg, isCFunc && !byValStruct ? nullptr : paramVT,
-		                                paramVT ? funcParams[argIdx].value("name", "") : "", argAst, litBody, litRelease)
+		                                paramVT ? funcParams[argIdx].value("name", "") : "", funcName,
+		                                argAst, litBody, litRelease)
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
 		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
 		if (!saArg.contains("value-type")) {

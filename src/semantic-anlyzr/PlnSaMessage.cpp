@@ -470,6 +470,23 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       "initializer, the source of '->' to a struct, an element of an array literal, or an "
 			       "argument for a struct parameter.";
 
+		case E_ArrLitArgType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg1 + "' of type '" + arg2 + "' cannot take an array literal: "
+			       "only a struct or fixed-size array parameter can.";
+
+		case E_DictLitArgType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg1 + "' of type '" + arg2 + "' cannot take a '{name: value}' literal: "
+			       "only a struct parameter can.";
+
+		case E_LitArgCFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a literal cannot be passed to C function '" + arg1 + "': "
+			       "only a by-value struct parameter takes one.";
+
 		case E_StructLitTarget:
 			return "a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy "
 			       "into the struct it points to.";
