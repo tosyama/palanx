@@ -1,0 +1,21 @@
+cinclude <stdio.h>;
+
+// The 4th argument arrives in %rcx, which the shift count also needs.
+func f(int64 a, int64 b, int64 c, int64 d) -> int64 { return (d <<< c) + d; }
+func g(int64 a, int64 b, int64 c, int64 d) -> int64 { return a <<< d + c; }
+
+int32 a = -8;
+uint8 b = 200;
+int8 c = 1;
+int64 n = 33;
+int32 m = 1;
+printf("%d %u %d %d\n", a >>> 1, b <<< 1, int32(c <<< 9), m <<< n);
+printf("%ld %ld\n", f(0, 0, 2, 3), g(5, 0, 1, 2));
+
+int32 i = -7;
+uint32 u = 29;
+int8 s = -128;
+int64 big = -9223372036854775807 - 1;
+printf("%d %d %d %d\n", i / 4, i % 4, i * 8, 8 * i);
+printf("%u %u %u\n", u / 8, u % 8, u * 4);
+printf("%d %d %ld\n", s / 2, s % 64, big / 4);

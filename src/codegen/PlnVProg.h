@@ -29,6 +29,28 @@ enum class VRegType {
     Float64,
 };
 
+inline bool isFloat(VRegType t) {
+    return t == VRegType::Float32 || t == VRegType::Float64;
+}
+
+inline int intWidth(VRegType t) {
+    switch (t) {
+        case VRegType::Int8:  case VRegType::Uint8:  return 1;
+        case VRegType::Int16: case VRegType::Uint16: return 2;
+        case VRegType::Int32: case VRegType::Uint32: return 4;
+        default:                                     return 8;  // Int64, Uint64, Ptr64
+    }
+}
+
+inline bool isSignedInt(VRegType t) {
+    switch (t) {
+        case VRegType::Int8: case VRegType::Int16: case VRegType::Int32: case VRegType::Int64:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // -------- Virtual instructions --------
 
 struct LeaLabel  { VReg dst; VRegType type; string label; };       // dst = address of label
@@ -45,6 +67,9 @@ struct BitAnd   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs &
 struct BitOr    { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs | rhs
 struct BitXor   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs ^ rhs
 struct BitNot   { VReg dst; VReg src; VRegType type; };            // dst = ~src
+enum class ShiftOp { Shl, Shr, Sar };  // Sar only lowers division; Palan has no arithmetic shift
+struct Shift    { VReg dst; VReg lhs; VReg rhs; ShiftOp op; VRegType type; }; // count taken modulo the width
+struct ShiftImm { VReg dst; VReg src; int count; ShiftOp op; VRegType type; }; // 0 < count < width
 struct Cmp      { VReg dst; string op; VReg lhs; VReg rhs; VRegType type; }; // dst (uint8) = (lhs op rhs) ? 1 : 0
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 // dsts/retTypes hold zero (statement-level, no return used), one (an ordinary
@@ -77,7 +102,7 @@ struct CalcAddr      { VReg dst; VReg ptr; int offset; };                       
 struct LeaLocal      { VReg dst; VReg local; };                                                        // dst = &local (local's own stack slot address)
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg,
-                             BitAnd, BitOr, BitXor, BitNot, Cmp, Convert,
+                             BitAnd, BitOr, BitXor, BitNot, Shift, ShiftImm, Cmp, Convert,
                              CallC, CallPln, CallSys, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov, Copy, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,

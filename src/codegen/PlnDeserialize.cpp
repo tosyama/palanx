@@ -185,6 +185,14 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
+    if (expr_type == "shl" || expr_type == "shr") {
+        auto e = make_unique<ShiftExpr>();
+        e->isRight = expr_type == "shr";
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
     if (expr_type == "bitnot") {
         auto e     = make_unique<BitNotExpr>();
         e->operand = deserializeExpr(j["operand"]);

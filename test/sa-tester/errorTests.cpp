@@ -3520,6 +3520,8 @@ TEST(sa_error, const_expr)
 		{"error_590_const_expr_flo_div_zero.pa", ":1:11: " + divZero},
 		{"error_591_const_expr_flo_bitop.pa", ":1:11: error: Bitwise operator operand must be an integer type."},
 		{"error_592_const_expr_flo_mod.pa", ":1:11: error: '%' operator is not supported for float types."},
+		{"error_597_shift_float.pa", ":2:11: error: Bitwise operator operand must be an integer type."},
+		{"error_598_const_shift_float.pa", ":1:11: error: Bitwise operator operand must be an integer type."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -55,6 +55,8 @@ enum {
 	OPE_LE =	PlnParser::token::OPE_LE,
 	OPE_GE =	PlnParser::token::OPE_GE,
 	DBL_GRTR =	PlnParser::token::DBL_GRTR,
+	OPE_SHL =	PlnParser::token::OPE_SHL,
+	OPE_SHR =	PlnParser::token::OPE_SHR,
 	ARROW =	PlnParser::token::ARROW,
 	DBL_ARROW =	PlnParser::token::DBL_ARROW,
 	AT_EXCL =	PlnParser::token::AT_EXCL,
@@ -183,6 +185,8 @@ COMMENT1	\/\/[^\n]*\n
 <*>"<="	{ return OPE_LE; }
 <*>">="	{ return OPE_GE; }
 <*>">>"	{ return DBL_GRTR; }
+<*>"<<<"	{ return OPE_SHL; }
+<*>">>>"	{ return OPE_SHR; }
 <*>"->"	{ return ARROW; }
 <*>"->>"	{ return DBL_ARROW; }
 <*>"@!"	{ return AT_EXCL; }

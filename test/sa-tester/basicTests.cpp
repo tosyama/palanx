@@ -5817,3 +5817,20 @@ TEST(sa, owned_rows_ro_slots)
 	json jout = run_sa("../test/testdata/sa/266_owned_rows_ro_slots.pa");
 	ASSERT_TRUE(jout.is_object());
 }
+
+TEST(sa, shift)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/267_shift.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto init = [&](int i) { return jout["statements"][i]["vars"][0]["init"]; };
+	// The result keeps the left operand's type; the count is converted to it.
+	ASSERT_EQ(init(2)["expr-type"], "shl");
+	ASSERT_EQ(init(2)["value-type"]["type-name"], "int8");
+	ASSERT_EQ(init(2)["right"]["expr-type"], "convert");
+	ASSERT_EQ(init(2)["right"]["value-type"]["type-name"], "int8");
+	ASSERT_EQ(init(3)["value-type"]["type-name"], "int32");
+	// An untyped constant shifts at 64 bits.
+	ASSERT_EQ(init(4)["value"], "1099511627776");
+	ASSERT_EQ(init(5)["value"], "9223372036854775804");
+}

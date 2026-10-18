@@ -2996,3 +2996,9 @@ TEST(build_mgr, owned_rows_ro_slots) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/292_owned_rows_ro_slots.pa");
 	ASSERT_EQ(output, "3 4\n7\n");
 }
+
+TEST(build_mgr, shift) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/293_shift.pa");
+	ASSERT_EQ(output, "2147483644 144 2 2\n15 40\n-1 -3 -56 -56\n3 5 116\n-64 0 -2305843009213693952\n");
+}

@@ -47,6 +47,8 @@ class PlnVCodeGen {
     void lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func);
     void lowerAssignStmt(const AssignStmt& stmt, VFunc& func);
     VReg lowerU64FloatConvert(VReg src, VRegType from, VRegType to, VFunc& func);
+    VReg shiftImm(VReg src, int count, ShiftOp op, VRegType type, VFunc& func);
+    VReg lowerPow2DivMod(VReg x, int k, bool isMod, VRegType type, VFunc& func);
     VReg lowerArrIndexExpr(const ArrIndexExpr& expr, VFunc& func);
     void lowerArrAssignStmt(const ArrAssignStmt& stmt, VFunc& func);
     void lowerReturnStmt(const ReturnStmt& stmt, VFunc& func);

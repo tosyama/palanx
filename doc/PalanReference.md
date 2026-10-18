@@ -293,6 +293,8 @@ and is currently a compile error. It is not an assignment — assignment is writ
 | Bitwise OR | `expr \| expr` | `a \| b` |
 | Bitwise XOR | `expr ^ expr` | `a ^ b` |
 | Bitwise NOT | `~expr` | `~a` |
+| Left shift | `expr <<< expr` | `a <<< 3` |
+| Logical right shift | `expr >>> expr` | `a >>> 3` |
 | Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
@@ -305,7 +307,7 @@ and is currently a compile error. It is not an assignment — assignment is writ
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
 
 Operator precedence (high to low): unary minus / `!` / `~`, `as`, `* / % & | ^`, `+ -`,
-comparisons, `&&`, `||`, `->`. All binary operators are left-associative.
+`<<< >>>`, comparisons, `&&`, `||`, `->`. All binary operators are left-associative.
 
 Note the bitwise operators `&`/`|`/`^` share a precedence class with `*`/`/`/`%` — one level
 **above** `+`/`-` — rather than C's much lower placement below comparisons. This is a deliberate
@@ -318,9 +320,19 @@ simplification, not an oversight, and it changes how mixed expressions parse rel
   that mix `+`/`-` with `&`/`|`/`^`.
 
 Bitwise operators require integer operands; using one with a float operand is a compile error.
-There is no shift operator (`<<`/`>>`) in this version — `>>` is already used for
-ownership-transfer syntax (`->>`, `[n]@![]T`; see [Arrays](#18-arrays)), and reusing it for a
-shift would conflict with that grammar.
+
+The shift operators are `<<<` (left) and `>>>` (logical right); `>>` stays the mark that moves
+ownership into a call. As in C, a shift sits between `+`/`-` and the comparisons, so
+`a + 1 <<< 2` is `(a + 1) <<< 2`; since `|` binds tighter than a shift in Palan, `x <<< 3 | y`
+is `x <<< (3 | y)`.
+
+- The result has the left operand's type, and the count may be any integer type.
+- `>>>` fills with zeros even for a signed operand: for `int32 a = -8;`, `a >>> 1` is
+  `2147483644`.
+- The count is taken modulo the left operand's width in bits, so `int32` shifted by `33` is
+  shifted by `1`, as in Java and JavaScript.
+- There is no arithmetic (sign-filling) right shift; divide by a power of two instead. A
+  multiplication, division or `%` by a power-of-two constant compiles to shifts.
 
 Comparison operators produce `bool` (1 if true, 0 if false). Both operands are converted to a
 common type first — see [Usual Arithmetic Conversions](#3-type-system) in Type System.
@@ -2066,14 +2078,15 @@ printf("%ld\n", MaxLen);   // 256
 ```
 
 - The value is a literal or a constant expression: literals, consts and `sizeof(type)` combined
-  with `+ - * / %`, `& | ^`, unary `-` and `~` (`const W = N * 2 + 1;`). A cast, a variable, an
+  with `+ - * / %`, `& | ^`, `<<< >>>`, unary `-` and `~` (`const W = N * 2 + 1;`). A cast, a variable, an
   enumerator or a call is not constant.
 - A constant expression is folded wherever it is written, not only in a const: an array size
   (`[N + 1]int32 a;`, a struct field `[N * 2]$int32 v;`), an enumerator value, or an ordinary
   expression (`x * (N + 1)` folds `N + 1`).
 - Integers are computed in `int64`, or in `uint64` once a `u` literal or `sizeof` is an operand. A
   value outside that range, a negative value in `uint64`, or a division by zero is a compile
-  error. Division truncates toward zero, and `%` takes the sign of the dividend.
+  error. Division truncates toward zero, and `%` takes the sign of the dividend. A shift is
+  computed at 64 bits: bits shifted out are not an error, and the count is taken modulo 64.
 - A float operand makes the whole operation `flo64`; `%`, `&`, `|`, `^` and `~` on a float are errors.
 - The result is untyped like a literal and must fit the type of the place it is used.
 - A `cinclude`d macro constant inside a constant expression drops its C type and is computed like

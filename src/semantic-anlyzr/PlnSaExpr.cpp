@@ -473,7 +473,7 @@ static json promoteOperand(json operand)
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
 static const set<string> foldableOps = {
-	"add", "sub", "mul", "div", "mod", "bitand", "bitor", "bitxor", "neg", "bitnot", "sizeof"
+	"add", "sub", "mul", "div", "mod", "bitand", "bitor", "bitxor", "shl", "shr", "neg", "bitnot", "sizeof"
 };
 
 // A variable shadows a same-named const, so this can only be decided at
@@ -575,7 +575,18 @@ optional<ConstVal> PlnSemanticAnalyzer::evalConst(const json& expr)
 	optional<ConstVal> l = evalConst(expr["left"]);
 	if (!l) return nullopt;
 
-	bool isBit = et == "bitand" || et == "bitor" || et == "bitxor";
+	bool isShift = et == "shl" || et == "shr";
+	bool isBit = et == "bitand" || et == "bitor" || et == "bitxor" || isShift;
+	if (isShift && l->kind != K::Flo && r->kind != K::Flo) {
+		// Bits shifted out are not an overflow; the count is taken modulo the
+		// 64-bit width an untyped constant is computed in.
+		int count = (r->kind == K::Int ? (uint64_t)r->i : r->u) & 63;
+		uint64_t bits = l->kind == K::Int ? (uint64_t)l->i : l->u;
+		bits = et == "shl" ? bits << count : bits >> count;
+		l->i = (int64_t)bits;
+		l->u = bits;
+		return l;
+	}
 	if (l->kind == K::Flo || r->kind == K::Flo) {
 		if (isBit) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
@@ -750,6 +761,9 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	        || expr_type == "bitand" || expr_type == "bitor" || expr_type == "bitxor") {
 		return sa_expr_arith(expr, expectedType);
 
+	} else if (expr_type == "shl" || expr_type == "shr") {
+		return sa_expr_shift(expr, expectedType);
+
 	} else if (expr_type == "neg") {
 		json operand = promoteOperand(sa_expression(expr["operand"], expectedType));
 		sa_expr["operand"]    = operand;
@@ -838,6 +852,28 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	} else if (expr_type == "arr-index") {
 		return sa_expr_arr_index(expr);
 	}
+	return sa_expr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The count does not join the usual arithmetic conversions, so the result
+// keeps the left operand's width. Converted to that type, the count keeps the
+// low bits that a count modulo the width needs.
+json PlnSemanticAnalyzer::sa_expr_shift(const json& expr, const PlnType* expectedType)
+{
+	if (isBoolPrim(expectedType)) expectedType = registry_.prim(PrimType::Name::Int32);
+	json left  = promoteOperand(sa_expression(expr["left"], expectedType));
+	json right = promoteOperand(sa_expression(expr["right"]));
+	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
+	const PlnType* rightType = registry_.fromJson(right["value-type"]);
+	if (!isIntegerPrim(leftType) || !isIntegerPrim(rightType)) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_BitwiseOpNotInteger) << endl;
+		exit(1);
+	}
+	if (rightType != leftType) right = wrapConvert(right, left["value-type"]);
+	json sa_expr = expr;
+	sa_expr["left"]       = left;
+	sa_expr["right"]      = right;
+	sa_expr["value-type"] = left["value-type"];
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

@@ -451,7 +451,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call"
 - loc\* - Location Array
   1. lit-str - String literal
     - value\* - String value
@@ -557,19 +557,25 @@ Expression model
     - right\* - Right operand expression model
   23. bitnot - Unary bitwise NOT (`~a`; integer operand only)
     - operand\* - Operand expression model
-  24. arr-lit - Array literal (`[a, b, c]`)
+  24. shl - Left shift (`a <<< b`; integer operands only)
+    - left\*  - Value expression model
+    - right\* - Shift count expression model
+  25. shr - Logical right shift (`a >>> b`; integer operands only)
+    - left\*  - Value expression model
+    - right\* - Shift count expression model
+  26. arr-lit - Array literal (`[a, b, c]`)
     - items\* - Element expression model list. A 2D literal is an `arr-lit` of row `arr-lit`s;
       the concatenated form `[a,b][c,d]` is normalized to the same shape as the nested form
       `[[a,b],[c,d]]` (only `loc` differs)
-  25. dict-lit - Named-value literal (`{x: a, y: b}`); a trailing comma is allowed
+  27. dict-lit - Named-value literal (`{x: a, y: b}`); a trailing comma is allowed
     - items\* - List of named values in source order
       - name\*  - Name string
       - value\* - Value expression model
       - loc\*   - Location Array of `name: value`
-  26. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
+  28. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
       template argument is emitted as `not-impl` instead
     - type\* - Type model
-  27. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
+  29. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
       consumed by SA, not emitted to sa.json (see SASpec.md "Chained calls")
     - value\* - Expression model whose value (or return values) come first in the arguments; a
       nested `chain-call` for `x -> f() -> g()`

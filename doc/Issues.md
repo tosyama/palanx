@@ -30,12 +30,6 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ---
 
-## 11. Shift Operators (`<<<`/`>>>`)
-
-**Summary:** v0.1.29 added the bitwise operators `&`/`|`/`^`/`~` but deliberately left out shift operators. `<<` has no token in Palan's lexer at all. `>>` is already `DBL_GRTR`, the move-owner mark on a call argument (`f(x>>)`) and on a parameter (`T >> name`); `->>` is a separate token. Shift operators will be spelled `<<<` (left) and `>>>` (logical right), so they do not collide with it. There is no arithmetic right shift; division by a power of two serves instead.
-
----
-
 ## 12. C Global Variable Write Access
 
 **Summary:** A C global variable brought in via `cinclude` (e.g. `stdout`) is read-only from Palan this version — assigning to it is `E_CGlobalNotAssignable` and taking its address is `E_CGlobalNotAddressable` (see PalanReference.md §9 and SASpec.md's Statement model). Allowing writes would introduce a new category of storage location — one not owned by any Palan scope, with no allocation or free timing of its own — into the ownership and scope rules that today assume every writable location is either a local variable or reached through a pointer with a known owner. Deliberately deferred rather than designed hastily alongside the read-only mechanism.

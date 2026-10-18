@@ -220,6 +220,8 @@ struct BodyList {
 %token OPE_LE	"<="
 %token OPE_GE	">="
 %token DBL_GRTR	">>"
+%token OPE_SHL	"<<<"
+%token OPE_SHR	">>>"
 %token ARROW	"->"
 %token DBL_ARROW	"->>"
 %token AT_EXCL	"@!"
@@ -263,6 +265,7 @@ struct BodyList {
 %left OPE_AND
 %left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
+%left OPE_SHL OPE_SHR
 %left '+' '-'
 %left '*' '/' '%' '&' '|' '^'
 %left KW_AS
@@ -792,6 +795,10 @@ expression: term
 	{ $$ = {{"expr-type", "bitor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression '^' expression
 	{ $$ = {{"expr-type", "bitxor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression OPE_SHL expression
+	{ $$ = {{"expr-type", "shl"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	| expression OPE_SHR expression
+	{ $$ = {{"expr-type", "shr"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
 	| expression KW_AS type_expr
 	{ $$ = {{"expr-type", "cast"}, {"target-type", move($3)}, {"src", move($1)}}; LOC($$, @$); }
 	| '~' expression %prec UNARY_MINUS

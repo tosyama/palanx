@@ -2076,3 +2076,23 @@ TEST(gen_ast, as_cast) {
 	ASSERT_EQ(stmts[5]["body"]["array"]["expr-type"], "cast");
 	ASSERT_EQ(stmts[6]["body"]["target-type"]["type-name"], "L.T");
 }
+
+TEST(gen_ast, shift) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/137_shift.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	// A shift binds looser than '+'/'-' and tighter than a comparison.
+	ASSERT_EQ(stmts[0]["body"]["expr-type"], "shl");
+	ASSERT_EQ(stmts[0]["body"]["left"]["expr-type"], "add");
+	ASSERT_EQ(stmts[1]["body"]["right"]["expr-type"], "bitor");
+	ASSERT_EQ(stmts[2]["body"]["expr-type"], "cmp");
+	ASSERT_EQ(stmts[2]["body"]["left"]["expr-type"], "shr");
+	ASSERT_EQ(stmts[3]["body"]["expr-type"], "shr");
+	ASSERT_EQ(stmts[3]["body"]["left"]["expr-type"], "shl");
+	// '>>' stays the move-owner mark.
+	ASSERT_EQ(stmts[4]["body"]["args"][0]["expr-type"], "not-impl");
+}

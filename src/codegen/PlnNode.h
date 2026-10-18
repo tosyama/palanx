@@ -31,6 +31,7 @@ enum class ExprKind {
     BitOr,
     BitXor,
     BitNot,
+    Shift,
     Cmp,
     Convert,
     CCCall,
@@ -163,6 +164,14 @@ struct BitOrExpr : Expr {
 
 struct BitXorExpr : Expr {
     BitXorExpr() : Expr(ExprKind::BitXor) {}
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
+struct ShiftExpr : Expr {
+    ShiftExpr() : Expr(ExprKind::Shift) {}
+    bool isRight = false;  // '>>>' (logical) rather than '<<<'
     unique_ptr<Expr> left;
     unique_ptr<Expr> right;
     VRegType type = VRegType::Int64;

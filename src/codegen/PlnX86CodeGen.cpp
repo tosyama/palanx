@@ -64,6 +64,8 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* o  = std::get_if<BitOr>    (&instr)) emitBinArith(orInstrForType(o->type),  o->dst, o->lhs, o->rhs, o->type, rm);
             else if (auto* x  = std::get_if<BitXor>   (&instr)) emitBinArith(xorInstrForType(x->type), x->dst, x->lhs, x->rhs, x->type, rm);
             else if (auto* i  = std::get_if<BitNot>   (&instr)) emitInstrBitNot(*i, rm);
+            else if (auto* i  = std::get_if<Shift>    (&instr)) emitInstrShift(*i, rm);
+            else if (auto* i  = std::get_if<ShiftImm> (&instr)) emitInstrShiftImm(*i, rm);
             else if (auto* i  = std::get_if<Cmp>      (&instr)) emitInstrCmp(*i, rm);
             else if (auto* i  = std::get_if<Convert>  (&instr)) emitInstrConvert(*i, rm);
             else if (auto* i  = std::get_if<CallC>    (&instr)) emitInstrCallC(*i, rm);

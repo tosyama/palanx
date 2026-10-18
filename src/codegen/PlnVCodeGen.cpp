@@ -18,6 +18,19 @@ static long long intLitImm(const string& value, VRegType type)
     return stoll(value);
 }
 
+// k when `e` is an integer literal 2^k with 0 < k < width, else 0.
+static int pow2Literal(const Expr& e, VRegType type)
+{
+    if (isFloat(type) || (e.kind != ExprKind::IntLit && e.kind != ExprKind::UintLit)) return 0;
+    const string& text = e.kind == ExprKind::IntLit ? static_cast<const IntLitExpr&>(e).value
+                                                    : static_cast<const UintLitExpr&>(e).value;
+    if (text[0] == '-') return 0;
+    unsigned long long v = stoull(text);
+    if (v < 2 || (v & (v - 1))) return 0;
+    int k = __builtin_ctzll(v);
+    return k < intWidth(type) * 8 ? k : 0;
+}
+
 // -------- Variable scope management --------
 
 void PlnVCodeGen::enterVarScope()
@@ -132,6 +145,10 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::Mul: {
             auto& e  = static_cast<const MulExpr&>(expr);
+            if (int k = pow2Literal(*e.right, e.type))
+                return shiftImm(lowerExpr(*e.left, func), k, ShiftOp::Shl, e.type, func);
+            if (int k = pow2Literal(*e.left, e.type))
+                return shiftImm(lowerExpr(*e.right, func), k, ShiftOp::Shl, e.type, func);
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
@@ -140,6 +157,8 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::Div: {
             auto& e  = static_cast<const DivExpr&>(expr);
+            if (int k = pow2Literal(*e.right, e.type))
+                return lowerPow2DivMod(lowerExpr(*e.left, func), k, false, e.type, func);
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
@@ -148,6 +167,8 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::Mod: {
             auto& e  = static_cast<const ModExpr&>(expr);
+            if (int k = pow2Literal(*e.right, e.type))
+                return lowerPow2DivMod(lowerExpr(*e.left, func), k, true, e.type, func);
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
@@ -185,6 +206,14 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
             func.instrs.push_back(BitXor{dst, l, r, e.type});
+            return dst;
+        }
+        case ExprKind::Shift: {
+            auto& e  = static_cast<const ShiftExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Shift{dst, l, r, e.isRight ? ShiftOp::Shr : ShiftOp::Shl, e.type});
             return dst;
         }
         case ExprKind::BitNot: {
@@ -519,6 +548,39 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
         default:
             BOOST_ASSERT(false);  // only call expressions are valid as statements
     }
+}
+
+VReg PlnVCodeGen::shiftImm(VReg src, int count, ShiftOp op, VRegType type, VFunc& func)
+{
+    VReg dst = allocVReg();
+    func.instrs.push_back(ShiftImm{dst, src, count, op, type});
+    return dst;
+}
+
+// Division by 2^k truncates toward zero, while an arithmetic shift rounds
+// toward negative infinity: a negative dividend first gets 2^k - 1 added.
+// The remainder then follows from the quotient, keeping the dividend's sign.
+VReg PlnVCodeGen::lowerPow2DivMod(VReg x, int k, bool isMod, VRegType type, VFunc& func)
+{
+    if (!isSignedInt(type)) {
+        if (!isMod) return shiftImm(x, k, ShiftOp::Shr, type, func);
+        VReg mask = allocVReg();
+        func.instrs.push_back(MovImm{mask, type, (long long)((1ULL << k) - 1)});
+        VReg dst = allocVReg();
+        func.instrs.push_back(BitAnd{dst, x, mask, type});
+        return dst;
+    }
+    int bits = intWidth(type) * 8;
+    VReg sign = shiftImm(x, bits - 1, ShiftOp::Sar, type, func);
+    VReg bias = shiftImm(sign, bits - k, ShiftOp::Shr, type, func);
+    VReg adj = allocVReg();
+    func.instrs.push_back(Add{adj, x, bias, type});
+    VReg q = shiftImm(adj, k, ShiftOp::Sar, type, func);
+    if (!isMod) return q;
+    VReg back = shiftImm(q, k, ShiftOp::Shl, type, func);
+    VReg dst = allocVReg();
+    func.instrs.push_back(Sub{dst, x, back, type});
+    return dst;
 }
 
 // SSE converts only cover the signed int64 range, so values with the top bit

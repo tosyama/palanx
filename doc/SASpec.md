@@ -181,7 +181,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 - const-decl statements are consumed by SA and not emitted; the value is
   folded to an untyped literal and inlined at each reference site (see
   Constant Declarations in PalanReference.md)
-- a constant expression (literals, consts and `sizeof` under the arithmetic and bitwise
+- a constant expression (literals, consts and `sizeof` under the arithmetic, bitwise and shift
   operators) is folded to one untyped `lit-int`/`lit-uint`/`lit-flo` before it is typed, in every
   expression position; `E_ConstExprOverflow`/`E_ConstExprDivByZero` reject an invalid one
 - not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
@@ -816,6 +816,10 @@ the base type.
 bitwise, or comparison operator, `neg`, or `bitnot` in a `convert` to `int32`, so the result is
 never a 1-byte value outside 0/1 (`b + 1` is 2). `usualArithConv` itself ranks `bool` below every
 other type, so the other side wins; this matters only for call arguments (below).
+
+A shift (`shl`/`shr`) does not take a common type: its `value-type` is the (promoted) left
+operand's, and the count is wrapped in a `convert` to that type when it differs. Both operands
+must be integers (`E_BitwiseOpNotInteger`). Codegen takes the count modulo the width.
 
 A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
 an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
