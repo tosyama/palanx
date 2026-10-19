@@ -1,0 +1,2 @@
+type M = int32;
+const M = 4;

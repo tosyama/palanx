@@ -1151,11 +1151,14 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt, VarStorage sto
 void PlnSemanticAnalyzer::enterBlockDecls(const json& stmts)
 {
 	vector<string> names;
+	set<string> vars;
 	for (auto& stmt : stmts) {
+		addDeclaredVarNames(stmt, vars);
 		string t = stmt.value("stmt-type", "");
 		if (t != "struct-def" && t != "enum-def" && t != "type-alias" && t != "const-decl") continue;
 		string name = stmt["name"].get<string>();
-		if (isDeclNameTaken(name) || find(names.begin(), names.end(), name) != names.end()) {
+		bool varTaken = t == "const-decl" && (findVar(name) || vars.count(name));
+		if (varTaken || isDeclNameTaken(name) || find(names.begin(), names.end(), name) != names.end()) {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(
 				t == "const-decl" ? E_DuplicateConstDecl : E_DuplicateTypeName, name) << endl;
 			exit(1);
@@ -1207,6 +1210,16 @@ string PlnSemanticAnalyzer::declaredTypeName(const string& written) const
 bool PlnSemanticAnalyzer::isDeclNameTaken(const string& name) const
 {
 	return topDecls_.count(name) || isNameRegistered(name);
+}
+
+// A const is visible from the top of its block, so a variable declared
+// before it in the same block still clashes with it.
+void PlnSemanticAnalyzer::addDeclaredVarNames(const json& stmt, set<string>& names)
+{
+	string t = stmt.value("stmt-type", "");
+	if (t != "var-decl" && t != "tapple-decl") return;
+	const char* key = t == "var-decl" ? "name" : "var-name";
+	for (auto& v : stmt["vars"]) names.insert(v[key].get<string>());
 }
 
 bool PlnSemanticAnalyzer::isNameRegistered(const string& name) const

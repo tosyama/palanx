@@ -3088,6 +3088,31 @@ TEST(sa_error, block_decl_scope)
 	}
 }
 
+TEST(sa_error, const_name_dup)
+{
+	const pair<string, string> cases[] = {
+		{"error_630_top_const_dup.pa", ":2:1: error: Constant 'N' is already defined."},
+		{"error_631_top_type_then_const.pa", ":2:1: error: Constant 'M' is already defined."},
+		{"error_632_top_const_then_alias.pa", ":2:1: error: type 'M' is already defined."},
+		{"error_633_top_alias_dup.pa", ":2:1: error: type 'A' is already defined."},
+		{"error_634_top_var_then_const.pa", ":2:1: error: Constant 'K' is already defined."},
+		{"error_635_top_const_then_var.pa", ":2:1: error: Variable 'K' is already declared."},
+		{"error_636_top_const_param.pa", ":2:1: error: Variable 'N' is already declared."},
+		{"error_637_block_const_outer_var.pa", ":3:2: error: Constant 'K' is already defined."},
+		{"error_638_block_var_then_const.pa", ":3:2: error: Constant 'K' is already defined."},
+		{"error_639_top_const_c_type.pa", ":2:1: error: Constant 'time_t' is already defined."},
+		{"error_640_block_tapple_then_const.pa", ":6:2: error: Constant 'K' is already defined."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
 TEST(sa_error, struct_ptr_elem_copy)
 {
 	const pair<string, string> cases[] = {

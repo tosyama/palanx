@@ -72,12 +72,13 @@ string PlnSemanticAnalyzer::locPrefix(const json& node) const
 
 void PlnSemanticAnalyzer::declareVar(const string& name, const json& type, const json* loc_node)
 {
-	for (auto& scope : varScopes)
-		if (scope.count(name)) {
-			cerr << locPrefix(loc_node ? *loc_node : json{})
-			     << PlnSaMessage::getMessage(E_DuplicateVarDecl, name) << endl;
-			exit(1);
-		}
+	bool taken = constDecls_.count(name) > 0;
+	for (auto& scope : varScopes) taken = taken || scope.count(name);
+	if (taken) {
+		cerr << locPrefix(loc_node ? *loc_node : json{})
+		     << PlnSaMessage::getMessage(E_DuplicateVarDecl, name) << endl;
+		exit(1);
+	}
 	varScopes.back()[name] = type;
 }
 
@@ -871,15 +872,22 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 	}
 	// Once every C and imported name is known, so a clash with one is
 	// reported at the Palan declaration wherever it is written.
+	set<string> vars;
 	for (auto& stmt : stmts) {
+		addDeclaredVarNames(stmt, vars);
 		string t = stmt.value("stmt-type", "");
-		if ((t != "struct-def" && t != "enum-def") || stmt.value("export", false)) continue;
+		if (t != "struct-def" && t != "enum-def" && t != "type-alias" && t != "const-decl") continue;
 		string name = stmt["name"].get<string>();
-		if (topDecls_.at(name).stmt != &stmt || isNameRegistered(name)) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
+		bool localType = (t == "struct-def" || t == "enum-def") && !stmt.value("export", false);
+		bool clash = topDecls_.at(name).stmt != &stmt;
+		if (t == "const-decl") clash = clash || isNameRegistered(name) || vars.count(name);
+		if (localType) clash = clash || isNameRegistered(name);
+		if (clash) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(
+				t == "const-decl" ? E_DuplicateConstDecl : E_DuplicateTypeName, name) << endl;
 			exit(1);
 		}
-		declareLocalTypeName(stmt);
+		if (localType) declareLocalTypeName(stmt);
 	}
 }
 

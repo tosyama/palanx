@@ -670,8 +670,7 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 - A later cincluded header may redefine or `#undef` a macro, as in C. References after that
   `cinclude` see the new value, or no macro at all.
 - A macro constant silently takes priority over any same-named variable, parameter, or `const` in
-  scope at the reference site — the opposite of the const/variable [shadowing
-  rule](#21-constant-declarations), and undiagnosed either way.
+  scope at the reference site, undiagnosed.
 - Aliased cinclude (`cinclude <x.h> as X;`) does not namespace macro constants — they fold the
   same regardless of alias. Only C function calls require the `X.` qualifier.
 - A macro constant is not visible across an `import`/`export` boundary — it is purely a
@@ -1018,7 +1017,7 @@ int64 x = 10;
 printf("%ld\n", x);   // x is still visible
 ```
 
-Shadowing — declaring a variable or Palan function with the same name as one in an outer scope — is a compile error.
+Shadowing — declaring a variable or Palan function with the same name as one in an outer scope — is a compile error. A variable (including a parameter) and a const cannot share a name either way.
 
 Palan function definitions inside a block are block-scoped and support forward references within the same block.
 
@@ -2175,13 +2174,14 @@ printf("%ld\n", MaxLen);   // 256
 - Every reference to the constant is inlined with the literal value; the constant's name does not
   appear in `sa.json`.
 - A const may reference another const (`const B = A;`); this chains naturally through inlining.
+- A const cannot share its name with another const, a type, or a variable (including a parameter)
+  in the same or an enclosing scope. A const is visible from the top of its block, so a variable
+  declared before it in the same block clashes too.
 - Like the literal it names, a const takes its type from where it is used: `const N = 20;` can be
   passed to an `int32` parameter, used in `N + 2` for an `int16` variable, or assigned to `flo64`.
 
 ### Restrictions
 
-- There is no name-collision check between a const and a variable — a variable declaration of the
-  same name silently shadows a same-named const.
 - Only a top-level const can size a borrowed array parameter (`@[N]T`); function signatures are
   registered before any other statement is processed.
 

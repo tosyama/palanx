@@ -478,8 +478,6 @@ static const set<string> foldableOps = {
 	"add", "sub", "mul", "div", "mod", "bitand", "bitor", "bitxor", "shl", "shr", "neg", "bitnot", "sizeof"
 };
 
-// A variable shadows a same-named const, so this can only be decided at
-// the reference site, not by rewriting the AST up front.
 // A folded result is untyped like a source literal, so the context types it
 // and checkIntLiteralRange rejects what does not fit there.
 json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
@@ -488,7 +486,6 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 	json lit;
 	if (et == "id") {
 		string name = expr["name"].get<string>();
-		if (findVar(name) != nullptr) return expr;
 		auto cit = constDecls_.find(name);
 		if (cit == constDecls_.end()) return expr;
 		lit = cit->second;

@@ -327,6 +327,7 @@ class PlnSemanticAnalyzer {
 	string declaredTypeName(const string& written) const;
 	bool isDeclNameTaken(const string& name) const;
 	bool isNameRegistered(const string& name) const;  // isDeclNameTaken but for topDecls_
+	static void addDeclaredVarNames(const json& stmt, set<string>& names);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	void registerCStruct(const json& cincludeStmt, const json& s);  // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt, VarStorage storage); // returns array of statements
