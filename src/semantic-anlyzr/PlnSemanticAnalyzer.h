@@ -158,10 +158,11 @@ class PlnSemanticAnalyzer {
 	// under their written names while the block is analyzed. Shadowing is an
 	// error, so leaving the block erases them without hiding an outer entry.
 	vector<vector<string>> blockDeclNames_;
-	// Written name -> program-wide name of each struct/enum of the enclosing
-	// blocks. Blocks may reuse a name, the allocators and sa.json may not.
-	map<string, string>    blockTypeNames_;
-	int                    blockTypeSeq_ = 0;
+	// Written name -> program-wide name of each unexported top-level
+	// struct/enum and each one of the enclosing blocks. Modules and blocks may
+	// reuse a name, the allocators and sa.json may not.
+	map<string, string>    localTypeNames_;
+	int                    localTypeSeq_ = 0;
 	// Type names (`T` or `V.T`) each enclosing block's imports made writable.
 	vector<vector<string>> blockImportedTypes_;
 	// Program-wide type resolution state, shared by every module's analyzer.
@@ -321,9 +322,11 @@ class PlnSemanticAnalyzer {
 	void recordArrArrShape(const string& leafName);
 	void recordArrArrStructShape(const string& structName);
 	void enterBlockDecls(const json& stmts);
+	void declareLocalTypeName(const json& stmt);
 	void leaveBlockDecls();
 	string declaredTypeName(const string& written) const;
 	bool isDeclNameTaken(const string& name) const;
+	bool isNameRegistered(const string& name) const;  // isDeclNameTaken but for topDecls_
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	void registerCStruct(const json& cincludeStmt, const json& s);  // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt, VarStorage storage); // returns array of statements

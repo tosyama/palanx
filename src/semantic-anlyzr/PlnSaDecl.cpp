@@ -1162,18 +1162,23 @@ void PlnSemanticAnalyzer::enterBlockDecls(const json& stmts)
 		}
 		names.push_back(name);
 		topDecls_.emplace(name, TopDecl{&stmt});
-		if (t != "struct-def" && t != "enum-def") continue;
-		string internal = PlnSaMessage::blockTypeName(moduleId_, ++blockTypeSeq_, name);
-		blockTypeNames_[name] = internal;
-		// A pointer may name the struct before its layout is resolved.
-		if (t == "struct-def") {
-			typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", internal}};
-			declaredStructs_.insert(internal);
-		}
+		if (t == "struct-def" || t == "enum-def") declareLocalTypeName(stmt);
 	}
 	blockDeclNames_.push_back(names);
 	blockImportedTypes_.emplace_back();
 	for (auto& name : names) ensureTypeName(name, false);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::declareLocalTypeName(const json& stmt)
+{
+	string name = stmt["name"].get<string>();
+	string internal = PlnSaMessage::localTypeName(moduleId_, ++localTypeSeq_, name);
+	localTypeNames_[name] = internal;
+	// A pointer may name the struct before its layout is resolved.
+	if (stmt["stmt-type"] == "struct-def") {
+		typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", internal}};
+		declaredStructs_.insert(internal);
+	}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::leaveBlockDecls()
@@ -1182,7 +1187,7 @@ void PlnSemanticAnalyzer::leaveBlockDecls()
 		topDecls_.erase(name);
 		typeAliases_.erase(name);
 		constDecls_.erase(name);
-		blockTypeNames_.erase(name);
+		localTypeNames_.erase(name);
 	}
 	blockDeclNames_.pop_back();
 	// An imported type stays registered: a type the block used may depend on it.
@@ -1195,13 +1200,18 @@ void PlnSemanticAnalyzer::leaveBlockDecls()
 
 string PlnSemanticAnalyzer::declaredTypeName(const string& written) const
 {
-	auto it = blockTypeNames_.find(written);
-	return it == blockTypeNames_.end() ? written : it->second;
+	auto it = localTypeNames_.find(written);
+	return it == localTypeNames_.end() ? written : it->second;
 }
 
 bool PlnSemanticAnalyzer::isDeclNameTaken(const string& name) const
 {
-	return topDecls_.count(name) || importedTypes_.count(name) || typeOrigins_.count(name)
+	return topDecls_.count(name) || isNameRegistered(name);
+}
+
+bool PlnSemanticAnalyzer::isNameRegistered(const string& name) const
+{
+	return importedTypes_.count(name) || typeOrigins_.count(name)
 		|| structDefs_.count(name) || enumDefs_.count(name) || typeAliases_.count(name)
 		|| constDecls_.count(name) || elemSizeBytes(name) >= 0;
 }
@@ -1547,7 +1557,7 @@ void PlnSemanticAnalyzer::declareTypeName(const string& name, const json& stmt)
 // A cinclude inside a block runs after the Palan types are declared.
 void PlnSemanticAnalyzer::requireNotPalanType(const string& name, const json& locNode) const
 {
-	if (typeOrigins_.count(name) || blockTypeNames_.count(name)) {
+	if (typeOrigins_.count(name) || localTypeNames_.count(name)) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
 		exit(1);
 	}

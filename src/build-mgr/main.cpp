@@ -274,6 +274,8 @@ int main(int argc, char* argv[])
 				// allocators touch nothing else, and the full field list cannot
 				// be re-expressed as Palan source in general (C unions, synthesized
 				// anonymous tags, embedded types not declared in this module).
+				// Exported, because SA keeps only an exported type's name, and
+				// these must keep the program-wide names the shapes carry.
 				// Byte ranges of each struct outside its owned pointer fields,
 				// declared as __pln_padN fields and copied as they are.
 				map<string, vector<pair<string, int64_t>>> struct_pads;
@@ -289,7 +291,7 @@ int main(int argc, char* argv[])
 							+ af["leaf-name"].get<string>() + " " + af["name"].get<string>()});
 					sort(owned_decls.begin(), owned_decls.end());
 
-					out << "\ntype " << name << " {";
+					out << "\nexport type " << name << " {";
 					int64_t pos = 0;
 					int pad_no = 0;
 					auto pad_to = [&](int64_t end) {

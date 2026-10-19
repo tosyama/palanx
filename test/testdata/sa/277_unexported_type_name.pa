@@ -1,0 +1,4 @@
+type A { int32 a; };
+export type B { A a; int32 n; };
+A x;
+B y;

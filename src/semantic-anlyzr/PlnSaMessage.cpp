@@ -14,22 +14,22 @@
 using std::regex;
 using std::to_string;
 
-static const char blockTypePrefix[] = "__pln_L";
+static const char localTypePrefix[] = "__pln_L";
 
-string PlnSaMessage::blockTypeName(const string& moduleId, int seq, const string& name)
+string PlnSaMessage::localTypeName(const string& moduleId, int seq, const string& name)
 {
 	// FNV-1a: the module's part must be the same in every build of it.
 	uint64_t h = 14695981039346656037ull;
 	for (unsigned char c : moduleId) h = (h ^ c) * 1099511628211ull;
 	char hex[17];
 	snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
-	return blockTypePrefix + string(hex) + "_" + to_string(seq) + "_" + name;
+	return localTypePrefix + string(hex) + "_" + to_string(seq) + "_" + name;
 }
 
 string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
 {
-	static const regex blockTypePart(string(blockTypePrefix) + "[0-9a-f]{16}_[0-9]+_");
-	return regex_replace(format(msg_code, arg1, arg2, arg3), blockTypePart, "");
+	static const regex localTypePart(string(localTypePrefix) + "[0-9a-f]{16}_[0-9]+_");
+	return regex_replace(format(msg_code, arg1, arg2, arg3), localTypePart, "");
 }
 
 string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)

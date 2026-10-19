@@ -179,6 +179,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Type names are program-wide identities (build-mgr keys struct allocators by them).
     Each Palan type name records its defining module, so the same name from a second
     module, or a local declaration of an imported name, is `E_DuplicateTypeName`.
+    An exported struct/enum keeps its written name. One that is not exported, or is
+    declared in a block, is named `__pln_L<module hash>_<seq>_<Name>` in sa.json, so
+    modules and blocks may each declare their own; a message shows the written name.
 - type-alias statements are consumed by SA and not emitted; the alias is
   registered and resolved inline at each reference site (see Type Aliases
   in PalanReference.md)

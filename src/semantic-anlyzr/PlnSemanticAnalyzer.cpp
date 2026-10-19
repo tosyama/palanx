@@ -847,7 +847,7 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 		if (t == "struct-def" || t == "enum-def" || t == "type-alias" || t == "const-decl") {
 			string name = stmt["name"].get<string>();
 			topDecls_.emplace(name, TopDecl{&stmt});
-			if (t == "struct-def") declaredStructs_.insert(name);
+			if (t == "struct-def" && stmt.value("export", false)) declaredStructs_.insert(name);
 		} else if (t == "cinclude") {
 			registerCIncludeTypes(stmt);
 		} else if (t == "import") {
@@ -868,6 +868,18 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 				if (d["stmt-type"] == "struct-def") declaredStructs_.insert(name);
 			}
 		}
+	}
+	// Once every C and imported name is known, so a clash with one is
+	// reported at the Palan declaration wherever it is written.
+	for (auto& stmt : stmts) {
+		string t = stmt.value("stmt-type", "");
+		if ((t != "struct-def" && t != "enum-def") || stmt.value("export", false)) continue;
+		string name = stmt["name"].get<string>();
+		if (topDecls_.at(name).stmt != &stmt || isNameRegistered(name)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_DuplicateTypeName, name) << endl;
+			exit(1);
+		}
+		declareLocalTypeName(stmt);
 	}
 }
 
@@ -930,6 +942,11 @@ void PlnSemanticAnalyzer::ensureTypeRefs(const json& node, bool viaPointer)
 
 void PlnSemanticAnalyzer::ensureStructDef(const string& name)
 {
+	for (auto& [written, internal] : localTypeNames_)
+		if (internal == name) {
+			ensureTypeName(written, false);
+			return;
+		}
 	if (topDecls_.count(name)) {
 		ensureTypeName(name, false);
 		return;

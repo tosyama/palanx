@@ -32,6 +32,14 @@ static json run_sa(const string& pa_file)
 	return json::parse(f);
 }
 
+// sa.json with each unexported type named as written: the program-wide name
+// hashes the module's absolute path.
+static json written(const json& sa)
+{
+	static const regex internal("__pln_L[0-9a-f]{16}_[0-9]+_");
+	return json::parse(regex_replace(sa.dump(), internal, ""));
+}
+
 // A call argument held in a temp: the call that initializes it, and the
 // function that releases it.
 static const json& tempInit(const json& arg)
@@ -1453,7 +1461,7 @@ TEST(sa, toplevel_call_named_return_struct)
 	// and crashing palan-sa. Struct pre-registration now happens in step 0, so
 	// the call resolved here (step 2) must already see the normalized
 	// pntr(struct(Point)) form.
-	json jout = run_sa("../test/testdata/sa/135_toplevel_call_named_return_struct.pa");
+	json jout = written(run_sa("../test/testdata/sa/135_toplevel_call_named_return_struct.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// statements[2] = var-decl for "view" = borrow(original)
@@ -1472,7 +1480,7 @@ TEST(sa, toplevel_call_struct_arg)
 	cleanTestEnv();
 	// Regression: same struct pre-registration path, but exercising a
 	// struct-typed parameter (not just the return type) in a top-level call.
-	json jout = run_sa("../test/testdata/sa/137_toplevel_call_struct_arg.pa");
+	json jout = written(run_sa("../test/testdata/sa/137_toplevel_call_struct_arg.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Pre-registered signature must have its parameter normalized to pntr(struct(Point)).
@@ -1496,7 +1504,7 @@ TEST(sa, toplevel_call_struct_arg)
 TEST(sa, struct_def)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/069_struct_def.pa");
+	json jout = written(run_sa("../test/testdata/sa/069_struct_def.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// struct-def is consumed; first stmt is var-decl for p
@@ -1912,7 +1920,7 @@ TEST(sa, embed_struct_field)
 TEST(sa, owned_struct_field)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/075_owned_struct_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/075_owned_struct_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Rect { Point tl; Point br; } — ownsFields → __pln_alloc_Rect
@@ -1971,7 +1979,7 @@ TEST(sa, raw_ptr_prim_field)
 TEST(sa, alloc_shape_owned)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/077_alloc_shape_owned.pa");
+	json jout = written(run_sa("../test/testdata/sa/077_alloc_shape_owned.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Rect r; — init uses __pln_alloc_Rect (pln func, no args)
@@ -2014,7 +2022,7 @@ TEST(sa, calloc_no_owned)
 TEST(sa, alloc_func_no_recurse)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/079_alloc_func_no_recurse.pa");
+	json jout = written(run_sa("../test/testdata/sa/079_alloc_func_no_recurse.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// __pln_alloc_Rect() -> Rect ret { Rect ret; }
@@ -2038,7 +2046,7 @@ TEST(sa, alloc_func_no_recurse)
 TEST(sa, struct_param)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/080_struct_param.pa");
+	json jout = written(run_sa("../test/testdata/sa/080_struct_param.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// func __pln_free_Point(Point p) { free(p); }
@@ -2080,7 +2088,7 @@ TEST(sa, embed_field_chain)
 TEST(sa, owned_field_chain)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/082_owned_field_chain.pa");
+	json jout = written(run_sa("../test/testdata/sa/082_owned_field_chain.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// 10 -> r.tl.x: Point tl@0, int64 x@0 → ptr-expr={var:"r",offset:0}, offset:0
@@ -2118,7 +2126,7 @@ TEST(sa, ptr_field_chain)
 TEST(sa, mixed_field_chain)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/084_mixed_chain.pa");
+	json jout = written(run_sa("../test/testdata/sa/084_mixed_chain.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// int64 v = outer.sub.inner.x
@@ -2196,7 +2204,7 @@ TEST(sa, struct_ptr_field_assign)
 	// An owned struct field is copied into, not rebound: a flat A is a memcpy
 	// into the storage the field points to.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/088_struct_ptr_field_assign.pa");
+	json jout = written(run_sa("../test/testdata/sa/088_struct_ptr_field_assign.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	json* call = nullptr;
@@ -2219,7 +2227,7 @@ TEST(sa, raw_ptr_mutable_field_assign)
 	// field-assign for raw-ptr mutable field → fieldValueType sets mutable:true
 	// Covers: fieldValueType raw-ptr branch (pntr["mutable"] = isMutable)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/089_raw_ptr_mutable_field_assign.pa");
+	json jout = written(run_sa("../test/testdata/sa/089_raw_ptr_mutable_field_assign.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	json* fa = nullptr;
@@ -2424,7 +2432,7 @@ TEST(sa, embed_struct_arr_decl)
 {
 	// [4]$Point pts — contiguous 1D struct array: malloc(4 * 16), free at scope exit
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/098_embed_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/098_embed_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2470,7 +2478,7 @@ TEST(sa, owned_struct_arr_decl)
 {
 	// [2]Point pts — owned pointer array: alloc/free via palan functions
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/099_owned_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/099_owned_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// alloc-shapes: struct shape for Point, then arr-struct shape for arr_Point
@@ -2535,7 +2543,7 @@ TEST(sa, at_struct_arr_decl)
 {
 	// [4]@Point rpts — non-owning read-only pointer array: malloc(4 * 8), free at scope exit
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/100_at_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/100_at_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2582,7 +2590,7 @@ TEST(sa, at_bang_struct_arr_decl)
 {
 	// [4]@!Point wpts — non-owning mutable write-through pointer array
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/102_at_bang_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/102_at_bang_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2622,7 +2630,7 @@ TEST(sa, embed_struct_arr_field_access)
 	// [4]$Point pts; 10 -> pts[0].x; 20 -> pts[0].y; printf("%ld %ld\n", pts[0].x, pts[0].y);
 	// Covers: resolveObjectChain arr-index base case (embedded struct array)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/103_embed_struct_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/103_embed_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2663,7 +2671,7 @@ TEST(sa, owned_struct_arr_field_access)
 	// [2]Point pts; 5 -> pts[0].x; printf("%ld\n", pts[0].x);
 	// Covers: resolveObjectChain arr-index base case (owned pointer array)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/104_owned_struct_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/104_owned_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2693,7 +2701,7 @@ TEST(sa, at_bang_struct_arr_field_write)
 	// Point p; [4]@!Point wpts; p -> wpts[0]; 42 -> wpts[0].x; printf("%ld\n", p.x);
 	// Covers: resolveObjectChain(forWrite=true) arr-index base case, mutable:true (write-through allowed)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/105_at_bang_struct_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/105_at_bang_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2715,7 +2723,7 @@ TEST(sa, at_struct_arr_field_read)
 	// Point p; [4]@Point rpts; p -> rpts[0]; printf("%ld\n", rpts[0].x);
 	// Covers: resolveObjectChain arr-index base case, mutable:false (read-only, read allowed)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/106_at_struct_arr_field_read.pa");
+	json jout = written(run_sa("../test/testdata/sa/106_at_struct_arr_field_read.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2822,7 +2830,7 @@ TEST(sa, owned_prim_arr_field)
 	// case (arr-ptr typeKind, ownsFields), useSimpleCalloc==false path,
 	// recordAllocShape "owned-array-fields" output.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/112_owned_prim_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/112_owned_prim_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Bucket b; -> __pln_alloc_Bucket() (not calloc): an owned array field
@@ -2856,7 +2864,7 @@ TEST(sa, owned_struct_arr_field)
 	// pointer array field (arr-ptr typeKind, elemKind=="struct"), recordAllocShape
 	// registering an "arr-struct" shape (arr_Point) alongside the "struct" shapes.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/113_owned_struct_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/113_owned_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Cluster c; -> __pln_alloc_Cluster() (not calloc)
@@ -2942,7 +2950,7 @@ TEST(sa, embed_struct_arr_struct_field_access)
 	// the arr-index base (poly.pts[0]) must resolve the same way the existing
 	// variable-level embedded struct array (embed_struct_arr_field_access) does.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/115_embed_struct_arr_struct_field_access.pa");
+	json jout = written(run_sa("../test/testdata/sa/115_embed_struct_arr_struct_field_access.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -3004,7 +3012,7 @@ TEST(sa, owned_struct_arr_struct_field_access)
 	// pointer, loaded via DerefLoadIdx) rather than the bare struct type the old
 	// default branch produced (which broke resolveObjectChain's arr-index case).
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/117_owned_struct_arr_struct_field_access.pa");
+	json jout = written(run_sa("../test/testdata/sa/117_owned_struct_arr_struct_field_access.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -3037,7 +3045,7 @@ TEST(sa, embed_ptr_arr_struct_field_access)
 	// address collapsed to NULL). Also covers write-through then read-back of the
 	// stored pointer's field.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/118_embed_ptr_arr_struct_field_access.pa");
+	json jout = written(run_sa("../test/testdata/sa/118_embed_ptr_arr_struct_field_access.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -3075,7 +3083,7 @@ TEST(sa, field_arr_readonly_ptr_slot)
 	// (only write-through to the pointee's fields is restricted; see
 	// write_readonly_arr_field_elem for the rejected case).
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/119_field_arr_readonly_ptr_slot.pa");
+	json jout = written(run_sa("../test/testdata/sa/119_field_arr_readonly_ptr_slot.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -3166,7 +3174,7 @@ TEST(sa, at_bang_plain_var_decl)
 	//     path so `view`'s var-type carries base-type.type-kind=="struct" (not "prim"),
 	//     matching what resolveObjectChain requires for field access.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/130_at_bang_plain_var_decl.pa");
+	json jout = written(run_sa("../test/testdata/sa/130_at_bang_plain_var_decl.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// statements: [0] type Point is consumed, so:
@@ -3200,7 +3208,7 @@ TEST(sa, at_plain_var_decl_readonly)
 {
 	// `@Point view = original;` (read-only, non-mutable) plain local var decl.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/131_at_plain_var_decl_readonly.pa");
+	json jout = written(run_sa("../test/testdata/sa/131_at_plain_var_decl_readonly.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	const auto& view_decl = jout["statements"][1];
@@ -3439,7 +3447,7 @@ TEST(sa, addr_of_embed_field)
 	// pntr(struct Inner) (the field IS the struct's inline storage), so
 	// taking its address must NOT double-wrap into pntr(pntr(struct Inner)).
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/170_addr_of_embed_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/170_addr_of_embed_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	const auto& init = jout["statements"][1]["vars"][0]["init"];
@@ -3780,7 +3788,7 @@ TEST(sa, struct_type_alias)
 	// before dispatch, so this reaches sa_struct_var_decl the same way a
 	// direct `Point p;` would.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/160_struct_type_alias.pa");
+	json jout = written(run_sa("../test/testdata/sa/160_struct_type_alias.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	const auto& decl = jout["statements"][0];
@@ -3800,7 +3808,7 @@ TEST(sa, struct_type_alias)
 TEST(sa, struct_field_type_alias)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/198_struct_field_type_alias.pa");
+	json jout = written(run_sa("../test/testdata/sa/198_struct_field_type_alias.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& st = jout["statements"];
 
@@ -4574,7 +4582,7 @@ TEST(sa, ptr_arr_field_permission)
 
 TEST(sa, struct_arr_2d)
 {
-	json jout = run_sa("../test/testdata/sa/204_struct_arr_2d.pa");
+	json jout = written(run_sa("../test/testdata/sa/204_struct_arr_2d.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// The rows reuse the [n]T helpers, so their shape is registered too.
@@ -4599,7 +4607,7 @@ TEST(sa, struct_arr_2d)
 
 TEST(sa, embed_struct_arr_2d)
 {
-	json jout = run_sa("../test/testdata/sa/209_embed_struct_arr_2d.pa");
+	json jout = written(run_sa("../test/testdata/sa/209_embed_struct_arr_2d.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Each row is a plain block of n structs, so the byte-row allocator serves it.
@@ -4651,7 +4659,7 @@ TEST(sa, struct_arr_lit)
 TEST(sa, struct_arr_borrow)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/206_struct_arr_borrow.pa");
+	json jout = written(run_sa("../test/testdata/sa/206_struct_arr_borrow.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// The element stays the struct's storage (no "mutable"): only the array
@@ -4675,7 +4683,7 @@ TEST(sa, struct_arr_borrow)
 TEST(sa, embed_struct_arr_borrow)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/207_embed_struct_arr_borrow.pa");
+	json jout = written(run_sa("../test/testdata/sa/207_embed_struct_arr_borrow.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// The borrow keeps the variable's contiguous layout: the structs sit in
@@ -4694,7 +4702,7 @@ TEST(sa, embed_struct_arr_borrow)
 TEST(sa, ptr_slot_arr_borrow)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/208_ptr_slot_arr_borrow.pa");
+	json jout = written(run_sa("../test/testdata/sa/208_ptr_slot_arr_borrow.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// The borrow's permission covers the slots only; each element pointer
@@ -4714,7 +4722,7 @@ TEST(sa, ptr_slot_arr_borrow)
 TEST(sa, ptr_field_forward_ref)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/210_ptr_field_forward_ref.pa");
+	json jout = written(run_sa("../test/testdata/sa/210_ptr_field_forward_ref.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// a.bs[1].x: a [2]@B slot declared before B still reads as a struct pointer.
@@ -4818,7 +4826,7 @@ TEST(sa, tapple_struct)
 }
 
 TEST(sa, field_transfer) {
-	json jout = run_sa("../test/testdata/sa/215_field_transfer.pa");
+	json jout = written(run_sa("../test/testdata/sa/215_field_transfer.pa"));
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 6);
 	// The field's previous array is freed before it takes over pa.
@@ -4867,7 +4875,7 @@ TEST(sa, struct_ret_copy) {
 }
 
 TEST(sa, struct_ret_temp) {
-	json jout = run_sa("../test/testdata/sa/217_struct_ret_temp.pa");
+	json jout = written(run_sa("../test/testdata/sa/217_struct_ret_temp.pa"));
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 3);
 	// A returned struct passed as an argument is held in a temp and released.
@@ -4910,7 +4918,7 @@ TEST(sa, embed_ptr_slot_store) {
 }
 
 TEST(sa, unsized_struct_arr_sig) {
-	json jout = run_sa("../test/testdata/sa/220_unsized_struct_arr_sig.pa");
+	json jout = written(run_sa("../test/testdata/sa/220_unsized_struct_arr_sig.pa"));
 	// The same representations as [n]P / [n]$P, minus the size.
 	json owned = {{"type-kind","pntr"},{"base-type",{{"type-kind","pntr"},
 	              {"base-type",{{"type-kind","struct"},{"type-name","P"}}}}}};
@@ -4932,7 +4940,7 @@ TEST(sa, unsized_struct_arr_sig) {
 }
 
 TEST(sa, enum_type) {
-	json jout = run_sa("../test/testdata/sa/222_enum.pa");
+	json jout = written(run_sa("../test/testdata/sa/222_enum.pa"));
 	ASSERT_TRUE(jout.is_object());
 	auto enumType = [](const char* base, const char* name) {
 		return json{{"type-kind","prim"},{"type-name",base},{"enum",name}};
@@ -5029,7 +5037,7 @@ static void collectCalls(const json& node, const string& name, vector<json>& out
 }
 
 TEST(sa, method_call) {
-	json jout = run_sa("../test/testdata/sa/226_method_call.pa");
+	json jout = written(run_sa("../test/testdata/sa/226_method_call.pa"));
 	ASSERT_TRUE(jout.is_object());
 	auto calls = [&](const string& name) { vector<json> v; collectCalls(jout, name, v); return v; };
 
@@ -5070,7 +5078,7 @@ TEST(sa, method_call) {
 TEST(sa, method_call_alias) {
 	cleanTestEnv();
 	genLibSaImport();
-	json jout = run_sa("../test/testdata/sa/227_method_call_alias.pa");
+	json jout = written(run_sa("../test/testdata/sa/227_method_call_alias.pa"));
 	ASSERT_TRUE(jout.is_object());
 	vector<json> v;
 	collectCalls(jout, "square", v);
@@ -5154,7 +5162,7 @@ TEST(sa, import_type_field)
 {
 	cleanTestEnv();
 	genLibSaTypes();
-	json jout = run_sa("../test/testdata/sa/232_import_type_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/232_import_type_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 	json shape;
 	for (auto& s : jout["alloc-shapes"])
@@ -5169,17 +5177,11 @@ TEST(sa, import_type_field)
 TEST(sa, struct_field_const_size)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/233_struct_field_const_size.pa");
+	json jout = written(run_sa("../test/testdata/sa/233_struct_field_const_size.pa"));
 	ASSERT_TRUE(jout.is_object());
 	map<string, json> shapes;
 	for (auto& s : jout["alloc-shapes"])
 		if (s.value("shape-kind", "") == "struct") shapes[s["shape-name"]] = s;
-	auto blockShape = [&](const string& name) {
-		for (auto& [n, s] : shapes)
-			if (n.size() > name.size() && n.compare(n.size() - name.size() - 1, string::npos, "_" + name) == 0)
-				return s;
-		return json();
-	};
 	// a [3]$int32 12 + b [3]$Point 24 (+4) + c [3]@Point 24 + d 8 + e 8
 	// + r [3]$int16 6 + z [8]$uint8 8 (+2)
 	ASSERT_EQ(shapes["S"]["total-size"], 96);
@@ -5187,14 +5189,14 @@ TEST(sa, struct_field_const_size)
 	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["name"], "d");
 	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["count"], 3);
 	ASSERT_EQ(shapes["S"]["owned-array-fields"][1]["offset"], 72);
-	ASSERT_EQ(blockShape("L")["total-size"], 16);
-	ASSERT_EQ(blockShape("L")["owned-array-fields"][0]["count"], 2);
+	ASSERT_EQ(shapes["L"]["total-size"], 16);
+	ASSERT_EQ(shapes["L"]["owned-array-fields"][0]["count"], 2);
 }
 
 TEST(sa, top_decl_order)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/234_top_decl_order.pa");
+	json jout = written(run_sa("../test/testdata/sa/234_top_decl_order.pa"));
 	ASSERT_TRUE(jout.is_object());
 	json shape;
 	for (auto& s : jout["alloc-shapes"])
@@ -5327,7 +5329,7 @@ TEST(sa, struct_lit_init_assign)
 TEST(sa, named_ret_struct_auto_decl)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/239_named_ret_struct_auto_decl.pa");
+	json jout = written(run_sa("../test/testdata/sa/239_named_ret_struct_auto_decl.pa"));
 	ASSERT_TRUE(jout.is_object());
 	// Allocated at entry and handed to the caller, so no free follows.
 	const auto& fbody = jout["functions"][0]["body"];
@@ -5474,7 +5476,7 @@ TEST(sa, struct_lit_struct_expr)
 TEST(sa, return_unowned_struct)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/245_return_unowned_struct.pa");
+	json jout = written(run_sa("../test/testdata/sa/245_return_unowned_struct.pa"));
 	ASSERT_TRUE(jout.is_object());
 	auto func = [&](const string& name) -> const json& {
 		for (auto& f : jout["functions"])
@@ -5575,7 +5577,7 @@ TEST(sa, member_call_borrow)
 TEST(sa, lit_arg)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/248_lit_arg.pa");
+	json jout = written(run_sa("../test/testdata/sa/248_lit_arg.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 5);
@@ -5693,7 +5695,7 @@ TEST(sa, chain_lit)
 TEST(sa, lit_arg_struct_arr)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/253_lit_arg_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/253_lit_arg_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 2);
@@ -5720,7 +5722,7 @@ TEST(sa, c_func_ptr_field)
 TEST(sa, ptr_ptr_field)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/255_ptr_ptr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/255_ptr_ptr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
 	const auto& pp = stmts[1]["vars"][0]["init"]["value-type"];
@@ -5795,6 +5797,19 @@ TEST(sa, c_ptr_typedef)
 		pntr({{"type-kind", "struct"}, {"type-name", "S"}}, true));    // SP
 	EXPECT_EQ(stmts[7]["vars"][0]["var-type"],
 		pntr({{"type-kind", "prim"}, {"type-name", "void"}}, true));    // timer_t
+}
+
+TEST(sa, unexported_type_name)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/277_unexported_type_name.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Another module may declare its own A; an importer writes B as is.
+	const json& st = jout["statements"];
+	string a = st[0]["vars"][0]["var-type"]["base-type"]["type-name"];
+	ASSERT_TRUE(regex_match(a, regex("__pln_L[0-9a-f]{16}_[0-9]+_A"))) << a;
+	ASSERT_EQ(st[1]["vars"][0]["var-type"]["base-type"]["type-name"], "B");
+	ASSERT_EQ(jout["alloc-shapes"][1]["owned-fields"][0]["struct-name"], a);
 }
 
 TEST(sa, block_type_scope)
@@ -5937,7 +5952,7 @@ TEST(sa, func_ptr)
 TEST(sa, frame_struct)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/274_frame_struct.pa");
+	json jout = written(run_sa("../test/testdata/sa/274_frame_struct.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
 	auto call = [&](size_t i) -> const json& { return stmts[i]["body"]; };
@@ -5976,7 +5991,7 @@ TEST(sa, frame_struct)
 TEST(sa, frame_arr)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/275_frame_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/275_frame_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
 	auto init = [&](size_t i) -> const json& { return stmts[i]["vars"][0]["init"]; };
@@ -6002,7 +6017,7 @@ TEST(sa, frame_arr)
 TEST(sa, frame_scope_exit)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/276_frame_scope_exit.pa");
+	json jout = written(run_sa("../test/testdata/sa/276_frame_scope_exit.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& body = jout["functions"][0]["body"];
 	const auto& loop = body[3]["body"];

@@ -3113,3 +3113,18 @@ TEST(build_mgr, frame_c) {
 TEST(build_mgr, frame_owned_elems_mtrace) {
 	expectFrameMtrace("302_frame_owned_elems_mtrace", "10\n5\n7\n9\n3\n");
 }
+
+TEST(build_mgr, import_private_type) {
+	cleanTestEnv();
+	// Each module's P gets its own allocators: copying lib's [2]P with main's
+	// 4-byte copy would print "5 3 0".
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/303_import_private_type.pa");
+	ASSERT_EQ(output, "5 3 4\n");
+}
+
+TEST(build_mgr, import_private_dep_type) {
+	cleanTestEnv();
+	// Q brings lib's unexported P along; main's own P does not clash with it.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/304_import_private_dep_type.pa");
+	ASSERT_EQ(output, "6 7\n");
+}

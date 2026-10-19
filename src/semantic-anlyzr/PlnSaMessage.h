@@ -163,9 +163,9 @@ public:
 	static string getMessage(PlnSaMessageCode msg_code,
 	                         string arg1="\x01", string arg2="\x01",
 	                         string arg3="\x01");
-	// The program-wide name of a struct/enum declared in a block. A message
-	// shows it as written.
-	static string blockTypeName(const string& moduleId, int seq, const string& name);
+	// The program-wide name of an unexported struct/enum, or one declared in
+	// a block. A message shows it as written.
+	static string localTypeName(const string& moduleId, int seq, const string& name);
 private:
 	static string format(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3);
 };

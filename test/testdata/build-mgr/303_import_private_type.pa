@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+import "lib_private_type.pa";
+type P { int32 a; };
+[2]P y; [2]P w;
+5 -> y[1].a;
+y -> w;
+printf("%d", w[1].a);
+copyPrivate();
