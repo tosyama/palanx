@@ -445,6 +445,13 @@ class PlnSemanticAnalyzer {
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);
+	json sa_store_scope(const json& stmt);  // returns json::array()
+	json sa_store_stmt(const json& stmt);   // returns json::array()
+	void hoistStores(json& value, json& body);
+	json sa_store_steps(const json& stmt, json& body, bool readBack);
+	const PlnType* storeTargetType(const json& stmt);
+	json pinLocation(json loc, json& body);
+	json pinValue(json saValue, const json& astValue, json& body);
 	json sa_assign_stmt(const json& stmt);
 	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.

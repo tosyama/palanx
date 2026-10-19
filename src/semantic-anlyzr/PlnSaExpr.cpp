@@ -672,6 +672,12 @@ optional<ConstVal> PlnSemanticAnalyzer::evalConst(const json& expr)
 
 json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expectedType)
 {
+	if (rawExpr.contains("stmt-type")) {
+		cerr << locPrefix(rawExpr) << PlnSaMessage::getMessage(E_AssignInExpr) << endl;
+		exit(1);
+	}
+	if (rawExpr.value("expr-type", "") == "pinned")
+		return rawExpr["sa"];
 	const json expr = foldConstExpr(rawExpr);
 	json sa_expr = expr;
 	string expr_type = expr["expr-type"];
@@ -686,13 +692,6 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	}
 	if (expr_type == "dict-lit") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_DictLitContext) << endl;
-		exit(1);
-	}
-	// gen-ast lowers an assignment written as a statement, so one reaching
-	// here is nested in another expression.
-	if (expr_type == "assign-expr" || expr_type == "arr-assign-expr"
-			|| expr_type == "field-assign-expr" || expr_type == "tapple-assign-expr") {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AssignInExpr) << endl;
 		exit(1);
 	}
 	if (expr_type == "not-impl") {

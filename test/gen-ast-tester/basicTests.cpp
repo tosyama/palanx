@@ -1853,32 +1853,34 @@ TEST(gen_ast, assign_chain) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
-	ASSERT_EQ(stmts.size(), 10);
+	ASSERT_EQ(stmts.size(), 3);
 
-	ASSERT_EQ(stmts[0]["stmt-type"], "arr-assign");
-	ASSERT_EQ(stmts[0]["value"]["expr-type"], "lit-int");
-	for (int i = 1; i < 7; i++) {
-		ASSERT_EQ(stmts[i]["stmt-type"], "arr-assign");
-		ASSERT_EQ(stmts[i]["value"], stmts[i-1]["target"]);
+	// Each step's value is the previous step, whose target SA reads back.
+	const json* step = &stmts[0];
+	for (string idx : {"o", "n", "m", "l", "k", "j", "i"}) {
+		ASSERT_EQ((*step)["stmt-type"], "arr-assign");
+		ASSERT_EQ((*step)["target"]["index"]["name"], idx);
+		step = &(*step)["value"];
 	}
-	ASSERT_EQ(stmts[6]["target"]["index"]["name"], "o");
+	ASSERT_EQ((*step)["expr-type"], "lit-int");
 
-	ASSERT_EQ(stmts[7]["stmt-type"], "field-assign");
-	ASSERT_EQ(stmts[7]["value"]["name"], "x");
-	ASSERT_EQ(stmts[8]["stmt-type"], "field-assign");
-	ASSERT_EQ(stmts[8]["object"]["expr-type"], "arr-index");
-	ASSERT_EQ(stmts[8]["value"]["expr-type"], "field-access");
-	ASSERT_EQ(stmts[8]["value"]["object"]["name"], "s");
-	ASSERT_EQ(stmts[8]["value"]["field"], "a");
-	ASSERT_EQ(stmts[8].value("ownership-transfer", false), true);
+	const auto& outer = stmts[1];
+	ASSERT_EQ(outer["stmt-type"], "field-assign");
+	ASSERT_EQ(outer["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(outer.value("ownership-transfer", false), true);
+	ASSERT_EQ(outer["value"]["stmt-type"], "field-assign");
+	ASSERT_EQ(outer["value"]["object"]["name"], "s");
+	ASSERT_EQ(outer["value"]["field"], "a");
+	ASSERT_EQ(outer["value"]["value"]["name"], "x");
+	ASSERT_EQ(outer["value"].value("ownership-transfer", false), true);
 
-	ASSERT_EQ(stmts[9]["stmt-type"], "not-impl");
+	ASSERT_EQ(stmts[2]["stmt-type"], "not-impl");
 
 	const auto& body = jout["ast"]["functions"][0]["block"]["body"];
-	ASSERT_EQ(body.size(), 2);
-	ASSERT_EQ(body[1]["name"], "b");
-	ASSERT_EQ(body[1]["value"]["expr-type"], "id");
-	ASSERT_EQ(body[1]["value"]["name"], "a");
+	ASSERT_EQ(body.size(), 1);
+	ASSERT_EQ(body[0]["name"], "b");
+	ASSERT_EQ(body[0]["value"]["stmt-type"], "assign");
+	ASSERT_EQ(body[0]["value"]["name"], "a");
 }
 
 // Copying a list on every append made parse time quadratic: 2000 items took
@@ -2097,7 +2099,7 @@ TEST(gen_ast, chain_call) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
-	ASSERT_EQ(stmts.size(), 11);
+	ASSERT_EQ(stmts.size(), 8);
 
 	const auto& plain = stmts[0]["body"];
 	ASSERT_EQ(plain["expr-type"], "chain-call");
@@ -2115,19 +2117,19 @@ TEST(gen_ast, chain_call) {
 	ASSERT_EQ(stmts[3]["stmt-type"], "assign");
 	ASSERT_EQ(stmts[3]["value"]["expr-type"], "chain-call");
 
-	// An assignment feeding a call is its own statement; the call reads it back.
-	ASSERT_EQ(stmts[4]["stmt-type"], "assign");
-	ASSERT_EQ(stmts[5]["body"]["value"]["name"], "v");
-	ASSERT_EQ(stmts[6]["name"], "v");
-	ASSERT_EQ(stmts[7]["name"], "w");
-	ASSERT_EQ(stmts[7]["value"]["value"]["name"], "v");
-	ASSERT_EQ(stmts[8]["body"]["value"]["name"], "w");
-	ASSERT_EQ(stmts[8]["body"]["call"]["name"], "g");
+	// An assignment feeding a call is the call's value; SA reads its target back.
+	ASSERT_EQ(stmts[4]["body"]["value"]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[4]["body"]["value"]["name"], "v");
+	const auto& g = stmts[5]["body"];
+	ASSERT_EQ(g["call"]["name"], "g");
+	ASSERT_EQ(g["value"]["name"], "w");
+	ASSERT_EQ(g["value"]["value"]["call"]["name"], "f");
+	ASSERT_EQ(g["value"]["value"]["value"]["name"], "v");
 
-	ASSERT_EQ(stmts[9]["stmt-type"], "tapple-decl");
-	ASSERT_EQ(stmts[9]["value"]["expr-type"], "chain-call");
-	ASSERT_EQ(stmts[10]["stmt-type"], "tapple-assign");
-	ASSERT_EQ(stmts[10]["value"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[6]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[6]["value"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[7]["stmt-type"], "tapple-assign");
+	ASSERT_EQ(stmts[7]["value"]["expr-type"], "chain-call");
 }
 
 TEST(gen_ast, as_cast) {

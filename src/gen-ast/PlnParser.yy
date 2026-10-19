@@ -95,14 +95,6 @@ struct LazyNode {
 };
 
 inline NodeRef leafNode(json j) { return std::make_shared<const LazyNode>(LazyNode{ std::move(j), {}, {} }); } // LCOV_EXCL_EXCEPTION_BR_LINE
-// A chained assignment's expr_stmt carries the statements it expands to.
-inline PList<NodeRef> pushExprStmt(PList<NodeRef> list, const json& stmt) {
-	if (!stmt.contains("stmt-seq"))
-		return list.push(leafNode(stmt)); // LCOV_EXCL_EXCEPTION_BR_LINE
-	for (auto& s : stmt["stmt-seq"])
-		list = list.push(leafNode(s)); // LCOV_EXCL_EXCEPTION_BR_LINE
-	return list;
-}
 inline NodeRef blockStmtNode(const PList<NodeRef>& body) {
 	return std::make_shared<const LazyNode>(LazyNode{ {{"stmt-type", "block"}}, {}, {{"body", body}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -409,12 +401,8 @@ expr_stmt: import
 	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
 	| expression
 	{
-		if (isAssignExpr($1) || $1.value("expr-type", "") == "chain-call") {
-			vector<json> stmts = lowerExprStmt($1);
-			if (stmts.size() == 1)
-				$$ = move(stmts[0]);
-			else
-				$$ = {{"stmt-seq", move(stmts)}};
+		if (isStoreStmt($1)) {
+			$$ = move($1);
 		} else {
 			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
 			LOC($$, @$);
@@ -436,13 +424,13 @@ expr_stmt: import
 	;
 
 stmt_list_e: expr_stmt
-	{ $$ = pushExprStmt(PList<NodeRef>(), $1); }
+	{ $$ = PList<NodeRef>().push(leafNode(move($1))); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| stmt_list_b expr_stmt
-	{ $$ = pushExprStmt($1, $2); }
+	{ $$ = $1.push(leafNode(move($2))); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| stmt_list_b ';' expr_stmt
-	{ $$ = pushExprStmt($1, $3); }
+	{ $$ = $1.push(leafNode(move($3))); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| stmt_list_e ';' expr_stmt
-	{ $$ = pushExprStmt($1, $3); }
+	{ $$ = $1.push(leafNode(move($3))); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	;
 
 stmt_list_b: block_stmt
@@ -561,22 +549,22 @@ block: '{' statements '}'
 
 body_list_e: expr_stmt
 	{
-		$$.body = pushExprStmt($$.body, $1);
+		$$.body = $$.body.push(leafNode(move($1))); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	| body_list_b expr_stmt
 	{
 		$$ = $1;
-		$$.body = pushExprStmt($$.body, $2);
+		$$.body = $$.body.push(leafNode(move($2))); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	| body_list_b ';' expr_stmt
 	{
 		$$ = $1;
-		$$.body = pushExprStmt($$.body, $3);
+		$$.body = $$.body.push(leafNode(move($3))); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	| body_list_e ';' expr_stmt
 	{
 		$$ = $1;
-		$$.body = pushExprStmt($$.body, $3);
+		$$.body = $$.body.push(leafNode(move($3))); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	;
 
@@ -859,57 +847,35 @@ expression: term
 	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", true}}; LOC($$, @$); }
 	| expression ARROW store_loc
 	{
-		if ($3.value("kind", "") == "var") {
-			$$ = {{"expr-type", "assign-expr"}, {"name", move($3["name"])}, {"value", move($1)}};
-			LOC($$, @$);
-		} else if ($3.value("kind", "") == "arr-index") {
-			json arr_node = {{"expr-type", "arr-index"},
-							 {"array", move($3["array"])},
-							 {"index", move($3["index"])}};
-			LOC(arr_node, @3);
-			$$ = {{"expr-type", "arr-assign-expr"}, {"target", move(arr_node)}, {"value", move($1)}};
-			LOC($$, @$);
-		} else if ($3.value("kind", "") == "field") {
-			$$ = {{"expr-type", "field-assign-expr"},
-				  {"base", move($3["base"])}, {"field", move($3["field"])},
-				  {"value", move($1)}};
-			LOC($$, @$);
-		} else if ($3.value("kind", "") == "tapple") {
+		string kind = $3.value("kind", "");
+		if (kind == "tapple") {
 			string et = $1.value("expr-type", "");
 			if (et == "call" || et == "member-call" || et == "chain-call") {
-				$$ = {{"expr-type", "tapple-assign-expr"}, {"targets", move($3["targets"])}, {"value", move($1)}};
+				$$ = {{"stmt-type", "tapple-assign"}, {"targets", move($3["targets"])}, {"value", move($1)}};
 				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
 				LOC($$, @$);
 			}
-		} else if ($3.value("kind", "") == "call") {
+		} else if (kind == "call" && !chainsThroughTapple($1)) {
 			$$ = {{"expr-type", "chain-call"}, {"value", move($1)}, {"call", move($3["call"])}};
 			LOC($$, @$);
-		} else {
+		} else if (kind == "call") {
 			$$ = {{"expr-type", "not-impl"}};
+			LOC($$, @$);
+		} else {
+			$$ = storeStmt(move($3), move($1), false);
 			LOC($$, @$);
 		}
 	}
 	| expression DBL_ARROW store_loc
 	{
-		if ($3.value("kind", "") == "arr-index") {
-			json arr_node = {{"expr-type", "arr-index"},
-							 {"array", move($3["array"])},
-							 {"index", move($3["index"])}};
-			LOC(arr_node, @3);
-			$$ = {{"expr-type", "arr-assign-expr"}, {"ownership-transfer", true},
-				  {"target", move(arr_node)}, {"value", move($1)}};
-			LOC($$, @$);
-		} else if ($3.value("kind", "") == "field") {
-			$$ = {{"expr-type", "field-assign-expr"}, {"ownership-transfer", true},
-				  {"base", move($3["base"])}, {"field", move($3["field"])},
-				  {"value", move($1)}};
-			LOC($$, @$);
-		} else {
+		string kind = $3.value("kind", "");
+		if (kind == "arr-index" || kind == "field")
+			$$ = storeStmt(move($3), move($1), true);
+		else
 			$$ = {{"expr-type", "not-impl"}};
-			LOC($$, @$);
-		}
+		LOC($$, @$);
 	}
 	| noname_func
 	{ $$ = {{"expr-type", "not-impl"}}; LOC($$, @$); }

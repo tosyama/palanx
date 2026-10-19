@@ -351,9 +351,10 @@ The assignment expression `expr -> var` evaluates `expr`, stores it in `var`, an
 
 Assignments chain as a statement: `v -> a -> b;` is `v -> a; a -> b;`, and the same holds
 for `->>` (`x ->> s.p ->> t.p;` moves ownership from `x` to `s.p`, then from `s.p` to `t.p`).
-A target followed by another `->` is read back as the next value, so its index is evaluated
-twice (`v -> arr[f()] -> x` calls `f` twice). Targets are stored left to right: in
-`n -> i -> arr[i]`, `arr[i]` uses the `i` just stored. An assignment used inside any other
+A target followed by another `->` is read back as the next value from the same location
+(`v -> arr[f()] -> x` calls `f` once). Evaluation goes left to right: the value first, then
+each target as it is stored, so in `g() -> arr[f()]` `g` is called before `f`, and in
+`n -> i -> arr[i]` `arr[i]` uses the `i` just stored. An assignment used inside any other
 expression is not supported.
 A call can follow `->` too; see [Chained Calls](#chained-calls).
 

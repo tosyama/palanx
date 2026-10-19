@@ -17,16 +17,15 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		string t = stmt["stmt-type"];
 		if      (t == "import")   sa_import(stmt);
 		else if (t == "cinclude") sa_cinclude(stmt);
+		else if (t == "expr" && chainsFromStore(stmt["body"])) { for (auto& s : sa_store_scope(stmt)) result.push_back(s); }
 		else if (t == "expr")     result.push_back(sa_expression_stmt(stmt));
 		else if (t == "var-decl") { for (auto& s : sa_var_decl(stmt)) result.push_back(s); }
-		else if (t == "assign")     result.push_back(sa_assign_stmt(stmt));
-		else if (t == "arr-assign")   { for (auto& s : sa_arr_assign_stmt(stmt)) result.push_back(s); }
+		else if (isStoreStmt(stmt)) { for (auto& s : sa_store_scope(stmt)) result.push_back(s); }
 		else if (prescannedDecls_.count(&stmt)) continue;
 		else if (t == "struct-def")   sa_struct_def(stmt);
 		else if (t == "type-alias")   sa_type_alias(stmt);
 		else if (t == "const-decl")   sa_const_decl(stmt);
 		else if (t == "enum-def")     sa_enum_def(stmt);
-		else if (t == "field-assign") { for (auto& s : sa_field_assign(stmt)) result.push_back(s); }
 		else if (t == "return") {
 			if (funcBodyScopeIdx_ > 0) {
 				json retStmt = stmt;
@@ -58,6 +57,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 				result.push_back(sa_return_stmt(stmt)); // LCOV_EXCL_EXCEPTION_BR_LINE
 		}
 		else if (t == "tapple-decl") { for (auto& s : sa_tapple_decl(stmt)) result.push_back(s); }
+		else if (t == "tapple-assign" && chainsFromStore(stmt["value"])) { for (auto& s : sa_store_scope(stmt)) result.push_back(s); }
 		else if (t == "tapple-assign") result.push_back(sa_tapple_assign(stmt));
 		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
 		else if (t == "while")    result.push_back(sa_while_stmt(stmt));
@@ -332,6 +332,172 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	checkBorrowSource(stmt, value, *varType);
 	checkPtrPermission(stmt, value["value-type"], *varType);
 	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The key of the location a store writes to; none for a plain variable.
+static const char* storeTargetKey(const json& stmt)
+{
+	string t = stmt["stmt-type"];
+	if (t == "arr-assign") return "target";
+	if (t == "field-assign") return "object";
+	return nullptr;
+}
+
+static bool isLocationExpr(const json& e)
+{
+	string et = e.value("expr-type", "");
+	return et == "id" || et == "arr-index" || et == "field-access";
+}
+
+// A store evaluates a call in its target or value into a temp when its value is
+// a store whose target is read back, when the value is to be evaluated before
+// a call in the target, or when '->>' resets the location it read.
+static bool storePins(const json& stmt)
+{
+	const json& v = stmt["value"];
+	if (chainsFromStore(v))
+		return true;
+	if (!hasCall(v))
+		return false;
+	const char* target = storeTargetKey(stmt);
+	return (target && hasCall(stmt[target])) || (stmt.value("ownership-transfer", false) && isLocationExpr(v));
+}
+
+// Stores run left to right, each evaluating every call in it once. A
+// statement whose value chains from a store runs that store first, and one
+// that evaluates a call into a temp holds the temp in a block of its own.
+json PlnSemanticAnalyzer::sa_store_scope(const json& stmt)
+{
+	string t = stmt["stmt-type"];
+	if (isStoreStmt(stmt) && !storePins(stmt))
+		return sa_store_stmt(stmt);
+	enterScope();
+	json body = json::array();
+	if (t == "expr") {
+		json s = stmt;
+		hoistStores(s["body"], body);
+		body.push_back(sa_expression_stmt(s));
+	} else if (t == "tapple-assign") {
+		json s = stmt;
+		hoistStores(s["value"], body);
+		body.push_back(sa_tapple_assign(s));
+	} else {
+		sa_store_steps(stmt, body, false);
+	}
+	bool hasTemps = !varScopes.back().empty();
+	leaveScope();
+	if (!hasTemps)
+		return body;
+	return json::array({{{"stmt-type", "block"}, {"body", move(body)}}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_store_stmt(const json& stmt)
+{
+	string t = stmt["stmt-type"];
+	if (t == "assign")
+		return json::array({sa_assign_stmt(stmt)}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (t == "arr-assign")
+		return sa_arr_assign_stmt(stmt);
+	return sa_field_assign(stmt);
+}
+
+// Runs the store `value` is, or the store a chained call's value starts from,
+// and replaces it with the target it stored, read back.
+void PlnSemanticAnalyzer::hoistStores(json& value, json& body)
+{
+	if (isStoreStmt(value))
+		value = sa_store_steps(value, body, true);
+	else if (value.value("expr-type", "") == "chain-call")
+		hoistStores(value["value"], body);
+}
+
+// Appends the statements of one store to body and returns its target as an
+// expression. A target read back has its calls evaluated into temps first, so
+// both the store and the read use the same location.
+json PlnSemanticAnalyzer::sa_store_steps(const json& stmt, json& body, bool readBack)
+{
+	json s = stmt;
+	json& value = s["value"];
+	hoistStores(value, body);
+	const char* target = storeTargetKey(s);
+	bool targetCall = target && hasCall(s[target]);
+	json targetPins = json::array();
+	if (targetCall && readBack)
+		s[target] = pinLocation(move(s[target]), targetPins);
+	if (hasCall(value)) {
+		// '->>' reads the location it gives away again to reset it.
+		if (s.value("ownership-transfer", false) && isLocationExpr(value))
+			value = pinLocation(move(value), body);
+		else if (targetCall && !isAggregateLit(value))
+			value = pinValue(sa_expression(value, storeTargetType(s)), value, body);
+	}
+	for (auto& p : targetPins)
+		body.push_back(move(p));
+	for (auto& r : sa_store_stmt(s))
+		body.push_back(move(r));
+
+	string t = s["stmt-type"];
+	json readExpr;
+	if (t == "assign")
+		readExpr = {{"expr-type", "id"}, {"name", s["name"]}};
+	else if (t == "arr-assign")
+		return s["target"];
+	else
+		readExpr = {{"expr-type", "field-access"}, {"object", s["object"]}, {"field", s["field"]}};
+	if (s.contains("loc")) readExpr["loc"] = s["loc"];
+	return readExpr;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+const PlnType* PlnSemanticAnalyzer::storeTargetType(const json& stmt)
+{
+	if (stmt["stmt-type"] == "arr-assign")
+		return registry_.fromJson(sa_expr_arr_index(stmt["target"], /*forWrite=*/true)["value-type"]);
+	json field = {{"expr-type", "field-access"}, {"object", stmt["object"]}, {"field", stmt["field"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return registry_.fromJson(sa_expr_field_access(field, /*forWrite=*/true)["value-type"]);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The calls along a location -- its indices and the expression it starts
+// from -- each evaluated once into a temp, leaving the same location.
+json PlnSemanticAnalyzer::pinLocation(json loc, json& body)
+{
+	string et = loc.value("expr-type", "");
+	if (et == "arr-index") {
+		loc["array"] = pinLocation(move(loc["array"]), body);
+		if (hasCall(loc["index"]))
+			loc["index"] = pinValue(sa_expression(loc["index"]), loc["index"], body);
+	} else if (et == "field-access") {
+		loc["object"] = pinLocation(move(loc["object"]), body);
+	} else if (et != "id" && hasCall(loc)) {
+		loc = pinValue(sa_expression(loc), loc, body);
+	}
+	return loc;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// saValue evaluated into a temp, standing in for the expression it was
+// analyzed from: a `pinned` node, which sa_expression gives back as the temp
+// with saValue's type and category, so a store treats it as the value itself.
+json PlnSemanticAnalyzer::pinValue(json saValue, const json& astValue, json& body)
+{
+	// No value, or a C function's by-value struct, which only a declaration
+	// receives: left where it is, to be diagnosed or evaluated by the store.
+	if (!saValue.contains("value-type") || saValue["value-type"].value("type-kind", "") == "struct")
+		return astValue;
+	if (holdsCallTemps(saValue)) {
+		cerr << locPrefix(astValue) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
+		exit(1);
+	}
+	// LCOV_EXCL_EXCEPTION_BR_START
+	string name = "__pin_" + to_string(tempVarCounter_++);
+	const json type = saValue["value-type"];
+	declareVar(name, type);
+	json temp = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}};
+	if (saValue.contains("category")) temp["category"] = saValue["category"];
+	body.push_back({{"stmt-type", "var-decl"},
+	                {"vars", json::array({{{"name", name}, {"var-type", type}, {"init", move(saValue)}}})}});
+	json pinned = {{"expr-type", "pinned"}, {"sa", move(temp)}};
+	if (astValue.contains("loc")) pinned["loc"] = astValue["loc"];
+	return pinned;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt)

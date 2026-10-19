@@ -1,0 +1,18 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; };
+type H { P p; };
+func idx(int32 i) -> int32 r { printf("i%d ", i); i -> r; }
+func mk(int32 n) -> P p { n -> p.x; }
+mtrace();
+{
+    [2]P ps;
+    H h;
+    P q;
+    2 -> ps[1].x;
+    ps[idx(1)] ->> h.p;
+    mk(3) -> ps[idx(0)] -> q;
+    mk(4) ->> ps[idx(1)];
+    printf("%d %d %d\n", h.p.x, q.x, ps[1].x);
+}
+muntrace();

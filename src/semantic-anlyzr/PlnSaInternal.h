@@ -185,6 +185,31 @@ inline bool holdsCallTemps(const json& v)
 			return true;
 	return false;
 }
+// An assignment node: a statement, or the value of another assignment or of a
+// chained call when the assignments chain.
+inline bool isStoreStmt(const json& e)
+{
+	string t = e.value("stmt-type", "");
+	return t == "assign" || t == "arr-assign" || t == "field-assign";
+}
+inline bool chainsFromStore(const json& e)
+{
+	if (isStoreStmt(e)) return true;
+	return e.value("expr-type", "") == "chain-call" && chainsFromStore(e["value"]);
+}
+inline bool hasCall(const json& e)
+{
+	if (e.is_object()) {
+		string et = e.value("expr-type", "");
+		if (et == "call" || et == "member-call" || et == "chain-call") return true;
+		for (auto& [k, v] : e.items())
+			if (hasCall(v)) return true;
+	} else if (e.is_array()) {
+		for (auto& v : e)
+			if (hasCall(v)) return true;
+	}
+	return false;
+}
 inline bool isCallBorrow(const json& expr)
 {
 	if (expr.value("expr-type", "") != "addr-of") return false;

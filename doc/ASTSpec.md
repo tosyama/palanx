@@ -441,11 +441,11 @@ Statement model
     - targets\* - Target expression model list: `id`, `arr-index` or `field-access` per entry
     - value\* - Call expression model (must be a call to a multi-return Palan function), or a
       `chain-call` whose last call is one
-  - A chained assignment `v -> t1 -> t2` is emitted as consecutive assign / arr-assign /
-    field-assign statements `v -> t1` and `t1 -> t2`: each later value reads back the
-    previous target. A chain with a tapple-assign in it is a single not-impl statement.
-    An assignment feeding a chained call (`x -> v -> f()`) is likewise emitted before it, and
-    the `chain-call` reads the target back (`x -> v` then the statement for `v -> f()`).
+  - In a chained assignment `v -> t1 -> t2`, the `value` of the `t2` assign / arr-assign /
+    field-assign is the whole `v -> t1` statement node, whose target SA reads back. An
+    assignment feeding a chained call (`x -> v -> f()`) is likewise the `chain-call`'s `value`.
+    Elsewhere in an expression such a node is rejected by SA. A chain with a tapple-assign in
+    it is a single not-impl statement (a not-impl expression when a call follows).
   14. block - standalone block statement (`{ ... }`)
     - functions\* - Palan function definition list local to this block (may be empty array)
     - body\* - Statement model list (does not contain func-def entries)
@@ -602,7 +602,7 @@ Expression model
   29. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
       consumed by SA, not emitted to sa.json (see SASpec.md "Chained calls")
     - value\* - Expression model whose value (or return values) come first in the arguments; a
-      nested `chain-call` for `x -> f() -> g()`
+      nested `chain-call` for `x -> f() -> g()`, or an assignment statement node for `x -> v -> f()`
     - call\* - `call` or `member-call` expression model, its `args` without the chained value
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative

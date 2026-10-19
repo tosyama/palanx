@@ -3157,3 +3157,40 @@ TEST(build_mgr, expr_rooted_access) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/308_expr_rooted_access.pa");
 	ASSERT_EQ(output, "7 8 8\n10\n10 11\n12\n1970\n1\n");
 }
+
+TEST(build_mgr, store_eval_once) {
+	cleanTestEnv();
+	// Each call in a chain's targets runs once, and a value runs before the
+	// calls in its target.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/309_store_eval_once.pa");
+	ASSERT_EQ(output, "i1 v i2 s7 5 6 5 7\ng i0 g v g i1 v 8 9 10 10\nw g i1 11 11 12 13 14\n");
+}
+
+TEST(build_mgr, store_eval_once_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_store_eval_once_mtrace_bin "
+		"../test/testdata/build-mgr/310_store_eval_once_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_store_eval_once_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_store_eval_once_mtrace_bin");
+	ASSERT_EQ(output, "i1 i0 i1 i1 2 3 4\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 8) << "expected 8 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}

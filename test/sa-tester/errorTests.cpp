@@ -3247,6 +3247,7 @@ TEST(sa_error, arr_lit_assign)
 		{"error_492_temp_borrow_prim.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_493_temp_borrow_tapple.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_494_member_call_borrow_not_arg.pa", ":4:9: error: a struct returned by a call has no owner to borrow from"},
+		{"error_653_temp_borrow_pinned.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3329,6 +3330,7 @@ TEST(sa_error, void_call_arg)
 	const pair<string, string> cases[] = {
 		{"error_509_void_call_arg.pa", ":3:11: error: Void function call cannot be used as a value."},
 		{"error_510_void_call_variadic_arg.pa", ":3:1: error: Void function call cannot be used as a value."},
+		{"error_654_void_value_call_target.pa", ":4:1: error: Void function call cannot be used as a value."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
