@@ -790,6 +790,9 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
             }
         } else {
             r = allocVReg();
+            func.instrs.push_back(DeclVar{r, ve.type});
+            if (!blockVarStack_.empty())
+                blockVarStack_.back().push_back(r);
         }
         declareVar(ve.varName, r);
     }

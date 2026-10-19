@@ -58,6 +58,7 @@ struct LeaLabel  { VReg dst; VRegType type; string label; };       // dst = addr
 struct MovImm    { VReg dst; VRegType type; long long value; };    // dst = immediate integer
 struct InitVar   { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
 struct InitVarF  { VReg dst; VRegType type; string label; };       // variable init: dst_vreg = float at label
+struct DeclVar   { VReg dst; VRegType type; };                     // variable decl without initializer (no code)
 struct Add      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs + rhs
 struct Sub      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs - rhs
 struct Mul      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs * rhs
@@ -109,7 +110,7 @@ struct CalcAddr      { VReg dst; VReg ptr; int offset; };                       
 struct LeaLocal      { VReg dst; VReg local; };                                                        // dst = &local (local's own stack slot address)
 struct FrameAddr     { VReg dst; int block; };                                                         // dst = address of VFunc::frameBlocks[block]
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg,
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, DeclVar, Add, Sub, Mul, Div, Mod, Neg,
                              BitAnd, BitOr, BitXor, BitNot, Shift, ShiftImm, Cmp, Convert,
                              CallC, CallPln, CallSys, RetPln, ExitCode,
                              BlockEnter, BlockLeave,

@@ -3233,3 +3233,11 @@ TEST(build_mgr, store_value_first_mtrace) {
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
+
+TEST(build_mgr, uninit_var_decl) {
+	cleanTestEnv();
+	// A variable declared without an initializer keeps its declared width
+	// when it is later assigned, read, addressed or redeclared in a loop.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/313_uninit_var_decl.pa");
+	ASSERT_EQ(output, "11 12\n12 13\n-2 301 4000000000 3.0\n8\n0 1 2 3 4 5 \n");
+}

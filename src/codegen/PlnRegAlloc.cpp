@@ -20,7 +20,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     struct VRegMeta {
         VRegType type         = VRegType::Int64;
         int      def_idx      = -1;
-        bool     isVar        = false;   // true if defined by InitVar (variable)
+        bool     isVar        = false;   // true if a declared variable (InitVar/InitVarF/DeclVar)
         int      last_any_use = -1;      // last use by non-call-argument instructions
         vector<pair<int,string>> call_uses; // (call_instr_idx, desired arg register)
         bool     isRetValue   = false;   // true if used by RetPln
@@ -79,6 +79,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const MovImm& m)    { setDef(m.dst, m.type); },
             [&](const InitVar& v)   { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
             [&](const InitVarF& v)  { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
+            [&](const DeclVar& v)   { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
             [&](const Add& a)      { setBinOp(a.dst, a.lhs, a.rhs, a.type); },
             [&](const Sub& s)      { setBinOp(s.dst, s.lhs, s.rhs, s.type); },
             [&](const Mul& m)      { setBinOp(m.dst, m.lhs, m.rhs, m.type); },
@@ -429,13 +430,6 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 }
             }
         }
-
-        // isVar VRegs with no defining instruction (e.g. `int64 x;` with no
-        // initializer, later addressed via `@x`) never match a def_idx above --
-        // give them a permanent slot (no freePool reuse) as a conservative fallback.
-        for (auto& [vreg, m] : meta)
-            if (m.isVar && m.def_idx == -1 && !result.count(vreg))
-                allocStackSlot(vreg, m.type);
     }
 
     // For non-entry functions, reserve stack slots at the top of the frame to

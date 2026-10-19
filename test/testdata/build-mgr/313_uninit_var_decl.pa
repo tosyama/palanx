@@ -1,0 +1,29 @@
+cinclude <stdio.h>;
+func two(int32 n) -> int32 a, int32 b { n + 1 -> a; n + 2 -> b; }
+func set(@!int32 p) -> int32 r { 7 -> p[0]; 0 -> r; }
+
+int32 x; int32 y;
+11 -> x;
+x + 1 -> y;
+printf("%d %d\n", x, y);
+x -> y;
+two(y) -> (x, y);
+printf("%d %d\n", x, y);
+
+int8 a; int16 b; uint32 c; flo32 f;
+-3 -> a; 300 -> b; 4000000000 -> c; 1.5 -> f;
+printf("%d %d %u %.1f\n", a + 1, b + 1, c, f * 2.0);
+
+int32 z;
+set(@!z);
+printf("%d\n", z + 1);
+
+int32 i = 0;
+while i < 3 {
+	int32 t; int64 u;
+	i * 2 -> t;
+	t + 1 -> u;
+	printf("%d %ld ", t, u);
+	i + 1 -> i;
+}
+printf("\n");
