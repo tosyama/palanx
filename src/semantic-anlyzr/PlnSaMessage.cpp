@@ -355,11 +355,6 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "syscall '" + arg1 + "' has " + arg2 + " parameters; the Linux syscall "
 			       "ABI supports at most 6.";
 
-		case E_SyscallInvalidReturn:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "syscall '" + arg1 + "' must declare its return with '-> type'; named "
-			       "and multiple return values are not supported.";
-
 		case E_SyscallUnsupportedParamType:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");

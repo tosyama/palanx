@@ -57,7 +57,8 @@ Function definition model
      - export - Boolean, true if declared with `export` keyword (omitted when false)
      - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters;
        at most 6, checked by SA)
-     - ret-type - Return variable type (single-return only; omitted for void; SA rejects `rets`)
+     - ret-type - Return variable type (omitted for void; never `rets` — gen-ast rejects named and
+       multiple returns)
      - syscall-number\* - Expression node for the syscall number; a reference to a cinclude'd
        macro constant is already folded to a `lit-int` by gen-ast (see Constant definition
        model below), so SA only requires the node to be an integer literal expression and folds

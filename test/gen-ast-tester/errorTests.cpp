@@ -158,6 +158,22 @@ TEST(gen_ast_error, invalid_number_literal) {
 	}
 }
 
+TEST(gen_ast_error, syscall_named_return) {
+	cleanTestEnv();
+	const string msg = "error: a syscall must declare its return with '-> type'; named and "
+		"multiple return values are not supported.";
+	const char* cases[][2] = {
+		{"error_018_syscall_named_return.pa", ":1:18: "},
+		{"error_019_syscall_multi_return.pa", ":1:18: "},
+		{"error_020_syscall_multi_return_inherit.pa", ":1:18: "},
+	};
+	for (auto& c : cases) {
+		string out = execTestCommand(string("bin/palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
+		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
+		EXPECT_NE(out.find(c[1] + msg), string::npos) << out;
+	}
+}
+
 TEST(gen_ast_error, cinclude_local_path_injection) {
 	// Same shell-metacharacter-injection risk as cinclude_sys_path_injection
 	// above, for the "..." local-path branch (fs::path(base_dir) / resolved).

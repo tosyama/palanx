@@ -2002,33 +2002,6 @@ TEST(sa_error, syscall_too_many_params)
 	ASSERT_NE(sa.find("Linux syscall ABI supports at most 6"), string::npos);
 }
 
-TEST(sa_error, syscall_named_return)
-{
-	// A single named return (`-> int64 n`) is rejected too, not only
-	// multiple returns -- a syscall declaration has no body, so a return
-	// variable name carries no meaning.
-	// Covers: validateSyscallDecl rets guard, E_SyscallInvalidReturn
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_177_syscall_named_return.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("must declare its return with '-> type'"), string::npos);
-}
-
-TEST(sa_error, syscall_multi_return)
-{
-	// Covers: validateSyscallDecl rets guard, E_SyscallInvalidReturn (multi-return case)
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_178_syscall_multi_return.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("must declare its return with '-> type'"), string::npos);
-}
-
 TEST(sa_error, syscall_float_param)
 {
 	// flo32/flo64 do not fit in a GP register, which is all the Linux

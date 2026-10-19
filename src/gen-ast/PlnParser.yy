@@ -249,7 +249,7 @@ struct BodyList {
 %type <json>	var_declaration inherit_var_decl
 %type <PList<json>>	var_declarations
 %type <NodeRef>	func_def func_item syscall_decl
-%type <json>	return_def
+%type <json>	return_def syscall_ret ret_type
 %type <json>	return
 %type <vector<json>>	paramaters
 %type <PList<json>>	expressions
@@ -1131,16 +1131,12 @@ func_item: func_def
 
 // A syscall declaration binds a number to a name callable like any other
 // function (Linux syscall ABI, not System V -- see doc/SpecAndDesign.md).
-// "=" is otherwise unused between ')' and ';', so return_def's own optional
-// "= expr" tail (named-return initializer) is forced to fail at ';' instead
-// of surviving as a second GLR parse -- adding parameter defaults or an "="
-// expression operator would break this forced split.
-syscall_decl: KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
+syscall_decl: KW_SYSCALL ID '(' paramaters ')' syscall_ret '=' expression ';'
 	{
 		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "syscall"}, {"syscall-number", $8}}, $4, $6, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
 		$$ = leafNode(move(fn)); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
-	| KW_EXPORT KW_SYSCALL ID '(' paramaters ')' return_def '=' expression ';'
+	| KW_EXPORT KW_SYSCALL ID '(' paramaters ')' syscall_ret '=' expression ';'
 	{
 		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "syscall"}, {"syscall-number", $9}}, $5, $7, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
 		$$ = leafNode(move(fn)); // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1157,13 +1153,35 @@ return_def: /* empty */
 	{ }
 	| ARROW var_declarations
 	{ $$["rets"] = $2.toVector(); }
-	| ARROW type_expr
+	| ARROW ret_type
+	{ $$["ret-type"] = move($2); }
+	;
+
+// Named returns get no "= expr" initializer here: a syscall has no body to
+// use them in, and allowing one would collide with the syscall number's "=".
+syscall_ret: /* empty */
+	{ }
+	| ARROW ret_type
+	{ $$["ret-type"] = move($2); }
+	| ARROW syscall_named_rets
 	{
-		if (isDeclarableVarType($2)) {
-			$$["ret-type"] = move($2);
+		throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile,
+			@2.begin.line, @2.begin.column, PlnGenAstMessage::getMessage(E_SyscallNamedReturn)));
+	}
+	;
+
+syscall_named_rets: type_expr ID
+	| syscall_named_rets ',' type_expr ID
+	| syscall_named_rets ',' ID
+	;
+
+ret_type: type_expr
+	{
+		if (isDeclarableVarType($1)) {
+			$$ = move($1);
 		} else {
-			$$["ret-type"] = {{"not-impl", true}};
-			LOC($$["ret-type"], @2);
+			$$ = {{"not-impl", true}};
+			LOC($$, @1);
 		}
 	}
 	;

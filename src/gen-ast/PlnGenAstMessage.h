@@ -19,6 +19,7 @@ enum PlnMessageCode {
 	E_UnexpectedChar,		// character
 	E_InvalidCharLiteral,		// literal text
 	E_InvalidNumberLiteral,		// literal text
+	E_SyscallNamedReturn,
 };
 
 class PlnGenAstMessage

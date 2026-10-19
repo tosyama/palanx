@@ -1543,10 +1543,9 @@ TEST(gen_ast, syscall_decl) {
 	json jout = json::parse(output);
 
 	auto& funcs = jout["ast"]["functions"];
-	ASSERT_EQ(funcs.size(), 6u);  // write, exit, foo, bar, baz, main
+	ASSERT_EQ(funcs.size(), 4u);  // write, exit, foo, main
 
 	bool found_write = false, found_exit = false, found_foo = false;
-	bool found_bar = false, found_baz = false;
 	for (auto& f : funcs) {
 		if (f["name"] == "write") {
 			ASSERT_EQ(f["func-type"], "syscall");
@@ -1573,28 +1572,10 @@ TEST(gen_ast, syscall_decl) {
 			ASSERT_EQ(f["syscall-number"]["value"], "42");
 			found_foo = true;
 		}
-		if (f["name"] == "bar") {
-			// GLR-critical case: "-> int64 n = SYS_bar" must resolve as a
-			// named return, not as return_def's own "ID = expr" initializer.
-			ASSERT_TRUE(f.contains("rets"));
-			ASSERT_EQ(f["rets"].size(), 1u);
-			ASSERT_EQ(f["rets"][0]["name"], "n");
-			ASSERT_EQ(f["syscall-number"]["name"], "SYS_bar");
-			found_bar = true;
-		}
-		if (f["name"] == "baz") {
-			// GLR-critical case: multi-return followed by the mandatory "=".
-			ASSERT_TRUE(f.contains("rets"));
-			ASSERT_EQ(f["rets"].size(), 2u);
-			ASSERT_EQ(f["syscall-number"]["name"], "SYS_baz");
-			found_baz = true;
-		}
 	}
 	ASSERT_TRUE(found_write);
 	ASSERT_TRUE(found_exit);
 	ASSERT_TRUE(found_foo);
-	ASSERT_TRUE(found_bar);
-	ASSERT_TRUE(found_baz);
 
 	// root "export" array carries syscall-number too (no symbol to link
 	// against; the importer needs the number itself).

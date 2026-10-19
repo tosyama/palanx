@@ -679,11 +679,6 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 		                                  to_string(funcDef["parameters"].size())) << endl;
 		exit(1);
 	}
-	if (funcDef.contains("rets")) {
-		cerr << locPrefix(funcDef)
-		     << PlnSaMessage::getMessage(E_SyscallInvalidReturn, funcName) << endl;
-		exit(1);
-	}
 
 	// The Linux syscall ABI has no sub-word argument/return slot: every GP
 	// register is read/written in full, so a narrower declared type would
