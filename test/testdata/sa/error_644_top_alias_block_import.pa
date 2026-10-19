@@ -1,0 +1,4 @@
+type MyInt = int32;
+{
+	import "lib_sa_types.pa";
+}

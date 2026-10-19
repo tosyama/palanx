@@ -2975,6 +2975,11 @@ TEST(sa_error, import_type)
 		{"error_571_block_import_qualified_outside.pa", ":4:1: error: unknown type 'V.Vec'."},
 		// PP is lib's P, a different type from main's P of the same name.
 		{"error_641_import_alias_private_type.pa", ":4:1: error: cannot convert '@!P' to '@!P'."},
+		// An import making a name writable still clashes with a local type of that name.
+		{"error_642_block_local_then_import.pa", ":3:2: error: type 'Vec' is already defined."},
+		{"error_643_top_local_block_import.pa", ":3:2: error: type 'Vec' is already defined."},
+		{"error_644_top_alias_block_import.pa", ":3:2: error: type 'MyInt' is already defined."},
+		{"error_645_hidden_after_block_local.pa", ":6:1: error: type 'Vec' requires a module alias qualifier: 'V.Vec'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

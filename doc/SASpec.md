@@ -176,12 +176,15 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     unbound. Writing an unbound Palan type name is `E_UnqualifiedAliasType` (imported
     under an alias) or `E_UnknownType`. C types are copied without binding; they are
     global as in C and written by their own name.
-  - Type names are program-wide identities (build-mgr keys struct allocators by them).
-    Each Palan type name records its defining module, so the same name from a second
-    module, or a local declaration of an imported name, is `E_DuplicateTypeName`.
+  - Struct and enum names are program-wide identities (build-mgr keys struct allocators
+    by them). Each records its defining module, so the same name from a second module,
+    or one a C type has, is `E_DuplicateTypeName`. An alias has no program-wide name.
     An exported struct/enum keeps its written name. One that is not exported, or is
     declared in a block, is named `__pln_L<module hash>_<seq>_<Name>` in sa.json, so
     modules and blocks may each declare their own; a message shows the written name.
+  - A type declaration clashes only with names written in its scope: a type an import
+    makes writable, a C type, a const, or another declaration. An imported type that is
+    not writable does not clash.
 - type-alias statements are consumed by SA and not emitted; the aliased type is
   resolved where the alias is declared, so its names keep meaning the types they
   named there, and inlined at each reference site (see Type Aliases in

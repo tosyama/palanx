@@ -1,0 +1,8 @@
+import getX from "lib_sa_types.pa";
+type Vec { int32 a; };
+type Inner { int64 b; int64 c; };
+Vec p; Inner i;
+func f() {
+	import "lib_sa_types.pa" as V;
+	V.Vec v; Vec w;
+}

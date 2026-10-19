@@ -126,9 +126,9 @@ class PlnSemanticAnalyzer {
 	// null for a cinclude'd C enum (whose first definition wins).
 	struct EnumDef { map<string, int64_t> values; json loc; };
 	map<string, EnumDef>   enumDefs_;
-	// Defining module of each Palan type name. Type names are program-wide
-	// identities (build-mgr keys struct allocators by them), so a name may come
-	// from one module only. A C type has no entry.
+	// Defining module of each Palan struct and enum name. These names are
+	// program-wide identities (build-mgr keys struct allocators by them), so a
+	// name may come from one module only. A C type or an alias has no entry.
 	map<string, string>    typeOrigins_;
 	// Imported type names source may not write unqualified -> the module
 	// alias to write them with.
@@ -239,7 +239,9 @@ class PlnSemanticAnalyzer {
 	// another module or a cincluded header defined it.
 	bool claimTypeName(const string& name, const string& origin, const json& locNode);
 	void declareTypeName(const string& name, const json& stmt);
-	void requireNotPalanType(const string& name, const json& locNode) const;
+	void requireNotPalanType(const string& name, const json& locNode, bool isStruct) const;
+	// Binds a type an import makes writable; exits if the name is bound to another type.
+	void bindImportedTypeName(const json& locNode, const string& name, const json& type);
 	// Exits if `written` names a Palan type this scope cannot write.
 	void requireWritableTypeName(const json& locNode, const string& written) const;
 	void sa_import(const json &stmt);
@@ -330,7 +332,7 @@ class PlnSemanticAnalyzer {
 	void leaveBlockDecls();
 	string declaredTypeName(const string& written) const;
 	bool isDeclNameTaken(const string& name) const;
-	bool isNameRegistered(const string& name) const;  // isDeclNameTaken but for topDecls_
+	bool isWrittenNameTaken(const string& name) const;  // isDeclNameTaken but for topDecls_
 	static void addDeclaredVarNames(const json& stmt, set<string>& names);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	void registerCStruct(const json& cincludeStmt, const json& s);  // consume c2ast "structs" entry, register in structDefs_

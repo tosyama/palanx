@@ -1,0 +1,4 @@
+type Vec { int32 a; };
+{
+	import "lib_sa_types.pa";
+}

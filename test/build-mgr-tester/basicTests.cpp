@@ -3142,3 +3142,10 @@ TEST(build_mgr, qualified_type_entries) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/306_qualified_type_entries.pa");
 	ASSERT_EQ(output, "5 6 2 8 16\n");
 }
+
+TEST(build_mgr, import_hidden_type_name_reuse) {
+	cleanTestEnv();
+	// main's R coexists with lib's R, written only as V.R or reached through S.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/307_import_hidden_type_name_reuse.pa");
+	ASSERT_EQ(output, "1 2 30000000000\n7 5\n");
+}

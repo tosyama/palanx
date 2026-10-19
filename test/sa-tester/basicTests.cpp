@@ -5146,6 +5146,49 @@ TEST(sa, import_type_selective)
 	ASSERT_EQ(jout["statements"][1]["vars"][0]["init"]["name"], "getX");
 }
 
+// The var-decl of `name` among `stmts`: its declared type, and its calloc'd size if a struct.
+static pair<json, string> declaredVar(const json& stmts, const string& name)
+{
+	for (auto& st : stmts)
+		for (auto& v : st.value("vars", json::array()))
+			if (v["name"] == name) {
+				const json& init = v.value("init", json::object());
+				return {v["var-type"], init.contains("args") ? init["args"][1]["value"].get<string>() : ""};
+			}
+	return {json(), ""};
+}
+
+TEST(sa, import_hidden_type_name_reuse)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = written(run_sa("../test/testdata/sa/278_import_hidden_type_name_reuse.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// V.Vec is lib's 24-byte Vec, Vec main's own.
+	ASSERT_EQ(declaredVar(stmts, "v").second, "24");
+	ASSERT_EQ(declaredVar(stmts, "w").second, "4");
+	ASSERT_EQ(declaredVar(stmts, "m").first["type-name"], "int32");
+	ASSERT_EQ(declaredVar(stmts, "n").first["type-name"], "int64");
+	const auto& body = jout["functions"][0]["body"];
+	ASSERT_EQ(declaredVar(body, "c").second, "8");
+	ASSERT_EQ(declaredVar(body, "d").first["enum"], "Color");
+}
+
+TEST(sa, import_dep_type_name_reuse)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = written(run_sa("../test/testdata/sa/279_import_dep_type_name_reuse.pa"));
+	ASSERT_TRUE(jout.is_object());
+	// getX brings lib's Vec and Inner along, without making them writable.
+	ASSERT_EQ(declaredVar(jout["statements"], "p").second, "4");
+	ASSERT_EQ(declaredVar(jout["statements"], "i").second, "16");
+	const auto& body = jout["functions"][0]["body"];
+	ASSERT_EQ(declaredVar(body, "v").second, "24");
+	ASSERT_EQ(declaredVar(body, "w").second, "4");
+}
+
 TEST(sa, import_type_diamond)
 {
 	cleanTestEnv();

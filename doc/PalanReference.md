@@ -1125,8 +1125,11 @@ flo32 l = len2(@p);
 - A selective import lists types alongside functions: `import vec3, len2 from "vec3.pa";`.
 - An exported type may use the declaring file's non-exported types, consts, and cincluded
   headers; those are not made nameable in the importing file.
-- A type name must be unique in the program: declaring or importing a type whose name another
-  file already defines is a compile error.
+- An exported struct or enum name is shared by the whole program: two files exporting the
+  same name is a compile error once one file reaches both.
+- A file may declare a type with the name of an imported type it cannot write unqualified
+  (one imported as `V.T`, or only brought along by another imported type). Declaring a type
+  with a name an import makes writable is a compile error.
 - Two files may import each other and use each other's types anywhere, including in type
   declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
 

@@ -865,9 +865,8 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 		if (t != "struct-def" && t != "enum-def" && t != "type-alias" && t != "const-decl") continue;
 		string name = stmt["name"].get<string>();
 		bool localType = (t == "struct-def" || t == "enum-def") && !stmt.value("export", false);
-		bool clash = topDecls_.at(name).stmt != &stmt;
-		if (t == "const-decl") clash = clash || isNameRegistered(name) || vars.count(name);
-		if (localType) clash = clash || isNameRegistered(name);
+		bool clash = topDecls_.at(name).stmt != &stmt || isWrittenNameTaken(name);
+		if (t == "const-decl") clash = clash || vars.count(name);
 		if (clash) {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(
 				t == "const-decl" ? E_DuplicateConstDecl : E_DuplicateTypeName, name) << endl;
@@ -1037,7 +1036,7 @@ const json& PlnSemanticAnalyzer::result()
 // policy as a native "type X = ...;" alias.
 void PlnSemanticAnalyzer::registerTypeAliasChecked(const json& locNode, const string& aliasName, const json& resolved)
 {
-	requireNotPalanType(aliasName, locNode);
+	requireNotPalanType(aliasName, locNode, false);
 	auto it = typeAliases_.find(aliasName);
 	if (it == typeAliases_.end()) {
 		typeAliases_[aliasName] = resolved;
