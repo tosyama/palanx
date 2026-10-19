@@ -54,11 +54,19 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		return {true, "", 0, move(sa_idx), struct_name};
 	}
 	if (obj.value("expr-type","") != "field-access") {
-		// Reachable via a chain rooted in a non-addressable base: a call/tuple
-		// grouping normalizes to "not-impl" (see storeLocToExpr and term's
-		// '(' tapple_inner ')' rule), which has neither "object" nor "field".
-		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
-		exit(1);
+		json saBase = sa_expression(obj);
+		requireOwnedBase(saBase, obj);
+		json vt = saBase.value("value-type", json::object());
+		if (!isStructPntr(vt)) {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
+			exit(1);
+		}
+		if (forWrite && !isWritableThrough(vt)) {
+			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
+			exit(1);
+		}
+		string structName = vt["base-type"]["type-name"].get<string>();
+		return {true, "", 0, move(saBase), structName};
 	}
 	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
@@ -97,6 +105,23 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	return {true, "", 0, move(ptrNode), it->typeName};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A call result can be indexed or have its fields accessed only when something
+// else owns what it points to: nothing would release an owned struct or array
+// a call returns, and a borrow of a temp given to the call outlives that temp.
+void PlnSemanticAnalyzer::requireOwnedBase(const json& saBase, const json& locNode)
+{
+	if (holdsCallTemps(saBase)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
+		exit(1);
+	}
+	json vt = saBase.value("value-type", json::object());
+	if (vt.value("type-kind", "") == "struct"
+	    || (saBase.value("category", "") == "expiring" && !isPtrBorrow(vt))) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnownedCallResult) << endl;
+		exit(1);
+	}
+}
 
 const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode)
 {
@@ -1510,6 +1535,7 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 		: arr_kind == "field-access" ? sa_expr_field_access(arr, true)
 		: arr_kind == "arr-index"    ? sa_expr_arr_index(arr, true)
 		: sa_expression(arr);
+	requireOwnedBase(sa_array, arr);
 	const json& array_type = sa_array["value-type"];
 	if (array_type.value("type-kind", "") != "pntr") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_NotArrayType) << endl;

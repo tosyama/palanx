@@ -1264,7 +1264,8 @@ and `return` of a stack struct returns a copy. `return` of a stack array is E_Re
 ```
 
 `ptr-expr` is present when the field chain passes through an owned (`T`) or non-owning (`@T`/`@!T`)
-struct pointer field. It is an expression that loads the intermediate pointer; `offset` is then applied
+struct pointer field, or starts from an expression other than a variable (a call returning
+`@T`/`@!T`, a cast). It is an expression that gives the intermediate pointer; `offset` is then applied
 relative to that pointer. When `ptr-expr` is present, `var` is absent; when `var` is present, `ptr-expr`
 is absent.
 

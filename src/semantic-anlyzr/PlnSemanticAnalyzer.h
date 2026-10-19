@@ -426,6 +426,7 @@ class PlnSemanticAnalyzer {
 	void  applyPlnCalleeSig(json& sa_expr, const json& pFunc);
 	json sa_field_assign(const json& stmt);  // returns json::array()
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
+	void requireOwnedBase(const json& saBase, const json& locNode);
 	json makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value);
 	json makeFieldAccess(const FieldChain& chain, const FieldLayout& field);
 	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);

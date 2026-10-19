@@ -1,0 +1,4 @@
+type P { int32 a; };
+func mk() -> P r { }
+func view(@P p) -> @P r { p -> r; }
+int32 x = view(@mk()).a;

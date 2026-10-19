@@ -1,0 +1,3 @@
+type P { int32 a; };
+func mk() -> P r { }
+5 -> mk().a;

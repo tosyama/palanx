@@ -863,8 +863,8 @@ TEST(gen_ast, addr_of_call) {
 	ASSERT_EQ(rw["mutable"], true);
 	ASSERT_EQ(rw["object"]["expr-type"], "call");
 
-	// Only a whole call is borrowed; a call as an index base and a cast stay unsupported.
-	ASSERT_EQ(stmts[2]["body"]["args"][0]["object"]["array"]["expr-type"], "not-impl");
+	// A call as an index base is an ordinary expression; a type-name cast stays unsupported.
+	ASSERT_EQ(stmts[2]["body"]["args"][0]["object"]["array"]["expr-type"], "call");
 	ASSERT_EQ(stmts[3]["body"]["args"][0]["object"]["expr-type"], "not-impl");
 }
 
@@ -1302,6 +1302,33 @@ TEST(gen_ast, cinclude_same_line) {
 	ASSERT_EQ(paths, (vector<string>{"stdio.h", "stdlib.h"}));
 	ASSERT_TRUE(found_printf);
 	ASSERT_TRUE(found_malloc);
+}
+
+TEST(gen_ast, expr_rooted_access) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/144_expr_rooted_access.pa");
+	ASSERT_TRUE(checkerr(output));
+	json stmts = json::parse(output)["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	json a = stmts[0]["vars"][0]["init"];
+	ASSERT_EQ(a["expr-type"], "field-access");
+	ASSERT_EQ(a["object"]["expr-type"], "call");
+
+	json b = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(b["expr-type"], "arr-index");
+	ASSERT_EQ(b["array"]["expr-type"], "call");
+
+	json c = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(c["expr-type"], "field-access");
+	ASSERT_EQ(c["object"]["expr-type"], "member-call");
+	ASSERT_EQ(c["object"]["object"]["expr-type"], "call");
+
+	ASSERT_EQ(stmts[3]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[3]["target"]["array"]["expr-type"], "id");
+
+	ASSERT_EQ(stmts[4]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[4]["object"]["expr-type"], "call");
 }
 
 TEST(gen_ast, cinclude_constant) {

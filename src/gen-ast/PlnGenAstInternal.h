@@ -17,6 +17,8 @@ using std::string;
 inline json storeLocToExpr(const json& loc)
 {
 	string kind = loc.value("kind", "");
+	if (kind == "call") return loc["call"];
+	if (kind == "expr") return loc["expr"];
 	json e;
 	if (kind == "var") {
 		e = {{"expr-type", "id"}, {"name", loc["name"]}};
@@ -27,18 +29,11 @@ inline json storeLocToExpr(const json& loc)
 		e = {{"expr-type", "field-access"},
 		     {"object", storeLocToExpr(loc["base"])}, {"field", loc["field"]}};
 	} else {
-		// A call is only a whole '@' operand (addrOfObject); as the base of an
-		// index or field, or as a store target, it stays unsupported.
 		e = {{"expr-type", "not-impl"}};
 	}
 	if (loc.contains("loc")) e["loc"] = loc["loc"];
 	return e;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
-
-inline json addrOfObject(const json& loc)
-{
-	return loc.value("kind", "") == "call" ? loc["call"] : storeLocToExpr(loc);
-}
 
 inline bool isAssignExpr(const json& e)
 {

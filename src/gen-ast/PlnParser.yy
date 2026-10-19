@@ -250,7 +250,7 @@ struct BodyList {
 %type <PList<string>>	import_ids link_libs
 %type <vector<string>>	link_clause
 %type <string>	import_as
-%type <json>	expression func_call term store_loc
+%type <json>	expression term store_loc
 %type <PList<json>>	arguments
 %type <json>	array_desc array_row dict_desc
 %type <PList<json>>	array_rows array_items dict_items
@@ -797,8 +797,6 @@ interface_methods: /* empty */
 
 expression: term
 	{ $$ = move($1); }
-	| func_call
-	{ $$ = move($1); }
 	| array_desc
 	{ $$ = move($1); }
 	| dict_desc
@@ -848,9 +846,9 @@ expression: term
 	| '!' expression
 	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); }
 	| '@' store_loc %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "addr-of"}, {"object", addrOfObject($2)}, {"mutable", false}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", false}}; LOC($$, @$); }
 	| AT_EXCL store_loc %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "addr-of"}, {"object", addrOfObject($2)}, {"mutable", true}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", true}}; LOC($$, @$); }
 	| '@' array_desc %prec UNARY_MINUS
 	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", false}}; LOC($$, @$); }
 	| AT_EXCL array_desc %prec UNARY_MINUS
@@ -959,6 +957,31 @@ term: INT
 		$$ = {{"expr-type", "arr-index"}, {"array", move($1)}, {"index", move($3)}};
 		LOC($$, @$);
 	}
+	| ID '(' arguments ')'
+	{
+		if (typeNames.count($1)) {
+			if ($3.size == 1) {
+				$$ = {{"expr-type",   "cast"},
+				      {"target-type", {{"type-kind", "prim"}, {"type-name", move($1)}}},
+				      {"src",         $3.last->item}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				LOC($$, @$);
+			} else {
+				$$ = {{"expr-type", "not-impl"}};
+				LOC($$, @$);
+			}
+		} else {
+			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			LOC($$, @$);
+		}
+	}
+	| term '.' ID '(' arguments ')'
+	{
+		$$ = {{"expr-type", "member-call"},
+		      {"object", move($1)},
+		      {"method", move($3)},
+		      {"args", $5.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		LOC($$, @$);
+	}
 	;
 
 tapple_inner: expression
@@ -978,33 +1001,6 @@ tapple_inner: expression
 	}
 	| tapple_inner ',' '-'
 	{ $$ = {{"not-impl", true}}; }
-	;
-
-func_call: ID '(' arguments ')'
-	{
-		if (typeNames.count($1)) {
-			if ($3.size == 1) {
-				$$ = {{"expr-type",   "cast"},
-				      {"target-type", {{"type-kind", "prim"}, {"type-name", move($1)}}},
-				      {"src",         $3.last->item}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-				LOC($$, @$);
-			} else {
-				$$ = {{"expr-type", "not-impl"}};
-				LOC($$, @$);
-			}
-		} else {
-			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-			LOC($$, @$);
-		}
-	}
-	| expression '.' ID '(' arguments ')'
-	{
-		$$ = {{"expr-type", "member-call"},
-		      {"object", move($1)},
-		      {"method", move($3)},
-		      {"args", $5.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		LOC($$, @$);
-	}
 	;
 
 arguments: /* empty */
@@ -1089,7 +1085,9 @@ store_loc
 	| '(' tapple_inner ')'
 	{
 		$$ = {{"kind", "not-impl"}};
-		if ($2.count("tapple-items")) {
+		if (!$2.count("tapple-items") && !$2.count("not-impl")) {
+			$$ = {{"kind", "expr"}, {"expr", move($2)}};
+		} else if ($2.count("tapple-items")) {
 			bool all_ok = true;
 			for (auto& t : $2["tapple-items"]) {
 				string et = t.value("expr-type", "");
@@ -1099,9 +1097,9 @@ store_loc
 		}
 		LOC($$, @$);
 	}
-	// Not func_call: its member-call form starts from an arbitrary expression,
-	// which let every `-> x[i]` also parse as the object of a pending `.f()`
-	// and split the GLR parse exponentially along an assignment chain.
+	// Not term's call rules: a term-rooted member call would let every `-> x[i]`
+	// also parse as the object of a pending `.f()` and split the GLR parse
+	// exponentially along an assignment chain.
 	| ID '(' arguments ')'
 	{
 		$$ = {{"kind", "not-impl"}};
@@ -1115,7 +1113,7 @@ store_loc
 	| store_loc '.' ID '(' arguments ')'
 	{
 		$$ = {{"kind", "not-impl"}};
-		json obj = addrOfObject($1);
+		json obj = storeLocToExpr($1);
 		if (obj.value("expr-type", "") != "not-impl") {
 			$$ = {{"kind", "call"},
 			      {"call", {{"expr-type", "member-call"}, {"object", move(obj)},

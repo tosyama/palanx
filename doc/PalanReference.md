@@ -214,9 +214,9 @@ ownership — and a struct value can't be cast into a pointer: take its address 
 
 `as` binds tighter than every binary operator and looser than a unary one: `p as @!int32 == NULL`
 compares the cast pointer, `a + b as int64` casts only `b`, and `-x as uint32` casts `-x`.
-Indexing binds tighter than `as`, so index a cast pointer as `(p as @!int32)[0]`. The result of a
-cast can be read and indexed, but writing through it (`5 -> (p as @!int32)[0]`) or accessing a
-field of it is not supported in this version: bind it to a variable first.
+Indexing binds tighter than `as`, so index a cast pointer as `(p as @!int32)[0]`. A cast result
+can be indexed, have its fields accessed, and be written through like a variable of that type:
+`5 -> (p as @!int32)[0]`, `(v as @P).a`.
 
 ### Usual Arithmetic Conversions (Binary Operators and Comparisons)
 
@@ -1864,6 +1864,19 @@ Point p;
 20 -> p.y;
 printf("%ld %ld\n", p.x, p.y);   // 10 20
 ```
+
+A field access or an index can start from any expression that gives a struct or array reference,
+not only a variable: a cast, a parenthesized expression, or a call returning a `@T`/`@!T` (a C
+function returning a pointer, too). Writing through it follows that reference's permission.
+
+```palan
+3 -> view(@!p).x;                       // view returns @!Point
+printf("%d\n", gmtime(@t).tm_year);     // gmtime returns @!tm
+```
+
+A call returning an owned struct (`T`) or a C struct by value has nothing that would free the
+result, so `mk().x` and `div(7, 2).quot` are compile errors: receive the result into a variable
+with `->` first.
 
 - **Memory management**: heap-allocated (zero-initialized); automatically freed at scope exit.
   With `$` (`$Point p;`) the struct is placed in the stack frame instead; see

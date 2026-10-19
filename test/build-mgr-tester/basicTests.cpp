@@ -3149,3 +3149,11 @@ TEST(build_mgr, import_hidden_type_name_reuse) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/307_import_hidden_type_name_reuse.pa");
 	ASSERT_EQ(output, "1 2 30000000000\n7 5\n");
 }
+
+TEST(build_mgr, expr_rooted_access) {
+	cleanTestEnv();
+	// Indexing, field access and their writes rooted in a cast, a parenthesized
+	// expression or a call returning a pointer.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/308_expr_rooted_access.pa");
+	ASSERT_EQ(output, "7 8 8\n10\n10 11\n12\n1970\n1\n");
+}

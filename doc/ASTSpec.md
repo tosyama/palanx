@@ -426,7 +426,8 @@ Statement model
     - value\* - Literal expression model (lit-int, lit-uint, lit-flo, or lit-str; see Expression model)
   10. field-assign - struct field assignment (`value -> obj.field` or `value ->> obj.field`)
     - object\* - Base object expression model: `id` for a plain variable, `arr-index` or
-      `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`)
+      `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`), or any other expression
+      the chain starts from (a call, a cast in parentheses)
     - field\*  - Field name string
     - value\*  - Source expression model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
@@ -536,9 +537,8 @@ Expression model
     - operand\* - Operand expression model
   16. field-access - Struct field read (`obj.field` rvalue). An enumerator reference `Name.X` has
     the same shape (`object` is the `id` `Name`); SA tells them apart.
-    - object\* - Base object expression model: `id` for a plain variable, or `arr-index`/
-      `field-access` for a nested chain (e.g. `s.f[0].sub`, `pts[0].x`) — same object vocabulary
-      as field-assign's `object` (see Statement model above)
+    - object\* - Base object expression model — same vocabulary as field-assign's `object` (see
+      Statement model above)
     - field\*  - Field name string
   17. member-call - `x.f(args)`: a module-alias call `L.f(args)` or a method-form call
     `aa.f(args)` (`f(@!aa, args)`); gen-ast does not tell them apart (consumed by SA, not
@@ -552,23 +552,23 @@ Expression model
       element reached from one (`@` read-only, `@!`/`AT_EXCL` mutable). The operand grammar is
       `store_loc` — the same vocabulary the right side of `->` accepts (a bare identifier, a
       `.`-chain of field accesses, a `[expr]` index, a parenthesized tuple, or a call `f(...)` /
-      `x.f(...)` whose object is itself one of these) — so `@s.x`,
+      `x.f(...)` whose object is itself one of these, or a parenthesized expression) — so `@s.x`,
       `@!s.in.v`, and `@arr[i]` all parse — or an array literal or `{name: value}` literal
       (`@[1, 2]`, `@![1, 2][3, 4]`, `@{x: 1}`); SA decides in sa.json whether the target is
       addressable (see SASpec.md). `@` binds looser than `.`, so `@x.f()` is `@(x.f())`, never
       `(@x).f()`.
-    - object\* - Operand expression: `arr-lit` or `dict-lit` for a literal, otherwise one of six
-      shapes depending on which `store_loc` alternative was used: `id` for a plain variable, `field-access` for a `.`-chain (nested
+    - object\* - Operand expression: `arr-lit` or `dict-lit` for a literal, otherwise the shape
+      the `store_loc` alternative gives: `id` for a plain variable, `field-access` for a `.`-chain (nested
       chains produce nested `field-access` objects), `arr-index` for a `[expr]`-indexed target,
-      `call` for a whole call `f(...)` (`@f()`), `member-call` for a whole method-form or
-      module-qualified call `x.f(...)` (`@v.f()`, `@M.f()`, `@f().g()`), or `not-impl` for
-      anything else (a tuple grouping, a call as an index or field base — SA rejects these
-      without needing to inspect their shape further)
+      `call` for a call `f(...)` (`@f()`), `member-call` for a method-form or module-qualified
+      call `x.f(...)` (`@v.f()`, `@M.f()`, `@f().g()`), the inner expression for a parenthesized
+      one (`@(x)`), or `not-impl` for a tuple grouping or a type-name cast `@int32(x)`. A call or
+      a parenthesized expression may also be the base of the chain (`@f().x`, `@(p as @!P).x`).
     - mutable\* - `true` for `@!`, `false` for `@`
   19. not-impl - An expression the grammar parses but the compiler does not implement (e.g. a
       tuple `(a, b)` used as a value, `sizeof` of a `[#n]` type, a call argument `x>>`), or a `store_loc` shape that
-      carries no addressable location (a parenthesized tuple or a bare function call reached via
-      `@`/`@!`, or `field-access`'s chain root when it isn't itself addressable). Carries no
+      carries no addressable location (a parenthesized tuple, or a type-name cast `int32(x)`, reached via
+      `@`/`@!` or as a chain root). Carries no
       fields beyond `expr-type` and `loc`; SA rejects any expression of this shape.
   20. bitand - Binary bitwise AND (`a & b`; integer operands only)
     - left\*  - Left operand expression model

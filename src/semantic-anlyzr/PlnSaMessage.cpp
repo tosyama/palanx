@@ -537,6 +537,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       "which is freed before the statement ends; receive the struct into a variable "
 			       "with '->' and pass it as '@name' or '@!name'.";
 
+		case E_UnownedCallResult:
+			return "a struct or array returned by a call has no owner to access it through; "
+			       "receive it into a variable with '->' first.";
+
 		case E_AssignInExpr:
 			return "an assignment cannot be used inside an expression; write it as its own statement.";
 
