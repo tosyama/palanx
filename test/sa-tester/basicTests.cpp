@@ -3762,10 +3762,9 @@ TEST(sa, addr_of_2d_elem)
 
 TEST(sa, ptr_decl_alias_pointee)
 {
-	// `type MyInt = int64; @MyInt p = @a;` -- deepNormalizePrimToStruct
-	// re-applies resolveTypeAlias at every level of a pntr chain, so an
-	// alias used as a pointee resolves to its underlying type instead of
-	// reaching PlnTypeRegistry::fromJson unresolved (which used to abort with
+	// `type MyInt = int64; @MyInt p = @a;` -- an alias used as a pointee
+	// resolves to its underlying type instead of reaching
+	// PlnTypeRegistry::fromJson unresolved (which used to abort with
 	// "unknown prim type-name: MyInt").
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/157_ptr_decl_alias_pointee.pa");
@@ -3784,9 +3783,8 @@ TEST(sa, struct_type_alias)
 	// type-kind/type-name, so a struct reached only through an alias name
 	// ("PT") never matched structDefs_.count() and silently fell through to
 	// the plain scalar var-decl path, which declares the variable but never
-	// allocates its storage. resolveTypeAliasDeep now resolves the alias
-	// before dispatch, so this reaches sa_struct_var_decl the same way a
-	// direct `Point p;` would.
+	// allocates its storage. The alias is resolved before dispatch, so this
+	// reaches sa_struct_var_decl the same way a direct `Point p;` would.
 	cleanTestEnv();
 	json jout = written(run_sa("../test/testdata/sa/160_struct_type_alias.pa"));
 	ASSERT_TRUE(jout.is_object());

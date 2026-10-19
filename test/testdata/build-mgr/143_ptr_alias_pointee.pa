@@ -1,9 +1,7 @@
 cinclude <stdio.h>;
 
-// deepNormalizePrimToStruct used to only resolve prim(Name) -> struct(Name)
-// via structDefs_, without re-applying resolveTypeAlias at each level of a
-// pntr chain, so a type alias or C typedef used as a pointee reached
-// PlnTypeRegistry::fromJson unresolved and aborted with "unknown prim
+// A type alias or C typedef used as a pointee used to reach
+// PlnTypeRegistry::fromJson unresolved and abort with "unknown prim
 // type-name: ...". Both previously aborted (rc=134):
 type MyInt = int64;
 int64 a = 42;

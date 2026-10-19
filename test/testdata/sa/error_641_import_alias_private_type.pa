@@ -1,0 +1,4 @@
+import "lib_sa_private_alias.pa";
+type P { int64 b; };
+P p;
+PP r = @!p;

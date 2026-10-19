@@ -92,7 +92,7 @@ class PlnSemanticAnalyzer {
 	PlnTypeRegistry registry_;
 	map<string, string> strLiteralLabels;  // value -> label
 	const json*       currentFunc_    = nullptr;  // null = _start level
-	const json*       currentFuncDef_ = nullptr;  // currentFunc_'s types as written in source
+	const json*       currentFuncDef_ = nullptr;  // currentFunc_'s types resolved, not normalized
 	int               loopDepth_     = 0;        // nesting depth of while loops
 	size_t            funcBodyScopeIdx_ = 0;     // 0 = top-level (no function)
 
@@ -115,7 +115,9 @@ class PlnSemanticAnalyzer {
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
-	// Registered type aliases (name -> fully-resolved base type json)
+	// Written type name -> the type it names in this scope, in program-wide
+	// names: aliases, C typedefs, enums, and every Palan struct source may
+	// write here. An unbound C struct is written by its program-wide name.
 	map<string, json>      typeAliases_;
 	// cinclude'd C typedefs (name -> var-type, its own references resolved), for
 	// resolving a later header's "user" reference to one of them.
@@ -128,9 +130,8 @@ class PlnSemanticAnalyzer {
 	// identities (build-mgr keys struct allocators by them), so a name may come
 	// from one module only. A C type has no entry.
 	map<string, string>    typeOrigins_;
-	// Imported type names source may not write unqualified: the module alias
-	// to write them with, or "" for a type that was not selected or not
-	// exported, registered only because an imported type depends on it.
+	// Imported type names source may not write unqualified -> the module
+	// alias to write them with.
 	map<string, string>    hiddenTypeNames_;
 	// A top-level struct/enum/alias/const declaration, resolved when first
 	// needed, so neither source order nor which of two files importing each
@@ -233,13 +234,14 @@ class PlnSemanticAnalyzer {
 	void adoptEnum(const PlnSemanticAnalyzer& sub, const string& name, bool nameable, const string& alias,
 	               const json& locNode);
 	void adoptTypeDeps(PlnSemanticAnalyzer& sub, const json& type, const json& locNode);
-	void setTypeNameable(const string& name, bool isNew, bool nameable, const string& alias);
+	void setTypeNameable(const string& name, bool nameable, const string& alias);
 	// Records `name` as defined by `origin`; false if it already was, exits if
 	// another module or a cincluded header defined it.
 	bool claimTypeName(const string& name, const string& origin, const json& locNode);
 	void declareTypeName(const string& name, const json& stmt);
 	void requireNotPalanType(const string& name, const json& locNode) const;
-	void requireNameableType(const json& locNode, const json& type) const;
+	// Exits if `written` names a Palan type this scope cannot write.
+	void requireWritableTypeName(const json& locNode, const string& written) const;
 	void sa_import(const json &stmt);
 	void sa_cinclude(const json &stmt);
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
@@ -295,6 +297,8 @@ class PlnSemanticAnalyzer {
 	json sa_expression_stmt(const json& stmt);
 	json discardedValueStmt(const json& stmt, json body);
 	json sa_var_decl(const json& stmt);           // returns array of statements
+	// sa_var_decl for var-types already resolved (absent storage = heap).
+	json sa_resolved_var_decl(const json& stmt, vector<VarStorage> storage = {});
 	// all vars share one var-type; returns array of statements
 	json sa_var_decl_group(const json& stmt, VarStorage storage);
 	json sa_arr_var_decl(const json& stmt, VarStorage storage);       // returns array of statements
@@ -343,7 +347,7 @@ class PlnSemanticAnalyzer {
 	json aliasCast(const json& expr, const string& typeName);
 	json sa_expr_cast(const json& expr);
 	json resolveEnumerator(const json& expr);     // `Name.X` as a lit-int, or null for a field access
-	int64_t typeByteSize(const json& locNode, const json& type);  // `sizeof(type)`
+	int64_t typeByteSize(const json& locNode, json type);  // `sizeof(type)`, type resolved
 	void recordAllocShape(const string& structName);
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
 	json makeStructFreeStmt(const string& name, const json& pntrType);
@@ -351,14 +355,14 @@ class PlnSemanticAnalyzer {
 	pair<string, string> structFreeFunc(const string& structName);
 	json makeOwnedValueFreeStmt(json value);
 	bool isStructType(const json& type) const;
-	// True if `name` resolves to some type: a primitive, a registered struct, or a type alias.
+	// True if the program-wide name `name` is a primitive or a registered struct.
 	bool isKnownTypeName(const string& name) const;
 	// isKnownTypeName plus "void", valid only as a pointer pointee, never a standalone value type.
 	bool isKnownPointeeTypeName(const string& name) const;
 	// Exits with E_UnknownType if a name at the leaf of `type` (through arr/pntr levels) is unknown,
 	// or if a `$` element is not a struct or a `$[m]` row. Struct fields don't pass through here:
 	// a `[n]$int32` field is an inline array, which a variable has no counterpart of.
-	// `type` must be as written in source (see requireNameableType).
+	// `type` must be resolved (resolveWrittenType).
 	void requireKnownTypeNames(const json& locNode, const json& type) const;
 	// Exits unless each parameter/return of a function type is one a function
 	// pointer can carry (isFuncSigType) and names known types.
@@ -369,8 +373,15 @@ class PlnSemanticAnalyzer {
 	json  ptrSlotElemType(const json& locNode, const json& type);
 	void  normalizeUnsizedArrSig(json& funcDef);
 	json  deepNormalizePrimToStruct(const json& type) const;
-	json  resolveTypeAlias(const json& vtype) const;
-	json  resolveTypeAliasDeep(const json& vtype) const;
+	// The type a written name is bound to in this scope, or null.
+	const json* findTypeBinding(const string& written) const;
+	// A type as written in source -> the same type in program-wide names, at
+	// every level. Each written type passes through here exactly once.
+	json  resolveWrittenType(const json& locNode, const json& type) const;
+	// resolveWrittenType, then requireKnownTypeNames.
+	json  resolveKnownType(const json& locNode, const json& type) const;
+	// A function's parameter/return types resolved, before any normalization.
+	json  resolveSigTypes(const json& f) const;
 	// The canonical form of a signature type (an owned struct becomes pntr(struct)),
 	// also what a tapple-decl variable's declared type is compared in.
 	json  normalizeSigType(const json& type) const;

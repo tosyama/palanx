@@ -322,9 +322,6 @@ json PlnSemanticAnalyzer::discardedValueStmt(const json& stmt, json body)
 
 json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
-	// Resolve type-alias names (e.g. "FILE" -> struct "_IO_FILE") at every
-	// level before dispatching, so a struct reached only through an alias
-	// doesn't fall through to the plain scalar var-decl path below.
 	json stmt2 = stmt;
 	vector<VarStorage> storage;
 	for (auto& var : stmt2["vars"]) {
@@ -335,10 +332,14 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 			var["var-type"] = move(base);
 			storage.back() = VarStorage::Frame;
 		}
-		requireKnownTypeNames(stmt2, var["var-type"]);
-		var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
+		var["var-type"] = resolveKnownType(stmt2, var["var-type"]);
 	}
+	return sa_resolved_var_decl(stmt2, move(storage));
+}
 
+json PlnSemanticAnalyzer::sa_resolved_var_decl(const json& stmt2, vector<VarStorage> storage)
+{
+	storage.resize(stmt2["vars"].size(), VarStorage::Heap);
 	auto isArrInit = [](const json& var) {
 		return var["var-type"].value("type-kind", "") == "arr" && var.contains("init");
 	};
@@ -1194,10 +1195,7 @@ void PlnSemanticAnalyzer::leaveBlockDecls()
 	}
 	blockDeclNames_.pop_back();
 	// An imported type stays registered: a type the block used may depend on it.
-	for (auto& written : blockImportedTypes_.back()) {
-		if (written.find('.') != string::npos) typeAliases_.erase(written);
-		else hiddenTypeNames_[written] = "";
-	}
+	for (auto& written : blockImportedTypes_.back()) typeAliases_.erase(written);
 	blockImportedTypes_.pop_back();
 }
 
@@ -1231,13 +1229,14 @@ bool PlnSemanticAnalyzer::isNameRegistered(const string& name) const
 
 json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 {
-	string name = declaredTypeName(stmt["name"].get<string>());
+	string written = stmt["name"].get<string>();
+	string name = declaredTypeName(written);
 	declareTypeName(name, stmt);
+	// A local struct was bound to its program-wide name when declared.
+	typeAliases_.emplace(written, json{{"type-kind", "prim"}, {"type-name", name}});
 	json fields = stmt["fields"];
 	for (auto& f : fields) {
-		requireNameableType(stmt, f["var-type"]);
-		const json written = f["var-type"];
-		f["var-type"] = resolveTypeAliasDeep(f["var-type"]);
+		f["var-type"] = resolveWrittenType(stmt, f["var-type"]);
 		json& vt = f["var-type"];
 		if (vt.value("type-kind", "") == "arr" && !vt["size-expr"].is_null()) {
 			// A type is resolved before the variables of its block are declared.
@@ -1257,7 +1256,7 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		if (t->value("type-kind", "") != "pntr") continue;
 		string pointee = pointeeLeaf(*t).type->value("type-name", "");
 		bool laterDef = pointee == name || declaredStructs_.count(pointee);
-		if (!laterDef) requireKnownTypeNames(stmt, written);
+		if (!laterDef) requireKnownTypeNames(stmt, f["var-type"]);
 		json* leaf = const_cast<json*>(t);
 		while (leaf->value("type-kind", "") == "pntr") leaf = &(*leaf)["base-type"];
 		if (leaf->value("type-kind", "") == "func") *leaf = deepNormalizePrimToStruct(*leaf);
@@ -1385,10 +1384,7 @@ json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)
 {
 	string name = stmt["name"].get<string>();
 	declareTypeName(name, stmt);
-	requireNameableType(stmt, stmt["type"]);
-	// Resolve one level so chains of aliases (alias-of-alias) collapse to the
-	// base type at registration time; later lookups need only one map access.
-	typeAliases_[name] = resolveTypeAlias(stmt["type"]);
+	typeAliases_[name] = resolveWrittenType(stmt, stmt["type"]);
 	return json::array();
 }
 
@@ -1513,33 +1509,52 @@ void PlnSemanticAnalyzer::resolveCTypeRefs(json& node) const
 	for (auto& [key, val] : node.items()) resolveCTypeRefs(val);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::resolveTypeAlias(const json& vtype) const
+const json* PlnSemanticAnalyzer::findTypeBinding(const string& written) const
 {
-	if (vtype.value("type-kind", "") == "prim") {
-		string tname = vtype.value("type-name", "");
-		if (!structDefs_.count(tname)) {
-			auto it = typeAliases_.find(tname);
-			if (it != typeAliases_.end())
-				return it->second;
-		}
-	}
-	return vtype;
+	auto it = typeAliases_.find(written);
+	return it == typeAliases_.end() ? nullptr : &it->second;
 }
 
-// Like resolveTypeAlias, but also resolves alias names nested inside pntr/arr
-// wrappers (e.g. "[3]PT", "@!PT" or "$PT"). Unlike deepNormalizePrimToStruct, this
-// leaves a resolved name as "prim" rather than "struct", so callers' existing
-// structDefs_.count(type-name) checks keep working.
-json PlnSemanticAnalyzer::resolveTypeAliasDeep(const json& vtype) const
+// Every Palan type source may write here is bound in typeAliases_; an
+// unbound one is registered only as another type's dependency, or as `V.T`.
+void PlnSemanticAnalyzer::requireWritableTypeName(const json& locNode, const string& written) const
 {
-	json resolved = resolveTypeAlias(vtype);
-	string tk = resolved.value("type-kind", "");
-	if ((tk == "pntr" || tk == "arr" || tk == "embed") && resolved.contains("base-type"))
-		resolved["base-type"] = resolveTypeAliasDeep(resolved["base-type"]);
-	if (tk == "func") {
-		for (auto& p : resolved["parameters"]) p["var-type"] = resolveTypeAliasDeep(p["var-type"]);
-		resolved["ret-type"] = resolveTypeAliasDeep(resolved["ret-type"]);
+	if (typeAliases_.count(written) || !typeOrigins_.count(written)) return;
+	auto it = hiddenTypeNames_.find(written);
+	if (it == hiddenTypeNames_.end())
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, written) << endl;
+	else
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnqualifiedAliasType, written, it->second) << endl;
+	exit(1);
+}
+
+// A binding already holds program-wide names, so it is never looked up again:
+// in another scope the same string may name a different type. Leaves a name
+// as "prim" rather than "struct", so callers' structDefs_.count(type-name)
+// checks keep working.
+json PlnSemanticAnalyzer::resolveWrittenType(const json& locNode, const json& type) const
+{
+	string tk = type.value("type-kind", "");
+	if (tk == "prim") {
+		string tname = type.value("type-name", "");
+		requireWritableTypeName(locNode, tname);
+		const json* bound = findTypeBinding(tname);
+		return bound ? *bound : type;
 	}
+	json resolved = type;
+	if ((tk == "pntr" || tk == "arr" || tk == "embed") && type.contains("base-type"))
+		resolved["base-type"] = resolveWrittenType(locNode, type["base-type"]);
+	if (tk == "func") {
+		for (auto& p : resolved["parameters"]) p["var-type"] = resolveWrittenType(locNode, p["var-type"]);
+		resolved["ret-type"] = resolveWrittenType(locNode, resolved["ret-type"]);
+	}
+	return resolved;
+}
+
+json PlnSemanticAnalyzer::resolveKnownType(const json& locNode, const json& type) const
+{
+	json resolved = resolveWrittenType(locNode, type);
+	requireKnownTypeNames(locNode, resolved);
 	return resolved;
 }
 
@@ -1576,16 +1591,12 @@ void PlnSemanticAnalyzer::requireNotPalanType(const string& name, const json& lo
 	}
 }
 
-void PlnSemanticAnalyzer::setTypeNameable(const string& name, bool isNew, bool nameable, const string& alias)
+void PlnSemanticAnalyzer::setTypeNameable(const string& name, bool nameable, const string& alias)
 {
-	if (nameable) {
+	if (nameable)
 		hiddenTypeNames_.erase(name);
-	} else if (isNew) {
-		hiddenTypeNames_[name] = alias;
-	} else {
-		auto it = hiddenTypeNames_.find(name);
-		if (it != hiddenTypeNames_.end() && it->second.empty()) it->second = alias;
-	}
+	else if (!alias.empty() && !typeAliases_.count(name))
+		hiddenTypeNames_.emplace(name, alias);
 }
 
 // Registers the types `stmt` imports, as the exporting module resolved them.
@@ -1604,8 +1615,7 @@ void PlnSemanticAnalyzer::adoptExportedTypes(const json& stmt, const json& impAs
 		string name = d["name"].get<string>();
 		if (selective && !targets.count(name)) continue;
 		string written = alias.empty() ? name : alias + "." + name;
-		bool wasWritable = (structDefs_.count(written) || typeAliases_.count(written))
-			&& !hiddenTypeNames_.count(written);
+		bool wasWritable = typeAliases_.count(written);
 		adoptExportedType(stmt, d, sub);
 		if (!blockImportedTypes_.empty() && !wasWritable) blockImportedTypes_.back().push_back(written);
 	}
@@ -1629,7 +1639,8 @@ void PlnSemanticAnalyzer::adoptExportedType(const json& stmt, const json& decl, 
 		const json& t = sub.typeAliases_.at(name);
 		adoptTypeDeps(sub, t, stmt);
 		if (alias.empty()) {
-			setTypeNameable(name, claimTypeName(name, sub.typeOrigins_.at(name), stmt), true, alias);
+			claimTypeName(name, sub.typeOrigins_.at(name), stmt);
+			setTypeNameable(name, true, alias);
 			typeAliases_[name] = t;
 		} else {
 			typeAliases_[alias + "." + name] = t;
@@ -1655,7 +1666,8 @@ void PlnSemanticAnalyzer::adoptStruct(PlnSemanticAnalyzer& sub, const string& na
 	} else {
 		adopted = claimTypeName(name, origin->second, locNode);
 		if (adopted) structDefs_[name] = def;
-		setTypeNameable(name, adopted, nameable, alias);
+		if (nameable) typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", name}};
+		setTypeNameable(name, nameable, alias);
 	}
 	if (!adopted) return;
 	for (auto& f : def.fields) {
@@ -1690,7 +1702,7 @@ void PlnSemanticAnalyzer::adoptEnum(const PlnSemanticAnalyzer& sub, const string
 	bool adopted = claimTypeName(name, origin->second, locNode);
 	if (adopted) enumDefs_[name] = sub.enumDefs_.at(name);
 	if (nameable) typeAliases_[name] = sub.typeAliases_.at(name);
-	setTypeNameable(name, adopted, nameable, alias);
+	setTypeNameable(name, nameable, alias);
 }
 
 void PlnSemanticAnalyzer::adoptTypeDeps(PlnSemanticAnalyzer& sub, const json& type, const json& locNode)

@@ -2973,10 +2973,12 @@ TEST(sa_error, import_type)
 		{"error_569_block_import_alias_outside.pa", ":4:1: error: unknown type 'MyInt'."},
 		{"error_570_block_import_enum_outside.pa", ":4:11: error: unknown type 'Color'."},
 		{"error_571_block_import_qualified_outside.pa", ":4:1: error: unknown type 'V.Vec'."},
+		// PP is lib's P, a different type from main's P of the same name.
+		{"error_641_import_alias_private_type.pa", ":4:1: error: cannot convert '@!P' to '@!P'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
-		for (string lib : {"lib_sa_types", "lib_sa_types2", "lib_sa_bad_struct"})
+		for (string lib : {"lib_sa_types", "lib_sa_types2", "lib_sa_bad_struct", "lib_sa_private_alias"})
 			execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(

@@ -389,7 +389,7 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 	string name = "__lit_" + to_string(tempVarCounter_++);
 	json decl = {{"stmt-type","var-decl"},{"loc",lit.value("loc", json::array())},
 		{"vars",json::array({{{"name",name},{"var-type",declType}}})}};
-	body = sa_var_decl(decl);
+	body = sa_resolved_var_decl(decl);
 	json target = {{"expr-type","id"},{"name",name}};
 	const json varType = *findVar(name);
 	if (isStruct) {
@@ -540,8 +540,7 @@ optional<ConstVal> PlnSemanticAnalyzer::evalConst(const json& expr)
 		return v;
 	}
 	if (et == "sizeof") {
-		requireKnownTypeNames(expr, expr["type"]);
-		return ConstVal{K::Uint, 0, (uint64_t)typeByteSize(expr, expr["type"])};
+		return ConstVal{K::Uint, 0, (uint64_t)typeByteSize(expr, resolveKnownType(expr, expr["type"]))};
 	}
 	if (et == "id") {
 		json lit = foldConstExpr(expr);
@@ -1315,21 +1314,20 @@ json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const 
 
 json PlnSemanticAnalyzer::enumTypeNamed(const string& name) const
 {
-	json t = resolveTypeAlias({{"type-kind", "prim"}, {"type-name", name}});
-	return t.contains("enum") ? t : json();
+	const json* t = findTypeBinding(name);
+	return t && t->contains("enum") ? *t : json();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // C's sizeof of the type as Palan lays it out: an array holds its elements
 // inline, but only a '$' element is stored in place -- a struct or row
 // element without '$' is a pointer slot.
-int64_t PlnSemanticAnalyzer::typeByteSize(const json& locNode, const json& type)
+int64_t PlnSemanticAnalyzer::typeByteSize(const json& locNode, json t)
 {
-	json t = resolveTypeAlias(type);
 	string tk = t.value("type-kind", "");
 	if (tk == "pntr")
 		return 8;
 	if (tk == "embed") {
-		json base = resolveTypeAlias(t["base-type"]);
+		json base = t["base-type"];
 		if (base.value("type-kind", "") == "prim" && !isKnownTypeName(base.value("type-name", ""))) {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, base.value("type-name", "")) << endl;
 			exit(1);
@@ -1346,7 +1344,7 @@ int64_t PlnSemanticAnalyzer::typeByteSize(const json& locNode, const json& type)
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_SizeofArrSizeNotConst) << endl;
 			exit(1);
 		}
-		json elem = resolveTypeAlias(t["base-type"]);
+		json elem = t["base-type"];
 		bool inPlace = t.value("embedded", false)
 		            || (elem.value("type-kind", "") == "prim" && !isStructType(elem));
 		return n * (inPlace ? typeByteSize(locNode, elem) : 8);
@@ -1380,9 +1378,9 @@ string PlnSemanticAnalyzer::typeNameWritten(const json& obj) const
 json PlnSemanticAnalyzer::aliasCast(const json& expr, const string& typeName)
 {
 	json written = {{"type-kind", "prim"}, {"type-name", typeName}};
-	requireNameableType(expr, written);
-	json target = resolveTypeAlias(written);
-	if (target == written) return json();
+	requireWritableTypeName(expr, typeName);
+	const json* target = findTypeBinding(typeName);
+	if (!target || *target == written) return json();
 	if (expr["args"].size() != 1) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastArgCount, typeName) << endl;
 		exit(1);
@@ -1395,8 +1393,7 @@ json PlnSemanticAnalyzer::aliasCast(const json& expr, const string& typeName)
 json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
 {
 	const json& written = expr["target-type"];
-	requireKnownTypeNames(expr, written);
-	json resolved = resolveTypeAliasDeep(written);
+	json resolved = resolveKnownType(expr, written);
 	string tk = resolved.value("type-kind", "");
 	if (written.value("type-kind", "") == "arr") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastToOwnedArr) << endl;
@@ -1465,7 +1462,7 @@ json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)
 {
 	string typeName = typeNameWritten(expr["object"]);
 	if (typeName.empty()) return json();
-	requireNameableType(expr, {{"type-kind", "prim"}, {"type-name", typeName}});
+	requireWritableTypeName(expr, typeName);
 	json enumType = enumTypeNamed(typeName);
 	if (enumType.is_null()) return json();
 

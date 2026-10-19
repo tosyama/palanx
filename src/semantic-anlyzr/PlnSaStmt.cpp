@@ -200,6 +200,8 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 {
 	// A syscall declaration is a prototype: no block to analyze, and nothing to emit.
 	if (funcDef.value("func-type", "") == "syscall") return;
+	// Resolved here, before the body's declarations are in scope.
+	const json sig = resolveSigTypes(funcDef);
 
 	// Save var scopes and use a fresh function scope instead
 	auto savedVarScopes      = varScopes;
@@ -211,13 +213,13 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	varScopes       = {{}};
 	arrayScopeVars_ = {{}};  // scope[0] = params; no arrays expected here
 
-	if (funcDef.contains("parameters"))
-		for (auto& p : funcDef["parameters"])
-			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(normalizeArrBorrowType(funcDef, unsizedArrToPntr(funcDef, resolveTypeAlias(p["var-type"]))))), &funcDef);
-	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"]) {
-			if (!isStructType(resolveTypeAlias(r["var-type"]))) {
-				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(funcDef, resolveTypeAlias(r["var-type"]))), &funcDef);
+	if (sig.contains("parameters"))
+		for (auto& p : sig["parameters"])
+			declareVar(p["name"], deepNormalizePrimToStruct(toStructPntrType(normalizeArrBorrowType(funcDef, unsizedArrToPntr(funcDef, p["var-type"])))), &funcDef);
+	if (sig.contains("rets"))
+		for (auto& r : sig["rets"]) {
+			if (!isStructType(r["var-type"])) {
+				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(funcDef, r["var-type"])), &funcDef);
 			} else if (r.contains("init")) {
 				// A struct-type named return is allocated at body entry, where an initializer can't run yet.
 				cerr << locPrefix(r["init"]) << PlnSaMessage::getMessage(E_NamedRetInitOnStruct, r["name"].get<string>()) << endl;
@@ -226,7 +228,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		}
 
 	currentFunc_ = findPlnFunc(funcDef["name"]);
-	currentFuncDef_ = &funcDef;
+	currentFuncDef_ = &sig;
 	enterScope();  // push scope[1] = function body
 	funcBodyScopeIdx_ = arrayScopeVars_.size() - 1;  // = 1
 
@@ -246,7 +248,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	for (auto& f : blk.value("functions", json::array()))
 		sa_function(f);
 
-	json saFunc = funcDef;
+	json saFunc = sig;
 	normalizeUnsizedArrSig(saFunc);
 	normalizeArrBorrowSig(saFunc);
 	validateEmbeddedParams(saFunc);
@@ -257,15 +259,15 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];
 
 	json body = json::array();
-	if (funcDef.contains("rets")) {
+	if (sig.contains("rets")) {
 		auto& bodyScopeVars = arrayScopeVars_[funcBodyScopeIdx_];
 		size_t nonRetVars = bodyScopeVars.size();
-		for (auto& r : funcDef["rets"]) {
-			if (!isStructType(resolveTypeAlias(r["var-type"]))) continue;
+		for (auto& r : sig["rets"]) {
+			if (!isStructType(r["var-type"])) continue;
 			json decl = {{"stmt-type", "var-decl"},
 			             {"vars", json::array({{{"name", r["name"]}, {"var-type", r["var-type"]}}})},
 			             {"loc", r.value("loc", json::array())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-			for (auto& s : sa_var_decl(decl)) body.push_back(move(s));
+			for (auto& s : sa_resolved_var_decl(decl)) body.push_back(move(s));
 		}
 		// The caller takes over the named returns, so they are not freed here.
 		bodyScopeVars.resize(nonRetVars);
@@ -593,8 +595,8 @@ json PlnSemanticAnalyzer::bindReturnValueToTemp(const json& stmt, json& ret)
 // `return [..];` from a function returning a struct becomes
 // `T __ret_N = [..]; return __ret_N;`, so the literal goes through the
 // struct initializer and the return through the path of a returned variable.
-// The declared type is the one written in source: the normalized ret-type is
-// the struct's storage pointer, and its name may be reachable only by an alias.
+// The declared type is the resolved one, not the normalized ret-type, which is
+// the struct's storage pointer.
 json PlnSemanticAnalyzer::bindReturnStructLit(json& stmt)
 {
 	if (!currentFunc_->contains("ret-type") || !isStructStorage((*currentFunc_)["ret-type"])
@@ -607,7 +609,7 @@ json PlnSemanticAnalyzer::bindReturnStructLit(json& stmt)
 	json decl = {{"stmt-type", "var-decl"}, {"loc", loc}, // LCOV_EXCL_EXCEPTION_BR_LINE
 		{"vars", json::array({{{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}, {"init", value}}})}};
 	value = {{"expr-type", "id"}, {"name", name}, {"loc", value.value("loc", loc)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-	return sa_var_decl(decl);
+	return sa_resolved_var_decl(decl);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // A returned struct is freed by the caller, so one the function doesn't own
@@ -623,7 +625,7 @@ json PlnSemanticAnalyzer::copyReturnStruct(const json& stmt, json& ret)
 	string name = "__ret_" + to_string(tempVarCounter_++);
 	json decl = {{"stmt-type", "var-decl"}, {"loc", stmt.value("loc", json::array())}, // LCOV_EXCL_EXCEPTION_BR_LINE
 		{"vars", json::array({{{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}}})}};
-	json result = sa_var_decl(decl);
+	json result = sa_resolved_var_decl(decl);
 	removeFromArrayScope(name);
 	const json type = *findVar(name);
 	json dst = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}}; // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -716,12 +718,12 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 	for (size_t i = 0; i < stmt["vars"].size(); i++) {
 		const json& v = stmt["vars"][i];
 		const json& retType = rets[i]["var-type"];
-		requireKnownTypeNames(stmt, v["var-type"]);
+		json varType = resolveKnownType(stmt, v["var-type"]);
 		string name = v["var-name"];
-		if (normalizeSigType(v["var-type"]) != retType) {
+		if (normalizeSigType(varType) != retType) {
 			string temp = "__tap_" + to_string(tempVarCounter_++);
 			convDecls.push_back({{"stmt-type", "var-decl"}, {"loc", stmt["loc"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
-				{"vars", json::array({{{"name", name}, {"var-type", v["var-type"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
+				{"vars", json::array({{{"name", name}, {"var-type", varType}, // LCOV_EXCL_EXCEPTION_BR_LINE
 					{"init", {{"expr-type", "id"}, {"name", temp}, {"loc", stmt["loc"]}}}}})}});
 			name = temp;
 		}
@@ -734,7 +736,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 
 	json result = json::array({{{"stmt-type", "tapple-decl"}, {"vars", vars}, {"value", saCall}}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	for (auto& d : convDecls)
-		for (auto& s : sa_var_decl(d))
+		for (auto& s : sa_resolved_var_decl(d))
 			result.push_back(s);
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE

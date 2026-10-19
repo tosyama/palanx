@@ -171,20 +171,21 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     pointer only has to be declared; it is resolved once no declaration is being
     resolved, so a pointer may close a cycle.
   - A struct comes with every struct and enum its fields use, and a signature with every
-    type it names. A Palan type that is not nameable is registered but hidden: one written
-    `V.T` under an alias (registered as the alias `"V.T"` for `T`), one not selected, or
-    one not exported. A hidden name written in a type position is `E_UnqualifiedAliasType`
-    (alias) or `E_UnknownType`. C types are copied without hiding; they are global as
-    in C.
+    type it names. A Palan type source may write is bound to the name it is written as
+    (`T`, or `V.T` under an alias); one not selected or not exported is registered but
+    unbound. Writing an unbound Palan type name is `E_UnqualifiedAliasType` (imported
+    under an alias) or `E_UnknownType`. C types are copied without binding; they are
+    global as in C and written by their own name.
   - Type names are program-wide identities (build-mgr keys struct allocators by them).
     Each Palan type name records its defining module, so the same name from a second
     module, or a local declaration of an imported name, is `E_DuplicateTypeName`.
     An exported struct/enum keeps its written name. One that is not exported, or is
     declared in a block, is named `__pln_L<module hash>_<seq>_<Name>` in sa.json, so
     modules and blocks may each declare their own; a message shows the written name.
-- type-alias statements are consumed by SA and not emitted; the alias is
-  registered and resolved inline at each reference site (see Type Aliases
-  in PalanReference.md)
+- type-alias statements are consumed by SA and not emitted; the aliased type is
+  resolved where the alias is declared, so its names keep meaning the types they
+  named there, and inlined at each reference site (see Type Aliases in
+  PalanReference.md)
 - const-decl statements are consumed by SA and not emitted; the value is
   folded to an untyped literal and inlined at each reference site (see
   Constant Declarations in PalanReference.md)

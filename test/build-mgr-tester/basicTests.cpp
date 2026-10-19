@@ -1110,9 +1110,8 @@ TEST(build_mgr, uint_idx_var_stride) {
 }
 
 TEST(build_mgr, ptr_alias_pointee) {
-	// Regression: deepNormalizePrimToStruct didn't re-apply resolveTypeAlias at
-	// each pntr-chain level, so a type alias/typedef used as a `@T`/`@!T`
-	// pointee reached fromJson unresolved and aborted with rc=134.
+	// Regression: a type alias/typedef used as a `@T`/`@!T` pointee reached
+	// fromJson unresolved and aborted with rc=134.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/143_ptr_alias_pointee.pa");
 	ASSERT_EQ(output, "42 7\n");
@@ -3127,4 +3126,19 @@ TEST(build_mgr, import_private_dep_type) {
 	// Q brings lib's unexported P along; main's own P does not clash with it.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/304_import_private_dep_type.pa");
 	ASSERT_EQ(output, "6 7\n");
+}
+
+TEST(build_mgr, import_private_alias_type) {
+	cleanTestEnv();
+	// PP names lib's P wherever it is written, not main's P of the same name.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/305_import_private_alias_type.pa");
+	ASSERT_EQ(output, "8 9\n");
+}
+
+TEST(build_mgr, qualified_type_entries) {
+	cleanTestEnv();
+	// V.P reaches lib's L through an alias chain, a parameter, a tapple, a
+	// cast and sizeof alike, never main's L.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/306_qualified_type_entries.pa");
+	ASSERT_EQ(output, "5 6 2 8 16\n");
 }

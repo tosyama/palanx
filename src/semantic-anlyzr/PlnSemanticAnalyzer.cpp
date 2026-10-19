@@ -296,7 +296,7 @@ bool PlnSemanticAnalyzer::isStructType(const json& type) const
 
 bool PlnSemanticAnalyzer::isKnownTypeName(const string& name) const
 {
-	return structDefs_.count(name) || typeAliases_.count(name) || elemSizeBytes(name) >= 0;
+	return structDefs_.count(name) || elemSizeBytes(name) >= 0;
 }
 
 bool PlnSemanticAnalyzer::isKnownPointeeTypeName(const string& name) const
@@ -306,27 +306,9 @@ bool PlnSemanticAnalyzer::isKnownPointeeTypeName(const string& name) const
 	return isPrimPointeeName(name) || isKnownTypeName(name);
 }
 
-// `type` is as written in source: an imported name's visibility is a
-// property of how it was written, gone once an alias is resolved.
-void PlnSemanticAnalyzer::requireNameableType(const json& locNode, const json& type) const
-{
-	const json* t = &type;
-	while (t->contains("base-type")) t = &(*t)["base-type"];
-	string tname = t->value("type-name", "");
-	auto it = hiddenTypeNames_.find(tname);
-	if (it == hiddenTypeNames_.end()) return;
-	if (it->second.empty())
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, tname) << endl;
-	else
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnqualifiedAliasType, tname, it->second) << endl;
-	exit(1);
-}
-
 void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json& type) const
 {
-	requireNameableType(locNode, type);
-	const json resolved = resolveTypeAliasDeep(type);
-	const json* t = &resolved;
+	const json* t = &type;
 	bool isPointee = false;
 	while (t->value("type-kind","") == "arr" || t->value("type-kind","") == "pntr") {
 		isPointee = t->value("type-kind","") == "pntr";
@@ -395,7 +377,7 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 	    || !type["size-expr"].is_null())
 		return type;
 	if (type.value("embedded", false)) {
-		json embed_bt = resolveTypeAlias(type["base-type"]);  // [m]T or a struct
+		json embed_bt = type["base-type"];  // [m]T or a struct
 		json pntr = {{"type-kind","pntr"},{"embedded",true}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		if (isStructType(embed_bt)) {
 			string tname = embed_bt["type-name"].get<string>();
@@ -406,7 +388,7 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 			return pntr;
 		}
 		bool isRow = embed_bt.value("type-kind","") == "arr";
-		if (isRow && isStructType(resolveTypeAlias(embed_bt["base-type"]))) {
+		if (isRow && isStructType(embed_bt["base-type"])) {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_Unsupported2DStructArr) << endl;
 			exit(1);
 		}
@@ -425,9 +407,9 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 		pntr["base-type"] = move(row);
 		return pntr;
 	}
-	json bt = resolveTypeAlias(type["base-type"]);
+	json bt = type["base-type"];
 	if (bt.value("type-kind","") == "arr" && !bt["size-expr"].is_null()) {
-		json leaf = resolveTypeAlias(bt["base-type"]);
+		json leaf = bt["base-type"];
 		string lk = leaf.value("type-kind","");
 		if (lk == "arr" || lk == "pntr") {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsizedArrRowUnsupported) << endl;
@@ -467,10 +449,8 @@ void PlnSemanticAnalyzer::normalizeUnsizedArrSig(json& funcDef)
 
 json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 {
-	// Resolves type aliases and converts prim(Name) -> struct(Name) at every
-	// level of a pntr chain, re-applying resolveTypeAlias at each recursion
-	// step since it alone only inspects the top-level node.
-	json resolved = resolveTypeAlias(type);
+	// Converts prim(Name) -> struct(Name) at every level of a pntr chain.
+	json resolved = type;
 	if (resolved.value("type-kind","") == "pntr") {
 		json t = resolved;
 		t["base-type"] = deepNormalizePrimToStruct(resolved["base-type"]);
@@ -489,8 +469,7 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 
 json PlnSemanticAnalyzer::normalizeSigType(const json& type) const
 {
-	json t = resolveTypeAlias(type);
-	return isStructType(t) ? toStructPntrType(t) : deepNormalizePrimToStruct(t);
+	return isStructType(type) ? toStructPntrType(type) : deepNormalizePrimToStruct(type);
 }
 
 void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
@@ -565,7 +544,6 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 		out["embedded"] = true;
 		if (leaf.value("type-kind","") != "arr") {
 			// [n]$T: the structs themselves are laid out in the array, as in the variable.
-			leaf = resolveTypeAlias(leaf);
 			string tname = leaf.value("type-name","");
 			// LCOV_EXCL_EXCEPTION_BR_START
 			out["stride"]    = requireCompleteStruct(tname, locNode).totalSize;
@@ -586,12 +564,12 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 		out["base-type"] = sizedArrLevel(locNode, leaf, isMutable);
 		return out;
 	}
-	leaf = resolveTypeAlias(leaf);
 	// [n]@T / [n]@!T: the element pointer keeps its own permission.
 	json ptrElem;
 	if (leaf.value("type-kind","") == "pntr" && !out.value("embedded", false)) {
 		ptrElem = {{"type-kind","pntr"},{"mutable",leaf.value("mutable", true)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		leaf = resolveTypeAlias(leaf["base-type"]);
+		json pointee = leaf["base-type"];
+		leaf = move(pointee);
 	}
 	string tname = leaf.value("type-name","");
 	bool isStruct = structDefs_.count(tname) > 0;
@@ -761,13 +739,8 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 	for (auto& r : f.value("rets", json::array()))
 		ensureTypeRefs(r["var-type"]);
 	if (f.contains("ret-type")) ensureTypeRefs(f["ret-type"]);
-	for (auto& p : f.value("parameters", json::array()))
-		requireKnownTypeNames(f, p["var-type"]);
-	for (auto& r : f.value("rets", json::array()))
-		requireKnownTypeNames(f, r["var-type"]);
-	if (f.contains("ret-type")) requireKnownTypeNames(f, f["ret-type"]);
 
-	json funcEntry = f;
+	json funcEntry = resolveSigTypes(f);
 	normalizeUnsizedArrSig(funcEntry);
 	normalizeArrBorrowSig(funcEntry);
 	validateEmbeddedParams(funcEntry);
@@ -779,6 +752,19 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 		validateSyscallDecl(funcEntry);
 	return funcEntry;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+json PlnSemanticAnalyzer::resolveSigTypes(const json& f) const
+{
+	json sig = f;
+	if (sig.contains("parameters"))
+		for (auto& p : sig["parameters"])
+			p["var-type"] = resolveKnownType(f, p["var-type"]);
+	if (sig.contains("rets"))
+		for (auto& r : sig["rets"])
+			r["var-type"] = resolveKnownType(f, r["var-type"]);
+	if (sig.contains("ret-type")) sig["ret-type"] = resolveKnownType(f, sig["ret-type"]);
+	return sig;
+}
 
 void PlnSemanticAnalyzer::preregisterFunc(const json& f)
 {
