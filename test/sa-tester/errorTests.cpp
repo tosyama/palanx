@@ -2537,7 +2537,7 @@ TEST(sa_error, field_2d_arr_unsupported)
 		{"error_323_field_2d_arr.pa", ":1:1: error: unsupported struct field type."},
 		{"error_324_field_2d_embed_prim.pa", ":1:1: error: unsupported struct field type."},
 		{"error_325_field_2d_embed_struct.pa", ":2:1: error: unsupported struct field type."},
-		{"error_524_field_generic_type.pa", ":1:1: error: unsupported struct field type."},
+		{"error_524_field_var_arr_type.pa", ":1:1: error: unsupported struct field type."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2922,7 +2922,7 @@ TEST(sa_error, expr_not_implemented)
 		{"error_416_expr_not_impl_assign.pa", ":2:1: error: this expression is not supported"},
 		{"error_417_expr_not_impl_stmt.pa", ":1:1: error: this expression is not supported"},
 		{"error_521_chain_tapple_value.pa", ":4:1: error: this expression is not supported"},
-		{"error_523_expr_not_impl_sizeof_generic.pa", ":1:12: error: this expression is not supported"},
+		{"error_523_expr_not_impl_sizeof_nested.pa", ":1:12: error: this expression is not supported"},
 		{"error_553_arg_move_owner.pa", ":3:3: error: this expression is not supported"},
 		{"error_554_c_arg_move_owner.pa", ":3:16: error: this expression is not supported"},
 	};
@@ -2945,10 +2945,10 @@ TEST(sa_error, sig_not_implemented)
 		{"error_545_param_typed_default.pa", ":1:18: error: parameter 'x' " + defaultNotImpl},
 		{"error_546_param_inherit_default.pa", ":1:21: error: parameter 'b' " + defaultNotImpl},
 		{"error_547_param_move_owner.pa", ":1:8: error: this parameter is not supported in this version."},
-		{"error_548_param_generic_type.pa", ":1:8: error: this parameter is not supported in this version."},
+		{"error_548_param_var_arr_type.pa", ":1:8: error: this parameter is not supported in this version."},
 		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
 		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
-		{"error_551_ret_generic_type.pa", ":1:13: error: this return value is not supported in this version."},
+		{"error_551_ret_var_arr_type.pa", ":1:13: error: this return value is not supported in this version."},
 		{"error_552_ret_untyped.pa", ":1:13: error: this return value is not supported in this version."},
 		{"error_555_import_not_impl_sig.pa", "lib_sa_not_impl_sig.pa:1:15: error: this parameter is not supported in this version."},
 	};

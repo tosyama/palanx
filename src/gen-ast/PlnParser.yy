@@ -773,8 +773,6 @@ long_func_name: ID
 
 interface_decl: KW_INTERFACE ID '{' interface_methods '}'
 	| KW_EXPORT KW_INTERFACE ID '{' interface_methods '}'
-	| KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
-	| KW_EXPORT KW_INTERFACE ID '<' temp_ids '>' '{' interface_methods '}'
 	;
 
 interface_methods: /* empty */ 
@@ -1223,8 +1221,6 @@ type_expr: ID
 	{ $$ = {{"type-kind","prim"},{"type-name",move($1)}}; }
 	| ID '.' ID
 	{ $$ = {{"type-kind","prim"},{"type-name",$1 + "." + $3}}; }
-	| ID '<' temp_ids '>'
-	{ $$ = {{"not-impl",true}}; }
 	| '@' type_expr
 	{ $$ = pntrTypeExpr(move($2), false); }
 	| AT_EXCL type_expr
@@ -1279,9 +1275,6 @@ fptr_ret: /* empty */ %prec FPTR_NORET
 	{ $$ = voidTypeExpr(); }
 	| ARROW type_expr
 	{ $$ = move($2); }
-	;
-
-temp_ids: ID | temp_ids ',' ID
 	;
 
 

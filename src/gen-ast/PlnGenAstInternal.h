@@ -164,12 +164,10 @@ inline json funcTypeExpr(std::vector<json> params, json ret)
 	return {{"type-kind","func"},{"parameters",std::move(params)},{"ret-type",std::move(ret)}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// Whether a type_expr result has no not-impl part ('T<...>') and no array
-// level other than a plain '[n]'/'[]' one ('[#n]'/'[+n]' are not implemented).
+// Whether a type_expr result has no array level other than a plain '[n]'/'[]'
+// one ('[#n]'/'[+n]' are not implemented).
 inline bool isImplementedTypeExpr(const json& t)
 {
-	if (t.contains("not-impl"))
-		return false;
 	if (t.value("type-kind", "") == "arr" && t.value("specifier", "") != "raw")
 		return false;
 	return !t.contains("base-type") || isImplementedTypeExpr(t["base-type"]);

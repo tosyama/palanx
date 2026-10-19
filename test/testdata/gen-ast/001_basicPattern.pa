@@ -19,15 +19,15 @@ export type MyType {
  	@MyType next;
 };
 
-export interface IMyObjStorage<Item> {
-	func size(@IMyObjStorage<Item> self) -> int32 {
+export interface IMyObjStorage {
+	func size(@IMyObjStorage self) -> int32 {
 		return 0;
 	}
 
-	func add_item(@!IMyObjStorage<Item> self, Item >>item);
+	func add_item(@!IMyObjStorage self, Item >>item);
 };
 
-type MyTypeStorage : MyObjStorage<MyType> as A {
+type MyTypeStorage : MyObjStorage as A {
 	[+]MyType storage;
 
 	func A.size(@MyTypeStorage self) -> int32 {
