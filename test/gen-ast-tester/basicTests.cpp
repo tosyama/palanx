@@ -1282,6 +1282,28 @@ TEST(gen_ast, cinclude_local_header) {
 	ASSERT_TRUE(found_add_one);
 }
 
+TEST(gen_ast, cinclude_same_line) {
+	cleanTestEnv();
+	// A greedy <...> rule would read "stdio.h>; cinclude <stdlib.h" as one path.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/143_cinclude_same_line.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	vector<string> paths;
+	bool found_printf = false, found_malloc = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		paths.push_back(stmt["path"]);
+		for (auto& f : stmt["functions"]) {
+			if (f["name"] == "printf") found_printf = true;
+			if (f["name"] == "malloc") found_malloc = true;
+		}
+	}
+	ASSERT_EQ(paths, (vector<string>{"stdio.h", "stdlib.h"}));
+	ASSERT_TRUE(found_printf);
+	ASSERT_TRUE(found_malloc);
+}
+
 TEST(gen_ast, cinclude_constant) {
 	cleanTestEnv();
 	// c2ast exports object-like macro constants into ast.constants; gen-ast
