@@ -5,6 +5,7 @@
 
 #include "PlnRegAlloc.h"
 #include <algorithm>
+#include <cassert>
 
 using namespace std;
 
@@ -138,6 +139,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // rest of its lifetime, exactly like an InitVar-declared variable —
             // reuse the isVar mechanism rather than a second forced-stack path.
             [&](const LeaLocal&   ll)    { setDef(ll.dst, VRegType::Ptr64); meta[ll.local].isVar = true; addUse(ll.local); },
+            [&](const FrameAddr&  fa)    { setDef(fa.dst, VRegType::Ptr64); },
             [&](const ExitCode&)   {},
             [&](const BlockEnter&) {},
             [&](const BlockLeave&) {},
@@ -449,6 +451,20 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         stack_bytes += save_area;
     }
 
+    // Frame blocks go below everything already placed, so the callee-saved
+    // shift above cannot break their alignment. %rbp itself is 16-byte aligned
+    // except in _start, which has no return address below it.
+    vector<int> frameBlockOffsets;
+    int rbpBias = func.isEntry ? 8 : 0;
+    for (auto& b : func.frameBlocks) {
+        assert(b.align > 0 && b.align <= 16 && 16 % b.align == 0);
+        // A non-empty block also makes _start set up %rbp, which its address is relative to.
+        int s = stack_bytes + std::max(b.size, 1);
+        while ((s - rbpBias) % b.align != 0) s++;
+        frameBlockOffsets.push_back(-s);
+        stack_bytes = s;
+    }
+
     // Align frame size for ABI compliance.
     // _start (isEntry): entered with RSP 16-byte aligned; pushq %rbp shifts by 8,
     //   so frameSize must be ≡ 8 (mod 16) when non-zero.
@@ -469,5 +485,5 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     for (auto& [argReg, vreg, ptype] : pendingParamCopies)
         paramCopies.push_back({argReg, result[vreg], ptype});
 
-    return {result, frameSize, usedCallee, paramCopies};
+    return {result, frameSize, usedCallee, paramCopies, frameBlockOffsets};
 }

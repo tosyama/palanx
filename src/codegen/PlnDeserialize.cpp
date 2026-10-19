@@ -100,6 +100,12 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->release = deserializeStatements(j["release"]);
         return e;
     }
+    if (expr_type == "frame-alloc") {
+        auto e = make_unique<FrameAllocExpr>();
+        e->size  = j["size"];
+        e->align = j["align"];
+        return e;
+    }
     if (expr_type == "addr-of") {
         auto e = make_unique<AddrOfExpr>();
         e->name = j["name"];

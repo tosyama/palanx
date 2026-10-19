@@ -425,3 +425,52 @@ TEST(x86, setcc_for_op_by_type) {
     EXPECT_STREQ(setCCForOp("==", VRegType::Uint64),  "sete");
     EXPECT_STREQ(setCCForOp("!=", VRegType::Int64),   "setne");
 }
+
+// -------- Frame blocks --------
+
+// _start's %rbp is 8 mod 16, so a 16-aligned block sits at an offset of 8 mod 16.
+TEST(regalloc, frame_block_entry_alignment) {
+    VFunc func;
+    func.isEntry = true;
+    func.instrs.push_back(InitVar{0, VRegType::Int64, 0});
+    func.frameBlocks.push_back({16, 16});
+    func.instrs.push_back(FrameAddr{1, 0});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    EXPECT_EQ(r.regMap.at(0).stackOffset, -8);
+    EXPECT_EQ(r.frameBlockOffsets.at(0), -24);
+    EXPECT_EQ(r.frameSize, 24);
+}
+
+// Blocks go below the callee-saved save area, so its shift can't misalign them.
+TEST(regalloc, frame_block_below_callee_saved) {
+    VFunc func;
+    func.instrs.push_back(MovImm{0, VRegType::Ptr64, 0});
+    func.instrs.push_back(CallC{"puts", {0}, {}, {}});
+    func.instrs.push_back(CallC{"puts", {0}, {}, {}});
+    func.frameBlocks.push_back({4, 16});
+    func.frameBlocks.push_back({3, 1});
+    func.instrs.push_back(FrameAddr{1, 0});
+    func.instrs.push_back(FrameAddr{2, 1});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    ASSERT_EQ(r.usedCalleeSaved.size(), 1u);
+    EXPECT_EQ(r.frameBlockOffsets.at(0), -16);
+    EXPECT_EQ(r.frameBlockOffsets.at(1), -19);
+    EXPECT_EQ(r.frameSize, 32);
+}
+
+// An empty block still reserves a byte, so _start sets up the %rbp it is addressed from.
+TEST(regalloc, frame_block_empty) {
+    VFunc func;
+    func.isEntry = true;
+    func.frameBlocks.push_back({0, 4});
+    func.instrs.push_back(FrameAddr{0, 0});
+
+    auto r = allocateRegisters(func, testPhys);
+
+    EXPECT_EQ(r.frameBlockOffsets.at(0), -4);
+    EXPECT_GT(r.frameSize, 0);
+}

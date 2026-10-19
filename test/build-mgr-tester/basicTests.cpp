@@ -3070,3 +3070,46 @@ TEST(build_mgr, func_ptr) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/294_func_ptr.pa");
 	ASSERT_EQ(output, "10 6 42 8\nhello\n8 4\n36 4.5 -7\n1 0\n1 2 3\nvia puts\n30\n");
 }
+
+static void expectFrameMtrace(const string& base, const string& expected)
+{
+	cleanTestEnv();
+	string bin = "/tmp/palan_" + base + "_bin";
+	ASSERT_EQ(execTestCommand("bin/palan -o " + bin + " ../test/testdata/build-mgr/" + base + ".pa"), "");
+
+	string traceFile = "/tmp/palan_" + base + ".log";
+	// Freeing a stack address would abort here instead of printing.
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " " + bin);
+	ASSERT_EQ(output, expected);
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_GT(allocs, 0);
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, frame_mtrace) {
+	expectFrameMtrace("300_frame_mtrace",
+		"0 0\n7\n2 6\n1 9 0\n6 10\n7 5\n3\n5\n8\n4\n3 4\n11\n");
+}
+
+TEST(build_mgr, frame_c) {
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("301_frame_c"), "3 4\n14\n33\nAAAAAAA\n");
+}
+
+TEST(build_mgr, frame_owned_elems_mtrace) {
+	expectFrameMtrace("302_frame_owned_elems_mtrace", "10\n5\n7\n9\n3\n");
+}

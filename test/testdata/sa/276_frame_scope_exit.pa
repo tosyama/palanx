@@ -1,0 +1,12 @@
+type P { int32 x; int64 y; };
+type Q { P p; int32 z; };
+func f(int32 n) -> int32 {
+    $Q q;
+    while n > 0 {
+        $Q w;
+        n - 1 -> n;
+        if n == 3 { continue; }
+        if n == 1 { break; }
+    }
+    return q.z;
+}

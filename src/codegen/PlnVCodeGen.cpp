@@ -117,6 +117,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             auto& e = static_cast<const IdExpr&>(expr);
             return findVar(e.name);
         }
+        case ExprKind::FrameAlloc: {
+            auto& e = static_cast<const FrameAllocExpr&>(expr);
+            func.frameBlocks.push_back({e.size, e.align});
+            VReg dst = allocVReg();
+            func.instrs.push_back(FrameAddr{dst, (int)func.frameBlocks.size() - 1});
+            return dst;
+        }
         case ExprKind::AddrOf: {
             auto& e = static_cast<const AddrOfExpr&>(expr);
             VReg local = findVar(e.name);

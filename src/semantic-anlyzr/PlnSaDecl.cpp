@@ -326,11 +326,18 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	// level before dispatching, so a struct reached only through an alias
 	// doesn't fall through to the plain scalar var-decl path below.
 	json stmt2 = stmt;
-	for (auto& var : stmt2["vars"])
-		if (var.contains("var-type")) {
-			requireKnownTypeNames(stmt2, var["var-type"]);
-			var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
+	vector<VarStorage> storage;
+	for (auto& var : stmt2["vars"]) {
+		storage.push_back(VarStorage::Heap);
+		if (!var.contains("var-type")) continue;
+		if (var["var-type"].value("type-kind", "") == "embed") {
+			json base = var["var-type"]["base-type"];
+			var["var-type"] = move(base);
+			storage.back() = VarStorage::Frame;
 		}
+		requireKnownTypeNames(stmt2, var["var-type"]);
+		var["var-type"] = resolveTypeAliasDeep(var["var-type"]);
+	}
 
 	auto isArrInit = [](const json& var) {
 		return var["var-type"].value("type-kind", "") == "arr" && var.contains("init");
@@ -356,19 +363,19 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	size_t begin = 0;
 	for (size_t i = 1; i <= vars.size(); i++) {
 		if (i < vars.size() && vars[i]["var-type"] == vars[i-1]["var-type"]
-				&& !ownRun(vars[i]) && !ownRun(vars[i-1]))
+				&& storage[i] == storage[i-1] && !ownRun(vars[i]) && !ownRun(vars[i-1]))
 			continue;
 		json run = stmt2;
 		run["vars"] = json(vars.begin() + begin, vars.begin() + i);
 		json lowered;
 		if (isLitInit(vars[begin]) && !isArrInit(vars[begin]))
-			lowered = sa_struct_lit_var_decl(run);
+			lowered = sa_struct_lit_var_decl(run, storage[begin]);
 		else if (!isArrInit(vars[begin]))
-			lowered = sa_var_decl_group(run);
+			lowered = sa_var_decl_group(run, storage[begin]);
 		else if (vars[begin]["init"].value("expr-type", "") == "arr-lit")
-			lowered = sa_arr_lit_var_decl(run);
+			lowered = sa_arr_lit_var_decl(run, storage[begin]);
 		else
-			lowered = sa_arr_copy_var_decl(run);
+			lowered = sa_arr_copy_var_decl(run, storage[begin]);
 		for (auto& s : lowered)
 			result.push_back(move(s));
 		begin = i;
@@ -376,7 +383,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt)
+json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage storage)
 {
 	// Evaluated before the declaration so the variable is not in scope in its
 	// own initializer.
@@ -388,7 +395,7 @@ json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt)
 	}
 	json declStmt = stmt;
 	declStmt["vars"][0].erase("init");
-	json result = sa_var_decl_group(declStmt);
+	json result = sa_var_decl_group(declStmt, storage);
 	string name = var["name"];
 	const json& vt = *findVar(name);
 	json dst = {{"expr-type","id"},{"name",name},{"var-type",vt},{"value-type",vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -396,7 +403,7 @@ json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
+json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storage)
 {
 	const json& vtype = stmt2["vars"][0]["var-type"];
 	string tk = vtype.value("type-kind", "");
@@ -414,22 +421,26 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
 				exit(1);
 			}
 			if (base.value("embedded", false))
-				return sa_arr_var_decl(stmt2);
-			return sa_owned_struct_arr2d_var_decl(stmt2);
+				return sa_arr_var_decl(stmt2, storage);
+			return sa_owned_struct_arr2d_var_decl(stmt2, storage);
 		}
 	}
 	if (tk == "arr" && vtype.value("specifier", "") == "raw"
 			&& !vtype["size-expr"].is_null()
 			&& vtype.value("embedded", false))
-		return sa_embed_arr_var_decl(stmt2);
+		return sa_embed_arr_var_decl(stmt2, storage);
 	if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
 		const json& base = vtype["base-type"];
 		if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
-			return sa_owned_struct_arr_var_decl(stmt2);
-		return sa_arr_var_decl(stmt2);
+			return sa_owned_struct_arr_var_decl(stmt2, storage);
+		return sa_arr_var_decl(stmt2, storage);
 	}
 	if (tk == "prim" && structDefs_.count(vtype.value("type-name", "")))
-		return sa_struct_var_decl(stmt2);
+		return sa_struct_var_decl(stmt2, storage);
+	if (storage == VarStorage::Frame) {
+		cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_FrameVarType, typeDisplayName(vtype)) << endl;
+		exit(1);
+	}
 
 	json borrowType = normalizeArrBorrowType(stmt2, vtype);
 	bool isArrBorrow = borrowType.contains("arr-size");
@@ -463,6 +474,55 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2)
 	return json::array({sa_stmt});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// The heap and frame versions of an aggregate variable share one var-type and
+// differ only in how the outermost block is obtained and released, so each
+// handler describes the heap version and the frame version is derived from it:
+// __pln_alloc_K(args) becomes __pln_init_K(v, args) on the zeroed frame block,
+// and __pln_free_K becomes __pln_fini_K, which leaves the block itself alone.
+// An empty `heapInit` means the frame block's contents come from elsewhere.
+json PlnSemanticAnalyzer::placeAggregateVar(const json& stmt, const string& name, const json& varType,
+                                            json heapInit, json heapRelease, VarStorage storage,
+                                            int64_t frameBytes, int frameAlign, bool zeroFill, json& post)
+{
+	if (storage == VarStorage::Heap) {
+		addOwnedScopeVar(name, move(heapRelease));
+		return heapInit;
+	}
+	if (frameBytes < 0) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_FrameArrSizeNotConst, name) << endl;
+		exit(1);
+	}
+	// LCOV_EXCL_EXCEPTION_BR_START
+	const string allocPrefix = "__pln_alloc_", freePrefix = "__pln_free_";
+	json self = {{"expr-type","id"},{"name",name},{"var-type",varType},{"value-type",varType}};
+	string allocFn = heapInit.value("name", "");
+	bool helperInit = allocFn.starts_with(allocPrefix);
+	if (zeroFill || helperInit) {
+		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+		json args = json::array({self,
+			{{"expr-type","lit-int"},{"value","0"},{"value-type",{{"type-kind","prim"},{"type-name","int32"}}}},
+			{{"expr-type","lit-uint"},{"value",to_string(frameBytes)},{"value-type",uint64_type}}});
+		post.push_back({{"stmt-type","expr"},{"body",{
+			{"expr-type","call"},{"name","memset"},{"func-type","c"},{"args",move(args)}}}});
+	}
+	if (helperInit) {
+		json args = json::array({self});
+		for (auto& a : heapInit["args"]) args.push_back(a);
+		post.push_back({{"stmt-type","expr"},{"body",{
+			{"expr-type","call"},{"name","__pln_init_" + allocFn.substr(allocPrefix.size())},
+			{"func-type",heapInit["func-type"]},{"args",move(args)}}}});
+	}
+	json release;
+	string freeFn = heapRelease["body"].value("name", "");
+	if (freeFn.starts_with(freePrefix)) {
+		release = move(heapRelease);
+		release["body"]["name"] = "__pln_fini_" + freeFn.substr(freePrefix.size());
+	}
+	arrayScopeVars_.back().push_back({name, move(release), false});
+	return {{"expr-type","frame-alloc"},{"size",frameBytes},{"align",frameAlign},{"value-type",varType}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::sa_arr_size_expr(const json& stmt, const json& sizeExprAst)
 {
 	const PlnType* uint64Type = registry_.prim(PrimType::Name::Uint64);
@@ -493,7 +553,7 @@ json PlnSemanticAnalyzer::sa_arr_size_expr(const json& stmt, const json& sizeExp
 	return sz;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
+json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage)
 {
 	// Array var-decl: transform to pntr var-decl + malloc init.
 	// All vars in the declaration share the same var-type, so compute
@@ -572,12 +632,16 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			}}};
 
 			declareVar(name, pntr_type, &stmt);
-			arrayScopeVars_.back().push_back({name, free_stmt_json});
+			json post = json::array();
+			int64_t d0 = constArrSize(d0_expr);
+			json init = placeAggregateVar(stmt, name, pntr_type, move(alloc_call), move(free_stmt_json),
+			                              storage, d0 < 0 ? -1 : d0 * 8, 8, false, post);
 			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
-				{"name",name},{"var-type",pntr_type},{"init",alloc_call}
+				{"name",name},{"var-type",pntr_type},{"init",move(init)}
 			}})}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
+			for (auto& s : post) result.push_back(move(s));
 		}
 		return result;
 	} // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -630,7 +694,9 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 		size_arg = size_bytes;
 	}
 
+	int64_t count = constArrSize(sa_count);
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
+	json post = json::array();
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 		json malloc_call = {
@@ -638,10 +704,12 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt)
 			{"args", json::array({size_arg})}, {"value-type", pntr_type}
 		};
 		declareVar(name, pntr_type, &stmt);
-		arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
-		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",malloc_call}});
+		json init = placeAggregateVar(stmt, name, pntr_type, move(malloc_call), makeFreeStmt(name, pntr_type),
+		                              storage, count < 0 ? -1 : count * elem_size, elem_size, false, post);
+		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",move(init)}});
 	}
 	result.push_back(sa_stmt);
+	for (auto& s : post) result.push_back(move(s));
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -663,7 +731,7 @@ string PlnSemanticAnalyzer::arrLitDimSize(const json& stmt, const string& name, 
 	return lit["value"].get<string>();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
+json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage storage)
 {
 	const json& var = stmt["vars"][0];
 	string name = var["name"];
@@ -694,7 +762,7 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt)
 	string rowSize = is2d ? arrLitDimSize(stmt, name, declType["base-type"]["size-expr"], items[0]["items"].size()) : "0";
 	checkArrLitCount(stmt, items, name, is2d, stoull(declared), stoull(rowSize));
 
-	json result = sa_var_decl_group(declStmt);
+	json result = sa_var_decl_group(declStmt, storage);
 	emitArrLitAssigns({{"expr-type", "id"}, {"name", name}}, shape, values, result); // LCOV_EXCL_EXCEPTION_BR_LINE
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -803,7 +871,7 @@ void PlnSemanticAnalyzer::emitArrLitAssigns(const json& arrAst, const ArrLitShap
 	}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_struct_lit_var_decl(const json& stmt)
+json PlnSemanticAnalyzer::sa_struct_lit_var_decl(const json& stmt, VarStorage storage)
 {
 	const json& var = stmt["vars"][0];
 	const json& vtype = var["var-type"];
@@ -815,7 +883,7 @@ json PlnSemanticAnalyzer::sa_struct_lit_var_decl(const json& stmt)
 		exit(1);
 	}
 	if (!isStructName(vtype))
-		return sa_var_decl_group(stmt);
+		return sa_var_decl_group(stmt, storage);
 
 	const StructDef& def = requireCompleteStruct(vtype["type-name"].get<string>(), stmt);
 	// Evaluated before the declaration so the variable is not in scope in its
@@ -823,7 +891,7 @@ json PlnSemanticAnalyzer::sa_struct_lit_var_decl(const json& stmt)
 	json values = sa_struct_lit(var["init"], def);
 	json declStmt = stmt;
 	declStmt["vars"][0].erase("init");
-	json result = sa_var_decl_group(declStmt);
+	json result = sa_var_decl_group(declStmt, storage);
 	emitStructLitAssigns({{"expr-type", "id"}, {"name", var["name"]}}, def, values, result); // LCOV_EXCL_EXCEPTION_BR_LINE
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -942,7 +1010,7 @@ void PlnSemanticAnalyzer::emitStructLitAssigns(const json& objAst, const StructD
 	}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
+json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt, VarStorage storage)
 {
 	const json& vtype = stmt["vars"][0]["var-type"];
 	string base_kind = vtype["base-type"].value("type-kind", "");
@@ -978,12 +1046,16 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 			                    {"args",json::array({size_arg})},{"value-type",var_type}};
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 			declareVar(name, var_type, &stmt);
-			arrayScopeVars_.back().push_back({name, makeFreeStmt(name, var_type)});
+			json post = json::array();
+			int64_t count = constArrSize(sa_outer);
+			json init = placeAggregateVar(stmt, name, var_type, move(malloc_call), makeFreeStmt(name, var_type),
+			                              storage, count < 0 ? -1 : count * stride, def.maxAlign, false, post);
 			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
-				{"name",name},{"var-type",var_type},{"init",malloc_call}
+				{"name",name},{"var-type",var_type},{"init",move(init)}
 			}})}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
+			for (auto& s : post) result.push_back(move(s));
 		}
 		return result;
 	}
@@ -1061,12 +1133,17 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt)
 		};
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 		declareVar(name, pntr_type, &stmt);
-		arrayScopeVars_.back().push_back({name, makeFreeStmt(name, pntr_type)});
+		json post = json::array();
+		int64_t count = constArrSize(sa_outer);
+		int64_t frameBytes = count < 0 || m_val < 0 ? -1 : count * m_val * elem_size;
+		json init = placeAggregateVar(stmt, name, pntr_type, move(malloc_call), makeFreeStmt(name, pntr_type),
+		                              storage, frameBytes, elem_size, false, post);
 		// LCOV_EXCL_EXCEPTION_BR_START
 		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
-			{"name",name},{"var-type",pntr_type},{"init",malloc_call}
+			{"name",name},{"var-type",pntr_type},{"init",move(init)}
 		}})}});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
+		for (auto& s : post) result.push_back(move(s));
 	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1651,7 +1728,7 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value)
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
+json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storage)
 {
 	const string& structName = stmt["vars"][0]["var-type"]["type-name"].get<string>();
 	const StructDef& def = requireCompleteStruct(structName, stmt);
@@ -1667,6 +1744,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 	// sa_var_decl gives each initialized var its own run, so these only follow
 	// the var-decl that allocates their storage.
 	json initStmts = json::array();
+	json post = json::array();
 	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"].get<string>();
@@ -1714,34 +1792,55 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt)
 			}
 		}
 		declareVar(name, pntr_type, &stmt);
+		json var_id = {{"expr-type","id"},{"name",name},{"var-type",pntr_type},{"value-type",pntr_type}};
 
 		json init;
-		if (!takenOver.is_null()) {
+		if (!takenOver.is_null() && storage == VarStorage::Heap) {
 			init = move(takenOver);
-		} else if (useSimpleCalloc) {
-			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-			json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
-			                 {"value-type",uint64_type}};
-			json one_arg  = {{"expr-type","lit-int"},{"value","1"},
-			                 {"value-type",uint64_type}};
-			init = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},
-			        {"args",json::array({one_arg, size_arg})},{"value-type",pntr_type}};
+			addOwnedScopeVar(name, makeStructFreeStmt(name, pntr_type));
 		} else {
-			recordAllocShape(structName);
-			init = {{"expr-type","call"},{"name","__pln_alloc_" + structName},{"func-type","pln"},
-			        {"args",json::array()},{"value-type",pntr_type}};
+			json heapInit;
+			bool fresh = takenOver.is_null();
+			if (!fresh) {
+				// Frame storage can't take the returned block over: its contents,
+				// owned fields included, move into the frame and only the block is freed.
+				string temp = "__tmp_" + to_string(tempVarCounter_++);
+				json tempId = {{"expr-type","id"},{"name",temp},{"var-type",pntr_type},{"value-type",pntr_type}};
+				json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+				json size_arg = {{"expr-type","lit-uint"},{"value",to_string(def.totalSize)},{"value-type",uint64_type}};
+				json body = json::array({
+					{{"stmt-type","var-decl"},{"vars",json::array({{{"name",temp},{"var-type",pntr_type},{"init",move(takenOver)}}})}},
+					{{"stmt-type","expr"},{"body",{{"expr-type","call"},{"name","memcpy"},{"func-type","c"},
+						{"args",json::array({var_id, tempId, size_arg})}}}},
+					makeFreeStmt(temp, pntr_type)});
+				initStmts.push_back({{"stmt-type","block"},{"body",move(body)}});
+				heapInit = json::object();
+			} else if (useSimpleCalloc) {
+				json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+				json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},
+				                 {"value-type",uint64_type}};
+				json one_arg  = {{"expr-type","lit-int"},{"value","1"},
+				                 {"value-type",uint64_type}};
+				heapInit = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},
+				            {"args",json::array({one_arg, size_arg})},{"value-type",pntr_type}};
+			} else {
+				recordAllocShape(structName);
+				heapInit = {{"expr-type","call"},{"name","__pln_alloc_" + structName},{"func-type","pln"},
+				            {"args",json::array()},{"value-type",pntr_type}};
+			}
+			init = placeAggregateVar(stmt, name, pntr_type, move(heapInit), makeStructFreeStmt(name, pntr_type),
+			                         storage, def.totalSize, def.maxAlign, fresh, post);
 		}
 
-		arrayScopeVars_.back().push_back({name, makeStructFreeStmt(name, pntr_type)});
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
 		if (!structRetCall.is_null())
 			initStmts.push_back(structRetCall);
-		if (!copySrc.is_null()) {
-			json dst = {{"expr-type","id"},{"name",name},{"var-type",pntr_type},{"value-type",pntr_type}};
-			initStmts.push_back(makeCopyStmt(stmt, dst, copySrc));
-		}
+		if (!copySrc.is_null())
+			initStmts.push_back(makeCopyStmt(stmt, var_id, copySrc));
 	}
 	result.push_back(sa_stmt);
+	for (auto& s : post)
+		result.push_back(s);
 	for (auto& s : initStmts)
 		result.push_back(s);
 	// LCOV_EXCL_EXCEPTION_BR_STOP
@@ -1783,7 +1882,7 @@ void PlnSemanticAnalyzer::recordArrArrStructShape(const string& structName)
 	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
+json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt, VarStorage storage)
 {
 	// [n]T (T = struct): owned pointer array.
 	// __pln_alloc_arr_T(n) on declaration, __pln_free_arr_T(pts, n) at scope exit.
@@ -1837,17 +1936,21 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt)
 		}}};
 
 		declareVar(name, pntr_type, &stmt);
-		arrayScopeVars_.back().push_back({name, free_stmt_json});
+		json post = json::array();
+		int64_t count = constArrSize(n_expr);
+		json init = placeAggregateVar(stmt, name, pntr_type, move(alloc_call), move(free_stmt_json),
+		                              storage, count < 0 ? -1 : count * 8, 8, false, post);
 		// LCOV_EXCL_EXCEPTION_BR_START
 		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
-			{"name",name},{"var-type",pntr_type},{"init",alloc_call}
+			{"name",name},{"var-type",pntr_type},{"init",move(init)}
 		}})}});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
+		for (auto& s : post) result.push_back(move(s));
 	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_owned_struct_arr2d_var_decl(const json& stmt)
+json PlnSemanticAnalyzer::sa_owned_struct_arr2d_var_decl(const json& stmt, VarStorage storage)
 {
 	// [m][n]T (T = struct): an array of owned [n]T rows.
 	// __pln_alloc_arr_arr_T(m, n) on declaration, __pln_free_arr_arr_T(pts, m, n) at scope exit.
@@ -1909,12 +2012,16 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr2d_var_decl(const json& stmt)
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 
 		declareVar(name, pntr_type, &stmt);
-		arrayScopeVars_.back().push_back({name, free_stmt_json});
+		json post = json::array();
+		int64_t count = constArrSize(d0_expr);
+		json init = placeAggregateVar(stmt, name, pntr_type, move(alloc_call), move(free_stmt_json),
+		                              storage, count < 0 ? -1 : count * 8, 8, false, post);
 		// LCOV_EXCL_EXCEPTION_BR_START
 		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
-			{"name",name},{"var-type",pntr_type},{"init",alloc_call}
+			{"name",name},{"var-type",pntr_type},{"init",move(init)}
 		}})}});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
+		for (auto& s : post) result.push_back(move(s));
 	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE

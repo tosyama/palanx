@@ -1462,3 +1462,22 @@ TEST(codegen, uint64_float_convert) {
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/076_uint64_float_convert.o"), "");
 }
+
+TEST(codegen, frame_alloc)
+{
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/077_frame_alloc.sa.json";
+    string asmf = "out/077_frame_alloc.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    // Each `$` variable is the address of its own block in the frame.
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("leaq -88(%rbp)"), string::npos);
+    ASSERT_NE(asm_text.find("leaq -96(%rbp)"), string::npos);
+    ASSERT_NE(asm_text.find("leaq -16(%rbp)"), string::npos);
+    ASSERT_NE(asm_text.find("call memset"), string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/077_frame_alloc.o"), "");
+}

@@ -21,14 +21,15 @@ struct PlnSemanticAnalyzer::TypeProgram {
 	deque<function<void()>> settled;
 };
 
-// Collect free() stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
+// Collect release stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
 json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx)
 {
 	json result = json::array();
 	for (size_t i = to_idx; i > from_idx; --i) {
 		auto& scope = arrayScopeVars_[i - 1];
 		for (auto it = scope.rbegin(); it != scope.rend(); ++it)
-			result.push_back(it->second);
+			if (!it->release.is_null())
+				result.push_back(it->release);
 	}
 	return result;
 }
@@ -97,11 +98,19 @@ bool PlnSemanticAnalyzer::isLocalVar(const string& name) const
 	return false; // LCOV_EXCL_LINE -- callers only invoke this after findVar() succeeded
 }
 
-bool PlnSemanticAnalyzer::isInArrayScope(const string& name) const
+bool PlnSemanticAnalyzer::isOwnedVar(const string& name) const
 {
 	for (auto& scope : arrayScopeVars_)
-		for (auto& [n, _] : scope)
-			if (n == name) return true;
+		for (auto& v : scope)
+			if (v.name == name) return v.owned;
+	return false;
+}
+
+bool PlnSemanticAnalyzer::isFrameVar(const string& name) const
+{
+	for (auto& scope : arrayScopeVars_)
+		for (auto& v : scope)
+			if (v.name == name) return !v.owned;
 	return false;
 }
 
@@ -109,9 +118,14 @@ void PlnSemanticAnalyzer::removeFromArrayScope(const string& name)
 {
 	for (auto& scope : arrayScopeVars_) {
 		auto it = find_if(scope.begin(), scope.end(),
-			[&](const pair<string,json>& p){ return p.first == name; });
+			[&](const ScopeVar& v){ return v.name == name; });
 		if (it != scope.end()) { scope.erase(it); return; }
 	}
+}
+
+void PlnSemanticAnalyzer::addOwnedScopeVar(const string& name, json release)
+{
+	arrayScopeVars_.back().push_back({name, move(release), true});
 }
 
 void PlnSemanticAnalyzer::registerCFunc(const string& name, const json& def)

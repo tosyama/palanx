@@ -20,7 +20,7 @@ type Point { int64 x; int64 y; };
 printf("%ld\n", p[0]);
 ```
 
-Reading through `p` after the block exits reads freed memory — undefined behavior, observed to print a garbage value rather than crash. Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today.
+Reading through `p` after the block exits reads freed memory — undefined behavior, observed to print a garbage value rather than crash. Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today. A stack variable (`$Point s;`) widens the reach of the same gap: a pointer into it that is returned from the function points into a frame that no longer exists.
 
 ---
 

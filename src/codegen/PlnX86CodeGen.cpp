@@ -85,6 +85,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<DerefStore>   (&instr)) emitInstrDerefStore(*i, rm);
             else if (auto* i  = std::get_if<CalcAddr>     (&instr)) emitInstrCalcAddr(*i, rm);
             else if (auto* i  = std::get_if<LeaLocal>     (&instr)) emitInstrLeaLocal(*i, rm);
+            else if (auto* i  = std::get_if<FrameAddr>    (&instr)) emitInstrFrameAddr(*i, rm, ra.frameBlockOffsets);
             // BlockEnter and BlockLeave are no-ops
         }
     }

@@ -660,6 +660,13 @@ SA-only expression kinds (not present in AST JSON):
   bound). One discarded as an `expr` statement becomes a `block` of its `body`, the call's
   statement and its `release`.
 
+- frame-alloc - A block in the function's stack frame; its value is the block's address. Appears
+  only as the `init` of a stack variable's var-decl (see Stack variable declarations).
+  - expr-type\*: "frame-alloc"
+  - size\*: block size in bytes (compile-time constant)
+  - align\*: block alignment in bytes (1, 2, 4, 8 or 16)
+  - value-type\*: the variable's type
+
 SA-only expression kinds (added to AST nodes):
 
 - **arr-index** - Array element access (`arr[i]`), and pointer dereference/subscript (`p[i]`) --
@@ -1200,6 +1207,29 @@ When the initializer is a call to a Palan function returning the same struct (`P
 makePoint();`), the call itself is the var-decl's `init` in place of `calloc`: the variable takes
 over the returned storage and frees it at scope exit. A struct variable with an initializer is
 always emitted as its own var-decl, so `Point a = b, c = f();` evaluates left to right.
+
+### Stack variable declarations
+
+A struct or array variable declared with `$` (`$Point p;`, `$[4]int32 a;`) gets the same
+`var-type` as without `$`; its `init` is a `frame-alloc` instead of the allocation call, and
+what the heap version does through its allocator and free functions is derived from them:
+
+- `calloc` → `memset(v, 0, size)` follows the var-decl; `malloc` → nothing (left uninitialized).
+- `__pln_alloc_K(args)` → `memset(v, 0, size)` then `__pln_init_K(v, args)` follow the var-decl.
+  build-mgr generates `__pln_init_K` (fill an existing block) and `__pln_fini_K` (release what
+  the block owns, not the block) for every alloc-shape alongside the alloc/free pair.
+- At scope exit, `free` → nothing; `__pln_free_K(v, args)` → `__pln_fini_K(v, args)`.
+
+Only the outermost block is in the frame, so a `[n]T` struct array or a 2D array keeps its heap
+elements or rows. `size` must be a compile-time constant (E_FrameArrSizeNotConst). A struct
+returned by a Palan call (`$Point p = makePoint();`) is copied in, as a `block` following the
+var-decl: a temp takes the call, `memcpy` copies it into `p`, and `free` releases the returned
+block without `__pln_free_K`, since `p` now holds what it owned.
+
+A stack variable is registered in `arrayScopeVars_` with its scope-exit statement (if any) but not
+as an owner: an `id` naming it has no `"category":"owned"`, so it cannot be the source of `->>`,
+and `return` of a stack struct returns a copy. `return` of a stack array is E_ReturnFrameArr;
+`$` on a non-aggregate type is E_FrameVarType.
 
 ### field-assign statement → sa.json
 

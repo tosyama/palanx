@@ -1,0 +1,58 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int64 y; };
+type Q { P p; [3]int32 a; int32 z; };
+const N = 2;
+func sumP(@P p) -> int64 { return p.x + p.y; }
+func makeP(int32 x) -> P p { x -> p.x; 10 -> p.y; }
+func makeQ() -> Q q { 7 -> q.z; 5 -> q.p.x; }
+func retQ() -> Q {
+    $Q q;
+    3 -> q.z;
+    return q;
+}
+func fill([]int32 a, int64 n) {
+    int64 i = 0;
+    while i < n { int32(i * 2) -> a[i]; i + 1 -> i; }
+}
+mtrace();
+{
+    $P p;
+    printf("%d %ld\n", p.x, p.y);
+    3 -> p.x; 4 -> p.y;
+    printf("%ld\n", sumP(@p));
+    $[N*2]int32 a;
+    fill(a, 4);
+    printf("%d %d\n", a[1], a[3]);
+    $Q q;
+    q.p.x + 1 -> q.p.x;
+    9 -> q.a[2];
+    printf("%d %d %d\n", q.p.x, q.a[2], q.z);
+    $P r = makeP(6);
+    printf("%d %ld\n", r.x, r.y);
+    $Q q2 = makeQ();
+    printf("%d %d\n", q2.z, q2.p.x);
+    Q q3 = retQ();
+    printf("%d\n", q3.z);
+    $[2]$[3]int32 g;
+    5 -> g[1][2];
+    printf("%d\n", g[1][2]);
+    $[3]P ps;
+    8 -> ps[2].x;
+    printf("%d\n", ps[2].x);
+    $[2][3]int32 m;
+    4 -> m[1][1];
+    printf("%d\n", m[1][1]);
+    $[2]$P eps = [[1, 2], [3, 4]];
+    printf("%d %ld\n", eps[1].x, eps[1].y);
+    $P lit = {x: 11, y: 12};
+    printf("%d\n", lit.x);
+    int32 k = 0;
+    while k < 3 {
+        $Q lq;
+        k -> lq.z;
+        k + 1 -> k;
+        if k == 2 { continue; }
+    }
+}
+muntrace();

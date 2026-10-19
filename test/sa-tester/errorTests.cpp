@@ -3523,3 +3523,28 @@ TEST(sa_error, c_struct_arg)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, frame_var)
+{
+	const pair<string, string> cases[] = {
+		{"error_620_frame_prim.pa", ":2:1: error: '$' on a variable applies only to a struct or an array, not 'int32'."},
+		{"error_621_frame_ptr.pa", ":2:1: error: '$' on a variable applies only to a struct or an array, not '@P'."},
+		{"error_622_frame_arr_size.pa", ":2:1: error: the size of stack array 'a' must be a compile-time constant."},
+		{"error_623_return_frame_arr.pa", ":3:5: error: stack array 'a' cannot be returned; its storage ends with the function."},
+		// A stack variable doesn't own its storage, so it has nothing to give away.
+		{"error_624_transfer_frame_struct.pa", ":5:1: error: '->>' needs a source that owns its value"},
+		{"error_625_transfer_frame_arr.pa", ":4:1: error: '->>' needs a source that owns its value"},
+		{"error_626_frame_embed_owning.pa", ":3:1: error: cannot embed 'Q' with '$': it owns fields; use 'Q' without '$'."},
+		{"error_627_frame_param.pa", ":2:1: error: this parameter is not supported in this version."},
+		{"error_628_frame_named_ret.pa", ":2:1: error: this return value is not supported in this version."},
+		{"error_629_frame_ret_type.pa", ":2:13: error: this return value is not supported in this version."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

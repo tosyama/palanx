@@ -47,6 +47,7 @@ enum class ExprKind {
     FuncRef,
     PtrCall,
     Temp,
+    FrameAlloc,
 };
 
 struct Expr {
@@ -108,6 +109,13 @@ struct FloLitExpr : Expr {
 struct IdExpr : Expr {
     IdExpr() : Expr(ExprKind::Id) {}
     string name;
+};
+
+// A block in the function's stack frame; its value is the block's address.
+struct FrameAllocExpr : Expr {
+    FrameAllocExpr() : Expr(ExprKind::FrameAlloc) {}
+    int size  = 0;
+    int align = 1;
 };
 
 struct AddrOfExpr : Expr {

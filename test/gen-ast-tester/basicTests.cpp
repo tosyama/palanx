@@ -2161,3 +2161,24 @@ TEST(gen_ast, func_ptr_type) {
 	ASSERT_EQ(stmts[4]["stmt-type"], "assign");
 	ASSERT_EQ(stmts[4]["value"]["target-type"]["base-type"]["ret-type"]["type-name"], "int32");
 }
+
+TEST(gen_ast, frame_var) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/142_frame_var.pa");
+	ASSERT_TRUE(checkerr(output));
+	json ast = json::parse(output)["ast"];
+	const auto& stmts = ast["statements"];
+	ASSERT_EQ(stmts[1]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["type-kind"], "embed");
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"]["type-name"], "P");
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["type-kind"], "embed");
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["base-type"]["type-kind"], "arr");
+	// A later name takes the first one's type, '$' included.
+	ASSERT_EQ(stmts[3]["vars"][1]["var-type"]["type-kind"], "embed");
+
+	// Frame storage belongs to local declarations only.
+	const auto& funcs = ast["functions"];
+	ASSERT_EQ(funcs[0]["parameters"][0]["not-impl"], true);
+	ASSERT_EQ(funcs[1]["rets"][0]["not-impl"], true);
+	ASSERT_EQ(funcs[2]["ret-type"]["not-impl"], true);
+}

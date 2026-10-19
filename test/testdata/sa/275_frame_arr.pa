@@ -1,0 +1,11 @@
+type P { int32 x; int64 y; };
+const N = 2;
+$[N*2]int32 a;
+$[3]@P s;
+$[2]$P e;
+$[2]$[3]int16 g;
+$[3]P ps;
+$[2][3]int32 m;
+$[2][3]$P me;
+$[2][3]P mp;
+$[]int32 lit = [1, 2, 3];

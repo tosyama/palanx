@@ -5933,3 +5933,84 @@ TEST(sa, func_ptr)
 	ASSERT_EQ(stmts[6]["stmt-type"], "expr");
 	ASSERT_EQ(stmts[6]["body"]["expr-type"], "call-ptr");
 }
+
+TEST(sa, frame_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/274_frame_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto call = [&](size_t i) -> const json& { return stmts[i]["body"]; };
+
+	// The var keeps the heap version's type; only its init differs.
+	const auto& p = stmts[0]["vars"][0];
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "P");
+	ASSERT_EQ(p["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(p["init"]["size"], 16);
+	ASSERT_EQ(p["init"]["align"], 8);
+	ASSERT_EQ(call(1)["name"], "memset");
+
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["size"], 24);
+	ASSERT_EQ(call(3)["name"], "memset");
+	ASSERT_EQ(call(4)["name"], "__pln_init_Q");
+
+	// A struct returned by a call is moved into the frame and only its block freed.
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	const auto& adopt = stmts[6]["body"];
+	ASSERT_EQ(adopt[0]["vars"][0]["init"]["name"], "makeQ");
+	ASSERT_EQ(adopt[1]["body"]["name"], "memcpy");
+	ASSERT_EQ(adopt[2]["body"]["name"], "free");
+	ASSERT_EQ(adopt.size(), 3);
+
+	ASSERT_EQ(call(9)["name"], "memcpy");
+	ASSERT_EQ(stmts[10]["vars"].size(), 2);
+	ASSERT_EQ(stmts[10]["vars"][1]["init"]["expr-type"], "frame-alloc");
+
+	// Returning a stack struct returns a heap copy, and the stack one is finalized.
+	const auto& retQ = jout["functions"][1]["body"];
+	ASSERT_EQ(retQ[4]["body"]["name"], "__pln_copy_Q");
+	ASSERT_EQ(retQ[6]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(retQ[7]["stmt-type"], "return");
+}
+
+TEST(sa, frame_arr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/275_frame_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto init = [&](size_t i) -> const json& { return stmts[i]["vars"][0]["init"]; };
+	auto sizeAlign = [&](size_t i) { return make_pair(init(i)["size"].get<int>(), init(i)["align"].get<int>()); };
+
+	ASSERT_EQ(sizeAlign(0), make_pair(16, 4));
+	ASSERT_EQ(stmts[0]["vars"][0]["var-type"]["arr-size"], 4);
+	ASSERT_EQ(sizeAlign(1), make_pair(24, 8));
+	ASSERT_EQ(sizeAlign(2), make_pair(32, 8));
+	ASSERT_EQ(sizeAlign(3), make_pair(12, 2));
+	// Only the pointer array is in the frame; its elements or rows are on the heap.
+	ASSERT_EQ(sizeAlign(5), make_pair(24, 8));
+	ASSERT_EQ(stmts[7]["body"]["name"], "__pln_init_arr_P");
+	ASSERT_EQ(sizeAlign(9), make_pair(16, 8));
+	ASSERT_EQ(stmts[11]["body"]["name"], "__pln_init_arr_arr_int32");
+	ASSERT_EQ(stmts[15]["body"]["name"], "__pln_init_arr_arr_uint8");
+	ASSERT_EQ(stmts[20]["body"]["name"], "__pln_init_arr_arr_P");
+	ASSERT_EQ(stmts[20]["body"]["args"].size(), 3);
+	ASSERT_EQ(sizeAlign(21), make_pair(12, 4));
+	ASSERT_EQ(stmts[22]["stmt-type"], "arr-assign");
+}
+
+TEST(sa, frame_scope_exit)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/276_frame_scope_exit.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& body = jout["functions"][0]["body"];
+	const auto& loop = body[3]["body"];
+	ASSERT_EQ(loop[4]["then"]["body"][0]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(loop[4]["then"]["body"][1]["stmt-type"], "continue");
+	ASSERT_EQ(loop[5]["then"]["body"][0]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(loop[5]["then"]["body"][1]["stmt-type"], "break");
+	ASSERT_EQ(loop[6]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(body[5]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(body[6]["stmt-type"], "return");
+}

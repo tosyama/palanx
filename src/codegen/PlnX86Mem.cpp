@@ -202,6 +202,19 @@ void PlnX86CodeGen::emitInstrLeaLocal(const LeaLocal& ll, const RegMap& rm)
     }
 }
 
+void PlnX86CodeGen::emitInstrFrameAddr(const FrameAddr& fa, const RegMap& rm, const vector<int>& blockOffsets)
+{
+    if (!rm.count(fa.dst)) return;
+    const PhysLoc& dst_loc = rm.at(fa.dst);
+    string addr = std::to_string(blockOffsets.at(fa.block)) + "(%rbp)";
+    if (!dst_loc.isStack()) {
+        out << "\tleaq " << addr << ", " << dst_loc.base << "\n";
+    } else {
+        out << "\tleaq " << addr << ", %r11\n";
+        out << "\tmovq %r11, " << dst_loc.stackOffset << "(%rbp)\n";
+    }
+}
+
 void PlnX86CodeGen::emitInstrDerefStore(const DerefStore& ds, const RegMap& rm)
 {
     if (!rm.count(ds.ptr) || !rm.count(ds.src)) return;

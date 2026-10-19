@@ -1,0 +1,448 @@
+{
+  "alloc-shapes": [],
+  "functions": [
+    {
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            {
+              "init": {
+                "align": 8,
+                "expr-type": "frame-alloc",
+                "size": 16,
+                "value-type": {
+                  "base-type": {
+                    "type-kind": "struct",
+                    "type-name": "P"
+                  },
+                  "type-kind": "pntr"
+                }
+              },
+              "name": "p",
+              "var-type": {
+                "base-type": {
+                  "type-kind": "struct",
+                  "type-name": "P"
+                },
+                "type-kind": "pntr"
+              }
+            }
+          ]
+        },
+        {
+          "body": {
+            "args": [
+              {
+                "expr-type": "id",
+                "name": "p",
+                "value-type": {
+                  "base-type": {
+                    "type-kind": "struct",
+                    "type-name": "P"
+                  },
+                  "type-kind": "pntr"
+                },
+                "var-type": {
+                  "base-type": {
+                    "type-kind": "struct",
+                    "type-name": "P"
+                  },
+                  "type-kind": "pntr"
+                }
+              },
+              {
+                "expr-type": "lit-int",
+                "value": "0",
+                "value-type": {
+                  "type-kind": "prim",
+                  "type-name": "int32"
+                }
+              },
+              {
+                "expr-type": "lit-uint",
+                "value": "16",
+                "value-type": {
+                  "type-kind": "prim",
+                  "type-name": "uint64"
+                }
+              }
+            ],
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "memset"
+          },
+          "stmt-type": "expr"
+        },
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            {
+              "init": {
+                "align": 2,
+                "expr-type": "frame-alloc",
+                "size": 8,
+                "value-type": {
+                  "arr-size": 4,
+                  "base-type": {
+                    "type-kind": "prim",
+                    "type-name": "int16"
+                  },
+                  "type-kind": "pntr"
+                }
+              },
+              "name": "a",
+              "var-type": {
+                "arr-size": 4,
+                "base-type": {
+                  "type-kind": "prim",
+                  "type-name": "int16"
+                },
+                "type-kind": "pntr"
+              }
+            }
+          ]
+        },
+        {
+          "offset": 0,
+          "stmt-type": "field-assign",
+          "value": {
+            "expr-type": "id",
+            "loc": [
+              5,
+              5,
+              5,
+              6
+            ],
+            "name": "n",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            },
+            "var-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            }
+          },
+          "value-type": {
+            "type-kind": "prim",
+            "type-name": "int32"
+          },
+          "var": "p"
+        },
+        {
+          "stmt-type": "arr-assign",
+          "target": {
+            "addr-only": false,
+            "array": {
+              "expr-type": "id",
+              "loc": [
+                6,
+                10,
+                6,
+                11
+              ],
+              "name": "a",
+              "value-type": {
+                "arr-size": 4,
+                "base-type": {
+                  "type-kind": "prim",
+                  "type-name": "int16"
+                },
+                "type-kind": "pntr"
+              },
+              "var-type": {
+                "arr-size": 4,
+                "base-type": {
+                  "type-kind": "prim",
+                  "type-name": "int16"
+                },
+                "type-kind": "pntr"
+              }
+            },
+            "elem-size": {
+              "expr-type": "lit-uint",
+              "value": "2",
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "uint64"
+              }
+            },
+            "expr-type": "arr-index",
+            "index": {
+              "expr-type": "lit-int",
+              "loc": [
+                6,
+                12,
+                6,
+                13
+              ],
+              "value": "3",
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "int64"
+              }
+            },
+            "loc": [
+              6,
+              10,
+              6,
+              14
+            ],
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "int16"
+            }
+          },
+          "value": {
+            "expr-type": "lit-int",
+            "loc": [
+              6,
+              5,
+              6,
+              6
+            ],
+            "value": "7",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "int16"
+            }
+          }
+        },
+        {
+          "stmt-type": "return",
+          "values": [
+            {
+              "expr-type": "convert",
+              "from-type": {
+                "type-kind": "prim",
+                "type-name": "int32"
+              },
+              "src": {
+                "expr-type": "add",
+                "left": {
+                  "addr-only": false,
+                  "expr-type": "field-access",
+                  "offset": 0,
+                  "value-type": {
+                    "type-kind": "prim",
+                    "type-name": "int32"
+                  },
+                  "var": "p"
+                },
+                "loc": [
+                  7,
+                  12,
+                  7,
+                  22
+                ],
+                "right": {
+                  "expr-type": "convert",
+                  "from-type": {
+                    "type-kind": "prim",
+                    "type-name": "int16"
+                  },
+                  "src": {
+                    "addr-only": false,
+                    "array": {
+                      "expr-type": "id",
+                      "loc": [
+                        7,
+                        18,
+                        7,
+                        19
+                      ],
+                      "name": "a",
+                      "value-type": {
+                        "arr-size": 4,
+                        "base-type": {
+                          "type-kind": "prim",
+                          "type-name": "int16"
+                        },
+                        "type-kind": "pntr"
+                      },
+                      "var-type": {
+                        "arr-size": 4,
+                        "base-type": {
+                          "type-kind": "prim",
+                          "type-name": "int16"
+                        },
+                        "type-kind": "pntr"
+                      }
+                    },
+                    "elem-size": {
+                      "expr-type": "lit-uint",
+                      "value": "2",
+                      "value-type": {
+                        "type-kind": "prim",
+                        "type-name": "uint64"
+                      }
+                    },
+                    "expr-type": "arr-index",
+                    "index": {
+                      "expr-type": "lit-int",
+                      "loc": [
+                        7,
+                        20,
+                        7,
+                        21
+                      ],
+                      "value": "3",
+                      "value-type": {
+                        "type-kind": "prim",
+                        "type-name": "int64"
+                      }
+                    },
+                    "loc": [
+                      7,
+                      18,
+                      7,
+                      22
+                    ],
+                    "value-type": {
+                      "type-kind": "prim",
+                      "type-name": "int16"
+                    }
+                  },
+                  "value-type": {
+                    "type-kind": "prim",
+                    "type-name": "int32"
+                  }
+                },
+                "value-type": {
+                  "type-kind": "prim",
+                  "type-name": "int32"
+                }
+              },
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "int64"
+              }
+            }
+          ]
+        }
+      ],
+      "func-type": "palan",
+      "loc": [
+        2,
+        1,
+        8,
+        2
+      ],
+      "name": "f",
+      "parameters": [
+        {
+          "name": "n",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "int32"
+          }
+        }
+      ],
+      "ret-type": {
+        "type-kind": "prim",
+        "type-name": "int64"
+      }
+    }
+  ],
+  "libs": [],
+  "objs": [],
+  "original": "/test/077_frame_alloc.pa",
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "align": 8,
+            "expr-type": "frame-alloc",
+            "size": 16,
+            "value-type": {
+              "base-type": {
+                "type-kind": "struct",
+                "type-name": "P"
+              },
+              "type-kind": "pntr"
+            }
+          },
+          "name": "q",
+          "var-type": {
+            "base-type": {
+              "type-kind": "struct",
+              "type-name": "P"
+            },
+            "type-kind": "pntr"
+          }
+        }
+      ]
+    },
+    {
+      "body": {
+        "args": [
+          {
+            "expr-type": "id",
+            "name": "q",
+            "value-type": {
+              "base-type": {
+                "type-kind": "struct",
+                "type-name": "P"
+              },
+              "type-kind": "pntr"
+            },
+            "var-type": {
+              "base-type": {
+                "type-kind": "struct",
+                "type-name": "P"
+              },
+              "type-kind": "pntr"
+            }
+          },
+          {
+            "expr-type": "lit-int",
+            "value": "0",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            }
+          },
+          {
+            "expr-type": "lit-uint",
+            "value": "16",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "uint64"
+            }
+          }
+        ],
+        "expr-type": "call",
+        "func-type": "c",
+        "name": "memset"
+      },
+      "stmt-type": "expr"
+    },
+    {
+      "offset": 8,
+      "stmt-type": "field-assign",
+      "value": {
+        "expr-type": "lit-int",
+        "loc": [
+          10,
+          1,
+          10,
+          2
+        ],
+        "value": "5",
+        "value-type": {
+          "type-kind": "prim",
+          "type-name": "int64"
+        }
+      },
+      "value-type": {
+        "type-kind": "prim",
+        "type-name": "int64"
+      },
+      "var": "q"
+    }
+  ],
+  "str-literals": []
+}

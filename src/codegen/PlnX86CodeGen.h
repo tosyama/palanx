@@ -61,6 +61,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrDerefStore(const DerefStore& ds, const RegMap& rm);
     void emitInstrCalcAddr  (const CalcAddr&   ca, const RegMap& rm);
     void emitInstrLeaLocal  (const LeaLocal&   ll, const RegMap& rm);
+    void emitInstrFrameAddr (const FrameAddr&  fa, const RegMap& rm, const vector<int>& blockOffsets);
 
 public:
     static const PhysRegs x86PhysRegs;

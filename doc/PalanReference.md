@@ -275,6 +275,10 @@ int32 a = 5, b = 10;   // type inheritance: b is also int32
 **Type is required:** `x = 10;` is a declaration without a type, reserved for future type inference,
 and is currently a compile error. It is not an assignment — assignment is written `10 -> x;`.
 
+**Stack storage:** A struct or array variable is allocated on the heap; with `$` in front of its
+type (`$Point p;`, `$[4]int32 a;`) it is placed in the function's stack frame instead. See
+[Stack Arrays](#stack-arrays-nt) and [Stack Structs](#stack-structs-t).
+
 ---
 
 ## 5. Expressions
@@ -1371,6 +1375,35 @@ cinclude <stdio.h>;
 }                             // free(buf) called here automatically
 ```
 
+### Stack Arrays (`$[n]T`)
+
+`$` in front of an array type places the array in the function's stack frame: nothing is
+allocated or freed for it, and its elements are not initialized, as with `malloc`. The size must
+be a compile-time constant (a literal, a `const`, or an expression of them).
+
+```palan
+const N = 4;
+$[N]int32 a;          // 16 bytes in the frame
+$[3]$[4]int16 g;      // 3 rows of 4 in one block
+$[2]$Point pts;       // structs laid out in place ($T: Point must own no fields)
+$[]int32 b = [1, 2, 3];
+```
+
+Only the outermost block goes into the frame; the rest of the type keeps its meaning. In `$[n]T`
+with `T` a struct, `$[m][n]T`, and `$[m][n]$T`, the frame holds the array of pointers, and the
+elements or rows are allocated on the heap and freed at scope exit as for the heap array. They
+are owned by the array like the heap array's, so they can be moved with `->>`.
+
+A stack array is used like a heap one — indexed, copied with `->`, borrowed with `@`/`@!`, and
+passed to a `[]T` parameter or a C function — with these differences:
+
+- It does not own its storage, so it cannot be the source of `->>`.
+- It cannot be returned: its storage ends with the function.
+- `$` is not allowed on a parameter or a named return.
+
+A large array can overflow the stack (typically 8 MiB for the main thread); a pointer borrowed
+from a stack array must not outlive it (see [Address-Of](#22-address-of-operator)).
+
 ### Passing to C Functions
 
 An array variable is passed to C functions as a pointer to its first element, matching the C `uint8 *` / `char *` convention.
@@ -1586,7 +1619,7 @@ p ->> w.pt;              // w's original Point is freed; p is set to NULL
 The source must own what it gives away: a variable that owns its array or struct, an owned
 field or element (`v.pt ->> w.pt`, `pts[1] ->> w.pt`, `m[1] ->> w.arr`), or a value returned by
 a function. A field or element source is set to NULL like a variable. A borrow (`@T`/`@!T`,
-`@[n]T`), a struct parameter, or a `@T` field is a compile error.
+`@[n]T`), a struct parameter, a stack (`$`) variable, or a `@T` field is a compile error.
 
 `return` on a tracked array variable also transfers ownership: the variable is removed from
 free-tracking and the caller receives the pointer.
@@ -1737,7 +1770,8 @@ In a comma-separated declaration, each initializer belongs to its own variable:
 
 ### Struct Arrays
 
-Palan supports four forms of struct array declarations. All are heap-allocated and automatically freed at scope exit.
+Palan supports four forms of struct array declarations. All are heap-allocated and automatically freed at scope exit,
+or placed in the stack frame with `$` (see [Stack Arrays](#stack-arrays-nt)).
 
 | Form | Memory | Element type |
 |---|---|---|
@@ -1804,7 +1838,7 @@ printf("%ld\n", tiles[1][2].y);  // 7
 
 Array **fields** (declared inside `type { ... }`, see Section 19) use the same four forms but
 require `n` to be a compile-time integer literal, since struct layout must be statically known.
-Array **variables** (this section) allow non-constant `n`.
+Array **variables** (this section) allow non-constant `n`, except a stack array (`$[n]T`).
 
 ### Limitations (current version)
 
@@ -1830,7 +1864,26 @@ printf("%ld %ld\n", p.x, p.y);   // 10 20
 ```
 
 - **Memory management**: heap-allocated (zero-initialized); automatically freed at scope exit.
+  With `$` (`$Point p;`) the struct is placed in the stack frame instead; see
+  [Stack Structs](#stack-structs-t).
 - **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
+
+### Stack Structs (`$T`)
+
+`$Point p;` places the struct in the function's stack frame, zero-initialized like a heap struct.
+What it owns (`U field`, `[k]U field`) is still allocated when the declaration is reached and freed
+at scope exit; only the struct's own storage is in the frame. Initializers work as for a heap
+struct, copying the value: `$Point p = q;`, `$Point p = {x: 1, y: 2};`, and
+`$Point p = makePoint(1, 2);`, where the returned struct's contents, owned fields included, move
+into `p` and the returned storage is freed. A struct returned by value from a C function is
+received directly into the frame.
+
+A stack struct is used like a heap one, including `@p`/`@!p` and passing it by value to a C
+function, with these differences:
+
+- It does not own its storage, so it cannot be the source of `->>`.
+- Returning it returns a copy, as for a struct the function doesn't own.
+- `$` is not allowed on a parameter or a named return.
 
 ### Struct literals
 
@@ -2258,7 +2311,8 @@ int64 x = 42;
   Nothing checks that the pointer does not outlive that storage — if it escapes the scope that
   owns the storage (e.g. assigned to a variable declared in an outer block), reading through it
   after the storage is freed is undefined behavior, not a compile error. See `doc/Issues.md`
-  for a worked example.
+  for a worked example. For a stack (`$`) variable this includes returning such a pointer
+  from the function: the frame it points into is gone once the function returns.
 
 ### Restrictions
 

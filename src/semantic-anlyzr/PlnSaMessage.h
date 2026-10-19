@@ -152,6 +152,9 @@ enum PlnSaMessageCode {
 	E_ConstExprDivByZero,
 	E_CMacroFuncLike,	// arg1: macro name
 	E_CMacroNotConstant,	// arg1: macro name
+	E_FrameVarType,	// arg1: type display name
+	E_FrameArrSizeNotConst,	// arg1: variable name
+	E_ReturnFrameArr,	// arg1: variable name
 };
 
 class PlnSaMessage

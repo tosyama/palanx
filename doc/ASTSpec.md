@@ -298,10 +298,13 @@ Variable type
     `pntr` whose `base-type` is `arr(T)`; these are not interchangeable. See SASpec.md's C-origin
     field admission rules for how the `arr(pntr(T))` form is normalized to Palan's `[n]@T`/`[n]@!T`
     pointer-slot-array shape at the cinclude ingestion boundary.
-  4. embed - Inline struct embedding (`$T` syntax in struct field declarations)
-    - base-type\* - Base variable type of the embedded struct (type-kind "prim" with the struct name)
-    Note: Valid only inside `struct-def` field lists. SA resolves the sub-struct layout and folds the
-    embedded fields' offsets into the parent struct (no separate pointer).
+  4. embed - In-place storage (`$T` syntax)
+    - base-type\* - The type placed in place: a struct name (type-kind "prim") in a field, or any
+      declarable variable type in a variable declaration
+    Note: In a `struct-def` field list, SA resolves the sub-struct layout and folds the embedded
+    fields' offsets into the parent struct (no separate pointer). At the top of a local `var-decl`
+    var-type (`$P p;`, `$[4]int32 a;`), it places the variable's storage in the stack frame. A
+    parameter or named return with it is emitted as a not-impl entry (`{"not-impl": true}`).
   5. strct - Struct type reference (by name), from a C struct-typed parameter/return in a
      `cinclude`d function signature
     - type-name - Struct name string; omitted only for a reference to a genuinely untagged

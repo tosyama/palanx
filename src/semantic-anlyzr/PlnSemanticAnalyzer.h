@@ -46,6 +46,10 @@ struct FieldLayout {
 	json    funcType;  // elemKind == "func": the pointee function type
 };
 
+// Where an aggregate variable's outermost storage block lives: `$T v;` puts it
+// in the function's stack frame.
+enum class VarStorage { Heap, Frame };
+
 struct StructDef {
 	string name;
 	vector<FieldLayout> fields;
@@ -99,8 +103,11 @@ class PlnSemanticAnalyzer {
 	// scope stack: alias("" = unqualified) → funcname → funcDef (empty json{} = ambiguous sentinel)
 	vector<map<string, map<string, json>>> importScopes;
 
-	// Array variable tracking per scope (parallel to varScopes)
-	vector<vector<pair<string,json>>> arrayScopeVars_;
+	// Aggregate variables per scope (parallel to varScopes) and what runs when
+	// each goes out of scope. A frame variable is listed even with nothing to
+	// release, but only a heap variable owns its storage.
+	struct ScopeVar { string name; json release; bool owned; };
+	vector<vector<ScopeVar>> arrayScopeVars_;
 	// Stack of while-body scope indices (for break/continue cleanup)
 	vector<size_t> whileScopeStack_;
 	// Counter for generating unique temporary variable names
@@ -180,8 +187,10 @@ class PlnSemanticAnalyzer {
 	void        declareVar(const string& name, const json& type, const json* loc_node = nullptr);
 	const json* findVar(const string& name) const;
 	bool        isLocalVar(const string& name) const;
-	bool        isInArrayScope(const string& name) const;
+	bool        isOwnedVar(const string& name) const;
+	bool        isFrameVar(const string& name) const;
 	void        removeFromArrayScope(const string& name);
+	void        addOwnedScopeVar(const string& name, json release);
 
 	void        registerCFunc(const string& name, const json& def);
 	const json* findCFunc(const string& name) const;
@@ -285,11 +294,15 @@ class PlnSemanticAnalyzer {
 	json sa_expression_stmt(const json& stmt);
 	json discardedValueStmt(const json& stmt, json body);
 	json sa_var_decl(const json& stmt);           // returns array of statements
-	json sa_var_decl_group(const json& stmt);     // all vars share one var-type; returns array of statements
-	json sa_arr_var_decl(const json& stmt);       // returns array of statements
-	json sa_arr_lit_var_decl(const json& stmt);   // single var; returns array of statements
-	json sa_arr_copy_var_decl(const json& stmt);  // single var; returns array of statements
-	json sa_struct_lit_var_decl(const json& stmt); // single var; returns array of statements
+	// all vars share one var-type; returns array of statements
+	json sa_var_decl_group(const json& stmt, VarStorage storage);
+	json sa_arr_var_decl(const json& stmt, VarStorage storage);       // returns array of statements
+	json sa_arr_lit_var_decl(const json& stmt, VarStorage storage);   // single var; returns array of statements
+	json sa_arr_copy_var_decl(const json& stmt, VarStorage storage);  // single var; returns array of statements
+	json sa_struct_lit_var_decl(const json& stmt, VarStorage storage); // single var; returns array of statements
+	json placeAggregateVar(const json& stmt, const string& name, const json& varType,
+	                       json heapInit, json heapRelease, VarStorage storage,
+	                       int64_t frameBytes, int frameAlign, bool zeroFill, json& post);
 	json sa_struct_lit(const json& item, const StructDef& def);
 	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
@@ -301,9 +314,9 @@ class PlnSemanticAnalyzer {
 	void checkArrLitCount(const json& locNode, const json& items, const string& name,
 	                      bool is2d, uint64_t size, uint64_t rowSize);
 	void emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out);
-	json sa_embed_arr_var_decl(const json& stmt); // returns array of statements
-	json sa_owned_struct_arr_var_decl(const json& stmt); // returns array of statements
-	json sa_owned_struct_arr2d_var_decl(const json& stmt); // returns array of statements
+	json sa_embed_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
+	json sa_owned_struct_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
+	json sa_owned_struct_arr2d_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	void recordArrStructShape(const string& structName);
 	void recordArrArrShape(const string& leafName);
 	void recordArrArrStructShape(const string& structName);
@@ -313,7 +326,7 @@ class PlnSemanticAnalyzer {
 	bool isDeclNameTaken(const string& name) const;
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
 	void registerCStruct(const json& cincludeStmt, const json& s);  // consume c2ast "structs" entry, register in structDefs_
-	json sa_struct_var_decl(const json& stmt);    // returns array of statements
+	json sa_struct_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_
 	json sa_const_decl(const json& stmt);         // consume const-decl, register in constDecls_
 	json sa_enum_def(const json& stmt);           // consume enum-def, register in enumDefs_/typeAliases_

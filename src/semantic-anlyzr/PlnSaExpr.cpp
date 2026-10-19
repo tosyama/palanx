@@ -183,7 +183,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			if (expr.contains("loc")) out["loc"] = expr["loc"];
 			return out;
 		}
-		if (isInArrayScope(name) || varType->contains("arr-size")) {
+		if (isOwnedVar(name) || varType->contains("arr-size")) {
 			json out = {{"expr-type","id"},{"name",name},{"var-type",*varType},
 			            {"value-type",withArrPermission(*varType, isMutable)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 			if (expr.contains("loc")) out["loc"] = expr["loc"];
@@ -740,7 +740,7 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 		if (varType != nullptr) {
 			sa_expr["var-type"]   = *varType;
 			sa_expr["value-type"] = *varType;
-			if (isInArrayScope(expr["name"].get<string>()))
+			if (isOwnedVar(expr["name"].get<string>()))
 				sa_expr["category"] = "owned";
 		} else {
 			string name = expr["name"].get<string>();

@@ -650,6 +650,15 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_ConstExprDivByZero:
 			return "division by zero in a constant expression.";
 
+		case E_FrameVarType:
+			return "'$' on a variable applies only to a struct or an array, not '" + arg1 + "'.";
+
+		case E_FrameArrSizeNotConst:
+			return "the size of stack array '" + arg1 + "' must be a compile-time constant.";
+
+		case E_ReturnFrameArr:
+			return "stack array '" + arg1 + "' cannot be returned; its storage ends with the function.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

@@ -107,13 +107,14 @@ struct DerefLoad     { VReg dst; VReg ptr; int offset; VRegType type; };        
 struct DerefStore    { VReg ptr; int offset; VReg src;  VRegType type; };                              // *(ptr+offset) = src
 struct CalcAddr      { VReg dst; VReg ptr; int offset; };                                              // dst = ptr + offset (no dereference)
 struct LeaLocal      { VReg dst; VReg local; };                                                        // dst = &local (local's own stack slot address)
+struct FrameAddr     { VReg dst; int block; };                                                         // dst = address of VFunc::frameBlocks[block]
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg,
                              BitAnd, BitOr, BitXor, BitNot, Shift, ShiftImm, Cmp, Convert,
                              CallC, CallPln, CallSys, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov, Copy, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
-                             DerefLoad, DerefStore, CalcAddr, LeaLocal>;
+                             DerefLoad, DerefStore, CalcAddr, LeaLocal, FrameAddr>;
 
 // SysV argument placement, shared by the register allocator's argument hints
 // and the x86 emitter: each arg's index in its class's register sequence, or
@@ -158,9 +159,12 @@ struct VFloatLiteral {
     VRegType type;    // Float32 or Float64
 };
 
+struct FrameBlock { int size; int align; };
+
 struct VFunc {
     string         name;
     vector<VInstr> instrs;
+    vector<FrameBlock> frameBlocks;   // stack-frame storage of `$` variables, indexed by FrameAddr::block
     bool           isEntry  = false;  // true only for _start
     bool           isExport = false;  // true for export func
     vector<std::pair<VReg, VRegType>> params;  // (vreg, type) in arg order

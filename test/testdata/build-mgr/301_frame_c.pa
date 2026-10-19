@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+cinclude "301_frame_c.h" link "301_frame_c.o";
+
+$V2 v = v2_make(3, 4);
+printf("%d %d\n", v.x, v.y);
+v2_scale(@!v, 2);
+printf("%d\n", v2_sum(v));
+$Big b = big_make(10);
+printf("%ld\n", big_sum(@b));
+$[8]uint8 buf;
+memset(@!buf, 65, 7);
+0 -> buf[7];
+printf("%s\n", @buf);

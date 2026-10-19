@@ -208,6 +208,14 @@ inline bool isDeclarableVarType(const json& t)
 	return false;
 }
 
+// `$T v;` / `$[n]T a;` put a local's storage in the stack frame. Whether the
+// base is a struct or an array is only known in SA, so any declarable base is
+// carried here and SA rejects the rest with a real message.
+inline bool isFrameVarType(const json& t)
+{
+	return t.value("type-kind", "") == "embed" && isDeclarableVarType(t["base-type"]);
+}
+
 // A typed lit-int, like a macro-folded constant: SA keeps its bool type
 // instead of retyping it from context, so no separate literal kind is needed.
 inline json boolLiteral(const char* value)

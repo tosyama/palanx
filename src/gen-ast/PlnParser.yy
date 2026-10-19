@@ -168,9 +168,19 @@ struct BodyList {
 	static json funcDecl(json& ast, bool exported, json fn, const vector<json>& params, const json& ret,
 	                     const palan::PlnParser::location_type& loc)
 	{
-		fn["parameters"] = params;
+		// Frame storage is a property of a local declaration; a parameter or
+		// named return with it stays an unimplemented entry for SA to report.
+		auto rejectFrame = [&](vector<json> vars) {
+			for (auto& v : vars)
+				if (v.contains("var-type") && v["var-type"].value("type-kind", "") == "embed") {
+					v = {{"not-impl", true}};
+					LOC(v, loc);
+				}
+			return vars;
+		};
+		fn["parameters"] = rejectFrame(params);
 		if (ret.contains("rets"))
-			fn["rets"] = ret["rets"];
+			fn["rets"] = rejectFrame(ret["rets"].get<vector<json>>());
 		else if (ret.contains("ret-type"))
 			fn["ret-type"] = ret["ret-type"];
 		LOC(fn, loc); // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -654,7 +664,7 @@ inherit_var_decl: ID
 
 var_declaration: type_expr ID
 	{
-		if (isDeclarableVarType($1)) {
+		if (isDeclarableVarType($1) || isFrameVarType($1)) {
 			$$ = {{"name", $2}, {"var-type", move($1)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		} else {
 			$$ = {{"not-impl", true}};
@@ -665,7 +675,7 @@ var_declaration: type_expr ID
 	{ $$ = {{"not-impl", true}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| type_expr ID '=' expression
 	{
-		if (isDeclarableVarType($1)) {
+		if (isDeclarableVarType($1) || isFrameVarType($1)) {
 			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}};
 		} else {
 			$$ = {{"not-impl", true}};
