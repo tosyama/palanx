@@ -68,10 +68,11 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 ## 26. `cinclude` Processing Time
 
-**Summary:** Now that gen-ast parses in linear time, `cinclude` dominates its run time. In `samples/tetris.pa`, gen-ast took about 1.45s in a Debug build, of which the four `cinclude`s of `ncurses.h`, `unistd.h`, `stdlib.h` and `time.h` took about 1.35s (about 1.0s in the `palan-c2ast` child processes, `ncurses.h` about 0.6s). Building the tools with `-O2` (what `make` does since v0.2.0) brings the whole gen-ast run down to about 0.22s, so this is no longer a practical problem. If it becomes one again, the next steps are profiling c2ast's preprocessing and parsing of system headers, or caching translated headers between builds.
+**Summary:** Now that gen-ast parses in linear time, `cinclude` dominates its run time. In `samples/tetris.pa`, gen-ast took about 1.45s in a Debug build, of which the four `cinclude`s of `ncurses.h`, `unistd.h`, `stdlib.h` and `time.h` took about 1.35s (about 1.0s in the `palan-c2ast` child processes, `ncurses.h` about 0.6s). Building the tools with `-O2` (what `make` does since v0.2.0) brings the whole gen-ast run down to about 0.22s, so this is no longer a practical problem. If it becomes one again, the next steps are profiling c2ast's preprocessing and parsing of system headers, or caching translated headers between builds (the cache key would have to include the macro state passed in from the earlier `cinclude`s, see #27).
 
 ---
 
-## 27. A `cinclude`d Header Cannot See Earlier `cinclude`s' Macros
+## 27. A Header Read Inside a Block Is Skipped by a Later `cinclude` Outside It
 
-**Summary:** Each `cinclude` is translated by its own palan-c2ast run, so a header written to follow another header in the same C translation unit does not see that header's macros: an `#ifdef`/`#if` on a macro the earlier header defines takes the other branch, and a macro it uses is not expanded. Typedefs are resolved across `cinclude`s by SA, but macros act during preprocessing, before SA. Supporting this needs a way to pass the macros in effect at the `cinclude` point (for example the earlier headers, or their resulting macro table) to palan-c2ast.
+**Summary:** Each `cinclude` is preprocessed with the macros every earlier `cinclude` in the file left defined, in source order, so a header an earlier `cinclude` already read is skipped by its include guard. Its declarations come from that earlier `cinclude`, but C functions are visible only in the `cinclude`'s scope. When the earlier one is inside a block, the functions are not visible after the block: `func f() { cinclude <stdio.h>; ... }` followed by a top-level `cinclude <stdio.h>; printf("x\n");` reports `Undefined function 'printf'`. Fixing this needs either the macro state to follow block scope or SA to register the skipped declarations for the later `cinclude` as well.
+

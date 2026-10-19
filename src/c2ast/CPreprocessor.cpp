@@ -41,15 +41,20 @@ static int next_pos(const vector<CToken0>& token0s, int n);
 
 //== CMacro ==
 CMacro::CMacro(CMacroType type, string name, int lexer_no)
-	: type(type), name(name), lexer_no(lexer_no)
+	: type(type), name(name), lexer_no(lexer_no), inherited(false)
 {
 }
 
 //== CPreprocessor ==
-bool CPreprocessor::loadPredefined(const string& filepath)
+void CPreprocessor::loadMacroFile(const string& filepath)
 {
+	// Registered like a preprocessed file: macro body tokens point back into
+	// this lexer, and CParser looks tokens' locations up through `lexers`.
+	int lexer_no = lexers.size();
 	CFileInfo finfo(filepath);
-	CLexer lexer(finfo);
+	lexers.push_back(new CLexer(finfo));
+	CLexer& lexer = *lexers.back();
+	lexer.no = lexer_no;
 
 	vector<CToken0>& token0s = lexer.scan();
 	for (int n=0; n<token0s.size(); n++) {
@@ -58,15 +63,24 @@ bool CPreprocessor::loadPredefined(const string& filepath)
 			n = next_pos(token0s, n);
 			BOOST_ASSERT(t != &token0s[n]);
 			t = &token0s[n];
-			if (t->type == TT0_ID && lexer.get_str(t) == "define") {
+			BOOST_ASSERT(t->type == TT0_ID);
+			string directive = lexer.get_str(t);
+			if (directive == "define") {
 				n = process_define(*this, lexer, n);
+			} else if (directive == "undef") {
+				n = process_undef(*this, lexer, n);
 			} else {
-				BOOST_ASSERT(false);
+				BOOST_ASSERT(directive == "pragma");
+				n = next_pos(token0s, n);
+				BOOST_ASSERT(lexer.get_str(&token0s[n]) == "palan_once_included");
+				n = next_pos(token0s, n);
+				BOOST_ASSERT(token0s[n].type == TT0_STR);
+				string path = lexer.get_str(&token0s[n]);
+				once_included.insert(path.substr(1, path.size() - 2));
 			}
 		}
 	}
-
-	return true;
+	for (CMacro* m: macros) m->inherited = true;
 }
 
 bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
@@ -382,21 +396,6 @@ vector<CToken*> replace_parameter_tokens(CToken* t, const vector<string>& params
 	return result;
 }
 
-static string punc_to_str(int punc);
-
-static string token_paste_str(CToken* t, const vector<CLexer*>& lexers)
-{
-	switch (t->type) {
-		case TT_ID: return *t->info.id;
-		case TT_KEYWORD: return CLexer::keywords[t->info.keyword];
-		case TT_PP_NUMBER: return *t->info.str;
-		case TT_PUNCTUATOR: return punc_to_str(t->info.punc);
-		default:
-			throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroPasteInvalidToken),
-				t->lexer_no, t->token0_no);
-	}
-}
-
 static string punc_to_str(int punc)
 {
 	if (punc > 0xFFFF)
@@ -404,6 +403,29 @@ static string punc_to_str(int punc)
 	if (punc > 0xFF)
 		return string({(char)(punc>>8), (char)punc});
 	return string(1, (char)punc);
+}
+
+// false for a token kind that has no source spelling (TT_INCLUDE etc.).
+static bool token_spelling(const CToken* t, string& s)
+{
+	switch (t->type) {
+		case TT_ID:         s = *t->info.id; return true;
+		case TT_KEYWORD:    s = CLexer::keywords[t->info.keyword]; return true;
+		case TT_PP_NUMBER:
+		case TT_STR:
+		case TT_CHAR:       s = *t->info.str; return true;
+		case TT_PUNCTUATOR: s = punc_to_str(t->info.punc); return true;
+		default:            return false;
+	}
+}
+
+static string token_paste_str(CToken* t, const vector<CLexer*>& lexers)
+{
+	string s;
+	if (t->type == TT_STR || t->type == TT_CHAR || !token_spelling(t, s))
+		throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroPasteInvalidToken),
+			t->lexer_no, t->token0_no);
+	return s;
 }
 
 static string stringify_arg(const list<CToken*>& arg, const vector<CLexer*>& lexers)
@@ -419,15 +441,11 @@ static string stringify_arg(const list<CToken*>& arg, const vector<CLexer*>& lex
 				result += c;
 			}
 		} else {
-			switch (t->type) {
-				case TT_ID:         result += *t->info.id; break;
-				case TT_KEYWORD:    result += CLexer::keywords[t->info.keyword]; break;
-				case TT_PP_NUMBER:  result += *t->info.str; break;
-				case TT_PUNCTUATOR: result += punc_to_str(t->info.punc); break;
-				default:
-					throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroStringifyInvalidToken),
-						t->lexer_no, t->token0_no);
-			}
+			string s;
+			if (!token_spelling(t, s))
+				throw CPreprocessError(PlnC2AstMessage::getMessage(E_MacroStringifyInvalidToken),
+					t->lexer_no, t->token0_no);
+			result += s;
 		}
 	}
 	result += "\"";
@@ -1383,6 +1401,28 @@ void CPreprocessor::outputError(const CPreprocessError& err)
 CPreprocessError::CPreprocessError(const string& what, int lexer_no, int start, int end)
 	: runtime_error(what), lexer_no(lexer_no), token0_start(start), token0_end(end)
 {
+}
+
+void CPreprocessor::dumpMacroState(ostream& os)
+{
+	for (CMacro* m: macros) {
+		os << "#define " << m->name;
+		if (m->type == MT_FUNC) {
+			os << "(";	// no space: a space would make it object-like
+			for (int i=0; i<m->params.size(); i++)
+				os << (i ? ", " : "") << m->params[i];
+			os << ")";
+		}
+		for (CToken* t: m->body) {
+			string s;
+			bool has_spelling = token_spelling(t, s);
+			BOOST_ASSERT(has_spelling);
+			os << " " << s;
+		}
+		os << "\n";
+	}
+	for (const string& path: once_included)
+		os << "#pragma palan_once_included \"" << path << "\"\n";
 }
 
 void CPreprocessor::dumpPreprocessed(ostream& os, vector<CToken*> *tokens)

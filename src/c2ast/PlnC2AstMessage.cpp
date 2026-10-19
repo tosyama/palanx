@@ -23,6 +23,8 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 				" -p, --path <dir>      Add search path for C headers.\n"
 				" -c, --curdir <dir>    Specify current directory for relative includes.\n"
 				" -s, --sysheader       Treat input as a system header.\n"
+				" -m, --macros <file>   Start from a macro state (an earlier run's\n"
+				"                       \"macro-state\" output) instead of predefined.h.\n"
 				" -v, --version         Display version.\n"
 				" -h, --help            Display help.\n";
 

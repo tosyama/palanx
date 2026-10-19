@@ -1493,6 +1493,12 @@ TEST(build_mgr, c_anon_member) {
 		"f 1.5 2.5\n2.5 3.5\n");
 }
 
+TEST(build_mgr, cinclude_macro_state) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/299_cinclude_macro_state.pa");
+	ASSERT_EQ(output, "ok\n100 3 2\n");
+}
+
 TEST(build_mgr, fopencookie) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/297_fopencookie.pa");

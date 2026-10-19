@@ -9,8 +9,7 @@ void registerMacroConstants(MacroTable& macros, const json& constants, const jso
 {
 	for (auto& c : constants) {
 		string name = c["name"].get<string>();
-		if (macros.count(name)) continue;  // first cinclude wins on duplicate macro names
-		macros[name] = MacroEntry{ c["value"], c.value("value-type", json()), cincludeLoc, "" };
+		macros[name].push_back(MacroEntry{ c["value"], c.value("value-type", json()), cincludeLoc, "" });
 	}
 }
 
@@ -18,9 +17,17 @@ void registerUnexportedMacros(MacroTable& macros, const json& unexported, const 
 {
 	for (auto& m : unexported) {
 		string name = m["name"].get<string>();
-		if (macros.count(name)) continue;
-		macros[name] = MacroEntry{ json(), json(), cincludeLoc,
-			m.value("function-like", false) ? "function-like" : "not-constant" };
+		macros[name].push_back(MacroEntry{ json(), json(), cincludeLoc,
+			m.value("function-like", false) ? "function-like" : "not-constant" });
+	}
+}
+
+void registerUndefinedMacros(MacroTable& macros, const json& undefined, const json& cincludeLoc)
+{
+	for (auto& n : undefined) {
+		MacroEntry e{ json(), json(), cincludeLoc, "" };
+		e.undefined = true;
+		macros[n.get<string>()].push_back(e);
 	}
 }
 
@@ -32,6 +39,16 @@ static bool isAfterMacroLoc(const json& loc, const json& macroLoc)
 	int macroLine = macroLoc[0].get<int>(), macroCol = macroLoc[1].get<int>();
 	if (refLine != macroLine) return refLine > macroLine;
 	return refCol > macroCol;
+}
+
+// The registration of `name` in effect at reference `loc`, or null.
+static const MacroEntry* findMacroAt(const MacroTable& macros, const string& name, const json& loc)
+{
+	auto it = macros.find(name);
+	if (it == macros.end()) return nullptr;
+	for (auto e = it->second.rbegin(); e != it->second.rend(); ++e)
+		if (isAfterMacroLoc(loc, e->loc)) return &*e;
+	return nullptr;
 }
 
 void foldMacroConstants(json& node, const MacroTable& macros)
@@ -46,14 +63,14 @@ void foldMacroConstants(json& node, const MacroTable& macros)
 
 	string exprType = node.value("expr-type", "");
 	if (exprType == "id" || exprType == "call") {
-		auto it = macros.find(node["name"].get<string>());
-		if (it != macros.end() && isAfterMacroLoc(node["loc"], it->second.loc)) {
-			if (!it->second.unexported.empty()) {
-				node["c-macro"] = it->second.unexported;
+		const MacroEntry* e = findMacroAt(macros, node["name"].get<string>(), node["loc"]);
+		if (e && !e->undefined) {
+			if (!e->unexported.empty()) {
+				node["c-macro"] = e->unexported;
 			} else if (exprType == "id") {
 				json loc = node["loc"];
-				node = { {"expr-type", "lit-int"}, {"value", it->second.value}, {"loc", loc} };
-				if (!it->second.valueType.is_null()) node["value-type"] = it->second.valueType;
+				node = { {"expr-type", "lit-int"}, {"value", e->value}, {"loc", loc} };
+				if (!e->valueType.is_null()) node["value-type"] = e->valueType;
 			}
 		} // LCOV_EXCL_EXCEPTION_BR_LINE
 		if (exprType == "id") return;

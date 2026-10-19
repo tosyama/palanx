@@ -9,6 +9,7 @@
 #include <set>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <filesystem>
 #include <getopt.h>
 
@@ -51,11 +52,13 @@ int main(int argc, char* argv[])
 		{ "output",             required_argument, NULL, 'o' },
 		{ "sysheader",          no_argument,       NULL, 's' },
 		{ "dump-preprocessed",  no_argument,       NULL, 'd' },
+		{ "macros",             required_argument, NULL, 'm' },
 		{ 0 }
 	};
 
 	int opt, option_index = 0;
 	char *output_file = NULL;
+	char *macro_state_file = NULL;
 	bool do_indent = false;
 	bool is_sys_header = false;
 	bool do_dump_preprocessed = false;
@@ -63,7 +66,7 @@ int main(int argc, char* argv[])
 	string current_directory = "";
 	string target = "x86_64-linux-gnu";
 
-	while (0 < (opt = getopt_long(argc, argv, "hvo:ip:c:sd", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "hvo:ip:c:sdm:", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
 				cout << PlnC2AstMessage::getMessage(M_Help) << endl;
@@ -88,6 +91,9 @@ int main(int argc, char* argv[])
 				break;
 			case 'd':
 				do_dump_preprocessed = true;
+				break;
+			case 'm':
+				macro_state_file = optarg;
 				break;
 
 			default:
@@ -169,9 +175,11 @@ int main(int argc, char* argv[])
 			fs::path exec_file_path = fs::canonical("/proc/self/exe");
 			string exec_path = exec_file_path.parent_path().string();
 			CPreprocessor cpp(macros, include_paths);
-			string predefined_path = exec_path + "/c2ast/predefined.h";
-			cpp.loadPredefined(predefined_path);
-			set<CMacro*> predefined_macros(macros.begin(), macros.end());
+			// A macro state already holds predefined.h's macros (or their #undefs).
+			cpp.loadMacroFile(macro_state_file ? string(macro_state_file)
+			                                   : exec_path + "/c2ast/predefined.h");
+			set<string> inherited_names;
+			for (CMacro* m : macros) inherited_names.insert(m->name);
 
 		try {
 			if (is_sys_header) {
@@ -195,9 +203,18 @@ int main(int argc, char* argv[])
 
 				vector<CMacro*> user_macros;
 				for (CMacro* m : macros) {
-					if (!predefined_macros.count(m)) user_macros.push_back(m);
+					if (!m->inherited) user_macros.push_back(m);
+					inherited_names.erase(m->name);
 				}
 				cparser.exportMacroConstants(ast, user_macros, cpp);
+				if (macro_state_file) {
+					for (const string& name : inherited_names)
+						ast["ast"]["undefined-macros"].push_back(name);
+				}
+
+				ostringstream macro_state;
+				cpp.dumpMacroState(macro_state);
+				ast["macro-state"] = macro_state.str();
 
 				ostream* out = &cout;
 				ofstream outfile;

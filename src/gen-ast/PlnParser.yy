@@ -10,7 +10,7 @@
 
 %defines
 %define api.parser.class	{PlnParser}
-%parse-param	{PlnLexer& lexer}	{json& ast}	{MacroTable& macros}
+%parse-param	{PlnLexer& lexer}	{json& ast}	{MacroTable& macros}	{string& cMacroState}
 %lex-param	{PlnLexer& lexer}
 
 %code requires
@@ -321,7 +321,9 @@ expr_stmt: import
 		$$["stmt-type"] = "cinclude";
 
 		json c_ast = execute_c2ast($$["path-type"], $$["path"],
-		                          fs::path(lexer.inputFile).parent_path().string());
+		                          fs::path(lexer.inputFile).parent_path().string(), cMacroState);
+		if (c_ast.is_object() && c_ast.contains("macro-state"))
+			cMacroState = c_ast["macro-state"].get<string>();
 		if (c_ast.is_object() && c_ast.contains("ast")) {
 			if (c_ast["ast"].contains("functions")) {
 				$$["functions"] = move(c_ast["ast"]["functions"]);
@@ -345,6 +347,9 @@ expr_stmt: import
 		}
 		if (c_ast.is_object() && c_ast.contains("ast") && c_ast["ast"].contains("unexported-macros")) {
 			registerUnexportedMacros(macros, c_ast["ast"]["unexported-macros"], $$["loc"]);
+		}
+		if (c_ast.is_object() && c_ast.contains("ast") && c_ast["ast"].contains("undefined-macros")) {
+			registerUndefinedMacros(macros, c_ast["ast"]["undefined-macros"], $$["loc"]);
 		}
 	}
 	| var_declarations

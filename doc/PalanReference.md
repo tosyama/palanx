@@ -592,7 +592,12 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 - A header may use a typedef from a header cincluded before it, as in C where both are included
   into one translation unit: `cinclude <stdio.h>; cinclude <jpeglib.h>;` lets `jpeglib.h`'s
   declarations use `size_t` and `FILE`. Typedefs that bottom out in a pointer type are not carried
-  over this way, and neither are macros (see `doc/Issues.md`).
+  over this way.
+- Macros carry over the same way: a header sees every macro the headers cincluded before it in the
+  file defined or `#undef`ed, so its `#ifdef`s and macro uses work as in C. A header that an
+  earlier cinclude already read is skipped by its include guard, as in C, and its declarations
+  come from that earlier cinclude. So if the earlier cinclude is inside a block, the skipped
+  functions can't be called outside that block (see `doc/Issues.md`).
 - If multiple cincluded headers introduce the same typedef name resolving to the *same* underlying
   type, the first registration silently wins. If they resolve to *different* underlying types, this
   is a compile error. Because typedef registration is no longer gated on being referenced by some
@@ -653,13 +658,13 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   integer cast, as in ncurses' `A_REVERSE` (`unsigned int`) — keeps that type, and meets other operands
   through the [usual arithmetic conversions](#3-type-system) like any typed value.
 - Substitution is text-order only, not lexically scoped like a cincluded C function or `const`:
-  a reference resolves against whichever cincluded header defines the name first, textually
+  a reference resolves against the last cincluded header that defines the name, textually
   before that reference, anywhere in the rest of the file — including past the end of the block
   the `cinclude` itself appears in. A reference that textually precedes every cincluding
   `cinclude` is left unresolved (`Undefined function`/`Undefined variable`), even if a later
   `cinclude` in the same file would otherwise define it.
-- If multiple cincluded headers define the same name, the first one (by source position) wins;
-  later `cinclude`s defining the same name are silently ignored for that name.
+- A later cincluded header may redefine or `#undef` a macro, as in C. References after that
+  `cinclude` see the new value, or no macro at all.
 - A macro constant silently takes priority over any same-named variable, parameter, or `const` in
   scope at the reference site — the opposite of the const/variable [shadowing
   rule](#21-constant-declarations), and undiagnosed either way.

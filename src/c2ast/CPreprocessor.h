@@ -23,6 +23,7 @@ public:
 	vector<string> params;
 	vector<CToken*> body;
 	int lexer_no;
+	bool inherited;	// loaded by loadMacroFile, not defined by the header
 
 	CMacro(CMacroType type, string name, int lexer_no);
 };
@@ -49,8 +50,12 @@ public:
 	vector<CToken*> expand_macro_tokens(CMacro *m, vector<list<CToken*>> &args, vector<CMacro*> *hide_set);
 	vector<CToken*> expandObjectMacroBody(CMacro *m);
 
+	// Loads #define/#undef lines and the "#pragma palan_once_included" lines
+	// dumpMacroState writes; used for predefined.h and for a macro state.
+	// Every macro defined once it returns is marked inherited.
+	void loadMacroFile(const string& filepath);
+	void dumpMacroState(ostream& os);
 	// true: success, false: failed
-	bool loadPredefined(const string& filepath);
 	bool preprocess(const string& filepath, vector<CToken*> *tokens=NULL);
 	void outputError(const CPreprocessError& err);
 

@@ -1312,8 +1312,8 @@ TEST(gen_ast, cinclude_constant) {
 
 TEST(gen_ast, cinclude_unexported_macro) {
 	cleanTestEnv();
-	// Only references after the cinclude are marked, and the first cinclude
-	// wins over a later one's constant of the same name, as among constants.
+	// Only references after the cinclude are marked, and a later header's
+	// redefinition as a constant replaces the mark from there on.
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/140_cinclude_unexported_macro.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
@@ -1323,9 +1323,24 @@ TEST(gen_ast, cinclude_unexported_macro) {
 	ASSERT_EQ(stmts[2]["vars"][0]["init"]["c-macro"], "not-constant");
 
 	auto& after = stmts[4]["vars"][0]["init"];
-	ASSERT_EQ(after["left"]["c-macro"], "not-constant");
+	ASSERT_EQ(after["left"]["expr-type"], "lit-int");
+	ASSERT_EQ(after["left"]["value"], "7");
 	ASSERT_EQ(after["right"]["c-macro"], "function-like");
-	ASSERT_EQ(after["right"]["args"][0]["c-macro"], "not-constant");
+	ASSERT_EQ(after["right"]["args"][0]["value"], "7");
+}
+
+TEST(gen_ast, cinclude_macro_state) {
+	cleanTestEnv();
+	// b.h is preprocessed with a.h's macros, as in one C translation unit.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/141_cinclude_macro_state.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	auto& stmts = jout["ast"]["statements"];
+
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["value"], "3");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value"], "5");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value"], "1");
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["expr-type"], "id");
 }
 
 TEST(gen_ast, cinclude_global) {
@@ -1689,8 +1704,8 @@ TEST(gen_ast, bool_literal) {
 }
 
 TEST(gen_ast, macro_fold_duplicate_name) {
-	// Two cincludes defining the same macro name: the first registration
-	// wins and later same-named definitions are ignored.
+	// Two cincludes defining the same macro name: the second header redefines
+	// it, as in one C translation unit, so the reference after both sees it.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/118_macro_fold_dup.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1698,7 +1713,7 @@ TEST(gen_ast, macro_fold_duplicate_name) {
 
 	auto& ret = jout["ast"]["functions"][0]["block"]["body"][0]["values"][0];
 	ASSERT_EQ(ret["expr-type"], "lit-int");
-	ASSERT_EQ(ret["value"], "1");
+	ASSERT_EQ(ret["value"], "2");
 }
 
 TEST(gen_ast, return_def_nonprim) {

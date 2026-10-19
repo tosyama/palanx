@@ -93,9 +93,14 @@ function-like macro referenced without a call, a string or floating literal, a r
 equality/logical/ternary expression, unary `!`, or a reference to an unresolved identifier)
 is not exported here; it goes to the `ast.unexported-macros` list instead, as `{name}` or, for a
 function-like macro, `{name, "function-like": true}`. gen-ast registers these into the same macro
-table (first cinclude wins on a name, as among constants) and, instead of folding, sets `c-macro`
+table and, instead of folding, sets `c-macro`
 on a later `id` or `call` that names one (see Expression model's `id`), so SA reports the macro
 rather than an undefined name.
+
+Each c2ast run starts from the previous `cinclude`'s macros (SpecAndDesign.md §3.3), so these
+lists hold only the macros the header itself (re)defines, and `ast.undefined-macros` names the
+ones it `#undef`s. gen-ast keeps each name's registrations in source order, and a reference uses
+the last one before it; an `#undef` registration leaves the reference unfolded.
 
 An enumerator (see Enum definition model below) is an integer operand in these expressions,
 untyped like an unsuffixed literal. A body that is exactly one enumerator of a named enum
