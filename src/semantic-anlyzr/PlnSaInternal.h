@@ -508,6 +508,32 @@ inline bool elemShapeMatch(const json& from, const json& to) {
 // or an array level. Rebinding would alias the source and free it twice.
 inline bool isCopiedByValue(const json& t) { return isStructStorage(t) || isArrLevel(t); }
 
+// The source type that declares an owned array of the levels of saType (a
+// borrowed array parameter); null when an element is not one a literal gives.
+inline json astArrType(const json& saType)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json out = {{"type-kind","arr"},{"specifier","raw"},
+		{"size-expr",{{"expr-type","lit-uint"},{"value",to_string(saType["arr-size"].get<int64_t>())}}}};
+	if (saType.value("embedded", false))
+		out["embedded"] = true;
+	const json& base = saType["base-type"];
+	json elem;
+	if (isArrLevel(base) && base.contains("arr-size"))
+		elem = astArrType(base);
+	else if (base.value("type-kind","") == "struct")
+		elem = {{"type-kind","prim"},{"type-name",base["type-name"]}};
+	else if (isStructStorage(base))
+		elem = {{"type-kind","prim"},{"type-name",base["base-type"]["type-name"]}};
+	else if (base.value("type-kind","") == "prim")
+		elem = base;
+	if (elem.is_null())
+		return nullptr;
+	out["base-type"] = move(elem);
+	return out;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // Shape equality for such a copy, which is a plain byte copy level by level:
 // every size known and equal, the same layout and the exact same element
 // type, since no conversion can apply.

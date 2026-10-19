@@ -394,11 +394,18 @@ Additional statement kinds emitted by SA:
 - **Chained and once-evaluated stores** - an assignment whose `value` is another assignment
   (`v -> t1 -> t2`, or a `chain-call` starting from one) runs that assignment first and reads its
   target back as the value. Each call is evaluated once, values before targets: a call in a target
-  read back (an index, or the expression the target starts from), a value with a call stored to a
-  target with a call, and a call in the location a `->>` reads and then resets are each evaluated
-  into a temp `__pin_N` by a `var-decl`, in source order, and the statements are wrapped in a
-  `block`. The temp keeps the value's `category`, so the store treats it as the value itself. An
-  aggregate literal value is not held in a temp (its elements are evaluated after a pinned target).
+  read back or freed by `->>` (an index, or the expression the target starts from), a value with a
+  call stored to a target with a call, and a call in the location a `->>` reads and then resets are
+  each evaluated into a temp `__pin_N` by a `var-decl`, in source order, and the statements are
+  wrapped in a `block`. The temp keeps the value's `category`, so the store treats it as the value
+  itself. A value with no call stored to a target with a call is evaluated first too when a call
+  could change it: a numeric or pointer value is read into a `__pin_N`, a struct or array copied
+  into a `__snap_N` (freed after the store), and a `->>` source read into a `__pin_N` (category
+  `expiring`) and reset at once. That is unless all it reads is the storage of local variables
+  none of which gives a pointer to its storage away anywhere in the function (by `@`, as a struct,
+  `[]T` or C pointer argument, bound to a pointer, or cast). An aggregate literal value is
+  evaluated before the target as usual; when the target is read back its address temp is what is
+  read.
 
 - **Copy** (`src -> dst` where dst is an array or a struct's storage) - no dedicated statement
   kind. SA lowers the copy to an `expr` statement calling a copy routine with `(dst, src, ...)`,

@@ -354,7 +354,10 @@ for `->>` (`x ->> s.p ->> t.p;` moves ownership from `x` to `s.p`, then from `s.
 A target followed by another `->` is read back as the next value from the same location
 (`v -> arr[f()] -> x` calls `f` once). Evaluation goes left to right: the value first, then
 each target as it is stored, so in `g() -> arr[f()]` `g` is called before `f`, and in
-`n -> i -> arr[i]` `arr[i]` uses the `i` just stored. An assignment used inside any other
+`n -> i -> arr[i]` `arr[i]` uses the `i` just stored. A call in the target that changes the
+value through a pointer it was given does not change what is stored: `q[0] -> q[bump(@!q)]`
+stores `q[0]` as it was before `bump`. A `->>` gives its value away when the value is
+evaluated, so such a call already sees the source empty. An assignment used inside any other
 expression is not supported.
 A call can follow `->` too; see [Chained Calls](#chained-calls).
 

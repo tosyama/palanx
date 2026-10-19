@@ -3177,7 +3177,7 @@ TEST(build_mgr, store_eval_once_mtrace) {
 		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
 		"MALLOC_TRACE=" + traceFile + " "
 		"/tmp/palan_store_eval_once_mtrace_bin");
-	ASSERT_EQ(output, "i1 i0 i1 i1 2 3 4\n");
+	ASSERT_EQ(output, "i1 i0 i1 2 3 4\n");
 
 	string catResult = execTestCommand("cat " + traceFile);
 	int allocs = 0, frees = 0;
@@ -3191,6 +3191,45 @@ TEST(build_mgr, store_eval_once_mtrace) {
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
 	EXPECT_EQ(allocs, 8) << "expected 8 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, store_value_first) {
+	cleanTestEnv();
+	// A call in the target that writes the value through a pointer it was
+	// given -- by '@', a struct or []T parameter, a raw pointer or an integer
+	// cast, even one given later in a loop -- does not change what is stored.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/311_store_value_first.pa");
+	ASSERT_EQ(output, "5 5\n1 2\n1 11\n1 2\n1 11\n1 101\n1 1001\n3 9\ng i 1 2\n"
+	                  "1 2 27\ni i i 6 4 1\ni 2 2\n");
+}
+
+TEST(build_mgr, store_value_first_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_store_value_first_mtrace_bin "
+		"../test/testdata/build-mgr/312_store_value_first_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_store_value_first_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_store_value_first_mtrace_bin");
+	ASSERT_EQ(output, "3 4\n5 4 9\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 15) << "expected 15 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }

@@ -350,32 +350,6 @@ json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
 	return saArg;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
-// The source type that declares an owned array of the levels of saType (a
-// borrowed array parameter); null when an element is not one a literal gives.
-static json astArrType(const json& saType)
-{
-	// LCOV_EXCL_EXCEPTION_BR_START
-	json out = {{"type-kind","arr"},{"specifier","raw"},
-		{"size-expr",{{"expr-type","lit-uint"},{"value",to_string(saType["arr-size"].get<int64_t>())}}}};
-	if (saType.value("embedded", false))
-		out["embedded"] = true;
-	const json& base = saType["base-type"];
-	json elem;
-	if (isArrLevel(base) && base.contains("arr-size"))
-		elem = astArrType(base);
-	else if (base.value("type-kind","") == "struct")
-		elem = {{"type-kind","prim"},{"type-name",base["type-name"]}};
-	else if (isStructStorage(base))
-		elem = {{"type-kind","prim"},{"type-name",base["base-type"]["type-name"]}};
-	else if (base.value("type-kind","") == "prim")
-		elem = base;
-	if (elem.is_null())
-		return nullptr;
-	out["base-type"] = move(elem);
-	return out;
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-
 // A literal argument ('[..]', '{..}', or one under '@'/'@!') becomes a temp of
 // the parameter's struct or array type, initialized by body; the argument is
 // then analyzed as the temp written in its place ('@__lit_N'), returned with
@@ -971,6 +945,7 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		const PlnType* toType, const json& toTypeJson)
 {
+	noteEscape(value);
 	if (!value.contains("value-type") || value["value-type"] == toTypeJson) return value;
 	const PlnType* fromType = registry_.fromJson(value["value-type"]);
 	TypeCompat compat = typeCompat(fromType, toType, registry_);
@@ -1302,6 +1277,8 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		if (byValStruct) {
 			const StructDef& def = requireCompleteStruct((*paramVT)["base-type"]["type-name"].get<string>(), locNode);
 			saArg["struct-arg"] = {{"size", def.totalSize}, {"eightbytes", eightbytesJson(def, structDefs_)}};
+		} else {
+			noteEscape(saArg);
 		}
 		saArgs.push_back(saArg);
 		argIdx++;
@@ -1432,6 +1409,8 @@ json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
 		exit(1);
 	}
+	// An address cast to an integer can be cast back.
+	noteEscape(src);
 	const json& from = src["value-type"];
 	// A struct value is held as a pointer to its storage, but it is not one.
 	bool fromPntr = from.value("type-kind", "") == "pntr" && !isStructStorage(from);

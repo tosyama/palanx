@@ -112,6 +112,11 @@ class PlnSemanticAnalyzer {
 	vector<size_t> whileScopeStack_;
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
+	// Variables of the function being analyzed (the top level counts as one)
+	// whose storage a pointer has been given to, and the count of
+	// `pending-alias` statements waiting for that to be known.
+	set<string> escapedVars_;
+	int pendingAliases_ = 0;
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
@@ -424,7 +429,7 @@ class PlnSemanticAnalyzer {
 	// node. Shared by sa_expr_call and sa_expr_member_call so the two paths
 	// can't drift on which fields a syscall call carries.
 	void  applyPlnCalleeSig(json& sa_expr, const json& pFunc);
-	json sa_field_assign(const json& stmt);  // returns json::array()
+	json sa_field_assign(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	void requireOwnedBase(const json& saBase, const json& locNode);
 	json makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value);
@@ -446,19 +451,28 @@ class PlnSemanticAnalyzer {
 	void sa_functions(const json& funcs);
 	void sa_function(const json& funcDef);
 	json sa_store_scope(const json& stmt);  // returns json::array()
-	json sa_store_stmt(const json& stmt);   // returns json::array()
+	json sa_store_stmt(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	void hoistStores(json& value, json& body);
 	json sa_store_steps(const json& stmt, json& body, bool readBack);
-	const PlnType* storeTargetType(const json& stmt);
+	json storeTargetType(const json& stmt);
 	json pinLocation(json loc, json& body);
 	json pinValue(json saValue, const json& astValue, json& body);
+	bool valueFirst(json& s, json& pre, json& post, set<string>& roots);
+	json snapshotCopy(const json& saSrc, const json& locNode, json& pre, json& post);
+	json takeScopeRelease(const string& name);
+	void noteEscape(const json& saValue);
+	bool storageRoots(const json& v, set<string>& roots, bool contents);
+	void resolvePending(json& stmts);
 	json sa_assign_stmt(const json& stmt);
 	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
-	json sa_arr_assign_stmt(const json& stmt);  // returns json::array()
+	json sa_arr_assign_stmt(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	// `[...] -> target` / `{...} -> target` for a struct or array target; returns a block.
-	json sa_aggregate_lit_assign(const json& stmt, const json& targetAst, const json& targetType);
+	// With litAddr, returns the statements without a scope of their own and
+	// sets litAddr to the target's address, held in a temp, to read it back.
+	json sa_aggregate_lit_assign(const json& stmt, const json& targetAst, const json& targetType,
+	                             json* litAddr = nullptr);
 	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);

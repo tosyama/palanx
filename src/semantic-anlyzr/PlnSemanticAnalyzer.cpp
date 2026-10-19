@@ -1017,6 +1017,8 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 2. Process top-level statements (cinclude/import registered here,
 	//    visible in Palan function bodies processed next).
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
+	if (pendingAliases_)
+		resolvePending(sa["statements"]);
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);

@@ -2378,6 +2378,7 @@ TEST(sa_error, copy)
 		{"error_207_arr_var_init_not_literal.pa", ":1:1: error: cannot copy 'int64' into '[3]int32'"},
 		{"error_296_copy_size_mismatch.pa", ":3:1: error: cannot copy '[4]int32' into '[3]int32'"},
 		{"error_297_copy_runtime_size.pa", ":4:1: error: cannot copy '[?]int32' into '[?]int32'"},
+		{"error_655_copy_unsized_row_call_target.pa", ":4:2: error: cannot copy '@!int32' into '[2]int32'"},
 		{"error_298_copy_elem_type.pa", ":2:1: error: cannot copy '[3]int32' into '[3]int64'"},
 		{"error_299_copy_struct_type.pa", ":5:1: error: cannot copy 'P' into 'Q'"},
 		{"error_300_copy_into_ro_elem.pa", ":3:2: error: cannot write through read-only pointer '@T'"},

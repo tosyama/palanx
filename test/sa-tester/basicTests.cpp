@@ -6070,3 +6070,25 @@ TEST(sa, frame_scope_exit)
 	ASSERT_EQ(body[5]["body"]["name"], "__pln_fini_Q");
 	ASSERT_EQ(body[6]["stmt-type"], "return");
 }
+
+TEST(sa, store_value_first_plain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/280_store_value_first_plain.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+
+	// A value no call can reach is stored as written: no temp, no block.
+	ASSERT_EQ(stmts[2]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[2]["value"]["name"], "x");
+	ASSERT_EQ(stmts[6]["stmt-type"], "expr");
+	ASSERT_EQ(stmts[8]["stmt-type"], "arr-assign");
+
+	// c is given to memset afterwards, so its element is read before f().
+	const auto& blk = stmts[10];
+	ASSERT_EQ(blk["stmt-type"], "block");
+	ASSERT_EQ(blk["body"][0]["stmt-type"], "var-decl");
+	ASSERT_EQ(blk["body"][0]["vars"][0]["init"]["array"]["name"], "c");
+	ASSERT_EQ(blk["body"][1]["value"]["name"], blk["body"][0]["vars"][0]["name"]);
+	ASSERT_EQ(jout.dump().find("pending-alias"), string::npos);
+}
