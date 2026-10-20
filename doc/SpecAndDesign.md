@@ -6,20 +6,24 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-10-15)
-version: 0.2.0 — release preparation
+### 2.1 Iteration Goal (2026-10-20)
+version: 0.2.1 — variable-length arrays
 
-No new language features are planned. The iteration brings the existing implementation and
-its documentation into a consistent, releasable state:
+Add `[+]T` / `[+n]T`, an array that keeps its length and capacity at run time and can grow and
+shrink. It is the base for receiving command-line arguments, a `for` loop that cannot index out
+of range, and a string type.
 
-- Triage `doc/Issues.md` and fix the items that should not remain in 0.2.0.
-- Verify that the examples in `doc/PalanReference.md` work as written, and correct stale
-  descriptions in the other documents.
-- Rewrite `README.md` as an introduction to the language.
-- Shorten the test suite's running time without lowering coverage.
+- Representation: the variable is one word pointing to a heap header `{len, cap, data}`; growing
+  or shrinking reallocates only `data`, so the variable and any borrow of it stay valid.
+- Elements: primitives, structs (`[+]T` owned, `[+]$T` contiguous), and nested `[+][+]T`. Also
+  usable as borrows (`@[+]T`/`@![+]T`), parameters, return values and struct fields.
+- Operations `len`, `push`, `resize` and `pop` are built-in functions, resolved through function
+  overloading, which this iteration adds for Palan functions in general.
+- A method-form call after `->` (`x -> v.push()`) is added as a general feature.
 
-Other rough edges found along the way are ticketed and fixed as they come up.
-The ticket list is kept in `localtickets/iteration-2026-10-15-v0200-release.md`.
+Out of scope: `[#]T`, and `->>` into a call (a parameter that takes ownership); an owned element
+is moved in with `v.resize(n + 1); p ->> v[n];`.
+The ticket list is kept in `localtickets/iteration-2026-10-20-v0210-varray.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
