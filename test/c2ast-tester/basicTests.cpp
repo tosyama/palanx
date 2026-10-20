@@ -1183,6 +1183,24 @@ TEST(c2ast, sizeof_unknown) {
         ASSERT_EQ(constants.count(name), 0) << name;
 }
 
+TEST(c2ast, unfolded_arr_size) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/051_unfolded_arr_size.h");
+    json ast = json::parse(output);
+    map<string, json> tails;
+    for (auto& s : ast["ast"]["structs"]) tails[s["name"]] = s["fields"][1]["var-type"]["size-expr"];
+    map<string, string> constants;
+    for (auto& c : ast["ast"]["constants"]) constants[c["name"]] = c["value"];
+
+    // Only `[]` is a flexible array member; a size that doesn't fold is not one.
+    for (const char* name : {"T", "V"}) {
+        ASSERT_EQ(tails.at(name)["expr-type"], "not-const") << name;
+        ASSERT_EQ(constants.count(string("SZ_") + name), 0) << name;
+    }
+    ASSERT_TRUE(tails.at("U").is_null());
+    ASSERT_EQ(constants["SZ_U"], "4");
+}
+
 TEST(c2ast, attributes) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/047_attributes.h");

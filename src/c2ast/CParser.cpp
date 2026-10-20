@@ -741,10 +741,15 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 	while (true) {
 		if (CONSUME_PUNC('[')) {
 			json arr_size_value;
-			constant_expression(arr_size_value, tokens, index);
 			if (!CONSUME_PUNC(']')) {
-				// debug_token(tokens[index]);
-				return false;
+				constant_expression(arr_size_value, tokens, index);
+				if (!CONSUME_PUNC(']')) {
+					// debug_token(tokens[index]);
+					return false;
+				}
+				// A null size-expr means `[]`, so a size that doesn't fold must not
+				// reach the AST as one.
+				if (arr_size_value.is_null()) arr_size_value = {{"expr-type", "not-const"}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 			}
 			dims.push_back(move(arr_size_value));
 

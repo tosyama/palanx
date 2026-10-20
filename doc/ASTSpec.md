@@ -310,6 +310,9 @@ Variable type
     `base-type` is an inner `arr` (size-expr 3). See SASpec.md's C-origin field admission rules for
     which shapes SA accepts as a struct field (2D+ is not supported there) and the C Parameter
     section below for how an array-typed parameter decays.
+    Note: c2ast gives a C array a null `size-expr` only for `[]`. A size it can't fold to an
+    integer is `{"expr-type": "not-const"}`, so it never reads as a flexible array member; SA
+    rejects it in a struct field like any other non-literal size.
     Note: c2ast's declarator parser follows normal C precedence — the postfix `[n]` binds tighter
     than the prefix `*` — so `T *name[n];` (array of `n` pointers to T) captures as an `arr` whose
     `base-type` is `pntr(T)`, while `T (*name)[n];` (pointer to an array of `n` T) captures as a
