@@ -97,3 +97,15 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 - (g) `#include` inside an enum body — `stab.h`.
 - (h) A `static __inline__` function definition — `sys/platform/x86.h`.
 - (i) `#error` for non-GNU compilers — `tgmath.h`. Its type-generic macros are function-like and would not be usable from Palan anyway (#9).
+
+---
+
+## 30. Returned Structs Are Always Heap-Allocated
+
+**Summary:** A function returning a struct allocates the return value on the heap on every call, and the caller frees it when done; this holds also when the value is only a temporary (an argument such as `@sub(@a, @b)`, or the middle of `v -> f() -> g()`) and for named struct returns. In `samples/raytracer` (v0.2.0), rendering a 256×192 image makes about 6.7 million `calloc`/`free` pairs, about 137 per pixel (mostly from `sub`, `scene_intersect`'s named returns, `mul`, `normalized` and `add`), and `malloc`/`calloc`/`free` take about 66% of the instructions executed (callgrind). The 1024×768 render takes about 7.7s. A fix is to have the caller pass the storage for the return value, as C's struct return does: frame storage for a temporary or a `$T` variable, heap storage only for a variable that owns it. Receiving into `$T v = f();` copies the heap value into the frame and frees it, which is correct but does not avoid the allocation.
+
+---
+
+## 31. Float Values Are Never Kept in Registers
+
+**Summary:** `PlnRegAlloc` assigns no XMM registers, so every `flo32`/`flo64` value lives in a stack slot and each arithmetic operation stores its result to memory and reloads it. `samples/raytracer/vecmath.pa`'s `dot` compiles to 32 instructions, most of them `movss` to and from the frame. Allocating XMM registers needs to save values that live across a call, since SysV makes every XMM register caller-saved. Together with #30, this keeps the raytracer far slower than C.
