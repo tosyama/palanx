@@ -800,6 +800,8 @@ Additional fields per expression kind:
 - call expression:
   - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions, "syscall"
     for a call resolved to a `syscall` declaration (local or imported)
+  - name: for func-type "c", the symbol the function links to (its `symbol` in ast.json, else
+    the written name); likewise for a func-ref to a C function
   - syscall-number added (integer) when func-type is "syscall" -- the declaration's number,
     folded to a literal by SA; the declaration itself never reaches this or any other module's
     sa.json (see "Function model" above), so this is the only place the number survives

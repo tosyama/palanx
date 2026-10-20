@@ -98,6 +98,7 @@ class CParser {
 
 	bool resolveConstValue(const json &node, json &value, json &type);
 	bool typeSizeAlign(const json &vt, long long &size, long long &align);
+	bool exportFuncAlias(json &ast, const string &name, const string &target);
 
 	// void debug_token(const CToken* token);
 

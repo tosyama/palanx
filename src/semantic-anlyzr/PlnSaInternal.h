@@ -635,6 +635,12 @@ inline json cTypeAsAlias(const json& type) {
 	return t;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// The symbol a C call or function pointer links to: a header can declare a
+// name as an alias of another function (`#define sscanf __isoc99_sscanf`).
+inline const json& cLinkName(const json& funcDef) {
+	return funcDef.contains("symbol") ? funcDef["symbol"] : funcDef["name"];
+}
+
 // An unrepresentable parameter/return type is recorded as "_unsupported-sig"
 // rather than rejected here, so cinclude'ing the header is not itself an
 // error -- only calling the function is. A by-value struct parameter takes

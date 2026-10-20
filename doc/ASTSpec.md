@@ -52,6 +52,9 @@ Function definition model
   2. **c** - C function prototype (from `cinclude`)
      - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)
      - ret-type\* - Return variable type
+     - symbol - Symbol the function links to (omitted when it is `name`). A header macro that
+       names another declared function (`#define sscanf __isoc99_sscanf`) makes `name` a
+       declaration with that function's type and symbol, replacing any older one of `name`
 
   3. **syscall** - Raw syscall declaration (a prototype with no block)
      - export - Boolean, true if declared with `export` keyword (omitted when false)

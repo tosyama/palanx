@@ -1081,7 +1081,7 @@ json PlnSemanticAnalyzer::sa_func_ref(const json& expr)
 			reject("its parameter type '" + typeDisplayName(p["var-type"]) + "' cannot be passed through one");
 	if (!retOk)
 		reject("its return type '" + typeDisplayName(ret) + "' cannot be returned through one");
-	json out = {{"expr-type", "func-ref"}, {"name", name},
+	json out = {{"expr-type", "func-ref"}, {"name", cfunc ? cLinkName(*cfunc) : json(name)},
 	            {"value-type", {{"type-kind","pntr"},{"mutable",false},{"base-type",move(func)}}}};
 	if (expr.contains("loc")) out["loc"] = expr["loc"];
 	return out;
@@ -1161,6 +1161,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	if (cfunc) {
 		isCFunc = true;
 		sa_expr["func-type"] = "c";
+		sa_expr["name"] = cLinkName(*cfunc);
 		requireSupportedCFuncSig(*cfunc, expr["name"].get<string>(), expr);
 		if (cfunc->contains("ret-type")
 				&& (*cfunc)["ret-type"].value("type-name", "") != "void")
@@ -1862,6 +1863,7 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 
 	if (isCFunc) {
 		sa_expr["func-type"] = "c";
+		sa_expr["name"] = cLinkName(*pFunc);
 		requireSupportedCFuncSig(*pFunc, method, expr);
 		if (pFunc->contains("ret-type")
 				&& (*pFunc)["ret-type"].value("type-name", "") != "void")

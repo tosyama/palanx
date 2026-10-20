@@ -1965,6 +1965,23 @@ bool CParser::resolveConstValue(const json &node, json &value, json &type)
 	return false;
 }
 
+bool CParser::exportFuncAlias(json &ast, const string &name, const string &target)
+{
+	json &funcs = ast["ast"]["functions"];
+	if (!funcs.is_array()) return false;
+	json alias;
+	for (const json &f : funcs)
+		if (f["name"] == target) { alias = f; break; }
+	if (alias.is_null()) return false;
+
+	for (auto it = funcs.begin(); it != funcs.end();)
+		it = (*it)["name"] == name ? funcs.erase(it) : it + 1;
+	if (!alias.contains("symbol")) alias["symbol"] = target;
+	alias["name"] = name;
+	funcs.push_back(move(alias));
+	return true;
+}
+
 void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPreprocessor &cpp)
 {
 	json unexported = json::array();
@@ -1997,7 +2014,15 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 		// "#define stderr stderr": the name means whatever C declares under it.
 		bool self_ref = expanded.size() == 1 && expanded[0]->type == TT_ID
 		                && *expanded[0]->info.id == m->name;
+		string alias_target;
+		if (!ok && !self_ref && expanded.size() == 1 && expanded[0]->type == TT_ID)
+			alias_target = *expanded[0]->info.id;
 		for (CToken* t : expanded) delete t;
+		// "#define sscanf __isoc99_sscanf": every C call of the name reaches the
+		// target, so the name becomes a declaration with the target's type that
+		// links to its symbol, replacing any older declaration of the name.
+		if (!alias_target.empty() && exportFuncAlias(ast, m->name, alias_target))
+			continue;
 		if (!ok) {
 			if (!self_ref) unexported.push_back({{"name", m->name}});
 			continue;

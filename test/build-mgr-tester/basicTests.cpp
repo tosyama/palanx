@@ -3267,3 +3267,12 @@ TEST(build_mgr, inet_ntoa) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/314_inet_ntoa.pa");
 	ASSERT_EQ(output, "127.0.0.1 2130706433\n2\n");
 }
+
+
+TEST(build_mgr, c_func_alias_macro) {
+	cleanTestEnv();
+	// Each name is a glibc macro for another symbol; the old sscanf would read
+	// "%as" as a GNU allocated string.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/317_c_func_alias_macro.pa");
+	ASSERT_EQ(output, "1 8\n0 No such file or directory\nb\n");
+}

@@ -1772,3 +1772,29 @@ TEST(c2ast, macro_state) {
     ASSERT_EQ(b_state.find("A_GONE"), string::npos);
     ASSERT_NE(b_state.find("#define A_VAL 5\n"), string::npos);
 }
+
+TEST(c2ast, func_alias_macro) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/049_func_alias_macro.h");
+    json ast = json::parse(output);
+    auto funcs = [&](const string& name) {
+        vector<json> found;
+        for (auto& f : ast["ast"]["functions"])
+            if (f["name"] == name) found.push_back(f);
+        return found;
+    };
+
+    auto old_f = funcs("old_f");
+    ASSERT_EQ(old_f.size(), 1u);
+    ASSERT_EQ(old_f[0]["symbol"], "new_f");
+    ASSERT_EQ(old_f[0]["parameters"].size(), 2u);
+    ASSERT_EQ(funcs("new_f")[0].contains("symbol"), false);
+
+    ASSERT_EQ(funcs("kept_f")[0].contains("symbol"), false);
+    ASSERT_EQ(funcs("first_f")[0]["symbol"], "last_f");
+    ASSERT_EQ(funcs("missing_f").size(), 0u);
+    ASSERT_EQ(ast["ast"]["unexported-macros"], json::parse(R"([{"name":"missing_f"}])"));
+
+    ast = json::parse(execTestCommand("bin/palan-c2ast -s stdio.h"));
+    ASSERT_EQ(funcs("sscanf")[0]["symbol"], "__isoc99_sscanf");
+}
