@@ -77,6 +77,12 @@ struct FieldChain {
 	string structName;      // struct type currently being resolved
 };
 
+// A function a call can name: from a cinclude (isC) or a Palan definition.
+struct Callee {
+	const json* def;
+	bool        isC;
+};
+
 // The value of a constant expression under evaluation.
 struct ConstVal {
 	enum class Kind { Int, Uint, Flo } kind;
@@ -103,8 +109,9 @@ class PlnSemanticAnalyzer {
 	vector<map<string, json>> cFuncScopes;
 	vector<map<string, json>> cGlobalScopes;
 	vector<map<string, json>> plnFuncScopes;
-	// scope stack: alias("" = unqualified) → funcname → funcDef (empty json{} = ambiguous sentinel)
-	vector<map<string, map<string, json>>> importScopes;
+	// scope stack: alias("" = unqualified) → funcname → funcDefs (several
+	// when unqualified imports of different modules export the same name)
+	vector<map<string, map<string, vector<json>>>> importScopes;
 
 	// Aggregate variables per scope (parallel to varScopes) and what runs when
 	// each goes out of scope. A frame variable is listed even with nothing to
@@ -211,8 +218,10 @@ class PlnSemanticAnalyzer {
 
 	void        registerPlnFunc(const string& name, const json& def, const json& locNode);
 	const json* findPlnFunc(const string& name) const;
-	const json* findImportFunc(const string& fname) const;
-	const json* findImportFuncByAlias(const string& alias, const string& fname) const;
+	vector<Callee> findCallees(const string& name) const;
+	vector<Callee> findCalleesByAlias(const string& alias, const string& name) const;
+	void   requireAlias(const json& locNode, const string& alias) const;
+	Callee requireUniqueCallee(const json& locNode, const string& name, const vector<Callee>& cands) const;
 
 	json sa_statements(const json& stmts);
 	void beginModule(const json& ast);
@@ -429,11 +438,7 @@ class PlnSemanticAnalyzer {
 	// "syscall-number" expression node into a plain JSON integer.
 	void  validateSyscallDecl(json& funcDef);
 	void  rejectNotImplSig(const json& f);
-	// Copy a resolved Palan/syscall callee's func-type, ret-type (as
-	// value-type) and, for a syscall, its folded syscall-number onto a call
-	// node. Shared by sa_expr_call and sa_expr_member_call so the two paths
-	// can't drift on which fields a syscall call carries.
-	void  applyPlnCalleeSig(json& sa_expr, const json& pFunc);
+	json  makeCallNode(const json& expr, const Callee& callee, const string& writtenName);
 	json sa_field_assign(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	void requireOwnedBase(const json& saBase, const json& locNode);

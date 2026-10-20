@@ -164,6 +164,15 @@ TEST(sa_error, tuple_needs_multi_ret) {
 	ASSERT_NE(sa.find("multiple return values"), string::npos);
 }
 
+TEST(sa_error, tuple_c_func_single_ret) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_700_tuple_c_func_single_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:1: error: Function 'abs' does not have multiple return values."), string::npos);
+}
+
 TEST(sa_error, tuple_var_count_mismatch) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -349,6 +358,16 @@ TEST(sa_error, unqualified_alias_call)
 	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_054_unqualified_alias_call.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("requires a module alias qualifier"), string::npos);
+}
+
+TEST(sa_error, chain_alias_undefined)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_701_chain_alias_undefined.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":2:16: error: Undefined function 'nosuch'."), string::npos);
 }
 
 TEST(sa_error, ambiguous_call)

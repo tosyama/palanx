@@ -1147,7 +1147,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				entry["_c-func"] = true;
-				currentScope[alias][fname] = entry;
+				currentScope[alias][fname] = {entry};
 			}
 		} else {
 			for (auto& f : stmt["functions"]) {
@@ -1240,13 +1240,9 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 			adoptTypeDeps(sub, r["var-type"], stmt);
 		if (funcEntry.contains("ret-type")) adoptTypeDeps(sub, funcEntry["ret-type"], stmt);
 
-		if (hasAlias) {
-			currentScope[alias][fname] = funcEntry;
-		} else {
-			if (currentScope[""].count(fname))
-				currentScope[""][fname] = json{};  // ambiguous sentinel
-			else
-				currentScope[""][fname] = funcEntry;
-		}
+		if (hasAlias)
+			currentScope[alias][fname] = {funcEntry};
+		else
+			currentScope[""][fname].push_back(funcEntry);
 	}
 }

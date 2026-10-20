@@ -729,7 +729,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 
 	} else if (expr_type == "call") {
 		const string& callName = expr["name"].get<string>();
-		if (!findCFunc(callName) && !findPlnFunc(callName)) {
+		if (findCallees(callName).empty()) {
 			json cast = aliasCast(expr, callName);
 			if (!cast.is_null()) return cast;
 		}

@@ -6144,3 +6144,16 @@ TEST(sa, store_value_first_plain)
 	ASSERT_EQ(blk["body"][1]["value"]["name"], blk["body"][0]["vars"][0]["name"]);
 	ASSERT_EQ(jout.dump().find("pending-alias"), string::npos);
 }
+
+// A call names a function wherever it comes from, before a type alias of the
+// same name.
+TEST(sa, import_func_over_alias)
+{
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/284_import_func_over_alias.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& init = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "call");
+	ASSERT_EQ(init["name"], "square");
+}
