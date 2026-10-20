@@ -311,7 +311,11 @@ vector<CToken*> CPreprocessor::scan_macro(list<CToken*> &unprocessed_tokens, boo
 
 		if (t->type == TT_ID) {
 			CMacro* m = macro_exists(*t->info.id);
-			if (m && !t->does_hide(m)) {
+			// A function-like macro's name not followed by '(' stays a plain name.
+			auto next = std::next(unprocessed_tokens.begin());
+			bool invoked = m && (m->type != MT_FUNC || (next != unprocessed_tokens.end()
+				&& (*next)->type == TT_PUNCTUATOR && (*next)->info.punc == '('));
+			if (invoked && !t->does_hide(m)) {
 				unprocessed_tokens.pop_front(); // remove macro name token
 				vector<list<CToken*> > args;
 				if (m->type == MT_FUNC) {

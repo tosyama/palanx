@@ -34,6 +34,16 @@ TEST(c2ast, named_va_args) {
         "\"a , b\";\"c , d\";}union {struct {int x;int y;}a;struct tg{int x;int y;}b;}g;");
 }
 
+TEST(c2ast, func_macro_no_paren) {
+    // A function-like macro's name not followed by '(' is not an invocation.
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/048_func_macro_no_paren.h");
+    ASSERT_EQ(output, "int testproc(){return F;return F+1;return F;return (2+1);return (3+1);}");
+    output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/048_func_macro_no_paren.h");
+    ASSERT_NE(output.find("{\"name\":\"K\"}"), string::npos);
+}
+
 TEST(c2ast, token_paste_nonid) {
     cleanTestEnv();
     string output;
