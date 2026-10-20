@@ -76,3 +76,24 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 
 **Summary:** Each `cinclude` is preprocessed with the macros every earlier `cinclude` in the file left defined, in source order, so a header an earlier `cinclude` already read is skipped by its include guard. Its declarations come from that earlier `cinclude`, but C functions are visible only in the `cinclude`'s scope. When the earlier one is inside a block, the functions are not visible after the block: `func f() { cinclude <stdio.h>; ... }` followed by a top-level `cinclude <stdio.h>; printf("x\n");` reports `Undefined function 'printf'`. Fixing this needs either the macro state to follow block scope or SA to register the skipped declarations for the later `cinclude` as well.
 
+
+---
+
+## 28. `register_t` Is 32 Bits
+
+**Summary:** c2ast does not define `__GNUC__`, so glibc headers take the path meant for non-GNU compilers. That path keeps the ABI everywhere except `sys/types.h`'s `register_t`, which becomes `int` (32 bits) instead of a word-sized (64-bit) integer. No other glibc header uses `register_t`, so only Palan code that names it directly is affected. Defining `__GNUC__` would instead pull in GNU-only constructs such as `_Float128`.
+
+---
+
+## 29. glibc Headers c2ast Cannot Read
+
+**Summary:** Of the 242 public headers in libc6-dev (excluding `bits/` and `gnu/`), c2ast reads 200 (v0.2.0). 4 of the rest are not meant to be read (`regexp.h`, `sys/elf.h` and `sys/vm86.h` stop with `#error`; `finclude/math-vector-fortran.h` is not C). The other 38 fail on these constructs, each also failing every header that includes the one named:
+- (a) Bit-fields — `a.out.h`, `arpa/nameser_compat.h` (`arpa/nameser.h`, `resolv.h`), `fenv.h`, `ieee754.h`, `netinet/ip.h` (`netinet/ip_icmp.h`), `netinet/tcp.h`, `obstack.h`, `printf.h`, `regex.h` (`re_comp.h`), `scsi/sg.h`, `sys/mtio.h`, `sys/timex.h`.
+- (b) `restrict` in an unnamed parameter or inside array brackets (`const char *restrict)`, `p[restrict]`) — `glob.h`, `aio.h`, `spawn.h`. The non-GNU path defines `__restrict` as `restrict`; c2ast accepts `__restrict` in the same positions.
+- (c) `__signed__` — `asm-generic/int-ll64.h`, reached from `net/ethernet.h`, `net/if_ppp.h`, `net/ppp_defs.h`, `netatalk/at.h`, `netinet/ether.h`, `netinet/if_ether.h`, `netinet/if_fddi.h`, `nfs/nfs.h`, `sys/fanotify.h`, `sys/prctl.h`, `sys/quota.h`, `sys/sysinfo.h`. Linux kernel headers use GNU keywords whether or not `__GNUC__` is defined.
+- (d) `__has_include` in `#if` — `sys/mount.h`, `sys/rseq.h`.
+- (e) `__extension__` before a struct member — `sys/user.h`.
+- (f) `_Complex` — `complex.h`.
+- (g) `#include` inside an enum body — `stab.h`.
+- (h) A `static __inline__` function definition — `sys/platform/x86.h`.
+- (i) `#error` for non-GNU compilers — `tgmath.h`. Its type-generic macros are function-like and would not be usable from Palan anyway (#9).
