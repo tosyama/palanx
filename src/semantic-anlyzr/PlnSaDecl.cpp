@@ -340,11 +340,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	for (auto& var : stmt2["vars"]) {
 		storage.push_back(VarStorage::Heap);
 		if (!var.contains("var-type")) continue;
-		if (var["var-type"].value("type-kind", "") == "embed") {
-			json base = var["var-type"]["base-type"];
-			var["var-type"] = move(base);
-			storage.back() = VarStorage::Frame;
-		}
+		storage.back() = takeVarStorage(var["var-type"]);
 		var["var-type"] = resolveKnownType(stmt2, var["var-type"]);
 	}
 	return sa_resolved_var_decl(stmt2, move(storage));

@@ -3561,6 +3561,8 @@ TEST(sa_error, frame_var)
 		{"error_627_frame_param.pa", ":2:1: error: this parameter is not supported in this version."},
 		{"error_628_frame_named_ret.pa", ":2:1: error: this return value is not supported in this version."},
 		{"error_629_frame_ret_type.pa", ":2:13: error: this return value is not supported in this version."},
+		{"error_663_tapple_frame_prim.pa", ":2:1: error: '$' on a variable applies only to a struct or an array, not 'int32'."},
+		{"error_664_tapple_frame_arr.pa", ":3:1: error: cannot copy '[?]int32' into '[3]int32'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

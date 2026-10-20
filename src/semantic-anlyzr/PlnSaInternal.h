@@ -157,6 +157,14 @@ inline bool isFuncPtr(const json& vt)
 }
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
+// Strips a declared variable's `$` and returns where its storage lives.
+inline VarStorage takeVarStorage(json& varType)
+{
+	if (varType.value("type-kind", "") != "embed") return VarStorage::Heap;
+	json base = varType["base-type"];
+	varType = move(base);
+	return VarStorage::Frame;
+}
 // A struct returned by a Palan call, owned by whoever receives it.
 inline bool isExpiringStruct(const json& v)
 {

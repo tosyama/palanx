@@ -3276,3 +3276,9 @@ TEST(build_mgr, c_func_alias_macro) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/317_c_func_alias_macro.pa");
 	ASSERT_EQ(output, "1 8\n0 No such file or directory\nb\n");
 }
+
+TEST(build_mgr, tapple_frame_mtrace) {
+	// A `$` receiver gets the returned struct's contents, owned fields
+	// included, and the returned block is freed.
+	expectFrameMtrace("318_tapple_frame_mtrace", "3 10\n5 6 9 7\n8 9\n");
+}

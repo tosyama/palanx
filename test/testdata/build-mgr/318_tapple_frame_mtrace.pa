@@ -1,0 +1,22 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int64 y; };
+type Q { P p; [3]int32 a; int32 z; };
+func makeP(int32 x) -> bool ok, P p {
+    true -> ok;
+    x -> p.x; 10 -> p.y;
+}
+func makePQ(int32 x) -> P p, Q q {
+    x -> p.x; 10 -> p.y;
+    x + 1 -> q.p.x; 9 -> q.a[2]; 7 -> q.z;
+}
+mtrace();
+{
+    (bool ok, $P p) = makeP(3);
+    printf("%d %ld\n", p.x, p.y);
+    ($P p2, $Q q2) = makePQ(5);
+    printf("%d %d %d %d\n", p2.x, q2.p.x, q2.a[2], q2.z);
+    (P p3, $Q q3) = makePQ(8);
+    printf("%d %d\n", p3.x, q3.p.x);
+}
+muntrace();

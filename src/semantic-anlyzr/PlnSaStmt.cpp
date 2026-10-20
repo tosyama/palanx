@@ -1121,28 +1121,39 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 
 	json vars = json::array();
 	json convDecls = json::array();
+	vector<VarStorage> convStorage;
 	for (size_t i = 0; i < stmt["vars"].size(); i++) {
 		const json& v = stmt["vars"][i];
 		const json& retType = rets[i]["var-type"];
-		json varType = resolveKnownType(stmt, v["var-type"]);
+		json varType = v["var-type"];
+		VarStorage storage = takeVarStorage(varType);
+		varType = resolveKnownType(stmt, varType);
 		string name = v["var-name"];
-		if (normalizeSigType(varType) != retType) {
+		// A frame variable can't take the returned block over, so it is
+		// declared from the temp like a single `$T x = f();`, which moves a
+		// returned struct's contents into the frame and frees the block.
+		bool movesIntoFrame = storage == VarStorage::Frame && isStructStorage(retType);
+		if (storage == VarStorage::Frame || normalizeSigType(varType) != retType) {
 			string temp = "__tap_" + to_string(tempVarCounter_++);
+			json init = {{"expr-type", "id"}, {"name", temp}, {"loc", stmt["loc"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			if (movesIntoFrame)
+				init = {{"expr-type", "pinned"}, {"loc", stmt["loc"]}, {"sa", {{"expr-type", "id"}, {"name", temp}, // LCOV_EXCL_EXCEPTION_BR_LINE
+					{"var-type", retType}, {"value-type", retType}, {"category", "expiring"}}}};
 			convDecls.push_back({{"stmt-type", "var-decl"}, {"loc", stmt["loc"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
-				{"vars", json::array({{{"name", name}, {"var-type", varType}, // LCOV_EXCL_EXCEPTION_BR_LINE
-					{"init", {{"expr-type", "id"}, {"name", temp}, {"loc", stmt["loc"]}}}}})}});
+				{"vars", json::array({{{"name", name}, {"var-type", varType}, {"init", move(init)}}})}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+			convStorage.push_back(storage);
 			name = temp;
 		}
 		declareVar(name, retType);
 		// A returned struct is owned by the caller.
-		if (isStructStorage(retType))
+		if (isStructStorage(retType) && !movesIntoFrame)
 			addOwnedScopeVar(name, makeStructFreeStmt(name, retType));
 		vars.push_back({{"var-name", name}, {"var-type", retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 	json result = json::array({{{"stmt-type", "tapple-decl"}, {"vars", vars}, {"value", saCall}}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-	for (auto& d : convDecls)
-		for (auto& s : sa_resolved_var_decl(d))
+	for (size_t i = 0; i < convDecls.size(); i++)
+		for (auto& s : sa_resolved_var_decl(convDecls[i], {convStorage[i]}))
 			result.push_back(s);
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
