@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+cinclude <sys/socket.h>;
+cinclude <arpa/inet.h>;
+
+in_addr a;
+inet_addr("127.0.0.1") -> a.s_addr;
+printf("%s %u\n", inet_ntoa(a), ntohl(a.s_addr));
+printf("%d\n", AF_INET);

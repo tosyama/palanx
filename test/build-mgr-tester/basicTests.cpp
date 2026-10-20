@@ -3241,3 +3241,10 @@ TEST(build_mgr, uninit_var_decl) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/313_uninit_var_decl.pa");
 	ASSERT_EQ(output, "11 12\n12 13\n-2 301 4000000000 3.0\n8\n0 1 2 3 4 5 \n");
 }
+
+TEST(build_mgr, inet_ntoa) {
+	cleanTestEnv();
+	// The socket headers reach a GNU named variadic macro (`MEMBERS...`).
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/314_inet_ntoa.pa");
+	ASSERT_EQ(output, "127.0.0.1 2130706433\n2\n");
+}

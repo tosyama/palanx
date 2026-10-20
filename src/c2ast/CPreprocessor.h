@@ -21,6 +21,7 @@ public:
 	CMacroType type;
 	string name;
 	vector<string> params;
+	bool variadic;	// the last of params takes the remaining arguments; unnamed `...` is __VA_ARGS__
 	vector<CToken*> body;
 	int lexer_no;
 	bool inherited;	// loaded by loadMacroFile, not defined by the header

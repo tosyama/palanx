@@ -114,6 +114,13 @@ TEST(c2ast_error, malformed_macro_args) {
 	ASSERT_NE(out.find("malformed macro argument list"), string::npos);
 }
 
+TEST(c2ast_error, va_args_not_last) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_016_va_args_not_last.h");
+	ASSERT_NE(out.find("malformed macro argument list"), string::npos);
+}
+
 TEST(c2ast_error, if_missing_colon) {
 	cleanTestEnv();
 	string out = execTestCommand(

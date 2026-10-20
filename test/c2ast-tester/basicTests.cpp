@@ -26,6 +26,14 @@ TEST(c2ast, va_args) {
     ASSERT_EQ(output, "int testproc(){mylog(\"hello\",1,2);}");
 }
 
+TEST(c2ast, named_va_args) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/046_named_va_args.h");
+    ASSERT_EQ(output, "int testproc(){mylog(\"none\",);mylog(\"one\",1);mylog(\"many\",1,(2,3),4);"
+        "\"a , b\";\"c , d\";}union {struct {int x;int y;}a;struct tg{int x;int y;}b;}g;");
+}
+
 TEST(c2ast, token_paste_nonid) {
     cleanTestEnv();
     string output;
@@ -1677,7 +1685,8 @@ TEST(c2ast, macro_state) {
     // Spelled back token by token, so each line re-lexes to the same macro.
     for (const char* line : {
             "#define A_FLAG\n", "#define A_CAT(x, y) x ## y\n", "#define A_STR(x) # x\n",
-            "#define A_VARGS(...) f ( __VA_ARGS__ )\n", "#define A_SHIFT ( 1 << 2 )\n",
+            "#define A_VARGS(...) f ( __VA_ARGS__ )\n", "#define A_NVARGS(fn, xs...) fn ( xs )\n",
+            "#define A_SHIFT ( 1 << 2 )\n",
             "#define A_TEXT \"a b\"\n", "#define A_CH 'c'\n",
             "#pragma palan_once_included \"../test/testdata/c2ast/045_macro_state_a.h\"\n"})
         ASSERT_NE(state.find(line), string::npos) << line;
@@ -1691,7 +1700,7 @@ TEST(c2ast, macro_state) {
     // a.h is skipped by its #pragma once, so a_func is not declared again.
     set<string> funcs;
     for (auto& f : b["ast"]["functions"]) funcs.insert(f["name"]);
-    ASSERT_EQ(funcs, (set<string>{"a_flag_on", "cated"}));
+    ASSERT_EQ(funcs, (set<string>{"a_flag_on", "cated", "nvarg"}));
     // Inherited macros are not exported again; a redefinition is.
     ASSERT_EQ(b["ast"]["constants"], json::parse(R"([
         {"name":"B_SHIFT","value":"4"}, {"name":"A_VAL","value":"5"}])"));

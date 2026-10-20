@@ -41,7 +41,7 @@ static int next_pos(const vector<CToken0>& token0s, int n);
 
 //== CMacro ==
 CMacro::CMacro(CMacroType type, string name, int lexer_no)
-	: type(type), name(name), lexer_no(lexer_no), inherited(false)
+	: type(type), name(name), variadic(false), lexer_no(lexer_no), inherited(false)
 {
 }
 
@@ -217,7 +217,7 @@ bool CPreprocessor::preprocess(const string& filepath, vector<CToken*> *tokens)
 	return true;
 }
 
-vector<list<CToken*> > extract_macro_func_args(list<CToken*> &tokens)
+vector<list<CToken*> > extract_macro_func_args(list<CToken*> &tokens, const CMacro* m)
 {
 	// Extract macro function arguments from tokens starting at front (the position of '(')
 	// Remove argument tokens from tokens and return them as vector<list<CToken*>>
@@ -246,7 +246,8 @@ vector<list<CToken*> > extract_macro_func_args(list<CToken*> &tokens)
 				}
 			}
 
-			if (blace_level == 1 && t->info.punc == ',') {
+			bool in_va_arg = m->variadic && args.size() == m->params.size() - 1;
+			if (blace_level == 1 && t->info.punc == ',' && !in_va_arg) {
 				// end of current argument
 				delete t;
 				args.push_back(arg);
@@ -256,6 +257,9 @@ vector<list<CToken*> > extract_macro_func_args(list<CToken*> &tokens)
 		}
 		arg.push_back(t);
 	}
+
+	if (m->variadic && args.size() < m->params.size())
+		args.resize(m->params.size());	// variadic part omitted: F(a) for F(a, ...)
 
 	return args;
 }
@@ -307,7 +311,7 @@ vector<CToken*> CPreprocessor::scan_macro(list<CToken*> &unprocessed_tokens, boo
 				unprocessed_tokens.pop_front(); // remove macro name token
 				vector<list<CToken*> > args;
 				if (m->type == MT_FUNC) {
-					args = extract_macro_func_args(unprocessed_tokens);
+					args = extract_macro_func_args(unprocessed_tokens, m);
 				}
 				vector<CToken*> expanded_tokens = expand_macro_tokens(m, args, t->hide_set);
 
@@ -567,30 +571,6 @@ vector<CToken*> CPreprocessor::expand_macro_tokens(CMacro *m, vector<list<CToken
 	for (int n=0; n<body_tokens.size(); n++) {
 		CToken *t = body_tokens[n];
 		if (t->type == TT_ID) {
-			if (*t->info.id == "__VA_ARGS__") {
-				int va_idx = -1;
-				for (int p = 0; p < (int)m->params.size(); p++) {
-					if (m->params[p] == "...") { va_idx = p; break; }
-				}
-				if (va_idx >= 0) {
-					vector<CToken*> va_tokens;
-					for (int p = va_idx; p < (int)args_expanded.size(); p++) {
-						if (p > va_idx) {
-							CToken* comma = new CToken(TT_PUNCTUATOR, t->lexer_no, t->token0_no);
-							comma->info.punc = ',';
-							va_tokens.push_back(comma);
-						}
-						for (CToken* at: args_expanded[p]) {
-							va_tokens.push_back(new CToken(*at));
-						}
-					}
-					delete t;
-					body_tokens.erase(body_tokens.begin() + n);
-					body_tokens.insert(body_tokens.begin() + n, va_tokens.begin(), va_tokens.end());
-					n += (int)va_tokens.size() - 1;
-					continue;
-				}
-			}
 			for (int p=0; p < m->params.size(); p++) {
 				if (*t->info.id == m->params[p]) {
 					// replace parameter by argument tokens
@@ -708,7 +688,7 @@ int process_include(CPreprocessor& cpp, CLexer& lexer, int n, vector<CToken*>* t
 }
 
 static void delete_macro(vector<CMacro*> &macros, string &macro_name);
-static int parse_params(vector<string>& params, CLexer& lexer, int n);
+static int parse_params(CMacro& m, CLexer& lexer, int n);
 static int set_macro_body(vector<CToken*> &body, CLexer& lexer, int n);
 
 int process_define(CPreprocessor& cpp, CLexer& lexer, int n)
@@ -742,7 +722,7 @@ int process_define(CPreprocessor& cpp, CLexer& lexer, int n)
 
 	} else if (t1.type == TT0_MACRO_ARGS) {	// define function like macro
 		CMacro* func_macro = new CMacro(MT_FUNC, macro_name, lexer.no);
-		n = parse_params(func_macro->params, lexer, n);
+		n = parse_params(*func_macro, lexer, n);
 		n = set_macro_body(func_macro->body, lexer, n);
 		cpp.macros.push_back(func_macro);
 
@@ -768,42 +748,52 @@ void delete_macro(vector<CMacro*> &macros, string &macroname)
 	}
 }
 
-int parse_params(vector<string>& params, CLexer& lexer, int n)
+int parse_params(CMacro& m, CLexer& lexer, int n)
 {
 	vector<CToken0> &token0s = lexer.tokens;
 	is_not_eol(token0s[n]);	// NG: #define hoge(
+
+	auto is_ellipsis = [&](CToken0& t) {
+		return t.type == TT0_PUNCTUATOR && lexer.get_ch(&t) == '...';
+	};
+	auto malformed = [&](int n) {
+		return CPreprocessError(PlnC2AstMessage::getMessage(E_MalformedMacroArgList),
+			lexer.no, n);
+	};
 
 	for (;;) {
 		n = next_pos(token0s, n);
 		CToken0 &t = token0s[n];
 
-		if (t.type == TT0_ID || (t.type == TT0_PUNCTUATOR && lexer.get_ch(&t) == '...')) {
+		if (t.type == TT0_ID || is_ellipsis(t)) {
 			is_not_eol(t);
-			params.push_back(lexer.get_str(&t));
+			if (t.type == TT0_ID) {
+				m.params.push_back(lexer.get_str(&t));
+			} else {
+				m.params.push_back("__VA_ARGS__");
+				m.variadic = true;
+			}
 			n = next_pos(token0s, n);
 
-			CToken0 &t_next = token0s[n];
-			if (t_next.type == TT0_PUNCTUATOR) {
-				int c = lexer.get_ch(&t_next);
-				if (c == ',') { // next arg
-					continue;
-
-				} else if (c == ')') { // end arg
-					break;
-
-				} else {
-					throw CPreprocessError(PlnC2AstMessage::getMessage(E_MalformedMacroArgList),
-						lexer.no, n);
-				}
-			} else {
-				throw CPreprocessError(PlnC2AstMessage::getMessage(E_MalformedMacroArgList),
-					lexer.no, n);
+			if (!m.variadic && is_ellipsis(token0s[n])) {	// GNU named variadic: NAME...
+				is_not_eol(token0s[n]);
+				m.variadic = true;
+				n = next_pos(token0s, n);
 			}
+
+			CToken0 &t_next = token0s[n];
+			if (t_next.type != TT0_PUNCTUATOR)
+				throw malformed(n);
+			int c = lexer.get_ch(&t_next);
+			if (c == ')')
+				break;
+			if (c != ',' || m.variadic)
+				throw malformed(n);
+
 		} else if (t.type == TT0_PUNCTUATOR && lexer.get_ch(&t) == ')') {
 			break;
 		} else {
-			throw CPreprocessError(PlnC2AstMessage::getMessage(E_MalformedMacroArgList),
-				lexer.no, n);
+			throw malformed(n);
 		}
 	}
 
@@ -1409,8 +1399,14 @@ void CPreprocessor::dumpMacroState(ostream& os)
 		os << "#define " << m->name;
 		if (m->type == MT_FUNC) {
 			os << "(";	// no space: a space would make it object-like
-			for (int i=0; i<m->params.size(); i++)
-				os << (i ? ", " : "") << m->params[i];
+			for (int i=0; i<m->params.size(); i++) {
+				os << (i ? ", " : "");
+				bool is_va = m->variadic && i == m->params.size() - 1;
+				if (!is_va || m->params[i] != "__VA_ARGS__")
+					os << m->params[i];
+				if (is_va)
+					os << "...";
+			}
 			os << ")";
 		}
 		for (CToken* t: m->body) {

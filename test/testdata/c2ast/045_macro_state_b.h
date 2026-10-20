@@ -8,6 +8,7 @@ int a_flag_off(void);
 int char_bit_defined(void);
 #endif
 int A_CAT(cat, ed)(void);
+int A_NVARGS(nvarg, int, char);
 #define B_SHIFT A_SHIFT
 #define A_VAL 5
 #undef A_GONE
