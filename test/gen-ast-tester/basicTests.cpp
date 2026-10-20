@@ -1919,6 +1919,7 @@ TEST(gen_ast, decl_variants) {
 	          json({{"not-impl", true}, {"untyped-var", "x"}, {"loc", {1, 16, 1, 21}}}));
 	ASSERT_EQ(funcs[3]["name"], "untypedFirst");
 	ASSERT_EQ(funcs[3]["parameters"].size(), 2);
+	ASSERT_EQ(funcs[3]["parameters"][1], json({{"not-impl", true}, {"loc", {11, 1, 11, 32}}}));
 	ASSERT_EQ(funcs[6]["name"], "exportedSysNotImpl");
 	ASSERT_EQ(funcs[7]["name"], "outer");
 	ASSERT_EQ(funcs[7]["block"]["functions"].size(), 4);

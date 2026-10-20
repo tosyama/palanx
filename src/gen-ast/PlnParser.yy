@@ -160,19 +160,21 @@ struct BodyList {
 	static json funcDecl(json& ast, bool exported, json fn, const vector<json>& params, const json& ret,
 	                     const palan::PlnParser::location_type& loc)
 	{
-		// Frame storage is a property of a local declaration; a parameter or
-		// named return with it stays an unimplemented entry for SA to report.
-		auto rejectFrame = [&](vector<json> vars) {
+		// Frame storage is a property of a local declaration, and a name after
+		// only unimplemented entries has no type to inherit; such a parameter or
+		// named return stays an unimplemented entry for SA to report.
+		auto rejectUnimplemented = [&](vector<json> vars) {
 			for (auto& v : vars)
-				if (v.contains("var-type") && v["var-type"].value("type-kind", "") == "embed") {
+				if (v.value("inherit-type", false)
+						|| (v.contains("var-type") && v["var-type"].value("type-kind", "") == "embed")) {
 					v = {{"not-impl", true}};
 					LOC(v, loc);
 				}
 			return vars;
 		};
-		fn["parameters"] = rejectFrame(params);
+		fn["parameters"] = rejectUnimplemented(params);
 		if (ret.contains("rets"))
-			fn["rets"] = rejectFrame(ret["rets"].get<vector<json>>());
+			fn["rets"] = rejectUnimplemented(ret["rets"].get<vector<json>>());
 		else if (ret.contains("ret-type"))
 			fn["ret-type"] = ret["ret-type"];
 		LOC(fn, loc); // LCOV_EXCL_EXCEPTION_BR_LINE
