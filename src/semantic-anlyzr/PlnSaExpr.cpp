@@ -359,7 +359,7 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 {
 	bool isAddrOf = arg.value("expr-type", "") == "addr-of";
 	const json& lit = isAddrOf ? arg["object"] : arg;
-	auto rejectParamType = [&](PlnSaMessageCode code) {
+	auto rejectParamType = [&](PlnSaMessageCode code) __attribute__((noreturn)) {
 		cerr << locPrefix(lit) << PlnSaMessage::getMessage(code, paramName, typeDisplayName(*paramVT)) << endl;
 		exit(1);
 	};
@@ -492,14 +492,14 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 		optional<ConstVal> v = evalConst(expr);
 		if (!v) return expr;
 		switch (v->kind) {
-			case ConstVal::Kind::Int:  lit = {{"expr-type", "lit-int"},  {"value", to_string(v->i)}}; break;
-			case ConstVal::Kind::Uint: lit = {{"expr-type", "lit-uint"}, {"value", to_string(v->u)}}; break;
+			case ConstVal::Kind::Int:  lit = {{"expr-type", "lit-int"},  {"value", to_string(v->i)}}; break; // LCOV_EXCL_EXCEPTION_BR_LINE
+			case ConstVal::Kind::Uint: lit = {{"expr-type", "lit-uint"}, {"value", to_string(v->u)}}; break; // LCOV_EXCL_EXCEPTION_BR_LINE
 			case ConstVal::Kind::Flo: {
 				char buf[32];
 				auto r = to_chars(buf, buf + sizeof(buf), v->f);
 				string s(buf, r.ptr);
 				if (s.find_first_of(".e") == string::npos) s += ".0";
-				lit = {{"expr-type", "lit-flo"}, {"value", s}};
+				lit = {{"expr-type", "lit-flo"}, {"value", s}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 				break;
 			}
 		}
@@ -518,7 +518,7 @@ optional<ConstVal> PlnSemanticAnalyzer::evalConst(const json& expr)
 {
 	using K = ConstVal::Kind;
 	string et = expr.value("expr-type", "");
-	auto overflow = [&]() {
+	auto overflow = [&]() __attribute__((noreturn)) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ConstExprOverflow) << endl;
 		exit(1);
 	};
@@ -1046,11 +1046,11 @@ void PlnSemanticAnalyzer::applyPlnCalleeSig(json& sa_expr, const json& pFunc)
 json PlnSemanticAnalyzer::sa_func_ref(const json& expr)
 {
 	const string& name = expr["name"].get<string>();
-	auto reject = [&](const string& reason) {
+	auto reject = [&](const string& reason) __attribute__((noreturn)) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_FuncNotValue, name, reason) << endl;
 		exit(1);
 	};
-	json func = {{"type-kind","func"},{"parameters",json::array()}};
+	json func = {{"type-kind","func"},{"parameters",json::array()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	const json* cfunc = findCFunc(name);
 	const json* pFunc = cfunc;
 	if (cfunc) {
@@ -1066,13 +1066,15 @@ json PlnSemanticAnalyzer::sa_func_ref(const json& expr)
 		}
 		if (pFunc->value("func-type", "") == "syscall") reject("it is a syscall");
 		if (pFunc->contains("rets") && (*pFunc)["rets"].size() > 1) reject("it returns multiple values");
+		// LCOV_EXCL_EXCEPTION_BR_START
 		func["ret-type"] = pFunc->contains("ret-type") ? (*pFunc)["ret-type"]
 		                 : pFunc->contains("rets") ? (*pFunc)["rets"][0]["var-type"]
 		                 : json{{"type-kind","prim"},{"type-name","void"}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 	}
 	for (auto& p : (*pFunc)["parameters"]) {
 		if (p.value("name", "") == "...") reject("it takes variable arguments");
-		func["parameters"].push_back({{"var-type", p["var-type"]}});
+		func["parameters"].push_back({{"var-type", p["var-type"]}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	const json& ret = func["ret-type"];
 	bool retOk = ret.value("type-name", "") == "void" || isFuncSigType(ret);
@@ -1081,8 +1083,10 @@ json PlnSemanticAnalyzer::sa_func_ref(const json& expr)
 			reject("its parameter type '" + typeDisplayName(p["var-type"]) + "' cannot be passed through one");
 	if (!retOk)
 		reject("its return type '" + typeDisplayName(ret) + "' cannot be returned through one");
+	// LCOV_EXCL_EXCEPTION_BR_START
 	json out = {{"expr-type", "func-ref"}, {"name", cfunc ? cLinkName(*cfunc) : json(name)},
 	            {"value-type", {{"type-kind","pntr"},{"mutable",false},{"base-type",move(func)}}}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 	if (expr.contains("loc")) out["loc"] = expr["loc"];
 	return out;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1115,9 +1119,7 @@ json PlnSemanticAnalyzer::funcPtrField(const json& memberCall)
 	const string& method = memberCall["method"].get<string>();
 	json vt = operandValueType(obj);
 	if (!isStructPntr(vt)) return json();
-	auto def = structDefs_.find(vt["base-type"]["type-name"].get<string>());
-	if (def == structDefs_.end()) return json();
-	auto& fields = def->second.fields;
+	auto& fields = structDefs_.at(vt["base-type"]["type-name"].get<string>()).fields;
 	auto f = find_if(fields.begin(), fields.end(), [&](const FieldLayout& f) { return f.name == method; });
 	if (f == fields.end() || !f->unsupported.empty() || !isFuncPtr(fieldValueType(*f))) return json();
 	bool isCFunc;
@@ -1126,7 +1128,7 @@ json PlnSemanticAnalyzer::funcPtrField(const json& memberCall)
 		cerr << locPrefix(memberCall) << PlnSaMessage::getMessage(E_AmbiguousFuncPtrCall, method) << endl;
 		exit(1);
 	}
-	json access = {{"expr-type", "field-access"}, {"object", obj}, {"field", method}};
+	json access = {{"expr-type", "field-access"}, {"object", obj}, {"field", method}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (memberCall.contains("loc")) access["loc"] = memberCall["loc"];
 	return access;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1137,7 +1139,7 @@ json PlnSemanticAnalyzer::funcPtrField(const json& memberCall)
 json PlnSemanticAnalyzer::sa_expr_call_ptr(const json& expr, json callee, const string& funcName)
 {
 	const json& func = callee["value-type"]["base-type"];
-	json sa_expr = {{"expr-type", "call-ptr"}, {"callee", callee}};
+	json sa_expr = {{"expr-type", "call-ptr"}, {"callee", callee}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
 	if (func["ret-type"].value("type-name", "") != "void")
 		sa_expr["value-type"] = func["ret-type"];
@@ -1152,7 +1154,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	bool isCFunc = false;
 
 	if (findFuncPtrVar(expr)) {
-		json id = {{"expr-type", "id"}, {"name", expr["name"]}};
+		json id = {{"expr-type", "id"}, {"name", expr["name"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		if (expr.contains("loc")) id["loc"] = expr["loc"];
 		return sa_expr_call_ptr(expr, sa_expression(id), expr["name"].get<string>());
 	}
@@ -1283,7 +1285,7 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 			saArg = bindCallTemp(move(saArg));
 		if (byValStruct) {
 			const StructDef& def = requireCompleteStruct((*paramVT)["base-type"]["type-name"].get<string>(), locNode);
-			saArg["struct-arg"] = {{"size", def.totalSize}, {"eightbytes", eightbytesJson(def, structDefs_)}};
+			saArg["struct-arg"] = {{"size", def.totalSize}, {"eightbytes", eightbytesJson(def, structDefs_)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		} else {
 			noteEscape(saArg);
 		}
@@ -1393,7 +1395,7 @@ json PlnSemanticAnalyzer::aliasCast(const json& expr, const string& typeName)
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastArgCount, typeName) << endl;
 		exit(1);
 	}
-	json cast = {{"expr-type", "cast"}, {"target-type", written}, {"src", expr["args"][0]}};
+	json cast = {{"expr-type", "cast"}, {"target-type", written}, {"src", expr["args"][0]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (expr.contains("loc")) cast["loc"] = expr["loc"];
 	return sa_expression(cast);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1417,7 +1419,7 @@ json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
 	const json& from = src["value-type"];
 	// A struct value is held as a pointer to its storage, but it is not one.
 	bool fromPntr = from.value("type-kind", "") == "pntr" && !isStructStorage(from);
-	auto incompatible = [&](const json& target) {
+	auto incompatible = [&](const json& target) __attribute__((noreturn)) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_IncompatibleTypeCast,
 			typeDisplayName(from), typeDisplayName(target)) << endl;
 		exit(1);
@@ -1461,7 +1463,6 @@ json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
 		return wrapConvert(src, registry_.toJson(target));
 	}
 	incompatible(resolved);
-	return json(); // LCOV_EXCL_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)

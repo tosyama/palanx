@@ -144,6 +144,35 @@ TEST(c2ast_error, malformed_attribute) {
 	ASSERT_NE(out.find("error_019_malformed_attribute.h:1:1: error: unexpected token"), string::npos);
 }
 
+TEST(c2ast_error, malformed_attribute_positions) {
+	const char* files[] = {
+		"error_023_attr_struct_head.h", "error_024_attr_struct_tail.h", "error_025_attr_decl_spec.h",
+		"error_026_attr_enum_tail.h", "error_027_attr_declarator.h", "error_028_attr_after_ptr.h",
+		"error_029_attr_decl_head.h", "error_030_attr_list_sep.h", "error_031_attr_unclosed.h",
+		"error_032_attr_one_paren.h", "error_033_attr_args_unclosed.h", "error_034_attr_eof.h",
+	};
+	for (const char* file : files) {
+		cleanTestEnv();
+		string out = execTestCommand(string("bin/palan-c2ast ../test/testdata/c2ast/") + file);
+		ASSERT_NE(out.find(string(file) + ":1:1: error: unexpected token"), string::npos) << file << ": " << out;
+	}
+}
+
+TEST(c2ast_error, unsupported_attribute_args) {
+	const pair<string, string> cases[] = {
+		{"error_035_aligned_enum.h", ":1:14: error: attribute 'aligned' is not supported here"},
+		{"error_036_mode_enum.h", ":1:29: error: attribute 'mode' is not supported here"},
+		{"error_037_aligned_negative.h", ":1:33: error: attribute 'aligned' is not supported here"},
+		{"error_038_aligned_not_const.h", ":2:33: error: attribute 'aligned' is not supported here"},
+		{"error_039_aligned_too_large.h", ":1:33: error: attribute 'aligned' is not supported here"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string out = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/" + file);
+		ASSERT_NE(out.find(file + expected), string::npos) << file << ": " << out;
+	}
+}
+
 TEST(c2ast_error, mode_param) {
 	cleanTestEnv();
 	string out = execTestCommand(

@@ -1170,6 +1170,19 @@ TEST(c2ast, sizeof_fold) {
     ASSERT_EQ(find_const("SZ_UNKNOWN"), nullptr);
 }
 
+TEST(c2ast, sizeof_unknown) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/050_sizeof_unknown.h");
+    json ast = json::parse(output);
+    map<string, string> constants;
+    for (auto& c : ast["ast"]["constants"]) constants[c["name"]] = c["value"];
+    // An enum value below INT32_MIN widens the enum to 8 bytes.
+    ASSERT_EQ(constants["SZ_E4"], "8");
+    // A layout or operand c2ast cannot compute leaves the macro unfolded.
+    for (const char* name : {"SZ_A2", "SZ_A3", "SZ_A4", "SZ_A5", "SZ_E2", "SZ_EU", "BN"})
+        ASSERT_EQ(constants.count(name), 0) << name;
+}
+
 TEST(c2ast, attributes) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/047_attributes.h");

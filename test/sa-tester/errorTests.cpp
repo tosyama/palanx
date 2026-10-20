@@ -360,6 +360,14 @@ TEST(sa_error, ambiguous_call)
 	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_055_ambiguous_call.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("Ambiguous function call"), string::npos);
+
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_683_func_value_ambiguous_import.pa -o " + ast_out), "");
+	sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:27: error: Ambiguous function call 'square'"), string::npos) << sa;
+
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_684_func_ptr_import_func_call.pa -o " + ast_out), "");
+	sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:11: error: call to 'square' is ambiguous: it names both a function pointer and a function."), string::npos) << sa;
 }
 
 TEST(sa_error, unknown_alias)
@@ -2336,6 +2344,7 @@ TEST(sa_error, struct_arr_lit)
 		{"error_266_struct_lit_unknown_field.pa", ":2:21: error: struct 'Point' has no field 'z'."},
 		{"error_267_struct_lit_ptr_field.pa", ":2:15: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
 		{"error_268_struct_lit_narrowing.pa", ":3:17: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
+		{"error_693_dict_lit_prim_var.pa", ":1:11: error: a '{name: value}' literal can only be used as a struct value"},
 		{"error_269_dict_lit_prim_elem.pa", ":1:15: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, an element of an array literal, or an argument for a struct parameter."},
 		{"error_270_dict_lit_context.pa", ":3:5: error: parameter 'p' of type 'int32' cannot take a '{name: value}' literal: only a struct parameter can."},
 	};
@@ -3034,6 +3043,7 @@ TEST(sa_error, as_cast)
 		{"error_584_cast_struct_to_ptr.pa", ":3:13: error: Cannot cast type 'P' to '@!uint8'."},
 		{"error_585_cast_enum_to_ptr.pa", ":3:13: error: Cannot cast type 'Big' to '@!int32'."},
 		{"error_586_cast_ptr_to_enum.pa", ":3:9: error: Cannot cast type '@!int32' to 'Big'."},
+		{"error_688_cast_ptr_to_float.pa", ":3:11: error: Cannot cast type '@int32' to 'flo64'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3075,6 +3085,10 @@ TEST(sa_error, block_decl_scope)
 		{"error_564_block_dup_decl.pa", ":3:2: error: Constant 'Foo' is already defined."},
 		// A C type a block's cinclude brings in clashes with the block's own.
 		{"error_565_block_type_then_cinclude.pa", ":3:2: error: type 'tm' is already defined."},
+		{"error_696_prim_name_type.pa", ":1:1: error: type 'int32' is already defined."},
+		{"error_697_block_prim_name_type.pa", ":2:2: error: type 'int32' is already defined."},
+		{"error_698_alias_then_cinclude.pa", ":3:2: error: type 'A' is already defined."},
+		{"error_699_alias_then_cinclude_typedef.pa", ":3:2: error: type 'B' is already defined."},
 		{"error_566_block_type_display_name.pa", ":4:2: error: cannot convert 'Foo' to 'int32'."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -3473,6 +3487,22 @@ TEST(sa_error, const_expr)
 		{"error_592_const_expr_flo_mod.pa", ":1:11: error: '%' operator is not supported for float types."},
 		{"error_597_shift_float.pa", ":2:11: error: Bitwise operator operand must be an integer type."},
 		{"error_598_const_shift_float.pa", ":1:11: error: Bitwise operator operand must be an integer type."},
+		{"error_674_const_expr_flo_bitnot.pa", ":1:11: error: Bitwise operator operand must be an integer type."},
+		{"error_675_const_expr_uint_neg.pa", ":1:11: " + overflow},
+		{"error_676_const_expr_uint_add_overflow.pa", ":1:11: " + overflow},
+		{"error_677_const_expr_uint_mul_overflow.pa", ":1:11: " + overflow},
+		{"error_678_const_expr_uint_neg_operand.pa", ":1:11: " + overflow},
+		{"error_679_const_expr_int_min_div.pa", ":1:11: " + overflow},
+		{"error_680_const_expr_flo_overflow.pa", ":1:11: " + overflow},
+		{"error_681_const_expr_mul_overflow.pa", ":1:11: " + overflow},
+		{"error_682_const_expr_sub_overflow.pa", ":1:11: " + overflow},
+		// A literal past 64 bits is caught while folding, before its context types it.
+		{"error_695_const_expr_lit_overflow.pa", ":1:11: " + overflow},
+		{"error_689_const_expr_uint_mod_zero.pa", ":1:11: " + divZero},
+		{"error_690_const_expr_str_operand.pa", ":2:11: error: Arithmetic operator operand must be a numeric type."},
+		{"error_691_shift_flo_count.pa", ":2:11: error: Bitwise operator operand must be an integer type."},
+		// A shift computes in int32 for a bool target, which then rejects the narrowing.
+		{"error_692_shift_bool_target.pa", ":2:1: error: Implicit conversion from 'int32' to 'bool' is not allowed"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3527,6 +3557,12 @@ TEST(sa_error, func_ptr)
 		{"error_609_func_ptr_permission.pa",
 		 ":2:1: error: cannot convert '@func(@!int32) -> int32' to '@func(@int32) -> int32'."},
 		{"error_610_func_ptr_arg_count.pa", ":3:1: error: function 'f' takes 1 argument(s), but 2 given."},
+		{"error_685_func_ptr_c_func_call.pa",
+		 ":3:1: error: call to 'abs' is ambiguous: it names both a function pointer and a function."},
+		{"error_686_method_on_incomplete_struct.pa", ":3:1: error: Undefined function 'foo'."},
+		{"error_687_method_on_non_func_ptr_field.pa", ":3:11: error: Undefined function 'n'."},
+		{"error_694_func_ptr_param_count.pa",
+		 ":3:1: error: cannot convert '@func(int32) -> int32' to '@func(int32, int32) -> int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

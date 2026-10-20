@@ -1,0 +1,1 @@
+export type FS { @func(int32) -> int32 f; };

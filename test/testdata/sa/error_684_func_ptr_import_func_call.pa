@@ -1,0 +1,3 @@
+import "lib_sa_import.pa";
+@func(int64) -> int64 square = cube;
+int64 y = square(2);

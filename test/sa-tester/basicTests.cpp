@@ -5923,6 +5923,23 @@ TEST(sa, const_expr)
 	ASSERT_EQ(init(12)["value"], "2147483648");
 }
 
+TEST(sa, const_expr_ops)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/281_const_expr_ops.pa");
+	ASSERT_TRUE(jout.is_object());
+	const pair<string, string> lits[] = {
+		{"lit-uint", "3"}, {"lit-uint", "1"}, {"lit-uint", "2"}, {"lit-uint", "7"}, {"lit-uint", "5"},
+		{"lit-uint", "0"}, {"lit-int", "0"}, {"lit-int", "7"}, {"lit-flo", "1.0"}, {"lit-flo", "1.5"},
+		{"lit-flo", "3.5"}, {"lit-uint", "8"}, {"lit-int", "4"}, {"lit-int", "15"}, {"lit-int", "5"},
+	};
+	for (int i = 0; i < 15; i++) {
+		const json& init = jout["statements"][i]["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], lits[i].first) << i;
+		ASSERT_EQ(init["value"], lits[i].second) << i;
+	}
+}
+
 TEST(sa, owned_rows_ro_slots)
 {
 	// Owned rows and structs may be lent as read-only '@T' slots; a C 'T**'
@@ -5988,6 +6005,41 @@ TEST(sa, func_ptr)
 
 	ASSERT_EQ(stmts[6]["stmt-type"], "expr");
 	ASSERT_EQ(stmts[6]["body"]["expr-type"], "call-ptr");
+}
+
+TEST(sa, func_ptr_paths)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/282_func_ptr_paths.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value-type"]["base-type"]["ret-type"]["type-name"], "void");
+	const auto& hook = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(hook["expr-type"], "call-ptr");
+	ASSERT_EQ(hook["callee"]["expr-type"], "c-global");
+	// A function whose receiver is read-only is not the method form of a
+	// call through a '@!H', so the field is called.
+	const auto& field = stmts[3]["vars"][0]["init"];
+	ASSERT_EQ(field["expr-type"], "call-ptr");
+	ASSERT_EQ(field["callee"]["expr-type"], "field-access");
+}
+
+TEST(sa, runtime_size_aggregates)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_func_ptr_field.pa -o out/lib_sa_func_ptr_field.pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/283_runtime_size_aggregates.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// stmts[1] holds the runtime element count of `a`.
+	ASSERT_EQ(stmts[2]["vars"][0]["name"], "a");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["expr-type"], "call");
+	ASSERT_EQ(stmts[3]["vars"][0]["name"], "rows");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["expr-type"], "call");
+	ASSERT_EQ(stmts[4]["vars"][0]["name"], "e");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["expr-type"], "call");
+	ASSERT_EQ(stmts[7]["vars"][0]["name"], "g");
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["expr-type"], "call");
 }
 
 TEST(sa, frame_struct)

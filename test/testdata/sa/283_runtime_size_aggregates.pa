@@ -1,0 +1,12 @@
+import "lib_sa_func_ptr_field.pa";
+type P { int32 x; };
+int32 n = 3;
+[n]P a;
+[n]@![]int32 rows;
+[n]$P e;
+[n][2]P g;
+FS s;
+{
+	import "lib_sa_func_ptr_field.pa";
+	FS t;
+}

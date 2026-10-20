@@ -5,6 +5,7 @@
 
 #pragma once
 #include <string>
+#include <boost/assert.hpp>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
 // FieldLayout/StructDef live in PlnSemanticAnalyzer.h, not here; every SA .cpp
@@ -98,13 +99,13 @@ inline bool ptrPermissionOk(const json& from, const json& to)
 // A function stored as `to` is called with `to`'s arguments and its result is
 // read as `to`'s, so permissions are checked in the direction each value
 // flows: reversed for the parameters. Types themselves are compared by the
-// registry; here only the counts must agree for the walk to line up.
+// registry first, so the parameter counts already agree.
 inline bool funcSigPermissionOk(const json& from, const json& to)
 {
 	if (from.value("type-kind","") != "func" || to.value("type-kind","") != "func") return true;
 	const json& fp = from["parameters"];
 	const json& tp = to["parameters"];
-	if (fp.size() != tp.size()) return true;
+	BOOST_ASSERT(fp.size() == tp.size());
 	for (size_t i = 0; i < fp.size(); i++)
 		if (!ptrPermissionOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
 	return ptrPermissionOk(from["ret-type"], to["ret-type"]);
@@ -367,7 +368,7 @@ inline json eightbytesJson(const StructDef& def, const map<string, StructDef>& d
 {
 	json ebs = json::array();
 	for (auto& eb : classifySysVStruct(def, defs))
-		ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}});
+		ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	return ebs;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -633,10 +634,10 @@ inline json normalizeCType(const json& type) {
 inline json cTypeAsAlias(const json& type) {
 	string tk = type.value("type-kind", "");
 	if (tk == "pntr")
-		return {{"type-kind", "pntr"}, {"mutable", type["mutable"]},
-		        {"base-type", cTypeAsAlias(type["base-type"])}};
+		return {{"type-kind", "pntr"}, {"mutable", type["mutable"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
+		        {"base-type", cTypeAsAlias(type["base-type"])}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (tk == "struct")
-		return {{"type-kind", "prim"}, {"type-name", type["type-name"]}};
+		return {{"type-kind", "prim"}, {"type-name", type["type-name"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	json t = type;
 	t.erase("const");
 	t.erase("typedef-name");
@@ -662,8 +663,8 @@ inline void normalizeCFuncSig(json& funcDef) {
 				json vt = normalizeCType(p["var-type"]);
 				if (bad.empty()) bad = unrepresentableTypeName(vt);
 				if (vt.value("type-kind", "") == "struct")
-					vt = {{"type-kind","pntr"},
-					      {"base-type",{{"type-kind","struct"},{"type-name",vt["type-name"]}}}};
+					vt = {{"type-kind","pntr"}, // LCOV_EXCL_EXCEPTION_BR_LINE
+					      {"base-type",{{"type-kind","struct"},{"type-name",vt["type-name"]}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 				p["var-type"] = move(vt);
 			}
 	if (funcDef.contains("ret-type")) {

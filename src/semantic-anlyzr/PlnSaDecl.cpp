@@ -338,9 +338,7 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 	json stmt2 = stmt;
 	vector<VarStorage> storage;
 	for (auto& var : stmt2["vars"]) {
-		storage.push_back(VarStorage::Heap);
-		if (!var.contains("var-type")) continue;
-		storage.back() = takeVarStorage(var["var-type"]);
+		storage.push_back(takeVarStorage(var["var-type"]));
 		var["var-type"] = resolveKnownType(stmt2, var["var-type"]);
 	}
 	return sa_resolved_var_decl(stmt2, move(storage));
@@ -708,10 +706,10 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage)
 		declareVar(name, pntr_type, &stmt);
 		json init = placeAggregateVar(stmt, name, pntr_type, move(malloc_call), makeFreeStmt(name, pntr_type),
 		                              storage, count < 0 ? -1 : count * elem_size, elem_size, false, post);
-		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",move(init)}});
+		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",move(init)}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	result.push_back(sa_stmt);
-	for (auto& s : post) result.push_back(move(s));
+	for (auto& s : post) result.push_back(move(s)); // LCOV_EXCL_EXCEPTION_BR_LINE
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -1049,7 +1047,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt, VarStorage sto
 				{"name",name},{"var-type",var_type},{"init",move(init)}
 			}})}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
-			for (auto& s : post) result.push_back(move(s));
+			for (auto& s : post) result.push_back(move(s)); // LCOV_EXCL_EXCEPTION_BR_LINE
 		}
 		return result;
 	}
@@ -1137,7 +1135,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt, VarStorage sto
 			{"name",name},{"var-type",pntr_type},{"init",move(init)}
 		}})}});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
-		for (auto& s : post) result.push_back(move(s));
+		for (auto& s : post) result.push_back(move(s)); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1173,7 +1171,7 @@ void PlnSemanticAnalyzer::declareLocalTypeName(const json& stmt)
 	localTypeNames_[name] = internal;
 	// A pointer may name the struct before its layout is resolved.
 	if (stmt["stmt-type"] == "struct-def") {
-		typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", internal}};
+		typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", internal}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		declaredStructs_.insert(internal);
 	}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1228,7 +1226,7 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 	string name = declaredTypeName(written);
 	declareTypeName(name, stmt);
 	// A local struct was bound to its program-wide name when declared.
-	typeAliases_.emplace(written, json{{"type-kind", "prim"}, {"type-name", name}});
+	typeAliases_.emplace(written, json{{"type-kind", "prim"}, {"type-name", name}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	json fields = stmt["fields"];
 	for (auto& f : fields) {
 		f["var-type"] = resolveWrittenType(stmt, f["var-type"]);
@@ -1267,8 +1265,8 @@ static json cFieldVarType(const json& vtype)
 {
 	auto isStruct = [](const json& t) { return t.value("type-kind", "") == "struct"; };
 	if (isStruct(vtype)) {
-		return {{"type-kind", "embed"},
-		        {"base-type", {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}}};
+		return {{"type-kind", "embed"}, // LCOV_EXCL_EXCEPTION_BR_LINE
+		        {"base-type", {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	if (vtype.value("type-kind", "") == "arr" && vtype.contains("base-type")) {
 		json v = vtype;
@@ -1368,7 +1366,7 @@ void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& 
 			structDefs_[name] = def;
 			return;
 		}
-		json field = {{"var-type", vt}};
+		json field = {{"var-type", vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		for (const char* key : {"name", "packed", "aligned"})
 			if (f.contains(key)) field[key] = f[key];
 		fields.push_back(field);
@@ -1457,7 +1455,7 @@ void PlnSemanticAnalyzer::registerEnum(const string& name, map<string, int64_t> 
 		: minV >= 0 && maxV <= UINT32_MAX ? "uint32"
 		: minV < 0 ? "int64" : "uint64";
 	enumDefs_[name] = {move(values), loc};
-	typeAliases_[written] = {{"type-kind", "prim"}, {"type-name", base}, {"enum", name}};
+	typeAliases_[written] = {{"type-kind", "prim"}, {"type-name", base}, {"enum", name}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::registerCEnum(const json& cincludeStmt, const json& e)
@@ -1695,7 +1693,7 @@ void PlnSemanticAnalyzer::adoptStruct(PlnSemanticAnalyzer& sub, const string& na
 		if (!f.enumName.empty()) adoptEnum(sub, f.enumName, false, "", locNode);
 		if (f.elemKind == "func") adoptTypeDeps(sub, f.funcType, locNode);
 	}
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::adoptEnum(const PlnSemanticAnalyzer& sub, const string& name, bool nameable,
 		const string& alias, const json& locNode)

@@ -1,0 +1,3 @@
+int32 x;
+@int32 p = @x;
+flo64 a = p as flo64;

@@ -1,0 +1,3 @@
+cinclude "282_func_ptr_paths.h";
+@!Inc p = getinc();
+p.foo(1);
