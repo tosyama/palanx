@@ -7,7 +7,7 @@ cinclude <jpeglib.h> link "jpeg";
 import "vecmath.pa";
 
 type Light {
-	vec3 position;
+	$vec3 position;
 	flo32 intensity;
 };
 
@@ -20,8 +20,8 @@ const LN = 3;
 
 type Material {
 	flo32 refractive_index;
-	[4]flo32 albedo;
-	color diffuse_color;
+	[4]$flo32 albedo;
+	$color diffuse_color;
 	flo32 specular_exponent;
 };
 
@@ -31,9 +31,9 @@ Material mirror = [1.0, [0.0, 10.0, 0.8, 0.0], [1.0, 1.0, 1.0], 1425.0];
 Material red_rubber = [1.0, [1.4, 0.3, 0.0, 0.0], [0.3, 0.1, 0.1], 10.0];
 
 type Sphere {
-	vec3 center;
+	$vec3 center;
 	flo32 radius;
-	Material material;
+	$Material material;
 };
 
 const SN = 4;
@@ -50,7 +50,7 @@ const fov = 1.05;	// 60 degrees field of view in radians
 
 [width*height]color framebuffer;
 int32 pix = 0;
-vec3 orig = [0, 0, 0]; // camera origin
+$vec3 orig = [0, 0, 0]; // camera origin
 
 while pix < width*height { // actual rendering loop
 	flo32 dir_x = (pix % width + 0.5) - width / 2.0;
