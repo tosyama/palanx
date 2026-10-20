@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.40
+ver. 0.2.0
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -440,11 +440,14 @@ Additional statement kinds emitted by SA:
 
 - **tapple-decl** - tuple-style multiple return value declaration
   - stmt-type\*: "tapple-decl"
-  - vars\*: variable list (name, var-type per entry; var-type is the function's ret type)
+  - vars\*: variable list (var-name, var-type per entry; var-type is the function's ret type)
   - value\*: SA-annotated call expression (func-type: "palan"; carries value-types field)
 
-  A declared variable whose type differs from its ret type is received into a temporary
-  and declared by a following `var-decl` initialized from it.
+  A declared variable whose type differs from its ret type, or one declared with `$`, is
+  received into a temporary and declared by a following `var-decl` initialized from it. For a
+  `$T` variable receiving a struct, that initializer is the temporary as an `expiring` value, so
+  the contents move in as for `$T p = f();` (see Stack variable declarations) and the temporary
+  is not freed at scope exit.
   A variable receiving a struct owns it and is freed at scope exit like a declared struct.
   A `tapple-assign` is emitted as a `block` holding a `tapple-decl` into temporaries followed by
   one `assign`, `arr-assign` or `field-assign` per target, in target order; a struct is copied

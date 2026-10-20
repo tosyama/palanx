@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.1.40
+ver. 0.2.0
 
 \* - Required
 
@@ -452,7 +452,7 @@ Statement model
   11. return - return statement
     - values - Return expression list (omitted for bare `return;`)
   12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
-    - vars\* - Variable declaration list (name, var-type per entry)
+    - vars\* - Variable declaration list (var-name, var-type per entry)
     - value\* - Call expression model (must be a call to a multi-return Palan function), or a
       `chain-call` whose last call is one
   13. tapple-assign - multiple return values assigned to existing targets (`call(...) -> (target, ...)`)
@@ -491,7 +491,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "cmp" "call" "cast" "arr-index" "field-access" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call"
 - loc\* - Location Array
   1. lit-str - String literal
     - value\* - String value
@@ -527,38 +527,47 @@ Expression model
   7. sub - Binary subtraction
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  8. neg - Unary negation
+  8. mul - Binary multiplication
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  9. div - Binary division
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  10. mod - Remainder (`a % b`; integer operands only)
+    - left\*  - Left operand expression model
+    - right\* - Right operand expression model
+  11. neg - Unary negation
     - operand\* - Operand expression model
-  9. cmp - Comparison expression (result: 0 or 1 as int32)
+  12. cmp - Comparison expression (result: 0 or 1 as int32)
     - op\*    - Operator string: "<" "<=" ">" ">=" "==" "!="
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  10. call - Function call expression
+  13. call - Function call expression
     - name\* - Function name string
     - args - Argument expression list
-  11. cast - Explicit type cast expression (`expr as type` or `type-name(expr)`). `as` takes any
+  14. cast - Explicit type cast expression (`expr as type` or `type-name(expr)`). `as` takes any
     type a declaration accepts; `type-name(expr)` produces a `cast` only for a built-in type
     keyword — an alias or enum cast `Name(expr)` is emitted as a `call` and SA treats it as a cast.
     - target-type\* - Target Variable type object
     - src\* - Source expression model
-  12. arr-index - Array element access (`arr[i]`)
+  15. arr-index - Array element access (`arr[i]`)
     - array\* - Array expression model
     - index\* - Index expression model
     (elem-size is added by SA; not present in AST)
-  13. logical-and - Short-circuit logical AND (`a && b`; result: int32, 0 or 1)
+  16. logical-and - Short-circuit logical AND (`a && b`; result: int32, 0 or 1)
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  14. logical-or - Short-circuit logical OR (`a || b`; result: int32, 0 or 1)
+  17. logical-or - Short-circuit logical OR (`a || b`; result: int32, 0 or 1)
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  15. logical-not - Logical NOT (`!a`; result: int32, 0 or 1)
+  18. logical-not - Logical NOT (`!a`; result: int32, 0 or 1)
     - operand\* - Operand expression model
-  16. field-access - Struct field read (`obj.field` rvalue). An enumerator reference `Name.X` has
+  19. field-access - Struct field read (`obj.field` rvalue). An enumerator reference `Name.X` has
     the same shape (`object` is the `id` `Name`); SA tells them apart.
     - object\* - Base object expression model — same vocabulary as field-assign's `object` (see
       Statement model above)
     - field\*  - Field name string
-  17. member-call - `x.f(args)`: a module-alias call `L.f(args)` or a method-form call
+  20. member-call - `x.f(args)`: a module-alias call `L.f(args)` or a method-form call
     `aa.f(args)` (`f(@!aa, args)`); gen-ast does not tell them apart (consumed by SA, not
     emitted to sa.json)
     - object\* - Object expression: an `id` naming a module alias, or the receiver expression
@@ -566,7 +575,7 @@ Expression model
     - args - Argument expression list (without the receiver)
     Note: SA resolves `member-call` and emits a regular `call` node in sa.json (see SASpec.md
     "Method-form calls").
-  18. addr-of - Address-of a local variable, a struct field reached from one, or an array
+  21. addr-of - Address-of a local variable, a struct field reached from one, or an array
       element reached from one (`@` read-only, `@!`/`AT_EXCL` mutable). The operand grammar is
       `store_loc` — the same vocabulary the right side of `->` accepts (a bare identifier, a
       `.`-chain of field accesses, a `[expr]` index, a parenthesized tuple, or a call `f(...)` /
@@ -583,41 +592,41 @@ Expression model
       one (`@(x)`), or `not-impl` for a tuple grouping or a type-name cast `@int32(x)`. A call or
       a parenthesized expression may also be the base of the chain (`@f().x`, `@(p as @!P).x`).
     - mutable\* - `true` for `@!`, `false` for `@`
-  19. not-impl - An expression the grammar parses but the compiler does not implement (e.g. a
+  22. not-impl - An expression the grammar parses but the compiler does not implement (e.g. a
       tuple `(a, b)` used as a value, `sizeof` of a `[#n]` type, a call argument `x>>`), or a `store_loc` shape that
       carries no addressable location (a parenthesized tuple, or a type-name cast `int32(x)`, reached via
       `@`/`@!` or as a chain root). Carries no
       fields beyond `expr-type` and `loc`; SA rejects any expression of this shape.
-  20. bitand - Binary bitwise AND (`a & b`; integer operands only)
+  23. bitand - Binary bitwise AND (`a & b`; integer operands only)
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  21. bitor - Binary bitwise OR (`a | b`; integer operands only)
+  24. bitor - Binary bitwise OR (`a | b`; integer operands only)
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  22. bitxor - Binary bitwise XOR (`a ^ b`; integer operands only)
+  25. bitxor - Binary bitwise XOR (`a ^ b`; integer operands only)
     - left\*  - Left operand expression model
     - right\* - Right operand expression model
-  23. bitnot - Unary bitwise NOT (`~a`; integer operand only)
+  26. bitnot - Unary bitwise NOT (`~a`; integer operand only)
     - operand\* - Operand expression model
-  24. shl - Left shift (`a <<< b`; integer operands only)
+  27. shl - Left shift (`a <<< b`; integer operands only)
     - left\*  - Value expression model
     - right\* - Shift count expression model
-  25. shr - Logical right shift (`a >>> b`; integer operands only)
+  28. shr - Logical right shift (`a >>> b`; integer operands only)
     - left\*  - Value expression model
     - right\* - Shift count expression model
-  26. arr-lit - Array literal (`[a, b, c]`)
+  29. arr-lit - Array literal (`[a, b, c]`)
     - items\* - Element expression model list. A 2D literal is an `arr-lit` of row `arr-lit`s;
       the concatenated form `[a,b][c,d]` is normalized to the same shape as the nested form
       `[[a,b],[c,d]]` (only `loc` differs)
-  27. dict-lit - Named-value literal (`{x: a, y: b}`); a trailing comma is allowed
+  30. dict-lit - Named-value literal (`{x: a, y: b}`); a trailing comma is allowed
     - items\* - List of named values in source order
       - name\*  - Name string
       - value\* - Value expression model
       - loc\*   - Location Array of `name: value`
-  28. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
+  31. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
       template argument is emitted as `not-impl` instead
     - type\* - Type model
-  29. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
+  32. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
       consumed by SA, not emitted to sa.json (see SASpec.md "Chained calls")
     - value\* - Expression model whose value (or return values) come first in the arguments; a
       nested `chain-call` for `x -> f() -> g()`, or an assignment statement node for `x -> v -> f()`

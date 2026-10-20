@@ -30,29 +30,29 @@ Responsibility:
   The tool is responsible for orchestrating the compilation process.
 
 ```
-Usage: palan [options] <source files>
+Usage: palan [options] <source file>
  options:
    -o, --output <file path> Specify output file path. If not specified, the binary is
                             executed immediately after linking and then removed.
-   -c, --clean              Clean build artifacts
+   -c, --clean              Remove all cached work files (the whole working directory)
    -h, --help               Display help information
    -v, --version            Display version information
 ```
 
 Design:
- The build manager searches for specified Palan source files and generates the output file paths for the AST generator.
- After generating ASTs of the source files by invoking palan-gen-ast, it checks for dependencies on other Palan source files and invokes palan-gen-ast for those dependent files if needed.
- After generating ASTs for all source files, it invokes palan-sa to perform semantic analysis on the generated ASTs.
- It then invokes palan-codegen to generate x86-64 assembly files from the analyzed ASTs,
- assembles them with `as`, and links the resulting object files with `ld` to create the final executable (default: `a.out`).
+ The build manager generates the AST of the given source file by invoking palan-gen-ast, then
+ follows its `import`s of other Palan source files and generates their ASTs in turn.
+ For each module it then invokes palan-sa and palan-codegen (`--no-entry` for every module but
+ the given one) and assembles the result with `as`. The allocators the modules need are generated
+ as one more module (see 3.6), and all object files are linked with `ld` to create the final
+ executable (default: `a.out`).
  If `-o` is not specified, the resulting `a.out` is executed immediately after linking and then removed.
  This allows palan to be used as a script runner without leaving build artifacts.
- Before linking, the build manager unions the `libs` array (see SASpec.md's Root) across every
- module's sa.json, in the same pass it already makes over all modules to collect `alloc-shapes`,
- and appends `-l<name>` to the `ld` invocation for each library named by a `link` clause on a
- `cinclude` statement (e.g. `cinclude <math.h> link "m";`) anywhere in the program.
- During each step, the build manager will check the creation times of source files and their corresponding output files
- to determine if recompilation is necessary, optimizing the build process by avoiding redundant work.
+ Before linking, the build manager unions the `libs` and `objs` arrays (see SASpec.md's Root)
+ across every module's sa.json, in the same pass it already makes over all modules to collect
+ `alloc-shapes`. It appends `-l<name>` to the `ld` invocation for each library named by a `link`
+ clause on a `cinclude` statement (e.g. `cinclude <math.h> link "m";`) anywhere in the program,
+ and passes each `.o` file named by one after the program's own objects.
 
 ### 3.2 AST Generator (palan-gen-ast)
 Responsibility:
@@ -63,7 +63,6 @@ Usage: palan-gen-ast [options] <source file>
  options:
    -o, --output <file path> Specify output AST file path. If not specified, standard output is used.
    -i, --indent             Generate indented (pretty-printed) JSON output
-   -m, --macros <file>      Start from a macro state (a previous run's `macro-state`) instead of predefined.h
    -h, --help               Display help information
    -v, --version            Display version information
 ```
@@ -127,6 +126,7 @@ Responsibility:
 Usage: palan-sa [options] <AST file>
  options:
    -o, --output <file path> Specify output analyzed AST file path. If not specified, defaults to <source>.sa.json.
+   -i, --indent             Generate indented (pretty-printed) JSON output
    -h, --help               Display help information
    -v, --version            Display version information
 ```
@@ -157,7 +157,7 @@ Responsibility:
 Usage: palan-codegen [options] <SA file>
  options:
    -o, --output <file path> Specify output assembly file path. If not specified, defaults to <source>.s.
-   --no-entry               Suppress _start generation (use for library files)
+   -n, --no-entry           Do not export _start or define __dso_handle (for every module but the entry one)
    -h, --help               Display help information
    -v, --version            Display version information
 ```
@@ -195,124 +195,60 @@ Design:
  whole binary's stack executable as soon as any note-carrying libc object joins the link).
 
 
-### 3.6 Array Allocator Generation (Future Design)
+### 3.6 Allocator Generation
 
-For complex array element types (nested arrays, structs with array fields), a simple `malloc` call
-is insufficient — recursive allocation and deallocation loops are required.
+An owned aggregate made of more than one heap block — a struct that owns fields, an array of
+structs, a `[m][n]T` array — is allocated, released and copied by generated functions instead of
+inline loops. A struct that owns nothing and a `[n]T` array of primitives use `calloc`/`malloc` and
+`free` directly.
 
-**Design decision:** palan-sa auto-generates allocator and free functions for complex array shapes,
-and the build manager aggregates them across modules.
+palan-sa emits only calls to these functions; it records each shape it needs in sa.json's
+`alloc-shapes` (SASpec.md's Root), as it collects `str-literals`. The build manager collects the
+shapes of all modules, deduplicates them by key (each module defining its own copy would collide
+at link time), and writes the functions as Palan source `__allocators.pa` in the working directory
+of the given source file, with `__allocators.h` declaring the C functions it calls. It is compiled
+as one more module (`--no-entry`). Each struct appears there as an exported type declaring only
+its owned fields, at their offsets, with the rest of its bytes as padding, so a C struct or a type
+of another module needs no Palan declaration of its other fields.
 
-#### Allocator function model
+For a shape key `K`, the functions are:
 
-Allocator functions are keyed by the **structural shape** of the element type, with all sizes
-stripped out and passed as arguments. This avoids per-size function proliferation.
+| Function | Does |
+|----------|------|
+| `__pln_alloc_K(sizes...)` | allocates and builds the value |
+| `__pln_free_K(p, sizes...)` | releases what `p` owns, then `p`; `p` may be NULL |
+| `__pln_init_K(p, sizes...)` | builds the value in an existing zeroed block (a `$` variable) |
+| `__pln_fini_K(p, sizes...)` | releases what `p` owns, but not `p` (a `$` variable) |
+| `__pln_copy_K(dst, src, sizes...)` | copies `src` into `dst`, owned parts included |
 
-##### Shape key
-
-The shape key encodes the full structural type path from outermost to innermost using `_` as
-separator. Constructor tokens (`arr`, `ptr`, `emb`) appear first; the leaf type name is always last.
-
-**Encoding rules:**
-1. Each type constructor contributes one token: `arr`, `ptr`, or `emb`
-2. The leaf type name (primitive or user-defined) is appended last
-3. Underscores within user-defined type names are escaped to `__`
-   (constructor tokens never contain underscores, so no escaping is needed for them)
-
-**Decoding rule:** scan left to right splitting on `_`; a `__` sequence is an escaped `_`
-within the current token, not a separator. The last token is always the leaf type name.
-
-| Palan type           | Shape notation         | Shape key              |
-|----------------------|------------------------|------------------------|
-| `[n]int32`           | `arr(int32)`           | — (no allocator; direct malloc) |
-| `[m][n]int64`        | `arr(arr(int64))`      | `arr_arr_int64`        |
-| `[l][m][n]int64`     | `arr(arr(arr(int64)))` | `arr_arr_arr_int64`    |
-| `[n]MyStruct`        | `arr(MyStruct)`        | `arr_MyStruct`         |
-| `[m][n]MyStruct`     | `arr(arr(MyStruct))`   | `arr_arr_MyStruct`     |
-| `[n]arr`             | `arr(arr)`             | `arr_arr`              |
-| `[n]my_type`         | `arr(my_type)`         | `arr_my__type`         |
-| `[m]$my_type`        | `arr(emb(my_type))`    | `arr_emb_my__type`     |
-
-##### Function naming convention
-
-- Alloc: `__pln_alloc_<shape-key>`
-- Free:  `__pln_free_<shape-key>`
-
-The `__pln_` prefix reserves the symbol as a Palan internal (double-underscore per C standard,
-`pln` namespace to avoid collision with other tools or libraries).
-
-##### Signatures
-
-Alloc takes one `int64_t` argument per dimension (outermost to innermost) and returns `void*`:
-
-```c
-void* __pln_alloc_arr_arr_int64(int64_t d0, int64_t d1);
-void* __pln_alloc_arr_arr_arr_int64(int64_t d0, int64_t d1, int64_t d2);
-void* __pln_alloc_arr_MyStruct(int64_t d0);
-```
-
-Free takes the array pointer (`void*`) plus all dimensions **except the innermost**
-(the innermost size is not needed because `free` does not require it):
-
-```c
-void __pln_free_arr_arr_int64(void* arr, int64_t d0);
-void __pln_free_arr_arr_arr_int64(void* arr, int64_t d0, int64_t d1);
-void __pln_free_arr_MyStruct(void* arr, int64_t d0);
-```
-
-Each shape maps to exactly one allocator function and one free function.
-
-#### Cross-module deduplication (build manager aggregation)
-
-When multiple source files require allocators for the same shape, generating the function
-independently in each module would cause duplicate symbol errors at link time.
-
-To avoid this, palan-sa does **not** emit allocator function bodies into sa.json directly.
-Instead, it records the required allocator shapes in a dedicated `alloc-shapes` metadata
-section of sa.json. The build manager collects `alloc-shapes` from all sa.json files,
-deduplicates by shape key, generates a single allocator source file, compiles it once,
-and links it with all modules.
-
-This follows the same pattern as the existing `str-literals` table: SA collects metadata,
-codegen (or build manager) handles the actual emission.
-
-#### Allocation strategy selection (palan-sa)
-
-palan-sa determines the allocation strategy per element type:
-
-```
-allocKind(elem_type):
-  prim or pntr  → Direct: malloc(count * sizeof(elem))
-  arr or struct → Generated: call __alloc_<shape>(counts...)
-```
-
-For generated allocators, SA records the shape in `alloc-shapes` and emits a call to the
-corresponding function name. The function body is produced by the build manager step.
+| Shape | `K` | Functions |
+|-------|-----|-----------|
+| struct `T` (one that owns nothing only as a part of another shape) | `T` | all; `init`/`fini` only when it owns fields |
+| `[n]T` with `T` a struct | `arr_T` | all |
+| `[m][n]T` with `T` a struct | `arr_arr_T` | all |
+| `[m][n]P` with `P` a primitive | `arr_arr_P` | all |
+| a struct's owned `[n]P` field | `arr_prim_P` | `alloc`, `free` |
 
 ## 4. Expression Value Categories
 
-Every expression in Palan has a **value category** that determines ownership semantics.
-palan-sa annotates expressions with their category and uses it to drive free-tracking decisions.
+palan-sa marks an expression whose value has, or needs, an owner with a `category`:
 
-| Category | Description | Examples |
-|----------|-------------|---------|
-| `owned`    | A named variable with ownership; SA tracks it for free at scope end | `[n]T` variable, `[n]@![]T` variable |
-| `expiring` | An owned value being relinquished; must be consumed exactly once | return value of a function whose return type is a tracked array type; result of `->>` |
-| `transient` | A plain temporary with no ownership; no tracking needed | integer literal, arithmetic result, `prim` function return value |
+| Category | Expression |
+|----------|------------|
+| `owned`    | an `id` naming a variable that owns its storage and releases it at scope exit (a heap struct or array, not a `$` variable) |
+| `expiring` | a Palan function call returning a pointer type; a returned struct has no owner yet |
+| (absent)   | anything else |
 
-### Rules
-
-- Assigning an `expiring` value to a variable → the variable becomes `owned`, SA adds it to free-tracking.
-- Passing an `expiring` value as a function argument → the callee takes ownership (parameter becomes `owned`).
-- An unused `expiring` value → freed at the end of the statement (or immediately after use).
-- `return expr` where `expr` is `owned` → SA removes it from free-tracking (no free emitted); the caller is responsible for freeing.
-- `val ->> target` (ownership-transfer arr-assign) → SA emits `val = NULL` after the transfer; the scope-end `free(val)` becomes `free(NULL)` which is a no-op.
-- `val -> target` where target is an owned array or struct and `val` is not `expiring` → the contents are copied (owned parts included); neither side's ownership changes.
-
-### SA determination of expiring
-
-A function call expression is `expiring` if the function's return type is a tracked array type
-(`[]T`, `[][]T`, or any unsized array type). Otherwise it is `transient`.
+- A returned struct initializing a variable becomes owned by it without a copy; a `$T` variable
+  gets its contents and the returned block is freed. Assigned with `->`, it is copied and freed.
+- A returned struct given as an argument, or not used, is freed once the statement has been
+  evaluated: the callee only borrows it. Binding it to a `@T`/`@!T` borrow is an error.
+- `return v` of an owned `v` drops it from scope-exit release; the caller owns the value.
+  Returning a struct the function doesn't own returns a copy.
+- `v ->> target` needs an owned `v` and sets `v` to NULL after the transfer, so its scope-exit
+  free is a no-op; an `expiring` source has nothing to reset.
+- `v -> target` with an owned array or struct `target` and a non-expiring `v` copies the contents
+  (owned parts included); neither side's ownership changes.
 
 ## 5. Working Directory and Output Files
 ### 5.1 Working Directory
