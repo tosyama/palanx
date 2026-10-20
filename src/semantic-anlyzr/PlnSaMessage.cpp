@@ -563,6 +563,14 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
 
+		case E_TransferToNonOwnedVar:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->>' needs a variable that owns its array or struct; '" + arg1 + "' does not.";
+
+		case E_TransferToSelf:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->>' cannot give '" + arg1 + "' to itself.";
+
 		case E_UnsizedArrRowSizeNotConst:
 			return "the row size in '[][m]T' must be a compile-time constant.";
 

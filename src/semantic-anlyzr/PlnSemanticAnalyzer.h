@@ -465,10 +465,12 @@ class PlnSemanticAnalyzer {
 	bool valueFirst(json& s, json& pre, json& post, set<string>& roots);
 	json snapshotCopy(const json& saSrc, const json& locNode, json& pre, json& post);
 	json takeScopeRelease(const string& name);
+	const json& scopeRelease(const string& name) const;
 	void noteEscape(const json& saValue);
 	bool storageRoots(const json& v, set<string>& roots, bool contents);
 	void resolvePending(json& stmts);
-	json sa_assign_stmt(const json& stmt);
+	json sa_assign_stmt(const json& stmt);  // returns json::array()
+	json sa_transfer_to_var(const json& stmt, const string& name, const json& varType, const PlnType* toType);
 	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
@@ -479,6 +481,8 @@ class PlnSemanticAnalyzer {
 	json sa_aggregate_lit_assign(const json& stmt, const json& targetAst, const json& targetType,
 	                             json* litAddr = nullptr);
 	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue);
+	// `value ->> target`: releases what target holds, stores, and resets the source.
+	json transferStmts(const json& stmt, json targetRelease, json store, const json& value);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
 	json bindReturnStructLit(json& stmt);

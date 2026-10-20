@@ -123,6 +123,8 @@ enum PlnSaMessageCode {
 	E_TransferFromNonOwner,
 	E_TransferToBorrowSlot,
 	E_TransferShapeMismatch,	// arg1: destination shape, arg2: source shape
+	E_TransferToNonOwnedVar,	// arg1: variable name
+	E_TransferToSelf,	// arg1: variable name
 	E_UnsizedArrRowSizeNotConst,
 	E_UnsizedArrRowUnsupported,
 	E_ArrElemShapeMismatch,	// arg1: expected shape, arg2: actual shape

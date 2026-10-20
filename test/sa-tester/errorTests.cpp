@@ -2453,6 +2453,16 @@ TEST(sa_error, unknown_type_name)
 		{"error_369_unsized_rows_1d_borrow.pa", ":3:1: error: array shape '@[3]int32' does not match '[?][3]int32'"},
 		{"error_370_slot_arr_ret_as_owned_rows.pa", ":3:2: error: array shape '[?]@!int32' does not match '[?][?]int32'"},
 		{"error_371_borrow_elems_arg_as_owned.pa", ":6:1: error: array shape '[1]@!P' does not match '[?]P'"},
+		{"error_665_transfer_to_frame_var.pa", ":4:1: error: '->>' needs a variable that owns its array or struct; 'q' does not."},
+		{"error_666_transfer_to_borrow_var.pa", ":4:1: error: '->>' needs a variable that owns its array or struct; 'b' does not."},
+		{"error_667_transfer_to_struct_param.pa", ":2:20: error: '->>' needs a variable that owns its array or struct; 'p' does not."},
+		{"error_668_transfer_to_prim_var.pa", ":3:1: error: '->>' needs a variable that owns its array or struct; 'x' does not."},
+		{"error_669_transfer_to_self.pa", ":2:1: error: '->>' cannot give 'a' to itself."},
+		{"error_670_transfer_var_size_mismatch.pa", ":3:1: error: cannot transfer '[4]int32' into '[3]int32'"},
+		// The variable frees by the size it was declared with.
+		{"error_671_transfer_var_runtime_size.pa", ":4:1: error: cannot transfer '[?]int32' into '[?]int32'"},
+		{"error_672_transfer_var_struct_mismatch.pa", ":5:1: error: cannot transfer 'P' into 'Q'"},
+		{"error_673_transfer_frame_arr_to_var.pa", ":3:1: error: '->>' needs a source that owns its value"},
 		{"error_372_owned_elems_arg_as_borrow.pa", ":5:1: error: array shape '[2]P' does not match '[?]@!P'"},
 		{"error_373_slot_arr_into_owned_rows_slot.pa", ":3:1: error: array shape '[3]@!int32' does not match '[?][?]int32'"},
 	};

@@ -1136,6 +1136,18 @@ Point p;
 p ->> w.pt;              // w's original Point is freed; p is set to NULL
 ```
 
+`val ->> var` transfers `val` into a variable that owns its array or struct. What the variable
+held is freed first, and `val` is set to NULL as above. An array must have the same element type
+and the same sizes as the variable, both known at compile time; a struct must be of the same
+type. A stack (`$`) variable, a borrow, a struct parameter, or `val` naming the variable itself is
+a compile error.
+
+```palan
+[4]int32 a = [1, 2, 3, 4];
+[4]int32 c;
+a ->> c;                 // c's original array is freed; a is set to NULL
+```
+
 The source must own what it gives away: a variable that owns its array or struct, an owned
 field or element (`v.pt ->> w.pt`, `pts[1] ->> w.pt`, `m[1] ->> w.arr`), or a value returned by
 a function. A field or element source is set to NULL like a variable. A borrow (`@T`/`@!T`,

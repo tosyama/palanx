@@ -1845,6 +1845,18 @@ TEST(gen_ast, field_transfer) {
 	ASSERT_FALSE(stmts[3].contains("ownership-transfer"));
 }
 
+TEST(gen_ast, var_transfer) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/145_var_transfer.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& s = jout["ast"]["statements"][2];
+	ASSERT_EQ(s["stmt-type"], "assign");
+	ASSERT_EQ(s["name"], "c");
+	ASSERT_EQ(s["value"]["name"], "a");
+	ASSERT_EQ(s.value("ownership-transfer", false), true);
+}
+
 // A chain into array elements used to split the GLR parse at every step:
 // 4 steps never finished, so execTestCommand's timeout catches a regression.
 TEST(gen_ast, assign_chain) {

@@ -3282,3 +3282,9 @@ TEST(build_mgr, tapple_frame_mtrace) {
 	// included, and the returned block is freed.
 	expectFrameMtrace("318_tapple_frame_mtrace", "3 10\n5 6 9 7\n8 9\n");
 }
+
+TEST(build_mgr, var_transfer_mtrace) {
+	// The target's old value is freed and the source left NULL, so every
+	// block is freed exactly once.
+	expectFrameMtrace("319_var_transfer_mtrace", "4\n5\n3 4\n7\n9\n7\n0\n5\n9\n");
+}

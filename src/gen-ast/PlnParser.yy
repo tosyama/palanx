@@ -873,7 +873,7 @@ expression: term
 	| expression DBL_ARROW store_loc
 	{
 		string kind = $3.value("kind", "");
-		if (kind == "arr-index" || kind == "field")
+		if (kind == "var" || kind == "arr-index" || kind == "field")
 			$$ = storeStmt(move($3), move($1), true);
 		else
 			$$ = {{"expr-type", "not-impl"}};

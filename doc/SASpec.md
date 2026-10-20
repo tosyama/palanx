@@ -391,6 +391,12 @@ Additional statement kinds emitted by SA:
   `[n]T`; otherwise E_TransferToNonOwnedField), and emits the same three statements with a
   `field-assign`.
 
+  A `->>` into a variable (`val ->> var`, an `assign` with `ownership-transfer`) is accepted only
+  for a variable that owns its array or struct (otherwise E_TransferToNonOwnedVar), from a value
+  other than the variable itself (E_TransferToSelf) whose shape matches it as for a row
+  (E_TransferShapeMismatch). It emits the same three statements with an `assign`; the free is the
+  variable's own scope-exit release, which knows its sizes.
+
 - **Chained and once-evaluated stores** - an assignment whose `value` is another assignment
   (`v -> t1 -> t2`, or a `chain-call` starting from one) runs that assignment first and reads its
   target back as the value. Each call is evaluated once, values before targets: a call in a target

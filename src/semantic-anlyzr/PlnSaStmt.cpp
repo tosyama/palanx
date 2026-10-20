@@ -281,7 +281,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 			if (!r.contains("init")) continue;
 			json assign = {{"stmt-type", "assign"}, {"name", r["name"]}, {"value", r["init"]},
 			               {"loc", r["init"].value("loc", json::array())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-			body.push_back(sa_assign_stmt(assign));
+			for (auto& st : sa_assign_stmt(assign)) body.push_back(move(st));
 			r.erase("init");
 		}
 	for (auto& s : sa_statements(blk["body"])) body.push_back(move(s));
@@ -321,21 +321,47 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		exit(1);
 	}
 	if (isAggregateLit(stmt["value"]) && (isStructPntr(*varType) || isArrLevel(*varType)))
-		return sa_aggregate_lit_assign(stmt, {{"expr-type", "id"}, {"name", name}}, *varType); // LCOV_EXCL_EXCEPTION_BR_LINE
+		return json::array({sa_aggregate_lit_assign(stmt, {{"expr-type", "id"}, {"name", name}}, *varType)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	const PlnType* toType = registry_.fromJson(*varType);
+	if (stmt.value("ownership-transfer", false))
+		return sa_transfer_to_var(stmt, name, *varType, toType);
 	json value = sa_expression(stmt["value"], toType);
 	// A borrowed array variable ("mutable" on its levels) is rebound to what
 	// '@x' names.
 	if (isCopiedByValue(*varType) && !varType->contains("mutable")) {
 		json dst = {{"expr-type","id"},{"name",name},{"var-type",*varType},{"value-type",*varType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		return makeCopyStmt(stmt, dst, value);
+		return json::array({makeCopyStmt(stmt, dst, value)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	if (varType->contains("arr-size") && !isOwnedVar(name))
 		checkArrBorrowBinding(stmt, stmt["value"], value, *varType);
 	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 	checkBorrowSource(stmt, value, *varType);
 	checkPtrPermission(stmt, value["value-type"], *varType);
-	return {{"stmt-type", "assign"}, {"name", name}, {"value", value}};
+	return json::array({{{"stmt-type", "assign"}, {"name", name}, {"value", value}}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The variable releases what it held the way its scope exit would, which
+// knows its sizes, so the value must have those same sizes.
+json PlnSemanticAnalyzer::sa_transfer_to_var(const json& stmt, const string& name, const json& varType,
+                                             const PlnType* toType)
+{
+	if (!isOwnedVar(name)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedVar, name) << endl;
+		exit(1);
+	}
+	const json& src = stmt["value"];
+	if (src.value("expr-type", "") == "id" && src["name"] == name) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToSelf, name) << endl;
+		exit(1);
+	}
+	json value = sa_expression(src, toType);
+	if (!copyShapeMatch(value["value-type"], varType)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferShapeMismatch,
+			typeDisplayName(varType), typeDisplayName(value["value-type"])) << endl;
+		exit(1);
+	}
+	json store = {{"stmt-type", "assign"}, {"name", name}, {"value", value}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return transferStmts(stmt, scopeRelease(name), move(store), value);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // The key of the location a store writes to; none for a plain variable.
@@ -414,7 +440,7 @@ json PlnSemanticAnalyzer::sa_store_stmt(const json& stmt, json* litAddr)
 {
 	string t = stmt["stmt-type"];
 	if (t == "assign")
-		return json::array({sa_assign_stmt(stmt)}); // LCOV_EXCL_EXCEPTION_BR_LINE
+		return sa_assign_stmt(stmt);
 	if (t == "arr-assign")
 		return sa_arr_assign_stmt(stmt, litAddr);
 	return sa_field_assign(stmt, litAddr);
@@ -599,6 +625,15 @@ json PlnSemanticAnalyzer::takeScopeRelease(const string& name)
 	return release;
 }
 
+const json& PlnSemanticAnalyzer::scopeRelease(const string& name) const
+{
+	for (auto scope = arrayScopeVars_.rbegin(); scope != arrayScopeVars_.rend(); ++scope)
+		for (auto& v : *scope)
+			if (v.name == name) return v.release;
+	static const json none;
+	return none; // LCOV_EXCL_LINE -- callers check isOwnedVar first
+}
+
 // The variable whose storage a pointer value points into, if one does.
 static string pointeeVar(const json& v)
 {
@@ -779,9 +814,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt, json* litAddr)
 		exit(1);
 	}
 	arr_assign["ownership-transfer"] = true;
-	json result = json::array({makeOwnedValueFreeStmt(sa_target), arr_assign}); // LCOV_EXCL_EXCEPTION_BR_LINE
-	appendTransferSourceReset(result, stmt, sa_value);
-	return result;
+	return transferStmts(stmt, makeOwnedValueFreeStmt(sa_target), move(arr_assign), sa_value);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // The name an array-literal diagnostic gives the target: the variable or
@@ -898,6 +931,13 @@ json PlnSemanticAnalyzer::sa_aggregate_lit_assign(const json& stmt, const json& 
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	leaveScope();
 	return {{"stmt-type", "block"}, {"body", move(body)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::transferStmts(const json& stmt, json targetRelease, json store, const json& value)
+{
+	json result = json::array({move(targetRelease), move(store)}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	appendTransferSourceReset(result, stmt, value);
+	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Only an owner may give its value away, and it then holds NULL so its own free
@@ -1218,9 +1258,8 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt, json* litAddr)
 	if (!transfer)
 		return json::array({makeFieldAssign(chain, *it, move(value))}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	// The field owns what it held, so '->>' releases that before taking over.
-	json result = json::array({makeOwnedValueFreeStmt(makeFieldAccess(chain, *it)), makeFieldAssign(chain, *it, value)}); // LCOV_EXCL_EXCEPTION_BR_LINE
-	appendTransferSourceReset(result, stmt, value);
-	return result;
+	return transferStmts(stmt, makeOwnedValueFreeStmt(makeFieldAccess(chain, *it)),
+	                     makeFieldAssign(chain, *it, value), value);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value)

@@ -422,9 +422,10 @@ Statement model
       - name\* - Variable name string
       - var-type\* - Variable type
       - init - Initializer expression model (omitted if no initializer)
-  5. assign - assignment statement (`expr -> var`)
+  5. assign - assignment statement (`expr -> var` or `expr ->> var`)
     - name\* - Target variable name string
     - value\* - Source expression model
+    - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
   6. arr-assign - array element assignment statement (`expr -> arr[i]` or `expr ->> arr[i]`)
     - target\* - arr-index expression model (see Expression model §12)
     - value\* - Source expression model

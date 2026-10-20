@@ -42,9 +42,9 @@ a -> b;                     // copies the elements
 fill(@!b, 7);               // lends b writable (@ lends read-only)
 printf("%d %d\n", sum(@a), sum(@b));   // 10 28
 
-[2][N]int32 grid;
-a ->> grid[0];              // moves a's array into the row; a is left NULL
-printf("%d\n", grid[0][3]); // 4
+[N]int32 c;
+a ->> c;                    // moves a's array into c; a is left NULL
+printf("%d\n", c[3]);       // 4
 ```
 
 **C libraries as they are.** `cinclude` reads a C header and makes its functions, types, structs,
