@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.1.40
+**Version:** v0.2.0
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -40,27 +40,16 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 1. [Command-Line Usage](#1-command-line-usage)
 2. [Lexical Rules](#2-lexical-rules)
 3. [Type System](#3-type-system)
-4. [Variable Declarations](#4-variable-declarations)
+4. [Variables, Constants and Type Aliases](#4-variables-constants-and-type-aliases)
 5. [Expressions](#5-expressions)
 6. [Statements](#6-statements)
 7. [Function Definitions](#7-function-definitions)
-8. [Receiving Multiple Return Values](#8-receiving-multiple-return-values)
-9. [C Library Integration](#9-c-library-integration)
-10. [If / If-Else Statements](#10-if--if-else-statements)
-11. [Block Statements](#11-block-statements)
-12. [Modules (import / export)](#12-modules-import--export)
-13. [Program Structure](#13-program-structure)
-14. [While Loops](#14-while-loops)
-15. [break / continue](#15-break--continue)
-16. [Optional Semicolons](#16-optional-semicolons)
-17. [Floating-Point Types](#17-floating-point-types)
-18. [Arrays](#18-arrays)
-19. [Struct Types](#19-struct-types)
-20. [Type Aliases](#20-type-aliases)
-21. [Constant Declarations](#21-constant-declarations)
-22. [Address-Of Operator](#22-address-of-operator)
-23. [Raw Syscalls](#23-raw-syscalls)
-24. [Function Pointers](#24-function-pointers)
+8. [Arrays](#8-arrays)
+9. [Struct Types](#9-struct-types)
+10. [Address-Of Operator](#10-address-of-operator)
+11. [Modules and Program Structure](#11-modules-and-program-structure)
+12. [C Library Integration](#12-c-library-integration)
+13. [Raw Syscalls](#13-raw-syscalls)
 
 ---
 
@@ -87,7 +76,7 @@ The build manager (`palan`) orchestrates the full pipeline: parse → semantic a
 A literal must fit the type it adopts from its context (the declared variable, parameter, or the
 other operand); otherwise it is a compile error — `int8 x = 300;` and `uint8 y = -1;` are both
 rejected. A minus sign directly on an integer literal is part of the value, so `int8 x = -128;`
-is accepted. A constant expression (see [Constant Declarations](#21-constant-declarations)) is
+is accepted. A constant expression (see [Constant Declarations](#constant-declarations)) is
 folded first, so its result is what must fit: `int8 x = 100 + 100;` is rejected.
 
 **Character literals:** `'a'` is an integer literal whose value is the character's ASCII code, so
@@ -261,9 +250,119 @@ When passing to variadic C functions (e.g., `printf`), small integer types are p
 - `uint8`, `uint16` → `uint32`
 - `bool` → `int32`
 
+### Floating-Point Types
+
+Palan supports 32-bit and 64-bit IEEE 754 floating-point types:
+
+| Type    | Width  | C equivalent |
+|---------|--------|--------------|
+| `flo32` | 32-bit | `float`      |
+| `flo64` | 64-bit | `double`     |
+
+#### Declaration and Initialization
+
+Float variables are declared like integer variables. A float literal has digits on both sides of the decimal point, an exponent, or both. A number followed directly by other letters (`1.5f`, `100px`) is an error.
+
+```palan
+flo64 pi = 3.14159;
+flo32 half = 0.5;
+flo64 big = 1e10;
+flo64 small = 2.5e-3;
+flo64 f;              // uninitialized
+```
+
+Float literals adopt the declared variable's type. A `flo32` variable initialized with `1.5` stores the value as a 32-bit float; a `flo64` variable stores it as a 64-bit double.
+
+Integer literals can also initialize float variables:
+
+```palan
+flo64 n = 5;    // stored as 5.0
+```
+
+#### Arithmetic Operators
+
+`+`, `-`, `*`, `/` work on `flo32` and `flo64` operands and produce a float result.
+
+```palan
+flo64 a = 3.0, b = 2.0;
+flo64 sum = a + b;    // 5.0
+flo64 diff = a - b;   // 1.0
+flo64 prod = a * b;   // 6.0
+flo64 quot = a / b;   // 1.5
+```
+
+The `%` (modulo) operator is **not** supported on float types; using it is a compile error.
+
+#### Comparison Operators
+
+All six comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) work on float operands and produce `bool` (1 if true, 0 if false), the same as integer comparisons.
+
+```palan
+flo64 x = 1.5;
+if x > 1.0 { printf("big\n"); }
+```
+
+#### Unary Minus
+
+`-expr` negates a float value.
+
+```palan
+flo64 v = 3.14;
+-v -> v;   // v is now -3.14
+```
+
+#### Type Promotion
+
+Float operand conversion for binary operators and comparisons follows the same Usual Arithmetic
+Conversions rule as integer operands — see [Type System](#3-type-system): the wider float wins
+between two floats, and a float always wins over a paired integer regardless of the integer's
+width (`flo32 op flo64` → `flo64`; `int op flo32` → `flo32`; `int op flo64` → `flo64`).
+
+#### Explicit Cast to Integer
+
+Use `int64(x)` or `int32(x)` to convert a float to an integer (truncation toward zero):
+
+```palan
+cinclude <stdio.h>;
+flo64 pi = 3.14159;
+printf("%ld\n", int64(pi));   // prints 3
+```
+
+#### Float Parameters and Return Values
+
+Palan functions take and return `flo32`/`flo64` values like any other type, and may mix them with
+integer parameters and return values:
+
+```palan
+func scale(flo64 x, int32 n) -> flo64 {
+    return x * n;
+}
+flo64 r = scale(1.5, 4);   // 6.0
+```
+
+#### Example — Newton's Method
+
+```palan
+cinclude <stdio.h>;
+
+flo64 x = 2.0;
+flo64 guess = 1.0;
+flo64 eps = 0.000001;
+flo64 diff = guess * guess - x;
+if diff < 0.0 { -diff -> diff; }
+while diff > eps {
+    (guess + x / guess) / 2.0 -> guess;
+    guess * guess - x -> diff;
+    if diff < 0.0 { -diff -> diff; }
+}
+printf("sqrt(2) = %f\n", guess);
+```
+
+Expected output: `sqrt(2) = 1.414214`
+
 ---
 
-## 4. Variable Declarations
+## 4. Variables, Constants and Type Aliases
 
 ```palan
 int64 x = 10;
@@ -278,6 +377,63 @@ and is currently a compile error. It is not an assignment — assignment is writ
 **Stack storage:** A struct or array variable is allocated on the heap; with `$` in front of its
 type (`$Point p;`, `$[4]int32 a;`) it is placed in the function's stack frame instead. See
 [Stack Arrays](#stack-arrays-nt) and [Stack Structs](#stack-structs-t).
+
+### Constant Declarations
+
+Declare a compile-time constant with `const`:
+
+```palan
+const MaxLen = 256;
+
+[MaxLen]uint8 buf;
+type Msg { [MaxLen]$uint8 body; };
+printf("%ld\n", MaxLen);   // 256
+```
+
+- The value is a literal or a constant expression: literals, consts and `sizeof(type)` combined
+  with `+ - * / %`, `& | ^`, `<<< >>>`, unary `-` and `~` (`const W = N * 2 + 1;`). A cast, a variable, an
+  enumerator or a call is not constant.
+- A constant expression is folded wherever it is written, not only in a const: an array size
+  (`[N + 1]int32 a;`, a struct field `[N * 2]$int32 v;`), an enumerator value, or an ordinary
+  expression (`x * (N + 1)` folds `N + 1`).
+- Integers are computed in `int64`, or in `uint64` once a `u` literal or `sizeof` is an operand. A
+  value outside that range, a negative value in `uint64`, or a division by zero is a compile
+  error. Division truncates toward zero, and `%` takes the sign of the dividend. A shift is
+  computed at 64 bits: bits shifted out are not an error, and the count is taken modulo 64.
+- A float operand makes the whole operation `flo64`; `%`, `&`, `|`, `^` and `~` on a float are errors.
+- The result is untyped like a literal and must fit the type of the place it is used.
+- A `cinclude`d macro constant inside a constant expression drops its C type and is computed like
+  any other literal.
+- Every reference to the constant is inlined with the literal value.
+- A const may reference another const (`const B = A;`); this chains naturally through inlining.
+- A const cannot share its name with another const, a type, or a variable (including a parameter)
+  in the same or an enclosing scope. A const is visible from the top of its block, so a variable
+  declared before it in the same block clashes too.
+- Like the literal it names, a const takes its type from where it is used: `const N = 20;` can be
+  passed to an `int32` parameter, used in `N + 2` for an `int16` variable, or assigned to `flo64`.
+
+#### Restrictions
+
+- Only a top-level const can size a borrowed array parameter (`@[N]T`); function signatures are
+  registered before any other statement is processed.
+
+### Type Aliases
+
+Declare an alias for a type with `type`:
+
+```palan
+type MyInt = int64;
+
+MyInt x = 42;
+
+func addOne(MyInt n) -> MyInt result {
+    n + 1 -> result;
+}
+```
+
+- The target may be a primitive, struct, or array type (`type PT = Point;`, `type Row = [3]int32;`).
+- The alias may be used wherever a type is written: variable declarations, function signatures,
+  struct field types, and array element types (`[n]MyInt`).
 
 ---
 
@@ -386,9 +542,155 @@ return;                    // return from function (no value)
 return expr;               // return with single value
 (int64 a, b) = foo();      // tapple declaration (receive multiple return values)
 foo() -> (a, b);           // assign multiple return values to existing variables
-import "lib.pa";           // import Palan source file (see §12)
-if expr { ... }            // conditional (see §10)
-if expr { ... } else { ... }  // conditional with else (see §10)
+import "lib.pa";           // import Palan source file (see §11)
+if expr { ... }            // conditional (see §6)
+if expr { ... } else { ... }  // conditional with else (see §6)
+```
+
+### If / If-Else Statements
+
+An `if` statement conditionally executes a block. The condition expression must be an integer type; zero is false, non-zero is true.
+
+```palan
+if x < 0 {
+    printf("negative\n");
+}
+```
+
+An optional `else` branch executes when the condition is false:
+
+```palan
+if x < 0 {
+    printf("negative\n");
+} else {
+    printf("non-negative\n");
+}
+```
+
+`else if` chains are supported:
+
+```palan
+if x < 0 {
+    printf("negative\n");
+} else if x == 0 {
+    printf("zero\n");
+} else {
+    printf("positive\n");
+}
+```
+
+- The condition can be any expression that produces an integer value (comparison, variable, call, etc.).
+- The `then` and `else` bodies are block statements and create their own scope.
+
+### While Loops
+
+`while cond { body }` repeats `body` as long as `cond` is non-zero.
+
+```palan
+cinclude <stdio.h>;
+
+int64 i = 1;
+while i <= 5 {
+    printf("%ld\n", i);
+    i + 1 -> i;
+}
+```
+
+The condition is evaluated before each iteration. The loop exits when the condition is zero (false).
+
+```palan
+cinclude <stdio.h>;
+
+func fizzbuzz(int64 n) {
+    int64 i = 1;
+    while i <= n {
+        if i % 15 == 0 { printf("FizzBuzz\n"); }
+        else if i % 3 == 0 { printf("Fizz\n"); }
+        else if i % 5 == 0 { printf("Buzz\n"); }
+        else { printf("%ld\n", i); }
+        i + 1 -> i;
+    }
+}
+
+fizzbuzz(20);
+```
+
+### break / continue
+
+`break` exits the innermost `while` loop immediately. `continue` skips the rest of the loop body and jumps to the next iteration's condition check. Both are only valid inside a `while` loop; using them outside a loop is a compile error.
+
+```palan
+cinclude <stdio.h>;
+
+func print_primes(int64 limit) {
+    int64 n = 2;
+    while n <= limit {
+        int64 i = 2;
+        int64 is_prime = 1;
+        while i * i <= n {
+            if n % i == 0 {
+                0 -> is_prime;
+                break
+            }
+            i + 1 -> i;
+        }
+        if is_prime == 1 { printf("%ld\n", n); }
+        n + 1 -> n;
+    }
+}
+
+func print_nonmult3(int64 limit) {
+    int64 i = 0;
+    while i < limit {
+        i + 1 -> i;
+        if i % 3 == 0 { continue }
+        printf("%ld\n", i);
+    }
+}
+
+print_primes(20);
+printf("---\n");
+print_nonmult3(10);
+```
+
+### Block Statements
+
+A block `{ ... }` creates a new scope. Variables and functions declared inside are not visible after the closing brace.
+
+```palan
+int64 x = 10;
+{
+    int64 y = 20;      // y visible only inside this block
+    printf("%ld\n", y);
+}
+// y is no longer visible here
+printf("%ld\n", x);   // x is still visible
+```
+
+Shadowing — declaring a variable or Palan function with the same name as one in an outer scope — is a compile error. A variable (including a parameter) and a const cannot share a name either way.
+
+Palan function definitions inside a block are block-scoped and support forward references within the same block.
+
+Types and consts declared inside a block follow the same rules (see [Declaration order](#declaration-order)).
+
+`cinclude` inside a block makes the imported C functions available only within that block. Shadowing of C function names is allowed.
+
+### Optional Semicolons
+
+The semicolon at the end of the last statement in a block (or at top level) may be omitted. Statements ending with `}` (`if`, `while`, standalone block) never require a trailing semicolon. Other statements require a semicolon when followed by another statement.
+
+```palan
+int64 x = 5;
+int64 y = x + 1     // semicolon optional here (last statement)
+```
+
+```palan
+cinclude <stdio.h>;
+int64 i = 0;
+while i < 3 {
+    i + 1 -> i;
+    printf("%ld\n", i)   // semicolon optional at end of block body
+}
 ```
 
 ---
@@ -396,8 +698,8 @@ if expr { ... } else { ... }  // conditional with else (see §10)
 ## 7. Function Definitions
 
 Functions are defined with the `func` keyword. Return values are declared after `->`.
-The optional `export` keyword makes the function callable from other Palan files that import this file (see §12).
-Parameters and return values may be float types as well as integer types (see [Floating-Point Types](#17-floating-point-types)).
+The optional `export` keyword makes the function callable from other Palan files that import this file (see §11).
+Parameters and return values may be float types as well as integer types (see [Floating-Point Types](#floating-point-types)).
 
 ### No Return Value
 
@@ -471,7 +773,7 @@ cinfo.jpeg_set_defaults();  // jpeg_set_defaults(@!cinfo)
   function taking `@!Counter c` can write `c.add(1)`. A read-only `@T` borrow is a compile error.
 - A function whose first parameter is not `@!` (a value, `@T`, or no parameters) cannot be called
   this way.
-- If `x` is both a variable and a module alias (§12), the variable is used.
+- If `x` is both a variable and a module alias (§11), the variable is used.
 
 ### Chained Calls
 
@@ -494,9 +796,7 @@ divmod(17, 5) -> add3(100);                    // add3(q, r, 100)
 - Not supported in this version: `->>` to a call, a method-form call after `->` (`v -> s.f()`),
   and receiving the return values of a call given several chained values with `(a, b) = ...`.
 
----
-
-## 8. Receiving Multiple Return Values
+### Receiving Multiple Return Values
 
 A **tapple declaration** `(type name, ...) = call(...)` receives multiple return values into newly declared variables in one statement:
 
@@ -521,876 +821,59 @@ sumsOf(1, 2, 3) -> (ab, arr[1]);
 
 All return values are received first, then assigned to the targets from left to right, with the same type rules as a single `->` (a struct is copied into its target). So in `f() -> (i, arr[i])`, `arr[i]` uses the newly assigned `i`.
 
----
+### Function Pointers
 
-## 9. C Library Integration
-
-```palan
-cinclude <stdio.h>;          // system header — functions visible as unqualified calls
-cinclude "myheader.h";       // local header
-printf("%ld\n", x);          // call C function directly
-
-cinclude <stdio.h> as S;     // alias — functions accessible only as S.xxx()
-S.printf("%d\n", 42);        // qualified call
-
-cinclude <math.h> link "m";  // link against libm (-lm) when building
-```
-
-### Function Calls
-
-- `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
-- With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
-- The number of arguments must match the number of parameters; a variadic C function takes at least
-  its fixed parameters. A C function declared with empty parentheses `f()` takes no arguments, the
-  same as `f(void)`.
-
-### Link Libraries
-
-- Some C headers declare functions that live outside libc, in a separate shared library — `math.h`'s
-  `sqrt`/`pow`/`sin`/etc, for instance, are only in libm. A `link` clause on `cinclude` names the
-  library to add to the final link step: `cinclude <math.h> link "m";` appends `-lm` to the `ld`
-  invocation, the same as passing `-lm` on a C compiler's command line. Palan does not keep a
-  built-in header-to-library lookup table — every third-party library must be named explicitly with
-  `link`, since a lookup table covering every header a program might ever cinclude would itself need
-  ongoing maintenance.
-- Multiple libraries in one clause are comma-separated: `cinclude <stdio.h> link "rt", "m";`. The
-  `link` clause comes last, after an optional `as` alias.
-- A library name may contain only letters, digits, `_`, `.`, `+` and `-`, and may not be empty — it
-  is appended directly after `-l` when invoking the linker, so this is checked at compile time
-  rather than left to fail at the `ld` step.
-- Library names are collected across the whole program, not scoped to the file or block where
-  `link` appears: a `link` clause inside a function body or `{ }` block, or one that reaches the
-  final binary only through an `import`ed module, still ends up on the final `ld` command line. The
-  same library named more than once (in one `link` clause, in different clauses, or across
-  different modules) is deduplicated.
-- A header may be cincluded with `link` in one place and without it elsewhere in the same program —
-  the library is added to the link step regardless of which cincluding site names it.
-- A name ending in `.o` is an object file to link instead of a library, such as one compiled from
-  your own C source: `cinclude "util.h" link "util.o";`. A relative path is relative to the
-  directory of the source file, as a local `cinclude` header is. A missing file is a compile error.
-  Object files and libraries can be mixed in one clause (`link "m", "lib/util.o"`), and object
-  files are collected and deduplicated across the whole program in the same way.
-- `link` is not a reserved word — it is only recognized as introducing this clause immediately after
-  a `cinclude` path (and optional `as` alias). `unistd.h`'s `link()` function, for example, remains
-  callable as an ordinary C function.
-
-### Typedefs
-
-- A `typedef` a cincluded C header defines is registered as soon as the header is cincluded,
-  whether or not any C function or global in that same header references it. For example,
-  `cinclude <stdint.h>; int32_t x = 5;` works even though `stdint.h` declares no C functions at
-  all — the typedef itself is what gets registered, not something a function signature happens to
-  carry past SA. `size_t n = strlen(s);` after `cinclude <string.h>;` works the same way, just less
-  visibly, since `string.h` also declares functions.
-- Typedefs that resolve to a primitive type are registered as a Palan type alias (see
-  [Type Aliases](#20-type-aliases)). Typedefs that resolve to a struct (e.g. `FILE`, `typedef struct
-  _IO_FILE FILE;`, including a multi-level chain) are registered and usable the same way as a
-  native struct type — see [Incomplete Struct Types](#incomplete-struct-types-opaque-handles) below
-  for the case where the struct's own layout isn't known. This includes a struct body
-  with no tag of its own (`typedef struct { int quot; int rem; } div_t;`) — the typedef's own name
-  is used as the struct's tag, so `div_t`/`ldiv_t`/`lldiv_t` (from `stdlib.h`'s `div`/`ldiv`/`lldiv`)
-  are usable struct types exactly like a tagged one.
-- Typedefs that bottom out in a pointer type are usable as a pointer type alias: `@!T` when the
-  pointee is not `const`, `@T` when it is (`typedef void *timer_t;` is `@!void`, `typedef const
-  char *CS;` is `@int8`). A typedef of a function pointer is a [function pointer
-  type](#24-function-pointers) (`__compar_fn_t` is `@func(@void, @void) -> int32`).
-- Typedefs that bottom out in a union are usable the same way as struct typedefs (see
-  [Union Types](#union-types) below). A typedef of an enum is another name for it (see
-  [C Enum Types](#c-enum-types) below).
-- A header may use a typedef from a header cincluded before it, as in C where both are included
-  into one translation unit: `cinclude <stdio.h>; cinclude <jpeglib.h>;` lets `jpeglib.h`'s
-  declarations use `size_t` and `FILE`. Typedefs that bottom out in a pointer type are not carried
-  over this way.
-- Macros carry over the same way: a header sees every macro the headers cincluded before it in the
-  file defined or `#undef`ed, so its `#ifdef`s and macro uses work as in C. A header that an
-  earlier cinclude already read is skipped by its include guard, as in C, and its declarations
-  come from that earlier cinclude. So if the earlier cinclude is inside a block, the skipped
-  functions can't be called outside that block (see `doc/Issues.md`).
-- If multiple cincluded headers introduce the same typedef name resolving to the *same* underlying
-  type, the first registration silently wins. If they resolve to *different* underlying types, this
-  is a compile error. Because typedef registration is no longer gated on being referenced by some
-  function's signature, this conflict is more likely to actually surface than before.
-- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported typedefs — they are
-  always registered globally. Only C function calls require the `X.` qualifier.
-
-### Macro Constants
-
-- An object-like `#define` macro whose body folds down to a single compile-time integer value is
-  usable by name from Palan the moment the header is cincluded — not as an imported symbol, but
-  as a compile-time text substitution: every later reference to the name is replaced with the
-  folded literal value, the same way the C preprocessor itself would substitute it. This covers a
-  bare integer literal, a pointer-cast of one (e.g. `#define NULL ((void *)0)`), and an
-  arithmetic or bitwise expression built from `| & ^ << >> + - * / %` over such forms (e.g.
-  `sys/stat.h`'s `S_IRWXU`, defined as `(S_IREAD|S_IWRITE|S_IEXEC)`) — including one that
-  references another already-defined macro (`#define S_IFDIR __S_IFDIR`). An operand may be
-  C's `sizeof(type)`, which folds to the type's size as `size_t` when its layout is known (e.g.
-  `sys/select.h`'s `__NFDBITS`, `(8 * (int) sizeof (__fd_mask))`). The same folding sizes a C
-  struct's array fields, so `fd_set` is a complete struct and `select` can be called with it.
-- A macro whose body doesn't fold this way — a function-like macro referenced without a call
-  (e.g. `S_ISDIR`, which takes an argument), a string literal, a relational/equality/logical/
-  ternary expression, or a reference to an identifier that never resolves — is left untouched.
-  Referencing such a name from Palan is an ordinary `Undefined function`/`Undefined variable`
-  diagnostic, not a compiler crash:
-
-  ```palan
-  cinclude <sys/stat.h>;
-  stat st;
-  stat("/etc", @!st);
-  if (S_ISDIR(st.st_mode)) { ... }   // error: Undefined function 'S_ISDIR'
-  ```
-
-  `S_IFMT`/`S_IFDIR` and similar bare constants *do* fold, so the same check can be written
-  directly with a bitwise AND (see [Expressions](#5-expressions)):
-
-  ```palan
-  if ((st.st_mode & S_IFMT) == S_IFDIR) { ... }   // works
-  ```
-
-  ```palan
-  cinclude <string.h>;
-  if (strchr(s, 'x') == NULL) {
-      // not found
-  }
-  ```
-
-  `NULL` is a generic pointer value: it is compatible with and can be compared (`==`/`!=`)
-  against any pointer-typed value, including C function return values, `[]T` array
-  pointers, and struct pointer fields.
-- A macro constant whose type C leaves open — a plain number such as `#define COLOR_RED 1` or
-  `#define ERR (-1)`, or arithmetic over plain numbers like `S_IRWXU` — behaves exactly like an
-  integer literal written in Palan: it takes the type its context expects and must fit in it. So
-  `st.st_mode & S_IFMT` is `uint32` because `S_IFMT` takes `st_mode`'s type, and ncurses'
-  `init_pair(1, COLOR_RED, COLOR_BLACK)` passes the constants to `short` parameters without a
-  cast.
-- A macro constant whose type C fixes — an unsigned or long suffix (`1U`, `5L`), `sizeof`, or an
-  integer cast, as in ncurses' `A_REVERSE` (`unsigned int`) — keeps that type, and meets other operands
-  through the [usual arithmetic conversions](#3-type-system) like any typed value.
-- Substitution is text-order only, not lexically scoped like a cincluded C function or `const`:
-  a reference resolves against the last cincluded header that defines the name, textually
-  before that reference, anywhere in the rest of the file — including past the end of the block
-  the `cinclude` itself appears in. A reference that textually precedes every cincluding
-  `cinclude` is left unresolved (`Undefined function`/`Undefined variable`), even if a later
-  `cinclude` in the same file would otherwise define it.
-- A later cincluded header may redefine or `#undef` a macro, as in C. References after that
-  `cinclude` see the new value, or no macro at all.
-- A macro constant silently takes priority over any same-named variable, parameter, or `const` in
-  scope at the reference site, undiagnosed.
-- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace macro constants — they fold the
-  same regardless of alias. Only C function calls require the `X.` qualifier.
-- A macro constant is not visible across an `import`/`export` boundary — it is purely a
-  same-file, parse-time substitution. A value built from one (e.g. an `export syscall`'s number,
-  see [Raw Syscalls](#23-raw-syscalls)) is already a plain literal by the time it could be
-  exported, so the folded *value* does cross that boundary even though the macro *name* never
-  does.
-
-### C Global Variables
-
-- A file-scope `extern` object declared in a cincluded header, whose type is a primitive, an enum
-  or a pointer (e.g. `extern FILE *stdout;`), is captured as a readable Palan variable of the same
-  name, visible from the cinclude point to the end of the enclosing scope — the same rule as a
-  cincluded function. `static` declarations, block-scope declarations, and arrays or by-value
-  struct/union globals are not captured.
-
-  ```palan
-  cinclude <stdio.h>;
-  fprintf(stderr, "starting up\n");   // stderr resolves to the C global
-  ```
-
-- **Read-only from Palan**: assigning to a C global (`x -> stdout`) is a compile error, and so is
-  taking its address (`@stdout`) or reaching a field through it. This is a restriction on the
-  variable binding itself, not on what it points to — the *pointee* keeps its own C-declared
-  mutability, so `fwrite(data, 1, n, stdout)` (writing through the `FILE *` value `stdout` holds)
-  works normally.
-- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace C globals either — like typedefs
-  and constants, they are always registered globally; only a function call needs the `X.`
-  qualifier.
-
-### Struct Types
-
-- A C `struct Name { ... }` defined (with a full field list, not just forward-declared) in a
-  cincluded header becomes a usable [struct type](#19-struct-types) under that same name — field
-  access, embedded struct-typed fields, and struct-typed function parameters all work identically
-  to a struct declared natively with `type Name { ... }`. A tag that is only forward-declared, or
-  whose full definition can't be captured, is still usable under its name — see [Incomplete
-  Struct Types](#incomplete-struct-types-opaque-handles) below.
-- A C pointer field (`T *f;`, or a pointer array `T *f[n];`) is `@!T` when its pointee is not
-  `const` and `@T` when it is (`const T *f;`), the same rule as a C function's pointer parameters.
-- A function pointer field (or an array of them) is a [function pointer](#24-function-pointers)
-  field, and `s.f(args)` calls through it. One whose signature can't be expressed as `@func(...)`
-  (a variadic one, for example) keeps its place in the layout but cannot be read, written, or have
-  its address taken.
-- A struct pointer *returned* by a C function should be bound to a non-owning `@T`/`@!T`-typed
-  local variable, not a named return — the pointer may be owned by C (e.g. a static internal
-  buffer), so no automatic freeing is registered for it:
-
-  ```palan
-  cinclude <time.h>;
-  cinclude <stdio.h>;
-
-  time_t t = int64(0);
-  @!tm p = gmtime(@t);                        // non-owning: gmtime owns the storage, not Palan
-  printf("%d\n", int32(p.tm_year) + 1900);    // 1970
-  ```
-
-  A struct passed *into* a C call's struct pointer parameter is borrowed the same way as for a
-  native `@T`/`@!T` parameter: write `@s` for a `const` pointer parameter and `@!s` otherwise
-  (`mktime(@!t)`, `asctime(@t)`; see
-  [Struct types in function signatures](#struct-types-in-function-signatures)).
-
-### Structs Returned By Value
-
-A C function that returns a struct **by value** (not by pointer) can be received directly into a
-struct-typed local variable's initializer, the same syntax as a native call:
-
-```palan
-cinclude <stdlib.h>;
-cinclude <stdio.h>;
-
-div_t d = div(7, 2);
-printf("%d %d\n", d.quot, d.rem);   // 3 1
-```
-
-- The variable's own storage is what the C call writes into — this is an ordinary owning struct
-  local, freed automatically at scope exit like any other, not a `@T`/`@!T`-typed handle to
-  something C owns (contrast with the pointer-returning case above).
-- This is implemented as a general System V AMD64 return-value classification, not a
-  `div_t`-specific special case: a struct of 16 bytes or less comes back in registers (`%rax`/
-  `%rdx` for integer-classified eightbytes, `%xmm0`/`%xmm1` for floating-point ones, mixed if the
-  struct has both), and a struct larger than 16 bytes comes back through a hidden destination
-  pointer, the same ABI a C caller would use.
-- Writing a call that returns a struct by value anywhere other than a struct variable's
-  initializer — as a bare statement, discarding the result — is a compile error: the call still
-  has to happen, but there is nowhere to write the result, so the compiler rejects it instead of
-  silently dropping the call.
-- Native Palan functions do not gain a struct-by-value return syntax from this — this feature is
-  about receiving a C function's by-value return, not a Palan-side language addition.
-
-### Structs Passed By Value
-
-A C function that takes a struct **by value** is called with the struct written by name, as for a
-native struct-type parameter; the function receives a copy:
+`@func(T1, T2) -> R` is a pointer to a function taking `T1`, `T2` and returning `R`. Without
+`-> R` the function returns nothing. A function's name is a value of its function pointer type,
+and a function pointer is called like a function:
 
 ```palan
 cinclude <stdio.h>;
 
-func cwrite(@!void cookie, @int8 buf, uint64 size) -> int64 n {
-    printf("[%.*s]", int32(size), buf);
-    int64(size) -> n;
-}
+func twice(int32 x) -> int32 { return x * 2; }
+func plus1(int32 x) -> int32 { return x + 1; }
+func apply(@func(int32) -> int32 f, int32 x) -> int32 { return f(x); }
 
-cookie_io_functions_t io;
-cwrite -> io.write;
-@!FILE f = fopencookie(NULL, "w", io);
-fprintf(f, "hello");                 // [hello]
-fclose(f);
+@func(int32) -> int32 g = twice;
+printf("%d\n", g(5));              // 10
+plus1 -> g;
+printf("%d\n", g(5));              // 6
+printf("%d\n", apply(twice, 21));  // 42
+
+type Ops { @func(int32) -> int32 op; };
+Ops o;
+twice -> o.op;
+printf("%d\n", o.op(4));           // 8
 ```
 
-- The argument can be a struct variable, a struct field or array element, a struct returned by a
-  call, a struct literal (`{x: 1, y: 2}`), or a `@T`/`@!T` pointer to the struct — a read-only
-  `@T` is fine, since only a copy is passed. Changes the C function makes to its copy are not
-  seen by the caller.
-- The struct is passed the way a C caller would pass it under the System V AMD64 ABI: in
-  registers when it is 16 bytes or less and its parts fit in the remaining argument registers,
-  on the stack otherwise. A union is passed the same way.
-- A C function that takes a struct by value cannot be used as a function pointer.
-
-### Passing a Palan Function as a Callback
-
-A bare Palan function name, written in a C function's argument position, is passed as that
-function's address — the common C idiom of handing a callback to a library function like
-`qsort`:
-
-```palan
-cinclude <stdlib.h>;
-cinclude <stdio.h>;
-
-func cmp(@int32 a, @int32 b) -> int32 { return a[0] - b[0]; }
-
-[4]int32 arr;
-5 -> arr[0];  3 -> arr[1];  1 -> arr[2];  4 -> arr[3];
-qsort(arr, uint64(4), uint64(4), cmp);
-printf("%d %d %d %d\n", arr[0], arr[1], arr[2], arr[3]);   // 1 3 4 5
-```
-
-- The C parameter is a [function pointer](#24-function-pointers) (`int (*)(const void *, const
-  void *)` is `@func(@void, @void) -> int32`), and the function name is a value of that type. The
-  rules for which functions match are in that section; in short, the parameter and return types
-  must be the same, with no widening, since the C library calls the Palan function directly.
-- `@void`/`@!void` — a pointer whose pointee type is `void` — exists to write the callback
-  signatures C itself uses generically, such as `qsort`'s and `bsearch`'s `const void *`
-  comparator arguments:
-
-  ```palan
-  cinclude <stdlib.h>;
-  cinclude <stdio.h>;
-
-  func cmp(@void a, @void b) -> int32 {
-      @int32 x = a;   // give the void pointer a concrete type before reading through it
-      @int32 y = b;
-      return x[0] - y[0];
-  }
-
-  [4]int32 arr;
-  1 -> arr[0];  3 -> arr[1];  4 -> arr[2];  5 -> arr[3];
-  int32 key = 4;
-  @!int32 found = bsearch(@key, arr, uint64(4), uint64(4), cmp);
-  printf("%d\n", found[0]);   // 4
-
-  int32 miss = 2;
-  @!int32 none = bsearch(@miss, arr, uint64(4), uint64(4), cmp);
-  printf("%d\n", none == NULL);   // 1 -- not found
-  ```
-
-  `void` can only appear as a pointer's pointee (`@void`/`@!void`) — a bare `void x;` variable is
-  still rejected. A `@void`/`@!void` value is compatible with any other pointer type in both
-  directions, so assigning it to a concretely-typed pointer variable (as `@int32 x = a;` does
-  above) gives it a type to read or write through, as does a cast (`(a as @int32)[0]`). Indexing
-  or dereferencing a void pointer directly (`a[0]`) is a compile error.
-- A function registered with `atexit`/`at_quick_exit` must not read or write any of the calling
-  scope's Palan-owned local variables: program exit frees all still-live owned locals before
-  invoking the registered handlers, so by the time the handler runs, that storage is gone.
-
-  ```palan
-  cinclude <stdlib.h>;
-  cinclude <stdio.h>;
-
-  func say_bye()  { printf("bye\n"); }
-  func say_last() { printf("last\n"); }
-
-  atexit(say_bye);
-  atexit(say_last);
-  printf("hello\n");
-  // output: hello / last / bye -- exit handlers run in LIFO order, same as C's atexit
-  ```
-
-### C Array Fields
-
-- A fixed-size C array field (`char name[16];`) becomes a fixed-size [array field](#array-fields)
-  on the Palan side, laid out inline in the struct exactly like a native `[16]int8 name;` field —
-  element access and taking the address of an element both work. A C function parameter declared
-  as an array (`void take(char buf[32])`) decays to a plain pointer, same as in C — only the
-  outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row. A C
-  struct field with two or more array dimensions (`int cells[2][3];`) is not supported this
-  version — the field is left with no known layout, which downgrades the whole struct to an
-  [incomplete struct type](#incomplete-struct-types-opaque-handles) rather than making just that
-  field unusable.
-
-### Union Types
-
-A C `union Name { ... }` (or `typedef union { ... } Name;`) from a cincluded header is usable under
-its name everywhere a C struct is: a by-value variable declaration, `@`/`@!` address-of, field
-read/write, a `$Name` field of a native struct, and passing it to a C function by pointer. All
-members start at the same address, so writing one member changes what the others read, as in C;
-the size is that of the largest member, rounded up to the largest member alignment.
-
-`pthread.h`'s `pthread_mutex_t`, `pthread_cond_t` and `pthread_attr_t` are unions:
-
-```palan
-cinclude <pthread.h>;
-cinclude <stdio.h>;
-
-type Shared { int64 count; $pthread_mutex_t m; };
-
-func worker(@!void arg) -> @!void {
-    @!Shared sh = arg;
-    pthread_mutex_lock(@!sh.m);
-    sh.count + 1 -> sh.count;
-    pthread_mutex_unlock(@!sh.m);
-    return NULL;
-}
-
-Shared s;
-pthread_mutex_init(@!s.m, NULL);
-pthread_t t1;
-pthread_t t2;
-pthread_create(@!t1, NULL, worker, s);
-pthread_create(@!t2, NULL, worker, s);
-pthread_join(t1, NULL);
-pthread_join(t2, NULL);
-pthread_mutex_destroy(@!s.m);
-printf("%ld\n", s.count);    // 2
-```
-
-`PTHREAD_MUTEX_INITIALIZER` and the other `*_INITIALIZER` macros expand to a brace initializer,
-which Palan has no syntax for; call the matching `_init` function instead.
-
-The fields of a C11 anonymous member, a struct or union body with no member name
-(`struct S { int k; union { int a; float b; }; };`), are fields of the enclosing type:
-`s.a` and `s.b` read and write the union directly. An anonymous body that has a member name
-(`union { ... } u;`) is reached through that name (`s.u.a`).
-
-### Packed and Aligned C Structs
-
-A C struct or union declared with GCC's `__attribute__((packed))` or `__attribute__((aligned(N)))`,
-on the type or on individual fields, has the same layout in Palan as in C: field offsets, size,
-and the stride of an array of it all match. `sys/epoll.h`'s `struct epoll_event` is packed
-(12 bytes, `data` at offset 4), so an array of it can be handed to `epoll_wait` directly:
-
-```palan
-cinclude <stdio.h>;
-cinclude <unistd.h>;
-cinclude <sys/epoll.h>;
-
-[2]int32 fds;
-pipe(@!fds[0]);
-int32 ep = epoll_create1(0);
-epoll_event ev;
-EPOLLIN -> ev.events;
-42 -> ev.data.u64;
-epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], @!ev);
-write(fds[1], "x", 1);
-[2]$epoll_event evs;
-int32 n = epoll_wait(ep, @!evs[0], 2, 1000);
-printf("%d %lu\n", n, evs[0].data.u64);    // 1 42
-```
-
-Attributes that change the type itself (`vector_size`, `mode`) are not supported: a typedef that
-carries one is not imported, and on a struct field the header is rejected. A typedef that carries
-`packed`/`aligned` after its own name (`typedef struct { ... } T __attribute__((aligned(16)));`)
-is not imported either; the attribute on the struct itself (`typedef struct { ... }
-__attribute__((aligned(16))) T;`) is fine.
-
-### C Enum Types
-
-A C enum from a cincluded header is a Palan [enum](#enum): its enumerators are referenced as
-`Name.X`, and it follows the same type rules. `Name` is the tag (`enum Tag { ... }`) or the
-typedef name (`typedef enum { ... } Name;`); when the enum has both, either name works. It can be
-the type of a variable, a struct field, a C function's parameter or return value, and a C global.
-
-```palan
-cinclude <jpeglib.h>;
-
-jpeg_compress_struct cinfo;
-J_COLOR_SPACE.JCS_RGB -> cinfo.in_color_space;
-JDCT_DEFAULT -> cinfo.dct_method;    // #define JDCT_DEFAULT JDCT_ISLOW
-int32 cs = cinfo.in_color_space;     // widens to its base type
-```
-
-- A macro that is just one enumerator (`#define JDCT_DEFAULT JDCT_ISLOW`, or glibc's
-  `#define SOCK_STREAM SOCK_STREAM`) has the enum's type. A macro computing with enumerators
-  (`#define X (A + 1)`) is a plain integer constant, like any other [macro constant](#macro-constants).
-- The enumerators of an enum with neither a tag nor a typedef name (`enum { A, B };`) are
-  referenced without qualification (`A`), as plain integer constants.
-- An enum with an enumerator whose value can't be computed at compile time (e.g. `= sizeof(struct
-  Opaque)` for a forward-declared struct) is not available; a function or struct using it is treated as unsupported.
-
-### Incomplete Struct Types (Opaque Handles)
-
-A struct tag whose full layout isn't known to Palan — either because the header only
-forward-declares it, or because one of its fields uses a shape [C Array Fields](#c-array-fields)
-above doesn't support — is registered as an **incomplete struct**: its name resolves and it can
-be used, but only through a pointer (`@T`/`@!T`), the same restriction C itself places on an
-incomplete type. `DIR` (from `dirent.h`) is the running example: its underlying `struct
-__dirstream` is only forward-declared, so `DIR` is incomplete, and `opendir`/`readdir`/`closedir`
-all work with it purely as an opaque handle:
-
-```palan
-cinclude <dirent.h>;
-@!DIR d = opendir(".");
-closedir(d);
-```
-
-`@!DIR d = opendir(...)` is **not** automatically freed at scope exit — unlike an owning struct
-pointer variable, the pointee here belongs to C (closed by `closedir`, not Palan's own allocator).
-
-An incomplete struct cannot be used anywhere a full layout is required: a by-value variable
-declaration (`DIR d;`), an owned or embedded array of it (`[n]DIR`/`[n]$DIR`), a field access
-through it, subscripting an array of it, or embedding it in another struct. Each of these is a
-compile error naming the struct and the reason (forward-declared in the header, or a field type
-this version can't represent) — never a compiler crash.
+- A function pointer can be a variable, a parameter, a return type, a struct field, or an array
+  element (`[4]@func(int32) -> int32`). Parameter names are not written.
+- It is read-only like `@T`: code is never written through it, so `@!func(...)` is an error.
+  The variable itself can be given another function with `->`.
+- A parameter or return type must be a primitive or a borrowed pointer (`@T`/`@!T`, including
+  another function pointer). A struct or an array passed or returned by value is not allowed.
+- A function becomes a function pointer by writing its name where a value is expected. This works
+  for a Palan function returning nothing or one value (a single named return counts as one), an
+  imported function, and a C function that is not variadic. A function with several return
+  values, a variadic C function, and a `syscall` cannot be used this way. A variable of the same
+  name is used in preference to the function.
+- A function fits a function pointer type when the parameter count is the same, each parameter
+  and the return type are the same type (no widening: `int32` does not fit `int64`), and pointer
+  permissions flow the right way: a function taking `@!T` does not fit a pointer that passes
+  `@T`, while a function taking `@T` fits one that passes `@!T`. A `@void` parameter or return
+  matches any pointer, as it does elsewhere.
+- A function pointer is a pointer otherwise: it can be `NULL` and compared with `==`/`!=`, a
+  `@void` converts to it, and `as` converts it to `@void` or `int64`/`uint64` and back. Calling a
+  `NULL` function pointer is not checked.
+- `f(x)` when both a function pointer `f` and a function `f` are visible is an error, and so is
+  `s.f(x)` when `s` has a function pointer field `f` and a function `f` could take `s` as a method
+  (its first parameter is `@!`).
+- Not supported in this version: calling the result of an expression directly, such as
+  `tbl[0](3)` or `pick(true)(3)`; store it in a variable first.
 
 ---
 
-## 10. If / If-Else Statements
-
-An `if` statement conditionally executes a block. The condition expression must be an integer type; zero is false, non-zero is true.
-
-```palan
-if x < 0 {
-    printf("negative\n");
-}
-```
-
-An optional `else` branch executes when the condition is false:
-
-```palan
-if x < 0 {
-    printf("negative\n");
-} else {
-    printf("non-negative\n");
-}
-```
-
-`else if` chains are supported:
-
-```palan
-if x < 0 {
-    printf("negative\n");
-} else if x == 0 {
-    printf("zero\n");
-} else {
-    printf("positive\n");
-}
-```
-
-- The condition can be any expression that produces an integer value (comparison, variable, call, etc.).
-- The `then` and `else` bodies are block statements and create their own scope.
-
----
-
-## 11. Block Statements
-
-A block `{ ... }` creates a new scope. Variables and functions declared inside are not visible after the closing brace.
-
-```palan
-int64 x = 10;
-{
-    int64 y = 20;      // y visible only inside this block
-    printf("%ld\n", y);
-}
-// y is no longer visible here
-printf("%ld\n", x);   // x is still visible
-```
-
-Shadowing — declaring a variable or Palan function with the same name as one in an outer scope — is a compile error. A variable (including a parameter) and a const cannot share a name either way.
-
-Palan function definitions inside a block are block-scoped and support forward references within the same block.
-
-Types and consts declared inside a block follow the same rules (see [Declaration order](#declaration-order)).
-
-`cinclude` inside a block makes the imported C functions available only within that block. Shadowing of C function names is allowed.
-
----
-
-## 12. Modules (import / export)
-
-Palan supports multi-file compilation. Functions and types declared with `export` are visible to other files that `import` the declaring file.
-
-### Exporting a function
-
-```palan
-// lib_add.pa
-export func add(int32 a, int32 b) -> int32 {
-    return a + b;
-}
-```
-
-Functions without `export` are file-private and not accessible from other files.
-
-### Importing a file
-
-```palan
-// main.pa
-cinclude <stdio.h>;
-import "lib_add.pa";
-
-printf("%d\n", add(3, 4));   // 7
-```
-
-- The path in `import` is relative to the importing file.
-- Imported functions are visible from the `import` statement to the end of the enclosing scope.
-- Block-scoped `import` (inside `{ }`) makes the imported functions visible only within that block.
-- Circular imports (A imports B and B imports A) are supported.
-
-### Selective import
-
-Import only named functions from a file:
-
-```palan
-cinclude <stdio.h>;
-import square from "lib_math.pa";
-
-printf("%ld\n", square(4));   // 16  (cube is not imported)
-```
-
-Multiple names can be listed with commas: `import square, cube from "lib_math.pa"`.
-
-### Alias import
-
-Import all exports under a namespace prefix to avoid name conflicts:
-
-```palan
-cinclude <stdio.h>;
-import "lib_math.pa" as L;
-
-printf("%ld\n", L.square(3));  // 9
-printf("%ld\n", L.cube(2));    // 8
-```
-
-- All calls must use the `L.f()` qualified form. Unqualified `square()` is a compile error.
-- A variable named `L` hides the alias: `L.f()` is then a method-form call on the variable (see §7).
-
-### Selective alias import
-
-Import specific functions under a namespace prefix:
-
-```palan
-cinclude <stdio.h>;
-import square from "lib_math.pa" as L;
-
-printf("%ld\n", L.square(5));  // 25
-```
-
-### Exporting types
-
-A struct, enum, or type alias declared with `export type` can be imported like a function:
-
-```palan
-// vec3.pa
-export type vec3 { flo32 x; flo32 y; flo32 z; };
-export type Color enum { Red, Green };
-export type Row = [3]vec3;
-export func len2(@vec3 v) -> flo32 {
-    return v.x * v.x + v.y * v.y + v.z * v.z;
-}
-```
-
-```palan
-// main.pa
-import "vec3.pa";
-vec3 p;
-Color c = Color.Green;
-flo32 l = len2(@p);
-```
-
-- An exported type is visible in the whole importing file, like a type declared in it. A
-  type imported inside a block is visible from the `import` on.
-- Under an alias import, write the type with the alias: `V.vec3`, `V.Color.Green`,
-  `V.Color(1)`. The unqualified name is a compile error.
-- A selective import lists types alongside functions: `import vec3, len2 from "vec3.pa";`.
-- An exported type may use the declaring file's non-exported types, consts, and cincluded
-  headers; those are not made nameable in the importing file.
-- An exported struct or enum name is shared by the whole program: two files exporting the
-  same name is a compile error once one file reaches both.
-- A file may declare a type with the name of an imported type it cannot write unqualified
-  (one imported as `V.T`, or only brought along by another imported type). Declaring a type
-  with a name an import makes writable is a compile error.
-- Two files may import each other and use each other's types anywhere, including in type
-  declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
-
----
-
-## 13. Program Structure
-
-```palan
-cinclude <stdio.h>;
-
-int64 x = 10;
-printf("%lld\n", x);
-```
-
-- Top-level statements execute as the `_start` entry point.
-- User-defined functions can be placed before or after top-level statements.
-- `return` is not valid at top-level. To exit early, call `exit()` from `<stdlib.h>`.
-
----
-
-## 14. While Loops
-
-`while cond { body }` repeats `body` as long as `cond` is non-zero.
-
-```palan
-cinclude <stdio.h>;
-
-int64 i = 1;
-while i <= 5 {
-    printf("%ld\n", i);
-    i + 1 -> i;
-}
-```
-
-The condition is evaluated before each iteration. The loop exits when the condition is zero (false).
-
-```palan
-cinclude <stdio.h>;
-
-func fizzbuzz(int64 n) {
-    int64 i = 1;
-    while i <= n {
-        if i % 15 == 0 { printf("FizzBuzz\n"); }
-        else if i % 3 == 0 { printf("Fizz\n"); }
-        else if i % 5 == 0 { printf("Buzz\n"); }
-        else { printf("%ld\n", i); }
-        i + 1 -> i;
-    }
-}
-
-fizzbuzz(20);
-```
-
----
-
-## 15. break / continue
-
-`break` exits the innermost `while` loop immediately. `continue` skips the rest of the loop body and jumps to the next iteration's condition check. Both are only valid inside a `while` loop; using them outside a loop is a compile error.
-
-```palan
-cinclude <stdio.h>;
-
-func print_primes(int64 limit) {
-    int64 n = 2;
-    while n <= limit {
-        int64 i = 2;
-        int64 is_prime = 1;
-        while i * i <= n {
-            if n % i == 0 {
-                0 -> is_prime;
-                break
-            }
-            i + 1 -> i;
-        }
-        if is_prime == 1 { printf("%ld\n", n); }
-        n + 1 -> n;
-    }
-}
-
-func print_nonmult3(int64 limit) {
-    int64 i = 0;
-    while i < limit {
-        i + 1 -> i;
-        if i % 3 == 0 { continue }
-        printf("%ld\n", i);
-    }
-}
-
-print_primes(20);
-printf("---\n");
-print_nonmult3(10);
-```
-
----
-
-## 16. Optional Semicolons
-
-The semicolon at the end of the last statement in a block (or at top level) may be omitted. Statements ending with `}` (`if`, `while`, standalone block) never require a trailing semicolon. Other statements require a semicolon when followed by another statement.
-
-```palan
-int64 x = 5;
-int64 y = x + 1     // semicolon optional here (last statement)
-```
-
-```palan
-cinclude <stdio.h>;
-int64 i = 0;
-while i < 3 {
-    i + 1 -> i;
-    printf("%ld\n", i)   // semicolon optional at end of block body
-}
-```
-
-## 17. Floating-Point Types
-
-Palan supports 32-bit and 64-bit IEEE 754 floating-point types:
-
-| Type    | Width  | C equivalent |
-|---------|--------|--------------|
-| `flo32` | 32-bit | `float`      |
-| `flo64` | 64-bit | `double`     |
-
-### Declaration and Initialization
-
-Float variables are declared like integer variables. A float literal has digits on both sides of the decimal point, an exponent, or both. A number followed directly by other letters (`1.5f`, `100px`) is an error.
-
-```palan
-flo64 pi = 3.14159;
-flo32 half = 0.5;
-flo64 big = 1e10;
-flo64 small = 2.5e-3;
-flo64 f;              // uninitialized
-```
-
-Float literals adopt the declared variable's type. A `flo32` variable initialized with `1.5` stores the value as a 32-bit float; a `flo64` variable stores it as a 64-bit double.
-
-Integer literals can also initialize float variables:
-
-```palan
-flo64 n = 5;    // stored as 5.0
-```
-
-### Arithmetic Operators
-
-`+`, `-`, `*`, `/` work on `flo32` and `flo64` operands and produce a float result.
-
-```palan
-flo64 a = 3.0, b = 2.0;
-flo64 sum = a + b;    // 5.0
-flo64 diff = a - b;   // 1.0
-flo64 prod = a * b;   // 6.0
-flo64 quot = a / b;   // 1.5
-```
-
-The `%` (modulo) operator is **not** supported on float types; using it is a compile error.
-
-### Comparison Operators
-
-All six comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) work on float operands and produce `bool` (1 if true, 0 if false), the same as integer comparisons.
-
-```palan
-flo64 x = 1.5;
-if x > 1.0 { printf("big\n"); }
-```
-
-### Unary Minus
-
-`-expr` negates a float value.
-
-```palan
-flo64 v = 3.14;
--v -> v;   // v is now -3.14
-```
-
-### Type Promotion
-
-Float operand conversion for binary operators and comparisons follows the same Usual Arithmetic
-Conversions rule as integer operands — see [Type System](#3-type-system): the wider float wins
-between two floats, and a float always wins over a paired integer regardless of the integer's
-width (`flo32 op flo64` → `flo64`; `int op flo32` → `flo32`; `int op flo64` → `flo64`).
-
-### Explicit Cast to Integer
-
-Use `int64(x)` or `int32(x)` to convert a float to an integer (truncation toward zero):
-
-```palan
-cinclude <stdio.h>;
-flo64 pi = 3.14159;
-printf("%ld\n", int64(pi));   // prints 3
-```
-
-### Float Parameters and Return Values
-
-Palan functions take and return `flo32`/`flo64` values like any other type, and may mix them with
-integer parameters and return values:
-
-```palan
-func scale(flo64 x, int32 n) -> flo64 {
-    return x * n;
-}
-flo64 r = scale(1.5, 4);   // 6.0
-```
-
-### Example — Newton's Method
-
-```palan
-cinclude <stdio.h>;
-
-flo64 x = 2.0;
-flo64 guess = 1.0;
-flo64 eps = 0.000001;
-flo64 diff = guess * guess - x;
-if diff < 0.0 { -diff -> diff; }
-while diff > eps {
-    (guess + x / guess) / 2.0 -> guess;
-    guess * guess - x -> diff;
-    if diff < 0.0 { -diff -> diff; }
-}
-printf("sqrt(2) = %f\n", guess);
-```
-
-Expected output: `sqrt(2) = 1.414214`
-
----
-
-## 18. Arrays
+## 8. Arrays
 
 A 1D array is declared with `[size-expr]type name`. The element count is given as an integer expression before the type.
 
@@ -1439,7 +922,7 @@ passed to a `[]T` parameter or a C function — with these differences:
 - `$` is not allowed on a parameter or a named return.
 
 A large array can overflow the stack (typically 8 MiB for the main thread); a pointer borrowed
-from a stack array must not outlive it (see [Address-Of](#22-address-of-operator)).
+from a stack array must not outlive it (see [Address-Of](#10-address-of-operator)).
 
 ### Passing to C Functions
 
@@ -1879,11 +1362,13 @@ Array **variables** (this section) allow non-constant `n`, except a stack array 
 
 ### Limitations (current version)
 
-- Top-level (global) array variables are not freed at scope exit (the OS reclaims memory at process exit).
+- An array declared at the top level (outside any block) is not freed when the top-level statements end; the OS reclaims the memory at process exit.
 - Boundary checking is not performed.
 - `[n]$T` is not supported when `T` owns fields.
 
-## 19. Struct Types
+---
+
+## 9. Struct Types
 
 Define a struct type with `type`:
 
@@ -1935,7 +1420,7 @@ function, with these differences:
 - Returning it returns a copy, as for a struct the function doesn't own.
 - `$` is not allowed on a parameter or a named return.
 
-### Struct literals
+### Struct Literals
 
 A struct value written as in an array literal's struct element (`[1, 2]` or `{y: 2, x: 1}`) can
 initialize a struct variable, be the source of `->` to a struct, be returned from a function
@@ -1967,7 +1452,7 @@ reset(@![1, 2]);
   `T` field, an array element, a `@T`/`@!T`, or a call result: `Q q = [p, mk(3)];` copies it. With `->`
   it is read before any write too, so `[q.b, @q.a] -> q` swaps.
 
-### Field types
+### Field Types
 
 Integer and float primitives (`int8`–`int64`, `uint8`–`uint64`, `flo32`, `flo64`) are declared without a prefix:
 
@@ -2003,7 +1488,7 @@ Point original;
 printf("%ld %ld\n", original.x, original.y);   // 20 10
 ```
 
-### Array fields
+### Array Fields
 
 | Syntax        | Meaning                                  | Memory                          |
 |---------------|-------------------------------------------|----------------------------------|
@@ -2013,7 +1498,7 @@ printf("%ld %ld\n", original.x, original.y);   // 20 10
 | `[n]@!T field`| Non-owning mutable pointer-slot array     | parent's block (slots only)      |
 
 `T` may be a primitive type or a struct name. `n` must be a compile-time integer: a literal, a
-[const](#21-constant-declarations), or `sizeof(T)`.
+[const](#constant-declarations), or `sizeof(T)`.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 
@@ -2036,7 +1521,7 @@ printf("%ld\n", c.pts[0].x);  // 5
 type Ring { [4]@!Point nodes; };
 Point p;  99 -> p.x;
 Ring r;
-p -> r.nodes[0];
+@!p -> r.nodes[0];
 printf("%ld\n", r.nodes[0].x);   // 99
 42 -> r.nodes[0].x;              // write-through (mutable only)
 printf("%ld\n", p.x);            // 42
@@ -2093,7 +1578,7 @@ Node n1;  Node n2;
 printf("%ld\n", n2.val);               // 42
 ```
 
-### Struct types in function signatures
+### Struct Types in Function Signatures
 
 A struct-type parameter is passed as a pointer (borrowed, not freed by the callee):
 
@@ -2144,7 +1629,7 @@ own it. So is binding a pointer returned by a call that was given such a struct
 Returning a struct the function doesn't own — a parameter, a field, or an array element — returns
 a copy of it (including what it owns), which the caller owns.
 
-### Declaration order
+### Declaration Order
 
 A struct, enum, type alias, or const may be used anywhere in the scope that declares it, before
 its declaration too, and so may the C types of a top-level `cinclude`. One declared in a block or
@@ -2176,69 +1661,7 @@ compile error. A pointer field (`@T`/`@!T`) may close a cycle.
 
 ---
 
-## 20. Type Aliases
-
-Declare an alias for a type with `type`:
-
-```palan
-type MyInt = int64;
-
-MyInt x = 42;
-
-func addOne(MyInt n) -> MyInt result {
-    n + 1 -> result;
-}
-```
-
-- The target may be a primitive, struct, or array type (`type PT = Point;`, `type Row = [3]int32;`).
-- The alias may be used wherever a type is written: variable declarations, function signatures,
-  struct field types, and array element types (`[n]MyInt`).
-
----
-
-## 21. Constant Declarations
-
-Declare a compile-time constant with `const`:
-
-```palan
-const MaxLen = 256;
-
-[MaxLen]uint8 buf;
-type Msg { [MaxLen]$uint8 body; };
-printf("%ld\n", MaxLen);   // 256
-```
-
-- The value is a literal or a constant expression: literals, consts and `sizeof(type)` combined
-  with `+ - * / %`, `& | ^`, `<<< >>>`, unary `-` and `~` (`const W = N * 2 + 1;`). A cast, a variable, an
-  enumerator or a call is not constant.
-- A constant expression is folded wherever it is written, not only in a const: an array size
-  (`[N + 1]int32 a;`, a struct field `[N * 2]$int32 v;`), an enumerator value, or an ordinary
-  expression (`x * (N + 1)` folds `N + 1`).
-- Integers are computed in `int64`, or in `uint64` once a `u` literal or `sizeof` is an operand. A
-  value outside that range, a negative value in `uint64`, or a division by zero is a compile
-  error. Division truncates toward zero, and `%` takes the sign of the dividend. A shift is
-  computed at 64 bits: bits shifted out are not an error, and the count is taken modulo 64.
-- A float operand makes the whole operation `flo64`; `%`, `&`, `|`, `^` and `~` on a float are errors.
-- The result is untyped like a literal and must fit the type of the place it is used.
-- A `cinclude`d macro constant inside a constant expression drops its C type and is computed like
-  any other literal.
-- Every reference to the constant is inlined with the literal value; the constant's name does not
-  appear in `sa.json`.
-- A const may reference another const (`const B = A;`); this chains naturally through inlining.
-- A const cannot share its name with another const, a type, or a variable (including a parameter)
-  in the same or an enclosing scope. A const is visible from the top of its block, so a variable
-  declared before it in the same block clashes too.
-- Like the literal it names, a const takes its type from where it is used: `const N = 20;` can be
-  passed to an `int32` parameter, used in `N + 2` for an `int16` variable, or assigned to `flo64`.
-
-### Restrictions
-
-- Only a top-level const can size a borrowed array parameter (`@[N]T`); function signatures are
-  registered before any other statement is processed.
-
----
-
-## 22. Address-Of Operator
+## 10. Address-Of Operator
 
 Take the address of a local primitive-typed variable with `@` (read-only) or `@!` (mutable):
 
@@ -2391,7 +1814,610 @@ to its storage, so `@s`/`@!s` and `@arr`/`@!arr` borrow it as it is (see
 
 ---
 
-## 23. Raw Syscalls
+## 11. Modules and Program Structure
+
+Palan supports multi-file compilation. Functions and types declared with `export` are visible to other files that `import` the declaring file.
+
+### Exporting a Function
+
+```palan
+// lib_add.pa
+export func add(int32 a, int32 b) -> int32 {
+    return a + b;
+}
+```
+
+Functions without `export` are file-private and not accessible from other files.
+
+### Importing a File
+
+```palan
+// main.pa
+cinclude <stdio.h>;
+import "lib_add.pa";
+
+printf("%d\n", add(3, 4));   // 7
+```
+
+- The path in `import` is relative to the importing file.
+- Imported functions are visible from the `import` statement to the end of the enclosing scope.
+- Block-scoped `import` (inside `{ }`) makes the imported functions visible only within that block.
+- Circular imports (A imports B and B imports A) are supported.
+
+### Selective Import
+
+Import only named functions from a file:
+
+```palan
+cinclude <stdio.h>;
+import square from "lib_math.pa";
+
+printf("%ld\n", square(4));   // 16  (cube is not imported)
+```
+
+Multiple names can be listed with commas: `import square, cube from "lib_math.pa"`.
+
+### Alias Import
+
+Import all exports under a namespace prefix to avoid name conflicts:
+
+```palan
+cinclude <stdio.h>;
+import "lib_math.pa" as L;
+
+printf("%ld\n", L.square(3));  // 9
+printf("%ld\n", L.cube(2));    // 8
+```
+
+- All calls must use the `L.f()` qualified form. Unqualified `square()` is a compile error.
+- A variable named `L` hides the alias: `L.f()` is then a method-form call on the variable (see §7).
+
+### Selective Alias Import
+
+Import specific functions under a namespace prefix:
+
+```palan
+cinclude <stdio.h>;
+import square from "lib_math.pa" as L;
+
+printf("%ld\n", L.square(5));  // 25
+```
+
+### Exporting Types
+
+A struct, enum, or type alias declared with `export type` can be imported like a function:
+
+```palan
+// vec3.pa
+export type vec3 { flo32 x; flo32 y; flo32 z; };
+export type Color enum { Red, Green };
+export type Row = [3]vec3;
+export func len2(@vec3 v) -> flo32 {
+    return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+```
+
+```palan
+// main.pa
+import "vec3.pa";
+vec3 p;
+Color c = Color.Green;
+flo32 l = len2(@p);
+```
+
+- An exported type is visible in the whole importing file, like a type declared in it. A
+  type imported inside a block is visible from the `import` on.
+- Under an alias import, write the type with the alias: `V.vec3`, `V.Color.Green`,
+  `V.Color(1)`. The unqualified name is a compile error.
+- A selective import lists types alongside functions: `import vec3, len2 from "vec3.pa";`.
+- An exported type may use the declaring file's non-exported types, consts, and cincluded
+  headers; those are not made nameable in the importing file.
+- An exported struct or enum name is shared by the whole program: two files exporting the
+  same name is a compile error once one file reaches both.
+- A file may declare a type with the name of an imported type it cannot write unqualified
+  (one imported as `V.T`, or only brought along by another imported type). Declaring a type
+  with a name an import makes writable is a compile error.
+- Two files may import each other and use each other's types anywhere, including in type
+  declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
+
+### Program Structure
+
+```palan
+cinclude <stdio.h>;
+
+int64 x = 10;
+printf("%lld\n", x);
+```
+
+- Top-level statements execute as the `_start` entry point, only in the file being built. The
+  top-level statements of an imported file are not executed, so a module can hold its own tests
+  or usage examples.
+- There are no global variables: a top-level variable is visible to the top-level statements
+  after it, but not inside functions.
+- User-defined functions can be placed before or after top-level statements.
+- `return` is not valid at top-level. To exit early, call `exit()` from `<stdlib.h>`.
+
+---
+
+## 12. C Library Integration
+
+```palan
+cinclude <stdio.h>;          // system header — functions visible as unqualified calls
+cinclude "myheader.h";       // local header
+printf("%ld\n", x);          // call C function directly
+
+cinclude <stdio.h> as S;     // alias — functions accessible only as S.xxx()
+S.printf("%d\n", 42);        // qualified call
+
+cinclude <math.h> link "m";  // link against libm (-lm) when building
+```
+
+### Function Calls
+
+- `cinclude` makes C functions visible from the declaration point to the end of the enclosing scope.
+- With an alias, functions are accessible only via the qualified form `alias.funcName(...)`.
+- The number of arguments must match the number of parameters; a variadic C function takes at least
+  its fixed parameters. A C function declared with empty parentheses `f()` takes no arguments, the
+  same as `f(void)`.
+- A macro that names another declared function (glibc's `#define sscanf __isoc99_sscanf`) makes
+  its name call that function, as in C. So `sscanf` has the C99 behavior, and `strerror_r` and
+  `libgen.h`'s `basename` are the XPG versions.
+
+### Link Libraries
+
+- Some C headers declare functions that live outside libc, in a separate shared library — `math.h`'s
+  `sqrt`/`pow`/`sin`/etc, for instance, are only in libm. A `link` clause on `cinclude` names the
+  library to add to the final link step: `cinclude <math.h> link "m";` appends `-lm` to the `ld`
+  invocation, the same as passing `-lm` on a C compiler's command line. Palan does not keep a
+  built-in header-to-library lookup table — every third-party library must be named explicitly with
+  `link`, since a lookup table covering every header a program might ever cinclude would itself need
+  ongoing maintenance.
+- Multiple libraries in one clause are comma-separated: `cinclude <stdio.h> link "rt", "m";`. The
+  `link` clause comes last, after an optional `as` alias.
+- A library name may contain only letters, digits, `_`, `.`, `+` and `-`, and may not be empty — it
+  is appended directly after `-l` when invoking the linker, so this is checked at compile time
+  rather than left to fail at the `ld` step.
+- Library names are collected across the whole program, not scoped to the file or block where
+  `link` appears: a `link` clause inside a function body or `{ }` block, or one that reaches the
+  final binary only through an `import`ed module, still ends up on the final `ld` command line. The
+  same library named more than once (in one `link` clause, in different clauses, or across
+  different modules) is deduplicated.
+- A header may be cincluded with `link` in one place and without it elsewhere in the same program —
+  the library is added to the link step regardless of which cincluding site names it.
+- A name ending in `.o` is an object file to link instead of a library, such as one compiled from
+  your own C source: `cinclude "util.h" link "util.o";`. A relative path is relative to the
+  directory of the source file, as a local `cinclude` header is. A missing file is a compile error.
+  Object files and libraries can be mixed in one clause (`link "m", "lib/util.o"`), and object
+  files are collected and deduplicated across the whole program in the same way.
+- `link` is not a reserved word — it is only recognized as introducing this clause immediately after
+  a `cinclude` path (and optional `as` alias). `unistd.h`'s `link()` function, for example, remains
+  callable as an ordinary C function.
+
+### Typedefs
+
+- A `typedef` a cincluded C header defines is registered as soon as the header is cincluded,
+  whether or not any C function or global in that same header references it. For example,
+  `cinclude <stdint.h>; int32_t x = 5;` works even though `stdint.h` declares no C functions at
+  all — every typedef is registered, not only those a function signature uses. `size_t n = strlen(s);` after `cinclude <string.h>;` works the same way, just less
+  visibly, since `string.h` also declares functions.
+- Typedefs that resolve to a primitive type are registered as a Palan type alias (see
+  [Type Aliases](#type-aliases)). Typedefs that resolve to a struct (e.g. `FILE`, `typedef struct
+  _IO_FILE FILE;`, including a multi-level chain) are registered and usable the same way as a
+  native struct type — see [Incomplete Struct Types](#incomplete-struct-types-opaque-handles) below
+  for the case where the struct's own layout isn't known. This includes a struct body
+  with no tag of its own (`typedef struct { int quot; int rem; } div_t;`) — the typedef's own name
+  is used as the struct's tag, so `div_t`/`ldiv_t`/`lldiv_t` (from `stdlib.h`'s `div`/`ldiv`/`lldiv`)
+  are usable struct types exactly like a tagged one.
+- Typedefs that bottom out in a pointer type are usable as a pointer type alias: `@!T` when the
+  pointee is not `const`, `@T` when it is (`typedef void *timer_t;` is `@!void`, `typedef const
+  char *CS;` is `@int8`). A typedef of a function pointer is a [function pointer
+  type](#function-pointers) (`__compar_fn_t` is `@func(@void, @void) -> int32`).
+- Typedefs that bottom out in a union are usable the same way as struct typedefs (see
+  [Union Types](#union-types) below). A typedef of an enum is another name for it (see
+  [C Enum Types](#c-enum-types) below).
+- A header may use a typedef from a header cincluded before it, as in C where both are included
+  into one translation unit: `cinclude <stdio.h>; cinclude <jpeglib.h>;` lets `jpeglib.h`'s
+  declarations use `size_t` and `FILE`. Typedefs that bottom out in a pointer type are not carried
+  over this way.
+- Macros carry over the same way: a header sees every macro the headers cincluded before it in the
+  file defined or `#undef`ed, so its `#ifdef`s and macro uses work as in C. A header that an
+  earlier cinclude already read is skipped by its include guard, as in C, and its declarations
+  come from that earlier cinclude. So if the earlier cinclude is inside a block, the skipped
+  functions can't be called outside that block (see `doc/Issues.md`).
+- If multiple cincluded headers introduce the same typedef name resolving to the *same* underlying
+  type, the first registration silently wins. If they resolve to *different* underlying types, this
+  is a compile error.
+- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace imported typedefs — they are
+  always registered globally. Only C function calls require the `X.` qualifier.
+
+### Macro Constants
+
+- An object-like `#define` macro whose body folds down to a single compile-time integer value is
+  usable by name from Palan the moment the header is cincluded — not as an imported symbol, but
+  as a compile-time text substitution: every later reference to the name is replaced with the
+  folded literal value, the same way the C preprocessor itself would substitute it. This covers a
+  bare integer literal, a pointer-cast of one (e.g. `#define NULL ((void *)0)`), and an
+  arithmetic or bitwise expression built from `| & ^ << >> + - * / %` over such forms (e.g.
+  `sys/stat.h`'s `S_IRWXU`, defined as `(S_IREAD|S_IWRITE|S_IEXEC)`) — including one that
+  references another already-defined macro (`#define S_IFDIR __S_IFDIR`). An operand may be
+  C's `sizeof(type)`, which folds to the type's size as `size_t` when its layout is known (e.g.
+  `sys/select.h`'s `__NFDBITS`, `(8 * (int) sizeof (__fd_mask))`). The same folding sizes a C
+  struct's array fields, so `fd_set` is a complete struct and `select` can be called with it.
+- A macro whose body doesn't fold this way — a function-like macro referenced without a call
+  (e.g. `S_ISDIR`, which takes an argument), a string literal, a relational/equality/logical/
+  ternary expression, or a reference to an identifier that never resolves — is left untouched.
+  Referencing such a name from Palan is a compile error naming the macro:
+
+  ```palan
+  cinclude <sys/stat.h>;
+  stat st;
+  stat("/etc", @!st);
+  if (S_ISDIR(st.st_mode)) { ... }   // error: C macro 'S_ISDIR' is function-like; Palan cannot use it.
+  ```
+
+  `S_IFMT`/`S_IFDIR` and similar bare constants *do* fold, so the same check can be written
+  directly with a bitwise AND (see [Expressions](#5-expressions)):
+
+  ```palan
+  if ((st.st_mode & S_IFMT) == S_IFDIR) { ... }   // works
+  ```
+
+  ```palan
+  cinclude <string.h>;
+  if (strchr(s, 'x') == NULL) {
+      // not found
+  }
+  ```
+
+  `NULL` is a generic pointer value: it is compatible with and can be compared (`==`/`!=`)
+  against any pointer-typed value, including C function return values, `[]T` array
+  pointers, and struct pointer fields.
+- A macro constant whose type C leaves open — a plain number such as `#define COLOR_RED 1` or
+  `#define ERR (-1)`, or arithmetic over plain numbers like `S_IRWXU` — behaves exactly like an
+  integer literal written in Palan: it takes the type its context expects and must fit in it. So
+  `st.st_mode & S_IFMT` is `uint32` because `S_IFMT` takes `st_mode`'s type, and ncurses'
+  `init_pair(1, COLOR_RED, COLOR_BLACK)` passes the constants to `short` parameters without a
+  cast.
+- A macro constant whose type C fixes — an unsigned or long suffix (`1U`, `5L`), `sizeof`, or an
+  integer cast, as in ncurses' `A_REVERSE` (`unsigned int`) — keeps that type, and meets other operands
+  through the [usual arithmetic conversions](#3-type-system) like any typed value.
+- Substitution is text-order only, not lexically scoped like a cincluded C function or `const`:
+  a reference resolves against the last cincluded header that defines the name, textually
+  before that reference, anywhere in the rest of the file — including past the end of the block
+  the `cinclude` itself appears in. A reference that textually precedes every cincluding
+  `cinclude` is left unresolved (`Undefined function`/`Undefined variable`), even if a later
+  `cinclude` in the same file would otherwise define it.
+- A later cincluded header may redefine or `#undef` a macro, as in C. References after that
+  `cinclude` see the new value, or no macro at all.
+- A macro constant silently takes priority over any same-named variable, parameter, or `const` in
+  scope at the reference site, undiagnosed.
+- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace macro constants — they fold the
+  same regardless of alias. Only C function calls require the `X.` qualifier.
+- A macro constant is not visible across an `import`/`export` boundary — it is purely a
+  same-file, parse-time substitution. A value built from one (e.g. an `export syscall`'s number,
+  see [Raw Syscalls](#13-raw-syscalls)) is already a plain literal by the time it could be
+  exported, so the folded *value* does cross that boundary even though the macro *name* never
+  does.
+
+### C Global Variables
+
+- A file-scope `extern` object declared in a cincluded header, whose type is a primitive, an enum
+  or a pointer (e.g. `extern FILE *stdout;`), is captured as a readable Palan variable of the same
+  name, visible from the cinclude point to the end of the enclosing scope — the same rule as a
+  cincluded function. `static` declarations, block-scope declarations, and arrays or by-value
+  struct/union globals are not captured.
+
+  ```palan
+  cinclude <stdio.h>;
+  fprintf(stderr, "starting up\n");   // stderr resolves to the C global
+  ```
+
+- **Read-only from Palan**: assigning to a C global (`x -> stdout`) is a compile error, and so is
+  taking its address (`@stdout`) or reaching a field through it. This is a restriction on the
+  variable binding itself, not on what it points to — the *pointee* keeps its own C-declared
+  mutability, so `fwrite(data, 1, n, stdout)` (writing through the `FILE *` value `stdout` holds)
+  works normally.
+- Aliased cinclude (`cinclude <x.h> as X;`) does not namespace C globals either — like typedefs
+  and constants, they are always registered globally; only a function call needs the `X.`
+  qualifier.
+
+### Struct Types
+
+- A C `struct Name { ... }` defined (with a full field list, not just forward-declared) in a
+  cincluded header becomes a usable [struct type](#9-struct-types) under that same name — field
+  access, embedded struct-typed fields, and struct-typed function parameters all work identically
+  to a struct declared natively with `type Name { ... }`. A tag that is only forward-declared, or
+  whose full definition can't be captured, is still usable under its name — see [Incomplete
+  Struct Types](#incomplete-struct-types-opaque-handles) below.
+- A C pointer field (`T *f;`, or a pointer array `T *f[n];`) is `@!T` when its pointee is not
+  `const` and `@T` when it is (`const T *f;`), the same rule as a C function's pointer parameters.
+- A function pointer field (or an array of them) is a [function pointer](#function-pointers)
+  field, and `s.f(args)` calls through it. One whose signature can't be expressed as `@func(...)`
+  (a variadic one, for example) keeps its place in the layout but cannot be read, written, or have
+  its address taken.
+- A struct pointer *returned* by a C function should be bound to a non-owning `@T`/`@!T`-typed
+  local variable, not a named return — the pointer may be owned by C (e.g. a static internal
+  buffer), so no automatic freeing is registered for it:
+
+  ```palan
+  cinclude <time.h>;
+  cinclude <stdio.h>;
+
+  time_t t = int64(0);
+  @!tm p = gmtime(@t);                        // non-owning: gmtime owns the storage, not Palan
+  printf("%d\n", int32(p.tm_year) + 1900);    // 1970
+  ```
+
+  A struct passed *into* a C call's struct pointer parameter is borrowed the same way as for a
+  native `@T`/`@!T` parameter: write `@s` for a `const` pointer parameter and `@!s` otherwise
+  (`mktime(@!t)`, `asctime(@t)`; see
+  [Struct types in function signatures](#struct-types-in-function-signatures)).
+
+### Structs Returned By Value
+
+A C function that returns a struct **by value** (not by pointer) can be received directly into a
+struct-typed local variable's initializer, the same syntax as a native call:
+
+```palan
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+
+div_t d = div(7, 2);
+printf("%d %d\n", d.quot, d.rem);   // 3 1
+```
+
+- The variable's own storage is what the C call writes into — this is an ordinary owning struct
+  local, freed automatically at scope exit like any other, not a `@T`/`@!T`-typed handle to
+  something C owns (contrast with the pointer-returning case above).
+- This is implemented as a general System V AMD64 return-value classification, not a
+  `div_t`-specific special case: a struct of 16 bytes or less comes back in registers (`%rax`/
+  `%rdx` for integer-classified eightbytes, `%xmm0`/`%xmm1` for floating-point ones, mixed if the
+  struct has both), and a struct larger than 16 bytes comes back through a hidden destination
+  pointer, the same ABI a C caller would use.
+- Writing a call that returns a struct by value anywhere other than a struct variable's
+  initializer — as a bare statement, discarding the result — is a compile error: the call still
+  has to happen, but there is nowhere to write the result, so the compiler rejects it instead of
+  silently dropping the call.
+- Native Palan functions do not gain a struct-by-value return syntax from this — this feature is
+  about receiving a C function's by-value return, not a Palan-side language addition.
+
+### Structs Passed By Value
+
+A C function that takes a struct **by value** is called with the struct written by name, as for a
+native struct-type parameter; the function receives a copy:
+
+```palan
+cinclude <stdio.h>;
+
+func cwrite(@!void cookie, @int8 buf, uint64 size) -> int64 n {
+    printf("[%.*s]", int32(size), buf);
+    int64(size) -> n;
+}
+
+cookie_io_functions_t io;
+cwrite -> io.write;
+@!FILE f = fopencookie(NULL, "w", io);
+fprintf(f, "hello");                 // [hello]
+fclose(f);
+```
+
+- The argument can be a struct variable, a struct field or array element, a struct returned by a
+  call, a struct literal (`{x: 1, y: 2}`), or a `@T`/`@!T` pointer to the struct — a read-only
+  `@T` is fine, since only a copy is passed. Changes the C function makes to its copy are not
+  seen by the caller.
+- The struct is passed the way a C caller would pass it under the System V AMD64 ABI: in
+  registers when it is 16 bytes or less and its parts fit in the remaining argument registers,
+  on the stack otherwise. A union is passed the same way.
+- A C function that takes a struct by value cannot be used as a function pointer.
+
+### Passing a Palan Function as a Callback
+
+A bare Palan function name, written in a C function's argument position, is passed as that
+function's address — the common C idiom of handing a callback to a library function like
+`qsort`:
+
+```palan
+cinclude <stdlib.h>;
+cinclude <stdio.h>;
+
+func cmp(@int32 a, @int32 b) -> int32 { return a[0] - b[0]; }
+
+[4]int32 arr;
+5 -> arr[0];  3 -> arr[1];  1 -> arr[2];  4 -> arr[3];
+qsort(arr, uint64(4), uint64(4), cmp);
+printf("%d %d %d %d\n", arr[0], arr[1], arr[2], arr[3]);   // 1 3 4 5
+```
+
+- The C parameter is a [function pointer](#function-pointers) (`int (*)(const void *, const
+  void *)` is `@func(@void, @void) -> int32`), and the function name is a value of that type. The
+  rules for which functions match are in that section; in short, the parameter and return types
+  must be the same, with no widening, since the C library calls the Palan function directly.
+- `@void`/`@!void` — a pointer whose pointee type is `void` — exists to write the callback
+  signatures C itself uses generically, such as `qsort`'s and `bsearch`'s `const void *`
+  comparator arguments:
+
+  ```palan
+  cinclude <stdlib.h>;
+  cinclude <stdio.h>;
+
+  func cmp(@void a, @void b) -> int32 {
+      @int32 x = a;   // give the void pointer a concrete type before reading through it
+      @int32 y = b;
+      return x[0] - y[0];
+  }
+
+  [4]int32 arr;
+  1 -> arr[0];  3 -> arr[1];  4 -> arr[2];  5 -> arr[3];
+  int32 key = 4;
+  @!int32 found = bsearch(@key, arr, uint64(4), uint64(4), cmp);
+  printf("%d\n", found[0]);   // 4
+
+  int32 miss = 2;
+  @!int32 none = bsearch(@miss, arr, uint64(4), uint64(4), cmp);
+  printf("%d\n", none == NULL);   // 1 -- not found
+  ```
+
+  `void` can only appear as a pointer's pointee (`@void`/`@!void`) — a bare `void x;` variable is
+  still rejected. A `@void`/`@!void` value is compatible with any other pointer type in both
+  directions, so assigning it to a concretely-typed pointer variable (as `@int32 x = a;` does
+  above) gives it a type to read or write through, as does a cast (`(a as @int32)[0]`). Indexing
+  or dereferencing a void pointer directly (`a[0]`) is a compile error.
+- A function registered with `atexit`/`at_quick_exit` must not read or write any of the calling
+  scope's Palan-owned local variables: program exit frees all still-live owned locals before
+  invoking the registered handlers, so by the time the handler runs, that storage is gone.
+
+  ```palan
+  cinclude <stdlib.h>;
+  cinclude <stdio.h>;
+
+  func say_bye()  { printf("bye\n"); }
+  func say_last() { printf("last\n"); }
+
+  atexit(say_bye);
+  atexit(say_last);
+  printf("hello\n");
+  // output: hello / last / bye -- exit handlers run in LIFO order, same as C's atexit
+  ```
+
+### C Array Fields
+
+- A fixed-size C array field (`char name[16];`) becomes a fixed-size [array field](#array-fields)
+  on the Palan side, laid out inline in the struct exactly like a native `[16]int8 name;` field —
+  element access and taking the address of an element both work. A C function parameter declared
+  as an array (`void take(char buf[32])`) decays to a plain pointer, same as in C — only the
+  outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row. A C
+  struct field with two or more array dimensions (`int cells[2][3];`) is not supported this
+  version — the field is left with no known layout, which downgrades the whole struct to an
+  [incomplete struct type](#incomplete-struct-types-opaque-handles) rather than making just that
+  field unusable.
+
+### Union Types
+
+A C `union Name { ... }` (or `typedef union { ... } Name;`) from a cincluded header is usable under
+its name everywhere a C struct is: a by-value variable declaration, `@`/`@!` address-of, field
+read/write, a `$Name` field of a native struct, and passing it to a C function by pointer. All
+members start at the same address, so writing one member changes what the others read, as in C;
+the size is that of the largest member, rounded up to the largest member alignment.
+
+`pthread.h`'s `pthread_mutex_t`, `pthread_cond_t` and `pthread_attr_t` are unions:
+
+```palan
+cinclude <pthread.h>;
+cinclude <stdio.h>;
+
+type Shared { int64 count; $pthread_mutex_t m; };
+
+func worker(@!void arg) -> @!void {
+    @!Shared sh = arg;
+    pthread_mutex_lock(@!sh.m);
+    sh.count + 1 -> sh.count;
+    pthread_mutex_unlock(@!sh.m);
+    return NULL;
+}
+
+Shared s;
+pthread_mutex_init(@!s.m, NULL);
+pthread_t t1;
+pthread_t t2;
+pthread_create(@!t1, NULL, worker, s);
+pthread_create(@!t2, NULL, worker, s);
+pthread_join(t1, NULL);
+pthread_join(t2, NULL);
+pthread_mutex_destroy(@!s.m);
+printf("%ld\n", s.count);    // 2
+```
+
+`PTHREAD_MUTEX_INITIALIZER` and the other `*_INITIALIZER` macros expand to a brace initializer,
+which Palan has no syntax for; call the matching `_init` function instead.
+
+The fields of a C11 anonymous member, a struct or union body with no member name
+(`struct S { int k; union { int a; float b; }; };`), are fields of the enclosing type:
+`s.a` and `s.b` read and write the union directly. An anonymous body that has a member name
+(`union { ... } u;`) is reached through that name (`s.u.a`).
+
+### Packed and Aligned C Structs
+
+A C struct or union declared with GCC's `__attribute__((packed))` or `__attribute__((aligned(N)))`,
+on the type or on individual fields, has the same layout in Palan as in C: field offsets, size,
+and the stride of an array of it all match. `sys/epoll.h`'s `struct epoll_event` is packed
+(12 bytes, `data` at offset 4), so an array of it can be handed to `epoll_wait` directly:
+
+```palan
+cinclude <stdio.h>;
+cinclude <unistd.h>;
+cinclude <sys/epoll.h>;
+
+[2]int32 fds;
+pipe(@!fds[0]);
+int32 ep = epoll_create1(0);
+epoll_event ev;
+EPOLLIN -> ev.events;
+42 -> ev.data.u64;
+epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], @!ev);
+write(fds[1], "x", 1);
+[2]$epoll_event evs;
+int32 n = epoll_wait(ep, @!evs[0], 2, 1000);
+printf("%d %lu\n", n, evs[0].data.u64);    // 1 42
+```
+
+Attributes that change the type itself (`vector_size`, `mode`) are not supported: a typedef that
+carries one is not imported, and on a struct field the header is rejected. A typedef that carries
+`packed`/`aligned` after its own name (`typedef struct { ... } T __attribute__((aligned(16)));`)
+is not imported either; the attribute on the struct itself (`typedef struct { ... }
+__attribute__((aligned(16))) T;`) is fine.
+
+### C Enum Types
+
+A C enum from a cincluded header is a Palan [enum](#enum): its enumerators are referenced as
+`Name.X`, and it follows the same type rules. `Name` is the tag (`enum Tag { ... }`) or the
+typedef name (`typedef enum { ... } Name;`); when the enum has both, either name works. It can be
+the type of a variable, a struct field, a C function's parameter or return value, and a C global.
+
+```palan
+cinclude <jpeglib.h>;
+
+jpeg_compress_struct cinfo;
+J_COLOR_SPACE.JCS_RGB -> cinfo.in_color_space;
+JDCT_DEFAULT -> cinfo.dct_method;    // #define JDCT_DEFAULT JDCT_ISLOW
+int32 cs = cinfo.in_color_space;     // widens to its base type
+```
+
+- A macro that is just one enumerator (`#define JDCT_DEFAULT JDCT_ISLOW`, or glibc's
+  `#define SOCK_STREAM SOCK_STREAM`) has the enum's type. A macro computing with enumerators
+  (`#define X (A + 1)`) is a plain integer constant, like any other [macro constant](#macro-constants).
+- The enumerators of an enum with neither a tag nor a typedef name (`enum { A, B };`) are
+  referenced without qualification (`A`), as plain integer constants.
+- An enum with an enumerator whose value can't be computed at compile time (e.g. `= sizeof(struct
+  Opaque)` for a forward-declared struct) is not available; a function or struct using it is treated as unsupported.
+
+### Incomplete Struct Types (Opaque Handles)
+
+A struct tag whose full layout isn't known to Palan — either because the header only
+forward-declares it, or because one of its fields uses a shape [C Array Fields](#c-array-fields)
+above doesn't support — is registered as an **incomplete struct**: its name resolves and it can
+be used, but only through a pointer (`@T`/`@!T`), the same restriction C itself places on an
+incomplete type. `DIR` (from `dirent.h`) is the running example: its underlying `struct
+__dirstream` is only forward-declared, so `DIR` is incomplete, and `opendir`/`readdir`/`closedir`
+all work with it purely as an opaque handle:
+
+```palan
+cinclude <dirent.h>;
+@!DIR d = opendir(".");
+closedir(d);
+```
+
+`@!DIR d = opendir(...)` is **not** automatically freed at scope exit — unlike an owning struct
+pointer variable, the pointee here belongs to C (closed by `closedir`, not Palan's own allocator).
+
+An incomplete struct cannot be used anywhere a full layout is required: a by-value variable
+declaration (`DIR d;`), an owned or embedded array of it (`[n]DIR`/`[n]$DIR`), a field access
+through it, subscripting an array of it, or embedding it in another struct. Each of these is a
+compile error naming the struct and the reason (forward-declared in the header, or a field type
+this version can't represent) — never a compiler crash.
+
+---
+
+## 13. Raw Syscalls
 
 A `syscall` declaration binds a Linux x86-64 syscall number to a name, callable afterward like
 any other function — bypassing libc entirely:
@@ -2415,7 +2441,7 @@ syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
   integer literal (0 to 2^32-1) — a bare literal or a cinclude'd macro constant that folds to
   one; any other expression is not allowed.
 - Once declared, the name is called exactly like a normal function, including from other
-  functions or across an `import`/`export` boundary (see §12).
+  functions or across an `import`/`export` boundary (see §11).
 - A block-scoped `syscall` declaration is visible only within that block, same as a nested
   `func`.
 - At most 6 parameters. The return, if any, must be a single unnamed type (`-> type`); named or
@@ -2427,57 +2453,3 @@ syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
   variable is never touched.
 - `syscall` is a reserved word, so a cinclude'd `<unistd.h>`'s `syscall()` wrapper function
   cannot be called from a file that uses this feature.
-
----
-
-## 24. Function Pointers
-
-`@func(T1, T2) -> R` is a pointer to a function taking `T1`, `T2` and returning `R`. Without
-`-> R` the function returns nothing. A function's name is a value of its function pointer type,
-and a function pointer is called like a function:
-
-```palan
-cinclude <stdio.h>;
-
-func twice(int32 x) -> int32 { return x * 2; }
-func plus1(int32 x) -> int32 { return x + 1; }
-func apply(@func(int32) -> int32 f, int32 x) -> int32 { return f(x); }
-
-@func(int32) -> int32 g = twice;
-printf("%d\n", g(5));              // 10
-plus1 -> g;
-printf("%d\n", g(5));              // 6
-printf("%d\n", apply(twice, 21));  // 42
-
-type Ops { @func(int32) -> int32 op; };
-Ops o;
-twice -> o.op;
-printf("%d\n", o.op(4));           // 8
-```
-
-- A function pointer can be a variable, a parameter, a return type, a struct field, or an array
-  element (`[4]@func(int32) -> int32`). Parameter names are not written.
-- It is read-only like `@T`: code is never written through it, so `@!func(...)` is an error.
-  The variable itself can be given another function with `->`.
-- A parameter or return type must be a primitive or a borrowed pointer (`@T`/`@!T`, including
-  another function pointer). A struct or an array passed or returned by value is not allowed.
-- A function becomes a function pointer by writing its name where a value is expected. This works
-  for a Palan function returning nothing or one value (a single named return counts as one), an
-  imported function, and a C function that is not variadic. A function with several return
-  values, a variadic C function, and a `syscall` cannot be used this way. A variable of the same
-  name is used in preference to the function.
-- A function fits a function pointer type when the parameter count is the same, each parameter
-  and the return type are the same type (no widening: `int32` does not fit `int64`), and pointer
-  permissions flow the right way: a function taking `@!T` does not fit a pointer that passes
-  `@T`, while a function taking `@T` fits one that passes `@!T`. A `@void` parameter or return
-  matches any pointer, as it does elsewhere.
-- A function pointer is a pointer otherwise: it can be `NULL` and compared with `==`/`!=`, a
-  `@void` converts to it, and `as` converts it to `@void` or `int64`/`uint64` and back. Calling a
-  `NULL` function pointer is not checked.
-- `f(x)` when both a function pointer `f` and a function `f` are visible is an error, and so is
-  `s.f(x)` when `s` has a function pointer field `f` and a function `f` could take `s` as a method
-  (its first parameter is `@!`).
-- Not supported in this version: calling the result of an expression directly, such as
-  `tbl[0](3)` or `pick(true)(3)`; store it in a variable first.
-
----

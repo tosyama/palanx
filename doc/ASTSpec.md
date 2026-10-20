@@ -372,7 +372,7 @@ Note: A var-type node originating from a C typedef that resolves to a known type
 or "pntr" for a pointer-bottomed typedef chain, e.g. `typedef void *timer_t;`) may carry an additional
 `typedef-name` field — the original C typedef identifier (e.g. `"size_t"`). This is a
 c2ast/cinclude-only annotation. For type-kind "prim", SA registers it as a native type alias (see
-PalanReference.md §20 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
+PalanReference.md §4 Type Aliases) and strips the field before emitting to sa.json (see SASpec.md).
 For type-kind "pntr", the field is left in place and never reaches sa.json (C function signatures
 themselves aren't serialized there); the name itself is registered through `ast.typedefs`.
 This annotation is specific to the var-type node at the reference site that looked the typedef

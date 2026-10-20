@@ -729,7 +729,7 @@ SA-only expression kinds (added to AST nodes):
   the element type. This holds for any index, not just `0` — there is no `i == 0` special case
   anywhere in SA or codegen; `p[i]` for `i != 0` is ordinary pointer arithmetic, scaled by
   `elem-size`, with no bounds check (the same as C). `@T` (read-only) permits this only for a
-  read; a write is E_WriteThroughReadOnlyPtr. See PalanReference.md §22.
+  read; a write is E_WriteThroughReadOnlyPtr. See PalanReference.md §10.
 
   **Pointer dereference (`p[i]`) on a struct element:** when `array`'s `pntr` base-type is itself
   `struct(T)` (i.e. `p` is `@T`/`@!T` where `T` is a struct — not an `[n]$T`/`[n]T`/`[n]@T`/
