@@ -33,7 +33,7 @@
           { "expr-type": "lit-str", "label": ".str0",
             "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } } },
           {
-            "expr-type": "call", "func-type": "pln", "name": "add",
+            "expr-type": "call", "func-type": "palan", "name": "add",
             "value-type": { "type-kind": "prim", "type-name": "int32" },
             "args": [
               { "expr-type": "lit-int", "value": "3", "value-type": { "type-kind": "prim", "type-name": "int32" } },

@@ -1736,7 +1736,7 @@ pair<string, string> PlnSemanticAnalyzer::structFreeFunc(const string& structNam
 	if (!structDefs_.at(structName).ownsFields)
 		return {"free", "c"};
 	recordAllocShape(structName);
-	return {"__pln_free_" + structName, "pln"};
+	return {"__pln_free_" + structName, "palan"};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -1764,7 +1764,7 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value)
 		string name = vt["base-type"]["base-type"]["type-name"];
 		recordArrStructShape(name);
 		fn = "__pln_free_arr_" + name;
-		funcType = "pln";
+		funcType = "palan";
 		args.push_back({{"expr-type","lit-int"},{"value",to_string(vt["arr-size"].get<int64_t>())},
 		                {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}});
 	} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
@@ -1870,7 +1870,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 				            {"args",json::array({one_arg, size_arg})},{"value-type",pntr_type}};
 			} else {
 				recordAllocShape(structName);
-				heapInit = {{"expr-type","call"},{"name","__pln_alloc_" + structName},{"func-type","pln"},
+				heapInit = {{"expr-type","call"},{"name","__pln_alloc_" + structName},{"func-type","palan"},
 				            {"args",json::array()},{"value-type",pntr_type}};
 			}
 			init = placeAggregateVar(stmt, name, pntr_type, move(heapInit), makeStructFreeStmt(name, pntr_type),

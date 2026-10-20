@@ -1927,7 +1927,7 @@ TEST(sa, owned_struct_field)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
-	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 }
 
@@ -1986,7 +1986,7 @@ TEST(sa, alloc_shape_owned)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
-	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
 	// alloc-shapes: Point first (leaf), then Rect (root)
@@ -2838,7 +2838,7 @@ TEST(sa, owned_prim_arr_field)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "b");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Bucket");
-	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
 	const auto& shapes = jout["alloc-shapes"];
@@ -2871,7 +2871,7 @@ TEST(sa, owned_struct_arr_field)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "c");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Cluster");
-	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
 	const auto& shapes = jout["alloc-shapes"];
@@ -4882,7 +4882,7 @@ TEST(sa, struct_ret_temp) {
 	ASSERT_EQ(argP["release"][0]["body"]["func-type"], "c");
 	const auto& argQ = stmts[1]["vars"][0]["init"]["args"][0];
 	ASSERT_EQ(tempRelease(argQ), "__pln_free_Q");
-	ASSERT_EQ(argQ["release"][0]["body"]["func-type"], "pln");
+	ASSERT_EQ(argQ["release"][0]["body"]["func-type"], "palan");
 	// A discarded one is received in a temp and freed.
 	const auto& blk = stmts[2];
 	ASSERT_EQ(blk["stmt-type"], "block");

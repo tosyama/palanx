@@ -89,7 +89,7 @@
             "value-type": { "type-kind": "pntr", "base-type": { "type-kind": "prim", "type-name": "uint8" } } },
           {
             "expr-type": "call",
-            "func-type": "pln",
+            "func-type": "palan",
             "name": "tricky",
             "value-type": { "type-kind": "prim", "type-name": "int64" },
             "args": [
