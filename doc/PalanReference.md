@@ -919,6 +919,37 @@ The fields of a C11 anonymous member, a struct or union body with no member name
 `s.a` and `s.b` read and write the union directly. An anonymous body that has a member name
 (`union { ... } u;`) is reached through that name (`s.u.a`).
 
+### Packed and Aligned C Structs
+
+A C struct or union declared with GCC's `__attribute__((packed))` or `__attribute__((aligned(N)))`,
+on the type or on individual fields, has the same layout in Palan as in C: field offsets, size,
+and the stride of an array of it all match. `sys/epoll.h`'s `struct epoll_event` is packed
+(12 bytes, `data` at offset 4), so an array of it can be handed to `epoll_wait` directly:
+
+```palan
+cinclude <stdio.h>;
+cinclude <unistd.h>;
+cinclude <sys/epoll.h>;
+
+[2]int32 fds;
+pipe(@!fds[0]);
+int32 ep = epoll_create1(0);
+epoll_event ev;
+EPOLLIN -> ev.events;
+42 -> ev.data.u64;
+epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], @!ev);
+write(fds[1], "x", 1);
+[2]$epoll_event evs;
+int32 n = epoll_wait(ep, @!evs[0], 2, 1000);
+printf("%d %lu\n", n, evs[0].data.u64);    // 1 42
+```
+
+Attributes that change the type itself (`vector_size`, `mode`) are not supported: a typedef that
+carries one is not imported, and on a struct field the header is rejected. A typedef that carries
+`packed`/`aligned` after its own name (`typedef struct { ... } T __attribute__((aligned(16)));`)
+is not imported either; the attribute on the struct itself (`typedef struct { ... }
+__attribute__((aligned(16))) T;`) is fine.
+
 ### C Enum Types
 
 A C enum from a cincluded header is a Palan [enum](#enum): its enumerators are referenced as

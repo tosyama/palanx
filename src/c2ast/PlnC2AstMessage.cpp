@@ -47,6 +47,10 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 		case E_UnhandledToken:
 			return "unexpected token";
 
+		case E_UnsupportedAttribute:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "attribute '" + arg1 + "' is not supported here";
+
 		case W_ExtraTokensAfterDirective:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "warning: extra tokens at end of '#" + arg1 + "' directive";

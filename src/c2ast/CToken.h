@@ -46,6 +46,8 @@ typedef enum {
 	TK_CONST,
 
 	TK_SIZEOF,
+	TK_ALIGNOF,
+	TK_GNU_ALIGNOF,
 
 	TK_SIGNED,
 	TK_UNSIGNED,
@@ -66,6 +68,8 @@ typedef enum {
 	TK_INLINE,
 	TK_RESTRICT,
 	TK_VOLATILE,
+
+	TK_ATTRIBUTE,
 
 	TK_NOT_KEYWORD,
 } CTokenKeyword;

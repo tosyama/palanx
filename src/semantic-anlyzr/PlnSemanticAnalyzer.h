@@ -63,6 +63,9 @@ struct StructDef {
 	// A C union: every field sits at offset 0. Only layout (buildStructDef) and
 	// diagnostics consult this; every other consumer sees offsets/totalSize.
 	bool   isUnion = false;
+	// A field (or one nested in an embedded struct) sits off its type's own
+	// alignment, as only a C packed struct allows; passed by value as MEMORY class.
+	bool   hasUnalignedField = false;
 	const char* keyword() const { return isUnion ? "union" : "struct"; }
 };
 

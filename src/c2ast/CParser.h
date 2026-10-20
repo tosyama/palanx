@@ -35,7 +35,8 @@ class CParser {
 	// leaving the tag name unresolved.
 	vector<json> capturedStructs_;
 	map<string, int> structIndex_;  // tag name -> index into capturedStructs_
-	void captureStructTag(const string &name, const json *fields, bool is_union);
+	// `body` holds "fields" and any struct-level "packed"/"aligned".
+	void captureStructTag(const string &name, const json *body, bool is_union);
 	string synthesizeAnonTag(const CToken* at);
 
 	// Every enum body seen while parsing, in first-appearance order. An
@@ -68,6 +69,7 @@ class CParser {
 	bool parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index);
 	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_struct);
 	bool enum_definition(string &name, const vector<CToken*> &tokens, int &result_index);
+	bool attribute_specifiers(json &attrs, const vector<CToken*> &tokens, int &result_index);
 
 	bool statement(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool jump_statement(json &ast, const vector<CToken*> &tokens, int &result_index);

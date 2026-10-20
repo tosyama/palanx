@@ -264,13 +264,17 @@ vector<list<CToken*> > extract_macro_func_args(list<CToken*> &tokens, const CMac
 	return args;
 }
 
+static bool token_spelling(const CToken* t, string& s);
+
 CToken* get_defined_id_token(list<CToken*> &unprocessed_tokens)
 {
 	// expect '(' ID ')' or ID
 	if (unprocessed_tokens.empty()) return NULL;
 
+	// Keywords are identifiers to the preprocessor, e.g. "defined(__attribute__)".
+	auto is_identifier = [](CToken* t) { return t->type == TT_ID || t->type == TT_KEYWORD; };
 	CToken* t = unprocessed_tokens.front();
-	if (t->type == TT_ID) {
+	if (is_identifier(t)) {
 		unprocessed_tokens.pop_front();
 		return t;
 	}
@@ -284,7 +288,7 @@ CToken* get_defined_id_token(list<CToken*> &unprocessed_tokens)
 	// expect ID
 	if (unprocessed_tokens.empty()) return NULL;
 	CToken* id_token = unprocessed_tokens.front();
-	if (id_token->type != TT_ID) return NULL;
+	if (!is_identifier(id_token)) return NULL;
 	unprocessed_tokens.pop_front(); // remove ID
 
 	// expect ')'
@@ -333,7 +337,9 @@ vector<CToken*> CPreprocessor::scan_macro(list<CToken*> &unprocessed_tokens, boo
 						err_lexer_no, err_token0_no);
 				}
 
-				CMacro* dm = macro_exists(*id_token->info.id);
+				string id_name;
+				token_spelling(id_token, id_name);
+				CMacro* dm = macro_exists(id_name);
 				if (dm) {
 					CToken* one_token = new CToken(TT_PP_NUMBER, id_token->lexer_no, t->token0_no);
 					one_token->info.str = new string("1");

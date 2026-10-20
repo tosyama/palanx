@@ -78,27 +78,31 @@ CParser::CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexer
 // type-specifier reference in a field/parameter/return type, and recursively
 // for a nested struct-typed field) and, for an anonymous struct/union body, from
 // declaration()'s tag synthesis (the typedef name stands in for the missing
-// tag). `fields` is null for a tag-only reference or forward declaration; a
+// tag). `body` is null for a tag-only reference or forward declaration; a
 // later full definition of the same tag promotes an existing tag-only entry
 // in place (preserving its first-seen position in the output) rather than
 // adding a duplicate. A first-seen full definition is never overwritten by a
 // later one (first definition wins) -- declaration() relies on this by
 // checking structIndex_ itself before calling, so a synthesized name never
 // collides with an unrelated struct already holding it.
-void CParser::captureStructTag(const string &name, const json *fields, bool is_union)
+void CParser::captureStructTag(const string &name, const json *body, bool is_union)
 {
 	auto it = structIndex_.find(name);
+	int idx;
 	if (it == structIndex_.end()) {
+		idx = (int)capturedStructs_.size();
+		structIndex_[name] = idx;
 		json entry = {{"name", name}};
 		if (is_union) entry["union"] = true;
-		if (fields) entry["fields"] = *fields;
-		structIndex_[name] = (int)capturedStructs_.size();
 		capturedStructs_.push_back(move(entry));
-		return;
+	} else {
+		idx = it->second;
 	}
-	json &entry = capturedStructs_[it->second];
-	if (fields && !entry.contains("fields"))
-		entry["fields"] = *fields;
+	json &entry = capturedStructs_[idx];
+	if (!body || entry.contains("fields")) return;
+	entry["fields"] = (*body)["fields"];
+	for (const char *key : {"packed", "aligned"})
+		if (body->contains(key)) entry[key] = (*body)[key];
 }
 
 // Named after the body's source location rather than a per-run counter:
@@ -336,9 +340,36 @@ bool signed_int(const vector<CToken*> &tokens, int &index)
 	return false;
 }
 
+[[noreturn]] static void throwUnsupportedAttribute(const string &name, const CToken *at)
+{
+	throw CPreprocessError(PlnC2AstMessage::getMessage(E_UnsupportedAttribute, name),
+		at->lexer_no, at->token0_no);
+}
+
+// For attrs recorded by attribute_specifiers() with an "unsupported" entry.
+[[noreturn]] static void throwUnsupportedAttribute(const json &attrs)
+{
+	const json &u = attrs["unsupported"];
+	throw CPreprocessError(PlnC2AstMessage::getMessage(E_UnsupportedAttribute, u["name"].get<string>()),
+		u["lexer"].get<int>(), u["token0"].get<int>());
+}
+
+// Combines attributes as GCC does: alignment only grows, and the first
+// unsupported attribute is the one reported.
+static void mergeAttributes(json &into, const json &from)
+{
+	if (from.contains("packed")) into["packed"] = true;
+	if (from.contains("aligned"))
+		into["aligned"] = max(into.value("aligned", 0LL), from["aligned"].get<long long>());
+	if (from.contains("unsupported") && !into.contains("unsupported"))
+		into["unsupported"] = from["unsupported"];
+}
+
 bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_struct)
 {
 	int index = result_index;
+	json struct_attrs = json::object();
+	if (!attribute_specifiers(struct_attrs, tokens, index)) return false;
 
 	if (CONSUME(TT_ID)) {
 		// struct with tag
@@ -369,7 +400,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 			string btk = base_vt.value("type-kind", "");
 			if ((btk == "strct" || btk == "union") && !base_vt.contains("type-name")) {
 				string tag = synthesizeAnonTag(tokens[field_start]);
-				captureStructTag(tag, &flocal["fields"], btk == "union");
+				captureStructTag(tag, &flocal, btk == "union");
 				base_vt["type-name"] = tag;
 				// C11 anonymous member: no member name, its fields belong to the owner.
 				if (CONSUME_PUNC(';')) {
@@ -377,18 +408,19 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 					continue;
 				}
 			}
-			json field = {{"var-type", base_vt}};
-			if (!declarator(field, tokens, index, false)) {
-				return false;
-			}
-			fields.push_back(field);
-			while (CONSUME_PUNC(',')) {
-				json field2 = {{"var-type", base_vt}};
-				if (!declarator(field2, tokens, index, false)) {
+			json spec_attrs = flocal.value("attributes", json::object());
+			do {
+				json field = {{"var-type", base_vt}, {"attributes", spec_attrs}};
+				if (!declarator(field, tokens, index, false)) {
 					return false;
 				}
-				fields.push_back(field2);
-			}
+				json attrs = move(field["attributes"]);
+				field.erase("attributes");
+				if (attrs.contains("unsupported")) throwUnsupportedAttribute(attrs);
+				for (const char *key : {"packed", "aligned"})
+					if (attrs.contains(key)) field[key] = attrs[key];
+				fields.push_back(move(field));
+			} while (CONSUME_PUNC(','));
 			EXPECT_PUNC(';');
 		} else {
 			break;
@@ -396,11 +428,15 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 	} while (true);
 
 	EXPECT_PUNC('}');
+	if (!attribute_specifiers(struct_attrs, tokens, index)) return false;
+	if (struct_attrs.contains("unsupported")) throwUnsupportedAttribute(struct_attrs);
 
 	ast["fields"] = move(fields);
+	for (const char *key : {"packed", "aligned"})
+		if (struct_attrs.contains(key)) ast[key] = struct_attrs[key];
 	string tagName = ast.value("struct-name", "");
 	if (!tagName.empty())
-		captureStructTag(tagName, &ast["fields"], !is_struct);
+		captureStructTag(tagName, &ast, !is_struct);
 	result_index = index;
 	return true;
 }
@@ -496,12 +532,17 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	// int", "volatile const int"), so consume them in a loop rather than a fixed
 	// sequence -- a fixed sequence would silently miss "const" in the other order.
 	bool is_const = false;
+	json attrs = json::object();
 	for (;;) {
 		if (CONSUME_KW(TK_INLINE)) continue;
 		if (CONSUME_KW(TK_VOLATILE)) continue;
 		if (CONSUME_KW(TK_CONST)) { is_const = true; continue; }
+		int before = index;
+		if (!attribute_specifiers(attrs, tokens, index)) return false;
+		if (index != before) continue;
 		break;
 	}
+	if (!attrs.empty()) ast["attributes"] = attrs;
 
 	// Single point applying `const` to the resolved var-type, so every branch
 	// below (prim/typedef/struct/union/enum) reflects it the same way instead of
@@ -579,6 +620,14 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	if (CONSUME_KW(TK_ENUM)) {
 		string name;
 		if (enum_definition(name, tokens, index)) {
+			// Every enum is laid out as int; a packed or aligned one would not be.
+			json enum_attrs = json::object();
+			int attr_start = index;
+			if (!attribute_specifiers(enum_attrs, tokens, index)) return false;
+			if (enum_attrs.contains("unsupported")) throwUnsupportedAttribute(enum_attrs);
+			if (!enum_attrs.empty())
+				throwUnsupportedAttribute(enum_attrs.contains("packed") ? "packed" : "aligned",
+					tokens[attr_start]);
 			set_vt({{"type-kind", "enum"}, {"type-name", name}});
 			result_index = index;
 			return true;
@@ -603,32 +652,44 @@ static void decayArrayParam(json &param)
 	}
 }
 
+// A parameter's layout attributes don't change how it is passed; one that
+// changes its type can't be represented.
+static void takeParamAttributes(json &param)
+{
+	if (param["attributes"].contains("unsupported")) throwUnsupportedAttribute(param["attributes"]);
+	param.erase("attributes");
+}
+
 bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index)
 {
 	int index = result_index;
 
 	json local;
 	if (declaration_specifiers(local, tokens, index)) {
-		json param = {{"var-type", local.value("var-type", json{})}};
+		json param = {{"var-type", local.value("var-type", json{})},
+			{"attributes", local.value("attributes", json::object())}};
 		if (!declarator(param, tokens, index, false)) {
 			if (!declarator(param, tokens, index, true)) { // abstract declarator
 				// debug_token(tokens[index]);
 				return false;
 			}
 		}
+		takeParamAttributes(param);
 		decayArrayParam(param);
 		params.push_back(param);
 
 		while (CONSUME_PUNC(',')) {
 			json local2;
 			if (declaration_specifiers(local2, tokens, index)) {
-				json param2 = {{"var-type", local2.value("var-type", json{})}};
+				json param2 = {{"var-type", local2.value("var-type", json{})},
+					{"attributes", local2.value("attributes", json::object())}};
 				if (!declarator(param2, tokens, index, false)) {
 					if (!declarator(param2, tokens, index, true)) { // abstract declarator
 						// debug_token(tokens[index]);
 						return false;
 					}
 				}
+				takeParamAttributes(param2);
 				decayArrayParam(param2);
 				params.push_back(param2);
 			} else if (CONSUME_PUNC('...')) {
@@ -754,35 +815,32 @@ bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_
 {
 	int index = result_index;
 	json saved = decl;
+	json attrs = decl.value("attributes", json::object());
+	auto fail = [&]() { decl = move(saved); return false; };
 
+	if (!attribute_specifiers(attrs, tokens, index)) return fail();
 	while (CONSUME_PUNC('*')) {
 		bool ptr_const = CONSUME_KW(TK_CONST);       // e.g. int * const p
 		CONSUME_KW(TK_VOLATILE);
 		decl["var-type"] = {{"type-kind", "pntr"}, {"base-type", move(decl["var-type"])}};
 		if (ptr_const) decl["var-type"]["const"] = true;
+		if (!attribute_specifiers(attrs, tokens, index)) return fail();
 	}
 
 	int group_index = -1, close_index = -1;
 	if (CONSUME_PUNC('(')) {
 		group_index = index;
-		if (!skipToMatchingParen(tokens, index, close_index)) {
-			decl = move(saved);
-			return false;
-		}
+		if (!skipToMatchingParen(tokens, index, close_index)) return fail();
 
 	} else if (!is_typeonly) {
 		CONSUME_KW(TK_RESTRICT); // C99 restrict qualifier
-		if (!CONSUME(TT_ID)) {
-			decl = move(saved);
-			return false;
-		}
+		if (!CONSUME(TT_ID)) return fail();
 		decl["name"] = *tokens[index-1]->info.id;
 	}
 
-	if (!declarator_tail(decl, tokens, index)) {
-		decl = move(saved);
-		return false;
-	}
+	if (!declarator_tail(decl, tokens, index)) return fail();
+	if (!attribute_specifiers(attrs, tokens, index)) return fail();
+	if (!attrs.empty()) decl["attributes"] = move(attrs);
 
 	if (group_index >= 0) {
 		// Parse the group's interior as a nested declarator level, now that the type
@@ -793,10 +851,7 @@ bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_
 		// "int(char*)", the same shapes the old EXPECT_PUNC(')')-right-after-recursing
 		// check used to reject.
 		int gi = group_index;
-		if (!declarator(decl, tokens, gi, is_typeonly) || gi != close_index) {
-			decl = move(saved);
-			return false;
-		}
+		if (!declarator(decl, tokens, gi, is_typeonly) || gi != close_index) return fail();
 	}
 
 	result_index = index;
@@ -809,6 +864,8 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 
 	bool is_extern = false;
 	bool is_static = false;
+	json decl_attrs = json::object();
+	if (!attribute_specifiers(decl_attrs, tokens, index)) return false;
 	bool is_typedef = CONSUME_KW(TK_TYPEDEF);
 
 	if (!is_typedef) {
@@ -828,8 +885,8 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 			// itself (the single point every struct tag reference goes through);
 			// nothing to do here beyond clearing the scratch keys it wrote into ast.
 			if (struct_union_definition(ast, tokens, index, is_struct_kw) && CONSUME_PUNC(';')) {
-				ast.erase("struct-name");
-				ast.erase("fields");
+				for (const char *key : {"struct-name", "fields", "packed", "aligned"})
+					ast.erase(key);
 				result_index = index;
 				return true;
 			}
@@ -849,8 +906,9 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 			result_index = index;
 			return true;
 		}
+		if (local.contains("attributes")) mergeAttributes(decl_attrs, local["attributes"]);
 		vector<json> decls;
-		decls.push_back({{"var-type", base_vt}});
+		decls.push_back({{"var-type", base_vt}, {"attributes", decl_attrs}});
 		if (declarator(decls.back(), tokens, index, false)) {
 			// parsed first declarator
 
@@ -859,7 +917,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 			// below -- all go through emitDeclarator() rather than only the
 			// first being visible.
 			while (CONSUME_PUNC(',')) {
-				decls.push_back({{"var-type", base_vt}});
+				decls.push_back({{"var-type", base_vt}, {"attributes", decl_attrs}});
 				bool ok = declarator(decls.back(), tokens, index, false);
 				BOOST_ASSERT(ok);
 			}
@@ -887,8 +945,12 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 					string tk0 = vt0.value("type-kind", "");
 					if ((tk0 == "strct" || tk0 == "union") && !vt0.contains("type-name")) {
 						const string& name = decls[0]["name"].get<string>();
-						if (structIndex_.find(name) == structIndex_.end()) {
-							captureStructTag(name, &local["fields"], tk0 == "union");
+						// GCC gives a typedef's own aligned attribute to the name
+						// only (the body keeps its size), which Palan can't
+						// express; such a typedef stays unregistered.
+						if (structIndex_.find(name) == structIndex_.end()
+								&& decls[0]["attributes"].empty()) {
+							captureStructTag(name, &local, tk0 == "union");
 							vt0["type-name"] = name;
 						}
 					}
@@ -938,6 +1000,14 @@ void CParser::emitDeclarator(json &ast, json &decl,
 	auto& vt = decl["var-type"];
 	BOOST_ASSERT(vt.is_object());
 	string tk = vt.value("type-kind", "");
+	json attrs = move(decl["attributes"]);
+	decl.erase("attributes");
+	if (!attrs.empty()) {
+		// A typedef can't carry its own type change or alignment into Palan, so
+		// the name stays unknown; elsewhere only a type change matters.
+		if (is_typedef) return;
+		if (attrs.contains("unsupported")) throwUnsupportedAttribute(attrs);
+	}
 
 	if (!is_static && !is_typedef && tk == "func") {
 		BOOST_ASSERT(decl.contains("name"));
@@ -1273,6 +1343,59 @@ static json foldBitNot(const json &node)
 	return makeTypedLitInt(~litIntBits(node), intPrimType(width, is_signed));
 }
 
+// GCC's __attribute__((...)) lists. Only what changes a layout ("packed",
+// "aligned") or a type itself ("vector_size", "mode") is recorded into
+// `attrs`; the rest (noreturn, format, nonnull, ...) is skipped.
+bool CParser::attribute_specifiers(json &attrs, const vector<CToken*> &tokens, int &result_index)
+{
+	int index = result_index;
+	while (CONSUME_KW(TK_ATTRIBUTE)) {
+		EXPECT_PUNC('(');
+		EXPECT_PUNC('(');
+		while (!CONSUME_PUNC(')')) {
+			if (index >= tokens.size()) return false;
+			const CToken *at = tokens[index];
+			string name;
+			if (at->type == TT_ID) name = *at->info.id;
+			else if (at->type == TT_KEYWORD) name = CLexer::keywords[at->info.keyword];
+			else return false;
+			index++;
+			if (name.size() > 4 && name.starts_with("__") && name.ends_with("__"))
+				name = name.substr(2, name.size() - 4);
+
+			json found = json::object();
+			auto unsupported = [&]() {
+				found["unsupported"] = {{"name", name}, {"lexer", at->lexer_no}, {"token0", at->token0_no}};
+			};
+			if (name == "packed") found["packed"] = true;
+			else if (name == "vector_size" || name == "mode") unsupported();
+			if (CONSUME_PUNC('(')) {
+				int args = index, close_index;
+				if (!skipToMatchingParen(tokens, index, close_index)) return false;
+				if (name == "aligned") {
+					json n;
+					unsigned long long v = 0;
+					if (constant_expression(n, tokens, args) && args == close_index && isLitInt(n)
+							&& n["value"].get_ref<const string&>()[0] != '-')
+						v = litIntBits(n);
+					if (v && !(v & (v - 1)) && v <= LLONG_MAX) found["aligned"] = (long long)v;
+					else unsupported();
+				}
+			} else if (name == "aligned") {
+				found["aligned"] = 16LL;  // the largest alignment on x86-64
+			}
+			mergeAttributes(attrs, found);
+			if (!CONSUME_PUNC(',')) {
+				EXPECT_PUNC(')');
+				break;
+			}
+		}
+		EXPECT_PUNC(')');
+	}
+	result_index = index;
+	return true;
+}
+
 // C's own x86-64 layout rules, not SA's buildStructDef: that one lays out only the
 // shapes Palan can represent, while sizeof must size any type C allows.
 bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
@@ -1310,7 +1433,8 @@ bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
 		if (!entry.contains("fields")) return false;
 		const json &fields = entry["fields"];
 		bool is_union = tk == "union";
-		long long offset = 0, max_align = 1;
+		bool packed = entry.value("packed", false);
+		long long offset = 0, max_align = entry.value("aligned", 1LL);
 		for (size_t i = 0; i < fields.size(); i++) {
 			const json &fvt = fields[i]["var-type"];
 			long long fsize, falign;
@@ -1323,6 +1447,8 @@ bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
 			} else if (!typeSizeAlign(fvt, fsize, falign)) {
 				return false;
 			}
+			if (packed || fields[i].value("packed", false)) falign = 1;
+			falign = max(falign, fields[i].value("aligned", 1LL));
 			max_align = max(max_align, falign);
 			if (is_union) offset = max(offset, fsize);
 			else offset = (offset + falign - 1) / falign * falign + fsize;
@@ -1450,7 +1576,8 @@ bool CParser::unary_expression(json &value, const vector<CToken*> &tokens, int &
 		return true;
 	}
 
-	if (CONSUME_KW(TK_SIZEOF)) {
+	bool is_sizeof = CONSUME_KW(TK_SIZEOF);
+	if (is_sizeof || CONSUME_KW(TK_ALIGNOF) || CONSUME_KW(TK_GNU_ALIGNOF)) {
 		EXPECT_PUNC('(');
 
 		json slocal;
@@ -1465,7 +1592,7 @@ bool CParser::unary_expression(json &value, const vector<CToken*> &tokens, int &
 		EXPECT_PUNC(')');
 		long long size, align;
 		if (typeSizeAlign(sdecl["var-type"], size, align))
-			value = makeTypedLitInt(size, intPrimType(64, false));
+			value = makeTypedLitInt(is_sizeof ? size : align, intPrimType(64, false));
 		else
 			value = json{};
 		result_index = index;

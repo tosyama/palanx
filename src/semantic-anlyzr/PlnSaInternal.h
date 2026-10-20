@@ -335,11 +335,11 @@ inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
 }
 
 // Classifies a struct passed or returned by value per the System V AMD64 ABI
-// (§3.2.3): over 16 bytes is MEMORY class (an empty vector here); 16 bytes or
-// less travels in up to two eightbytes, each INTEGER or SSE.
+// (§3.2.3): over 16 bytes or with an unaligned field is MEMORY class (an empty
+// vector here); otherwise it travels in up to two eightbytes, each INTEGER or SSE.
 inline vector<Eightbyte> classifySysVStruct(const StructDef& def, const map<string, StructDef>& defs)
 {
-	if (def.totalSize > 16) return {};  // MEMORY class
+	if (def.totalSize > 16 || def.hasUnalignedField) return {};  // MEMORY class
 
 	int nEightbytes = (def.totalSize + 7) / 8;
 	int tailWidth = def.totalSize - 8 * (nEightbytes - 1);

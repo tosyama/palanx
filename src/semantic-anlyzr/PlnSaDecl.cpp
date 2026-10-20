@@ -47,25 +47,36 @@ static StructDef buildStructDef(const string& name,
                                 const json& fields,
                                 const map<string, StructDef>& structDefs,
                                 const string& errPrefix,
-                                bool isUnion = false)
+                                bool isUnion = false,
+                                bool packed = false,
+                                int aligned = 1)
 {
 	StructDef def;
 	def.name = name;
 	def.isUnion = isUnion;
-	int offset = 0, maxAlign = 1;
+	int offset = 0, maxAlign = aligned;
+	bool fieldPacked = false;
+	int fieldAligned = 1;
 	// Returns the new field's offset; a union overlays every field at 0 and
 	// sizes to its largest member instead of advancing past each one.
+	// GCC's packed/aligned attributes (C structs only) override `align`.
 	auto place = [&](int64_t size, int align) {
+		int naturalAlign = align;
+		if (packed || fieldPacked) align = 1;
+		align = max(align, fieldAligned);
 		maxAlign = max(maxAlign, align);
 		if (isUnion) {
 			offset = max<int64_t>(offset, size);
 			return 0;
 		}
 		int at = alignUp(offset, align);
+		if (at % naturalAlign) def.hasUnalignedField = true;
 		offset = at + size;
 		return at;
 	};
 	for (auto& f : fields) {
+		fieldPacked = f.value("packed", false);
+		fieldAligned = f.value("aligned", 1);
 		const json& vtype = f["var-type"];
 		string tk = vtype.value("type-kind", "");
 		string fieldName = f.value("name", "");
@@ -119,6 +130,7 @@ static StructDef buildStructDef(const string& name,
 			}
 			int align = sub.maxAlign;
 			int at = place(sub.totalSize, align);
+			if (sub.hasUnalignedField) def.hasUnalignedField = true;
 			if (!f.contains("name")) {
 				// A C11 anonymous member: promote its fields so every consumer
 				// finds s.a as an ordinary field of the owner. sub was registered
@@ -255,6 +267,7 @@ static StructDef buildStructDef(const string& name,
 				stride = leafDef.totalSize;
 				elemKind = "struct";
 				align = leafDef.maxAlign;
+				if (leafDef.hasUnalignedField) def.hasUnalignedField = true;
 			} else {
 				// base_kind == "arr" ([n]$[m]T nested) -- not supported
 				cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
@@ -1360,10 +1373,12 @@ void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& 
 			return;
 		}
 		json field = {{"var-type", vt}};
-		if (f.contains("name")) field["name"] = f["name"];
+		for (const char* key : {"name", "packed", "aligned"})
+			if (f.contains(key)) field[key] = f[key];
 		fields.push_back(field);
 	}
-	structDefs_[name] = buildStructDef(name, fields, structDefs_, locPrefix(cincludeStmt), s.value("union", false));
+	structDefs_[name] = buildStructDef(name, fields, structDefs_, locPrefix(cincludeStmt),
+	                                   s.value("union", false), s.value("packed", false), s.value("aligned", 1));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_type_alias(const json& stmt)

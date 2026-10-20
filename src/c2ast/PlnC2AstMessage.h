@@ -16,6 +16,7 @@ enum PlnC2AstMessageCode {
 	E_InvalidDefinedSyntax,
 	E_MalformedMacroArgList,
 	E_UnhandledToken,
+	E_UnsupportedAttribute,	// arg1: attribute name
 	W_ExtraTokensAfterDirective,	// arg1: directive name (undef/ifdef/else/endif)
 	// Group A: directive errors
 	E_InvalidDirective,

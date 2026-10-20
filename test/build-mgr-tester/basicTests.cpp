@@ -1484,6 +1484,25 @@ TEST(build_mgr, c_struct_byval) {
 		"variadic_after 0.5 7 2.25 9\n");
 }
 
+TEST(build_mgr, c_packed_aligned) {
+	// gcc's side prints its own layout and what it received through each path.
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("315_c_packed_aligned"),
+		"Pk 13 1 5, Al 32, Fa 24 8 12, TPk 3, Outer 40 1 14\n"
+		"pk 1 2 3\n11 12 13\n"
+		"2 12 102\n13\n"
+		"20 21 32\n"
+		"fa 4 5 12\n"
+		"tpk 6 7\n"
+		"outer 8 9 10 11 13\n");
+}
+
+TEST(build_mgr, epoll_packed) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/316_epoll_packed.pa"),
+		"1 1 1234605616436508552\n");
+}
+
 TEST(build_mgr, c_anon_member) {
 	cleanTestEnv();
 	ASSERT_EQ(runWithCObj("298_c_anon_member"),

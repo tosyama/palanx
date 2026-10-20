@@ -81,8 +81,8 @@ forms (e.g. `#define S_IRWXU (S_IREAD|S_IWRITE|S_IEXEC)`) — evaluated left-to-
 precedence level. Literals may carry C's `U`/`L`/`LL` suffixes, and any operand may be an integer
 cast (e.g. ncurses' `((chtype)(1U) << 18)`) or `sizeof(type)`, typed `uint64` (`size_t`). `sizeof`
 folds for a primitive, pointer, typedef, array of a folded size, enum, or a struct/union whose
-body is in the same header, laid out by the x86-64 C rules (`__attribute__((packed))` and
-`aligned` are not seen); for anything else (an incomplete struct, `void`, a typedef from an earlier
+body is in the same header, laid out by the x86-64 C rules including `packed`/`aligned` (see
+Struct definition model); `_Alignof`/`__alignof__` fold the same way. For anything else (an incomplete struct, `void`, a typedef from an earlier
 `cinclude`) it doesn't fold. An operation with no suffixed or cast operand uses
 exact signed 64-bit arithmetic; otherwise it follows C's integer promotions and usual arithmetic
 conversions (LP64), with unsigned results wrapping to their width. An operation that would
@@ -154,6 +154,10 @@ AST in. Same field-list shape as the native `struct-def` statement.
   characters no C identifier can, so it never collides with a real tag, and Palan source cannot
   spell it.
 - union - `true` when the tag is a C union; omitted for a struct.
+- packed - `true` for GCC's `__attribute__((packed))` on the struct/union itself: every field
+  is aligned to 1. Omitted otherwise.
+- aligned - Integer from `__attribute__((aligned(N)))` on the struct/union itself (16 for a bare
+  `aligned`): its alignment is at least N. Omitted otherwise.
 - fields - Field list; omitted when this header never gives the tag a body (forward
   declaration or bare reference only). SA registers such a tag as an incomplete struct
   (usable only through a pointer) rather than leaving the name unresolved — see SASpec.md.
@@ -163,6 +167,17 @@ AST in. Same field-list shape as the native `struct-def` statement.
   - var-type\* - Field type (same Variable type object format; a C array declarator, e.g.
     `char name[16];`, produces an `arr` type-kind field — see `embedded` above and SASpec.md's
     C-origin field admission rules for which array shapes SA accepts)
+  - packed / aligned - The same attributes on the field alone: `packed` aligns it to 1,
+    `aligned` raises its alignment to at least N. Omitted otherwise.
+
+c2ast reads GCC's `__attribute__((...))` itself (it is a keyword, so the empty
+`#define __attribute__(xyz)` that `sys/cdefs.h` issues for a non-GNU compiler has no effect).
+Only `packed` and `aligned` are recorded; other attributes (`noreturn`, `format`, ...) are
+ignored. `vector_size` and `mode`, which change the type itself, are rejected: a typedef
+carrying them is not captured, and on any other declaration c2ast reports an error, as it does
+for `packed`/`aligned` on an enum. A typedef carrying `packed`/`aligned` on its own declarator
+is not captured either: GCC gives that alignment to the typedef name only, which Palan has no
+way to express.
 
 Global variable model
 ----------------------

@@ -121,6 +121,50 @@ TEST(c2ast_error, va_args_not_last) {
 	ASSERT_NE(out.find("malformed macro argument list"), string::npos);
 }
 
+TEST(c2ast_error, vector_size_field) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_017_vector_size_field.h");
+	ASSERT_NE(out.find("error_017_vector_size_field.h:1:35: error: attribute 'vector_size' is not supported here"),
+		string::npos);
+}
+
+TEST(c2ast_error, packed_enum) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_018_packed_enum.h");
+	ASSERT_NE(out.find("error_018_packed_enum.h:1:19: error: attribute 'packed' is not supported here"),
+		string::npos);
+}
+
+TEST(c2ast_error, malformed_attribute) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_019_malformed_attribute.h");
+	ASSERT_NE(out.find("error_019_malformed_attribute.h:1:1: error: unexpected token"), string::npos);
+}
+
+TEST(c2ast_error, mode_param) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_020_mode_param.h");
+	ASSERT_NE(out.find("error_020_mode_param.h:1:29: error: attribute 'mode' is not supported here"), string::npos);
+}
+
+TEST(c2ast_error, mode_global) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_021_mode_global.h");
+	ASSERT_NE(out.find("error_021_mode_global.h:1:29: error: attribute 'mode' is not supported here"), string::npos);
+}
+
+TEST(c2ast_error, mode_struct) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_022_mode_struct.h");
+	ASSERT_NE(out.find("error_022_mode_struct.h:1:36: error: attribute 'mode' is not supported here"), string::npos);
+}
+
 TEST(c2ast_error, if_missing_colon) {
 	cleanTestEnv();
 	string out = execTestCommand(

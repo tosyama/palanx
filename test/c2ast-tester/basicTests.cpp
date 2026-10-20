@@ -1160,6 +1160,57 @@ TEST(c2ast, sizeof_fold) {
     ASSERT_EQ(find_const("SZ_UNKNOWN"), nullptr);
 }
 
+TEST(c2ast, attributes) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/047_attributes.h");
+    json ast = json::parse(output);
+    auto find = [&](const string& section, const string& name) -> json* {
+        for (auto& e : ast["ast"][section])
+            if (e["name"] == name) return &e;
+        return nullptr;
+    };
+
+    json* p = find("structs", "P");
+    ASSERT_NE(p, nullptr);
+    ASSERT_EQ((*p)["packed"], true);
+    ASSERT_EQ((*find("structs", "A"))["aligned"], 32);
+    json& f = (*find("structs", "F"))["fields"];
+    ASSERT_EQ(f[1]["aligned"], 8);
+    ASSERT_EQ(f[2]["packed"], true);
+    ASSERT_EQ((*find("structs", "S"))["fields"][0]["aligned"], 8);
+    ASSERT_EQ((*find("structs", "U"))["packed"], true);
+    ASSERT_EQ((*find("structs", "TP"))["packed"], true);
+    ASSERT_EQ((*find("structs", "TB"))["aligned"], 16);
+
+    // A typedef's own type change or alignment can't be carried over.
+    ASSERT_EQ(find("structs", "TA"), nullptr);
+    for (const char* name : {"TA", "u16m", "v4f", "ai8", "aibad", "both"})
+        ASSERT_EQ(find("typedefs", name), nullptr) << name;
+
+    // Expected values are what gcc gives on x86-64.
+    auto expect_const = [&](const string& name, const string& value) {
+        json* c = find("constants", name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+    };
+    expect_const("ATTR_MACRO_DEFINED", "1");
+    expect_const("SZ_P", "13");
+    expect_const("SZ_A", "32");
+    expect_const("SZ_F", "16");
+    expect_const("SZ_TP", "9");
+    expect_const("SZ_TB", "16");
+    expect_const("SZ_S", "16");
+    expect_const("SZ_U", "4");
+    expect_const("AL_A", "32");
+    expect_const("AL_P", "1");
+    ASSERT_EQ(find("constants", "SZ_TA"), nullptr);
+
+    for (const char* name : {"die", "pure_f", "cleanup_f"})
+        ASSERT_NE(find("functions", name), nullptr) << name;
+    ASSERT_EQ((*find("functions", "pure_f"))["parameters"][0].contains("attributes"), false);
+    ASSERT_NE(find("globals", "aligned_var"), nullptr);
+}
+
 TEST(c2ast, sizeof_fd_set) {
     // fd_set's array size and __NFDBITS are both built from sizeof.
     cleanTestEnv();

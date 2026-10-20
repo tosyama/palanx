@@ -31,6 +31,8 @@ CLexer::CLexer(CFileInfo &infile) : infile(move(infile)), no(-1)
 		keywords[TK_STATIC] = "static";
 		keywords[TK_CONST] = "const";
 		keywords[TK_SIZEOF] = "sizeof";
+		keywords[TK_ALIGNOF] = "_Alignof";
+		keywords[TK_GNU_ALIGNOF] = "__alignof__";
 		keywords[TK_SIGNED] = "signed";
 		keywords[TK_UNSIGNED] = "unsigned";
 		keywords[TK_SHORT] = "short";
@@ -48,6 +50,9 @@ CLexer::CLexer(CFileInfo &infile) : infile(move(infile)), no(-1)
 		keywords[TK_INLINE] = "inline";
 		keywords[TK_RESTRICT] = "restrict";
 		keywords[TK_VOLATILE] = "volatile";
+		// A keyword, as in GCC, so the "#define __attribute__(xyz)" that
+		// sys/cdefs.h issues for non-GNU compilers never expands.
+		keywords[TK_ATTRIBUTE] = "__attribute__";
 	}
 }
 

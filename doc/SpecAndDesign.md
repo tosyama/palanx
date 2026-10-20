@@ -116,6 +116,8 @@ Design:
  exported to `ast.constants` again unless the header redefines them, and the ones the header
  `#undef`s are listed in `ast.undefined-macros`.
  The included C header files will be expanded recursively, searching for headers in the specified search paths and current directory.
+ `__GNUC__` is not predefined, so headers take their non-GNU paths, but `__attribute__` is a
+ keyword: `packed` and `aligned` reach the struct layout (ASTSpec.md, Struct definition model).
 
 ### 3.4 Semantic Analyzer (palan-sa)
 Responsibility:
