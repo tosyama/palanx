@@ -1,0 +1,4 @@
+type R { [2]int32 a; };
+R r;
+$[2]int32 a;
+a ->> r.a;

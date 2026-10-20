@@ -1,0 +1,6 @@
+type P { int32 x; };
+func mk() -> P p { 1 -> p.x; }
+func pick(@P p) -> @P r { p -> r; }
+func idx() -> int32 r { 0 -> r; }
+[2]@P ps;
+pick(@mk()) -> ps[idx()];

@@ -1,7 +1,7 @@
 /// c2ast error case tests
 ///
-/// @file	errorTests.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file errorTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
@@ -112,6 +112,86 @@ TEST(c2ast_error, malformed_macro_args) {
 	string out = execTestCommand(
 		"bin/palan-c2ast ../test/testdata/c2ast/error_011_malformed_macro_args.h");
 	ASSERT_NE(out.find("malformed macro argument list"), string::npos);
+}
+
+TEST(c2ast_error, va_args_not_last) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_016_va_args_not_last.h");
+	ASSERT_NE(out.find("malformed macro argument list"), string::npos);
+}
+
+TEST(c2ast_error, vector_size_field) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_017_vector_size_field.h");
+	ASSERT_NE(out.find("error_017_vector_size_field.h:1:35: error: attribute 'vector_size' is not supported here"),
+		string::npos);
+}
+
+TEST(c2ast_error, packed_enum) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_018_packed_enum.h");
+	ASSERT_NE(out.find("error_018_packed_enum.h:1:19: error: attribute 'packed' is not supported here"),
+		string::npos);
+}
+
+TEST(c2ast_error, malformed_attribute) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_019_malformed_attribute.h");
+	ASSERT_NE(out.find("error_019_malformed_attribute.h:1:1: error: unexpected token"), string::npos);
+}
+
+TEST(c2ast_error, malformed_attribute_positions) {
+	const char* files[] = {
+		"error_023_attr_struct_head.h", "error_024_attr_struct_tail.h", "error_025_attr_decl_spec.h",
+		"error_026_attr_enum_tail.h", "error_027_attr_declarator.h", "error_028_attr_after_ptr.h",
+		"error_029_attr_decl_head.h", "error_030_attr_list_sep.h", "error_031_attr_unclosed.h",
+		"error_032_attr_one_paren.h", "error_033_attr_args_unclosed.h", "error_034_attr_eof.h",
+	};
+	for (const char* file : files) {
+		cleanTestEnv();
+		string out = execTestCommand(string("bin/palan-c2ast ../test/testdata/c2ast/") + file);
+		ASSERT_NE(out.find(string(file) + ":1:1: error: unexpected token"), string::npos) << file << ": " << out;
+	}
+}
+
+TEST(c2ast_error, unsupported_attribute_args) {
+	const pair<string, string> cases[] = {
+		{"error_035_aligned_enum.h", ":1:14: error: attribute 'aligned' is not supported here"},
+		{"error_036_mode_enum.h", ":1:29: error: attribute 'mode' is not supported here"},
+		{"error_037_aligned_negative.h", ":1:33: error: attribute 'aligned' is not supported here"},
+		{"error_038_aligned_not_const.h", ":2:33: error: attribute 'aligned' is not supported here"},
+		{"error_039_aligned_too_large.h", ":1:33: error: attribute 'aligned' is not supported here"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string out = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/" + file);
+		ASSERT_NE(out.find(file + expected), string::npos) << file << ": " << out;
+	}
+}
+
+TEST(c2ast_error, mode_param) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_020_mode_param.h");
+	ASSERT_NE(out.find("error_020_mode_param.h:1:29: error: attribute 'mode' is not supported here"), string::npos);
+}
+
+TEST(c2ast_error, mode_global) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_021_mode_global.h");
+	ASSERT_NE(out.find("error_021_mode_global.h:1:29: error: attribute 'mode' is not supported here"), string::npos);
+}
+
+TEST(c2ast_error, mode_struct) {
+	cleanTestEnv();
+	string out = execTestCommand(
+		"bin/palan-c2ast ../test/testdata/c2ast/error_022_mode_struct.h");
+	ASSERT_NE(out.find("error_022_mode_struct.h:1:36: error: attribute 'mode' is not supported here"), string::npos);
 }
 
 TEST(c2ast_error, if_missing_colon) {

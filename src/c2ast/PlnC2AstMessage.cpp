@@ -2,8 +2,8 @@
 ///
 /// Manage output message descriptions.
 ///
-/// @file		PlnC2AstMessage.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnC2AstMessage.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnC2AstMessage.h"
 #include "../common/PlnDefs.h"
@@ -23,6 +23,8 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 				" -p, --path <dir>      Add search path for C headers.\n"
 				" -c, --curdir <dir>    Specify current directory for relative includes.\n"
 				" -s, --sysheader       Treat input as a system header.\n"
+				" -m, --macros <file>   Start from a macro state (an earlier run's\n"
+				"                       \"macro-state\" output) instead of predefined.h.\n"
 				" -v, --version         Display version.\n"
 				" -h, --help            Display help.\n";
 
@@ -44,6 +46,10 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 
 		case E_UnhandledToken:
 			return "unexpected token";
+
+		case E_UnsupportedAttribute:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "attribute '" + arg1 + "' is not supported here";
 
 		case W_ExtraTokensAfterDirective:
 			BOOST_ASSERT(arg1 != "\x01");

@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+import "lib_private_alias_type.pa";
+type P { int64 a; int64 b; };
+Q q; P p;
+PP r = @!q.p;
+setP(r, 8);
+9 -> p.b;
+printf("%d %ld\n", q.p.a, p.b);

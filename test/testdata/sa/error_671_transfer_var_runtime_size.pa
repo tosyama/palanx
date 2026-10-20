@@ -1,0 +1,4 @@
+int64 n = 4;
+[n]int32 a;
+[n]int32 c;
+a ->> c;

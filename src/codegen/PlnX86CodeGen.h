@@ -20,8 +20,9 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitLeaLabel(const string& reg, const string& label);
     void emitMovImm(const string& dst, bool dst_is_mem, VRegType type, long long value);
     void emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to);
-    void emitCallC(const string& name, int nFloatArgs = 0);
-    int  emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs);
+    void emitCallC(const string& name, int nFloatArgs = 0, bool indirect = false);
+    int  emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs,
+                      const PhysLoc* callee = nullptr, const vector<StructArgSpan>& structArgs = {});
     void emitExit(int code);
 
     // Per-function prologue
@@ -43,6 +44,8 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrMod(const Mod& i, const RegMap& rm);
     void emitInstrNeg(const Neg& i, const RegMap& rm);
     void emitInstrBitNot(const BitNot& i, const RegMap& rm);
+    void emitInstrShift(const Shift& i, const RegMap& rm);
+    void emitInstrShiftImm(const ShiftImm& i, const RegMap& rm);
     void emitInstrCmp(const Cmp& i, const RegMap& rm);
     void emitInstrConvert(const Convert& i, const RegMap& rm);
     void emitInstrCallC(const CallC& i, const RegMap& rm);
@@ -58,6 +61,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrDerefStore(const DerefStore& ds, const RegMap& rm);
     void emitInstrCalcAddr  (const CalcAddr&   ca, const RegMap& rm);
     void emitInstrLeaLocal  (const LeaLocal&   ll, const RegMap& rm);
+    void emitInstrFrameAddr (const FrameAddr&  fa, const RegMap& rm, const vector<int>& blockOffsets);
 
 public:
     static const PhysRegs x86PhysRegs;

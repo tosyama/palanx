@@ -1,0 +1,2 @@
+const S = "abc";
+const X = S + 1;

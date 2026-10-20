@@ -1,0 +1,74 @@
+cinclude <stdio.h>;
+cinclude "296_struct_byval.h" link "296_struct_byval.o";
+
+I8 i8;
+1 -> i8.a; 2 -> i8.b;
+I8 i8r = i8_add(i8, 10);
+printf("%d %d / %d %d\n", i8r.a, i8r.b, i8.a, i8.b);
+
+I16 i16;
+3 -> i16.a; 4 -> i16.b;
+I16 i16r = i16_add(i16, 10);
+printf("%ld %ld\n", i16r.a, i16r.b);
+
+F2 f2;
+1.5 -> f2.x; 2.5 -> f2.y;
+F2 f2r = f2_add(f2, 1.0);
+printf("%.1f %.1f\n", f2r.x, f2r.y);
+
+D2 d2;
+1.5 -> d2.x; 2.5 -> d2.y;
+D2 d2r = d2_add(d2, 1.0);
+printf("%.1f %.1f\n", d2r.x, d2r.y);
+
+Mix mix;
+0.5 -> mix.d; 7 -> mix.i;
+Mix mixr = mix_add(mix, 1);
+printf("%.1f %d\n", mixr.d, mixr.i);
+
+Mix2 mix2r = mix2_add({i: 5, f: 0.5}, 1);
+printf("%d %.1f\n", mix2r.i, mix2r.f);
+
+B3 b3;
+1 -> b3.a; 2 -> b3.b; 3 -> b3.c;
+B3 b3r = b3_add(b3, 10);
+printf("%d %d %d\n", b3r.a, b3r.b, b3r.c);
+
+B5 b5;
+1 -> b5.a; 2 -> b5.b; 3 -> b5.c; 4 -> b5.d; 5 -> b5.e;
+B5 b5r = b5_add(b5, 10);
+printf("%d %d %d %d %d\n", b5r.a, b5r.b, b5r.c, b5r.d, b5r.e);
+
+B6 b6;
+1000 -> b6.a; 2000 -> b6.b; 3000 -> b6.c;
+B6 b6r = b6_add(b6, 1);
+printf("%d %d %d\n", b6r.a, b6r.b, b6r.c);
+
+B7 b7;
+1 -> b7.a; 2 -> b7.b; 3 -> b7.c; 4 -> b7.d; 5 -> b7.e; 6 -> b7.f; 7 -> b7.g;
+B7 b7r = b7_add(b7, 10);
+printf("%d %d %d %d %d %d %d\n", b7r.a, b7r.b, b7r.c, b7r.d, b7r.e, b7r.f, b7r.g);
+
+B11 b11;
+1 -> b11.c[0]; 9 -> b11.c[8]; 11 -> b11.c[10];
+B11 b11r = b11_add(b11, 10);
+printf("%d %d %d\n", b11r.c[0], b11r.c[8], b11r.c[10]);
+
+Big big;
+1 -> big.a; 2 -> big.b; 3 -> big.c;
+Big bigr = big_add(big, 10);
+printf("%ld %ld %ld / %ld\n", bigr.a, bigr.b, bigr.c, big.a);
+
+Big20 big20;
+1 -> big20.c[0]; 20 -> big20.c[19];
+Big20 big20r = big20_add(big20, 10);
+printf("%d %d\n", big20r.c[0], big20r.c[19]);
+
+U u;
+1.0 -> u.f;
+U ur = u_bits(u);
+printf("%x\n", ur.i);
+
+int_regs_full(1, 2, 3, 4, 5, i16, 7);
+flt_regs_full(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, d2, 9.0);
+variadic_after(mix, "%.2f %d\n", 2.25, 9);

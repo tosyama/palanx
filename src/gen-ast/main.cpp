@@ -2,7 +2,7 @@
 /// Command line tool main.
 ///
 /// @file main.cpp
-/// @copyright 2024 YAMAGUCHI Toshinobu
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 #include <iostream>
 #include <vector>
@@ -65,7 +65,8 @@ int main(int argc, char* argv[])
 		PlnLexer lexer(input_file.string());
 		json ast;
 		MacroTable macros;
-		PlnParser parser(lexer, ast, macros);
+		string cMacroState;
+		PlnParser parser(lexer, ast, macros, cMacroState);
 
 		int ret;
 		ret = parser.parse();

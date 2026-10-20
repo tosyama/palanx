@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+import "lib_private_dep_type.pa";
+type P { int64 a; int64 b; };
+Q q; P p;
+6 -> q.p.a; 7 -> p.b;
+printf("%d %ld\n", q.p.a, p.b);

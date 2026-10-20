@@ -1,0 +1,13 @@
+cinclude <stdio.h>;
+import "lib_qualified_entry.pa" as V;
+type L { int64 x; int64 y; };
+type A = V.P;
+type B = A;
+func setB(B p, int32 v) { v -> p.b; }
+V.Q q;
+(V.P p, int32 n) = V.pick(@!q);
+V.setA(p, 5);
+setB(p, 6);
+@V.Q rq = @q;
+@!V.Q wq = rq as @!V.Q;
+printf("%d %d %d %lu %lu\n", wq.l.a, q.l.b, n, sizeof(V.Q), sizeof(L));

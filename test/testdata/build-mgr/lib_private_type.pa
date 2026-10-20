@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+type P { int64 a; int64 b; };
+export func copyPrivate() {
+	[2]P x; [2]P z;
+	3 -> x[1].a; 4 -> x[1].b;
+	x -> z;
+	printf(" %ld %ld\n", z[1].a, z[1].b);
+}

@@ -1,4 +1,10 @@
+/// gen-ast tests
+///
+/// @file basicTests.cpp
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
+
 #include <fstream>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
@@ -857,8 +863,8 @@ TEST(gen_ast, addr_of_call) {
 	ASSERT_EQ(rw["mutable"], true);
 	ASSERT_EQ(rw["object"]["expr-type"], "call");
 
-	// Only a whole call is borrowed; a call as an index base and a cast stay unsupported.
-	ASSERT_EQ(stmts[2]["body"]["args"][0]["object"]["array"]["expr-type"], "not-impl");
+	// A call as an index base is an ordinary expression; a type-name cast stays unsupported.
+	ASSERT_EQ(stmts[2]["body"]["args"][0]["object"]["array"]["expr-type"], "call");
 	ASSERT_EQ(stmts[3]["body"]["args"][0]["object"]["expr-type"], "not-impl");
 }
 
@@ -1276,6 +1282,55 @@ TEST(gen_ast, cinclude_local_header) {
 	ASSERT_TRUE(found_add_one);
 }
 
+TEST(gen_ast, cinclude_same_line) {
+	cleanTestEnv();
+	// A greedy <...> rule would read "stdio.h>; cinclude <stdlib.h" as one path.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/143_cinclude_same_line.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+
+	vector<string> paths;
+	bool found_printf = false, found_malloc = false;
+	for (auto& stmt : jout["ast"]["statements"]) {
+		if (stmt["stmt-type"] != "cinclude") continue;
+		paths.push_back(stmt["path"]);
+		for (auto& f : stmt["functions"]) {
+			if (f["name"] == "printf") found_printf = true;
+			if (f["name"] == "malloc") found_malloc = true;
+		}
+	}
+	ASSERT_EQ(paths, (vector<string>{"stdio.h", "stdlib.h"}));
+	ASSERT_TRUE(found_printf);
+	ASSERT_TRUE(found_malloc);
+}
+
+TEST(gen_ast, expr_rooted_access) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/144_expr_rooted_access.pa");
+	ASSERT_TRUE(checkerr(output));
+	json stmts = json::parse(output)["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	json a = stmts[0]["vars"][0]["init"];
+	ASSERT_EQ(a["expr-type"], "field-access");
+	ASSERT_EQ(a["object"]["expr-type"], "call");
+
+	json b = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(b["expr-type"], "arr-index");
+	ASSERT_EQ(b["array"]["expr-type"], "call");
+
+	json c = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(c["expr-type"], "field-access");
+	ASSERT_EQ(c["object"]["expr-type"], "member-call");
+	ASSERT_EQ(c["object"]["object"]["expr-type"], "call");
+
+	ASSERT_EQ(stmts[3]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[3]["target"]["array"]["expr-type"], "id");
+
+	ASSERT_EQ(stmts[4]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[4]["object"]["expr-type"], "call");
+}
+
 TEST(gen_ast, cinclude_constant) {
 	cleanTestEnv();
 	// c2ast exports object-like macro constants into ast.constants; gen-ast
@@ -1302,6 +1357,39 @@ TEST(gen_ast, cinclude_constant) {
 	ASSERT_EQ(add_left["expr-type"], "lit-int");
 	ASSERT_EQ(add_left["value"], "42");
 	ASSERT_FALSE(add_left.contains("value-type"));
+}
+
+TEST(gen_ast, cinclude_unexported_macro) {
+	cleanTestEnv();
+	// Only references after the cinclude are marked, and a later header's
+	// redefinition as a constant replaces the mark from there on.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/140_cinclude_unexported_macro.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	auto& stmts = jout["ast"]["statements"];
+
+	ASSERT_FALSE(stmts[0]["vars"][0]["init"].contains("c-macro"));
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["c-macro"], "not-constant");
+
+	auto& after = stmts[4]["vars"][0]["init"];
+	ASSERT_EQ(after["left"]["expr-type"], "lit-int");
+	ASSERT_EQ(after["left"]["value"], "7");
+	ASSERT_EQ(after["right"]["c-macro"], "function-like");
+	ASSERT_EQ(after["right"]["args"][0]["value"], "7");
+}
+
+TEST(gen_ast, cinclude_macro_state) {
+	cleanTestEnv();
+	// b.h is preprocessed with a.h's macros, as in one C translation unit.
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/141_cinclude_macro_state.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	auto& stmts = jout["ast"]["statements"];
+
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["value"], "3");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value"], "5");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value"], "1");
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["expr-type"], "id");
 }
 
 TEST(gen_ast, cinclude_global) {
@@ -1462,6 +1550,24 @@ TEST(gen_ast, cinclude_link) {
 	ASSERT_FALSE(stmts[3].contains("libs"));
 }
 
+TEST(gen_ast, cinclude_link_obj) {
+	// A ".o" entry becomes an absolute path relative to the source file's
+	// directory, so downstream tools never depend on the process cwd.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/139_cinclude_link_obj.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 2);
+
+	string dir = std::filesystem::absolute("../test/testdata/gen-ast").lexically_normal().string();
+	ASSERT_EQ(stmts[0]["libs"], json::array({"m"}));
+	ASSERT_EQ(stmts[0]["objs"], json::array({dir + "/abi.o", dir + "/lib/x.o"}));
+
+	ASSERT_FALSE(stmts[1].contains("libs"));
+	ASSERT_EQ(stmts[1]["objs"], json::array({"/opt/y.o"}));
+}
+
 TEST(gen_ast, link_as_identifier) {
 	// "link" is a context-dependent keyword recognized
 	// only as `KW_CINCLUDE import_path import_as ID link_libs` where that ID
@@ -1501,10 +1607,9 @@ TEST(gen_ast, syscall_decl) {
 	json jout = json::parse(output);
 
 	auto& funcs = jout["ast"]["functions"];
-	ASSERT_EQ(funcs.size(), 6u);  // write, exit, foo, bar, baz, main
+	ASSERT_EQ(funcs.size(), 4u);  // write, exit, foo, main
 
 	bool found_write = false, found_exit = false, found_foo = false;
-	bool found_bar = false, found_baz = false;
 	for (auto& f : funcs) {
 		if (f["name"] == "write") {
 			ASSERT_EQ(f["func-type"], "syscall");
@@ -1531,28 +1636,10 @@ TEST(gen_ast, syscall_decl) {
 			ASSERT_EQ(f["syscall-number"]["value"], "42");
 			found_foo = true;
 		}
-		if (f["name"] == "bar") {
-			// GLR-critical case: "-> int64 n = SYS_bar" must resolve as a
-			// named return, not as return_def's own "ID = expr" initializer.
-			ASSERT_TRUE(f.contains("rets"));
-			ASSERT_EQ(f["rets"].size(), 1u);
-			ASSERT_EQ(f["rets"][0]["name"], "n");
-			ASSERT_EQ(f["syscall-number"]["name"], "SYS_bar");
-			found_bar = true;
-		}
-		if (f["name"] == "baz") {
-			// GLR-critical case: multi-return followed by the mandatory "=".
-			ASSERT_TRUE(f.contains("rets"));
-			ASSERT_EQ(f["rets"].size(), 2u);
-			ASSERT_EQ(f["syscall-number"]["name"], "SYS_baz");
-			found_baz = true;
-		}
 	}
 	ASSERT_TRUE(found_write);
 	ASSERT_TRUE(found_exit);
 	ASSERT_TRUE(found_foo);
-	ASSERT_TRUE(found_bar);
-	ASSERT_TRUE(found_baz);
 
 	// root "export" array carries syscall-number too (no symbol to link
 	// against; the importer needs the number itself).
@@ -1666,8 +1753,8 @@ TEST(gen_ast, bool_literal) {
 }
 
 TEST(gen_ast, macro_fold_duplicate_name) {
-	// Two cincludes defining the same macro name: the first registration
-	// wins and later same-named definitions are ignored.
+	// Two cincludes defining the same macro name: the second header redefines
+	// it, as in one C translation unit, so the reference after both sees it.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/118_macro_fold_dup.pa");
 	ASSERT_TRUE(checkerr(output));
@@ -1675,7 +1762,7 @@ TEST(gen_ast, macro_fold_duplicate_name) {
 
 	auto& ret = jout["ast"]["functions"][0]["block"]["body"][0]["values"][0];
 	ASSERT_EQ(ret["expr-type"], "lit-int");
-	ASSERT_EQ(ret["value"], "1");
+	ASSERT_EQ(ret["value"], "2");
 }
 
 TEST(gen_ast, return_def_nonprim) {
@@ -1758,6 +1845,18 @@ TEST(gen_ast, field_transfer) {
 	ASSERT_FALSE(stmts[3].contains("ownership-transfer"));
 }
 
+TEST(gen_ast, var_transfer) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/145_var_transfer.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& s = jout["ast"]["statements"][2];
+	ASSERT_EQ(s["stmt-type"], "assign");
+	ASSERT_EQ(s["name"], "c");
+	ASSERT_EQ(s["value"]["name"], "a");
+	ASSERT_EQ(s.value("ownership-transfer", false), true);
+}
+
 // A chain into array elements used to split the GLR parse at every step:
 // 4 steps never finished, so execTestCommand's timeout catches a regression.
 TEST(gen_ast, assign_chain) {
@@ -1766,32 +1865,34 @@ TEST(gen_ast, assign_chain) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
-	ASSERT_EQ(stmts.size(), 10);
+	ASSERT_EQ(stmts.size(), 3);
 
-	ASSERT_EQ(stmts[0]["stmt-type"], "arr-assign");
-	ASSERT_EQ(stmts[0]["value"]["expr-type"], "lit-int");
-	for (int i = 1; i < 7; i++) {
-		ASSERT_EQ(stmts[i]["stmt-type"], "arr-assign");
-		ASSERT_EQ(stmts[i]["value"], stmts[i-1]["target"]);
+	// Each step's value is the previous step, whose target SA reads back.
+	const json* step = &stmts[0];
+	for (string idx : {"o", "n", "m", "l", "k", "j", "i"}) {
+		ASSERT_EQ((*step)["stmt-type"], "arr-assign");
+		ASSERT_EQ((*step)["target"]["index"]["name"], idx);
+		step = &(*step)["value"];
 	}
-	ASSERT_EQ(stmts[6]["target"]["index"]["name"], "o");
+	ASSERT_EQ((*step)["expr-type"], "lit-int");
 
-	ASSERT_EQ(stmts[7]["stmt-type"], "field-assign");
-	ASSERT_EQ(stmts[7]["value"]["name"], "x");
-	ASSERT_EQ(stmts[8]["stmt-type"], "field-assign");
-	ASSERT_EQ(stmts[8]["object"]["expr-type"], "arr-index");
-	ASSERT_EQ(stmts[8]["value"]["expr-type"], "field-access");
-	ASSERT_EQ(stmts[8]["value"]["object"]["name"], "s");
-	ASSERT_EQ(stmts[8]["value"]["field"], "a");
-	ASSERT_EQ(stmts[8].value("ownership-transfer", false), true);
+	const auto& outer = stmts[1];
+	ASSERT_EQ(outer["stmt-type"], "field-assign");
+	ASSERT_EQ(outer["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(outer.value("ownership-transfer", false), true);
+	ASSERT_EQ(outer["value"]["stmt-type"], "field-assign");
+	ASSERT_EQ(outer["value"]["object"]["name"], "s");
+	ASSERT_EQ(outer["value"]["field"], "a");
+	ASSERT_EQ(outer["value"]["value"]["name"], "x");
+	ASSERT_EQ(outer["value"].value("ownership-transfer", false), true);
 
-	ASSERT_EQ(stmts[9]["stmt-type"], "not-impl");
+	ASSERT_EQ(stmts[2]["stmt-type"], "not-impl");
 
 	const auto& body = jout["ast"]["functions"][0]["block"]["body"];
-	ASSERT_EQ(body.size(), 2);
-	ASSERT_EQ(body[1]["name"], "b");
-	ASSERT_EQ(body[1]["value"]["expr-type"], "id");
-	ASSERT_EQ(body[1]["value"]["name"], "a");
+	ASSERT_EQ(body.size(), 1);
+	ASSERT_EQ(body[0]["name"], "b");
+	ASSERT_EQ(body[0]["value"]["stmt-type"], "assign");
+	ASSERT_EQ(body[0]["value"]["name"], "a");
 }
 
 // Copying a list on every append made parse time quadratic: 2000 items took
@@ -1812,6 +1913,8 @@ TEST(gen_ast, decl_variants) {
 	ASSERT_EQ(stmts[2]["stmt-type"], "struct-def");
 	ASSERT_EQ(stmts[2]["fields"].size(), 1);
 	ASSERT_EQ(stmts[3]["body"]["args"].size(), 2);
+	ASSERT_EQ(stmts[3]["body"]["args"][1]["expr-type"], "not-impl");
+	ASSERT_EQ(stmts[3]["body"]["args"][1]["loc"], json::array({7, 6, 7, 9}));
 	ASSERT_EQ(stmts[4]["vars"].size(), 1);
 	ASSERT_EQ(stmts[4]["vars"][0]["var-name"], "c");
 	ASSERT_EQ(stmts[5]["vars"].size(), 0);
@@ -1819,13 +1922,21 @@ TEST(gen_ast, decl_variants) {
 	ASSERT_EQ(stmts[6]["body"]["expr-type"], "not-impl");
 	ASSERT_EQ(stmts[6]["body"]["loc"], json::array({10, 1, 10, 12}));
 
-	// Definitions with an unsupported parameter form are dropped wherever they appear.
+	// Definitions with an unsupported parameter form are kept wherever they
+	// appear, so SA can reject them where they are defined.
 	const auto& funcs = jout["ast"]["functions"];
-	ASSERT_EQ(funcs.size(), 1);
-	ASSERT_EQ(funcs[0]["name"], "outer");
-	ASSERT_EQ(funcs[0]["block"]["functions"].size(), 0);
-	ASSERT_EQ(funcs[0]["block"]["body"].size(), 1);
-	ASSERT_FALSE(jout.contains("export"));
+	ASSERT_EQ(funcs.size(), 8);
+	ASSERT_EQ(funcs[0]["name"], "dropFirst");
+	ASSERT_EQ(funcs[0]["parameters"][0],
+	          json({{"not-impl", true}, {"untyped-var", "x"}, {"loc", {1, 16, 1, 21}}}));
+	ASSERT_EQ(funcs[3]["name"], "untypedFirst");
+	ASSERT_EQ(funcs[3]["parameters"].size(), 2);
+	ASSERT_EQ(funcs[3]["parameters"][1], json({{"not-impl", true}, {"loc", {11, 1, 11, 32}}}));
+	ASSERT_EQ(funcs[6]["name"], "exportedSysNotImpl");
+	ASSERT_EQ(funcs[7]["name"], "outer");
+	ASSERT_EQ(funcs[7]["block"]["functions"].size(), 4);
+	ASSERT_EQ(funcs[7]["block"]["body"].size(), 1);
+	ASSERT_EQ(jout["export"].size(), 2);
 }
 
 TEST(gen_ast, linear_parse_time) {
@@ -1865,6 +1976,24 @@ TEST(gen_ast, linear_parse_time) {
 	json* inner = &jout["ast"]["functions"][0]["block"]["body"][0];
 	for (int i = 1; i < depth; i++) inner = &(*inner)["body"][0];
 	ASSERT_EQ((*inner)["body"].size(), n);
+}
+
+TEST(gen_ast, deep_nesting) {
+	// Deeper than the GLR stack's original initial size of 200 items, where
+	// growing the stack used to double-free semantic values.
+	cleanTestEnv();
+	const int depth = 100;
+	string src = "func f() {\nint32 a = 0;\n";
+	for (int i = 0; i < depth; i++) src += "while 1 < 2 {\n";
+	src += "a + 1 -> a;\n" + string(depth, '}') + "\n}\n";
+	ofstream("out/deep_nesting.pa") << src;
+
+	string output = execTestCommand("bin/palan-gen-ast out/deep_nesting.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	json* inner = &jout["ast"]["functions"][0]["block"]["body"][1];
+	for (int i = 1; i < depth; i++) inner = &(*inner)["body"][0];
+	ASSERT_EQ((*inner)["body"][0]["stmt-type"], "assign");
 }
 
 TEST(gen_ast, enum_def) {
@@ -1983,7 +2112,7 @@ TEST(gen_ast, chain_call) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
-	ASSERT_EQ(stmts.size(), 11);
+	ASSERT_EQ(stmts.size(), 8);
 
 	const auto& plain = stmts[0]["body"];
 	ASSERT_EQ(plain["expr-type"], "chain-call");
@@ -2001,17 +2130,119 @@ TEST(gen_ast, chain_call) {
 	ASSERT_EQ(stmts[3]["stmt-type"], "assign");
 	ASSERT_EQ(stmts[3]["value"]["expr-type"], "chain-call");
 
-	// An assignment feeding a call is its own statement; the call reads it back.
-	ASSERT_EQ(stmts[4]["stmt-type"], "assign");
-	ASSERT_EQ(stmts[5]["body"]["value"]["name"], "v");
-	ASSERT_EQ(stmts[6]["name"], "v");
-	ASSERT_EQ(stmts[7]["name"], "w");
-	ASSERT_EQ(stmts[7]["value"]["value"]["name"], "v");
-	ASSERT_EQ(stmts[8]["body"]["value"]["name"], "w");
-	ASSERT_EQ(stmts[8]["body"]["call"]["name"], "g");
+	// An assignment feeding a call is the call's value; SA reads its target back.
+	ASSERT_EQ(stmts[4]["body"]["value"]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[4]["body"]["value"]["name"], "v");
+	const auto& g = stmts[5]["body"];
+	ASSERT_EQ(g["call"]["name"], "g");
+	ASSERT_EQ(g["value"]["name"], "w");
+	ASSERT_EQ(g["value"]["value"]["call"]["name"], "f");
+	ASSERT_EQ(g["value"]["value"]["value"]["name"], "v");
 
-	ASSERT_EQ(stmts[9]["stmt-type"], "tapple-decl");
-	ASSERT_EQ(stmts[9]["value"]["expr-type"], "chain-call");
-	ASSERT_EQ(stmts[10]["stmt-type"], "tapple-assign");
-	ASSERT_EQ(stmts[10]["value"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[6]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[6]["value"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[7]["stmt-type"], "tapple-assign");
+	ASSERT_EQ(stmts[7]["value"]["expr-type"], "chain-call");
+}
+
+TEST(gen_ast, as_cast) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/136_as_cast.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 7);
+
+	const auto& prim = stmts[0]["body"];
+	ASSERT_EQ(prim["expr-type"], "cast");
+	ASSERT_EQ(prim["target-type"]["type-name"], "int32");
+	ASSERT_EQ(prim["src"]["name"], "x");
+	ASSERT_TRUE(prim.contains("loc"));
+
+	const auto& borrow = stmts[1]["body"]["target-type"];
+	ASSERT_EQ(borrow["type-kind"], "pntr");
+	ASSERT_EQ(borrow["mutable"], true);
+	ASSERT_EQ(borrow["base-type"]["type-kind"], "arr");
+
+	// 'as' binds tighter than a binary operator and looser than a unary one.
+	ASSERT_EQ(stmts[2]["body"]["expr-type"], "add");
+	ASSERT_EQ(stmts[2]["body"]["right"]["expr-type"], "cast");
+	ASSERT_EQ(stmts[3]["body"]["expr-type"], "cast");
+	ASSERT_EQ(stmts[4]["body"]["expr-type"], "cmp");
+	ASSERT_EQ(stmts[4]["body"]["left"]["expr-type"], "cast");
+	ASSERT_EQ(stmts[5]["body"]["array"]["expr-type"], "cast");
+	ASSERT_EQ(stmts[6]["body"]["target-type"]["type-name"], "L.T");
+}
+
+TEST(gen_ast, shift) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/137_shift.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	// A shift binds looser than '+'/'-' and tighter than a comparison.
+	ASSERT_EQ(stmts[0]["body"]["expr-type"], "shl");
+	ASSERT_EQ(stmts[0]["body"]["left"]["expr-type"], "add");
+	ASSERT_EQ(stmts[1]["body"]["right"]["expr-type"], "bitor");
+	ASSERT_EQ(stmts[2]["body"]["expr-type"], "cmp");
+	ASSERT_EQ(stmts[2]["body"]["left"]["expr-type"], "shr");
+	ASSERT_EQ(stmts[3]["body"]["expr-type"], "shr");
+	ASSERT_EQ(stmts[3]["body"]["left"]["expr-type"], "shl");
+	// '>>' stays the move-owner mark.
+	ASSERT_EQ(stmts[4]["body"]["args"][0]["expr-type"], "not-impl");
+}
+
+TEST(gen_ast, func_ptr_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/138_func_ptr_type.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+
+	const auto& f = stmts[0]["vars"][0]["var-type"];
+	ASSERT_EQ(f["type-kind"], "pntr");
+	ASSERT_EQ(f["mutable"], false);
+	ASSERT_EQ(f["base-type"]["type-kind"], "func");
+	ASSERT_EQ(f["base-type"]["parameters"].size(), 2);
+	ASSERT_EQ(f["base-type"]["parameters"][1]["var-type"]["mutable"], true);
+	ASSERT_EQ(f["base-type"]["ret-type"]["type-name"], "int32");
+	// No return is a void return, as c2ast writes a C function type.
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"]["ret-type"]["type-name"], "void");
+	// `@!func` is kept for SA to reject.
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["mutable"], true);
+	ASSERT_EQ(stmts[3]["vars"][0]["var-type"]["type-kind"], "arr");
+	ASSERT_EQ(stmts[3]["vars"][0]["var-type"]["base-type"]["base-type"]["ret-type"]["type-kind"], "pntr");
+
+	const auto& fn = jout["ast"]["functions"][0];
+	ASSERT_EQ(fn["parameters"][0]["var-type"]["base-type"]["type-kind"], "func");
+	ASSERT_EQ(fn["ret-type"]["base-type"]["ret-type"]["type-name"], "int32");
+
+	// The return of a type after `as` is taken greedily, so this is a cast
+	// to a function returning int32, then chained into f.
+	ASSERT_EQ(stmts[4]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[4]["value"]["target-type"]["base-type"]["ret-type"]["type-name"], "int32");
+}
+
+TEST(gen_ast, frame_var) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/142_frame_var.pa");
+	ASSERT_TRUE(checkerr(output));
+	json ast = json::parse(output)["ast"];
+	const auto& stmts = ast["statements"];
+	ASSERT_EQ(stmts[1]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["type-kind"], "embed");
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"]["type-name"], "P");
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["type-kind"], "embed");
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["base-type"]["type-kind"], "arr");
+	// A later name takes the first one's type, '$' included.
+	ASSERT_EQ(stmts[3]["vars"][1]["var-type"]["type-kind"], "embed");
+
+	// Frame storage belongs to local declarations only.
+	const auto& funcs = ast["functions"];
+	ASSERT_EQ(funcs[0]["parameters"][0]["not-impl"], true);
+	ASSERT_EQ(funcs[1]["rets"][0]["not-impl"], true);
+	ASSERT_EQ(funcs[2]["ret-type"]["not-impl"], true);
 }

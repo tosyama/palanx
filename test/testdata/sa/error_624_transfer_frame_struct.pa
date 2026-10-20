@@ -1,0 +1,5 @@
+type P { int32 x; };
+type W { P p; };
+W w;
+$P p;
+p ->> w.p;

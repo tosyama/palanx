@@ -38,6 +38,7 @@ struct RegAllocResult {
     int    frameSize;          // bytes to reserve on stack (0 if no spills/callee-saves needed)
     vector<string>    usedCalleeSaved;  // callee-saved regs used, in allocation order
     vector<ParamCopy> paramCopies;      // params moved from arg regs due to call-crossing
+    vector<int>       frameBlockOffsets;  // %rbp offset of each VFunc::frameBlocks entry
 };
 
 // Physical register lists (architecture-specific, passed in by caller)

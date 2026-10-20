@@ -2,14 +2,37 @@
 ///
 /// Manage output message descriptions.
 ///
-/// @file		PlnSaMessage.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnSaMessage.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnSaMessage.h"
 #include "../common/PlnDefs.h"
 #include <boost/assert.hpp>
+#include <cstdio>
+#include <regex>
+
+using std::regex;
+using std::to_string;
+
+static const char localTypePrefix[] = "__pln_L";
+
+string PlnSaMessage::localTypeName(const string& moduleId, int seq, const string& name)
+{
+	// FNV-1a: the module's part must be the same in every build of it.
+	uint64_t h = 14695981039346656037ull;
+	for (unsigned char c : moduleId) h = (h ^ c) * 1099511628211ull;
+	char hex[17];
+	snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
+	return localTypePrefix + string(hex) + "_" + to_string(seq) + "_" + name;
+}
 
 string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
+{
+	static const regex localTypePart(string(localTypePrefix) + "[0-9a-f]{16}_[0-9]+_");
+	return regex_replace(format(msg_code, arg1, arg2, arg3), localTypePart, "");
+}
+
+string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
 {
 	switch (msg_code) {
 		case M_Help:
@@ -144,9 +167,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Function '" + arg1 + "' requires a module alias qualifier.";
 
-		case E_UnknownStructType:
+		case E_UnknownType:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "unknown struct type '" + arg1 + "'.";
+			return "unknown type '" + arg1 + "'.";
 
 		case E_UnknownField:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -174,6 +197,9 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "cannot write through read-only pointer array element; use [n]@!T for mutable.";
 
 		case E_ArrFieldSizeNotConstant:
+			if (arg1 != "\x01")
+				return "struct field array size must be a compile-time constant integer; '" + arg1
+				       + "' is not a const.";
 			return "struct field array size must be a compile-time constant integer.";
 
 		case E_ConflictingTypedef:
@@ -182,7 +208,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ConstNotCompileTimeValue:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "const '" + arg1 + "' must be initialized with a compile-time constant literal.";
+			return "const '" + arg1 + "' must be initialized with a compile-time constant.";
 
 		case E_AddrOfNotLocalVar:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -275,30 +301,28 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot convert '" + arg1 + "' to '" + arg2 + "'.";
 
-		case E_UnsupportedCStructReturn:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot receive the return value of a C function returning '" + arg1
-			       + "' by value: this version cannot classify its layout for a "
-			         "register-based return.";
-
 		case E_ByvalStructRetDiscarded:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "the return value of this call (a '" + arg1 + "' returned by value) is "
 			       "discarded; assign it to a newly declared '" + arg1 + "' variable instead.";
 
-		case E_CallbackArgRequiresFunc:
+		case E_FuncNotValue:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "argument '" + arg2 + "' to C function '" + arg1 + "' must be the bare name of "
-			       "a Palan function to use as a callback; this version does not support passing "
-			       "a variable or any other expression here.";
+			return "function '" + arg1 + "' cannot be used as a function pointer: " + arg2 + ".";
 
-		case E_CallbackSignatureMismatch:
+		case E_FuncPtrMutable:
+			return "a function pointer is read-only; write '@func(...)', not '@!func(...)'.";
+
+		case E_FuncPtrSigType:
 			BOOST_ASSERT(arg1 != "\x01");
-			BOOST_ASSERT(arg2 != "\x01");
-			return "function '" + arg1 + "' cannot be used as a callback for C function '" + arg2
-			       + "': its parameter types, return type, or pointer mutability do not exactly "
-			         "match the callback signature C expects.";
+			return "'" + arg1 + "' cannot be a parameter or return type of a function pointer; "
+			       "use a primitive type or a borrowed pointer ('@T'/'@!T').";
+
+		case E_AmbiguousFuncPtrCall:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "call to '" + arg1 + "' is ambiguous: it names both a function pointer and a "
+			       "function.";
 
 		case E_DerefVoidPointer:
 			return "cannot index or dereference a void pointer; assign it to a typed pointer "
@@ -309,6 +333,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "invalid library name '" + arg1 + "' in a cinclude link clause; a name "
 			       "may only contain letters, digits, '_', '.', '+' and '-', since it is "
 			       "passed to the linker as -l<name>.";
+
+		case E_LinkObjNotFound:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "object file '" + arg1 + "' in a cinclude link clause is not found.";
 
 		case E_SyscallNumberNotConstant:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -327,11 +355,6 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			return "syscall '" + arg1 + "' has " + arg2 + " parameters; the Linux syscall "
 			       "ABI supports at most 6.";
 
-		case E_SyscallInvalidReturn:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "syscall '" + arg1 + "' must declare its return with '-> type'; named "
-			       "and multiple return values are not supported.";
-
 		case E_SyscallUnsupportedParamType:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
@@ -348,6 +371,17 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_ExprNotImplemented:
 			return "this expression is not supported in this version.";
+
+		case E_ParamDefaultNotImpl:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "parameter '" + arg1 + "' has a default value; default values are not "
+			       "supported yet.";
+
+		case E_ParamNotImplemented:
+			return "this parameter is not supported in this version.";
+
+		case E_RetNotImplemented:
+			return "this return value is not supported in this version.";
 
 		case E_IntLiteralOutOfRange:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -434,6 +468,31 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       "initializer, the source of '->' to a struct, an element of an array literal, or an "
 			       "argument for a struct parameter.";
 
+		case E_ArrLitArgType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg1 + "' of type '" + arg2 + "' cannot take an array literal: "
+			       "only a struct or fixed-size array parameter can.";
+
+		case E_DictLitArgType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg1 + "' of type '" + arg2 + "' cannot take a '{name: value}' literal: "
+			       "only a struct parameter can.";
+
+		case E_CMacroFuncLike:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "C macro '" + arg1 + "' is function-like; Palan cannot use it.";
+
+		case E_CMacroNotConstant:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "C macro '" + arg1 + "' cannot be used: it does not expand to an integer constant.";
+
+		case E_LitArgCFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a literal cannot be passed to C function '" + arg1 + "': "
+			       "only a by-value struct parameter takes one.";
+
 		case E_StructLitTarget:
 			return "a struct literal cannot be given to a borrow '@T'; write to its '[0]' to copy "
 			       "into the struct it points to.";
@@ -478,6 +537,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			       "which is freed before the statement ends; receive the struct into a variable "
 			       "with '->' and pass it as '@name' or '@!name'.";
 
+		case E_UnownedCallResult:
+			return "a struct or array returned by a call has no owner to access it through; "
+			       "receive it into a variable with '->' first.";
+
 		case E_AssignInExpr:
 			return "an assignment cannot be used inside an expression; write it as its own statement.";
 
@@ -499,6 +562,14 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+
+		case E_TransferToNonOwnedVar:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->>' needs a variable that owns its array or struct; '" + arg1 + "' does not.";
+
+		case E_TransferToSelf:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->>' cannot give '" + arg1 + "' to itself.";
 
 		case E_UnsizedArrRowSizeNotConst:
 			return "the row size in '[][m]T' must be a compile-time constant.";
@@ -529,7 +600,7 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 
 		case E_EnumValueNotConst:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "enumerator '" + arg1 + "' must be given an integer literal or a const.";
+			return "enumerator '" + arg1 + "' must be given an integer constant expression.";
 
 		case E_EnumValueOutOfRange:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -539,6 +610,10 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 		case E_DuplicateTypeName:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "type '" + arg1 + "' is already defined.";
+
+		case E_DuplicateConstDecl:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Constant '" + arg1 + "' is already defined.";
 
 		case E_CastArgCount:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -561,9 +636,12 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "type '" + arg1 + "' depends on itself: " + arg2 + ".";
 
-		case E_CastTargetNotPrim:
+		case E_CastToOwnedArr:
+			return "cannot cast to an owned array: only a borrowed array ('@[n]T'/'@![n]T') can be a cast target.";
+
+		case E_InvalidCastTarget:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot cast to '" + arg1 + "': only a primitive or enum type can be a cast target.";
+			return "cannot cast to '" + arg1 + "': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target.";
 
 		case E_UnsupportedCFieldType:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -577,6 +655,21 @@ string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string a
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot bind '" + arg1 + "' to '" + arg2
 			       + "': a pointer reached through a mutable pointer '@!' must keep its permission.";
+
+		case E_ConstExprOverflow:
+			return "constant expression overflows its 64-bit range.";
+
+		case E_ConstExprDivByZero:
+			return "division by zero in a constant expression.";
+
+		case E_FrameVarType:
+			return "'$' on a variable applies only to a struct or an array, not '" + arg1 + "'.";
+
+		case E_FrameArrSizeNotConst:
+			return "the size of stack array '" + arg1 + "' must be a compile-time constant.";
+
+		case E_ReturnFrameArr:
+			return "stack array '" + arg1 + "' cannot be returned; its storage ends with the function.";
 
 		default:
 			BOOST_ASSERT(false);

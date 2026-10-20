@@ -1,0 +1,18 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; };
+type Q { P own; [2]int32 arr; };
+func bumpQ(@!Q q) -> int32 r { q.own.x + 1 -> q.own.x; 0 -> r; }
+func steal(@!Q q) -> int32 r { P n; 9 -> n.x; n ->> q.own; 0 -> r; }
+mtrace();
+{
+    [2]Q qs;
+    Q h; 3 -> h.own.x;
+    h -> qs[bumpQ(@!h)];
+    printf("%d %d\n", qs[0].own.x, h.own.x);
+    h.own ->> qs[1].own;
+    P p; 5 -> p.x; p ->> h.own;
+    h.own ->> qs[steal(@!h)].own;
+    printf("%d %d %d\n", qs[0].own.x, qs[1].own.x, h.own.x);
+}
+muntrace();

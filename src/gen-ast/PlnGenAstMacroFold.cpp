@@ -9,8 +9,25 @@ void registerMacroConstants(MacroTable& macros, const json& constants, const jso
 {
 	for (auto& c : constants) {
 		string name = c["name"].get<string>();
-		if (macros.count(name)) continue;  // first cinclude wins on duplicate macro names
-		macros[name] = MacroEntry{ c["value"], c.value("value-type", json()), cincludeLoc };
+		macros[name].push_back(MacroEntry{ c["value"], c.value("value-type", json()), cincludeLoc, "" });
+	}
+}
+
+void registerUnexportedMacros(MacroTable& macros, const json& unexported, const json& cincludeLoc)
+{
+	for (auto& m : unexported) {
+		string name = m["name"].get<string>();
+		macros[name].push_back(MacroEntry{ json(), json(), cincludeLoc,
+			m.value("function-like", false) ? "function-like" : "not-constant" });
+	}
+}
+
+void registerUndefinedMacros(MacroTable& macros, const json& undefined, const json& cincludeLoc)
+{
+	for (auto& n : undefined) {
+		MacroEntry e{ json(), json(), cincludeLoc, "" };
+		e.undefined = true;
+		macros[n.get<string>()].push_back(e);
 	}
 }
 
@@ -24,6 +41,16 @@ static bool isAfterMacroLoc(const json& loc, const json& macroLoc)
 	return refCol > macroCol;
 }
 
+// The registration of `name` in effect at reference `loc`, or null.
+static const MacroEntry* findMacroAt(const MacroTable& macros, const string& name, const json& loc)
+{
+	auto it = macros.find(name);
+	if (it == macros.end()) return nullptr;
+	for (auto e = it->second.rbegin(); e != it->second.rend(); ++e)
+		if (isAfterMacroLoc(loc, e->loc)) return &*e;
+	return nullptr;
+}
+
 void foldMacroConstants(json& node, const MacroTable& macros)
 {
 	if (node.is_array()) {
@@ -34,14 +61,19 @@ void foldMacroConstants(json& node, const MacroTable& macros)
 
 	if (node.value("stmt-type", "") == "cinclude") return;
 
-	if (node.value("expr-type", "") == "id") {
-		auto it = macros.find(node["name"].get<string>());
-		if (it != macros.end() && isAfterMacroLoc(node["loc"], it->second.loc)) {
-			json loc = node["loc"];
-			node = { {"expr-type", "lit-int"}, {"value", it->second.value}, {"loc", loc} };
-			if (!it->second.valueType.is_null()) node["value-type"] = it->second.valueType;
+	string exprType = node.value("expr-type", "");
+	if (exprType == "id" || exprType == "call") {
+		const MacroEntry* e = findMacroAt(macros, node["name"].get<string>(), node["loc"]);
+		if (e && !e->undefined) {
+			if (!e->unexported.empty()) {
+				node["c-macro"] = e->unexported;
+			} else if (exprType == "id") {
+				json loc = node["loc"];
+				node = { {"expr-type", "lit-int"}, {"value", e->value}, {"loc", loc} };
+				if (!e->valueType.is_null()) node["value-type"] = e->valueType;
+			}
 		} // LCOV_EXCL_EXCEPTION_BR_LINE
-		return;
+		if (exprType == "id") return;
 	}
 
 	for (auto& [key, val] : node.items()) {

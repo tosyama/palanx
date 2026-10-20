@@ -1,0 +1,15 @@
+cinclude <stdio.h>;
+cinclude <unistd.h>;
+cinclude <sys/epoll.h>;
+
+[2]int32 fds;
+pipe(@!fds[0]);
+int32 ep = epoll_create1(0);
+epoll_event ev;
+EPOLLIN -> ev.events;
+1234605616436508552 -> ev.data.u64;
+epoll_ctl(ep, EPOLL_CTL_ADD, fds[0], @!ev);
+write(fds[1], "x", 1);
+[2]$epoll_event evs;
+int32 n = epoll_wait(ep, @!evs[0], 2, 1000);
+printf("%d %u %lu\n", n, evs[0].events, evs[0].data.u64);

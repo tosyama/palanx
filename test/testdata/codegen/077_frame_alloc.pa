@@ -1,0 +1,10 @@
+type P { int32 x; int64 y; };
+func f(int32 n) -> int64 {
+    $P p;
+    $[4]int16 a;
+    n -> p.x;
+    7 -> a[3];
+    return p.x + a[3];
+}
+$P q;
+5 -> q.y;

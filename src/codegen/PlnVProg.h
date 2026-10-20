@@ -8,6 +8,7 @@
 #include <vector>
 #include <variant>
 #include <utility>
+#include <optional>
 
 using std::string;
 using std::vector;
@@ -29,12 +30,35 @@ enum class VRegType {
     Float64,
 };
 
+inline bool isFloat(VRegType t) {
+    return t == VRegType::Float32 || t == VRegType::Float64;
+}
+
+inline int intWidth(VRegType t) {
+    switch (t) {
+        case VRegType::Int8:  case VRegType::Uint8:  return 1;
+        case VRegType::Int16: case VRegType::Uint16: return 2;
+        case VRegType::Int32: case VRegType::Uint32: return 4;
+        default:                                     return 8;  // Int64, Uint64, Ptr64
+    }
+}
+
+inline bool isSignedInt(VRegType t) {
+    switch (t) {
+        case VRegType::Int8: case VRegType::Int16: case VRegType::Int32: case VRegType::Int64:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // -------- Virtual instructions --------
 
 struct LeaLabel  { VReg dst; VRegType type; string label; };       // dst = address of label
 struct MovImm    { VReg dst; VRegType type; long long value; };    // dst = immediate integer
 struct InitVar   { VReg dst; VRegType type; long long imm; };      // variable init: dst_vreg = imm
 struct InitVarF  { VReg dst; VRegType type; string label; };       // variable init: dst_vreg = float at label
+struct DeclVar   { VReg dst; VRegType type; };                     // variable decl without initializer (no code)
 struct Add      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs + rhs
 struct Sub      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs - rhs
 struct Mul      { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs * rhs
@@ -45,6 +69,9 @@ struct BitAnd   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs &
 struct BitOr    { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs | rhs
 struct BitXor   { VReg dst; VReg lhs; VReg rhs; VRegType type; }; // dst = lhs ^ rhs
 struct BitNot   { VReg dst; VReg src; VRegType type; };            // dst = ~src
+enum class ShiftOp { Shl, Shr, Sar };  // Sar only lowers division; Palan has no arithmetic shift
+struct Shift    { VReg dst; VReg lhs; VReg rhs; ShiftOp op; VRegType type; }; // count taken modulo the width
+struct ShiftImm { VReg dst; VReg src; int count; ShiftOp op; VRegType type; }; // 0 < count < width
 struct Cmp      { VReg dst; string op; VReg lhs; VReg rhs; VRegType type; }; // dst (uint8) = (lhs op rhs) ? 1 : 0
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 // dsts/retTypes hold zero (statement-level, no return used), one (an ordinary
@@ -53,7 +80,13 @@ struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (t
 // %xmm0/%xmm1, then a DerefStore writes it into the destination struct) VRegs
 // -- the same shape as CallPln, so both share PlnRegAlloc's CallPln visitor
 // logic.
-struct CallC    { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
+// With callee set, the call goes through that function pointer instead of
+// name: a call through a pointer always uses the C convention.
+// structArgs marks the runs of args that are the eightbytes of one struct
+// passed by value (in argument order).
+struct StructArgSpan { size_t first; size_t count; bool inMemory; };
+struct CallC    { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes;
+                  std::optional<VReg> callee = std::nullopt; vector<StructArgSpan> structArgs = {}; };
 struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
 // Same dsts/retTypes shape as CallC/CallPln, but always 0 or 1 (palan-sa's
 // validateSyscallDecl rejects multi-return syscall declarations) and no
@@ -75,13 +108,44 @@ struct DerefLoad     { VReg dst; VReg ptr; int offset; VRegType type; };        
 struct DerefStore    { VReg ptr; int offset; VReg src;  VRegType type; };                              // *(ptr+offset) = src
 struct CalcAddr      { VReg dst; VReg ptr; int offset; };                                              // dst = ptr + offset (no dereference)
 struct LeaLocal      { VReg dst; VReg local; };                                                        // dst = &local (local's own stack slot address)
+struct FrameAddr     { VReg dst; int block; };                                                         // dst = address of VFunc::frameBlocks[block]
 
-using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, Add, Sub, Mul, Div, Mod, Neg,
-                             BitAnd, BitOr, BitXor, BitNot, Cmp, Convert,
+using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, DeclVar, Add, Sub, Mul, Div, Mod, Neg,
+                             BitAnd, BitOr, BitXor, BitNot, Shift, ShiftImm, Cmp, Convert,
                              CallC, CallPln, CallSys, RetPln, ExitCode,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov, Copy, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
-                             DerefLoad, DerefStore, CalcAddr, LeaLocal>;
+                             DerefLoad, DerefStore, CalcAddr, LeaLocal, FrameAddr>;
+
+// SysV argument placement, shared by the register allocator's argument hints
+// and the x86 emitter: each arg's index in its class's register sequence, or
+// -1 for the stack. A struct goes to the stack whole when its eightbytes don't
+// all fit in the remaining registers (or it is MEMORY class); later args still
+// take the registers left free.
+inline vector<int> placeCallArgs(const vector<VRegType>& types, const vector<StructArgSpan>& spans,
+                                 int nIntRegs, int nFltRegs)
+{
+    vector<int> slots(types.size(), -1);
+    int nextInt = 0, nextFlt = 0;
+    size_t span = 0;
+    for (size_t i = 0; i < types.size(); ) {
+        if (span < spans.size() && spans[span].first == i) {
+            const StructArgSpan& s = spans[span++];
+            int nInt = 0, nFlt = 0;
+            for (size_t k = i; k < i + s.count; k++)
+                (isFloat(types[k]) ? nFlt : nInt)++;
+            if (!s.inMemory && nextInt + nInt <= nIntRegs && nextFlt + nFlt <= nFltRegs)
+                for (size_t k = i; k < i + s.count; k++)
+                    slots[k] = isFloat(types[k]) ? nextFlt++ : nextInt++;
+            i += s.count;
+            continue;
+        }
+        if (isFloat(types[i])) { if (nextFlt < nFltRegs) slots[i] = nextFlt++; }
+        else                   { if (nextInt < nIntRegs) slots[i] = nextInt++; }
+        i++;
+    }
+    return slots;
+}
 
 // -------- Program structure --------
 
@@ -96,9 +160,12 @@ struct VFloatLiteral {
     VRegType type;    // Float32 or Float64
 };
 
+struct FrameBlock { int size; int align; };
+
 struct VFunc {
     string         name;
     vector<VInstr> instrs;
+    vector<FrameBlock> frameBlocks;   // stack-frame storage of `$` variables, indexed by FrameAddr::block
     bool           isEntry  = false;  // true only for _start
     bool           isExport = false;  // true for export func
     vector<std::pair<VReg, VRegType>> params;  // (vreg, type) in arg order

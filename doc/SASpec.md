@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.1.40
+ver. 0.2.0
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -19,6 +19,9 @@ Root
   (sorted, deduplicated). Empty array when none. Each module's sa.json carries only its
   own libraries; the build manager unions this list across all modules and appends
   `-l<name>` to the `ld` invocation for each entry.
+- objs\* - Absolute object file path list from `link` clauses, collected like `libs` (sorted,
+  deduplicated; empty array when none). Each file must exist (`E_LinkObjNotFound`). The build
+  manager unions it across modules and passes each path to `ld` after the program's own objects.
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
   Four entry kinds:
@@ -122,7 +125,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   of v0.1.33: every reference is already folded to a `lit-int` by
   gen-ast (ASTSpec.md's Constant definition model and `lit-int` entries), so
   a `cinclude` statement never carries a `constants` field by the time SA
-  sees it, and SA has no macro-name table of its own.
+  sees it, and SA has no macro-name table of its own (a macro c2ast could not
+  export reaches SA only as the `c-macro` mark on a reference).
   `functions`, `globals`, `structs` and `typedefs` are
   independent sections of the header's AST -- a header exporting only some of
   them (e.g. `stdint.h` with only `typedefs`) still has each present section
@@ -161,29 +165,43 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     module's own declaration, or a type a top-level import brings in. A pre-scan
     resolves all of them (imports first) before function signatures are pre-registered,
     so their order in the source does not matter. A block-scoped import's types are
-    registered at the import, like a struct-def at that position.
+    registered at the import and writable until the end of the block.
   - Reaching a declaration that is still being resolved is a cycle, reported as
     `E_CircularTypeDecl` at the declaration that reached it. A struct named through a
     pointer only has to be declared; it is resolved once no declaration is being
     resolved, so a pointer may close a cycle.
   - A struct comes with every struct and enum its fields use, and a signature with every
-    type it names. A Palan type that is not nameable is registered but hidden: one written
-    `V.T` under an alias (registered as the alias `"V.T"` for `T`), one not selected, or
-    one not exported. A hidden name written in a type position is `E_UnqualifiedAliasType`
-    (alias) or `E_UnknownStructType`. C types are copied without hiding; they are global as
-    in C.
-  - Type names are program-wide identities (build-mgr keys struct allocators by them).
-    Each Palan type name records its defining module, so the same name from a second
-    module, or a local declaration of an imported name, is `E_DuplicateTypeName`.
-- type-alias statements are consumed by SA and not emitted; the alias is
-  registered and resolved inline at each reference site (see Type Aliases
-  in PalanReference.md)
-- const-decl statements are consumed by SA and not emitted; literal values
-  are inlined at each reference site (see Constant Declarations /
-  Restrictions in PalanReference.md)
+    type it names. A Palan type source may write is bound to the name it is written as
+    (`T`, or `V.T` under an alias); one not selected or not exported is registered but
+    unbound. Writing an unbound Palan type name is `E_UnqualifiedAliasType` (imported
+    under an alias) or `E_UnknownType`. C types are copied without binding; they are
+    global as in C and written by their own name.
+  - Struct and enum names are program-wide identities (build-mgr keys struct allocators
+    by them). Each records its defining module, so the same name from a second module,
+    or one a C type has, is `E_DuplicateTypeName`. An alias has no program-wide name.
+    An exported struct/enum keeps its written name. One that is not exported, or is
+    declared in a block, is named `__pln_L<module hash>_<seq>_<Name>` in sa.json, so
+    modules and blocks may each declare their own; a message shows the written name.
+  - A type declaration clashes only with names written in its scope: a type an import
+    makes writable, a C type, a const, or another declaration. An imported type that is
+    not writable does not clash.
+- type-alias statements are consumed by SA and not emitted; the aliased type is
+  resolved where the alias is declared, so its names keep meaning the types they
+  named there, and inlined at each reference site (see Type Aliases in
+  PalanReference.md)
+- const-decl statements are consumed by SA and not emitted; the value is
+  folded to an untyped literal and inlined at each reference site (see
+  Constant Declarations in PalanReference.md)
+- a constant expression (literals, consts and `sizeof` under the arithmetic, bitwise and shift
+  operators) is folded to one untyped `lit-int`/`lit-uint`/`lit-flo` before it is typed, in every
+  expression position; `E_ConstExprOverflow`/`E_ConstExprDivByZero` reject an invalid one
 - not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
   the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise; a not-impl expression in
   value position is rejected as `E_ExprNotImplemented`
+- a function signature holding a not-impl parameter or return (ASTSpec.md's Palan Parameter) is
+  rejected where the function is registered, whether called or not, local or imported:
+  `E_ParamDefaultNotImpl` for a parameter with a default value, `E_ParamNotImplemented` for any
+  other parameter, `E_RetNotImplemented` for a return
 - var-type resolved on id expressions (see Expression model below)
 - assign and return statements are emitted as-is with SA-annotated expressions
 
@@ -199,6 +217,11 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     block. Shadowing of C function names is permitted.
   - Palan function definitions inside a block are pre-registered (pass 1) to
     support forward references within the same block.
+  - Struct, enum, type-alias, and const declarations inside a block (a function body
+    included) are resolved on entry, before its functions are pre-registered, and are
+    not visible outside it; nor are the type names a block's import makes writable.
+    A block's struct or enum is named `__pln_L<module hash>_<n>_<Name>` wherever the
+    type appears in sa.json (`type-name`, `alloc-shapes`), so blocks may reuse a name.
 
 - **if** - if / if-else statement
   - stmt-type\*: "if"
@@ -302,7 +325,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   its `arr[i]` is the same struct storage. Because of `embedded`, that form is an array, not a
   struct pointer. For `@[n]@T` / `@[n]@!T`, the element is `pntr(T, mutable)` without
   `arr-size`, as in the owned `[n]@T`; the borrow's `mutable` stops at the slots. A `pntr` with
-  `mutable` and neither `arr-size` nor `embedded` is a `@T`/`@!T` pointer, never an array level.
+  `mutable` and none of `arr-size`, `embedded` and `unsized` is a `@T`/`@!T` pointer, never an
+  array level. `@name` of an array whose size is known only at run time marks each such level
+  `"unsized": true` beside its `mutable`, so it stays an array level.
   Every size must be constant
   (`E_ArrBorrowSizeNotConst`) and `T` primitive, struct or a pointer to one, with neither a
   struct nor a pointer inside a `$[m]` row (`E_ArrBorrowUnsupportedElem`). A
@@ -366,6 +391,28 @@ Additional statement kinds emitted by SA:
   `[n]T`; otherwise E_TransferToNonOwnedField), and emits the same three statements with a
   `field-assign`.
 
+  A `->>` into a variable (`val ->> var`, an `assign` with `ownership-transfer`) is accepted only
+  for a variable that owns its array or struct (otherwise E_TransferToNonOwnedVar), from a value
+  other than the variable itself (E_TransferToSelf) whose shape matches it as for a row
+  (E_TransferShapeMismatch). It emits the same three statements with an `assign`; the free is the
+  variable's own scope-exit release, which knows its sizes.
+
+- **Chained and once-evaluated stores** - an assignment whose `value` is another assignment
+  (`v -> t1 -> t2`, or a `chain-call` starting from one) runs that assignment first and reads its
+  target back as the value. Each call is evaluated once, values before targets: a call in a target
+  read back or freed by `->>` (an index, or the expression the target starts from), a value with a
+  call stored to a target with a call, and a call in the location a `->>` reads and then resets are
+  each evaluated into a temp `__pin_N` by a `var-decl`, in source order, and the statements are
+  wrapped in a `block`. The temp keeps the value's `category`, so the store treats it as the value
+  itself. A value with no call stored to a target with a call is evaluated first too when a call
+  could change it: a numeric or pointer value is read into a `__pin_N`, a struct or array copied
+  into a `__snap_N` (freed after the store), and a `->>` source read into a `__pin_N` (category
+  `expiring`) and reset at once. That is unless all it reads is the storage of local variables
+  none of which gives a pointer to its storage away anywhere in the function (by `@`, as a struct,
+  `[]T` or C pointer argument, bound to a pointer, or cast). An aggregate literal value is
+  evaluated before the target as usual; when the target is read back its address temp is what is
+  read.
+
 - **Copy** (`src -> dst` where dst is an array or a struct's storage) - no dedicated statement
   kind. SA lowers the copy to an `expr` statement calling a copy routine with `(dst, src, ...)`,
   where `dst` is the destination's `id`, `arr-index` or `field-access` expression. It applies to
@@ -399,11 +446,14 @@ Additional statement kinds emitted by SA:
 
 - **tapple-decl** - tuple-style multiple return value declaration
   - stmt-type\*: "tapple-decl"
-  - vars\*: variable list (name, var-type per entry; var-type is the function's ret type)
+  - vars\*: variable list (var-name, var-type per entry; var-type is the function's ret type)
   - value\*: SA-annotated call expression (func-type: "palan"; carries value-types field)
 
-  A declared variable whose type differs from its ret type is received into a temporary
-  and declared by a following `var-decl` initialized from it.
+  A declared variable whose type differs from its ret type, or one declared with `$`, is
+  received into a temporary and declared by a following `var-decl` initialized from it. For a
+  `$T` variable receiving a struct, that initializer is the temporary as an `expiring` value, so
+  the contents move in as for `$T p = f();` (see Stack variable declarations) and the temporary
+  is not freed at scope exit.
   A variable receiving a struct owns it and is freed at scope exit like a declared struct.
   A `tapple-assign` is emitted as a `block` holding a `tapple-decl` into temporaries followed by
   one `assign`, `arr-assign` or `field-assign` per target, in target order; a struct is copied
@@ -449,21 +499,25 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     both operands must be integer types (flo32/flo64 operands are a compile error)
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "bool"}`; operand must be integer type
-  - func-ref: a bare Palan function name written where a C function parameter marked
-    `_callback-param` (see "C-origin signature admission" below) expects it. Emitted as
-    `{"expr-type":"func-ref","name":<Palan function name>}` (plus `loc` when present on the
-    source node) — no `value-type` key at all, since this version has no first-class
-    function-pointer type to give it. `name` must resolve to an existing Palan function (not a
-    variable) via an ordinary function lookup, with matching arity, per-parameter `typeCompat ==
-    Identical` (no widening/narrowing — there is no conversion point once the C library calls
-    the function directly) plus matching pointer-mutability direction against the callback's
-    parameter types, and a matching return type (including a void/non-void mismatch, and a
-    multi-return Palan function is always rejected) — otherwise E_CallbackArgRequiresFunc (not
-    a bare function-name argument) or E_CallbackSignatureMismatch (signature mismatch). Lowered
-    by codegen to the same `LeaLabel` instruction a string literal or C global address uses,
-    since a Palan function is emitted as an unmangled assembly label — no indirect-call
-    machinery or new instruction is introduced; the callback is invoked by the C library's own
-    compiled code, never by Palan.
+  - func-ref: a function name written where a value is expected (an `id` naming no variable or
+    C global). Emitted as `{"expr-type":"func-ref","name":<function name>,"value-type":<its
+    function pointer type>}` (plus `loc`). The type is `{"type-kind":"pntr","mutable":false,
+    "base-type":{"type-kind":"func","parameters":[{"var-type":T}...],"ret-type":R}}`, built from
+    the function's signature; a function returning nothing has a `void` prim `ret-type`, and a
+    single named return gives its type. The function must be a Palan function (local or imported)
+    or a non-variadic C function, and every parameter and the return must be a primitive or a
+    borrowed pointer (`isFuncSigType`); otherwise E_FuncNotValue (multiple returns, variadic,
+    syscall, or a type that can't pass through a function pointer). Lowered by codegen to the
+    `LeaLabel` of the function's label.
+  - call-ptr: a call through a function pointer, `{"expr-type":"call-ptr","callee":<expression of
+    a function pointer type>,"args":[...],"value-type":R}` (`value-type` absent for a void
+    return). A `call` whose name is a function pointer variable, parameter or C global becomes
+    one with an `id` callee, and a `member-call` `s.f(args)` whose object's struct has a function
+    pointer field `f` becomes one with a `field-access` callee. If a function of the same name is
+    visible (for `s.f(args)`, one whose first parameter is `@!`, i.e. a method-form candidate) the
+    call is E_AmbiguousFuncPtrCall. Arguments are checked against the function type's parameters
+    by the rules for a Palan callee, whatever the pointer's origin. Lowered to a C-convention
+    indirect call.
   - addr-of: SA dispatches on the AST node's `object` (see ASTSpec.md) and emits one of three
     shapes — the `addr-of` expr-type only ever appears for the plain-variable case; a struct-field
     or array-element target lowers to an ordinary `field-access`/`arr-index` node instead:
@@ -571,8 +625,9 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       would; `release` is that variable's scope-end free. `value` is `__lit_N` analyzed as
       written in the literal's place (`@__lit_N`), so the argument is checked as that variable would
       be: a missing `@` is E_StructBorrowNeedsAddrOf / E_ArrBorrowNeedsAddrOf, and `@` for `@!` is a
-      permission error. A literal for any other parameter (numeric, `[]T`, a C function's) is
-      E_ArrLitContext / E_DictLitContext.
+      permission error. A literal for any other parameter (numeric, a non-struct `@T`/`@!T`,
+      `[]T`) is E_ArrLitArgType / E_DictLitArgType, naming the parameter and its type; one for
+      a C function's parameter other than a by-value struct is E_LitArgCFunc.
 
     A struct returned by a call and discarded as an `expr` statement becomes a `block` of a temp
     `var-decl` initialized by the call and the temp's free.
@@ -586,7 +641,7 @@ SA-only expression kinds (not present in AST JSON):
 
 - convert - Type conversion inserted by SA. Wraps an expression whose value-type
   differs from the required type. Used for both implicit widening and explicit casts
-  (narrowing, signed↔unsigned). The `cast` AST node is consumed by SA and replaced
+  (narrowing, signed↔unsigned, and the pointer casts below). The `cast` AST node is consumed by SA and replaced
   by `convert` (or removed if Identical); it does not appear in sa.json. A cast to `bool`
   from any other numeric type becomes `convert(cmp(src != 0))` (`0.0` for a float source), so a
   nonzero value yields 1 instead of being truncated.
@@ -604,6 +659,12 @@ SA-only expression kinds (not present in AST JSON):
     "src": {"expr-type": "id", "name": "x", ...}
   }
   ```
+
+  A cast whose target is a pointer type is not decided by `typeCompat`: from a pointer (not a
+  struct value) or an `int64`/`uint64`, any pointer type and permission is accepted, and a
+  borrowed array target (`pntr` with `arr-size`) only from a pointer or array. A pointer casts to
+  a prim only when that is `int64`/`uint64`. Codegen lowers every such `convert` to a plain
+  64-bit move. A borrowed array binding accepts a `convert` as its source, alongside `@name`.
 
   Example: `int32(x)` where x is int64 (explicit narrowing cast)
   ```json
@@ -631,6 +692,13 @@ SA-only expression kinds (not present in AST JSON):
   bound). One discarded as an `expr` statement becomes a `block` of its `body`, the call's
   statement and its `release`.
 
+- frame-alloc - A block in the function's stack frame; its value is the block's address. Appears
+  only as the `init` of a stack variable's var-decl (see Stack variable declarations).
+  - expr-type\*: "frame-alloc"
+  - size\*: block size in bytes (compile-time constant)
+  - align\*: block alignment in bytes (1, 2, 4, 8 or 16)
+  - value-type\*: the variable's type
+
 SA-only expression kinds (added to AST nodes):
 
 - **arr-index** - Array element access (`arr[i]`), and pointer dereference/subscript (`p[i]`) --
@@ -652,7 +720,7 @@ SA-only expression kinds (added to AST nodes):
   - If the array operand's value-type is not `pntr` → compile error (E_NotArrayType)
   - If the index expression resolves to flo32 or flo64 → compile error (E_ArrayIndexNotInteger)
   - If a non-struct element's byte size cannot be determined → compile error
-    (E_UnknownStructType). Reachable because gen-ast has no symbol table: a name it doesn't
+    (E_UnknownType). Reachable because gen-ast has no symbol table: a name it doesn't
     recognize as a struct in native syntax (e.g. `@!Foo p;` where `Foo` was never declared)
     still parses as `{"type-kind":"prim","type-name":"Foo"}`, so this is the first point SA can
     reject it. This guards the SA/codegen boundary: without it, a name that fails to resolve
@@ -670,7 +738,7 @@ SA-only expression kinds (added to AST nodes):
   the element type. This holds for any index, not just `0` — there is no `i == 0` special case
   anywhere in SA or codegen; `p[i]` for `i != 0` is ordinary pointer arithmetic, scaled by
   `elem-size`, with no bounds check (the same as C). `@T` (read-only) permits this only for a
-  read; a write is E_WriteThroughReadOnlyPtr. See PalanReference.md §22.
+  read; a write is E_WriteThroughReadOnlyPtr. See PalanReference.md §10.
 
   **Pointer dereference (`p[i]`) on a struct element:** when `array`'s `pntr` base-type is itself
   `struct(T)` (i.e. `p` is `@T`/`@!T` where `T` is a struct — not an `[n]$T`/`[n]T`/`[n]@T`/
@@ -741,6 +809,8 @@ Additional fields per expression kind:
 - call expression:
   - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions, "syscall"
     for a call resolved to a `syscall` declaration (local or imported)
+  - name: for func-type "c", the symbol the function links to (its `symbol` in ast.json, else
+    the written name); likewise for a func-ref to a C function
   - syscall-number added (integer) when func-type is "syscall" -- the declaration's number,
     folded to a literal by SA; the declaration itself never reaches this or any other module's
     sa.json (see "Function model" above), so this is the only place the number survives
@@ -750,16 +820,23 @@ Additional fields per expression kind:
   - struct-ret added instead of value-type when a C function returns a struct **by value**
     (SysV AMD64 classification, see "Struct variable declaration → sa.json" below for how this
     call is placed): `{"var":<destination variable name string>,"struct-name":<struct tag
-    name>,"size":<total struct size in bytes>,"eightbytes":[{"class":"int"|"sse","size":1|2|4|
-    8}, ...]}`. Each array entry is one eightbyte of the classified return value in order — its
+    name>,"size":<total struct size in bytes>,"eightbytes":[{"class":"int"|"sse","size":1..8},
+    ...]}`. Each array entry is one eightbyte of the classified return value in order — its
     byte offset within the struct is implied by its index (`index * 8`), there is no explicit
     `offset` key; `size` on the last entry is the tail width when the struct isn't a multiple of
-    8 bytes (only 1/2/4/8 are supported — any other tail width is E_UnsupportedCStructReturn). A
+    8 bytes (codegen writes a width other than 1/2/4/8 piecewise). A
     struct over 16 bytes (the System V AMD64 MEMORY class) is `"eightbytes":[]`, and the hidden
     destination pointer is prepended by SA as an ordinary first entry in the call's own `args`
     array (an `id` expression of type `pntr(struct)`) — codegen has no MEMORY-specific lowering,
     it is just another argument. When `struct-ret` is present the call node never carries
     `value-type`/`value-types` (SA removes it) since the call has no ordinary return-value slot.
+  - struct-arg added on an argument (in `args`) given to a C function's by-value struct
+    parameter: `{"size":<total struct size in bytes>,"eightbytes":[...]}`, with `eightbytes` as
+    in `struct-ret` (`[]` for MEMORY class). The argument expression itself is a pointer to the
+    struct to copy — a variable, field, array element, or a `temp` holding a literal or a
+    returned struct — and codegen reads the eightbytes through it: each goes to a register of
+    its class when all of the struct's eightbytes fit in the remaining argument registers,
+    otherwise the whole struct is copied to the stack, as a MEMORY-class one always is.
 
 Promotion rules
 ---------------
@@ -796,6 +873,10 @@ the base type.
 bitwise, or comparison operator, `neg`, or `bitnot` in a `convert` to `int32`, so the result is
 never a 1-byte value outside 0/1 (`b + 1` is 2). `usualArithConv` itself ranks `bool` below every
 other type, so the other side wins; this matters only for call arguments (below).
+
+A shift (`shl`/`shr`) does not take a common type: its `value-type` is the (promoted) left
+operand's, and the count is wrapped in a `convert` to that type when it differs. Both operands
+must be integers (`E_BitwiseOpNotInteger`). Codegen takes the count modulo the width.
 
 A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
 an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
@@ -929,8 +1010,8 @@ cast.
     writable — there is no read-only concept for those forms in this iteration.
   - A C parameter or return type's own `mutable` comes from its pointee's `const` qualification
     (`base-type.const`), folded in by `normalizeCType` at the point a `cinclude`d function
-    signature is registered (`PlnSaInternal.h`) — `const T *` normalizes to `mutable: false`,
-    `T *` to `mutable: true`. This is the same ingestion-boundary treatment struct/array
+    signature, global, or struct field is registered (`PlnSaInternal.h`) — `const T *`
+    normalizes to `mutable: false`, `T *` to `mutable: true`. This is the same ingestion-boundary treatment struct/array
     variables get elsewhere: SA's own permission checks only ever need to understand `mutable`,
     never c2ast's `const` vocabulary.
 
@@ -944,7 +1025,9 @@ a named `strct`/`union`→`struct`) and then check every type against `unreprese
 - A `prim` type-name not resolved to a known Palan primitive (e.g. `flt128` for C's `long
   double` when no typedef maps it to something usable).
 - `arr` (a bare array type-kind — the `[n]@T`/`[n]@!T` pointer-slot-array shape has already
-  normalized to `pntr` by this point), `func` (a function-pointer type), a `strct`/`union`
+  normalized to `pntr` by this point), a `func` whose parameters or return are not all
+  primitives or pointers representable by these same rules (a variadic one, or one taking a
+  struct by value), a `strct`/`union`
   with no `type-name` (a genuinely untagged struct reference — c2ast synthesizes a tag from
   the typedef name for a single, non-derived `typedef struct { ... } Name;`, so this is a
   multi-declarator/derived-declarator typedef of such a body, not every anonymous struct),
@@ -958,26 +1041,20 @@ a named `strct`/`union`→`struct`) and then check every type against `unreprese
   needed (see "Incomplete struct types" below), not at signature-admission time. This applies to
   a struct **return** type, including one that requires the full System V AMD64 by-value return
   classification at the call site (see the call expression's `struct-ret` entry above) — the
-  return direction is fully representable. A by-value struct type-kind used as a top-level
-  **parameter** (not behind a pointer), by contrast, is rejected here with the reason
-  `"by-value struct parameter"` — this direction has no ABI implementation (a C function like
-  `stdio.h`'s `fopencookie`, which takes a `cookie_io_functions_t` by value, is unsupported for
-  this reason).
-- A `pntr` whose `base-type` is `func` (a function-pointer parameter) is representable, as a
-  narrow exception, when the inner function signature is itself fully representable by the same
-  rules applied recursively (no by-value struct parameter, no nested function pointer, no other
-  unrepresentable parameter or return type) — such a parameter is marked `"_callback-param":true`
-  on the parameter's own JSON object (an SA-internal marker, never emitted in sa.json) and its
-  argument position accepts a bare Palan function name as a `func-ref` expression (see the
-  Expression model entry above) instead of an ordinary expression. A function-pointer parameter
-  whose inner signature is not representable this way still contributes `"function pointer"` to
-  `_unsupported-sig`, same as before this marker existed. `normalizeCType` recurses into a `func`
-  type-kind's own return type and parameters, so pointee `const` folds to `mutable` on the inner
-  signature's pointers exactly as it does at the top level.
+  return direction is fully representable. A by-value struct used as a top-level
+  **parameter** is rewritten to the shape of a native struct parameter (`pntr` to `struct`
+  without `mutable`), so a call checks its argument as for a native function; the call's
+  argument then carries `struct-arg` (see the call expression above). Unlike a native struct
+  parameter, a read-only `@T` is accepted, since the callee receives a copy.
+- `normalizeCType` folds a `pntr` to a `func` to `"mutable":false` whatever C's `const` says,
+  drops the parameters' `name`s and the node's `typedef-name`, and recurses into the return type
+  and parameters, so a C function pointer has the same shape as a native `@func(...)`. A C
+  typedef of a function type (not a pointer, e.g. `cookie_read_function_t`) is expanded by
+  c2ast where it is referenced, so `cookie_read_function_t *` arrives as a `pntr` to a `func`.
 
 This differs from a native Palan signature's check (`validateNativeSig`): a native signature only
 rejects a structural type-kind `PlnTypeRegistry::fromJson` can never build (currently just a bare
-`arr`), and defers a not-yet-registered struct name to the more specific E_UnknownStructType /
+`arr`), and defers a not-yet-registered struct name to the more specific E_UnknownType /
 E_IncompleteStructType diagnosed at the point of use — a cinclude'd C signature has no such later
 resolution step to defer to, since c2ast's typedef registration has already resolved anything
 resolvable before the signature is emitted.
@@ -1027,8 +1104,8 @@ Struct types
 ------------
 `type Name { field_decl... }` defines a struct type. The SA processes `struct-def` nodes and
 registers the type in its internal registry; the node is consumed and does not appear in sa.json.
-An array field's `size-expr` is evaluated like any array size (a const reference or `sizeof` folds
-to a literal); a size that is not a compile-time integer is an error.
+An array field's `size-expr` is evaluated like any array size (a constant expression folds to a
+literal); a size that is not a compile-time integer is an error.
 
 A struct captured from a `cinclude`d C header (ASTSpec.md's `cinclude` statement `structs`
 field) registers into this exact same internal registry — there is no separate representation
@@ -1047,7 +1124,7 @@ keeps an `isUnion` flag used only by the layout computation and by diagnostic wo
 ### Incomplete struct types
 
 A registered struct tag may be *incomplete* — its name is known but no field layout is available,
-the same distinction C makes for a forward-declared or opaque tag (e.g. `FILE`). `StructDef` has
+the same distinction C makes for a forward-declared or opaque tag (e.g. `DIR`). `StructDef` has
 `bool isComplete` and `string incompleteReason`; when `!isComplete`, `fields` is empty and
 `totalSize` is `-1` (there is no partial layout — either the layout is fully known or not known
 at all). `incompleteReason` is one of exactly two values:
@@ -1059,7 +1136,7 @@ at all). `incompleteReason` is one of exactly two values:
 - `"unsupported-field"` — the header gives the tag a field list, but at least one field is
   rejected by "C-origin field admission" (below).
 
-Either way the tag name still resolves — referencing it is not E_UnknownStructType, the "no such
+Either way the tag name still resolves — referencing it is not E_UnknownType, the "no such
 type" error — but any use that requires a known layout is E_IncompleteStructType instead:
 
 - Field-chain resolution, including a plain field read or an intermediate hop in a longer chain
@@ -1083,15 +1160,17 @@ happens: a tag already complete keeps its layout regardless of what a later head
 ### C-origin field admission
 
 Before a C-origin field list is registered, each field's `var-type` (ASTSpec.md's c2ast
-representation) is normalized to the same vocabulary a native `struct-def` field would use, then
-checked for support; a field the check rejects causes the *whole* struct to be registered as an
-incomplete struct (see "Incomplete struct types" below) rather than being dropped individually or
-the tag going unregistered — fields up to and including the failing one are discarded, and no
-partial layout is kept:
+representation) is first passed through `normalizeCType` (so every pointer level, including a
+pointer-slot array's slot and the levels under it, gets `mutable` from its pointee's `const`:
+`T *f;` is `@!T`, `const T *f;` is `@T`), then normalized to the same vocabulary a native
+`struct-def` field would use, and checked for support; a field the check rejects causes the
+*whole* struct to be registered as an incomplete struct (see "Incomplete struct types" below)
+rather than being dropped individually or the tag going unregistered — fields up to and including
+the failing one are discarded, and no partial layout is kept:
 
-- A by-value struct or union leaf (`type-kind:"strct"`/`"union"`, from `struct Foo f;`) is rewritten to
-  `type-kind:"embed"` — same shape a native `$Foo` field produces. A by-value struct leaf inside
-  an array (`struct Foo arr[n];`) is instead rewritten to a plain `prim` type-name leaf, matching
+- A by-value struct or union leaf (`type-kind:"struct"` after `normalizeCType`, from
+  `struct Foo f;`) is rewritten to `type-kind:"embed"` — same shape a native `$Foo` field
+  produces. A by-value struct leaf inside an array (`struct Foo arr[n];`) is instead rewritten to a plain `prim` type-name leaf, matching
   the native `[n]$Foo` shape (`buildStructDef`'s array case looks the leaf up in the struct
   registry by name, not by a distinct type-kind).
 - A `prim` field is supported iff `elemSizeBytes` resolves its type-name.
@@ -1111,10 +1190,7 @@ partial layout is kept:
     c2ast always stamps on a raw C array declarator is stripped during this same normalization
     step — both origins reach the struct layout code as the single canonical (no-`embedded`)
     shape. A by-value struct leaf under the pointer (`struct Foo *field[n];`) is rewritten to a
-    plain `prim` type-name leaf, same as the direct-array case above. The slot's `mutable` flag
-    is left absent (defaults to `false`, i.e. read-only) — C-origin pointer fields have no
-    const/non-const distinction carried this deep, so they are conservatively read-only, same
-    as a scalar C pointer field.
+    plain `prim` type-name leaf, same as the direct-array case above.
 
 ### C ABI layout
 
@@ -1166,6 +1242,29 @@ makePoint();`), the call itself is the var-decl's `init` in place of `calloc`: t
 over the returned storage and frees it at scope exit. A struct variable with an initializer is
 always emitted as its own var-decl, so `Point a = b, c = f();` evaluates left to right.
 
+### Stack variable declarations
+
+A struct or array variable declared with `$` (`$Point p;`, `$[4]int32 a;`) gets the same
+`var-type` as without `$`; its `init` is a `frame-alloc` instead of the allocation call, and
+what the heap version does through its allocator and free functions is derived from them:
+
+- `calloc` → `memset(v, 0, size)` follows the var-decl; `malloc` → nothing (left uninitialized).
+- `__pln_alloc_K(args)` → `memset(v, 0, size)` then `__pln_init_K(v, args)` follow the var-decl.
+  build-mgr generates `__pln_init_K` (fill an existing block) and `__pln_fini_K` (release what
+  the block owns, not the block) for every alloc-shape alongside the alloc/free pair.
+- At scope exit, `free` → nothing; `__pln_free_K(v, args)` → `__pln_fini_K(v, args)`.
+
+Only the outermost block is in the frame, so a `[n]T` struct array or a 2D array keeps its heap
+elements or rows. `size` must be a compile-time constant (E_FrameArrSizeNotConst). A struct
+returned by a Palan call (`$Point p = makePoint();`) is copied in, as a `block` following the
+var-decl: a temp takes the call, `memcpy` copies it into `p`, and `free` releases the returned
+block without `__pln_free_K`, since `p` now holds what it owned.
+
+A stack variable is registered in `arrayScopeVars_` with its scope-exit statement (if any) but not
+as an owner: an `id` naming it has no `"category":"owned"`, so it cannot be the source of `->>`,
+and `return` of a stack struct returns a copy. `return` of a stack array is E_ReturnFrameArr;
+`$` on a non-aggregate type is E_FrameVarType.
+
 ### field-assign statement → sa.json
 
 `10 -> p.x` (inline or `$T` chain — no pointer indirection) produces:
@@ -1192,7 +1291,8 @@ always emitted as its own var-decl, so `Point a = b, c = f();` evaluates left to
 ```
 
 `ptr-expr` is present when the field chain passes through an owned (`T`) or non-owning (`@T`/`@!T`)
-struct pointer field. It is an expression that loads the intermediate pointer; `offset` is then applied
+struct pointer field, or starts from an expression other than a variable (a call returning
+`@T`/`@!T`, a cast). It is an expression that gives the intermediate pointer; `offset` is then applied
 relative to that pointer. When `ptr-expr` is present, `var` is absent; when `var` is present, `ptr-expr`
 is absent.
 

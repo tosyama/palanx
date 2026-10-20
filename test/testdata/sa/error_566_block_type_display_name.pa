@@ -1,0 +1,5 @@
+func f() {
+	type Foo { int32 x; };
+	Foo p;
+	int32 n = p;
+}

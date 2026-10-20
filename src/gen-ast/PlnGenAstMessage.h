@@ -2,8 +2,8 @@
 ///
 /// Manage output message descripitons class.
 ///
-/// @file		PlnGenAstMessage.h
-/// @copyright	2024 YAMAGUCHI Toshinobu
+/// @file PlnGenAstMessage.h
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 #include <string>
 using std::string;
@@ -19,6 +19,7 @@ enum PlnMessageCode {
 	E_UnexpectedChar,		// character
 	E_InvalidCharLiteral,		// literal text
 	E_InvalidNumberLiteral,		// literal text
+	E_SyscallNamedReturn,
 };
 
 class PlnGenAstMessage

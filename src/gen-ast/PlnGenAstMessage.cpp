@@ -2,8 +2,8 @@
 ///
 /// Manage output message descripitons.
 ///
-/// @file		PlnGenAstMessage.h
-/// @copyright	2024 YAMAGUCHI Toshinobu
+/// @file PlnGenAstMessage.cpp
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 #include "PlnGenAstMessage.h"
 #include "../common/PlnDefs.h"
@@ -56,6 +56,10 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 		case E_InvalidNumberLiteral:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Invalid number literal '" + arg1 + "'.";
+
+		case E_SyscallNamedReturn:
+			return "a syscall must declare its return with '-> type'; named and multiple "
+			       "return values are not supported.";
 
 		default:
 			BOOST_ASSERT(false);

@@ -4,4 +4,5 @@ typedef unsigned int chtype;
 #define NCURSES_BITS(mask,shift) (NCURSES_CAST(chtype,(mask)) << ((shift) + NCURSES_ATTR_SHIFT))
 #define A_REVERSE NCURSES_BITS(1U,10)
 #define A_BOLD    NCURSES_BITS(1U,13)
+#define A_ATTRIBUTES NCURSES_BITS(~(1U - 1U),0)
 #define ULMAX     18446744073709551615UL

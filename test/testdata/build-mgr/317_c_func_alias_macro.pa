@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+cinclude <libgen.h>;
+
+flo32 f = 0.0;
+int32 n = sscanf("0x1p3s", "%as", @!f);
+printf("%d %g\n", n, f);
+
+[64]uint8 msg;
+printf("%d %s\n", strerror_r(2, msg, 64), msg);
+
+[16]uint8 path;
+strcpy(path, "/a/b/");
+printf("%s\n", basename(path));

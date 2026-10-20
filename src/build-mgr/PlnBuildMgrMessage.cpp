@@ -2,8 +2,8 @@
 ///
 /// Manage output message descriptions.
 ///
-/// @file		PlnBuildMgrMessage.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnBuildMgrMessage.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnBuildMgrMessage.h"
 #include "../common/PlnDefs.h"

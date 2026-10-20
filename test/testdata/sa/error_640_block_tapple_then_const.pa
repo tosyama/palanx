@@ -1,0 +1,7 @@
+func f() -> int64 a, int64 b {
+	return;
+}
+{
+	(int64 K, int64 L) = f();
+	const K = 4;
+}

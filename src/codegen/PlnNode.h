@@ -31,6 +31,7 @@ enum class ExprKind {
     BitOr,
     BitXor,
     BitNot,
+    Shift,
     Cmp,
     Convert,
     CCCall,
@@ -44,7 +45,9 @@ enum class ExprKind {
     AddrOf,
     CGlobal,
     FuncRef,
+    PtrCall,
     Temp,
+    FrameAlloc,
 };
 
 struct Expr {
@@ -67,15 +70,22 @@ struct CGlobalExpr : Expr {
     VRegType type = VRegType::Ptr64;
 };
 
-// Reference to a Palan function's address, to pass as a C callback argument
-// (e.g. qsort's comparator). A Palan function is emitted
-// as an unmangled assembly label (see PlnVCodeGen::generate), so this is
-// just the address of that label -- lowered to a bare LeaLabel, same as
-// StrLitExpr, with no dereference. No first-class function-pointer value
-// exists in this version, so there is no value-type to carry here.
+// A function's address, as a function pointer value. Functions are emitted
+// as unmangled assembly labels (see PlnVCodeGen::generate), so this is just
+// the address of that label -- lowered to a bare LeaLabel, same as
+// StrLitExpr, with no dereference.
 struct FuncRefExpr : Expr {
     FuncRefExpr() : Expr(ExprKind::FuncRef) {}
     string name;
+};
+
+// A call through a function pointer.
+struct PtrCallExpr : Expr {
+    PtrCallExpr() : Expr(ExprKind::PtrCall) {}
+    unique_ptr<Expr> callee;
+    bool     hasRet  = false;
+    VRegType retType = VRegType::Int64;
+    vector<unique_ptr<Expr>> args;
 };
 
 struct IntLitExpr : Expr {
@@ -99,6 +109,13 @@ struct FloLitExpr : Expr {
 struct IdExpr : Expr {
     IdExpr() : Expr(ExprKind::Id) {}
     string name;
+};
+
+// A block in the function's stack frame; its value is the block's address.
+struct FrameAllocExpr : Expr {
+    FrameAllocExpr() : Expr(ExprKind::FrameAlloc) {}
+    int size  = 0;
+    int align = 1;
 };
 
 struct AddrOfExpr : Expr {
@@ -168,6 +185,14 @@ struct BitXorExpr : Expr {
     VRegType type = VRegType::Int64;
 };
 
+struct ShiftExpr : Expr {
+    ShiftExpr() : Expr(ExprKind::Shift) {}
+    bool isRight = false;  // '>>>' (logical) rather than '<<<'
+    unique_ptr<Expr> left;
+    unique_ptr<Expr> right;
+    VRegType type = VRegType::Int64;
+};
+
 struct BitNotExpr : Expr {
     BitNotExpr() : Expr(ExprKind::BitNot) {}
     unique_ptr<Expr> operand;
@@ -189,6 +214,11 @@ struct ConvertExpr : Expr {
     unique_ptr<Expr> src;
 };
 
+// One eightbyte of a struct passed or returned by value: the register type
+// it travels in, and how many of its bytes belong to the struct (1-8; a width
+// other than 1/2/4/8 is read or written piecewise).
+struct Eightbyte { VRegType type; int size; };
+
 struct CCCallExpr : Expr {
     CCCallExpr() : Expr(ExprKind::CCCall) {}
     string name;
@@ -203,9 +233,14 @@ struct CCCallExpr : Expr {
     // structRetEightbytes lists the classified eightbytes in order (empty
     // means MEMORY class -- the destination pointer was already prepended to
     // args as an ordinary argument, so no further lowering is needed here).
-    bool             hasStructRet = false;
-    string           structRetVar;
-    vector<VRegType> structRetEightbytes;
+    bool              hasStructRet = false;
+    string            structRetVar;
+    vector<Eightbyte> structRetEightbytes;
+    // Parallel to args: set for an argument passed to a by-value struct
+    // parameter, whose expression yields a pointer to the struct to copy.
+    // Empty eightbytes means MEMORY class (copied to the stack).
+    struct StructArg { int size; vector<Eightbyte> eightbytes; };
+    vector<std::optional<StructArg>> structArgs;
 };
 
 struct PlnCallExpr : Expr {

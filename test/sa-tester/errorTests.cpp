@@ -1,3 +1,8 @@
+/// semantic analyzer error case tests
+///
+/// @file errorTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
 
@@ -355,6 +360,14 @@ TEST(sa_error, ambiguous_call)
 	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_055_ambiguous_call.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("Ambiguous function call"), string::npos);
+
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_683_func_value_ambiguous_import.pa -o " + ast_out), "");
+	sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:27: error: Ambiguous function call 'square'"), string::npos) << sa;
+
+	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_684_func_ptr_import_func_call.pa -o " + ast_out), "");
+	sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":3:11: error: call to 'square' is ambiguous: it names both a function pointer and a function."), string::npos) << sa;
 }
 
 TEST(sa_error, unknown_alias)
@@ -404,7 +417,7 @@ TEST(sa_error, unknown_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_060_unknown_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find("unknown type"), string::npos);
 }
 
 TEST(sa_error, unknown_field)
@@ -542,27 +555,27 @@ TEST(sa_error, write_readonly_ptr)
 TEST(sa_error, struct_field_unknown_type)
 {
 	// type Foo { BadType x; } — prim field with unknown type name
-	// Covers: buildStructDef E_UnknownStructType for prim field (sz < 0 branch)
+	// Covers: buildStructDef E_UnknownType for prim field (sz < 0 branch)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_073_struct_field_unknown_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
 TEST(sa_error, embed_unknown_struct)
 {
 	// type Foo { $Unknown a; } — embed field with undefined struct name
-	// Covers: buildStructDef E_UnknownStructType for embed field
+	// Covers: buildStructDef E_UnknownType for embed field
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_074_embed_unknown_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
 TEST(sa_error, alias_unknown_method)
@@ -631,42 +644,23 @@ TEST(sa_error, field_assign_on_arr_index_non_struct)
 	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
 }
 
-TEST(sa_error, field_assign_on_call_base)
-{
-	// type Point{...}; func f() -> @!Point r {...}; 1 -> f().x; -- the store_loc
-	// grammar's func_call alternative normalizes to an unaddressable "not-impl"
-	// base (see storeLocToExpr), which resolveObjectChain's field-access
-	// recursion must reject explicitly rather than assume a nested object/field
-	// shape (previously an unguarded obj["object"] access aborted on this input).
-	// Covers: resolveObjectChain(forWrite=true) non-field-access base branch (E_FieldAccessOnNonStruct)
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_115_field_assign_on_call_base.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
-}
-
 TEST(sa_error, field_access_on_tuple_base)
 {
 	// type Point{...}; type Line{$Point a; $Point b;}; int64 v = (1,2).a.x; --
 	// a multi-expression tuple grouping normalizes to "not-impl" (see term's
-	// '(' tapple_inner ')' rule), reached here through a read-side two-level
-	// field-access chain rather than store_loc.
-	// Covers: resolveObjectChain(forWrite=false) non-field-access base branch (E_FieldAccessOnNonStruct)
+	// '(' tapple_inner ')' rule), reached as the base of a field-access chain.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_116_field_access_on_tuple_base.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("field access on non-struct variable"), string::npos);
+	ASSERT_NE(sa.find("this expression is not supported in this version."), string::npos);
 }
 
 TEST(sa_error, arr_field_size_not_constant)
 {
-	// type Buf { [1+1]$int64 data; }; -- size-expr is not a lit-int/lit-uint literal
+	// type Buf { [int64(2) + 1]$int64 data; }; -- a cast is not folded as a constant expression
 	// Covers: buildStructDef "arr" branch, E_ArrFieldSizeNotConstant
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -757,28 +751,28 @@ TEST(sa_error, struct_arr_ptr_field_unknown_prim_type)
 {
 	// type T { [4]NoSuchType field; }; -- [n]T owned pointer array, prim leaf unknown
 	// Covers: buildStructDef "arr" branch, non-embedded arr-ptr prim-leaf case,
-	// E_UnknownStructType
+	// E_UnknownType
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_086_arr_ptr_field_unknown_prim_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
 TEST(sa_error, struct_embed_arr_field_unknown_prim_type)
 {
 	// type T { [4]$NoSuchType field; }; -- [n]$T embed-arr, prim leaf unknown
 	// Covers: buildStructDef "arr" branch, embed-arr prim-leaf case,
-	// E_UnknownStructType
+	// E_UnknownType
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_087_embed_arr_field_unknown_prim_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:1: error: unknown struct type"), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
 TEST(sa_error, struct_nested_embed_arr_field_unsupported)
@@ -1098,14 +1092,14 @@ TEST(sa_error, deref_unknown_struct_ptr)
 	// A local `@!Foo p;` var decl is
 	// now rejected at declaration time (sa_var_decl), so only a parameter's
 	// pointee (unchecked at signature normalization) still reaches this guard.
-	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownStructType)
+	// Covers: sa_expr_arr_index generic branch, sz<0 guard (E_UnknownType)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_104_deref_unknown_struct_ptr.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find("unknown type"), string::npos);
 }
 
 TEST(sa_error, readonly_ptr_to_nonconst_c_param)
@@ -1195,14 +1189,14 @@ TEST(sa_error, ptr_decl_unknown_type)
 	// initializer, this used to compile silently and leave `p` referencing a
 	// nonexistent type.
 	// Covers: sa_var_decl pntr branch (incl. pntr-of-pntr walk), unknown
-	// pointee prim name -> E_UnknownStructType
+	// pointee prim name -> E_UnknownType
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_120_ptr_decl_unknown_type.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("unknown struct type"), string::npos);
+	ASSERT_NE(sa.find("unknown type"), string::npos);
 }
 
 TEST(sa_error, incomplete_struct_var_decl)
@@ -1211,7 +1205,7 @@ TEST(sa_error, incomplete_struct_var_decl)
 	// then `Tag t;` -- an owned declaration needs Tag's totalSize to calloc it.
 	// registerCStruct downgrades Tag to an incomplete struct
 	// (opaque handle) instead of leaving the tag unregistered, so this is a
-	// diagnosed E_IncompleteStructType, not "unknown struct type".
+	// diagnosed E_IncompleteStructType, not "unknown type".
 	// Covers: sa_struct_var_decl -> requireCompleteStruct
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1296,7 +1290,7 @@ TEST(sa_error, incomplete_struct_native_embed)
 	// declared inside a function body so it is only processed by sa_statements
 	// (pass 3), after cinclude registers Tag (pass 2) -- at top level a struct-def
 	// is also pre-scanned in pass 0, before cinclude, which would hit the
-	// separate "name not yet registered" E_UnknownStructType path instead of
+	// separate "name not yet registered" E_UnknownType path instead of
 	// this one.
 	// Covers: buildStructDef "embed" branch, sub.isComplete check
 	cleanTestEnv();
@@ -1454,7 +1448,7 @@ TEST(sa_error, c_unsupported_union_param)
 TEST(sa_error, c_unsupported_enum_param)
 {
 	// `void pick(enum Color c);` where c2ast can't compute Color's values
-	// (`= sizeof(int)`), so the enum is never registered.
+	// (`= sizeof(struct Opaque)`, an incomplete type), so the enum is never registered.
 	// Covers: sa_expr_call -> requireSupportedCFuncSig
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1486,14 +1480,8 @@ TEST(sa_error, c_unsupported_union_ret)
 
 TEST(sa_error, c_unsupported_func_param)
 {
-	// `void set_cb(int (*cb)(long double));` -- a function-pointer parameter
-	// whose own inner signature is unrepresentable (long double) is still
-	// rejected wholesale as "function pointer": the callback exception only
-	// exempts a callback parameter from the blanket rejection when
-	// callbackSigRepresentable finds every inner parameter/return type
-	// representable, which is not the case here.
-	// Covers: normalizeCFuncSig -> callbackSigRepresentable (false branch),
-	// sa_expr_call -> requireSupportedCFuncSig
+	// `void set_cb(int (*cb)(long double));` -- a function pointer whose own
+	// parameter is unrepresentable makes the whole signature unsupported.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -1733,24 +1721,6 @@ TEST(sa_error, call_arg_ptr_mismatch_c)
 	ASSERT_NE(sa.find("cannot convert '@!int32' to '@!int64'"), string::npos);
 }
 
-TEST(sa_error, c_by_value_struct_param)
-{
-	// normalizeCFuncSig used to accept a
-	// top-level by-value struct parameter (indistinguishable from a
-	// pntr-wrapped struct base-type to unrepresentableTypeName alone),
-	// letting a call like this type-check with the wrong ABI. Real-world
-	// case: stdio.h's fopencookie(..., cookie_io_functions_t).
-	// Covers: normalizeCFuncSig by-value struct detection, E_UnsupportedCFuncSignature
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_155_c_by_value_struct_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot call C function 'point_sum'"), string::npos);
-	ASSERT_NE(sa.find("by-value struct parameter"), string::npos);
-}
-
 TEST(sa_error, convert_for_binding_ptr_mismatch)
 {
 	// Same Incompatible gap as call_arg_ptr_mismatch_native, but through
@@ -1781,97 +1751,60 @@ TEST(sa_error, byval_struct_ret_discarded)
 	ASSERT_NE(sa.find("the return value of this call (a 'div_t' returned by value) is discarded"), string::npos);
 }
 
-TEST(sa_error, unsupported_c_struct_return)
-{
-	// `Odd3 o = get_odd();` where Odd3 is `{ char a[3]; }`
-	// -- classifySysVStructRet rejects the 3-byte tail eightbyte (not 1/2/4/8
-	// wide) rather than guessing at a partial-eightbyte store.
-	// Covers: sa_struct_var_decl struct-ret classification rejection, E_UnsupportedCStructReturn
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_158_unsupported_c_struct_return.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot receive the return value of a C function returning 'Odd3' by value"), string::npos);
-}
-
 TEST(sa_error, callback_arg_not_func)
 {
-	// `qsort(arr, 4, 4, x);` where `x` is a local
-	// variable, not a function name -- the "_callback-param" slot only
-	// accepts a bare reference resolved by findPlnFunc, not findVar.
-	// Covers: sa_func_ref_arg's arg.expr-type=="id" + findVar/findPlnFunc
-	// dispatch, E_CallbackArgRequiresFunc
+	// A variable of another type in a C function's function pointer parameter.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_159_callback_arg_not_func.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("argument 'x' to C function 'qsort' must be the bare name of a Palan function"),
-		string::npos);
+	ASSERT_NE(sa.find(":5:1: error: cannot convert 'int64' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_sig_arity_mismatch)
 {
-	// `func cmp(@int32 a) -> int32` passed where qsort
-	// expects a 2-parameter comparator -- arity mismatch between the C
-	// callback signature and the Palan function's own signature.
-	// Covers: sa_func_ref_arg's cCount != pCount check, E_CallbackSignatureMismatch
+	// A function with fewer parameters than qsort's comparator.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_160_callback_sig_arity_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32) -> int32' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_sig_ptr_permission)
 {
-	// `func cmp(@!int32 a, @!int32 b) -> int32` passed to
-	// qsort, whose comparator parameters are `const void*` -- C passes a
-	// read-only value INTO the callback, so a Palan `@!T` (which could write
-	// through it) is not a valid match even though the pointee types agree.
-	// Covers: sa_func_ref_arg's ptrPermissionOk(cvt, pvt) direction (value
-	// flows from C into the callback parameter), E_CallbackSignatureMismatch
+	// qsort passes `const void*`: a function that may write through its
+	// parameters can't take them.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_161_callback_ptr_permission.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@!int32, @!int32) -> int32' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_sig_width_mismatch)
 {
-	// `func cb(int64 status, @int8 arg)` passed to
-	// on_exit, whose handler's first parameter is a plain `int` (int32) --
-	// typeCompat(int32, int64) is ImplicitWiden, not Identical, and this
-	// call site requires Identical because glibc calls the Palan function
-	// directly with no conversion step to widen through at the ABI
-	// boundary. Proves callback matching is strict Identical-only, unlike
-	// every other call site in this file (which tolerate ImplicitWiden).
-	// Covers: sa_func_ref_arg's typeCompat(...) != Identical check for a
-	// non-pointer parameter, E_CallbackSignatureMismatch
+	// The callee is called with no conversion step, so int32 does not widen
+	// to an int64 parameter as it would in a direct call.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_162_callback_sig_width_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cb' cannot be used as a callback for C function 'on_exit'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(int64, @int8)' to '@func(int32, @!void)'."), string::npos) << sa;
 }
 
 TEST(sa_error, c_unsupported_func_ret)
 {
-	// `void set_cb(long double (*cb)(int));` -- a callback whose parameters
-	// are all representable but whose OWN return type is not (long double).
-	// Distinct from c_unsupported_func_param (which has an unrepresentable
-	// parameter): this exercises callbackSigRepresentable's ret-type check.
-	// Covers: normalizeCFuncSig -> callbackSigRepresentable (ret-type branch)
+	// `void set_cb(long double (*cb)(int));` -- the function pointer's return
+	// type, not a parameter, is unrepresentable.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -1884,73 +1817,57 @@ TEST(sa_error, c_unsupported_func_ret)
 
 TEST(sa_error, callback_ret_void_mismatch)
 {
-	// `func cb() -> int32 { ... }` passed to atexit,
-	// whose handler returns void -- the callback's own return value flows
-	// nowhere (glibc's atexit dispatcher discards it), so a Palan function
-	// with a return value cannot stand in for a void C callback.
-	// Covers: sa_func_ref_arg's cVoidRet==true / pHasRet==true branch,
-	// E_CallbackSignatureMismatch
+	// A function returning a value where a void function is expected.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_164_callback_ret_void_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cb' cannot be used as a callback for C function 'atexit'"), string::npos);
+	ASSERT_NE(sa.find(":3:1: error: cannot convert '@func() -> int32' to '@func()'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_ret_type_mismatch)
 {
-	// `func cmp(@int32 a, @int32 b) -> int64` passed to
-	// qsort, whose comparator returns `int` (int32) -- parameters match
-	// exactly, but the non-void return types differ.
-	// Covers: sa_func_ref_arg's non-void return-type typeCompat(...) !=
-	// Identical branch, E_CallbackSignatureMismatch
+	// Matching parameters, different non-void return type.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_165_callback_ret_type_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32, @int32) -> int64' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_multi_ret_mismatch)
 {
-	// A Palan function with multiple named returns has no single ABI return
-	// value a C callback slot could bind to -- rejected before even looking
-	// at qsort's own (single, non-void) return type.
-	// Covers: sa_func_ref_arg's pMultiRet branch, E_CallbackSignatureMismatch
+	// Multiple named returns have no single return register to bind to.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_169_callback_multi_ret_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:34: error: function 'cmp' cannot be used as a function pointer: it returns multiple values."), string::npos) << sa;
 }
 
 TEST(sa_error, callback_ret_missing_mismatch)
 {
-	// `func cmp(@int32 a, @int32 b) { }` has matching parameters but no
-	// return value at all, while qsort's comparator expects a non-void
-	// `int` return -- the mirror image of callback_ret_void_mismatch.
-	// Covers: sa_func_ref_arg's cVoidRet==false / pHasRet==false branch,
-	// E_CallbackSignatureMismatch
+	// A void function where qsort's comparator returns int.
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_170_callback_ret_missing_mismatch.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'cmp' cannot be used as a callback for C function 'qsort'"), string::npos);
+	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32, @int32)' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
 
 TEST(sa_error, deref_void_pointer)
 {
 	// `p[0]` where p is @!void -- void has no size, so
 	// this must give a dedicated diagnostic rather than the misleading
-	// "unknown struct type 'void'." that the shared sz<0 guard in
+	// "unknown type 'void'." that the shared sz<0 guard in
 	// sa_expr_arr_index would otherwise produce.
 	// Covers: sa_expr_arr_index void-pointee guard, E_DerefVoidPointer
 	cleanTestEnv();
@@ -1982,7 +1899,7 @@ TEST(sa_error, field_access_through_prim_ptr_field)
 	// raw-ptr field with a primitive pointee (`@!int64 p;`) has nothing to
 	// chain into -- resolveObjectChain must reject it as a non-struct hop,
 	// not build a bogus pntr(struct("int64")) and fail later with an
-	// unrelated "unknown struct type 'int64'." from requireCompleteStruct.
+	// unrelated "unknown type 'int64'." from requireCompleteStruct.
 	// Covers: resolveObjectChain raw-ptr elemKind=="prim" guard,
 	// E_FieldAccessOnNonStruct
 	cleanTestEnv();
@@ -2008,6 +1925,17 @@ TEST(sa_error, invalid_link_lib_name)
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(": error:"), string::npos);
 	ASSERT_NE(sa.find("invalid library name"), string::npos);
+}
+
+TEST(sa_error, link_obj_not_found)
+{
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	ASSERT_EQ(execTestCommand(
+		"bin/palan-gen-ast ../test/testdata/sa/error_611_link_obj_not_found.pa -o " + ast_out), "");
+	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find(":1:1: error: object file '"), string::npos);
+	ASSERT_NE(sa.find("/test/testdata/sa/error_611_missing.o' in a cinclude link clause is not found."), string::npos);
 }
 
 TEST(sa_error, empty_link_lib_name)
@@ -2061,33 +1989,6 @@ TEST(sa_error, syscall_too_many_params)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Linux syscall ABI supports at most 6"), string::npos);
-}
-
-TEST(sa_error, syscall_named_return)
-{
-	// A single named return (`-> int64 n`) is rejected too, not only
-	// multiple returns -- a syscall declaration has no body, so a return
-	// variable name carries no meaning.
-	// Covers: validateSyscallDecl rets guard, E_SyscallInvalidReturn
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_177_syscall_named_return.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("must declare its return with '-> type'"), string::npos);
-}
-
-TEST(sa_error, syscall_multi_return)
-{
-	// Covers: validateSyscallDecl rets guard, E_SyscallInvalidReturn (multi-return case)
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_178_syscall_multi_return.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("must declare its return with '-> type'"), string::npos);
 }
 
 TEST(sa_error, syscall_float_param)
@@ -2196,8 +2097,7 @@ TEST(sa_error, macro_backref_undefined)
 TEST(sa_error, macro_backref_arr_field)
 {
 	// Same loc-order gate as macro_backref_undefined, but for a struct
-	// field array size -- the un-folded "id" is evaluated like any other
-	// array size expression.
+	// field array size -- the un-folded "id" names no const.
 	// Covers: foldMacroConstants loc-order gate
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -2205,7 +2105,7 @@ TEST(sa_error, macro_backref_arr_field)
 		"bin/palan-gen-ast ../test/testdata/sa/error_186_macro_backref_arr_field.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":1:13: error: Undefined variable 'ARR_N'."), string::npos);
+	ASSERT_NE(sa.find(":1:1: error: struct field array size must be a compile-time constant integer; 'ARR_N' is not a const."), string::npos) << sa;
 }
 
 TEST(sa_error, untyped_var_decl)
@@ -2248,7 +2148,7 @@ TEST(sa_error, arr_lit_func_arg)
 		"bin/palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":2:5: error: an array literal can only be used as an array or struct variable's initializer, the source of '->' to a struct or an array, the value returned from a function returning a struct, or an argument for a struct or borrowed array parameter, in this version."), string::npos);
+	ASSERT_NE(sa.find(":2:5: error: parameter 'a' of type '[?]int32' cannot take an array literal: only a struct or fixed-size array parameter can."), string::npos);
 }
 
 TEST(sa_error, arr_lit_init)
@@ -2263,7 +2163,7 @@ TEST(sa_error, arr_lit_init)
 		// Elements are analyzed before the array is declared.
 		{"error_215_arr_lit_self_ref.pa", ":1:18: error: Undefined variable 'a'."},
 		{"error_216_arr_lit_ptr_elem.pa", ":1:1: error: array 'a' cannot be given an array literal: only numeric and struct element types are supported."},
-		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
+		{"error_217_arr_lit_unknown_elem.pa", ":1:1: error: unknown type 'Foo'."},
 		{"error_218_arr_lit_void_elem.pa", ":2:15: error: Void function call cannot be used as a value."},
 		{"error_219_arr_lit_row_size.pa", ":1:24: error: array 'm' has rows of size 3 but a row of its array literal has 2 elements."},
 		{"error_220_arr_lit_row_size_declared.pa", ":1:19: error: array 'm' has rows of size 3 but a row of its array literal has 2 elements."},
@@ -2292,11 +2192,13 @@ TEST(sa_error, int_literal_out_of_range)
 		{"error_201_int_lit_range_uint32.pa", "'5000000000' is out of range for type 'uint32'"},
 		{"error_202_int_lit_range_int64.pa", "'99999999999999999999' is out of range for type 'int64'"},
 		{"error_203_int_lit_range_uint64.pa", "'18446744073709551616' is out of range for type 'uint64'"},
-		{"error_204_int_lit_range_arith.pa", ":1:14: error: Integer literal '300' is out of range for type 'int8'."},
+		{"error_204_int_lit_range_arith.pa", ":2:14: error: Integer literal '300' is out of range for type 'int8'."},
 		{"error_205_int_lit_range_neg_unsigned.pa", "'-1' is out of range for type 'uint32'"},
 		// An unsuffixed cinclude macro is an untyped literal, typed from its context.
 		{"error_225_macro_untyped_range.pa", ":5:3: error: Integer literal '300' is out of range for type 'int8'."},
 		{"error_247_int_lit_range_const.pa", ":2:10: error: Integer literal '300' is out of range for type 'int8'."},
+		// A constant expression is folded first, so the sum is what must fit.
+		{"error_593_int_lit_range_folded.pa", ":1:10: error: Integer literal '200' is out of range for type 'int8'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2358,7 +2260,7 @@ TEST(sa_error, arr_borrow)
 		{"error_243_arr_borrow_assign_mismatch.pa", ":4:1: error: array shape '[3]int32' does not match"},
 		{"error_244_arr_borrow_unsized.pa", "every size in a borrowed array type"},
 		{"error_245_arr_borrow_return.pa", "cannot represent: 'array'"},
-		{"error_246_arr_borrow_embed_prim.pa", ":1:1: error: unknown struct type 'int32'."},
+		{"error_246_arr_borrow_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 		{"error_271_struct_arr_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer"},
 		{"error_272_struct_arr_borrow_mut_elem_of_ro.pa", ":3:10: error: cannot write through read-only pointer"},
 		{"error_273_struct_arr_borrow_elem_no_addr_of.pa", ":3:2: error: a struct given to a '@T'/'@!T' pointer must be written as"},
@@ -2442,8 +2344,9 @@ TEST(sa_error, struct_arr_lit)
 		{"error_266_struct_lit_unknown_field.pa", ":2:21: error: struct 'Point' has no field 'z'."},
 		{"error_267_struct_lit_ptr_field.pa", ":2:15: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
 		{"error_268_struct_lit_narrowing.pa", ":3:17: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
+		{"error_693_dict_lit_prim_var.pa", ":1:11: error: a '{name: value}' literal can only be used as a struct value"},
 		{"error_269_dict_lit_prim_elem.pa", ":1:15: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, an element of an array literal, or an argument for a struct parameter."},
-		{"error_270_dict_lit_context.pa", ":3:5: error: a '{name: value}' literal can only be used as a struct value: a struct variable's initializer, the source of '->' to a struct, an element of an array literal, or an argument for a struct parameter."},
+		{"error_270_dict_lit_context.pa", ":3:5: error: parameter 'p' of type 'int32' cannot take a '{name: value}' literal: only a struct parameter can."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2461,7 +2364,7 @@ TEST(sa_error, ptr_slot_arr)
 		{"error_282_prim_ptr_slot_arr_write_ro.pa", ":4:1: error: cannot write through read-only pointer '@T'"},
 		{"error_283_ptr_slot_arr_borrow_elem_upgrade.pa", "array shape '[2]@P' does not match the borrowed array type '@[2]@!P'."},
 		{"error_284_ptr_slot_arr_borrow_narrow_mut_slots.pa", "array shape '[2]@!P' does not match the borrowed array type '@![2]@P'."},
-		{"error_285_ptr_slot_arr_borrow_owned_arr.pa", "array shape '[2]P' does not match the borrowed array type '@[2]@P'."},
+		{"error_285_ptr_slot_arr_borrow_owned_arr.pa", "array shape '[2]P' does not match the borrowed array type '@![2]@!P'."},
 		{"error_286_ptr_slot_arr_borrow_write_ro_slot.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
 		{"error_287_ptr_slot_arr_borrow_write_ro_elem.pa", ":3:7: error: cannot write through read-only pointer array element"},
 		{"error_288_prim_ptr_slot_arr_borrow_as_prim.pa", "array shape '[2]@int32' does not match the borrowed array type '@[2]int32'."},
@@ -2484,12 +2387,13 @@ TEST(sa_error, copy)
 		{"error_207_arr_var_init_not_literal.pa", ":1:1: error: cannot copy 'int64' into '[3]int32'"},
 		{"error_296_copy_size_mismatch.pa", ":3:1: error: cannot copy '[4]int32' into '[3]int32'"},
 		{"error_297_copy_runtime_size.pa", ":4:1: error: cannot copy '[?]int32' into '[?]int32'"},
+		{"error_655_copy_unsized_row_call_target.pa", ":4:2: error: cannot copy '@!int32' into '[2]int32'"},
 		{"error_298_copy_elem_type.pa", ":2:1: error: cannot copy '[3]int32' into '[3]int64'"},
 		{"error_299_copy_struct_type.pa", ":5:1: error: cannot copy 'P' into 'Q'"},
 		{"error_300_copy_into_ro_elem.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
 		{"error_301_copy_ptr_slots_into_structs.pa", ":4:1: error: cannot copy '[2]@P' into '[2]P'"},
 		{"error_302_copy_unsupported_shape.pa", ":2:2: error: copying '@![2][3][4]int32' is not supported in this version."},
-		{"error_374_arr_copy_void_init.pa", ":2:1: error: Void function call cannot be used as a value."},
+		{"error_374_arr_copy_void_init.pa", ":2:14: error: Void function call cannot be used as a value."},
 		{"error_376_copy_runtime_row_size.pa", ":3:1: error: cannot copy '[3]$[?]int32' into '[3]$[?]int32'"},
 	};
 	for (auto& [file, expected] : cases) {
@@ -2505,26 +2409,24 @@ TEST(sa_error, copy)
 TEST(sa_error, unknown_type_name)
 {
 	const pair<string, string> cases[] = {
-		{"error_306_unknown_arr_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_307_unknown_ptr_slot_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_308_unknown_ptr_slot_unsized_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_309_unknown_arr2d_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_310_unknown_arr2d_embed_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_311_unknown_arr_borrow_elem.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_312_unknown_arr_elem_via_alias.pa", ":2:1: error: unknown struct type 'Foo'."},
-		// A block-local struct is visible only after its definition, as for a scalar `Foo p;`.
-		{"error_313_unknown_arr_elem_before_def.pa", ":2:2: error: unknown struct type 'Foo'."},
-		{"error_314_unknown_unsized_param.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_315_unknown_param.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_316_unknown_arr_borrow_param.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_317_unknown_named_ret.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_331_unknown_ptr_field.pa", ":1:1: error: unknown struct type 'Foo'."},
-		{"error_332_unknown_ptr_slot_field.pa", ":1:1: error: unknown struct type 'Foo'."},
-		// A pointer field may name a struct defined later only in its own or an enclosing statement list.
-		{"error_333_ptr_field_sibling_block_def.pa", ":2:2: error: unknown struct type 'B'."},
+		{"error_306_unknown_arr_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_307_unknown_ptr_slot_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_308_unknown_ptr_slot_unsized_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_309_unknown_arr2d_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_310_unknown_arr2d_embed_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_311_unknown_arr_borrow_elem.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_312_unknown_arr_elem_via_alias.pa", ":2:1: error: unknown type 'Foo'."},
+		{"error_314_unknown_unsized_param.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_315_unknown_param.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_316_unknown_arr_borrow_param.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_317_unknown_named_ret.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_331_unknown_ptr_field.pa", ":1:1: error: unknown type 'Foo'."},
+		{"error_332_unknown_ptr_slot_field.pa", ":1:1: error: unknown type 'Foo'."},
+		// A block's types are not visible from a sibling block.
+		{"error_333_ptr_field_sibling_block_def.pa", ":2:2: error: unknown type 'B'."},
 		// A declaration after another statement starts at its own first token.
-		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
-		{"error_335_unknown_param_after_stmt.pa", ":2:1: error: unknown struct type 'Foo'."},
+		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown type 'Foo'."},
+		{"error_335_unknown_param_after_stmt.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_336_named_ret_init_narrowing.pa", ":1:30: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_337_named_ret_init_struct.pa", ":2:19: error: struct-type named return 'p' cannot have an initializer."},
 		{"error_338_tapple_assign_narrowing.pa", ":3:13: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
@@ -2532,7 +2434,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_340_tapple_assign_single_ret.pa", ":3:1: error: Function 'g' does not have multiple return values."},
 		{"error_341_tapple_decl_narrowing.pa", ":2:1: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_342_tapple_decl_struct_mismatch.pa", ":3:1: error: cannot convert 'P' to 'int32'."},
-		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown struct type 'Foo'."},
+		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_344_transfer_non_owned_field.pa", ":3:1: error: '->>' needs a field that owns its value (T or [n]T); 'n' does not."},
 		{"error_345_unsized_ret_copy.pa", ":3:1: error: cannot copy '[?]int32' into '[3]int32'"},
 		{"error_346_ret_struct_borrow_decl.pa", ":3:1: error: a struct returned by a call has no owner to borrow from"},
@@ -2560,6 +2462,16 @@ TEST(sa_error, unknown_type_name)
 		{"error_369_unsized_rows_1d_borrow.pa", ":3:1: error: array shape '@[3]int32' does not match '[?][3]int32'"},
 		{"error_370_slot_arr_ret_as_owned_rows.pa", ":3:2: error: array shape '[?]@!int32' does not match '[?][?]int32'"},
 		{"error_371_borrow_elems_arg_as_owned.pa", ":6:1: error: array shape '[1]@!P' does not match '[?]P'"},
+		{"error_665_transfer_to_frame_var.pa", ":4:1: error: '->>' needs a variable that owns its array or struct; 'q' does not."},
+		{"error_666_transfer_to_borrow_var.pa", ":4:1: error: '->>' needs a variable that owns its array or struct; 'b' does not."},
+		{"error_667_transfer_to_struct_param.pa", ":2:20: error: '->>' needs a variable that owns its array or struct; 'p' does not."},
+		{"error_668_transfer_to_prim_var.pa", ":3:1: error: '->>' needs a variable that owns its array or struct; 'x' does not."},
+		{"error_669_transfer_to_self.pa", ":2:1: error: '->>' cannot give 'a' to itself."},
+		{"error_670_transfer_var_size_mismatch.pa", ":3:1: error: cannot transfer '[4]int32' into '[3]int32'"},
+		// The variable frees by the size it was declared with.
+		{"error_671_transfer_var_runtime_size.pa", ":4:1: error: cannot transfer '[?]int32' into '[?]int32'"},
+		{"error_672_transfer_var_struct_mismatch.pa", ":5:1: error: cannot transfer 'P' into 'Q'"},
+		{"error_673_transfer_frame_arr_to_var.pa", ":3:1: error: '->>' needs a source that owns its value"},
 		{"error_372_owned_elems_arg_as_borrow.pa", ":5:1: error: array shape '[2]P' does not match '[?]@!P'"},
 		{"error_373_slot_arr_into_owned_rows_slot.pa", ":3:1: error: array shape '[3]@!int32' does not match '[?][?]int32'"},
 	};
@@ -2576,11 +2488,12 @@ TEST(sa_error, unknown_type_name)
 TEST(sa_error, embed_elem_not_struct)
 {
 	const pair<string, string> cases[] = {
-		{"error_318_embed_prim_2d_var.pa", ":1:1: error: unknown struct type 'int32'."},
-		{"error_319_embed_prim_row_elem.pa", ":1:1: error: unknown struct type 'int32'."},
-		{"error_320_embed_prim_alias.pa", ":2:1: error: unknown struct type 'int32'."},
-		{"error_321_embed_prim_param.pa", ":1:1: error: unknown struct type 'int32'."},
+		{"error_318_embed_prim_2d_var.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
+		{"error_319_embed_prim_row_elem.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
+		{"error_320_embed_prim_alias.pa", ":2:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
+		{"error_321_embed_prim_param.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 		{"error_322_embed_ptr_elem.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not '@int32'."},
+		{"error_572_embed_prim_field.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2598,7 +2511,7 @@ TEST(sa_error, field_2d_arr_unsupported)
 		{"error_323_field_2d_arr.pa", ":1:1: error: unsupported struct field type."},
 		{"error_324_field_2d_embed_prim.pa", ":1:1: error: unsupported struct field type."},
 		{"error_325_field_2d_embed_struct.pa", ":2:1: error: unsupported struct field type."},
-		{"error_524_field_generic_type.pa", ":1:1: error: unsupported struct field type."},
+		{"error_524_field_var_arr_type.pa", ":1:1: error: unsupported struct field type."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2839,7 +2752,7 @@ TEST(sa_error, enum_value_not_const)
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_397_enum_value_not_const.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa.find(":3:15: error: enumerator 'A' must be given an integer literal or a const."), string::npos);
+	ASSERT_NE(sa.find(":3:15: error: enumerator 'A' must be given an integer constant expression."), string::npos);
 }
 
 TEST(sa_error, enum_value_overflow)
@@ -2955,12 +2868,13 @@ TEST(sa_error, enum_field_from_int)
 TEST(sa_error, sizeof)
 {
 	const pair<string, string> cases[] = {
-		{"error_406_sizeof_unknown_type.pa", ":1:12: error: unknown struct type 'Foo'."},
-		{"error_407_sizeof_incomplete_struct.pa", ":2:12: error: struct '_IO_FILE' has no known layout"},
+		{"error_406_sizeof_unknown_type.pa", ":1:12: error: unknown type 'Foo'."},
+		{"error_407_sizeof_incomplete_struct.pa", ":2:12: error: struct '__dirstream' is only forward-declared"},
 		{"error_408_sizeof_unsized_arr.pa", ":1:12: error: every array size in the type of 'sizeof' must be a compile-time constant."},
 		{"error_409_sizeof_arr_size_not_const.pa", ":2:12: error: every array size in the type of 'sizeof' must be a compile-time constant."},
-		{"error_410_sizeof_embed_prim.pa", ":1:12: error: unknown struct type 'int32'."},
+		{"error_410_sizeof_embed_prim.pa", ":1:12: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 		{"error_411_sizeof_embed_ptr.pa", ":1:12: error: '$' applies only to a struct element or a '$[m]' row, not '@int32'."},
+		{"error_573_sizeof_embed_unknown.pa", ":1:12: error: unknown type 'Foo'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2982,10 +2896,39 @@ TEST(sa_error, expr_not_implemented)
 		{"error_416_expr_not_impl_assign.pa", ":2:1: error: this expression is not supported"},
 		{"error_417_expr_not_impl_stmt.pa", ":1:1: error: this expression is not supported"},
 		{"error_521_chain_tapple_value.pa", ":4:1: error: this expression is not supported"},
-		{"error_523_expr_not_impl_sizeof_generic.pa", ":1:12: error: this expression is not supported"},
+		{"error_523_expr_not_impl_sizeof_nested.pa", ":1:12: error: this expression is not supported"},
+		{"error_553_arg_move_owner.pa", ":3:3: error: this expression is not supported"},
+		{"error_554_c_arg_move_owner.pa", ":3:16: error: this expression is not supported"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+// None of these functions is called: the signature alone must be rejected.
+TEST(sa_error, sig_not_implemented)
+{
+	const string defaultNotImpl = "has a default value; default values are not supported yet.";
+	const pair<string, string> cases[] = {
+		{"error_544_param_untyped_default.pa", ":1:8: error: parameter 'x' " + defaultNotImpl},
+		{"error_545_param_typed_default.pa", ":1:18: error: parameter 'x' " + defaultNotImpl},
+		{"error_546_param_inherit_default.pa", ":1:21: error: parameter 'b' " + defaultNotImpl},
+		{"error_547_param_move_owner.pa", ":1:8: error: this parameter is not supported in this version."},
+		{"error_548_param_var_arr_type.pa", ":1:8: error: this parameter is not supported in this version."},
+		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
+		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
+		{"error_551_ret_var_arr_type.pa", ":1:13: error: this return value is not supported in this version."},
+		{"error_552_ret_untyped.pa", ":1:13: error: this return value is not supported in this version."},
+		{"error_555_import_not_impl_sig.pa", "lib_sa_not_impl_sig.pa:1:15: error: this parameter is not supported in this version."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_not_impl_sig.pa -o out/lib_sa_not_impl_sig.pa.ast.json");
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
@@ -3020,16 +2963,28 @@ TEST(sa_error, import_type)
 	const pair<string, string> cases[] = {
 		{"error_424_import_type_unqualified.pa", ":2:1: error: type 'Vec' requires a module alias qualifier: 'V.Vec'."},
 		{"error_425_import_enum_unqualified.pa", ":2:17: error: type 'Color' requires a module alias qualifier: 'V.Color'."},
-		{"error_426_import_type_not_selected.pa", ":2:1: error: unknown struct type 'Vec'."},
-		{"error_427_import_type_private_dep.pa", ":2:1: error: unknown struct type 'Inner'."},
+		{"error_426_import_type_not_selected.pa", ":2:1: error: unknown type 'Vec'."},
+		{"error_427_import_type_private_dep.pa", ":2:1: error: unknown type 'Inner'."},
 		{"error_428_import_type_local_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
 		{"error_429_import_type_module_conflict.pa", ":2:1: error: type 'Vec' is already defined."},
 		// The imported module's own path and line, not the importer's.
 		{"error_430_import_bad_struct_def.pa", "lib_sa_bad_struct.pa:2:1: error: unsupported struct field type."},
+		// A block's import makes its types writable only in that block.
+		{"error_568_block_import_type_outside.pa", ":4:1: error: unknown type 'Vec'."},
+		{"error_569_block_import_alias_outside.pa", ":4:1: error: unknown type 'MyInt'."},
+		{"error_570_block_import_enum_outside.pa", ":4:11: error: unknown type 'Color'."},
+		{"error_571_block_import_qualified_outside.pa", ":4:1: error: unknown type 'V.Vec'."},
+		// PP is lib's P, a different type from main's P of the same name.
+		{"error_641_import_alias_private_type.pa", ":4:1: error: cannot convert '@!P' to '@!P'."},
+		// An import making a name writable still clashes with a local type of that name.
+		{"error_642_block_local_then_import.pa", ":3:2: error: type 'Vec' is already defined."},
+		{"error_643_top_local_block_import.pa", ":3:2: error: type 'Vec' is already defined."},
+		{"error_644_top_alias_block_import.pa", ":3:2: error: type 'MyInt' is already defined."},
+		{"error_645_hidden_after_block_local.pa", ":6:1: error: type 'Vec' requires a module alias qualifier: 'V.Vec'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
-		for (string lib : {"lib_sa_types", "lib_sa_types2", "lib_sa_bad_struct"})
+		for (string lib : {"lib_sa_types", "lib_sa_types2", "lib_sa_bad_struct", "lib_sa_private_alias"})
 			execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
@@ -3062,10 +3017,33 @@ TEST(sa_error, circular_type_decl)
 TEST(sa_error, alias_cast)
 {
 	const pair<string, string> cases[] = {
-		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a primitive or enum type can be a cast target."},
-		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a primitive or enum type can be a cast target."},
-		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a primitive or enum type can be a cast target."},
+		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
 		{"error_439_cast_alias_arg_count.pa", ":2:8: error: cast 'U8(...)' takes exactly one argument."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, as_cast)
+{
+	const pair<string, string> cases[] = {
+		{"error_579_cast_owned_arr.pa", ":2:14: error: cannot cast to an owned array: only a borrowed array ('@[n]T'/'@![n]T') can be a cast target."},
+		{"error_580_cast_ptr_to_narrow_int.pa", ":3:11: error: Cannot cast type '@!int32' to 'int32'."},
+		{"error_581_cast_int_to_ptr.pa", ":2:13: error: Cannot cast type 'int32' to '@!int32'."},
+		{"error_582_cast_int_to_borrowed_arr.pa", ":2:16: error: Cannot cast type 'uint64' to '@![4]int32'."},
+		{"error_583_cast_struct_value.pa", ":3:7: error: cannot cast to 'P': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_584_cast_struct_to_ptr.pa", ":3:13: error: Cannot cast type 'P' to '@!uint8'."},
+		{"error_585_cast_enum_to_ptr.pa", ":3:13: error: Cannot cast type 'Big' to '@!int32'."},
+		{"error_586_cast_ptr_to_enum.pa", ":3:9: error: Cannot cast type '@!int32' to 'Big'."},
+		{"error_688_cast_ptr_to_float.pa", ":3:11: error: Cannot cast type '@int32' to 'flo64'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3080,7 +3058,63 @@ TEST(sa_error, alias_cast)
 TEST(sa_error, struct_field_size)
 {
 	const pair<string, string> cases[] = {
-		{"error_431_struct_field_var_size.pa", ":4:2: error: struct field array size must be a compile-time constant integer."},
+		{"error_431_struct_field_var_size.pa", ":4:2: error: struct field array size must be a compile-time constant integer; 'n' is not a const."},
+		{"error_567_struct_field_var_size_top.pa", ":2:1: error: struct field array size must be a compile-time constant integer; 'n' is not a const."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, block_decl_scope)
+{
+	const pair<string, string> cases[] = {
+		{"error_556_block_type_outside.pa", ":4:1: error: unknown type 'Foo'."},
+		{"error_557_block_const_outside.pa", ":4:11: error: Undefined variable 'N'."},
+		{"error_558_block_alias_outside.pa", ":4:1: error: unknown type 'I'."},
+		{"error_559_block_enum_outside.pa", ":4:11: error: Undefined variable 'E'."},
+		{"error_560_block_type_shadow_top.pa", ":3:2: error: type 'Foo' is already defined."},
+		{"error_561_block_type_shadow_c.pa", ":3:2: error: type 'FILE' is already defined."},
+		{"error_562_block_type_shadow_outer_block.pa", ":4:3: error: type 'Foo' is already defined."},
+		{"error_563_block_const_shadow.pa", ":4:3: error: Constant 'N' is already defined."},
+		{"error_564_block_dup_decl.pa", ":3:2: error: Constant 'Foo' is already defined."},
+		// A C type a block's cinclude brings in clashes with the block's own.
+		{"error_565_block_type_then_cinclude.pa", ":3:2: error: type 'tm' is already defined."},
+		{"error_696_prim_name_type.pa", ":1:1: error: type 'int32' is already defined."},
+		{"error_697_block_prim_name_type.pa", ":2:2: error: type 'int32' is already defined."},
+		{"error_698_alias_then_cinclude.pa", ":3:2: error: type 'A' is already defined."},
+		{"error_699_alias_then_cinclude_typedef.pa", ":3:2: error: type 'B' is already defined."},
+		{"error_566_block_type_display_name.pa", ":4:2: error: cannot convert 'Foo' to 'int32'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, const_name_dup)
+{
+	const pair<string, string> cases[] = {
+		{"error_630_top_const_dup.pa", ":2:1: error: Constant 'N' is already defined."},
+		{"error_631_top_type_then_const.pa", ":2:1: error: Constant 'M' is already defined."},
+		{"error_632_top_const_then_alias.pa", ":2:1: error: type 'M' is already defined."},
+		{"error_633_top_alias_dup.pa", ":2:1: error: type 'A' is already defined."},
+		{"error_634_top_var_then_const.pa", ":2:1: error: Constant 'K' is already defined."},
+		{"error_635_top_const_then_var.pa", ":2:1: error: Variable 'K' is already declared."},
+		{"error_636_top_const_param.pa", ":2:1: error: Variable 'N' is already declared."},
+		{"error_637_block_const_outer_var.pa", ":3:2: error: Constant 'K' is already defined."},
+		{"error_638_block_var_then_const.pa", ":3:2: error: Constant 'K' is already defined."},
+		{"error_639_top_const_c_type.pa", ":2:1: error: Constant 'time_t' is already defined."},
+		{"error_640_block_tapple_then_const.pa", ":6:2: error: Constant 'K' is already defined."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3238,6 +3272,7 @@ TEST(sa_error, arr_lit_assign)
 		{"error_492_temp_borrow_prim.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_493_temp_borrow_tapple.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_494_member_call_borrow_not_arg.pa", ":4:9: error: a struct returned by a call has no owner to borrow from"},
+		{"error_653_temp_borrow_pinned.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3257,13 +3292,33 @@ TEST(sa_error, lit_arg)
 		{"error_496_arr_lit_arg_needs_at.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' ('@[..]' or '@![..]' for a literal)."},
 		{"error_497_lit_arg_count.pa", ":2:5: error: array 'a' has size 3 but its array literal has 2 elements."},
 		{"error_498_lit_arg_field_count.pa", ":3:5: error: struct 'P' has 2 fields but its literal has 1 values."},
-		{"error_499_dict_lit_arr_arg.pa", ":2:5: error: a '{name: value}' literal can only be used as a struct value"},
-		{"error_500_lit_arg_c_func.pa", ":2:10: error: an array literal can only be used as"},
-		{"error_501_lit_arg_unsized.pa", ":2:5: error: an array literal can only be used as"},
+		{"error_499_dict_lit_arr_arg.pa", ":2:5: error: parameter 'a' of type '@[3]int32' cannot take a '{name: value}' literal: only a struct parameter can."},
+		{"error_500_lit_arg_c_func.pa", ":2:10: error: a literal cannot be passed to C function 'memset': only a by-value struct parameter takes one."},
+		{"error_501_lit_arg_unsized.pa", ":2:5: error: parameter 'a' of type '[?]int32' cannot take an array literal: only a struct or fixed-size array parameter can."},
 		{"error_502_lit_arg_ptr_slot.pa", ":4:5: error: array 'a' cannot be given an array literal: only numeric and struct element types are supported."},
 		{"error_503_lit_borrow_not_arg.pa", ":3:9: error: an array literal can only be used as"},
 		{"error_504_lit_arg_borrow_escapes.pa", ":4:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_505_lit_arg_read_only.pa", ":4:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_614_arr_lit_scalar_param.pa", ":2:4: error: parameter 'a' of type 'int32' cannot take an array literal: only a struct or fixed-size array parameter can."},
+		{"error_615_arr_lit_ptr_param.pa", ":2:6: error: parameter 'p' of type '@!int32' cannot take an array literal: only a struct or fixed-size array parameter can."},
+		{"error_616_lit_arg_c_variadic.pa", ":2:16: error: a literal cannot be passed to C function 'printf': only a by-value struct parameter takes one."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, c_macro_unexported)
+{
+	const pair<string, string> cases[] = {
+		{"error_617_c_macro_func_like.pa", ":2:11: error: C macro 'FMAC' is function-like; Palan cannot use it."},
+		{"error_618_c_macro_not_constant.pa", ":2:11: error: C macro 'NOFOLD' cannot be used: it does not expand to an integer constant."},
+		{"error_619_c_macro_arr_field.pa", ":2:1: error: C macro 'NOFOLD' cannot be used: it does not expand to an integer constant."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3295,11 +3350,19 @@ TEST(sa_error, assign_in_expr)
 }
 
 
-TEST(sa_error, void_call_arg)
+TEST(sa_error, void_call_as_value)
 {
 	const pair<string, string> cases[] = {
-		{"error_509_void_call_arg.pa", ":3:11: error: Void function call cannot be used as a value."},
-		{"error_510_void_call_variadic_arg.pa", ":3:1: error: Void function call cannot be used as a value."},
+		{"error_509_void_call_arg.pa", ":3:13: error: Void function call cannot be used as a value."},
+		{"error_510_void_call_variadic_arg.pa", ":3:16: error: Void function call cannot be used as a value."},
+		{"error_654_void_value_call_target.pa", ":4:1: error: Void function call cannot be used as a value."},
+		{"error_656_void_index_store.pa", ":3:10: error: Void function call cannot be used as a value."},
+		{"error_657_void_index_load.pa", ":4:5: error: Void function call cannot be used as a value."},
+		{"error_658_void_struct_elem_copy.pa", ":4:1: error: Void function call cannot be used as a value."},
+		{"error_659_void_operand.pa", ":2:11: error: Void function call cannot be used as a value."},
+		{"error_660_void_logical_not.pa", ":2:12: error: Void function call cannot be used as a value."},
+		{"error_661_void_cond.pa", ":2:4: error: Void function call cannot be used as a value."},
+		{"error_662_void_return.pa", ":3:9: error: Void function call cannot be used as a value."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3320,7 +3383,7 @@ TEST(sa_error, chain_call)
 		{"error_513_chain_too_few.pa", ":3:17: error: function 'show' takes 3 argument(s), but 2 given."},
 		{"error_514_chain_mut_needs_at.pa", ":4:6: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'"},
 		{"error_515_chain_multi_to_mut.pa", ":3:17: error: cannot convert 'int32' to '@!int32'."},
-		{"error_516_chain_void_value.pa", ":3:14: error: Void function call cannot be used as a value."},
+		{"error_516_chain_void_value.pa", ":3:1: error: Void function call cannot be used as a value."},
 		{"error_517_chain_transfer.pa", ":3:1: error: this expression is not supported in this version."},
 		{"error_518_chain_method_form.pa", ":5:6: error: '->' cannot pass a value to a method-form call 'x.f()'"},
 		{"error_519_chain_multi_to_tapple.pa", ":3:1: error: the return values of a call chained with '->' into a multiple-return call cannot be received"},
@@ -3338,12 +3401,31 @@ TEST(sa_error, chain_call)
 
 TEST(sa_error, unsupported_c_field)
 {
+	// A variadic function pointer can't be typed as `@func`.
 	const string msg = "of 'CB': its type uses 'function pointer', a C type this version cannot represent.";
 	const pair<string, string> cases[] = {
 		{"error_534_c_func_ptr_field_read.pa", ":3:11: error: cannot access field 'fn' " + msg},
 		{"error_535_c_func_ptr_field_write.pa", ":3:1: error: cannot access field 'fn' " + msg},
 		{"error_536_c_func_ptr_field_elem.pa", ":3:11: error: cannot access field 'fns' " + msg},
 		{"error_537_c_func_ptr_field_addr.pa", ":3:15: error: cannot access field 'fn' " + msg},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, c_const_ptr_field)
+{
+	const pair<string, string> cases[] = {
+		{"error_574_c_const_ptr_field_write.pa", ":3:1: error: cannot write through read-only pointer '@T'"},
+		{"error_575_c_const_ptr_field_hop.pa", ":3:6: error: cannot write through read-only pointer field '@T'"},
+		{"error_576_c_ptr_field_bind_read_only.pa", ":4:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_577_c_const_ptr_typedef_write.pa", ":4:1: error: cannot write through read-only pointer '@T'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3381,6 +3463,173 @@ TEST(sa_error, ptr_inner_permission)
 		{"error_541_ptr_inner_narrowing.pa", ":4:1: " + narrowing},
 		{"error_542_ptr_ptr_field_inner_upgrade.pa", ":3:1: " + upgrade},
 		{"error_543_c_ptr_inner_narrowing.pa", ":5:1: " + narrowing},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, const_expr)
+{
+	const string overflow = "error: constant expression overflows its 64-bit range.";
+	const string divZero = "error: division by zero in a constant expression.";
+	const pair<string, string> cases[] = {
+		{"error_587_const_expr_overflow.pa", ":1:11: " + overflow},
+		{"error_588_const_expr_uint_overflow.pa", ":1:11: " + overflow},
+		{"error_589_const_expr_div_zero.pa", ":1:11: " + divZero},
+		{"error_590_const_expr_flo_div_zero.pa", ":1:11: " + divZero},
+		{"error_591_const_expr_flo_bitop.pa", ":1:11: error: Bitwise operator operand must be an integer type."},
+		{"error_592_const_expr_flo_mod.pa", ":1:11: error: '%' operator is not supported for float types."},
+		{"error_597_shift_float.pa", ":2:11: error: Bitwise operator operand must be an integer type."},
+		{"error_598_const_shift_float.pa", ":1:11: error: Bitwise operator operand must be an integer type."},
+		{"error_674_const_expr_flo_bitnot.pa", ":1:11: error: Bitwise operator operand must be an integer type."},
+		{"error_675_const_expr_uint_neg.pa", ":1:11: " + overflow},
+		{"error_676_const_expr_uint_add_overflow.pa", ":1:11: " + overflow},
+		{"error_677_const_expr_uint_mul_overflow.pa", ":1:11: " + overflow},
+		{"error_678_const_expr_uint_neg_operand.pa", ":1:11: " + overflow},
+		{"error_679_const_expr_int_min_div.pa", ":1:11: " + overflow},
+		{"error_680_const_expr_flo_overflow.pa", ":1:11: " + overflow},
+		{"error_681_const_expr_mul_overflow.pa", ":1:11: " + overflow},
+		{"error_682_const_expr_sub_overflow.pa", ":1:11: " + overflow},
+		// A literal past 64 bits is caught while folding, before its context types it.
+		{"error_695_const_expr_lit_overflow.pa", ":1:11: " + overflow},
+		{"error_689_const_expr_uint_mod_zero.pa", ":1:11: " + divZero},
+		{"error_690_const_expr_str_operand.pa", ":2:11: error: Arithmetic operator operand must be a numeric type."},
+		{"error_691_shift_flo_count.pa", ":2:11: error: Bitwise operator operand must be an integer type."},
+		// A shift computes in int32 for a bool target, which then rejects the narrowing.
+		{"error_692_shift_bool_target.pa", ":2:1: error: Implicit conversion from 'int32' to 'bool' is not allowed"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, owned_rows_c_ptrptr)
+{
+	// A row the array owns is not a '@!T' slot, whether or not a size is known.
+	const string mismatch = "does not match '[?]@!uint8': its elements must have the same size and layout";
+	const pair<string, string> cases[] = {
+		{"error_594_owned_rows_c_ptrptr.pa", ":3:1: error: array shape '@![1][4]uint8' " + mismatch},
+		{"error_595_owned_unsized_rows_c_ptrptr.pa", ":4:1: error: array shape '@![1][?]uint8' " + mismatch},
+		{"error_596_owned_rows_runtime_outer_c_ptrptr.pa", ":4:1: error: array shape '@![?][4]uint8' " + mismatch},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, func_ptr)
+{
+	const string sigType = " cannot be a parameter or return type of a function pointer;";
+	const pair<string, string> cases[] = {
+		{"error_599_mutable_func_ptr.pa",
+		 ":1:1: error: a function pointer is read-only; write '@func(...)', not '@!func(...)'."},
+		{"error_600_func_ptr_struct_param.pa", ":2:1: error: 'P'" + sigType},
+		{"error_601_func_ptr_arr_param.pa", ":1:1: error: 'array'" + sigType},
+		{"error_602_func_ptr_alias_struct_param.pa", ":3:1: error: 'P'" + sigType},
+		{"error_603_variadic_func_value.pa",
+		 ":2:27: error: function 'printf' cannot be used as a function pointer: it takes variable arguments."},
+		{"error_604_syscall_func_value.pa",
+		 ":2:27: error: function 'wr' cannot be used as a function pointer: it is a syscall."},
+		{"error_605_owned_param_func_value.pa",
+		 ":3:15: error: function 'g' cannot be used as a function pointer: its parameter type 'P' cannot be passed through one."},
+		{"error_606_owned_ret_func_value.pa",
+		 ":3:19: error: function 'g' cannot be used as a function pointer: its return type 'P' cannot be returned through one."},
+		{"error_607_ambiguous_func_ptr_call.pa",
+		 ":5:1: error: call to 'f3' is ambiguous: it names both a function pointer and a function."},
+		{"error_608_ambiguous_func_ptr_field_call.pa",
+		 ":4:1: error: call to 'run' is ambiguous: it names both a function pointer and a function."},
+		{"error_609_func_ptr_permission.pa",
+		 ":2:1: error: cannot convert '@func(@!int32) -> int32' to '@func(@int32) -> int32'."},
+		{"error_610_func_ptr_arg_count.pa", ":3:1: error: function 'f' takes 1 argument(s), but 2 given."},
+		{"error_685_func_ptr_c_func_call.pa",
+		 ":3:1: error: call to 'abs' is ambiguous: it names both a function pointer and a function."},
+		{"error_686_method_on_incomplete_struct.pa", ":3:1: error: Undefined function 'foo'."},
+		{"error_687_method_on_non_func_ptr_field.pa", ":3:11: error: Undefined function 'n'."},
+		{"error_694_func_ptr_param_count.pa",
+		 ":3:1: error: cannot convert '@func(int32) -> int32' to '@func(int32, int32) -> int32'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, c_struct_arg)
+{
+	const pair<string, string> cases[] = {
+		{"error_155_c_by_value_struct_param.pa", ":3:11: error: cannot convert 'int64' to 'Point'."},
+		{"error_612_c_struct_arg_func_ref.pa",
+		 ":3:25: error: function 'take_i8' cannot be used as a function pointer: its parameter type 'I8' cannot be passed through one."},
+		// Only a by-value struct parameter takes a literal; a pointer parameter still doesn't.
+		{"error_613_c_ptr_param_lit.pa", ":4:13: error: a literal cannot be passed to C function 'take_i8_ptr': only a by-value struct parameter takes one."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, frame_var)
+{
+	const pair<string, string> cases[] = {
+		{"error_620_frame_prim.pa", ":2:1: error: '$' on a variable applies only to a struct or an array, not 'int32'."},
+		{"error_621_frame_ptr.pa", ":2:1: error: '$' on a variable applies only to a struct or an array, not '@P'."},
+		{"error_622_frame_arr_size.pa", ":2:1: error: the size of stack array 'a' must be a compile-time constant."},
+		{"error_623_return_frame_arr.pa", ":3:5: error: stack array 'a' cannot be returned; its storage ends with the function."},
+		// A stack variable doesn't own its storage, so it has nothing to give away.
+		{"error_624_transfer_frame_struct.pa", ":5:1: error: '->>' needs a source that owns its value"},
+		{"error_625_transfer_frame_arr.pa", ":4:1: error: '->>' needs a source that owns its value"},
+		{"error_626_frame_embed_owning.pa", ":3:1: error: cannot embed 'Q' with '$': it owns fields; use 'Q' without '$'."},
+		{"error_627_frame_param.pa", ":2:1: error: this parameter is not supported in this version."},
+		{"error_628_frame_named_ret.pa", ":2:1: error: this return value is not supported in this version."},
+		{"error_629_frame_ret_type.pa", ":2:13: error: this return value is not supported in this version."},
+		{"error_663_tapple_frame_prim.pa", ":2:1: error: '$' on a variable applies only to a struct or an array, not 'int32'."},
+		{"error_664_tapple_frame_arr.pa", ":3:1: error: cannot copy '[?]int32' into '[3]int32'"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, expr_rooted_access)
+{
+	const pair<string, string> cases[] = {
+		{"error_646_call_owned_struct_field.pa", ":3:11: error: a struct or array returned by a call has no owner to access it through"},
+		{"error_647_call_owned_struct_field_write.pa", ":3:6: error: a struct or array returned by a call has no owner to access it through"},
+		{"error_648_c_byval_struct_field.pa", ":2:17: error: a struct or array returned by a call has no owner to access it through"},
+		{"error_649_call_temp_borrow_field.pa", ":4:11: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_650_readonly_cast_field_write.pa", ":4:7: error: cannot write through read-only pointer '@T'"},
+		{"error_651_readonly_cast_index_write.pa", ":3:1: error: cannot write through read-only pointer '@T'"},
+		{"error_652_call_prim_field.pa", ":2:11: error: field access on non-struct variable."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

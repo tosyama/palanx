@@ -1,0 +1,6 @@
+int8 x = 1;
+int64 k = 3;
+int8 a = x <<< k;
+int32 b = 1 <<< k;
+int64 c = 1 <<< 40;
+int64 d = -8 >>> 1;

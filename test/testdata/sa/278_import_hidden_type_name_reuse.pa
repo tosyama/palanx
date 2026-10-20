@@ -1,0 +1,9 @@
+import "lib_sa_types.pa" as V;
+type Vec { int32 a; };
+type MyInt = int32;
+V.Vec v; Vec w;
+MyInt m; V.MyInt n;
+func f() {
+	type Color { int64 b; };
+	Color c; V.Color d = V.Color.Green;
+}

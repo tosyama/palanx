@@ -4,8 +4,8 @@
 /// a shell, so no argument is ever subject to shell word-splitting, globbing
 /// or command substitution.
 ///
-/// @file		PlnProcess.h
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnProcess.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
 

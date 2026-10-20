@@ -2,7 +2,7 @@
 /// Command line tool main.
 ///
 /// @file main.cpp
-/// @copyright 2024 YAMAGUCHI Toshinobu
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <iostream>
 #include <fstream>
@@ -150,6 +150,7 @@ int main(int argc, char* argv[])
 	// module. Declared here (not scoped to the aggregation block below) so it
 	// is still alive when the ld command line is built.
 	set<string> link_libs;
+	set<string> link_objs;
 
 	for (int i=0; i<ast_files.size(); i++) {
 		string ast_file = ast_files[i];
@@ -197,6 +198,7 @@ int main(int argc, char* argv[])
 			// is needed. Read before the alloc-shapes continue below: a
 			// module can carry libs without carrying alloc-shapes.
 			for (auto& l : sa["libs"]) link_libs.insert(l.get<string>());
+			for (auto& o : sa["objs"]) link_objs.insert(o.get<string>());
 			if (!sa.contains("alloc-shapes")) continue;
 			for (auto& shape : sa["alloc-shapes"]) {
 				string key;
@@ -272,6 +274,8 @@ int main(int argc, char* argv[])
 				// allocators touch nothing else, and the full field list cannot
 				// be re-expressed as Palan source in general (C unions, synthesized
 				// anonymous tags, embedded types not declared in this module).
+				// Exported, because SA keeps only an exported type's name, and
+				// these must keep the program-wide names the shapes carry.
 				// Byte ranges of each struct outside its owned pointer fields,
 				// declared as __pln_padN fields and copied as they are.
 				map<string, vector<pair<string, int64_t>>> struct_pads;
@@ -287,7 +291,7 @@ int main(int argc, char* argv[])
 							+ af["leaf-name"].get<string>() + " " + af["name"].get<string>()});
 					sort(owned_decls.begin(), owned_decls.end());
 
-					out << "\ntype " << name << " {";
+					out << "\nexport type " << name << " {";
 					int64_t pos = 0;
 					int pad_no = 0;
 					auto pad_to = [&](int64_t end) {
@@ -356,9 +360,11 @@ int main(int argc, char* argv[])
 					if (hasOwned(name))
 						out << "}\n";
 
-					out << "export func __pln_free_" << name
-					    << "(" << name << " p) {\n"
-					    << "    if (p == NULL) { return; }\n";
+					// A struct in a stack frame releases only what it owns (fini);
+					// a heap one also frees its own block.
+					if (hasOwned(name))
+						out << "export func __pln_fini_" << name
+						    << "(" << name << " p) {\n";
 					for (auto& af : ownedArr) {
 						string fname = af["name"];
 						if (af["elem-kind"] == "prim") {
@@ -375,6 +381,13 @@ int main(int argc, char* argv[])
 						string sname = of["struct-name"];
 						out << "    __pln_free_" << sname << "(p." << oname << ");\n";
 					}
+					if (hasOwned(name))
+						out << "}\n";
+					out << "export func __pln_free_" << name
+					    << "(" << name << " p) {\n"
+					    << "    if (p == NULL) { return; }\n";
+					if (hasOwned(name))
+						out << "    __pln_fini_" << name << "(p);\n";
 					out << "    free(p);\n"
 					    << "    return;\n"
 					    << "}\n";
@@ -420,24 +433,32 @@ int main(int argc, char* argv[])
 						? "__pln_free_" + struct_name + "(pts[i]);"
 						: "free(pts[i]);";
 
-					out << "\nexport func __pln_alloc_" << shape_key
-					    << "(int64 n) -> []@!" << struct_name << " {\n"
-					    << "    [n]@!" << struct_name << " outer;\n"
+					out << "\nexport func __pln_init_" << shape_key
+					    << "([]@!" << struct_name << " outer, int64 n) {\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
 					    << structElemBuild(struct_name, "outer[i]", "        ")
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
+					    << "}\n"
+					    << "export func __pln_alloc_" << shape_key
+					    << "(int64 n) -> []@!" << struct_name << " {\n"
+					    << "    [n]@!" << struct_name << " outer;\n"
+					    << "    __pln_init_" << shape_key << "(outer, n);\n"
 					    << "    return outer;\n"
 					    << "}\n"
-					    << "export func __pln_free_" << shape_key
+					    << "export func __pln_fini_" << shape_key
 					    << "([]" << struct_name << " pts, int64 n) {\n"
-					    << "    if (pts == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
 					    << "        " << elem_free << "\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
+					    << "}\n"
+					    << "export func __pln_free_" << shape_key
+					    << "([]" << struct_name << " pts, int64 n) {\n"
+					    << "    if (pts == NULL) { return; }\n"
+					    << "    __pln_fini_" << shape_key << "(pts, n);\n"
 					    << "    free(pts);\n"
 					    << "    return;\n"
 					    << "}\n"
@@ -455,9 +476,8 @@ int main(int argc, char* argv[])
 				for (auto& shape : arr_arr_struct_shapes) {
 					string struct_name = shape["struct-name"];
 					string shape_key   = shape["shape-key"];
-					out << "\nexport func __pln_alloc_" << shape_key
-					    << "(int64 d0, int64 d1) -> []@![]@!" << struct_name << " {\n"
-					    << "    [d0]@![]@!" << struct_name << " outer;\n"
+					out << "\nexport func __pln_init_" << shape_key
+					    << "([]@![]@!" << struct_name << " outer, int64 d0, int64 d1) {\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
 					    << "        calloc(d1, 8) -> outer[i];\n"
@@ -468,16 +488,25 @@ int main(int argc, char* argv[])
 					    << "        }\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
+					    << "}\n"
+					    << "export func __pln_alloc_" << shape_key
+					    << "(int64 d0, int64 d1) -> []@![]@!" << struct_name << " {\n"
+					    << "    [d0]@![]@!" << struct_name << " outer;\n"
+					    << "    __pln_init_" << shape_key << "(outer, d0, d1);\n"
 					    << "    return outer;\n"
 					    << "}\n"
-					    << "export func __pln_free_" << shape_key
+					    << "export func __pln_fini_" << shape_key
 					    << "([][]" << struct_name << " outer, int64 d0, int64 d1) {\n"
-					    << "    if (outer == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
 					    << "        __pln_free_arr_" << struct_name << "(outer[i], d1);\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
+					    << "}\n"
+					    << "export func __pln_free_" << shape_key
+					    << "([][]" << struct_name << " outer, int64 d0, int64 d1) {\n"
+					    << "    if (outer == NULL) { return; }\n"
+					    << "    __pln_fini_" << shape_key << "(outer, d0, d1);\n"
 					    << "    free(outer);\n"
 					    << "    return;\n"
 					    << "}\n"
@@ -495,24 +524,32 @@ int main(int argc, char* argv[])
 				// Array allocator/free functions
 				for (auto& shape : arr_shapes) {
 					string leaf = shape["leaf-type"];
-					out << "\nexport func __pln_alloc_arr_arr_" << leaf
-					    << "(int64 d0, int64 d1) -> []@![]" << leaf << " {\n"
-					    << "    [d0]@![]" << leaf << " outer;\n"
+					out << "\nexport func __pln_init_arr_arr_" << leaf
+					    << "([]@![]" << leaf << " outer, int64 d0, int64 d1) {\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
 					    << "        malloc(d1 * " << shape["leaf-size"].get<int64_t>() << ") -> outer[i];\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
+					    << "}\n"
+					    << "export func __pln_alloc_arr_arr_" << leaf
+					    << "(int64 d0, int64 d1) -> []@![]" << leaf << " {\n"
+					    << "    [d0]@![]" << leaf << " outer;\n"
+					    << "    __pln_init_arr_arr_" << leaf << "(outer, d0, d1);\n"
 					    << "    return outer;\n"
 					    << "}\n"
-					    << "export func __pln_free_arr_arr_" << leaf
+					    << "export func __pln_fini_arr_arr_" << leaf
 					    << "([][]" << leaf << " outer, int64 d0) {\n"
-					    << "    if (outer == NULL) { return; }\n"
 					    << "    int64 i = 0;\n"
 					    << "    while i < d0 {\n"
 					    << "        free(outer[i]);\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
+					    << "}\n"
+					    << "export func __pln_free_arr_arr_" << leaf
+					    << "([][]" << leaf << " outer, int64 d0) {\n"
+					    << "    if (outer == NULL) { return; }\n"
+					    << "    __pln_fini_arr_arr_" << leaf << "(outer, d0);\n"
 					    << "    free(outer);\n"
 					    << "    return;\n"
 					    << "}\n"
@@ -550,6 +587,7 @@ int main(int argc, char* argv[])
 	// dependencies were ever supported.
 	vector<string> ldArgv{"ld"};
 	for (auto& obj : obj_files) ldArgv.push_back(obj);
+	for (auto& obj : link_objs) ldArgv.push_back(obj);
 	ldArgv.push_back("-lc");
 	for (auto& lib : link_libs) ldArgv.push_back("-l" + lib);
 	ldArgv.push_back("-dynamic-linker");

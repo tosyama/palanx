@@ -1,0 +1,10 @@
+func twice(int32 x) -> int32 { return x * 2; }
+func one(int32 x) -> int32 r { x -> r; }
+type Ops { @func(int32) -> int32 op; };
+@func(int32) -> int32 f = twice;
+one -> f;
+int32 a = f(3);
+Ops o;
+f -> o.op;
+int32 b = o.op(4);
+f(5);

@@ -145,6 +145,36 @@ void PlnX86CodeGen::emitInstrBitNot(const BitNot& n, const RegMap& rm)
     emitUnArith(notInstrForType(n.type), n.dst, n.src, n.type, rm);
 }
 
+static const char* shiftMnemonic(ShiftOp op)
+{
+    return op == ShiftOp::Shl ? "shl" : op == ShiftOp::Shr ? "shr" : "sar";
+}
+
+void PlnX86CodeGen::emitInstrShift(const Shift& s, const RegMap& rm)
+{
+    if (!rm.count(s.dst)) return;  // dead: result never used
+    // The count must be in %cl, and %rcx may hold a live value: it is kept in
+    // %r11 while the value is shifted in %r10.
+    const char* mov = movInstrForType(s.type);
+    string val = sizedRegName("%r10", s.type);
+    out << "\t" << mov << " " << srcOperand(rm.at(s.lhs)) << ", " << val << "\n";
+    out << "\tmovq %rcx, %r11\n";
+    out << "\t" << mov << " " << srcOperand(rm.at(s.rhs)) << ", " << sizedRegName("%rcx", s.type) << "\n";
+    // x86 takes the count modulo 32 below 64 bits, so 8/16-bit widths mask it themselves.
+    int w = intWidth(s.type);
+    if (w < 4)
+        out << "\tandb $" << (w * 8 - 1) << ", %cl\n";
+    out << "\t" << intMnemonic(shiftMnemonic(s.op), s.type) << " %cl, " << val << "\n";
+    out << "\tmovq %r11, %rcx\n";
+    out << "\t" << mov << " " << val << ", " << srcOperand(rm.at(s.dst)) << "\n";
+}
+
+void PlnX86CodeGen::emitInstrShiftImm(const ShiftImm& s, const RegMap& rm)
+{
+    emitUnArith(intMnemonic(shiftMnemonic(s.op), s.type) + " $" + to_string(s.count) + ",",
+                s.dst, s.src, s.type, rm);
+}
+
 void PlnX86CodeGen::emitInstrCmp(const Cmp& cm, const RegMap& rm)
 {
     if (!rm.count(cm.dst)) return;  // dead

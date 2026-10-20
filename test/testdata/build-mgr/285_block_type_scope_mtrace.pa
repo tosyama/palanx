@@ -1,0 +1,29 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+
+// Same-named structs of different layouts need their own allocators.
+func f() -> int64 r {
+	[2]P a;
+	N -> a[1].x;
+	a[1].x -> r;
+	type P { int64 x; [2]@!P next; };
+	const N = 5;
+}
+
+func g() -> int32 r {
+	[3]P b;
+	Color.Blue -> b[2].z;
+	b[2].z -> r;
+	type P { int32 y; int32 z; };
+	type Color enum { Red, Green, Blue };
+}
+
+mtrace();
+printf("%ld %d\n", f(), g());
+{
+	type P { int16 w; };
+	[2]P c;
+	7 -> c[0].w;
+	printf("%d\n", c[0].w);
+}
+muntrace();

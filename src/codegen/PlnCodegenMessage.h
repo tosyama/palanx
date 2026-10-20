@@ -2,8 +2,8 @@
 ///
 /// Manage output message descriptions class.
 ///
-/// @file		PlnCodegenMessage.h
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnCodegenMessage.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <string>
 using std::string;

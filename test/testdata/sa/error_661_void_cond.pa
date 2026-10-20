@@ -1,0 +1,2 @@
+func vf() { }
+if vf() { }

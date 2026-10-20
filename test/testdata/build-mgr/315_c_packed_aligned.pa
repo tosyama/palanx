@@ -1,0 +1,31 @@
+cinclude <stdio.h>;
+cinclude "315_c_packed_aligned.h" link "315_c_packed_aligned.o";
+
+layout();
+
+Pk p;
+1 -> p.c; 2 -> p.i; 3 -> p.l;
+show_pk(p);
+Pk q = pk_add(p, 10);
+printf("%d %d %ld\n", q.c, q.i, q.l);
+
+[3]$Pk pks;
+fill_pk(@!pks[0], 3);
+printf("%d %d %ld\n", pks[2].c, pks[2].i, pks[2].l);
+printf("%ld\n", (@pks[1] as int64) - (@pks[0] as int64));
+
+[2]$Al als;
+fill_al(@!als[0], 2);
+printf("%d %d %ld\n", als[0].x, als[1].x, (@als[1] as int64) - (@als[0] as int64));
+
+Fa f;
+4 -> f.c; 5 -> f.i; 12 -> f.l;
+show_fa(@!f);
+
+TPk t;
+6 -> t.c; 7 -> t.s;
+show_tpk(t);
+
+Outer o;
+8 -> o.c; 9 -> o.pk.c; 10 -> o.pk.i; 11 -> o.pk.l; 13 -> o.two[1].l;
+show_outer(@!o);

@@ -1,0 +1,8 @@
+cinclude <stddef.h>;
+cinclude "282_func_ptr_paths.h";
+func none() { }
+func cb(@H h, int32 x) -> int32 { return x; }
+@func() g = none;
+int32 r = hook(1);
+@!H h = NULL;
+int32 s = h.cb(1);

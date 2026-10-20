@@ -1,3 +1,8 @@
+/// C lexer: splits a C header into preprocessing tokens.
+///
+/// @file CLexer.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 class CLexer {
 public:
 	int no;

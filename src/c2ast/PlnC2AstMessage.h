@@ -2,8 +2,8 @@
 ///
 /// Manage output message descriptions class.
 ///
-/// @file		PlnC2AstMessage.h
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnC2AstMessage.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <string>
 using std::string;
@@ -16,6 +16,7 @@ enum PlnC2AstMessageCode {
 	E_InvalidDefinedSyntax,
 	E_MalformedMacroArgList,
 	E_UnhandledToken,
+	E_UnsupportedAttribute,	// arg1: attribute name
 	W_ExtraTokensAfterDirective,	// arg1: directive name (undef/ifdef/else/endif)
 	// Group A: directive errors
 	E_InvalidDirective,

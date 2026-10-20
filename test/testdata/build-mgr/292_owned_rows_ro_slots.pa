@@ -1,0 +1,13 @@
+cinclude <stdio.h>;
+
+type P { int32 x; };
+func show(@[2]@P s) { printf("%d %d\n", s[0].x, s[1].x); }
+func corner(@[2]@int32 r) { printf("%d\n", r[1][2]); }
+
+[2]P ps;
+3 -> ps[0].x;
+4 -> ps[1].x;
+show(@ps);
+[2][3]int32 m;
+7 -> m[1][2];
+corner(@m);

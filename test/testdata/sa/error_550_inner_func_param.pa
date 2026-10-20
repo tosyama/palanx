@@ -1,0 +1,3 @@
+func outer() {
+	func inner(int32 >> x) { }
+}

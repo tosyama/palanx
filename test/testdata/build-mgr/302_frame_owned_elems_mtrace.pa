@@ -1,0 +1,34 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int64 y; };
+type W { P p; [3]int32 a; };
+func depth(int32 n) -> int32 {
+    $[4]int32 a;
+    n -> a[0];
+    if n == 0 { return 0; }
+    int32 r = depth(n - 1);
+    return r + a[0];
+}
+mtrace();
+{
+    printf("%d\n", depth(4));
+    $[3]P ps;
+    W w;
+    5 -> ps[1].x;
+    ps[1] ->> w.p;
+    printf("%d\n", w.p.x);
+    P np;
+    7 -> np.x;
+    np ->> ps[2];
+    printf("%d\n", ps[2].x);
+    $[2][3]int32 m;
+    [3]int32 row;
+    9 -> row[1];
+    row ->> m[0];
+    printf("%d\n", m[0][1]);
+    m[1] ->> w.a;
+    $[2][2]P mp;
+    3 -> mp[1][1].x;
+    printf("%d\n", mp[1][1].x);
+}
+muntrace();

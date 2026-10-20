@@ -47,10 +47,15 @@ class PlnVCodeGen {
     void lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func);
     void lowerAssignStmt(const AssignStmt& stmt, VFunc& func);
     VReg lowerU64FloatConvert(VReg src, VRegType from, VRegType to, VFunc& func);
+    VReg shiftImm(VReg src, int count, ShiftOp op, VRegType type, VFunc& func);
+    VReg lowerPow2DivMod(VReg x, int k, bool isMod, VRegType type, VFunc& func);
     VReg lowerArrIndexExpr(const ArrIndexExpr& expr, VFunc& func);
     void lowerArrAssignStmt(const ArrAssignStmt& stmt, VFunc& func);
     void lowerReturnStmt(const ReturnStmt& stmt, VFunc& func);
     void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
+    vector<VReg> lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func);
+    VReg loadEightbyte(VReg ptr, int offset, const Eightbyte& eb, VFunc& func);
+    void storeEightbyte(VReg ptr, int offset, VReg src, const Eightbyte& eb, VFunc& func);
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);
     void lowerSysCallExpr(const SysCallExpr& expr, VFunc& func);
     vector<VReg> lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc& func);

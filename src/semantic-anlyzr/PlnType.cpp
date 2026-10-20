@@ -70,6 +70,23 @@ const EnumType* PlnTypeRegistry::enumType(const std::string& name, const PrimTyp
     return ins->second.get();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+const FuncType* PlnTypeRegistry::funcType(const std::vector<const PlnType*>& params, const PlnType* ret)
+{
+    auto key = std::make_pair(params, ret);
+    auto it = funcCache_.find(key);
+    if (it != funcCache_.end()) return it->second.get();
+    auto [ins, ok] = funcCache_.emplace(key, std::make_unique<FuncType>(params, ret));
+    return ins->second.get();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A by-value struct or array can't cross an indirect call: it would need the
+// callee's ownership convention, which a function pointer does not carry.
+static bool isFuncSigValueType(const json& t)
+{
+    std::string kind = t.value("type-kind", "");
+    return kind == "prim" || kind == "pntr";
+}
+
 // Kept in sync with fromJson's three accepted shapes below by construction:
 // fromJson calls this first and refuses to proceed unless it returns "", so
 // the two cannot silently drift apart the way a second, independently
@@ -89,7 +106,17 @@ std::string unrepresentableTypeName(const json& j)
     if (kind == "struct")
         return j.contains("type-name") ? "" : "anonymous struct"; // LCOV_EXCL_BR_LINE -- normalizeCType only folds a named tag to "struct"
     if (kind == "arr")   return "array"; // LCOV_EXCL_BR_LINE -- arrays always decay to pntr before reaching here
-    if (kind == "func")  return "function pointer";
+    if (kind == "func") {
+        for (auto& p : j.value("parameters", json::array())) {
+            if (!p.contains("var-type") || !isFuncSigValueType(p["var-type"])) return "function pointer";
+            const json& pt = p["var-type"];
+            if (pt.value("type-name", "") == "void" || !unrepresentableTypeName(pt).empty()) return "function pointer";
+        }
+        if (!j.contains("ret-type") || !isFuncSigValueType(j["ret-type"])
+            || !unrepresentableTypeName(j["ret-type"]).empty())
+            return "function pointer";
+        return "";
+    }
     if (kind == "union") return "union";
     if (kind == "enum")  return "enum";
     // "strct": c2ast's struct tag. normalizeCType folds a named one to
@@ -116,6 +143,11 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
     }
     if (kind == "pntr")
         return ptr(fromJson(j["base-type"]));
+    if (kind == "func") {
+        std::vector<const PlnType*> params;
+        for (auto& p : j["parameters"]) params.push_back(fromJson(p["var-type"]));
+        return funcType(params, fromJson(j["ret-type"]));
+    }
     // kind == "struct" (the only remaining possibility once unrepresentableTypeName
     // returns "")
     return structType(j["type-name"].get<std::string>());
@@ -134,7 +166,6 @@ json PlnTypeRegistry::toJson(const PlnType* t)
         j["enum"] = e->name;
         return j;
     }
-    // LCOV_EXCL_START — Ptr/Struct toJson not reachable from current SA flow
     if (t->kind == PlnType::Kind::Ptr) {
         const auto* p = static_cast<const PtrType*>(t);
         return {{"type-kind", "pntr"}, {"base-type", toJson(p->base)}};
@@ -143,8 +174,13 @@ json PlnTypeRegistry::toJson(const PlnType* t)
         const auto* s = static_cast<const StructType*>(t);
         return {{"type-kind", "struct"}, {"type-name", s->name}};
     }
-    throw std::runtime_error("unknown PlnType::Kind");
-    // LCOV_EXCL_STOP
+    if (t->kind == PlnType::Kind::Func) {
+        const auto* f = static_cast<const FuncType*>(t);
+        json params = json::array();
+        for (auto* p : f->params) params.push_back({{"var-type", toJson(p)}});
+        return {{"type-kind", "func"}, {"parameters", params}, {"ret-type", toJson(f->ret)}};
+    }
+    throw std::runtime_error("unknown PlnType::Kind"); // LCOV_EXCL_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // typeCompat implementation
@@ -226,6 +262,20 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
         bool toIsVoid = pt->base->kind == PlnType::Kind::Prim
             && static_cast<const PrimType*>(pt->base)->name == PrimType::Name::Void;
         if (fromIsVoid || toIsVoid) return TypeCompat::Identical;  // pntr(void) is bidirectionally compatible with any pntr(T)
+
+        // Functions match when each parameter and the return would: a pointer
+        // passes through unconverted, so pntr(void) and pntr(T) are as good as
+        // the same type there too.
+        if (pf->base->kind == PlnType::Kind::Func && pt->base->kind == PlnType::Kind::Func) {
+            const auto* ff = static_cast<const FuncType*>(pf->base);
+            const auto* ft = static_cast<const FuncType*>(pt->base);
+            if (ff->params.size() != ft->params.size()) return TypeCompat::Incompatible;
+            for (size_t i = 0; i < ff->params.size(); i++)
+                if (typeCompat(ft->params[i], ff->params[i], registry) != TypeCompat::Identical)
+                    return TypeCompat::Incompatible;
+            return typeCompat(ff->ret, ft->ret, registry) == TypeCompat::Identical
+                ? TypeCompat::Identical : TypeCompat::Incompatible;
+        }
 
         // pntr(int8) <-> pntr(uint8) is Identical for string/byte-buffer C
         // interop (PalanReference.md "Passing to C Functions"); the scalar

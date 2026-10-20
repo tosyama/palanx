@@ -22,6 +22,12 @@ typedef unsigned int chtype;
 #define LU5    5LU
 #define HEXL   0xFFFFFFFFFFFFFFFFL           /* hex: unsigned long when long can't hold it */
 #define SNARROW ((short)40000)               /* wraps to a negative short */
+#define UNOT   (~0U)
+#define ULNOT  (~0UL)
+#define UCNOT  (~(unsigned char)0)           /* promoted to int first */
+#define AATTR  ((chtype)(~(1U - 1U)) << 8)   /* ncurses A_ATTRIBUTES */
+#define INOT   (~5)
+#define LNOT   (~4294967296)
 #define BIGSH  (1U << 32)                    /* skipped: count >= width */
 #define SOVF   ((int)0x7fffffff + (int)1)    /* skipped: signed int overflow */
 #define BIGDEC 9223372036854775808L          /* skipped: no type holds it */
@@ -33,3 +39,5 @@ typedef unsigned int chtype;
 #define UNTBIG 0xFFFFFFFFFFFFFFFF            /* skipped: an untyped literal is limited to int64 */
 #define SSHNEG ((int)-1 << 1)                /* skipped: negative signed left operand */
 #define LSHOVF (1L << 63)                    /* skipped: signed shift overflow */
+#define FMAC(x) (x)
+#define SELF SELF

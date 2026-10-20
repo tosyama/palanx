@@ -1,0 +1,4 @@
+cinclude "271_c_struct_arg.h";
+cinclude "error_613_c_ptr_param_lit.h";
+
+take_i8_ptr({a: 1, b: 2});

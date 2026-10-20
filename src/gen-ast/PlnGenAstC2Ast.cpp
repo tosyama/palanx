@@ -1,7 +1,7 @@
 /// palan-c2ast invocation for cinclude'd C headers.
 ///
-/// @file		PlnGenAstC2Ast.cpp
-/// @copyright	2026 YAMAGUCHI Toshinobu
+/// @file PlnGenAstC2Ast.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include "PlnGenAstC2Ast.h"
 
@@ -9,6 +9,9 @@
 #include <filesystem>
 #include <stdexcept>
 #include <cstring>
+#include <cstdlib>
+#include <cerrno>
+#include <unistd.h>
 #include <vector>
 #include "PlnGenAstMessage.h"
 #include "../common/PlnProcess.h"
@@ -21,13 +24,48 @@ using std::runtime_error;
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-json execute_c2ast(const string& path_type, const string& path, const string& base_dir)
+namespace {
+// Removed on every exit path, including the throws below.
+struct TempFile {
+	string path;
+	~TempFile() { if (!path.empty()) unlink(path.c_str()); }
+};
+}
+
+static void writeTempFile(TempFile& tf, const string& content, const string& path)
+{
+	const char* tmpdir = getenv("TMPDIR");
+	string templ = string(tmpdir && *tmpdir ? tmpdir : "/tmp") + "/palan-macros-XXXXXX";
+	vector<char> buf(templ.begin(), templ.end());
+	buf.push_back('\0');
+	int fd = mkstemp(buf.data());
+	if (fd < 0) {	// LCOV_EXCL_START
+		cerr << "palan-gen-ast: cannot create macro state file: " << strerror(errno) << endl;
+		throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
+	}	// LCOV_EXCL_STOP
+	tf.path = buf.data();
+	bool ok = write(fd, content.data(), content.size()) == (ssize_t)content.size();
+	close(fd);
+	if (!ok) {	// LCOV_EXCL_START
+		cerr << "palan-gen-ast: cannot write macro state file: " << strerror(errno) << endl;
+		throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
+	}	// LCOV_EXCL_STOP
+}
+
+json execute_c2ast(const string& path_type, const string& path, const string& base_dir,
+                   const string& macro_state)
 {
 	fs::path exec_file_path = fs::canonical("/proc/self/exe");
 	string exec_path = exec_file_path.parent_path().string();
 	string c2ast_path = exec_path + "/palan-c2ast";
 
 	vector<string> argv{c2ast_path};
+	TempFile macro_file;
+	if (!macro_state.empty()) {
+		writeTempFile(macro_file, macro_state, path);
+		argv.push_back("--macros");
+		argv.push_back(macro_file.path);
+	}
 	if (path_type == "inc") {
 		argv.push_back("-s");
 		argv.push_back(path);

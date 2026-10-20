@@ -7,6 +7,7 @@
 
 #include <map>
 #include <memory>
+#include <vector>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
 using json = nlohmann::json;
@@ -21,7 +22,7 @@ enum class TypeCompat {
 
 // Type base class
 struct PlnType {
-    enum class Kind { Prim, Ptr, Struct, Enum } kind;
+    enum class Kind { Prim, Ptr, Struct, Enum, Func } kind;
     virtual ~PlnType() = default;
 protected:
     PlnType(Kind k) : kind(k) {}
@@ -58,23 +59,36 @@ struct EnumType : PlnType {
     EnumType(std::string n, const PrimType* b) : PlnType(Kind::Enum), name(std::move(n)), base(b) {}
 };
 
+// Function type: only ever a pointer's base (a `@func(...)` value). Pointer
+// permissions of the parameters and return are not part of the identity; they
+// are checked on the JSON (ptrPermission), as for any other pointer.
+struct FuncType : PlnType {
+    std::vector<const PlnType*> params;
+    const PlnType* ret;  // Void prim when nothing is returned
+    FuncType(std::vector<const PlnType*> p, const PlnType* r)
+        : PlnType(Kind::Func), params(std::move(p)), ret(r) {}
+};
+
 // Type registry — owns all type instances and interns them
 class PlnTypeRegistry {
     std::map<PrimType::Name, std::unique_ptr<PrimType>>  primCache_;
     std::map<const PlnType*, std::unique_ptr<PtrType>>   ptrCache_;
     std::map<std::string, std::unique_ptr<StructType>>   structCache_;
     std::map<std::string, std::unique_ptr<EnumType>>     enumCache_;
+    std::map<std::pair<std::vector<const PlnType*>, const PlnType*>, std::unique_ptr<FuncType>> funcCache_;
 public:
     const PrimType*  prim(PrimType::Name name);
     const PtrType*   ptr(const PlnType* base);
     const StructType* structType(const std::string& name);
     const EnumType*  enumType(const std::string& name, const PrimType* base);
+    const FuncType*  funcType(const std::vector<const PlnType*>& params, const PlnType* ret);
     const PlnType*   fromJson(const json& j);
     json             toJson(const PlnType* t);
 };
 
 // Mirrors PlnTypeRegistry::fromJson's accepted domain (prim with a known
-// type-name, pntr, struct with a type-name) without interning anything, so a
+// type-name, pntr, struct with a type-name, and a func whose parameters and
+// return are scalars or pointers) without interning anything, so a
 // caller can diagnose an unrepresentable type before treating a signature as
 // callable instead of relying on fromJson's exception. Returns "" when
 // fromJson(j) would succeed; otherwise a short display name for the first

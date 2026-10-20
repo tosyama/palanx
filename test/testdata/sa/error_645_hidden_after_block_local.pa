@@ -1,0 +1,6 @@
+import "lib_sa_types.pa" as V;
+{
+	type Vec { int32 a; };
+	Vec w;
+}
+Vec v;

@@ -1,0 +1,4 @@
+func vf() { }
+type P { int32 x; };
+[2]P ps;
+vf() -> ps[0];

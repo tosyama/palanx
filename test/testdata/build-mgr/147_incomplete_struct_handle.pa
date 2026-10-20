@@ -1,9 +1,8 @@
+cinclude <dirent.h>;
 cinclude <stdio.h>;
 
-// _IO_FILE has 29 fields captured from stdio.h; only "_unused2" (a size-expr
-// c2ast can't evaluate) is unsupported, so it registers as an incomplete
-// struct (opaque handle) instead of not registering at all, or being
-// rejected outright -- only a non-owning pointer is declared, no layout
-// needed.
-@!_IO_FILE p;
-printf("ok\n");
+// dirent.h only forward-declares struct __dirstream, so it registers as an
+// incomplete struct (opaque handle); a non-owning pointer needs no layout.
+@!__dirstream p;
+@!DIR d = opendir(".");
+printf("%d\n", closedir(d));

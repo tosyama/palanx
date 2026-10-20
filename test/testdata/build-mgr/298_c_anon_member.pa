@@ -1,0 +1,20 @@
+cinclude <stdio.h>;
+cinclude "298_c_anon_member.h" link "298_c_anon_member.o";
+
+S s;
+fill(@!s);
+printf("%d %d %d %d\n", s.k, s.lo, s.hi, s.t);
+5 -> s.k;
+2.5 -> s.d;
+6 -> s.t;
+show(@s);
+
+V v;
+1 -> v.tag; 2 -> v.i; 3.5 -> v.w;
+V vr = v_add(v, 10);
+printf("%d %d %.1f\n", vr.tag, vr.i, vr.w);
+
+F f;
+1.5 -> f.x; 2.5 -> f.y;
+F fr = f_add(f, 1.0);
+printf("%.1f %.1f\n", fr.x, fr.z);

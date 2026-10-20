@@ -1,0 +1,37 @@
+cinclude <time.h>;
+cinclude <stdio.h>;
+
+type P { int32 a; int32 b; };
+
+func view(@!P p) -> @!P r {
+	p -> r;
+}
+
+P v;
+1 -> v.a;
+2 -> v.b;
+@!P pv = @!v;
+@!void raw = pv as @!void;
+
+// cast result
+7 -> (raw as @!int32)[0];
+8 -> (raw as @!P).b;
+printf("%d %d %d\n", v.a, (raw as @P).b, (raw as @int32)[1]);	// 7 8 8
+
+// parenthesized expression
+9 -> (pv).a;
+@!int32 pa = @!v.a;
+10 -> (pa)[0];
+printf("%d\n", v.a);	// 10
+
+// call result
+11 -> view(@!v).b;
+printf("%d %d\n", view(@!v).a, view(@!v).b);	// 10 11
+@!int32 pb = @!view(@!v).b;
+12 -> pb[0];
+printf("%d\n", v.b);	// 12
+
+time_t t = int64(0);
+printf("%d\n", int32(gmtime(@t).tm_year) + 1900);	// 1970
+3 -> gmtime(@t).tm_mday;
+printf("%d\n", int32(gmtime(@t).tm_mday));	// 1 (the call refills its static buffer)

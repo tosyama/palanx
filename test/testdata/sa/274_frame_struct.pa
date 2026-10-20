@@ -1,0 +1,12 @@
+type P { int32 x; int64 y; };
+type Q { P p; [3]int32 a; int32 z; };
+func makeQ() -> Q q { 1 -> q.z; }
+func retQ() -> Q {
+    $Q t;
+    return t;
+}
+$P p;
+$Q q;
+$Q r = makeQ();
+$P c = p;
+$P a, b;

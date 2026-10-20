@@ -1,0 +1,6 @@
+cinclude "141_cinclude_macro_state_a.h";
+int32 x = A_VAL;
+cinclude "141_cinclude_macro_state_b.h";
+int32 y = A_VAL;
+int32 z = B_ON;
+int32 w = A_GONE;

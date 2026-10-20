@@ -1,3 +1,8 @@
+/// x86-64 code generation: VProg + RegMap -> AT&T assembly.
+///
+/// @file PlnX86CodeGen.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include "PlnX86CodeGen.h"
 #include "PlnX86Internal.h"
 #include <cstdint>
@@ -59,6 +64,8 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* o  = std::get_if<BitOr>    (&instr)) emitBinArith(orInstrForType(o->type),  o->dst, o->lhs, o->rhs, o->type, rm);
             else if (auto* x  = std::get_if<BitXor>   (&instr)) emitBinArith(xorInstrForType(x->type), x->dst, x->lhs, x->rhs, x->type, rm);
             else if (auto* i  = std::get_if<BitNot>   (&instr)) emitInstrBitNot(*i, rm);
+            else if (auto* i  = std::get_if<Shift>    (&instr)) emitInstrShift(*i, rm);
+            else if (auto* i  = std::get_if<ShiftImm> (&instr)) emitInstrShiftImm(*i, rm);
             else if (auto* i  = std::get_if<Cmp>      (&instr)) emitInstrCmp(*i, rm);
             else if (auto* i  = std::get_if<Convert>  (&instr)) emitInstrConvert(*i, rm);
             else if (auto* i  = std::get_if<CallC>    (&instr)) emitInstrCallC(*i, rm);
@@ -78,7 +85,8 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<DerefStore>   (&instr)) emitInstrDerefStore(*i, rm);
             else if (auto* i  = std::get_if<CalcAddr>     (&instr)) emitInstrCalcAddr(*i, rm);
             else if (auto* i  = std::get_if<LeaLocal>     (&instr)) emitInstrLeaLocal(*i, rm);
-            // BlockEnter and BlockLeave are no-ops
+            else if (auto* i  = std::get_if<FrameAddr>    (&instr)) emitInstrFrameAddr(*i, rm, ra.frameBlockOffsets);
+            // DeclVar, BlockEnter and BlockLeave are no-ops
         }
     }
 

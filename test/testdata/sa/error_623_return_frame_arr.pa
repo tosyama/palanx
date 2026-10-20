@@ -1,0 +1,4 @@
+func f() -> []int32 {
+    $[4]int32 a;
+    return a;
+}

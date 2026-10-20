@@ -1,0 +1,6 @@
+{
+	type Foo { int32 x; };
+	{
+		type Foo = int32;
+	}
+}

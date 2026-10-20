@@ -4,6 +4,7 @@
 /// @file PlnX86Call.cpp
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
+#include <algorithm>
 #include "PlnX86CodeGen.h"
 #include "PlnX86Internal.h"
 
@@ -101,15 +102,17 @@ static void emitSafeRegMoves(ostream& out, vector<RegMove> moves, const string& 
 // own register sequence, and overflow of either class goes to the stack in
 // argument order. Returns the stack space reserved (to release after the call)
 // and sets nFloatArgs to the float-class count (for C variadic %al).
-int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs)
+// A callee pointer joins the register shuffle into %rax, which is no argument
+// register and no stack argument's scratch, so no argument move overwrites it
+// before it is read.
+int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs,
+                                const PhysLoc* callee, const vector<StructArgSpan>& structArgs)
 {
-    int n_int_regs = (int)x86PhysRegs.intArgs.size();
-    int n_flt_regs = (int)x86PhysRegs.floatArgs.size();
-    int n_stack = 0, int_count = 0, flt_count = 0;
-    for (auto vr : args) {
-        if (isFloat(rm.at(vr).type)) { if (flt_count >= n_flt_regs) n_stack++; flt_count++; }
-        else                         { if (int_count >= n_int_regs) n_stack++; int_count++; }
-    }
+    vector<VRegType> types;
+    for (auto vr : args) types.push_back(rm.at(vr).type);
+    vector<int> slots = placeCallArgs(types, structArgs, (int)x86PhysRegs.intArgs.size(),
+                                      (int)x86PhysRegs.floatArgs.size());
+    int n_stack = (int)std::count(slots.begin(), slots.end(), -1);
     int stack_space = 0;
     if (n_stack > 0) {
         stack_space = ((n_stack * 8) + 15) & ~15;
@@ -121,22 +124,22 @@ int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int&
     // point, a stack arg whose source happens to be a register is read safely
     // regardless of which position that register is also a destination for.
     vector<RegMove> intMoves;
-    int int_idx = 0, flt_idx = 0, stack_idx = 0;
-    for (auto vr : args) {
-        const PhysLoc& src_loc = rm.at(vr);
+    int n_flt_regs_used = 0, stack_idx = 0;
+    for (size_t k = 0; k < args.size(); k++) {
+        const PhysLoc& src_loc = rm.at(args[k]);
         bool is_flt = isFloat(src_loc.type);
-        if (is_flt && flt_idx < n_flt_regs) {
-            string xmm = x86PhysRegs.floatArgs[flt_idx++];
+        if (is_flt && slots[k] >= 0) {
+            string xmm = x86PhysRegs.floatArgs[slots[k]];
+            n_flt_regs_used++;
             string s = srcOperand(src_loc);
             if (s != xmm)
                 out << "\t" << movInstrForType(src_loc.type) << " " << s << ", " << xmm << "\n";
-        } else if (!is_flt && int_idx < n_int_regs) {
-            intMoves.push_back(makeIntArgMove(src_loc, x86PhysRegs.intArgs[int_idx++]));
+        } else if (!is_flt && slots[k] >= 0) {
+            intMoves.push_back(makeIntArgMove(src_loc, x86PhysRegs.intArgs[slots[k]]));
         } else {
             // Overflow to stack: both int and float use 8 bytes per slot.
             int offset = stack_idx++ * 8;
             if (is_flt) {
-                flt_idx++;
                 const char* mov = movInstrForType(src_loc.type);
                 if (src_loc.isStack()) {
                     // %xmm8 is safe as scratch here for the same reason as in
@@ -147,21 +150,21 @@ int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int&
                     out << "\t" << mov << " " << srcOperand(src_loc) << ", " << offset << "(%rsp)\n";
                 }
             } else {
-                int_idx++;
                 emitIntStackArg(out, src_loc, offset);
             }
         }
     }
+    if (callee) intMoves.push_back(makeIntArgMove(*callee, "%rax"));
     emitSafeRegMoves(out, intMoves, "%r11");
-    nFloatArgs = flt_idx;
+    nFloatArgs = n_flt_regs_used;
     return stack_space;
 }
 
 void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
 {
     int flt_idx;
-    int stack_space = emitCallArgs(i.args, rm, flt_idx);
-    emitCallC(i.name, flt_idx);
+    int stack_space = emitCallArgs(i.args, rm, flt_idx, i.callee ? &rm.at(*i.callee) : nullptr, i.structArgs);
+    emitCallC(i.name, flt_idx, i.callee.has_value());
     if (stack_space > 0)
         out << "\taddq $" << stack_space << ", %rsp\n";
     // Move return value(s) to destination(s). An ordinary scalar/pointer
@@ -170,8 +173,9 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
     // second dst of either class, consuming %rdx or %xmm1 next in that
     // class's own sequence -- SysV's <=16-byte register-return limit means
     // there is never a third of either. Each dst here is a freshly allocated
-    // temp used only by a single immediately-following DerefStore (see
-    // PlnVCodeGen::lowerCCCallExpr), so PlnRegAlloc always places it in a
+    // temp used only by the stores (and shifts) that write it into the
+    // destination struct right after the call (see
+    // PlnVCodeGen::storeEightbyte), so PlnRegAlloc always places it in a
     // callee-saved register or on the stack, never in %rax/%rdx/%xmm0/%xmm1
     // themselves -- copies below need no clobber-avoiding ordering.
     static const array<const char*, 2> kIntRetRegs = {"%rax", "%rdx"};
@@ -281,12 +285,19 @@ void PlnX86CodeGen::emitInstrRetPln(const RetPln& r, const RegMap& rm, const vec
     out << "\tret\n";
 }
 
-void PlnX86CodeGen::emitCallC(const string& name, int nFloatArgs)
+// indirect: the callee pointer is in %rax (see emitCallArgs), and moves to
+// %r11 to free %al.
+void PlnX86CodeGen::emitCallC(const string& name, int nFloatArgs, bool indirect)
 {
+    if (indirect)
+        out << "\tmovq %rax, %r11\n";
     // For variadic C functions, al = number of XMM registers used for float args.
     if (nFloatArgs == 0)
         out << "\txorl %eax, %eax\n";
     else
         out << "\tmovl $" << nFloatArgs << ", %eax\n";
-    out << "\tcall " << name << "\n";
+    if (indirect)
+        out << "\tcall *%r11\n";
+    else
+        out << "\tcall " << name << "\n";
 }

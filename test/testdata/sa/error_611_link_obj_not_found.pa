@@ -1,0 +1,1 @@
+cinclude <stdio.h> link "error_611_missing.o";

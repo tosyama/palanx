@@ -1,0 +1,6 @@
+@func(int32, @!void) -> int32 f;
+@func() g;
+@!func(int32) h;
+[2]@func(int32) -> @int8 t;
+func apply(@func(int32) -> int32 cb, int32 x) -> @func(int32) -> int32 { return cb; }
+f as @func(int32, @!void) -> int32 -> f;

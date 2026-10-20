@@ -1,0 +1,4 @@
+{
+	import "lib_sa_types.pa";
+}
+Vec v;

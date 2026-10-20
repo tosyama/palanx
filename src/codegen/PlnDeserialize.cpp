@@ -1,3 +1,8 @@
+/// Deserialize sa.json into the codegen AST (Module).
+///
+/// @file PlnDeserialize.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include "PlnDeserialize.h"
 #include "PlnCodegenMessage.h"
 #include <boost/assert.hpp>
@@ -7,20 +12,17 @@ using std::endl;
 
 using namespace std;
 
-// Maps one struct-ret eightbyte descriptor ({"class":"int"|"sse","size":1|2|4|8})
-// to the VRegType its register-to-memory store should use. Sign doesn't matter
-// here (movInstrForType only keys off width), so every "int" eightbyte maps to
-// a plain signed VRegType regardless of the source field's actual signedness.
-static VRegType eightbyteToVRegType(const json& eb) {
+// Maps one eightbyte descriptor ({"class":"int"|"sse","size":1..8}) to the
+// register type it travels in. Sign doesn't matter here (movInstrForType only
+// keys off width), so every "int" eightbyte maps to a plain signed VRegType
+// regardless of the source field's actual signedness.
+static Eightbyte toEightbyte(const json& eb) {
     int size = eb["size"].get<int>();
     if (eb["class"] == "sse")
-        return size == 4 ? VRegType::Float32 : VRegType::Float64;
-    switch (size) {
-        case 1:  return VRegType::Int8;
-        case 2:  return VRegType::Int16;
-        case 4:  return VRegType::Int32;
-        default: return VRegType::Int64;
-    }
+        return {size == 4 ? VRegType::Float32 : VRegType::Float64, size};
+    VRegType t = size == 1 ? VRegType::Int8 : size == 2 ? VRegType::Int16
+               : size <= 4 ? VRegType::Int32 : VRegType::Int64;
+    return {t, size};
 }
 
 static VRegType toVRegType(const json& vt) {
@@ -98,17 +100,30 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->release = deserializeStatements(j["release"]);
         return e;
     }
+    if (expr_type == "frame-alloc") {
+        auto e = make_unique<FrameAllocExpr>();
+        e->size  = j["size"];
+        e->align = j["align"];
+        return e;
+    }
     if (expr_type == "addr-of") {
         auto e = make_unique<AddrOfExpr>();
         e->name = j["name"];
         return e;
     }
     if (expr_type == "func-ref") {
-        // No "value-type" to read here (toVRegType would reject a "func"
-        // type-kind) -- this version has no first-class function-pointer
-        // value, just the callback slot's raw address (see FuncRefExpr).
         auto e = make_unique<FuncRefExpr>();
         e->name = j["name"];
+        return e;
+    }
+    if (expr_type == "call-ptr") {
+        auto e = make_unique<PtrCallExpr>();
+        e->callee = deserializeExpr(j["callee"]);
+        if (j.contains("value-type")) {
+            e->hasRet  = true;
+            e->retType = toVRegType(j["value-type"]);
+        }
+        deserializeArgs(j, e->args);
         return e;
     }
     if (expr_type == "convert") {
@@ -180,6 +195,14 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
         return e;
     }
+    if (expr_type == "shl" || expr_type == "shr") {
+        auto e = make_unique<ShiftExpr>();
+        e->isRight = expr_type == "shr";
+        e->left  = deserializeExpr(j["left"]);
+        e->right = deserializeExpr(j["right"]);
+        e->type  = j.contains("value-type") ? toVRegType(j["value-type"]) : VRegType::Int64;
+        return e;
+    }
     if (expr_type == "bitnot") {
         auto e     = make_unique<BitNotExpr>();
         e->operand = deserializeExpr(j["operand"]);
@@ -209,9 +232,20 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
                 e->hasStructRet = true;
                 e->structRetVar = sr["var"].get<string>();
                 for (auto& eb : sr["eightbytes"])
-                    e->structRetEightbytes.push_back(eightbyteToVRegType(eb));
+                    e->structRetEightbytes.push_back(toEightbyte(eb));
             }
             deserializeArgs(j, e->args);
+            for (auto& arg : j.value("args", json::array())) {
+                if (!arg.contains("struct-arg")) {
+                    e->structArgs.emplace_back();
+                    continue;
+                }
+                const json& sa = arg["struct-arg"];
+                CCCallExpr::StructArg info{sa["size"].get<int>(), {}};
+                for (auto& eb : sa["eightbytes"])
+                    info.eightbytes.push_back(toEightbyte(eb));
+                e->structArgs.push_back(move(info));
+            }
             return e;
         } else if (func_type == "syscall") {
             auto e = make_unique<SysCallExpr>();

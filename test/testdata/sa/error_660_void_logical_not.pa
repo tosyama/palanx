@@ -1,0 +1,2 @@
+func vf() { }
+int32 a = !vf();

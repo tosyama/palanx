@@ -1,0 +1,2 @@
+func fi(int32 a) -> int32 { return a; }
+fi([1]);

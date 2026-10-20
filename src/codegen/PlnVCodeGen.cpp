@@ -1,3 +1,8 @@
+/// Virtual code generation: AST (Module) -> VProg.
+///
+/// @file PlnVCodeGen.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include "PlnVCodeGen.h"
 #include <boost/assert.hpp>
 
@@ -11,6 +16,19 @@ static long long intLitImm(const string& value, VRegType type)
      || type == VRegType::Uint32 || type == VRegType::Uint64)
         return (long long)stoull(value);
     return stoll(value);
+}
+
+// k when `e` is an integer literal 2^k with 0 < k < width, else 0.
+static int pow2Literal(const Expr& e, VRegType type)
+{
+    if (isFloat(type) || (e.kind != ExprKind::IntLit && e.kind != ExprKind::UintLit)) return 0;
+    const string& text = e.kind == ExprKind::IntLit ? static_cast<const IntLitExpr&>(e).value
+                                                    : static_cast<const UintLitExpr&>(e).value;
+    if (text[0] == '-') return 0;
+    unsigned long long v = stoull(text);
+    if (v < 2 || (v & (v - 1))) return 0;
+    int k = __builtin_ctzll(v);
+    return k < intWidth(type) * 8 ? k : 0;
 }
 
 // -------- Variable scope management --------
@@ -67,9 +85,6 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             return dst;
         }
         case ExprKind::FuncRef: {
-            // A Palan function is emitted as an unmangled label (see
-            // generate() below), so its address is just LeaLabel of that
-            // label -- same shape as StrLit, no dereference.
             auto& e = static_cast<const FuncRefExpr&>(expr);
             VReg r = allocVReg();
             func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.name});
@@ -102,6 +117,13 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             auto& e = static_cast<const IdExpr&>(expr);
             return findVar(e.name);
         }
+        case ExprKind::FrameAlloc: {
+            auto& e = static_cast<const FrameAllocExpr&>(expr);
+            func.frameBlocks.push_back({e.size, e.align});
+            VReg dst = allocVReg();
+            func.instrs.push_back(FrameAddr{dst, (int)func.frameBlocks.size() - 1});
+            return dst;
+        }
         case ExprKind::AddrOf: {
             auto& e = static_cast<const AddrOfExpr&>(expr);
             VReg local = findVar(e.name);
@@ -127,6 +149,10 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::Mul: {
             auto& e  = static_cast<const MulExpr&>(expr);
+            if (int k = pow2Literal(*e.right, e.type))
+                return shiftImm(lowerExpr(*e.left, func), k, ShiftOp::Shl, e.type, func);
+            if (int k = pow2Literal(*e.left, e.type))
+                return shiftImm(lowerExpr(*e.right, func), k, ShiftOp::Shl, e.type, func);
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
@@ -135,6 +161,8 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::Div: {
             auto& e  = static_cast<const DivExpr&>(expr);
+            if (int k = pow2Literal(*e.right, e.type))
+                return lowerPow2DivMod(lowerExpr(*e.left, func), k, false, e.type, func);
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
@@ -143,6 +171,8 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::Mod: {
             auto& e  = static_cast<const ModExpr&>(expr);
+            if (int k = pow2Literal(*e.right, e.type))
+                return lowerPow2DivMod(lowerExpr(*e.left, func), k, true, e.type, func);
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
@@ -182,6 +212,14 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(BitXor{dst, l, r, e.type});
             return dst;
         }
+        case ExprKind::Shift: {
+            auto& e  = static_cast<const ShiftExpr&>(expr);
+            VReg l   = lowerExpr(*e.left, func);
+            VReg r   = lowerExpr(*e.right, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(Shift{dst, l, r, e.isRight ? ShiftOp::Shr : ShiftOp::Shl, e.type});
+            return dst;
+        }
         case ExprKind::BitNot: {
             auto& e  = static_cast<const BitNotExpr&>(expr);
             VReg src = lowerExpr(*e.operand, func);
@@ -211,9 +249,10 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             // and sa_struct_var_decl are the only SA producers of one, and both
             // always place it as a bare statement (lowerExprStmt), never here.
             BOOST_ASSERT(e.hasRet && !e.hasStructRet);
-            vector<VReg> args = lowerArgs(e.args, func);
+            vector<StructArgSpan> spans;
+            vector<VReg> args = lowerCCallArgs(e, spans, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(CallC{e.name, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CallC{e.name, args, {dst}, {e.retType}, std::nullopt, spans}); // LCOV_EXCL_EXCEPTION_BR_LINE
             return dst;
         }
         case ExprKind::PlnCall: {
@@ -222,6 +261,15 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
             func.instrs.push_back(CallPln{e.name, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            return dst;
+        }
+        case ExprKind::PtrCall: {
+            auto& e = static_cast<const PtrCallExpr&>(expr);
+            BOOST_ASSERT(e.hasRet);
+            VReg callee = lowerExpr(*e.callee, func);
+            vector<VReg> args = lowerArgs(e.args, func);
+            VReg dst = allocVReg();
+            func.instrs.push_back(CallC{"", args, {dst}, {e.retType}, callee}); // LCOV_EXCL_EXCEPTION_BR_LINE
             return dst;
         }
         case ExprKind::SysCall: {
@@ -320,15 +368,103 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
     }
 }
 
+// A width other than 1/2/4/8 is moved as 4-, 2- and 1-byte pieces from the
+// low end, so no byte outside the struct is touched.
+static vector<pair<int, VRegType>> eightbytePieces(int size)
+{
+    vector<pair<int, VRegType>> pieces;
+    for (int pos = 0; pos < size; ) {
+        int w = size - pos >= 4 ? 4 : size - pos >= 2 ? 2 : 1;
+        pieces.push_back({pos, w == 4 ? VRegType::Uint32 : w == 2 ? VRegType::Uint16 : VRegType::Uint8});
+        pos += w;
+    }
+    return pieces;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+static bool isWholeEightbyte(const Eightbyte& eb)
+{
+    return isFloat(eb.type) || eb.size == intWidth(eb.type);
+}
+
+VReg PlnVCodeGen::loadEightbyte(VReg ptr, int offset, const Eightbyte& eb, VFunc& func)
+{
+    VReg acc = allocVReg();
+    if (isWholeEightbyte(eb)) {
+        func.instrs.push_back(DerefLoad{acc, ptr, offset, eb.type});
+        return acc;
+    }
+    bool first = true;
+    for (auto [pos, t] : eightbytePieces(eb.size)) {
+        VReg piece = allocVReg(), wide = allocVReg();
+        func.instrs.push_back(DerefLoad{piece, ptr, offset + pos, t});
+        func.instrs.push_back(Convert{wide, piece, t, eb.type});
+        if (first) {
+            acc = wide;
+            first = false;
+            continue;
+        }
+        VReg shifted = allocVReg(), merged = allocVReg();
+        func.instrs.push_back(ShiftImm{shifted, wide, 8 * pos, ShiftOp::Shl, eb.type});
+        func.instrs.push_back(BitOr{merged, acc, shifted, eb.type});
+        acc = merged;
+    }
+    return acc;
+}
+
+void PlnVCodeGen::storeEightbyte(VReg ptr, int offset, VReg src, const Eightbyte& eb, VFunc& func)
+{
+    if (isWholeEightbyte(eb)) {
+        func.instrs.push_back(DerefStore{ptr, offset, src, eb.type});
+        return;
+    }
+    for (auto [pos, t] : eightbytePieces(eb.size)) {
+        VReg val = src;
+        if (pos > 0) {
+            val = allocVReg();
+            func.instrs.push_back(ShiftImm{val, src, 8 * pos, ShiftOp::Shr, eb.type});
+        }
+        func.instrs.push_back(DerefStore{ptr, offset + pos, val, t});
+    }
+}
+
+// A struct passed by value becomes its eightbytes, read from the struct the
+// argument points at; MEMORY class is read the same way, in 8-byte INTEGER
+// units, for the emitter to copy to the stack.
+vector<VReg> PlnVCodeGen::lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func)
+{
+    vector<VReg> args;
+    for (size_t i = 0; i < expr.args.size(); i++) {
+        VReg v = lowerExpr(*expr.args[i], func);
+        if (!expr.structArgs[i]) {
+            args.push_back(v);
+            continue;
+        }
+        const CCCallExpr::StructArg& sa = *expr.structArgs[i];
+        vector<Eightbyte> ebs = sa.eightbytes;
+        bool inMemory = ebs.empty();
+        if (inMemory)
+            for (int off = 0; off < sa.size; off += 8) {
+                int w = std::min(8, sa.size - off);
+                ebs.push_back({w == 1 ? VRegType::Int8 : w == 2 ? VRegType::Int16
+                               : w <= 4 ? VRegType::Int32 : VRegType::Int64, w});
+            }
+        spans.push_back({args.size(), ebs.size(), inMemory});
+        for (size_t k = 0; k < ebs.size(); k++)
+            args.push_back(loadEightbyte(v, 8 * (int)k, ebs[k], func));
+    }
+    return args;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
 {
-    vector<VReg> args = lowerArgs(expr.args, func);
+    vector<StructArgSpan> spans;
+    vector<VReg> args = lowerCCallArgs(expr, spans, func);
     if (!expr.hasStructRet || expr.structRetEightbytes.empty()) {
         // Plain void-context call, or a MEMORY-class (>16B) struct return --
         // sa_struct_var_decl already prepended the destination pointer to
         // args as an ordinary first argument for the MEMORY case, so the
         // callee writes the whole struct through it directly; no dsts needed.
-        func.instrs.push_back(CallC{expr.name, args, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        func.instrs.push_back(CallC{expr.name, args, {}, {}, std::nullopt, spans}); // LCOV_EXCL_EXCEPTION_BR_LINE
         return;
     }
     // Register-class struct return (<=16B): the call writes each eightbyte
@@ -339,16 +475,13 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
     VReg dstPtr = findVar(expr.structRetVar);
     vector<VReg> dsts;
     vector<VRegType> types;
-    for (VRegType t : expr.structRetEightbytes) {
+    for (const Eightbyte& eb : expr.structRetEightbytes) {
         dsts.push_back(allocVReg());
-        types.push_back(t);
+        types.push_back(eb.type);
     }
-    func.instrs.push_back(CallC{expr.name, args, dsts, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
-    int offset = 0;
-    for (size_t i = 0; i < dsts.size(); i++) {
-        func.instrs.push_back(DerefStore{dstPtr, offset, dsts[i], types[i]});
-        offset += 8;
-    }
+    func.instrs.push_back(CallC{expr.name, args, dsts, types, std::nullopt, spans}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    for (size_t i = 0; i < dsts.size(); i++)
+        storeEightbyte(dstPtr, 8 * (int)i, dsts[i], expr.structRetEightbytes[i], func);
 }
 
 void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
@@ -511,9 +644,49 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
         case ExprKind::SysCall:
             lowerSysCallExpr(static_cast<const SysCallExpr&>(*stmt.body), func);
             return;
+        case ExprKind::PtrCall: {
+            auto& e = static_cast<const PtrCallExpr&>(*stmt.body);
+            VReg callee = lowerExpr(*e.callee, func);
+            vector<VReg> args = lowerArgs(e.args, func);
+            func.instrs.push_back(CallC{"", args, {}, {}, callee}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            return;
+        }
         default:
             BOOST_ASSERT(false);  // only call expressions are valid as statements
     }
+}
+
+VReg PlnVCodeGen::shiftImm(VReg src, int count, ShiftOp op, VRegType type, VFunc& func)
+{
+    VReg dst = allocVReg();
+    func.instrs.push_back(ShiftImm{dst, src, count, op, type});
+    return dst;
+}
+
+// Division by 2^k truncates toward zero, while an arithmetic shift rounds
+// toward negative infinity: a negative dividend first gets 2^k - 1 added.
+// The remainder then follows from the quotient, keeping the dividend's sign.
+VReg PlnVCodeGen::lowerPow2DivMod(VReg x, int k, bool isMod, VRegType type, VFunc& func)
+{
+    if (!isSignedInt(type)) {
+        if (!isMod) return shiftImm(x, k, ShiftOp::Shr, type, func);
+        VReg mask = allocVReg();
+        func.instrs.push_back(MovImm{mask, type, (long long)((1ULL << k) - 1)});
+        VReg dst = allocVReg();
+        func.instrs.push_back(BitAnd{dst, x, mask, type});
+        return dst;
+    }
+    int bits = intWidth(type) * 8;
+    VReg sign = shiftImm(x, bits - 1, ShiftOp::Sar, type, func);
+    VReg bias = shiftImm(sign, bits - k, ShiftOp::Shr, type, func);
+    VReg adj = allocVReg();
+    func.instrs.push_back(Add{adj, x, bias, type});
+    VReg q = shiftImm(adj, k, ShiftOp::Sar, type, func);
+    if (!isMod) return q;
+    VReg back = shiftImm(q, k, ShiftOp::Shl, type, func);
+    VReg dst = allocVReg();
+    func.instrs.push_back(Sub{dst, x, back, type});
+    return dst;
 }
 
 // SSE converts only cover the signed int64 range, so values with the top bit
@@ -617,6 +790,9 @@ void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
             }
         } else {
             r = allocVReg();
+            func.instrs.push_back(DeclVar{r, ve.type});
+            if (!blockVarStack_.empty())
+                blockVarStack_.back().push_back(r);
         }
         declareVar(ve.varName, r);
     }

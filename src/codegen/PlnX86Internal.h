@@ -28,28 +28,6 @@ inline const char* movInstrForType(VRegType type) {
     }
 }
 
-inline bool isFloat(VRegType t) {
-    return t == VRegType::Float32 || t == VRegType::Float64;
-}
-
-inline int intWidth(VRegType t) {
-    switch (t) {
-        case VRegType::Int8:  case VRegType::Uint8:  return 1;
-        case VRegType::Int16: case VRegType::Uint16: return 2;
-        case VRegType::Int32: case VRegType::Uint32: return 4;
-        default:                                     return 8;  // Int64, Uint64, Ptr64
-    }
-}
-
-inline bool isSignedInt(VRegType t) {
-    switch (t) {
-        case VRegType::Int8: case VRegType::Int16: case VRegType::Int32: case VRegType::Int64:
-            return true;
-        default:
-            return false;
-    }
-}
-
 inline const char* widthSuffix(int width) {
     switch (width) {
         case 1:  return "b";

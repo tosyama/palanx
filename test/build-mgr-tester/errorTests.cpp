@@ -55,7 +55,7 @@ TEST(build_mgr_error, ambiguous_call) {
 TEST(build_mgr_error, unknown_struct_type) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_048_unknown_struct.pa");
-	ASSERT_NE(out.find("unknown struct type"), string::npos);
+	ASSERT_NE(out.find("unknown type"), string::npos);
 }
 
 TEST(build_mgr_error, unknown_field) {
@@ -109,13 +109,12 @@ TEST(build_mgr_error, c_unsupported_sig) {
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
 
-TEST(build_mgr_error, stdio_owned_file) {
-	// FILE resolves to `struct _IO_FILE`, registered incomplete (glibc's
-	// "_unused2" field has an unevaluable size-expr); the diagnostic names the
-	// underlying tag, not the alias.
+TEST(build_mgr_error, dirent_owned_dir) {
+	// DIR resolves to `struct __dirstream`, which dirent.h only
+	// forward-declares; the diagnostic names the underlying tag, not the alias.
 	cleanTestEnv();
-	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_056_stdio_owned_file.pa");
-	ASSERT_NE(out.find("struct '_IO_FILE' has no known layout"), string::npos);
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_056_dirent_owned_dir.pa");
+	ASSERT_NE(out.find("struct '__dirstream' is only forward-declared"), string::npos);
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
 
@@ -129,12 +128,12 @@ TEST(build_mgr_error, stdio_size_t_narrowing) {
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
 
-TEST(build_mgr_error, stdio_incomplete_field) {
-	// Same requireCompleteStruct diagnostic as stdio_owned_file above, but
-	// reached via field access (`f._flags`) through a `@!FILE` handle.
+TEST(build_mgr_error, dirent_incomplete_field) {
+	// Same requireCompleteStruct diagnostic as dirent_owned_dir above, but
+	// reached via field access (`d.fd`) through a `@!DIR` handle.
 	cleanTestEnv();
-	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_058_stdio_incomplete_field.pa");
-	ASSERT_NE(out.find("struct '_IO_FILE' has no known layout"), string::npos);
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_058_dirent_incomplete_field.pa");
+	ASSERT_NE(out.find("struct '__dirstream' is only forward-declared"), string::npos);
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
 
@@ -143,7 +142,7 @@ TEST(build_mgr_error, stat_func_macro) {
 	// macros, so this must be a clean diagnostic, not an abort.
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_059_stat_func_macro.pa");
-	ASSERT_NE(out.find("Undefined function 'S_ISDIR'"), string::npos);
+	ASSERT_NE(out.find("C macro 'S_ISDIR' is function-like; Palan cannot use it."), string::npos);
 	ASSERT_EQ(out.find("return0:"), string::npos);  // not killed by a signal (no abort)
 }
 

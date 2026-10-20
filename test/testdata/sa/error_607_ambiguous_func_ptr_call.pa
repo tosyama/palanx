@@ -1,0 +1,5 @@
+func f2(int32 x) { }
+@func(int32) g = f2;
+@func(int32) f3 = g;
+func f3(int32 x) { }
+f3(1);

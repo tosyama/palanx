@@ -1,0 +1,4 @@
+cinclude "error_574_c_const_ptr_field.h";
+Node s, u;
+@Node c = @u;
+c -> s.next;

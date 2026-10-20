@@ -1,7 +1,15 @@
+/// semantic analyzer tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include <fstream>
 #include <algorithm>
 #include <map>
+#include <set>
+#include <regex>
+#include <filesystem>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -22,6 +30,14 @@ static json run_sa(const string& pa_file)
 	ifstream f(sa_out);
 	if (!f.is_open()) return json{};
 	return json::parse(f);
+}
+
+// sa.json with each unexported type named as written: the program-wide name
+// hashes the module's absolute path.
+static json written(const json& sa)
+{
+	static const regex internal("__pln_L[0-9a-f]{16}_[0-9]+_");
+	return json::parse(regex_replace(sa.dump(), internal, ""));
 }
 
 // A call argument held in a temp: the call that initializes it, and the
@@ -1445,7 +1461,7 @@ TEST(sa, toplevel_call_named_return_struct)
 	// and crashing palan-sa. Struct pre-registration now happens in step 0, so
 	// the call resolved here (step 2) must already see the normalized
 	// pntr(struct(Point)) form.
-	json jout = run_sa("../test/testdata/sa/135_toplevel_call_named_return_struct.pa");
+	json jout = written(run_sa("../test/testdata/sa/135_toplevel_call_named_return_struct.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// statements[2] = var-decl for "view" = borrow(original)
@@ -1464,7 +1480,7 @@ TEST(sa, toplevel_call_struct_arg)
 	cleanTestEnv();
 	// Regression: same struct pre-registration path, but exercising a
 	// struct-typed parameter (not just the return type) in a top-level call.
-	json jout = run_sa("../test/testdata/sa/137_toplevel_call_struct_arg.pa");
+	json jout = written(run_sa("../test/testdata/sa/137_toplevel_call_struct_arg.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Pre-registered signature must have its parameter normalized to pntr(struct(Point)).
@@ -1488,7 +1504,7 @@ TEST(sa, toplevel_call_struct_arg)
 TEST(sa, struct_def)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/069_struct_def.pa");
+	json jout = written(run_sa("../test/testdata/sa/069_struct_def.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// struct-def is consumed; first stmt is var-decl for p
@@ -1719,6 +1735,22 @@ TEST(sa, cinclude_union)
 	ASSERT_EQ(call["args"][0]["name"], "m");
 }
 
+TEST(sa, cinclude_anon_member)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/273_c_anon_member.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& st = jout["statements"];
+
+	// struct S { char k; union { int a; double d; struct { short lo; short hi; }; }; char t; }
+	ASSERT_EQ(st[0]["vars"][0]["init"]["args"][1]["value"], "24");
+	ASSERT_EQ(st[1]["offset"], 0);   // s.k
+	ASSERT_EQ(st[2]["offset"], 8);   // s.a
+	ASSERT_EQ(st[3]["offset"], 10);  // s.hi
+	ASSERT_EQ(st[4]["offset"], 16);  // s.t
+	ASSERT_EQ(st[5]["vars"][0]["init"]["offset"], 8);  // read s.a
+}
+
 TEST(sa, cinclude_null_constant)
 {
 	cleanTestEnv();
@@ -1888,14 +1920,14 @@ TEST(sa, embed_struct_field)
 TEST(sa, owned_struct_field)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/075_owned_struct_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/075_owned_struct_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Rect { Point tl; Point br; } — ownsFields → __pln_alloc_Rect
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
-	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 }
 
@@ -1947,14 +1979,14 @@ TEST(sa, raw_ptr_prim_field)
 TEST(sa, alloc_shape_owned)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/077_alloc_shape_owned.pa");
+	json jout = written(run_sa("../test/testdata/sa/077_alloc_shape_owned.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Rect r; — init uses __pln_alloc_Rect (pln func, no args)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
-	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
 	// alloc-shapes: Point first (leaf), then Rect (root)
@@ -1990,7 +2022,7 @@ TEST(sa, calloc_no_owned)
 TEST(sa, alloc_func_no_recurse)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/079_alloc_func_no_recurse.pa");
+	json jout = written(run_sa("../test/testdata/sa/079_alloc_func_no_recurse.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// __pln_alloc_Rect() -> Rect ret { Rect ret; }
@@ -2014,7 +2046,7 @@ TEST(sa, alloc_func_no_recurse)
 TEST(sa, struct_param)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/080_struct_param.pa");
+	json jout = written(run_sa("../test/testdata/sa/080_struct_param.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// func __pln_free_Point(Point p) { free(p); }
@@ -2056,7 +2088,7 @@ TEST(sa, embed_field_chain)
 TEST(sa, owned_field_chain)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/082_owned_field_chain.pa");
+	json jout = written(run_sa("../test/testdata/sa/082_owned_field_chain.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// 10 -> r.tl.x: Point tl@0, int64 x@0 → ptr-expr={var:"r",offset:0}, offset:0
@@ -2094,7 +2126,7 @@ TEST(sa, ptr_field_chain)
 TEST(sa, mixed_field_chain)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/084_mixed_chain.pa");
+	json jout = written(run_sa("../test/testdata/sa/084_mixed_chain.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// int64 v = outer.sub.inner.x
@@ -2172,7 +2204,7 @@ TEST(sa, struct_ptr_field_assign)
 	// An owned struct field is copied into, not rebound: a flat A is a memcpy
 	// into the storage the field points to.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/088_struct_ptr_field_assign.pa");
+	json jout = written(run_sa("../test/testdata/sa/088_struct_ptr_field_assign.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	json* call = nullptr;
@@ -2195,7 +2227,7 @@ TEST(sa, raw_ptr_mutable_field_assign)
 	// field-assign for raw-ptr mutable field → fieldValueType sets mutable:true
 	// Covers: fieldValueType raw-ptr branch (pntr["mutable"] = isMutable)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/089_raw_ptr_mutable_field_assign.pa");
+	json jout = written(run_sa("../test/testdata/sa/089_raw_ptr_mutable_field_assign.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	json* fa = nullptr;
@@ -2400,7 +2432,7 @@ TEST(sa, embed_struct_arr_decl)
 {
 	// [4]$Point pts — contiguous 1D struct array: malloc(4 * 16), free at scope exit
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/098_embed_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/098_embed_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2446,7 +2478,7 @@ TEST(sa, owned_struct_arr_decl)
 {
 	// [2]Point pts — owned pointer array: alloc/free via palan functions
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/099_owned_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/099_owned_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// alloc-shapes: struct shape for Point, then arr-struct shape for arr_Point
@@ -2511,7 +2543,7 @@ TEST(sa, at_struct_arr_decl)
 {
 	// [4]@Point rpts — non-owning read-only pointer array: malloc(4 * 8), free at scope exit
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/100_at_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/100_at_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2558,7 +2590,7 @@ TEST(sa, at_bang_struct_arr_decl)
 {
 	// [4]@!Point wpts — non-owning mutable write-through pointer array
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/102_at_bang_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/102_at_bang_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2598,7 +2630,7 @@ TEST(sa, embed_struct_arr_field_access)
 	// [4]$Point pts; 10 -> pts[0].x; 20 -> pts[0].y; printf("%ld %ld\n", pts[0].x, pts[0].y);
 	// Covers: resolveObjectChain arr-index base case (embedded struct array)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/103_embed_struct_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/103_embed_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2639,7 +2671,7 @@ TEST(sa, owned_struct_arr_field_access)
 	// [2]Point pts; 5 -> pts[0].x; printf("%ld\n", pts[0].x);
 	// Covers: resolveObjectChain arr-index base case (owned pointer array)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/104_owned_struct_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/104_owned_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2669,7 +2701,7 @@ TEST(sa, at_bang_struct_arr_field_write)
 	// Point p; [4]@!Point wpts; p -> wpts[0]; 42 -> wpts[0].x; printf("%ld\n", p.x);
 	// Covers: resolveObjectChain(forWrite=true) arr-index base case, mutable:true (write-through allowed)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/105_at_bang_struct_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/105_at_bang_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2691,7 +2723,7 @@ TEST(sa, at_struct_arr_field_read)
 	// Point p; [4]@Point rpts; p -> rpts[0]; printf("%ld\n", rpts[0].x);
 	// Covers: resolveObjectChain arr-index base case, mutable:false (read-only, read allowed)
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/106_at_struct_arr_field_read.pa");
+	json jout = written(run_sa("../test/testdata/sa/106_at_struct_arr_field_read.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2798,7 +2830,7 @@ TEST(sa, owned_prim_arr_field)
 	// case (arr-ptr typeKind, ownsFields), useSimpleCalloc==false path,
 	// recordAllocShape "owned-array-fields" output.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/112_owned_prim_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/112_owned_prim_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Bucket b; -> __pln_alloc_Bucket() (not calloc): an owned array field
@@ -2806,7 +2838,7 @@ TEST(sa, owned_prim_arr_field)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "b");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Bucket");
-	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
 	const auto& shapes = jout["alloc-shapes"];
@@ -2832,14 +2864,14 @@ TEST(sa, owned_struct_arr_field)
 	// pointer array field (arr-ptr typeKind, elemKind=="struct"), recordAllocShape
 	// registering an "arr-struct" shape (arr_Point) alongside the "struct" shapes.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/113_owned_struct_arr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/113_owned_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Cluster c; -> __pln_alloc_Cluster() (not calloc)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "c");
 	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Cluster");
-	ASSERT_EQ(v["init"]["func-type"], "pln");
+	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
 	const auto& shapes = jout["alloc-shapes"];
@@ -2918,7 +2950,7 @@ TEST(sa, embed_struct_arr_struct_field_access)
 	// the arr-index base (poly.pts[0]) must resolve the same way the existing
 	// variable-level embedded struct array (embed_struct_arr_field_access) does.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/115_embed_struct_arr_struct_field_access.pa");
+	json jout = written(run_sa("../test/testdata/sa/115_embed_struct_arr_struct_field_access.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -2980,7 +3012,7 @@ TEST(sa, owned_struct_arr_struct_field_access)
 	// pointer, loaded via DerefLoadIdx) rather than the bare struct type the old
 	// default branch produced (which broke resolveObjectChain's arr-index case).
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/117_owned_struct_arr_struct_field_access.pa");
+	json jout = written(run_sa("../test/testdata/sa/117_owned_struct_arr_struct_field_access.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -3013,7 +3045,7 @@ TEST(sa, embed_ptr_arr_struct_field_access)
 	// address collapsed to NULL). Also covers write-through then read-back of the
 	// stored pointer's field.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/118_embed_ptr_arr_struct_field_access.pa");
+	json jout = written(run_sa("../test/testdata/sa/118_embed_ptr_arr_struct_field_access.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -3051,7 +3083,7 @@ TEST(sa, field_arr_readonly_ptr_slot)
 	// (only write-through to the pointee's fields is restricted; see
 	// write_readonly_arr_field_elem for the rejected case).
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/119_field_arr_readonly_ptr_slot.pa");
+	json jout = written(run_sa("../test/testdata/sa/119_field_arr_readonly_ptr_slot.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_FALSE(jout["functions"].empty());
@@ -3142,7 +3174,7 @@ TEST(sa, at_bang_plain_var_decl)
 	//     path so `view`'s var-type carries base-type.type-kind=="struct" (not "prim"),
 	//     matching what resolveObjectChain requires for field access.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/130_at_bang_plain_var_decl.pa");
+	json jout = written(run_sa("../test/testdata/sa/130_at_bang_plain_var_decl.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// statements: [0] type Point is consumed, so:
@@ -3176,7 +3208,7 @@ TEST(sa, at_plain_var_decl_readonly)
 {
 	// `@Point view = original;` (read-only, non-mutable) plain local var decl.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/131_at_plain_var_decl_readonly.pa");
+	json jout = written(run_sa("../test/testdata/sa/131_at_plain_var_decl_readonly.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	const auto& view_decl = jout["statements"][1];
@@ -3415,7 +3447,7 @@ TEST(sa, addr_of_embed_field)
 	// pntr(struct Inner) (the field IS the struct's inline storage), so
 	// taking its address must NOT double-wrap into pntr(pntr(struct Inner)).
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/170_addr_of_embed_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/170_addr_of_embed_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	const auto& init = jout["statements"][1]["vars"][0]["init"];
@@ -3730,10 +3762,9 @@ TEST(sa, addr_of_2d_elem)
 
 TEST(sa, ptr_decl_alias_pointee)
 {
-	// `type MyInt = int64; @MyInt p = @a;` -- deepNormalizePrimToStruct
-	// re-applies resolveTypeAlias at every level of a pntr chain, so an
-	// alias used as a pointee resolves to its underlying type instead of
-	// reaching PlnTypeRegistry::fromJson unresolved (which used to abort with
+	// `type MyInt = int64; @MyInt p = @a;` -- an alias used as a pointee
+	// resolves to its underlying type instead of reaching
+	// PlnTypeRegistry::fromJson unresolved (which used to abort with
 	// "unknown prim type-name: MyInt").
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/157_ptr_decl_alias_pointee.pa");
@@ -3752,11 +3783,10 @@ TEST(sa, struct_type_alias)
 	// type-kind/type-name, so a struct reached only through an alias name
 	// ("PT") never matched structDefs_.count() and silently fell through to
 	// the plain scalar var-decl path, which declares the variable but never
-	// allocates its storage. resolveTypeAliasDeep now resolves the alias
-	// before dispatch, so this reaches sa_struct_var_decl the same way a
-	// direct `Point p;` would.
+	// allocates its storage. The alias is resolved before dispatch, so this
+	// reaches sa_struct_var_decl the same way a direct `Point p;` would.
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/160_struct_type_alias.pa");
+	json jout = written(run_sa("../test/testdata/sa/160_struct_type_alias.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	const auto& decl = jout["statements"][0];
@@ -3776,7 +3806,7 @@ TEST(sa, struct_type_alias)
 TEST(sa, struct_field_type_alias)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/198_struct_field_type_alias.pa");
+	json jout = written(run_sa("../test/testdata/sa/198_struct_field_type_alias.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& st = jout["statements"];
 
@@ -3917,17 +3947,15 @@ TEST(sa, neg_lit_expected_type)
 	json jout = run_sa("../test/testdata/sa/167_neg_lit_expected_type.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// A negative integer literal is folded into one lit-int by gen-ast; a
-	// float literal still goes through `neg`.
 	auto& a = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(a["init"]["expr-type"], "lit-int");
 	ASSERT_EQ(a["init"]["value"], "-1");
 	ASSERT_EQ(a["init"]["value-type"]["type-name"], "int32");
 
 	auto& f = jout["statements"][1]["vars"][0];
-	ASSERT_EQ(f["init"]["expr-type"], "neg");
+	ASSERT_EQ(f["init"]["expr-type"], "lit-flo");
+	ASSERT_EQ(f["init"]["value"], "-1.5");
 	ASSERT_EQ(f["init"]["value-type"]["type-name"], "flo32");
-	ASSERT_EQ(f["init"]["operand"]["value-type"]["type-name"], "flo32");
 
 	auto& s = jout["statements"][3]["vars"][0];
 	ASSERT_EQ(s["init"]["value-type"]["type-name"], "int16");
@@ -4169,13 +4197,8 @@ TEST(sa, struct_ret_embed_arr_sse_field) {
 }
 
 TEST(sa, c_callback_arg) {
-	// `qsort(arr, 4, 4, cmp);` where `cmp` matches
-	// qsort's `int (*)(const void*, const void*)` comparator exactly --
-	// normalizeCFuncSig marks the comparator parameter "_callback-param"
-	// (its inner signature is fully representable), and sa_func_ref_arg
-	// resolves the bare name `cmp` via findPlnFunc (not findVar) into a
-	// "func-ref" node carrying only the function's name -- no value-type,
-	// since this version has no first-class function-pointer value.
+	// `cmp` takes `@int32`s where qsort's comparator takes `const void*`:
+	// a void pointer matches any pointer in a function type too.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/173_c_callback_arg.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -4187,15 +4210,16 @@ TEST(sa, c_callback_arg) {
 	const auto& cb = call["args"][3];
 	ASSERT_EQ(cb["expr-type"], "func-ref");
 	ASSERT_EQ(cb["name"], "cmp");
-	ASSERT_FALSE(cb.contains("value-type"));
+	ASSERT_EQ(cb["value-type"]["mutable"], false);
+	const auto& fn = cb["value-type"]["base-type"];
+	ASSERT_EQ(fn["type-kind"], "func");
+	ASSERT_EQ(fn["parameters"][0]["var-type"]["base-type"]["type-name"], "int32");
+	ASSERT_EQ(fn["ret-type"]["type-name"], "int32");
 }
 
 TEST(sa, c_callback_void) {
-	// `atexit(on_exit_cb);` where both atexit's handler
-	// type and `on_exit_cb` return void -- exercises sa_func_ref_arg's
-	// cVoidRet==true path (distinct from c_callback_arg's non-void qsort
-	// comparator), proving a void-returning callback is accepted without a
-	// spurious return-type mismatch.
+	// `atexit(on_exit_cb);`: a function returning nothing matches a void
+	// C function pointer.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/174_c_callback_void.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -4241,6 +4265,51 @@ TEST(sa, link_libs_sorted) {
 	ASSERT_EQ(jout["libs"].size(), 2u);
 	ASSERT_EQ(jout["libs"][0], "m");
 	ASSERT_EQ(jout["libs"][1], "rt");
+}
+
+TEST(sa, link_objs) {
+	// The same object file named twice, once inside a block, is linked once.
+	cleanTestEnv();
+	system("cp ../test/testdata/sa/270_link_obj.pa out/ && touch out/270_link_obj.o");
+	json jout = run_sa("out/270_link_obj.pa");
+	ASSERT_TRUE(jout.is_object());
+	string obj = filesystem::absolute("out/270_link_obj.o").lexically_normal().string();
+	ASSERT_EQ(jout["objs"], json::array({obj}));
+	ASSERT_EQ(jout["libs"], json::array({"m"}));
+}
+
+TEST(sa, c_struct_arg) {
+	// A by-value struct argument is marked with its SysV classification; the
+	// argument itself stays a pointer to the struct to copy.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/271_c_struct_arg.pa");
+	ASSERT_TRUE(jout.is_object());
+	vector<json> calls;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "expr") calls.push_back(s["body"]);
+	ASSERT_EQ(calls.size(), 5u);
+
+	json i8 = {{"size", 8}, {"eightbytes", json::array({{{"class", "int"}, {"size", 8}}})}};
+	ASSERT_EQ(calls[0]["args"][0]["expr-type"], "id");
+	ASSERT_EQ(calls[0]["args"][0]["struct-arg"], i8);
+	ASSERT_EQ(calls[1]["args"][0]["struct-arg"], json({{"size", 24}, {"eightbytes", json::array()}}));
+	ASSERT_EQ(calls[2]["args"][0]["struct-arg"],
+		json({{"size", 3}, {"eightbytes", json::array({{{"class", "int"}, {"size", 3}}})}}));
+	// A literal and a returned struct are held in a temp, which carries the mark.
+	ASSERT_EQ(calls[3]["args"][0]["expr-type"], "temp");
+	ASSERT_EQ(calls[3]["args"][0]["struct-arg"], i8);
+	ASSERT_EQ(calls[4]["args"][0]["expr-type"], "temp");
+	ASSERT_EQ(calls[4]["args"][0]["struct-arg"], i8);
+}
+
+TEST(sa, c_struct_arg_read_only) {
+	// The callee gets a copy, so a read-only pointer is accepted.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/272_c_struct_arg_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+	const json& call = jout["statements"].back()["body"];
+	ASSERT_EQ(call["name"], "take_i8");
+	ASSERT_TRUE(call["args"][0].contains("struct-arg"));
 }
 
 TEST(sa, link_libs_absent) {
@@ -4511,7 +4580,7 @@ TEST(sa, ptr_arr_field_permission)
 
 TEST(sa, struct_arr_2d)
 {
-	json jout = run_sa("../test/testdata/sa/204_struct_arr_2d.pa");
+	json jout = written(run_sa("../test/testdata/sa/204_struct_arr_2d.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// The rows reuse the [n]T helpers, so their shape is registered too.
@@ -4536,7 +4605,7 @@ TEST(sa, struct_arr_2d)
 
 TEST(sa, embed_struct_arr_2d)
 {
-	json jout = run_sa("../test/testdata/sa/209_embed_struct_arr_2d.pa");
+	json jout = written(run_sa("../test/testdata/sa/209_embed_struct_arr_2d.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// Each row is a plain block of n structs, so the byte-row allocator serves it.
@@ -4588,7 +4657,7 @@ TEST(sa, struct_arr_lit)
 TEST(sa, struct_arr_borrow)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/206_struct_arr_borrow.pa");
+	json jout = written(run_sa("../test/testdata/sa/206_struct_arr_borrow.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// The element stays the struct's storage (no "mutable"): only the array
@@ -4612,7 +4681,7 @@ TEST(sa, struct_arr_borrow)
 TEST(sa, embed_struct_arr_borrow)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/207_embed_struct_arr_borrow.pa");
+	json jout = written(run_sa("../test/testdata/sa/207_embed_struct_arr_borrow.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// The borrow keeps the variable's contiguous layout: the structs sit in
@@ -4631,7 +4700,7 @@ TEST(sa, embed_struct_arr_borrow)
 TEST(sa, ptr_slot_arr_borrow)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/208_ptr_slot_arr_borrow.pa");
+	json jout = written(run_sa("../test/testdata/sa/208_ptr_slot_arr_borrow.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// The borrow's permission covers the slots only; each element pointer
@@ -4651,7 +4720,7 @@ TEST(sa, ptr_slot_arr_borrow)
 TEST(sa, ptr_field_forward_ref)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/210_ptr_field_forward_ref.pa");
+	json jout = written(run_sa("../test/testdata/sa/210_ptr_field_forward_ref.pa"));
 	ASSERT_TRUE(jout.is_object());
 
 	// a.bs[1].x: a [2]@B slot declared before B still reads as a struct pointer.
@@ -4755,7 +4824,7 @@ TEST(sa, tapple_struct)
 }
 
 TEST(sa, field_transfer) {
-	json jout = run_sa("../test/testdata/sa/215_field_transfer.pa");
+	json jout = written(run_sa("../test/testdata/sa/215_field_transfer.pa"));
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 6);
 	// The field's previous array is freed before it takes over pa.
@@ -4804,7 +4873,7 @@ TEST(sa, struct_ret_copy) {
 }
 
 TEST(sa, struct_ret_temp) {
-	json jout = run_sa("../test/testdata/sa/217_struct_ret_temp.pa");
+	json jout = written(run_sa("../test/testdata/sa/217_struct_ret_temp.pa"));
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 3);
 	// A returned struct passed as an argument is held in a temp and released.
@@ -4813,7 +4882,7 @@ TEST(sa, struct_ret_temp) {
 	ASSERT_EQ(argP["release"][0]["body"]["func-type"], "c");
 	const auto& argQ = stmts[1]["vars"][0]["init"]["args"][0];
 	ASSERT_EQ(tempRelease(argQ), "__pln_free_Q");
-	ASSERT_EQ(argQ["release"][0]["body"]["func-type"], "pln");
+	ASSERT_EQ(argQ["release"][0]["body"]["func-type"], "palan");
 	// A discarded one is received in a temp and freed.
 	const auto& blk = stmts[2];
 	ASSERT_EQ(blk["stmt-type"], "block");
@@ -4847,7 +4916,7 @@ TEST(sa, embed_ptr_slot_store) {
 }
 
 TEST(sa, unsized_struct_arr_sig) {
-	json jout = run_sa("../test/testdata/sa/220_unsized_struct_arr_sig.pa");
+	json jout = written(run_sa("../test/testdata/sa/220_unsized_struct_arr_sig.pa"));
 	// The same representations as [n]P / [n]$P, minus the size.
 	json owned = {{"type-kind","pntr"},{"base-type",{{"type-kind","pntr"},
 	              {"base-type",{{"type-kind","struct"},{"type-name","P"}}}}}};
@@ -4869,7 +4938,7 @@ TEST(sa, unsized_struct_arr_sig) {
 }
 
 TEST(sa, enum_type) {
-	json jout = run_sa("../test/testdata/sa/222_enum.pa");
+	json jout = written(run_sa("../test/testdata/sa/222_enum.pa"));
 	ASSERT_TRUE(jout.is_object());
 	auto enumType = [](const char* base, const char* name) {
 		return json{{"type-kind","prim"},{"type-name",base},{"enum",name}};
@@ -4966,7 +5035,7 @@ static void collectCalls(const json& node, const string& name, vector<json>& out
 }
 
 TEST(sa, method_call) {
-	json jout = run_sa("../test/testdata/sa/226_method_call.pa");
+	json jout = written(run_sa("../test/testdata/sa/226_method_call.pa"));
 	ASSERT_TRUE(jout.is_object());
 	auto calls = [&](const string& name) { vector<json> v; collectCalls(jout, name, v); return v; };
 
@@ -5007,7 +5076,7 @@ TEST(sa, method_call) {
 TEST(sa, method_call_alias) {
 	cleanTestEnv();
 	genLibSaImport();
-	json jout = run_sa("../test/testdata/sa/227_method_call_alias.pa");
+	json jout = written(run_sa("../test/testdata/sa/227_method_call_alias.pa"));
 	ASSERT_TRUE(jout.is_object());
 	vector<json> v;
 	collectCalls(jout, "square", v);
@@ -5077,6 +5146,49 @@ TEST(sa, import_type_selective)
 	ASSERT_EQ(jout["statements"][1]["vars"][0]["init"]["name"], "getX");
 }
 
+// The var-decl of `name` among `stmts`: its declared type, and its calloc'd size if a struct.
+static pair<json, string> declaredVar(const json& stmts, const string& name)
+{
+	for (auto& st : stmts)
+		for (auto& v : st.value("vars", json::array()))
+			if (v["name"] == name) {
+				const json& init = v.value("init", json::object());
+				return {v["var-type"], init.contains("args") ? init["args"][1]["value"].get<string>() : ""};
+			}
+	return {json(), ""};
+}
+
+TEST(sa, import_hidden_type_name_reuse)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = written(run_sa("../test/testdata/sa/278_import_hidden_type_name_reuse.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// V.Vec is lib's 24-byte Vec, Vec main's own.
+	ASSERT_EQ(declaredVar(stmts, "v").second, "24");
+	ASSERT_EQ(declaredVar(stmts, "w").second, "4");
+	ASSERT_EQ(declaredVar(stmts, "m").first["type-name"], "int32");
+	ASSERT_EQ(declaredVar(stmts, "n").first["type-name"], "int64");
+	const auto& body = jout["functions"][0]["body"];
+	ASSERT_EQ(declaredVar(body, "c").second, "8");
+	ASSERT_EQ(declaredVar(body, "d").first["enum"], "Color");
+}
+
+TEST(sa, import_dep_type_name_reuse)
+{
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = written(run_sa("../test/testdata/sa/279_import_dep_type_name_reuse.pa"));
+	ASSERT_TRUE(jout.is_object());
+	// getX brings lib's Vec and Inner along, without making them writable.
+	ASSERT_EQ(declaredVar(jout["statements"], "p").second, "4");
+	ASSERT_EQ(declaredVar(jout["statements"], "i").second, "16");
+	const auto& body = jout["functions"][0]["body"];
+	ASSERT_EQ(declaredVar(body, "v").second, "24");
+	ASSERT_EQ(declaredVar(body, "w").second, "4");
+}
+
 TEST(sa, import_type_diamond)
 {
 	cleanTestEnv();
@@ -5091,7 +5203,7 @@ TEST(sa, import_type_field)
 {
 	cleanTestEnv();
 	genLibSaTypes();
-	json jout = run_sa("../test/testdata/sa/232_import_type_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/232_import_type_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 	json shape;
 	for (auto& s : jout["alloc-shapes"])
@@ -5106,7 +5218,7 @@ TEST(sa, import_type_field)
 TEST(sa, struct_field_const_size)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/233_struct_field_const_size.pa");
+	json jout = written(run_sa("../test/testdata/sa/233_struct_field_const_size.pa"));
 	ASSERT_TRUE(jout.is_object());
 	map<string, json> shapes;
 	for (auto& s : jout["alloc-shapes"])
@@ -5125,7 +5237,7 @@ TEST(sa, struct_field_const_size)
 TEST(sa, top_decl_order)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/234_top_decl_order.pa");
+	json jout = written(run_sa("../test/testdata/sa/234_top_decl_order.pa"));
 	ASSERT_TRUE(jout.is_object());
 	json shape;
 	for (auto& s : jout["alloc-shapes"])
@@ -5183,6 +5295,27 @@ TEST(sa, alias_cast)
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value-type"]["type-name"], "int64");
 }
 
+TEST(sa, as_cast)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/263_as_cast.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto init = [&](size_t i) -> const json& { return stmts[i]["vars"][0]["init"]; };
+	// '@T' -> '@!T' is allowed by an explicit cast.
+	ASSERT_EQ(init(2)["expr-type"], "convert");
+	ASSERT_EQ(init(2)["value-type"]["mutable"], true);
+	ASSERT_EQ(init(3)["value-type"]["type-name"], "uint64");
+	ASSERT_EQ(init(4)["from-type"]["type-name"], "uint64");
+	ASSERT_EQ(init(6)["value-type"]["arr-size"], 4);
+	ASSERT_EQ(init(6)["value-type"]["base-type"]["type-name"], "int32");
+	// A pointer alias casts like the type it names.
+	ASSERT_EQ(init(8)["value-type"]["base-type"]["type-name"], "int32");
+	ASSERT_EQ(init(9)["value-type"]["type-name"], "int32");
+	// A cast to the source's own type leaves no convert node.
+	ASSERT_EQ(init(10)["expr-type"], "id");
+}
+
 TEST(sa, struct_ptr_elem_copy)
 {
 	cleanTestEnv();
@@ -5237,7 +5370,7 @@ TEST(sa, struct_lit_init_assign)
 TEST(sa, named_ret_struct_auto_decl)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/239_named_ret_struct_auto_decl.pa");
+	json jout = written(run_sa("../test/testdata/sa/239_named_ret_struct_auto_decl.pa"));
 	ASSERT_TRUE(jout.is_object());
 	// Allocated at entry and handed to the caller, so no free follows.
 	const auto& fbody = jout["functions"][0]["body"];
@@ -5384,7 +5517,7 @@ TEST(sa, struct_lit_struct_expr)
 TEST(sa, return_unowned_struct)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/245_return_unowned_struct.pa");
+	json jout = written(run_sa("../test/testdata/sa/245_return_unowned_struct.pa"));
 	ASSERT_TRUE(jout.is_object());
 	auto func = [&](const string& name) -> const json& {
 		for (auto& f : jout["functions"])
@@ -5485,7 +5618,7 @@ TEST(sa, member_call_borrow)
 TEST(sa, lit_arg)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/248_lit_arg.pa");
+	json jout = written(run_sa("../test/testdata/sa/248_lit_arg.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 5);
@@ -5603,7 +5736,7 @@ TEST(sa, chain_lit)
 TEST(sa, lit_arg_struct_arr)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/253_lit_arg_struct_arr.pa");
+	json jout = written(run_sa("../test/testdata/sa/253_lit_arg_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 2);
@@ -5630,7 +5763,7 @@ TEST(sa, c_func_ptr_field)
 TEST(sa, ptr_ptr_field)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/255_ptr_ptr_field.pa");
+	json jout = written(run_sa("../test/testdata/sa/255_ptr_ptr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
 	const auto& pp = stmts[1]["vars"][0]["init"]["value-type"];
@@ -5671,4 +5804,343 @@ TEST(sa, c_ptr_ptr_field)
 	const auto& slot = stmts[3]["vars"][0]["init"]["value-type"];
 	ASSERT_EQ(slot["base-type"]["type-kind"], "pntr");
 	ASSERT_EQ(slot["base-type"]["base-type"]["type-name"], "int64");
+}
+
+TEST(sa, c_ptr_field_mutable)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/261_c_ptr_field_mutable.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	for (int i : {1, 2, 3, 4})
+		EXPECT_EQ(stmts[i]["vars"][0]["init"]["value-type"]["mutable"], true) << "stmt " << i;
+	EXPECT_EQ(stmts[4]["vars"][0]["init"]["value-type"]["base-type"]["mutable"], true);
+	EXPECT_EQ(stmts[5]["vars"][0]["init"]["value-type"]["mutable"], false);
+}
+
+TEST(sa, c_ptr_typedef)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/262_c_ptr_typedef.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto pntr = [](json base, bool mut) {
+		return json{{"type-kind", "pntr"}, {"mutable", mut}, {"base-type", base}};
+	};
+	json i32 = {{"type-kind", "prim"}, {"type-name", "int32"}};
+	EXPECT_EQ(stmts[1]["vars"][0]["var-type"], pntr(i32, true));    // P
+	EXPECT_EQ(stmts[2]["vars"][0]["var-type"], pntr(i32, false));   // CP
+	EXPECT_EQ(stmts[3]["vars"][0]["var-type"], pntr(i32, true));    // PC: the pointer's own const is not a pointee permission
+	EXPECT_EQ(stmts[4]["vars"][0]["var-type"], pntr(i32, true));    // PA
+	EXPECT_EQ(stmts[5]["vars"][0]["var-type"],
+		pntr(pntr({{"type-kind", "prim"}, {"type-name", "int8"}}, true), true));    // PP
+	EXPECT_EQ(stmts[6]["vars"][0]["var-type"],
+		pntr({{"type-kind", "struct"}, {"type-name", "S"}}, true));    // SP
+	EXPECT_EQ(stmts[7]["vars"][0]["var-type"],
+		pntr({{"type-kind", "prim"}, {"type-name", "void"}}, true));    // timer_t
+}
+
+TEST(sa, unexported_type_name)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/277_unexported_type_name.pa");
+	ASSERT_TRUE(jout.is_object());
+	// Another module may declare its own A; an importer writes B as is.
+	const json& st = jout["statements"];
+	string a = st[0]["vars"][0]["var-type"]["base-type"]["type-name"];
+	ASSERT_TRUE(regex_match(a, regex("__pln_L[0-9a-f]{16}_[0-9]+_A"))) << a;
+	ASSERT_EQ(st[1]["vars"][0]["var-type"]["base-type"]["type-name"], "B");
+	ASSERT_EQ(jout["alloc-shapes"][1]["owned-fields"][0]["struct-name"], a);
+}
+
+TEST(sa, block_type_scope)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/258_block_type_scope.pa");
+	ASSERT_TRUE(jout.is_object());
+	// The two block-local P's get distinct program-wide names; the written
+	// name reaches no type.
+	string out = jout.dump();
+	regex internal("__pln_L[0-9a-f]{16}_[0-9]+_P\\b");
+	set<string> ps;
+	for (sregex_iterator it(out.begin(), out.end(), internal), end; it != end; ++it)
+		ps.insert(it->str());
+	ASSERT_EQ(ps.size(), 2u);
+	ASSERT_EQ(out.find("\"type-name\":\"P\""), string::npos);
+}
+
+TEST(sa, block_type_before_def)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/259_block_type_before_def.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
+TEST(sa, block_import_type)
+{
+	// A block's import makes the types writable only in that block, so a
+	// later block imports them again.
+	cleanTestEnv();
+	genLibSaTypes();
+	json jout = run_sa("../test/testdata/sa/260_block_import_type.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
+TEST(sa, c_fd_set)
+{
+	// fd_set's array field is sized with sizeof, so it is a complete struct.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/264_c_fd_set.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& init = jout["statements"][0]["vars"][0]["init"];
+	ASSERT_EQ(init["name"], "calloc");
+	ASSERT_EQ(init["args"][1]["value"], "128");
+}
+
+TEST(sa, const_expr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/265_const_expr.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto& st = jout["statements"];
+	auto init = [&](int i) { return st[i]["vars"][0]["init"]; };
+	const pair<string, string> lits[] = {
+		{"lit-int", "11"}, {"lit-int", "1"}, {"lit-int", "-3"}, {"lit-int", "255"},
+		{"lit-flo", "3.0"}, {"lit-flo", "3.25"}, {"lit-uint", "8"}, {"lit-uint", "13"},
+		{"lit-int", "5"},
+	};
+	for (int i = 0; i < 9; i++) {
+		ASSERT_EQ(init(i)["expr-type"], lits[i].first) << i;
+		ASSERT_EQ(init(i)["value"], lits[i].second) << i;
+	}
+	// S { [A + 1]$int32 v; } is 16 bytes.
+	ASSERT_EQ(init(9)["args"][1]["value"], "16");
+	ASSERT_EQ(st[10]["vars"][0]["var-type"]["arr-size"], 6);
+	// Only an all-constant subtree folds; `b + 1 + 2` is (b + 1) + 2.
+	ASSERT_EQ(init(11)["expr-type"], "add");
+	// A typed C macro constant loses its type inside a constant expression.
+	ASSERT_EQ(init(12)["expr-type"], "lit-int");
+	ASSERT_EQ(init(12)["value"], "2147483648");
+}
+
+TEST(sa, const_expr_ops)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/281_const_expr_ops.pa");
+	ASSERT_TRUE(jout.is_object());
+	const pair<string, string> lits[] = {
+		{"lit-uint", "3"}, {"lit-uint", "1"}, {"lit-uint", "2"}, {"lit-uint", "7"}, {"lit-uint", "5"},
+		{"lit-uint", "0"}, {"lit-int", "0"}, {"lit-int", "7"}, {"lit-flo", "1.0"}, {"lit-flo", "1.5"},
+		{"lit-flo", "3.5"}, {"lit-uint", "8"}, {"lit-int", "4"}, {"lit-int", "15"}, {"lit-int", "5"},
+	};
+	for (int i = 0; i < 15; i++) {
+		const json& init = jout["statements"][i]["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], lits[i].first) << i;
+		ASSERT_EQ(init["value"], lits[i].second) << i;
+	}
+}
+
+TEST(sa, owned_rows_ro_slots)
+{
+	// Owned rows and structs may be lent as read-only '@T' slots; a C 'T**'
+	// that does not write takes them through 'as'.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/266_owned_rows_ro_slots.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
+TEST(sa, shift)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/267_shift.pa");
+	ASSERT_TRUE(jout.is_object());
+	auto init = [&](int i) { return jout["statements"][i]["vars"][0]["init"]; };
+	// The result keeps the left operand's type; the count is converted to it.
+	ASSERT_EQ(init(2)["expr-type"], "shl");
+	ASSERT_EQ(init(2)["value-type"]["type-name"], "int8");
+	ASSERT_EQ(init(2)["right"]["expr-type"], "convert");
+	ASSERT_EQ(init(2)["right"]["value-type"]["type-name"], "int8");
+	ASSERT_EQ(init(3)["value-type"]["type-name"], "int32");
+	// An untyped constant shifts at 64 bits.
+	ASSERT_EQ(init(4)["value"], "1099511627776");
+	ASSERT_EQ(init(5)["value"], "9223372036854775804");
+}
+
+TEST(sa, c_func_ptr_typedef)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/268_c_func_ptr_typedef.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& vt = stmts[0]["vars"][0]["var-type"];
+	ASSERT_EQ(vt["mutable"], false);
+	ASSERT_EQ(vt["base-type"]["type-kind"], "func");
+	ASSERT_EQ(vt["base-type"]["parameters"][0]["var-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["expr-type"], "call-ptr");
+}
+
+TEST(sa, func_ptr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/269_func_ptr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& ref = stmts[0]["vars"][0]["init"];
+	ASSERT_EQ(ref["expr-type"], "func-ref");
+	ASSERT_EQ(ref["name"], "twice");
+	// A single named return is the function's return value.
+	ASSERT_EQ(stmts[1]["value"]["name"], "one");
+	ASSERT_EQ(stmts[1]["value"]["value-type"]["base-type"]["ret-type"]["type-name"], "int32");
+
+	const auto& call = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(call["expr-type"], "call-ptr");
+	ASSERT_EQ(call["callee"]["name"], "f");
+	ASSERT_EQ(call["value-type"]["type-name"], "int32");
+	ASSERT_EQ(call["args"].size(), 1);
+
+	ASSERT_EQ(stmts[4]["stmt-type"], "field-assign");
+	const auto& fieldCall = stmts[5]["vars"][0]["init"];
+	ASSERT_EQ(fieldCall["expr-type"], "call-ptr");
+	ASSERT_EQ(fieldCall["callee"]["expr-type"], "field-access");
+
+	ASSERT_EQ(stmts[6]["stmt-type"], "expr");
+	ASSERT_EQ(stmts[6]["body"]["expr-type"], "call-ptr");
+}
+
+TEST(sa, func_ptr_paths)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/282_func_ptr_paths.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value-type"]["base-type"]["ret-type"]["type-name"], "void");
+	const auto& hook = stmts[1]["vars"][0]["init"];
+	ASSERT_EQ(hook["expr-type"], "call-ptr");
+	ASSERT_EQ(hook["callee"]["expr-type"], "c-global");
+	// A function whose receiver is read-only is not the method form of a
+	// call through a '@!H', so the field is called.
+	const auto& field = stmts[3]["vars"][0]["init"];
+	ASSERT_EQ(field["expr-type"], "call-ptr");
+	ASSERT_EQ(field["callee"]["expr-type"], "field-access");
+}
+
+TEST(sa, runtime_size_aggregates)
+{
+	cleanTestEnv();
+	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_func_ptr_field.pa -o out/lib_sa_func_ptr_field.pa.ast.json");
+	json jout = run_sa("../test/testdata/sa/283_runtime_size_aggregates.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	// stmts[1] holds the runtime element count of `a`.
+	ASSERT_EQ(stmts[2]["vars"][0]["name"], "a");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["expr-type"], "call");
+	ASSERT_EQ(stmts[3]["vars"][0]["name"], "rows");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["expr-type"], "call");
+	ASSERT_EQ(stmts[4]["vars"][0]["name"], "e");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["expr-type"], "call");
+	ASSERT_EQ(stmts[7]["vars"][0]["name"], "g");
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["expr-type"], "call");
+}
+
+TEST(sa, frame_struct)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/274_frame_struct.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto call = [&](size_t i) -> const json& { return stmts[i]["body"]; };
+
+	// The var keeps the heap version's type; only its init differs.
+	const auto& p = stmts[0]["vars"][0];
+	ASSERT_EQ(p["var-type"]["base-type"]["type-name"], "P");
+	ASSERT_EQ(p["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(p["init"]["size"], 16);
+	ASSERT_EQ(p["init"]["align"], 8);
+	ASSERT_EQ(call(1)["name"], "memset");
+
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["size"], 24);
+	ASSERT_EQ(call(3)["name"], "memset");
+	ASSERT_EQ(call(4)["name"], "__pln_init_Q");
+
+	// A struct returned by a call is moved into the frame and only its block freed.
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	const auto& adopt = stmts[6]["body"];
+	ASSERT_EQ(adopt[0]["vars"][0]["init"]["name"], "makeQ");
+	ASSERT_EQ(adopt[1]["body"]["name"], "memcpy");
+	ASSERT_EQ(adopt[2]["body"]["name"], "free");
+	ASSERT_EQ(adopt.size(), 3);
+
+	ASSERT_EQ(call(9)["name"], "memcpy");
+	ASSERT_EQ(stmts[10]["vars"].size(), 2);
+	ASSERT_EQ(stmts[10]["vars"][1]["init"]["expr-type"], "frame-alloc");
+
+	// Returning a stack struct returns a heap copy, and the stack one is finalized.
+	const auto& retQ = jout["functions"][1]["body"];
+	ASSERT_EQ(retQ[4]["body"]["name"], "__pln_copy_Q");
+	ASSERT_EQ(retQ[6]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(retQ[7]["stmt-type"], "return");
+}
+
+TEST(sa, frame_arr)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/275_frame_arr.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto init = [&](size_t i) -> const json& { return stmts[i]["vars"][0]["init"]; };
+	auto sizeAlign = [&](size_t i) { return make_pair(init(i)["size"].get<int>(), init(i)["align"].get<int>()); };
+
+	ASSERT_EQ(sizeAlign(0), make_pair(16, 4));
+	ASSERT_EQ(stmts[0]["vars"][0]["var-type"]["arr-size"], 4);
+	ASSERT_EQ(sizeAlign(1), make_pair(24, 8));
+	ASSERT_EQ(sizeAlign(2), make_pair(32, 8));
+	ASSERT_EQ(sizeAlign(3), make_pair(12, 2));
+	// Only the pointer array is in the frame; its elements or rows are on the heap.
+	ASSERT_EQ(sizeAlign(5), make_pair(24, 8));
+	ASSERT_EQ(stmts[7]["body"]["name"], "__pln_init_arr_P");
+	ASSERT_EQ(sizeAlign(9), make_pair(16, 8));
+	ASSERT_EQ(stmts[11]["body"]["name"], "__pln_init_arr_arr_int32");
+	ASSERT_EQ(stmts[15]["body"]["name"], "__pln_init_arr_arr_uint8");
+	ASSERT_EQ(stmts[20]["body"]["name"], "__pln_init_arr_arr_P");
+	ASSERT_EQ(stmts[20]["body"]["args"].size(), 3);
+	ASSERT_EQ(sizeAlign(21), make_pair(12, 4));
+	ASSERT_EQ(stmts[22]["stmt-type"], "arr-assign");
+}
+
+TEST(sa, frame_scope_exit)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/276_frame_scope_exit.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& body = jout["functions"][0]["body"];
+	const auto& loop = body[3]["body"];
+	ASSERT_EQ(loop[4]["then"]["body"][0]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(loop[4]["then"]["body"][1]["stmt-type"], "continue");
+	ASSERT_EQ(loop[5]["then"]["body"][0]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(loop[5]["then"]["body"][1]["stmt-type"], "break");
+	ASSERT_EQ(loop[6]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(body[5]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(body[6]["stmt-type"], "return");
+}
+
+TEST(sa, store_value_first_plain)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/280_store_value_first_plain.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+
+	// A value no call can reach is stored as written: no temp, no block.
+	ASSERT_EQ(stmts[2]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[2]["value"]["name"], "x");
+	ASSERT_EQ(stmts[6]["stmt-type"], "expr");
+	ASSERT_EQ(stmts[8]["stmt-type"], "arr-assign");
+
+	// c is given to memset afterwards, so its element is read before f().
+	const auto& blk = stmts[10];
+	ASSERT_EQ(blk["stmt-type"], "block");
+	ASSERT_EQ(blk["body"][0]["stmt-type"], "var-decl");
+	ASSERT_EQ(blk["body"][0]["vars"][0]["init"]["array"]["name"], "c");
+	ASSERT_EQ(blk["body"][1]["value"]["name"], blk["body"][0]["vars"][0]["name"]);
+	ASSERT_EQ(jout.dump().find("pending-alias"), string::npos);
 }

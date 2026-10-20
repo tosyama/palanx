@@ -1,0 +1,13 @@
+cinclude <stdio.h>;
+import "lib_hidden_name.pa" as V;
+type R { int64 x; };
+V.R a; R b;
+1 -> a.a; 2 -> a.b; 30000000000 -> b.x;
+printf("%d %d %ld\n", a.a, a.b, b.x);
+func f() {
+	import sum, S from "lib_hidden_name.pa";
+	S s; R c;
+	3 -> s.r.a; 4 -> s.r.b; 5 -> c.x;
+	printf("%d %ld\n", sum(@s), c.x);
+}
+f();

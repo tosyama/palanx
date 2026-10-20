@@ -1,0 +1,5 @@
+type L { int32 a; int32 b; };
+export type P = @!L;
+export type Q { L l; };
+export func pick(@!Q q) -> P p, int32 n { @!q.l -> p; 2 -> n; return; }
+export func setA(P p, int32 v) { v -> p.a; }

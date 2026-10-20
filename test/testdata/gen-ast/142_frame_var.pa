@@ -1,0 +1,7 @@
+type P { int32 x; };
+$P p;
+$[4]int32 a;
+$P b, c;
+func f($P q) { }
+func g() -> $P r { }
+func h() -> $P { }

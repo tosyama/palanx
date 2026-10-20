@@ -1,3 +1,8 @@
+/// C preprocessor: directives, macro expansion and #include handling.
+///
+/// @file CPreprocessor.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 class CPreprocessError : public runtime_error {
 public:
 	int lexer_no;
@@ -16,8 +21,10 @@ public:
 	CMacroType type;
 	string name;
 	vector<string> params;
+	bool variadic;	// the last of params takes the remaining arguments; unnamed `...` is __VA_ARGS__
 	vector<CToken*> body;
 	int lexer_no;
+	bool inherited;	// loaded by loadMacroFile, not defined by the header
 
 	CMacro(CMacroType type, string name, int lexer_no);
 };
@@ -44,8 +51,12 @@ public:
 	vector<CToken*> expand_macro_tokens(CMacro *m, vector<list<CToken*>> &args, vector<CMacro*> *hide_set);
 	vector<CToken*> expandObjectMacroBody(CMacro *m);
 
+	// Loads #define/#undef lines and the "#pragma palan_once_included" lines
+	// dumpMacroState writes; used for predefined.h and for a macro state.
+	// Every macro defined once it returns is marked inherited.
+	void loadMacroFile(const string& filepath);
+	void dumpMacroState(ostream& os);
 	// true: success, false: failed
-	bool loadPredefined(const string& filepath);
 	bool preprocess(const string& filepath, vector<CToken*> *tokens=NULL);
 	void outputError(const CPreprocessError& err);
 

@@ -1,3 +1,8 @@
+/// palan build manager tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include <filesystem>
 #include "../test-base/testBase.h"
@@ -1105,9 +1110,8 @@ TEST(build_mgr, uint_idx_var_stride) {
 }
 
 TEST(build_mgr, ptr_alias_pointee) {
-	// Regression: deepNormalizePrimToStruct didn't re-apply resolveTypeAlias at
-	// each pntr-chain level, so a type alias/typedef used as a `@T`/`@!T`
-	// pointee reached fromJson unresolved and aborted with rc=134.
+	// Regression: a type alias/typedef used as a `@T`/`@!T` pointee reached
+	// fromJson unresolved and aborted with rc=134.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/143_ptr_alias_pointee.pa");
 	ASSERT_EQ(output, "42 7\n");
@@ -1143,13 +1147,11 @@ TEST(build_mgr, bitwise_ops) {
 }
 
 TEST(build_mgr, incomplete_struct_handle) {
-	// Regression: registerCStruct used to drop the whole tag when one field
-	// (glibc's "_unused2", a size-expr c2ast can't evaluate) couldn't be laid
-	// out. It now registers _IO_FILE as incomplete, so a non-owning pointer
-	// declaration (no layout needed) builds and runs.
+	// A forward-declared-only tag from a real header is usable through a
+	// non-owning pointer, which needs no layout.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/147_incomplete_struct_handle.pa");
-	ASSERT_EQ(output, "ok\n");
+	ASSERT_EQ(output, "0\n");
 }
 
 TEST(build_mgr, file_handle) {
@@ -1440,6 +1442,87 @@ TEST(build_mgr, link_import) {
 	ASSERT_EQ(output, "11\n");
 }
 
+// Copies <base>.pa and <base>.h into out/ and compiles <base>.c there with
+// gcc, so the program's `link "<base>.o"` finds the object without a build
+// artifact in the source tree. Returns the program's output.
+static string runWithCObj(const string& base)
+{
+	string src = "../test/testdata/build-mgr/" + base;
+	string err = execTestCommand("cp " + src + ".pa " + src + ".h out/ && gcc -c -O1 "
+		+ src + ".c -o out/" + base + ".o");
+	if (err != "") return err;
+	return execTestCommand("bin/palan out/" + base + ".pa");
+}
+
+TEST(build_mgr, link_obj) {
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("295_link_obj"), "6\n");
+}
+
+TEST(build_mgr, c_struct_byval) {
+	// Each shape is checked against gcc's own code on the other side: the
+	// callee prints what it received and returns a changed copy, and the
+	// caller's struct stays unchanged.
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("296_struct_byval"),
+		"i8 1 2\n11 12 / 1 2\n"
+		"i16 3 4\n13 14\n"
+		"f2 1.5 2.5\n2.5 3.5\n"
+		"d2 1.5 2.5\n2.5 3.5\n"
+		"mix 0.5 7\n1.5 8\n"
+		"mix2 5 0.5\n6 1.5\n"
+		"b3 1 2 3\n11 2 13\n"
+		"b5 1 2 3 4 5\n11 2 3 4 15\n"
+		"b6 1000 2000 3000\n1001 2000 3001\n"
+		"b7 1 2 3 4 5 6 7\n11 2 3 4 5 6 17\n"
+		"b11 1 9 11\n11 9 21\n"
+		"big 1 2 3\n11 2 13 / 1\n"
+		"big20 1 20\n11 30\n"
+		"u 3f800000\n3f800001\n"
+		"int_regs_full 1 2 3 4 5 3 4 7\n"
+		"flt_regs_full 1 2 3 4 5 6 7 1.5 2.5 9\n"
+		"variadic_after 0.5 7 2.25 9\n");
+}
+
+TEST(build_mgr, c_packed_aligned) {
+	// gcc's side prints its own layout and what it received through each path.
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("315_c_packed_aligned"),
+		"Pk 13 1 5, Al 32, Fa 24 8 12, TPk 3, Outer 40 1 14\n"
+		"pk 1 2 3\n11 12 13\n"
+		"2 12 102\n13\n"
+		"20 21 32\n"
+		"fa 4 5 12\n"
+		"tpk 6 7\n"
+		"outer 8 9 10 11 13\n");
+}
+
+TEST(build_mgr, epoll_packed) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/316_epoll_packed.pa"),
+		"1 1 1234605616436508552\n");
+}
+
+TEST(build_mgr, c_anon_member) {
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("298_c_anon_member"),
+		"1 2 3 4\n5 2.5 6\n"
+		"v 1 2 3.5\n11 12 13.5\n"
+		"f 1.5 2.5\n2.5 3.5\n");
+}
+
+TEST(build_mgr, cinclude_macro_state) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/299_cinclude_macro_state.pa");
+	ASSERT_EQ(output, "ok\n100 3 2\n");
+}
+
+TEST(build_mgr, fopencookie) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/297_fopencookie.pa");
+	ASSERT_EQ(output, "[hello 42]\n");
+}
+
 TEST(build_mgr, math_functions) {
 	// Broad libm coverage (sqrt/pow/sin/.../hypot) run through the `link`
 	// clause, including a variable and a nested expression as arguments.
@@ -1599,7 +1682,7 @@ TEST(build_mgr, macro_const_suffix)
 	// Same shape as ncurses' A_* attributes: a typedef cast of a suffixed literal, shifted.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/211_macro_const_suffix.pa");
-	ASSERT_EQ(output, "262144 2097152 2359296 18446744073709551615\n");
+	ASSERT_EQ(output, "262144 2097152 2359296 18446744073709551615 4294967040\n");
 }
 
 TEST(build_mgr, macro_const_untyped)
@@ -2915,8 +2998,293 @@ TEST(build_mgr, lit_arg_struct_arr_mtrace)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, block_type_scope_mtrace) {
+	// Same-named block-local structs of different layouts each get their own
+	// allocator.
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_block_type_scope_bin "
+		"../test/testdata/build-mgr/285_block_type_scope_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_block_type_scope_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_block_type_scope_bin");
+	ASSERT_EQ(output, "5 2\n7\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_GT(allocs, 0);
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, ptr_ptr_field) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/284_ptr_ptr_field.pa");
 	ASSERT_EQ(output, "7 6\n7 6\n");
+}
+
+TEST(build_mgr, c_linked_list) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/286_c_linked_list.pa");
+	ASSERT_EQ(output, "1 20 30\n");
+}
+
+TEST(build_mgr, c_ptr_typedef_timer) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/287_c_ptr_typedef_timer.pa");
+	ASSERT_EQ(output, "0\n0\n0\n1\n0\n");
+}
+
+TEST(build_mgr, as_cast) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/288_as_cast.pa");
+	ASSERT_EQ(output, "2 1\nok\n7 1\n9\n40 0\n");
+}
+
+TEST(build_mgr, select_fd_set) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/289_select_fd_set.pa");
+	ASSERT_EQ(output, "1\n1\n");
+}
+
+TEST(build_mgr, file_layout) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/290_file_layout.pa");
+	ASSERT_EQ(output, "1\n");
+}
+
+TEST(build_mgr, const_expr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/291_const_expr.pa");
+	ASSERT_EQ(output, "28 5 4.5\n");
+}
+
+TEST(build_mgr, owned_rows_ro_slots) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/292_owned_rows_ro_slots.pa");
+	ASSERT_EQ(output, "3 4\n7\n");
+}
+
+TEST(build_mgr, shift) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/293_shift.pa");
+	ASSERT_EQ(output, "2147483644 144 2 2\n15 40\n-1 -3 -56 -56\n3 5 116\n-64 0 -2305843009213693952\n");
+}
+
+TEST(build_mgr, func_ptr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/294_func_ptr.pa");
+	ASSERT_EQ(output, "10 6 42 8\nhello\n8 4\n36 4.5 -7\n1 0\n1 2 3\nvia puts\n30\n");
+}
+
+static void expectFrameMtrace(const string& base, const string& expected)
+{
+	cleanTestEnv();
+	string bin = "/tmp/palan_" + base + "_bin";
+	ASSERT_EQ(execTestCommand("bin/palan -o " + bin + " ../test/testdata/build-mgr/" + base + ".pa"), "");
+
+	string traceFile = "/tmp/palan_" + base + ".log";
+	// Freeing a stack address would abort here instead of printing.
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " " + bin);
+	ASSERT_EQ(output, expected);
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_GT(allocs, 0);
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, frame_mtrace) {
+	expectFrameMtrace("300_frame_mtrace",
+		"0 0\n7\n2 6\n1 9 0\n6 10\n7 5\n3\n5\n8\n4\n3 4\n11\n");
+}
+
+TEST(build_mgr, frame_c) {
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("301_frame_c"), "3 4\n14\n33\nAAAAAAA\n");
+}
+
+TEST(build_mgr, frame_owned_elems_mtrace) {
+	expectFrameMtrace("302_frame_owned_elems_mtrace", "10\n5\n7\n9\n3\n");
+}
+
+TEST(build_mgr, import_private_type) {
+	cleanTestEnv();
+	// Each module's P gets its own allocators: copying lib's [2]P with main's
+	// 4-byte copy would print "5 3 0".
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/303_import_private_type.pa");
+	ASSERT_EQ(output, "5 3 4\n");
+}
+
+TEST(build_mgr, import_private_dep_type) {
+	cleanTestEnv();
+	// Q brings lib's unexported P along; main's own P does not clash with it.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/304_import_private_dep_type.pa");
+	ASSERT_EQ(output, "6 7\n");
+}
+
+TEST(build_mgr, import_private_alias_type) {
+	cleanTestEnv();
+	// PP names lib's P wherever it is written, not main's P of the same name.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/305_import_private_alias_type.pa");
+	ASSERT_EQ(output, "8 9\n");
+}
+
+TEST(build_mgr, qualified_type_entries) {
+	cleanTestEnv();
+	// V.P reaches lib's L through an alias chain, a parameter, a tapple, a
+	// cast and sizeof alike, never main's L.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/306_qualified_type_entries.pa");
+	ASSERT_EQ(output, "5 6 2 8 16\n");
+}
+
+TEST(build_mgr, import_hidden_type_name_reuse) {
+	cleanTestEnv();
+	// main's R coexists with lib's R, written only as V.R or reached through S.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/307_import_hidden_type_name_reuse.pa");
+	ASSERT_EQ(output, "1 2 30000000000\n7 5\n");
+}
+
+TEST(build_mgr, expr_rooted_access) {
+	cleanTestEnv();
+	// Indexing, field access and their writes rooted in a cast, a parenthesized
+	// expression or a call returning a pointer.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/308_expr_rooted_access.pa");
+	ASSERT_EQ(output, "7 8 8\n10\n10 11\n12\n1970\n1\n");
+}
+
+TEST(build_mgr, store_eval_once) {
+	cleanTestEnv();
+	// Each call in a chain's targets runs once, and a value runs before the
+	// calls in its target.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/309_store_eval_once.pa");
+	ASSERT_EQ(output, "i1 v i2 s7 5 6 5 7\ng i0 g v g i1 v 8 9 10 10\nw g i1 11 11 12 13 14\n");
+}
+
+TEST(build_mgr, store_eval_once_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_store_eval_once_mtrace_bin "
+		"../test/testdata/build-mgr/310_store_eval_once_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_store_eval_once_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_store_eval_once_mtrace_bin");
+	ASSERT_EQ(output, "i1 i0 i1 2 3 4\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 8) << "expected 8 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, store_value_first) {
+	cleanTestEnv();
+	// A call in the target that writes the value through a pointer it was
+	// given -- by '@', a struct or []T parameter, a raw pointer or an integer
+	// cast, even one given later in a loop -- does not change what is stored.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/311_store_value_first.pa");
+	ASSERT_EQ(output, "5 5\n1 2\n1 11\n1 2\n1 11\n1 101\n1 1001\n3 9\ng i 1 2\n"
+	                  "1 2 27\ni i i 6 4 1\ni 2 2\n");
+}
+
+TEST(build_mgr, store_value_first_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_store_value_first_mtrace_bin "
+		"../test/testdata/build-mgr/312_store_value_first_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_store_value_first_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_store_value_first_mtrace_bin");
+	ASSERT_EQ(output, "3 4\n5 4 9\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 15) << "expected 15 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, uninit_var_decl) {
+	cleanTestEnv();
+	// A variable declared without an initializer keeps its declared width
+	// when it is later assigned, read, addressed or redeclared in a loop.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/313_uninit_var_decl.pa");
+	ASSERT_EQ(output, "11 12\n12 13\n-2 301 4000000000 3.0\n8\n0 1 2 3 4 5 \n");
+}
+
+TEST(build_mgr, inet_ntoa) {
+	cleanTestEnv();
+	// The socket headers reach a GNU named variadic macro (`MEMBERS...`).
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/314_inet_ntoa.pa");
+	ASSERT_EQ(output, "127.0.0.1 2130706433\n2\n");
+}
+
+
+TEST(build_mgr, c_func_alias_macro) {
+	cleanTestEnv();
+	// Each name is a glibc macro for another symbol; the old sscanf would read
+	// "%as" as a GNU allocated string.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/317_c_func_alias_macro.pa");
+	ASSERT_EQ(output, "1 8\n0 No such file or directory\nb\n");
+}
+
+TEST(build_mgr, tapple_frame_mtrace) {
+	// A `$` receiver gets the returned struct's contents, owned fields
+	// included, and the returned block is freed.
+	expectFrameMtrace("318_tapple_frame_mtrace", "3 10\n5 6 9 7\n8 9\n");
+}
+
+TEST(build_mgr, var_transfer_mtrace) {
+	// The target's old value is freed and the source left NULL, so every
+	// block is freed exactly once.
+	expectFrameMtrace("319_var_transfer_mtrace", "4\n5\n3 4\n7\n9\n7\n0\n5\n9\n");
 }

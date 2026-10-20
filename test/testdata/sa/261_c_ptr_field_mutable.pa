@@ -1,0 +1,8 @@
+cinclude "261_c_ptr_field_mutable.h";
+
+Node s;
+@!int32 a = s.mp;
+@!Node b = s.next;
+@!int32 c = s.slots[1];
+@!@!int32 d = s.pp;
+@int32 e = s.cp;

@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+cinclude "299_cinclude_macro_state_cfg.h";
+cinclude "299_cinclude_macro_state.h";
+cinclude <stdlib.h>;
+cinclude <string.h>;
+
+puts("ok");
+printf("%d %d %d\n", LIMIT, abs(-3), strlen("ab") as int32);

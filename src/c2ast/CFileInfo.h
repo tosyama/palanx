@@ -1,3 +1,8 @@
+/// Source file loading and include-path search for C headers.
+///
+/// @file CFileInfo.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 class CFileInfo {
 public:
 	string fname;

@@ -1,0 +1,3 @@
+cinclude "271_c_struct_arg.h";
+
+@func(@I8) -> int32 f = take_i8;

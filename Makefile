@@ -9,11 +9,18 @@ all: build/CMakeCache.txt
 	@cd build && rm -f bin/core && bin/codegen-unit-tester
 	@cd build && rm -f bin/core && bin/build-mgr-tester
 
+# Optimized so the end-to-end tests run fast, but without RelWithDebInfo's
+# default -DNDEBUG so that assertions still fire under test.
 build/CMakeCache.txt:
 	mkdir -p build
-	cd build && cmake -DCMAKE_BUILD_TYPE=Debug ..
+	cd build && cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -g" ..
+debug: build-debug/CMakeCache.txt
+	cmake --build build-debug
+build-debug/CMakeCache.txt:
+	mkdir -p build-debug
+	cd build-debug && cmake -DCMAKE_BUILD_TYPE=Debug ..
 clean:
-	rm -r build
+	rm -rf build build-debug
 # lcov reads exclusion markers only from files it treats as C/C++, which by
 # default excludes .yy grammar files.
 LCOV_FLAGS = --rc branch_coverage=1 --rc c_file_extensions=h,c,i,C,H,I,cpp,hpp,icc,cc,hh,cxx,hxx,yy

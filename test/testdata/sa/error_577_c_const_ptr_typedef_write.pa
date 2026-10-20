@@ -1,0 +1,4 @@
+cinclude "262_c_ptr_typedef.h";
+int32 x = 1;
+CP q = @x;
+3 -> q[0];

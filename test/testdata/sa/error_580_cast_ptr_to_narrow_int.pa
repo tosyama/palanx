@@ -1,0 +1,3 @@
+int32 x = 1;
+@!int32 p = @!x;
+int32 n = p as int32;

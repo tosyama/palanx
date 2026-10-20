@@ -1,5 +1,11 @@
+/// Register allocation: VProg -> RegMap.
+///
+/// @file PlnRegAlloc.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include "PlnRegAlloc.h"
 #include <algorithm>
+#include <cassert>
 
 using namespace std;
 
@@ -14,7 +20,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     struct VRegMeta {
         VRegType type         = VRegType::Int64;
         int      def_idx      = -1;
-        bool     isVar        = false;   // true if defined by InitVar (variable)
+        bool     isVar        = false;   // true if a declared variable (InitVar/InitVarF/DeclVar)
         int      last_any_use = -1;      // last use by non-call-argument instructions
         vector<pair<int,string>> call_uses; // (call_instr_idx, desired arg register)
         bool     isRetValue   = false;   // true if used by RetPln
@@ -49,24 +55,22 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         // scratch register (phys.scratch) cannot be bound directly either, since
         // other instructions between this def and the call may clobber it --
         // it falls through to addUse, same as an out-of-table slot.
-        auto addCallArgs = [&](const vector<VReg>& args, const vector<string>& argRegs) {
-            int int_idx = 0;
-            for (auto vr : args) {
-                VRegType t = meta.count(vr) ? meta[vr].type : VRegType::Int64;
-                bool is_flt = (t == VRegType::Float32 || t == VRegType::Float64);
-                if (is_flt) {
-                    // Float args go to XMM registers, not intArgs. Track only liveness.
+        auto addCallArgs = [&](const vector<VReg>& args, const vector<string>& argRegs,
+                               const vector<StructArgSpan>& spans) {
+            vector<VRegType> types;
+            for (auto vr : args)
+                types.push_back(meta.count(vr) ? meta[vr].type : VRegType::Int64);
+            vector<int> slots = placeCallArgs(types, spans, (int)argRegs.size(), (int)phys.floatArgs.size());
+            for (size_t k = 0; k < args.size(); k++) {
+                VReg vr = args[k];
+                // Float args go to XMM registers, not intArgs. Track only liveness.
+                bool in_table = !isFloat(types[k]) && slots[k] >= 0;
+                bool is_scratch = in_table && find(phys.scratch.begin(), phys.scratch.end(),
+                                                     argRegs[slots[k]]) != phys.scratch.end();
+                if (in_table && !is_scratch)
+                    meta[vr].call_uses.push_back({i, argRegs[slots[k]]});
+                else
                     addUse(vr);
-                } else {
-                    bool in_table = int_idx < (int)argRegs.size();
-                    bool is_scratch = in_table && find(phys.scratch.begin(), phys.scratch.end(),
-                                                         argRegs[int_idx]) != phys.scratch.end();
-                    if (in_table && !is_scratch)
-                        meta[vr].call_uses.push_back({i, argRegs[int_idx]});
-                    else
-                        addUse(vr);
-                    int_idx++;
-                }
             }
         };
 
@@ -75,6 +79,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const MovImm& m)    { setDef(m.dst, m.type); },
             [&](const InitVar& v)   { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
             [&](const InitVarF& v)  { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
+            [&](const DeclVar& v)   { setDef(v.dst, v.type); meta[v.dst].isVar = true; },
             [&](const Add& a)      { setBinOp(a.dst, a.lhs, a.rhs, a.type); },
             [&](const Sub& s)      { setBinOp(s.dst, s.lhs, s.rhs, s.type); },
             [&](const Mul& m)      { setBinOp(m.dst, m.lhs, m.rhs, m.type); },
@@ -85,17 +90,20 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const BitOr& o)    { setBinOp(o.dst, o.lhs, o.rhs, o.type); },
             [&](const BitXor& x)   { setBinOp(x.dst, x.lhs, x.rhs, x.type); },
             [&](const BitNot& n)   { setDef(n.dst, n.type); addUse(n.src); },
+            [&](const Shift& s)    { setBinOp(s.dst, s.lhs, s.rhs, s.type); },
+            [&](const ShiftImm& s) { setDef(s.dst, s.type); addUse(s.src); },
             [&](const Cmp& c)      { setDef(c.dst, VRegType::Uint8); addUse(c.lhs); addUse(c.rhs); },
             [&](const Convert& c)  { setDef(c.dst, c.to); addUse(c.src); },
             [&](const CallC& c) {
                 call_indices.push_back(i);
-                addCallArgs(c.args, phys.intArgs);
+                if (c.callee) addUse(*c.callee);
+                addCallArgs(c.args, phys.intArgs, c.structArgs);
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
             [&](const CallPln& c) {
                 call_indices.push_back(i);
-                addCallArgs(c.args, phys.intArgs);
+                addCallArgs(c.args, phys.intArgs, {});
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
@@ -106,7 +114,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // see IT-3206 status notes for the tradeoff).
             [&](const CallSys& c) {
                 call_indices.push_back(i);
-                addCallArgs(c.args, phys.syscallArgs);
+                addCallArgs(c.args, phys.syscallArgs, {});
                 for (int k = 0; k < (int)c.dsts.size(); k++)
                     setDef(c.dsts[k], c.retTypes[k]);
             },
@@ -132,6 +140,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // rest of its lifetime, exactly like an InitVar-declared variable —
             // reuse the isVar mechanism rather than a second forced-stack path.
             [&](const LeaLocal&   ll)    { setDef(ll.dst, VRegType::Ptr64); meta[ll.local].isVar = true; addUse(ll.local); },
+            [&](const FrameAddr&  fa)    { setDef(fa.dst, VRegType::Ptr64); },
             [&](const ExitCode&)   {},
             [&](const BlockEnter&) {},
             [&](const BlockLeave&) {},
@@ -421,13 +430,6 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 }
             }
         }
-
-        // isVar VRegs with no defining instruction (e.g. `int64 x;` with no
-        // initializer, later addressed via `@x`) never match a def_idx above --
-        // give them a permanent slot (no freePool reuse) as a conservative fallback.
-        for (auto& [vreg, m] : meta)
-            if (m.isVar && m.def_idx == -1 && !result.count(vreg))
-                allocStackSlot(vreg, m.type);
     }
 
     // For non-entry functions, reserve stack slots at the top of the frame to
@@ -441,6 +443,20 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                 loc.stackOffset -= save_area;
         }
         stack_bytes += save_area;
+    }
+
+    // Frame blocks go below everything already placed, so the callee-saved
+    // shift above cannot break their alignment. %rbp itself is 16-byte aligned
+    // except in _start, which has no return address below it.
+    vector<int> frameBlockOffsets;
+    int rbpBias = func.isEntry ? 8 : 0;
+    for (auto& b : func.frameBlocks) {
+        assert(b.align > 0 && b.align <= 16 && 16 % b.align == 0);
+        // A non-empty block also makes _start set up %rbp, which its address is relative to.
+        int s = stack_bytes + std::max(b.size, 1);
+        while ((s - rbpBias) % b.align != 0) s++;
+        frameBlockOffsets.push_back(-s);
+        stack_bytes = s;
     }
 
     // Align frame size for ABI compliance.
@@ -463,5 +479,5 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     for (auto& [argReg, vreg, ptype] : pendingParamCopies)
         paramCopies.push_back({argReg, result[vreg], ptype});
 
-    return {result, frameSize, usedCallee, paramCopies};
+    return {result, frameSize, usedCallee, paramCopies, frameBlockOffsets};
 }

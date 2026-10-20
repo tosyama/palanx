@@ -1,0 +1,4 @@
+type P { int32 a; };
+P v;
+@P p = @v;
+5 -> (p as @P).a;

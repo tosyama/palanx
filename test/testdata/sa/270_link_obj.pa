@@ -1,0 +1,4 @@
+cinclude <stdio.h> link "270_link_obj.o", "m";
+{
+	cinclude <stdio.h> link "270_link_obj.o";
+}

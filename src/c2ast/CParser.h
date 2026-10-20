@@ -1,3 +1,8 @@
+/// C parser: recursive descent parser for C declarations.
+///
+/// @file CParser.h
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <string>
 #include <map>
 #include <set>
@@ -30,7 +35,8 @@ class CParser {
 	// leaving the tag name unresolved.
 	vector<json> capturedStructs_;
 	map<string, int> structIndex_;  // tag name -> index into capturedStructs_
-	void captureStructTag(const string &name, const json *fields, bool is_union);
+	// `body` holds "fields" and any struct-level "packed"/"aligned".
+	void captureStructTag(const string &name, const json *body, bool is_union);
 	string synthesizeAnonTag(const CToken* at);
 
 	// Every enum body seen while parsing, in first-appearance order. An
@@ -63,13 +69,14 @@ class CParser {
 	bool parameter_list(vector<json> &params, const vector<CToken*> &tokens, int &result_index);
 	bool struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_struct);
 	bool enum_definition(string &name, const vector<CToken*> &tokens, int &result_index);
+	bool attribute_specifiers(json &attrs, const vector<CToken*> &tokens, int &result_index);
 
 	bool statement(json &ast, const vector<CToken*> &tokens, int &result_index);
 	bool jump_statement(json &ast, const vector<CToken*> &tokens, int &result_index);
 
 	// This subtree (primary_expression .. expression) builds a value-AST node into
-	// `value` for the small set of forms we can compute (literal, +/-, cast); otherwise
-	// `value` is left null. See CParser.cpp for the "expr-type" node shapes used.
+	// `value` for the small set of forms we can compute (literal, +/-, cast, sizeof);
+	// otherwise `value` is left null. See CParser.cpp for the "expr-type" node shapes used.
 	bool primary_expression(json &value, const vector<CToken*> &tokens, int &index);
 	bool postfix_expression(json &value, const vector<CToken*> &tokens, int &result_index);
 	bool unary_expression(json &value, const vector<CToken*> &tokens, int &result_index);
@@ -90,6 +97,8 @@ class CParser {
 	bool expression(json &value, const vector<CToken*> &tokens, int &result_index);
 
 	bool resolveConstValue(const json &node, json &value, json &type);
+	bool typeSizeAlign(const json &vt, long long &size, long long &align);
+	bool exportFuncAlias(json &ast, const string &name, const string &target);
 
 	// void debug_token(const CToken* token);
 

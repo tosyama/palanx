@@ -1,0 +1,54 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+
+func twice(int32 x) -> int32 { return x * 2; }
+func plus1(int32 x) -> int32 { return x + 1; }
+func apply(@func(int32) -> int32 f, int32 x) -> int32 { return f(x); }
+func pick(bool b) -> @func(int32) -> int32 { if b { return twice; } return plus1; }
+func hello() { printf("hello\n"); }
+func sum8(int32 a, int32 b, int32 c, int32 d, int32 e, int32 f, int32 g, int32 h) -> int32 {
+	return a + b + c + d + e + f + g + h;
+}
+func scale(flo64 x, int32 n) -> flo64 { return x * n; }
+func cmp(@int32 a, @int32 b) -> int32 { return a[0] - b[0]; }
+func sub(int32 a, int32 b) -> int32 { return a - b; }
+// f arrives in the first argument register the call overwrites.
+func swapcall(@func(int32, int32) -> int32 f, int32 a, int32 b) -> int32 { return f(b, a); }
+func myread(@!void c, @!int8 buf, uint64 n) -> int64 { return int64(n) * 10; }
+
+type Ops { int32 base; @func(int32) -> int32 op; };
+
+@func(int32) -> int32 g = twice;
+printf("%d ", g(5));
+plus1 -> g;
+@func(int32) -> int32 pk = pick(true);
+printf("%d %d %d\n", g(5), apply(twice, 21), 3 -> g() -> pk());
+@func() h = hello;
+h();
+
+Ops o;
+twice -> o.op;
+[2]@func(int32) -> int32 tbl;
+twice -> tbl[0];
+plus1 -> tbl[1];
+@func(int32) -> int32 t1 = tbl[1];
+printf("%d %d\n", o.op(4), t1(3));
+
+@func(int32, int32, int32, int32, int32, int32, int32, int32) -> int32 s = sum8;
+@func(flo64, int32) -> flo64 sc = scale;
+printf("%d %.1f %d\n", s(1, 2, 3, 4, 5, 6, 7, 8), sc(1.5, 3), swapcall(sub, 10, 3));
+
+@func(int32) -> int32 n = NULL;
+printf("%d %d\n", n == NULL, g == NULL);
+
+__compar_fn_t cf = cmp;
+[3]int32 arr = [3, 1, 2];
+qsort(arr, uint64(3), uint64(4), cf);
+printf("%d %d %d\n", arr[0], arr[1], arr[2]);
+
+@func(@int8) -> int32 p = puts;
+p("via puts");
+
+cookie_io_functions_t io;
+myread -> io.read;
+printf("%d\n", int32(io.read(NULL, NULL, uint64(3))));

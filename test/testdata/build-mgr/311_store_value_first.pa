@@ -1,0 +1,85 @@
+cinclude <stdio.h>;
+cinclude <unistd.h>;
+type P { int32 x; int32 y; };
+type Q { P own; };
+func bump(@![2]int32 a) -> int32 r { a[0] + 1 -> a[0]; 0 -> r; }
+func bumpP(@!P p) -> int32 r { p.x + 1 -> p.x; 0 -> r; }
+func byStruct(P p) -> int32 r { p.x + 10 -> p.x; 0 -> r; }
+func byArr([]int32 a) -> int32 r { a[0] + 10 -> a[0]; 0 -> r; }
+func viaPtr(@!int32 p) -> int32 r { p[0] + 100 -> p[0]; 0 -> r; }
+func viaInt(int64 n) -> int32 r { @!int32 p = n as @!int32; p[0] + 1000 -> p[0]; 0 -> r; }
+func steal(@!Q q) -> int32 r { P n; 9 -> n.x; n ->> q.own; 0 -> r; }
+func viewP(@!P p) -> @!P r { p -> r; }
+func inFunc(@!P p) -> int32 r {
+	[2]int32 o = [0, 0];
+	p.x -> o[bumpP(p)];
+	[2]int32 lq = [7, 0];
+	lq[0] -> lq[bump(@!lq)];
+	o[0] * 10 + lq[0] -> r;
+}
+func g(int32 n) -> int32 r { printf("g "); n -> r; }
+func idx(int32 i) -> int32 r { printf("i "); i -> r; }
+
+[2]int32 q = [5, 0];
+[2]int32 r = [0, 0];
+q[0] -> q[bump(@!q)] -> r[1];
+printf("%d %d\n", q[0], r[1]);
+
+[2]P ps;
+P s; 1 -> s.x;
+s -> ps[bumpP(@!s)];
+printf("%d %d\n", ps[0].x, s.x);
+
+P t; 1 -> t.x;
+t -> ps[byStruct(t)];
+printf("%d %d\n", ps[0].x, t.x);
+
+P u; 1 -> u.x;
+P w;
+@!P keep = @!w;
+int32 i = 0;
+while i < 2 {
+	u -> ps[bumpP(keep)];
+	@!u -> keep;
+	i + 1 -> i;
+}
+printf("%d %d\n", ps[0].x, u.x);
+
+[2]int32 a = [1, 2];
+[2][2]int32 m;
+a -> m[byArr(a)];
+printf("%d %d\n", m[0][0], a[0]);
+
+[2]int32 b = [1, 2];
+@!int32 bp = b;
+b[0] -> r[viaPtr(bp)];
+printf("%d %d\n", r[0], b[0]);
+
+[2]int32 c = [1, 2];
+int64 cn = c as int64;
+c[0] -> r[viaInt(cn)];
+printf("%d %d\n", r[0], c[0]);
+
+Q h; 3 -> h.own.x;
+h.own ->> ps[steal(@!h)];
+printf("%d %d\n", ps[0].x, h.own.x);
+
+[2]int32 rr = [0, 0];
+[g(1), 2] -> m[idx(0)] -> rr;
+printf("%d %d\n", rr[0], rr[1]);
+
+P s2; 1 -> s2.x;
+viewP(@!s2) -> ps[bumpP(@!s2)];
+printf("%d %d %d\n", ps[0].x, s2.x, inFunc(@!s2));
+P pv; 6 -> pv.x;
+pv ->> ps[idx(1)];
+Q h2; 4 -> h2.own.x;
+h2.own.x -> r[idx(0)];
+optind -> r[idx(1)];
+printf("%d %d %d\n", ps[1].x, r[0], r[1]);
+[2][2]P pr;
+[2]P pr2;
+P p1; 1 -> p1.x;
+P p2; 2 -> p2.x;
+[p1, p2] -> pr[idx(0)] -> pr2;
+printf("%d %d\n", pr[0][1].x, pr2[1].x);

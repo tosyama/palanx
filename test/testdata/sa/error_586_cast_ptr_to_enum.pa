@@ -1,0 +1,3 @@
+type Big enum { A = 5000000000 };
+int32 x = 1;
+Big e = @!x as Big;

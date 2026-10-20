@@ -1,3 +1,8 @@
+/// semantic analyzer unit tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include "PlnType.h"
 #include "PlnSaInternal.h"
@@ -415,13 +420,13 @@ TEST(arg_conv_ok, void_rejected_either_side) {
     EXPECT_FALSE(argConvOk(i32, v));
 }
 
-// -------- classifySysVStructRet: SysV AMD64 struct-return classification --------
+// -------- classifySysVStruct: SysV AMD64 by-value struct classification --------
 //
 // FieldLayout's first six members have no default initializers, so every
 // field below is built with positional aggregate init:
 //   {name, typeKind, typeName, isMutable, offset, size[, count, elemKind, stride]}
 
-TEST(sysv_struct_ret, one_eightbyte_integer) {
+TEST(sysv_struct, one_eightbyte_integer) {
     // div_t shape: { int32 quot; int32 rem; }
     StructDef def;
     def.totalSize = 8;
@@ -430,15 +435,13 @@ TEST(sysv_struct_ret, one_eightbyte_integer) {
         {"rem",  "prim", "int32", false, 4, 4},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);
     EXPECT_EQ(result[0].cls,  EightbyteClass::Integer);
     EXPECT_EQ(result[0].size, 8);
 }
 
-TEST(sysv_struct_ret, two_eightbyte_integer) {
+TEST(sysv_struct, two_eightbyte_integer) {
     // ldiv_t/lldiv_t shape: { int64 quot; int64 rem; }
     StructDef def;
     def.totalSize = 16;
@@ -447,27 +450,23 @@ TEST(sysv_struct_ret, two_eightbyte_integer) {
         {"rem",  "prim", "int64", false, 8, 8},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 2);
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
     EXPECT_EQ(result[1].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct_ret, one_eightbyte_sse) {
+TEST(sysv_struct, one_eightbyte_sse) {
     StructDef def;
     def.totalSize = 8;
     def.fields = { {"x", "prim", "flo64", false, 0, 8} };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);
     EXPECT_EQ(result[0].cls, EightbyteClass::Sse);
 }
 
-TEST(sysv_struct_ret, two_flo32_one_eightbyte) {
+TEST(sysv_struct, two_flo32_one_eightbyte) {
     StructDef def;
     def.totalSize = 8;
     def.fields = {
@@ -475,14 +474,12 @@ TEST(sysv_struct_ret, two_flo32_one_eightbyte) {
         {"b", "prim", "flo32", false, 4, 4},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);
     EXPECT_EQ(result[0].cls, EightbyteClass::Sse);
 }
 
-TEST(sysv_struct_ret, integer_wins_within_eightbyte) {
+TEST(sysv_struct, integer_wins_within_eightbyte) {
     // Any-INTEGER-wins merge rule: a float field sharing an eightbyte with an
     // integer field classifies the whole eightbyte as INTEGER.
     StructDef def;
@@ -492,14 +489,12 @@ TEST(sysv_struct_ret, integer_wins_within_eightbyte) {
         {"b", "prim", "int32", false, 4, 4},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct_ret, mixed_integer_sse) {
+TEST(sysv_struct, mixed_integer_sse) {
     StructDef def;
     def.totalSize = 16;
     def.fields = {
@@ -507,15 +502,13 @@ TEST(sysv_struct_ret, mixed_integer_sse) {
         {"b", "prim", "flo64", false, 8, 8},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 2);
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
     EXPECT_EQ(result[1].cls, EightbyteClass::Sse);
 }
 
-TEST(sysv_struct_ret, partial_tail_eightbyte) {
+TEST(sysv_struct, partial_tail_eightbyte) {
     // 12 bytes: 2 eightbytes, the second only 4 bytes wide.
     StructDef def;
     def.totalSize = 12;
@@ -525,16 +518,14 @@ TEST(sysv_struct_ret, partial_tail_eightbyte) {
         {"c", "prim", "int32", false, 8, 4},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 2);
     EXPECT_EQ(result[0].size, 8);
     EXPECT_EQ(result[1].size, 4);
 }
 
-TEST(sysv_struct_ret, memory_class) {
-    // Over 16 bytes -> MEMORY class (empty vector), ok stays true.
+TEST(sysv_struct, memory_class) {
+    // Over 16 bytes -> MEMORY class (empty vector).
     StructDef def;
     def.totalSize = 24;
     def.fields = {
@@ -543,64 +534,69 @@ TEST(sysv_struct_ret, memory_class) {
         {"c", "prim", "int64", false, 16, 8},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    EXPECT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     EXPECT_TRUE(result.empty());
 }
 
-TEST(sysv_struct_ret, fractional_tail_width) {
-    // `char a[3];` -- a 3-byte tail eightbyte isn't 1/2/4/8 wide, so the
-    // classifier refuses to guess at a partial-eightbyte store.
+TEST(sysv_struct, fractional_tail_width) {
     StructDef def;
     def.totalSize = 3;
     def.fields = {
         {"a", "embed-arr", "int8", false, 0, 3, /*count*/3, /*elemKind*/"prim", /*stride*/1},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    EXPECT_FALSE(ok);
-    EXPECT_TRUE(result.empty());
+    auto result = classifySysVStruct(def, defs);
+    ASSERT_EQ(result.size(), 1);
+    EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
+    EXPECT_EQ(result[0].size, 3);
 }
 
-TEST(sysv_struct_ret, raw_ptr_field) {
+TEST(sysv_struct, union_float_and_int) {
+    // A union's members overlap at offset 0; the INTEGER member wins.
+    StructDef def;
+    def.totalSize = 4;
+    def.fields = {
+        {"f", "prim", "flo32", false, 0, 4},
+        {"i", "prim", "int32", false, 0, 4},
+    };
+    map<string, StructDef> defs;
+    auto result = classifySysVStruct(def, defs);
+    ASSERT_EQ(result.size(), 1);
+    EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
+    EXPECT_EQ(result[0].size, 4);
+}
+
+TEST(sysv_struct, raw_ptr_field) {
     StructDef def;
     def.totalSize = 8;
     def.fields = { {"p", "raw-ptr", "int32", false, 0, 8} };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct_ret, struct_ptr_field) {
+TEST(sysv_struct, struct_ptr_field) {
     StructDef def;
     def.totalSize = 8;
     def.fields = { {"p", "struct-ptr", "Point", false, 0, 8} };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct_ret, arr_ptr_field) {
+TEST(sysv_struct, arr_ptr_field) {
     StructDef def;
     def.totalSize = 8;
     def.fields = { {"p", "arr-ptr", "int32", true, 0, 8} };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct_ret, embed_struct_recursion) {
+TEST(sysv_struct, embed_struct_recursion) {
     // Outer { $Inner in; int64 n; } where Inner { flo64 x; } -- classifying
     // Outer must recurse into `defs.at("Inner")` at the embed field's offset.
     StructDef inner;
@@ -615,15 +611,13 @@ TEST(sysv_struct_ret, embed_struct_recursion) {
     };
 
     map<string, StructDef> defs = { {"Inner", inner} };
-    bool ok;
-    auto result = classifySysVStructRet(outer, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(outer, defs);
     ASSERT_EQ(result.size(), 2);
     EXPECT_EQ(result[0].cls, EightbyteClass::Sse);
     EXPECT_EQ(result[1].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct_ret, embed_arr_prim_float) {
+TEST(sysv_struct, embed_arr_prim_float) {
     // `[4]flo32 v;` embedded fixed-size array (not an owned pointer array).
     StructDef def;
     def.totalSize = 16;
@@ -631,15 +625,13 @@ TEST(sysv_struct_ret, embed_arr_prim_float) {
         {"v", "embed-arr", "flo32", false, 0, 16, /*count*/4, /*elemKind*/"prim", /*stride*/4},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 2);
     EXPECT_EQ(result[0].cls, EightbyteClass::Sse);
     EXPECT_EQ(result[1].cls, EightbyteClass::Sse);
 }
 
-TEST(sysv_struct_ret, embed_arr_struct_leaf) {
+TEST(sysv_struct, embed_arr_struct_leaf) {
     // `[2]$Elem arr;` where Elem { int32 a; int32 b; } -- each element must
     // recurse via `defs.at("Elem")` at its own element offset.
     StructDef elem;
@@ -656,15 +648,13 @@ TEST(sysv_struct_ret, embed_arr_struct_leaf) {
     };
 
     map<string, StructDef> defs = { {"Elem", elem} };
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 2);
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
     EXPECT_EQ(result[1].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct_ret, embed_ptr_arr_field) {
+TEST(sysv_struct, embed_ptr_arr_field) {
     // `[2]@!int32 v;` -- a fixed-count array of pointer slots, each 8 bytes.
     StructDef def;
     def.totalSize = 16;
@@ -672,9 +662,7 @@ TEST(sysv_struct_ret, embed_ptr_arr_field) {
         {"v", "embed-ptr-arr", "int32", true, 0, 16, /*count*/2, /*elemKind*/"", /*stride*/0},
     };
     map<string, StructDef> defs;
-    bool ok;
-    auto result = classifySysVStructRet(def, defs, ok);
-    ASSERT_TRUE(ok);
+    auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 2);
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
     EXPECT_EQ(result[1].cls, EightbyteClass::Integer);

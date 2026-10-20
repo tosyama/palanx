@@ -1,0 +1,14 @@
+cinclude <string.h>;
+type P { int32 x; };
+func f() -> int32 r { 0 -> r; }
+[2]int32 q;
+int32 x = 1;
+x -> q[f()];
+P s;
+[2]P ps;
+s -> ps[f()];
+[2]int32 b;
+b[0] -> q[f()];
+[2]int32 c;
+c[1] -> q[f()];
+memset(c, 0, 8);

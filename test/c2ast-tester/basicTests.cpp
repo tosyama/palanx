@@ -1,5 +1,11 @@
+/// c2ast tests
+///
+/// @file basicTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include <set>
+#include <fstream>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -18,6 +24,24 @@ TEST(c2ast, va_args) {
     string output;
     output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/001_va_args.h");
     ASSERT_EQ(output, "int testproc(){mylog(\"hello\",1,2);}");
+}
+
+TEST(c2ast, named_va_args) {
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/046_named_va_args.h");
+    ASSERT_EQ(output, "int testproc(){mylog(\"none\",);mylog(\"one\",1);mylog(\"many\",1,(2,3),4);"
+        "\"a , b\";\"c , d\";}union {struct {int x;int y;}a;struct tg{int x;int y;}b;}g;");
+}
+
+TEST(c2ast, func_macro_no_paren) {
+    // A function-like macro's name not followed by '(' is not an invocation.
+    cleanTestEnv();
+    string output;
+    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/048_func_macro_no_paren.h");
+    ASSERT_EQ(output, "int testproc(){return F;return F+1;return F;return (2+1);return (3+1);}");
+    output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/048_func_macro_no_paren.h");
+    ASSERT_NE(output.find("{\"name\":\"K\"}"), string::npos);
 }
 
 TEST(c2ast, token_paste_nonid) {
@@ -454,6 +478,10 @@ TEST(c2ast, typedef_pointer_chain) {
     ASSERT_EQ((*g)["ret-type"]["base-type"]["type-kind"], "prim");
     ASSERT_EQ((*g)["ret-type"]["base-type"]["type-name"], "void");
     ASSERT_EQ((*g)["ret-type"]["typedef-name"], "level2_t");
+
+    ASSERT_EQ(ast["ast"]["typedefs"], json::parse(R"([
+        {"name":"level1_t","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"void"}}},
+        {"name":"level2_t","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"void"}}}])"));
 }
 
 TEST(c2ast, typedef_struct_tag) {
@@ -737,8 +765,7 @@ TEST(c2ast, macro_const_fold_expr) {
     ASSERT_EQ(find_const("MODZERO"), nullptr);
     ASSERT_EQ(find_const("BIGSHIFT"), nullptr);
     ASSERT_EQ(find_const("OVERFLOWED"), nullptr);
-    // sizeof is never evaluated, so any expression containing it stays null.
-    ASSERT_EQ(find_const("SIZED"), nullptr);
+    expect_value("SIZED", "16");
     // An unresolved identifier keeps the whole expression null.
     ASSERT_EQ(find_const("IDENT"), nullptr);
     json* suffixed = find_const("SUFFIXED");
@@ -790,10 +817,26 @@ TEST(c2ast, macro_const_suffix) {
     expect_const("LU5", "5", "uint64");
     expect_const("HEXL", "18446744073709551615", "uint64");
     expect_const("SNARROW", "-25536", "int16");
+    expect_const("UNOT", "4294967295", "uint32");
+    expect_const("ULNOT", "18446744073709551615", "uint64");
+    expect_const("UCNOT", "-1", "int32");
+    expect_const("AATTR", "4294967040", "uint32");
+    for (auto [name, value] : {pair{"INOT", "-6"}, pair{"LNOT", "-4294967297"}}) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << name;
+        ASSERT_EQ((*c)["value"], value) << name;
+        ASSERT_FALSE(c->contains("value-type")) << name;
+    }
 
     for (const char* name : {"BIGSH", "SOVF", "BIGDEC", "FLO", "UCMP", "UDIVZ", "UMODZ",
-                             "TOOBIG", "UNTBIG", "SSHNEG", "LSHOVF"})
+                             "TOOBIG", "UNTBIG", "SSHNEG", "LSHOVF"}) {
         ASSERT_EQ(find_const(name), nullptr) << name;
+        ASSERT_NE(find(ast["ast"]["unexported-macros"].begin(), ast["ast"]["unexported-macros"].end(),
+                       json{{"name", name}}), ast["ast"]["unexported-macros"].end()) << name;
+    }
+    ASSERT_NE(find(ast["ast"]["unexported-macros"].begin(), ast["ast"]["unexported-macros"].end(),
+                   json{{"name", "FMAC"}, {"function-like", true}}), ast["ast"]["unexported-macros"].end());
+    for (auto& m : ast["ast"]["unexported-macros"]) ASSERT_NE(m["name"], "SELF");
 }
 
 TEST(c2ast, int_constant_width) {
@@ -1076,13 +1119,156 @@ TEST(c2ast, array_size_expr_fold) {
     ASSERT_EQ((*a)["var-type"]["size-expr"]["expr-type"], "lit-int");
     ASSERT_EQ((*a)["var-type"]["size-expr"]["value"], "87");
 
-    // char b[4 * sizeof(int) - 2]; -- sizeof is never evaluated, so null must
-    // still propagate through the surrounding fold (this is what keeps a
-    // struct like FILE, whose glibc layout size expressions involve sizeof,
-    // an incomplete type instead of resolving to a wrong size).
+    // char b[4 * sizeof(int) - 2]; -- sizeof is size_t, so the result is too.
     json* b = find_field((*sizes)["fields"], "b");
     ASSERT_NE(b, nullptr);
-    ASSERT_TRUE((*b)["var-type"]["size-expr"].is_null());
+    ASSERT_EQ((*b)["var-type"]["size-expr"]["value"], "14");
+    ASSERT_EQ((*b)["var-type"]["size-expr"]["value-type"]["type-name"], "uint64");
+}
+
+TEST(c2ast, sizeof_fold) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/043_sizeof.h");
+    json ast = json::parse(output);
+    auto& constants = ast["ast"]["constants"];
+    auto find_const = [&](const string& name) -> json* {
+        for (auto& c : constants)
+            if (c["name"] == name) return &c;
+        return nullptr;
+    };
+    auto expect_const = [&](const string& name, const string& value, const string& type_name) {
+        json* c = find_const(name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+        ASSERT_EQ((*c)["value-type"]["type-name"], type_name) << "for " << name;
+    };
+
+    // Expected values are what gcc gives on x86-64.
+    expect_const("SZ_CHAR", "1", "uint64");
+    expect_const("SZ_SHORT", "2", "uint64");
+    expect_const("SZ_INT", "4", "uint64");
+    expect_const("SZ_LONG", "8", "uint64");
+    expect_const("SZ_DOUBLE", "8", "uint64");
+    expect_const("SZ_LDOUBLE", "16", "uint64");
+    expect_const("SZ_BOOL", "1", "uint64");
+    expect_const("SZ_PTR", "8", "uint64");
+    expect_const("SZ_FUNCPTR", "8", "uint64");
+    expect_const("SZ_TYPEDEF", "8", "uint64");
+    expect_const("SZ_TDPTR", "8", "uint64");
+    expect_const("SZ_ARR", "24", "uint64");
+    expect_const("SZ_PAD", "24", "uint64");
+    expect_const("SZ_UNION", "8", "uint64");
+    expect_const("SZ_NEST", "48", "uint64");
+    expect_const("SZ_FLEX", "8", "uint64");
+    expect_const("SZ_SMALL", "4", "uint64");
+    expect_const("SZ_BIG", "8", "uint64");
+    expect_const("SZ_ARRS", "64", "uint64");
+    expect_const("SZ_CAST", "64", "int32");
+    expect_const("SZ_EXPR", "20", "uint64");
+    ASSERT_EQ(find_const("SZ_VOID"), nullptr);
+    ASSERT_EQ(find_const("SZ_OPAQUE"), nullptr);
+    ASSERT_EQ(find_const("SZ_UNKNOWN"), nullptr);
+}
+
+TEST(c2ast, sizeof_unknown) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/050_sizeof_unknown.h");
+    json ast = json::parse(output);
+    map<string, string> constants;
+    for (auto& c : ast["ast"]["constants"]) constants[c["name"]] = c["value"];
+    // An enum value below INT32_MIN widens the enum to 8 bytes.
+    ASSERT_EQ(constants["SZ_E4"], "8");
+    // A layout or operand c2ast cannot compute leaves the macro unfolded.
+    for (const char* name : {"SZ_A2", "SZ_A3", "SZ_A4", "SZ_A5", "SZ_E2", "SZ_EU", "BN"})
+        ASSERT_EQ(constants.count(name), 0) << name;
+}
+
+TEST(c2ast, unfolded_arr_size) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/051_unfolded_arr_size.h");
+    json ast = json::parse(output);
+    map<string, json> tails;
+    for (auto& s : ast["ast"]["structs"]) tails[s["name"]] = s["fields"][1]["var-type"]["size-expr"];
+    map<string, string> constants;
+    for (auto& c : ast["ast"]["constants"]) constants[c["name"]] = c["value"];
+
+    // Only `[]` is a flexible array member; a size that doesn't fold is not one.
+    for (const char* name : {"T", "V"}) {
+        ASSERT_EQ(tails.at(name)["expr-type"], "not-const") << name;
+        ASSERT_EQ(constants.count(string("SZ_") + name), 0) << name;
+    }
+    ASSERT_TRUE(tails.at("U").is_null());
+    ASSERT_EQ(constants["SZ_U"], "4");
+}
+
+TEST(c2ast, attributes) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/047_attributes.h");
+    json ast = json::parse(output);
+    auto find = [&](const string& section, const string& name) -> json* {
+        for (auto& e : ast["ast"][section])
+            if (e["name"] == name) return &e;
+        return nullptr;
+    };
+
+    json* p = find("structs", "P");
+    ASSERT_NE(p, nullptr);
+    ASSERT_EQ((*p)["packed"], true);
+    ASSERT_EQ((*find("structs", "A"))["aligned"], 32);
+    json& f = (*find("structs", "F"))["fields"];
+    ASSERT_EQ(f[1]["aligned"], 8);
+    ASSERT_EQ(f[2]["packed"], true);
+    ASSERT_EQ((*find("structs", "S"))["fields"][0]["aligned"], 8);
+    ASSERT_EQ((*find("structs", "U"))["packed"], true);
+    ASSERT_EQ((*find("structs", "TP"))["packed"], true);
+    ASSERT_EQ((*find("structs", "TB"))["aligned"], 16);
+
+    // A typedef's own type change or alignment can't be carried over.
+    ASSERT_EQ(find("structs", "TA"), nullptr);
+    for (const char* name : {"TA", "u16m", "v4f", "ai8", "aibad", "both"})
+        ASSERT_EQ(find("typedefs", name), nullptr) << name;
+
+    // Expected values are what gcc gives on x86-64.
+    auto expect_const = [&](const string& name, const string& value) {
+        json* c = find("constants", name);
+        ASSERT_NE(c, nullptr) << "expected " << name << " to be exported";
+        ASSERT_EQ((*c)["value"], value) << "for " << name;
+    };
+    expect_const("ATTR_MACRO_DEFINED", "1");
+    expect_const("SZ_P", "13");
+    expect_const("SZ_A", "32");
+    expect_const("SZ_F", "16");
+    expect_const("SZ_TP", "9");
+    expect_const("SZ_TB", "16");
+    expect_const("SZ_S", "16");
+    expect_const("SZ_U", "4");
+    expect_const("AL_A", "32");
+    expect_const("AL_P", "1");
+    ASSERT_EQ(find("constants", "SZ_TA"), nullptr);
+
+    for (const char* name : {"die", "pure_f", "cleanup_f"})
+        ASSERT_NE(find("functions", name), nullptr) << name;
+    ASSERT_EQ((*find("functions", "pure_f"))["parameters"][0].contains("attributes"), false);
+    ASSERT_NE(find("globals", "aligned_var"), nullptr);
+}
+
+TEST(c2ast, sizeof_fd_set) {
+    // fd_set's array size and __NFDBITS are both built from sizeof.
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast -s sys/select.h");
+    json ast = json::parse(output);
+    json* fd_set = nullptr;
+    for (auto& s : ast["ast"]["structs"])
+        if (s["name"] == "fd_set") { fd_set = &s; break; }
+    ASSERT_NE(fd_set, nullptr);
+    ASSERT_EQ((*fd_set)["fields"][0]["var-type"]["size-expr"]["value"], "16");
+
+    json* nfdbits = nullptr;
+    for (auto& c : ast["ast"]["constants"])
+        if (c["name"] == "__NFDBITS") { nfdbits = &c; break; }
+    ASSERT_NE(nfdbits, nullptr);
+    ASSERT_EQ((*nfdbits)["value"], "64");
+    ASSERT_EQ((*nfdbits)["value-type"]["type-name"], "int32");
 }
 
 TEST(c2ast, typedef_anon_struct) {
@@ -1280,6 +1466,40 @@ TEST(c2ast, anon_member_tag) {
     }
 }
 
+TEST(c2ast, anon_member_unnamed) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/044_anon_member_unnamed.h");
+    json ast = json::parse(output);
+    auto& structs = ast["ast"]["structs"];
+
+    auto find_struct = [&](const string& name) -> json* {
+        for (auto& s : structs)
+            if (s["name"] == name) return &s;
+        return nullptr;
+    };
+    auto anon_body = [&](const json& field) -> json* {
+        if (field.contains("name")) return nullptr;
+        return find_struct(field["var-type"]["type-name"].get<string>());
+    };
+
+    json* s = find_struct("S");
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ((*s)["fields"].size(), 2u);
+    json* u = anon_body((*s)["fields"][1]);
+    ASSERT_NE(u, nullptr);
+    ASSERT_EQ((*u)["union"], true);
+    ASSERT_EQ((*u)["fields"].size(), 3u);
+    json* lohi = anon_body((*u)["fields"][2]);
+    ASSERT_NE(lohi, nullptr);
+    ASSERT_EQ((*lohi)["fields"][1]["name"], "hi");
+
+    json* pair = find_struct("pair_t");
+    ASSERT_NE(pair, nullptr);
+    json* xy = anon_body((*pair)["fields"][1]);
+    ASSERT_NE(xy, nullptr);
+    ASSERT_EQ((*xy)["fields"][0]["name"], "x");
+}
+
 // A header's typedefs are flushed into their own
 // ast.typedefs section regardless of whether any C function references them
 // -- this is what lets a header like stdint.h (zero functions, all typedefs)
@@ -1341,11 +1561,13 @@ TEST(c2ast, typedef_section) {
         ASSERT_EQ((*anon)["var-type"]["type-name"], "Anon");
     }
 
-    // typedef void *P; -- pointer-bottomed typedefs are deliberately excluded
-    // from this section this version.
-    ASSERT_EQ(find_typedef("P"), nullptr);
+    {
+        json* p = find_typedef("P");
+        ASSERT_NE(p, nullptr);
+        ASSERT_EQ((*p)["var-type"]["type-kind"], "pntr");
+    }
 
-    ASSERT_EQ(typedefs.size(), 6u);
+    ASSERT_EQ(typedefs.size(), 7u);
 }
 
 // A header whose typedefs are never referenced by any C function -- stdint.h
@@ -1480,11 +1702,12 @@ TEST(c2ast, enum_capture) {
     ASSERT_NE(color, nullptr);
     ASSERT_EQ((*color)["enumerators"], json::parse(R"([
         {"name":"RED","value":"0"},{"name":"GREEN","value":"5"},{"name":"BLUE","value":"6"},
-        {"name":"NEG","value":"-3"},{"name":"AFTER","value":"7"}])"));
+        {"name":"NEG","value":"-3"},{"name":"AFTER","value":"7"},
+        {"name":"NOTV","value":"-1"}])"));
     ASSERT_NE(find(enums, "CSpace"), nullptr);   // typedef name of an anonymous body
     ASSERT_NE(find(enums, "Mode"), nullptr);     // the tag, not the typedef name
     ASSERT_EQ(find(enums, "ModeAlias"), nullptr);
-    ASSERT_EQ(find(enums, "Unknown"), nullptr);  // U1 = sizeof(int) can't be computed
+    ASSERT_EQ(find(enums, "Unknown"), nullptr);  // sizeof of an incomplete struct can't be computed
     ASSERT_EQ(find(enums, "Huge"), nullptr);     // H1 overflows long long
     ASSERT_EQ(enums.size(), 5u);                 // + two anonymous bodies
 
@@ -1514,8 +1737,25 @@ TEST(c2ast, enum_capture) {
         (json{{"name", "MODE_X"}, {"value", "4"}, {"value-type", enumRef("Mode")}}));
     int anonA = 0;
     for (auto& c : constants) anonA += c["name"] == "ANON_A";
+    for (auto& m : ast["ast"]["unexported-macros"]) ASSERT_NE(m["name"], "ANON_A");
     ASSERT_EQ(anonA, 1);
     ASSERT_EQ(find(constants, "UNKNOWN_M"), nullptr);
+}
+
+TEST(c2ast, typedef_pointer) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/042_typedef_pointer.h");
+    json ast = json::parse(output);
+    ASSERT_EQ(ast["ast"]["typedefs"], json::parse(R"([
+        {"name":"CP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int32","const":true}}},
+        {"name":"FP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"func",
+            "ret-type":{"type-kind":"prim","type-name":"int32"},
+            "parameters":[{"var-type":{"type-kind":"prim","type-name":"int32"}}]}}},
+        {"name":"P","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int32"}}},
+        {"name":"PC","var-type":{"type-kind":"pntr","const":true,"base-type":{"type-kind":"prim","type-name":"int32"}}},
+        {"name":"PP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int8"}}}},
+        {"name":"SP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"strct","type-name":"S"}}},
+        {"name":"VP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"void"}}}])"));
 }
 
 TEST(c2ast, undeclared_typedef) {
@@ -1527,4 +1767,65 @@ TEST(c2ast, undeclared_typedef) {
         {"name":"X","var-type":{"type-kind":"user","type-name":"undeclared_t"}}])"));
     ASSERT_EQ(ast["ast"]["functions"][0]["parameters"][0]["var-type"], json::parse(R"(
         {"type-kind":"user","type-name":"undeclared_t","typedef-name":"X"})"));
+}
+
+TEST(c2ast, macro_state) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/045_macro_state_a.h");
+    json a = json::parse(output);
+    string state = a["macro-state"];
+    // Spelled back token by token, so each line re-lexes to the same macro.
+    for (const char* line : {
+            "#define A_FLAG\n", "#define A_CAT(x, y) x ## y\n", "#define A_STR(x) # x\n",
+            "#define A_VARGS(...) f ( __VA_ARGS__ )\n", "#define A_NVARGS(fn, xs...) fn ( xs )\n",
+            "#define A_SHIFT ( 1 << 2 )\n",
+            "#define A_TEXT \"a b\"\n", "#define A_CH 'c'\n",
+            "#pragma palan_once_included \"../test/testdata/c2ast/045_macro_state_a.h\"\n"})
+        ASSERT_NE(state.find(line), string::npos) << line;
+    ASSERT_EQ(state.find("__CHAR_BIT__"), string::npos);
+
+    string state_file = "045_macro_state.tmp";
+    ofstream(state_file) << state;
+    output = execTestCommand("bin/palan-c2ast -m " + state_file + " ../test/testdata/c2ast/045_macro_state_b.h");
+    remove(state_file.c_str());
+    json b = json::parse(output);
+    // a.h is skipped by its #pragma once, so a_func is not declared again.
+    set<string> funcs;
+    for (auto& f : b["ast"]["functions"]) funcs.insert(f["name"]);
+    ASSERT_EQ(funcs, (set<string>{"a_flag_on", "cated", "nvarg"}));
+    // Inherited macros are not exported again; a redefinition is.
+    ASSERT_EQ(b["ast"]["constants"], json::parse(R"([
+        {"name":"B_SHIFT","value":"4"}, {"name":"A_VAL","value":"5"}])"));
+    ASSERT_EQ(b["ast"]["undefined-macros"], json::parse(R"(["A_GONE"])"));
+    ASSERT_FALSE(b["ast"].contains("unexported-macros"));
+
+    string b_state = b["macro-state"];
+    ASSERT_EQ(b_state.find("A_GONE"), string::npos);
+    ASSERT_NE(b_state.find("#define A_VAL 5\n"), string::npos);
+}
+
+TEST(c2ast, func_alias_macro) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/049_func_alias_macro.h");
+    json ast = json::parse(output);
+    auto funcs = [&](const string& name) {
+        vector<json> found;
+        for (auto& f : ast["ast"]["functions"])
+            if (f["name"] == name) found.push_back(f);
+        return found;
+    };
+
+    auto old_f = funcs("old_f");
+    ASSERT_EQ(old_f.size(), 1u);
+    ASSERT_EQ(old_f[0]["symbol"], "new_f");
+    ASSERT_EQ(old_f[0]["parameters"].size(), 2u);
+    ASSERT_EQ(funcs("new_f")[0].contains("symbol"), false);
+
+    ASSERT_EQ(funcs("kept_f")[0].contains("symbol"), false);
+    ASSERT_EQ(funcs("first_f")[0]["symbol"], "last_f");
+    ASSERT_EQ(funcs("missing_f").size(), 0u);
+    ASSERT_EQ(ast["ast"]["unexported-macros"], json::parse(R"([{"name":"missing_f"}])"));
+
+    ast = json::parse(execTestCommand("bin/palan-c2ast -s stdio.h"));
+    ASSERT_EQ(funcs("sscanf")[0]["symbol"], "__isoc99_sscanf");
 }

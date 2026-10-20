@@ -1,0 +1,5 @@
+cinclude "271_c_struct_arg.h";
+
+I8 v;
+@I8 p = @v;
+take_i8(p);

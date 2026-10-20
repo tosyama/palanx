@@ -1,61 +1,142 @@
 # Palan
 
 Palan is a programming language designed as a simpler, safer, and more enjoyable alternative to C.
-It compiles to x86-64 assembly and supports calling C library functions via `cinclude`.
+It compiles to native x86-64 Linux binaries and calls C libraries directly through their headers.
+
+```palan
+cinclude <stdio.h>;
+
+func divmod(int32 a, int32 b) -> int32 q, int32 r {
+    a / b -> q;
+    a % b -> r;
+}
+
+(int32 q, r) = divmod(17, 5);
+printf("%d %d\n", q, r);    // 3 2
+q * 2 -> q;                 // values flow left to right
+printf("%d\n", q);          // 6
+```
+
+## Features
+
+**Ownership without a garbage collector.** Arrays and structs are freed automatically at the end
+of their scope. `->` copies, `->>` moves ownership, and a function borrows with `@` (read-only)
+or `@!` (writable), which the caller writes too:
+
+```palan
+cinclude <stdio.h>;
+const N = 4;
+
+func sum(@[N]int32 a) -> int32 s {
+    int32 i = 0;
+    while i < N { s + a[i] -> s; i + 1 -> i; }
+}
+func fill(@![N]int32 a, int32 v) {
+    int32 i = 0;
+    while i < N { v -> a[i]; i + 1 -> i; }
+}
+
+[N]int32 a = [1, 2, 3, 4];  // allocated on the heap, freed at the end of its scope
+[N]int32 b;
+a -> b;                     // copies the elements
+fill(@!b, 7);               // lends b writable (@ lends read-only)
+printf("%d %d\n", sum(@a), sum(@b));   // 10 28
+
+[N]int32 c;
+a ->> c;                    // moves a's array into c; a is left NULL
+printf("%d\n", c[3]);       // 4
+```
+
+**C libraries as they are.** `cinclude` reads a C header and makes its functions, types, structs,
+enums and macro constants usable from Palan; `link` names the library to link. `$` places a
+struct or array in the stack frame instead of the heap:
+
+```palan
+cinclude <stdio.h>;
+cinclude <math.h> link "m";
+
+type Vec { flo64 x; flo64 y; };
+
+func len(@Vec v) -> flo64 { return sqrt(v.x * v.x + v.y * v.y); }
+
+$Vec v = {x: 3.0, y: 4.0};
+printf("%.1f\n", len(@v));  // 5.0
+```
+
+Other features include multiple named return values, method-form calls (`c.add(1)` for
+`add(@!c, 1)`), function pointers, enums, modules (`import`/`export`), and raw Linux syscalls.
+See the [Palan Language Reference](doc/PalanReference.md) for the whole language.
 
 ## Quick Start
 
-Write a Palan source file:
+Build the toolchain (see [Building](#building)), then write `hello.pa`:
 
-```
-# hello.pa
+```palan
 cinclude <stdio.h>;
 printf("Hello World!\n");
 ```
 
-Build and run:
-
 ```bash
-bin/palan hello.pa
+build/bin/palan hello.pa
 # Hello World!
 ```
 
-When `-o` is not specified, `palan` executes the binary immediately after linking and removes it.
-To keep the binary, use `-o`:
+Without `-o`, `palan` runs the binary right after linking and removes it. To keep it:
 
 ```bash
-bin/palan -o hello hello.pa
+build/bin/palan -o hello hello.pa
 ./hello
-# Hello World!
 ```
 
-## Build Instructions
+## Samples
+
+- [samples/tetris.pa](samples/tetris.pa) — Tetris in the terminal with ncurses (needs
+  `libncurses-dev`). Arrow keys move and drop, space rotates, `q` quits.
+
+  ```bash
+  build/bin/palan samples/tetris.pa
+  ```
+
+- [samples/raytracer/](samples/raytracer/) — a port of
+  [tinyraytracer](https://github.com/ssloy/tinyraytracer) that writes `ray.jpg` with libjpeg
+  (needs `libjpeg-dev`).
+
+  ```bash
+  cd samples/raytracer && ../../build/bin/palan raytracer.pa
+  ```
+
+## Building
 
 **Dependencies:** g++ (C++20), CMake 3.16+, Flex, Bison 3.8+, libboost-dev, libfl-dev, lcov
 
 ```bash
-# Build and run all tests
-make
-
-# Clean build artifacts
-make clean
-
-# Generate coverage report
-make coverage
+make            # build (build/, -O2 -g) and run all tests
+make debug      # unoptimized build for gdb (build-debug/)
+make clean      # remove build/ and build-debug/
+make coverage   # coverage report (build-cov/lcov.info)
 ```
 
-Binaries are placed in `build/bin/`.
+The tools are placed in `build/bin/`.
 
 ## Toolchain
 
-Palan compilation is performed by a pipeline of independent CLI tools:
+Palan compiles through a pipeline of independent tools that pass JSON between them:
 
 | Tool | Input | Output | Description |
 |---|---|---|---|
-| `palan-gen-ast` | `.pa` source | `.ast.json` | Parse Palan source into AST |
-| `palan-c2ast` | C header | AST JSON | Translate C headers into AST nodes |
+| `palan-gen-ast` | `.pa` source | `.ast.json` | Parse Palan source into an AST |
+| `palan-c2ast` | C header | AST JSON | Translate a C header (run by `palan-gen-ast` for each `cinclude`) |
 | `palan-sa` | `.ast.json` | `.sa.json` | Semantic analysis |
 | `palan-codegen` | `.sa.json` | `.s` assembly | x86-64 code generation |
-| `palan` | `.pa` source | `a.out` | Build manager (orchestrates above) |
+| `palan` | `.pa` source | executable | Build manager (runs the tools above, `as` and `ld`) |
 
-See [doc/SpecAndDesign.md](doc/SpecAndDesign.md) for full specification and design details.
+## Documentation
+
+- [doc/PalanReference.md](doc/PalanReference.md) — language reference
+- [doc/SpecAndDesign.md](doc/SpecAndDesign.md) — toolchain design
+- [doc/ASTSpec.md](doc/ASTSpec.md), [doc/SASpec.md](doc/SASpec.md) — JSON formats between the tools
+- [doc/Issues.md](doc/Issues.md) — known limitations and open issues
+
+## License
+
+MIT License — see [LICENSE](LICENSE). The bundled [nlohmann/json](lib/json) is distributed under its own MIT license (`lib/json/LICENSE.MIT`).

@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+
+// FILE is a complete struct now that _IO_FILE's sizeof-sized field folds;
+// a field read through the handle must agree with libc's own accessor.
+@!FILE f = fopen("/tmp/pln_290_file_layout.txt", "w");
+printf("%d\n", f._fileno == fileno(f));
+fclose(f);

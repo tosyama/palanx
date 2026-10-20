@@ -1,0 +1,8 @@
+cinclude "273_c_anon_member.h";
+
+S s;
+1 -> s.k;
+2 -> s.a;
+3 -> s.hi;
+4 -> s.t;
+int32 v = s.a;

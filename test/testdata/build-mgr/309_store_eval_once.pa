@@ -1,0 +1,26 @@
+cinclude <stdio.h>;
+type S { int32 a; int32 b; };
+type T { $S s; };
+func idx(int32 i) -> int32 r { printf("i%d ", i); i -> r; }
+func g(int32 n) -> int32 r { printf("g "); n -> r; }
+func view(@!S s) -> @!S r { printf("v "); s -> r; }
+func show(int32 n) { printf("s%d ", n); }
+func wrap(@!T t) -> @!T r { printf("w "); t -> r; }
+func two(int32 n) -> int32 a, int32 b { n -> a; n + 1 -> b; }
+[3]int32 arr;
+S v;
+int32 x = 0; int32 y = 0;
+5 -> arr[idx(1)] -> x;
+6 -> view(@!v).a -> y;
+7 -> arr[idx(2)] -> show();
+printf("%d %d %d %d\n", x, y, arr[1], arr[2]);
+g(8) -> arr[idx(0)];
+g(9) -> view(@!v).b;
+g(10) -> arr[idx(1)] -> view(@!v).a -> x;
+printf("%d %d %d %d\n", arr[0], v.b, v.a, x);
+T t;
+[2][2]int32 m;
+11 -> wrap(@!t).s.a -> x;
+x -> y -> two() -> (x, y);
+[g(13), 14] -> m[idx(1)];
+printf("%d %d %d %d %d\n", t.s.a, x, y, m[1][0], m[1][1]);

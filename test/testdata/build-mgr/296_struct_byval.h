@@ -1,0 +1,33 @@
+struct I8 { int a; int b; };
+struct I16 { long a; long b; };
+struct F2 { float x; float y; };
+struct D2 { double x; double y; };
+struct Mix { double d; int i; };
+struct Mix2 { int i; float f; };
+struct B3 { char a, b, c; };
+struct B5 { char a, b, c, d, e; };
+struct B6 { short a, b, c; };
+struct B7 { char a, b, c, d, e, f, g; };
+struct B11 { char c[11]; };
+struct Big { long a, b, c; };
+struct Big20 { char c[20]; };
+union U { float f; int i; };
+
+struct I8 i8_add(struct I8 v, int d);
+struct I16 i16_add(struct I16 v, long d);
+struct F2 f2_add(struct F2 v, float d);
+struct D2 d2_add(struct D2 v, double d);
+struct Mix mix_add(struct Mix v, int d);
+struct Mix2 mix2_add(struct Mix2 v, int d);
+struct B3 b3_add(struct B3 v, char d);
+struct B5 b5_add(struct B5 v, char d);
+struct B6 b6_add(struct B6 v, short d);
+struct B7 b7_add(struct B7 v, char d);
+struct B11 b11_add(struct B11 v, char d);
+struct Big big_add(struct Big v, long d);
+struct Big20 big20_add(struct Big20 v, char d);
+union U u_bits(union U v);
+void int_regs_full(long a, long b, long c, long d, long e, struct I16 s, long g);
+void flt_regs_full(double a, double b, double c, double d, double e, double f, double g,
+                   struct D2 s, double h);
+void variadic_after(struct Mix m, const char *fmt, ...);

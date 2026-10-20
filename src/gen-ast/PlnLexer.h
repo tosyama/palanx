@@ -1,7 +1,7 @@
 /// Palan Lexer
 /// 
 /// @file PlnLexer.h
-/// @copyright 2024 YAMAGUCHI Toshinobu
+/// @copyright 2024-2026 YAMAGUCHI Toshinobu
 
 #ifndef FLEX_SCANNER
 	#include <FlexLexer.h>

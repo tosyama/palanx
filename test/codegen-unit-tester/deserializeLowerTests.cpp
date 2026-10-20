@@ -1,3 +1,8 @@
+/// codegen unit tests for sa.json deserialization and lowering
+///
+/// @file deserializeLowerTests.cpp
+/// @copyright 2026 YAMAGUCHI Toshinobu
+
 #include <gtest/gtest.h>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnDeserialize.h"

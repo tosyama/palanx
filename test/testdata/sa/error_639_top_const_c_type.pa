@@ -1,0 +1,2 @@
+cinclude <time.h>;
+const time_t = 1;

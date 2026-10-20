@@ -1,0 +1,4 @@
+type B = int32;
+{
+	cinclude "error_698_alias_then_cinclude.h";
+}

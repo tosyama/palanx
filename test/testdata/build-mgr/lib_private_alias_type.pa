@@ -1,0 +1,4 @@
+type P { int32 a; };
+export type PP = @!P;
+export type Q { P p; int32 n; };
+export func setP(PP p, int32 v) { v -> p.a; }
