@@ -324,10 +324,6 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 		return sa_aggregate_lit_assign(stmt, {{"expr-type", "id"}, {"name", name}}, *varType); // LCOV_EXCL_EXCEPTION_BR_LINE
 	const PlnType* toType = registry_.fromJson(*varType);
 	json value = sa_expression(stmt["value"], toType);
-	if (!value.contains("value-type")) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-		exit(1);
-	}
 	// A borrowed array variable ("mutable" on its levels) is rebound to what
 	// '@x' names.
 	if (isCopiedByValue(*varType) && !varType->contains("mutable")) {
@@ -538,8 +534,6 @@ bool PlnSemanticAnalyzer::valueFirst(json& s, json& pre, json& post, set<string>
 	}
 	if (isCopiedByValue(toType)) {
 		json saSrc = sa_expression(value);
-		if (!saSrc.contains("value-type"))
-			return false;
 		if (isExpiringStruct(saSrc)) {
 			value = pinValue(move(saSrc), value, pre);
 			return true;
@@ -719,9 +713,9 @@ json PlnSemanticAnalyzer::pinLocation(json loc, json& body)
 // with saValue's type and category, so a store treats it as the value itself.
 json PlnSemanticAnalyzer::pinValue(json saValue, const json& astValue, json& body)
 {
-	// No value, or a C function's by-value struct, which only a declaration
-	// receives: left where it is, to be diagnosed or evaluated by the store.
-	if (!saValue.contains("value-type") || saValue["value-type"].value("type-kind", "") == "struct")
+	// A C function's by-value struct, which only a declaration receives: left
+	// where it is, to be diagnosed or evaluated by the store.
+	if (saValue["value-type"].value("type-kind", "") == "struct") // LCOV_EXCL_EXCEPTION_BR_LINE
 		return astValue;
 	if (holdsCallTemps(saValue)) {
 		cerr << locPrefix(astValue) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
@@ -769,10 +763,6 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt, json* litAddr)
 	}
 	const PlnType* toType = registry_.fromJson(targetType);
 	json sa_value = sa_expression(stmt["value"], toType);
-	if (!sa_value.contains("value-type")) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-		exit(1);
-	}
 	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
 	checkElemShape(stmt, sa_value, targetType);
 	checkBorrowSource(stmt, sa_value, targetType);
@@ -978,12 +968,10 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		}
 		const PlnType* toType = registry_.fromJson((*currentFunc_)["ret-type"]);
 		json value = sa_expression(stmt["values"][0], toType);
-		if (value.contains("value-type")) {
-			value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
-			checkElemShape(stmt, value, (*currentFunc_)["ret-type"]);
-			checkBorrowSource(stmt, value, (*currentFunc_)["ret-type"]);
-			checkPtrPermission(stmt, value["value-type"], (*currentFunc_)["ret-type"]);
-		}
+		value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
+		checkElemShape(stmt, value, (*currentFunc_)["ret-type"]);
+		checkBorrowSource(stmt, value, (*currentFunc_)["ret-type"]);
+		checkPtrPermission(stmt, value["value-type"], (*currentFunc_)["ret-type"]);
 		return {{"stmt-type", "return"}, {"values", json::array({value})}};
 	}
 	// Void function: bare return only
@@ -1119,7 +1107,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 	const json& rets = findMultiRetFunc(stmt, callExpr, stmt["vars"].size())["rets"];
 
 	// Process the call expression via sa_expression (resolves func-type, annotates args)
-	json saCall = sa_expression(callExpr);
+	json saCall = sa_expr_maybe_void(callExpr);
 
 	// Add multi-return value-types from the function's rets
 	json valueTypes = json::array();
@@ -1211,10 +1199,6 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt, json* litAddr)
 	}
 	const PlnType* toType = registry_.fromJson(fieldType);
 	json value = sa_expression(stmt["value"], toType);
-	if (!value.contains("value-type")) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-		exit(1);
-	}
 	if (!transfer && isCopiedByValue(fieldType))
 		return json::array({makeCopyStmt(stmt, makeFieldAccess(chain, *it), value)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	value = convertForBinding(stmt, value, toType, fieldType);

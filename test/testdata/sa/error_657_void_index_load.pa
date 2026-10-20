@@ -1,0 +1,4 @@
+func vf() { }
+[2]int32 arr;
+int32 x;
+arr[vf()] -> x;

@@ -1,0 +1,4 @@
+func vf() { }
+func f() -> int32 {
+	return vf();
+}

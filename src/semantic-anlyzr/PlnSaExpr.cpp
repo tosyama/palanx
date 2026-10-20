@@ -646,6 +646,16 @@ optional<ConstVal> PlnSemanticAnalyzer::evalConst(const json& expr)
 
 json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expectedType)
 {
+	json sa = sa_expr_maybe_void(rawExpr, expectedType);
+	if (!sa.contains("value-type")) {
+		cerr << locPrefix(rawExpr) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
+		exit(1);
+	}
+	return sa;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType* expectedType)
+{
 	if (rawExpr.contains("stmt-type")) {
 		cerr << locPrefix(rawExpr) << PlnSaMessage::getMessage(E_AssignInExpr) << endl;
 		exit(1);
@@ -946,7 +956,7 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		const PlnType* toType, const json& toTypeJson)
 {
 	noteEscape(value);
-	if (!value.contains("value-type") || value["value-type"] == toTypeJson) return value;
+	if (value["value-type"] == toTypeJson) return value;
 	const PlnType* fromType = registry_.fromJson(value["value-type"]);
 	TypeCompat compat = typeCompat(fromType, toType, registry_);
 	if (compat == TypeCompat::ImplicitWiden) {
@@ -1224,10 +1234,6 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		                                argAst, litBody, litRelease)
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
 		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-		if (!saArg.contains("value-type")) {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-			exit(1);
-		}
 		bool expiring = isCallBorrow(arg) || isExpiringStruct(saArg);
 		const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 		if (paramVT) {
@@ -1405,10 +1411,6 @@ json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
 		exit(1);
 	}
 	json src = sa_expression(expr["src"]);
-	if (!src.contains("value-type")) {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-		exit(1);
-	}
 	// An address cast to an integer can be cast back.
 	noteEscape(src);
 	const json& from = src["value-type"];
@@ -1684,7 +1686,7 @@ json PlnSemanticAnalyzer::operandValueType(const json& obj)
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/false);
 		return fieldValueType(findFieldOrExit(chain.structName, obj["field"].get<string>(), obj));
 	}
-	return sa_expression(obj).value("value-type", json());
+	return sa_expression(obj)["value-type"];
 }
 
 // Rewrites a method-form call `aa.f(args)` to the call `f(@!aa, args)`. Any
@@ -1739,7 +1741,6 @@ json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool 
 	string et = value.value("expr-type", "");
 	if (et != "arr-lit" && et != "dict-lit") {
 		json vt = operandValueType(value);
-		if (vt.is_null()) return value;
 		bool ownedArr = isArrLevel(vt) && !isArrBorrowVar(vt);
 		if (!isStructStorage(vt) && vt.value("type-kind", "") != "prim"
 				&& !(ownedArr && !isCFunc && isArrBorrowVar(*paramVT)))
@@ -1821,11 +1822,11 @@ json PlnSemanticAnalyzer::sa_expr_chain_call(const json& expr)
 {
 	json norm = normalizeChainCall(expr);
 	if (norm["expr-type"] != "chain-call")
-		return sa_expression(norm);
+		return sa_expr_maybe_void(norm);
 
 	enterScope();
 	json body = json::array();
-	json saCall = sa_expression(chainMultiCall(norm, body));
+	json saCall = sa_expr_maybe_void(chainMultiCall(norm, body));
 	size_t idx = arrayScopeVars_.size() - 1;
 	json release = collectFreeStmts(idx, idx + 1);
 	leaveScope();

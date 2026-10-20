@@ -2384,7 +2384,7 @@ TEST(sa_error, copy)
 		{"error_300_copy_into_ro_elem.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
 		{"error_301_copy_ptr_slots_into_structs.pa", ":4:1: error: cannot copy '[2]@P' into '[2]P'"},
 		{"error_302_copy_unsupported_shape.pa", ":2:2: error: copying '@![2][3][4]int32' is not supported in this version."},
-		{"error_374_arr_copy_void_init.pa", ":2:1: error: Void function call cannot be used as a value."},
+		{"error_374_arr_copy_void_init.pa", ":2:14: error: Void function call cannot be used as a value."},
 		{"error_376_copy_runtime_row_size.pa", ":3:1: error: cannot copy '[3]$[?]int32' into '[3]$[?]int32'"},
 	};
 	for (auto& [file, expected] : cases) {
@@ -3326,12 +3326,19 @@ TEST(sa_error, assign_in_expr)
 }
 
 
-TEST(sa_error, void_call_arg)
+TEST(sa_error, void_call_as_value)
 {
 	const pair<string, string> cases[] = {
-		{"error_509_void_call_arg.pa", ":3:11: error: Void function call cannot be used as a value."},
-		{"error_510_void_call_variadic_arg.pa", ":3:1: error: Void function call cannot be used as a value."},
+		{"error_509_void_call_arg.pa", ":3:13: error: Void function call cannot be used as a value."},
+		{"error_510_void_call_variadic_arg.pa", ":3:16: error: Void function call cannot be used as a value."},
 		{"error_654_void_value_call_target.pa", ":4:1: error: Void function call cannot be used as a value."},
+		{"error_656_void_index_store.pa", ":3:10: error: Void function call cannot be used as a value."},
+		{"error_657_void_index_load.pa", ":4:5: error: Void function call cannot be used as a value."},
+		{"error_658_void_struct_elem_copy.pa", ":4:1: error: Void function call cannot be used as a value."},
+		{"error_659_void_operand.pa", ":2:11: error: Void function call cannot be used as a value."},
+		{"error_660_void_logical_not.pa", ":2:12: error: Void function call cannot be used as a value."},
+		{"error_661_void_cond.pa", ":2:4: error: Void function call cannot be used as a value."},
+		{"error_662_void_return.pa", ":3:9: error: Void function call cannot be used as a value."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3352,7 +3359,7 @@ TEST(sa_error, chain_call)
 		{"error_513_chain_too_few.pa", ":3:17: error: function 'show' takes 3 argument(s), but 2 given."},
 		{"error_514_chain_mut_needs_at.pa", ":4:6: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'"},
 		{"error_515_chain_multi_to_mut.pa", ":3:17: error: cannot convert 'int32' to '@!int32'."},
-		{"error_516_chain_void_value.pa", ":3:14: error: Void function call cannot be used as a value."},
+		{"error_516_chain_void_value.pa", ":3:1: error: Void function call cannot be used as a value."},
 		{"error_517_chain_transfer.pa", ":3:1: error: this expression is not supported in this version."},
 		{"error_518_chain_method_form.pa", ":5:6: error: '->' cannot pass a value to a method-form call 'x.f()'"},
 		{"error_519_chain_multi_to_tapple.pa", ":3:1: error: the return values of a call chained with '->' into a multiple-return call cannot be received"},

@@ -280,7 +280,7 @@ static StructDef buildStructDef(const string& name,
 
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
 {
-	return discardedValueStmt(stmt, sa_expression(stmt["body"]));
+	return discardedValueStmt(stmt, sa_expr_maybe_void(stmt["body"]));
 }
 
 json PlnSemanticAnalyzer::discardedValueStmt(const json& stmt, json body)
@@ -390,10 +390,6 @@ json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage stor
 	// own initializer.
 	json var = stmt["vars"][0];
 	json src = sa_expression(var["init"]);
-	if (!src.contains("value-type")) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-		exit(1);
-	}
 	json declStmt = stmt;
 	declStmt["vars"][0].erase("init");
 	json result = sa_var_decl_group(declStmt, storage);
@@ -458,10 +454,6 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 			// should be an error, not silently read uninitialized z).
 			const PlnType* toType = registry_.fromJson(varType);
 			json init = sa_expression(var["init"], toType);
-			if (!init.contains("value-type")) {
-				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-				exit(1);
-			}
 			if (isArrBorrow)
 				checkArrBorrowBinding(stmt2, var["init"], init, varType);
 			init = convertForBinding(stmt2, init, toType, varType);
@@ -804,10 +796,6 @@ json PlnSemanticAnalyzer::sa_arr_lit_values(const json& lit, const ArrLitShape& 
 			exit(1);
 		}
 		json value = sa_expression(item, elemType);
-		if (!value.contains("value-type")) {
-			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-			exit(1);
-		}
 		return convertForBinding(item, value, elemType, shape.leaf);
 	};
 
@@ -984,10 +972,6 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 		json fieldType = fieldValueType(f);
 		const PlnType* toType = registry_.fromJson(fieldType);
 		json value = sa_expression(v, toType);
-		if (!value.contains("value-type")) {
-			cerr << locPrefix(v) << PlnSaMessage::getMessage(E_VoidCallUsedAsValue) << endl;
-			exit(1);
-		}
 		values.push_back(convertForBinding(v, value, toType, fieldType));
 	}
 	return values;
