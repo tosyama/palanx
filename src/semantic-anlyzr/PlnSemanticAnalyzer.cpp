@@ -134,15 +134,6 @@ void PlnSemanticAnalyzer::registerCFunc(const string& name, const json& def)
 	cFuncScopes.back()[name] = def;  // shadow allowed
 }
 
-const json* PlnSemanticAnalyzer::findCFunc(const string& name) const
-{
-	for (auto it = cFuncScopes.rbegin(); it != cFuncScopes.rend(); ++it) {
-		auto f = it->find(name);
-		if (f != it->end()) return &f->second;
-	}
-	return nullptr;
-}
-
 void PlnSemanticAnalyzer::registerCGlobal(const string& name, const json& def)
 {
 	cGlobalScopes.back()[name] = def;  // shadow allowed
@@ -178,39 +169,6 @@ void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, c
 			exit(1);
 		}
 	plnFuncScopes.back()[name] = def;
-}
-
-const json* PlnSemanticAnalyzer::findPlnFunc(const string& name) const
-{
-	for (auto it = plnFuncScopes.rbegin(); it != plnFuncScopes.rend(); ++it) {
-		auto f = it->find(name);
-		if (f != it->end()) return &f->second;
-	}
-	return nullptr;
-}
-
-const json* PlnSemanticAnalyzer::findImportFunc(const string& fname) const
-{
-	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it) {
-		auto alias_it = it->find("");
-		if (alias_it == it->end()) continue;
-		auto f_it = alias_it->second.find(fname);
-		if (f_it != alias_it->second.end())
-			return &f_it->second;
-	}
-	return nullptr;
-}
-
-const json* PlnSemanticAnalyzer::findImportFuncByAlias(const string& alias, const string& fname) const
-{
-	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it) {
-		auto alias_it = it->find(alias);
-		if (alias_it == it->end()) continue;
-		auto f_it = alias_it->second.find(fname);
-		if (f_it != alias_it->second.end())
-			return &f_it->second;
-	}
-	return nullptr;
 }
 
 void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)

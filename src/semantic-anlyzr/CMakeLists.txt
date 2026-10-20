@@ -4,6 +4,7 @@ add_executable(palan-sa
 	main.cpp
 	PlnSemanticAnalyzer.cpp
 	PlnSaExpr.cpp
+	PlnSaCall.cpp
 	PlnSaDecl.cpp
 	PlnSaStmt.cpp
 	PlnSaMessage.cpp

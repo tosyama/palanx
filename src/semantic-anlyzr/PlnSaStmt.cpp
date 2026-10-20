@@ -1080,64 +1080,6 @@ json PlnSemanticAnalyzer::copyReturnStruct(const json& stmt, json& ret)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount)
-{
-	const json* pFunc = nullptr;
-	string fname;
-
-	if (callExpr["expr-type"] == "member-call") {
-		const string& alias = callExpr["object"]["name"].get<string>();
-		fname = callExpr["method"].get<string>();
-		bool aliasFound = false;
-		for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
-			if (it->count(alias)) { aliasFound = true; break; }
-		if (!aliasFound) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UnknownAlias, alias) << endl;
-			exit(1);
-		}
-		pFunc = findImportFuncByAlias(alias, fname);
-	} else {
-		fname = callExpr["name"].get<string>();
-		pFunc = findPlnFunc(fname);
-		if (pFunc == nullptr) {
-			pFunc = findImportFunc(fname);
-			if (pFunc != nullptr && pFunc->empty()) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AmbiguousCall, fname) << endl;
-				exit(1);
-			}
-		}
-	}
-
-	if (pFunc == nullptr) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleUndefinedFunction, fname) << endl;
-		exit(1);
-	}
-	if (!pFunc->contains("rets") || (*pFunc)["rets"].size() < 2) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleNeedsMultiRet, fname) << endl;
-		exit(1);
-	}
-	if (recvCount != (*pFunc)["rets"].size()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleVarCountMismatch, fname) << endl;
-		exit(1);
-	}
-	return *pFunc;
-}
-
-// The call whose return values a multiple-return declaration or assignment
-// receives.
-json PlnSemanticAnalyzer::tappleCallExpr(const json& stmt)
-{
-	json value = stmt["value"];
-	if (value.value("expr-type", "") == "chain-call") {
-		value = normalizeChainCall(value);
-		if (value["expr-type"] == "chain-call") {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ChainMultiToTapple) << endl;
-			exit(1);
-		}
-	}
-	return normalizeMethodCall(value);
-}
-
 // A variable whose declared type differs from its return value's receives it
 // through a temp and is declared as `T x = temp;`, so it follows the same
 // conversion rules as a single-value declaration.
