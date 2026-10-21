@@ -6,6 +6,7 @@
 #pragma once
 #include <string>
 #include <map>
+#include <deque>
 #include <memory>
 #include <set>
 #include <vector>
@@ -86,11 +87,18 @@ struct Callee {
 // A call argument before the callee's parameter is known. A pending one gets
 // its type only from the parameter (see takesExpectedType), so it is analyzed
 // once the callee is chosen.
+// A chained value (`v -> f()`) becomes `v` or `@v` by the parameter, so it is
+// pending too. probe is what a pending argument is matched by: a literal's
+// default type, or a chained value's analysis.
 struct CallArg {
 	json ast;
 	bool pending;
 	json sa;
+	bool chained = false;
+	json probe;
 };
+
+enum class ArgFit { None, Viable, Exact };
 
 // A diagnostic decided without exiting, so a check can also just test a fit.
 struct SaDiag {
@@ -124,7 +132,8 @@ class PlnSemanticAnalyzer {
 	vector<map<string, json>> varScopes;
 	vector<map<string, json>> cFuncScopes;
 	vector<map<string, json>> cGlobalScopes;
-	vector<map<string, json>> plnFuncScopes;
+	// A deque keeps every definition where it is while overloads are added.
+	vector<map<string, deque<json>>> plnFuncScopes;
 	// scope stack: alias("" = unqualified) → funcname → funcDefs (several
 	// when unqualified imports of different modules export the same name)
 	vector<map<string, map<string, vector<json>>>> importScopes;
@@ -233,11 +242,20 @@ class PlnSemanticAnalyzer {
 	[[noreturn]] void undefinedNameError(const json& at, const json& ref, PlnSaMessageCode undefinedCode) const;
 
 	void        registerPlnFunc(const string& name, const json& def, const json& locNode);
-	const json* findPlnFunc(const string& name) const;
+	const json* findPlnFuncDef(const json& funcDef) const;
+	string calleeKey(const json& def, bool isC) const;
 	vector<Callee> findCallees(const string& name) const;
 	vector<Callee> findCalleesByAlias(const string& alias, const string& name) const;
+	size_t countCallees(const json& call) const;
 	void   requireAlias(const json& locNode, const string& alias) const;
-	Callee requireUniqueCallee(const json& locNode, const string& name, const vector<Callee>& cands) const;
+	Callee selectCallee(const json& locNode, const string& name, const vector<Callee>& cands,
+	                    const vector<CallArg>& args);
+	ArgFit argFit(const CallArg& arg, const json& param, size_t argIdx, bool isCFunc, const string& funcName);
+	bool   sameArgType(const json& argVT, const json& paramVT);
+	string argTypesText(const vector<CallArg>& args);
+	string calleesText(const string& name, const vector<Callee>& cands) const;
+	json   makeCall(const json& expr, const vector<Callee>& cands, const string& writtenName);
+	vector<Callee> usableCallees(const json& expr, const vector<Callee>& cands) const;
 
 	json sa_statements(const json& stmts);
 	void beginModule(const json& ast);
@@ -289,7 +307,11 @@ class PlnSemanticAnalyzer {
 	json sa_expr_shift(const json& expr, const PlnType* expectedType);
 	void checkIntLiteralRange(const json& lit);
 	json sa_expr_call(const json& expr);
-	json sa_func_ref(const json& expr);
+	json sa_func_ref(const json& expr, const PlnType* expectedType);
+	string funcRefType(const json& def, json& funcPtr) const;
+	bool namesOverloadedFunc(const json& expr) const;
+	json literalDefaultType(const json& expr);
+	bool isPureOperand(const json& expr);
 	const json* findFuncPtrVar(const json& call) const;
 	json funcPtrField(const json& memberCall);
 	json sa_expr_call_ptr(const json& expr, json callee, const string& funcName);
@@ -299,7 +321,7 @@ class PlnSemanticAnalyzer {
 	const json* findCalleeByName(const string& name, bool& isCFunc) const;
 	const json* findCallee(const json& call, bool& isCFunc) const;
 	json operandValueType(const json& obj);
-	json chainArg(const json& value, const json* paramVT, bool isCFunc);
+	json chainArg(const json& value, const json* paramVT, bool isCFunc, const json* valueType = nullptr);
 	size_t chainRetCount(const json& value) const;
 	json normalizeChainCall(const json& expr);
 	json chainMultiCall(const json& chain, json& body);
@@ -462,7 +484,8 @@ class PlnSemanticAnalyzer {
 	// "syscall-number" expression node into a plain JSON integer.
 	void  validateSyscallDecl(json& funcDef);
 	void  rejectNotImplSig(const json& f);
-	json  makeCallNode(const json& expr, const Callee& callee, const string& writtenName);
+	json  makeCallNode(const json& expr, const Callee& callee, const string& writtenName,
+	                   vector<CallArg>* analyzedArgs = nullptr);
 	json sa_field_assign(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	void requireOwnedBase(const json& saBase, const json& locNode);

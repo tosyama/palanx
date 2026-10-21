@@ -6184,3 +6184,86 @@ TEST(sa, call_arg_expected_type)
 	ASSERT_EQ(stmts[10]["body"]["args"][0]["right"]["left"]["value-type"]["type-name"], "int32");
 	ASSERT_EQ(stmts[11]["body"]["args"][0]["left"]["left"]["value-type"]["type-name"], "int32");
 }
+
+// Of several functions of one name, the one every argument fits, or the one
+// every argument matches exactly.
+TEST(sa, overload)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/286_overload.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto call = [&](size_t i) -> const json& { return stmts[i]["body"]; };
+	auto retName = [&](size_t i) { return call(i)["value-type"]["type-name"].get<string>(); };
+	ASSERT_EQ(retName(3), "int32");                       // f(x), int32
+	ASSERT_EQ(retName(4), "int64");                       // f(y), int64
+	ASSERT_EQ(retName(5), "int64");                       // f(1): a literal's default type
+	ASSERT_EQ(retName(6), "int32");                       // f(int32(1))
+	ASSERT_EQ(call(7)["func-type"], "c");                 // abs(x): C's abs(int)
+	ASSERT_EQ(call(8)["func-type"], "palan");             // abs(-1.5)
+	ASSERT_EQ(call(11)["args"][0]["value-type"]["mutable"], false);   // v -> len(): @v
+	ASSERT_EQ(call(12)["args"][0]["value-type"]["base-type"], call(13)["args"][0]["value-type"]["base-type"]);
+	ASSERT_EQ(call(13)["name"], "add");                   // c.add(1): only add(@!Counter, ...)
+	ASSERT_FALSE(call(13).contains("method-form"));
+	ASSERT_EQ(stmts[14]["vars"][0]["init"]["expr-type"], "func-ref");
+	ASSERT_EQ(stmts[14]["vars"][0]["init"]["value-type"]["base-type"]["ret-type"]["type-name"], "int32");
+	ASSERT_EQ(call(15)["args"][0]["value-type"]["base-type"]["ret-type"]["type-name"], "int32");  // apply(h, 2)
+	ASSERT_EQ(retName(16), "int32");                      // s(@[1, 2]): only s(@[2]int32) takes it
+	ASSERT_EQ(retName(17), "int64");                      // 1 -> f()
+	ASSERT_EQ(stmts[18]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[18]["value"]["args"][0]["value-type"]["type-name"], "int32");   // dm(x): dm(int32)
+}
+
+// Imported functions are candidates as well, and a module imported twice
+// gives each function once.
+TEST(sa, overload_import)
+{
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/287_overload_import.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value-type"]["type-name"], "flo64");
+	ASSERT_EQ(stmts[1]["vars"][0]["init"]["value-type"]["type-name"], "int64");
+	ASSERT_EQ(stmts[2]["vars"][0]["init"]["name"], "local");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["type-name"], "int64");   // 3 -> square()
+}
+
+// The paths an argument is matched by: a function name, a pointer's
+// permission, a literal under operators, a chained value as it is or borrowed.
+TEST(sa, overload_paths)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/288_overload_paths.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto retName = [&](size_t i) { return stmts[i]["body"]["value-type"]["type-name"].get<string>(); };
+	ASSERT_EQ(retName(3), "int32");    // app(h): the function pointer parameter
+	ASSERT_EQ(retName(4), "int32");    // q(@v): only q(@Vec)
+	ASSERT_EQ(retName(5), "int64");    // q(@!v): q(@!Vec) exactly
+	ASSERT_EQ(retName(6), "int64");    // r(1): a literal fits no pointer
+	ASSERT_EQ(retName(7), "int64");    // r(1 <<< len(@v))
+	ASSERT_EQ(retName(8), "flo64");    // h(x + 1.5): flo64 by default
+	ASSERT_EQ(retName(9), "int64");    // f(-(1 <<< x)): int64 by default
+	ASSERT_EQ(retName(10), "int32");   // x -> f(): x as it is
+	ASSERT_EQ(retName(11), "int32");   // x -> pp(): @x
+	ASSERT_EQ(retName(12), "int32");   // arr -> sumA(): the array's shape
+	ASSERT_EQ(retName(13), "int64");   // g2(@v, 1)
+	ASSERT_EQ(stmts[14]["body"]["args"][0]["expr-type"], "temp");   // mk() -> len()
+	ASSERT_EQ(stmts[15]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(retName(16), "int32");
+	ASSERT_EQ(retName(17), "int64");   // v -> lenx(): @v is no @int32
+	ASSERT_EQ(retName(18), "uint64");  // u(x + 2u): uint64 by default
+	ASSERT_EQ(retName(19), "int64");   // r2(len(@v) + (1 <<< x))
+}
+
+// An alias imported twice gives each function once.
+TEST(sa, overload_alias_twice)
+{
+	cleanTestEnv();
+	genLibSaImport();
+	json jout = run_sa("../test/testdata/sa/289_overload_alias_twice.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["name"], "square");
+	ASSERT_EQ(jout["statements"][1]["vars"][0]["init"]["name"], "square");
+}

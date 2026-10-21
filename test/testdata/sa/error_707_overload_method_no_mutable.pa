@@ -1,0 +1,5 @@
+type C { int32 n; };
+func m(C c) { }
+func m(C c, int32 d) { }
+C c;
+c.m();

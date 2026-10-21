@@ -667,13 +667,13 @@ int64 x = 10;
 printf("%ld\n", x);   // x is still visible
 ```
 
-Shadowing — declaring a variable or Palan function with the same name as one in an outer scope — is a compile error. A variable (including a parameter) and a const cannot share a name either way.
+Shadowing — declaring a variable with the same name as one in an outer scope, or a Palan function with the same name and parameter types as one in an outer scope — is a compile error (functions of one name with different parameter types are [overloads](#overloading)). A variable (including a parameter) and a const cannot share a name either way.
 
 Palan function definitions inside a block are block-scoped and support forward references within the same block.
 
 Types and consts declared inside a block follow the same rules (see [Declaration order](#declaration-order)).
 
-`cinclude` inside a block makes the imported C functions available only within that block. Shadowing of C function names is allowed.
+`cinclude` inside a block makes the imported C functions available only within that block. A C function brought in again is the same function.
 
 ### Optional Semicolons
 
@@ -870,6 +870,40 @@ printf("%d\n", o.op(4));           // 8
   (its first parameter is `@!`).
 - Not supported in this version: calling the result of an expression directly, such as
   `tbl[0](3)` or `pick(true)(3)`; store it in a variable first.
+
+### Overloading
+
+Functions may share a name when their parameter types differ. A call takes the one its
+arguments fit:
+
+```palan
+cinclude <stdio.h>;
+
+func show(int32 x) { printf("int %d\n", x); }
+func show(flo64 x) { printf("float %.1f\n", x); }
+
+int32 n = 3;
+show(n);            // int 3
+show(2.5);          // float 2.5
+```
+
+- Two functions with the same parameter types are a compile error, even if they return
+  different types.
+- C functions and imported functions of the name are candidates too: after
+  `cinclude <stdlib.h>;`, `func abs(flo64 x) -> flo64` adds a float version of C's `abs(int)`.
+- If one function fits the arguments, it is called. If several fit, the one every argument
+  matches exactly (same type, and for a pointer the same `@`/`@!`) is called; otherwise the call
+  is ambiguous and a compile error. With `f(int32)` and `f(int64)`, an `int16` argument is
+  ambiguous: write `f(int32(x))`.
+- A literal matches exactly only its default type: `int64` for an integer, `uint64` with `u`,
+  `flo64` for a decimal. With `f(int32)` and `f(int64)`, `f(1)` calls `f(int64)`.
+- A method-form call `x.f()` considers only the functions whose first parameter is `@!`. In a
+  chained call `v -> f()`, `v` fits a `@T` parameter as `@v`.
+- A function name used as a value takes the function of the pointer type it is given to:
+  `@func(int32) -> int32 g = show;` is an error here (no `show` returns `int32`), and one
+  written where no function pointer type is expected is a compile error.
+- Receiving several return values (`(a, b) = f(x)`) needs the functions returning that many to
+  return the same types.
 
 ---
 

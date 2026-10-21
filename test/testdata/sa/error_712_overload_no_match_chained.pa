@@ -1,0 +1,5 @@
+func f(int32 a) -> int32 { return a; }
+func f(int64 a) -> int64 { return a; }
+type P { int32 x; };
+P p;
+p -> f();

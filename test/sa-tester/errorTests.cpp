@@ -3660,3 +3660,38 @@ TEST(sa_error, expr_rooted_access)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, overload)
+{
+	const pair<string, string> cases[] = {
+		// Both fit only by widening, and neither matches exactly.
+		{"error_703_overload_ambiguous.pa", ":4:1: error: Ambiguous function call 'f': it can mean f(int32), f(int64)."},
+		// A literal matches exactly only its default type, int64.
+		{"error_704_overload_literal_ambiguous.pa", ":3:1: error: Ambiguous function call 'g': it can mean g(int32), g(flo32)."},
+		{"error_705_overload_no_match.pa", ":5:1: error: No function 'f' takes (@P); there are f(int32), f(int64)."},
+		// The return type does not tell overloads apart.
+		{"error_706_overload_same_params.pa", ":3:1: error: Function 'f' is already defined."},
+		{"error_707_overload_method_no_mutable.pa", ":5:1: error: 'm' cannot be called as a method: its first parameter must be a writable borrow ('@!')."},
+		{"error_708_overload_func_name_type.pa", ":3:25: error: 'f' names f(int32), f(int64); it must be given where a function pointer type chooses one."},
+		// The receivers are declared before the arguments choose a function.
+		{"error_709_overload_multi_ret_differ.pa", ":3:1: error: Ambiguous function call 'dm': it can mean dm(int32), dm(int64)."},
+		// An argument that fits no function is shown as what it would match.
+		{"error_710_overload_no_match_literal.pa", ":3:1: error: No function 'pp' takes (int64); there are pp(@int32), pp(@int64)."},
+		{"error_711_overload_no_match_func_name.pa", ":5:1: error: No function 'f' takes (function); there are f(int32), f(int64)."},
+		{"error_712_overload_no_match_chained.pa", ":5:6: error: No function 'f' takes (P); there are f(int32), f(int64)."},
+		{"error_713_overload_no_match_variadic.pa", ":5:1: error: No function 'printf' takes (@P); there are printf(@int8, ...), printf(int32)."},
+		{"error_714_overload_func_name_none.pa", ":3:27: error: 'dm' names dm(int32), dm(int64); it must be given where a function pointer type chooses one."},
+		{"error_715_overload_multi_ret_none.pa", ":3:1: error: Function 'f' does not have multiple return values."},
+		{"error_716_overload_no_match_chained_literal.pa", ":3:6: error: No function 'pp' takes (int64); there are pp(@int32), pp(@int64)."},
+		{"error_717_overload_no_match_aggregate.pa", ":3:1: error: No function 'f' takes (literal); there are f(int32), f(int64)."},
+		{"error_718_overload_no_match_no_args.pa", ":3:1: error: No function 'printf' takes (); there are printf(@int8, ...), printf(int32)."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

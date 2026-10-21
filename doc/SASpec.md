@@ -939,15 +939,43 @@ multiple-return declaration/assignment):
   `L.f(args)`, resolved through the alias as before (an unknown name is E_UnknownAlias). A
   variable therefore shadows an alias of the same name, as it does an enum name in `Name.X`.
 - Otherwise it is rewritten to the plain `call` `f(recv, args)` and analyzed as any other call
-  (callee lookup, argument count/type/permission checks). `f` must have a first parameter whose
-  `var-type` has `mutable: true` — a Palan `@!T`/`@![n]T`, or a C non-const pointer — or it is
-  E_MethodNeedsMutableFirstParam.
+  (callee lookup, argument count/type/permission checks). Only a function `f` whose first
+  parameter's `var-type` has `mutable: true` — a Palan `@!T`/`@![n]T`, or a C non-const pointer —
+  is a candidate; if no function `f` has one, it is E_MethodNeedsMutableFirstParam.
 - `recv` is `addr-of` (`@!aa`) of the object, so the object must be addressable as for `@!` (a
   call returning a struct is, as a call argument). An
   object that is already a borrow (a `@T`/`@!T`/`@[n]T`/`@![n]T` variable, parameter or field) is
   passed as is; a read-only one is then rejected by the usual permission check.
 
 sa.json carries only the resulting `call`; `member-call` is never emitted.
+
+### Overloaded calls
+
+Several functions can share a name: Palan functions whose parameter types differ (the same
+parameter types, whatever the return, is E_DuplicateFuncDef), C functions, and functions imported
+unqualified (or under one alias) all join the candidates for a call by that name. A function
+brought in more than once — a header cincluded again, a module imported again — is one candidate.
+A name with one candidate is bound to it directly, with the diagnostics of an argument that does
+not fit it. With several, each argument is analyzed once without a parameter type, then:
+
+- A candidate fits when the argument count matches (at least the fixed parameters for a C
+  variadic function) and every argument passes the parameter's checks; an argument matches
+  exactly when its type is the parameter's, including a pointer's `mutable`.
+- An argument whose type comes only from its parameter is matched by what it can become: an
+  untyped literal (or one the parameter's type reaches through `-`, `~`, a shift or arithmetic)
+  fits any primitive and matches exactly its default type (int64, uint64, flo64; for an
+  expression of literals and variables, the type it has with no parameter); an aggregate literal
+  fits a pointer or struct and never matches exactly; a function name matches a function pointer
+  parameter of one of its functions' types. It is analyzed with the chosen parameter's type.
+- A chained value fits as `@v` where the parameter would take it so, and as `v` otherwise.
+- The one fitting candidate is chosen; of several, the one every argument matches exactly
+  (and no variadic argument is passed). Otherwise E_NoMatchingFunc (the argument types and
+  the candidates) or E_AmbiguousCall (the candidates that fit).
+- Receiving several values (`(a, b) = f(x)`) considers only the candidates returning that many,
+  which must agree on what they return, since the receivers are declared before the arguments
+  choose one (E_AmbiguousCall).
+- A function name used as a value takes the function whose `@func` type is the expected one (a
+  variable's, field's or parameter's): none is E_FuncNameNeedsType, several E_AmbiguousCall.
 
 ### Chained calls
 
@@ -960,7 +988,8 @@ of a multiple-return declaration/assignment) by `normalizeChainCall`, after its 
   its first argument, analyzed as any other call. For a read-only borrow parameter (`@T`, `@[n]T`,
   a C const pointer) a struct, numeric value or (for a Palan function) owned array is wrapped in
   `addr-of` (`@v`), so `@` may be omitted; a call returning a struct then becomes a temp as
-  `@f()` does. `@!` is never added.
+  `@f()` does. `@!` is never added. When `call` names several functions, whether `@` is added
+  depends on the one chosen (see Overloaded calls).
 - Otherwise the return values are received into temps `__tap_N` by a `tapple-decl` and placed in
   front of the arguments the same way; a chain of such calls adds one `tapple-decl` per call. The
   result is a `temp` whose `body` is the `tapple-decl`s, `value` the last `call`, and `release`

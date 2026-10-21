@@ -231,7 +231,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 			}
 		}
 
-	currentFunc_ = findPlnFunc(funcDef["name"]);
+	currentFunc_ = findPlnFuncDef(funcDef);
 	currentFuncDef_ = &sig;
 	enterScope();  // push scope[1] = function body
 	funcBodyScopeIdx_ = arrayScopeVars_.size() - 1;  // = 1
@@ -1087,6 +1087,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 {
 	json callExpr = tappleCallExpr(stmt);
 	const json& rets = findMultiRetFunc(stmt, callExpr, stmt["vars"].size())["rets"];
+	callExpr["multi-ret"] = rets.size();
 
 	// Process the call expression via sa_expression (resolves func-type, annotates args)
 	json saCall = sa_expr_maybe_void(callExpr);

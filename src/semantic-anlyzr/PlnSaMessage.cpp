@@ -157,7 +157,8 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_AmbiguousCall:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "Ambiguous function call '" + arg1 + "': imported from multiple modules.";
+			BOOST_ASSERT(arg2 != "\x01");
+			return "Ambiguous function call '" + arg1 + "': it can mean " + arg2 + ".";
 
 		case E_UnknownAlias:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -670,6 +671,17 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ReturnFrameArr:
 			return "stack array '" + arg1 + "' cannot be returned; its storage ends with the function.";
+
+		case E_NoMatchingFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "No function '" + arg1 + "' takes (" + arg2 + "); there are " + arg3 + ".";
+
+		case E_FuncNameNeedsType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "'" + arg1 + "' names " + arg2 + "; it must be given where a function pointer type chooses one.";
 
 		default:
 			BOOST_ASSERT(false);

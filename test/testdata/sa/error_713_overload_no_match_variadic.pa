@@ -1,0 +1,5 @@
+cinclude <stdio.h>;
+func printf(int32 a) { }
+type P { int32 x; };
+P p;
+printf(@p);

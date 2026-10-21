@@ -158,6 +158,8 @@ enum PlnSaMessageCode {
 	E_FrameVarType,	// arg1: type display name
 	E_FrameArrSizeNotConst,	// arg1: variable name
 	E_ReturnFrameArr,	// arg1: variable name
+	E_NoMatchingFunc,	// arg1: function name, arg2: argument types, arg3: candidates
+	E_FuncNameNeedsType,	// arg1: function name, arg2: candidates
 };
 
 class PlnSaMessage

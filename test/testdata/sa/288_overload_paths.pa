@@ -1,0 +1,50 @@
+type Vec { int64 x; };
+type Counter { int32 n; };
+func f(int32 a) -> int32 { return a; }
+func f(int64 a) -> int64 { return a; }
+func h(int32 x) -> int32 { return x; }
+func h(flo64 x) -> flo64 { return x; }
+func len(@Vec v) -> int64 { return v.x; }
+func len(@Counter c) -> int64 { return c.n; }
+func app(@func(int32) -> int32 fn) -> int32 { return fn(1); }
+func app(int64 a) -> int64 { return a; }
+func q(@Vec v) -> int32 { return 1; }
+func q(@!Vec v) -> int64 { return 2; }
+func r(@Vec v) -> int32 { return 1; }
+func r(int32 a) -> int64 { return a; }
+func pp(@int32 p) -> int32 { return p[0]; }
+func pp(@int64 p) -> int64 { return p[0]; }
+func sumA(@[2]int32 a) -> int32 { return a[0]; }
+func sumA(@[3]int32 a) -> int64 { return a[0]; }
+func g2(int32 a, int32 b) -> int32 { return a; }
+func g2(@Vec v, int64 b) -> int64 { return b; }
+func mk() -> Vec v { 1 -> v.x; }
+func dm3(int32 a) -> int64 { return a; }
+func dm3(int64 a) -> int64 q, int64 r { a -> q; a -> r; }
+func local() -> int32 { return 1; }
+func lenx(@Vec v) -> int64 { return v.x; }
+func lenx(@int32 p) -> int32 { return p[0]; }
+func u(uint64 a) -> uint64 { return a; }
+func u(int32 a) -> int32 { return a; }
+func r2(@Vec v) -> int32 { return 1; }
+func r2(int64 a) -> int64 { return a; }
+int32 x = 1;
+Vec v;
+[2]int32 arr;
+app(h);
+q(@v);
+q(@!v);
+r(1);
+r(1 <<< len(@v));
+h(x + 1.5);
+f(-(1 <<< x));
+x -> f();
+x -> pp();
+arr -> sumA();
+g2(@v, 1);
+mk() -> len();
+(int64 a, int64 b) = dm3(x);
+local();
+v -> lenx();
+u(x + 2u);
+r2(len(@v) + (1 <<< x));

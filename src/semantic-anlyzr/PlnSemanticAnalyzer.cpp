@@ -166,15 +166,31 @@ void PlnSemanticAnalyzer::reportDiag(const json& locNode, const SaDiag& diag) co
 	exit(1);
 }
 
+static bool sameParamTypes(const json& a, const json& b)
+{
+	const json& pa = a.value("parameters", json::array());
+	const json& pb = b.value("parameters", json::array());
+	if (pa.size() != pb.size()) return false;
+	for (size_t i = 0; i < pa.size(); i++)
+		if (pa[i]["var-type"] != pb[i]["var-type"]) return false;
+	return true;
+}
+
+// Functions of one name are told apart by their parameter types alone, since
+// a call chooses among them by its arguments.
 void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json& locNode)
 {
-	for (auto& scope : plnFuncScopes)
-		if (scope.count(name)) {
-			cerr << locPrefix(locNode)
-			     << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
-			exit(1);
-		}
-	plnFuncScopes.back()[name] = def;
+	for (auto& scope : plnFuncScopes) {
+		auto it = scope.find(name);
+		if (it == scope.end()) continue;
+		for (auto& other : it->second)
+			if (sameParamTypes(other, def)) {
+				cerr << locPrefix(locNode)
+				     << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
+				exit(1);
+			}
+	}
+	plnFuncScopes.back()[name].push_back(def);
 }
 
 void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
@@ -1159,7 +1175,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				entry["_c-func"] = true;
-				currentScope[alias][fname] = {entry};
+				currentScope[alias][fname].push_back(entry);
 			}
 		} else {
 			for (auto& f : stmt["functions"]) {
@@ -1246,15 +1262,13 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 		// Resolved in the exporting module, where the type names it uses mean
 		// what its author meant.
 		json funcEntry = sub.normalizeFuncSig(f);
+		funcEntry["_module"] = sub.moduleId_;
 		for (auto& p : funcEntry.value("parameters", json::array()))
 			adoptTypeDeps(sub, p["var-type"], stmt);
 		for (auto& r : funcEntry.value("rets", json::array()))
 			adoptTypeDeps(sub, r["var-type"], stmt);
 		if (funcEntry.contains("ret-type")) adoptTypeDeps(sub, funcEntry["ret-type"], stmt);
 
-		if (hasAlias)
-			currentScope[alias][fname] = {funcEntry};
-		else
-			currentScope[""][fname].push_back(funcEntry);
+		currentScope[alias][fname].push_back(funcEntry);
 	}
 }

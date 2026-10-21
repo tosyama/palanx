@@ -1,0 +1,4 @@
+func f(int32 a) -> int32 { return a; }
+func f(int64 a) -> int64 { return a; }
+int16 z = 3;
+f(z);

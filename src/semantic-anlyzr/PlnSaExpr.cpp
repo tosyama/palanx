@@ -650,7 +650,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 				sa_expr = {{"expr-type", "c-global"}, {"label", name}, {"value-type", (*cglobal)["var-type"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 				if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
 			} else {
-				json ref = sa_func_ref(expr);
+				json ref = sa_func_ref(expr, expectedType);
 				if (!ref.is_null()) return ref;
 				undefinedNameError(expr, expr, E_UndefinedVariable);
 			}
@@ -803,6 +803,34 @@ bool PlnSemanticAnalyzer::takesExpectedType(const json& rawExpr)
 		return takesExpectedType(expr["left"]) || takesExpectedType(expr["right"]);
 	}
 	return false;
+}
+
+// Literals and variables under the operators takesExpectedType follows:
+// analyzing it has no effect but its type.
+bool PlnSemanticAnalyzer::isPureOperand(const json& rawExpr)
+{
+	const json expr = foldConstExpr(rawExpr);
+	string et = expr.value("expr-type", "");
+	if (et == "lit-int" || et == "lit-uint" || et == "lit-flo") return true;
+	if (et == "id") return findVar(expr["name"].get<string>()) != nullptr;
+	if (et == "neg" || et == "bitnot") return isPureOperand(expr["operand"]);
+	if (et == "shl" || et == "shr" || arithOps.count(et))
+		return isPureOperand(expr["left"]) && isPureOperand(expr["right"]);
+	return false;
+}
+
+// The type an argument takesExpectedType accepts has with no parameter to give
+// it one, which is the type it matches exactly; null when finding it would
+// take evaluating more than literals and variables.
+json PlnSemanticAnalyzer::literalDefaultType(const json& rawExpr)
+{
+	const json expr = foldConstExpr(rawExpr);
+	string et = expr.value("expr-type", "");
+	if (et == "lit-int") return registry_.toJson(registry_.prim(PrimType::Name::Int64));
+	if (et == "lit-uint") return registry_.toJson(registry_.prim(PrimType::Name::Uint64));
+	if (et == "lit-flo") return registry_.toJson(registry_.prim(PrimType::Name::Float64));
+	if (!isPureOperand(expr)) return json();
+	return sa_expression(expr)["value-type"];
 }
 
 json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expectedType)
