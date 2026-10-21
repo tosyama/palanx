@@ -6157,3 +6157,30 @@ TEST(sa, import_func_over_alias)
 	ASSERT_EQ(init["expr-type"], "call");
 	ASSERT_EQ(init["name"], "square");
 }
+
+// An argument whose type comes only from its parameter: a literal, or one the
+// parameter's type reaches through an operator.
+TEST(sa, call_arg_expected_type)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/285_call_arg_expected_type.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& lit = stmts[2]["body"]["args"][0];
+	ASSERT_EQ(lit["expr-type"], "lit-flo");
+	ASSERT_EQ(lit["value-type"]["type-name"], "flo64");
+	const auto& shl = stmts[3]["body"]["args"][0];
+	ASSERT_EQ(shl["expr-type"], "shl");
+	ASSERT_EQ(shl["left"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[4]["body"]["args"][0]["value-type"]["type-name"], "flo32");
+	const auto& add = stmts[5]["body"]["args"][0];
+	ASSERT_EQ(add["right"]["expr-type"], "lit-flo");
+	ASSERT_EQ(add["right"]["value-type"]["type-name"], "flo32");
+	// The parameter's type reaches the shifted literal through each operator.
+	ASSERT_EQ(stmts[6]["body"]["args"][0]["operand"]["left"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[7]["body"]["args"][0]["left"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[8]["body"]["args"][0]["right"]["left"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[9]["body"]["args"][0]["left"]["left"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[10]["body"]["args"][0]["right"]["left"]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[11]["body"]["args"][0]["left"]["left"]["value-type"]["type-name"], "int32");
+}

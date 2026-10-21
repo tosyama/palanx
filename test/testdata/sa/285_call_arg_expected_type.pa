@@ -1,0 +1,15 @@
+func ff(flo64 a) -> flo64 { return a; }
+func fi32(int32 a) -> int32 { return a; }
+func ff32(flo32 a) -> flo32 { return a; }
+int32 n = 3;
+flo32 x = 2;
+ff(1);
+fi32(1 <<< n);
+ff32(-x);
+ff32(x + 1.5);
+fi32(~(1 <<< n));
+fi32(1 >>> n);
+fi32(2 * (1 <<< n));
+fi32((1 <<< n) & 7);
+fi32(n | (1 <<< n));
+fi32((1 <<< n) | n);

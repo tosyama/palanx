@@ -175,22 +175,6 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 	return saArg;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// An upgrade's diagnostic differs by callee kind, since a C parameter's
-// permission comes from const-qualification while a Palan parameter's comes
-// from `@!T`.
-void PlnSemanticAnalyzer::checkArgPtrPermission(const json& expr, const string& funcName,
-		bool isCFunc, const json& saArg, const json& param, size_t argIdx)
-{
-	if (isCFunc && ptrPermission(saArg["value-type"], param["var-type"]) == PtrPermission::Upgrade) {
-		string paramName = param.value("name", "");
-		if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
-		cerr << locPrefix(expr)
-		     << PlnSaMessage::getMessage(E_ReadOnlyPtrToNonConstCParam, funcName, paramName) << endl;
-		exit(1);
-	}
-	checkPtrPermission(expr, saArg["value-type"], param["var-type"]);
-}
-
 // The call node for `expr` calling `callee`, as written by `writtenName`.
 json PlnSemanticAnalyzer::makeCallNode(const json& expr, const Callee& callee, const string& writtenName)
 {
@@ -342,16 +326,31 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 	return makeCallNode(expr, requireUniqueCallee(expr, callName, cands), callName);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+static bool isVariadicSig(const json& funcParams)
+{
+	for (auto& p : funcParams)
+		if (p.value("name", "") == "...") return true;
+	return false;
+}
+
+static bool isAggregateLitArg(const json& arg)
+{
+	return isAggregateLit(arg)
+		|| (arg.value("expr-type", "") == "addr-of" && isAggregateLit(arg["object"]));
+}
+
+static bool isScalar(const PlnType* t)
+{
+	return t->kind == PlnType::Kind::Prim || t->kind == PlnType::Kind::Enum;
+}
+
 // Shared by sa_expr_call and sa_expr_member_call: these used to duplicate
 // only part of this loop, silently dropping variadic promotion for an
 // aliased call like `S.printf("%f\n", someFlo32)`.
 json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json& funcParams,
                                       bool isCFunc, const string& funcName)
 {
-	bool isVariadic = false;
-	for (auto& p : funcParams)
-		if (p.value("name", "") == "...") { isVariadic = true; break; }
-
+	bool isVariadic = isVariadicSig(funcParams);
 	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
 	// C's `()` arrives as an empty list just like `(void)` and is checked as
 	// `(void)` (as C23 reads it); glibc headers are fully prototyped.
@@ -362,61 +361,98 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 		exit(1);
 	} // LCOV_EXCL_LINE -- only cleanup skipped by exit(1) is attributed here
 
-	json saArgs = json::array();
-	size_t argIdx = 0;
+	vector<CallArg> callArgs = analyzeCallArgs(args);
+	return bindCallArgs(locNode, callArgs, funcParams, isCFunc, funcName);
+}
+
+// Analyzes the arguments, left to right, before any parameter is known.
+vector<CallArg> PlnSemanticAnalyzer::analyzeCallArgs(const json& args)
+{
+	vector<CallArg> callArgs;
 	for (auto& arg : args) {
-		const json* paramVT = argIdx < fixedCount ? &funcParams[argIdx]["var-type"] : nullptr;
+		bool pending = isAggregateLitArg(arg) || takesExpectedType(arg);
+		json sa = pending ? json()
+		        : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
+		        : sa_expression(arg);
+		callArgs.push_back({arg, pending, move(sa)});
+	}
+	return callArgs;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+// Whether an analyzed argument fits a parameter, and if not, why.
+optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const json& saArg,
+		const json& param, size_t argIdx, bool isCFunc, const string& funcName)
+{
+	const json& paramVT = param["var-type"];
+	if (paramVT.contains("arr-size")) {
+		if (auto d = arrBorrowBindingMismatch(argAst, saArg, paramVT)) return d;
+	} else if (paramVT.value("embedded", false)) {
+		// The type registry can't tell contiguous elements from pointer slots,
+		// nor a contiguous struct array from a single struct.
+		const json& argVT = saArg["value-type"];
+		bool argContig = argVT.value("embedded", false) && argVT.contains("stride");
+		const json& paramElem = paramVT["base-type"];
+		if (isArrLevel(paramElem)) {
+			const json* argRow = argContig ? &argVT["base-type"] : nullptr;
+			bool argSized = argRow && isArrLevel(*argRow) && argRow->contains("arr-size");
+			if (!argSized || (*argRow)["arr-size"] != paramElem["arr-size"]) {
+				string actual = argSized
+					? to_string((*argRow)["arr-size"].get<int64_t>()) : "variable";
+				// LCOV_EXCL_EXCEPTION_BR_START
+				return SaDiag{E_EmbeddedArrInnerSizeMismatch,
+				              to_string(paramElem["arr-size"].get<int64_t>()), actual};
+				// LCOV_EXCL_EXCEPTION_BR_STOP
+			}
+		} else if (!argContig) {
+			return SaDiag{E_IncompatibleTypes, typeDisplayName(argVT), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		}
+	}
+	if (auto d = elemShapeMismatch(saArg, paramVT)) return d;
+	if (auto d = callArgConvMismatch(saArg, paramVT)) return d;
+	if (isStructBorrow(paramVT) && isStructStorage(saArg["value-type"]))
+		return SaDiag{E_StructBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	// A by-value struct is only read, to copy it, so a read-only source is fine.
+	if (isCFunc && isStructStorage(paramVT)) return nullopt;
+	// An upgrade's diagnostic differs by callee kind, since a C parameter's
+	// permission comes from const-qualification while a Palan parameter's comes
+	// from `@!T`.
+	if (isCFunc && ptrPermission(saArg["value-type"], paramVT) == PtrPermission::Upgrade) {
+		string paramName = param.value("name", "");
+		if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
+		return SaDiag{E_ReadOnlyPtrToNonConstCParam, funcName, paramName}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
+	return ptrPermissionMismatch(saArg["value-type"], paramVT);
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+// Binds the analyzed arguments to the chosen callee's parameters: a pending
+// argument is analyzed now with its parameter's type, then each is checked
+// and converted.
+json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& args, const json& funcParams,
+                                        bool isCFunc, const string& funcName)
+{
+	bool isVariadic = isVariadicSig(funcParams);
+	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
+	json saArgs = json::array();
+	for (size_t argIdx = 0; argIdx < args.size(); argIdx++) {
+		const json& arg = args[argIdx].ast;
+		const json* param = argIdx < fixedCount ? &funcParams[argIdx] : nullptr;
+		const json* paramVT = param ? &(*param)["var-type"] : nullptr;
 		bool byValStruct = isCFunc && paramVT && isStructStorage(*paramVT);
 		json argAst = arg;
 		json litBody, litRelease;
-		bool isLit = isAggregateLit(arg)
-			|| (arg.value("expr-type", "") == "addr-of" && isAggregateLit(arg["object"]));
-		// A bare integer literal argument adopts the parameter's type here
-		// instead of defaulting to int64/uint64, avoiding a spurious narrowing
-		// rejection below.
+		bool isLit = isAggregateLitArg(arg);
 		json saArg = isLit ? sa_lit_arg(arg, isCFunc && !byValStruct ? nullptr : paramVT,
-		                                paramVT ? funcParams[argIdx].value("name", "") : "", funcName,
+		                                param ? param->value("name", "") : "", funcName,
 		                                argAst, litBody, litRelease)
-		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
-		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		           : args[argIdx].pending ? sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr)
+		           : move(args[argIdx].sa);
 		bool expiring = isCallBorrow(arg) || isExpiringStruct(saArg);
-		const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 		if (paramVT) {
-			if (paramVT->contains("arr-size")) {
-				checkArrBorrowBinding(locNode, argAst, saArg, *paramVT);
-			} else if (paramVT->value("embedded", false)) {
-				// The type registry can't tell contiguous elements from pointer slots,
-				// nor a contiguous struct array from a single struct.
-				const json& argVT = saArg["value-type"];
-				bool argContig = argVT.value("embedded", false) && argVT.contains("stride");
-				const json& paramElem = (*paramVT)["base-type"];
-				if (isArrLevel(paramElem)) {
-					const json* argRow = argContig ? &argVT["base-type"] : nullptr;
-					bool argSized = argRow && isArrLevel(*argRow) && argRow->contains("arr-size");
-					if (!argSized || (*argRow)["arr-size"] != paramElem["arr-size"]) {
-						string actual = argSized
-							? to_string((*argRow)["arr-size"].get<int64_t>()) : "variable";
-						cerr << locPrefix(locNode)
-						     << PlnSaMessage::getMessage(E_EmbeddedArrInnerSizeMismatch,
-						            to_string(paramElem["arr-size"].get<int64_t>()), actual) << endl;
-						exit(1);
-					}
-				} else if (!argContig) {
-					cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
-						typeDisplayName(argVT), typeDisplayName(*paramVT)) << endl;
-					exit(1);
-				}
-			}
-			checkElemShape(locNode, saArg, *paramVT);
-			saArg = convertCallArg(locNode, saArg, *paramVT);
-			if (isStructBorrow(*paramVT) && isStructStorage(saArg["value-type"])) {
-				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StructBorrowNeedsAddrOf) << endl;
-				exit(1);
-			}
-			// A by-value struct is only read, to copy it, so a read-only source is fine.
-			if (!byValStruct)
-				checkArgPtrPermission(locNode, funcName, isCFunc, saArg, funcParams[argIdx], argIdx);
+			if (auto d = callArgMismatch(argAst, saArg, *param, argIdx, isCFunc, funcName))
+				reportDiag(locNode, *d);
+			saArg = convertCallArg(move(saArg), *paramVT);
 		} else if (isVariadic) {
+			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 			const PlnType* promoted = variadicPromote(fromType, registry_);
 			if (promoted != fromType)
 				saArg = wrapConvert(saArg, registry_.toJson(promoted));
@@ -432,36 +468,35 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 			noteEscape(saArg);
 		}
 		saArgs.push_back(saArg);
-		argIdx++;
 	}
 	return saArgs;
 }
 
-// Convert a single call argument to a parameter's type. Embedded-array shape
-// and pointer-permission checks are each caller's own responsibility, since
-// those differ by callee kind (C vs. Palan).
-json PlnSemanticAnalyzer::convertCallArg(const json& locNode, json saArg, const json& paramVT)
+// Embedded-array shape and pointer-permission checks are callArgMismatch's,
+// since those differ by callee kind (C vs. Palan).
+optional<SaDiag> PlnSemanticAnalyzer::callArgConvMismatch(const json& saArg, const json& paramVT)
 {
 	const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 	const PlnType* toType   = registry_.fromJson(paramVT);
-	if (fromType == toType) return saArg;
-	auto isScalar = [](const PlnType* t) {
-		return t->kind == PlnType::Kind::Prim || t->kind == PlnType::Kind::Enum;
-	};
+	if (fromType == toType) return nullopt;
 	if (isScalar(fromType) && isScalar(toType)) {
-		if (argConvOk(fromType, toType))
-			return wrapConvert(saArg, registry_.toJson(toType));
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidNarrowingConv,
-			typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)) << endl;
-		exit(1);
+		if (argConvOk(fromType, toType)) return nullopt;
+		return SaDiag{E_InvalidNarrowingConv, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	// pntr(void) is bidirectionally Identical with any pntr(T), which is how NULL passes.
-	if (typeCompat(fromType, toType, registry_) == TypeCompat::Incompatible) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
-			typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)) << endl;
-		exit(1);
-	}
-	return saArg;
+	if (typeCompat(fromType, toType, registry_) == TypeCompat::Incompatible)
+		return SaDiag{E_IncompatibleTypes, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return nullopt;
+}
+
+// Converts an argument callArgConvMismatch accepted to its parameter's type;
+// it accepts a scalar only into a scalar.
+json PlnSemanticAnalyzer::convertCallArg(json saArg, const json& paramVT)
+{
+	const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
+	const PlnType* toType   = registry_.fromJson(paramVT);
+	if (fromType == toType || !isScalar(fromType)) return saArg;
+	return wrapConvert(saArg, registry_.toJson(toType));
 }
 
 // A member-call whose object is a variable (or C global) is a method-form

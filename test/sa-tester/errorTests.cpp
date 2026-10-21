@@ -2208,6 +2208,7 @@ TEST(sa_error, int_literal_out_of_range)
 	// initializer and an arith operand typed from expectedType
 	const pair<string, string> cases[] = {
 		{"error_200_int_lit_range_int8.pa", ":1:10: error: Integer literal '300' is out of range for type 'int8'."},
+		{"error_702_call_arg_lit_range.pa", ":2:5: error: Integer literal '300' is out of range for type 'int8'."},
 		{"error_201_int_lit_range_uint32.pa", "'5000000000' is out of range for type 'uint32'"},
 		{"error_202_int_lit_range_int64.pa", "'99999999999999999999' is out of range for type 'int64'"},
 		{"error_203_int_lit_range_uint64.pa", "'18446744073709551616' is out of range for type 'uint64'"},

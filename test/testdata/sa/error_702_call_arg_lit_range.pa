@@ -1,0 +1,2 @@
+func fi8(int8 a) -> int8 { return a; }
+fi8(300);

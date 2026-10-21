@@ -160,6 +160,12 @@ void PlnSemanticAnalyzer::undefinedNameError(const json& at, const json& ref, Pl
 	exit(1);
 }
 
+void PlnSemanticAnalyzer::reportDiag(const json& locNode, const SaDiag& diag) const
+{
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(diag.code, diag.arg1, diag.arg2) << endl;
+	exit(1);
+}
+
 void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json& locNode)
 {
 	for (auto& scope : plnFuncScopes)
@@ -562,37 +568,43 @@ void PlnSemanticAnalyzer::normalizeArrBorrowSig(json& funcDef)
 		p["var-type"] = normalizeArrBorrowType(funcDef, p["var-type"]);
 }
 
-void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json& srcAst,
+optional<SaDiag> PlnSemanticAnalyzer::arrBorrowBindingMismatch(const json& srcAst,
 		const json& saValue, const json& dstType)
 {
 	bool namesBorrow = saValue.value("expr-type","") == "id" && saValue.contains("var-type")
 	                   && isArrBorrowVar(saValue["var-type"]);
 	// Only an explicit cast converts into a borrowed array type.
 	bool castBorrow = saValue.value("expr-type","") == "convert";
-	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow && !castBorrow) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowNeedsAddrOf) << endl;
-		exit(1);
-	}
+	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow && !castBorrow)
+		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (!arrShapeMatch(saValue["value-type"], dstType)) {
 		// Shown as the owned type, without the permission the borrow added.
 		const json& srcType = saValue.contains("var-type") ? saValue["var-type"]
 			: saValue.value("expr-type","") == "arr-index" ? saValue["array"]["value-type"]["base-type"]
 			: saValue["value-type"];
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowShapeMismatch,
-			typeDisplayName(dstType), typeDisplayName(srcType)) << endl;
-		exit(1);
+		return SaDiag{E_ArrBorrowShapeMismatch, typeDisplayName(dstType), typeDisplayName(srcType)}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
+	return nullopt;
 }
+
+void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json& srcAst,
+		const json& saValue, const json& dstType)
+{
+	if (auto d = arrBorrowBindingMismatch(srcAst, saValue, dstType)) reportDiag(locNode, *d);
+}
+
+optional<SaDiag> PlnSemanticAnalyzer::elemShapeMismatch(const json& saValue, const json& dstType)
+{
+	if (!saValue.contains("value-type") || elemShapeMatch(saValue["value-type"], dstType)) return nullopt;
+	json dstShape = dstType;
+	dstShape.erase("mutable");  // a slot reads as the array it points to
+	return SaDiag{E_ArrElemShapeMismatch, typeDisplayName(dstShape), typeDisplayName(saValue["value-type"])}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 void PlnSemanticAnalyzer::checkElemShape(const json& locNode, const json& saValue, const json& dstType)
 {
-	if (!saValue.contains("value-type") || elemShapeMatch(saValue["value-type"], dstType)) return;
-	json dstShape = dstType;
-	dstShape.erase("mutable");  // a slot reads as the array it points to
-	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrElemShapeMismatch,
-		typeDisplayName(dstShape), typeDisplayName(saValue["value-type"])) << endl;
-	exit(1);
-} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+	if (auto d = elemShapeMismatch(saValue, dstType)) reportDiag(locNode, *d);
+}
 
 // Diagnoses a "syscall" declaration against the Linux syscall ABI (<=6
 // GP-register args, no float, single raw-rax return) and folds its number

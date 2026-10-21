@@ -783,6 +783,28 @@ json PlnSemanticAnalyzer::sa_expr_shift(const json& expr, const PlnType* expecte
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+static const set<string> arithOps = {"add", "sub", "mul", "div", "mod", "bitand", "bitor", "bitxor"};
+
+// Whether expectedType changes what sa_expression makes of `rawExpr`: it must
+// follow how sa_expr_maybe_void, sa_expr_arith and sa_expr_shift pass it down
+// to a literal.
+bool PlnSemanticAnalyzer::takesExpectedType(const json& rawExpr)
+{
+	const json expr = foldConstExpr(rawExpr);
+	string et = expr.value("expr-type", "");
+	if (et == "lit-int") return !expr.contains("value-type");
+	if (et == "lit-uint" || et == "lit-flo") return true;
+	if (et == "neg" || et == "bitnot") return takesExpectedType(expr["operand"]);
+	if (et == "shl" || et == "shr") return takesExpectedType(expr["left"]);
+	if (arithOps.count(et)) {
+		// A lit-int operand takes the other operand's type instead.
+		if (foldConstExpr(expr["left"])["expr-type"] == "lit-int") return takesExpectedType(expr["right"]);
+		if (foldConstExpr(expr["right"])["expr-type"] == "lit-int") return takesExpectedType(expr["left"]);
+		return takesExpectedType(expr["left"]) || takesExpectedType(expr["right"]);
+	}
+	return false;
+}
+
 json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expectedType)
 {
 	json sa_expr = expr;
@@ -873,24 +895,24 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 	return value;
 }
 
-void PlnSemanticAnalyzer::checkPtrPermission(const json& locNode, const json& from, const json& to)
+optional<SaDiag> PlnSemanticAnalyzer::ptrPermissionMismatch(const json& from, const json& to)
 {
 	switch (ptrPermission(from, to)) {
 	case PtrPermission::Ok:
-		return;
+		break;
 	case PtrPermission::Upgrade:
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
-		break;
+		return SaDiag{E_PtrMutabilityUpgrade}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	case PtrPermission::InnerNarrowing:
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_PtrInnerPermissionNarrowing,
-			typeDisplayName(from), typeDisplayName(to)) << endl;
-		break;
+		return SaDiag{E_PtrInnerPermissionNarrowing, typeDisplayName(from), typeDisplayName(to)}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	case PtrPermission::FuncSigMismatch:
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_IncompatibleTypes,
-			typeDisplayName(from), typeDisplayName(to)) << endl;
-		break;
+		return SaDiag{E_IncompatibleTypes, typeDisplayName(from), typeDisplayName(to)}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
-	exit(1);
+	return nullopt;
+}
+
+void PlnSemanticAnalyzer::checkPtrPermission(const json& locNode, const json& from, const json& to)
+{
+	if (auto d = ptrPermissionMismatch(from, to)) reportDiag(locNode, *d);
 }
 
 // A struct returned by a call is owned by nobody, and a borrow never frees

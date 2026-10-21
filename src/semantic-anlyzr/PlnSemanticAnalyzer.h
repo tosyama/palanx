@@ -83,6 +83,22 @@ struct Callee {
 	bool        isC;
 };
 
+// A call argument before the callee's parameter is known. A pending one gets
+// its type only from the parameter (see takesExpectedType), so it is analyzed
+// once the callee is chosen.
+struct CallArg {
+	json ast;
+	bool pending;
+	json sa;
+};
+
+// A diagnostic decided without exiting, so a check can also just test a fit.
+struct SaDiag {
+	PlnSaMessageCode code;
+	string arg1 = "\x01";
+	string arg2 = "\x01";
+};
+
 // The value of a constant expression under evaluation.
 struct ConstVal {
 	enum class Kind { Int, Uint, Flo } kind;
@@ -292,14 +308,19 @@ class PlnSemanticAnalyzer {
 	// Analyze a call's argument list against the callee's parameter list.
 	json saCallArgs(const json& locNode, const json& args, const json& funcParams,
 	                bool isCFunc, const string& funcName);
-	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
-	                           const json& saArg, const json& param, size_t argIdx);
+	bool takesExpectedType(const json& expr);
+	vector<CallArg> analyzeCallArgs(const json& args);
+	optional<SaDiag> callArgMismatch(const json& argAst, const json& saArg, const json& param,
+	                                 size_t argIdx, bool isCFunc, const string& funcName);
+	json bindCallArgs(const json& locNode, vector<CallArg>& args, const json& funcParams,
+	                  bool isCFunc, const string& funcName);
+	[[noreturn]] void reportDiag(const json& locNode, const SaDiag& diag) const;
+	optional<SaDiag> ptrPermissionMismatch(const json& from, const json& to);
 	void checkPtrPermission(const json& locNode, const json& from, const json& to);
 	// Shared narrowing rule for every binding site.
 	json convertForBinding(const json& locNode, json value, const PlnType* toType, const json& toTypeJson);
-	// Convert a single call argument to a parameter's type, diagnosing
-	// E_InvalidNarrowingConv if it doesn't fit without an explicit cast.
-	json convertCallArg(const json& locNode, json saArg, const json& paramVT);
+	optional<SaDiag> callArgConvMismatch(const json& saArg, const json& paramVT);
+	json convertCallArg(json saArg, const json& paramVT);
 	// forWrite: the result is written through (store, '@!', or a field write
 	// below it), so every hop back to the chain's root must be writable --
 	// the same rule resolveObjectChain applies to struct field chains.
@@ -418,7 +439,10 @@ class PlnSemanticAnalyzer {
 	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);
 	void  normalizeArrBorrowSig(json& funcDef);
 	const json* firstNonConstName(const json& expr) const;
+	optional<SaDiag> elemShapeMismatch(const json& saValue, const json& dstType);
 	void  checkElemShape(const json& locNode, const json& saValue, const json& dstType);
+	optional<SaDiag> arrBorrowBindingMismatch(const json& srcAst, const json& saValue,
+	                                          const json& dstType);
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);
 	json  sa_call_borrow_arg(const json& arg);
