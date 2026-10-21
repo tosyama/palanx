@@ -332,8 +332,11 @@ class PlnSemanticAnalyzer {
 	json operandValueType(const json& obj);
 	json chainArg(const json& value, const json* paramVT, bool isCFunc, const json* valueType = nullptr);
 	size_t chainRetCount(const json& value) const;
+	json chainTarget(const json& call, size_t& at);
+	json chainInto(json call, size_t at, const vector<json>& values);
+	json chainValueAhead(const json& value, const json* paramVT, json& body);
 	json normalizeChainCall(const json& expr);
-	json chainMultiCall(const json& chain, json& body);
+	json chainAheadCall(const json& chain, json& body);
 	json sa_expr_chain_call(const json& expr);
 	json tappleCallExpr(const json& stmt);
 	// Analyze a call's argument list against the callee's parameter list.
@@ -522,6 +525,7 @@ class PlnSemanticAnalyzer {
 	json sa_store_steps(const json& stmt, json& body, bool readBack);
 	json storeTargetType(const json& stmt);
 	json pinLocation(json loc, json& body);
+	string pinTemp(json saValue, const json& locNode, json& body);
 	json pinValue(json saValue, const json& astValue, json& body);
 	bool valueFirst(json& s, json& pre, json& post, set<string>& roots);
 	json snapshotCopy(const json& saSrc, const json& locNode, json& pre, json& post);

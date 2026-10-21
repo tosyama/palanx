@@ -147,7 +147,6 @@ enum PlnSaMessageCode {
 	E_BorrowOfTempEscapes,
 	E_UnownedCallResult,
 	E_AssignInExpr,
-	E_ChainToMethodCall,
 	E_ChainMultiToTapple,
 	E_UnsupportedCFieldType,	// arg1: struct name, arg2: field name, arg3: unsupported type display name
 	E_PtrInnerPermissionNarrowing,	// arg1: from type display name, arg2: to type display name

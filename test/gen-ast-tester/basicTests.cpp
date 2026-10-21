@@ -2112,7 +2112,7 @@ TEST(gen_ast, chain_call) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
-	ASSERT_EQ(stmts.size(), 8);
+	ASSERT_EQ(stmts.size(), 9);
 
 	const auto& plain = stmts[0]["body"];
 	ASSERT_EQ(plain["expr-type"], "chain-call");
@@ -2143,6 +2143,12 @@ TEST(gen_ast, chain_call) {
 	ASSERT_EQ(stmts[6]["value"]["expr-type"], "chain-call");
 	ASSERT_EQ(stmts[7]["stmt-type"], "tapple-assign");
 	ASSERT_EQ(stmts[7]["value"]["expr-type"], "chain-call");
+
+	const auto& method = stmts[8]["body"];
+	ASSERT_EQ(method["call"]["expr-type"], "member-call");
+	ASSERT_EQ(method["call"]["object"]["name"], "s");
+	ASSERT_EQ(method["value"]["call"]["object"]["expr-type"], "arr-index");
+	ASSERT_EQ(method["value"]["call"]["method"], "f");
 }
 
 TEST(gen_ast, as_cast) {

@@ -3308,3 +3308,39 @@ TEST(build_mgr, nested_func_symbols) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/322_nested_func_symbols.pa");
 	ASSERT_EQ(output, "5000\n60000\n1 2 430\n");
 }
+
+TEST(build_mgr, chain_method_call) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/323_chain_method_call.pa");
+	// The chained value is evaluated before the receiver's index.
+	ASSERT_EQ(output, "324\n1 0 10\n8 7\n11\n8\n10 10 10\n");
+}
+
+TEST(build_mgr, chain_method_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_chain_method_bin "
+		"../test/testdata/build-mgr/324_chain_method_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_chain_method_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_chain_method_bin");
+	ASSERT_EQ(output, "30\n34\n40 40 2\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && line.find(" + ") != string::npos) allocs++;
+		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 10) << "expected 10 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}

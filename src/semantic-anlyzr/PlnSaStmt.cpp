@@ -386,12 +386,6 @@ static const char* storeTargetKey(const json& stmt)
 	return nullptr;
 }
 
-static bool isLocationExpr(const json& e)
-{
-	string et = e.value("expr-type", "");
-	return et == "id" || et == "arr-index" || et == "field-access";
-}
-
 // A store needs a scope for temps when its value is a store whose target is
 // read back, when its target has a call (the value is evaluated before it, and
 // a '->>' target is freed and stored to through one evaluation), or when '->>'
@@ -756,27 +750,41 @@ json PlnSemanticAnalyzer::pinLocation(json loc, json& body)
 	return loc;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// saValue evaluated into a temp, standing in for the expression it was
-// analyzed from: a `pinned` node, which sa_expression gives back as the temp
-// with saValue's type and category, so a store treats it as the value itself.
-json PlnSemanticAnalyzer::pinValue(json saValue, const json& astValue, json& body)
+// saValue evaluated into a temp `__pin_N` declared in body; empty when it is
+// left where it is.
+string PlnSemanticAnalyzer::pinTemp(json saValue, const json& locNode, json& body)
 {
 	// A C function's by-value struct, which only a declaration receives: left
 	// where it is, to be diagnosed or evaluated by the store.
 	if (saValue["value-type"].value("type-kind", "") == "struct") // LCOV_EXCL_EXCEPTION_BR_LINE
-		return astValue;
+		return "";
 	if (holdsCallTemps(saValue)) {
-		cerr << locPrefix(astValue) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
 		exit(1);
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
 	string name = "__pin_" + to_string(tempVarCounter_++);
 	const json type = saValue["value-type"];
 	declareVar(name, type);
-	json temp = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}};
-	if (saValue.contains("category")) temp["category"] = saValue["category"];
 	body.push_back({{"stmt-type", "var-decl"},
 	                {"vars", json::array({{{"name", name}, {"var-type", type}, {"init", move(saValue)}}})}});
+	return name;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// saValue evaluated into a temp, standing in for the expression it was
+// analyzed from: a `pinned` node, which sa_expression gives back as the temp
+// with saValue's type and category, so a store treats it as the value itself.
+json PlnSemanticAnalyzer::pinValue(json saValue, const json& astValue, json& body)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	const json type = saValue["value-type"];
+	json category = saValue.value("category", json());
+	string name = pinTemp(move(saValue), astValue, body);
+	if (name.empty())
+		return astValue;
+	json temp = {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}};
+	if (!category.is_null()) temp["category"] = move(category);
 	json pinned = {{"expr-type", "pinned"}, {"sa", move(temp)}};
 	if (astValue.contains("loc")) pinned["loc"] = astValue["loc"];
 	return pinned;

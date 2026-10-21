@@ -1,0 +1,5 @@
+type V { flo32 x; };
+func getx(@V v, flo32 x) -> flo32 { return v.x + x; }
+V v = [1];
+flo32 f = 2;
+f -> v.getx();

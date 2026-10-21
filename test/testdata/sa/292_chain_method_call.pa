@@ -1,0 +1,29 @@
+type Acc { int32 n; };
+type V { int32 x; };
+func add(@!Acc a, int32 d) { a.n + d -> a.n; }
+func addv(@!Acc a, @V v) { a.n + v.x -> a.n; }
+func add2(@!Acc a, int32 p, int32 q, int32 r) { a.n + p + q + r -> a.n; }
+func two(@!Acc a, int32 d) -> int32 p, int32 q { a.n -> p; d -> q; }
+func divmod(int32 a, int32 b) -> int32 q, int32 r { a / b -> q; a % b -> r; }
+func g() -> int32 { return 1; }
+func mk() -> V v { 1 -> v.x; }
+func inner(@!Acc a) { 1 -> a.add(); }
+Acc acc;
+[2]Acc accs;
+int32 x = 2;
+V v;
+x -> acc.add();
+v -> acc.addv();
+divmod(7, 2) -> acc.add2(9);
+g() -> acc.add();
+x -> accs[g()].add();
+mk() -> acc.addv();
+(int32 p, int32 q) = x -> acc.two();
+type W { V v; };
+func addr(@!Acc a, int32 d) -> int32 { a.n + d -> a.n; return a.n; }
+W w;
+@mk() -> acc.addv();
+w.v -> accs[g()].addv();
+v -> accs[g()].addv();
+g() -> acc.addr() -> acc.add();
+1 -> accs[g()].add();

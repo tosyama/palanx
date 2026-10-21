@@ -774,6 +774,7 @@ cinfo.jpeg_set_defaults();  // jpeg_set_defaults(@!cinfo)
 - A function whose first parameter is not `@!` (a value, `@T`, or no parameters) cannot be called
   this way.
 - If `x` is both a variable and a module alias (§11), the variable is used.
+- A method-form call can follow `->`; see [Chained Calls](#chained-calls).
 
 ### Chained Calls
 
@@ -793,8 +794,13 @@ divmod(17, 5) -> add3(100);                    // add3(q, r, 100)
 - For a read-only borrow parameter (`@T`, `@[n]T`, or a C function's const pointer), `@` may be
   omitted: `v -> len()` is `len(@v)`. `@!` must be written: `@!v -> scale(2)`.
 - As a statement, `x -> v -> f()` stores `x` in `v`, then calls `f(v)`. A call is evaluated once.
-- Not supported in this version: `->>` to a call, a method-form call after `->` (`v -> s.f()`),
-  and receiving the return values of a call given several chained values with `(a, b) = ...`.
+- A method-form call takes the chained values after `x`: `v -> x.f(args)` is `f(@!x, v, args)`,
+  and `divmod(7, 2) -> acc.add3(9)` is `add3(@!acc, q, r, 9)`. `v` is evaluated before `x`, so in
+  `next(@!i) -> a[i].f()` `a[i]` uses the `i` `next` changed, and in `n -> a[bump(@!n)].f()` the
+  `n` passed is the one before `bump`.
+- Not supported in this version: `->>` to a call, and receiving with `(a, b) = ...` the return
+  values of a chain whose value is evaluated first: a call given several chained values, or a
+  method-form call where the value or `x` has a call (`(a, b) = g() -> acc.two()`).
 
 ### Receiving Multiple Return Values
 

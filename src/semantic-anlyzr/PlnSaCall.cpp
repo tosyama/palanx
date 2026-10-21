@@ -744,13 +744,13 @@ size_t PlnSemanticAnalyzer::countCallees(const json& call) const
 {
 	string et = call.value("expr-type", "");
 	if (et == "call") return findCallees(call["name"].get<string>()).size();
-	// normalizeChainCall has rejected a method-form call.
+	// chainTarget has rewritten a method-form call.
 	BOOST_ASSERT(et == "member-call" && !isMethodForm(call));
 	return findCalleesByAlias(call["object"]["name"].get<string>(), call["method"].get<string>()).size();
 }
 
-// The function a call, a module-alias call, or a chained call (its last call)
-// names; null otherwise.
+// The function a call, a module-alias call, a method-form call, or a chained
+// call (its last call) names; null otherwise.
 const json* PlnSemanticAnalyzer::findCallee(const json& call, bool& isCFunc) const
 {
 	isCFunc = false;
@@ -759,8 +759,10 @@ const json* PlnSemanticAnalyzer::findCallee(const json& call, bool& isCFunc) con
 		return findCallee(call["call"], isCFunc);
 	if (et == "call")
 		return findCalleeByName(call["name"].get<string>(), isCFunc);
-	if (et != "member-call" || isMethodForm(call))
+	if (et != "member-call")
 		return nullptr;
+	if (isMethodForm(call))
+		return findCalleeByName(call["method"].get<string>(), isCFunc);
 	vector<Callee> cands = findCalleesByAlias(call["object"]["name"].get<string>(), call["method"].get<string>());
 	if (cands.size() != 1) return nullptr;
 	isCFunc = cands[0].isC;
@@ -846,64 +848,121 @@ size_t PlnSemanticAnalyzer::chainRetCount(const json& value) const
 	return callee && callee->contains("rets") ? (*callee)["rets"].size() : 0;
 }
 
-// Rewrites a chained call `v -> f(args)` to `f(v, args)`. A value that is a
-// call returning several values is left as a chain-call, received into temps
-// by sa_expr_chain_call.
+// The call a value is chained to, and where the chained values go in its
+// arguments: after the receiver of a method-form call.
+json PlnSemanticAnalyzer::chainTarget(const json& call, size_t& at)
+{
+	json out = normalizeMethodCall(call);
+	at = call["expr-type"] == "member-call" && out["expr-type"] == "call" ? 1 : 0;
+	return out;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+json PlnSemanticAnalyzer::chainInto(json call, size_t at, const vector<json>& values)
+{
+	bool isCFunc;
+	const json* callee = findCallee(call, isCFunc);
+	bool overloaded = countCallees(call) > 1;
+	json& args = call["args"];
+	for (size_t i = 0; i < values.size(); i++) {
+		json arg = overloaded ? chainedValue(values[i]) : chainArg(values[i], fixedParamType(callee, at + i), isCFunc);
+		args.insert(args.begin() + at + i, move(arg)); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
+	return call;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A value chained to a method-form call, evaluated into a temp in body so that
+// it comes before the receiver; returns what is chained in its place. What no
+// call can change, and what takes its type from the parameter, is left as is.
+json PlnSemanticAnalyzer::chainValueAhead(const json& value, const json* paramVT, json& body)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	if (foldConstExpr(value)["expr-type"].get<string>().rfind("lit-", 0) == 0
+	    || isAggregateLitArg(value) || namesOverloadedFunc(value))
+		return value;
+	auto tempId = [&](const string& name) {
+		json id = {{"expr-type", "id"}, {"name", name}};
+		if (value.contains("loc")) id["loc"] = value["loc"];
+		return id;
+	};
+	if (isCallBorrow(value)) {
+		json sa = sa_call_borrow_arg(value);
+		sa["value-type"].erase("mutable");
+		json storage = sa["value-type"];
+		string name = pinTemp(move(sa), value, body);
+		addOwnedScopeVar(name, makeStructFreeStmt(name, storage));
+		return {{"expr-type", "addr-of"}, {"mutable", value["mutable"]}, {"object", tempId(name)}};
+	}
+	json sa;
+	if (isLocationExpr(value) && isCopiedByValue(operandValueType(value))) {
+		// A variable's storage stays where it is; that of a field or element
+		// is held by its address.
+		if (value["expr-type"] == "id") return value;
+		sa = sa_expression({{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}});
+		sa["value-type"].erase("mutable");
+	} else {
+		bool typed = paramVT && paramVT->value("type-kind", "") != "pntr";
+		sa = sa_expression(value, typed ? registry_.fromJson(*paramVT) : nullptr);
+		if (!sa.contains("value-type")) return value;
+	}
+	noteEscape(sa);
+	bool owned = isExpiringStruct(sa);
+	json type = sa["value-type"];
+	string name = pinTemp(move(sa), value, body);
+	if (name.empty()) return value;
+	if (owned) addOwnedScopeVar(name, makeStructFreeStmt(name, type));
+	return tempId(name);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Rewrites a chained call `v -> f(args)` to `f(v, args)`, and `v -> x.f(args)`
+// to `f(@!x, v, args)`. A chain whose value is evaluated into temps first -- a
+// call returning several values, or a value given to a method-form call where
+// it or the receiver has a call -- is left as a chain-call for
+// sa_expr_chain_call.
 json PlnSemanticAnalyzer::normalizeChainCall(const json& expr)
 {
 	json value = expr["value"];
 	if (value.value("expr-type", "") == "chain-call")
 		value = normalizeChainCall(value);
-	json call = expr["call"];
-	if (call["expr-type"] == "member-call" && isMethodForm(call)) {
-		cerr << locPrefix(call) << PlnSaMessage::getMessage(E_ChainToMethodCall) << endl;
-		exit(1);
-	}
-	if (chainRetCount(value) >= 2) {
+	const json& call = expr["call"];
+	bool method = call["expr-type"] == "member-call" && isMethodForm(call);
+	if (chainRetCount(value) >= 2 || (method && (hasCall(value) || hasCall(call["object"])))) {
 		json out = expr;
 		out["value"] = move(value);
 		return out;
 	}
-	bool isCFunc;
-	const json* callee = findCallee(call, isCFunc);
-	json arg = countCallees(call) > 1 ? chainedValue(value) : chainArg(value, fixedParamType(callee, 0), isCFunc);
-	call["args"].insert(call["args"].begin(), move(arg));
-	return call;
+	size_t at;
+	json target = chainTarget(call, at);
+	return chainInto(move(target), at, {move(value)});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// Receives the return values of a chained call's value into temps, appending
-// their declarations to body, and returns the call with the temps in front of
-// its arguments.
-json PlnSemanticAnalyzer::chainMultiCall(const json& chain, json& body)
+// Evaluates a chained call's values into temps, appending their declarations
+// to body, and returns the call with the temps in their place.
+json PlnSemanticAnalyzer::chainAheadCall(const json& chain, json& body)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json value = chain["value"];
 	if (value["expr-type"] == "chain-call")
-		value = chainMultiCall(value, body);
+		value = chainAheadCall(value, body);
+	size_t at;
+	json call = chainTarget(chain["call"], at);
 	bool isCFunc;
+	if (chainRetCount(value) < 2) {
+		const json* paramVT = countCallees(call) > 1 ? nullptr : fixedParamType(findCallee(call, isCFunc), at);
+		return chainInto(move(call), at, {chainValueAhead(value, paramVT, body)});
+	}
 	const json& rets = (*findCallee(value, isCFunc))["rets"];
 	json loc = chain.value("loc", json::array());
 	json decl = {{"stmt-type", "tapple-decl"}, {"vars", json::array()}, {"value", value}, {"loc", loc}};
-	vector<string> temps;
+	vector<json> temps;
 	for (auto& r : rets) {
-		temps.push_back("__tap_" + to_string(tempVarCounter_++));
-		decl["vars"].push_back({{"var-name", temps.back()}, {"var-type", r["var-type"]}});
-	}
+		string name = "__tap_" + to_string(tempVarCounter_++);
+		decl["vars"].push_back({{"var-name", name}, {"var-type", r["var-type"]}});
+		temps.push_back({{"expr-type", "id"}, {"name", name}, {"loc", loc}});
+	} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	for (auto& s : sa_tapple_decl(decl))
 		body.push_back(s);
-
-	json call = chain["call"];
-	const json* callee = findCallee(call, isCFunc);
-	bool overloaded = countCallees(call) > 1;
-	json args = json::array();
-	for (size_t i = 0; i < temps.size(); i++) {
-		json temp = {{"expr-type", "id"}, {"name", temps[i]}, {"loc", loc}};
-		args.push_back(overloaded ? chainedValue(temp) : chainArg(temp, fixedParamType(callee, i), isCFunc));
-	}
-	for (auto& a : call["args"])
-		args.push_back(a);
-	call["args"] = move(args);
-	return call;
+	return chainInto(move(call), at, temps);
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -915,7 +974,7 @@ json PlnSemanticAnalyzer::sa_expr_chain_call(const json& expr)
 
 	enterScope();
 	json body = json::array();
-	json saCall = sa_expr_maybe_void(chainMultiCall(norm, body));
+	json saCall = sa_expr_maybe_void(chainAheadCall(norm, body));
 	size_t idx = arrayScopeVars_.size() - 1;
 	json release = collectFreeStmts(idx, idx + 1);
 	leaveScope();

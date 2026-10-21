@@ -630,7 +630,8 @@ Expression model
   31. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
       template argument is emitted as `not-impl` instead
     - type\* - Type model
-  32. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
+  32. chain-call - A chained call `value -> f(args)` (`f(value, args)`), `value -> L.f(args)`, or
+      a method-form call `value -> s.f(args)` (`f(@!s, value, args)`);
       consumed by SA, not emitted to sa.json (see SASpec.md "Chained calls")
     - value\* - Expression model whose value (or return values) come first in the arguments; a
       nested `chain-call` for `x -> f() -> g()`, or an assignment statement node for `x -> v -> f()`

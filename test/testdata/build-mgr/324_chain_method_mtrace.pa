@@ -1,0 +1,27 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+
+type Acc { int32 n; };
+type V { int32 x; int32 y; };
+
+func add(@!Acc a, int32 d) -> int32 { a.n + d -> a.n; return a.n; }
+func addv(@!Acc a, @V v) -> int32 { a.n + v.x + v.y -> a.n; return a.n; }
+func addvn(@!Acc a, @V v, int32 n) { a.n + (v.x + v.y) * n -> a.n; }
+func mk(int32 x, int32 y) -> V v { x -> v.x; y -> v.y; }
+func split(int32 x) -> V v, int32 n { [x, x] -> v; 2 -> n; }
+func pick() -> int32 { return 1; }
+
+mtrace();
+{
+	Acc acc;
+	[2]Acc accs;
+	mk(1, 2) -> acc.addv();
+	@mk(3, 4) -> acc.addv();
+	split(5) -> acc.addvn();
+	printf("%d\n", acc.n);
+	mk(1, 1) -> accs[pick()].addv();
+	printf("%d\n", mk(2, 2) -> acc.addv());
+	mk(3, 3) -> acc.addv() -> accs[0].add();
+	printf("%d %d %d\n", acc.n, accs[0].n, accs[1].n);
+}
+muntrace();

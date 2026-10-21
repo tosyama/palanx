@@ -3405,9 +3405,15 @@ TEST(sa_error, chain_call)
 		{"error_515_chain_multi_to_mut.pa", ":3:17: error: cannot convert 'int32' to '@!int32'."},
 		{"error_516_chain_void_value.pa", ":3:1: error: Void function call cannot be used as a value."},
 		{"error_517_chain_transfer.pa", ":3:1: error: this expression is not supported in this version."},
-		{"error_518_chain_method_form.pa", ":5:6: error: '->' cannot pass a value to a method-form call 'x.f()'"},
-		{"error_519_chain_multi_to_tapple.pa", ":3:1: error: the return values of a call chained with '->' into a multiple-return call cannot be received"},
+		{"error_518_chain_method_ro_recv.pa", ":4:7: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_519_chain_multi_to_tapple.pa", ":3:1: error: the return values of a '->' chain whose value is evaluated first"},
 		{"error_520_chain_multi_borrow_escapes.pa", ":4:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_719_chain_method_not_mutable.pa", ":5:6: error: 'getx' cannot be called as a method: its first parameter must be a writable borrow ('@!')."},
+		{"error_720_chain_method_too_many.pa", ":4:6: error: function 'set' takes 2 argument(s), but 3 given."},
+		{"error_721_chain_method_type.pa", ":4:6: error: cannot convert 'V' to 'int32'."},
+		{"error_722_chain_method_ahead_to_tapple.pa", ":5:1: error: the return values of a '->' chain whose value is evaluated first"},
+		{"error_723_chain_method_borrow_escapes.pa", ":6:10: error: a borrow returned by a call given a temporary struct may point to that struct"},
+		{"error_724_chain_method_c_struct_value.pa", ":6:16: error: cannot convert 'div_t' to '@div_t'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -978,7 +978,8 @@ multiple-return declaration/assignment):
   object that is already a borrow (a `@T`/`@!T`/`@[n]T`/`@![n]T` variable, parameter or field) is
   passed as is; a read-only one is then rejected by the usual permission check.
 
-sa.json carries only the resulting `call`; `member-call` is never emitted.
+sa.json carries only the resulting `call`; `member-call` is never emitted. A method-form call
+after `->` is rewritten the same way (see Chained calls).
 
 ### Overloaded calls
 
@@ -1014,7 +1015,8 @@ An AST `chain-call` `v -> f(args)` is rewritten where SA takes it in (an express
 of a multiple-return declaration/assignment) by `normalizeChainCall`, after its `value` (a nested
 `chain-call` first):
 
-- `call` must not be a method-form call (E_ChainToMethodCall); a module-alias call is kept.
+- A module-alias call is kept. A method-form call is rewritten first (see Method-form calls), and
+  the chained values go in after its receiver instead of first.
 - If `value` is not a call returning several values, the result is `call` with `value` inserted as
   its first argument, analyzed as any other call. For a read-only borrow parameter (`@T`, `@[n]T`,
   a C const pointer) a struct, numeric value or (for a Palan function) owned array is wrapped in
@@ -1022,10 +1024,16 @@ of a multiple-return declaration/assignment) by `normalizeChainCall`, after its 
   `@f()` does. `@!` is never added. When `call` names several functions, whether `@` is added
   depends on the one chosen (see Overloaded calls).
 - Otherwise the return values are received into temps `__tap_N` by a `tapple-decl` and placed in
-  front of the arguments the same way; a chain of such calls adds one `tapple-decl` per call. The
-  result is a `temp` whose `body` is the `tapple-decl`s, `value` the last `call`, and `release`
-  the frees of returned structs. As a multiple-return declaration/assignment's value this is
-  E_ChainMultiToTapple.
+  the arguments the same way; a chain of such calls adds one `tapple-decl` per call.
+- A single value given to a method-form call where the value or the receiver has a call is
+  evaluated into a temp `__pin_N` by a `var-decl` first, so it comes before the receiver, and the
+  temp is placed instead. A constant, an aggregate literal, an overloaded function name and a
+  struct or array variable are left in place. `@f()`/`@!f()` is received into an owned temp and
+  passed as `@`/`@!` of it; a struct or array field or element is held by its address; a returned
+  struct is owned by the temp. A temp that owns a struct is freed after the call.
+- A chain with such temps becomes a `temp` whose `body` is their declarations, `value` the last
+  `call`, and `release` the frees of returned structs. As a multiple-return
+  declaration/assignment's value this is E_ChainMultiToTapple.
 
 sa.json never carries `chain-call`.
 

@@ -1,0 +1,4 @@
+type V { int32 x; };
+func set(@!V v, int32 x) { x -> v.x; }
+V v;
+1 -> v.set(2);

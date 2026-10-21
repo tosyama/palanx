@@ -222,6 +222,11 @@ inline bool hasCall(const json& e)
 	}
 	return false;
 }
+inline bool isLocationExpr(const json& e)
+{
+	string et = e.value("expr-type", "");
+	return et == "id" || et == "arr-index" || et == "field-access";
+}
 inline bool isCallBorrow(const json& expr)
 {
 	if (expr.value("expr-type", "") != "addr-of") return false;

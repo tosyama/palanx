@@ -5743,6 +5743,76 @@ TEST(sa, chain_lit)
 	}
 }
 
+TEST(sa, chain_method_call)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/292_chain_method_call.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 18);
+
+	// The chained value comes after the receiver, '@' added for a '@T' parameter.
+	const auto& plain = stmts[5]["body"];
+	ASSERT_EQ(funcName(plain["name"]), "add");
+	ASSERT_EQ(plain["args"][0]["name"], "acc");
+	ASSERT_EQ(plain["args"][0]["value-type"]["mutable"], true);
+	ASSERT_EQ(plain["args"][1]["name"], "x");
+	const auto& borrowed = stmts[6]["body"]["args"][1];
+	ASSERT_EQ(borrowed["name"], "v");
+	ASSERT_EQ(borrowed["value-type"]["mutable"], false);
+
+	const auto& multi = stmts[7]["body"];
+	ASSERT_EQ(multi[0]["stmt-type"], "tapple-decl");
+	const auto& add2 = multi[1]["body"]["args"];
+	ASSERT_EQ(add2[0]["name"], "acc");
+	ASSERT_EQ(add2[1]["name"], multi[0]["vars"][0]["var-name"]);
+	ASSERT_EQ(add2[2]["name"], multi[0]["vars"][1]["var-name"]);
+	ASSERT_EQ(add2[3]["value"], "9");
+
+	// With a call in the value or the receiver, the value is evaluated first.
+	for (int i : {8, 9}) {
+		const auto& body = stmts[i]["body"];
+		ASSERT_EQ(body[0]["stmt-type"], "var-decl") << i;
+		ASSERT_EQ(body[1]["body"]["args"][1]["name"], body[0]["vars"][0]["name"]) << i;
+	}
+	ASSERT_EQ(funcName(stmts[8]["body"][0]["vars"][0]["init"]["name"]), "g");
+	ASSERT_EQ(stmts[9]["body"][0]["vars"][0]["init"]["name"], "x");
+
+	// A returned struct is borrowed for the call and freed after it.
+	const auto& owned = stmts[10]["body"];
+	ASSERT_EQ(owned.size(), 3);
+	string vtemp = owned[0]["vars"][0]["name"];
+	ASSERT_EQ(owned[1]["body"]["args"][1]["name"], vtemp);
+	ASSERT_EQ(owned[1]["body"]["args"][1]["value-type"]["mutable"], false);
+	ASSERT_EQ(owned[2]["body"]["name"], "free");
+	ASSERT_EQ(owned[2]["body"]["args"][0]["name"], vtemp);
+
+	ASSERT_EQ(stmts[11]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[11]["value"]["args"][1]["name"], "x");
+
+	const auto& callBorrow = stmts[13]["body"];
+	ASSERT_EQ(callBorrow.size(), 3);
+	ASSERT_EQ(callBorrow[1]["body"]["args"][1]["name"], callBorrow[0]["vars"][0]["name"]);
+	ASSERT_EQ(callBorrow[2]["body"]["name"], "free");
+
+	// A struct field is held by its address; a struct variable stays in place.
+	const auto& field = stmts[14]["body"];
+	ASSERT_EQ(field[0]["vars"][0]["init"]["expr-type"], "field-access");
+	ASSERT_EQ(field[1]["body"]["args"][1]["name"], field[0]["vars"][0]["name"]);
+	ASSERT_EQ(stmts[15]["body"].size(), 1);
+	ASSERT_EQ(stmts[15]["body"][0]["body"]["args"][1]["name"], "v");
+
+	const auto& twice = stmts[16]["body"];
+	ASSERT_EQ(funcName(twice[0]["vars"][0]["init"]["name"]), "g");
+	ASSERT_EQ(funcName(twice[1]["vars"][0]["init"]["name"]), "addr");
+	ASSERT_EQ(funcName(twice[2]["body"]["name"]), "add");
+	ASSERT_EQ(twice[2]["body"]["args"][1]["name"], twice[1]["vars"][0]["name"]);
+
+	// A constant is left in place.
+	ASSERT_EQ(stmts[17]["body"].size(), 1);
+	ASSERT_EQ(stmts[17]["body"][0]["body"]["args"][1]["value"], "1");
+}
+
 TEST(sa, lit_arg_struct_arr)
 {
 	cleanTestEnv();

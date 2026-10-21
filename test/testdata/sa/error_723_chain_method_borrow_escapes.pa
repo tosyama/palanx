@@ -1,0 +1,6 @@
+type V { int32 x; };
+func mk() -> V v { 1 -> v.x; }
+func first(@V v) -> @V { return v; }
+func take(@!V a, @V b) { b.x -> a.x; }
+V v;
+@mk() -> first() -> v.take();
