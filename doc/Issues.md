@@ -109,3 +109,15 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 14. Float Values Are Never Kept in Registers
 
 **Summary:** `PlnRegAlloc` assigns no XMM registers, so every `flo32`/`flo64` value lives in a stack slot and each arithmetic operation stores its result to memory and reloads it. `samples/raytracer/vecmath.pa`'s `dot` compiles to 32 instructions, most of them `movss` to and from the frame. Allocating XMM registers needs to save values that live across a call, since SysV makes every XMM register caller-saved. Together with #13, this keeps the raytracer far slower than C.
+
+---
+
+## 15. Exported Palan Functions Cannot Be Called from C by Name
+
+**Summary:** Every Palan function links by a symbol made from its module, name and parameter types (`util..show.int32`, v0.2.1), which is no C identifier. C code linked in with `cinclude ... link "x.o"` can call a Palan function only through a function pointer it is given (a callback). Calling one by name would need a way to give an exported function its plain name, like C++'s `extern "C"`.
+
+---
+
+## 16. Same-Named Source Files in Different Directories Share a Module Name
+
+**Summary:** The module part of a symbol is the source file's name without its directory, so a symbol does not depend on where the source is checked out. Two modules `a/util.pa` and `b/util.pa` that export a function of the same name and parameter types therefore give it the same symbol, and `ld` reports it as defined twice. Escaping `-` and `.` as `_` plus hex digits can likewise make two file names meet (`my-lib.pa` and `my_2dlib.pa`).

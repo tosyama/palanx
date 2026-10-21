@@ -87,7 +87,7 @@ Function model (sa.json)
 Same structure as the Palan function definition in ASTSpec.md, with `body` replaced by
 SA-annotated statements.
 
-- name\* - Function name string
+- name\* - Symbol name of the function (see "Symbol names" below), not the written name
 - func-type\* - "palan"
 - parameters\* - Parameter list (Palan parameter: name, var-type; empty array when no parameters)
 - ret-type - Return variable type (single-return functions only)
@@ -99,6 +99,31 @@ Note: a `syscall` declaration is a prototype with no block, so it never appears 
 it -- see "call expression" below.
 
 Note: cinclude statements are not present in function bodies (they are top-level only).
+
+### Symbol names
+
+Every Palan function links by a symbol SA builds from its module and its parameter types, so
+functions of one name (overloads, or the same function exported by two modules) have distinct
+symbols. It is the `name` of the function, of a `call` resolved to it and of a `func-ref` to it.
+`_start`, C functions and syscalls are not renamed.
+
+`<module>..<name>.<param>.<param>...` — `<name>.v` when there are no parameters.
+
+- `<module>`: the source file's name without `.pa`, with each byte outside `[A-Za-z0-9_]` written
+  `_` and two lowercase hex digits, and `_` in front of a leading digit (`001_hello.pa` →
+  `_001_hello`). The allocators build-mgr generates are in module `__allocators`, which SA names
+  in the calls it makes to them.
+- `<param>`: the parameter's normalized `var-type`, each type self-delimiting:
+  - prim: its name (`int32`, `flo64`, `bool`, `void`); an enum: `N<len><enum name><base prim>`
+  - struct: `<len><type-name>`
+  - pntr: `E` if `embedded`, `S<stride>_` if `stride`, `A<arr-size>_` if `arr-size`, then `P`
+    (no `mutable`: owned or by value), `R` (`mutable: false`) or `W` (`mutable: true`), then the
+    base type
+  - func: `F<parameter count>_`, each parameter type, then the return type (a `void` prim when none)
+
+The return type is not part of the symbol, since functions differing only by it cannot coexist.
+Two parameter types that differ in any key give different symbols. `func show(int32)` in
+`util.pa` is `util..show.int32`; `func cmp(@int32, @int32)` is `util..cmp.Rint32.Rint32`.
 
 Note: `[]T` (unsized array type) in `ret-type` or parameter `var-type` is resolved by SA to
 `pntr(T)` with no ownership tracking. `[][]T` becomes `pntr(pntr(T))`. `[][m]T` becomes
@@ -500,7 +525,7 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "bool"}`; operand must be integer type
   - func-ref: a function name written where a value is expected (an `id` naming no variable or
-    C global). Emitted as `{"expr-type":"func-ref","name":<function name>,"value-type":<its
+    C global). Emitted as `{"expr-type":"func-ref","name":<its link name>,"value-type":<its
     function pointer type>}` (plus `loc`). The type is `{"type-kind":"pntr","mutable":false,
     "base-type":{"type-kind":"func","parameters":[{"var-type":T}...],"ret-type":R}}`, built from
     the function's signature; a function returning nothing has a `void` prim `ret-type`, and a
@@ -810,7 +835,8 @@ Additional fields per expression kind:
   - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions, "syscall"
     for a call resolved to a `syscall` declaration (local or imported)
   - name: for func-type "c", the symbol the function links to (its `symbol` in ast.json, else
-    the written name); likewise for a func-ref to a C function
+    the written name); for func-type "palan", its symbol name (see "Symbol names"); likewise for
+    a func-ref
   - syscall-number added (integer) when func-type is "syscall" -- the declaration's number,
     folded to a literal by SA; the declaration itself never reaches this or any other module's
     sa.json (see "Function model" above), so this is the only place the number survives

@@ -186,6 +186,9 @@ Design:
  - The `_start` entry point uses `call exit` as its epilogue; `return` statements are rejected by palan-sa.
  - Symbol visibility: `_start` and `export func` functions are emitted with `.globl`. All other Palan
    functions are local symbols (no `.globl`), equivalent to `static` in C.
+ - Symbol names: a Palan function's symbol is the `name` palan-sa gives it, built from its module,
+   its name and its parameter types (`util..show.int32`; SASpec.md "Symbol names"), so overloads
+   and same-named functions of different modules link side by side. codegen emits it as given.
 
  String literals are collected by palan-sa into the `str-literals` table in sa.json,
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
@@ -232,6 +235,11 @@ For a shape key `K`, the functions are:
 | `[m][n]T` with `T` a struct | `arr_arr_T` | all |
 | `[m][n]P` with `P` a primitive | `arr_arr_P` | all |
 | a struct's owned `[n]P` field | `arr_prim_P` | `alloc`, `free` |
+
+Like any Palan function, each links by a symbol made from its module and parameter types, so
+palan-sa names the module `__allocators` (`PALAN_ALLOCATORS_MODULE` in `src/common/PlnDefs.h`,
+which the build manager also uses for the file name) and the parameter types of each signature
+above when it calls one (`allocHelperCall`).
 
 ## 4. Expression Value Categories
 

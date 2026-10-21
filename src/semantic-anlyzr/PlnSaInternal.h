@@ -63,6 +63,9 @@ inline bool isFloatPrim(const PlnType* t) {
 // struct/array variables, which carry no read-only concept of their own.
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
+// A call to one of them, linked by the same symbol as its generated definition.
+json allocHelperCall(AllocFamily family, const string& leaf, const string& op, json args);
+
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 
 // Checks binding `from` to `to` level by level down their pointer chains.

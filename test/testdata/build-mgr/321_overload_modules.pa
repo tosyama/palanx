@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+import "lib_overload_a.pa";
+import "lib_overload_b.pa" as B;
+import "lib_abs_export.pa" as L;
+
+func twice(int32 x) -> int32 { return x * 3; }
+printf("%ld %.1f %d\n", twice(4), twice(1.5), twice(int32(4)));
+printf("%ld %ld\n", id(), B.id());
+printf("%d %d\n", abs(int32(-5)), L.abs(int32(-5)));

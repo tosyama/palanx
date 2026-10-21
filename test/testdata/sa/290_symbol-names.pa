@@ -1,0 +1,8 @@
+func show(int32 x) -> int32 { return x; }
+func show(@!int64 p) -> int32 { return 0; }
+func none() { }
+show(int32(1));
+int64 v = 2;
+show(@!v);
+none();
+@func(int32) -> int32 f = show;

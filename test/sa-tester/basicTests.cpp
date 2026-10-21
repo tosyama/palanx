@@ -40,6 +40,16 @@ static json written(const json& sa)
 	return json::parse(regex_replace(sa.dump(), internal, ""));
 }
 
+// The function name a Palan link name ("module..name.types") was made from;
+// a C function's name is its link name.
+static string funcName(const json& linkName)
+{
+	string s = linkName;
+	size_t pos = s.rfind("..");
+	size_t start = pos == string::npos ? 0 : pos + 2;
+	return s.substr(start, s.find('.', start) - start);
+}
+
 // A call argument held in a temp: the call that initializes it, and the
 // function that releases it.
 static const json& tempInit(const json& arg)
@@ -48,7 +58,7 @@ static const json& tempInit(const json& arg)
 }
 static string tempRelease(const json& arg)
 {
-	return arg.at("release").at(0).at("body").at("name");
+	return funcName(arg.at("release").at(0).at("body").at("name"));
 }
 
 TEST(sa, helloworld_sa) {
@@ -357,7 +367,7 @@ TEST(sa, func_defs) {
 
 	auto findFunc = [&](const string& name) -> const json* {
 		for (auto& f : jout["functions"])
-			if (f["name"] == name) return &f;
+			if (funcName(f["name"]) == name) return &f;
 		return nullptr;
 	};
 
@@ -422,7 +432,7 @@ TEST(sa, func_defs) {
 		if (stmt["stmt-type"] != "return") continue;
 		auto& val = stmt["values"][0];
 		ASSERT_EQ(val["expr-type"], "call");
-		ASSERT_EQ(val["name"],      "recurse");
+		ASSERT_EQ(funcName(val["name"]),      "recurse");
 		ASSERT_EQ(val["func-type"], "palan");
 		found_recurse = true;
 	}
@@ -442,7 +452,7 @@ TEST(sa, palan_call_resolved) {
 		auto& outer = stmt["body"];
 		if (!outer.contains("args")) continue;
 		for (auto& arg : outer["args"]) {
-			if (arg["expr-type"] != "call" || arg["name"] != "add") continue;
+			if (arg["expr-type"] != "call" || funcName(arg["name"]) != "add") continue;
 			ASSERT_EQ(arg["func-type"], "palan");
 			ASSERT_EQ(arg["value-type"]["type-name"], "int32");
 			found = true;
@@ -527,7 +537,7 @@ TEST(sa, block_func_def) {
 	// double_val is in sa["functions"]
 	bool found_func = false;
 	for (auto& f : jout["functions"])
-		if (f["name"] == "double_val") { found_func = true; break; }
+		if (funcName(f["name"]) == "double_val") { found_func = true; break; }
 	ASSERT_TRUE(found_func);
 
 	// block body does NOT contain func-def (it's been processed out)
@@ -598,7 +608,7 @@ TEST(sa, void_func) {
 	// greet function: no ret-type, body has bare return
 	ASSERT_EQ(jout["functions"].size(), 1u);
 	const json& greet = jout["functions"][0];
-	ASSERT_EQ(greet["name"], "greet");
+	ASSERT_EQ(funcName(greet["name"]), "greet");
 	ASSERT_FALSE(greet.contains("ret-type"));
 	ASSERT_FALSE(greet.contains("rets"));
 	ASSERT_EQ(greet["body"][0]["stmt-type"], "return");
@@ -609,7 +619,7 @@ TEST(sa, void_func) {
 	for (auto& stmt : jout["statements"]) {
 		if (stmt["stmt-type"] != "expr") continue;
 		auto& body = stmt["body"];
-		if (body["expr-type"] != "call" || body["name"] != "greet") continue;
+		if (body["expr-type"] != "call" || funcName(body["name"]) != "greet") continue;
 		ASSERT_EQ(body["func-type"], "palan");
 		ASSERT_FALSE(body.contains("value-type"));
 		found_call = true;
@@ -877,7 +887,7 @@ TEST(sa, unsized_arr_sig) {
 
 	auto findFunc = [&](const string& name) -> const json* {
 		for (auto& f : jout["functions"])
-			if (f["name"] == name) return &f;
+			if (funcName(f["name"]) == name) return &f;
 		return nullptr;
 	};
 
@@ -983,10 +993,10 @@ TEST(sa, ownership_transfer) {
 		ASSERT_EQ(body[5]["value"]["value-type"]["type-kind"], "pntr");
 		// body[6]: testOwnedReturn() call with category: "expiring"
 		ASSERT_EQ(body[6]["stmt-type"], "expr");
-		ASSERT_EQ(body[6]["body"]["name"], "testOwnedReturn");
+		ASSERT_EQ(funcName(body[6]["body"]["name"]), "testOwnedReturn");
 		ASSERT_EQ(body[6]["body"]["category"], "expiring");
 		// body[7..8]: free outer, free(inner) before return
-		ASSERT_EQ(body[7]["body"]["name"], "__pln_free_arr_arr_int32");
+		ASSERT_EQ(funcName(body[7]["body"]["name"]), "__pln_free_arr_arr_int32");
 		ASSERT_EQ(body[8]["body"]["name"], "free");
 		ASSERT_EQ(body[9]["stmt-type"], "return");
 	}
@@ -1041,7 +1051,7 @@ TEST(sa, 2d_arr_decl) {
 	ASSERT_EQ(body[3]["vars"][0]["var-type"]["base-type"]["base-type"]["type-name"], "int32");
 	auto& init = body[3]["vars"][0]["init"];
 	ASSERT_EQ(init["expr-type"], "call");
-	ASSERT_EQ(init["name"], "__pln_alloc_arr_arr_int32");
+	ASSERT_EQ(funcName(init["name"]), "__pln_alloc_arr_arr_int32");
 	ASSERT_EQ(init["func-type"], "palan");
 	ASSERT_EQ(init["args"][0]["name"], "__mat_d0");
 	ASSERT_EQ(init["args"][1]["name"], "cols");
@@ -1049,7 +1059,7 @@ TEST(sa, 2d_arr_decl) {
 	// body.back(): __pln_free_arr_arr_int32(mat, __mat_d0) at scope exit
 	auto& last = body.back();
 	ASSERT_EQ(last["stmt-type"], "expr");
-	ASSERT_EQ(last["body"]["name"], "__pln_free_arr_arr_int32");
+	ASSERT_EQ(funcName(last["body"]["name"]), "__pln_free_arr_arr_int32");
 	ASSERT_EQ(last["body"]["func-type"], "palan");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "mat");
 	ASSERT_EQ(last["body"]["args"][1]["name"], "__mat_d0");
@@ -1245,7 +1255,7 @@ TEST(sa, embed_arr_func_param) {
 	bool found_call = false;
 	for (const auto& stmt : caller_body) {
 		if (stmt["stmt-type"] == "expr" && stmt["body"]["expr-type"] == "call"
-				&& stmt["body"]["name"] == "process") {
+				&& funcName(stmt["body"]["name"]) == "process") {
 			found_call = true;
 			break;
 		}
@@ -1296,7 +1306,7 @@ TEST(sa, import_unqualified)
 	const auto& init = jout["statements"][0]["vars"][0]["init"];
 	ASSERT_EQ(init["expr-type"], "call");
 	ASSERT_EQ(init["func-type"], "palan");
-	ASSERT_EQ(init["name"], "square");
+	ASSERT_EQ(funcName(init["name"]), "square");
 }
 
 TEST(sa, import_block_scope)
@@ -1320,7 +1330,7 @@ TEST(sa, import_selective)
 	ASSERT_TRUE(jout.is_object());
 	const auto& init = jout["statements"][0]["vars"][0]["init"];
 	ASSERT_EQ(init["func-type"], "palan");
-	ASSERT_EQ(init["name"], "square");
+	ASSERT_EQ(funcName(init["name"]), "square");
 }
 
 TEST(sa, import_alias)
@@ -1332,10 +1342,10 @@ TEST(sa, import_alias)
 	const auto& a_init = jout["statements"][0]["vars"][0]["init"];
 	ASSERT_EQ(a_init["expr-type"], "call");
 	ASSERT_EQ(a_init["func-type"], "palan");
-	ASSERT_EQ(a_init["name"], "square");
+	ASSERT_EQ(funcName(a_init["name"]), "square");
 	const auto& b_init = jout["statements"][1]["vars"][0]["init"];
 	ASSERT_EQ(b_init["func-type"], "palan");
-	ASSERT_EQ(b_init["name"], "cube");
+	ASSERT_EQ(funcName(b_init["name"]), "cube");
 }
 
 TEST(sa, import_alias_tapple)
@@ -1348,7 +1358,7 @@ TEST(sa, import_alias_tapple)
 	ASSERT_EQ(tapple["stmt-type"], "tapple-decl");
 	ASSERT_EQ(tapple["value"]["expr-type"], "call");
 	ASSERT_EQ(tapple["value"]["func-type"], "palan");
-	ASSERT_EQ(tapple["value"]["name"], "divmod");
+	ASSERT_EQ(funcName(tapple["value"]["name"]), "divmod");
 	ASSERT_EQ(tapple["value"]["value-types"].size(), 2u);
 }
 
@@ -1547,7 +1557,7 @@ TEST(sa, type_alias_func)
 
 	const json* doubleFunc = nullptr;
 	for (auto& f : jout["functions"])
-		if (f["name"] == "double") doubleFunc = &f;
+		if (funcName(f["name"]) == "double") doubleFunc = &f;
 	ASSERT_NE(doubleFunc, nullptr);
 
 	// Count param/ret resolved to uint64, not left as the alias name
@@ -1926,7 +1936,7 @@ TEST(sa, owned_struct_field)
 	// Rect { Point tl; Point br; } — ownsFields → __pln_alloc_Rect
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
-	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
+	ASSERT_EQ(funcName(v["init"]["name"]), "__pln_alloc_Rect");
 	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 }
@@ -1985,7 +1995,7 @@ TEST(sa, alloc_shape_owned)
 	// Rect r; — init uses __pln_alloc_Rect (pln func, no args)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "r");
-	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Rect");
+	ASSERT_EQ(funcName(v["init"]["name"]), "__pln_alloc_Rect");
 	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
@@ -2028,7 +2038,7 @@ TEST(sa, alloc_func_no_recurse)
 	// __pln_alloc_Rect() -> Rect ret { Rect ret; }
 	// inAllocFunc_=true → Rect ret uses calloc(1,16), not __pln_alloc_Rect
 	const auto& f = jout["functions"][0];
-	ASSERT_EQ(f["name"], "__pln_alloc_Rect");
+	ASSERT_EQ(funcName(f["name"]), "__pln_alloc_Rect");
 
 	// ret-type normalized to pntr(struct(Rect))
 	ASSERT_EQ(f["ret-type"]["type-kind"], "pntr");
@@ -2052,7 +2062,7 @@ TEST(sa, struct_param)
 	// func __pln_free_Point(Point p) { free(p); }
 	// parameters[0]: Point p → pntr(struct(Point))
 	const auto& f = jout["functions"][0];
-	ASSERT_EQ(f["name"], "__pln_free_Point");
+	ASSERT_EQ(funcName(f["name"]), "__pln_free_Point");
 
 	const auto& param = f["parameters"][0];
 	ASSERT_EQ(param["name"], "p");
@@ -2330,7 +2340,7 @@ TEST(sa, import_single_named_ret)
 	const auto& init = jout["statements"][0]["vars"][0]["init"];
 	ASSERT_EQ(init["expr-type"],  "call");
 	ASSERT_EQ(init["func-type"], "palan");
-	ASSERT_EQ(init["name"],       "getVal");
+	ASSERT_EQ(funcName(init["name"]),       "getVal");
 	ASSERT_EQ(init["value-type"]["type-name"], "int64");
 }
 
@@ -2394,7 +2404,7 @@ TEST(sa, array_in_if_block)
 	// Find test() function
 	json* func = nullptr;
 	for (auto& f : jout["functions"])
-		if (f["name"] == "test") { func = &f; break; }
+		if (funcName(f["name"]) == "test") { func = &f; break; }
 	ASSERT_NE(func, nullptr);
 
 	// The if stmt is the second statement in the function body
@@ -2516,7 +2526,7 @@ TEST(sa, owned_struct_arr_decl)
 	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
 	const auto& init = body[1]["vars"][0]["init"];
 	ASSERT_EQ(init["expr-type"], "call");
-	ASSERT_EQ(init["name"],      "__pln_alloc_arr_Point");
+	ASSERT_EQ(funcName(init["name"]),      "__pln_alloc_arr_Point");
 	ASSERT_EQ(init["func-type"], "palan");
 	ASSERT_EQ(init["args"][0]["name"], "__pts_n");
 
@@ -2533,7 +2543,7 @@ TEST(sa, owned_struct_arr_decl)
 	// body.back(): __pln_free_arr_Point(pts, __pts_n)  at scope exit
 	const auto& last = body.back();
 	ASSERT_EQ(last["stmt-type"], "expr");
-	ASSERT_EQ(last["body"]["name"],      "__pln_free_arr_Point");
+	ASSERT_EQ(funcName(last["body"]["name"]),      "__pln_free_arr_Point");
 	ASSERT_EQ(last["body"]["func-type"], "palan");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "pts");
 	ASSERT_EQ(last["body"]["args"][1]["name"], "__pts_n");
@@ -2837,7 +2847,7 @@ TEST(sa, owned_prim_arr_field)
 	// alone takes the struct off the simple-calloc path.
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "b");
-	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Bucket");
+	ASSERT_EQ(funcName(v["init"]["name"]), "__pln_alloc_Bucket");
 	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
@@ -2870,7 +2880,7 @@ TEST(sa, owned_struct_arr_field)
 	// Cluster c; -> __pln_alloc_Cluster() (not calloc)
 	const auto& v = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(v["name"], "c");
-	ASSERT_EQ(v["init"]["name"], "__pln_alloc_Cluster");
+	ASSERT_EQ(funcName(v["init"]["name"]), "__pln_alloc_Cluster");
 	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
@@ -4029,13 +4039,13 @@ TEST(sa, usual_arith_conv)
 	// (argConvOk-only case, not a usualArithConv widen) -- allowed without an
 	// explicit cast at a call site, unlike at a binding site.
 	const auto& call_u32 = stmts[9]["body"];
-	ASSERT_EQ(call_u32["name"],                        "take_u32");
+	ASSERT_EQ(funcName(call_u32["name"]),                        "take_u32");
 	ASSERT_EQ(call_u32["args"][0]["expr-type"],        "convert");
 	ASSERT_EQ(call_u32["args"][0]["value-type"]["type-name"], "uint32");
 
 	// take_i64(mode): uint32 arg -> int64 param, a genuine usualArithConv widen.
 	const auto& call_i64 = stmts[10]["body"];
-	ASSERT_EQ(call_i64["name"],                        "take_i64");
+	ASSERT_EQ(funcName(call_i64["name"]),                        "take_i64");
 	ASSERT_EQ(call_i64["args"][0]["expr-type"],        "convert");
 	ASSERT_EQ(call_i64["args"][0]["value-type"]["type-name"], "int64");
 }
@@ -4209,7 +4219,7 @@ TEST(sa, c_callback_arg) {
 
 	const auto& cb = call["args"][3];
 	ASSERT_EQ(cb["expr-type"], "func-ref");
-	ASSERT_EQ(cb["name"], "cmp");
+	ASSERT_EQ(funcName(cb["name"]), "cmp");
 	ASSERT_EQ(cb["value-type"]["mutable"], false);
 	const auto& fn = cb["value-type"]["base-type"];
 	ASSERT_EQ(fn["type-kind"], "func");
@@ -4227,7 +4237,7 @@ TEST(sa, c_callback_void) {
 	const auto& call = jout["statements"][0]["body"];
 	ASSERT_EQ(call["name"], "atexit");
 	ASSERT_EQ(call["args"][0]["expr-type"], "func-ref");
-	ASSERT_EQ(call["args"][0]["name"], "on_exit_cb");
+	ASSERT_EQ(funcName(call["args"][0]["name"]), "on_exit_cb");
 }
 
 TEST(sa, link_libs) {
@@ -4367,7 +4377,7 @@ TEST(sa, syscall_decl) {
 	ASSERT_TRUE(jout.is_object());
 
 	ASSERT_EQ(jout["functions"].size(), 1u);
-	ASSERT_EQ(jout["functions"][0]["name"], "main");
+	ASSERT_EQ(funcName(jout["functions"][0]["name"]), "main");
 }
 
 TEST(sa, syscall_call) {
@@ -4528,7 +4538,7 @@ TEST(sa, struct_borrow)
 
 	vector<json> args;
 	for (auto& st : jout["statements"])
-		if (st["stmt-type"] == "expr" && st["body"]["name"] == "getv")
+		if (st["stmt-type"] == "expr" && funcName(st["body"]["name"]) == "getv")
 			args.push_back(st["body"]["args"][0]);
 	ASSERT_EQ(args.size(), 4u);
 
@@ -4554,7 +4564,7 @@ TEST(sa, struct_borrow)
 
 	vector<json> setArgs;
 	for (auto& st : jout["statements"])
-		if (st["stmt-type"] == "expr" && st["body"]["name"] == "setv")
+		if (st["stmt-type"] == "expr" && funcName(st["body"]["name"]) == "setv")
 			setArgs.push_back(st["body"]["args"][0]);
 	// 'setv(@!mk())' and the method form 'mk().setv()'.
 	ASSERT_EQ(setArgs.size(), 2u);
@@ -4571,7 +4581,7 @@ TEST(sa, ptr_arr_field_permission)
 	ASSERT_TRUE(jout.is_object());
 
 	const json& wr = jout["functions"][1];
-	ASSERT_EQ(wr["name"], "wr");
+	ASSERT_EQ(funcName(wr["name"]), "wr");
 	int arrAssigns = 0;
 	for (auto& st : wr["body"])
 		if (st["stmt-type"] == "arr-assign") arrAssigns++;
@@ -4593,7 +4603,7 @@ TEST(sa, struct_arr_2d)
 	const json& stmts = jout["statements"];
 	const json& m = stmts[2]["vars"][0];
 	ASSERT_EQ(m["name"], "m");
-	ASSERT_EQ(m["init"]["name"], "__pln_alloc_arr_arr_Point");
+	ASSERT_EQ(funcName(m["init"]["name"]), "__pln_alloc_arr_arr_Point");
 	ASSERT_EQ(m["init"]["args"].size(), 2);
 	json point = {{"type-kind","struct"},{"type-name","Point"}};
 	ASSERT_EQ(m["var-type"]["base-type"]["base-type"]["base-type"], point);
@@ -4616,7 +4626,7 @@ TEST(sa, embed_struct_arr_2d)
 
 	const json& m = jout["statements"][1]["vars"][0];
 	ASSERT_EQ(m["name"], "m");
-	ASSERT_EQ(m["init"]["name"], "__pln_alloc_arr_arr_uint8");
+	ASSERT_EQ(funcName(m["init"]["name"]), "__pln_alloc_arr_arr_uint8");
 	const json& rowBytes = m["init"]["args"][1];
 	ASSERT_EQ(rowBytes["expr-type"], "mul");
 	ASSERT_EQ(rowBytes["right"]["value"], "8");
@@ -4828,7 +4838,7 @@ TEST(sa, field_transfer) {
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 6);
 	// The field's previous array is freed before it takes over pa.
-	ASSERT_EQ(stmts[3]["body"]["name"], "__pln_free_arr_P");
+	ASSERT_EQ(funcName(stmts[3]["body"]["name"]), "__pln_free_arr_P");
 	ASSERT_EQ(stmts[3]["body"]["args"][0]["expr-type"], "field-access");
 	ASSERT_EQ(stmts[3]["body"]["args"][1]["value"], "2");
 	ASSERT_EQ(stmts[4]["stmt-type"], "field-assign");
@@ -4864,7 +4874,7 @@ TEST(sa, struct_ret_copy) {
 	ASSERT_EQ(body.size(), 3);
 	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
 	string temp = body[0]["vars"][0]["name"];
-	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "g");
+	ASSERT_EQ(funcName(body[0]["vars"][0]["init"]["name"]), "g");
 	ASSERT_EQ(body[1]["body"]["name"], "memcpy");
 	ASSERT_EQ(body[1]["body"]["args"][0]["name"], "s");
 	ASSERT_EQ(body[1]["body"]["args"][1]["name"], temp);
@@ -4889,7 +4899,7 @@ TEST(sa, struct_ret_temp) {
 	const auto& body = blk["body"];
 	ASSERT_EQ(body.size(), 2);
 	string temp = body[0]["vars"][0]["name"];
-	ASSERT_EQ(body[0]["vars"][0]["init"]["name"], "g");
+	ASSERT_EQ(funcName(body[0]["vars"][0]["init"]["name"]), "g");
 	ASSERT_EQ(body[1]["body"]["name"], "free");
 	ASSERT_EQ(body[1]["body"]["args"][0]["name"], temp);
 }
@@ -5026,7 +5036,7 @@ TEST(sa, sizeof) {
 static void collectCalls(const json& node, const string& name, vector<json>& out)
 {
 	if (node.is_object()) {
-		if (node.value("expr-type", "") == "call" && node.value("name", "") == name)
+		if (node.value("expr-type", "") == "call" && funcName(node.value("name", "")) == name)
 			out.push_back(node);
 		for (auto& [k, v] : node.items()) collectCalls(v, name, out);
 	} else if (node.is_array()) {
@@ -5105,13 +5115,13 @@ TEST(sa, import_type)
 	const auto& p = stmts[0]["vars"][0]["init"];
 	ASSERT_EQ(p["name"], "calloc");
 	ASSERT_EQ(p["args"][1]["value"], "24");
-	ASSERT_EQ(stmts[2]["vars"][0]["init"]["name"], "__pln_alloc_arr_Vec");
+	ASSERT_EQ(funcName(stmts[2]["vars"][0]["init"]["name"]), "__pln_alloc_arr_Vec");
 	ASSERT_EQ(stmts[3]["vars"][0]["var-type"]["type-name"], "int64");
 	ASSERT_EQ(stmts[4]["vars"][0]["var-type"]["enum"], "Color");
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["value"], "5");
 	// getX's return type is the exporting module's non-exported alias Priv.
 	const auto& x = stmts[5]["vars"][0]["init"];
-	ASSERT_EQ(x["name"], "getX");
+	ASSERT_EQ(funcName(x["name"]), "getX");
 	ASSERT_EQ(x["value-type"]["type-name"], "int32");
 	ASSERT_EQ(x["args"][0]["value-type"]["base-type"]["type-name"], "Vec");
 }
@@ -5128,13 +5138,13 @@ TEST(sa, import_type_alias)
 	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["enum"], "Color");
 	ASSERT_EQ(stmts[2]["vars"][0]["init"]["value"], "5");
 	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["enum"], "Color");
-	ASSERT_EQ(stmts[4]["vars"][0]["init"]["name"], "getX");
+	ASSERT_EQ(funcName(stmts[4]["vars"][0]["init"]["name"]), "getX");
 	// A top-level const names the enumerator through the alias.
 	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value"], "5");
 	// A module-alias call chained into a call is its first argument.
 	const auto& z = stmts[6]["vars"][0]["init"];
-	ASSERT_EQ(z["name"], "id");
-	ASSERT_EQ(z["args"][0]["name"], "getX");
+	ASSERT_EQ(funcName(z["name"]), "id");
+	ASSERT_EQ(funcName(z["args"][0]["name"]), "getX");
 }
 
 TEST(sa, import_type_selective)
@@ -5143,7 +5153,7 @@ TEST(sa, import_type_selective)
 	genLibSaTypes();
 	json jout = run_sa("../test/testdata/sa/230_import_type_selective.pa");
 	ASSERT_TRUE(jout.is_object());
-	ASSERT_EQ(jout["statements"][1]["vars"][0]["init"]["name"], "getX");
+	ASSERT_EQ(funcName(jout["statements"][1]["vars"][0]["init"]["name"]), "getX");
 }
 
 // The var-decl of `name` among `stmts`: its declared type, and its calloc'd size if a struct.
@@ -5195,8 +5205,8 @@ TEST(sa, import_type_diamond)
 	genLibSaTypes();
 	json jout = run_sa("../test/testdata/sa/231_import_type_diamond.pa");
 	ASSERT_TRUE(jout.is_object());
-	ASSERT_EQ(jout["statements"][1]["body"]["name"], "setX");
-	ASSERT_EQ(jout["statements"][2]["vars"][0]["init"]["name"], "getX");
+	ASSERT_EQ(funcName(jout["statements"][1]["body"]["name"]), "setX");
+	ASSERT_EQ(funcName(jout["statements"][2]["vars"][0]["init"]["name"]), "getX");
 }
 
 TEST(sa, import_type_field)
@@ -5381,7 +5391,7 @@ TEST(sa, named_ret_struct_auto_decl)
 	const auto& gbody = jout["functions"][1]["body"];
 	ASSERT_EQ(gbody.size(), 3);
 	ASSERT_EQ(gbody[0]["vars"][0]["name"], "o");
-	ASSERT_EQ(gbody[0]["vars"][0]["init"]["name"], "__pln_alloc_O");
+	ASSERT_EQ(funcName(gbody[0]["vars"][0]["init"]["name"]), "__pln_alloc_O");
 }
 
 TEST(sa, struct_init_from_call)
@@ -5398,7 +5408,7 @@ TEST(sa, struct_init_from_call)
 		ASSERT_EQ(stmts[i]["vars"].size(), 1);
 		ASSERT_EQ(stmts[i]["vars"][0]["name"], expected[i][0]);
 		ASSERT_EQ(stmts[i]["vars"][0]["init"]["expr-type"], "call");
-		ASSERT_EQ(stmts[i]["vars"][0]["init"]["name"], expected[i][1]);
+		ASSERT_EQ(funcName(stmts[i]["vars"][0]["init"]["name"]), expected[i][1]);
 	}
 }
 
@@ -5491,7 +5501,7 @@ TEST(sa, struct_lit_struct_expr)
 	// Q q = [v, mk(3)]: copy from v, and from the call result through a freed temp.
 	ASSERT_EQ(stmts[4]["body"]["name"], "memcpy");
 	ASSERT_EQ(stmts[4]["body"]["args"][1]["name"], "v");
-	ASSERT_EQ(stmts[5]["body"][0]["vars"][0]["init"]["name"], "mk");
+	ASSERT_EQ(funcName(stmts[5]["body"][0]["vars"][0]["init"]["name"]), "mk");
 
 	// [q.b, @q.a] -> q: both values are copied into temp structs before the
 	// stores, which copy from the temps; the temps are freed at the end.
@@ -5521,7 +5531,7 @@ TEST(sa, return_unowned_struct)
 	ASSERT_TRUE(jout.is_object());
 	auto func = [&](const string& name) -> const json& {
 		for (auto& f : jout["functions"])
-			if (f["name"] == name) return f["body"];
+			if (funcName(f["name"]) == name) return f["body"];
 		throw runtime_error("no function " + name);
 	};
 	// A struct the function doesn't own is copied into a fresh one, which is returned.
@@ -5539,13 +5549,13 @@ TEST(sa, return_unowned_struct)
 	// From a local: the copy is made before the local is freed.
 	const auto& rd = func("rd");
 	ASSERT_EQ(rd[5]["body"]["name"], "memcpy");
-	ASSERT_EQ(rd[7]["body"]["name"], "__pln_free_Q");
+	ASSERT_EQ(funcName(rd[7]["body"]["name"]), "__pln_free_Q");
 	ASSERT_EQ(func("re")[5]["body"]["name"], "memcpy");
 
 	// A struct owning fields is copied with what it owns.
 	const auto& rg = func("rg");
-	ASSERT_EQ(rg[0]["vars"][0]["init"]["name"], "__pln_alloc_Q");
-	ASSERT_EQ(rg[1]["body"]["name"], "__pln_copy_Q");
+	ASSERT_EQ(funcName(rg[0]["vars"][0]["init"]["name"]), "__pln_alloc_Q");
+	ASSERT_EQ(funcName(rg[1]["body"]["name"]), "__pln_copy_Q");
 	ASSERT_EQ(rg[1]["body"]["args"][1]["name"], "q");
 
 	// A local struct variable and a call result are returned as they are.
@@ -5553,7 +5563,7 @@ TEST(sa, return_unowned_struct)
 	ASSERT_EQ(rh.back()["values"][0]["name"], "l");
 	const auto& ri = func("ri");
 	ASSERT_EQ(ri.size(), 1);
-	ASSERT_EQ(ri[0]["values"][0]["name"], "mk");
+	ASSERT_EQ(funcName(ri[0]["values"][0]["name"]), "mk");
 
 	// A returned borrow stays a borrow.
 	const auto& rj = func("rj");
@@ -5605,13 +5615,13 @@ TEST(sa, member_call_borrow)
 	const bool muts[] = {false, true, false, true, false};
 	for (size_t i = 0; i < args.size(); i++) {
 		const json& call = tempInit(args[i]);
-		ASSERT_EQ(call["name"], names[i]) << i;
+		ASSERT_EQ(funcName(call["name"]), names[i]) << i;
 		ASSERT_EQ(call["category"], "expiring") << i;
 		ASSERT_EQ(args[i]["value"]["value-type"]["mutable"], muts[i]) << i;
 		ASSERT_EQ(tempRelease(args[i]), "free") << i;
 	}
 	const auto& inner = tempInit(args[4])["args"][0];
-	ASSERT_EQ(tempInit(inner)["name"], "mk");
+	ASSERT_EQ(funcName(tempInit(inner)["name"]), "mk");
 	ASSERT_EQ(tempRelease(inner), "free");
 }
 
@@ -5662,7 +5672,7 @@ TEST(sa, chain_call)
 	ASSERT_EQ(stmts.size(), 16);
 
 	const auto& plain = stmts[5]["body"];
-	ASSERT_EQ(plain["name"], "add");
+	ASSERT_EQ(funcName(plain["name"]), "add");
 	ASSERT_EQ(plain["args"][0]["name"], "x");
 	ASSERT_EQ(plain["args"][1]["value"], "4");
 
@@ -5676,7 +5686,7 @@ TEST(sa, chain_call)
 	ASSERT_EQ(stmts[9]["body"]["args"][0]["value-type"]["mutable"], true);
 
 	const auto& temp = stmts[10]["body"]["args"][0];
-	ASSERT_EQ(tempInit(temp)["name"], "mk");
+	ASSERT_EQ(funcName(tempInit(temp)["name"]), "mk");
 	ASSERT_EQ(temp["value"]["value-type"]["mutable"], false);
 	ASSERT_EQ(tempRelease(temp), "free");
 
@@ -5685,7 +5695,7 @@ TEST(sa, chain_call)
 	ASSERT_EQ(multi["stmt-type"], "block");
 	ASSERT_EQ(multi["body"][0]["stmt-type"], "tapple-decl");
 	const auto& show = multi["body"][1]["body"];
-	ASSERT_EQ(show["name"], "show");
+	ASSERT_EQ(funcName(show["name"]), "show");
 	ASSERT_EQ(show["args"][0]["name"], multi["body"][0]["vars"][0]["var-name"]);
 	ASSERT_EQ(show["args"][1]["name"], multi["body"][0]["vars"][1]["var-name"]);
 	ASSERT_EQ(show["args"][2]["value"], "1");
@@ -5700,13 +5710,13 @@ TEST(sa, chain_call)
 	ASSERT_EQ(structRet[2]["body"]["args"][0]["name"], vtemp);
 
 	const auto& twice = stmts[13]["body"];
-	ASSERT_EQ(twice[0]["value"]["name"], "divmod");
+	ASSERT_EQ(funcName(twice[0]["value"]["name"]), "divmod");
 	ASSERT_EQ(twice[1]["stmt-type"], "tapple-decl");
-	ASSERT_EQ(twice[1]["value"]["name"], "swap");
+	ASSERT_EQ(funcName(twice[1]["value"]["name"]), "swap");
 	ASSERT_EQ(twice[2]["body"]["args"][0]["name"], twice[1]["vars"][0]["var-name"]);
 
 	const auto& nested = stmts[14]["body"];
-	ASSERT_EQ(nested["args"][0]["name"], "add");
+	ASSERT_EQ(funcName(nested["args"][0]["name"]), "add");
 	ASSERT_EQ(nested["args"][0]["args"][0]["name"], "x");
 
 	ASSERT_EQ(stmts[15]["stmt-type"], "tapple-decl");
@@ -5725,7 +5735,7 @@ TEST(sa, chain_lit)
 	const char* callees[] = {"len2", "len2", "first"};
 	for (int i = 0; i < 3; i++) {
 		const auto& call = stmts[i]["body"];
-		ASSERT_EQ(call["name"], callees[i]) << i;
+		ASSERT_EQ(funcName(call["name"]), callees[i]) << i;
 		const auto& temp = call["args"][0];
 		ASSERT_EQ(temp["expr-type"], "temp") << i;
 		ASSERT_EQ(temp["value"]["value-type"]["mutable"], false) << i;
@@ -5987,9 +5997,9 @@ TEST(sa, func_ptr)
 	const auto& stmts = jout["statements"];
 	const auto& ref = stmts[0]["vars"][0]["init"];
 	ASSERT_EQ(ref["expr-type"], "func-ref");
-	ASSERT_EQ(ref["name"], "twice");
+	ASSERT_EQ(funcName(ref["name"]), "twice");
 	// A single named return is the function's return value.
-	ASSERT_EQ(stmts[1]["value"]["name"], "one");
+	ASSERT_EQ(funcName(stmts[1]["value"]["name"]), "one");
 	ASSERT_EQ(stmts[1]["value"]["value-type"]["base-type"]["ret-type"]["type-name"], "int32");
 
 	const auto& call = stmts[2]["vars"][0]["init"];
@@ -6060,12 +6070,12 @@ TEST(sa, frame_struct)
 
 	ASSERT_EQ(stmts[2]["vars"][0]["init"]["size"], 24);
 	ASSERT_EQ(call(3)["name"], "memset");
-	ASSERT_EQ(call(4)["name"], "__pln_init_Q");
+	ASSERT_EQ(funcName(call(4)["name"]), "__pln_init_Q");
 
 	// A struct returned by a call is moved into the frame and only its block freed.
 	ASSERT_EQ(stmts[5]["vars"][0]["init"]["expr-type"], "frame-alloc");
 	const auto& adopt = stmts[6]["body"];
-	ASSERT_EQ(adopt[0]["vars"][0]["init"]["name"], "makeQ");
+	ASSERT_EQ(funcName(adopt[0]["vars"][0]["init"]["name"]), "makeQ");
 	ASSERT_EQ(adopt[1]["body"]["name"], "memcpy");
 	ASSERT_EQ(adopt[2]["body"]["name"], "free");
 	ASSERT_EQ(adopt.size(), 3);
@@ -6076,8 +6086,8 @@ TEST(sa, frame_struct)
 
 	// Returning a stack struct returns a heap copy, and the stack one is finalized.
 	const auto& retQ = jout["functions"][1]["body"];
-	ASSERT_EQ(retQ[4]["body"]["name"], "__pln_copy_Q");
-	ASSERT_EQ(retQ[6]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(funcName(retQ[4]["body"]["name"]), "__pln_copy_Q");
+	ASSERT_EQ(funcName(retQ[6]["body"]["name"]), "__pln_fini_Q");
 	ASSERT_EQ(retQ[7]["stmt-type"], "return");
 }
 
@@ -6097,11 +6107,11 @@ TEST(sa, frame_arr)
 	ASSERT_EQ(sizeAlign(3), make_pair(12, 2));
 	// Only the pointer array is in the frame; its elements or rows are on the heap.
 	ASSERT_EQ(sizeAlign(5), make_pair(24, 8));
-	ASSERT_EQ(stmts[7]["body"]["name"], "__pln_init_arr_P");
+	ASSERT_EQ(funcName(stmts[7]["body"]["name"]), "__pln_init_arr_P");
 	ASSERT_EQ(sizeAlign(9), make_pair(16, 8));
-	ASSERT_EQ(stmts[11]["body"]["name"], "__pln_init_arr_arr_int32");
-	ASSERT_EQ(stmts[15]["body"]["name"], "__pln_init_arr_arr_uint8");
-	ASSERT_EQ(stmts[20]["body"]["name"], "__pln_init_arr_arr_P");
+	ASSERT_EQ(funcName(stmts[11]["body"]["name"]), "__pln_init_arr_arr_int32");
+	ASSERT_EQ(funcName(stmts[15]["body"]["name"]), "__pln_init_arr_arr_uint8");
+	ASSERT_EQ(funcName(stmts[20]["body"]["name"]), "__pln_init_arr_arr_P");
 	ASSERT_EQ(stmts[20]["body"]["args"].size(), 3);
 	ASSERT_EQ(sizeAlign(21), make_pair(12, 4));
 	ASSERT_EQ(stmts[22]["stmt-type"], "arr-assign");
@@ -6114,12 +6124,12 @@ TEST(sa, frame_scope_exit)
 	ASSERT_TRUE(jout.is_object());
 	const auto& body = jout["functions"][0]["body"];
 	const auto& loop = body[3]["body"];
-	ASSERT_EQ(loop[4]["then"]["body"][0]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(funcName(loop[4]["then"]["body"][0]["body"]["name"]), "__pln_fini_Q");
 	ASSERT_EQ(loop[4]["then"]["body"][1]["stmt-type"], "continue");
-	ASSERT_EQ(loop[5]["then"]["body"][0]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(funcName(loop[5]["then"]["body"][0]["body"]["name"]), "__pln_fini_Q");
 	ASSERT_EQ(loop[5]["then"]["body"][1]["stmt-type"], "break");
-	ASSERT_EQ(loop[6]["body"]["name"], "__pln_fini_Q");
-	ASSERT_EQ(body[5]["body"]["name"], "__pln_fini_Q");
+	ASSERT_EQ(funcName(loop[6]["body"]["name"]), "__pln_fini_Q");
+	ASSERT_EQ(funcName(body[5]["body"]["name"]), "__pln_fini_Q");
 	ASSERT_EQ(body[6]["stmt-type"], "return");
 }
 
@@ -6155,7 +6165,7 @@ TEST(sa, import_func_over_alias)
 	ASSERT_TRUE(jout.is_object());
 	const auto& init = jout["statements"][0]["vars"][0]["init"];
 	ASSERT_EQ(init["expr-type"], "call");
-	ASSERT_EQ(init["name"], "square");
+	ASSERT_EQ(funcName(init["name"]), "square");
 }
 
 // An argument whose type comes only from its parameter: a literal, or one the
@@ -6203,7 +6213,7 @@ TEST(sa, overload)
 	ASSERT_EQ(call(8)["func-type"], "palan");             // abs(-1.5)
 	ASSERT_EQ(call(11)["args"][0]["value-type"]["mutable"], false);   // v -> len(): @v
 	ASSERT_EQ(call(12)["args"][0]["value-type"]["base-type"], call(13)["args"][0]["value-type"]["base-type"]);
-	ASSERT_EQ(call(13)["name"], "add");                   // c.add(1): only add(@!Counter, ...)
+	ASSERT_EQ(funcName(call(13)["name"]), "add");                   // c.add(1): only add(@!Counter, ...)
 	ASSERT_FALSE(call(13).contains("method-form"));
 	ASSERT_EQ(stmts[14]["vars"][0]["init"]["expr-type"], "func-ref");
 	ASSERT_EQ(stmts[14]["vars"][0]["init"]["value-type"]["base-type"]["ret-type"]["type-name"], "int32");
@@ -6225,7 +6235,7 @@ TEST(sa, overload_import)
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value-type"]["type-name"], "flo64");
 	ASSERT_EQ(stmts[1]["vars"][0]["init"]["value-type"]["type-name"], "int64");
-	ASSERT_EQ(stmts[2]["vars"][0]["init"]["name"], "local");
+	ASSERT_EQ(funcName(stmts[2]["vars"][0]["init"]["name"]), "local");
 	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value-type"]["type-name"], "int64");   // 3 -> square()
 }
 
@@ -6264,6 +6274,25 @@ TEST(sa, overload_alias_twice)
 	genLibSaImport();
 	json jout = run_sa("../test/testdata/sa/289_overload_alias_twice.pa");
 	ASSERT_TRUE(jout.is_object());
-	ASSERT_EQ(jout["statements"][0]["vars"][0]["init"]["name"], "square");
-	ASSERT_EQ(jout["statements"][1]["vars"][0]["init"]["name"], "square");
+	ASSERT_EQ(funcName(jout["statements"][0]["vars"][0]["init"]["name"]), "square");
+	ASSERT_EQ(funcName(jout["statements"][1]["vars"][0]["init"]["name"]), "square");
+}
+
+// A function, a call to it and a func-ref to it carry the same symbol: the
+// module (escaped file name), the name and the parameter types.
+TEST(sa, symbol_names)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/290_symbol-names.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& fns = jout["functions"];
+	ASSERT_EQ(fns[0]["name"], "_290_symbol_2dnames..show.int32");
+	ASSERT_EQ(fns[1]["name"], "_290_symbol_2dnames..show.Wint64");
+	ASSERT_EQ(fns[2]["name"], "_290_symbol_2dnames..none.v");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["body"]["name"], "_290_symbol_2dnames..show.int32");
+	ASSERT_EQ(stmts[2]["body"]["name"], "_290_symbol_2dnames..show.Wint64");
+	ASSERT_EQ(stmts[3]["body"]["name"], "_290_symbol_2dnames..none.v");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["expr-type"], "func-ref");
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["name"], "_290_symbol_2dnames..show.int32");
 }

@@ -384,7 +384,7 @@ json PlnSemanticAnalyzer::makeCallNode(const json& expr, const Callee& callee, c
 			sa_expr["value-type"] = def["ret-type"];
 	} else {
 		sa_expr["func-type"] = def["func-type"];
-		sa_expr["name"] = writtenName;
+		sa_expr["name"] = def.contains("symbol") ? def["symbol"] : json(writtenName); // a syscall has none
 		if (def.contains("ret-type"))
 			sa_expr["value-type"] = def["ret-type"];
 		if (def.value("func-type", "") == "syscall")
@@ -468,7 +468,7 @@ json PlnSemanticAnalyzer::sa_func_ref(const json& expr, const PlnType* expectedT
 		exit(1);
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
-	json out = {{"expr-type", "func-ref"}, {"name", callee.isC ? cLinkName(*callee.def) : json(name)},
+	json out = {{"expr-type", "func-ref"}, {"name", callee.isC ? cLinkName(*callee.def) : (*callee.def)["symbol"]},
 	            {"value-type", move(funcPtr)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	if (expr.contains("loc")) out["loc"] = expr["loc"];

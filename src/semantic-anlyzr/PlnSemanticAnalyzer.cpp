@@ -736,6 +736,9 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 	validateNativeSig(funcEntry);
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
+	else
+		funcEntry["symbol"] = moduleSymbol(moduleId_) + ".."
+			+ funcSymbol(funcEntry["name"].get<string>(), funcEntry.value("parameters", json::array()));
 	return funcEntry;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 

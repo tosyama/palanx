@@ -696,3 +696,59 @@ TEST(bool_type, arg_conv) {
     EXPECT_FALSE(argConvOk(reg.prim(N::Int8), b));
     EXPECT_FALSE(argConvOk(reg.prim(N::Uint8), b));
 }
+
+// -------- symbols --------
+
+static json params(std::initializer_list<json> types) {
+    json ps = json::array();
+    for (auto& t : types) ps.push_back({{"var-type", t}});
+    return ps;
+}
+static json prim(const char* n) { return {{"type-kind","prim"},{"type-name",n}}; }
+static json strct(const char* n) { return {{"type-kind","struct"},{"type-name",n}}; }
+static json pntr(json base) { return {{"type-kind","pntr"},{"base-type",base}}; }
+static json pntr(json base, bool mut) { json p = pntr(base); p["mutable"] = mut; return p; }
+
+TEST(symbol, module) {
+    EXPECT_EQ(moduleSymbol("/home/u/src/util.pa"), "util");
+    EXPECT_EQ(moduleSymbol("/a.pa/b.pa"), "b");
+    // A leading digit is read as a number by `as`; '-' and '.' are no symbol characters.
+    EXPECT_EQ(moduleSymbol("/t/001_hello.pa"), "_001_hello");
+    EXPECT_EQ(moduleSymbol("/t/my-lib.v2.pa"), "my_2dlib_2ev2");
+}
+
+TEST(symbol, prim_and_user_types) {
+    EXPECT_EQ(funcSymbol("f", json::array()), "f.v");
+    EXPECT_EQ(funcSymbol("show", params({prim("int32")})), "show.int32");
+    EXPECT_EQ(funcSymbol("show", params({prim("flo64"), prim("bool")})), "show.flo64.bool");
+    EXPECT_EQ(funcSymbol("f", params({strct("Point")})), "f.5Point");
+    json color = prim("int32");
+    color["enum"] = "Color";
+    EXPECT_EQ(funcSymbol("f", params({color})), "f.N5Colorint32");
+}
+
+TEST(symbol, pointer_permissions) {
+    // Owned or by value, read borrow and write borrow are different parameters.
+    EXPECT_EQ(funcSymbol("f", params({pntr(strct("P"))})), "f.P1P");
+    EXPECT_EQ(funcSymbol("f", params({pntr(strct("P"), false)})), "f.R1P");
+    EXPECT_EQ(funcSymbol("f", params({pntr(strct("P"), true)})), "f.W1P");
+    EXPECT_EQ(funcSymbol("f", params({pntr(pntr(prim("int8"), true))})), "f.PWint8");
+}
+
+TEST(symbol, array_shapes) {
+    json rows = pntr(prim("int32"), false);
+    rows["arr-size"] = 4;
+    EXPECT_EQ(funcSymbol("f", params({rows})), "f.A4_Rint32");
+    json embed = pntr(strct("P"));
+    embed["embedded"] = true;
+    embed["stride"] = 16;
+    EXPECT_EQ(funcSymbol("f", params({embed})), "f.ES16_P1P");
+}
+
+TEST(symbol, func_pointer) {
+    json fn = {{"type-kind","func"},{"parameters",params({prim("int32"), pntr(prim("void"), false)})},
+               {"ret-type",prim("int32")}};
+    EXPECT_EQ(funcSymbol("apply", params({pntr(fn, false)})), "apply.RF2_int32Rvoidint32");
+    json proc = {{"type-kind","func"},{"parameters",json::array()},{"ret-type",prim("void")}};
+    EXPECT_EQ(funcSymbol("on", params({pntr(proc, false)})), "on.RF0_void");
+}

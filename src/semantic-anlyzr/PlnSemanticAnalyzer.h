@@ -51,6 +51,11 @@ struct FieldLayout {
 // in the function's stack frame.
 enum class VarStorage { Heap, Frame };
 
+// The allocator helpers build-mgr generates (SpecAndDesign.md 3.6), one
+// family per shape: __pln_<op>_<leaf>, __pln_<op>_arr_<leaf>, __pln_<op>_arr_arr_<leaf>.
+enum class AllocFamily { Struct, ArrStruct, ArrArrStruct, ArrArrPrim };
+struct AllocShapeRef { AllocFamily family; string leaf; };
+
 struct StructDef {
 	string name;
 	vector<FieldLayout> fields;
@@ -371,7 +376,8 @@ class PlnSemanticAnalyzer {
 	json sa_struct_lit_var_decl(const json& stmt, VarStorage storage); // single var; returns array of statements
 	json placeAggregateVar(const json& stmt, const string& name, const json& varType,
 	                       json heapInit, json heapRelease, VarStorage storage,
-	                       int64_t frameBytes, int frameAlign, bool zeroFill, json& post);
+	                       int64_t frameBytes, int frameAlign, bool zeroFill, json& post,
+	                       optional<AllocShapeRef> shape = nullopt);
 	json sa_struct_lit(const json& item, const StructDef& def);
 	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
@@ -416,7 +422,6 @@ class PlnSemanticAnalyzer {
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
 	json makeStructFreeStmt(const string& name, const json& pntrType);
 	json makeStructFreeCall(json ptr, const string& structName);
-	pair<string, string> structFreeFunc(const string& structName);
 	json makeOwnedValueFreeStmt(json value);
 	bool isStructType(const json& type) const;
 	// True if the program-wide name `name` is a primitive or a registered struct.

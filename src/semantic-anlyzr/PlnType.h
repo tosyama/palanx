@@ -115,3 +115,10 @@ const PlnType* usualArithConv(const PlnType* a, const PlnType* b);
 // signedness reinterpretation (e.g. int32 -> uint32) that a binding site
 // (var-decl/assign/return) rejects.
 bool argConvOk(const PlnType* from, const PlnType* to);
+
+// Link-name elements of a Palan function, joined by ".." into its symbol.
+// Each element uses only [A-Za-z0-9_.] and never contains "..", so the scope
+// path can be split back; within a function element every type is
+// self-delimiting (lowercase prim, digit-led user name, uppercase modifier).
+std::string moduleSymbol(const std::string& sourcePath);
+std::string funcSymbol(const std::string& name, const json& params);

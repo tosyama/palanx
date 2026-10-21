@@ -15,6 +15,7 @@
 #include <filesystem>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnBuildMgrMessage.h"
+#include "../common/PlnDefs.h"
 #include "../common/PlnProcess.h"
 
 using namespace std;
@@ -231,7 +232,7 @@ int main(int argc, char* argv[])
 
 		if (!arr_shapes.empty() || !struct_shapes.empty() || !arr_struct_shapes.empty()) {
 			string workdir = fs::path(ast_files[0]).parent_path().string();
-			string alloc_pa  = workdir + "/__allocators.pa";
+			string alloc_pa  = workdir + "/" PALAN_ALLOCATORS_MODULE ".pa";
 			string alloc_ast = alloc_pa + ".ast.json";
 			string alloc_sa  = alloc_pa + ".sa.json";
 			string alloc_s   = alloc_pa + ".s";

@@ -8,6 +8,7 @@
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
+#include "../common/PlnDefs.h"
 
 static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1); }
 
@@ -482,7 +483,8 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 // An empty `heapInit` means the frame block's contents come from elsewhere.
 json PlnSemanticAnalyzer::placeAggregateVar(const json& stmt, const string& name, const json& varType,
                                             json heapInit, json heapRelease, VarStorage storage,
-                                            int64_t frameBytes, int frameAlign, bool zeroFill, json& post)
+                                            int64_t frameBytes, int frameAlign, bool zeroFill, json& post,
+                                            optional<AllocShapeRef> shape)
 {
 	if (storage == VarStorage::Heap) {
 		addOwnedScopeVar(name, move(heapRelease));
@@ -493,10 +495,11 @@ json PlnSemanticAnalyzer::placeAggregateVar(const json& stmt, const string& name
 		exit(1);
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
-	const string allocPrefix = "__pln_alloc_", freePrefix = "__pln_free_";
 	json self = {{"expr-type","id"},{"name",name},{"var-type",varType},{"value-type",varType}};
-	string allocFn = heapInit.value("name", "");
-	bool helperInit = allocFn.starts_with(allocPrefix);
+	auto helperName = [&](const char* op) {
+		return allocHelperCall(shape->family, shape->leaf, op, json::array())["name"].get<string>();
+	};
+	bool helperInit = shape && heapInit.value("name", "") == helperName("alloc");
 	if (zeroFill || helperInit) {
 		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 		json args = json::array({self,
@@ -508,15 +511,12 @@ json PlnSemanticAnalyzer::placeAggregateVar(const json& stmt, const string& name
 	if (helperInit) {
 		json args = json::array({self});
 		for (auto& a : heapInit["args"]) args.push_back(a);
-		post.push_back({{"stmt-type","expr"},{"body",{
-			{"expr-type","call"},{"name","__pln_init_" + allocFn.substr(allocPrefix.size())},
-			{"func-type",heapInit["func-type"]},{"args",move(args)}}}});
+		post.push_back({{"stmt-type","expr"},{"body",allocHelperCall(shape->family, shape->leaf, "init", move(args))}});
 	}
 	json release;
-	string freeFn = heapRelease["body"].value("name", "");
-	if (freeFn.starts_with(freePrefix)) {
+	if (shape && heapRelease["body"].value("name", "") == helperName("free")) {
 		release = move(heapRelease);
-		release["body"]["name"] = "__pln_fini_" + freeFn.substr(freePrefix.size());
+		release["body"]["name"] = helperName("fini");
 	}
 	arrayScopeVars_.back().push_back({name, move(release), false});
 	return {{"expr-type","frame-alloc"},{"size",frameBytes},{"align",frameAlign},{"value-type",varType}};
@@ -582,11 +582,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage)
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 			leaf_name = "uint8";
 		}
-		string shape_key = "arr_arr_" + leaf_name;
 		recordArrArrShape(leaf_name);
-
-		string alloc_func = "__pln_alloc_" + shape_key;
-		string free_func  = "__pln_free_"  + shape_key;
 
 		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 
@@ -622,20 +618,19 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage)
 			}})}});
 			// LCOV_EXCL_EXCEPTION_BR_STOP
 
-			json alloc_call = {
-				{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
-				{"args",json::array({d0_id, row_bytes})}, {"value-type",pntr_type} // LCOV_EXCL_EXCEPTION_BR_LINE
-			};
-			json free_stmt_json = {{"stmt-type","expr"},{"body",{
-				{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
-				{"args",json::array({mat_id, d0_id})}
-			}}};
+			// LCOV_EXCL_EXCEPTION_BR_START
+			json alloc_call = allocHelperCall(AllocFamily::ArrArrPrim, leaf_name, "alloc", json::array({d0_id, row_bytes}));
+			alloc_call["value-type"] = pntr_type;
+			json free_stmt_json = {{"stmt-type","expr"},{"body",
+				allocHelperCall(AllocFamily::ArrArrPrim, leaf_name, "free", json::array({mat_id, d0_id}))}};
+			// LCOV_EXCL_EXCEPTION_BR_STOP
 
 			declareVar(name, pntr_type, &stmt);
 			json post = json::array();
 			int64_t d0 = constArrSize(d0_expr);
 			json init = placeAggregateVar(stmt, name, pntr_type, move(alloc_call), move(free_stmt_json),
-			                              storage, d0 < 0 ? -1 : d0 * 8, 8, false, post);
+			                              storage, d0 < 0 ? -1 : d0 * 8, 8, false, post,
+			                              AllocShapeRef{AllocFamily::ArrArrPrim, leaf_name});
 			// LCOV_EXCL_EXCEPTION_BR_START
 			result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 				{"name",name},{"var-type",pntr_type},{"init",move(init)}
@@ -1728,23 +1723,62 @@ json PlnSemanticAnalyzer::makeStructFreeStmt(const string& name, const json& pnt
 	return makeStructFreeCall(move(var_id), pntrType["base-type"]["type-name"].get<string>());
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-pair<string, string> PlnSemanticAnalyzer::structFreeFunc(const string& structName)
+// The parameter types are those of the signatures build-mgr writes for each
+// family, as palan-sa normalizes them when it analyzes the generated module.
+json allocHelperCall(AllocFamily family, const string& leaf, const string& op, json args)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
-	if (!structDefs_.at(structName).ownsFields)
-		return {"free", "c"};
-	recordAllocShape(structName);
-	return {"__pln_free_" + structName, "palan"};
+	auto ptr = [](json base) { return json{{"type-kind","pntr"},{"base-type",move(base)}}; };
+	auto mut = [](json base) { return json{{"type-kind","pntr"},{"mutable",true},{"base-type",move(base)}}; };
+	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
+	bool isStruct = family != AllocFamily::ArrArrPrim;
+	json elem = isStruct ? json{{"type-kind","struct"},{"type-name",leaf}}
+	                     : json{{"type-kind","prim"},{"type-name",leaf}};
+	string prefix;
+	json owned, building;   // the storage as fini/free/copy take it, and as init fills it
+	vector<json> dims;
+	switch (family) {
+	case AllocFamily::Struct:
+		owned = ptr(elem); building = mut(elem);
+		break;
+	case AllocFamily::ArrStruct:
+		prefix = "arr_"; owned = ptr(ptr(elem)); building = ptr(mut(elem)); dims = {i64};
+		break;
+	case AllocFamily::ArrArrStruct:
+		prefix = "arr_arr_"; owned = ptr(ptr(ptr(elem))); building = ptr(mut(mut(elem))); dims = {i64, i64};
+		break;
+	case AllocFamily::ArrArrPrim:
+		prefix = "arr_arr_"; owned = ptr(ptr(elem)); building = ptr(mut(elem)); dims = {i64, i64};
+		break;
+	}
+	vector<json> params;
+	if (op == "init") params.push_back(building);
+	else if (op == "copy") params = {owned, owned};
+	else if (op != "alloc") params.push_back(owned);   // fini, free
+	params.insert(params.end(), dims.begin(), dims.end());
+	// A row of primitives is one block, so freeing it needs only the row count.
+	if (family == AllocFamily::ArrArrPrim && (op == "fini" || op == "free")) params.pop_back();
+
+	json jparams = json::array();
+	for (auto& t : params) jparams.push_back({{"var-type", t}});
+	string name = "__pln_" + op + "_" + prefix + leaf;
+	return {{"expr-type","call"},{"name",moduleSymbol(PALAN_ALLOCATORS_MODULE) + ".." + funcSymbol(name, jparams)},
+	        {"func-type","palan"},{"args",move(args)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::makeStructFreeCall(json ptr, const string& structName)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
-	auto [fn, funcType] = structFreeFunc(structName);
-	return {{"stmt-type","expr"},{"body",{
-		{"expr-type","call"},{"name",fn},
-		{"func-type",funcType},{"args",json::array({move(ptr)})}}}};
+	json args = json::array({move(ptr)});
+	json call;
+	if (structDefs_.at(structName).ownsFields) {
+		recordAllocShape(structName);
+		call = allocHelperCall(AllocFamily::Struct, structName, "free", move(args));
+	} else {
+		call = {{"expr-type","call"},{"name","free"},{"func-type","c"},{"args",move(args)}};
+	}
+	return {{"stmt-type","expr"},{"body",move(call)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -1757,17 +1791,14 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value)
 	if (isStructStorage(vt))
 		return makeStructFreeCall(move(value), vt["base-type"]["type-name"].get<string>());
 	json args = json::array({move(value)});
-	string fn = "free", funcType = "c";
-	if (isStructStorage(vt["base-type"])) {
-		string name = vt["base-type"]["base-type"]["type-name"];
-		recordArrStructShape(name);
-		fn = "__pln_free_arr_" + name;
-		funcType = "palan";
-		args.push_back({{"expr-type","lit-int"},{"value",to_string(vt["arr-size"].get<int64_t>())},
-		                {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}});
-	} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-	return {{"stmt-type","expr"},{"body",{
-		{"expr-type","call"},{"name",fn},{"func-type",funcType},{"args",move(args)}}}};
+	if (!isStructStorage(vt["base-type"]))
+		return {{"stmt-type","expr"},{"body",{
+			{"expr-type","call"},{"name","free"},{"func-type","c"},{"args",move(args)}}}};
+	string name = vt["base-type"]["base-type"]["type-name"];
+	recordArrStructShape(name);
+	args.push_back({{"expr-type","lit-int"},{"value",to_string(vt["arr-size"].get<int64_t>())},
+	                {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}});
+	return {{"stmt-type","expr"},{"body",allocHelperCall(AllocFamily::ArrStruct, name, "free", move(args))}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -1868,11 +1899,12 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 				            {"args",json::array({one_arg, size_arg})},{"value-type",pntr_type}};
 			} else {
 				recordAllocShape(structName);
-				heapInit = {{"expr-type","call"},{"name","__pln_alloc_" + structName},{"func-type","palan"},
-				            {"args",json::array()},{"value-type",pntr_type}};
+				heapInit = allocHelperCall(AllocFamily::Struct, structName, "alloc", json::array());
+				heapInit["value-type"] = pntr_type;
 			}
 			init = placeAggregateVar(stmt, name, pntr_type, move(heapInit), makeStructFreeStmt(name, pntr_type),
-			                         storage, def.totalSize, def.maxAlign, fresh, post);
+			                         storage, def.totalSize, def.maxAlign, fresh, post,
+			                         AllocShapeRef{AllocFamily::Struct, structName});
 		}
 
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
@@ -1935,9 +1967,6 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt, VarStor
 	requireCompleteStruct(struct_name, stmt);  // recordAllocShape below needs totalSize/fields
 
 	recordArrStructShape(struct_name);
-	string shape_key = "arr_" + struct_name;
-	string alloc_func = "__pln_alloc_" + shape_key;
-	string free_func  = "__pln_free_"  + shape_key;
 
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
@@ -1969,20 +1998,19 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt, VarStor
 		}})}});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 
-		json alloc_call = {
-			{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
-			{"args",json::array({n_id})}, {"value-type",pntr_type}
-		};
-		json free_stmt_json = {{"stmt-type","expr"},{"body",{
-			{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
-			{"args",json::array({arr_id, n_id})}
-		}}};
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json alloc_call = allocHelperCall(AllocFamily::ArrStruct, struct_name, "alloc", json::array({n_id}));
+		alloc_call["value-type"] = pntr_type;
+		json free_stmt_json = {{"stmt-type","expr"},{"body",
+			allocHelperCall(AllocFamily::ArrStruct, struct_name, "free", json::array({arr_id, n_id}))}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 
 		declareVar(name, pntr_type, &stmt);
 		json post = json::array();
 		int64_t count = constArrSize(n_expr);
 		json init = placeAggregateVar(stmt, name, pntr_type, move(alloc_call), move(free_stmt_json),
-		                              storage, count < 0 ? -1 : count * 8, 8, false, post);
+		                              storage, count < 0 ? -1 : count * 8, 8, false, post,
+		                              AllocShapeRef{AllocFamily::ArrStruct, struct_name});
 		// LCOV_EXCL_EXCEPTION_BR_START
 		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 			{"name",name},{"var-type",pntr_type},{"init",move(init)}
@@ -2003,10 +2031,6 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr2d_var_decl(const json& stmt, VarSt
 	requireCompleteStruct(struct_name, stmt);
 
 	recordArrArrStructShape(struct_name);
-	string shape_key = "arr_arr_" + struct_name;
-
-	string alloc_func = "__pln_alloc_" + shape_key;
-	string free_func  = "__pln_free_"  + shape_key;
 
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
@@ -2044,21 +2068,18 @@ json PlnSemanticAnalyzer::sa_owned_struct_arr2d_var_decl(const json& stmt, VarSt
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json arr_id = {{"expr-type","id"},{"name",name},
 		               {"var-type",pntr_type},{"value-type",pntr_type}};
-		json alloc_call = {
-			{"expr-type","call"}, {"name",alloc_func}, {"func-type","palan"},
-			{"args",args}, {"value-type",pntr_type}
-		};
-		json free_stmt_json = {{"stmt-type","expr"},{"body",{
-			{"expr-type","call"}, {"name",free_func}, {"func-type","palan"},
-			{"args",json::array({arr_id, args[0], args[1]})}
-		}}};
+		json alloc_call = allocHelperCall(AllocFamily::ArrArrStruct, struct_name, "alloc", args);
+		alloc_call["value-type"] = pntr_type;
+		json free_stmt_json = {{"stmt-type","expr"},{"body",
+			allocHelperCall(AllocFamily::ArrArrStruct, struct_name, "free", json::array({arr_id, args[0], args[1]}))}};
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 
 		declareVar(name, pntr_type, &stmt);
 		json post = json::array();
 		int64_t count = constArrSize(d0_expr);
 		json init = placeAggregateVar(stmt, name, pntr_type, move(alloc_call), move(free_stmt_json),
-		                              storage, count < 0 ? -1 : count * 8, 8, false, post);
+		                              storage, count < 0 ? -1 : count * 8, 8, false, post,
+		                              AllocShapeRef{AllocFamily::ArrArrStruct, struct_name});
 		// LCOV_EXCL_EXCEPTION_BR_START
 		result.push_back({{"stmt-type","var-decl"},{"vars",json::array({{
 			{"name",name},{"var-type",pntr_type},{"init",move(init)}

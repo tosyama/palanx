@@ -5,6 +5,9 @@
 
 #include "PlnType.h"
 #include <stdexcept>
+#include <cctype>
+#include <filesystem>
+#include <set>
 
 // Singleton that holds bidirectional maps between type-name strings and PrimType::Name.
 // Using a struct with an explicit constructor body so gcov tracks each entry individually.
@@ -339,3 +342,83 @@ bool argConvOk(const PlnType* from, const PlnType* to)
     if (gt == 3) return false;  // int8 -> bool is not a reinterpretation
     return primRank(pf->name) == primRank(pt->name);           // same-width sign reinterpretation
 }
+
+// Symbol elements
+
+// The stem alone, so a symbol is the same wherever the source is checked out.
+std::string moduleSymbol(const std::string& sourcePath)
+{
+    std::string stem = std::filesystem::path(sourcePath).stem().string();
+    static const char hex[] = "0123456789abcdef";
+    // A leading digit would make `as` read the symbol as a number.
+    std::string out = isdigit((unsigned char)stem[0]) ? "_" : "";
+    for (unsigned char c : stem) {
+        if (isalnum(c) || c == '_') { out += c; continue; }
+        out += '_';
+        out += hex[c >> 4];
+        out += hex[c & 15];
+    }
+    return out;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+static std::string symbolUserName(const std::string& name)
+{
+    return std::to_string(name.size()) + name;
+}
+
+static std::string symbolType(const json& t);
+
+// A pointer's mutable key is three-way: absent for an owned or by-value
+// parameter, false for a read borrow, true for a write borrow.
+static std::string symbolPntr(const json& t)
+{
+    // LCOV_EXCL_EXCEPTION_BR_START
+    std::string s;
+    if (t.value("embedded", false)) s += "E";
+    if (t.contains("stride")) s += "S" + std::to_string(t["stride"].get<int64_t>()) + "_";
+    if (t.contains("arr-size")) s += "A" + std::to_string(t["arr-size"].get<int64_t>()) + "_";
+    if (!t.contains("mutable")) s += "P";
+    else s += t["mutable"].get<bool>() ? "W" : "R";
+    return s + symbolType(t["base-type"]);
+    // LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+static std::string symbolType(const json& t)
+{
+    // LCOV_EXCL_EXCEPTION_BR_START
+    static const std::map<std::string, std::set<std::string>> knownKeys = {
+        {"prim",   {"type-kind", "type-name", "enum"}},
+        {"struct", {"type-kind", "type-name"}},
+        {"pntr",   {"type-kind", "base-type", "mutable", "embedded", "stride", "arr-size"}},
+        {"func",   {"type-kind", "parameters", "ret-type"}},
+    };
+    const std::string kind = t.value("type-kind", "");
+    auto known = knownKeys.find(kind);
+    // Every key a type carries tells overloads apart, so one the encoding
+    // skips could give two functions the same symbol.
+    if (known == knownKeys.end()) throw std::logic_error("symbol: type-kind " + kind); // LCOV_EXCL_LINE
+    for (auto& [k, v] : t.items())
+        if (!known->second.count(k)) throw std::logic_error("symbol: " + kind + " key " + k); // LCOV_EXCL_LINE
+
+    if (kind == "prim") {
+        std::string prim = t["type-name"].get<std::string>();
+        return t.contains("enum") ? "N" + symbolUserName(t["enum"].get<std::string>()) + prim : prim;
+    }
+    if (kind == "struct") return symbolUserName(t["type-name"].get<std::string>());
+    if (kind == "pntr") return symbolPntr(t);
+    const json& params = t["parameters"];
+    std::string s = "F" + std::to_string(params.size()) + "_";
+    for (auto& p : params) s += symbolType(p["var-type"]);
+    return s + symbolType(t["ret-type"]);
+    // LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+std::string funcSymbol(const std::string& name, const json& params)
+{
+    // LCOV_EXCL_EXCEPTION_BR_START
+    if (params.empty()) return name + ".v";
+    std::string s = name;
+    for (auto& p : params) s += "." + symbolType(p["var-type"]);
+    return s;
+    // LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE

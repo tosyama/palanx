@@ -3288,3 +3288,17 @@ TEST(build_mgr, var_transfer_mtrace) {
 	// block is freed exactly once.
 	expectFrameMtrace("319_var_transfer_mtrace", "4\n5\n3 4\n7\n9\n7\n0\n5\n9\n");
 }
+
+TEST(build_mgr, overload_symbols) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/320_overload_symbols.pa");
+	ASSERT_EQ(output, "int 3\nfloat 2.5\n8 3.0\n1 3 4 5 1\n");
+}
+
+TEST(build_mgr, overload_modules) {
+	cleanTestEnv();
+	// A function exported under a libc name does not take the place of the
+	// libc one, and two modules can export the same function.
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/321_overload_modules.pa");
+	ASSERT_EQ(output, "8 3.0 12\n1 2\n5 100\n");
+}
