@@ -106,18 +106,24 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 	// Before the functions, whose signatures may name the block's types.
 	enterBlockDecls(stmt["body"]);
 
+	const json& funcs = stmt.value("functions", json::array());
+	string savedSymbolScope = symbolScope_;
+	if (!funcs.empty())
+		symbolScope_ += "..b" + to_string(++blockSymbolSeq_);
+
 	// pre-register block-local func-defs (forward reference support)
-	for (auto& f : stmt.value("functions", json::array())) {
+	for (auto& f : funcs) {
 		if (f.value("export", false)) {
 			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInBlock, f["name"].get<string>()) << endl;
 			exit(1);
 		}
-		preregisterFunc(f);
+		preregisterFunc(f, symbolScope_);
 	}
 
 	// analyze block-local func bodies -> appended to sa["functions"]
-	for (auto& f : stmt.value("functions", json::array()))
+	for (auto& f : funcs)
 		sa_function(f);
+	symbolScope_ = savedSymbolScope;
 
 	// analyze body statements (no func-defs)
 	json body = sa_statements(stmt["body"]);
@@ -211,6 +217,8 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	auto savedFuncBodyIdx    = funcBodyScopeIdx_;
 	auto savedEscapedVars    = move(escapedVars_);
 	auto savedPendingAliases = pendingAliases_;
+	auto savedSymbolScope    = symbolScope_;
+	auto savedBlockSymbolSeq = blockSymbolSeq_;
 	escapedVars_.clear();
 	pendingAliases_ = 0;
 
@@ -233,6 +241,8 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	currentFunc_ = findPlnFuncDef(funcDef);
 	currentFuncDef_ = &sig;
+	symbolScope_ = (*currentFunc_)["symbol"];
+	blockSymbolSeq_ = 0;
 	enterScope();  // push scope[1] = function body
 	funcBodyScopeIdx_ = arrayScopeVars_.size() - 1;  // = 1
 
@@ -245,7 +255,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_ExportInFunction, f["name"].get<string>()) << endl;
 			exit(1);
 		}
-		preregisterFunc(f);
+		preregisterFunc(f, symbolScope_);
 	}
 
 	// analyze inner func bodies -> appended to sa["functions"]
@@ -305,6 +315,8 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	currentFuncDef_  = savedCurrentFuncDef;
 	escapedVars_     = move(savedEscapedVars);
 	pendingAliases_  = savedPendingAliases;
+	symbolScope_     = savedSymbolScope;
+	blockSymbolSeq_  = savedBlockSymbolSeq;
 
 	sa["functions"].push_back(saFunc);
 }

@@ -131,6 +131,10 @@ class PlnSemanticAnalyzer {
 	map<string, string> strLiteralLabels;  // value -> label
 	const json*       currentFunc_    = nullptr;  // null = _start level
 	const json*       currentFuncDef_ = nullptr;  // currentFunc_'s types resolved, not normalized
+	// Prefix of the symbols of functions defined here: the module, or the
+	// enclosing function's symbol, plus `..b<n>` inside a block.
+	string            symbolScope_;
+	int               blockSymbolSeq_ = 0;       // blocks with functions seen in this function
 	int               loopDepth_     = 0;        // nesting depth of while loops
 	size_t            funcBodyScopeIdx_ = 0;     // 0 = top-level (no function)
 
@@ -482,8 +486,8 @@ class PlnSemanticAnalyzer {
 	void  registerCFuncTypedefAliases(const json& locNode, json& funcEntry);
 	// Shared function pre-registration sequence (normalize + validate + register)
 	// used by top-level, block-local, and function-nested func-defs alike.
-	void  preregisterFunc(const json& f);
-	json  normalizeFuncSig(const json& f);
+	void  preregisterFunc(const json& f, const string& scope);
+	json  normalizeFuncSig(const json& f, const string& scope);
 	// Diagnose Linux syscall ABI constraints on a syscall declaration
 	// (funcDef must already be normalizeStructSig'd) and fold its
 	// "syscall-number" expression node into a plain JSON integer.

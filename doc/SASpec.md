@@ -109,6 +109,11 @@ symbols. It is the `name` of the function, of a `call` resolved to it and of a `
 
 `<module>..<name>.<param>.<param>...` — `<name>.v` when there are no parameters.
 
+A function defined inside another one has the enclosing function's symbol in place of
+`<module>` (`util..a.v..f.v`). A `{ }` block that defines functions adds `..b<n>`, its order
+among such blocks of the enclosing function or of the top level (`util..a.v..b1..f.v`,
+`util..b1..f.v`).
+
 - `<module>`: the source file's name without `.pa`, with each byte outside `[A-Za-z0-9_]` written
   `_` and two lowercase hex digits, and `_` in front of a leading digit (`001_hello.pa` →
   `_001_hello`). The allocators build-mgr generates are in module `__allocators`, which SA names

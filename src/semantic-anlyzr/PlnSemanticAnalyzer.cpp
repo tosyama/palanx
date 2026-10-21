@@ -717,7 +717,7 @@ void PlnSemanticAnalyzer::rejectNotImplSig(const json& f)
 	}
 }
 
-json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
+json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 {
 	rejectNotImplSig(f);
 	for (auto& p : f.value("parameters", json::array()))
@@ -737,7 +737,7 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
 	else
-		funcEntry["symbol"] = moduleSymbol(moduleId_) + ".."
+		funcEntry["symbol"] = scope + ".."
 			+ funcSymbol(funcEntry["name"].get<string>(), funcEntry.value("parameters", json::array()));
 	return funcEntry;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
@@ -755,9 +755,9 @@ json PlnSemanticAnalyzer::resolveSigTypes(const json& f) const
 	return sig;
 }
 
-void PlnSemanticAnalyzer::preregisterFunc(const json& f)
+void PlnSemanticAnalyzer::preregisterFunc(const json& f, const string& scope)
 {
-	json funcEntry = normalizeFuncSig(f);
+	json funcEntry = normalizeFuncSig(f, scope);
 	registerPlnFunc(funcEntry["name"], funcEntry, f);
 }
 
@@ -784,6 +784,7 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 {
 	inputFilePath = ast["original"];
 	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
+	symbolScope_  = moduleSymbol(moduleId_);
 	sa["original"]      = ast["original"];
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
@@ -1002,7 +1003,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"])
-			preregisterFunc(f);
+			preregisterFunc(f, symbolScope_);
 	// 2. Process top-level statements (cinclude/import registered here,
 	//    visible in Palan function bodies processed next).
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
@@ -1264,7 +1265,7 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 
 		// Resolved in the exporting module, where the type names it uses mean
 		// what its author meant.
-		json funcEntry = sub.normalizeFuncSig(f);
+		json funcEntry = sub.normalizeFuncSig(f, moduleSymbol(sub.moduleId_));
 		funcEntry["_module"] = sub.moduleId_;
 		for (auto& p : funcEntry.value("parameters", json::array()))
 			adoptTypeDeps(sub, p["var-type"], stmt);

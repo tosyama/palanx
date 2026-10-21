@@ -6296,3 +6296,17 @@ TEST(sa, symbol_names)
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["expr-type"], "func-ref");
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["name"], "_290_symbol_2dnames..show.int32");
 }
+
+// An inner function's symbol carries the enclosing function's; a block with
+// functions is numbered among those of its function or of the top level.
+TEST(sa, nested_func_symbols)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/291_nested-func-symbols.pa");
+	ASSERT_TRUE(jout.is_object());
+	set<string> names;
+	for (auto& f : jout["functions"]) names.insert(f["name"].get<string>());
+	const string m = "_291_nested_2dfunc_2dsymbols..";
+	ASSERT_EQ(names, (set<string>{m + "a.v", m + "a.v..f.v", m + "a.v..f.v..g.v",
+		m + "a.v..b1..k.v", m + "a.v..b2..k.v", m + "b1..k.v"}));
+}

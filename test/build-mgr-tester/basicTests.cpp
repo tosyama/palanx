@@ -3302,3 +3302,9 @@ TEST(build_mgr, overload_modules) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/321_overload_modules.pa");
 	ASSERT_EQ(output, "8 3.0 12\n1 2\n5 100\n");
 }
+
+TEST(build_mgr, nested_func_symbols) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/322_nested_func_symbols.pa");
+	ASSERT_EQ(output, "5000\n60000\n1 2 430\n");
+}

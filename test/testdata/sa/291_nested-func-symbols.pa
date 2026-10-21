@@ -1,0 +1,6 @@
+func a() {
+    func f() { func g() { } }
+    { func k() { } }
+    { { func k() { } } }
+}
+{ func k() { } }
