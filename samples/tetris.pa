@@ -203,8 +203,8 @@ func placeMino(@!Field field, @Mino mino, int32 mx, int32 my, int32 color)
 }
 
 func draw(@!WINDOW win, @!WINDOW nextwin, @Field field,
-		@[4]$Point mino, int32 mx, int32 my, int32 mino_no,
-		@[4]$Point next_mino, int32 next_mino_no,
+		@Mino mino, int32 mx, int32 my, int32 mino_no,
+		@Mino next_mino, int32 next_mino_no,
 		int32 score, int32 level, bool placed)
 {
 	win.werase();
