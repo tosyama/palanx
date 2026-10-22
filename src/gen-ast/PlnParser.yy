@@ -162,11 +162,13 @@ struct BodyList {
 	{
 		// Frame storage is a property of a local declaration, and a name after
 		// only unimplemented entries has no type to inherit; such a parameter or
-		// named return stays an unimplemented entry for SA to report.
+		// named return stays an unimplemented entry for SA to report, as does a
+		// variable-length array.
 		auto rejectUnimplemented = [&](vector<json> vars) {
 			for (auto& v : vars)
 				if (v.value("inherit-type", false)
-						|| (v.contains("var-type") && v["var-type"].value("type-kind", "") == "embed")) {
+						|| (v.contains("var-type") && v["var-type"].value("type-kind", "") == "embed")
+						|| (v.contains("var-type") && isVarrType(v["var-type"]))) {
 					v = {{"not-impl", true}};
 					LOC(v, loc);
 				}
@@ -1158,7 +1160,7 @@ syscall_named_rets: type_expr ID
 
 ret_type: type_expr
 	{
-		if (isDeclarableVarType($1)) {
+		if (isDeclarableVarType($1) && !isVarrType($1)) {
 			$$ = move($1);
 		} else {
 			$$ = {{"not-impl", true}};

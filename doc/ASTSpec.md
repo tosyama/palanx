@@ -291,7 +291,8 @@ Variable type
       - null semantics differ by specifier:
         - "raw"      (`[]type`)  — initialization required; element count determined by SA from initializer
         - "fixed"    (`[#]type`) — initialization required; element count determined by SA from initializer
-        - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
+        - "variable" (`[+]type`) — no initial capacity: the header is allocated, its data is not
+          (no initialization required)
     - embedded - Boolean, true when the array's storage is laid out inline/contiguous rather than
       as a separately-allocated block; omitted when false. Native syntax sets this for the
       `$`-prefixed inline-storage forms, both 1D (`[n]$T`) and a contiguous 2D array (`[n]$[m]T`,

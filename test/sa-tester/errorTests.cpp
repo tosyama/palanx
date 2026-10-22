@@ -2939,7 +2939,7 @@ TEST(sa_error, sig_not_implemented)
 		{"error_545_param_typed_default.pa", ":1:18: error: parameter 'x' " + defaultNotImpl},
 		{"error_546_param_inherit_default.pa", ":1:21: error: parameter 'b' " + defaultNotImpl},
 		{"error_547_param_move_owner.pa", ":1:8: error: this parameter is not supported in this version."},
-		{"error_548_param_var_arr_type.pa", ":1:8: error: this parameter is not supported in this version."},
+		{"error_548_param_var_arr_type.pa", ":1:1: error: this parameter is not supported in this version."},
 		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
 		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
 		{"error_551_ret_var_arr_type.pa", ":1:13: error: this return value is not supported in this version."},
@@ -3414,6 +3414,27 @@ TEST(sa_error, chain_call)
 		{"error_722_chain_method_ahead_to_tapple.pa", ":5:1: error: the return values of a '->' chain whose value is evaluated first"},
 		{"error_723_chain_method_borrow_escapes.pa", ":6:10: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_724_chain_method_c_struct_value.pa", ":6:16: error: cannot convert 'div_t' to '@div_t'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, varr)
+{
+	const pair<string, string> cases[] = {
+		{"error_725_varr_copy_init.pa", ":2:1: error: copying '[+]int32' is not supported in this version."},
+		{"error_726_varr_copy_assign.pa", ":3:1: error: copying '[+]int32' is not supported in this version."},
+		{"error_727_varr_transfer.pa", ":3:1: error: this statement is not supported in this version."},
+		{"error_728_varr_struct_elem.pa", ":2:1: error: this statement is not supported in this version."},
+		{"error_729_varr_lit_over_len.pa", ":1:1: error: array 'v' has size 2 but its array literal has 3 elements."},
+		{"error_730_varr_lit_len_not_const.pa", ":2:1: error: array 'v' given an array literal must have a compile-time constant size."},
+		{"error_731_varr_to_ptr.pa", ":2:1: error: cannot convert '[+]int32' to '@int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

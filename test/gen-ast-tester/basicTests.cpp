@@ -90,6 +90,23 @@ TEST(gen_ast, arr_lit_2d_forms) {
 	ASSERT_EQ(stripLoc(a1), stripLoc((*vars)[1]["init"]));
 }
 
+TEST(gen_ast, varr_var_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+
+	// [+]int64 a6 = [1,3,5]
+	ASSERT_EQ(stmts[5]["stmt-type"], "var-decl");
+	const json& a6 = stmts[5]["vars"][0];
+	ASSERT_EQ(a6["name"], "a6");
+	ASSERT_EQ(a6["var-type"]["specifier"], "variable");
+	ASSERT_TRUE(a6["var-type"]["size-expr"].is_null());
+	// Only a primitive element is implemented: [+][+]int64 a8
+	ASSERT_EQ(stmts[7]["stmt-type"], "not-impl");
+}
+
 TEST(gen_ast, arr_lit_trailing_comma) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/121_arr_lit_trailing_comma.pa");

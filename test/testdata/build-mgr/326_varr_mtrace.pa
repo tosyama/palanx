@@ -1,0 +1,11 @@
+cinclude <mcheck.h>;
+mtrace();
+{
+	[+4]int32 v;
+	// No capacity: only the header is allocated.
+	[+]int64 e;
+	// The header is in the frame: only the data is allocated.
+	$[+2]uint8 f;
+	[+3]flo64 w = [1.0, 2.0];
+}
+muntrace();

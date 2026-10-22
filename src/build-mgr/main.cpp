@@ -191,6 +191,7 @@ int main(int argc, char* argv[])
 		vector<json> struct_shapes;
 		vector<json> arr_struct_shapes;
 		vector<json> arr_arr_struct_shapes;
+		vector<json> varr_shapes;
 		for (auto& ast_file : ast_files) {
 			string base = ast_file.substr(0, ast_file.size() - 9);
 			ifstream f(base + ".sa.json");
@@ -214,6 +215,8 @@ int main(int argc, char* argv[])
 					arr_struct_shapes.push_back(shape);
 				else if (shape.value("shape-kind", "") == "arr-arr-struct")
 					arr_arr_struct_shapes.push_back(shape);
+				else if (shape.value("shape-kind", "") == "varr")
+					varr_shapes.push_back(shape);
 				else
 					arr_shapes.push_back(shape);
 			}
@@ -230,7 +233,7 @@ int main(int argc, char* argv[])
 						arr_prim_shapes.push_back({{"leaf-type", leaf}});
 				}
 
-		if (!arr_shapes.empty() || !struct_shapes.empty() || !arr_struct_shapes.empty()) {
+		if (!arr_shapes.empty() || !struct_shapes.empty() || !arr_struct_shapes.empty() || !varr_shapes.empty()) {
 			string workdir = fs::path(ast_files[0]).parent_path().string();
 			string alloc_pa  = workdir + "/" PALAN_ALLOCATORS_MODULE ".pa";
 			string alloc_ast = alloc_pa + ".ast.json";
@@ -561,6 +564,34 @@ int main(int argc, char* argv[])
 					    << "        memcpy(dst[i], src[i], d1 * " << shape["leaf-size"].get<int64_t>() << ");\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
+					    << "}\n";
+				}
+
+				// Variable-length array headers {len, cap, data}. The header
+				// starts zeroed (calloc or the frame's memset), so data stays
+				// NULL while the capacity is 0.
+				for (auto& shape : varr_shapes) {
+					string leaf = shape["leaf-type"];
+					string hdr = "__pln_varr_" + leaf;
+					out << "\nexport type " << hdr << " { int64 len; int64 cap; @!" << leaf << " data; };\n"
+					    << "export func __pln_init_varr_" << leaf
+					    << "(@!" << hdr << " h, int64 len, int64 cap) {\n"
+					    << "    len -> h.len;\n"
+					    << "    cap -> h.cap;\n"
+					    << "    if cap > 0 { calloc(cap, " << shape["leaf-size"].get<int64_t>() << ") -> h.data; }\n"
+					    << "}\n"
+					    << "export func __pln_alloc_varr_" << leaf
+					    << "(int64 len, int64 cap) -> " << hdr << " h {\n"
+					    << "    __pln_init_varr_" << leaf << "(@!h, len, cap);\n"
+					    << "}\n"
+					    << "export func __pln_fini_varr_" << leaf << "(" << hdr << " h) {\n"
+					    << "    free(h.data);\n"
+					    << "}\n"
+					    << "export func __pln_free_varr_" << leaf << "(" << hdr << " h) {\n"
+					    << "    if (h == NULL) { return; }\n"
+					    << "    __pln_fini_varr_" << leaf << "(h);\n"
+					    << "    free(h);\n"
+					    << "    return;\n"
 					    << "}\n";
 				}
 			}

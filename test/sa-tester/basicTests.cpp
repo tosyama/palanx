@@ -5743,6 +5743,60 @@ TEST(sa, chain_lit)
 	}
 }
 
+TEST(sa, varr_basic)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/293_varr_basic.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 9);
+
+	// The variable points at a header allocated even without a capacity.
+	const auto& a = stmts[0]["vars"][0];
+	ASSERT_EQ(a["var-type"]["type-kind"], "pntr");
+	ASSERT_EQ(a["var-type"]["base-type"]["type-kind"], "varr");
+	ASSERT_EQ(a["var-type"]["base-type"]["base-type"]["type-name"], "int32");
+	ASSERT_EQ(funcName(a["init"]["name"]), "__pln_alloc_varr_int32");
+	ASSERT_EQ(a["init"]["args"][0]["value"], "0");
+	ASSERT_EQ(a["init"]["args"][1]["value"], "0");
+	// [+4]int64: length 0, capacity 4
+	const auto& bArgs = stmts[1]["vars"][0]["init"]["args"];
+	ASSERT_EQ(bArgs[0]["value"], "0");
+	ASSERT_EQ(bArgs[1]["value"], "4");
+	// [+3]uint8 = [1, 2]: the size is the length
+	const auto& cArgs = stmts[2]["vars"][0]["init"]["args"];
+	ASSERT_EQ(cArgs[0]["value"], "3");
+	ASSERT_EQ(cArgs[1]["value"], "3");
+	ASSERT_EQ(stmts[3]["stmt-type"], "arr-assign");
+
+	// v[i] indexes the header's data pointer.
+	const auto& store = stmts[5]["target"]["array"];
+	ASSERT_EQ(store["expr-type"], "field-access");
+	ASSERT_EQ(store["offset"], 16);
+	ASSERT_EQ(store["ptr-expr"]["name"], "b");
+	ASSERT_EQ(store["value-type"]["base-type"]["type-name"], "int64");
+	ASSERT_EQ(stmts[6]["vars"][0]["init"]["array"]["expr-type"], "field-access");
+
+	// A C function receives the data pointer.
+	const auto& cArg = stmts[7]["body"]["args"][0];
+	ASSERT_EQ(cArg["expr-type"], "field-access");
+	ASSERT_EQ(cArg["ptr-expr"]["name"], "c");
+
+	// $[+2]int32: the header is in the frame and only its data is released.
+	const auto& block = stmts[8]["body"];
+	ASSERT_EQ(block[0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(block[0]["vars"][0]["init"]["size"], 24);
+	ASSERT_EQ(block[1]["body"]["name"], "memset");
+	ASSERT_EQ(funcName(block[2]["body"]["name"]), "__pln_init_varr_int32");
+	ASSERT_EQ(funcName(block.back()["body"]["name"]), "__pln_fini_varr_int32");
+
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes.size(), 3);
+	ASSERT_EQ(shapes[0]["shape-kind"], "varr");
+	ASSERT_EQ(shapes[0]["leaf-type"], "int32");
+	ASSERT_EQ(shapes[0]["leaf-size"], 4);
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();

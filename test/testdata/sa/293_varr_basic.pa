@@ -1,0 +1,10 @@
+cinclude <string.h>;
+[+]int32 a;
+[+4]int64 b;
+[+3]uint8 c = [1, 2];
+7 -> b[1];
+int64 x = b[1];
+memset(c, 0, 3);
+{
+	$[+2]int32 f;
+}

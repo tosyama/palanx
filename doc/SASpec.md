@@ -24,7 +24,7 @@ Root
   manager unions it across modules and passes each path to `ld` after the program's own objects.
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
-  Four entry kinds:
+  Five entry kinds:
 
   **Array entry** (multi-dimensional arrays):
   - shape-key\* - Shape key string (e.g. "arr\_arr\_int32")
@@ -47,6 +47,16 @@ Root
   - shape-kind\* - "arr-arr-struct"
   - shape-key\* - Shape key string (e.g. "arr\_arr\_Point")
   - struct-name\* - Leaf struct type name (e.g. "Point")
+
+  **Varr entry** (`[+]T` variable with a primitive `T`): build-mgr declares the header as
+  `type __pln_varr_T { int64 len; int64 cap; @!T data; }` and generates
+  `__pln_alloc_varr_T(len, cap)`, `__pln_init_varr_T(h, len, cap)` (calloc's `cap` elements when
+  `cap > 0`; the header starts zeroed, so `data` stays NULL otherwise), `__pln_fini_varr_T(h)`
+  (frees `data`) and `__pln_free_varr_T(h)` (fini, then the header):
+  - shape-kind\* - "varr"
+  - shape-key\* - Shape key string (e.g. "varr\_int32")
+  - leaf-type\* - Element type name
+  - leaf-size\* - Element size in bytes
 
   **Struct entry** (structs with owned struct-pointer fields and/or array fields):
   - shape-kind\* - "struct"
@@ -318,6 +328,26 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     - `init`: C call `malloc(mul(<n-expr>, mul(__<name>_d1, lit-uint(sizeof(T)))))`
   - Scope-exit free: C call `free(<name>)` (no custom allocator; no `alloc-shapes` entry needed).
   - `n` (row count) is not stored; only `m` (inner dimension) needs to be retained for row indexing.
+
+  **`[+]T` / `[+n]T` (variable-length array, primitive `T`):** The variable is one word pointing
+  at a heap header `{int64 len; int64 cap; T* data}` (24 bytes), allocated even when empty so
+  that it never needs a NULL test; only `data` waits for a capacity.
+  - `var-type`: `pntr(varr(T))`. `varr` (`{"type-kind":"varr","base-type":T}`) appears only as
+    this pointer's base; its layout is known to SA alone, and codegen sees a pointer.
+  - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
+    `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
+    with an array literal, whose size is the length. The literal's size is its element count
+    when omitted, and otherwise must be a constant no smaller than the count; the elements past
+    the literal's are zero.
+  - Scope-exit free: `__pln_free_varr_T(<name>)`. `$[+]T` places the header in the frame:
+    `memset` + `__pln_init_varr_T(<name>, len, cap)`, released by `__pln_fini_varr_T(<name>)`.
+  - `arr[i]` on such a variable indexes its data: SA replaces the `array` operand with
+    `{"expr-type":"field-access","ptr-expr":<array>,"offset":16,"value-type":pntr(T)}`, and the
+    `arr-index` is then the one for a `pntr(T)`.
+  - A C call argument (fixed or variadic) is passed the same `field-access` to `data`. A Palan
+    pointer or array is not given it implicitly: `data` moves when the array grows.
+  - Copying (`[+]T w = v;`, `v -> w`) and `->>` into such a variable are not supported yet, nor
+    is a struct or array element, a parameter, a return value or a field.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
   `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`

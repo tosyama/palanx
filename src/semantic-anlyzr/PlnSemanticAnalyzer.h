@@ -53,7 +53,7 @@ enum class VarStorage { Heap, Frame };
 
 // The allocator helpers build-mgr generates (SpecAndDesign.md 3.6), one
 // family per shape: __pln_<op>_<leaf>, __pln_<op>_arr_<leaf>, __pln_<op>_arr_arr_<leaf>.
-enum class AllocFamily { Struct, ArrStruct, ArrArrStruct, ArrArrPrim };
+enum class AllocFamily { Struct, ArrStruct, ArrArrStruct, ArrArrPrim, Varr };
 struct AllocShapeRef { AllocFamily family; string leaf; };
 
 struct StructDef {
@@ -380,6 +380,7 @@ class PlnSemanticAnalyzer {
 	json sa_arr_var_decl(const json& stmt, VarStorage storage);       // returns array of statements
 	json sa_arr_lit_var_decl(const json& stmt, VarStorage storage);   // single var; returns array of statements
 	json sa_arr_copy_var_decl(const json& stmt, VarStorage storage);  // single var; returns array of statements
+	json sa_varr_var_decl(const json& stmt, VarStorage storage, bool litLen = false);
 	json sa_struct_lit_var_decl(const json& stmt, VarStorage storage); // single var; returns array of statements
 	json placeAggregateVar(const json& stmt, const string& name, const json& varType,
 	                       json heapInit, json heapRelease, VarStorage storage,
@@ -401,6 +402,7 @@ class PlnSemanticAnalyzer {
 	json sa_owned_struct_arr2d_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	void recordArrStructShape(const string& structName);
 	void recordArrArrShape(const string& leafName);
+	void recordVarrShape(const string& leafName);
 	void recordArrArrStructShape(const string& structName);
 	void enterBlockDecls(const json& stmts);
 	void declareLocalTypeName(const json& stmt);

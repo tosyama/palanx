@@ -101,6 +101,12 @@ inline bool isImplementedTypeExpr(const json& t)
 	return !t.contains("base-type") || isImplementedTypeExpr(t["base-type"]);
 }
 
+// A variable-length array, which no function signature takes yet.
+inline bool isVarrType(const json& t)
+{
+	return t.value("type-kind", "") == "arr" && t.value("specifier", "") == "variable";
+}
+
 // Whether a type_expr result is one gen-ast currently knows how to carry as
 // a declared variable's type (a bare, uninitialized var_declaration). Shared
 // by var_declaration and return_def (ARROW type_expr) so a bare-return-type
@@ -112,6 +118,8 @@ inline bool isDeclarableVarType(const json& t)
 	string tk = t.value("type-kind", "");
 	if (tk == "prim" || tk == "pntr")
 		return true;
+	if (isVarrType(t))
+		return t["base-type"].value("type-kind", "") == "prim";
 	if (tk != "arr" || t.value("specifier", "") != "raw")
 		return false;
 	if (t["size-expr"].is_null())

@@ -1,0 +1,27 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+[+4]int32 v;
+7 -> v[2];
+v[2] + 1 -> v[3];
+printf("%d %d\n", v[2], v[3]);
+[+]int64 w = [10, 20, 30];
+printf("%ld %ld %ld\n", w[0], w[1], w[2]);
+// Elements past the literal's are zero.
+[+5]int32 z = [1, 2];
+printf("%d %d %d\n", z[1], z[2], z[4]);
+{
+	$[+3]uint8 s;
+	memset(s, 65, 2);
+	printf("%s\n", s);
+}
+int32 n = 2;
+[+n]int32 a, b;
+3 -> a[0];
+4 -> b[1];
+printf("%d %d\n", a[0], b[1]);
+func sum3() -> int32
+{
+	[+]int32 t = [1, 2, 3];
+	return t[0] + t[1] + t[2];
+}
+printf("%d\n", sum3());

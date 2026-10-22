@@ -143,7 +143,8 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
                                    bool isCFunc, const string& funcName)
 {
 	const json& paramVT = param["var-type"];
-	auto fitOf = [&](const json& ast, const json& sa) {
+	auto fitOf = [&](const json& ast, const json& sa0) {
+		json sa = isCFunc && isVarrPntr(sa0["value-type"]) ? varrData(sa0) : sa0;
 		if (callArgMismatch(ast, sa, param, argIdx, isCFunc, funcName)) return ArgFit::None;
 		return sameArgType(sa["value-type"], paramVT) ? ArgFit::Exact : ArgFit::Viable;
 	};
@@ -666,6 +667,10 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
 		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
 		bool expiring = isCallBorrow(arg) || isExpiringStruct(saArg);
+		// Only across the C ABI: a Palan pointer to the data would dangle once
+		// the array grows.
+		if (isCFunc && isVarrPntr(saArg["value-type"]))
+			saArg = varrData(move(saArg));
 		if (paramVT) {
 			if (auto d = callArgMismatch(argAst, saArg, *param, argIdx, isCFunc, funcName))
 				reportDiag(locNode, *d);

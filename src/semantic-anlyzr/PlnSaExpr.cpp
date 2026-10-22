@@ -1158,6 +1158,8 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 		: arr_kind == "arr-index"    ? sa_expr_arr_index(arr, true)
 		: sa_expression(arr);
 	requireOwnedBase(sa_array, arr);
+	if (isVarrPntr(sa_array["value-type"]))
+		sa_array = varrData(move(sa_array));
 	const json& array_type = sa_array["value-type"];
 	if (array_type.value("type-kind", "") != "pntr") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_NotArrayType) << endl;

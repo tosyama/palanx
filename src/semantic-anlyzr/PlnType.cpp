@@ -57,6 +57,14 @@ const PtrType* PlnTypeRegistry::ptr(const PlnType* base)
     return ins->second.get();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+const VarrType* PlnTypeRegistry::varr(const PlnType* elem)
+{
+    auto it = varrCache_.find(elem);
+    if (it != varrCache_.end()) return it->second.get();
+    auto [ins, ok] = varrCache_.emplace(elem, std::make_unique<VarrType>(elem));
+    return ins->second.get();
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 const StructType* PlnTypeRegistry::structType(const std::string& name)
 {
     auto it = structCache_.find(name);
@@ -104,7 +112,7 @@ std::string unrepresentableTypeName(const json& j)
         if (tname.empty()) return "malformed type"; // LCOV_EXCL_BR_LINE -- no real producer emits this
         return PrimTypeNames::instance().toEnum.count(tname) ? "" : tname; // LCOV_EXCL_EXCEPTION_BR_LINE
     }
-    if (kind == "pntr")
+    if (kind == "pntr" || kind == "varr")
         return j.contains("base-type") ? unrepresentableTypeName(j["base-type"]) : "malformed type"; // LCOV_EXCL_EXCEPTION_BR_LINE
     if (kind == "struct")
         return j.contains("type-name") ? "" : "anonymous struct"; // LCOV_EXCL_BR_LINE -- normalizeCType only folds a named tag to "struct"
@@ -146,6 +154,8 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
     }
     if (kind == "pntr")
         return ptr(fromJson(j["base-type"]));
+    if (kind == "varr")
+        return varr(fromJson(j["base-type"]));
     if (kind == "func") {
         std::vector<const PlnType*> params;
         for (auto& p : j["parameters"]) params.push_back(fromJson(p["var-type"]));
@@ -172,6 +182,10 @@ json PlnTypeRegistry::toJson(const PlnType* t)
     if (t->kind == PlnType::Kind::Ptr) {
         const auto* p = static_cast<const PtrType*>(t);
         return {{"type-kind", "pntr"}, {"base-type", toJson(p->base)}};
+    }
+    if (t->kind == PlnType::Kind::Varr) {
+        const auto* v = static_cast<const VarrType*>(t);
+        return {{"type-kind", "varr"}, {"base-type", toJson(v->elem)}};
     }
     if (t->kind == PlnType::Kind::Struct) {
         const auto* s = static_cast<const StructType*>(t);
@@ -259,6 +273,9 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
         const auto* pf = static_cast<const PtrType*>(from);
         const auto* pt = static_cast<const PtrType*>(to);
         if (pf->base == pt->base) return TypeCompat::Identical;
+        // A header is not its elements, so it must not pass as `@void`.
+        if (pf->base->kind == PlnType::Kind::Varr || pt->base->kind == PlnType::Kind::Varr)
+            return TypeCompat::Incompatible;
 
         bool fromIsVoid = pf->base->kind == PlnType::Kind::Prim
             && static_cast<const PrimType*>(pf->base)->name == PrimType::Name::Void;

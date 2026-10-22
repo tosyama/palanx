@@ -160,6 +160,20 @@ inline bool isFuncPtr(const json& vt)
 	    && vt["base-type"].value("type-kind","") == "func";
 }
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
+// A `[+]T` value: one word pointing at its {len, cap, data} header.
+inline bool isVarrPntr(const json& vt)
+{
+	return vt.value("type-kind","") == "pntr" && vt.contains("base-type")
+	    && vt["base-type"].value("type-kind","") == "varr";
+}
+// The header's data pointer: what `v[i]` indexes and a C function receives.
+inline json varrData(json varr)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json elems = {{"type-kind","pntr"},{"base-type",varr["value-type"]["base-type"]["base-type"]}};
+	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 // Strips a declared variable's `$` and returns where its storage lives.
 inline VarStorage takeVarStorage(json& varType)
@@ -430,7 +444,7 @@ inline void setArrSize(json& pntrType, const json& saSize) {
 // The array levels stop at an element that is a struct's own storage or a
 // '@T'/'@!T' pointer.
 inline bool isArrLevel(const json& t) {
-	return t.value("type-kind","") == "pntr" && !isStructStorage(t) && !isPtrBorrow(t);
+	return t.value("type-kind","") == "pntr" && !isStructStorage(t) && !isPtrBorrow(t) && !isVarrPntr(t);
 }
 
 // Renders an SA type as source-like text for diagnostics: a struct's own
@@ -461,6 +475,8 @@ inline string typeDisplayName(const json& t) {
 		return unrepresentableTypeName(t);
 	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
 	auto perm = [](const json& p) { return string(isWritableThrough(p) ? "@!" : "@"); };
+	if (isVarrPntr(t))
+		return "[+]" + typeDisplayName(t["base-type"]["base-type"]);
 	if (isStructStorage(t))
 		return typeDisplayName(t["base-type"]);
 	if (isPtrBorrow(t))

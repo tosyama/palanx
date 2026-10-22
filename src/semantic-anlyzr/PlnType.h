@@ -22,7 +22,7 @@ enum class TypeCompat {
 
 // Type base class
 struct PlnType {
-    enum class Kind { Prim, Ptr, Struct, Enum, Func } kind;
+    enum class Kind { Prim, Ptr, Struct, Enum, Func, Varr } kind;
     virtual ~PlnType() = default;
 protected:
     PlnType(Kind k) : kind(k) {}
@@ -69,16 +69,25 @@ struct FuncType : PlnType {
         : PlnType(Kind::Func), params(std::move(p)), ret(r) {}
 };
 
+// A `[+]T` header {len, cap, data}: only ever a pointer's base, since a
+// variable-length array variable is one word pointing at its header.
+struct VarrType : PlnType {
+    const PlnType* elem;
+    VarrType(const PlnType* e) : PlnType(Kind::Varr), elem(e) {}
+};
+
 // Type registry — owns all type instances and interns them
 class PlnTypeRegistry {
     std::map<PrimType::Name, std::unique_ptr<PrimType>>  primCache_;
     std::map<const PlnType*, std::unique_ptr<PtrType>>   ptrCache_;
+    std::map<const PlnType*, std::unique_ptr<VarrType>>  varrCache_;
     std::map<std::string, std::unique_ptr<StructType>>   structCache_;
     std::map<std::string, std::unique_ptr<EnumType>>     enumCache_;
     std::map<std::pair<std::vector<const PlnType*>, const PlnType*>, std::unique_ptr<FuncType>> funcCache_;
 public:
     const PrimType*  prim(PrimType::Name name);
     const PtrType*   ptr(const PlnType* base);
+    const VarrType*  varr(const PlnType* elem);
     const StructType* structType(const std::string& name);
     const EnumType*  enumType(const std::string& name, const PrimType* base);
     const FuncType*  funcType(const std::vector<const PlnType*>& params, const PlnType* ret);

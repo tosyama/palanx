@@ -394,9 +394,14 @@ json PlnSemanticAnalyzer::sa_resolved_var_decl(const json& stmt2, vector<VarStor
 
 json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage storage)
 {
+	json var = stmt["vars"][0];
+	if (var["var-type"].value("specifier", "") == "variable") {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_CopyUnsupportedShape,
+			"[+]" + typeDisplayName(var["var-type"]["base-type"])) << endl;
+		exit(1);
+	}
 	// Evaluated before the declaration so the variable is not in scope in its
 	// own initializer.
-	json var = stmt["vars"][0];
 	json src = sa_expression(var["init"]);
 	json declStmt = stmt;
 	declStmt["vars"][0].erase("init");
@@ -413,6 +418,8 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 	const json& vtype = stmt2["vars"][0]["var-type"];
 	string tk = vtype.value("type-kind", "");
 
+	if (tk == "arr" && vtype.value("specifier", "") == "variable")
+		return sa_varr_var_decl(stmt2, storage);
 	if (tk == "arr" && vtype.value("specifier", "") == "raw" && vtype["size-expr"].is_null()) {
 		cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_UnsizedArrVarDecl) << endl;
 		exit(1);
@@ -708,6 +715,55 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage)
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// The header is allocated even when empty, so `v` always points at one and no
+// operation has to test it; only the data waits for a capacity. With an array
+// literal (`litLen`), the declared size is the length rather than the capacity.
+json PlnSemanticAnalyzer::sa_varr_var_decl(const json& stmt, VarStorage storage, bool litLen)
+{
+	const json& vtype = stmt["vars"][0]["var-type"];
+	const json& elem = vtype["base-type"];
+	string leaf = elem.value("type-name", "");
+	if (elemSizeBytes(leaf) < 0) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
+		exit(1);
+	}
+	recordVarrShape(leaf);
+
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json int64_type = {{"type-kind","prim"},{"type-name","int64"}};
+	json zero = {{"expr-type","lit-int"},{"value","0"},{"value-type",int64_type}};
+	json cap = vtype["size-expr"].is_null() ? zero : sa_arr_size_expr(stmt, vtype["size-expr"]);
+	json result = json::array();
+	if (stmt["vars"].size() > 1 && constArrSize(cap) < 0) {
+		string capName = "__arr_sz_" + to_string(tempVarCounter_++);
+		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+		declareVar(capName, uint64_type, &stmt);
+		result.push_back({{"stmt-type","var-decl"},
+			{"vars",json::array({{{"name",capName},{"var-type",uint64_type},{"init",cap}}})}});
+		cap = {{"expr-type","id"},{"name",capName},{"var-type",uint64_type},{"value-type",uint64_type}};
+	}
+	json len = litLen ? cap : zero;
+	json varType = {{"type-kind","pntr"},{"base-type",{{"type-kind","varr"},{"base-type",elem}}}};
+
+	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
+	json post = json::array();
+	for (auto& var : stmt["vars"]) {
+		string name = var["name"];
+		json self = {{"expr-type","id"},{"name",name},{"var-type",varType},{"value-type",varType}};
+		json alloc = allocHelperCall(AllocFamily::Varr, leaf, "alloc", json::array({len, cap}));
+		alloc["value-type"] = varType;
+		json release = {{"stmt-type","expr"},{"body",allocHelperCall(AllocFamily::Varr, leaf, "free", json::array({self}))}};
+		declareVar(name, varType, &stmt);
+		json init = placeAggregateVar(stmt, name, varType, move(alloc), move(release), storage,
+		                              24, 8, false, post, AllocShapeRef{AllocFamily::Varr, leaf});
+		sa_stmt["vars"].push_back({{"name",name},{"var-type",varType},{"init",move(init)}});
+	}
+	result.push_back(move(sa_stmt));
+	for (auto& s : post) result.push_back(move(s));
+	return result;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // Fills an omitted dimension with `count`; otherwise returns the declared
 // size, which must be a compile-time constant.
 string PlnSemanticAnalyzer::arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count)
@@ -755,9 +811,13 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage stora
 	json& declType = declVar["var-type"];
 	string declared = arrLitDimSize(stmt, name, declType["size-expr"], items.size());
 	string rowSize = is2d ? arrLitDimSize(stmt, name, declType["base-type"]["size-expr"], items[0]["items"].size()) : "0";
-	checkArrLitCount(stmt, items, name, is2d, stoull(declared), stoull(rowSize));
+	// A variable-length array's size is its length; the elements past the
+	// literal's are zero.
+	bool isVarr = vtype.value("specifier", "") == "variable";
+	checkArrLitCount(stmt, items, name, is2d, isVarr && stoull(declared) >= items.size() ? items.size() : stoull(declared),
+	                 stoull(rowSize));
 
-	json result = sa_var_decl_group(declStmt, storage);
+	json result = isVarr ? sa_varr_var_decl(declStmt, storage, true) : sa_var_decl_group(declStmt, storage);
 	emitArrLitAssigns({{"expr-type", "id"}, {"name", name}}, shape, values, result); // LCOV_EXCL_EXCEPTION_BR_LINE
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1750,6 +1810,12 @@ json allocHelperCall(AllocFamily family, const string& leaf, const string& op, j
 	case AllocFamily::ArrArrPrim:
 		prefix = "arr_arr_"; owned = ptr(ptr(elem)); building = ptr(mut(elem)); dims = {i64, i64};
 		break;
+	case AllocFamily::Varr:
+		// The generated module sees the header as a struct of its own.
+		elem = {{"type-kind","struct"},{"type-name","__pln_varr_" + leaf}};
+		prefix = "varr_"; owned = ptr(elem); building = mut(elem);
+		if (op == "alloc" || op == "init") dims = {i64, i64};   // len, cap
+		break;
 	}
 	vector<json> params;
 	if (op == "init") params.push_back(building);
@@ -1942,6 +2008,17 @@ void PlnSemanticAnalyzer::recordArrArrShape(const string& leafName)
 	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
 		{"shape-key", shape_key}, {"leaf-type", leafName},
 		{"leaf-size", elemSizeBytes(leafName)}, {"depth", 2} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+	});
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::recordVarrShape(const string& leafName)
+{
+	string shape_key = "varr_" + leafName;
+	for (auto& s : sa["alloc-shapes"])
+		if (s.value("shape-key","") == shape_key) return;
+	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
+		{"shape-kind","varr"}, {"shape-key",shape_key}, {"leaf-type",leafName},
+		{"leaf-size",elemSizeBytes(leafName)} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
