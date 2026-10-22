@@ -475,6 +475,7 @@ class PlnSemanticAnalyzer {
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
+	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
 	// isMutable: the borrow's permission, or none for an owned level.
 	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable);
 	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);

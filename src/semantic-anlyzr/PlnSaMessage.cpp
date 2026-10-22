@@ -440,6 +440,9 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_VarrBorrowNeedsAddrOf:
 			return "a variable-length array given to '@[+]T'/'@![+]T' must be written as '@name' or '@!name'.";
 
+		case E_VarrBorrowSized:
+			return "a borrowed variable-length array type is written '@[+]T' or '@![+]T', without a size.";
+
 		case E_ArrLenNotConst:
 			return "'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time.";
 

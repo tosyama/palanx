@@ -995,6 +995,10 @@ void PlnSemanticAnalyzer::checkBorrowSource(const json& locNode, const json& saV
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
 		exit(1);
 	}
+	if (isVarrPntr(dstType) && isPtrBorrow(dstType) && isVarrStorage(saValue["value-type"])) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VarrBorrowNeedsAddrOf) << endl;
+		exit(1);
+	}
 	if (!isStructBorrow(dstType) || !isStructStorage(saValue["value-type"]))
 		return;
 	if (isExpiringStruct(saValue)) {

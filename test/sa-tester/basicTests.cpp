@@ -5865,6 +5865,36 @@ TEST(sa, arr_len)
 	ASSERT_EQ(ret["value"]["value"], "3");
 }
 
+// A borrow passes the header itself; a `[]T` parameter gets the data.
+TEST(sa, varr_borrow)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/296_varr_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& funcs = jout["functions"];
+	ASSERT_EQ(funcs.size(), 3);
+	ASSERT_EQ(funcs[0]["name"], "_296_varr_borrow..add.WVint32.int32");
+	ASSERT_EQ(funcs[1]["name"], "_296_varr_borrow..total.RVint32");
+	const auto& param = funcs[1]["parameters"][0]["var-type"];
+	ASSERT_EQ(param["base-type"]["type-kind"], "varr");
+	ASSERT_EQ(param["mutable"], false);
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 7);
+	const auto& total = stmts[3]["vars"][0]["init"]["args"][0];
+	ASSERT_EQ(total["name"], "v");
+	ASSERT_EQ(total["value-type"]["mutable"], true);
+	const auto& data = stmts[4]["vars"][0]["init"]["args"][0];
+	ASSERT_EQ(data["expr-type"], "field-access");
+	ASSERT_EQ(data["offset"], 16);
+	ASSERT_EQ(data["ptr-expr"]["name"], "v");
+	const auto& p = stmts[5]["vars"][0];
+	ASSERT_EQ(p["var-type"]["base-type"]["type-kind"], "varr");
+	ASSERT_EQ(p["var-type"]["mutable"], true);
+	ASSERT_EQ(stmts[6]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[6]["value"]["name"], "w");
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();

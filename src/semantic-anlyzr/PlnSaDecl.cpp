@@ -461,7 +461,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 	for (auto& var : stmt2["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = deepNormalizePrimToStruct(isArrBorrow ? borrowType : var["var-type"]);
+		json varType = deepNormalizePrimToStruct(isArrBorrow || isVarrPntr(borrowType) ? borrowType : var["var-type"]);
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
@@ -743,7 +743,7 @@ json PlnSemanticAnalyzer::sa_varr_var_decl(const json& stmt, VarStorage storage,
 		cap = {{"expr-type","id"},{"name",capName},{"var-type",uint64_type},{"value-type",uint64_type}};
 	}
 	json len = litLen ? cap : zero;
-	json varType = {{"type-kind","pntr"},{"base-type",{{"type-kind","varr"},{"base-type",elem}}}};
+	json varType = varrPntrType(elem);
 
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
 	json post = json::array();
@@ -2033,28 +2033,37 @@ void PlnSemanticAnalyzer::recordVarrShape(const string& leafName)
 	registerVarrBuiltins(leafName);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-void PlnSemanticAnalyzer::registerVarrBuiltins(const string& leafName)
+json varrBuiltinDefs(const string& leafName)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json elem = {{"type-kind","prim"},{"type-name",leafName}};
 	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
 	auto self = [&](bool isMutable) {
-		return json{{"name","v"},{"var-type",{{"type-kind","pntr"},{"mutable",isMutable},
-			{"base-type",{{"type-kind","varr"},{"base-type",elem}}}}}};
+		json vt = varrPntrType(elem);
+		vt["mutable"] = isMutable;
+		return json{{"name","v"},{"var-type",move(vt)}};
 	};
+	json defs = json::array();
 	auto add = [&](const string& name, json params, const json* ret) {
 		json def = {{"name",name},{"func-type","palan"},{"parameters",move(params)}};
 		if (name == "len") def["inline"] = true;
 		else def["symbol"] = allocHelperSymbol(AllocFamily::Varr, leafName, name);
 		if (ret) def["ret-type"] = *ret;
-		varrBuiltins_[name].push_back(move(def));
+		defs.push_back(move(def));
 	};
 	add("len", json::array({self(false)}), &i64);
 	add("push", json::array({self(true), {{"name","x"},{"var-type",elem}}}), nullptr);
 	add("resize", json::array({self(true), {{"name","n"},{"var-type",i64}}}), nullptr);
 	add("pop", json::array({self(true)}), &elem);
+	return defs;
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::registerVarrBuiltins(const string& leafName)
+{
+	for (auto& def : varrBuiltinDefs(leafName))
+		varrBuiltins_[def["name"].get<string>()].push_back(def);
+}
 
 void PlnSemanticAnalyzer::recordArrArrStructShape(const string& structName)
 {

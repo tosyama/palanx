@@ -65,6 +65,8 @@ inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true)
 
 // The symbol of one of the functions build-mgr generates, and a call to it.
 string allocHelperSymbol(AllocFamily family, const string& leaf, const string& op);
+// len, push, resize and pop of `[+]T` for a primitive T, as call candidates.
+json varrBuiltinDefs(const string& leafName);
 json allocHelperCall(AllocFamily family, const string& leaf, const string& op, json args);
 
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
@@ -168,11 +170,25 @@ inline bool isVarrPntr(const json& vt)
 	    && vt["base-type"].value("type-kind","") == "varr";
 }
 inline bool isVarrStorage(const json& vt) { return isVarrPntr(vt) && !vt.contains("mutable"); }
-// The header's data pointer: what `v[i]` indexes and a C function receives.
+// Where a `[+]T` argument passes its data instead of its header: to C, or to
+// an unsized `[]T` (whose length the callee is told some other way).
+inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
+{
+	if (!isVarrPntr(argVT)) return false;
+	return isCFunc || (paramVT && paramVT->value("type-kind","") == "pntr" && !paramVT->contains("mutable")
+	                   && !paramVT->contains("arr-size") && !isStructStorage(*paramVT) && !isVarrPntr(*paramVT));
+}
+inline json varrPntrType(const json& elem)
+{
+	return {{"type-kind","pntr"},{"base-type",{{"type-kind","varr"},{"base-type",elem}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+// The header's data pointer: what `v[i]` indexes and a C function or a `[]T`
+// receives. Through a read-only borrow the elements are read-only too.
 inline json varrData(json varr)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json elems = {{"type-kind","pntr"},{"base-type",varr["value-type"]["base-type"]["base-type"]}};
+	if (!isWritableThrough(varr["value-type"])) elems["mutable"] = false;
 	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE

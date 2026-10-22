@@ -408,6 +408,7 @@ static std::string symbolType(const json& t)
         {"struct", {"type-kind", "type-name"}},
         {"pntr",   {"type-kind", "base-type", "mutable", "embedded", "stride", "arr-size"}},
         {"func",   {"type-kind", "parameters", "ret-type"}},
+        {"varr",   {"type-kind", "base-type"}},
     };
     const std::string kind = t.value("type-kind", "");
     auto known = knownKeys.find(kind);
@@ -423,6 +424,7 @@ static std::string symbolType(const json& t)
     }
     if (kind == "struct") return symbolUserName(t["type-name"].get<std::string>());
     if (kind == "pntr") return symbolPntr(t);
+    if (kind == "varr") return "V" + symbolType(t["base-type"]);
     const json& params = t["parameters"];
     std::string s = "F" + std::to_string(params.size()) + "_";
     for (auto& p : params) s += symbolType(p["var-type"]);

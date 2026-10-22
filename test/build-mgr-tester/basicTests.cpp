@@ -3422,6 +3422,41 @@ TEST(build_mgr, varr_builtins_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, varr_borrow) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/332_varr_borrow.pa");
+	ASSERT_EQ(output, "4 18 18\n18\n5 1 2\n5 16\n");
+}
+
+TEST(build_mgr, varr_borrow_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_varr_borrow_mtrace_bin "
+		"../test/testdata/build-mgr/333_varr_borrow_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_varr_borrow_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_varr_borrow_mtrace_bin");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && (line.find(" + ") != string::npos || line.find(" > ") != string::npos)) allocs++;
+		if (!fromSharedLib && (line.find(" - ") != string::npos || line.find(" < ") != string::npos)) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	// Only the owner frees: the header, and the data as the borrows grow it to 4, 8 and 16.
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, varr_builtins_abort) {
 	for (string file : {"329_varr_pop_empty", "330_varr_resize_negative"}) {
 		cleanTestEnv();

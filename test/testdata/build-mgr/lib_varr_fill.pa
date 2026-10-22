@@ -1,0 +1,8 @@
+export func fill(@![+]int64 a, int64 n)
+{
+	int64 i = 0;
+	while i < n {
+		a.push(i * i);
+		i + 1 -> i;
+	}
+}

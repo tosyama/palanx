@@ -1,0 +1,19 @@
+cinclude <mcheck.h>;
+
+func fill(@![+]int64 a, int64 n)
+{
+	int64 i = 0;
+	while i < n {
+		a.push(i);
+		i + 1 -> i;
+	}
+}
+
+mtrace();
+{
+	[+]int64 v;
+	@![+]int64 p = @!v;
+	fill(p, 5);
+	fill(@!v, 5);
+}
+muntrace();

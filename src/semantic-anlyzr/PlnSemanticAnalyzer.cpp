@@ -176,10 +176,32 @@ static bool sameParamTypes(const json& a, const json& b)
 	return true;
 }
 
+// The builtins exist for every T, whether or not a `[+]T` has made them
+// candidates yet, so declaration order does not matter. A `len` of a borrowed
+// constant-size array would never be called: such a len is folded first.
+static bool definesBuiltin(const string& name, const json& def)
+{
+	const json& params = def.value("parameters", json::array());
+	if (params.empty()) return false;
+	const json& first = params[0]["var-type"];
+	if (name == "len" && params.size() == 1 && first.contains("arr-size") && first.contains("mutable"))
+		return true;
+	if (!isVarrPntr(first)) return false;
+	const json& elem = first["base-type"]["base-type"];
+	if (elem.value("type-kind","") != "prim") return false; // LCOV_EXCL_BR_LINE -- a non-primitive element is rejected when the type is normalized
+	for (auto& builtin : varrBuiltinDefs(elem["type-name"].get<string>()))
+		if (builtin["name"] == name && sameParamTypes(builtin, def)) return true;
+	return false;
+}
+
 // Functions of one name are told apart by their parameter types alone, since
 // a call chooses among them by its arguments.
 void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json& locNode)
 {
+	if (definesBuiltin(name, def)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
+		exit(1);
+	}
 	for (auto& scope : plnFuncScopes) {
 		auto it = scope.find(name);
 		if (it == scope.end()) continue;
@@ -473,7 +495,7 @@ static string unsupportedNativeSigTypeKind(const json& vt)
 	string k = vt.value("type-kind", "");
 	if (k == "pntr")
 		return vt.contains("base-type") ? unsupportedNativeSigTypeKind(vt["base-type"]) : "";
-	if (k == "prim" || k == "struct" || k == "func" || k.empty())
+	if (k == "prim" || k == "struct" || k == "func" || k == "varr" || k.empty())
 		return "";
 	return k == "arr" ? "array" : k;
 }
@@ -572,7 +594,30 @@ json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json
 {
 	if (type.value("type-kind","") != "pntr" || type["base-type"].value("type-kind","") != "arr")
 		return type;
-	return sizedArrLevel(locNode, type["base-type"], type.value("mutable", false));
+	const json& arr = type["base-type"];
+	if (arr.value("specifier","") == "variable")
+		return varrBorrowType(locNode, arr, type.value("mutable", false));
+	return sizedArrLevel(locNode, arr, type.value("mutable", false));
+}
+
+// Registering the shape here gives the builtins and the generated functions
+// to a function or module that borrows a `[+]T` without declaring one.
+json PlnSemanticAnalyzer::varrBorrowType(const json& locNode, const json& arr, bool isMutable)
+{
+	if (!arr["size-expr"].is_null()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VarrBorrowSized) << endl;
+		exit(1);
+	}
+	const json& elem = arr["base-type"];
+	string leaf = elem.value("type-kind","") == "prim" ? elem.value("type-name","") : "";
+	if (elemSizeBytes(leaf) < 0) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
+		exit(1);
+	}
+	recordVarrShape(leaf);
+	json vt = varrPntrType(elem);
+	vt["mutable"] = isMutable;
+	return vt;
 }
 
 // Parameters only: a borrowed array return would outlive the storage it

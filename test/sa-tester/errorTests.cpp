@@ -3443,6 +3443,17 @@ TEST(sa_error, varr)
 		{"error_737_arr_len_unsized_param.pa", ":2:2: error: 'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time."},
 		{"error_738_arr_len_runtime_size.pa", ":3:11: error: 'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time."},
 		{"error_739_varr_len_const.pa", ":2:1: error: const 'N' must be initialized with a compile-time constant."},
+		{"error_740_varr_borrow_push_readonly.pa", ":1:23: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_741_varr_borrow_write_readonly.pa", ":1:23: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
+		{"error_742_varr_local_borrow_needs_addr.pa", ":2:1: error: a variable-length array given to '@[+]T'/'@![+]T' must be written as '@name' or '@!name'."},
+		{"error_743_varr_borrow_elem_mismatch.pa", ":3:1: error: cannot convert '@[+]int32' to '@[+]int64'."},
+		{"error_744_varr_to_sized_borrow.pa", ":3:1: error: array shape '[+]int32' does not match the borrowed array type '@[3]int32'."},
+		{"error_745_varr_readonly_to_unsized.pa", ":2:23: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_746_varr_builtin_redefined.pa", ":1:1: error: Function 'push' is already defined."},
+		{"error_747_varr_builtin_redefined_after.pa", ":2:1: error: Function 'push' is already defined."},
+		{"error_748_arr_len_redefined.pa", ":1:1: error: Function 'len' is already defined."},
+		{"error_749_varr_borrow_struct_elem.pa", ":2:1: error: this statement is not supported in this version."},
+		{"error_750_varr_borrow_sized.pa", ":1:1: error: a borrowed variable-length array type is written '@[+]T' or '@![+]T', without a size."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

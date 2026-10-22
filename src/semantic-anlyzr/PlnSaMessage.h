@@ -162,6 +162,7 @@ enum PlnSaMessageCode {
 	E_VarrBorrowNeedsAddrOf,
 	E_ArrLenNotConst,
 	E_ArrLenNeedsAddrOf,
+	E_VarrBorrowSized,
 };
 
 class PlnSaMessage

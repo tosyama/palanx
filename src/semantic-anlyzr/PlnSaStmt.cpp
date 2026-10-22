@@ -335,7 +335,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	}
 	if (isAggregateLit(stmt["value"]) && (isStructPntr(*varType) || isArrLevel(*varType)))
 		return json::array({sa_aggregate_lit_assign(stmt, {{"expr-type", "id"}, {"name", name}}, *varType)}); // LCOV_EXCL_EXCEPTION_BR_LINE
-	if (isVarrPntr(*varType)) {
+	if (isVarrStorage(*varType)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(stmt.value("ownership-transfer", false)
 			? E_StmtNotImplemented : E_CopyUnsupportedShape, typeDisplayName(*varType)) << endl;
 		exit(1);

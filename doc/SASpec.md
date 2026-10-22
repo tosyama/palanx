@@ -139,6 +139,7 @@ among such blocks of the enclosing function or of the top level (`util..a.v..b1.
     (no `mutable`: owned or by value), `R` (`mutable: false`) or `W` (`mutable: true`), then the
     base type
   - func: `F<parameter count>_`, each parameter type, then the return type (a `void` prim when none)
+  - varr: `V`, then the element type (`@![+]int32` is `WVint32`)
 
 The return type is not part of the symbol, since functions differing only by it cannot coexist.
 Two parameter types that differ in any key give different symbols. `func show(int32)` in
@@ -353,21 +354,31 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - `arr[i]` on such a variable indexes its data: SA replaces the `array` operand with
     `{"expr-type":"field-access","ptr-expr":<array>,"offset":16,"value-type":pntr(T)}`, and the
     `arr-index` is then the one for a `pntr(T)`.
-  - A C call argument (fixed or variadic) is passed the same `field-access` to `data`. A Palan
-    pointer or array is not given it implicitly: `data` moves when the array grows.
+  - A C call argument (fixed or variadic) and a `[]T`-family Palan parameter (an unsized
+    elements pointer: no `mutable`, no `arr-size`) are passed the same `field-access` to `data`.
+    Through a read-only borrow it is typed `pntr(T)` with `"mutable": false`, so writing an element
+    or passing it to `[]T` is rejected as for any `@T`. A sized `@[n]T`/`@![n]T` parameter does
+    not take a `[+]T` (E_ArrBorrowShapeMismatch). Growing the array moves `data`, leaving such a
+    pointer or a `@!v[i]` dangling; this is not checked.
   - `@v` / `@!v` borrows the array as it is: the value is the header pointer, typed
     `pntr(varr(T))` with `"mutable": false` / `true` (`@[+]T` / `@![+]T`; the owner's type has no
     `mutable`). Given to such a parameter, the array must be written with `@`/`@!`
     (E_VarrBorrowNeedsAddrOf); a chained value takes `@` for `@[+]T` as for other read borrows.
+  - `@[+]T` / `@![+]T` written as a parameter or local variable type is normalized to the same
+    `pntr(varr(T))` with `mutable` (a size, `@[+n]T`, is E_VarrBorrowSized), and registers `T`'s
+    varr shape as a declaration would. Such a variable is bound with `@v`/`@!v` or another borrow,
+    can be rebound by `->`, and is never freed.
   - Built-in functions: once `T` is used, the callee lookup also finds `len(@[+]T) -> int64`,
     `push(@![+]T, T)`, `resize(@![+]T, int64)` and `pop(@![+]T) -> T`, as ordinary Palan
     functions alongside C, local and imported ones (overloading, method form and chaining apply
     unchanged). `len` becomes the header's len, `field-access` at offset 0 of the borrowed
     header pointer, typed `int64`; the others are a `palan` call to
     `__pln_push/resize/pop_varr_T`, whose symbol is built from the generated signature (see the
-    varr `alloc-shapes` entry).
+    varr `alloc-shapes` entry). A Palan function with a built-in's name and parameter types, for
+    any `T`, is E_DuplicateFuncDef regardless of declaration order, as is a `len` taking one
+    borrowed constant-size array (that `len` is folded).
   - Copying (`[+]T w = v;`, `v -> w`) and `->>` into such a variable are not supported yet, nor
-    is a struct or array element, a parameter, a return value or a field.
+    is a struct or array element, an owned parameter, a return value or a field.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
   `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`
