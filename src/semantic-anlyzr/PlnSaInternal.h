@@ -176,6 +176,14 @@ inline json varrData(json varr)
 	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+// The header's len, which `len(@v)` reads in place of a call.
+inline json varrLen(json varr)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
+	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",0},{"value-type",move(i64)}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 // Strips a declared variable's `$` and returns where its storage lives.
 inline VarStorage takeVarStorage(json& varType)

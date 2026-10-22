@@ -312,6 +312,7 @@ class PlnSemanticAnalyzer {
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
 	json foldConstExpr(const json& expr);
 	optional<ConstVal> evalConst(const json& expr);
+	optional<int64_t> constArrLen(const json& expr);
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	// Also gives back a void call or a multi-value call, which has no value-type.
 	json sa_expr_maybe_void(const json &expr, const PlnType* expectedType = nullptr);

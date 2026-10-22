@@ -384,7 +384,7 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 		auto cit = constDecls_.find(name);
 		if (cit == constDecls_.end()) return expr;
 		lit = cit->second;
-	} else if (foldableOps.count(et)) {
+	} else if (foldableOps.count(et) || et == "call" || et == "chain-call") {
 		optional<ConstVal> v = evalConst(expr);
 		if (!v) return expr;
 		switch (v->kind) {
@@ -404,6 +404,44 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 	}
 	if (expr.contains("loc")) lit["loc"] = expr["loc"];
 	return lit;
+}
+
+// `len(@a)` or `a -> len()` of an array whose size is a constant: like
+// sizeof, it needs only a's type, so an `a` with a call to evaluate is left
+// to the call's analysis.
+optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
+{
+	auto lenCall = [&](const json& call, size_t argc) {
+		return call.value("expr-type", "") == "call" && call["name"] == "len"
+		    && call["args"].size() == argc && !findVar("len");
+	};
+	const json* arr;
+	bool borrowed = true;
+	if (expr["expr-type"] == "call") {
+		if (!lenCall(expr, 1)) return nullopt;
+		arr = &expr["args"][0];
+		borrowed = arr->value("expr-type", "") == "addr-of";
+	} else {
+		if (!lenCall(expr["call"], 0)) return nullopt;
+		arr = &expr["value"];
+	}
+	if (arr->value("expr-type", "") == "addr-of") arr = &(*arr)["object"];
+	if (!isLocationExpr(*arr) || hasCall(*arr)) return nullopt;
+	json vt = operandValueType(*arr);
+	if (!isArrLevel(vt)) return nullopt;
+	// Without '@' it is a call; one of the user's functions may take the array.
+	if (!borrowed) {
+		vector<Callee> cands = findCallees("len");
+		if (any_of(cands.begin(), cands.end(), [](const Callee& c) { return !(*c.def).value("inline", false); }))
+			return nullopt;
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLenNeedsAddrOf) << endl;
+		exit(1);
+	}
+	if (!vt.contains("arr-size")) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLenNotConst) << endl;
+		exit(1);
+	}
+	return vt["arr-size"].get<int64_t>();
 }
 
 // Evaluates in int64, or uint64 once a 'u' operand joins, like the usual
@@ -436,6 +474,11 @@ optional<ConstVal> PlnSemanticAnalyzer::evalConst(const json& expr)
 	}
 	if (et == "sizeof") {
 		return ConstVal{K::Uint, 0, (uint64_t)typeByteSize(expr, resolveKnownType(expr, expr["type"]))};
+	}
+	if (et == "call" || et == "chain-call") {
+		optional<int64_t> n = constArrLen(expr);
+		if (!n) return nullopt;
+		return ConstVal{K::Int, *n};
 	}
 	if (et == "id") {
 		json lit = foldConstExpr(expr);

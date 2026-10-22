@@ -3386,6 +3386,12 @@ TEST(build_mgr, varr_builtins) {
 	ASSERT_EQ(output, "12 12\n200 11\n0 1 2 0 0 \n2.5 1.5 1\n7 19 20\n");
 }
 
+TEST(build_mgr, arr_len) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/331_arr_len.pa");
+	ASSERT_EQ(output, "10 20 30 10 20 30 \n5 6 2\n");
+}
+
 TEST(build_mgr, varr_builtins_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(

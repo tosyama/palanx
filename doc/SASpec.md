@@ -53,7 +53,7 @@ Root
   `__pln_alloc_varr_T(len, cap)`, `__pln_init_varr_T(h, len, cap)` (calloc's `cap` elements when
   `cap > 0`; the header starts zeroed, so `data` stays NULL otherwise), `__pln_fini_varr_T(h)`
   (frees `data`) and `__pln_free_varr_T(h)` (fini, then the header), and the built-ins
-  `__pln_len_varr_T(@hdr h) -> int64`, `__pln_push_varr_T(@!hdr h, T x)`,
+  `__pln_push_varr_T(@!hdr h, T x)`,
   `__pln_resize_varr_T(@!hdr h, int64 n)` and `__pln_pop_varr_T(@!hdr h) -> T`. Growing
   reallocates `data` to max(needed, cap × 2, 4) elements; shrinking keeps the capacity, and
   `resize` zeroes the elements it adds. An empty `pop` or a negative `resize` calls `abort()`:
@@ -236,9 +236,14 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 - const-decl statements are consumed by SA and not emitted; the value is
   folded to an untyped literal and inlined at each reference site (see
   Constant Declarations in PalanReference.md)
-- a constant expression (literals, consts and `sizeof` under the arithmetic, bitwise and shift
-  operators) is folded to one untyped `lit-int`/`lit-uint`/`lit-flo` before it is typed, in every
-  expression position; `E_ConstExprOverflow`/`E_ConstExprDivByZero` reject an invalid one
+- a constant expression (literals, consts, `sizeof` and the `len` of a constant-size array under
+  the arithmetic, bitwise and shift operators) is folded to one untyped `lit-int`/`lit-uint`/`lit-flo`
+  before it is typed, in every expression position; `E_ConstExprOverflow`/`E_ConstExprDivByZero`
+  reject an invalid one
+- `len(@a)` / `len(@!a)` / `a -> len()` of an array level with `arr-size` (a variable, row, field or
+  borrowed array, whose expression has no call) folds to that `arr-size`, so it is no call and
+  no candidate. Of an array level without `arr-size` (`[]T` parameter, run-time size) it is
+  E_ArrLenNotConst; without `@`, E_ArrLenNeedsAddrOf unless a user function named `len` exists
 - not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
   the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise; a not-impl expression in
   value position is rejected as `E_ExprNotImplemented`
@@ -357,8 +362,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Built-in functions: once `T` is used, the callee lookup also finds `len(@[+]T) -> int64`,
     `push(@![+]T, T)`, `resize(@![+]T, int64)` and `pop(@![+]T) -> T`, as ordinary Palan
     functions alongside C, local and imported ones (overloading, method form and chaining apply
-    unchanged). Each is a `palan` call to `__pln_len/push/resize/pop_varr_T`, whose symbol is
-    built from the generated signature (see the varr `alloc-shapes` entry).
+    unchanged). `len` becomes the header's len, `field-access` at offset 0 of the borrowed
+    header pointer, typed `int64`; the others are a `palan` call to
+    `__pln_push/resize/pop_varr_T`, whose symbol is built from the generated signature (see the
+    varr `alloc-shapes` entry).
   - Copying (`[+]T w = v;`, `v -> w`) and `->>` into such a variable are not supported yet, nor
     is a struct or array element, a parameter, a return value or a field.
 

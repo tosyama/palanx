@@ -399,6 +399,7 @@ json PlnSemanticAnalyzer::makeCallNode(const json& expr, const Callee& callee, c
 	sa_expr["args"] = analyzedArgs
 		? bindCallArgs(expr, *analyzedArgs, def["parameters"], callee.isC, writtenName)
 		: saCallArgs(expr, expr["args"], def["parameters"], callee.isC, writtenName);
+	if (def.value("inline", false)) return varrLen(move(sa_expr["args"][0]));
 	return sa_expr;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 

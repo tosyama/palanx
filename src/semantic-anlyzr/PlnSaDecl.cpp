@@ -1815,7 +1815,6 @@ string allocHelperSymbol(AllocFamily family, const string& leaf, const string& o
 		elem = {{"type-kind","struct"},{"type-name","__pln_varr_" + leaf}};
 		prefix = "varr_"; owned = ptr(elem); building = mut(elem);
 		if (op == "alloc" || op == "init") dims = {i64, i64};   // len, cap
-		else if (op == "len") owned = {{"type-kind","pntr"},{"mutable",false},{"base-type",elem}};
 		else if (op == "push") { owned = building; dims = {{{"type-kind","prim"},{"type-name",leaf}}}; }
 		else if (op == "resize") { owned = building; dims = {i64}; }
 		else if (op == "pop") owned = building;
@@ -2044,8 +2043,9 @@ void PlnSemanticAnalyzer::registerVarrBuiltins(const string& leafName)
 			{"base-type",{{"type-kind","varr"},{"base-type",elem}}}}}};
 	};
 	auto add = [&](const string& name, json params, const json* ret) {
-		json def = {{"name",name},{"func-type","palan"},{"parameters",move(params)},
-		            {"symbol",allocHelperSymbol(AllocFamily::Varr, leafName, name)}};
+		json def = {{"name",name},{"func-type","palan"},{"parameters",move(params)}};
+		if (name == "len") def["inline"] = true;
+		else def["symbol"] = allocHelperSymbol(AllocFamily::Varr, leafName, name);
 		if (ret) def["ret-type"] = *ret;
 		varrBuiltins_[name].push_back(move(def));
 	};

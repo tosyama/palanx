@@ -440,6 +440,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_VarrBorrowNeedsAddrOf:
 			return "a variable-length array given to '@[+]T'/'@![+]T' must be written as '@name' or '@!name'.";
 
+		case E_ArrLenNotConst:
+			return "'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time.";
+
+		case E_ArrLenNeedsAddrOf:
+			return "an array given to 'len' must be written as '@name'.";
+
 		case E_Unsupported2DStructArr:
 			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
 

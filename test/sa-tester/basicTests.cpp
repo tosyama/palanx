@@ -5818,17 +5818,51 @@ TEST(sa, varr_builtins)
 		expectCall(stmts[i]["body"], "__pln_push_varr_int32", true);
 		ASSERT_EQ(stmts[i]["body"]["args"][1]["value"], to_string(i));
 	}
-	// len(@v), v -> len()
+	// len(@v), v -> len(): the header's len, read in place.
 	for (int i = 4; i <= 5; i++) {
-		const auto& call = stmts[i]["vars"][0]["init"];
-		expectCall(call, "__pln_len_varr_int32", false);
-		ASSERT_EQ(call["value-type"]["type-name"], "int64");
+		const auto& len = stmts[i]["vars"][0]["init"];
+		ASSERT_EQ(len["expr-type"], "field-access");
+		ASSERT_EQ(len["offset"], 0);
+		ASSERT_EQ(len["ptr-expr"]["name"], "v");
+		ASSERT_EQ(len["ptr-expr"]["value-type"]["mutable"], false);
+		ASSERT_EQ(len["value-type"]["type-name"], "int64");
 	}
 	const auto& pop = stmts[6]["vars"][0]["init"];
 	expectCall(pop, "__pln_pop_varr_int32", true);
 	ASSERT_EQ(pop["value-type"]["type-name"], "int32");
 	expectCall(stmts[7]["body"], "__pln_resize_varr_int32", true);
 	ASSERT_EQ(stmts[7]["body"]["args"][1]["name"], "n");
+}
+
+// A constant-size array's len is folded to its size, like sizeof.
+TEST(sa, arr_len)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/295_arr_len.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 15);
+	// [len(@a) * 2]int32 b
+	ASSERT_EQ(stmts[4]["vars"][0]["var-type"]["arr-size"], 6);
+	auto expectLen = [&](const json& stmt, const string& value) {
+		const auto& init = stmt["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "lit-int");
+		ASSERT_EQ(init["value"], value);
+	};
+	expectLen(stmts[8], "3");	// len(@c)
+	expectLen(stmts[9], "4");	// len(@c[0])
+	expectLen(stmts[10], "5");	// len(@p.arr)
+	expectLen(stmts[11], "3");	// a -> len()
+	expectLen(stmts[12], "3");	// len(@!a)
+	expectLen(stmts[13], "3");	// N
+	// Without '@', a user's len taking the array is called.
+	const auto& call = stmts[14]["vars"][0]["init"];
+	ASSERT_EQ(call["expr-type"], "call");
+	ASSERT_EQ(funcName(call["name"]), "len");
+
+	const auto& ret = jout["functions"][0]["body"][0];
+	ASSERT_EQ(ret["value"]["expr-type"], "lit-int");
+	ASSERT_EQ(ret["value"]["value"], "3");
 }
 
 TEST(sa, chain_method_call)
