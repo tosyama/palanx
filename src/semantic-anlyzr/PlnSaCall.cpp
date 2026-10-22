@@ -66,8 +66,8 @@ vector<Callee> PlnSemanticAnalyzer::findCalleesByAlias(const string& alias, cons
 	return cands;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
-// The functions a call by `name` can mean: C functions, Palan functions and
-// unqualified imports alike, each once.
+// The functions a call by `name` can mean: C functions, Palan functions,
+// unqualified imports and `[+]T` built-ins alike, each once.
 vector<Callee> PlnSemanticAnalyzer::findCallees(const string& name) const
 {
 	vector<Callee> cands;
@@ -91,6 +91,9 @@ vector<Callee> PlnSemanticAnalyzer::findCallees(const string& name) const
 		if (f != alias_it->second.end())
 			for (auto& def : f->second) add(def, def.value("_c-func", false));
 	}
+	auto b = varrBuiltins_.find(name);
+	if (b != varrBuiltins_.end())
+		for (auto& def : b->second) add(def, false);
 	return cands;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
@@ -626,6 +629,8 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 	if (auto d = callArgConvMismatch(saArg, paramVT)) return d;
 	if (isStructBorrow(paramVT) && isStructStorage(saArg["value-type"]))
 		return SaDiag{E_StructBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (isVarrPntr(paramVT) && isPtrBorrow(paramVT) && isVarrStorage(saArg["value-type"]))
+		return SaDiag{E_VarrBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	// A by-value struct is only read, to copy it, so a read-only source is fine.
 	if (isCFunc && isStructStorage(paramVT)) return nullopt;
 	// An upgrade's diagnostic differs by callee kind, since a C parameter's
@@ -837,7 +842,7 @@ json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool 
 	if (et != "arr-lit" && et != "dict-lit") {
 		json vt = valueType ? *valueType : operandValueType(value);
 		bool ownedArr = isArrLevel(vt) && !isArrBorrowVar(vt);
-		if (!isStructStorage(vt) && vt.value("type-kind", "") != "prim"
+		if (!isStructStorage(vt) && !isVarrStorage(vt) && vt.value("type-kind", "") != "prim"
 				&& !(ownedArr && !isCFunc && isArrBorrowVar(*paramVT)))
 			return value;
 	}

@@ -201,7 +201,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		}
 		// A struct or array variable is already a pointer to its storage, so '@'
 		// borrows it as it is rather than taking the address of the variable's slot.
-		if (isStructStorage(*varType)) {
+		if (isStructStorage(*varType) || isVarrStorage(*varType)) {
 			json vt = *varType;
 			vt["mutable"] = isMutable;
 			json out = {{"expr-type","id"},{"name",name},{"var-type",*varType},{"value-type",vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE

@@ -252,7 +252,10 @@ int main(int argc, char* argv[])
 				    << "void *malloc(unsigned long size);\n"
 				    << "void *calloc(unsigned long nmemb, unsigned long size);\n"
 				    << "void free(void *ptr);\n"
-				    << "void *memcpy(void *dest, const void *src, unsigned long n);\n";
+				    << "void *memcpy(void *dest, const void *src, unsigned long n);\n"
+				    << "void *realloc(void *ptr, unsigned long size);\n"
+				    << "void *memset(void *s, int c, unsigned long n);\n"
+				    << "void abort(void);\n";
 				ofstream out(alloc_pa);
 				out << "cinclude \"__allocators.h\";\n";
 
@@ -573,12 +576,13 @@ int main(int argc, char* argv[])
 				for (auto& shape : varr_shapes) {
 					string leaf = shape["leaf-type"];
 					string hdr = "__pln_varr_" + leaf;
+					int64_t size = shape["leaf-size"].get<int64_t>();
 					out << "\nexport type " << hdr << " { int64 len; int64 cap; @!" << leaf << " data; };\n"
 					    << "export func __pln_init_varr_" << leaf
 					    << "(@!" << hdr << " h, int64 len, int64 cap) {\n"
 					    << "    len -> h.len;\n"
 					    << "    cap -> h.cap;\n"
-					    << "    if cap > 0 { calloc(cap, " << shape["leaf-size"].get<int64_t>() << ") -> h.data; }\n"
+					    << "    if cap > 0 { calloc(cap, " << size << ") -> h.data; }\n"
 					    << "}\n"
 					    << "export func __pln_alloc_varr_" << leaf
 					    << "(int64 len, int64 cap) -> " << hdr << " h {\n"
@@ -592,6 +596,36 @@ int main(int argc, char* argv[])
 					    << "    __pln_fini_varr_" << leaf << "(h);\n"
 					    << "    free(h);\n"
 					    << "    return;\n"
+					    << "}\n"
+					// Growing doubles the capacity so that adding one element at a
+					// time, by push or by resize, reallocates only now and then.
+					    << "func __pln_reserve_varr_" << leaf << "(@!" << hdr << " h, int64 n) {\n"
+					    << "    int64 c = h.cap * 2;\n"
+					    << "    if c < n { n -> c; }\n"
+					    << "    if c < 4 { 4 -> c; }\n"
+					    << "    realloc(h.data, c * " << size << ") -> h.data;\n"
+					    << "    c -> h.cap;\n"
+					    << "}\n"
+					    << "export func __pln_len_varr_" << leaf << "(@" << hdr << " h) -> int64 n {\n"
+					    << "    h.len -> n;\n"
+					    << "}\n"
+					    << "export func __pln_push_varr_" << leaf << "(@!" << hdr << " h, " << leaf << " x) {\n"
+					    << "    if h.len == h.cap { __pln_reserve_varr_" << leaf << "(h, h.len + 1); }\n"
+					    << "    x -> h.data[h.len];\n"
+					    << "    h.len + 1 -> h.len;\n"
+					    << "}\n"
+					// Shrinking keeps the old elements past the length, so growing
+					// zeroes what it brings back.
+					    << "export func __pln_resize_varr_" << leaf << "(@!" << hdr << " h, int64 n) {\n"
+					    << "    if n < 0 { abort(); }\n"
+					    << "    if n > h.cap { __pln_reserve_varr_" << leaf << "(h, n); }\n"
+					    << "    if n > h.len { memset(@!h.data[h.len], 0, (n - h.len) * " << size << "); }\n"
+					    << "    n -> h.len;\n"
+					    << "}\n"
+					    << "export func __pln_pop_varr_" << leaf << "(@!" << hdr << " h) -> " << leaf << " x {\n"
+					    << "    if h.len == 0 { abort(); }\n"
+					    << "    h.len - 1 -> h.len;\n"
+					    << "    h.data[h.len] -> x;\n"
 					    << "}\n";
 				}
 			}

@@ -1785,7 +1785,7 @@ json PlnSemanticAnalyzer::makeStructFreeStmt(const string& name, const json& pnt
 
 // The parameter types are those of the signatures build-mgr writes for each
 // family, as palan-sa normalizes them when it analyzes the generated module.
-json allocHelperCall(AllocFamily family, const string& leaf, const string& op, json args)
+string allocHelperSymbol(AllocFamily family, const string& leaf, const string& op)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	auto ptr = [](json base) { return json{{"type-kind","pntr"},{"base-type",move(base)}}; };
@@ -1815,6 +1815,10 @@ json allocHelperCall(AllocFamily family, const string& leaf, const string& op, j
 		elem = {{"type-kind","struct"},{"type-name","__pln_varr_" + leaf}};
 		prefix = "varr_"; owned = ptr(elem); building = mut(elem);
 		if (op == "alloc" || op == "init") dims = {i64, i64};   // len, cap
+		else if (op == "len") owned = {{"type-kind","pntr"},{"mutable",false},{"base-type",elem}};
+		else if (op == "push") { owned = building; dims = {{{"type-kind","prim"},{"type-name",leaf}}}; }
+		else if (op == "resize") { owned = building; dims = {i64}; }
+		else if (op == "pop") owned = building;
 		break;
 	}
 	vector<json> params;
@@ -1828,7 +1832,14 @@ json allocHelperCall(AllocFamily family, const string& leaf, const string& op, j
 	json jparams = json::array();
 	for (auto& t : params) jparams.push_back({{"var-type", t}});
 	string name = "__pln_" + op + "_" + prefix + leaf;
-	return {{"expr-type","call"},{"name",moduleSymbol(PALAN_ALLOCATORS_MODULE) + ".." + funcSymbol(name, jparams)},
+	return moduleSymbol(PALAN_ALLOCATORS_MODULE) + ".." + funcSymbol(name, jparams);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json allocHelperCall(AllocFamily family, const string& leaf, const string& op, json args)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	return {{"expr-type","call"},{"name",allocHelperSymbol(family, leaf, op)},
 	        {"func-type","palan"},{"args",move(args)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -2020,6 +2031,29 @@ void PlnSemanticAnalyzer::recordVarrShape(const string& leafName)
 		{"shape-kind","varr"}, {"shape-key",shape_key}, {"leaf-type",leafName},
 		{"leaf-size",elemSizeBytes(leafName)} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	});
+	registerVarrBuiltins(leafName);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::registerVarrBuiltins(const string& leafName)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json elem = {{"type-kind","prim"},{"type-name",leafName}};
+	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
+	auto self = [&](bool isMutable) {
+		return json{{"name","v"},{"var-type",{{"type-kind","pntr"},{"mutable",isMutable},
+			{"base-type",{{"type-kind","varr"},{"base-type",elem}}}}}};
+	};
+	auto add = [&](const string& name, json params, const json* ret) {
+		json def = {{"name",name},{"func-type","palan"},{"parameters",move(params)},
+		            {"symbol",allocHelperSymbol(AllocFamily::Varr, leafName, name)}};
+		if (ret) def["ret-type"] = *ret;
+		varrBuiltins_[name].push_back(move(def));
+	};
+	add("len", json::array({self(false)}), &i64);
+	add("push", json::array({self(true), {{"name","x"},{"var-type",elem}}}), nullptr);
+	add("resize", json::array({self(true), {{"name","n"},{"var-type",i64}}}), nullptr);
+	add("pop", json::array({self(true)}), &elem);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::recordArrArrStructShape(const string& structName)

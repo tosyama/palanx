@@ -143,6 +143,9 @@ class PlnSemanticAnalyzer {
 	vector<map<string, json>> cGlobalScopes;
 	// A deque keeps every definition where it is while overloads are added.
 	vector<map<string, deque<json>>> plnFuncScopes;
+	// len/push/resize/pop for each `[+]T` element type, outside every scope:
+	// they exist for every T, and are registered as each T is first used.
+	map<string, deque<json>> varrBuiltins_;
 	// scope stack: alias("" = unqualified) → funcname → funcDefs (several
 	// when unqualified imports of different modules export the same name)
 	vector<map<string, map<string, vector<json>>>> importScopes;
@@ -403,6 +406,7 @@ class PlnSemanticAnalyzer {
 	void recordArrStructShape(const string& structName);
 	void recordArrArrShape(const string& leafName);
 	void recordVarrShape(const string& leafName);
+	void registerVarrBuiltins(const string& leafName);
 	void recordArrArrStructShape(const string& structName);
 	void enterBlockDecls(const json& stmts);
 	void declareLocalTypeName(const json& stmt);

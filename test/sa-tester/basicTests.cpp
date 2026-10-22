@@ -5797,6 +5797,40 @@ TEST(sa, varr_basic)
 	ASSERT_EQ(shapes[0]["leaf-size"], 4);
 }
 
+TEST(sa, varr_builtins)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/294_varr_builtins.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 8);
+
+	// The header pointer is passed as it is, with the borrow's permission.
+	auto expectCall = [&](const json& call, const string& name, bool isMutable) {
+		ASSERT_EQ(funcName(call["name"]), name);
+		const auto& self = call["args"][0];
+		ASSERT_EQ(self["expr-type"], "id");
+		ASSERT_EQ(self["name"], "v");
+		ASSERT_EQ(self["value-type"]["mutable"], isMutable);
+	};
+	// push(@!v, 1), v.push(2), 3 -> v.push()
+	for (int i = 1; i <= 3; i++) {
+		expectCall(stmts[i]["body"], "__pln_push_varr_int32", true);
+		ASSERT_EQ(stmts[i]["body"]["args"][1]["value"], to_string(i));
+	}
+	// len(@v), v -> len()
+	for (int i = 4; i <= 5; i++) {
+		const auto& call = stmts[i]["vars"][0]["init"];
+		expectCall(call, "__pln_len_varr_int32", false);
+		ASSERT_EQ(call["value-type"]["type-name"], "int64");
+	}
+	const auto& pop = stmts[6]["vars"][0]["init"];
+	expectCall(pop, "__pln_pop_varr_int32", true);
+	ASSERT_EQ(pop["value-type"]["type-name"], "int32");
+	expectCall(stmts[7]["body"], "__pln_resize_varr_int32", true);
+	ASSERT_EQ(stmts[7]["body"]["args"][1]["name"], "n");
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();

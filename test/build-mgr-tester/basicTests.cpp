@@ -3379,3 +3379,50 @@ TEST(build_mgr, varr_mtrace) {
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
+
+TEST(build_mgr, varr_builtins) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/327_varr_builtins.pa");
+	ASSERT_EQ(output, "12 12\n200 11\n0 1 2 0 0 \n2.5 1.5 1\n7 19 20\n");
+}
+
+TEST(build_mgr, varr_builtins_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_varr_builtins_mtrace_bin "
+		"../test/testdata/build-mgr/328_varr_builtins_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_varr_builtins_mtrace.log";
+	execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_varr_builtins_mtrace_bin");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		// mtrace logs a realloc as a free ("<") and an allocation (">").
+		if (!fromSharedLib && (line.find(" + ") != string::npos || line.find(" > ") != string::npos)) allocs++;
+		if (!fromSharedLib && (line.find(" - ") != string::npos || line.find(" < ") != string::npos)) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	// The header, the data as push grows it to 4, 8, 16 and 32, and as resize(100) grows it to 100.
+	EXPECT_EQ(allocs, 6) << "expected 6 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, varr_builtins_abort) {
+	for (string file : {"329_varr_pop_empty", "330_varr_resize_negative"}) {
+		cleanTestEnv();
+		string bin = "/tmp/palan_" + file;
+		ASSERT_EQ(execTestCommand("bin/palan -o " + bin + " ../test/testdata/build-mgr/" + file + ".pa"), "");
+		// ulimit -c 0 keeps the program's core dump out of build/.
+		string out = execTestCommand("ulimit -c 0; " + bin + "; echo status $?");
+		EXPECT_NE(out.find("status 134"), string::npos) << file << ": " << out;
+	}
+}

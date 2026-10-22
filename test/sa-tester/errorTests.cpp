@@ -3435,6 +3435,10 @@ TEST(sa_error, varr)
 		{"error_729_varr_lit_over_len.pa", ":1:1: error: array 'v' has size 2 but its array literal has 3 elements."},
 		{"error_730_varr_lit_len_not_const.pa", ":2:1: error: array 'v' given an array literal must have a compile-time constant size."},
 		{"error_731_varr_to_ptr.pa", ":2:1: error: cannot convert '[+]int32' to '@int32'."},
+		{"error_732_varr_push_readonly.pa", ":2:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_733_varr_len_method.pa", ":2:11: error: 'len' cannot be called as a method: its first parameter must be a writable borrow ('@!')."},
+		{"error_734_varr_push_no_match.pa", ":4:1: error: No function 'push' takes (@![+]int32, int64); there are push(@![+]flo64, flo64), push(@![+]int32, int32)."},
+		{"error_735_varr_borrow_needs_addr.pa", ":2:11: error: a variable-length array given to '@[+]T'/'@![+]T' must be written as '@name' or '@!name'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

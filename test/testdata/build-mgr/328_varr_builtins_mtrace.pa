@@ -1,0 +1,13 @@
+cinclude <mcheck.h>;
+mtrace();
+{
+	[+]int64 v;
+	int64 i = 0;
+	while i < 20 {
+		v.push(i);
+		i + 1 -> i;
+	}
+	v.resize(100);
+	v.resize(0);
+}
+muntrace();

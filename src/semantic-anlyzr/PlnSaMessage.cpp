@@ -437,6 +437,9 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' "
 			       "('@f()' or '@!f()' for a call returning it, '@[..]' or '@![..]' for a literal).";
 
+		case E_VarrBorrowNeedsAddrOf:
+			return "a variable-length array given to '@[+]T'/'@![+]T' must be written as '@name' or '@!name'.";
+
 		case E_Unsupported2DStructArr:
 			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
 

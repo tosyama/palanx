@@ -52,7 +52,11 @@ Root
   `type __pln_varr_T { int64 len; int64 cap; @!T data; }` and generates
   `__pln_alloc_varr_T(len, cap)`, `__pln_init_varr_T(h, len, cap)` (calloc's `cap` elements when
   `cap > 0`; the header starts zeroed, so `data` stays NULL otherwise), `__pln_fini_varr_T(h)`
-  (frees `data`) and `__pln_free_varr_T(h)` (fini, then the header):
+  (frees `data`) and `__pln_free_varr_T(h)` (fini, then the header), and the built-ins
+  `__pln_len_varr_T(@hdr h) -> int64`, `__pln_push_varr_T(@!hdr h, T x)`,
+  `__pln_resize_varr_T(@!hdr h, int64 n)` and `__pln_pop_varr_T(@!hdr h) -> T`. Growing
+  reallocates `data` to max(needed, cap × 2, 4) elements; shrinking keeps the capacity, and
+  `resize` zeroes the elements it adds. An empty `pop` or a negative `resize` calls `abort()`:
   - shape-kind\* - "varr"
   - shape-key\* - Shape key string (e.g. "varr\_int32")
   - leaf-type\* - Element type name
@@ -346,6 +350,15 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     `arr-index` is then the one for a `pntr(T)`.
   - A C call argument (fixed or variadic) is passed the same `field-access` to `data`. A Palan
     pointer or array is not given it implicitly: `data` moves when the array grows.
+  - `@v` / `@!v` borrows the array as it is: the value is the header pointer, typed
+    `pntr(varr(T))` with `"mutable": false` / `true` (`@[+]T` / `@![+]T`; the owner's type has no
+    `mutable`). Given to such a parameter, the array must be written with `@`/`@!`
+    (E_VarrBorrowNeedsAddrOf); a chained value takes `@` for `@[+]T` as for other read borrows.
+  - Built-in functions: once `T` is used, the callee lookup also finds `len(@[+]T) -> int64`,
+    `push(@![+]T, T)`, `resize(@![+]T, int64)` and `pop(@![+]T) -> T`, as ordinary Palan
+    functions alongside C, local and imported ones (overloading, method form and chaining apply
+    unchanged). Each is a `palan` call to `__pln_len/push/resize/pop_varr_T`, whose symbol is
+    built from the generated signature (see the varr `alloc-shapes` entry).
   - Copying (`[+]T w = v;`, `v -> w`) and `->>` into such a variable are not supported yet, nor
     is a struct or array element, a parameter, a return value or a field.
 

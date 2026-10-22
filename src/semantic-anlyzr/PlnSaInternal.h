@@ -63,7 +63,8 @@ inline bool isFloatPrim(const PlnType* t) {
 // struct/array variables, which carry no read-only concept of their own.
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
-// A call to one of them, linked by the same symbol as its generated definition.
+// The symbol of one of the functions build-mgr generates, and a call to it.
+string allocHelperSymbol(AllocFamily family, const string& leaf, const string& op);
 json allocHelperCall(AllocFamily family, const string& leaf, const string& op, json args);
 
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
@@ -166,6 +167,7 @@ inline bool isVarrPntr(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("base-type")
 	    && vt["base-type"].value("type-kind","") == "varr";
 }
+inline bool isVarrStorage(const json& vt) { return isVarrPntr(vt) && !vt.contains("mutable"); }
 // The header's data pointer: what `v[i]` indexes and a C function receives.
 inline json varrData(json varr)
 {
@@ -476,7 +478,7 @@ inline string typeDisplayName(const json& t) {
 	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
 	auto perm = [](const json& p) { return string(isWritableThrough(p) ? "@!" : "@"); };
 	if (isVarrPntr(t))
-		return "[+]" + typeDisplayName(t["base-type"]["base-type"]);
+		return (isVarrStorage(t) ? "" : perm(t)) + "[+]" + typeDisplayName(t["base-type"]["base-type"]);
 	if (isStructStorage(t))
 		return typeDisplayName(t["base-type"]);
 	if (isPtrBorrow(t))

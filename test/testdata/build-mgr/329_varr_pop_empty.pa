@@ -1,0 +1,4 @@
+[+]int32 v;
+v.push(1);
+v.pop();
+v.pop();

@@ -159,6 +159,7 @@ enum PlnSaMessageCode {
 	E_ReturnFrameArr,	// arg1: variable name
 	E_NoMatchingFunc,	// arg1: function name, arg2: argument types, arg3: candidates
 	E_FuncNameNeedsType,	// arg1: function name, arg2: candidates
+	E_VarrBorrowNeedsAddrOf,
 };
 
 class PlnSaMessage
