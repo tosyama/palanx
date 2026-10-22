@@ -443,6 +443,11 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_VarrBorrowSized:
 			return "a borrowed variable-length array type is written '@[+]T' or '@![+]T', without a size.";
 
+		case E_ArrowBindsTighter:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->' binds tighter than '" + arg1 + "'; parenthesize the operation to store its result: "
+			       "'(a " + arg1 + " b) -> c'.";
+
 		case E_ArrLenNotConst:
 			return "'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time.";
 

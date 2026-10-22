@@ -593,6 +593,15 @@ json PlnSemanticAnalyzer::sa_expression(const json &rawExpr, const PlnType* expe
 	return sa;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
+// '->' binds tighter than a comparison or a logical operator, so code written
+// to store such a result (`x < y -> b`) now nests an assignment in it.
+void PlnSemanticAnalyzer::rejectArrowOperand(const json& expr, const string& op) const
+{
+	if (!expr["right"].contains("stmt-type")) return;
+	cerr << locPrefix(expr["right"]) << PlnSaMessage::getMessage(E_ArrowBindsTighter, op) << endl;
+	exit(1);
+}
+
 json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType* expectedType)
 {
 	if (rawExpr.contains("stmt-type")) {
@@ -726,6 +735,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "cmp") {
+		rejectArrowOperand(expr, expr["op"].get<string>());
 		json left  = promoteOperand(sa_expression(expr["left"]));
 		json right = promoteOperand(sa_expression(expr["right"]));
 		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
@@ -744,6 +754,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 
 	} else if (expr_type == "logical-and" || expr_type == "logical-or") {
+		rejectArrowOperand(expr, expr_type == "logical-and" ? "&&" : "||");
 		json left  = sa_expression(expr["left"]);
 		json right = sa_expression(expr["right"]);
 		for (const json* op : {&left, &right}) {

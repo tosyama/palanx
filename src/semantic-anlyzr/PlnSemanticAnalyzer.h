@@ -237,6 +237,7 @@ class PlnSemanticAnalyzer {
 	json collectFreeStmts(size_t from_idx, size_t to_idx);
 
 	string locPrefix(const json& node) const;
+	void   rejectArrowOperand(const json& expr, const string& op) const;
 
 	void        declareVar(const string& name, const json& type, const json* loc_node = nullptr);
 	const json* findVar(const string& name) const;

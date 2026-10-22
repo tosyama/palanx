@@ -270,11 +270,11 @@ struct BodyList {
 // A function pointer type's return is taken greedily: `e as @func(T) -> X`
 // casts to a type returning X rather than chaining the cast into X.
 %precedence FPTR_NORET
-%left ARROW DBL_ARROW
 %left OPE_OR
 %left OPE_AND
 %left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
+%left ARROW DBL_ARROW
 %left OPE_SHL OPE_SHR
 %left '+' '-'
 %left '*' '/' '%' '&' '|' '^'

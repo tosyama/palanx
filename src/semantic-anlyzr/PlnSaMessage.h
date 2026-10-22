@@ -163,6 +163,7 @@ enum PlnSaMessageCode {
 	E_ArrLenNotConst,
 	E_ArrLenNeedsAddrOf,
 	E_VarrBorrowSized,
+	E_ArrowBindsTighter,	// arg1: operator
 };
 
 class PlnSaMessage

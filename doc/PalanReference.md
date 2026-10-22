@@ -468,7 +468,12 @@ func addOne(MyInt n) -> MyInt result {
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
 
 Operator precedence (high to low): unary minus / `!` / `~`, `as`, `* / % & | ^`, `+ -`,
-`<<< >>>`, comparisons, `&&`, `||`, `->`. All binary operators are left-associative.
+`<<< >>>`, `->` / `->>`, comparisons, `&&`, `||`. All binary operators are left-associative.
+
+`->` sits below arithmetic, so `x + 1 -> x` stores the sum, and above comparisons, so a chained
+call can be compared: `i < a -> len()` is `i < (a -> len())`. To store a comparison or a logical
+result, parenthesize it: `(x < y) -> b`. Without the parentheses, `x < y -> b` puts an assignment
+inside the comparison, which is a compile error.
 
 Note the bitwise operators `&`/`|`/`^` share a precedence class with `*`/`/`/`%` — one level
 **above** `+`/`-` — rather than C's much lower placement below comparisons. This is a deliberate

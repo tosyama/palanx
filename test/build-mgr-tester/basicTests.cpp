@@ -3457,6 +3457,12 @@ TEST(build_mgr, varr_borrow_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, arrow_precedence) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/334_arrow_precedence.pa");
+	ASSERT_EQ(output, "7 8 9 1\n");
+}
+
 TEST(build_mgr, varr_builtins_abort) {
 	for (string file : {"329_varr_pop_empty", "330_varr_resize_negative"}) {
 		cleanTestEnv();

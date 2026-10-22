@@ -1,0 +1,25 @@
+cinclude <stdio.h>;
+
+type Point { int32 x; int32 y; };
+
+func sumX(@[3]$Point ps) -> int32
+{
+	int32 s = 0;
+	int32 i = 0;
+	while i < ps -> len() && s < 100 {
+		s + ps[i].x -> s;
+		i + 1 -> i;
+	}
+	return s;
+}
+
+[3]$Point ps = [1,2][3,4][5,6];
+[+]int32 v = [7, 8];
+int32 i = 0;
+while v -> len() > i {
+	printf("%d ", v[i]);
+	i + 1 -> i;
+}
+bool b;
+(sumX(@ps) == 9 && i == 2) -> b;
+printf("%d %d\n", sumX(@ps), b);

@@ -2269,3 +2269,26 @@ TEST(gen_ast, frame_var) {
 	ASSERT_EQ(funcs[1]["rets"][0]["not-impl"], true);
 	ASSERT_EQ(funcs[2]["ret-type"]["not-impl"], true);
 }
+
+// '->' binds tighter than comparisons and logical operators, looser than arithmetic.
+TEST(gen_ast, arrow_precedence) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/146_arrow_precedence.pa");
+	ASSERT_TRUE(checkerr(output));
+	json ast = json::parse(output)["ast"];
+	const auto& stmts = ast["statements"];
+	// i < a -> len()
+	ASSERT_EQ(stmts[0]["body"]["expr-type"], "cmp");
+	ASSERT_EQ(stmts[0]["body"]["right"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[0]["body"]["right"]["value"]["name"], "a");
+	// a == b && c -> f()
+	ASSERT_EQ(stmts[1]["body"]["expr-type"], "logical-and");
+	ASSERT_EQ(stmts[1]["body"]["left"]["expr-type"], "cmp");
+	ASSERT_EQ(stmts[1]["body"]["right"]["expr-type"], "chain-call");
+	// x + 1 -> x
+	ASSERT_EQ(stmts[2]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[2]["value"]["expr-type"], "add");
+	// (x < y) -> b
+	ASSERT_EQ(stmts[3]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[3]["value"]["expr-type"], "cmp");
+}

@@ -179,7 +179,7 @@ func scene_intersect(@vec3 orig, @vec3 dir, @[SN]Sphere spheres)
 		i + 1 -> i;
 	}
 
-	nearest_dist < 1000 -> hit;
+	(nearest_dist < 1000) -> hit;
 }
 
 func ray_intersect_sphere(@vec3 orig, @vec3 dir, @Sphere s)

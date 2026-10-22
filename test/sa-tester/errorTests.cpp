@@ -3454,6 +3454,8 @@ TEST(sa_error, varr)
 		{"error_748_arr_len_redefined.pa", ":1:1: error: Function 'len' is already defined."},
 		{"error_749_varr_borrow_struct_elem.pa", ":2:1: error: this statement is not supported in this version."},
 		{"error_750_varr_borrow_sized.pa", ":1:1: error: a borrowed variable-length array type is written '@[+]T' or '@![+]T', without a size."},
+		{"error_751_arrow_after_cmp.pa", ":2:5: error: '->' binds tighter than '<'; parenthesize the operation to store its result: '(a < b) -> c'."},
+		{"error_752_arrow_after_logical.pa", ":2:7: error: '->' binds tighter than '&&'; parenthesize the operation to store its result: '(a && b) -> c'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
