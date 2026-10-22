@@ -1,0 +1,32 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+cinclude <stdlib.h>;
+
+type P { int64 x; };
+
+func pick(int64 c) -> P {
+	P p;
+	1 -> p.x;
+	if c == 1 { return p; }
+	P q;
+	2 -> q.x;
+	return q;
+}
+
+func arr(int64 c) -> []int32 {
+	[2]int32 a = [1, 2];
+	if c == 1 { return a; }
+	[2]int32 b = [3, 4];
+	return b;
+}
+
+mtrace();
+{
+	P s = pick(0);
+	P t = pick(1);
+	@!int32 u = arr(0);
+	@!int32 v = arr(1);
+	printf("%lld %lld %d %d\n", s.x, t.x, u[0], v[0]);
+	free(u);
+	free(v);
+}

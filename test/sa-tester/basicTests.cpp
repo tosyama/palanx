@@ -949,10 +949,12 @@ TEST(sa, pntr_arr_decl) {
 	ASSERT_EQ(idx["value-type"]["type-kind"], "pntr");
 	ASSERT_EQ(idx["value-type"]["base-type"]["type-name"], "int32");
 
-	// body.back(): free(ptrs) at scope end
-	ASSERT_EQ(body.back()["stmt-type"], "expr");
-	ASSERT_EQ(body.back()["body"]["name"], "free");
-	ASSERT_EQ(body.back()["body"]["args"][0]["name"], "ptrs");
+	// free(ptrs), then the trailing return
+	ASSERT_EQ(body.back()["stmt-type"], "return");
+	const auto& last = body[body.size() - 2];
+	ASSERT_EQ(last["stmt-type"], "expr");
+	ASSERT_EQ(last["body"]["name"], "free");
+	ASSERT_EQ(last["body"]["args"][0]["name"], "ptrs");
 }
 
 TEST(sa, ownership_transfer) {
@@ -1177,8 +1179,9 @@ TEST(sa, embed_arr_decl_const_inner) {
 	ASSERT_EQ(init["args"][0]["expr-type"],  "mul");
 	ASSERT_EQ(init["args"][0]["right"]["value"], "16");
 
-	// body[1]: return; body[2]: free(mat)  (or body.back() == free)
-	const auto& last_f = body_f.back();
+	// free(mat), then the trailing return
+	ASSERT_EQ(body_f.back()["stmt-type"], "return");
+	const auto& last_f = body_f[body_f.size() - 2];
 	ASSERT_EQ(last_f["stmt-type"], "expr");
 	ASSERT_EQ(last_f["body"]["name"], "free");
 	ASSERT_EQ(last_f["body"]["args"][0]["name"], "mat");
@@ -1218,8 +1221,9 @@ TEST(sa, embed_arr_decl_variable_inner) {
 	ASSERT_EQ(init_g["args"][0]["right"]["left"]["name"], "__mat_d1");
 	ASSERT_EQ(init_g["args"][0]["right"]["right"]["value"], "4");
 
-	// body.back(): free(mat)
-	const auto& last_g = body_g.back();
+	// free(mat), then the trailing return
+	ASSERT_EQ(body_g.back()["stmt-type"], "return");
+	const auto& last_g = body_g[body_g.size() - 2];
 	ASSERT_EQ(last_g["stmt-type"], "expr");
 	ASSERT_EQ(last_g["body"]["name"], "free");
 	ASSERT_EQ(last_g["body"]["args"][0]["name"], "mat");
@@ -2477,8 +2481,9 @@ TEST(sa, embed_struct_arr_decl)
 	ASSERT_EQ(idx["elem-size"]["expr-type"], "lit-uint");
 	ASSERT_EQ(idx["elem-size"]["value"], "16");
 
-	// body.back(): free(pts)
-	const auto& last = body.back();
+	// free(pts), then the trailing return
+	ASSERT_EQ(body.back()["stmt-type"], "return");
+	const auto& last = body[body.size() - 2];
 	ASSERT_EQ(last["stmt-type"], "expr");
 	ASSERT_EQ(last["body"]["name"], "free");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "pts");
@@ -2540,8 +2545,9 @@ TEST(sa, owned_struct_arr_decl)
 	ASSERT_EQ(idx["elem-size"]["expr-type"], "lit-uint");
 	ASSERT_EQ(idx["elem-size"]["value"], "8");
 
-	// body.back(): __pln_free_arr_Point(pts, __pts_n)  at scope exit
-	const auto& last = body.back();
+	// __pln_free_arr_Point(pts, __pts_n), then the trailing return
+	ASSERT_EQ(body.back()["stmt-type"], "return");
+	const auto& last = body[body.size() - 2];
 	ASSERT_EQ(last["stmt-type"], "expr");
 	ASSERT_EQ(funcName(last["body"]["name"]),      "__pln_free_arr_Point");
 	ASSERT_EQ(last["body"]["func-type"], "palan");
@@ -2589,8 +2595,9 @@ TEST(sa, at_struct_arr_decl)
 	ASSERT_EQ(idx["elem-size"]["expr-type"], "lit-uint");
 	ASSERT_EQ(idx["elem-size"]["value"], "8");
 
-	// body.back(): free(rpts)
-	const auto& last = body.back();
+	// free(rpts), then the trailing return
+	ASSERT_EQ(body.back()["stmt-type"], "return");
+	const auto& last = body[body.size() - 2];
 	ASSERT_EQ(last["stmt-type"], "expr");
 	ASSERT_EQ(last["body"]["name"], "free");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "rpts");
@@ -2628,8 +2635,9 @@ TEST(sa, at_bang_struct_arr_decl)
 	ASSERT_EQ(idx["elem-size"]["expr-type"], "lit-uint");
 	ASSERT_EQ(idx["elem-size"]["value"], "8");
 
-	// body.back(): free(wpts)
-	const auto& last = body.back();
+	// free(wpts), then the trailing return
+	ASSERT_EQ(body.back()["stmt-type"], "return");
+	const auto& last = body[body.size() - 2];
 	ASSERT_EQ(last["stmt-type"], "expr");
 	ASSERT_EQ(last["body"]["name"], "free");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "wpts");

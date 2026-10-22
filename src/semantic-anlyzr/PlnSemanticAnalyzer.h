@@ -234,7 +234,7 @@ class PlnSemanticAnalyzer {
 
 	void enterScope();
 	void leaveScope();
-	json collectFreeStmts(size_t from_idx, size_t to_idx);
+	json collectFreeStmts(size_t from_idx, size_t to_idx, const string& keep = "");
 
 	string locPrefix(const json& node) const;
 	void   rejectArrowOperand(const json& expr, const string& op) const;

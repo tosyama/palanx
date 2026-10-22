@@ -38,15 +38,17 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 						exit(1);
 					}
 				}
-				bool ownedVar = retStmt.contains("values") && retStmt["values"].size() == 1
+				// The caller takes over a returned owned variable, so this return
+				// leaves it out of its frees; other paths still free it.
+				string returned;
+				if (retStmt.contains("values") && retStmt["values"].size() == 1
 						&& retStmt["values"][0].value("expr-type","") == "id"
-						&& isOwnedVar(retStmt["values"][0]["name"].get<string>());
-				if (ownedVar)
-					removeFromArrayScope(retStmt["values"][0]["name"].get<string>());
+						&& isOwnedVar(retStmt["values"][0]["name"].get<string>()))
+					returned = retStmt["values"][0]["name"];
 				json ret = sa_return_stmt(retStmt);
-				if (!ownedVar)
+				if (returned.empty())
 					for (auto& s : copyReturnStruct(retStmt, ret)) result.push_back(s);
-				json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
+				json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size(), returned);
 				// The return value may read what the frees release, so it is
 				// evaluated into a temp first.
 				if (!frees.empty() && ret.contains("values"))
@@ -297,9 +299,12 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		}
 	for (auto& s : sa_statements(blk["body"])) body.push_back(move(s));
 
-	// Append free() for array vars in function body scope (reverse declaration order)
-	json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
-	for (auto& s : frees) body.push_back(s);
+	// Append free() for array vars in function body scope (reverse declaration order).
+	// A trailing return already freed what it doesn't return.
+	if (body.empty() || body.back().value("stmt-type", "") != "return") {
+		json frees = collectFreeStmts(funcBodyScopeIdx_, arrayScopeVars_.size());
+		for (auto& s : frees) body.push_back(s);
+	}
 
 	if (pendingAliases_)
 		resolvePending(body);

@@ -22,13 +22,13 @@ struct PlnSemanticAnalyzer::TypeProgram {
 };
 
 // Collect release stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
-json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx)
+json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx, const string& keep)
 {
 	json result = json::array();
 	for (size_t i = to_idx; i > from_idx; --i) {
 		auto& scope = arrayScopeVars_[i - 1];
 		for (auto it = scope.rbegin(); it != scope.rend(); ++it)
-			if (!it->release.is_null())
+			if (!it->release.is_null() && it->name != keep)
 				result.push_back(it->release);
 	}
 	return result;
