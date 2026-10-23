@@ -1,0 +1,7 @@
+[+][+]int32 m;
+m.resize(2);
+3 -> m[0].push();
+int64 n = m[1] -> len();
+[+]int32 r = m.pop();
+[3][+]int32 a;
+a -> m;

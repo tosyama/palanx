@@ -1,0 +1,25 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+func lens(@[3][+]int32 a) {
+	printf("%d %d %d\n", a[0]->len(), a[1]->len(), a[2]->len());
+}
+func fill(@![3][+]int32 a) { 4 -> a[2].push(); a[0].resize(0); }
+mtrace();
+{
+	[3][+]int32 a = [[1, 2], [], [3]];
+	lens(@a);
+	[3][+]int32 b;
+	a -> b;
+	fill(@!b);
+	lens(@a); lens(@b);
+	$[3][+]int32 f;
+	[[5], [6, 7], []] -> f;
+	lens(@f);
+	f -> a;
+	lens(@a);
+	[+][+]int32 m = b;
+	printf("%d %d\n", m->len(), m[2][1]);
+	[+]int32 r;
+	b[2] ->> r;
+	printf("%d\n", r->len());
+}

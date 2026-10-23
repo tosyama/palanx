@@ -126,7 +126,7 @@ static StructDef buildStructDef(const string& name,
 				exit(1);
 			}
 			if (sub.ownsFields) {
-				cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningStruct, structName) << endl;
+				cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningType, structName) << endl;
 				exit(1);
 			}
 			int align = sub.maxAlign;
@@ -262,7 +262,7 @@ static StructDef buildStructDef(const string& name,
 					exit(1);
 				}
 				if (leafDef.ownsFields) {
-					cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningStruct, leaf_name) << endl;
+					cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningType, leaf_name) << endl;
 					exit(1);
 				}
 				stride = leafDef.totalSize;
@@ -432,6 +432,18 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 	}
 	if (tk == "arr" && vtype.value("specifier", "") == "raw") {
 		const json& base = vtype["base-type"];
+		if (base.value("type-kind", "") == "arr" && isVarrAstType(base["base-type"])) {
+			cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_VarrIn2DArr) << endl;
+			exit(1);
+		}
+		if (isVarrAstType(base)) {
+			if (vtype.value("embedded", false)) {
+				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_EmbedOwningType,
+					typeDisplayName(varrStorageType(stmt2, base))) << endl;
+				exit(1);
+			}
+			return sa_owned_elem_arr_var_decl(stmt2, storage);
+		}
 		if (base.value("type-kind", "") == "arr" && base["base-type"].value("type-kind", "") == "prim"
 				&& structDefs_.count(base["base-type"].value("type-name", ""))) {
 			if (vtype.value("embedded", false)) {
@@ -450,7 +462,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 	if (tk == "arr" && vtype.value("specifier", "") == "raw" && !vtype["size-expr"].is_null()) {
 		const json& base = vtype["base-type"];
 		if (base.value("type-kind","") == "prim" && structDefs_.count(base.value("type-name","")))
-			return sa_owned_struct_arr_var_decl(stmt2, storage);
+			return sa_owned_elem_arr_var_decl(stmt2, storage);
 		return sa_arr_var_decl(stmt2, storage);
 	}
 	if (tk == "prim" && structDefs_.count(vtype.value("type-name", "")))
@@ -585,7 +597,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage)
 			// row is a plain byte block and the uint8 row allocator serves it.
 			const StructDef& def = requireCompleteStruct(leaf_name, stmt);
 			if (def.ownsFields) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedOwningStruct, leaf_name) << endl;
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedOwningType, leaf_name) << endl;
 				exit(1);
 			}
 			row_stride = def.totalSize;
@@ -785,140 +797,179 @@ string PlnSemanticAnalyzer::arrLitDimSize(const json& stmt, const string& name, 
 json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage storage)
 {
 	const json& var = stmt["vars"][0];
-	string name = var["name"];
+	// A literal stored through a temp is reported by the store's target.
+	string name = var.value("lit-name", var["name"].get<string>());
 	const json& vtype = var["var-type"];
-	const json& base = vtype["base-type"];
 	const json& items = var["init"]["items"];
 
-	bool is2d = base.value("type-kind", "") == "arr";
-	const json& leaf = is2d ? base["base-type"] : base;
+	json declStmt = stmt;
+	json& declVar = declStmt["vars"][0];
+	declVar.erase("init");
+	declVar.erase("lit-name");
+
+	// The levels as declared; an omitted fixed size is the literal's count
+	// (of its first row, for a row's size).
+	static const json noRows = json::array();
+	ArrLitShape shape = {{}, {}, nullptr};
+	json* level = &declVar["var-type"];
+	const json* rows = &items;
+	bool embedded = false;
+	string declared;
+	int fixedRun = 0;
+	while (level->value("type-kind", "") == "arr") {
+		bool isVarr = isVarrAstType(*level);
+		fixedRun = isVarr ? 0 : fixedRun + 1;
+		if (fixedRun > 2) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
+			exit(1);
+		}
+		if (!isVarr && (*level)["size-expr"].is_null() && rows->empty()) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitEmptySize, name) << endl;
+			exit(1);
+		}
+		string size = shape.levels.empty() || !isVarr
+			? arrLitDimSize(stmt, name, (*level)["size-expr"], rows->size()) : "";
+		if (shape.levels.empty()) declared = size;
+		shape.levels.push_back({isVarr ? -1 : stoll(size),
+		                        isVarr && !shape.levels.empty() ? varrStorageType(stmt, *level) : json()});
+		embedded = level->value("embedded", false);
+		rows = !rows->empty() && (*rows)[0].contains("items") ? &(*rows)[0]["items"] : &noRows;
+		level = &(*level)["base-type"];
+	}
+	const json& leaf = *level;
 	string leafName = leaf.value("type-name", "");
 	bool isStructLeaf = leaf.value("type-kind", "") == "prim" && structDefs_.count(leafName);
-	if (leaf.value("type-kind", "") != "prim"
-			|| (!isStructLeaf && !is2d && vtype.value("embedded", false))) {
+	if (leaf.value("type-kind", "") != "prim" || (!isStructLeaf && shape.levels.size() == 1 && embedded)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
 		exit(1);
 	}
-	ArrLitShape shape = {is2d, leaf, isStructLeaf ? &requireCompleteStruct(leafName, stmt) : nullptr};
+	shape.leaf = leaf;
+	if (isStructLeaf) shape.structDef = &requireCompleteStruct(leafName, stmt);
 
 	// Elements are analyzed before the variable is declared, so an element
 	// cannot read the array it is initializing.
 	json values = sa_arr_lit_values(var["init"], shape, name);
 
-	json declStmt = stmt;
-	json& declVar = declStmt["vars"][0];
-	declVar.erase("init");
-	json& declType = declVar["var-type"];
-	string declared = arrLitDimSize(stmt, name, declType["size-expr"], items.size());
-	string rowSize = is2d ? arrLitDimSize(stmt, name, declType["base-type"]["size-expr"], items[0]["items"].size()) : "0";
 	// A variable-length array's size is its length; the elements past the
 	// literal's are zero.
-	bool isVarr = vtype.value("specifier", "") == "variable";
-	checkArrLitCount(stmt, items, name, is2d, isVarr && stoull(declared) >= items.size() ? items.size() : stoull(declared),
-	                 stoull(rowSize));
+	bool isVarr = isVarrAstType(vtype);
+	if (isVarr && stoull(declared) < items.size()) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitCountMismatch,
+		                                  name, declared, to_string(items.size())) << endl;
+		exit(1);
+	}
+	checkArrLitCount(stmt, items, name, shape);
 
 	json result = isVarr ? sa_varr_var_decl(declStmt, storage, true) : sa_var_decl_group(declStmt, storage);
-	emitArrLitAssigns({{"expr-type", "id"}, {"name", name}}, shape, values, result); // LCOV_EXCL_EXCEPTION_BR_LINE
+	emitArrLitAssigns({{"expr-type", "id"}, {"name", declVar["name"]}}, shape, values, result); // LCOV_EXCL_EXCEPTION_BR_LINE
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // The levels of an already declared array, down to the elements a literal can
-// give: numeric values or structs (stored in place or owned), in one or two
-// levels whose sizes are compile-time constants.
+// give: numeric values or structs (stored in place or owned). A fixed level's
+// size must be a compile-time constant.
 PlnSemanticAnalyzer::ArrLitShape PlnSemanticAnalyzer::arrLitShape(const json& locNode, const string& name, const json& saType)
 {
-	bool is2d = isArrLevel(saType["base-type"]);
-	const json& leaf = is2d ? saType["base-type"]["base-type"] : saType["base-type"];
-	if (!saType.contains("arr-size") || (is2d && !saType["base-type"].contains("arr-size"))) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLitSizeNotConst, name) << endl;
-		exit(1);
+	ArrLitShape shape = {{}, {}, nullptr};
+	const json* t = &saType;
+	while (isArrLevel(*t) || (isVarrStorage(*t) && !shape.levels.empty())) {
+		if (isVarrStorage(*t)) {
+			shape.levels.push_back({-1, *t});
+			t = &(*t)["base-type"]["base-type"];
+			continue;
+		}
+		if (!t->contains("arr-size")) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLitSizeNotConst, name) << endl;
+			exit(1);
+		}
+		shape.levels.push_back({(*t)["arr-size"].get<int64_t>(), json()});
+		t = &(*t)["base-type"];
 	}
+	const json& leaf = *t;
 	string leafKind = leaf.value("type-kind", "");
+	shape.leaf = leaf;
 	if (isStructStorage(leaf))
-		return {is2d, leaf, &requireCompleteStruct(leaf["base-type"]["type-name"].get<string>(), locNode)};
-	if (leafKind == "struct")
-		return {is2d, leaf, &requireCompleteStruct(leaf["type-name"].get<string>(), locNode)};
-	if (leafKind != "prim") {
+		shape.structDef = &requireCompleteStruct(leaf["base-type"]["type-name"].get<string>(), locNode);
+	else if (leafKind == "struct")
+		shape.structDef = &requireCompleteStruct(leaf["type-name"].get<string>(), locNode);
+	else if (leafKind != "prim") {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLitElemType, name) << endl;
 		exit(1);
 	}
-	return {is2d, leaf, nullptr};
+	return shape;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// values[i] is one element (1D) or one row of elements (2D); a struct
-// element is the array sa_struct_lit gives.
-json PlnSemanticAnalyzer::sa_arr_lit_values(const json& lit, const ArrLitShape& shape, const string& name)
+// The values level by level: a row is an array of the next level's values,
+// and a struct element is the array sa_struct_lit gives.
+json PlnSemanticAnalyzer::sa_arr_lit_values(const json& lit, const ArrLitShape& shape, const string& name, size_t depth)
 {
-	const PlnType* elemType = shape.structDef ? nullptr : registry_.fromJson(shape.leaf);
-	auto elemValue = [&](const json& item) {
-		if (shape.structDef)
-			return sa_struct_lit(item, *shape.structDef);
-		if (item.value("expr-type", "") == "arr-lit") {
-			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, name) << endl;
-			exit(1);
-		}
-		json value = sa_expression(item, elemType);
-		return convertForBinding(item, value, elemType, shape.leaf);
-	};
-
+	bool isRow = depth + 1 < shape.levels.size();
+	const PlnType* elemType = shape.structDef || isRow ? nullptr : registry_.fromJson(shape.leaf);
 	json values = json::array();
 	for (auto& item : lit["items"]) {
-		if (!shape.is2d) {
-			values.push_back(elemValue(item));
-			continue;
-		}
-		if (item.value("expr-type", "") != "arr-lit") {
+		bool isLit = item.value("expr-type", "") == "arr-lit";
+		if (isRow != isLit && !(shape.structDef && !isRow)) {
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, name) << endl;
 			exit(1);
 		}
-		json row = json::array();
-		for (auto& elem : item["items"])
-			row.push_back(elemValue(elem));
-		values.push_back(row);
+		if (isRow) {
+			values.push_back(sa_arr_lit_values(item, shape, name, depth + 1));
+		} else if (shape.structDef) {
+			values.push_back(sa_struct_lit(item, *shape.structDef));
+		} else {
+			json value = sa_expression(item, elemType);
+			values.push_back(convertForBinding(item, value, elemType, shape.leaf));
+		}
 	}
 	return values;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
+// A `[+]T` level takes any count, which its row is resized to.
 void PlnSemanticAnalyzer::checkArrLitCount(const json& locNode, const json& items, const string& name,
-                                           bool is2d, uint64_t size, uint64_t rowSize)
+                                           const ArrLitShape& shape, size_t depth)
 {
-	if (size != items.size()) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLitCountMismatch,
-		                                  name, to_string(size), to_string(items.size())) << endl;
+	int64_t size = shape.levels[depth].size;
+	if (size >= 0 && uint64_t(size) != items.size()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(
+			depth == 0 ? E_ArrLitCountMismatch : E_ArrLitRowSizeMismatch,
+			name, to_string(size), to_string(items.size())) << endl;
 		exit(1);
 	}
-	if (!is2d)
+	if (depth + 1 == shape.levels.size())
 		return;
-	for (auto& row : items) {
-		if (rowSize != row["items"].size()) {
-			cerr << locPrefix(row) << PlnSaMessage::getMessage(E_ArrLitRowSizeMismatch,
-			                                 name, to_string(rowSize), to_string(row["items"].size())) << endl;
-			exit(1);
-		}
-	}
+	for (auto& row : items)
+		checkArrLitCount(row, row["items"], name, shape, depth + 1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-void PlnSemanticAnalyzer::emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out)
+void PlnSemanticAnalyzer::emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out,
+                                            size_t depth)
 {
 	auto indexOf = [](json array, size_t i) -> json {
 		return {{"expr-type", "arr-index"}, {"array", move(array)},
 		        {"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}};
 	};
-	auto assignElem = [&](const json& elemAst, const json& value) {
-		if (shape.structDef && value.is_object())
-			out.push_back(makeCopyStmt(elemAst, sa_expression(elemAst), value));
-		else if (shape.structDef)
-			emitStructLitAssigns(elemAst, *shape.structDef, value, out);
-		else
-			out.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(elemAst)}, {"value", value}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-	}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	bool isRow = depth + 1 < shape.levels.size();
 	for (size_t i = 0; i < values.size(); i++) {
-		if (!shape.is2d) {
-			assignElem(indexOf(arrAst, i), values[i]);
-			continue;
+		json elemAst = indexOf(arrAst, i);
+		const json& value = values[i];
+		if (isRow) {
+			const json& rowVarr = shape.levels[depth + 1].varr;
+			if (!rowVarr.is_null()) {
+				// LCOV_EXCL_EXCEPTION_BR_START
+				json n = {{"expr-type","lit-int"},{"value",to_string(value.size())},
+				          {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
+				json resize = allocHelperCall(varrShape(rowVarr), "resize", json::array({sa_expression(elemAst), n}));
+				out.push_back({{"stmt-type","expr"},{"body",move(resize)}});
+				// LCOV_EXCL_EXCEPTION_BR_STOP
+			}
+			emitArrLitAssigns(elemAst, shape, value, out, depth + 1);
+		} else if (shape.structDef && value.is_object()) {
+			out.push_back(makeCopyStmt(elemAst, sa_expression(elemAst), value));
+		} else if (shape.structDef) {
+			emitStructLitAssigns(elemAst, *shape.structDef, value, out);
+		} else {
+			out.push_back({{"stmt-type", "arr-assign"}, {"target", sa_expression(elemAst)}, {"value", value}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 		}
-		for (size_t j = 0; j < values[i].size(); j++)
-			assignElem(indexOf(indexOf(arrAst, i), j), values[i][j]);
 	}
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -1024,7 +1075,7 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 			}
 			ArrLitShape shape = arrLitShape(v, f.name, fieldValueType(f));
 			values.push_back(sa_arr_lit_values(v, shape, f.name));
-			checkArrLitCount(v, v["items"], f.name, false, f.count, 0);
+			checkArrLitCount(v, v["items"], f.name, shape);
 			continue;
 		}
 		if (f.typeKind != "prim") {
@@ -1067,7 +1118,7 @@ json PlnSemanticAnalyzer::sa_embed_arr_var_decl(const json& stmt, VarStorage sto
 		string leaf_name = vtype["base-type"].value("type-name", "");
 		const StructDef& def = requireCompleteStruct(leaf_name, stmt);
 		if (def.ownsFields) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedOwningStruct, leaf_name) << endl;
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_EmbedOwningType, leaf_name) << endl;
 			exit(1);
 		}
 		int stride = def.totalSize;
@@ -1810,7 +1861,10 @@ string allocHelperSymbol(const AllocShapeRef& shape, const string& op)
 	auto readOnly = [](json base) { return json{{"type-kind","pntr"},{"mutable",false},{"base-type",move(base)}}; };
 	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
 	AllocFamily family = shape.family;
-	const json& elem = shape.elem;
+	// An inner `[+]T` is its header struct's storage to the generated module.
+	const json elem = isVarrStorage(shape.elem)
+		? ptr({{"type-kind","struct"},{"type-name","__pln_" + allocShapeKey(varrShape(shape.elem))}})
+		: shape.elem;
 	// An owned struct's slot as the generated code fills it (`[]@!T`).
 	auto building = [&](const json& e) { return isStructStorage(e) ? mut(e["base-type"]) : e; };
 	json owned, built;   // the storage as fini/free/copy take it, and as init fills it
@@ -1893,7 +1947,7 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value)
 	if (isVarrStorage(vt))
 		return {{"stmt-type","expr"},{"body",allocHelperCall(varrShape(vt), "free", json::array({move(value)}))}};
 	json args = json::array({move(value)});
-	if (!isStructStorage(vt["base-type"]))
+	if (!isOwnedBlock(vt["base-type"]))
 		return {{"stmt-type","expr"},{"body",{
 			{"expr-type","call"},{"name","free"},{"func-type","c"},{"args",move(args)}}}};
 	recordArrShape(vt["base-type"]);
@@ -2038,6 +2092,11 @@ json PlnSemanticAnalyzer::allocElemDesc(const json& elem)
 		recordAllocShape(name);
 		return {{"kind","struct"},{"key",symbolType(elem)},{"name",name},{"size",8}};
 	}
+	if (isVarrStorage(elem)) {
+		recordVarrShape(elem);
+		string key = allocShapeKey(varrShape(elem));
+		return {{"kind","varr"},{"key",symbolType(elem)},{"name","__pln_" + key},{"shape-key",key},{"size",8}};
+	}
 	string name = elem["type-name"];
 	recordAllocShape(name);
 	return {{"kind","embed-struct"},{"key",symbolType(elem)},{"name",name},{"size",structDefs_.at(name).totalSize}};
@@ -2125,19 +2184,23 @@ void PlnSemanticAnalyzer::recordArrArrStructShape(const string& structName)
 	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_owned_struct_arr_var_decl(const json& stmt, VarStorage storage)
+json PlnSemanticAnalyzer::sa_owned_elem_arr_var_decl(const json& stmt, VarStorage storage)
 {
-	// [n]T (T = struct): owned pointer array.
-	// __pln_alloc_arr_T(n) on declaration, __pln_free_arr_T(pts, n) at scope exit.
+	// [n]T (T = struct or [+]U): an array of owned elements.
+	// __pln_alloc_arr_E(n) on declaration, __pln_free_arr_E(pts, n) at scope exit.
 	const json& vtype = stmt["vars"][0]["var-type"];
 	const json& base_type = vtype["base-type"];
-	string struct_name = base_type["type-name"].get<string>();
-	requireCompleteStruct(struct_name, stmt);  // recordAllocShape below needs totalSize/fields
+	json elem_pntr;
+	if (isVarrAstType(base_type)) {
+		elem_pntr = varrStorageType(stmt, base_type);
+	} else {
+		string struct_name = base_type["type-name"].get<string>();
+		requireCompleteStruct(struct_name, stmt);  // recordAllocShape below needs totalSize/fields
+		elem_pntr = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",struct_name}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
 
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-	json struct_type = {{"type-kind","struct"},{"type-name",struct_name}};
-	json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
 	json arr_type    = {{"type-kind","pntr"},{"base-type",elem_pntr}};
 	AllocShapeRef shape = {AllocFamily::Arr, elem_pntr};
 	// LCOV_EXCL_EXCEPTION_BR_STOP

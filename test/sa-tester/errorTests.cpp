@@ -621,7 +621,7 @@ TEST(sa_error, embed_arr_owned_sub_struct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_076_embed_arr_owned_struct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("it owns fields"), string::npos) << sa;
+	ASSERT_NE(sa.find("it owns storage of its own"), string::npos) << sa;
 }
 
 TEST(sa_error, write_readonly_arr_elem)
@@ -701,7 +701,7 @@ TEST(sa_error, embed_arr_field_owned_substruct)
 		"bin/palan-gen-ast ../test/testdata/sa/error_081_embed_arr_field_owned_substruct.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find(":4:1: error: cannot embed 'Rect' with '$': it owns fields"), string::npos) << sa;
+	ASSERT_NE(sa.find(":4:1: error: cannot embed 'Rect' with '$': it owns storage of its own"), string::npos) << sa;
 }
 
 TEST(sa_error, recursive_arr_field)
@@ -2343,7 +2343,7 @@ TEST(sa_error, struct_arr_2d)
 		{"error_292_embed_struct_arr_2d_borrow_owned.pa", "array shape '[2][3]$Point' does not match the borrowed array type '@[2][3]Point'."},
 		{"error_293_struct_arr_2d_borrow_embed.pa", "array shape '[2][3]Point' does not match the borrowed array type '@[2][3]$Point'."},
 		{"error_294_embed_struct_arr_2d_borrow_size.pa", "array shape '[2][4]$Point' does not match the borrowed array type '@[2][3]$Point'."},
-		{"error_295_embed_struct_arr_2d_owned_sub.pa", ":3:1: error: cannot embed 'Box' with '$': it owns fields; use 'Box' without '$'."},
+		{"error_295_embed_struct_arr_2d_owned_sub.pa", ":3:1: error: cannot embed 'Box' with '$': it owns storage of its own; use 'Box' without '$'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -2548,11 +2548,11 @@ TEST(sa_error, embed_owning_struct)
 	// Owned array fields count as owning just like owned struct fields,
 	// and a plain $T field is rejected the same way as [n]$T.
 	const pair<string, string> cases[] = {
-		{"error_326_embed_arr_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns fields"},
-		{"error_327_embed_arr_2d_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns fields"},
-		{"error_328_embed_arr_field_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns fields"},
-		{"error_329_embed_field_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns fields"},
-		{"error_330_embed_field_owning_struct_field.pa", ":3:1: error: cannot embed 'Rect' with '$': it owns fields"},
+		{"error_326_embed_arr_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns storage of its own"},
+		{"error_327_embed_arr_2d_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns storage of its own"},
+		{"error_328_embed_arr_field_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns storage of its own"},
+		{"error_329_embed_field_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns storage of its own"},
+		{"error_330_embed_field_owning_struct_field.pa", ":3:1: error: cannot embed 'Rect' with '$': it owns storage of its own"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3429,7 +3429,7 @@ TEST(sa_error, varr)
 		{"error_725_varr_copy_to_sized.pa", ":3:1: error: cannot copy '[+]int32' into '[3]int32': both need the same element type and the same sizes known at compile time."},
 		{"error_726_varr_copy_elem_mismatch.pa", ":2:1: error: cannot copy '[+]int32' into '[+]int64': both need the same element type and the same sizes known at compile time."},
 		{"error_727_varr_transfer_elem_mismatch.pa", ":3:1: error: cannot transfer '[+]int32' into '[+]int64': both need the same element type and the same sizes known at compile time."},
-		{"error_728_varr_embed_owning_struct.pa", ":3:1: error: cannot embed 'Q' with '$': it owns fields; use 'Q' without '$'."},
+		{"error_728_varr_embed_owning_struct.pa", ":3:1: error: cannot embed 'Q' with '$': it owns storage of its own; use 'Q' without '$'."},
 		{"error_729_varr_lit_over_len.pa", ":1:1: error: array 'v' has size 2 but its array literal has 3 elements."},
 		{"error_730_varr_lit_len_not_const.pa", ":2:1: error: array 'v' given an array literal must have a compile-time constant size."},
 		{"error_731_varr_to_ptr.pa", ":2:1: error: cannot convert '[+]int32' to '@int32'."},
@@ -3460,6 +3460,17 @@ TEST(sa_error, varr)
 		{"error_756_varr_return_borrow_mismatch.pa", ":2:2: error: cannot copy '@[+]int64' into '[+]int32': both need the same element type and the same sizes known at compile time."},
 		{"error_757_varr_lit_transfer.pa", ":2:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
 		{"error_758_varr_copy_struct_layout.pa", ":3:1: error: cannot copy '[2]$P' into '[+]P': both need the same element type and the same sizes known at compile time."},
+		{"error_759_varr_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
+		{"error_760_arr_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
+		{"error_761_varr_in_2d_arr.pa", ":1:1: error: a two-dimensional array of variable-length arrays ('[m][n][+]T') is not supported in this version."},
+		{"error_762_varr_elem_sized.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
+		{"error_763_nested_varr_lit_count.pa", ":1:1: error: array 'a' has size 3 but its array literal has 2 elements."},
+		{"error_764_arr_lit_empty_size.pa", ":1:1: error: array 'a' cannot take its size from an empty array literal '[]'."},
+		{"error_765_unsized_varr_elem_param.pa", ":1:1: error: an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'."},
+		{"error_766_nested_varr_lit_dim.pa", ":2:7: error: the array literal's dimensions do not match array 'm'."},
+		{"error_767_varr_elem_borrow_mismatch.pa", ":3:1: error: cannot convert '@[3][+]int64' to '@[3][+]int32'."},
+		{"error_768_nested_varr_readonly_push.pa", ":2:7: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
+		{"error_769_borrow_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3675,7 +3686,7 @@ TEST(sa_error, frame_var)
 		// A stack variable doesn't own its storage, so it has nothing to give away.
 		{"error_624_transfer_frame_struct.pa", ":5:1: error: '->>' needs a source that owns its value"},
 		{"error_625_transfer_frame_arr.pa", ":4:1: error: '->>' needs a source that owns its value"},
-		{"error_626_frame_embed_owning.pa", ":3:1: error: cannot embed 'Q' with '$': it owns fields; use 'Q' without '$'."},
+		{"error_626_frame_embed_owning.pa", ":3:1: error: cannot embed 'Q' with '$': it owns storage of its own; use 'Q' without '$'."},
 		{"error_627_frame_param.pa", ":2:1: error: this parameter is not supported in this version."},
 		{"error_628_frame_named_ret.pa", ":2:1: error: this return value is not supported in this version."},
 		{"error_629_frame_ret_type.pa", ":2:13: error: this return value is not supported in this version."},

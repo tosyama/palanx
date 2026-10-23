@@ -437,6 +437,8 @@ int main(int argc, char* argv[])
 				// views of a struct array's own. Any other element is plain bytes,
 				// zeroed and copied in bulk.
 				struct ElemOps {
+					string kind;       // the shape entry's element kind
+					string inner;      // an inner `[+]T` element's shape key
 					string key;        // the element's type symbol
 					string type;       // one element's type name in the source
 					int64_t size;      // the bytes a slot takes
@@ -452,10 +454,12 @@ int main(int argc, char* argv[])
 				auto opsOf = [&](const json& desc) {
 					string kind = desc["kind"];
 					ElemOps e;
+					e.kind = kind;
+					e.inner = desc.value("shape-key", "");
 					e.key = desc["key"];
 					e.type = kind == "prim" ? desc["type"] : desc["name"];
 					e.size = desc["size"].get<int64_t>();
-					e.owned = kind == "struct";
+					e.owned = kind == "struct" || kind == "varr";
 					e.embedded = kind == "embed-struct";
 					e.buildElem = "@!" + e.type;
 					e.ownElem = e.type;
@@ -466,13 +470,18 @@ int main(int argc, char* argv[])
 					e.data = e.owned ? "@!@!" + e.type : "@!" + e.type;
 					return e;
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// An inner `[+]T` element is its header, starting empty.
 				auto elemBuild = [&](const ElemOps& e, const string& slot, const string& indent) {
+					if (e.kind == "varr") return indent + "calloc(1, 24) -> " + slot + ";\n";
 					return structElemBuild(e.type, slot, indent);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				auto elemDrop = [&](const ElemOps& e, const string& slot) {
+					if (e.kind == "varr") return "__pln_free_" + e.inner + "(" + slot + ");";
 					return hasOwned(e.type) ? "__pln_free_" + e.type + "(" + slot + ");" : "free(" + slot + ");";
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				auto elemSet = [&](const ElemOps& e, const string& dst, const string& src) {
+					if (e.kind == "varr")
+						return "__pln_copy_" + e.inner + "(@!" + dst + ", " + src + ".data, " + src + ".len);";
 					return structCopy(e.type, dst, src);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				set<string> elemHelpersDone;
@@ -573,7 +582,10 @@ int main(int argc, char* argv[])
 					    << "}\n"
 					    << "export func __pln_push_" << key << "(@!" << hdr << " h, " << e.value << " x) {\n"
 					    << "    if h.len == h.cap { __pln_reserve_" << key << "(h, h.len + 1); }\n";
-					if (e.owned)
+					// The caller hands an inner `[+]T` over, so its header becomes the slot.
+					if (e.kind == "varr")
+						out << "    @!x -> h.data[h.len];\n";
+					else if (e.owned)
 						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1);\n"
 						    << "    __pln_set_" << e.key << "(h.data, h.len, x);\n";
 					else if (e.embedded)

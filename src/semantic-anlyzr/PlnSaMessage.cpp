@@ -191,8 +191,8 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_WriteToImmutablePtrField:
 			return "cannot write through read-only pointer field '@T'; use '@!T' for mutable.";
 
-		case E_EmbedOwningStruct:
-			return "cannot embed '" + arg1 + "' with '$': it owns fields; use '" + arg1 + "' without '$'.";
+		case E_EmbedOwningType:
+			return "cannot embed '" + arg1 + "' with '$': it owns storage of its own; use '" + arg1 + "' without '$'.";
 
 		case E_WriteToReadOnlyArrElem:
 			return "cannot write through read-only pointer array element; use [n]@!T for mutable.";
@@ -442,6 +442,19 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_VarrBorrowSized:
 			return "a borrowed variable-length array type is written '@[+]T' or '@![+]T', without a size.";
+
+		case E_VarrElemSized:
+			return "a variable-length array element is written '[+]T', without a size: it starts empty.";
+
+		case E_VarrIn2DArr:
+			return "a two-dimensional array of variable-length arrays ('[m][n][+]T') is not supported in this version.";
+
+		case E_UnsizedVarrElemArr:
+			return "an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'.";
+
+		case E_ArrLitEmptySize:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "array '" + arg1 + "' cannot take its size from an empty array literal '[]'.";
 
 		case E_ArrowBindsTighter:
 			BOOST_ASSERT(arg1 != "\x01");

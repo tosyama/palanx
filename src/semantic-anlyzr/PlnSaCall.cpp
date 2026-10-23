@@ -332,7 +332,7 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 	bool isStruct = isStructPntr(*paramVT);
 	json declType = isStruct
 		? json{{"type-kind","prim"},{"type-name",(*paramVT)["base-type"]["type-name"]}} // LCOV_EXCL_EXCEPTION_BR_LINE
-		: paramVT->contains("arr-size") ? astArrType(*paramVT) : json();
+		: paramVT->contains("arr-size") ? astTypeOf(*paramVT) : json();
 	if (declType.is_null()) {
 		if (!paramVT->contains("arr-size"))
 			rejectContext();
@@ -356,8 +356,7 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 			rejectParamType(E_DictLitArgType);
 		ArrLitShape shape = arrLitShape(lit, paramName, varType);
 		json values = sa_arr_lit_values(lit, shape, paramName);
-		checkArrLitCount(lit, lit["items"], paramName, shape.is2d, varType["arr-size"].get<uint64_t>(),
-		                 shape.is2d ? varType["base-type"]["arr-size"].get<uint64_t>() : 0);
+		checkArrLitCount(lit, lit["items"], paramName, shape);
 		emitArrLitAssigns(target, shape, values, body);
 	}
 	argAst = isAddrOf ? json{{"expr-type","addr-of"},{"object",target},{"mutable",arg["mutable"]},{"loc",arg.value("loc", json::array())}}
@@ -726,7 +725,7 @@ json PlnSemanticAnalyzer::ownedVarrArg(const json& locNode, const json& arg, Cal
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
 	string name = "__arg_" + to_string(tempVarCounter_++);
-	json var = {{"name",name},{"var-type",astVarrType(paramVT)}};
+	json var = {{"name",name},{"var-type",astTypeOf(paramVT)}};
 	if (isLit) var["init"] = arg;
 	json decl = {{"stmt-type","var-decl"},{"loc",arg.value("loc", json::array())},{"vars",json::array({var})}};
 	enterScope();

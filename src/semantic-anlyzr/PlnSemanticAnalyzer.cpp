@@ -367,6 +367,10 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 	if (type.value("type-kind","") != "arr" || type.value("specifier","") != "raw"
 	    || !type["size-expr"].is_null())
 		return type;
+	if (isVarrAstType(type["base-type"])) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsizedVarrElemArr) << endl;
+		exit(1);
+	}
 	if (type.value("embedded", false)) {
 		json embed_bt = type["base-type"];  // [m]T or a struct
 		json pntr = {{"type-kind","pntr"},{"embedded",true}}; // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -531,6 +535,16 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 	json out = {{"type-kind","pntr"},{"arr-size",constLevelSize(locNode, arr["size-expr"], isMutable.has_value())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (isMutable) out["mutable"] = *isMutable;
 	json leaf = arr["base-type"];
+	// [n][+]T: each element stays the `[+]T` the array owns, as a struct element does.
+	if (isVarrAstType(leaf)) {
+		json elem = varrStorageType(locNode, leaf);
+		if (arr.value("embedded", false)) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType, typeDisplayName(elem)) << endl;
+			exit(1);
+		}
+		out["base-type"] = move(elem);
+		return out;
+	}
 	if (arr.value("embedded", false)) {
 		out["embedded"] = true;
 		if (leaf.value("type-kind","") != "arr") {
@@ -597,12 +611,22 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 	string name = base.value("type-kind","") == "prim" ? base.value("type-name","") : "";
 	bool embedded = arr.value("embedded", false);
 	json elem;
-	if (!embedded && elemSizeBytes(name) >= 0) {
+	if (isVarrAstType(base)) {
+		if (!base["size-expr"].is_null()) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VarrElemSized) << endl;
+			exit(1);
+		}
+		elem = varrStorageType(locNode, base);
+		if (embedded) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType, typeDisplayName(elem)) << endl;
+			exit(1);
+		}
+	} else if (!embedded && elemSizeBytes(name) >= 0) {
 		elem = base;
 	} else if (structDefs_.count(name)) {
 		const StructDef& def = requireCompleteStruct(name, locNode);
 		if (embedded && def.ownsFields) {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningStruct, name) << endl;
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType, name) << endl;
 			exit(1);
 		}
 		// LCOV_EXCL_EXCEPTION_BR_START

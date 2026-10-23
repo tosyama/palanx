@@ -34,13 +34,16 @@ Root
 
   The arr and varr entries describe their element as `data` (or the array) holds it:
   - elem\* - `{"kind", "key", "size"}` and the type: `"prim"` with `"type"` (a primitive),
-    `"struct"` with `"name"` (an owned slot holding a struct `T`, 8 bytes), or `"embed-struct"`
-    with `"name"` (the struct itself, `total-size` bytes). `key` is the element type written as in
-    a symbol (see "Symbol names"): `int32`, `P5Point`, `5Point`.
+    `"struct"` with `"name"` (an owned slot holding a struct `T`, 8 bytes), `"embed-struct"`
+    with `"name"` (the struct itself, `total-size` bytes), or `"varr"` with `"name"` (an owned
+    slot holding a `[+]U`, 8 bytes; the name is its header type, `__pln_varr_U`) and `"shape-key"`
+    (the `[+]U`'s own entry). `key` is the element type written as in a symbol (see "Symbol
+    names"): `int32`, `P5Point`, `5Point`, `PVint32`.
   - Their shape key is `arr_`, `varr_` or `evarr_` followed by the element's `key`, so a key names
-    its element type exactly. A struct element's struct entry precedes the entry.
+    its element type exactly. A struct element's struct entry and a `[+]U` element's varr entry
+    precede the entry.
 
-  **Arr entry** (`[n]T` with `T` a struct, a variable or an owned field): build-mgr generates
+  **Arr entry** (`[n]T` with `T` a struct or a `[+]U`, a variable or an owned field): build-mgr generates
   `__pln_alloc_arr_E(n)`, `__pln_init_arr_E(outer, n)`, `__pln_free_arr_E(pts, n)`,
   `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`, `E` being the element's `key`:
   - shape-kind\* - "arr"
@@ -73,7 +76,11 @@ Root
   `copy` copy into the element (`__pln_copy_T` or memcpy), and `copy`'s source is a run of slots
   (`[]T src`). `[+]$T` (elem kind `"embed-struct"`, shape key `evarr_T`, functions
   `__pln_*_evarr_T`) keeps the elements in `data` like a primitive's, `T` taking its
-  `total-size` bytes and owning nothing; `pop` returns a newly allocated copy:
+  `total-size` bytes and owning nothing; `pop` returns a newly allocated copy. With a `[+]U`
+  element (elem kind `"varr"`) the slots hold the elements' headers the same way: a new element is
+  an empty header (`calloc(1, 24)`), a dropped one is freed with `__pln_free_varr_U`, and a copy
+  into one is `__pln_copy_varr_U`; `push` stores the header it is given, which the caller hands
+  over:
   - shape-kind\* - "varr"
   - shape-key\* - Shape key string (e.g. "varr\_int32", "varr\_P5Point", "evarr\_5Point")
   - elem\* - The element, as above
@@ -363,8 +370,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - `var-type`: `pntr(varr(E))`. `varr` (`{"type-kind":"varr","base-type":E}`) appears only as
     this pointer's base; its layout is known to SA alone, and codegen sees a pointer. `E` is one
     element as `data` holds it: a primitive `T`; for a struct `T`, `pntr(struct(T))` (an owned
-    slot, as a `[n]T` element) for `[+]T` and `struct(T)` for `[+]$T` (E_EmbedOwningStruct if
-    `T` owns fields), with `"embedded": true` on the `varr`. A pointer element (`[+]@T`) is not supported. Below, `T` stands for `E`
+    slot, as a `[n]T` element) for `[+]T` and `struct(T)` for `[+]$T` (E_EmbedOwningType if
+    `T` owns fields), with `"embedded": true` on the `varr`; for a `[+]U` element (`[+][+]U`, any
+    depth), the element's own owned `pntr(varr(…))` (`[+]$[+]U` is E_EmbedOwningType, `[+][+n]U`
+    E_VarrElemSized). A pointer element (`[+]@T`) is not supported. Below, `T` stands for `E`
     and `varr_T` for the shape key.
   - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
@@ -405,8 +414,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     `@[+]T` / `@![+]T` (`__pln_copy_varr_T(w, <v's data>, <v's len>)`) or a sized `[n]T` of the
     same element type and layout (`[n]T` into `[+]T`, `[n]$T` into `[+]$T`;
     `__pln_copy_varr_T(w, a, n)`); the length becomes the source's. Into a
-    `[n]T` it is E_CopyShapeMismatch. `[..] -> w` is a block declaring the literal as a frame
-    array `$[]T __lit_N` and copying it, so every element is read before `w` changes.
+    `[n]T` it is E_CopyShapeMismatch. `[..] -> w` (also into an element, `[..] -> m[i]`) is a
+    block declaring the literal as a frame array `$[]T __lit_N` (an empty `[]` as a frame
+    `$[+]T`) and copying it, so every element is read before `w` changes; its diagnostics name
+    `w`.
   - `->>` into such a variable is the transfer of any owned value: `__pln_free_varr_T(w)`, the
     assign, and the source set to NULL. The source is an owning variable (not `$[+]T`) or a call
     result, of the same element type.
@@ -420,7 +431,18 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     frees it when the function exits. A call result is passed as it is; anything else that a
     copy into `[+]T` accepts, or an array literal, is copied into a `temp` (`__arg_N`) whose
     `release` is empty.
-  - An array element (`[+][+]T`) and a field are not supported yet.
+  - An element `[+]U` (`[+][+]U`, `[n][+]U`) is owned by the array, as a struct element is:
+    `m[i]` is the element's header pointer (typed as the owned `[+]U`), `@m[i]`/`@!m[i]` borrows
+    it in place (so `m[i].push(x)` and `m[i] -> len()` apply), and copying, transferring and
+    freeing the outer array reach it through the generated helpers. `[n][+]U` is an arr entry of
+    the element (`__pln_alloc_arr_PVU(n)` …, or in the frame for `$[n][+]U`), and `@[n][+]U`
+    borrows it with each element left as the owned `[+]U`. Not supported: `[n]$[+]U`
+    (E_EmbedOwningType), `[m][n][+]U` (E_VarrIn2DArr), an unsized `[][+]U`
+    (E_UnsizedVarrElemArr). An array literal fills `[+]` levels at any depth: each inner row is
+    resized to its own count (`__pln_resize_varr_U(<row>, count)`, an empty `[]` included) before
+    its elements are stored; a fixed level still needs the exact count, and a fixed size taken from
+    an empty `[]` is E_ArrLitEmptySize.
+  - A field is not supported yet.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
   `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`

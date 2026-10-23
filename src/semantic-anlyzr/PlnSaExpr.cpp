@@ -270,13 +270,13 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 
 	if (obj_type == "arr-index") {
 		json sa_idx = sa_expr_arr_index(obj, isMutable);
-		// A struct element or a row is already a pointer to its storage, so '@'
-		// only marks it as a borrow, as for a whole array variable. Any other
+		// A struct or `[+]T` element or a row is already a pointer to its storage,
+		// so '@' only marks it as a borrow, as for a whole array variable. Any other
 		// element that is already an address computation or a pointer
 		// (pointer-slot element) is rejected -- '@' keeps a single meaning
 		// ("make a pointer to a storage slot"), and wrapping those would double
 		// the indirection.
-		bool isStructElem = isStructStorage(sa_idx["value-type"]);
+		bool isStructElem = isOwnedBlock(sa_idx["value-type"]);
 		bool isRow = isArrLevel(sa_idx["value-type"]);
 		if (!isStructElem && !isRow && (sa_idx.value("addr-only", false)
 		                      || sa_idx["value-type"].value("type-kind","") != "prim")) {

@@ -3579,3 +3579,53 @@ TEST(build_mgr, alloc_key_struct_names) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/338_alloc_key_struct_names.pa");
 	ASSERT_EQ(output, "3 4\n");
 }
+
+static void expectBalancedMtrace(const string& traceFile, int expectedAllocs)
+{
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && (line.find(" + ") != string::npos || line.find(" > ") != string::npos)) allocs++;
+		if (!fromSharedLib && (line.find(" - ") != string::npos || line.find(" < ") != string::npos)) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, expectedAllocs) << "expected " << expectedAllocs << " allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
+TEST(build_mgr, nested_varr_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_nested_varr_bin "
+		"../test/testdata/build-mgr/339_nested_varr_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_nested_varr.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_nested_varr_bin");
+	ASSERT_EQ(output,
+		"[1][][23]\n[1][456]\n[1][456]\n[17]\n[179][]\n[179][]\n"
+		"[01][12][23]\n9\n[8][]\n2 1\n0\n1 3 2\n2 5\n");
+	expectBalancedMtrace(traceFile, 77);
+}
+
+TEST(build_mgr, arr_of_varr_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_arr_of_varr_bin "
+		"../test/testdata/build-mgr/340_arr_of_varr_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_arr_of_varr.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_arr_of_varr_bin");
+	ASSERT_EQ(output, "2 0 1\n2 0 1\n0 0 2\n1 2 0\n1 2 0\n3 4\n2\n");
+	expectBalancedMtrace(traceFile, 25);
+}

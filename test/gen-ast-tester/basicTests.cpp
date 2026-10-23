@@ -103,8 +103,9 @@ TEST(gen_ast, varr_var_decl) {
 	ASSERT_EQ(a6["name"], "a6");
 	ASSERT_EQ(a6["var-type"]["specifier"], "variable");
 	ASSERT_TRUE(a6["var-type"]["size-expr"].is_null());
-	// Only a primitive element is implemented: [+][+]int64 a8
-	ASSERT_EQ(stmts[7]["stmt-type"], "not-impl");
+	// [+][+]int64 a8
+	ASSERT_EQ(stmts[7]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[7]["vars"][0]["var-type"]["base-type"]["specifier"], "variable");
 }
 
 TEST(gen_ast, arr_lit_trailing_comma) {
@@ -2291,4 +2292,23 @@ TEST(gen_ast, arrow_precedence) {
 	// (x < y) -> b
 	ASSERT_EQ(stmts[3]["stmt-type"], "assign");
 	ASSERT_EQ(stmts[3]["value"]["expr-type"], "cmp");
+}
+
+// `[+]` levels nest under `[+]` and `[n]`, and a literal row may be empty.
+TEST(gen_ast, nested_varr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/147_nested_varr.pa");
+	ASSERT_TRUE(checkerr(output));
+	json ast = json::parse(output)["ast"];
+	const auto& stmts = ast["statements"];
+	const auto& m = stmts[0]["vars"][0];
+	ASSERT_EQ(m["var-type"]["specifier"], "variable");
+	ASSERT_EQ(m["var-type"]["base-type"]["specifier"], "variable");
+	ASSERT_EQ(m["init"]["items"][1]["expr-type"], "arr-lit");
+	ASSERT_EQ(m["init"]["items"][1]["items"].size(), 0);
+	const auto& a = stmts[1]["vars"][0]["var-type"];
+	ASSERT_EQ(a["specifier"], "raw");
+	ASSERT_EQ(a["base-type"]["specifier"], "variable");
+	ASSERT_EQ(stmts[2]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[2]["value"]["items"].size(), 0);
 }

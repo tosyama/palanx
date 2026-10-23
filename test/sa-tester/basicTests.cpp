@@ -6067,6 +6067,81 @@ TEST(sa, chain_varr_overload)
 	ASSERT_EQ(funcName(stmts[3]["body"]["name"]), "__pln_push_varr_int32");
 }
 
+// An element `[+]T` is owned by the array holding it, whose generated
+// helpers build, free and copy it through the element's own.
+TEST(sa, nested_varr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/302_nested_varr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& m = stmts[0]["vars"][0];
+	const auto& elem = m["var-type"]["base-type"]["base-type"];
+	ASSERT_EQ(elem["base-type"]["type-kind"], "varr");
+	ASSERT_EQ(elem.contains("mutable"), false);
+	ASSERT_EQ(funcName(m["init"]["name"]), "__pln_alloc_varr_PVint32");
+	ASSERT_EQ(funcName(stmts[1]["body"]["name"]), "__pln_resize_varr_PVint32");
+
+	// m[0].push(): the element is borrowed in place.
+	const auto& push = stmts[2]["body"];
+	ASSERT_EQ(funcName(push["name"]), "__pln_push_varr_int32");
+	ASSERT_EQ(push["args"][0]["expr-type"], "arr-index");
+	ASSERT_EQ(push["args"][0]["value-type"]["mutable"], true);
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["ptr-expr"]["expr-type"], "arr-index");
+	const auto& popped = stmts[4]["vars"][0]["init"];
+	ASSERT_EQ(funcName(popped["name"]), "__pln_pop_varr_PVint32");
+	ASSERT_EQ(popped["category"], "expiring");
+
+	ASSERT_EQ(funcName(stmts[6]["vars"][0]["init"]["name"]), "__pln_alloc_arr_PVint32");
+	ASSERT_EQ(funcName(stmts[7]["body"]["name"]), "__pln_copy_varr_PVint32");
+
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes.size(), 3);
+	ASSERT_EQ(shapes[0]["shape-key"], "varr_int32");
+	ASSERT_EQ(shapes[1]["shape-key"], "varr_PVint32");
+	ASSERT_EQ(shapes[1]["elem"]["kind"], "varr");
+	ASSERT_EQ(shapes[1]["elem"]["shape-key"], "varr_int32");
+	ASSERT_EQ(shapes[1]["elem"]["size"], 8);
+	ASSERT_EQ(shapes[2]["shape-key"], "arr_PVint32");
+	ASSERT_EQ(shapes[2]["elem"]["kind"], "varr");
+}
+
+// Each `[+]` row of a literal is resized to its own count before its
+// elements are stored.
+TEST(sa, nested_varr_lit)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/303_nested_varr_lit.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["args"][0]["value"], "3");
+	auto resizeTo = [&](size_t i) {
+		EXPECT_EQ(funcName(stmts[i]["body"]["name"]), "__pln_resize_varr_int32");
+		return stmts[i]["body"]["args"][1]["value"].get<string>();
+	};
+	ASSERT_EQ(resizeTo(1), "1");
+	ASSERT_EQ(stmts[2]["stmt-type"], "arr-assign");
+	ASSERT_EQ(resizeTo(3), "0");
+	ASSERT_EQ(resizeTo(4), "2");
+	ASSERT_EQ(stmts[6]["stmt-type"], "arr-assign");
+
+	// `[[4]] -> m` goes through a frame `[1][+]int32`; `[] -> m[0]` through
+	// an empty frame `[+]int32`.
+	const auto& lit = stmts[7]["body"];
+	ASSERT_EQ(lit[1]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(funcName(lit[3]["body"]["name"]), "__pln_init_arr_PVint32");
+	ASSERT_EQ(funcName(lit[6]["body"]["name"]), "__pln_copy_varr_PVint32");
+	ASSERT_EQ(funcName(lit[7]["body"]["name"]), "__pln_fini_arr_PVint32");
+	const auto& empty = stmts[8]["body"];
+	ASSERT_EQ(empty[0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(empty[0]["vars"][0]["init"]["size"], 24);
+	ASSERT_EQ(funcName(empty[3]["body"]["name"]), "__pln_copy_varr_int32");
+
+	// [2][+]int32: rows of a fixed level are resized too.
+	ASSERT_EQ(resizeTo(11), "1");
+	ASSERT_EQ(resizeTo(13), "0");
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();

@@ -50,7 +50,7 @@ enum PlnSaMessageCode {
 	E_RecursiveStruct,			// arg1: struct name
 	E_FieldAccessOnNonStruct,
 	E_WriteToImmutablePtrField,
-	E_EmbedOwningStruct,			// arg1: struct name
+	E_EmbedOwningType,			// arg1: type display name
 	E_WriteToReadOnlyArrElem,
 	E_ArrFieldSizeNotConstant,	// arg1 (optional): the name that is not a const
 	E_ConflictingTypedef,			// arg1: typedef name
@@ -164,6 +164,10 @@ enum PlnSaMessageCode {
 	E_ArrLenNeedsAddrOf,
 	E_VarrBorrowSized,
 	E_ArrowBindsTighter,	// arg1: operator
+	E_VarrElemSized,
+	E_VarrIn2DArr,
+	E_UnsizedVarrElemArr,
+	E_ArrLitEmptySize,	// arg1: variable name
 };
 
 class PlnSaMessage

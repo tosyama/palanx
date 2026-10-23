@@ -132,7 +132,7 @@ inline bool isDeclarableVarType(const json& t)
 	if (tk == "prim" || tk == "pntr")
 		return true;
 	if (isVarrType(t))
-		return t["base-type"].value("type-kind", "") == "prim";
+		return t["base-type"].value("type-kind", "") == "prim" || isDeclarableVarType(t["base-type"]);
 	if (tk != "arr" || t.value("specifier", "") != "raw")
 		return false;
 	if (t["size-expr"].is_null())
@@ -141,6 +141,8 @@ inline bool isDeclarableVarType(const json& t)
 	string btk = bt.value("type-kind", "");
 	if (btk == "prim")
 		return true;  // fixed-size array of prim
+	if (isVarrType(bt))
+		return isDeclarableVarType(bt);  // fixed-size array of [+]T
 	if (btk == "pntr" && bt.value("mutable", false) == true && bt.contains("base-type")) {
 		const json& ibt = bt["base-type"];
 		if (ibt.value("type-kind", "") == "arr" && ibt.value("specifier", "") == "raw"
@@ -152,7 +154,7 @@ inline bool isDeclarableVarType(const json& t)
 	if (btk == "pntr" && bt["base-type"].value("type-kind", "") == "func")
 		return true;  // array of function pointers
 	if (btk == "arr" && bt.value("specifier", "") == "raw" && !bt["size-expr"].is_null()
-		&& bt["base-type"].value("type-kind", "") == "prim")
+		&& (bt["base-type"].value("type-kind", "") == "prim" || isVarrType(bt["base-type"])))
 		return true;  // fixed-size multidim array (also covers embedded-struct arrays)
 	return false;
 }

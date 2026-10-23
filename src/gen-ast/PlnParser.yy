@@ -1011,6 +1011,8 @@ array_row: '[' array_items ']'
 	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| '[' array_items ',' ']'
 	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	| '[' ']'
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", json::array()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	;
 
 array_items: expression
