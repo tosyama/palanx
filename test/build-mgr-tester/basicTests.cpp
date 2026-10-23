@@ -3571,3 +3571,11 @@ TEST(build_mgr, varr_builtins_abort) {
 		EXPECT_NE(out.find("status 134"), string::npos) << file << ": " << out;
 	}
 }
+
+// `[n]arr_P` and `[m][n]P` once shared the helper key `arr_arr_P`, so one of
+// them got no helpers and the program failed to link.
+TEST(build_mgr, alloc_key_struct_names) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/338_alloc_key_struct_names.pa");
+	ASSERT_EQ(output, "3 4\n");
+}

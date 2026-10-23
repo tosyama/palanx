@@ -64,10 +64,20 @@ inline bool isFloatPrim(const PlnType* t) {
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
 // The symbol of one of the functions build-mgr generates, and a call to it.
-string allocHelperSymbol(AllocFamily family, const string& leaf, const string& op);
-// len, push, resize and pop of `[+]T` for a primitive T, as call candidates.
-json varrBuiltinDefs(const json& elem);
-json allocHelperCall(AllocFamily family, const string& leaf, const string& op, json args);
+string allocShapeKey(const AllocShapeRef& shape);
+string allocHelperSymbol(const AllocShapeRef& shape, const string& op);
+json allocHelperCall(const AllocShapeRef& shape, const string& op, json args);
+inline AllocShapeRef structShape(const string& name)
+{
+	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+inline AllocShapeRef arrArrShape(AllocFamily family, const string& leaf)
+{
+	json elem = {{"type-kind",family == AllocFamily::ArrArrPrim ? "prim" : "struct"},{"type-name",leaf}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {family, move(elem)};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+// len, push, resize and pop of the `[+]T` whose header type is varr, as call candidates.
+json varrBuiltinDefs(const json& varr);
 
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 
@@ -184,19 +194,22 @@ inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
 	                   && !paramVT->contains("arr-size") && !isStructStorage(*paramVT) && !isVarrPntr(*paramVT));
 }
 // elem is one element as the data holds it: a primitive, an owned struct's
-// storage (`[+]T`), or the struct itself (`[+]$T`).
-inline json varrPntrType(const json& elem)
+// storage (`[+]T`), or the struct itself (`[+]$T`). `embedded` marks the
+// last, since an element type alone cannot tell a row of `[+][n]T` from one
+// laid out in place.
+inline json varrPntrType(const json& elem, bool embedded)
 {
-	return {{"type-kind","pntr"},{"base-type",{{"type-kind","varr"},{"base-type",elem}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json varr = {{"type-kind","varr"},{"base-type",elem}};
+	if (embedded) varr["embedded"] = true;
+	return {{"type-kind","pntr"},{"base-type",move(varr)}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
-inline bool isVarrEmbedded(const json& vt) { return vt["base-type"]["base-type"].value("type-kind","") == "struct"; }
+inline bool isVarrEmbedded(const json& vt) { return vt["base-type"].value("embedded", false); }
 // The generated helpers a `[+]T` uses, named after its element's type.
 inline AllocShapeRef varrShape(const json& vt)
 {
-	const json& elem = vt["base-type"]["base-type"];
-	if (isVarrEmbedded(vt)) return {AllocFamily::EVarr, elem["type-name"].get<string>()};
-	if (elem.value("type-kind","") == "pntr") return {AllocFamily::Varr, elem["base-type"]["type-name"].get<string>()};
-	return {AllocFamily::Varr, elem["type-name"].get<string>()};
+	return {isVarrEmbedded(vt) ? AllocFamily::EVarr : AllocFamily::Varr, vt["base-type"]["base-type"]};
 }
 // The header's len, which `len(@v)` reads in place of a call.
 inline json varrLen(json varr)
@@ -635,7 +648,8 @@ inline json astVarrType(const json& saType)
 	const json& elem = saType["base-type"]["base-type"];
 	if (isVarrEmbedded(saType)) t["embedded"] = true;
 	if (elem.value("type-kind","") == "prim") t["base-type"] = elem;
-	else t["base-type"] = {{"type-kind","prim"},{"type-name",varrShape(saType).leaf}};
+	else if (elem.value("type-kind","") == "pntr") t["base-type"] = {{"type-kind","prim"},{"type-name",elem["base-type"]["type-name"]}};
+	else t["base-type"] = {{"type-kind","prim"},{"type-name",elem["type-name"]}};
 	return t;
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE

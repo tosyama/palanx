@@ -73,21 +73,22 @@ struct FuncType : PlnType {
 // variable-length array variable is one word pointing at its header.
 struct VarrType : PlnType {
     const PlnType* elem;
-    VarrType(const PlnType* e) : PlnType(Kind::Varr), elem(e) {}
+    bool embedded;
+    VarrType(const PlnType* e, bool emb) : PlnType(Kind::Varr), elem(e), embedded(emb) {}
 };
 
 // Type registry — owns all type instances and interns them
 class PlnTypeRegistry {
     std::map<PrimType::Name, std::unique_ptr<PrimType>>  primCache_;
     std::map<const PlnType*, std::unique_ptr<PtrType>>   ptrCache_;
-    std::map<const PlnType*, std::unique_ptr<VarrType>>  varrCache_;
+    std::map<std::pair<const PlnType*, bool>, std::unique_ptr<VarrType>> varrCache_;
     std::map<std::string, std::unique_ptr<StructType>>   structCache_;
     std::map<std::string, std::unique_ptr<EnumType>>     enumCache_;
     std::map<std::pair<std::vector<const PlnType*>, const PlnType*>, std::unique_ptr<FuncType>> funcCache_;
 public:
     const PrimType*  prim(PrimType::Name name);
     const PtrType*   ptr(const PlnType* base);
-    const VarrType*  varr(const PlnType* elem);
+    const VarrType*  varr(const PlnType* elem, bool embedded);
     const StructType* structType(const std::string& name);
     const EnumType*  enumType(const std::string& name, const PrimType* base);
     const FuncType*  funcType(const std::vector<const PlnType*>& params, const PlnType* ret);
@@ -131,3 +132,5 @@ bool argConvOk(const PlnType* from, const PlnType* to);
 // self-delimiting (lowercase prim, digit-led user name, uppercase modifier).
 std::string moduleSymbol(const std::string& sourcePath);
 std::string funcSymbol(const std::string& name, const json& params);
+// A type as one identifier-safe word, distinct for distinct types.
+std::string symbolType(const json& t);

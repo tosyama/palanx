@@ -187,7 +187,7 @@ static bool definesBuiltin(const string& name, const json& def)
 	if (name == "len" && params.size() == 1 && first.contains("arr-size") && first.contains("mutable"))
 		return true;
 	if (!isVarrPntr(first)) return false;
-	for (auto& builtin : varrBuiltinDefs(first["base-type"]["base-type"]))
+	for (auto& builtin : varrBuiltinDefs(first["base-type"]))
 		if (builtin["name"] == name && sameParamTypes(builtin, def)) return true;
 	return false;
 }
@@ -261,18 +261,9 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 		if (f.elemKind == "struct") {
-			recordAllocShape(f.typeName);
-			string shape_key = "arr_" + f.typeName;
-			if (!allocShapeNames_.count(shape_key)) {
-				allocShapeNames_.insert(shape_key);
-				// LCOV_EXCL_EXCEPTION_BR_START
-				sa["alloc-shapes"].push_back({
-					{"shape-kind",   "arr-struct"},
-					{"shape-key",    shape_key},
-					{"struct-name",  f.typeName}
-				});
-				// LCOV_EXCL_EXCEPTION_BR_STOP
-			}
+			json elem = toStructPntrType({{"type-kind","prim"},{"type-name",f.typeName}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+			ownedArr.back()["shape-key"] = allocShapeKey({AllocFamily::Arr, elem});
+			recordArrShape(elem);
 		}
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
@@ -622,7 +613,7 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
 		exit(1);
 	}
-	json vt = varrPntrType(elem);
+	json vt = varrPntrType(elem, embedded);
 	recordVarrShape(vt);
 	return vt;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -636,7 +627,7 @@ json PlnSemanticAnalyzer::varrData(json varr)
 	json elems = {{"type-kind","pntr"},{"base-type",vt["base-type"]["base-type"]}};
 	if (isVarrEmbedded(vt)) {
 		elems["embedded"] = true;
-		elems["stride"] = structDefs_.at(varrShape(vt).leaf).totalSize;
+		elems["stride"] = structDefs_.at(vt["base-type"]["base-type"]["type-name"].get<string>()).totalSize;
 	}
 	if (!isWritableThrough(vt)) elems["mutable"] = false;
 	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};

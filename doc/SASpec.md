@@ -32,23 +32,30 @@ Root
   - leaf-size\* - Size of the leaf type in bytes, for the row copy
   - depth\* - Nesting depth integer (currently always 2 for `[m][n]T`)
 
-  **Arr-struct entry** (dependency marker for struct-leaf owned array fields, `[n]T field`
-  where `T` is a struct): emitted so build-mgr generates/compiles the shared
-  `__pln_alloc_arr_T`/`__pln_free_arr_T` pair (reused from the v0.1.24 struct array variable
-  feature) before any struct that has an owned array field of leaf type `T`:
-  - shape-kind\* - "arr-struct"
-  - shape-key\* - Shape key string (e.g. "arr\_Point")
-  - struct-name\* - Leaf struct type name (e.g. "Point")
+  The arr and varr entries describe their element as `data` (or the array) holds it:
+  - elem\* - `{"kind", "key", "size"}` and the type: `"prim"` with `"type"` (a primitive),
+    `"struct"` with `"name"` (an owned slot holding a struct `T`, 8 bytes), or `"embed-struct"`
+    with `"name"` (the struct itself, `total-size` bytes). `key` is the element type written as in
+    a symbol (see "Symbol names"): `int32`, `P5Point`, `5Point`.
+  - Their shape key is `arr_`, `varr_` or `evarr_` followed by the element's `key`, so a key names
+    its element type exactly. A struct element's struct entry precedes the entry.
+
+  **Arr entry** (`[n]T` with `T` a struct, a variable or an owned field): build-mgr generates
+  `__pln_alloc_arr_E(n)`, `__pln_init_arr_E(outer, n)`, `__pln_free_arr_E(pts, n)`,
+  `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`, `E` being the element's `key`:
+  - shape-kind\* - "arr"
+  - shape-key\* - Shape key string (e.g. "arr\_P5Point")
+  - elem\* - The element, as above
 
   **Arr-arr-struct entry** (`[m][n]T` variable where `T` is a struct): build-mgr generates
   `__pln_alloc_arr_arr_T(d0, d1)`/`__pln_free_arr_arr_T(pts, d0, d1)`, which allocate and free
-  each row with the `__pln_alloc_arr_T`/`__pln_free_arr_T` pair (its "arr-struct" entry is
-  always emitted alongside):
+  each row with the row's arr helpers (its arr entry is always emitted alongside):
   - shape-kind\* - "arr-arr-struct"
   - shape-key\* - Shape key string (e.g. "arr\_arr\_Point")
   - struct-name\* - Leaf struct type name (e.g. "Point")
+  - row-key\* - The shape key of a row, `[n]T` (e.g. "arr\_P5Point")
 
-  **Varr entry** (`[+]T` / `[+]$T` variable): for `[+]T`, build-mgr declares the header as
+  **Varr entry** (`[+]T` / `[+]$T` variable; `T` below names the shape key's element part): for `[+]T`, build-mgr declares the header as
   `type __pln_varr_T { int64 len; int64 cap; @!T data; }` and generates
   `__pln_alloc_varr_T(len, cap)`, `__pln_init_varr_T(h, len, cap)` (calloc's `cap` elements when
   `cap > 0`; the header starts zeroed, so `data` stays NULL otherwise), `__pln_fini_varr_T(h)`
@@ -59,20 +66,17 @@ Root
   and copies `n` elements from `src`, which may be `h`'s own). Growing
   reallocates `data` to max(needed, cap × 2, 4) elements; shrinking keeps the capacity, and
   `resize` zeroes the elements it adds. An empty `pop` or a negative `resize` calls `abort()`.
-  With a struct `T` (`elem-kind: "struct"`), `data` is `@!@!T`, an array of owned slots, of
+  With a struct `T` (elem kind `"struct"`), `data` is `@!@!T`, an array of owned slots, of
   which exactly the first `len` hold an element: growing (`init`, `resize`, `push`, `copy`)
   builds the new ones as `[n]T` does, shrinking (`resize`, `copy`) and `fini` free them with
   `__pln_free_T` (or `free`), and `pop` returns the last one without freeing it; `push` and
   `copy` copy into the element (`__pln_copy_T` or memcpy), and `copy`'s source is a run of slots
-  (`[]T src`). `[+]$T` (`elem-kind: "embed-struct"`, shape key `evarr_T`, functions
+  (`[]T src`). `[+]$T` (elem kind `"embed-struct"`, shape key `evarr_T`, functions
   `__pln_*_evarr_T`) keeps the elements in `data` like a primitive's, `T` taking its
-  `total-size` bytes and owning nothing; `pop` returns a newly allocated copy. A struct
-  element's struct entry precedes its varr entry:
+  `total-size` bytes and owning nothing; `pop` returns a newly allocated copy:
   - shape-kind\* - "varr"
-  - shape-key\* - Shape key string (e.g. "varr\_int32", "varr\_Point", "evarr\_Point")
-  - elem-kind\* - "prim", "struct" or "embed-struct"
-  - leaf-type\* - Element type name
-  - leaf-size\* - Bytes per element of `data` (8 for a struct's slots)
+  - shape-key\* - Shape key string (e.g. "varr\_int32", "varr\_P5Point", "evarr\_5Point")
+  - elem\* - The element, as above
 
   **Struct entry** (structs with owned struct-pointer fields and/or array fields):
   - shape-kind\* - "struct"
@@ -88,6 +92,7 @@ Root
     - offset\* - Byte offset within the struct
     - elem-kind\* - Leaf kind string ("prim" or "struct")
     - leaf-name\* - Leaf element type name (primitive name or struct name)
+    - shape-key\* - The arr entry's shape key, for a struct leaf only
     - count\* - Element count integer
     - elem-size\* - Bytes per element of the array the field points to (8 for a struct leaf's pointers)
 
@@ -96,7 +101,7 @@ Root
   elsewhere, because the full layout cannot always be re-expressed as Palan source (C unions,
   synthesized anonymous tags, embedded types not declared in that module).
 
-  Struct entries (and their leaf-first "arr-struct"/struct dependencies) are ordered leaf-first
+  Struct entries (and their leaf-first arr/struct dependencies) are ordered leaf-first
   (topological order) so build-mgr can generate and compile allocators in dependency order.
   Primitive-leaf owned array fields (`elem-kind: "prim"` in `owned-array-fields`) do not get a
   dedicated SA-emitted shape entry — build-mgr groups and deduplicates them by `leaf-name`
@@ -151,8 +156,8 @@ among such blocks of the enclosing function or of the top level (`util..a.v..b1.
     (no `mutable`: owned or by value), `R` (`mutable: false`) or `W` (`mutable: true`), then the
     base type
   - func: `F<parameter count>_`, each parameter type, then the return type (a `void` prim when none)
-  - varr: `V`, then the element type (`@![+]int32` is `WVint32`, `[+]Point` is `PVP5Point`,
-    `[+]$Point` is `PV5Point`)
+  - varr: `V` (`VC` if `embedded`), then the element type (`@![+]int32` is `WVint32`,
+    `[+]Point` is `PVP5Point`, `[+]$Point` is `PVC5Point`)
 
 The return type is not part of the symbol, since functions differing only by it cannot coexist.
 Two parameter types that differ in any key give different symbols. `func show(int32)` in
@@ -325,7 +330,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Temp vars `__<name>_d0` and `__<name>_d1` (uint64) are prepended; the free call needs both.
   - `var-type`: `pntr(pntr(pntr(struct(T))))`, with `arr-size` on the outer two levels when constant.
   - `init`: palan call to `__pln_alloc_arr_arr_<T>(__<name>_d0, __<name>_d1)`.
-  - "arr-struct" and "arr-arr-struct" entries are added to `alloc-shapes`.
+  - "arr" and "arr-arr-struct" entries are added to `alloc-shapes`.
   - Scope-exit free: palan call stmt `__pln_free_arr_arr_<T>(<name>, __<name>_d0, __<name>_d1)`.
 
   **`[m][n]$T` (2D array of contiguous struct rows, `T` a struct):** Lowered like `[m][n]T` for a
@@ -359,7 +364,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     this pointer's base; its layout is known to SA alone, and codegen sees a pointer. `E` is one
     element as `data` holds it: a primitive `T`; for a struct `T`, `pntr(struct(T))` (an owned
     slot, as a `[n]T` element) for `[+]T` and `struct(T)` for `[+]$T` (E_EmbedOwningStruct if
-    `T` owns fields). A pointer element (`[+]@T`) is not supported. Below, `T` stands for `E`
+    `T` owns fields), with `"embedded": true` on the `varr`. A pointer element (`[+]@T`) is not supported. Below, `T` stands for `E`
     and `varr_T` for the shape key.
   - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`

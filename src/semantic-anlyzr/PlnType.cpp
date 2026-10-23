@@ -57,11 +57,11 @@ const PtrType* PlnTypeRegistry::ptr(const PlnType* base)
     return ins->second.get();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-const VarrType* PlnTypeRegistry::varr(const PlnType* elem)
+const VarrType* PlnTypeRegistry::varr(const PlnType* elem, bool embedded)
 {
-    auto it = varrCache_.find(elem);
+    auto it = varrCache_.find({elem, embedded});
     if (it != varrCache_.end()) return it->second.get();
-    auto [ins, ok] = varrCache_.emplace(elem, std::make_unique<VarrType>(elem));
+    auto [ins, ok] = varrCache_.emplace(std::make_pair(elem, embedded), std::make_unique<VarrType>(elem, embedded));
     return ins->second.get();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -155,7 +155,7 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
     if (kind == "pntr")
         return ptr(fromJson(j["base-type"]));
     if (kind == "varr")
-        return varr(fromJson(j["base-type"]));
+        return varr(fromJson(j["base-type"]), j.value("embedded", false));
     if (kind == "func") {
         std::vector<const PlnType*> params;
         for (auto& p : j["parameters"]) params.push_back(fromJson(p["var-type"]));
@@ -185,7 +185,9 @@ json PlnTypeRegistry::toJson(const PlnType* t)
     }
     if (t->kind == PlnType::Kind::Varr) {
         const auto* v = static_cast<const VarrType*>(t);
-        return {{"type-kind", "varr"}, {"base-type", toJson(v->elem)}};
+        json j = {{"type-kind", "varr"}, {"base-type", toJson(v->elem)}};
+        if (v->embedded) j["embedded"] = true;
+        return j;
     }
     if (t->kind == PlnType::Kind::Struct) {
         const auto* s = static_cast<const StructType*>(t);
@@ -383,7 +385,6 @@ static std::string symbolUserName(const std::string& name)
     return std::to_string(name.size()) + name;
 }
 
-static std::string symbolType(const json& t);
 
 // A pointer's mutable key is three-way: absent for an owned or by-value
 // parameter, false for a read borrow, true for a write borrow.
@@ -400,7 +401,7 @@ static std::string symbolPntr(const json& t)
     // LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-static std::string symbolType(const json& t)
+std::string symbolType(const json& t)
 {
     // LCOV_EXCL_EXCEPTION_BR_START
     static const std::map<std::string, std::set<std::string>> knownKeys = {
@@ -408,7 +409,7 @@ static std::string symbolType(const json& t)
         {"struct", {"type-kind", "type-name"}},
         {"pntr",   {"type-kind", "base-type", "mutable", "embedded", "stride", "arr-size"}},
         {"func",   {"type-kind", "parameters", "ret-type"}},
-        {"varr",   {"type-kind", "base-type"}},
+        {"varr",   {"type-kind", "base-type", "embedded"}},
     };
     const std::string kind = t.value("type-kind", "");
     auto known = knownKeys.find(kind);
@@ -424,7 +425,7 @@ static std::string symbolType(const json& t)
     }
     if (kind == "struct") return symbolUserName(t["type-name"].get<std::string>());
     if (kind == "pntr") return symbolPntr(t);
-    if (kind == "varr") return "V" + symbolType(t["base-type"]);
+    if (kind == "varr") return std::string(t.value("embedded", false) ? "VC" : "V") + symbolType(t["base-type"]);
     const json& params = t["parameters"];
     std::string s = "F" + std::to_string(params.size()) + "_";
     for (auto& p : params) s += symbolType(p["var-type"]);

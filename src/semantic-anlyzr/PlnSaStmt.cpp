@@ -1317,8 +1317,8 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	auto lit = [&](int64_t v) -> json {
 		return {{"expr-type","lit-uint"},{"value",to_string(v)},{"value-type",uint64_type}};
 	};
-	auto copyStmt = [&](AllocFamily family, const string& leaf, json args) -> json {
-		return {{"stmt-type","expr"},{"body",allocHelperCall(family, leaf, "copy", move(args))}};
+	auto copyStmt = [&](const AllocShapeRef& shape, json args) -> json {
+		return {{"stmt-type","expr"},{"body",allocHelperCall(shape, "copy", move(args))}};
 	};
 	auto memcpyStmt = [&](int64_t bytes) {
 		return json{{"stmt-type","expr"},{"body",{{"expr-type","call"},{"name","memcpy"},{"func-type","c"},
@@ -1331,17 +1331,16 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 
 	if (isVarrStorage(t)) {
-		AllocShapeRef shape = varrShape(t);
 		json args = isVarrPntr(st) ? json::array({dst, varrData(src), varrLen(src)})
 		                           : json::array({dst, src, lit(st["arr-size"].get<int64_t>())});
-		return copyStmt(shape.family, shape.leaf, move(args));
+		return copyStmt(varrShape(t), move(args));
 	}
 	if (isStructStorage(t)) {
 		string name = t["base-type"]["type-name"];
 		if (!structHasOwned(name))
 			return memcpyStmt(structDefs_[name].totalSize);
 		recordAllocShape(name);
-		return copyStmt(AllocFamily::Struct, name, json::array({dst, src})); // LCOV_EXCL_EXCEPTION_BR_LINE
+		return copyStmt(structShape(name), json::array({dst, src})); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 
 	int64_t n = t["arr-size"];
@@ -1350,9 +1349,8 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 		return memcpyStmt(n * t["stride"].get<int64_t>());
 	}
 	if (isStructStorage(elem)) {
-		string name = elem["base-type"]["type-name"];
-		recordArrStructShape(name);
-		return copyStmt(AllocFamily::ArrStruct, name, json::array({dst, src, lit(n)})); // LCOV_EXCL_EXCEPTION_BR_LINE
+		recordArrShape(elem);
+		return copyStmt({AllocFamily::Arr, elem}, json::array({dst, src, lit(n)})); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	if (isArrLevel(elem)) {
 		int64_t m = elem["arr-size"];
@@ -1360,18 +1358,18 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 		if (elem.value("embedded", false) && elem.contains("stride")) {
 			// [n][m]$T: rows are byte blocks, allocated as arr_arr_uint8.
 			recordArrArrShape("uint8");
-			return copyStmt(AllocFamily::ArrArrPrim, "uint8",
+			return copyStmt(arrArrShape(AllocFamily::ArrArrPrim, "uint8"),
 				json::array({dst, src, lit(n), lit(m * elem["stride"].get<int64_t>())})); // LCOV_EXCL_EXCEPTION_BR_LINE
 		}
 		if (isStructStorage(leaf)) {
 			string name = leaf["base-type"]["type-name"];
 			recordArrArrStructShape(name);
-			return copyStmt(AllocFamily::ArrArrStruct, name, json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
+			return copyStmt(arrArrShape(AllocFamily::ArrArrStruct, name), json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
 		}
 		if (leaf.value("type-kind","") == "prim" && !elem.value("embedded", false)) {
 			string leafName = leaf["type-name"];
 			recordArrArrShape(leafName);
-			return copyStmt(AllocFamily::ArrArrPrim, leafName, json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
+			return copyStmt(arrArrShape(AllocFamily::ArrArrPrim, leafName), json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
 		}
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, typeDisplayName(t)) << endl;
 		exit(1);
