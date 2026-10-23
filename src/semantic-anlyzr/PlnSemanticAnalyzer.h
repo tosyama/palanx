@@ -488,6 +488,7 @@ class PlnSemanticAnalyzer {
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
 	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
 	json  varrStorageType(const json& locNode, const json& arr);
+	json  varrElemType(const json& locNode, const json& varr);
 	json  normalizeVarrType(const json& locNode, const json& type);
 	// isMutable: the borrow's permission, or none for an owned level.
 	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable);

@@ -439,7 +439,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 		if (isVarrAstType(base)) {
 			if (vtype.value("embedded", false)) {
 				cerr << locPrefix(stmt2) << PlnSaMessage::getMessage(E_EmbedOwningType,
-					typeDisplayName(varrStorageType(stmt2, base))) << endl;
+					typeDisplayName(varrElemType(stmt2, base))) << endl;
 				exit(1);
 			}
 			return sa_owned_elem_arr_var_decl(stmt2, storage);
@@ -831,7 +831,7 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage stora
 			? arrLitDimSize(stmt, name, (*level)["size-expr"], rows->size()) : "";
 		if (shape.levels.empty()) declared = size;
 		shape.levels.push_back({isVarr ? -1 : stoll(size),
-		                        isVarr && !shape.levels.empty() ? varrStorageType(stmt, *level) : json()});
+		                        isVarr && !shape.levels.empty() ? varrElemType(stmt, *level) : json()});
 		embedded = level->value("embedded", false);
 		rows = !rows->empty() && (*rows)[0].contains("items") ? &(*rows)[0]["items"] : &noRows;
 		level = &(*level)["base-type"];
@@ -2192,7 +2192,7 @@ json PlnSemanticAnalyzer::sa_owned_elem_arr_var_decl(const json& stmt, VarStorag
 	const json& base_type = vtype["base-type"];
 	json elem_pntr;
 	if (isVarrAstType(base_type)) {
-		elem_pntr = varrStorageType(stmt, base_type);
+		elem_pntr = varrElemType(stmt, base_type);
 	} else {
 		string struct_name = base_type["type-name"].get<string>();
 		requireCompleteStruct(struct_name, stmt);  // recordAllocShape below needs totalSize/fields

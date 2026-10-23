@@ -3471,6 +3471,8 @@ TEST(sa_error, varr)
 		{"error_767_varr_elem_borrow_mismatch.pa", ":3:1: error: cannot convert '@[3][+]int64' to '@[3][+]int32'."},
 		{"error_768_nested_varr_readonly_push.pa", ":2:7: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 		{"error_769_borrow_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
+		{"error_770_arr_varr_elem_sized.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
+		{"error_771_arr_varr_elem_sized_param.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -537,7 +537,7 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 	json leaf = arr["base-type"];
 	// [n][+]T: each element stays the `[+]T` the array owns, as a struct element does.
 	if (isVarrAstType(leaf)) {
-		json elem = varrStorageType(locNode, leaf);
+		json elem = varrElemType(locNode, leaf);
 		if (arr.value("embedded", false)) {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType, typeDisplayName(elem)) << endl;
 			exit(1);
@@ -612,11 +612,7 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 	bool embedded = arr.value("embedded", false);
 	json elem;
 	if (isVarrAstType(base)) {
-		if (!base["size-expr"].is_null()) {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VarrElemSized) << endl;
-			exit(1);
-		}
-		elem = varrStorageType(locNode, base);
+		elem = varrElemType(locNode, base);
 		if (embedded) {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType, typeDisplayName(elem)) << endl;
 			exit(1);
@@ -641,6 +637,16 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 	recordVarrShape(vt);
 	return vt;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A `[+]U` held as an element starts empty, so it takes no size.
+json PlnSemanticAnalyzer::varrElemType(const json& locNode, const json& varr)
+{
+	if (!varr["size-expr"].is_null()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VarrElemSized) << endl;
+		exit(1);
+	}
+	return varrStorageType(locNode, varr);
+}
 
 // The header's data pointer: what `v[i]` indexes and a C function or a `[]T`
 // receives. Through a read-only borrow the elements are read-only too.
