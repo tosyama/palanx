@@ -253,6 +253,7 @@ int main(int argc, char* argv[])
 				    << "void *calloc(unsigned long nmemb, unsigned long size);\n"
 				    << "void free(void *ptr);\n"
 				    << "void *memcpy(void *dest, const void *src, unsigned long n);\n"
+				    << "void *memmove(void *dest, const void *src, unsigned long n);\n"
 				    << "void *realloc(void *ptr, unsigned long size);\n"
 				    << "void *memset(void *s, int c, unsigned long n);\n"
 				    << "void abort(void);\n";
@@ -617,6 +618,13 @@ int main(int argc, char* argv[])
 					    << "    if n < 0 { abort(); }\n"
 					    << "    if n > h.cap { __pln_reserve_varr_" << leaf << "(h, n); }\n"
 					    << "    if n > h.len { memset(@!h.data[h.len], 0, (n - h.len) * " << size << "); }\n"
+					    << "    n -> h.len;\n"
+					    << "}\n"
+					// The source is any run of elements, which may be h's own
+					// (`v -> v`, or a borrow of v copied into v).
+					    << "export func __pln_copy_varr_" << leaf << "(@!" << hdr << " h, @" << leaf << " src, int64 n) {\n"
+					    << "    if n > h.cap { __pln_reserve_varr_" << leaf << "(h, n); }\n"
+					    << "    memmove(h.data, src, n * " << size << ");\n"
 					    << "    n -> h.len;\n"
 					    << "}\n"
 					    << "export func __pln_pop_varr_" << leaf << "(@!" << hdr << " h) -> " << leaf << " x {\n"

@@ -601,13 +601,9 @@ json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json
 }
 
 // Registering the shape here gives the builtins and the generated functions
-// to a function or module that borrows a `[+]T` without declaring one.
-json PlnSemanticAnalyzer::varrBorrowType(const json& locNode, const json& arr, bool isMutable)
+// to a function or module that takes or borrows a `[+]T` without declaring one.
+json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 {
-	if (!arr["size-expr"].is_null()) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VarrBorrowSized) << endl;
-		exit(1);
-	}
 	const json& elem = arr["base-type"];
 	string leaf = elem.value("type-kind","") == "prim" ? elem.value("type-name","") : "";
 	if (elemSizeBytes(leaf) < 0) {
@@ -615,18 +611,37 @@ json PlnSemanticAnalyzer::varrBorrowType(const json& locNode, const json& arr, b
 		exit(1);
 	}
 	recordVarrShape(leaf);
-	json vt = varrPntrType(elem);
+	return varrPntrType(elem);
+}
+
+json PlnSemanticAnalyzer::varrBorrowType(const json& locNode, const json& arr, bool isMutable)
+{
+	if (!arr["size-expr"].is_null()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VarrBorrowSized) << endl;
+		exit(1);
+	}
+	json vt = varrStorageType(locNode, arr);
 	vt["mutable"] = isMutable;
 	return vt;
 }
 
-// Parameters only: a borrowed array return would outlive the storage it
-// borrows, so it stays rejected by validateNativeSig.
-void PlnSemanticAnalyzer::normalizeArrBorrowSig(json& funcDef)
+json PlnSemanticAnalyzer::normalizeVarrType(const json& locNode, const json& type)
 {
-	if (!funcDef.contains("parameters")) return;
-	for (auto& p : funcDef["parameters"])
-		p["var-type"] = normalizeArrBorrowType(funcDef, p["var-type"]);
+	return isVarrAstType(type) ? varrStorageType(locNode, type) : type;
+}
+
+// A borrowed array return would outlive the storage it borrows, so it stays
+// rejected by validateNativeSig; an owned `[+]T` is returned like a struct.
+void PlnSemanticAnalyzer::normalizeArrSig(json& funcDef)
+{
+	if (funcDef.contains("parameters"))
+		for (auto& p : funcDef["parameters"])
+			p["var-type"] = normalizeVarrType(funcDef, normalizeArrBorrowType(funcDef, p["var-type"]));
+	if (funcDef.contains("rets"))
+		for (auto& r : funcDef["rets"])
+			r["var-type"] = normalizeVarrType(funcDef, r["var-type"]);
+	if (funcDef.contains("ret-type"))
+		funcDef["ret-type"] = normalizeVarrType(funcDef, funcDef["ret-type"]);
 }
 
 optional<SaDiag> PlnSemanticAnalyzer::arrBorrowBindingMismatch(const json& srcAst,
@@ -773,7 +788,7 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 
 	json funcEntry = resolveSigTypes(f);
 	normalizeUnsizedArrSig(funcEntry);
-	normalizeArrBorrowSig(funcEntry);
+	normalizeArrSig(funcEntry);
 	validateEmbeddedParams(funcEntry);
 	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];

@@ -5903,6 +5903,83 @@ TEST(sa, varr_borrow)
 	ASSERT_EQ(stmts[6]["value"]["name"], "w");
 }
 
+// A copy into a `[+]T` passes the source's elements and count; a transfer
+// frees the target's header and takes the source's.
+TEST(sa, varr_copy)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/297_varr_copy.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 16);
+
+	const auto& fromVarr = stmts[5]["body"];
+	ASSERT_EQ(funcName(fromVarr["name"]), "__pln_copy_varr_int32");
+	ASSERT_EQ(fromVarr["args"][0]["name"], "b");
+	ASSERT_EQ(fromVarr["args"][1]["offset"], 16);
+	ASSERT_EQ(fromVarr["args"][1]["ptr-expr"]["name"], "a");
+	ASSERT_EQ(fromVarr["args"][2]["offset"], 0);
+	const auto& fromSized = stmts[7]["body"];
+	ASSERT_EQ(fromSized["args"][1]["name"], "c");
+	ASSERT_EQ(fromSized["args"][2]["value"], "4");
+	ASSERT_EQ(funcName(stmts[9]["body"]["name"]), "__pln_copy_varr_int32");
+	ASSERT_EQ(stmts[11]["body"]["args"][1]["ptr-expr"]["name"], "p");
+
+	// A literal is laid out in the frame first, then copied.
+	const auto& lit = stmts[12]["body"];
+	ASSERT_EQ(lit[0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(lit.back()["body"]["args"][0]["name"], "d");
+	ASSERT_EQ(lit.back()["body"]["args"][2]["value"], "2");
+
+	ASSERT_EQ(funcName(stmts[13]["body"]["name"]), "__pln_free_varr_int32");
+	ASSERT_EQ(stmts[13]["body"]["args"][0]["name"], "b");
+	ASSERT_EQ(stmts[14]["name"], "b");
+	ASSERT_EQ(stmts[14]["value"]["name"], "a");
+	ASSERT_EQ(stmts[15]["name"], "a");
+	ASSERT_EQ(stmts[15]["value"]["value"], "0");
+}
+
+// A `[+]T` is returned and received like a struct, and an owned parameter
+// takes a copy of its argument, or a returned header as it is.
+TEST(sa, varr_return_param)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/298_varr_return_param.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& funcs = jout["functions"];
+	ASSERT_EQ(funcs.size(), 4);
+
+	// The named return is allocated at entry and not freed.
+	const auto& mk = funcs[0]["body"];
+	ASSERT_EQ(mk.size(), 2);
+	ASSERT_EQ(funcName(mk[0]["vars"][0]["init"]["name"]), "__pln_alloc_varr_int32");
+	// A borrow and a borrowed struct are returned as copies.
+	for (int i : {1, 3}) {
+		const auto& body = funcs[i]["body"];
+		ASSERT_EQ(body.size(), 3) << i;
+		ASSERT_EQ(body[2]["values"][0]["name"], body[0]["vars"][0]["name"]) << i;
+	}
+	ASSERT_EQ(funcName(funcs[1]["body"][1]["body"]["name"]), "__pln_copy_varr_int32");
+	// The owned parameter is returned as it is.
+	ASSERT_EQ(funcs[2]["name"], "_298_varr_return_param..own.PVint32");
+	const auto& own = funcs[2]["body"];
+	ASSERT_EQ(own.size(), 1);
+	ASSERT_EQ(own[0]["values"][0]["name"], "x");
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+	ASSERT_EQ(funcName(stmts[0]["vars"][0]["init"]["name"]), "mk");
+	const auto& received = stmts[1]["body"];
+	ASSERT_EQ(received.size(), 3);
+	ASSERT_EQ(funcName(received[1]["body"]["name"]), "__pln_copy_varr_int32");
+	ASSERT_EQ(funcName(received[2]["body"]["name"]), "__pln_free_varr_int32");
+	const auto& copied = stmts[2]["vars"][0]["init"]["args"][0];
+	ASSERT_EQ(copied["expr-type"], "temp");
+	ASSERT_EQ(copied["release"].size(), 0);
+	ASSERT_EQ(funcName(copied["body"][1]["body"]["name"]), "__pln_copy_varr_int32");
+	ASSERT_EQ(funcName(stmts[3]["vars"][0]["init"]["args"][0]["name"]), "mk");
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();

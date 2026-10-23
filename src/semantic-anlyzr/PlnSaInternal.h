@@ -163,6 +163,11 @@ inline bool isFuncPtr(const json& vt)
 	    && vt["base-type"].value("type-kind","") == "func";
 }
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
+// `[+]T` as written, before SA gives it its representation below.
+inline bool isVarrAstType(const json& t)
+{
+	return t.value("type-kind","") == "arr" && t.value("specifier","") == "variable";
+}
 // A `[+]T` value: one word pointing at its {len, cap, data} header.
 inline bool isVarrPntr(const json& vt)
 {
@@ -209,10 +214,13 @@ inline VarStorage takeVarStorage(json& varType)
 	varType = move(base);
 	return VarStorage::Frame;
 }
-// A struct returned by a Palan call, owned by whoever receives it.
-inline bool isExpiringStruct(const json& v)
+// A struct's or a `[+]T`'s own block: what a variable owns and frees, and what
+// a copy into it fills.
+inline bool isOwnedBlock(const json& vt) { return isStructStorage(vt) || isVarrStorage(vt); }
+// A block returned by a Palan call, owned by whoever receives it.
+inline bool isExpiringOwned(const json& v)
 {
-	return v.value("category", "") == "expiring" && isStructStorage(v["value-type"]);
+	return v.value("category", "") == "expiring" && isOwnedBlock(v["value-type"]);
 }
 inline bool returnsBorrow(const json& call)
 {
@@ -565,7 +573,7 @@ inline bool elemShapeMatch(const json& from, const json& to) {
 
 // '->' into a value of this type copies its contents: a struct's own storage
 // or an array level. Rebinding would alias the source and free it twice.
-inline bool isCopiedByValue(const json& t) { return isStructStorage(t) || isArrLevel(t); }
+inline bool isCopiedByValue(const json& t) { return isOwnedBlock(t) || isArrLevel(t); }
 
 // The source type that declares an owned array of the levels of saType (a
 // borrowed array parameter); null when an element is not one a literal gives.
@@ -611,8 +619,30 @@ inline bool copyShapeMatch(const json& from, const json& to) {
 		return ptrPermissionOk(from, to) && from["base-type"] == to["base-type"];
 	if (isStructStorage(to))
 		return from["base-type"] == to["base-type"];
+	if (isVarrPntr(from) || isVarrPntr(to))
+		return isVarrPntr(from) && isVarrPntr(to) && from["base-type"] == to["base-type"];
 	return from.value("type-kind","") == to.value("type-kind","")
 	    && from.value("type-name","") == to.value("type-name","");
+}
+
+// The source type that declares a `[+]T` of saType's elements.
+inline json astVarrType(const json& saType)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	return {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr},
+	        {"base-type",saType["base-type"]["base-type"]}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// What `[+]T` vt can be copied from: another `[+]T` (owned or borrowed) or a
+// sized array, of exactly its element type.
+inline bool varrCopySourceMatch(const json& from, const json& vt)
+{
+	const json& elem = vt["base-type"]["base-type"];
+	if (isVarrPntr(from))
+		return from["base-type"]["base-type"] == elem;
+	return isArrLevel(from) && from.contains("arr-size") && !from.value("embedded", false)
+	    && from["base-type"] == elem;
 }
 
 // An array is borrowed with one permission for every level down to its

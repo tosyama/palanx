@@ -301,7 +301,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 
 	// A call operand is accepted only as a call argument (sa_call_borrow_arg):
 	// elsewhere nothing would release the returned struct.
-	if (isCallBorrow(expr) && isExpiringStruct(sa_expression(obj))) {
+	if (isCallBorrow(expr) && isExpiringOwned(sa_expression(obj))) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExpiringStructToBorrow) << endl;
 		exit(1);
 	}
@@ -1012,7 +1012,7 @@ void PlnSemanticAnalyzer::checkBorrowSource(const json& locNode, const json& saV
 	}
 	if (!isStructBorrow(dstType) || !isStructStorage(saValue["value-type"]))
 		return;
-	if (isExpiringStruct(saValue)) {
+	if (isExpiringOwned(saValue)) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ExpiringStructToBorrow) << endl;
 		exit(1);
 	}

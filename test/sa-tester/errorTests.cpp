@@ -2448,7 +2448,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_335_unknown_param_after_stmt.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_336_named_ret_init_narrowing.pa", ":1:30: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
-		{"error_337_named_ret_init_struct.pa", ":2:19: error: struct-type named return 'p' cannot have an initializer."},
+		{"error_337_named_ret_init_struct.pa", ":2:19: error: named return 'p' of a struct or '[+]' type cannot have an initializer."},
 		{"error_338_tapple_assign_narrowing.pa", ":3:13: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_339_tapple_assign_count.pa", ":3:1: error: Variable count does not match return count of 'f'."},
 		{"error_340_tapple_assign_single_ret.pa", ":3:1: error: Function 'g' does not have multiple return values."},
@@ -2457,11 +2457,11 @@ TEST(sa_error, unknown_type_name)
 		{"error_343_tapple_decl_unknown_type.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_344_transfer_non_owned_field.pa", ":3:1: error: '->>' needs a field that owns its value (T or [n]T); 'n' does not."},
 		{"error_345_unsized_ret_copy.pa", ":3:1: error: cannot copy '[?]int32' into '[3]int32'"},
-		{"error_346_ret_struct_borrow_decl.pa", ":3:1: error: a struct returned by a call has no owner to borrow from"},
-		{"error_347_ret_struct_borrow_assign.pa", ":5:1: error: a struct returned by a call has no owner to borrow from"},
-		{"error_348_ret_struct_borrow_slot.pa", ":4:1: error: a struct returned by a call has no owner to borrow from"},
-		{"error_349_ret_struct_borrow_field.pa", ":5:1: error: a struct returned by a call has no owner to borrow from"},
-		{"error_350_ret_struct_borrow_return.pa", ":3:18: error: a struct returned by a call has no owner to borrow from"},
+		{"error_346_ret_struct_borrow_decl.pa", ":3:1: error: a struct or '[+]' array returned by a call has no owner to borrow from"},
+		{"error_347_ret_struct_borrow_assign.pa", ":5:1: error: a struct or '[+]' array returned by a call has no owner to borrow from"},
+		{"error_348_ret_struct_borrow_slot.pa", ":4:1: error: a struct or '[+]' array returned by a call has no owner to borrow from"},
+		{"error_349_ret_struct_borrow_field.pa", ":5:1: error: a struct or '[+]' array returned by a call has no owner to borrow from"},
+		{"error_350_ret_struct_borrow_return.pa", ":3:18: error: a struct or '[+]' array returned by a call has no owner to borrow from"},
 		{"error_351_transfer_from_borrow_to_field.pa", ":4:1: error: '->>' needs a source that owns its value"},
 		{"error_352_transfer_from_borrow_to_elem.pa", ":3:1: error: '->>' needs a source that owns its value"},
 		{"error_353_transfer_from_param.pa", ":4:2: error: '->>' needs a source that owns its value"},
@@ -2939,10 +2939,8 @@ TEST(sa_error, sig_not_implemented)
 		{"error_545_param_typed_default.pa", ":1:18: error: parameter 'x' " + defaultNotImpl},
 		{"error_546_param_inherit_default.pa", ":1:21: error: parameter 'b' " + defaultNotImpl},
 		{"error_547_param_move_owner.pa", ":1:8: error: this parameter is not supported in this version."},
-		{"error_548_param_var_arr_type.pa", ":1:1: error: this parameter is not supported in this version."},
 		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
 		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
-		{"error_551_ret_var_arr_type.pa", ":1:13: error: this return value is not supported in this version."},
 		{"error_552_ret_untyped.pa", ":1:13: error: this return value is not supported in this version."},
 		{"error_555_import_not_impl_sig.pa", "lib_sa_not_impl_sig.pa:1:15: error: this parameter is not supported in this version."},
 	};
@@ -3280,7 +3278,7 @@ TEST(sa_error, arr_lit_assign)
 		{"error_480_display_arr_borrow_row.pa", ":2:2: error: cannot convert '@[3]int32' to 'int64'."},
 		{"error_481_display_cast_struct.pa", ":3:11: error: Cannot cast type 'P' to 'int64'."},
 		{"error_482_call_borrow_needs_at.pa", ":4:11: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' ('@f()' or '@!f()' for a call returning it, '@[..]' or '@![..]' for a literal)."},
-		{"error_483_call_borrow_decl.pa", ":3:8: error: a struct returned by a call has no owner to borrow from"},
+		{"error_483_call_borrow_decl.pa", ":3:8: error: a struct or '[+]' array returned by a call has no owner to borrow from"},
 		{"error_484_call_borrow_ro_to_mut.pa", ":4:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 		{"error_485_call_borrow_not_struct.pa", ":3:3: error: cannot take the address of this expression"},
 		{"error_486_temp_borrow_decl.pa", ":5:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
@@ -3291,7 +3289,7 @@ TEST(sa_error, arr_lit_assign)
 		{"error_491_temp_borrow_nested.pa", ":5:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_492_temp_borrow_prim.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 		{"error_493_temp_borrow_tapple.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
-		{"error_494_member_call_borrow_not_arg.pa", ":4:9: error: a struct returned by a call has no owner to borrow from"},
+		{"error_494_member_call_borrow_not_arg.pa", ":4:9: error: a struct or '[+]' array returned by a call has no owner to borrow from"},
 		{"error_653_temp_borrow_pinned.pa", ":6:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
 	};
 	for (auto& [file, expected] : cases) {
@@ -3428,9 +3426,9 @@ TEST(sa_error, chain_call)
 TEST(sa_error, varr)
 {
 	const pair<string, string> cases[] = {
-		{"error_725_varr_copy_init.pa", ":2:1: error: copying '[+]int32' is not supported in this version."},
-		{"error_726_varr_copy_assign.pa", ":3:1: error: copying '[+]int32' is not supported in this version."},
-		{"error_727_varr_transfer.pa", ":3:1: error: this statement is not supported in this version."},
+		{"error_725_varr_copy_to_sized.pa", ":3:1: error: cannot copy '[+]int32' into '[3]int32': both need the same element type and the same sizes known at compile time."},
+		{"error_726_varr_copy_elem_mismatch.pa", ":2:1: error: cannot copy '[+]int32' into '[+]int64': both need the same element type and the same sizes known at compile time."},
+		{"error_727_varr_transfer_elem_mismatch.pa", ":3:1: error: cannot transfer '[+]int32' into '[+]int64': both need the same element type and the same sizes known at compile time."},
 		{"error_728_varr_struct_elem.pa", ":2:1: error: this statement is not supported in this version."},
 		{"error_729_varr_lit_over_len.pa", ":1:1: error: array 'v' has size 2 but its array literal has 3 elements."},
 		{"error_730_varr_lit_len_not_const.pa", ":2:1: error: array 'v' given an array literal must have a compile-time constant size."},
@@ -3456,6 +3454,11 @@ TEST(sa_error, varr)
 		{"error_750_varr_borrow_sized.pa", ":1:1: error: a borrowed variable-length array type is written '@[+]T' or '@![+]T', without a size."},
 		{"error_751_arrow_after_cmp.pa", ":2:5: error: '->' binds tighter than '<'; parenthesize the operation to store its result: '(a < b) -> c'."},
 		{"error_752_arrow_after_logical.pa", ":2:7: error: '->' binds tighter than '&&'; parenthesize the operation to store its result: '(a && b) -> c'."},
+		{"error_753_varr_transfer_from_frame.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
+		{"error_754_varr_param_elem_mismatch.pa", ":3:1: error: cannot convert '[+]int64' to '[+]int32'."},
+		{"error_755_varr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or '[+]' type cannot have an initializer."},
+		{"error_756_varr_return_borrow_mismatch.pa", ":2:2: error: cannot copy '@[+]int64' into '[+]int32': both need the same element type and the same sizes known at compile time."},
+		{"error_757_varr_lit_transfer.pa", ":2:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

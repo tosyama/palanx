@@ -225,7 +225,7 @@ Used in Palan function `parameters` and `rets`.
   parameter, since default values are not implemented)
 
 A parameter or return the grammar parses but the compiler does not implement (`T >> name`, an
-untyped `name = expr`, a type with no declarable form such as `[+]T`) stays in the list as
+untyped `name = expr`, a type with no declarable form such as `[+]T` of a struct) stays in the list as
 `{"not-impl": true, "loc": ...}`, plus `untyped-var` (the name) for `name = expr`; SA rejects
 the function at its definition. An unimplemented unnamed return type is a `ret-type` of the
 same shape.

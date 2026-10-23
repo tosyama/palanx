@@ -54,7 +54,9 @@ Root
   `cap > 0`; the header starts zeroed, so `data` stays NULL otherwise), `__pln_fini_varr_T(h)`
   (frees `data`) and `__pln_free_varr_T(h)` (fini, then the header), and the built-ins
   `__pln_push_varr_T(@!hdr h, T x)`,
-  `__pln_resize_varr_T(@!hdr h, int64 n)` and `__pln_pop_varr_T(@!hdr h) -> T`. Growing
+  `__pln_resize_varr_T(@!hdr h, int64 n)` and `__pln_pop_varr_T(@!hdr h) -> T`, and
+  `__pln_copy_varr_T(@!hdr h, @T src, int64 n)` (grows as needed, then sets the length to `n`
+  and copies `n` elements from `src`, which may be `h`'s own). Growing
   reallocates `data` to max(needed, cap × 2, 4) elements; shrinking keeps the capacity, and
   `resize` zeroes the elements it adds. An empty `pop` or a negative `resize` calls `abort()`:
   - shape-kind\* - "varr"
@@ -377,8 +379,25 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     varr `alloc-shapes` entry). A Palan function with a built-in's name and parameter types, for
     any `T`, is E_DuplicateFuncDef regardless of declaration order, as is a `len` taking one
     borrowed constant-size array (that `len` is folded).
-  - Copying (`[+]T w = v;`, `v -> w`) and `->>` into such a variable are not supported yet, nor
-    is a struct or array element, an owned parameter, a return value or a field.
+  - Copying (`[+]T w = v;`, `v -> w`, and an owned parameter, below) takes a `[+]T` or
+    `@[+]T` / `@![+]T` (`__pln_copy_varr_T(w, <v's data>, <v's len>)`) or a sized `[n]T` of the
+    same element type (`__pln_copy_varr_T(w, a, n)`); the length becomes the source's. Into a
+    `[n]T` it is E_CopyShapeMismatch. `[..] -> w` is a block declaring the literal as a frame
+    array `$[]T __lit_N` and copying it, so every element is read before `w` changes.
+  - `->>` into such a variable is the transfer of any owned value: `__pln_free_varr_T(w)`, the
+    assign, and the source set to NULL. The source is an owning variable (not `$[+]T`) or a call
+    result, of the same element type.
+  - A return value `-> [+]T` (named or not) is the caller's, as a struct's is: a named one is allocated at entry and can't have an initializer
+    (E_NamedRetInitOnStruct); `return v;` of an owning variable returns its header, and a borrow
+    or a `$[+]T` variable is returned as a copy (`__ret_N`). The caller's `[+]T w = f();`
+    takes the header over, and a call result copied into a variable, given to a borrow, or
+    discarded is held in a temp and freed with `__pln_free_varr_T`. A borrowed struct returned
+    from a function returning a struct is copied the same way.
+  - An owned parameter `[+]T x` (symbol `PV` + element) takes what the caller passes over and
+    frees it when the function exits. A call result is passed as it is; anything else that a
+    copy into `[+]T` accepts, or an array literal, is copied into a `temp` (`__arg_N`) whose
+    `release` is empty.
+  - A struct or array element, and a field, are not supported yet.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
   `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`
@@ -1391,7 +1410,7 @@ block without `__pln_free_K`, since `p` now holds what it owned.
 
 A stack variable is registered in `arrayScopeVars_` with its scope-exit statement (if any) but not
 as an owner: an `id` naming it has no `"category":"owned"`, so it cannot be the source of `->>`,
-and `return` of a stack struct returns a copy. `return` of a stack array is E_ReturnFrameArr;
+and `return` of a stack struct or `$[+]T` returns a copy. `return` of a stack array is E_ReturnFrameArr;
 `$` on a non-aggregate type is E_FrameVarType.
 
 ### field-assign statement → sa.json

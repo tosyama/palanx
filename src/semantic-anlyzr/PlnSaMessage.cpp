@@ -539,15 +539,15 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_NamedRetInitOnStruct:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "struct-type named return '" + arg1 + "' cannot have an initializer.";
+			return "named return '" + arg1 + "' of a struct or '[+]' type cannot have an initializer.";
 
 		case E_TransferToNonOwnedField:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'->>' needs a field that owns its value (T or [n]T); '" + arg1 + "' does not.";
 
 		case E_ExpiringStructToBorrow:
-			return "a struct returned by a call has no owner to borrow from; receive it into a "
-			       "struct variable with '->' and borrow it with '@name' or '@!name' (only a call "
+			return "a struct or '[+]' array returned by a call has no owner to borrow from; receive "
+			       "it into a variable with '->' and borrow it with '@name' or '@!name' (only a call "
 			       "argument can borrow it directly, as '@f()' or '@!f()').";
 
 		case E_BorrowOfTempEscapes:

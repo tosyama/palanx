@@ -351,6 +351,8 @@ class PlnSemanticAnalyzer {
 	vector<CallArg> analyzeCallArgs(const json& args);
 	optional<SaDiag> callArgMismatch(const json& argAst, const json& saArg, const json& param,
 	                                 size_t argIdx, bool isCFunc, const string& funcName);
+	json ownedVarrArg(const json& locNode, const json& arg, CallArg& ca, const json& param,
+	                  size_t argIdx, const string& funcName);
 	json bindCallArgs(const json& locNode, vector<CallArg>& args, const json& funcParams,
 	                  bool isCFunc, const string& funcName);
 	[[noreturn]] void reportDiag(const json& locNode, const SaDiag& diag) const;
@@ -435,7 +437,7 @@ class PlnSemanticAnalyzer {
 	int64_t typeByteSize(const json& locNode, json type);  // `sizeof(type)`, type resolved
 	void recordAllocShape(const string& structName);
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
-	json makeStructFreeStmt(const string& name, const json& pntrType);
+	json makeOwnedFreeStmt(const string& name, const json& pntrType);
 	json makeStructFreeCall(json ptr, const string& structName);
 	json makeOwnedValueFreeStmt(json value);
 	bool isStructType(const json& type) const;
@@ -477,10 +479,12 @@ class PlnSemanticAnalyzer {
 	void  validateNativeSig(const json& funcDef);
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
 	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
+	json  varrStorageType(const json& locNode, const json& arr);
+	json  normalizeVarrType(const json& locNode, const json& type);
 	// isMutable: the borrow's permission, or none for an owned level.
 	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable);
 	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);
-	void  normalizeArrBorrowSig(json& funcDef);
+	void  normalizeArrSig(json& funcDef);
 	const json* firstNonConstName(const json& expr) const;
 	optional<SaDiag> elemShapeMismatch(const json& saValue, const json& dstType);
 	void  checkElemShape(const json& locNode, const json& saValue, const json& dstType);
@@ -544,6 +548,7 @@ class PlnSemanticAnalyzer {
 	bool storageRoots(const json& v, set<string>& roots, bool contents);
 	void resolvePending(json& stmts);
 	json sa_assign_stmt(const json& stmt);  // returns json::array()
+	json sa_varr_lit_assign(const json& stmt, const string& name, const json& varType);
 	json sa_transfer_to_var(const json& stmt, const string& name, const json& varType, const PlnType* toType);
 	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
@@ -560,7 +565,7 @@ class PlnSemanticAnalyzer {
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
 	json bindReturnStructLit(json& stmt);
-	json copyReturnStruct(const json& stmt, json& ret);
+	json copyReturnBlock(const json& stmt, json& ret);
 	const json& findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount);
 	json sa_tapple_decl(const json& stmt);       // returns array of statements
 	json sa_tapple_assign(const json& stmt);

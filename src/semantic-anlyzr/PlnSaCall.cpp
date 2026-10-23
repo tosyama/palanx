@@ -289,7 +289,7 @@ json PlnSemanticAnalyzer::bindCallTemp(json saArg)
 	             {"vars",json::array({{{"name",name},{"var-type",storage},{"init",move(saArg)}}})}};
 	json value = {{"expr-type","id"},{"name",name},{"var-type",storage},{"value-type",move(valueType)}};
 	return makeTempExpr(json::array({move(decl)}), move(value),
-	                    json::array({makeStructFreeStmt(name, storage)}));
+	                    json::array({makeOwnedFreeStmt(name, storage)}));
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -298,7 +298,7 @@ json PlnSemanticAnalyzer::bindCallTemp(json saArg)
 json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
 {
 	json saArg = sa_expression(arg["object"]);
-	if (!isExpiringStruct(saArg)) {
+	if (!isExpiringOwned(saArg)) {
 		cerr << locPrefix(arg) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
 		exit(1);
 	}
@@ -603,6 +603,11 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 		const json& param, size_t argIdx, bool isCFunc, const string& funcName)
 {
 	const json& paramVT = param["var-type"];
+	// What an owned `[+]T` parameter takes is copied into it.
+	if (!isCFunc && isVarrStorage(paramVT)) {
+		if (varrCopySourceMatch(saArg["value-type"], paramVT)) return nullopt;
+		return SaDiag{E_IncompatibleTypes, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
 	if (paramVT.contains("arr-size")) {
 		if (auto d = arrBorrowBindingMismatch(argAst, saArg, paramVT)) return d;
 	} else if (paramVT.value("embedded", false)) {
@@ -665,6 +670,10 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		json argAst = arg;
 		json litBody, litRelease;
 		bool isLit = isAggregateLitArg(arg);
+		if (!isCFunc && paramVT && isVarrStorage(*paramVT)) {
+			saArgs.push_back(ownedVarrArg(locNode, arg, ca, *param, argIdx, funcName));
+			continue;
+		}
 		json saArg = isLit ? sa_lit_arg(arg, isCFunc && !byValStruct ? nullptr : paramVT,
 		                                param ? param->value("name", "") : "", funcName,
 		                                argAst, litBody, litRelease)
@@ -672,7 +681,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		           : !ca.pending ? move(ca.sa)
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
 		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-		bool expiring = isCallBorrow(arg) || isExpiringStruct(saArg);
+		bool expiring = isCallBorrow(arg) || isExpiringOwned(saArg);
 		if (takesVarrData(saArg["value-type"], paramVT, isCFunc))
 			saArg = varrData(move(saArg));
 		if (paramVT) {
@@ -699,6 +708,35 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 	}
 	return saArgs;
 }
+
+// An owned `[+]T` parameter takes the argument over: a returned header as it
+// is, anything else as a copy the callee frees.
+json PlnSemanticAnalyzer::ownedVarrArg(const json& locNode, const json& arg, CallArg& ca,
+                                        const json& param, size_t argIdx, const string& funcName)
+{
+	const json& paramVT = param["var-type"];
+	bool isLit = isAggregateLitArg(arg);
+	json saArg;
+	if (!isLit) {
+		saArg = !ca.pending ? move(ca.sa) : sa_expression(arg, registry_.fromJson(paramVT));
+		if (auto d = callArgMismatch(arg, saArg, param, argIdx, false, funcName))
+			reportDiag(locNode, *d);
+		if (isExpiringOwned(saArg)) return saArg;
+	}
+	// LCOV_EXCL_EXCEPTION_BR_START
+	string name = "__arg_" + to_string(tempVarCounter_++);
+	json var = {{"name",name},{"var-type",astVarrType(paramVT)}};
+	if (isLit) var["init"] = arg;
+	json decl = {{"stmt-type","var-decl"},{"loc",arg.value("loc", json::array())},{"vars",json::array({var})}};
+	enterScope();
+	json body = sa_resolved_var_decl(decl);
+	json value = {{"expr-type","id"},{"name",name},{"var-type",paramVT},{"value-type",paramVT}};
+	if (!isLit) body.push_back(makeCopyStmt(arg, value, saArg));
+	takeScopeRelease(name);
+	leaveScope();
+	return makeTempExpr(move(body), move(value), json::array());
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Embedded-array shape and pointer-permission checks are callArgMismatch's,
 // since those differ by callee kind (C vs. Palan).
@@ -898,7 +936,7 @@ json PlnSemanticAnalyzer::chainValueAhead(const json& value, const json* paramVT
 		sa["value-type"].erase("mutable");
 		json storage = sa["value-type"];
 		string name = pinTemp(move(sa), value, body);
-		addOwnedScopeVar(name, makeStructFreeStmt(name, storage));
+		addOwnedScopeVar(name, makeOwnedFreeStmt(name, storage));
 		return {{"expr-type", "addr-of"}, {"mutable", value["mutable"]}, {"object", tempId(name)}};
 	}
 	json sa;
@@ -914,11 +952,11 @@ json PlnSemanticAnalyzer::chainValueAhead(const json& value, const json* paramVT
 		if (!sa.contains("value-type")) return value;
 	}
 	noteEscape(sa);
-	bool owned = isExpiringStruct(sa);
+	bool owned = isExpiringOwned(sa);
 	json type = sa["value-type"];
 	string name = pinTemp(move(sa), value, body);
 	if (name.empty()) return value;
-	if (owned) addOwnedScopeVar(name, makeStructFreeStmt(name, type));
+	if (owned) addOwnedScopeVar(name, makeOwnedFreeStmt(name, type));
 	return tempId(name);
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE

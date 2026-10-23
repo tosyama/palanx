@@ -101,7 +101,7 @@ inline bool isImplementedTypeExpr(const json& t)
 	return !t.contains("base-type") || isImplementedTypeExpr(t["base-type"]);
 }
 
-// A variable-length array, which no function signature takes yet.
+// A variable-length array.
 inline bool isVarrType(const json& t)
 {
 	return t.value("type-kind", "") == "arr" && t.value("specifier", "") == "variable";

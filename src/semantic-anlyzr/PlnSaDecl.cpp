@@ -319,13 +319,13 @@ json PlnSemanticAnalyzer::discardedValueStmt(const json& stmt, json body)
 		exit(1);
 	}
 	// A discarded struct returned by a Palan call has no other owner.
-	if (isExpiringStruct(body)) {
+	if (isExpiringOwned(body)) {
 		// LCOV_EXCL_EXCEPTION_BR_START
 		string temp = "__tmp_" + to_string(tempVarCounter_++);
 		const json& st = body["value-type"];
 		json decl = {{"stmt-type","var-decl"},
 		             {"vars",json::array({{{"name",temp},{"var-type",st},{"init",body}}})}};
-		return {{"stmt-type","block"},{"body",json::array({decl, makeStructFreeStmt(temp, st)})}};
+		return {{"stmt-type","block"},{"body",json::array({decl, makeOwnedFreeStmt(temp, st)})}};
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 	}
 	return {
@@ -395,18 +395,24 @@ json PlnSemanticAnalyzer::sa_resolved_var_decl(const json& stmt2, vector<VarStor
 json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage storage)
 {
 	json var = stmt["vars"][0];
-	if (var["var-type"].value("specifier", "") == "variable") {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_CopyUnsupportedShape,
-			"[+]" + typeDisplayName(var["var-type"]["base-type"])) << endl;
-		exit(1);
-	}
+	string name = var["name"];
 	// Evaluated before the declaration so the variable is not in scope in its
 	// own initializer.
 	json src = sa_expression(var["init"]);
+	// A heap `[+]T` takes over a returned header instead of copying from it.
+	if (isVarrAstType(var["var-type"]) && var["var-type"]["size-expr"].is_null()
+			&& storage == VarStorage::Heap && isExpiringOwned(src)) {
+		json vt = varrStorageType(stmt, var["var-type"]);
+		if (src["value-type"] == vt) {
+			declareVar(name, vt, &stmt);
+			addOwnedScopeVar(name, makeOwnedFreeStmt(name, vt));
+			return json::array({{{"stmt-type","var-decl"}, // LCOV_EXCL_EXCEPTION_BR_LINE
+				{"vars",json::array({{{"name",name},{"var-type",vt},{"init",move(src)}}})}}});
+		}
+	}
 	json declStmt = stmt;
 	declStmt["vars"][0].erase("init");
 	json result = sa_var_decl_group(declStmt, storage);
-	string name = var["name"];
 	const json& vt = *findVar(name);
 	json dst = {{"expr-type","id"},{"name",name},{"var-type",vt},{"value-type",vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	result.push_back(makeCopyStmt(stmt, dst, src));
@@ -721,13 +727,8 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage)
 json PlnSemanticAnalyzer::sa_varr_var_decl(const json& stmt, VarStorage storage, bool litLen)
 {
 	const json& vtype = stmt["vars"][0]["var-type"];
-	const json& elem = vtype["base-type"];
-	string leaf = elem.value("type-name", "");
-	if (elemSizeBytes(leaf) < 0) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
-		exit(1);
-	}
-	recordVarrShape(leaf);
+	json varType = varrStorageType(stmt, vtype);
+	string leaf = vtype["base-type"]["type-name"];
 
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json int64_type = {{"type-kind","prim"},{"type-name","int64"}};
@@ -743,7 +744,6 @@ json PlnSemanticAnalyzer::sa_varr_var_decl(const json& stmt, VarStorage storage,
 		cap = {{"expr-type","id"},{"name",capName},{"var-type",uint64_type},{"value-type",uint64_type}};
 	}
 	json len = litLen ? cap : zero;
-	json varType = varrPntrType(elem);
 
 	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
 	json post = json::array();
@@ -752,7 +752,7 @@ json PlnSemanticAnalyzer::sa_varr_var_decl(const json& stmt, VarStorage storage,
 		json self = {{"expr-type","id"},{"name",name},{"var-type",varType},{"value-type",varType}};
 		json alloc = allocHelperCall(AllocFamily::Varr, leaf, "alloc", json::array({len, cap}));
 		alloc["value-type"] = varType;
-		json release = {{"stmt-type","expr"},{"body",allocHelperCall(AllocFamily::Varr, leaf, "free", json::array({self}))}};
+		json release = makeOwnedValueFreeStmt(self);
 		declareVar(name, varType, &stmt);
 		json init = placeAggregateVar(stmt, name, varType, move(alloc), move(release), storage,
 		                              24, 8, false, post, AllocShapeRef{AllocFamily::Varr, leaf});
@@ -1777,10 +1777,10 @@ void PlnSemanticAnalyzer::adoptTypeDeps(PlnSemanticAnalyzer& sub, const json& ty
 	if (t->contains("enum")) adoptEnum(sub, (*t)["enum"].get<string>(), false, "", locNode);
 }
 
-json PlnSemanticAnalyzer::makeStructFreeStmt(const string& name, const json& pntrType)
+json PlnSemanticAnalyzer::makeOwnedFreeStmt(const string& name, const json& pntrType)
 {
 	json var_id = {{"expr-type","id"},{"name",name},{"var-type",pntrType},{"value-type",pntrType}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-	return makeStructFreeCall(move(var_id), pntrType["base-type"]["type-name"].get<string>());
+	return makeOwnedValueFreeStmt(move(var_id));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // The parameter types are those of the signatures build-mgr writes for each
@@ -1818,12 +1818,16 @@ string allocHelperSymbol(AllocFamily family, const string& leaf, const string& o
 		else if (op == "push") { owned = building; dims = {{{"type-kind","prim"},{"type-name",leaf}}}; }
 		else if (op == "resize") { owned = building; dims = {i64}; }
 		else if (op == "pop") owned = building;
+		else if (op == "copy") {   // from a run of elements: (data, n)
+			owned = building;
+			dims = {{{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","prim"},{"type-name",leaf}}}}, i64};
+		}
 		break;
 	}
 	vector<json> params;
 	if (op == "init") params.push_back(building);
-	else if (op == "copy") params = {owned, owned};
-	else if (op != "alloc") params.push_back(owned);   // fini, free
+	else if (op == "copy" && family != AllocFamily::Varr) params = {owned, owned};
+	else if (op != "alloc") params.push_back(owned);   // fini, free, and the varr operations
 	params.insert(params.end(), dims.begin(), dims.end());
 	// A row of primitives is one block, so freeing it needs only the row count.
 	if (family == AllocFamily::ArrArrPrim && (op == "fini" || op == "free")) params.pop_back();
@@ -1866,6 +1870,9 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value)
 	json vt = value["value-type"];
 	if (isStructStorage(vt))
 		return makeStructFreeCall(move(value), vt["base-type"]["type-name"].get<string>());
+	if (isVarrStorage(vt))
+		return {{"stmt-type","expr"},{"body",allocHelperCall(AllocFamily::Varr,
+			vt["base-type"]["base-type"]["type-name"].get<string>(), "free", json::array({move(value)}))}};
 	json args = json::array({move(value)});
 	if (!isStructStorage(vt["base-type"]))
 		return {{"stmt-type","expr"},{"body",{
@@ -1910,14 +1917,14 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 				&& userInit.value("func-type", "") == "c"
 				&& userInit["value-type"].value("type-kind","") == "struct"
 				&& userInit["value-type"].value("type-name","") == structName;
-			if (isExpiringStruct(userInit) && userInit["value-type"]["base-type"] == pntr_type["base-type"]) {
+			if (isExpiringOwned(userInit) && userInit["value-type"]["base-type"] == pntr_type["base-type"]) {
 				// The variable becomes the owner of the returned struct, as in
 				// `(T v) = f()`, instead of allocating storage only to copy over it.
 				takenOver = move(userInit);
 			} else if (!isStructRetCall) {
 				// A struct of another type is left to makeCopyStmt's shape check.
 				if (!userInit.contains("value-type")
-						|| (userInit.value("category", "") == "expiring" && !isExpiringStruct(userInit))) {
+						|| (userInit.value("category", "") == "expiring" && !isExpiringOwned(userInit))) {
 					cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_StructInitNotSupported, structName) << endl;
 					exit(1);
 				}
@@ -1947,7 +1954,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 		json init;
 		if (!takenOver.is_null() && storage == VarStorage::Heap) {
 			init = move(takenOver);
-			addOwnedScopeVar(name, makeStructFreeStmt(name, pntr_type));
+			addOwnedScopeVar(name, makeOwnedFreeStmt(name, pntr_type));
 		} else {
 			json heapInit;
 			bool fresh = takenOver.is_null();
@@ -1978,7 +1985,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 				heapInit = allocHelperCall(AllocFamily::Struct, structName, "alloc", json::array());
 				heapInit["value-type"] = pntr_type;
 			}
-			init = placeAggregateVar(stmt, name, pntr_type, move(heapInit), makeStructFreeStmt(name, pntr_type),
+			init = placeAggregateVar(stmt, name, pntr_type, move(heapInit), makeOwnedFreeStmt(name, pntr_type),
 			                         storage, def.totalSize, def.maxAlign, fresh, post,
 			                         AllocShapeRef{AllocFamily::Struct, structName});
 		}
