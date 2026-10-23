@@ -176,6 +176,7 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
 	bool match = isArrLevel(vt) ? arrShapeMatch(vt, paramVT)
 	           : isStructStorage(vt) ? base.value("type-kind", "") == "struct" // LCOV_EXCL_EXCEPTION_BR_LINE
 	                                   && base["type-name"] == vt["base-type"]["type-name"]
+	           : isVarrStorage(vt) ? base == vt["base-type"]
 	           : base == vt;
 	return match ? ArgFit::Exact : ArgFit::None;
 }

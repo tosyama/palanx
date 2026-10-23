@@ -6053,6 +6053,20 @@ TEST(sa, varr_embedded_symbol)
 	ASSERT_EQ(funcs[1]["name"], "_300_varr_embedded_symbol..n.RVC1P");
 }
 
+// With two `[+]T` shapes the builtins are overloaded; a chained `[+]T`
+// variable still picks its own.
+TEST(sa, chain_varr_overload)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/301_chain_varr_overload.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& n = stmts[2]["vars"][0]["init"];
+	ASSERT_EQ(n["expr-type"], "field-access");
+	ASSERT_EQ(n["ptr-expr"]["name"], "a");
+	ASSERT_EQ(funcName(stmts[3]["body"]["name"]), "__pln_push_varr_int32");
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();

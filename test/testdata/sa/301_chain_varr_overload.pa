@@ -1,0 +1,4 @@
+[+]int32 a;
+[+]int64 b;
+int64 n = a -> len();
+3 -> a.push();
