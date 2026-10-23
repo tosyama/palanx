@@ -274,8 +274,8 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		// (pointer-slot element) is rejected -- '@' keeps a single meaning
 		// ("make a pointer to a storage slot"), and wrapping those would double
 		// the indirection.
-		bool isStructElem = isOwnedBlock(sa_idx["value-type"]);
 		bool isRow = isArrLevel(sa_idx["value-type"]);
+		bool isStructElem = !isRow && isOwnedBlock(sa_idx["value-type"]);
 		if (!isStructElem && !isRow && (sa_idx.value("addr-only", false)
 		                      || sa_idx["value-type"].value("type-kind","") != "prim")) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitiveElem) << endl;

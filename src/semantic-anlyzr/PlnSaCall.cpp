@@ -303,7 +303,10 @@ json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
 		cerr << locPrefix(arg) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
 		exit(1);
 	}
-	saArg["value-type"]["mutable"] = arg["mutable"];
+	bool isMutable = arg["mutable"];
+	json& vt = saArg["value-type"];
+	if (isArrLevel(vt)) vt = withArrPermission(vt, isMutable);
+	else vt["mutable"] = isMutable;
 	return saArg;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 

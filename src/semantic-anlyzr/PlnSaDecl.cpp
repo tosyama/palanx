@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <functional>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -392,6 +393,19 @@ json PlnSemanticAnalyzer::sa_resolved_var_decl(const json& stmt2, vector<VarStor
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// The block a declared `[+]T` or one-level `[n]T` owns, or null for any other
+// type: what a call result must be for the variable to take it over.
+json PlnSemanticAnalyzer::takeOverType(const json& locNode, const json& varType)
+{
+	if (isVarrAstType(varType))
+		return varType["size-expr"].is_null() ? varrStorageType(locNode, varType) : json();
+	if (varType.value("type-kind","") != "arr" || varType["size-expr"].is_null()
+			|| (varType["base-type"].value("type-kind","") == "arr" && !isVarrAstType(varType["base-type"])))
+		return json();
+	if (constArrSize(sa_arr_size_expr(locNode, varType["size-expr"])) < 0) return json();
+	return sizedArrLevel(locNode, varType, nullopt);
+}
+
 json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage storage)
 {
 	json var = stmt["vars"][0];
@@ -399,11 +413,10 @@ json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage stor
 	// Evaluated before the declaration so the variable is not in scope in its
 	// own initializer.
 	json src = sa_expression(var["init"]);
-	// A heap `[+]T` takes over a returned header instead of copying from it.
-	if (isVarrAstType(var["var-type"]) && var["var-type"]["size-expr"].is_null()
-			&& storage == VarStorage::Heap && isExpiringOwned(src)) {
-		json vt = varrStorageType(stmt, var["var-type"]);
-		if (src["value-type"] == vt) {
+	// A heap `[+]T` or `[n]T` takes over a returned block instead of copying from it.
+	if (storage == VarStorage::Heap && isExpiringOwned(src)) {
+		json vt = takeOverType(stmt, var["var-type"]);
+		if (!vt.is_null() && src["value-type"] == vt) {
 			declareVar(name, vt, &stmt);
 			addOwnedScopeVar(name, makeOwnedFreeStmt(name, vt));
 			return json::array({{{"stmt-type","var-decl"}, // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1861,10 +1874,17 @@ string allocHelperSymbol(const AllocShapeRef& shape, const string& op)
 	auto readOnly = [](json base) { return json{{"type-kind","pntr"},{"mutable",false},{"base-type",move(base)}}; };
 	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
 	AllocFamily family = shape.family;
-	// An inner `[+]T` is its header struct's storage to the generated module.
-	const json elem = isVarrStorage(shape.elem)
-		? ptr({{"type-kind","struct"},{"type-name","__pln_" + allocShapeKey(varrShape(shape.elem))}})
-		: shape.elem;
+	// An inner `[+]T` is its header struct's storage to the generated module,
+	// down to a row's elements.
+	function<json(const json&)> view = [&](const json& e) -> json {
+		if (isVarrStorage(e))
+			return ptr({{"type-kind","struct"},{"type-name","__pln_" + allocShapeKey(varrShape(e))}});
+		if (!isArrLevel(e)) return e;
+		json row = e;
+		row["base-type"] = view(e["base-type"]);
+		return row;
+	};
+	const json elem = view(shape.elem);
 	// An owned struct's slot as the generated code fills it (`[]@!T`).
 	auto building = [&](const json& e) { return isStructStorage(e) ? mut(e["base-type"]) : e; };
 	json owned, built;   // the storage as fini/free/copy take it, and as init fills it
@@ -1884,9 +1904,16 @@ string allocHelperSymbol(const AllocShapeRef& shape, const string& op)
 		break;
 	case AllocFamily::Varr:
 	case AllocFamily::EVarr: {
-		json value = elem.value("type-kind","") == "struct" ? ptr(elem) : elem;   // what push takes
-		// copy's source, a run of elements: their slots for owned structs (`[]T`)
+		bool isRow = isArrLevel(elem);
+		json rowRun = elem;   // a row's elements as a run (`[]T` / `[]$T`)
+		rowRun.erase("arr-size");
+		json value = isRow ? rowRun
+		           : elem.value("type-kind","") == "struct" ? ptr(elem) : elem;   // what push takes
+		// copy's source, a run of elements: their slots for owned elements (`[]T`),
+		// and the slots' own elements for rows laid out in place.
 		json run = isStructStorage(elem) ? ptr(elem) : readOnly(elem);
+		if (isRow && family == AllocFamily::Varr) run = ptr(elem);
+		else if (isRow) run = isOwnedBlock(shape.elem["base-type"]) ? rowRun : readOnly(elem["base-type"]);
 		// The generated module sees the header as a struct of its own.
 		json header = {{"type-kind","struct"},{"type-name","__pln_" + allocShapeKey(shape)}};
 		owned = ptr(header); built = mut(header);
@@ -2080,12 +2107,22 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 // One element as the array's storage holds it, as build-mgr builds, frees and
 // copies it. A struct's shape is recorded first, so build-mgr sees an
 // element's helpers before the array's.
-json PlnSemanticAnalyzer::allocElemDesc(const json& elem)
+json PlnSemanticAnalyzer::allocElemDesc(const json& elem, bool inPlace)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	if (elem.value("type-kind","") == "prim") {
 		string name = elem["type-name"];
 		return {{"kind","prim"},{"key",symbolType(elem)},{"type",name},{"size",elemSizeBytes(name)}};
+	}
+	// A row is its own block (`[+][n]T`) or laid out in the slot (`[+]$[n]T`),
+	// whose elements are then the slot's; the two build differently, so their
+	// helpers need different names.
+	if (isArrLevel(elem)) {
+		json leaf = allocElemDesc(elem["base-type"], elem.value("embedded", false));
+		int64_t n = elem["arr-size"];
+		int64_t size = inPlace ? n * leaf["size"].get<int64_t>() : 8;
+		return {{"kind",inPlace ? "embed-row" : "row"},{"key",(inPlace ? "C" : "") + symbolType(elem)},
+		        {"count",n},{"size",size},{"elem",move(leaf)}};
 	}
 	if (isStructStorage(elem)) {
 		string name = elem["base-type"]["type-name"];
@@ -2130,7 +2167,7 @@ void PlnSemanticAnalyzer::recordVarrShape(const json& vt)
 	string shape_key = allocShapeKey(varrShape(vt));
 	for (auto& s : sa["alloc-shapes"])
 		if (s.value("shape-key","") == shape_key) return;
-	json desc = allocElemDesc(vt["base-type"]["base-type"]);
+	json desc = allocElemDesc(vt["base-type"]["base-type"], isVarrEmbedded(vt));
 	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
 		{"shape-kind","varr"}, {"shape-key",shape_key}, {"elem",move(desc)}
 	});
@@ -2146,8 +2183,10 @@ json varrBuiltinDefs(const json& varr)
 	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
 	const json& elem = varr["base-type"];
 	bool embedded = varr.value("embedded", false);
-	json value = elem.value("type-kind","") == "struct"
-		? json{{"type-kind","pntr"},{"base-type",elem}} : elem;
+	// A row is pushed from a borrow of one and popped as an owned array.
+	json value = elem.value("type-kind","") == "struct" ? json{{"type-kind","pntr"},{"base-type",elem}}
+	           : isArrLevel(elem) ? withArrPermission(elem, false) : elem;
+	const json& popped = isArrLevel(elem) ? elem : value;
 	AllocShapeRef shape = varrShape(varrPntrType(elem, embedded));
 	auto self = [&](bool isMutable) {
 		json vt = varrPntrType(elem, embedded);
@@ -2165,7 +2204,7 @@ json varrBuiltinDefs(const json& varr)
 	add("len", json::array({self(false)}), &i64);
 	add("push", json::array({self(true), {{"name","x"},{"var-type",value}}}), nullptr);
 	add("resize", json::array({self(true), {{"name","n"},{"var-type",i64}}}), nullptr);
-	add("pop", json::array({self(true)}), &value);
+	add("pop", json::array({self(true)}), &popped);
 	return defs;
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE

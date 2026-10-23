@@ -617,6 +617,8 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType, typeDisplayName(elem)) << endl;
 			exit(1);
 		}
+	} else if (base.value("type-kind","") == "arr") {
+		elem = varrRowType(locNode, base);
 	} else if (!embedded && elemSizeBytes(name) >= 0) {
 		elem = base;
 	} else if (structDefs_.count(name)) {
@@ -638,6 +640,39 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 	return vt;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// The bytes an element takes when it is laid out in place: a struct, or a
+// row of primitives, of slots, or of structs laid out in place in turn.
+int64_t PlnSemanticAnalyzer::inPlaceSize(const json& elem) const
+{
+	if (elem.value("type-kind","") == "struct")
+		return structDefs_.at(elem["type-name"].get<string>()).totalSize;
+	if (elem.contains("stride")) return elem["arr-size"].get<int64_t>() * elem["stride"].get<int64_t>();
+	const json& leaf = elem["base-type"];
+	int64_t leafSize = leaf.value("type-kind","") == "prim" ? elemSizeBytes(leaf["type-name"].get<string>()) : 8;
+	return elem["arr-size"].get<int64_t>() * leafSize;
+}
+
+// A row element of `[+][n]T` or `[+]$[n]T`: the same level as a row of
+// `[m][n]T`. Only one fixed level is supported under `[+]`, and only
+// primitive, struct and `[+]U` leaves.
+json PlnSemanticAnalyzer::varrRowType(const json& locNode, const json& row)
+{
+	const json& leaf = row["base-type"];
+	bool fixedLeaf = leaf.value("type-kind","") == "arr" && !isVarrAstType(leaf);
+	if (fixedLeaf || leaf.value("type-kind","") == "pntr") {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
+		exit(1);
+	}
+	if (row.value("embedded", false) && structDefs_.count(leaf.value("type-name",""))) {
+		string name = leaf["type-name"];
+		if (requireCompleteStruct(name, locNode).ownsFields) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType, name) << endl;
+			exit(1);
+		}
+	}
+	return sizedArrLevel(locNode, row, nullopt);
+}
+
 // A `[+]U` held as an element starts empty, so it takes no size.
 json PlnSemanticAnalyzer::varrElemType(const json& locNode, const json& varr)
 {
@@ -657,10 +692,13 @@ json PlnSemanticAnalyzer::varrData(json varr)
 	json elems = {{"type-kind","pntr"},{"base-type",vt["base-type"]["base-type"]}};
 	if (isVarrEmbedded(vt)) {
 		elems["embedded"] = true;
-		elems["stride"] = structDefs_.at(vt["base-type"]["base-type"]["type-name"].get<string>()).totalSize;
+		elems["stride"] = inPlaceSize(vt["base-type"]["base-type"]);
 	}
-	if (!isWritableThrough(vt) || (varr.value("expr-type","") == "arr-index" && !isWritableElem(varr)))
+	// A row carries the permission on each of its levels, as in a borrowed `[m][n]T`.
+	if (!isWritableThrough(vt) || (varr.value("expr-type","") == "arr-index" && !isWritableElem(varr))) {
 		elems["mutable"] = false;
+		elems["base-type"] = withArrPermission(elems["base-type"], false);
+	}
 	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE

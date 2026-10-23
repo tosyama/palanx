@@ -33,7 +33,9 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 				if (retStmt.contains("values") && retStmt["values"].size() == 1
 						&& retStmt["values"][0].value("expr-type","") == "id") {
 					string name = retStmt["values"][0]["name"];
-					if (isFrameVar(name) && !isOwnedBlock(*findVar(name))) {
+					// An owned block return is a copy (copyReturnBlock); anything
+					// else would point into the frame.
+					if (isFrameVar(name) && !isOwnedBlock((*currentFunc_)["ret-type"])) {
 						cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ReturnFrameArr, name) << endl;
 						exit(1);
 					}
@@ -399,7 +401,11 @@ json PlnSemanticAnalyzer::sa_varr_lit_assign(const json& stmt, const json& varTy
 	json loc = stmt.value("loc", json::array());
 	string temp = "__lit_" + to_string(tempVarCounter_++);
 	json arr = astTypeOf(varType);
-	if (!stmt["value"]["items"].empty()) arr["specifier"] = "raw";
+	// Rows of `[+]U` cannot sit under a fixed level ('[m][n][+]T'), so that
+	// literal is held in a variable-length temp.
+	const json& elem = varType["base-type"]["base-type"];
+	bool rowsOfVarr = isArrLevel(elem) && isVarrPntr(elem["base-type"]);
+	if (!stmt["value"]["items"].empty() && !rowsOfVarr) arr["specifier"] = "raw";
 	string target = stmt.contains("name") ? stmt["name"].get<string>() : arrLitTargetName(stmt["target"]);
 	json decl = {{"stmt-type","var-decl"},{"loc",loc},
 		{"vars",json::array({{{"name",temp},{"lit-name",target},{"var-type",move(arr)},{"init",stmt["value"]}}})}};
@@ -1362,10 +1368,6 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	if (t.value("embedded", false)) {
 		return memcpyStmt(n * t["stride"].get<int64_t>());
 	}
-	if (isOwnedBlock(elem)) {
-		recordArrShape(elem);
-		return copyStmt({AllocFamily::Arr, elem}, json::array({dst, src, lit(n)})); // LCOV_EXCL_EXCEPTION_BR_LINE
-	}
 	if (isArrLevel(elem)) {
 		int64_t m = elem["arr-size"];
 		const json& leaf = elem["base-type"];
@@ -1387,6 +1389,10 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 		}
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, typeDisplayName(t)) << endl;
 		exit(1);
+	}
+	if (isOwnedBlock(elem)) {
+		recordArrShape(elem);
+		return copyStmt({AllocFamily::Arr, elem}, json::array({dst, src, lit(n)})); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	// Primitive elements, or '@T' slots whose pointers are copied as they are.
 	int64_t elemBytes = isPtrBorrow(elem) ? 8 : elemSizeBytes(elem["type-name"]);

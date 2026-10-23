@@ -414,7 +414,7 @@ class PlnSemanticAnalyzer {
 	json sa_embed_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json sa_owned_elem_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json sa_owned_struct_arr2d_var_decl(const json& stmt, VarStorage storage); // returns array of statements
-	json allocElemDesc(const json& elem);
+	json allocElemDesc(const json& elem, bool inPlace = false);
 	void recordArrShape(const json& elem);
 	void recordArrArrShape(const string& leafName);
 	void recordVarrShape(const json& vt);
@@ -489,6 +489,9 @@ class PlnSemanticAnalyzer {
 	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
 	json  varrStorageType(const json& locNode, const json& arr);
 	json  varrElemType(const json& locNode, const json& varr);
+	json  varrRowType(const json& locNode, const json& row);
+	json  takeOverType(const json& locNode, const json& varType);
+	int64_t inPlaceSize(const json& elem) const;
 	json  normalizeVarrType(const json& locNode, const json& type);
 	// isMutable: the borrow's permission, or none for an owned level.
 	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable);

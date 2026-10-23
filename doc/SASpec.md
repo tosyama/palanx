@@ -37,8 +37,12 @@ Root
     `"struct"` with `"name"` (an owned slot holding a struct `T`, 8 bytes), `"embed-struct"`
     with `"name"` (the struct itself, `total-size` bytes), or `"varr"` with `"name"` (an owned
     slot holding a `[+]U`, 8 bytes; the name is its header type, `__pln_varr_U`) and `"shape-key"`
-    (the `[+]U`'s own entry). `key` is the element type written as in a symbol (see "Symbol
-    names"): `int32`, `P5Point`, `5Point`, `PVint32`.
+    (the `[+]U`'s own entry), or, for a row `[n]U`, `"row"` (an owned slot holding the row's
+    own block, 8 bytes) or `"embed-row"` (the row laid out in place, `n` elements' bytes), each
+    with `"count"` (`n`) and `"elem"` (the row's element, described the same way). `key` is the
+    element type written as in a symbol (see "Symbol names"): `int32`, `P5Point`, `5Point`,
+    `PVint32`, `A4_Pint32`; an `"embed-row"`'s is prefixed with `C` (`CA4_Pint32`), since it is
+    built differently from a `"row"` of the same type.
   - Their shape key is `arr_`, `varr_` or `evarr_` followed by the element's `key`, so a key names
     its element type exactly. A struct element's struct entry and a `[+]U` element's varr entry
     precede the entry.
@@ -80,7 +84,14 @@ Root
   element (elem kind `"varr"`) the slots hold the elements' headers the same way: a new element is
   an empty header (`calloc(1, 24)`), a dropped one is freed with `__pln_free_varr_U`, and a copy
   into one is `__pln_copy_varr_U`; `push` stores the header it is given, which the caller hands
-  over:
+  over. With a row `[n]U` (elem kind `"row"`) a slot holds the row's own block: a new one is
+  `calloc(n, …)` with its owned elements built, a dropped one has them dropped (unless the slot
+  is NULL, after `->>`) and is freed, and `push` and `copy` copy the elements from the row they
+  are given (`[]U x`; `copy`'s source is `[][n]U`). `pop` returns the slot's block. A row laid
+  out in place (`[+]$[n]U`, elem kind `"embed-row"`, shape key `evarr_…`) is `n` consecutive
+  slots of its element, built, dropped and copied through the element's own helpers; `push`
+  takes `[]U`, `copy` takes the run of elements (`[]U` for owned ones, `@U` otherwise), and
+  `pop` moves the row into a newly allocated block:
   - shape-kind\* - "varr"
   - shape-key\* - Shape key string (e.g. "varr\_int32", "varr\_P5Point", "evarr\_5Point")
   - elem\* - The element, as above
@@ -164,7 +175,7 @@ among such blocks of the enclosing function or of the top level (`util..a.v..b1.
     base type
   - func: `F<parameter count>_`, each parameter type, then the return type (a `void` prim when none)
   - varr: `V` (`VC` if `embedded`), then the element type (`@![+]int32` is `WVint32`,
-    `[+]Point` is `PVP5Point`, `[+]$Point` is `PVC5Point`)
+    `[+]Point` is `PVP5Point`, `[+]$Point` is `PVC5Point`, `[+][4]int32` is `PVA4_Pint32`)
 
 The return type is not part of the symbol, since functions differing only by it cannot coexist.
 Two parameter types that differ in any key give different symbols. `func show(int32)` in
@@ -373,8 +384,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     slot, as a `[n]T` element) for `[+]T` and `struct(T)` for `[+]$T` (E_EmbedOwningType if
     `T` owns fields), with `"embedded": true` on the `varr`; for a `[+]U` element (`[+][+]U`, any
     depth), the element's own owned `pntr(varr(…))` (`[+]$[+]U` is E_EmbedOwningType, `[+][+n]U`
-    E_VarrElemSized). A pointer element (`[+]@T`) is not supported. Below, `T` stands for `E`
-    and `varr_T` for the shape key.
+    E_VarrElemSized); for a row (`[+][n]U`, `[+]$[n]U`), the level a row of `[m][n]U` has
+    (`pntr` with `arr-size`, over a primitive, an owned struct slot, a struct laid out in place
+    for `[n]$U`, or an owned `[+]V`), with `"embedded": true` on the `varr` for `[+]$[n]U`. The
+    row size must be a constant (E_UnsizedArrRowSizeNotConst). A pointer element (`[+]@T`,
+    `[+][n]@T`) and a second fixed level (`[+][m][n]U`, `[+][m]$[n]U`) are not supported
+    (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key.
   - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
     with an array literal, whose size is the length. The literal's size is its element count
@@ -384,12 +399,15 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     `memset` + `__pln_init_varr_T(<name>, len, cap)`, released by `__pln_fini_varr_T(<name>)`.
   - `arr[i]` on such a variable indexes its data: SA replaces the `array` operand with
     `{"expr-type":"field-access","ptr-expr":<array>,"offset":16,"value-type":pntr(E)}`, and the
-    `arr-index` is then the one for a `pntr(E)`; for `[+]$T` the `pntr` carries `embedded` and
-    `stride` as a `[n]$T` variable's does.
+    `arr-index` is then the one for a `pntr(E)`; for `[+]$T` and `[+]$[n]U` the `pntr` carries
+    `embedded` and `stride` (the struct's or the row's bytes) as a `[n]$T` or `[m]$[n]U`
+    variable's does.
   - A C call argument (fixed or variadic) and a `[]T`-family Palan parameter (an unsized
     elements pointer: no `mutable`, no `arr-size`) are passed the same `field-access` to `data`.
-    Through a read-only borrow it is typed `pntr(T)` with `"mutable": false`, so writing an element
-    or passing it to `[]T` is rejected as for any `@T`. A sized `@[n]T`/`@![n]T` parameter does
+    Through a read-only borrow it is typed `pntr(T)` with `"mutable": false` (and a row element
+    has `"mutable": false` on its levels, as a read-only `@[m][n]U`'s row does), so writing an
+    element or passing it to `[]T` is rejected as for any `@T`. An owned element (a struct, a
+    `[+]U`) reached through a read-only array is read-only too. A sized `@[n]T`/`@![n]T` parameter does
     not take a `[+]T` (E_ArrBorrowShapeMismatch). Growing the array moves `data`, leaving such a
     pointer or a `@!v[i]` dangling; this is not checked.
   - `@v` / `@!v` borrows the array as it is: the value is the header pointer, typed
@@ -402,7 +420,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     can be rebound by `->`, and is never freed.
   - Built-in functions: once `T` is used, the callee lookup also finds `len(@[+]T) -> int64`,
     `push(@![+]T, T)`, `resize(@![+]T, int64)` and `pop(@![+]T) -> T` (a struct element is
-    passed and returned as the struct's storage `T`; `pop`'s result is the caller's), as ordinary Palan
+    passed and returned as the struct's storage `T`; a row `[n]U` is pushed from a `@[n]U` and
+    popped as an owned `[n]U`; `pop`'s result is the caller's), as ordinary Palan
     functions alongside C, local and imported ones (overloading, method form and chaining apply
     unchanged). `len` becomes the header's len, `field-access` at offset 0 of the borrowed
     header pointer, typed `int64`; the others are a `palan` call to
@@ -412,12 +431,15 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     borrowed constant-size array (that `len` is folded).
   - Copying (`[+]T w = v;`, `v -> w`, and an owned parameter, below) takes a `[+]T` or
     `@[+]T` / `@![+]T` (`__pln_copy_varr_T(w, <v's data>, <v's len>)`) or a sized `[n]T` of the
-    same element type and layout (`[n]T` into `[+]T`, `[n]$T` into `[+]$T`;
-    `__pln_copy_varr_T(w, a, n)`); the length becomes the source's. Into a
+    same element type and layout (`[n]T` into `[+]T`, `[n]$T` into `[+]$T`, `[m][n]U` into
+    `[+][n]U`, `[m]$[n]U` into `[+]$[n]U`, also through a borrow;
+    `__pln_copy_varr_T(w, a, n)`); the length becomes the source's. A `[+]` source of the other
+    layout is E_CopyShapeMismatch too. Into a
     `[n]T` it is E_CopyShapeMismatch. `[..] -> w` (also into an element, `[..] -> m[i]`) is a
     block declaring the literal as a frame array `$[]T __lit_N` (an empty `[]` as a frame
     `$[+]T`) and copying it, so every element is read before `w` changes; its diagnostics name
-    `w`.
+    `w`. For rows holding a `[+]V` (`[+][n][+]V`) the frame array is a `$[+]` one, as a
+    `[k][n][+]V` is not supported.
   - `->>` into such a variable is the transfer of any owned value: `__pln_free_varr_T(w)`, the
     assign, and the source set to NULL. The source is an owning variable (not `$[+]T`) or a call
     result, of the same element type.
@@ -427,6 +449,11 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     takes the header over, and a call result copied into a variable, given to a borrow, or
     discarded is held in a temp and freed with `__pln_free_varr_T`. A borrowed struct returned
     from a function returning a struct is copied the same way.
+  - `pop` of a row returns an owned `[n]U` (a returned `[n]T` is otherwise not supported): a
+    heap `[n]U r = v.pop();` takes the block over (freed at scope exit as `[n]U` is), and a
+    result copied into an array, given to a borrow (`f(@v.pop())`), or discarded is held in a
+    temp and freed as the variable would be (`free`, or `__pln_free_arr_E` for owned
+    elements). `->>` from a row element leaves its slot NULL.
   - An owned parameter `[+]T x` (symbol `PV` + element) takes what the caller passes over and
     frees it when the function exits. A call result is passed as it is; anything else that a
     copy into `[+]T` accepts, or an array literal, is copied into a `temp` (`__arg_N`) whose

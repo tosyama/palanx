@@ -228,11 +228,17 @@ inline VarStorage takeVarStorage(json& varType)
 	varType = move(base);
 	return VarStorage::Frame;
 }
-// A struct's or a `[+]T`'s own block: what a variable owns and frees, and what
-// a copy into it fills.
-inline bool isOwnedBlock(const json& vt) { return isStructStorage(vt) || isVarrStorage(vt); }
-// An owned element (a struct's or a `[+]T`'s storage) has no permission of its
-// own: it is writable only as far as the array it is reached through.
+inline bool isArrLevel(const json& t);
+// A struct's, a `[+]T`'s or a constant-size array's own block: what a variable
+// owns and frees, and what a copy into it fills.
+inline bool isOwnedBlock(const json& vt)
+{
+	return isStructStorage(vt) || isVarrStorage(vt)
+	    || (isArrLevel(vt) && vt.contains("arr-size") && !vt.contains("mutable"));
+}
+// An owned element (a struct's, a `[+]T`'s or a row's storage) has no
+// permission of its own: it is writable only as far as the array it is
+// reached through.
 inline bool isWritableElem(const json& saIdx) {
 	return !isOwnedBlock(saIdx["value-type"]) || isWritableThrough(saIdx["array"]["value-type"]);
 }
@@ -649,19 +655,31 @@ inline bool copyShapeMatch(const json& from, const json& to) {
 	    && from.value("type-name","") == to.value("type-name","");
 }
 
+// An array type as its owner holds it, without a borrow's permissions.
+inline json withoutArrPermission(json t)
+{
+	json* cur = &t;
+	while (isArrLevel(*cur)) {
+		cur->erase("mutable");
+		cur->erase("unsized");
+		cur = &(*cur)["base-type"];
+	}
+	return t;
+}
 // What `[+]T` vt can be copied from: another `[+]T` (owned or borrowed) or a
 // sized array, of exactly its element type and layout.
 inline bool varrCopySourceMatch(const json& from, const json& vt)
 {
 	const json& elem = vt["base-type"]["base-type"];
+	// The layouts must agree too: `[+][n]T` and `[+]$[n]T` share an element type.
 	if (isVarrPntr(from))
-		return from["base-type"]["base-type"] == elem;
+		return from["base-type"] == vt["base-type"];
 	// A contiguous struct array's type has the same shape as a lone struct's
 	// storage, so only its stride tells it from one.
 	if (isVarrEmbedded(vt))
-		return from.contains("stride") && from.contains("arr-size") && from["base-type"] == elem;
+		return from.contains("stride") && from.contains("arr-size") && withoutArrPermission(from["base-type"]) == elem;
 	return isArrLevel(from) && from.contains("arr-size") && !from.value("embedded", false)
-	    && from["base-type"] == elem;
+	    && withoutArrPermission(from["base-type"]) == elem;
 }
 
 // An array is borrowed with one permission for every level down to its

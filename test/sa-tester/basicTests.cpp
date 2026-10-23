@@ -6142,6 +6142,69 @@ TEST(sa, nested_varr_lit)
 	ASSERT_EQ(resizeTo(13), "0");
 }
 
+// A row of `[+][n]T` is a block of its own, which pop hands to the caller;
+// `[+]$[n]T` lays the rows out in the data. push copies from a borrowed row.
+TEST(sa, varr_row)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/304_varr_row.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& elem = stmts[0]["vars"][0]["var-type"]["base-type"]["base-type"];
+	ASSERT_EQ(elem["arr-size"], 4);
+	ASSERT_EQ(elem.contains("mutable"), false);
+	const auto& push = stmts[2]["body"];
+	ASSERT_EQ(funcName(push["name"]), "__pln_push_varr_A4_Pint32");
+	ASSERT_EQ(push["args"][1]["value-type"]["mutable"], false);
+
+	// `[4]int32 r = v.pop();` takes the popped row over; a discarded one is freed.
+	const auto& r = stmts[3]["vars"][0];
+	ASSERT_EQ(funcName(r["init"]["name"]), "__pln_pop_varr_A4_Pint32");
+	ASSERT_EQ(r["init"]["category"], "expiring");
+	ASSERT_EQ(r["var-type"], elem);
+	ASSERT_EQ(stmts[4]["body"][1]["body"]["name"], "free");
+
+	const auto& rows = stmts[6]["target"]["array"]["array"]["value-type"];
+	ASSERT_EQ(rows["embedded"], true);
+	ASSERT_EQ(rows["stride"], 16);
+
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes.size(), 4);
+	ASSERT_EQ(shapes[0]["shape-key"], "varr_A4_Pint32");
+	ASSERT_EQ(shapes[0]["elem"]["kind"], "row");
+	ASSERT_EQ(shapes[0]["elem"]["count"], 4);
+	ASSERT_EQ(shapes[0]["elem"]["size"], 8);
+	ASSERT_EQ(shapes[0]["elem"]["elem"]["kind"], "prim");
+	ASSERT_EQ(shapes[1]["shape-key"], "evarr_A4_Pint32");
+	ASSERT_EQ(shapes[1]["elem"]["kind"], "embed-row");
+	ASSERT_EQ(shapes[1]["elem"]["size"], 16);
+	ASSERT_EQ(shapes[1]["elem"]["key"], "CA4_Pint32");
+	ASSERT_EQ(shapes[3]["elem"]["kind"], "embed-row");
+	ASSERT_EQ(shapes[3]["elem"]["elem"]["kind"], "struct");
+	ASSERT_EQ(shapes[3]["elem"]["size"], 16);
+}
+
+// A `[..] -> v` literal of rows holding a `[+]U` goes through a frame `[+]`
+// temp, since a fixed temp would be the unsupported `[m][n][+]U`.
+TEST(sa, varr_row_lit)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/305_varr_row_lit.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["args"][0]["value"], "2");
+	for (int i = 1; i <= 4; i++) ASSERT_EQ(stmts[i]["stmt-type"], "arr-assign");
+
+	const auto& fixed = stmts[5]["body"];
+	ASSERT_EQ(fixed[1]["vars"][0]["var-type"]["arr-size"], 1);
+	ASSERT_EQ(funcName(fixed[6]["body"]["name"]), "__pln_copy_varr_A2_Pint32");
+
+	const auto& varr = stmts[10]["body"];
+	ASSERT_EQ(varr[0]["vars"][0]["var-type"]["base-type"]["type-kind"], "varr");
+	ASSERT_EQ(funcName(varr[2]["body"]["name"]), "__pln_init_varr_A2_PPVint32");
+	ASSERT_EQ(funcName(varr[8]["body"]["name"]), "__pln_copy_varr_A2_PPVint32");
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();

@@ -3629,3 +3629,53 @@ TEST(build_mgr, arr_of_varr_mtrace) {
 	ASSERT_EQ(output, "2 0 1\n2 0 1\n0 0 2\n1 2 0\n1 2 0\n3 4\n2\n");
 	expectBalancedMtrace(traceFile, 25);
 }
+
+// A popped row is freed when discarded and taken over by a declaration.
+TEST(build_mgr, varr_row_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_varr_row_mtrace_bin "
+		"../test/testdata/build-mgr/341_varr_row_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_varr_row_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_varr_row_mtrace_bin");
+	ASSERT_EQ(output, 
+		"[1 2 3 4][5 6 7 8][9 10 11 12]\n12 1 0\n42\n\n[1 2 3 9][1 2 3 4][0 0 0 0]\n"
+		"[1 2 3 4]\n9 0\n3 7 3\n3\n7 4 1\n");
+	expectBalancedMtrace(traceFile, 42);
+}
+
+// Rows laid out in place: owned elements in them are built, dropped and
+// moved out by pop with the row.
+TEST(build_mgr, evarr_row_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_evarr_row_mtrace_bin "
+		"../test/testdata/build-mgr/342_evarr_row_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_evarr_row_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_evarr_row_mtrace_bin");
+	ASSERT_EQ(output, "7 3\n12 9 0 4\n77 10\n2 2 3\n5 7 0 3 1\n5 1 2\n4 3\n");
+	expectBalancedMtrace(traceFile, 77);
+}
+
+TEST(build_mgr, varr_row_owned_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_varr_row_owned_mtrace_bin "
+		"../test/testdata/build-mgr/343_varr_row_owned_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_varr_row_owned_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_varr_row_owned_mtrace_bin");
+	ASSERT_EQ(output, "5 7 3 7\n4 5 1\n2 1 0\n6 1 1\n");
+	expectBalancedMtrace(traceFile, 83);
+}

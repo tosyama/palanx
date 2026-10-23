@@ -11,6 +11,8 @@
 #include <map>
 #include <algorithm>
 #include <cstring>
+#include <functional>
+#include <memory>
 #include <getopt.h>
 #include <filesystem>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
@@ -442,23 +444,52 @@ int main(int argc, char* argv[])
 					string key;        // the element's type symbol
 					string type;       // one element's type name in the source
 					int64_t size;      // the bytes a slot takes
+					int64_t count;     // a row's elements
 					bool owned;
-					bool embedded;     // laid out in the slot itself (`[+]$T`)
+					bool embedded;     // laid out in the slot itself (`[+]$T`, `[+]$[n]T`)
 					string buildElem;  // a slot as the build helper fills it
 					string ownElem;    // a slot as the drop and copy helpers read it
 					string value;      // what push takes
 					string popped;     // what pop returns
 					string run;        // a copy's source run of elements
 					string data;       // the header's data pointer
+					shared_ptr<const ElemOps> leaf;   // a row's element
 				};
-				auto opsOf = [&](const json& desc) {
+				function<ElemOps(const json&)> opsOf = [&](const json& desc) {
 					string kind = desc["kind"];
 					ElemOps e;
 					e.kind = kind;
 					e.inner = desc.value("shape-key", "");
 					e.key = desc["key"];
-					e.type = kind == "prim" ? desc["type"] : desc["name"];
 					e.size = desc["size"].get<int64_t>();
+					e.count = desc.value("count", (int64_t)0);
+					if (kind == "row" || kind == "embed-row") {
+						e.leaf = make_shared<const ElemOps>(opsOf(desc["elem"]));
+						const ElemOps& l = *e.leaf;
+						string lrun = (l.embedded ? "$" : "") + l.ownElem;
+						e.embedded = kind == "embed-row";
+						e.value = "[]" + lrun;
+						if (!e.embedded) {
+							// A row is a block of its own, which the slot points at.
+							e.owned = true;
+							e.buildElem = "@!" + (l.owned ? l.buildElem : l.type);
+							e.ownElem = "[" + to_string(e.count) + "]" + lrun;
+							e.popped = e.buildElem;
+							e.run = "[]" + e.ownElem;
+							e.data = "@!" + e.buildElem;
+						} else {
+							// A row laid out in place is its elements' slots, n to a row.
+							// pop moves them into a block of their own for the caller.
+							e.owned = l.owned;
+							e.buildElem = l.buildElem;
+							e.ownElem = l.ownElem;
+							e.popped = "@!" + (l.owned ? l.buildElem : l.type);
+							e.run = l.owned ? "[]" + l.ownElem : "@" + l.type;
+							e.data = l.data;
+						}
+						return e;
+					}
+					e.type = kind == "prim" ? desc["type"] : desc["name"];
 					e.owned = kind == "struct" || kind == "varr";
 					e.embedded = kind == "embed-struct";
 					e.buildElem = "@!" + e.type;
@@ -470,41 +501,96 @@ int main(int argc, char* argv[])
 					e.data = e.owned ? "@!@!" + e.type : "@!" + e.type;
 					return e;
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// An inner `[+]T` element is its header, starting empty.
+				// The address of slot idx of a data pointer, for the byte copies of
+				// unowned elements. An embedded struct's `arr[i]` is its address already.
+				auto slotAddr = [&](const ElemOps& e, const string& arr, const string& idx) {
+					bool isRow = e.kind == "embed-row";
+					string at = arr + "[" + idx + (isRow ? " * " + to_string(e.count) : "") + "]";
+					bool isAddr = isRow ? e.leaf->embedded : e.embedded;
+					return (isAddr ? "" : "@!") + at;
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// An inner `[+]T` element is its header, starting empty. A row's
+				// block is zeroed, then its owned elements are built.
 				auto elemBuild = [&](const ElemOps& e, const string& slot, const string& indent) {
 					if (e.kind == "varr") return indent + "calloc(1, 24) -> " + slot + ";\n";
+					if (e.kind == "row") {
+						const ElemOps& l = *e.leaf;
+						string n = to_string(e.count);
+						string s = indent + "calloc(" + n + ", " + to_string(l.size) + ") -> " + slot + ";\n";
+						if (l.owned) s += indent + "__pln_build_" + l.key + "(" + slot + ", 0, " + n + ");\n";
+						return s;
+					}
 					return structElemBuild(e.type, slot, indent);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// A row moved out by `->>` leaves NULL in its slot.
 				auto elemDrop = [&](const ElemOps& e, const string& slot) {
 					if (e.kind == "varr") return "__pln_free_" + e.inner + "(" + slot + ");";
+					if (e.kind == "row") {
+						const ElemOps& l = *e.leaf;
+						if (!l.owned) return "free(" + slot + ");";
+						return "if " + slot + " != NULL { __pln_drop_" + l.key + "(" + slot + ", 0, "
+							+ to_string(e.count) + "); }\n        free(" + slot + ");";
+					}
 					return hasOwned(e.type) ? "__pln_free_" + e.type + "(" + slot + ");" : "free(" + slot + ");";
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				auto elemSet = [&](const ElemOps& e, const string& dst, const string& src) {
 					if (e.kind == "varr")
 						return "__pln_copy_" + e.inner + "(@!" + dst + ", " + src + ".data, " + src + ".len);";
+					if (e.kind == "row") {
+						const ElemOps& l = *e.leaf;
+						string n = to_string(e.count);
+						if (l.owned) return "__pln_copyrun_" + l.key + "(" + dst + ", " + src + ", " + n + ");";
+						return "memcpy(" + dst + ", " + src + ", " + to_string(e.count * l.size) + ");";
+					}
 					return structCopy(e.type, dst, src);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				set<string> elemHelpersDone;
-				auto emitElemHelpers = [&](const ElemOps& e) {
+				function<void(const ElemOps&)> emitElemHelpers = [&](const ElemOps& e) {
 					if (!e.owned || !elemHelpersDone.insert(e.key).second) return;
-					out << "\nfunc __pln_build_" << e.key << "([]" << e.buildElem << " slots, int64 from, int64 to) {\n"
+					if (e.leaf) emitElemHelpers(*e.leaf);
+					string head = "\nfunc __pln_build_" + e.key + "([]" + e.buildElem + " slots, int64 from, int64 to) {\n";
+					string dropHead = "func __pln_drop_" + e.key + "([]" + e.ownElem + " slots, int64 from, int64 to) {\n";
+					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + e.value + " x) {\n";
+					string runHead = "func __pln_copyrun_" + e.key + "([]" + e.ownElem + " dst, []" + e.ownElem + " src, int64 n) {\n";
+					if (e.kind == "embed-row") {
+						// Rows laid out in place are runs of their elements' slots.
+						string l = e.leaf->key, n = to_string(e.count);
+						out << head
+						    << "    __pln_build_" << l << "(slots, from * " << n << ", to * " << n << ");\n"
+						    << "}\n"
+						    << dropHead
+						    << "    __pln_drop_" << l << "(slots, from * " << n << ", to * " << n << ");\n"
+						    << "}\n"
+						    << setHead
+						    << "    int64 j = 0;\n"
+						    << "    while j < " << n << " {\n"
+						    << "        __pln_set_" << l << "(slots, i * " << n << " + j, x[j]);\n"
+						    << "        j + 1 -> j;\n"
+						    << "    }\n"
+						    << "}\n"
+						    << runHead
+						    << "    __pln_copyrun_" << l << "(dst, src, n * " << n << ");\n"
+						    << "}\n";
+						return;
+					}
+					out << head
 					    << "    int64 i = from;\n"
 					    << "    while i < to {\n"
 					    << elemBuild(e, "slots[i]", "        ")
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n"
-					    << "func __pln_drop_" << e.key << "([]" << e.ownElem << " slots, int64 from, int64 to) {\n"
+					    << dropHead
 					    << "    int64 i = from;\n"
 					    << "    while i < to {\n"
 					    << "        " << elemDrop(e, "slots[i]") << "\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n"
-					    << "func __pln_set_" << e.key << "([]" << e.ownElem << " slots, int64 i, " << e.value << " x) {\n"
+					    << setHead
 					    << "    " << elemSet(e, "slots[i]", "x") << "\n"
 					    << "}\n"
-					    << "func __pln_copyrun_" << e.key << "([]" << e.ownElem << " dst, []" << e.ownElem << " src, int64 n) {\n"
+					    << runHead
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
 					    << "        __pln_set_" << e.key << "(dst, i, src[i]);\n"
@@ -589,7 +675,7 @@ int main(int argc, char* argv[])
 						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1);\n"
 						    << "    __pln_set_" << e.key << "(h.data, h.len, x);\n";
 					else if (e.embedded)
-						out << "    memcpy(h.data[h.len], x, " << size << ");\n";
+						out << "    memcpy(" << slotAddr(e, "h.data", "h.len") << ", x, " << size << ");\n";
 					else
 						out << "    x -> h.data[h.len];\n";
 					out << "    h.len + 1 -> h.len;\n"
@@ -602,9 +688,8 @@ int main(int argc, char* argv[])
 						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len); }\n";
 					else
 					// Shrinking keeps the old elements past the length, so growing
-					// zeroes what it brings back. `h.data[i]` of an embedded element
-					// is its address already.
-						out << "    if n > h.len { memset(" << (e.embedded ? "" : "@!") << "h.data[h.len], 0, (n - h.len) * " << size << "); }\n";
+					// zeroes what it brings back.
+						out << "    if n > h.len { memset(" << slotAddr(e, "h.data", "h.len") << ", 0, (n - h.len) * " << size << "); }\n";
 					out << "    n -> h.len;\n"
 					    << "}\n"
 					// The source is any run of elements, which may be h's own
@@ -624,8 +709,17 @@ int main(int argc, char* argv[])
 					out << "export func __pln_pop_" << key << "(@!" << hdr << " h) -> " << e.popped << " x {\n"
 					    << "    if h.len == 0 { abort(); }\n"
 					    << "    h.len - 1 -> h.len;\n";
-					if (e.embedded)
-						out << "    memcpy(x, h.data[h.len], " << size << ");\n";
+					if (e.kind == "embed-row")
+						out << "    malloc(" << size << ") -> x;\n";
+					// Owned elements' slots are pointers, which '@!' cannot address.
+					if (e.kind == "embed-row" && e.owned)
+						out << "    int64 j = 0;\n"
+						    << "    while j < " << e.count << " {\n"
+						    << "        h.data[h.len * " << e.count << " + j] -> x[j];\n"
+						    << "        j + 1 -> j;\n"
+						    << "    }\n";
+					else if (e.embedded)
+						out << "    memcpy(x, " << slotAddr(e, "h.data", "h.len") << ", " << size << ");\n";
 					else
 						out << "    h.data[h.len] -> x;\n";
 					out << "}\n";

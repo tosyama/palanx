@@ -235,16 +235,20 @@ For a shape key `K`, the functions are:
 | `[m][n]T` with `T` a struct | `arr_arr_T` | all |
 | `[m][n]P` with `P` a primitive | `arr_arr_P` | all |
 | a struct's owned `[n]P` field | `arr_prim_P` | `alloc`, `free` |
-| `[+]T` (`T` a primitive or a struct) | `varr_E` | all, and `push`/`resize`/`pop`; `copy(h, src, n)` copies a run of elements |
-| `[+]$T` with `T` a struct | `evarr_E` | as `varr_E` |
+| `[+]T` (`T` a primitive, a struct, a `[+]U` or a row `[n]U`) | `varr_E` | all, and `push`/`resize`/`pop`; `copy(h, src, n)` copies a run of elements |
+| `[+]$T` with `T` a struct or a row `[n]U` | `evarr_E` | as `varr_E` |
 
 `E` is the element as the array's storage holds it, written as a parameter type is in a symbol
 (SASpec.md's Symbol names): `[n]Point` is `arr_P5Point` (an owned slot), `[+]int32` is
-`varr_int32`, `[+]$Point` is `evarr_5Point`. A key thus names its element type exactly, whatever a
-struct's name spells. The build manager generates the arrays of any element from one description
-of the element (`elem` in the shape): an owned element is built when its slot comes into use and
-dropped when it leaves, by helpers `__pln_build/drop/set/copyrun_E` shared by `arr_E` and
-`varr_E`; any other element is plain bytes, zeroed and copied in bulk.
+`varr_int32`, `[+]$Point` is `evarr_5Point`, `[+][4]int32` is `varr_A4_Pint32`. A key thus names
+its element type exactly, whatever a struct's name spells. The build manager generates the arrays
+of any element from one description of the element (`elem` in the shape, `ElemOps` in the build
+manager): an owned element is built when its slot comes into use and dropped when it leaves, by
+helpers `__pln_build/drop/set/copyrun_E` shared by `arr_E` and `varr_E`; any other element is
+plain bytes, zeroed and copied in bulk. A row element is described by its own element: a row in a
+block of its own is an owned element built and dropped through its elements' helpers, and a row
+laid out in place (`[+]$[n]U`) is `n` slots of its element, so it is owned exactly when that
+element is.
 
 Like any Palan function, each links by a symbol made from its module and parameter types, so
 palan-sa names the module `__allocators` (`PALAN_ALLOCATORS_MODULE` in `src/common/PlnDefs.h`,

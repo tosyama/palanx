@@ -234,7 +234,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_AddrOfNotAddressable:
 			return "cannot take the address of this expression: '@'/'@!' supports a local variable, a "
 			       "primitive-typed or embedded-struct field of a struct it names, a primitive-typed "
-			       "array element, or a call returning a struct given as a call argument.";
+			       "array element, or a call returning a struct or array given as a call argument.";
 
 		case E_ReadOnlyPtrToNonConstCParam:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -559,7 +559,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "'->>' needs a field that owns its value (T or [n]T); '" + arg1 + "' does not.";
 
 		case E_ExpiringStructToBorrow:
-			return "a struct or '[+]' array returned by a call has no owner to borrow from; receive "
+			return "a struct or array returned by a call has no owner to borrow from; receive "
 			       "it into a variable with '->' and borrow it with '@name' or '@!name' (only a call "
 			       "argument can borrow it directly, as '@f()' or '@!f()').";
 
@@ -601,7 +601,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "'->>' cannot give '" + arg1 + "' to itself.";
 
 		case E_UnsizedArrRowSizeNotConst:
-			return "the row size in '[][m]T' must be a compile-time constant.";
+			return "the row size in '[][m]T' or '[+][m]T' must be a compile-time constant.";
 
 		case E_UnsizedArrRowUnsupported:
 			return "'[][m]T' supports only '[m]T' rows of a primitive or struct element and '[m]$T' rows of a struct, in this version.";
