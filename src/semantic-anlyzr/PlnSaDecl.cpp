@@ -728,7 +728,7 @@ json PlnSemanticAnalyzer::sa_varr_var_decl(const json& stmt, VarStorage storage,
 {
 	const json& vtype = stmt["vars"][0]["var-type"];
 	json varType = varrStorageType(stmt, vtype);
-	string leaf = vtype["base-type"]["type-name"];
+	AllocShapeRef shape = varrShape(varType);
 
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json int64_type = {{"type-kind","prim"},{"type-name","int64"}};
@@ -750,12 +750,12 @@ json PlnSemanticAnalyzer::sa_varr_var_decl(const json& stmt, VarStorage storage,
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"];
 		json self = {{"expr-type","id"},{"name",name},{"var-type",varType},{"value-type",varType}};
-		json alloc = allocHelperCall(AllocFamily::Varr, leaf, "alloc", json::array({len, cap}));
+		json alloc = allocHelperCall(shape.family, shape.leaf, "alloc", json::array({len, cap}));
 		alloc["value-type"] = varType;
 		json release = makeOwnedValueFreeStmt(self);
 		declareVar(name, varType, &stmt);
 		json init = placeAggregateVar(stmt, name, varType, move(alloc), move(release), storage,
-		                              24, 8, false, post, AllocShapeRef{AllocFamily::Varr, leaf});
+		                              24, 8, false, post, shape);
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",varType},{"init",move(init)}});
 	}
 	result.push_back(move(sa_stmt));
@@ -1811,22 +1811,27 @@ string allocHelperSymbol(AllocFamily family, const string& leaf, const string& o
 		prefix = "arr_arr_"; owned = ptr(ptr(elem)); building = ptr(mut(elem)); dims = {i64, i64};
 		break;
 	case AllocFamily::Varr:
+	case AllocFamily::EVarr: {
+		bool isPrim = elemSizeBytes(leaf) >= 0;
+		json value = isPrim ? json{{"type-kind","prim"},{"type-name",leaf}} : ptr(elem);   // what push takes
+		json readOnly = {{"type-kind","pntr"},{"mutable",false},{"base-type",isPrim ? value : elem}};
+		// copy's source, a run of elements: their slots for owned structs (`[]T`)
+		json run = family == AllocFamily::Varr && !isPrim ? ptr(ptr(elem)) : readOnly;
+		prefix = family == AllocFamily::Varr ? "varr_" : "evarr_";
 		// The generated module sees the header as a struct of its own.
-		elem = {{"type-kind","struct"},{"type-name","__pln_varr_" + leaf}};
-		prefix = "varr_"; owned = ptr(elem); building = mut(elem);
+		elem = {{"type-kind","struct"},{"type-name","__pln_" + prefix + leaf}};
+		owned = ptr(elem); building = mut(elem);
 		if (op == "alloc" || op == "init") dims = {i64, i64};   // len, cap
-		else if (op == "push") { owned = building; dims = {{{"type-kind","prim"},{"type-name",leaf}}}; }
+		else if (op == "push") { owned = building; dims = {value}; }
 		else if (op == "resize") { owned = building; dims = {i64}; }
 		else if (op == "pop") owned = building;
-		else if (op == "copy") {   // from a run of elements: (data, n)
-			owned = building;
-			dims = {{{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","prim"},{"type-name",leaf}}}}, i64};
-		}
+		else if (op == "copy") { owned = building; dims = {run, i64}; }
 		break;
+	}
 	}
 	vector<json> params;
 	if (op == "init") params.push_back(building);
-	else if (op == "copy" && family != AllocFamily::Varr) params = {owned, owned};
+	else if (op == "copy" && family != AllocFamily::Varr && family != AllocFamily::EVarr) params = {owned, owned};
 	else if (op != "alloc") params.push_back(owned);   // fini, free, and the varr operations
 	params.insert(params.end(), dims.begin(), dims.end());
 	// A row of primitives is one block, so freeing it needs only the row count.
@@ -1870,9 +1875,10 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value)
 	json vt = value["value-type"];
 	if (isStructStorage(vt))
 		return makeStructFreeCall(move(value), vt["base-type"]["type-name"].get<string>());
-	if (isVarrStorage(vt))
-		return {{"stmt-type","expr"},{"body",allocHelperCall(AllocFamily::Varr,
-			vt["base-type"]["base-type"]["type-name"].get<string>(), "free", json::array({move(value)}))}};
+	if (isVarrStorage(vt)) {
+		AllocShapeRef shape = varrShape(vt);
+		return {{"stmt-type","expr"},{"body",allocHelperCall(shape.family, shape.leaf, "free", json::array({move(value)}))}};
+	}
 	json args = json::array({move(value)});
 	if (!isStructStorage(vt["base-type"]))
 		return {{"stmt-type","expr"},{"body",{
@@ -2028,23 +2034,37 @@ void PlnSemanticAnalyzer::recordArrArrShape(const string& leafName)
 	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-void PlnSemanticAnalyzer::recordVarrShape(const string& leafName)
+// A struct element's own helpers are generated from its struct shape, which
+// is recorded first so build-mgr sees it before the varr shape.
+void PlnSemanticAnalyzer::recordVarrShape(const json& vt)
 {
-	string shape_key = "varr_" + leafName;
+	AllocShapeRef shape = varrShape(vt);
+	bool isEmbedded = shape.family == AllocFamily::EVarr;
+	string shape_key = (isEmbedded ? "evarr_" : "varr_") + shape.leaf;
 	for (auto& s : sa["alloc-shapes"])
 		if (s.value("shape-key","") == shape_key) return;
+	const json& elem = vt["base-type"]["base-type"];
+	bool isPrim = elem.value("type-kind","") == "prim";
+	if (!isPrim) recordAllocShape(shape.leaf);
+	int64_t size = isPrim ? elemSizeBytes(shape.leaf) : isEmbedded ? structDefs_.at(shape.leaf).totalSize : 8;
 	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
-		{"shape-kind","varr"}, {"shape-key",shape_key}, {"leaf-type",leafName},
-		{"leaf-size",elemSizeBytes(leafName)} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+		{"shape-kind","varr"}, {"shape-key",shape_key}, {"leaf-type",shape.leaf},
+		{"elem-kind",isPrim ? "prim" : isEmbedded ? "embed-struct" : "struct"},
+		{"leaf-size",size} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	});
-	registerVarrBuiltins(leafName);
+	for (auto& def : varrBuiltinDefs(elem))
+		varrBuiltins_[def["name"].get<string>()].push_back(def);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json varrBuiltinDefs(const string& leafName)
+// push takes an element by value and pop returns one; a struct goes as its
+// storage, copied in by push and owned by pop's caller.
+json varrBuiltinDefs(const json& elem)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
-	json elem = {{"type-kind","prim"},{"type-name",leafName}};
 	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
+	json value = elem.value("type-kind","") == "struct"
+		? json{{"type-kind","pntr"},{"base-type",elem}} : elem;
+	AllocShapeRef shape = varrShape(varrPntrType(elem));
 	auto self = [&](bool isMutable) {
 		json vt = varrPntrType(elem);
 		vt["mutable"] = isMutable;
@@ -2054,23 +2074,17 @@ json varrBuiltinDefs(const string& leafName)
 	auto add = [&](const string& name, json params, const json* ret) {
 		json def = {{"name",name},{"func-type","palan"},{"parameters",move(params)}};
 		if (name == "len") def["inline"] = true;
-		else def["symbol"] = allocHelperSymbol(AllocFamily::Varr, leafName, name);
+		else def["symbol"] = allocHelperSymbol(shape.family, shape.leaf, name);
 		if (ret) def["ret-type"] = *ret;
 		defs.push_back(move(def));
 	};
 	add("len", json::array({self(false)}), &i64);
-	add("push", json::array({self(true), {{"name","x"},{"var-type",elem}}}), nullptr);
+	add("push", json::array({self(true), {{"name","x"},{"var-type",value}}}), nullptr);
 	add("resize", json::array({self(true), {{"name","n"},{"var-type",i64}}}), nullptr);
-	add("pop", json::array({self(true)}), &elem);
+	add("pop", json::array({self(true)}), &value);
 	return defs;
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
-
-void PlnSemanticAnalyzer::registerVarrBuiltins(const string& leafName)
-{
-	for (auto& def : varrBuiltinDefs(leafName))
-		varrBuiltins_[def["name"].get<string>()].push_back(def);
-}
 
 void PlnSemanticAnalyzer::recordArrArrStructShape(const string& structName)
 {

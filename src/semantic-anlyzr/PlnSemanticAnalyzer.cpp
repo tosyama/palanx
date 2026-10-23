@@ -187,9 +187,7 @@ static bool definesBuiltin(const string& name, const json& def)
 	if (name == "len" && params.size() == 1 && first.contains("arr-size") && first.contains("mutable"))
 		return true;
 	if (!isVarrPntr(first)) return false;
-	const json& elem = first["base-type"]["base-type"];
-	if (elem.value("type-kind","") != "prim") return false; // LCOV_EXCL_BR_LINE -- a non-primitive element is rejected when the type is normalized
-	for (auto& builtin : varrBuiltinDefs(elem["type-name"].get<string>()))
+	for (auto& builtin : varrBuiltinDefs(first["base-type"]["base-type"]))
 		if (builtin["name"] == name && sameParamTypes(builtin, def)) return true;
 	return false;
 }
@@ -604,15 +602,46 @@ json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json
 // to a function or module that takes or borrows a `[+]T` without declaring one.
 json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 {
-	const json& elem = arr["base-type"];
-	string leaf = elem.value("type-kind","") == "prim" ? elem.value("type-name","") : "";
-	if (elemSizeBytes(leaf) < 0) {
+	const json& base = arr["base-type"];
+	string name = base.value("type-kind","") == "prim" ? base.value("type-name","") : "";
+	bool embedded = arr.value("embedded", false);
+	json elem;
+	if (!embedded && elemSizeBytes(name) >= 0) {
+		elem = base;
+	} else if (structDefs_.count(name)) {
+		const StructDef& def = requireCompleteStruct(name, locNode);
+		if (embedded && def.ownsFields) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningStruct, name) << endl;
+			exit(1);
+		}
+		// LCOV_EXCL_EXCEPTION_BR_START
+		elem = {{"type-kind","struct"},{"type-name",name}};
+		if (!embedded) elem = {{"type-kind","pntr"},{"base-type",elem}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	} else {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
 		exit(1);
 	}
-	recordVarrShape(leaf);
-	return varrPntrType(elem);
-}
+	json vt = varrPntrType(elem);
+	recordVarrShape(vt);
+	return vt;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The header's data pointer: what `v[i]` indexes and a C function or a `[]T`
+// receives. Through a read-only borrow the elements are read-only too.
+json PlnSemanticAnalyzer::varrData(json varr)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	const json& vt = varr["value-type"];
+	json elems = {{"type-kind","pntr"},{"base-type",vt["base-type"]["base-type"]}};
+	if (isVarrEmbedded(vt)) {
+		elems["embedded"] = true;
+		elems["stride"] = structDefs_.at(varrShape(vt).leaf).totalSize;
+	}
+	if (!isWritableThrough(vt)) elems["mutable"] = false;
+	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::varrBorrowType(const json& locNode, const json& arr, bool isMutable)
 {

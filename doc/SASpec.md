@@ -48,7 +48,7 @@ Root
   - shape-key\* - Shape key string (e.g. "arr\_arr\_Point")
   - struct-name\* - Leaf struct type name (e.g. "Point")
 
-  **Varr entry** (`[+]T` variable with a primitive `T`): build-mgr declares the header as
+  **Varr entry** (`[+]T` / `[+]$T` variable): for `[+]T`, build-mgr declares the header as
   `type __pln_varr_T { int64 len; int64 cap; @!T data; }` and generates
   `__pln_alloc_varr_T(len, cap)`, `__pln_init_varr_T(h, len, cap)` (calloc's `cap` elements when
   `cap > 0`; the header starts zeroed, so `data` stays NULL otherwise), `__pln_fini_varr_T(h)`
@@ -58,11 +58,21 @@ Root
   `__pln_copy_varr_T(@!hdr h, @T src, int64 n)` (grows as needed, then sets the length to `n`
   and copies `n` elements from `src`, which may be `h`'s own). Growing
   reallocates `data` to max(needed, cap × 2, 4) elements; shrinking keeps the capacity, and
-  `resize` zeroes the elements it adds. An empty `pop` or a negative `resize` calls `abort()`:
+  `resize` zeroes the elements it adds. An empty `pop` or a negative `resize` calls `abort()`.
+  With a struct `T` (`elem-kind: "struct"`), `data` is `@!@!T`, an array of owned slots, of
+  which exactly the first `len` hold an element: growing (`init`, `resize`, `push`, `copy`)
+  builds the new ones as `[n]T` does, shrinking (`resize`, `copy`) and `fini` free them with
+  `__pln_free_T` (or `free`), and `pop` returns the last one without freeing it; `push` and
+  `copy` copy into the element (`__pln_copy_T` or memcpy), and `copy`'s source is a run of slots
+  (`[]T src`). `[+]$T` (`elem-kind: "embed-struct"`, shape key `evarr_T`, functions
+  `__pln_*_evarr_T`) keeps the elements in `data` like a primitive's, `T` taking its
+  `total-size` bytes and owning nothing; `pop` returns a newly allocated copy. A struct
+  element's struct entry precedes its varr entry:
   - shape-kind\* - "varr"
-  - shape-key\* - Shape key string (e.g. "varr\_int32")
+  - shape-key\* - Shape key string (e.g. "varr\_int32", "varr\_Point", "evarr\_Point")
+  - elem-kind\* - "prim", "struct" or "embed-struct"
   - leaf-type\* - Element type name
-  - leaf-size\* - Element size in bytes
+  - leaf-size\* - Bytes per element of `data` (8 for a struct's slots)
 
   **Struct entry** (structs with owned struct-pointer fields and/or array fields):
   - shape-kind\* - "struct"
@@ -141,7 +151,8 @@ among such blocks of the enclosing function or of the top level (`util..a.v..b1.
     (no `mutable`: owned or by value), `R` (`mutable: false`) or `W` (`mutable: true`), then the
     base type
   - func: `F<parameter count>_`, each parameter type, then the return type (a `void` prim when none)
-  - varr: `V`, then the element type (`@![+]int32` is `WVint32`)
+  - varr: `V`, then the element type (`@![+]int32` is `WVint32`, `[+]Point` is `PVP5Point`,
+    `[+]$Point` is `PV5Point`)
 
 The return type is not part of the symbol, since functions differing only by it cannot coexist.
 Two parameter types that differ in any key give different symbols. `func show(int32)` in
@@ -341,11 +352,15 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Scope-exit free: C call `free(<name>)` (no custom allocator; no `alloc-shapes` entry needed).
   - `n` (row count) is not stored; only `m` (inner dimension) needs to be retained for row indexing.
 
-  **`[+]T` / `[+n]T` (variable-length array, primitive `T`):** The variable is one word pointing
+  **`[+]T` / `[+n]T` (variable-length array):** The variable is one word pointing
   at a heap header `{int64 len; int64 cap; T* data}` (24 bytes), allocated even when empty so
   that it never needs a NULL test; only `data` waits for a capacity.
-  - `var-type`: `pntr(varr(T))`. `varr` (`{"type-kind":"varr","base-type":T}`) appears only as
-    this pointer's base; its layout is known to SA alone, and codegen sees a pointer.
+  - `var-type`: `pntr(varr(E))`. `varr` (`{"type-kind":"varr","base-type":E}`) appears only as
+    this pointer's base; its layout is known to SA alone, and codegen sees a pointer. `E` is one
+    element as `data` holds it: a primitive `T`; for a struct `T`, `pntr(struct(T))` (an owned
+    slot, as a `[n]T` element) for `[+]T` and `struct(T)` for `[+]$T` (E_EmbedOwningStruct if
+    `T` owns fields). A pointer element (`[+]@T`) is not supported. Below, `T` stands for `E`
+    and `varr_T` for the shape key.
   - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
     with an array literal, whose size is the length. The literal's size is its element count
@@ -354,8 +369,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Scope-exit free: `__pln_free_varr_T(<name>)`. `$[+]T` places the header in the frame:
     `memset` + `__pln_init_varr_T(<name>, len, cap)`, released by `__pln_fini_varr_T(<name>)`.
   - `arr[i]` on such a variable indexes its data: SA replaces the `array` operand with
-    `{"expr-type":"field-access","ptr-expr":<array>,"offset":16,"value-type":pntr(T)}`, and the
-    `arr-index` is then the one for a `pntr(T)`.
+    `{"expr-type":"field-access","ptr-expr":<array>,"offset":16,"value-type":pntr(E)}`, and the
+    `arr-index` is then the one for a `pntr(E)`; for `[+]$T` the `pntr` carries `embedded` and
+    `stride` as a `[n]$T` variable's does.
   - A C call argument (fixed or variadic) and a `[]T`-family Palan parameter (an unsized
     elements pointer: no `mutable`, no `arr-size`) are passed the same `field-access` to `data`.
     Through a read-only borrow it is typed `pntr(T)` with `"mutable": false`, so writing an element
@@ -371,7 +387,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     varr shape as a declaration would. Such a variable is bound with `@v`/`@!v` or another borrow,
     can be rebound by `->`, and is never freed.
   - Built-in functions: once `T` is used, the callee lookup also finds `len(@[+]T) -> int64`,
-    `push(@![+]T, T)`, `resize(@![+]T, int64)` and `pop(@![+]T) -> T`, as ordinary Palan
+    `push(@![+]T, T)`, `resize(@![+]T, int64)` and `pop(@![+]T) -> T` (a struct element is
+    passed and returned as the struct's storage `T`; `pop`'s result is the caller's), as ordinary Palan
     functions alongside C, local and imported ones (overloading, method form and chaining apply
     unchanged). `len` becomes the header's len, `field-access` at offset 0 of the borrowed
     header pointer, typed `int64`; the others are a `palan` call to
@@ -381,7 +398,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     borrowed constant-size array (that `len` is folded).
   - Copying (`[+]T w = v;`, `v -> w`, and an owned parameter, below) takes a `[+]T` or
     `@[+]T` / `@![+]T` (`__pln_copy_varr_T(w, <v's data>, <v's len>)`) or a sized `[n]T` of the
-    same element type (`__pln_copy_varr_T(w, a, n)`); the length becomes the source's. Into a
+    same element type and layout (`[n]T` into `[+]T`, `[n]$T` into `[+]$T`;
+    `__pln_copy_varr_T(w, a, n)`); the length becomes the source's. Into a
     `[n]T` it is E_CopyShapeMismatch. `[..] -> w` is a block declaring the literal as a frame
     array `$[]T __lit_N` and copying it, so every element is read before `w` changes.
   - `->>` into such a variable is the transfer of any owned value: `__pln_free_varr_T(w)`, the
@@ -397,7 +415,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     frees it when the function exits. A call result is passed as it is; anything else that a
     copy into `[+]T` accepts, or an array literal, is copied into a `temp` (`__arg_N`) whose
     `release` is empty.
-  - A struct or array element, and a field, are not supported yet.
+  - An array element (`[+][+]T`) and a field are not supported yet.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
   `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`

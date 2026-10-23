@@ -66,7 +66,7 @@ inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true)
 // The symbol of one of the functions build-mgr generates, and a call to it.
 string allocHelperSymbol(AllocFamily family, const string& leaf, const string& op);
 // len, push, resize and pop of `[+]T` for a primitive T, as call candidates.
-json varrBuiltinDefs(const string& leafName);
+json varrBuiltinDefs(const json& elem);
 json allocHelperCall(AllocFamily family, const string& leaf, const string& op, json args);
 
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
@@ -183,20 +183,21 @@ inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
 	return isCFunc || (paramVT && paramVT->value("type-kind","") == "pntr" && !paramVT->contains("mutable")
 	                   && !paramVT->contains("arr-size") && !isStructStorage(*paramVT) && !isVarrPntr(*paramVT));
 }
+// elem is one element as the data holds it: a primitive, an owned struct's
+// storage (`[+]T`), or the struct itself (`[+]$T`).
 inline json varrPntrType(const json& elem)
 {
 	return {{"type-kind","pntr"},{"base-type",{{"type-kind","varr"},{"base-type",elem}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
-// The header's data pointer: what `v[i]` indexes and a C function or a `[]T`
-// receives. Through a read-only borrow the elements are read-only too.
-inline json varrData(json varr)
+inline bool isVarrEmbedded(const json& vt) { return vt["base-type"]["base-type"].value("type-kind","") == "struct"; }
+// The generated helpers a `[+]T` uses, named after its element's type.
+inline AllocShapeRef varrShape(const json& vt)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
-	json elems = {{"type-kind","pntr"},{"base-type",varr["value-type"]["base-type"]["base-type"]}};
-	if (!isWritableThrough(varr["value-type"])) elems["mutable"] = false;
-	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	const json& elem = vt["base-type"]["base-type"];
+	if (isVarrEmbedded(vt)) return {AllocFamily::EVarr, elem["type-name"].get<string>()};
+	if (elem.value("type-kind","") == "pntr") return {AllocFamily::Varr, elem["base-type"]["type-name"].get<string>()};
+	return {AllocFamily::Varr, elem["type-name"].get<string>()};
+}
 // The header's len, which `len(@v)` reads in place of a call.
 inline json varrLen(json varr)
 {
@@ -510,7 +511,8 @@ inline string typeDisplayName(const json& t) {
 	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
 	auto perm = [](const json& p) { return string(isWritableThrough(p) ? "@!" : "@"); };
 	if (isVarrPntr(t))
-		return (isVarrStorage(t) ? "" : perm(t)) + "[+]" + typeDisplayName(t["base-type"]["base-type"]);
+		return (isVarrStorage(t) ? "" : perm(t)) + "[+]" + (isVarrEmbedded(t) ? "$" : "")
+		     + typeDisplayName(t["base-type"]["base-type"]);
 	if (isStructStorage(t))
 		return typeDisplayName(t["base-type"]);
 	if (isPtrBorrow(t))
@@ -629,18 +631,26 @@ inline bool copyShapeMatch(const json& from, const json& to) {
 inline json astVarrType(const json& saType)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
-	return {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr},
-	        {"base-type",saType["base-type"]["base-type"]}};
+	json t = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr}};
+	const json& elem = saType["base-type"]["base-type"];
+	if (isVarrEmbedded(saType)) t["embedded"] = true;
+	if (elem.value("type-kind","") == "prim") t["base-type"] = elem;
+	else t["base-type"] = {{"type-kind","prim"},{"type-name",varrShape(saType).leaf}};
+	return t;
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // What `[+]T` vt can be copied from: another `[+]T` (owned or borrowed) or a
-// sized array, of exactly its element type.
+// sized array, of exactly its element type and layout.
 inline bool varrCopySourceMatch(const json& from, const json& vt)
 {
 	const json& elem = vt["base-type"]["base-type"];
 	if (isVarrPntr(from))
 		return from["base-type"]["base-type"] == elem;
+	// A contiguous struct array's type has the same shape as a lone struct's
+	// storage, so only its stride tells it from one.
+	if (isVarrEmbedded(vt))
+		return from.contains("stride") && from.contains("arr-size") && from["base-type"] == elem;
 	return isArrLevel(from) && from.contains("arr-size") && !from.value("embedded", false)
 	    && from["base-type"] == elem;
 }

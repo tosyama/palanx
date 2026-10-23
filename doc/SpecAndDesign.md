@@ -235,6 +235,8 @@ For a shape key `K`, the functions are:
 | `[m][n]T` with `T` a struct | `arr_arr_T` | all |
 | `[m][n]P` with `P` a primitive | `arr_arr_P` | all |
 | a struct's owned `[n]P` field | `arr_prim_P` | `alloc`, `free` |
+| `[+]T` (`T` a primitive or a struct) | `varr_T` | all, and `push`/`resize`/`pop`; `copy(h, src, n)` copies a run of elements |
+| `[+]$T` with `T` a struct | `evarr_T` | as `varr_T` |
 
 Like any Palan function, each links by a symbol made from its module and parameter types, so
 palan-sa names the module `__allocators` (`PALAN_ALLOCATORS_MODULE` in `src/common/PlnDefs.h`,

@@ -573,65 +573,125 @@ int main(int argc, char* argv[])
 
 				// Variable-length array headers {len, cap, data}. The header
 				// starts zeroed (calloc or the frame's memset), so data stays
-				// NULL while the capacity is 0.
+				// NULL while the capacity is 0. Only the elements below len are
+				// live: an owned struct element is built when the length grows
+				// over its slot and freed when it shrinks below it.
 				for (auto& shape : varr_shapes) {
 					string leaf = shape["leaf-type"];
-					string hdr = "__pln_varr_" + leaf;
+					string kind = shape["elem-kind"];
+					string key = shape["shape-key"];
+					string hdr = "__pln_" + key;
 					int64_t size = shape["leaf-size"].get<int64_t>();
-					out << "\nexport type " << hdr << " { int64 len; int64 cap; @!" << leaf << " data; };\n"
-					    << "export func __pln_init_varr_" << leaf
+					bool owned = kind == "struct";
+					// `h.data[i]` of a contiguous struct is its address already.
+					string at = kind == "embed-struct" ? "" : "@!";
+					string runType = owned ? "[]" + leaf : "@" + leaf;
+					out << "\nexport type " << hdr << " { int64 len; int64 cap; " << (owned ? "@!@!" : "@!")
+					    << leaf << " data; };\n";
+					// The slots are filled as `[]@!T` and freed and copied as `[]T`,
+					// the views a struct array's own helpers take.
+					if (owned)
+						out << "func __pln_build_" << key << "([]@!" << leaf << " slots, int64 from, int64 to) {\n"
+						    << "    int64 i = from;\n"
+						    << "    while i < to {\n"
+						    << structElemBuild(leaf, "slots[i]", "        ")
+						    << "        i + 1 -> i;\n"
+						    << "    }\n"
+						    << "}\n"
+						    << "func __pln_drop_" << key << "([]" << leaf << " slots, int64 from, int64 to) {\n"
+						    << "    int64 i = from;\n"
+						    << "    while i < to {\n"
+						    << "        " << (hasOwned(leaf) ? "__pln_free_" + leaf + "(slots[i]);" : "free(slots[i]);") << "\n"
+						    << "        i + 1 -> i;\n"
+						    << "    }\n"
+						    << "}\n"
+						    << "func __pln_set_" << key << "([]" << leaf << " slots, int64 i, " << leaf << " x) {\n"
+						    << "    " << structCopy(leaf, "slots[i]", "x") << "\n"
+						    << "}\n"
+						    << "func __pln_copyrun_" << key << "([]" << leaf << " dst, []" << leaf << " src, int64 n) {\n"
+						    << "    int64 i = 0;\n"
+						    << "    while i < n {\n"
+						    << "        __pln_set_" << key << "(dst, i, src[i]);\n"
+						    << "        i + 1 -> i;\n"
+						    << "    }\n"
+						    << "}\n";
+					out << "export func __pln_init_" << key
 					    << "(@!" << hdr << " h, int64 len, int64 cap) {\n"
 					    << "    len -> h.len;\n"
 					    << "    cap -> h.cap;\n"
-					    << "    if cap > 0 { calloc(cap, " << size << ") -> h.data; }\n"
-					    << "}\n"
-					    << "export func __pln_alloc_varr_" << leaf
+					    << "    if cap > 0 { calloc(cap, " << size << ") -> h.data; }\n";
+					if (owned) out << "    __pln_build_" << key << "(h.data, 0, len);\n";
+					out << "}\n"
+					    << "export func __pln_alloc_" << key
 					    << "(int64 len, int64 cap) -> " << hdr << " h {\n"
-					    << "    __pln_init_varr_" << leaf << "(@!h, len, cap);\n"
+					    << "    __pln_init_" << key << "(@!h, len, cap);\n"
 					    << "}\n"
-					    << "export func __pln_fini_varr_" << leaf << "(" << hdr << " h) {\n"
-					    << "    free(h.data);\n"
+					    << "export func __pln_fini_" << key << "(" << hdr << " h) {\n";
+					if (owned) out << "    __pln_drop_" << key << "(h.data, 0, h.len);\n";
+					out << "    free(h.data);\n"
 					    << "}\n"
-					    << "export func __pln_free_varr_" << leaf << "(" << hdr << " h) {\n"
+					    << "export func __pln_free_" << key << "(" << hdr << " h) {\n"
 					    << "    if (h == NULL) { return; }\n"
-					    << "    __pln_fini_varr_" << leaf << "(h);\n"
+					    << "    __pln_fini_" << key << "(h);\n"
 					    << "    free(h);\n"
 					    << "    return;\n"
 					    << "}\n"
 					// Growing doubles the capacity so that adding one element at a
 					// time, by push or by resize, reallocates only now and then.
-					    << "func __pln_reserve_varr_" << leaf << "(@!" << hdr << " h, int64 n) {\n"
+					    << "func __pln_reserve_" << key << "(@!" << hdr << " h, int64 n) {\n"
 					    << "    int64 c = h.cap * 2;\n"
 					    << "    if c < n { n -> c; }\n"
 					    << "    if c < 4 { 4 -> c; }\n"
 					    << "    realloc(h.data, c * " << size << ") -> h.data;\n"
 					    << "    c -> h.cap;\n"
 					    << "}\n"
-					    << "export func __pln_push_varr_" << leaf << "(@!" << hdr << " h, " << leaf << " x) {\n"
-					    << "    if h.len == h.cap { __pln_reserve_varr_" << leaf << "(h, h.len + 1); }\n"
-					    << "    x -> h.data[h.len];\n"
-					    << "    h.len + 1 -> h.len;\n"
+					    << "export func __pln_push_" << key << "(@!" << hdr << " h, " << leaf << " x) {\n"
+					    << "    if h.len == h.cap { __pln_reserve_" << key << "(h, h.len + 1); }\n";
+					if (owned)
+						out << "    __pln_build_" << key << "(h.data, h.len, h.len + 1);\n"
+						    << "    __pln_set_" << key << "(h.data, h.len, x);\n";
+					else if (kind == "embed-struct")
+						out << "    memcpy(h.data[h.len], x, " << size << ");\n";
+					else
+						out << "    x -> h.data[h.len];\n";
+					out << "    h.len + 1 -> h.len;\n"
 					    << "}\n"
+					    << "export func __pln_resize_" << key << "(@!" << hdr << " h, int64 n) {\n"
+					    << "    if n < 0 { abort(); }\n"
+					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n); }\n";
+					if (owned)
+						out << "    if n > h.len { __pln_build_" << key << "(h.data, h.len, n); }\n"
+						    << "    else { __pln_drop_" << key << "(h.data, n, h.len); }\n";
+					else
 					// Shrinking keeps the old elements past the length, so growing
 					// zeroes what it brings back.
-					    << "export func __pln_resize_varr_" << leaf << "(@!" << hdr << " h, int64 n) {\n"
-					    << "    if n < 0 { abort(); }\n"
-					    << "    if n > h.cap { __pln_reserve_varr_" << leaf << "(h, n); }\n"
-					    << "    if n > h.len { memset(@!h.data[h.len], 0, (n - h.len) * " << size << "); }\n"
-					    << "    n -> h.len;\n"
+						out << "    if n > h.len { memset(" << at << "h.data[h.len], 0, (n - h.len) * " << size << "); }\n";
+					out << "    n -> h.len;\n"
 					    << "}\n"
 					// The source is any run of elements, which may be h's own
-					// (`v -> v`, or a borrow of v copied into v).
-					    << "export func __pln_copy_varr_" << leaf << "(@!" << hdr << " h, @" << leaf << " src, int64 n) {\n"
-					    << "    if n > h.cap { __pln_reserve_varr_" << leaf << "(h, n); }\n"
-					    << "    memmove(h.data, src, n * " << size << ");\n"
-					    << "    n -> h.len;\n"
-					    << "}\n"
-					    << "export func __pln_pop_varr_" << leaf << "(@!" << hdr << " h) -> " << leaf << " x {\n"
-					    << "    if h.len == 0 { abort(); }\n"
-					    << "    h.len - 1 -> h.len;\n"
-					    << "    h.data[h.len] -> x;\n"
+					// (`v -> v`, or a borrow of v copied into v); then n is h's
+					// length, so no element is built, freed or moved.
+					    << "export func __pln_copy_" << key << "(@!" << hdr << " h, " << runType << " src, int64 n) {\n"
+					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n); }\n";
+					if (owned)
+						out << "    if n > h.len { __pln_build_" << key << "(h.data, h.len, n); }\n"
+						    << "    else { __pln_drop_" << key << "(h.data, n, h.len); }\n"
+						    << "    __pln_copyrun_" << key << "(h.data, src, n);\n";
+					else
+						out << "    memmove(h.data, src, n * " << size << ");\n";
+					out << "    n -> h.len;\n"
 					    << "}\n";
+					// An owned element leaves its slot for the caller; the caller
+					// takes a struct's storage, which a `@!T` return carries the same way.
+					out << "export func __pln_pop_" << key << "(@!" << hdr << " h) -> "
+					    << (owned ? "@!" + leaf : leaf) << " x {\n"
+					    << "    if h.len == 0 { abort(); }\n"
+					    << "    h.len - 1 -> h.len;\n";
+					if (kind == "embed-struct")
+						out << "    memcpy(x, h.data[h.len], " << size << ");\n";
+					else
+						out << "    h.data[h.len] -> x;\n";
+					out << "}\n";
 				}
 			}
 

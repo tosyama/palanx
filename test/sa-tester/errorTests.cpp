@@ -3429,7 +3429,7 @@ TEST(sa_error, varr)
 		{"error_725_varr_copy_to_sized.pa", ":3:1: error: cannot copy '[+]int32' into '[3]int32': both need the same element type and the same sizes known at compile time."},
 		{"error_726_varr_copy_elem_mismatch.pa", ":2:1: error: cannot copy '[+]int32' into '[+]int64': both need the same element type and the same sizes known at compile time."},
 		{"error_727_varr_transfer_elem_mismatch.pa", ":3:1: error: cannot transfer '[+]int32' into '[+]int64': both need the same element type and the same sizes known at compile time."},
-		{"error_728_varr_struct_elem.pa", ":2:1: error: this statement is not supported in this version."},
+		{"error_728_varr_embed_owning_struct.pa", ":3:1: error: cannot embed 'Q' with '$': it owns fields; use 'Q' without '$'."},
 		{"error_729_varr_lit_over_len.pa", ":1:1: error: array 'v' has size 2 but its array literal has 3 elements."},
 		{"error_730_varr_lit_len_not_const.pa", ":2:1: error: array 'v' given an array literal must have a compile-time constant size."},
 		{"error_731_varr_to_ptr.pa", ":2:1: error: cannot convert '[+]int32' to '@int32'."},
@@ -3450,7 +3450,7 @@ TEST(sa_error, varr)
 		{"error_746_varr_builtin_redefined.pa", ":1:1: error: Function 'push' is already defined."},
 		{"error_747_varr_builtin_redefined_after.pa", ":2:1: error: Function 'push' is already defined."},
 		{"error_748_arr_len_redefined.pa", ":1:1: error: Function 'len' is already defined."},
-		{"error_749_varr_borrow_struct_elem.pa", ":2:1: error: this statement is not supported in this version."},
+		{"error_749_varr_ptr_elem.pa", ":2:1: error: this statement is not supported in this version."},
 		{"error_750_varr_borrow_sized.pa", ":1:1: error: a borrowed variable-length array type is written '@[+]T' or '@![+]T', without a size."},
 		{"error_751_arrow_after_cmp.pa", ":2:5: error: '->' binds tighter than '<'; parenthesize the operation to store its result: '(a < b) -> c'."},
 		{"error_752_arrow_after_logical.pa", ":2:7: error: '->' binds tighter than '&&'; parenthesize the operation to store its result: '(a && b) -> c'."},
@@ -3459,6 +3459,7 @@ TEST(sa_error, varr)
 		{"error_755_varr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or '[+]' type cannot have an initializer."},
 		{"error_756_varr_return_borrow_mismatch.pa", ":2:2: error: cannot copy '@[+]int64' into '[+]int32': both need the same element type and the same sizes known at compile time."},
 		{"error_757_varr_lit_transfer.pa", ":2:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
+		{"error_758_varr_copy_struct_layout.pa", ":3:1: error: cannot copy '[2]$P' into '[+]P': both need the same element type and the same sizes known at compile time."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

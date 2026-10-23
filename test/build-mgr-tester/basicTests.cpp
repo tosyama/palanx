@@ -3521,6 +3521,40 @@ TEST(build_mgr, varr_copy_return_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+// Owned struct elements are built, freed and copied as the length changes,
+// and a popped one is the caller's.
+TEST(build_mgr, varr_struct_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_varr_struct_bin "
+		"../test/testdata/build-mgr/337_varr_struct_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_varr_struct.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_varr_struct_bin");
+	ASSERT_EQ(output,
+		"3 1 4 5\n5 0 9\n1 3 4\n"
+		"4 9\n41\n20 21\n2 7\n"
+		"2 9 1 2\n2 5 101\n3 4 0\n");
+
+	string catResult = execTestCommand("cat " + traceFile);
+	int allocs = 0, frees = 0;
+	size_t pos = 0;
+	while ((pos = catResult.find("@ ", pos)) != string::npos) {
+		size_t eol = catResult.find('\n', pos);
+		string line = catResult.substr(pos, eol - pos);
+		bool fromSharedLib = line.find(".so.") != string::npos;
+		if (!fromSharedLib && (line.find(" + ") != string::npos || line.find(" > ") != string::npos)) allocs++;
+		if (!fromSharedLib && (line.find(" - ") != string::npos || line.find(" < ") != string::npos)) frees++;
+		pos = (eol == string::npos) ? string::npos : eol + 1;
+	}
+	EXPECT_EQ(allocs, 62) << "expected 62 allocs, got " << allocs;
+	EXPECT_EQ(allocs, frees)
+		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
+}
+
 TEST(build_mgr, arrow_precedence) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/334_arrow_precedence.pa");

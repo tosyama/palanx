@@ -101,6 +101,19 @@ inline bool isImplementedTypeExpr(const json& t)
 	return !t.contains("base-type") || isImplementedTypeExpr(t["base-type"]);
 }
 
+// `[+]$T` keeps its elements in place, marked like `[n]$T`.
+inline json varrTypeExpr(json sizeExpr, json base)
+{
+	json t = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",std::move(sizeExpr)}};
+	if (base.value("type-kind", "") == "embed") {
+		t["embedded"] = true;
+		t["base-type"] = std::move(base["base-type"]);
+	} else {
+		t["base-type"] = std::move(base);
+	}
+	return t;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // A variable-length array.
 inline bool isVarrType(const json& t)
 {

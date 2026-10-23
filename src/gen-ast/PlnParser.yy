@@ -1253,9 +1253,9 @@ type_expr: ID
 	| '[' '#' expression ']' type_expr
 	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",move($3)},{"base-type",move($5)}}; }
 	| '[' '+' ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr},{"base-type",move($4)}}; }
+	{ $$ = varrTypeExpr(nullptr, move($4)); }
 	| '[' '+' expression ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",move($3)},{"base-type",move($5)}}; }
+	{ $$ = varrTypeExpr(move($3), move($5)); }
 	;
 
 fptr_params: /* empty */

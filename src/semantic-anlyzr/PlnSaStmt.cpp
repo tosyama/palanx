@@ -1331,10 +1331,10 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 
 	if (isVarrStorage(t)) {
-		string leaf = t["base-type"]["base-type"]["type-name"];
+		AllocShapeRef shape = varrShape(t);
 		json args = isVarrPntr(st) ? json::array({dst, varrData(src), varrLen(src)})
 		                           : json::array({dst, src, lit(st["arr-size"].get<int64_t>())});
-		return copyStmt(AllocFamily::Varr, leaf, move(args));
+		return copyStmt(shape.family, shape.leaf, move(args));
 	}
 	if (isStructStorage(t)) {
 		string name = t["base-type"]["type-name"];

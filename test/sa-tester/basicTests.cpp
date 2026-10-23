@@ -5980,6 +5980,57 @@ TEST(sa, varr_return_param)
 	ASSERT_EQ(funcName(stmts[3]["vars"][0]["init"]["args"][0]["name"]), "mk");
 }
 
+// `[+]P` holds owned element slots and `[+]$P` the elements in place; each has
+// its own generated helpers.
+TEST(sa, varr_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/299_varr_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 11);
+
+	const auto& v = stmts[0]["vars"][0];
+	ASSERT_EQ(v["var-type"]["base-type"]["base-type"]["type-kind"], "pntr");
+	ASSERT_EQ(v["var-type"]["base-type"]["base-type"]["base-type"]["type-name"], "P");
+	ASSERT_EQ(funcName(v["init"]["name"]), "__pln_alloc_varr_P");
+	const auto& e = stmts[1]["vars"][0];
+	ASSERT_EQ(e["var-type"]["base-type"]["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(funcName(e["init"]["name"]), "__pln_alloc_evarr_P");
+	// The literal is stored field by field into the elements init built.
+	ASSERT_EQ(stmts[2]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
+
+	// v[0] is a slot; e[1] is in the data, `stride` bytes apart.
+	const auto& slot = stmts[4]["ptr-expr"];
+	ASSERT_EQ(slot["elem-size"]["value"], "8");
+	ASSERT_EQ(slot["addr-only"], false);
+	const auto& inPlace = stmts[5]["vars"][0]["init"]["ptr-expr"];
+	ASSERT_EQ(inPlace["addr-only"], true);
+	ASSERT_EQ(inPlace["array"]["value-type"]["embedded"], true);
+	ASSERT_EQ(inPlace["array"]["value-type"]["stride"], 8);
+
+	ASSERT_EQ(funcName(stmts[6]["body"]["name"]), "__pln_push_varr_P");
+	ASSERT_EQ(stmts[6]["body"]["args"][1]["expr-type"], "temp");
+	const auto& popped = stmts[7]["vars"][0]["init"];
+	ASSERT_EQ(funcName(popped["name"]), "__pln_pop_varr_P");
+	ASSERT_EQ(popped["category"], "expiring");
+	ASSERT_EQ(funcName(stmts[8]["body"]["name"]), "__pln_push_evarr_P");
+	ASSERT_EQ(funcName(stmts[9]["body"]["name"]), "__pln_resize_varr_P");
+
+	// A struct element's own shape comes before its varr shape.
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes.size(), 5);
+	ASSERT_EQ(shapes[0]["shape-name"], "P");
+	ASSERT_EQ(shapes[1]["shape-key"], "varr_P");
+	ASSERT_EQ(shapes[1]["elem-kind"], "struct");
+	ASSERT_EQ(shapes[1]["leaf-size"], 8);
+	ASSERT_EQ(shapes[2]["shape-key"], "evarr_P");
+	ASSERT_EQ(shapes[2]["elem-kind"], "embed-struct");
+	ASSERT_EQ(shapes[3]["shape-name"], "Q");
+	ASSERT_EQ(shapes[4]["shape-key"], "varr_Q");
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();
