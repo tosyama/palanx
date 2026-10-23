@@ -659,7 +659,8 @@ json PlnSemanticAnalyzer::varrData(json varr)
 		elems["embedded"] = true;
 		elems["stride"] = structDefs_.at(vt["base-type"]["base-type"]["type-name"].get<string>()).totalSize;
 	}
-	if (!isWritableThrough(vt)) elems["mutable"] = false;
+	if (!isWritableThrough(vt) || (varr.value("expr-type","") == "arr-index" && !isWritableElem(varr)))
+		elems["mutable"] = false;
 	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE

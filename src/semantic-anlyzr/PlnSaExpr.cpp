@@ -40,9 +40,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
 		}
-		// A pointer element carries its own permission; a struct stored in the
-		// array is writable only as far as the array it is reached through.
-		if (forWrite && isStructStorage(vt) && !isWritableThrough(sa_idx["array"]["value-type"])) {
+		if (forWrite && !isWritableElem(sa_idx)) {
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
 			exit(1);
 		}

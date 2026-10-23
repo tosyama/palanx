@@ -231,6 +231,11 @@ inline VarStorage takeVarStorage(json& varType)
 // A struct's or a `[+]T`'s own block: what a variable owns and frees, and what
 // a copy into it fills.
 inline bool isOwnedBlock(const json& vt) { return isStructStorage(vt) || isVarrStorage(vt); }
+// An owned element (a struct's or a `[+]T`'s storage) has no permission of its
+// own: it is writable only as far as the array it is reached through.
+inline bool isWritableElem(const json& saIdx) {
+	return !isOwnedBlock(saIdx["value-type"]) || isWritableThrough(saIdx["array"]["value-type"]);
+}
 // A block returned by a Palan call, owned by whoever receives it.
 inline bool isExpiringOwned(const json& v)
 {

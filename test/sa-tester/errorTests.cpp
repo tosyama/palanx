@@ -3473,6 +3473,9 @@ TEST(sa_error, varr)
 		{"error_769_borrow_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 		{"error_770_arr_varr_elem_sized.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 		{"error_771_arr_varr_elem_sized_param.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
+		{"error_772_nested_varr_readonly_write.pa", ":2:2: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
+		{"error_773_arr_varr_readonly_write.pa", ":2:2: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
+		{"error_774_nested3_varr_readonly_write.pa", ":2:2: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
