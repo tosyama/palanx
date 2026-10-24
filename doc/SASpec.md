@@ -182,6 +182,16 @@ a compile-time constant. `[]@![]T` becomes `pntr` over the element type a `[n]@!
 has (`pntr(T)` with `"mutable": true`).
 These types are valid only in function signatures; using `[]T` in a `var-decl` is a compile error.
 
+A sized `[n]T` parameter or return type (of any element and nesting a variable may have) is the
+type a variable of it has (`pntr` levels with `arr-size` and no `mutable`; `[3]int32` is
+`A3_Pint32` in a symbol); every size must be a compile-time constant (E_SigArrSizeNotConst). It
+is owned as a `[+]T` parameter or return value is (see `[+]T` below): a parameter takes a call
+result as it is and otherwise a copy, of what a copy into it accepts (E_IncompatibleTypes);
+`return` copies a value the function doesn't own, and any value whose shape a copy would reject,
+an owning variable's included, is E_CopyShapeMismatch; `return [..]` declares `__ret_N` from the
+literal, as for a struct. Only a parameter may borrow an array, so `-> @[n]T` is
+E_UnsupportedParamType.
+
 Statement model
 ---------------
 Same structure as AST statements (see ASTSpec.md) with the following differences:
@@ -434,11 +444,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     takes the header over, and a call result copied into a variable, given to a borrow, or
     discarded is held in a temp and freed with `__pln_free_varr_T`. A borrowed struct returned
     from a function returning a struct is copied the same way.
-  - `pop` of a row returns an owned `[n]U` (a returned `[n]T` is otherwise not supported): a
-    heap `[n]U r = v.pop();` takes the block over (freed at scope exit as `[n]U` is), and a
-    result copied into an array, given to a borrow (`f(@v.pop())`), or discarded is held in a
-    temp and freed as the variable would be (`free`, or `__pln_free_arr_E` for owned
-    elements). `->>` from a row element leaves its slot NULL.
+  - `pop` of a row returns an owned `[n]U`: a heap `[n]U r = v.pop();` takes the block over
+    (freed at scope exit as `[n]U` is), and a result copied into an array, given to a borrow
+    (`f(@v.pop())`), or discarded is held in a temp and freed as the variable would be (`free`,
+    or `__pln_free_arr_E` for owned elements). `->>` from a row element leaves its slot NULL.
   - An owned parameter `[+]T x` (symbol `PV` + element) takes what the caller passes over and
     frees it when the function exits. A call result is passed as it is; anything else that a
     copy into `[+]T` accepts, or an array literal, is copied into a `temp` (`__arg_N`) whose

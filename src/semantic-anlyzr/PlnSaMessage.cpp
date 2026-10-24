@@ -449,6 +449,9 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_UnsizedVarrElemArr:
 			return "an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'.";
 
+		case E_SigArrSizeNotConst:
+			return "every size in an array parameter or return type must be a compile-time constant.";
+
 		case E_ArrLitEmptySize:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "array '" + arg1 + "' cannot take its size from an empty array literal '[]'.";
@@ -546,7 +549,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_NamedRetInitOnStruct:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "named return '" + arg1 + "' of a struct or '[+]' type cannot have an initializer.";
+			return "named return '" + arg1 + "' of a struct or array type cannot have an initializer.";
 
 		case E_TransferToNonOwnedField:
 			BOOST_ASSERT(arg1 != "\x01");

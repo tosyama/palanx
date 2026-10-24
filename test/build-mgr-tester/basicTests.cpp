@@ -3722,3 +3722,11 @@ TEST(build_mgr, varr_nested_rows_mtrace) {
 TEST(build_mgr, embed_rows_mtrace) {
 	expectMtraceRun("347_embed_rows_mtrace", "5 6 7\n9 2\n4 1\n8 1\n30\n11\n6 6 2\n", 178);
 }
+
+// An owned `[n]T` parameter frees its copy, a returned one is the caller's,
+// and a borrow, a field, a row or a `$` array is returned as a copy.
+TEST(build_mgr, arr_return_param_mtrace) {
+	expectMtraceRun("348_arr_return_param_mtrace",
+		"1 2 3\n101 2 3\n110 11 12\n1 2 3\n8 8 8\n4 5 6\n4 5 6\n6 6 6\n1 0\n7 8 9\n9\n"
+		"104 5 6\n101 2 3\n3\n20 21 22\n", 35);
+}

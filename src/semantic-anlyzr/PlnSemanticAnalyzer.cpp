@@ -322,8 +322,9 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 
 // Structural-only counterpart to unrepresentableTypeName for native Palan
 // signatures: names were already checked by preregisterFunc, so only a
-// type-kind that can never build (currently just "arr") is reported. A
-// function type's own parameters were checked by requireFuncSigTypes.
+// type-kind that can never build is reported: "arr", left only under a
+// returned array borrow by sigType. A function type's own parameters were
+// checked by requireFuncSigTypes.
 static string unsupportedNativeSigTypeKind(const json& vt)
 {
 	string k = vt.value("type-kind", "");

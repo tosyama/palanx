@@ -609,9 +609,9 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 		const json& param, size_t argIdx, bool isCFunc, const string& funcName)
 {
 	const json& paramVT = param["var-type"];
-	// What an owned `[+]T` parameter takes is copied into it.
-	if (!isCFunc && isVarrStorage(paramVT)) {
-		if (varrCopySourceMatch(saArg["value-type"], paramVT)) return nullopt;
+	// What an owned parameter takes is copied into it.
+	if (!isCFunc && isOwnedParam(paramVT)) {
+		if (copySourceMatch(saArg["value-type"], paramVT)) return nullopt;
 		return SaDiag{E_IncompatibleTypes, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 	if (paramVT.contains("arr-size")) {
@@ -676,8 +676,8 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		json argAst = arg;
 		json litBody, litRelease;
 		bool isLit = isAggregateLitArg(arg);
-		if (!isCFunc && paramVT && isVarrStorage(*paramVT)) {
-			saArgs.push_back(ownedVarrArg(locNode, arg, ca, *param, argIdx, funcName));
+		if (!isCFunc && paramVT && isOwnedParam(*paramVT)) {
+			saArgs.push_back(ownedBlockArg(locNode, arg, ca, *param, argIdx, funcName));
 			continue;
 		}
 		json saArg = isLit ? sa_lit_arg(arg, isCFunc && !byValStruct ? nullptr : paramVT,
@@ -715,10 +715,10 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 	return saArgs;
 }
 
-// An owned `[+]T` parameter takes the argument over: a returned header as it
-// is, anything else as a copy the callee frees.
-json PlnSemanticAnalyzer::ownedVarrArg(const json& locNode, const json& arg, CallArg& ca,
-                                        const json& param, size_t argIdx, const string& funcName)
+// An owned parameter takes the argument over: a returned block as it is,
+// anything else as a copy the callee frees.
+json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, CallArg& ca,
+                                         const json& param, size_t argIdx, const string& funcName)
 {
 	const json& paramVT = param["var-type"];
 	bool isLit = isAggregateLitArg(arg);
@@ -732,7 +732,10 @@ json PlnSemanticAnalyzer::ownedVarrArg(const json& locNode, const json& arg, Cal
 	// LCOV_EXCL_EXCEPTION_BR_START
 	string name = "__arg_" + to_string(tempVarCounter_++);
 	json var = {{"name",name},{"var-type",astTypeOf(paramVT)}};
-	if (isLit) var["init"] = arg;
+	if (isLit) {
+		var["init"] = arg;
+		var["lit-name"] = param.value("name", "");
+	}
 	json decl = {{"stmt-type","var-decl"},{"loc",arg.value("loc", json::array())},{"vars",json::array({var})}};
 	enterScope();
 	json body = sa_resolved_var_decl(decl);

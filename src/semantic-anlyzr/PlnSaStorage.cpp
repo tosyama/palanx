@@ -356,7 +356,15 @@ json PlnSemanticAnalyzer::sigType(const json& locNode, const json& type, bool is
 {
 	json t = unsizedArrToPntr(locNode, type);
 	if (isParam) t = normalizeArrBorrowType(locNode, t);
-	if (isVarrAstType(t)) t = varrStorageType(locNode, t);
+	if (isVarrAstType(t)) {
+		t = varrStorageType(locNode, t);
+	} else if (t.value("type-kind","") == "arr") {
+		t = takeOverType(locNode, t);
+		if (t.is_null()) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_SigArrSizeNotConst) << endl;
+			exit(1);
+		}
+	}
 	return normalizeSigType(t);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -777,8 +785,7 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	// A lone struct may be copied from a '@T' as well as from another struct's
 	// storage; a `[+]T` takes any run of its elements and their count.
 	bool match = isStructStorage(t) ? isStructPntr(st) && st["base-type"] == t["base-type"]
-	           : isVarrStorage(t) ? varrCopySourceMatch(st, t)
-	           : copyShapeMatch(st, t);
+	           : copySourceMatch(st, t);
 	if (!match) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
 			typeDisplayName(t), typeDisplayName(st)) << endl;

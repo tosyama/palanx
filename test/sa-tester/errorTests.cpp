@@ -1406,27 +1406,6 @@ TEST(sa_error, incomplete_struct_native_embed_arr)
 	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
 
-TEST(sa_error, sized_arr_param)
-{
-	// `func f([3]int64 a) -> int64 { ... }` -- a sized-array parameter. []T /
-	// []$[m]T (unsized) normalize to pntr via unsizedArrToPntr, but a sized
-	// [n]T parameter keeps type-kind "arr", which PlnTypeRegistry::fromJson
-	// cannot build. Previously this reached sa_expr_call's parameter-side
-	// fromJson call, which was silently swallowed by a
-	// `catch (const std::runtime_error&) {}` -- the argument itself would
-	// still abort unguarded downstream. Registration now
-	// validates the normalized signature and diagnoses it up front instead.
-	// Covers: PlnSemanticAnalyzer::validateNativeSig (top-level registration)
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_133_sized_arr_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("function 'f' has a parameter or return type this version cannot represent: 'array'"),
-	          string::npos);
-}
-
 TEST(sa_error, c_unsupported_user_param)
 {
 	// `void take_handle(mystery_t h);` -- `mystery_t` is an identifier c2ast
@@ -2441,7 +2420,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_334_unknown_ptr_field_after_stmt.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_335_unknown_param_after_stmt.pa", ":2:1: error: unknown type 'Foo'."},
 		{"error_336_named_ret_init_narrowing.pa", ":1:30: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
-		{"error_337_named_ret_init_struct.pa", ":2:19: error: named return 'p' of a struct or '[+]' type cannot have an initializer."},
+		{"error_337_named_ret_init_struct.pa", ":2:19: error: named return 'p' of a struct or array type cannot have an initializer."},
 		{"error_338_tapple_assign_narrowing.pa", ":3:13: error: Implicit conversion from 'int64' to 'int32' is not allowed"},
 		{"error_339_tapple_assign_count.pa", ":3:1: error: Variable count does not match return count of 'f'."},
 		{"error_340_tapple_assign_single_ret.pa", ":3:1: error: Function 'g' does not have multiple return values."},
@@ -3448,7 +3427,7 @@ TEST(sa_error, varr)
 		{"error_752_arrow_after_logical.pa", ":2:7: error: '->' binds tighter than '&&'; parenthesize the operation to store its result: '(a && b) -> c'."},
 		{"error_753_varr_transfer_from_frame.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
 		{"error_754_varr_param_elem_mismatch.pa", ":3:1: error: cannot convert '[+]int64' to '[+]int32'."},
-		{"error_755_varr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or '[+]' type cannot have an initializer."},
+		{"error_755_varr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or array type cannot have an initializer."},
 		{"error_756_varr_return_borrow_mismatch.pa", ":2:2: error: cannot copy '@[+]int64' into '[+]int32': both need the same element type and the same sizes known at compile time."},
 		{"error_757_varr_lit_transfer.pa", ":2:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
 		{"error_758_varr_copy_struct_layout.pa", ":3:1: error: cannot copy '[2]$P' into '[+]P': both need the same element type and the same sizes known at compile time."},
@@ -3484,6 +3463,16 @@ TEST(sa_error, varr)
 		{"error_791_unsized_rows_of_varr.pa", ":1:1: error: an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'."},
 		{"error_792_copy_ptr_rows.pa", ":2:2: error: copying '@![2][3]@int32' is not supported in this version."},
 		{"error_793_varr_borrow_row_size.pa", ":3:1: error: array shape '@![+][4]int32' does not match '[+][3]int32': its elements must have the same size and layout, and be owned by both or by neither."},
+		{"error_794_arr_param_size_mismatch.pa", ":3:1: error: cannot convert '[4]int32' to '[3]int32'."},
+		{"error_795_arr_param_elem_mismatch.pa", ":3:1: error: cannot convert '[3]int16' to '[3]int32'."},
+		{"error_796_arr_param_from_varr.pa", ":3:1: error: cannot convert '[+]int32' to '[3]int32'."},
+		{"error_797_arr_return_size_mismatch.pa", ":3:2: error: cannot copy '[3]int32' into '[4]int32': both need the same element type and the same sizes known at compile time."},
+		{"error_798_arr_return_call_size_mismatch.pa", ":3:2: error: cannot copy '[3]int32' into '[4]int32': both need the same element type and the same sizes known at compile time."},
+		{"error_799_arr_return_borrow_size_mismatch.pa", ":2:2: error: cannot copy '@[4]int32' into '[3]int32': both need the same element type and the same sizes known at compile time."},
+		{"error_800_arr_sig_size_not_const.pa", ":1:1: error: every size in an array parameter or return type must be a compile-time constant."},
+		{"error_801_arr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or array type cannot have an initializer."},
+		{"error_802_arr_return_lit_count.pa", ":2:2: error: array '[3]int32' has size 3 but its array literal has 2 elements."},
+		{"error_803_arr_param_lit_count.pa", ":2:3: error: array 'x' has size 3 but its array literal has 2 elements."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -370,8 +370,8 @@ class PlnSemanticAnalyzer {
 	vector<CallArg> analyzeCallArgs(const json& args);
 	optional<SaDiag> callArgMismatch(const json& argAst, const json& saArg, const json& param,
 	                                 size_t argIdx, bool isCFunc, const string& funcName);
-	json ownedVarrArg(const json& locNode, const json& arg, CallArg& ca, const json& param,
-	                  size_t argIdx, const string& funcName);
+	json ownedBlockArg(const json& locNode, const json& arg, CallArg& ca, const json& param,
+	                   size_t argIdx, const string& funcName);
 	json bindCallArgs(const json& locNode, vector<CallArg>& args, const json& funcParams,
 	                  bool isCFunc, const string& funcName);
 	[[noreturn]] void reportDiag(const json& locNode, const SaDiag& diag) const;
@@ -589,7 +589,7 @@ class PlnSemanticAnalyzer {
 	json transferStmts(const json& stmt, json targetRelease, json store, const json& value);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
-	json bindReturnStructLit(json& stmt);
+	json bindReturnLit(json& stmt);
 	json copyReturnBlock(const json& stmt, json& ret);
 	const json& findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount);
 	json sa_tapple_decl(const json& stmt);       // returns array of statements

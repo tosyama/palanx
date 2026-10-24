@@ -6261,6 +6261,47 @@ TEST(sa, varr_row_len_args)
 	ASSERT_EQ(z["args"][2]["value"], "4");
 }
 
+// An owned `[n]T` parameter takes a copy, or a call's result as it is; a
+// returned borrow is copied, and the caller takes the result over.
+TEST(sa, arr_return_param)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/309_arr_return_param.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& funcs = jout["functions"];
+	ASSERT_EQ(funcs.size(), 6);
+	const string m = "_309_arr_return_param..";
+
+	// The named return is allocated at entry and not freed.
+	ASSERT_EQ(funcs[0]["body"].size(), 2);
+	ASSERT_EQ(funcName(funcs[0]["body"][0]["vars"][0]["init"]["name"]), "malloc");
+	// A borrow is returned as a copy.
+	const auto& dup = funcs[1]["body"];
+	ASSERT_EQ(dup.size(), 3);
+	ASSERT_EQ(funcName(dup[1]["body"]["name"]), "memcpy");
+	ASSERT_EQ(dup[2]["values"][0]["name"], dup[0]["vars"][0]["name"]);
+	// The owned parameter is returned as it is, or freed by the callee.
+	ASSERT_EQ(funcs[2]["name"], m + "own.A3_Pint32");
+	ASSERT_EQ(funcs[2]["body"].size(), 1);
+	ASSERT_EQ(funcs[2]["body"][0]["values"][0]["name"], "x");
+	ASSERT_EQ(funcs[3]["name"], m + "f.A3_Pint32");
+	ASSERT_EQ(funcName(funcs[3]["body"][0]["body"]["name"]), "free");
+	ASSERT_EQ(funcs[4]["name"], m + "f.A3_Rint32");
+	ASSERT_EQ(funcs[4]["body"].size(), 0);
+	ASSERT_EQ(funcs[5]["name"], m + "grid.ES12_A2_PA3_Pint32.A2_PPVint32");
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 5);
+	ASSERT_EQ(funcName(stmts[0]["vars"][0]["init"]["name"]), "mk");
+	ASSERT_EQ(funcName(stmts[1]["body"][1]["body"]["name"]), "memcpy");
+	ASSERT_EQ(funcName(stmts[1]["body"][2]["body"]["name"]), "free");
+	const auto& copied = stmts[2]["vars"][0]["init"]["args"][0];
+	ASSERT_EQ(copied["expr-type"], "temp");
+	ASSERT_EQ(copied["release"].size(), 0);
+	ASSERT_EQ(funcName(copied["body"][1]["body"]["name"]), "memcpy");
+	ASSERT_EQ(funcName(stmts[3]["vars"][0]["init"]["args"][0]["name"]), "mk");
+}
+
 TEST(sa, chain_method_call)
 {
 	cleanTestEnv();

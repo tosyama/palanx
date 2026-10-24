@@ -166,6 +166,7 @@ enum PlnSaMessageCode {
 	E_VarrElemSized,
 	E_UnsizedVarrElemArr,
 	E_ArrLitEmptySize,	// arg1: variable name
+	E_SigArrSizeNotConst,
 };
 
 class PlnSaMessage
