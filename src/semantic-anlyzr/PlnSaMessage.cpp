@@ -422,7 +422,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "every size in a borrowed array type ('@[n]T'/'@![n]T') must be a compile-time constant.";
 
 		case E_ArrBorrowUnsupportedElem:
-			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements, and neither a struct nor a pointer inside a '$[m]' row, in this version.";
+			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements in this version.";
 
 		case E_ArrBorrowNeedsAddrOf:
 			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' "
@@ -446,9 +446,6 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_VarrElemSized:
 			return "a variable-length array element is written '[+]T', without a size: it starts empty.";
 
-		case E_VarrIn2DArr:
-			return "a two-dimensional array of variable-length arrays ('[m][n][+]T') is not supported in this version.";
-
 		case E_UnsizedVarrElemArr:
 			return "an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'.";
 
@@ -466,9 +463,6 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ArrLenNeedsAddrOf:
 			return "an array given to 'len' must be written as '@name'.";
-
-		case E_Unsupported2DStructArr:
-			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
 
 		case E_StructLitFieldCount:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -604,7 +598,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "the row size in '[][m]T' or '[+][m]T' must be a compile-time constant.";
 
 		case E_UnsizedArrRowUnsupported:
-			return "'[][m]T' supports only '[m]T' rows of a primitive or struct element and '[m]$T' rows of a struct, in this version.";
+			return "'[][m]T' does not support rows of '@T'/'@!T' pointers in this version.";
 
 		case E_ArrElemShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");

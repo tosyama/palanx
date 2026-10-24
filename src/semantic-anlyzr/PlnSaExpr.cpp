@@ -1266,26 +1266,16 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 			return sa_expr;
 		}
 
-		// [n]$[m]T row access: mat[i] -> the row, laid out in place.
-		// Without a stride the row size is only known at run time, from __name_d1.
-		json elem_size_node;
-		if (array_type.contains("stride")) {
-			elem_size_node = {
-				{"expr-type","lit-uint"},{"value",to_string(array_type["stride"].get<int64_t>())},{"value-type",uint64_type}
-			};
-		} else {
-			int elem_sz = elemSizeBytes(elem_type["base-type"].value("type-name",""));
-			string arr_name = sa_array["name"].get<string>();
-			json d1_id = {{"expr-type","id"},{"name","__"+arr_name+"_d1"},
-			              {"var-type",uint64_type},{"value-type",uint64_type}};
-			json sz_lit = {
-				{"expr-type","lit-uint"},{"value",to_string(elem_sz)},{"value-type",uint64_type}
-			};
-			elem_size_node = {
-				{"expr-type","mul"},{"value-type",uint64_type},
-				{"left",d1_id},{"right",sz_lit}
-			};
-		}
+		// [n]$[m]T row access: mat[i] -> the row, laid out in place. A row
+		// whose length is known only at run time is a variable's, which keeps
+		// level k's length in __name_d<k>.
+		size_t level = 1;
+		const json* root = &sa_array;
+		for (; root->value("expr-type","") == "arr-index"; level++) root = &(*root)["array"];
+		json elem_size_node = inPlaceSizeExpr(elem_type, level, [&](size_t k) {
+			return json{{"expr-type","id"},{"name","__" + (*root)["name"].get<string>() + "_d" + to_string(k)},
+			            {"var-type",uint64_type},{"value-type",uint64_type}};
+		});
 		sa_expr["array"]      = sa_array;
 		sa_expr["index"]      = sa_index;
 		sa_expr["elem-size"]  = elem_size_node;

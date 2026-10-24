@@ -15,8 +15,10 @@ of range, and a string type.
 
 - Representation: the variable is one word pointing to a heap header `{len, cap, data}`; growing
   or shrinking reallocates only `data`, so the variable and any borrow of it stay valid.
-- Elements: primitives, structs (`[+]T` owned, `[+]$T` contiguous), and nested `[+][+]T`. Also
-  usable as borrows (`@[+]T`/`@![+]T`), parameters, return values and struct fields.
+- Elements: primitives, structs (`[+]T` owned, `[+]$T` contiguous), and nested `[+][+]T`. Fixed
+  levels, `[+]` levels and `$` combine in any order and depth (`[+][3][4]T`, `[2][3][+]T`,
+  `[+]$[3]$[4]T`); only `$` on an element that owns storage (`[n]$[+]T`, `[+]$O`) is rejected
+  for now. Also usable as borrows (`@[+]T`/`@![+]T`), parameters, return values and struct fields.
 - Operations `len`, `push`, `resize` and `pop` are built-in functions, resolved through function
   overloading, which this iteration adds for Palan functions in general.
 - A method-form call after `->` (`x -> v.push()`) is added as a general feature.
@@ -231,25 +233,27 @@ For a shape key `K`, the functions are:
 | Shape | `K` | Functions |
 |-------|-----|-----------|
 | struct `T` (one that owns nothing only as a part of another shape) | `T` | all; `init`/`fini` only when it owns fields |
-| `[n]T` with `T` a struct, and `[m][n]T`/`[m][n]$T` (the element a row) | `arr_E` | all; a row's also take its length after `n` |
+| `[n]T` whose element owns storage (a struct, a `[+]U`, a row) | `arr_E` | all |
 | a struct's owned `[n]P` field | `arr_prim_P` | `alloc`, `free` |
 | `[+]T` (`T` a primitive, a struct, a `[+]U` or a row `[n]U`) | `varr_E` | all, and `push`/`resize`/`pop`; `copy(h, src, n)` copies a run of elements |
-| `[+]$T` with `T` a struct or a row `[n]U` | `evarr_E` | as `varr_E` |
+| `[+]$T` with `T` a struct or rows `[n]U`, `[n]$[m]U`, … | `evarr_E` | as `varr_E` |
 
 `E` is the element as the array's storage holds it, written as a parameter type is in a symbol
 (SASpec.md's Symbol names): `[n]Point` is `arr_P5Point` (an owned slot), `[+]int32` is
-`varr_int32`, `[+]$Point` is `evarr_5Point`, `[+][4]int32` is `varr_A4_Pint32`. A key thus names
-its element type exactly, whatever a struct's name spells. The build manager generates the arrays
+`varr_int32`, `[+]$Point` is `evarr_5Point`, `[+][4]int32` is `varr_Pint32`. A key thus names
+its element type exactly but for its lengths, whatever a struct's name spells. The build manager generates the arrays
 of any element from one description of the element (`elem` in the shape, `ElemOps` in the build
 manager): an owned element is built when its slot comes into use and dropped when it leaves, by
 helpers `__pln_build/drop/set/copyrun_E` shared by `arr_E` and `varr_E`; any other element is
 plain bytes, zeroed and copied in bulk. A row element is described by its own element: a row in a
 block of its own is an owned element built and dropped through its elements' helpers, and a row
 laid out in place (`[+]$[n]U`) is `n` slots of its element, so it is owned exactly when that
-element is. A row in its own block may have a length known only at run time (`[m][k]int32`), so
-its key leaves the length out (`[m][n]int32` is `arr_Pint32`) and its helpers take it as an
-argument: a fixed array passes its own, `varr_A4_Pint32` the type's 4, and both share
-`__pln_build_Pint32` and the rest.
+element is; rows laid out in place in turn are one run of slots (`[2]$[3]S` is `arr_P1S` of 6).
+A length may be known only at run time (`[m][k]int32`), so keys leave every length out and every
+`arr_E`/`varr_E` function and helper takes, after its own arguments, one length per array level
+below it, outermost first, through rows and `[+]U` elements alike: `[m][3]int32` and `[+][3]int32`
+pass 3, `[+][4]int32` passes 4, and all share `__pln_build_Pint32` and the rest. palan-sa appends
+a type's lengths to its `push`/`resize`/`pop` calls itself.
 
 Like any Palan function, each links by a symbol made from its module and parameter types, so
 palan-sa names the module `__allocators` (`PALAN_ALLOCATORS_MODULE` in `src/common/PlnDefs.h`,

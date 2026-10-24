@@ -3677,7 +3677,7 @@ TEST(build_mgr, varr_row_owned_mtrace) {
 		"MALLOC_TRACE=" + traceFile + " "
 		"/tmp/palan_varr_row_owned_mtrace_bin");
 	ASSERT_EQ(output, "5 7 3 7\n4 5 1\n2 1 0\n6 1 1\n");
-	expectBalancedMtrace(traceFile, 83);
+	expectBalancedMtrace(traceFile, 82);
 }
 
 // A fixed array of rows of a run-time length and `[+][n]T` share the row
@@ -3695,4 +3695,30 @@ TEST(build_mgr, shared_row_mtrace) {
 		"/tmp/palan_shared_row_mtrace_bin");
 	ASSERT_EQ(output, "10 6 6\n");
 	expectBalancedMtrace(traceFile, 27);
+}
+
+static void expectMtraceRun(const string& name, const string& expected, int expectedAllocs)
+{
+	cleanTestEnv();
+	string bin = "/tmp/palan_" + name.substr(4) + "_bin";
+	ASSERT_EQ(execTestCommand("bin/palan -o " + bin + " ../test/testdata/build-mgr/" + name + ".pa"), "");
+	string traceFile = "/tmp/palan_" + name.substr(4) + ".log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " " + bin);
+	ASSERT_EQ(output, expected);
+	expectBalancedMtrace(traceFile, expectedAllocs);
+}
+
+TEST(build_mgr, nested_fixed_mtrace) {
+	expectMtraceRun("345_nested_fixed_mtrace", "7 7 8 8\n5 6 1\n7\n7 9 3\n", 63);
+}
+
+// `[+][3]int32` and `[+][4]int32` share their functions, which take the length.
+TEST(build_mgr, varr_nested_rows_mtrace) {
+	expectMtraceRun("346_varr_nested_rows_mtrace", "0 9 1 3 0\n4 6 6\n6 5 7\n8\n", 98);
+}
+
+TEST(build_mgr, embed_rows_mtrace) {
+	expectMtraceRun("347_embed_rows_mtrace", "5 6 7\n9 2\n4 1\n8 1\n30\n11\n6 6 2\n", 178);
 }

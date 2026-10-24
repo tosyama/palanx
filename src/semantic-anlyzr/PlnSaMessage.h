@@ -103,7 +103,6 @@ enum PlnSaMessageCode {
 	E_ArrBorrowNeedsAddrOf,
 	E_ArrBorrowShapeMismatch,	// arg1: expected shape, arg2: actual shape
 	E_StructBorrowNeedsAddrOf,
-	E_Unsupported2DStructArr,
 	E_StructLitFieldCount,	// arg1: struct name, arg2: field count, arg3: value count
 	E_StructLitDupField,	// arg1: field name
 	E_StructLitMissingField,	// arg1: struct name, arg2: field name
@@ -165,7 +164,6 @@ enum PlnSaMessageCode {
 	E_VarrBorrowSized,
 	E_ArrowBindsTighter,	// arg1: operator
 	E_VarrElemSized,
-	E_VarrIn2DArr,
 	E_UnsizedVarrElemArr,
 	E_ArrLitEmptySize,	// arg1: variable name
 };

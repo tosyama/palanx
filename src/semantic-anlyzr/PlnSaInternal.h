@@ -64,6 +64,8 @@ inline bool isFloatPrim(const PlnType* t) {
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
 // The symbol of one of the functions build-mgr generates, and a call to it.
+json shapeElem(const json& elem);
+json helperLens(const json& elem);
 string allocShapeKey(const AllocShapeRef& shape);
 string allocHelperSymbol(const AllocShapeRef& shape, const string& op);
 json allocHelperCall(const AllocShapeRef& shape, const string& op, json args);
@@ -231,23 +233,9 @@ inline bool isOwnedBlock(const json& vt)
 	return isStructStorage(vt) || isVarrStorage(vt)
 	    || (isArrLevel(vt) && vt.contains("arr-size") && !vt.contains("mutable"));
 }
-// The fixed array helpers for owned elements E. A row's length, which may be
-// known only at run time, is the helpers' argument rather than part of E, so
-// every array of rows of one element shares them.
-inline AllocShapeRef arrShape(const json& elem)
-{
-	json e = elem;
-	if (isArrLevel(e)) e.erase("arr-size");
-	return {AllocFamily::Arr, move(e)};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-// The lengths an arrShape helper takes after the array of type arrType.
-inline vector<int64_t> arrShapeLens(const json& arrType)
-{
-	vector<int64_t> lens = {arrType["arr-size"].get<int64_t>()};
-	const json& elem = arrType["base-type"];
-	if (isArrLevel(elem)) lens.push_back(elem["arr-size"].get<int64_t>());
-	return lens;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+// The fixed array helpers for owned elements E, which take the array's length
+// and then those of E's levels.
+inline AllocShapeRef arrShape(const json& elem) { return {AllocFamily::Arr, elem}; }
 // An owned element (a struct's, a `[+]T`'s or a row's storage) has no
 // permission of its own: it is writable only as far as the array it is
 // reached through.
@@ -520,10 +508,14 @@ inline bool isArrLevel(const json& t) {
 // An array whose elements are blocks of their own (structs, `[+]U`s, rows of
 // any length), built and freed through the generated helpers, rather than
 // laid out in the array's block.
+// Rows laid out in place hold their own elements' slots, so `[2]$[3]T` owns
+// what `[3]T` does.
 inline bool ownsElems(const json& arrType)
 {
-	const json& elem = arrType["base-type"];
-	return !arrType.value("embedded", false)
+	const json* t = &arrType;
+	while (t->value("embedded", false) && isArrLevel((*t)["base-type"])) t = &(*t)["base-type"];
+	const json& elem = (*t)["base-type"];
+	return !t->value("embedded", false)
 	    && (isOwnedBlock(elem) || (isArrLevel(elem) && !elem.contains("mutable")));
 }
 

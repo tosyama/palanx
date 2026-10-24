@@ -2188,7 +2188,6 @@ TEST(sa_error, arr_lit_init)
 		{"error_220_arr_lit_row_size_declared.pa", ":1:19: error: array 'm' has rows of size 3 but a row of its array literal has 2 elements."},
 		{"error_221_arr_lit_row_count.pa", ":1:1: error: array 'm' has size 3 but its array literal has 2 elements."},
 		{"error_222_arr_lit_2d_given_1d.pa", ":1:18: error: the array literal's dimensions do not match array 'm'."},
-		{"error_223_arr_lit_3d.pa", ":1:1: error: this statement is not supported in this version."},
 		{"error_224_arr_lit_row_size_not_const.pa", ":2:1: error: array 'm' given an array literal must have a compile-time constant size."},
 		{"error_375_struct_lit_void_field.pa", ":3:16: error: Void function call cannot be used as a value."},
 	};
@@ -2274,7 +2273,6 @@ TEST(sa_error, arr_borrow)
 		{"error_237_arr_borrow_embed_mismatch.pa", "array shape '[2]$[3]int32' does not match the borrowed array type '@[2][3]int32'."},
 		{"error_238_arr_borrow_size_not_const.pa", ":2:1: error: every size in a borrowed array type"},
 		{"error_239_addr_of_struct_arr.pa", "array shape '[2]P' does not match the borrowed array type '@[2]int32'."},
-		{"error_240_arr_borrow_struct_elem.pa", "neither a struct nor a pointer inside a '$[m]' row"},
 		{"error_241_arr_borrow_mut_of_ro.pa", "cannot bind a read-only pointer"},
 		{"error_242_arr_borrow_local_no_addr_of.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as"},
 		{"error_243_arr_borrow_assign_mismatch.pa", ":4:1: error: array shape '[3]int32' does not match"},
@@ -2336,9 +2334,6 @@ TEST(sa_error, struct_borrow)
 TEST(sa_error, struct_arr_2d)
 {
 	const pair<string, string> cases[] = {
-		{"error_261_struct_arr_2d_embed_outer.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
-		{"error_262_struct_arr_2d_embed_both.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
-		{"error_360_unsized_struct_arr_2d_embed.pa", ":2:1: error: a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'."},
 		{"error_291_embed_struct_arr_2d_borrow_write_ro.pa", ":3:7: error: cannot write through read-only pointer '@T'"},
 		{"error_292_embed_struct_arr_2d_borrow_owned.pa", "array shape '[2][3]$Point' does not match the borrowed array type '@[2][3]Point'."},
 		{"error_293_struct_arr_2d_borrow_embed.pa", "array shape '[2][3]Point' does not match the borrowed array type '@[2][3]$Point'."},
@@ -2388,7 +2383,6 @@ TEST(sa_error, ptr_slot_arr)
 		{"error_286_ptr_slot_arr_borrow_write_ro_slot.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
 		{"error_287_ptr_slot_arr_borrow_write_ro_elem.pa", ":3:7: error: cannot write through read-only pointer array element"},
 		{"error_288_prim_ptr_slot_arr_borrow_as_prim.pa", "array shape '[2]@int32' does not match the borrowed array type '@[2]int32'."},
-		{"error_289_arr_borrow_embed_ptr_elem.pa", "neither a struct nor a pointer inside a '$[m]' row"},
 		{"error_290_arr_borrow_runtime_inner_size.pa", "array shape '[2][?]int32' does not match the borrowed array type '@[2][3]int32'."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -2412,7 +2406,6 @@ TEST(sa_error, copy)
 		{"error_299_copy_struct_type.pa", ":5:1: error: cannot copy 'P' into 'Q'"},
 		{"error_300_copy_into_ro_elem.pa", ":3:2: error: cannot write through read-only pointer '@T'"},
 		{"error_301_copy_ptr_slots_into_structs.pa", ":4:1: error: cannot copy '[2]@P' into '[2]P'"},
-		{"error_302_copy_unsupported_shape.pa", ":2:2: error: copying '@![2][3][4]int32' is not supported in this version."},
 		{"error_374_arr_copy_void_init.pa", ":2:14: error: Void function call cannot be used as a value."},
 		{"error_376_copy_runtime_row_size.pa", ":3:1: error: cannot copy '[3]$[?]int32' into '[3]$[?]int32'"},
 	};
@@ -2477,8 +2470,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_364_unsized_rows_ret_mismatch.pa", ":2:2: error: array shape '[?][4]int32' does not match '[?][3]int32'"},
 		{"error_365_unsized_rows_slot_mismatch.pa", ":3:1: error: array shape '[2][4]int32' does not match '[?][3]int32'"},
 		{"error_366_unsized_rows_size_not_const.pa", ":2:1: error: the row size in '[][m]T' or '[+][m]T' must be a compile-time constant."},
-		{"error_367_unsized_rows_3d.pa", ":1:1: error: '[][m]T' supports only"},
-		{"error_368_unsized_rows_ptr_elem.pa", ":2:1: error: '[][m]T' supports only"},
+		{"error_368_unsized_rows_ptr_elem.pa", ":2:1: error: '[][m]T' does not support rows of '@T'/'@!T' pointers in this version."},
 		{"error_369_unsized_rows_1d_borrow.pa", ":3:1: error: array shape '@[3]int32' does not match '[?][3]int32'"},
 		{"error_370_slot_arr_ret_as_owned_rows.pa", ":3:2: error: array shape '[?]@!int32' does not match '[?][?]int32'"},
 		{"error_371_borrow_elems_arg_as_owned.pa", ":6:1: error: array shape '[1]@!P' does not match '[?]P'"},
@@ -3462,7 +3454,6 @@ TEST(sa_error, varr)
 		{"error_758_varr_copy_struct_layout.pa", ":3:1: error: cannot copy '[2]$P' into '[+]P': both need the same element type and the same sizes known at compile time."},
 		{"error_759_varr_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 		{"error_760_arr_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
-		{"error_761_varr_in_2d_arr.pa", ":1:1: error: a two-dimensional array of variable-length arrays ('[m][n][+]T') is not supported in this version."},
 		{"error_762_varr_elem_sized.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 		{"error_763_nested_varr_lit_count.pa", ":1:1: error: array 'a' has size 3 but its array literal has 2 elements."},
 		{"error_764_arr_lit_empty_size.pa", ":1:1: error: array 'a' cannot take its size from an empty array literal '[]'."},
@@ -3476,8 +3467,6 @@ TEST(sa_error, varr)
 		{"error_772_nested_varr_readonly_write.pa", ":2:2: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 		{"error_773_arr_varr_readonly_write.pa", ":2:2: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 		{"error_774_nested3_varr_readonly_write.pa", ":2:2: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
-		{"error_775_varr_row_2d.pa", ":1:1: error: this statement is not supported in this version."},
-		{"error_776_varr_row_embed_2d.pa", ":1:1: error: this statement is not supported in this version."},
 		{"error_777_varr_row_ptr.pa", ":1:1: error: this statement is not supported in this version."},
 		{"error_778_varr_row_size_not_const.pa", ":2:1: error: the row size in '[][m]T' or '[+][m]T' must be a compile-time constant."},
 		{"error_779_varr_row_varr_sized.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
@@ -3490,6 +3479,10 @@ TEST(sa_error, varr)
 		{"error_786_varr_row_pop_index.pa", ":2:11: error: a struct or array returned by a call has no owner to access it through; receive it into a variable with '->' first."},
 		{"error_787_varr_row_embed_owning.pa", ":3:1: error: cannot embed 'P' with '$': it owns storage of its own; use 'P' without '$'."},
 		{"error_788_varr_row_pop_borrow.pa", ":2:15: error: a struct or array returned by a call has no owner to borrow from; receive it into a variable with '->' and borrow it with '@name' or '@!name' (only a call argument can borrow it directly, as '@f()' or '@!f()')."},
+		{"error_789_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
+		{"error_790_embed_varr_deep.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
+		{"error_791_unsized_rows_of_varr.pa", ":1:1: error: an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'."},
+		{"error_792_copy_ptr_rows.pa", ":2:2: error: copying '@![2][3]@int32' is not supported in this version."},
 		{"error_793_varr_borrow_row_size.pa", ":3:1: error: array shape '@![+][4]int32' does not match '[+][3]int32': its elements must have the same size and layout, and be owned by both or by neither."},
 	};
 	for (auto& [file, expected] : cases) {

@@ -32,22 +32,26 @@ Root
     with `"name"` (the struct itself, `total-size` bytes), or `"varr"` with `"name"` (an owned
     slot holding a `[+]U`, 8 bytes; the name is its header type, `__pln_varr_U`) and `"shape-key"`
     (the `[+]U`'s own entry), or, for a row `[n]U`, `"row"` (an owned slot holding the row's
-    own block, 8 bytes) or `"embed-row"` (the row laid out in place, `n` elements' bytes), each
-    with `"elem"` (the row's element, described the same way) and `"count"` (`n`; a `"row"` has
-    it only in a varr entry, whose type fixes `n`). `key` is the element type written as in a
-    symbol (see "Symbol names"): `int32`, `P5Point`, `5Point`, `PVint32`. A `"row"`'s leaves out
-    the length (`Pint32` for `[4]int32` and `[k]int32` alike): its helpers take the length as
-    their last argument `m`, so every array of such rows shares them. An `"embed-row"`'s keeps the
-    length and is prefixed with `C` (`CA4_Pint32`), since it is built differently from a `"row"`.
+    own block, 8 bytes) with `"elem"` (the row's element, described the same way), or
+    `"embed-row"` (rows laid out in place; no `"size"`, which depends on the lengths) with `"depth"` (how many consecutive levels are laid
+    out in place: `[+]$[3]$[4]int32`'s element is one `"embed-row"` of depth 2) and `"elem"` (the
+    first element below them that is not laid out in place). `key` is the element type written
+    as in a symbol (see "Symbol names") without its lengths: `int32`, `P5Point`, `5Point`,
+    `PVint32`, `Pint32` for `[4]int32` and `[k]int32` alike, `C` and the levels below for an
+    `"embed-row"` (`CPint32`). Lengths are passed instead: every arr and varr function takes,
+    after its own arguments, one `int64` per array level below it, outermost first, through rows
+    and `[+]U` elements alike (`[+][3][+][4]int32`'s `__pln_push_varr_PVPint32(h, x, 3, 4)`), so
+    arrays differing only in lengths share their functions.
   - Their shape key is `arr_`, `varr_` or `evarr_` followed by the element's `key`, so a key names
     its element type exactly. A struct element's struct entry and a `[+]U` element's varr entry
     precede the entry.
 
-  **Arr entry** (`[n]T` with `T` a struct or a `[+]U`, a variable or an owned field, and
-  `[m][n]T`, `[m][n]$T` variables, whose element is the row): build-mgr generates
-  `__pln_alloc_arr_E(n)`, `__pln_init_arr_E(outer, n)`, `__pln_free_arr_E(pts, n)`,
-  `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`, `E` being the element's `key`;
-  with a `"row"` element each also takes the row length after `n` (`__pln_alloc_arr_Pint32(m, n)`):
+  **Arr entry** (`[n]T` whose element owns storage, a variable or an owned field; a row is such
+  an element): build-mgr generates `__pln_alloc_arr_E(n)`, `__pln_init_arr_E(outer, n)`,
+  `__pln_free_arr_E(pts, n)`, `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`,
+  `E` being the element's `key`, each followed by the lengths below it
+  (`[2][3][4]int32` is `__pln_alloc_arr_PPint32(2, 3, 4)`). Levels laid out in place in the
+  array itself are one run of their elements: `[2]$[3]S` is `__pln_alloc_arr_P1S(6)`:
   - shape-kind\* - "arr"
   - shape-key\* - Shape key string (e.g. "arr\_P5Point", "arr\_Pint32")
   - elem\* - The element, as above
@@ -77,9 +81,9 @@ Root
   over. With a row `[n]U` (elem kind `"row"`) a slot holds the row's own block: a new one is
   `calloc(n, …)` with its owned elements built, a dropped one has them dropped (unless the slot
   is NULL, after `->>`) and is freed, and `push` and `copy` copy the elements from the row they
-  are given (`[]U x`; `copy`'s source is `[][n]U`). `pop` returns the slot's block. A row laid
-  out in place (`[+]$[n]U`, elem kind `"embed-row"`, shape key `evarr_…`) is `n` consecutive
-  slots of its element, built, dropped and copied through the element's own helpers; `push`
+  are given (`[]U x`; `copy`'s source is `[][n]U`). `pop` returns the slot's block. Rows laid
+  out in place (`[+]$[n]U`, `[+]$[n]$[m]U`, elem kind `"embed-row"`, shape key `evarr_…`) are
+  consecutive slots of their element, built, dropped and copied through the element's own helpers; `push`
   takes `[]U`, `copy` takes the run of elements (`[]U` for owned ones, `@U` otherwise), and
   `pop` moves the row into a newly allocated block:
   - shape-kind\* - "varr"

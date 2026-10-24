@@ -440,62 +440,76 @@ int main(int argc, char* argv[])
 					string inner;      // an inner `[+]T` element's shape key
 					string key;        // the element's type symbol
 					string type;       // one element's type name in the source
-					int64_t size;      // the bytes a slot takes
-					int64_t count;     // a row's elements, when its type fixes them
+					int64_t size;      // the bytes a slot takes, but a row laid out in place
+					int nlens;         // the lengths its helpers take: its levels', then its elements'
+					int depth;         // the levels of a row laid out in place
 					bool owned;
 					bool embedded;     // laid out in the slot itself (`[+]$T`, `[+]$[n]T`)
 					string buildElem;  // a slot as the build helper fills it
 					string declElem;   // a slot as a local array declares it
 					string ownElem;    // a slot as the drop and copy helpers read it
+					string slotRun;    // a row block's slots, as `[]` of this; a row laid out in place stands for its elements'
+					string fill;       // a row block's slot as its build helper fills it
 					string value;      // what push takes
 					string popped;     // what pop returns
 					string run;        // a copy's source run of elements
 					string data;       // the header's data pointer
 					shared_ptr<const ElemOps> leaf;   // a row's element
 				};
+				map<string, const json*> varrElemDescs;
+				for (auto& shape : elem_arr_shapes)
+					if (shape["shape-kind"] == "varr") varrElemDescs[shape["shape-key"]] = &shape["elem"];
 				function<ElemOps(const json&)> opsOf = [&](const json& desc) {
 					string kind = desc["kind"];
 					ElemOps e;
 					e.kind = kind;
 					e.inner = desc.value("shape-key", "");
 					e.key = desc["key"];
-					e.size = desc["size"].get<int64_t>();
-					e.count = desc.value("count", (int64_t)0);
+					e.size = desc.value("size", (int64_t)8);
+					e.depth = desc.value("depth", 0);
 					if (kind == "row" || kind == "embed-row") {
 						e.leaf = make_shared<const ElemOps>(opsOf(desc["elem"]));
 						const ElemOps& l = *e.leaf;
-						string lrun = (l.embedded ? "$" : "") + l.ownElem;
 						e.embedded = kind == "embed-row";
-						e.value = "[]" + lrun;
+						e.value = "[]" + l.slotRun;
 						if (!e.embedded) {
 							// A row is a block of its own, which the slot points at.
-							// Its helpers take its length as m.
+							e.nlens = 1 + l.nlens;
 							e.owned = true;
-							e.buildElem = "@!" + (l.owned ? l.buildElem : l.type);
+							e.buildElem = "@!" + l.fill;
 							// A local array of `@!@!T` slots must be spelled `[n]@![]@!T`.
-							e.declElem = "@![]" + (l.owned ? l.buildElem : lrun);
-							e.ownElem = "[]" + lrun;
+							e.declElem = "@![]" + (l.owned ? l.buildElem : l.slotRun);
+							e.ownElem = "[]" + l.slotRun;
+							e.slotRun = e.ownElem;
+							e.fill = e.buildElem;
 							e.popped = e.buildElem;
-							e.run = "[][" + to_string(e.count) + "]" + lrun;
+							e.run = "[]" + e.ownElem;
 							e.data = "@!" + e.buildElem;
 						} else {
-							// A row laid out in place is its elements' slots, n to a row.
+							// A row laid out in place is its elements' slots, depth levels of them.
 							// pop moves them into a block of their own for the caller.
+							e.nlens = e.depth + l.nlens;
 							e.owned = l.owned;
+							e.type = l.type;
 							e.buildElem = l.buildElem;
 							e.ownElem = l.ownElem;
-							e.popped = "@!" + (l.owned ? l.buildElem : l.type);
-							e.run = l.owned ? "[]" + l.ownElem : "@" + l.type;
+							e.slotRun = l.slotRun;
+							e.fill = l.fill;
+							e.popped = "@!" + l.fill;
+							e.run = l.run;
 							e.data = l.data;
 						}
 						return e;
 					}
 					e.type = kind == "prim" ? desc["type"] : desc["name"];
+					e.nlens = kind == "varr" ? opsOf(*varrElemDescs.at(e.inner)).nlens : 0;
 					e.owned = kind == "struct" || kind == "varr";
 					e.embedded = kind == "embed-struct";
 					e.buildElem = "@!" + e.type;
 					e.declElem = e.buildElem;
 					e.ownElem = e.type;
+					e.slotRun = (e.embedded ? "$" : "") + e.type;
+					e.fill = e.owned ? e.buildElem : e.type;
 					e.value = e.type;
 					// The caller takes a struct's storage, which a `@!T` return carries the same way.
 					e.popped = e.owned ? "@!" + e.type : e.type;
@@ -503,97 +517,124 @@ int main(int argc, char* argv[])
 					e.data = e.owned ? "@!@!" + e.type : "@!" + e.type;
 					return e;
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// The helpers of an element take the lengths it needs as m0, m1, ...
+				// and pass the rest on to its element's helpers.
+				auto lenNames = [](int n, int from = 0) {
+					vector<string> names;
+					for (int i = from; i < from + n; i++) names.push_back("m" + to_string(i));
+					return names;
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				auto lenParams = [&](int n) {
+					string s;
+					for (auto& name : lenNames(n)) s += ", int64 " + name;
+					return s;
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				auto lenArgs = [](const vector<string>& names, size_t from = 0) {
+					string s;
+					for (size_t i = from; i < names.size(); i++) s += ", " + names[i];
+					return s;
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				auto rest = [](const vector<string>& names, size_t from) {
+					return vector<string>(names.begin() + from, names.end());
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// The slots a row laid out in place holds, and the bytes any slot takes.
+				auto countOf = [](const ElemOps& e, const vector<string>& names) {
+					string s = names[0];
+					for (int i = 1; i < e.depth; i++) s += " * " + names[i];
+					return s;
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				auto sizeOf = [&](const ElemOps& e, const vector<string>& names) {
+					if (e.kind != "embed-row") return to_string(e.size);
+					return countOf(e, names) + " * " + to_string(e.leaf->size);
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				// The address of slot idx of a data pointer, for the byte copies of
 				// unowned elements. An embedded struct's `arr[i]` is its address already.
-				auto slotAddr = [&](const ElemOps& e, const string& arr, const string& idx) {
+				auto slotAddr = [&](const ElemOps& e, const string& arr, const string& idx, const vector<string>& names) {
 					bool isRow = e.kind == "embed-row";
-					string at = arr + "[" + idx + (isRow ? " * " + to_string(e.count) : "") + "]";
+					string at = arr + "[" + idx + (isRow ? " * " + countOf(e, names) : "") + "]";
 					bool isAddr = isRow ? e.leaf->embedded : e.embedded;
 					return (isAddr ? "" : "@!") + at;
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				// An inner `[+]T` element is its header, starting empty. A row's
 				// block is zeroed, then its owned elements are built.
-				auto elemBuild = [&](const ElemOps& e, const string& slot, const string& indent) {
+				auto elemBuild = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
 					if (e.kind == "varr") return indent + "calloc(1, 24) -> " + slot + ";\n";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
-						string s = indent + "calloc(m, " + to_string(l.size) + ") -> " + slot + ";\n";
-						if (l.owned) s += indent + "__pln_build_" + l.key + "(" + slot + ", 0, m);\n";
+						string s = indent + "calloc(" + names[0] + ", " + sizeOf(l, rest(names, 1)) + ") -> " + slot + ";\n";
+						if (l.owned) s += indent + "__pln_build_" + l.key + "(" + slot + ", 0, " + names[0] + lenArgs(names, 1) + ");\n";
 						return s;
 					}
 					return structElemBuild(e.type, slot, indent);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				// A row moved out by `->>` leaves NULL in its slot.
-				auto elemDrop = [&](const ElemOps& e, const string& slot) {
-					if (e.kind == "varr") return "__pln_free_" + e.inner + "(" + slot + ");";
+				auto elemDrop = [&](const ElemOps& e, const string& slot, const vector<string>& names) {
+					if (e.kind == "varr") return "__pln_free_" + e.inner + "(" + slot + lenArgs(names) + ");";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
 						if (!l.owned) return "free(" + slot + ");";
 						return "if " + slot + " != NULL { __pln_drop_" + l.key + "(" + slot
-							+ ", 0, m); }\n        free(" + slot + ");";
+							+ ", 0, " + names[0] + lenArgs(names, 1) + "); }\n        free(" + slot + ");";
 					}
 					return hasOwned(e.type) ? "__pln_free_" + e.type + "(" + slot + ");" : "free(" + slot + ");";
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				auto elemSet = [&](const ElemOps& e, const string& dst, const string& src) {
+				auto elemSet = [&](const ElemOps& e, const string& dst, const string& src, const vector<string>& names) {
 					if (e.kind == "varr")
-						return "__pln_copy_" + e.inner + "(@!" + dst + ", " + src + ".data, " + src + ".len);";
+						return "__pln_copy_" + e.inner + "(@!" + dst + ", " + src + ".data, " + src + ".len" + lenArgs(names) + ");";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
-						if (l.owned) return "__pln_copyrun_" + l.key + "(" + dst + ", " + src + ", m);";
-						return "memcpy(" + dst + ", " + src + ", m * " + to_string(l.size) + ");";
+						if (l.owned) return "__pln_copyrun_" + l.key + "(" + dst + ", " + src + ", " + names[0] + lenArgs(names, 1) + ");";
+						return "memcpy(" + dst + ", " + src + ", " + names[0] + " * " + sizeOf(l, rest(names, 1)) + ");";
 					}
 					return structCopy(e.type, dst, src);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// A row block's helpers take its length after their own arguments:
-				// m inside the helpers and a fixed array's, the type's for `[+][n]T`.
-				auto rowLenParam = [](const ElemOps& e) { return e.kind == "row" ? string(", int64 m") : string(); };
-				auto rowLenArg = [](const ElemOps& e, const string& m) { return e.kind == "row" ? ", " + m : string(); };
 				set<string> elemHelpersDone;
 				function<void(const ElemOps&)> emitElemHelpers = [&](const ElemOps& e) {
 					if (!e.owned || !elemHelpersDone.insert(e.key).second) return;
 					if (e.leaf) emitElemHelpers(*e.leaf);
-					string mp = rowLenParam(e), ma = rowLenArg(e, "m");
+					vector<string> names = lenNames(e.nlens);
+					string mp = lenParams(e.nlens), ma = lenArgs(names);
 					string head = "\nfunc __pln_build_" + e.key + "([]" + e.buildElem + " slots, int64 from, int64 to" + mp + ") {\n";
 					string dropHead = "func __pln_drop_" + e.key + "([]" + e.ownElem + " slots, int64 from, int64 to" + mp + ") {\n";
 					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + e.value + " x" + mp + ") {\n";
 					string runHead = "func __pln_copyrun_" + e.key + "([]" + e.ownElem + " dst, []" + e.ownElem + " src, int64 n" + mp + ") {\n";
 					if (e.kind == "embed-row") {
 						// Rows laid out in place are runs of their elements' slots.
-						string l = e.leaf->key, n = to_string(e.count);
+						string l = e.leaf->key, n = countOf(e, names), la = lenArgs(names, e.depth);
 						out << head
-						    << "    __pln_build_" << l << "(slots, from * " << n << ", to * " << n << ");\n"
+						    << "    __pln_build_" << l << "(slots, from * " << n << ", to * " << n << la << ");\n"
 						    << "}\n"
 						    << dropHead
-						    << "    __pln_drop_" << l << "(slots, from * " << n << ", to * " << n << ");\n"
+						    << "    __pln_drop_" << l << "(slots, from * " << n << ", to * " << n << la << ");\n"
 						    << "}\n"
 						    << setHead
 						    << "    int64 j = 0;\n"
 						    << "    while j < " << n << " {\n"
-						    << "        __pln_set_" << l << "(slots, i * " << n << " + j, x[j]);\n"
+						    << "        __pln_set_" << l << "(slots, i * " << n << " + j, x[j]" << la << ");\n"
 						    << "        j + 1 -> j;\n"
 						    << "    }\n"
 						    << "}\n"
 						    << runHead
-						    << "    __pln_copyrun_" << l << "(dst, src, n * " << n << ");\n"
+						    << "    __pln_copyrun_" << l << "(dst, src, n * " << n << la << ");\n"
 						    << "}\n";
 						return;
 					}
 					out << head
 					    << "    int64 i = from;\n"
 					    << "    while i < to {\n"
-					    << elemBuild(e, "slots[i]", "        ")
+					    << elemBuild(e, "slots[i]", "        ", names)
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n"
 					    << dropHead
 					    << "    int64 i = from;\n"
 					    << "    while i < to {\n"
-					    << "        " << elemDrop(e, "slots[i]") << "\n"
+					    << "        " << elemDrop(e, "slots[i]", names) << "\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n"
 					    << setHead
-					    << "    " << elemSet(e, "slots[i]", "x") << "\n"
+					    << "    " << elemSet(e, "slots[i]", "x", names) << "\n"
 					    << "}\n"
 					    << runHead
 					    << "    int64 i = 0;\n"
@@ -608,10 +649,11 @@ int main(int argc, char* argv[])
 					ElemOps e = opsOf(shape["elem"]);
 					string key = shape["shape-key"];
 					emitElemHelpers(e);
+					vector<string> names = lenNames(e.nlens);
+					string mp = lenParams(e.nlens), ma = lenArgs(names);
 					if (shape["shape-kind"] == "arr") {
 						// A fixed array of owned elements, all of them live.
 						string buildRun = "[]" + e.buildElem, ownRun = "[]" + e.ownElem;
-						string mp = rowLenParam(e), ma = rowLenArg(e, "m");
 						out << "\nexport func __pln_init_" << key << "(" << buildRun << " outer, int64 n" << mp << ") {\n"
 						    << "    __pln_build_" << e.key << "(outer, 0, n" << ma << ");\n"
 						    << "}\n"
@@ -634,101 +676,102 @@ int main(int argc, char* argv[])
 						    << "}\n";
 						continue;
 					}
-					string ml = rowLenArg(e, to_string(e.count));
 					// A variable-length array's header {len, cap, data}. The header
 					// starts zeroed (calloc or the frame's memset), so data stays
 					// NULL while the capacity is 0. Only the elements below len are
 					// live: an owned element is built when the length grows over its
 					// slot and dropped when it shrinks below it.
 					string hdr = "__pln_" + key;
-					int64_t size = e.size;
+					string size = sizeOf(e, names);
 					out << "\nexport type " << hdr << " { int64 len; int64 cap; " << e.data << " data; };\n";
 					out << "export func __pln_init_" << key
-					    << "(@!" << hdr << " h, int64 len, int64 cap) {\n"
+					    << "(@!" << hdr << " h, int64 len, int64 cap" << mp << ") {\n"
 					    << "    len -> h.len;\n"
 					    << "    cap -> h.cap;\n"
 					    << "    if cap > 0 { calloc(cap, " << size << ") -> h.data; }\n";
-					if (e.owned) out << "    __pln_build_" << e.key << "(h.data, 0, len" << ml << ");\n";
+					if (e.owned) out << "    __pln_build_" << e.key << "(h.data, 0, len" << ma << ");\n";
 					out << "}\n"
 					    << "export func __pln_alloc_" << key
-					    << "(int64 len, int64 cap) -> " << hdr << " h {\n"
-					    << "    __pln_init_" << key << "(@!h, len, cap);\n"
+					    << "(int64 len, int64 cap" << mp << ") -> " << hdr << " h {\n"
+					    << "    __pln_init_" << key << "(@!h, len, cap" << ma << ");\n"
 					    << "}\n"
-					    << "export func __pln_fini_" << key << "(" << hdr << " h) {\n";
-					if (e.owned) out << "    __pln_drop_" << e.key << "(h.data, 0, h.len" << ml << ");\n";
+					    << "export func __pln_fini_" << key << "(" << hdr << " h" << mp << ") {\n";
+					if (e.owned) out << "    __pln_drop_" << e.key << "(h.data, 0, h.len" << ma << ");\n";
 					out << "    free(h.data);\n"
 					    << "}\n"
-					    << "export func __pln_free_" << key << "(" << hdr << " h) {\n"
+					    << "export func __pln_free_" << key << "(" << hdr << " h" << mp << ") {\n"
 					    << "    if (h == NULL) { return; }\n"
-					    << "    __pln_fini_" << key << "(h);\n"
+					    << "    __pln_fini_" << key << "(h" << ma << ");\n"
 					    << "    free(h);\n"
 					    << "    return;\n"
 					    << "}\n"
 					// Growing doubles the capacity so that adding one element at a
 					// time, by push or by resize, reallocates only now and then.
-					    << "func __pln_reserve_" << key << "(@!" << hdr << " h, int64 n) {\n"
+					    << "func __pln_reserve_" << key << "(@!" << hdr << " h, int64 n" << mp << ") {\n"
 					    << "    int64 c = h.cap * 2;\n"
 					    << "    if c < n { n -> c; }\n"
 					    << "    if c < 4 { 4 -> c; }\n"
 					    << "    realloc(h.data, c * " << size << ") -> h.data;\n"
 					    << "    c -> h.cap;\n"
 					    << "}\n"
-					    << "export func __pln_push_" << key << "(@!" << hdr << " h, " << e.value << " x) {\n"
-					    << "    if h.len == h.cap { __pln_reserve_" << key << "(h, h.len + 1); }\n";
+					    << "export func __pln_push_" << key << "(@!" << hdr << " h, " << e.value << " x" << mp << ") {\n"
+					    << "    if h.len == h.cap { __pln_reserve_" << key << "(h, h.len + 1" << ma << "); }\n";
 					// The caller hands an inner `[+]T` over, so its header becomes the slot.
 					if (e.kind == "varr")
 						out << "    @!x -> h.data[h.len];\n";
 					else if (e.owned)
-						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1" << ml << ");\n"
-						    << "    __pln_set_" << e.key << "(h.data, h.len, x" << ml << ");\n";
+						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1" << ma << ");\n"
+						    << "    __pln_set_" << e.key << "(h.data, h.len, x" << ma << ");\n";
 					else if (e.embedded)
-						out << "    memcpy(" << slotAddr(e, "h.data", "h.len") << ", x, " << size << ");\n";
+						out << "    memcpy(" << slotAddr(e, "h.data", "h.len", names) << ", x, " << size << ");\n";
 					else
 						out << "    x -> h.data[h.len];\n";
 					out << "    h.len + 1 -> h.len;\n"
 					    << "}\n"
-					    << "export func __pln_resize_" << key << "(@!" << hdr << " h, int64 n) {\n"
+					    << "export func __pln_resize_" << key << "(@!" << hdr << " h, int64 n" << mp << ") {\n"
 					    << "    if n < 0 { abort(); }\n"
-					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n); }\n";
+					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n" << ma << "); }\n";
 					if (e.owned)
-						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ml << "); }\n"
-						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ml << "); }\n";
+						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ma << "); }\n"
+						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ma << "); }\n";
 					else
 					// Shrinking keeps the old elements past the length, so growing
 					// zeroes what it brings back.
-						out << "    if n > h.len { memset(" << slotAddr(e, "h.data", "h.len") << ", 0, (n - h.len) * " << size << "); }\n";
+						out << "    if n > h.len { memset(" << slotAddr(e, "h.data", "h.len", names) << ", 0, (n - h.len) * " << size << "); }\n";
 					out << "    n -> h.len;\n"
 					    << "}\n"
 					// The source is any run of elements, which may be h's own
 					// (`v -> v`, or a borrow of v copied into v); then n is h's
 					// length, so no element is built, freed or moved.
-					    << "export func __pln_copy_" << key << "(@!" << hdr << " h, " << e.run << " src, int64 n) {\n"
-					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n); }\n";
+					    << "export func __pln_copy_" << key << "(@!" << hdr << " h, " << e.run << " src, int64 n" << mp << ") {\n"
+					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n" << ma << "); }\n";
 					if (e.owned)
-						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ml << "); }\n"
-						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ml << "); }\n"
-						    << "    __pln_copyrun_" << e.key << "(h.data, src, n" << ml << ");\n";
+						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ma << "); }\n"
+						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ma << "); }\n"
+						    << "    __pln_copyrun_" << e.key << "(h.data, src, n" << ma << ");\n";
 					else
 						out << "    memmove(h.data, src, n * " << size << ");\n";
 					out << "    n -> h.len;\n"
 					    << "}\n";
 					// An owned element leaves its slot for the caller.
-					out << "export func __pln_pop_" << key << "(@!" << hdr << " h) -> " << e.popped << " x {\n"
+					out << "export func __pln_pop_" << key << "(@!" << hdr << " h" << mp << ") -> " << e.popped << " x {\n"
 					    << "    if h.len == 0 { abort(); }\n"
 					    << "    h.len - 1 -> h.len;\n";
 					if (e.kind == "embed-row")
 						out << "    malloc(" << size << ") -> x;\n";
 					// Owned elements' slots are pointers, which '@!' cannot address.
-					if (e.kind == "embed-row" && e.owned)
+					if (e.kind == "embed-row" && e.owned) {
+						string n = countOf(e, names);
 						out << "    int64 j = 0;\n"
-						    << "    while j < " << e.count << " {\n"
-						    << "        h.data[h.len * " << e.count << " + j] -> x[j];\n"
+						    << "    while j < " << n << " {\n"
+						    << "        h.data[h.len * " << n << " + j] -> x[j];\n"
 						    << "        j + 1 -> j;\n"
 						    << "    }\n";
-					else if (e.embedded)
-						out << "    memcpy(x, " << slotAddr(e, "h.data", "h.len") << ", " << size << ");\n";
-					else
+					} else if (e.embedded) {
+						out << "    memcpy(x, " << slotAddr(e, "h.data", "h.len", names) << ", " << size << ");\n";
+					} else {
 						out << "    h.data[h.len] -> x;\n";
+					}
 					out << "}\n";
 				}
 

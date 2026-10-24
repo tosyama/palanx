@@ -398,11 +398,7 @@ json PlnSemanticAnalyzer::sa_varr_lit_assign(const json& stmt, const json& varTy
 	json loc = stmt.value("loc", json::array());
 	string temp = "__lit_" + to_string(tempVarCounter_++);
 	json arr = astTypeOf(varType);
-	// Rows of `[+]U` cannot sit under a fixed level ('[m][n][+]T'), so that
-	// literal is held in a variable-length temp.
-	const json& elem = varType["base-type"]["base-type"];
-	bool rowsOfVarr = isArrLevel(elem) && isVarrPntr(elem["base-type"]);
-	if (!stmt["value"]["items"].empty() && !rowsOfVarr) arr["specifier"] = "raw";
+	if (!stmt["value"]["items"].empty()) arr["specifier"] = "raw";
 	string target = stmt.contains("name") ? stmt["name"].get<string>() : arrLitTargetName(stmt["target"]);
 	json decl = {{"stmt-type","var-decl"},{"loc",loc},
 		{"vars",json::array({{{"name",temp},{"lit-name",target},{"var-type",move(arr)},{"init",stmt["value"]}}})}};

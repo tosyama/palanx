@@ -1255,6 +1255,22 @@ rejects calls where the argument's inner dimension is variable or does not match
 **Memory management:** A single `malloc` is called at declaration and a single `free` is
 inserted at scope exit. No helper functions are generated.
 
+### Arrays of More Levels
+
+The levels combine in any order and number: `[2][3][4]int32` has rows of rows, each in its own
+block; `[2]$[3]$[4]int32` lays all 24 elements out in one block; `[2]$[3][4]int32` lays out
+the 6 rows' slots in one block. They are indexed, copied, moved and borrowed like 2D arrays, and
+any level may have a length known only at run time. A function parameter or a borrow needs the
+lengths of the levels laid out in place to be constants.
+
+```palan
+[2][3][4]int32 a;
+5 -> a[1][2][3];
+[2][3][4]int32 b = a;   // copies every level
+int64 k = 3;
+[2]$[k]$[4]int32 c;     // one block of 2 * k * 4 elements
+```
+
 ### Array Literals
 
 An array variable can be initialized with an array literal `[a, b, c]` in its declaration.
@@ -1410,7 +1426,7 @@ printf("%ld\n", tiles[1][2].y);  // 7
 
 **Restrictions:**
 - `[n]$T` and `[m][n]$T` require that `T` owns no fields (no `U field` or `[k]U field`). Use `[n]T` / `[m][n]T` instead when it does.
-- Other two-dimensional struct array forms (`[m]$[n]T`, `[m]$[n]$T`) are not supported.
+- `[m]$[n]T` lays out the `m × n` struct slots in one block; `[m]$[n]$T`, the structs themselves (`T` owning no fields).
 
 Array **fields** (declared inside `type { ... }`, see Section 19) use the same four forms but
 require `n` to be a compile-time integer literal, since struct layout must be statically known.

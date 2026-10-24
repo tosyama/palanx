@@ -164,6 +164,7 @@ class PlnSemanticAnalyzer {
 	// len/push/resize/pop for each `[+]T` element type, outside every scope:
 	// they exist for every T, and are registered as each T is first used.
 	map<string, deque<json>> varrBuiltins_;
+	set<string> varrBuiltinTypes_;
 	// scope stack: alias("" = unqualified) → funcname → funcDefs (several
 	// when unqualified imports of different modules export the same name)
 	vector<map<string, map<string, vector<json>>>> importScopes;
@@ -501,9 +502,10 @@ class PlnSemanticAnalyzer {
 	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
 	json  varrStorageType(const json& locNode, const json& arr);
 	json  varrElemType(const json& locNode, const json& varr);
-	json  varrRowType(const json& locNode, const json& row);
 	json  takeOverType(const json& locNode, const json& varType);
 	int64_t inPlaceSize(const json& elem) const;
+	json  inPlaceSizeExpr(const json& elem, size_t level, const function<json(size_t)>& lenAt) const;
+	int   inPlaceAlign(const json& elem) const;
 	// isMutable: the borrow's permission, or none for an owned level.
 	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable,
 	                    vector<json>* lens = nullptr);
