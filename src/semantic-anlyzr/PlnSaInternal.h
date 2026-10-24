@@ -607,7 +607,10 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 // keeps rows of another size out and keeps the elements' owner unchanged:
 // either side would free, or overwrite, what the other one owns. A 'void*'
 // on either side (NULL, a C 'void*') says nothing about the elements.
+// A '[+]T' borrow must name the same rows, laid out the same way.
 inline bool elemShapeMatch(const json& from, const json& to) {
+	if (isVarrPntr(from) && isVarrPntr(to) && isArrLevel(to["base-type"]["base-type"]))
+		return from["base-type"] == to["base-type"];
 	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(from))
 		return true;
 	auto isVoid = [](const json& t) {

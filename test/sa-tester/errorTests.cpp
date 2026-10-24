@@ -3490,6 +3490,7 @@ TEST(sa_error, varr)
 		{"error_786_varr_row_pop_index.pa", ":2:11: error: a struct or array returned by a call has no owner to access it through; receive it into a variable with '->' first."},
 		{"error_787_varr_row_embed_owning.pa", ":3:1: error: cannot embed 'P' with '$': it owns storage of its own; use 'P' without '$'."},
 		{"error_788_varr_row_pop_borrow.pa", ":2:15: error: a struct or array returned by a call has no owner to borrow from; receive it into a variable with '->' and borrow it with '@name' or '@!name' (only a call argument can borrow it directly, as '@f()' or '@!f()')."},
+		{"error_793_varr_borrow_row_size.pa", ":3:1: error: array shape '@![+][4]int32' does not match '[+][3]int32': its elements must have the same size and layout, and be owned by both or by neither."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
