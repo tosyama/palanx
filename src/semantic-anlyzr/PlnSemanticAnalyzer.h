@@ -23,15 +23,15 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr" | "embed-arr" | "embed-ptr-arr" | "arr-ptr"
-	string typeName;   // prim type name, embed/struct-ptr struct name, raw-ptr base type name,
-	                    // embed-arr/embed-ptr-arr/arr-ptr: leaf prim type name or struct name
+	string typeKind;   // "prim" | "embed" | "owned" | "raw-ptr" | "embed-arr" | "embed-ptr-arr"
+	string typeName;   // prim type name, embed struct name, raw-ptr base type name,
+	                    // embed-arr/embed-ptr-arr: leaf prim type name or struct name
 	bool   isMutable;  // raw-ptr/embed-ptr-arr: @T=false, @!T=true
 	int    offset;     // byte offset from struct start (C ABI aligned)
-	int    size;       // prim: type size, embed: sub-struct totalSize, struct-ptr/raw-ptr/arr-ptr: 8,
+	int    size;       // prim: type size, embed: sub-struct totalSize, owned/raw-ptr: 8,
 	                    // embed-arr/embed-ptr-arr: count*stride
 
-	// Array-field-only members (valid when typeKind == "embed-arr", "embed-ptr-arr", or "arr-ptr")
+	// Array-field-only members (valid when typeKind == "embed-arr" or "embed-ptr-arr")
 	int64_t count    = 0;   // element count n (compile-time constant)
 	string  elemKind = "";  // "prim" | "struct"; also set for typeKind == "raw-ptr" (pointee kind);
 	                        // "func" for a function pointer (see funcType)
@@ -45,6 +45,9 @@ struct FieldLayout {
 	// field keeps its place in the layout but cannot be accessed.
 	string  unsupported = "";
 	json    funcType;  // elemKind == "func": the pointee function type
+	// An owned field (a struct `T` or an array `[n]...`) is a slot holding the
+	// block it owns, typed as a variable holding that block is.
+	json    type;
 };
 
 // Where an aggregate variable's outermost storage block lives: `$T v;` puts it
@@ -79,7 +82,7 @@ struct StructDef {
 	vector<FieldLayout> fields;
 	int  totalSize = -1;
 	int  maxAlign  = 0;
-	bool ownsFields = false;  // has a struct-ptr (T) or arr-ptr ([n]T) field
+	bool ownsFields = false;  // has an owned field
 	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;
@@ -442,6 +445,10 @@ class PlnSemanticAnalyzer {
 	bool isWrittenNameTaken(const string& name) const;  // isDeclNameTaken but for topDecls_
 	static void addDeclaredVarNames(const json& stmt, set<string>& names);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
+	StructDef buildStructDef(const string& name, const json& fields, const json& locNode,
+	                         bool isUnion = false, bool packed = false, int aligned = 1);
+	int64_t fieldArrSize(const json& locNode, const json& sizeExpr);
+	json ownedFieldType(const json& locNode, const json& vtype);
 	void registerCStruct(const json& cincludeStmt, const json& s);  // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_

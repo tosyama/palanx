@@ -206,6 +206,43 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 	return out;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// A type is resolved before the variables of its block are declared, so a
+// field's length can only name a const.
+int64_t PlnSemanticAnalyzer::fieldArrSize(const json& locNode, const json& sizeExpr)
+{
+	if (const json* id = firstNonConstName(sizeExpr)) {
+		if (id->contains("c-macro")) undefinedNameError(locNode, *id, E_UndefinedVariable);
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant,
+			(*id)["name"].get<string>()) << endl;
+		exit(1);
+	}
+	int64_t n = constArrSize(sa_arr_size_expr(locNode, sizeExpr));
+	if (n < 0) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrFieldSizeNotConstant) << endl;
+		exit(1);
+	}
+	return n;
+}
+
+// An owned array field holds its block as a variable of its type does. Its
+// levels are checked first, so that their errors are the field's own.
+json PlnSemanticAnalyzer::ownedFieldType(const json& locNode, const json& vtype)
+{
+	auto unsupported = [&] {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+		exit(1);
+	};
+	if (isVarrAstType(vtype)) unsupported();
+	requireKnownTypeNames(locNode, vtype);
+	const json* t = &vtype;
+	for (; t->value("type-kind","") == "arr" && !isVarrAstType(*t); t = &(*t)["base-type"]) {
+		if ((*t)["size-expr"].is_null()) unsupported();
+		fieldArrSize(locNode, (*t)["size-expr"]);
+	}
+	if (t->value("type-kind","") == "pntr") unsupported();
+	return sizedArrLevel(locNode, vtype, nullopt);
+}
+
 json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json& type)
 {
 	if (type.value("type-kind","") != "pntr" || type["base-type"].value("type-kind","") != "arr")
@@ -554,46 +591,29 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	allocShapeNames_.insert(name);
 
 	const StructDef& def = structDefs_[name];
+	// An owned field is a slot holding an element, built, dropped and copied
+	// as an array's is; its helpers take its lengths.
 	json owned = json::array();
 	for (auto& f : def.fields) {
-		if (f.typeKind != "struct-ptr") continue;
-		const StructDef& sub = structDefs_[f.typeName];
+		if (f.typeKind != "owned") continue;
 		// LCOV_EXCL_EXCEPTION_BR_START
+		json lens = json::array();
+		for (const json* level : helperLevels(f.type))
+			lens.push_back((*level)["arr-size"]);
 		owned.push_back({
-			{"name",              f.name},
-			{"offset",            f.offset},
-			{"struct-name",       f.typeName},
-			{"struct-total-size", sub.totalSize}
+			{"name",   f.name},
+			{"offset", f.offset},
+			{"elem",   allocElemDesc(f.type)},
+			{"lens",   move(lens)}
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
-		recordAllocShape(f.typeName);
-	}
-	json ownedArr = json::array();
-	for (auto& f : def.fields) {
-		if (f.typeKind != "arr-ptr") continue;
-		// LCOV_EXCL_EXCEPTION_BR_START
-		ownedArr.push_back({
-			{"name",      f.name},
-			{"offset",    f.offset},
-			{"elem-kind", f.elemKind},
-			{"leaf-name", f.typeName},
-			{"count",     f.count},
-			{"elem-size", f.stride}
-		});
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-		if (f.elemKind == "struct") {
-			json elem = toStructPntrType({{"type-kind","prim"},{"type-name",f.typeName}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-			ownedArr.back()["shape-key"] = allocShapeKey(arrShape(elem));
-			recordArrShape(elem);
-		}
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
 	sa["alloc-shapes"].push_back({
-		{"shape-kind",         "struct"},
-		{"shape-name",         name},
-		{"total-size",         def.totalSize},
-		{"owned-fields",       move(owned)},
-		{"owned-array-fields", move(ownedArr)}
+		{"shape-kind",   "struct"},
+		{"shape-name",   name},
+		{"total-size",   def.totalSize},
+		{"owned-fields", move(owned)}
 	});
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE

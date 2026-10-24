@@ -36,6 +36,7 @@ mtrace();
 	9 -> w[0][3];
 	w.push(@v.pop());
 	w.resize(3);
+	5 -> w[2][0]; 6 -> w[2][1]; 7 -> w[2][2]; 8 -> w[2][3];
 	show(@v); show(@w);
 	v.resize(1);
 	w[1] ->> v[0];

@@ -1275,7 +1275,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt, json* litAddr)
 	string fn = stmt["field"].get<string>();
 	const FieldLayout* it = &findFieldOrExit(chain.structName, fn, stmt);
 	bool transfer = stmt.value("ownership-transfer", false);
-	if (transfer && it->typeKind != "struct-ptr" && it->typeKind != "arr-ptr") {
+	if (transfer && it->typeKind != "owned") {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedField, fn) << endl;
 		exit(1);
 	}

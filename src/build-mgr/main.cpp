@@ -218,17 +218,6 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		// Derive one shared allocator per leaf primitive type used by "arr-ptr" fields
-		vector<json> arr_prim_shapes;
-		set<string> seenArrPrim;
-		for (auto& shape : struct_shapes)
-			for (auto& af : shape["owned-array-fields"])
-				if (af["elem-kind"] == "prim") {
-					string leaf = af["leaf-name"];
-					if (seenArrPrim.insert(leaf).second)
-						arr_prim_shapes.push_back({{"leaf-type", leaf}});
-				}
-
 		if (!struct_shapes.empty() || !elem_arr_shapes.empty()) {
 			string workdir = fs::path(ast_files[0]).parent_path().string();
 			string alloc_pa  = workdir + "/" PALAN_ALLOCATORS_MODULE ".pa";
@@ -261,7 +250,7 @@ int main(int argc, char* argv[])
 					struct_by_name[shape["shape-name"].get<string>()] = &shape;
 				auto hasOwned = [&](const string& name) {
 					const json& ss = *struct_by_name.at(name);
-					return !ss["owned-fields"].empty() || !ss["owned-array-fields"].empty();
+					return !ss["owned-fields"].empty();
 				};
 				// Copies one struct's storage into another's: a flat struct is a
 				// byte copy, one owning sub-objects goes through its copy function.
@@ -271,152 +260,6 @@ int main(int argc, char* argv[])
 					return "memcpy(" + dst + ", " + src + ", "
 						+ to_string(struct_by_name.at(name)->at("total-size").get<int64_t>()) + ");";
 				};
-
-				// Struct type declarations (leaf-first order from SA).
-				// Only the owned pointer fields are declared, at their original
-				// offsets; every other byte range becomes opaque padding. The
-				// allocators touch nothing else, and the full field list cannot
-				// be re-expressed as Palan source in general (C unions, synthesized
-				// anonymous tags, embedded types not declared in this module).
-				// Exported, because SA keeps only an exported type's name, and
-				// these must keep the program-wide names the shapes carry.
-				// Byte ranges of each struct outside its owned pointer fields,
-				// declared as __pln_padN fields and copied as they are.
-				map<string, vector<pair<string, int64_t>>> struct_pads;
-				for (auto& shape : struct_shapes) {
-					string name = shape["shape-name"];
-					vector<pair<int64_t, string>> owned_decls;
-					for (auto& of : shape["owned-fields"])
-						owned_decls.push_back({of["offset"].get<int64_t>(),
-							of["struct-name"].get<string>() + " " + of["name"].get<string>()});
-					for (auto& af : shape["owned-array-fields"])
-						owned_decls.push_back({af["offset"].get<int64_t>(),
-							"[" + to_string(af["count"].get<int64_t>()) + "]"
-							+ af["leaf-name"].get<string>() + " " + af["name"].get<string>()});
-					sort(owned_decls.begin(), owned_decls.end());
-
-					out << "\nexport type " << name << " {";
-					int64_t pos = 0;
-					int pad_no = 0;
-					auto pad_to = [&](int64_t end) {
-						if (end <= pos) return;
-						string pad = "__pln_pad" + to_string(pad_no++);
-						out << " [" << (end - pos) << "]$uint8 " << pad << ";";
-						struct_pads[name].push_back({pad, end - pos});
-					};
-					for (auto& [offset, decl] : owned_decls) {
-						pad_to(offset);
-						out << " " << decl << ";";
-						pos = offset + 8;
-					}
-					pad_to(shape["total-size"].get<int64_t>());
-					out << " };\n";
-				}
-
-				// arr-prim allocator/free functions (one shared pair per leaf primitive type)
-				for (auto& shape : arr_prim_shapes) {
-					string leaf = shape["leaf-type"];
-					out << "\nexport func __pln_alloc_arr_prim_" << leaf
-					    << "(int64 n) -> []" << leaf << " {\n"
-					    << "    [n]" << leaf << " result;\n"
-					    << "    return result;\n"
-					    << "}\n"
-					    << "export func __pln_free_arr_prim_" << leaf
-					    << "([]" << leaf << " arr) {\n"
-					    << "    free(arr);\n"
-					    << "    return;\n"
-					    << "}\n";
-				}
-
-				// Struct allocator/free functions
-				for (auto& shape : struct_shapes) {
-					string name = shape["shape-name"];
-					auto& owned = shape["owned-fields"];
-					auto& ownedArr = shape["owned-array-fields"];
-
-					// The block is returned as `@!T`: a `T` return would be allocated
-					// by this very function.
-					out << "\nexport func __pln_alloc_" << name
-					    << "() -> @!" << name << " p {\n"
-					    << "    calloc(1, " << shape["total-size"].get<int64_t>() << ") -> p;\n";
-					if (hasOwned(name))
-						out << "    __pln_init_" << name << "(p);\n";
-					out << "}\n";
-
-					if (hasOwned(name))
-						out << "export func __pln_init_" << name
-						    << "(@!" << name << " p) {\n";
-					for (auto& of : owned) {
-						string oname = of["name"];
-						string sname = of["struct-name"];
-						out << "    __pln_alloc_" << sname << "() ->> p." << oname << ";\n";
-					}
-					for (auto& af : ownedArr) {
-						string fname = af["name"];
-						int64_t count = af["count"].get<int64_t>();
-						if (af["elem-kind"] == "prim") {
-							string leaf = af["leaf-name"];
-							out << "    __pln_alloc_arr_prim_" << leaf << "(" << count
-							    << ") ->> p." << fname << ";\n";
-						} else { // struct leaf
-							out << "    __pln_alloc_" << af["shape-key"].get<string>() << "(" << count
-							    << ") ->> p." << fname << ";\n";
-						}
-					}
-					if (hasOwned(name))
-						out << "}\n";
-
-					// A struct in a stack frame releases only what it owns (fini);
-					// a heap one also frees its own block.
-					if (hasOwned(name))
-						out << "export func __pln_fini_" << name
-						    << "(" << name << " p) {\n";
-					for (auto& af : ownedArr) {
-						string fname = af["name"];
-						if (af["elem-kind"] == "prim") {
-							string leaf = af["leaf-name"];
-							out << "    __pln_free_arr_prim_" << leaf << "(p." << fname << ");\n";
-						} else { // struct leaf
-							int64_t count = af["count"].get<int64_t>();
-							out << "    __pln_free_" << af["shape-key"].get<string>() << "(p." << fname << ", " << count << ");\n";
-						}
-					}
-					for (auto& of : owned) {
-						string oname = of["name"];
-						string sname = of["struct-name"];
-						out << "    __pln_free_" << sname << "(p." << oname << ");\n";
-					}
-					if (hasOwned(name))
-						out << "}\n";
-					out << "export func __pln_free_" << name
-					    << "(" << name << " p) {\n"
-					    << "    if (p == NULL) { return; }\n";
-					if (hasOwned(name))
-						out << "    __pln_fini_" << name << "(p);\n";
-					out << "    free(p);\n"
-					    << "    return;\n"
-					    << "}\n";
-
-					out << "export func __pln_copy_" << name
-					    << "(" << name << " dst, " << name << " src) {\n";
-					for (auto& [pad, size] : struct_pads[name])
-						out << "    memcpy(dst." << pad << ", src." << pad << ", " << size << ");\n";
-					for (auto& of : owned) {
-						string oname = of["name"];
-						out << "    " << structCopy(of["struct-name"].get<string>(), "dst." + oname, "src." + oname) << "\n";
-					}
-					for (auto& af : ownedArr) {
-						string fname = af["name"];
-						int64_t count = af["count"].get<int64_t>();
-						if (af["elem-kind"] == "prim")
-							out << "    memcpy(dst." << fname << ", src." << fname << ", "
-							    << count * af["elem-size"].get<int64_t>() << ");\n";
-						else
-							out << "    __pln_copy_" << af["shape-key"].get<string>()
-							    << "(dst." << fname << ", src." << fname << ", " << count << ");\n";
-					}
-					out << "}\n";
-				}
 
 				// Slots are filled with raw C allocations: a borrow slot never takes
 				// ownership, and the array's free function releases the elements.
@@ -556,25 +399,26 @@ int main(int argc, char* argv[])
 					return (isAddr ? "" : "@!") + at;
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				// An inner `[+]T` element is its header, starting empty. A row's
-				// block is zeroed, then its owned elements are built.
+				// data starts undefined, as an array variable's does; its owned
+				// elements are built at once, so no slot is left unset.
 				auto elemBuild = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
 					if (e.kind == "varr") return indent + "calloc(1, 24) -> " + slot + ";\n";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
-						string s = indent + "calloc(" + names[0] + ", " + sizeOf(l, rest(names, 1)) + ") -> " + slot + ";\n";
+						string s = indent + "malloc(" + names[0] + " * " + sizeOf(l, rest(names, 1)) + ") -> " + slot + ";\n";
 						if (l.owned) s += indent + "__pln_build_" + l.key + "(" + slot + ", 0, " + names[0] + lenArgs(names, 1) + ");\n";
 						return s;
 					}
 					return structElemBuild(e.type, slot, indent);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				// A row moved out by `->>` leaves NULL in its slot.
-				auto elemDrop = [&](const ElemOps& e, const string& slot, const vector<string>& names) {
+				auto elemDrop = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
 					if (e.kind == "varr") return "__pln_free_" + e.inner + "(" + slot + lenArgs(names) + ");";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
 						if (!l.owned) return "free(" + slot + ");";
 						return "if " + slot + " != NULL { __pln_drop_" + l.key + "(" + slot
-							+ ", 0, " + names[0] + lenArgs(names, 1) + "); }\n        free(" + slot + ");";
+							+ ", 0, " + names[0] + lenArgs(names, 1) + "); }\n" + indent + "free(" + slot + ");";
 					}
 					return hasOwned(e.type) ? "__pln_free_" + e.type + "(" + slot + ");" : "free(" + slot + ");";
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
@@ -629,7 +473,7 @@ int main(int argc, char* argv[])
 					    << dropHead
 					    << "    int64 i = from;\n"
 					    << "    while i < to {\n"
-					    << "        " << elemDrop(e, "slots[i]", names) << "\n"
+					    << "        " << elemDrop(e, "slots[i]", "        ", names) << "\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n"
@@ -644,6 +488,94 @@ int main(int argc, char* argv[])
 					    << "    }\n"
 					    << "}\n";
 				};
+
+				// Struct type declarations (leaf-first order from SA).
+				// Only the owned pointer fields are declared, at their original
+				// offsets; every other byte range becomes opaque padding. The
+				// allocators touch nothing else, and the full field list cannot
+				// be re-expressed as Palan source in general (C unions, synthesized
+				// anonymous tags, embedded types not declared in this module).
+				// Exported, because SA keeps only an exported type's name, and
+				// these must keep the program-wide names the shapes carry.
+				// Byte ranges of each struct outside its owned pointer fields,
+				// declared as __pln_padN fields and copied as they are.
+				map<string, vector<pair<string, int64_t>>> struct_pads;
+				for (auto& shape : struct_shapes) {
+					string name = shape["shape-name"];
+					// An owned field is declared as the slot its build fills, so
+					// this module neither copies nor frees what it is given.
+					vector<pair<int64_t, string>> owned_decls;
+					for (auto& of : shape["owned-fields"])
+						owned_decls.push_back({of["offset"].get<int64_t>(),
+							opsOf(of["elem"]).buildElem + " " + of["name"].get<string>()});
+					sort(owned_decls.begin(), owned_decls.end());
+
+					out << "\nexport type " << name << " {";
+					int64_t pos = 0;
+					int pad_no = 0;
+					auto pad_to = [&](int64_t end) {
+						if (end <= pos) return;
+						string pad = "__pln_pad" + to_string(pad_no++);
+						out << " [" << (end - pos) << "]$uint8 " << pad << ";";
+						struct_pads[name].push_back({pad, end - pos});
+					};
+					for (auto& [offset, decl] : owned_decls) {
+						pad_to(offset);
+						out << " " << decl << ";";
+						pos = offset + 8;
+					}
+					pad_to(shape["total-size"].get<int64_t>());
+					out << " };\n";
+				}
+
+				// Struct allocator/free functions
+				for (auto& shape : struct_shapes) {
+					string name = shape["shape-name"];
+					struct OwnedField { string slot; ElemOps e; vector<string> lens; };
+					vector<OwnedField> owned;
+					for (auto& of : shape["owned-fields"]) {
+						OwnedField f{of["name"], opsOf(of["elem"]), {}};
+						for (auto& len : of["lens"]) f.lens.push_back(to_string(len.get<int64_t>()));
+						if (f.e.leaf) emitElemHelpers(*f.e.leaf);
+						owned.push_back(move(f));
+					}
+
+					// The block is returned as `@!T`: a `T` return would be allocated
+					// by this very function.
+					out << "\nexport func __pln_alloc_" << name
+					    << "() -> @!" << name << " p {\n"
+					    << "    calloc(1, " << shape["total-size"].get<int64_t>() << ") -> p;\n";
+					if (hasOwned(name))
+						out << "    __pln_init_" << name << "(p);\n";
+					out << "}\n";
+
+					// A struct in a stack frame releases only what it owns (fini);
+					// a heap one also frees its own block.
+					if (hasOwned(name)) {
+						out << "export func __pln_init_" << name << "(@!" << name << " p) {\n";
+						for (auto& f : owned) out << elemBuild(f.e, "p." + f.slot, "    ", f.lens);
+						out << "}\n"
+						    << "export func __pln_fini_" << name << "(" << name << " p) {\n";
+						for (auto& f : owned) out << "    " << elemDrop(f.e, "p." + f.slot, "    ", f.lens) << "\n";
+						out << "}\n";
+					}
+					out << "export func __pln_free_" << name
+					    << "(" << name << " p) {\n"
+					    << "    if (p == NULL) { return; }\n";
+					if (hasOwned(name))
+						out << "    __pln_fini_" << name << "(p);\n";
+					out << "    free(p);\n"
+					    << "    return;\n"
+					    << "}\n";
+
+					out << "export func __pln_copy_" << name
+					    << "(" << name << " dst, " << name << " src) {\n";
+					for (auto& [pad, size] : struct_pads[name])
+						out << "    memcpy(dst." << pad << ", src." << pad << ", " << size << ");\n";
+					for (auto& f : owned)
+						out << "    " << elemSet(f.e, "dst." + f.slot, "src." + f.slot, f.lens) << "\n";
+					out << "}\n";
+				}
 
 				for (auto& shape : elem_arr_shapes) {
 					ElemOps e = opsOf(shape["elem"]);

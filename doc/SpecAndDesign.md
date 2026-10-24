@@ -234,7 +234,6 @@ For a shape key `K`, the functions are:
 |-------|-----|-----------|
 | struct `T` (one that owns nothing only as a part of another shape) | `T` | all; `init`/`fini` only when it owns fields |
 | `[n]T` whose element owns storage (a struct, a `[+]U`, a row) | `arr_E` | all |
-| a struct's owned `[n]P` field | `arr_prim_P` | `alloc`, `free` |
 | `[+]T` (`T` a primitive, a struct, a `[+]U` or a row `[n]U`) | `varr_E` | all, and `push`/`resize`/`pop`; `copy(h, src, n)` copies a run of elements |
 | `[+]$T` with `T` a struct or rows `[n]U`, `[n]$[m]U`, … | `evarr_E` | as `varr_E` |
 
@@ -249,6 +248,11 @@ plain bytes, zeroed and copied in bulk. A row element is described by its own el
 block of its own is an owned element built and dropped through its elements' helpers, and a row
 laid out in place (`[+]$[n]U`) is `n` slots of its element, so it is owned exactly when that
 element is; rows laid out in place in turn are one run of slots (`[2]$[3]S` is `arr_P1S` of 6).
+A struct's owned field is a slot of the same kind, described the same way: `__pln_init/fini/copy_T`
+build, drop and copy each field through its element's helpers, and the generated module declares
+the field as the slot its build fills (`@!int32` for `[3]int32`), so it copies and frees nothing
+on its own. Palan zeroes only what it manages (owned slots, `[+]U` headers, pointer slots); a
+row's data starts undefined, as an array variable's does.
 A length may be known only at run time (`[m][k]int32`), so keys leave every length out and every
 `arr_E`/`varr_E` function and helper takes, after its own arguments, one length per array level
 below it, outermost first, through rows and `[+]U` elements alike: `[m][3]int32` and `[+][3]int32`

@@ -1565,12 +1565,15 @@ printf("%ld %ld\n", original.x, original.y);   // 20 10
 | Syntax        | Meaning                                  | Memory                          |
 |---------------|-------------------------------------------|----------------------------------|
 | `[n]$T field` | Embedded contiguous array                 | parent's block                   |
-| `[n]T field`  | Owned pointer array                       | cascaded alloc/free with parent  |
+| `[n]T field`  | Owned array                               | cascaded alloc/free with parent  |
+| `[n][m]T field`, `[n][m]$T field`, `[n][+]T field`, ... | Owned array of rows, as an array variable of that type | cascaded alloc/free with parent |
 | `[n]@T field` | Non-owning read-only pointer-slot array   | parent's block (slots only)      |
 | `[n]@!T field`| Non-owning mutable pointer-slot array     | parent's block (slots only)      |
 
-`T` may be a primitive type or a struct name. `n` must be a compile-time integer: a literal, a
-[const](#constant-declarations), or `sizeof(T)`.
+`T` may be a primitive type or a struct name. `n` (and each `m`) must be a compile-time integer:
+a literal, a [const](#constant-declarations), or `sizeof(T)`. An owned array field takes the
+forms an array variable can, and is allocated, copied and freed with its struct; its primitive
+elements start undefined, as an array variable's do.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 
@@ -1723,7 +1726,8 @@ compile error. A pointer field (`@T`/`@!T`) may close a cycle.
 
 ### Restrictions
 
-- Nested/2D array fields (`[n]$[m]T field`, etc.) are not supported.
+- An embedded array of rows (`[n]$[m]T field`), an unsized array (`[]T field`) and a
+  variable-length array (`[+]T field`) are not supported as fields.
 - Recursive embedding (`type A { $A a; }`) is a compile error.
 - An [incomplete struct type](#incomplete-struct-types-opaque-handles) — a tag whose layout
   isn't known, e.g. a cincluded `DIR` — cannot be used as a by-value variable (`DIR d;`), an

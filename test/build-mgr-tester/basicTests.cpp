@@ -471,16 +471,16 @@ TEST(build_mgr, at_bang_struct_arr) {
 }
 
 TEST(build_mgr, owned_prim_arr_field) {
-	// Bucket { [3]int64 vals; }, declaration-only: proves the shared
-	// __pln_alloc_arr_prim_int64 allocator is generated and runs without crashing.
+	// Bucket { [3]int64 vals; }, declaration-only: proves the field's row is
+	// built by __pln_init_Bucket and runs without crashing.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/069_owned_prim_arr_field.pa");
 	ASSERT_EQ(output, "ok\n");
 }
 
 TEST(build_mgr, owned_struct_arr_field) {
-	// Cluster { [4]Point pts; }, declaration-only: proves __pln_alloc_Cluster's
-	// forward reference to __pln_alloc_arr_Point (emitted later in the same file) resolves.
+	// Cluster { [4]Point pts; }, declaration-only: proves __pln_init_Cluster's
+	// call to the row's element helpers resolves.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/070_owned_struct_arr_field.pa");
 	ASSERT_EQ(output, "ok\n");
@@ -686,7 +686,7 @@ TEST(build_mgr, owned_prim_arr_field_mtrace) {
 		"/tmp/palan_owned_prim_arr_field_mtrace_bin");
 
 	auto [allocs, frees] = parseMtraceLog(traceFile);
-	// Bucket { [3]int64 vals; }: Bucket calloc(1) + __pln_alloc_arr_prim_int64 malloc(1) = 2
+	// Bucket { [3]int64 vals; }: Bucket calloc(1) + the field's row malloc(1) = 2
 	EXPECT_EQ(allocs, 2) << "expected 2 allocs for Bucket { [3]int64 vals; }, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
@@ -705,7 +705,7 @@ TEST(build_mgr, owned_struct_arr_field_mtrace) {
 		"/tmp/palan_owned_struct_arr_field_mtrace_bin");
 
 	auto [allocs, frees] = parseMtraceLog(traceFile);
-	// Cluster { [2]Point pts; }: Cluster calloc(1) + __pln_alloc_arr_Point(2):
+	// Cluster { [2]Point pts; }: Cluster calloc(1) + the field's row:
 	// ptr-array malloc(1) + 2 element callocs = 4
 	EXPECT_EQ(allocs, 4) << "expected 4 allocs for Cluster { [2]Point pts; }, got " << allocs;
 	EXPECT_EQ(allocs, frees)
@@ -726,7 +726,7 @@ TEST(build_mgr, mixed_owned_and_owned_arr_field_mtrace) {
 
 	auto [allocs, frees] = parseMtraceLog(traceFile);
 	// Mixed { Point single; [2]Point arr; }: Mixed calloc(1) + single-field
-	// __pln_alloc_Point calloc(1) + arr-field __pln_alloc_arr_Point:
+	// calloc(1) + the arr field's row:
 	// ptr-array malloc(1) + 2 element callocs = 5
 	EXPECT_EQ(allocs, 5) << "expected 5 allocs for Mixed { Point single; [2]Point arr; }, got " << allocs;
 	EXPECT_EQ(allocs, frees)
@@ -1079,7 +1079,7 @@ TEST(build_mgr, addr_of_owned_field_borrow_mtrace) {
 	EXPECT_EQ(output, "99\n");
 
 	auto [allocs, frees] = parseMtraceLog(traceFile);
-	// Cluster c: calloc(1) + __pln_alloc_arr_Point(2) = 4 (same shape as
+	// Cluster c: calloc(1) + the field's row of 2 = 4 (same shape as
 	// owned_struct_arr_field_mtrace). Taking @!c.pts[0].x adds no allocation.
 	EXPECT_EQ(allocs, 4) << "expected 4 allocs for Cluster c { [2]Point pts; }, got " << allocs;
 	EXPECT_EQ(allocs, frees)
@@ -3643,8 +3643,8 @@ TEST(build_mgr, varr_row_mtrace) {
 		"MALLOC_TRACE=" + traceFile + " "
 		"/tmp/palan_varr_row_mtrace_bin");
 	ASSERT_EQ(output, 
-		"[1 2 3 4][5 6 7 8][9 10 11 12]\n12 1 0\n42\n\n[1 2 3 9][1 2 3 4][0 0 0 0]\n"
-		"[1 2 3 4]\n9 0\n3 7 3\n3\n7 4 1\n");
+		"[1 2 3 4][5 6 7 8][9 10 11 12]\n12 1 0\n42\n\n[1 2 3 9][1 2 3 4][5 6 7 8]\n"
+		"[1 2 3 4]\n9 5\n3 7 3\n3\n7 4 1\n");
 	expectBalancedMtrace(traceFile, 42);
 }
 
@@ -3716,7 +3716,7 @@ TEST(build_mgr, nested_fixed_mtrace) {
 
 // `[+][3]int32` and `[+][4]int32` share their functions, which take the length.
 TEST(build_mgr, varr_nested_rows_mtrace) {
-	expectMtraceRun("346_varr_nested_rows_mtrace", "0 9 1 3 0\n4 6 6\n6 5 7\n8\n", 98);
+	expectMtraceRun("346_varr_nested_rows_mtrace", "2 9 1 3 4\n4 6 6\n6 5 7\n8\n", 98);
 }
 
 TEST(build_mgr, embed_rows_mtrace) {
@@ -3729,4 +3729,11 @@ TEST(build_mgr, arr_return_param_mtrace) {
 	expectMtraceRun("348_arr_return_param_mtrace",
 		"1 2 3\n101 2 3\n110 11 12\n1 2 3\n8 8 8\n4 5 6\n4 5 6\n6 6 6\n1 0\n7 8 9\n9\n"
 		"104 5 6\n101 2 3\n3\n20 21 22\n", 35);
+}
+
+// A field holds any array a variable can: built, copied, moved into and
+// freed with its struct, on the heap, in a frame and as an array element.
+TEST(build_mgr, struct_multilevel_field_mtrace) {
+	expectMtraceRun("349_struct_multilevel_field_mtrace",
+		"5 9 6 8 2 3 5\n1 2\n3 4\n11\n3 1\n", 67);
 }

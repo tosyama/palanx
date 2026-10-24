@@ -326,6 +326,20 @@ inline json fieldPointeeType(const FieldLayout& f)
 	return t;
 }
 
+// The struct a field holds, embedded or owned; empty for any other field.
+inline string fieldStructName(const FieldLayout& f)
+{
+	if (f.typeKind == "embed") return f.typeName;
+	if (f.typeKind == "owned" && isStructPntr(f.type)) return f.type["base-type"]["type-name"];
+	return "";
+}
+
+// An array a struct literal gives the field, embedded or owned.
+inline bool isLitArrField(const FieldLayout& f)
+{
+	return f.typeKind == "embed-arr" || (f.typeKind == "owned" && isArrLevel(f.type));
+}
+
 inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
@@ -340,21 +354,8 @@ inline json fieldValueType(const FieldLayout& f)
 		json elem_pntr = {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
 		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
 	}
-	if (f.typeKind == "arr-ptr") {
-		// Primitive leaf: field is a plain pointer to inline malloc'd values
-		// (pntr(prim)); pts[i] loads the value directly.
-		// Struct leaf: field cascades to __pln_alloc_arr_T, matching the
-		// variable-level owned struct array shape (sa_arr_var_decl) —
-		// a pointer to an array of struct-pointers (pntr(pntr(struct))); pts[i]
-		// loads the i-th element's pointer.
-		if (f.elemKind == "struct") {
-			json struct_type = {{"type-kind","struct"},{"type-name",f.typeName}};
-			json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
-			return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
-		}
-		json bt = fieldPrimLeaf(f);
-		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",bt}};
-	}
+	if (f.typeKind == "owned")
+		return f.type;
 	if (f.typeKind == "raw-ptr")
 		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
 	return {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",f.typeName}}}};
@@ -404,7 +405,7 @@ inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
 		if (f.typeKind == "prim") {
 			bool isFloat = (f.typeName == "flo32" || f.typeName == "flo64");
 			mark(off, f.size, isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
-		} else if (f.typeKind == "raw-ptr" || f.typeKind == "struct-ptr" || f.typeKind == "arr-ptr") {
+		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned") {
 			mark(off, 8, EightbyteClass::Integer);
 		} else if (f.typeKind == "embed-ptr-arr") {
 			for (int64_t i = 0; i < f.count; i++)

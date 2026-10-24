@@ -613,7 +613,7 @@ TEST(sa_error, alias_unknown_method)
 
 TEST(sa_error, embed_arr_owned_sub_struct)
 {
-	// [n]$Outer where Outer has an owned struct-ptr field — should error
+	// [n]$Outer where Outer has an owned struct field — should error
 	// Covers: E_EmbedArrOwnedSubStruct in sa_embed_arr_var_decl
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -769,7 +769,7 @@ TEST(sa_error, field_assign_on_prim_arr_field_elem)
 TEST(sa_error, struct_arr_ptr_field_unknown_prim_type)
 {
 	// type T { [4]NoSuchType field; }; -- [n]T owned pointer array, prim leaf unknown
-	// Covers: buildStructDef "arr" branch, non-embedded arr-ptr prim-leaf case,
+	// Covers: buildStructDef "arr" branch, non-embedded owned array field,
 	// E_UnknownType
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
@@ -1358,12 +1358,12 @@ TEST(sa_error, incomplete_struct_index)
 TEST(sa_error, incomplete_struct_native_owned_field)
 {
 	// Same incomplete Tag; `type Wrap { Tag a; };` (a bare-name field, i.e. an
-	// owned struct-ptr field per native struct syntax) is declared inside a
+	// owned struct field per native struct syntax) is declared inside a
 	// function body, same reasoning as incomplete_struct_native_embed above,
 	// so it processes after cinclude registers Tag as incomplete. An owned
-	// struct-ptr field's declaring struct records an alloc-shape for it, which
+	// struct field's declaring struct records an alloc-shape for it, which
 	// needs the pointee's totalSize.
-	// Covers: buildStructDef "prim name is a registered struct" branch (struct-ptr)
+	// Covers: buildStructDef "prim name is a registered struct" branch (owned)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
@@ -2496,13 +2496,16 @@ TEST(sa_error, embed_elem_not_struct)
 	}
 }
 
-TEST(sa_error, field_2d_arr_unsupported)
+TEST(sa_error, field_arr_level_errors)
 {
+	// An owned field's every level is checked as the field's own.
 	const pair<string, string> cases[] = {
-		{"error_323_field_2d_arr.pa", ":1:1: error: unsupported struct field type."},
-		{"error_324_field_2d_embed_prim.pa", ":1:1: error: unsupported struct field type."},
-		{"error_325_field_2d_embed_struct.pa", ":2:1: error: unsupported struct field type."},
+		{"error_324_field_2d_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 		{"error_524_field_var_arr_type.pa", ":1:1: error: unsupported struct field type."},
+		{"error_804_field_row_size_not_const.pa", ":3:2: error: struct field array size must be a compile-time constant integer; 'n' is not a const."},
+		{"error_805_field_unsized_row.pa", ":1:1: error: unsupported struct field type."},
+		{"error_806_field_ptr_slot_rows.pa", ":1:1: error: unsupported struct field type."},
+		{"error_807_field_sized_varr_elem.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -69,7 +69,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
 	const FieldLayout* it = &findFieldOrExit(base.structName, fn, obj);
-	if (it->typeKind == "prim") {
+	if (it->typeKind == "prim" || (it->typeKind == "owned" && !isStructPntr(it->type))) {
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 		exit(1);
 	}
@@ -91,8 +91,10 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 		return base;
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
-	json pntr_type = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",it->typeName}}}};
+	json pntr_type = it->typeKind == "owned" ? it->type
+		: json{{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",it->typeName}}}};
 	if (it->typeKind == "raw-ptr") pntr_type["mutable"] = it->isMutable;
+	string structName = pntr_type["base-type"]["type-name"];
 	json ptrNode;
 	if (!base.isPointerBased)
 		ptrNode = {{"expr-type","field-access"},{"var",base.varName},
@@ -100,7 +102,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	else
 		ptrNode = {{"expr-type","field-access"},{"ptr-expr",base.ptrExpr},
 		           {"offset",base.offset+it->offset},{"value-type",pntr_type}};
-	return {true, "", 0, move(ptrNode), it->typeName};
+	return {true, "", 0, move(ptrNode), structName};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -232,8 +234,9 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
 		string fn = obj["field"].get<string>();
 		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
-		bool isArrField = fld.typeKind == "arr-ptr" || fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr";
-		if (fld.typeKind != "prim" && fld.typeKind != "embed" && fld.typeKind != "struct-ptr" && !isArrField) {
+		bool isOwned = fld.typeKind == "owned";
+		bool isArrField = (isOwned && isArrLevel(fld.type)) || fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr";
+		if (fld.typeKind != "prim" && fld.typeKind != "embed" && !isOwned && !isArrField) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
 			exit(1);
 		}
@@ -248,7 +251,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		// An array field is borrowed as an array, like an array variable: an
 		// owned one ([n]T) holds the pointer to its elements, an embedded one
 		// is the elements.
-		bool addrOnly = fld.typeKind != "struct-ptr" && fld.typeKind != "arr-ptr";
+		bool addrOnly = !isOwned;
 		json pntr_type;
 		if (isArrField) {
 			pntr_type = withArrPermission(fieldValueType(fld), isMutable);

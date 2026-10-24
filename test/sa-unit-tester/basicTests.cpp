@@ -576,20 +576,10 @@ TEST(sysv_struct, raw_ptr_field) {
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct, struct_ptr_field) {
+TEST(sysv_struct, owned_field) {
     StructDef def;
     def.totalSize = 8;
-    def.fields = { {"p", "struct-ptr", "Point", false, 0, 8} };
-    map<string, StructDef> defs;
-    auto result = classifySysVStruct(def, defs);
-    ASSERT_EQ(result.size(), 1);
-    EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
-}
-
-TEST(sysv_struct, arr_ptr_field) {
-    StructDef def;
-    def.totalSize = 8;
-    def.fields = { {"p", "arr-ptr", "int32", true, 0, 8} };
+    def.fields = { {"p", "owned", "", false, 0, 8} };
     map<string, StructDef> defs;
     auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);

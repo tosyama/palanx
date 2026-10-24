@@ -1,0 +1,5 @@
+type P { int32 x; int64 y; };
+type S { [3][4]int32 m; [2][3]$P q; [2][+]int32 v; };
+S s;
+3 -> s.m[2][3];
+5 -> s.v[1].push();

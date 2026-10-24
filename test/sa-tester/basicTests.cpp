@@ -2036,8 +2036,8 @@ TEST(sa, alloc_shape_owned)
 	ASSERT_EQ(shapes[1]["shape-name"], "Rect");
 	ASSERT_EQ(shapes[1]["total-size"], 16);
 	ASSERT_EQ(shapes[1]["owned-fields"].size(), 2u);
-	ASSERT_EQ(shapes[1]["owned-fields"][0]["struct-name"], "Point");
-	ASSERT_EQ(shapes[1]["owned-fields"][1]["struct-name"], "Point");
+	ASSERT_EQ(shapes[1]["owned-fields"][0]["elem"]["name"], "Point");
+	ASSERT_EQ(shapes[1]["owned-fields"][1]["elem"]["name"], "Point");
 }
 
 TEST(sa, calloc_no_owned)
@@ -2143,7 +2143,7 @@ TEST(sa, mixed_field_chain)
 	ASSERT_TRUE(jout.is_object());
 
 	// int64 v = outer.sub.inner.x
-	// Sub sub@0 (struct-ptr) → ptr-expr={var:"outer",offset:0,pntr(struct(Sub))}
+	// Sub sub@0 (owned) → ptr-expr={var:"outer",offset:0,pntr(struct(Sub))}
 	// $Inner inner@0 (embed, flatten) → outer offset stays 0
 	// int64 x@0 → final offset: 0
 	const auto& rd = jout["statements"][1]["vars"][0]["init"];
@@ -2257,7 +2257,7 @@ TEST(sa, raw_ptr_mutable_field_assign)
 TEST(sa, deep_ptr_chain_access)
 {
 	// type A{int64 v}; type B{A a}; type C{B b}; C c;
-	// int64 x = c.b.a.v;  — two levels of struct-ptr traversal
+	// int64 x = c.b.a.v;  — two levels of owned struct field traversal
 	// Covers: resolveObjectChain when base.isPointerBased=true (nested ptr-expr)
 	// Also: resolveObjectChain(forWrite=true) ptr-based for "10 -> c.b.a.v"
 	cleanTestEnv();
@@ -2278,10 +2278,10 @@ TEST(sa, deep_ptr_chain_access)
 	const auto& init = (*x_decl)["init"];
 	ASSERT_EQ(init["expr-type"], "field-access");
 	ASSERT_EQ(init["offset"],    0);
-	// ptr-expr points into B.a (second struct-ptr level)
+	// ptr-expr points into B.a (second owned struct level)
 	const auto& pe1 = init["ptr-expr"];
 	ASSERT_EQ(pe1["expr-type"], "field-access");
-	// pe1 itself has a ptr-expr pointing to C.b (first struct-ptr level)
+	// pe1 itself has a ptr-expr pointing to C.b (first owned struct level)
 	ASSERT_TRUE(pe1.contains("ptr-expr"));
 	const auto& pe2 = pe1["ptr-expr"];
 	ASSERT_EQ(pe2["expr-type"],  "field-access");
@@ -2839,8 +2839,8 @@ TEST(sa, owned_prim_arr_field)
 {
 	// type Bucket { [3]int64 vals; }; Bucket b;
 	// Covers: buildStructDef "arr" branch, non-embedded non-pntr-wrapped primitive-leaf
-	// case (arr-ptr typeKind, ownsFields), useSimpleCalloc==false path,
-	// recordAllocShape "owned-array-fields" output.
+	// case (an owned field), useSimpleCalloc==false path, recordAllocShape's
+	// row element for it.
 	cleanTestEnv();
 	json jout = written(run_sa("../test/testdata/sa/112_owned_prim_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
@@ -2858,23 +2858,21 @@ TEST(sa, owned_prim_arr_field)
 	ASSERT_EQ(shapes[0]["shape-name"], "Bucket");
 	ASSERT_EQ(shapes[0]["shape-kind"], "struct");
 	ASSERT_EQ(shapes[0]["total-size"], 8);
-	ASSERT_EQ(shapes[0]["owned-fields"].size(), 0u);
-
-	const auto& ownedArr = shapes[0]["owned-array-fields"];
-	ASSERT_EQ(ownedArr.size(), 1u);
-	ASSERT_EQ(ownedArr[0]["name"], "vals");
-	ASSERT_EQ(ownedArr[0]["offset"], 0);
-	ASSERT_EQ(ownedArr[0]["elem-kind"], "prim");
-	ASSERT_EQ(ownedArr[0]["leaf-name"], "int64");
-	ASSERT_EQ(ownedArr[0]["count"], 3);
+	const auto& owned = shapes[0]["owned-fields"];
+	ASSERT_EQ(owned.size(), 1u);
+	ASSERT_EQ(owned[0]["name"], "vals");
+	ASSERT_EQ(owned[0]["offset"], 0);
+	ASSERT_EQ(owned[0]["elem"]["kind"], "row");
+	ASSERT_EQ(owned[0]["elem"]["elem"]["type"], "int64");
+	ASSERT_EQ(owned[0]["lens"], json::array({3}));
 }
 
 TEST(sa, owned_struct_arr_field)
 {
 	// type Point { int64 x; int64 y; }; type Cluster { [4]Point pts; }; Cluster c;
 	// Covers: buildStructDef "arr" branch, non-embedded case, struct-leaf owned
-	// pointer array field (arr-ptr typeKind, elemKind=="struct"), recordAllocShape
-	// registering an "arr" shape (arr_P5Point) alongside the "struct" shapes.
+	// pointer array field: a row of struct elements, whose helpers come with
+	// the struct's, so no "arr" shape is registered.
 	cleanTestEnv();
 	json jout = written(run_sa("../test/testdata/sa/113_owned_struct_arr_field.pa"));
 	ASSERT_TRUE(jout.is_object());
@@ -2887,34 +2885,26 @@ TEST(sa, owned_struct_arr_field)
 	ASSERT_TRUE(v["init"]["args"].empty());
 
 	const auto& shapes = jout["alloc-shapes"];
-	ASSERT_GE(shapes.size(), 3u);
+	ASSERT_EQ(shapes.size(), 2u);
 
 	auto point_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
 		return s.value("shape-kind","") == "struct" && s.value("shape-name","") == "Point";
 	});
 	ASSERT_NE(point_it, shapes.end());
 
-	auto arr_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
-		return s.value("shape-kind","") == "arr";
-	});
-	ASSERT_NE(arr_it, shapes.end());
-	ASSERT_EQ((*arr_it)["shape-key"], "arr_P5Point");
-
 	auto cluster_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
 		return s.value("shape-kind","") == "struct" && s.value("shape-name","") == "Cluster";
 	});
 	ASSERT_NE(cluster_it, shapes.end());
 	ASSERT_EQ((*cluster_it)["total-size"], 8);
-	ASSERT_EQ((*cluster_it)["owned-fields"].size(), 0u);
-
-	const auto& ownedArr = (*cluster_it)["owned-array-fields"];
-	ASSERT_EQ(ownedArr.size(), 1u);
-	ASSERT_EQ(ownedArr[0]["name"], "pts");
-	ASSERT_EQ(ownedArr[0]["offset"], 0);
-	ASSERT_EQ(ownedArr[0]["elem-kind"], "struct");
-	ASSERT_EQ(ownedArr[0]["leaf-name"], "Point");
-	ASSERT_EQ(ownedArr[0]["shape-key"], "arr_P5Point");
-	ASSERT_EQ(ownedArr[0]["count"], 4);
+	const auto& owned = (*cluster_it)["owned-fields"];
+	ASSERT_EQ(owned.size(), 1u);
+	ASSERT_EQ(owned[0]["name"], "pts");
+	ASSERT_EQ(owned[0]["offset"], 0);
+	ASSERT_EQ(owned[0]["elem"]["kind"], "row");
+	ASSERT_EQ(owned[0]["elem"]["elem"]["kind"], "struct");
+	ASSERT_EQ(owned[0]["elem"]["elem"]["name"], "Point");
+	ASSERT_EQ(owned[0]["lens"], json::array({4}));
 }
 
 TEST(sa, embed_prim_arr_struct_field_access)
@@ -2991,9 +2981,9 @@ TEST(sa, embed_struct_arr_struct_field_access)
 TEST(sa, owned_prim_arr_struct_field_access)
 {
 	// type Bucket { [3]int64 vals; }; Bucket b; 1->b.vals[0]; printf(b.vals[0]);
-	// Covers: fieldValueType arr-ptr primitive-leaf fix — base-type must be
+	// Covers: fieldValueType owned array field, primitive leaf — base-type must be
 	// {"type-kind":"prim","type-name":"int64"}, not "struct" (the previous default
-	// branch tagged every arr-ptr leaf as a struct, which happened to be harmless
+	// branch tagged every owned array leaf as a struct, which happened to be harmless
 	// for codegen by luck but was schema-incorrect).
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/116_owned_prim_arr_struct_field_access.pa");
@@ -3018,7 +3008,7 @@ TEST(sa, owned_struct_arr_struct_field_access)
 {
 	// type Point{...}; type Cluster { [4]Point pts; }; Cluster c;
 	// 5->c.pts[0].x; printf(c.pts[0].x);
-	// Covers: fieldValueType arr-ptr struct-leaf fix — field must be double-wrapped
+	// Covers: fieldValueType owned array field, struct leaf — field must be double-wrapped
 	// pntr(pntr(struct)) matching the variable-level owned struct array shape
 	// (sa_owned_struct_arr_var_decl), so pts[i] yields pntr(struct) (a real stored
 	// pointer, loaded via DerefLoadIdx) rather than the bare struct type the old
@@ -4118,7 +4108,7 @@ TEST(sa, struct_ret_memory_class) {
 }
 
 TEST(sa, struct_ret_ptr_field) {
-	// classifySysVWalk's raw-ptr/struct-ptr/arr-ptr branch (PlnSaInternal.h)
+	// classifySysVWalk's raw-ptr/owned branch (PlnSaInternal.h)
 	// was untested: every other struct-ret fixture uses all-prim fields.
 	// `{int tag; char *name;}` is 16 bytes (tag padded to the pointer's
 	// 8-byte alignment), so both eightbytes stay INTEGER via that branch.
@@ -5227,7 +5217,35 @@ TEST(sa, import_type_field)
 	ASSERT_EQ(shape["total-size"], 112);
 	ASSERT_EQ(shape["owned-fields"].size(), 1u);
 	ASSERT_EQ(shape["owned-fields"][0]["name"], "o");
-	ASSERT_EQ(shape["owned-fields"][0]["struct-name"], "Vec");
+	ASSERT_EQ(shape["owned-fields"][0]["elem"]["name"], "Vec");
+}
+
+// A field's array is typed and described as a variable's: rows of rows,
+// rows laid out in place and rows of `[+]T`, each level's length in order.
+TEST(sa, struct_multilevel_fields)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/310_struct_multilevel_fields.pa"));
+	ASSERT_TRUE(jout.is_object());
+	json s;
+	for (auto& sh : jout["alloc-shapes"])
+		if (sh.value("shape-kind", "") == "struct" && sh["shape-name"] == "S") s = sh;
+	const auto& owned = s["owned-fields"];
+	ASSERT_EQ(owned.size(), 3u);
+	ASSERT_EQ(owned[0]["elem"]["kind"], "row");
+	ASSERT_EQ(owned[0]["elem"]["elem"]["kind"], "row");
+	ASSERT_EQ(owned[0]["elem"]["elem"]["elem"]["type"], "int32");
+	ASSERT_EQ(owned[0]["lens"], json::array({3, 4}));
+	ASSERT_EQ(owned[1]["elem"]["elem"]["elem"]["kind"], "embed-struct");
+	ASSERT_EQ(owned[1]["lens"], json::array({2, 3}));
+	ASSERT_EQ(owned[2]["elem"]["elem"]["kind"], "varr");
+	ASSERT_EQ(owned[2]["lens"], json::array({2}));
+	ASSERT_EQ(owned[2]["offset"], 16);
+
+	const auto& m = jout["statements"][1]["target"]["array"]["array"]["value-type"];
+	ASSERT_EQ(m["arr-size"], 3);
+	ASSERT_EQ(m["base-type"]["arr-size"], 4);
+	ASSERT_EQ(m["base-type"]["base-type"]["type-name"], "int32");
 }
 
 TEST(sa, struct_field_const_size)
@@ -5241,12 +5259,12 @@ TEST(sa, struct_field_const_size)
 	// a [3]$int32 12 + b [3]$Point 24 (+4) + c [3]@Point 24 + d 8 + e 8
 	// + r [3]$int16 6 + z [8]$uint8 8 (+2)
 	ASSERT_EQ(shapes["S"]["total-size"], 96);
-	ASSERT_EQ(shapes["S"]["owned-array-fields"].size(), 2u);
-	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["name"], "d");
-	ASSERT_EQ(shapes["S"]["owned-array-fields"][0]["count"], 3);
-	ASSERT_EQ(shapes["S"]["owned-array-fields"][1]["offset"], 72);
+	ASSERT_EQ(shapes["S"]["owned-fields"].size(), 2u);
+	ASSERT_EQ(shapes["S"]["owned-fields"][0]["name"], "d");
+	ASSERT_EQ(shapes["S"]["owned-fields"][0]["lens"], json::array({3}));
+	ASSERT_EQ(shapes["S"]["owned-fields"][1]["offset"], 72);
 	ASSERT_EQ(shapes["L"]["total-size"], 16);
-	ASSERT_EQ(shapes["L"]["owned-array-fields"][0]["count"], 2);
+	ASSERT_EQ(shapes["L"]["owned-fields"][0]["lens"], json::array({2}));
 }
 
 TEST(sa, top_decl_order)
@@ -5259,7 +5277,7 @@ TEST(sa, top_decl_order)
 		if (s.value("shape-name", "") == "S") shape = s;
 	// a 8 + ts 16 + v [3]$int32 12 + t 4 + u 8 + al 8 + e 4 (+4) + p 8
 	ASSERT_EQ(shape["total-size"], 72);
-	ASSERT_EQ(shape["owned-fields"][0]["struct-name"], "U");
+	ASSERT_EQ(shape["owned-fields"][0]["elem"]["name"], "U");
 }
 
 TEST(sa, import_mutual_type)
@@ -6489,7 +6507,7 @@ TEST(sa, unexported_type_name)
 	string a = st[0]["vars"][0]["var-type"]["base-type"]["type-name"];
 	ASSERT_TRUE(regex_match(a, regex("__pln_L[0-9a-f]{16}_[0-9]+_A"))) << a;
 	ASSERT_EQ(st[1]["vars"][0]["var-type"]["base-type"]["type-name"], "B");
-	ASSERT_EQ(jout["alloc-shapes"][1]["owned-fields"][0]["struct-name"], a);
+	ASSERT_EQ(jout["alloc-shapes"][1]["owned-fields"][0]["elem"]["name"], a);
 }
 
 TEST(sa, block_type_scope)

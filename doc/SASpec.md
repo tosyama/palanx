@@ -79,7 +79,7 @@ Root
   an empty header (`calloc(1, 24)`), a dropped one is freed with `__pln_free_varr_U`, and a copy
   into one is `__pln_copy_varr_U`; `push` stores the header it is given, which the caller hands
   over. With a row `[n]U` (elem kind `"row"`) a slot holds the row's own block: a new one is
-  `calloc(n, …)` with its owned elements built, a dropped one has them dropped (unless the slot
+  `malloc(n * …)`, its data left undefined and its owned elements built, a dropped one has them dropped (unless the slot
   is NULL, after `->>`) and is freed, and `push` and `copy` copy the elements from the row they
   are given (`[]U x`; `copy`'s source is `[][n]U`). `pop` returns the slot's block. Rows laid
   out in place (`[+]$[n]U`, `[+]$[n]$[m]U`, elem kind `"embed-row"`, shape key `evarr_…`) are
@@ -90,35 +90,27 @@ Root
   - shape-key\* - Shape key string (e.g. "varr\_int32", "varr\_P5Point", "evarr\_5Point")
   - elem\* - The element, as above
 
-  **Struct entry** (structs with owned struct-pointer fields and/or array fields):
+  **Struct entry**:
   - shape-kind\* - "struct"
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
-  - owned-fields\* - Owned struct-pointer fields (`T field`), which require a sub-allocator; empty array if none
+  - owned-fields\* - Owned fields (`T field`, `[n]U field`, `[n][m]U field`, `[n][+]U field`, ...);
+    empty array if none. Each is a slot holding one element, built, dropped and copied as an
+    array element of that type is:
     - name\* - Field name string
     - offset\* - Byte offset within the struct
-    - struct-name\* - Sub-struct type name
-    - struct-total-size\* - Sub-struct total size in bytes
-  - owned-array-fields\* - Owned array fields (`[n]T field`), which require a cascaded array allocator; empty array if none
-    - name\* - Field name string
-    - offset\* - Byte offset within the struct
-    - elem-kind\* - Leaf kind string ("prim" or "struct")
-    - leaf-name\* - Leaf element type name (primitive name or struct name)
-    - shape-key\* - The arr entry's shape key, for a struct leaf only
-    - count\* - Element count integer
-    - elem-size\* - Bytes per element of the array the field points to (8 for a struct leaf's pointers)
+    - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"row"` for an array)
+    - lens\* - The lengths of the field's levels, outermost first and on through the elements
+      of a `[+]U`, which its element's helpers take (`[3]`, `[3, 4]`; empty for `T`)
 
   Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
   generated allocator module with only the owned fields at their offsets and opaque padding
   elsewhere, because the full layout cannot always be re-expressed as Palan source (C unions,
   synthesized anonymous tags, embedded types not declared in that module).
 
-  Struct entries (and their leaf-first arr/struct dependencies) are ordered leaf-first
-  (topological order) so build-mgr can generate and compile allocators in dependency order.
-  Primitive-leaf owned array fields (`elem-kind: "prim"` in `owned-array-fields`) do not get a
-  dedicated SA-emitted shape entry — build-mgr groups and deduplicates them by `leaf-name`
-  directly from `owned-array-fields` when generating the shared
-  `__pln_alloc_arr_prim_*`/`__pln_free_arr_prim_*` pair.
+  Struct entries (and the struct and varr entries their fields' elements need) are ordered
+  leaf-first (topological order) so build-mgr can generate and compile allocators in dependency
+  order.
 
 String literal table entry
 --------------------------
@@ -723,9 +715,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       field-access section below), then re-emitted as `{"expr-type":"field-access","var"|
       "ptr-expr":…,"offset":<int>,"value-type":<pntr type>,"addr-only":true}` —
       `addr-only:true` tells codegen to compute the field's address (`CalcAddr`) instead of loading
-      it. The leaf field must be primitive-typed, an embedded struct (`$T`), or an owned struct
-      (`struct-ptr`) — a `raw-ptr`, embedded-array, or owned-array field is rejected
-      (E_AddrOfNotPrimitive) — and must exist on the resolved struct (E_UnknownField otherwise). A
+      it. The leaf field must be primitive-typed, an embedded struct (`$T`), an owned field
+      (`owned`), or an embedded array — a `raw-ptr` field is rejected
+      (E_AddrOfNotPrimitive) — and must exist on the resolved struct (E_UnknownField otherwise). An
+      array field is borrowed as an array, as an array variable is (its value-type with the
+      requested permission on every level); an owned one is loaded (`addr-only:false`). A
       primitive leaf's `value-type` is `{"type-kind":"pntr","mutable":<bool>,"base-type":<field's
       prim type>}`, same as the `id` case. An embed leaf's own value-type
       (`fieldValueType`) is already `pntr(struct T)` — the field IS the inner struct's storage, the
