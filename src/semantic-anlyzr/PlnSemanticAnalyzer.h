@@ -52,12 +52,12 @@ struct FieldLayout {
 enum class VarStorage { Heap, Frame };
 
 // The allocator helpers build-mgr generates (SpecAndDesign.md 3.6), one
-// family per shape: __pln_<op>_<struct>, __pln_<op>_arr_arr_<leaf>, and for an
-// array of any element E, __pln_<op>_arr_<E>, __pln_<op>_varr_<E> and
-// __pln_<op>_evarr_<E> (`[+]$T`), E written as its symbol.
-enum class AllocFamily { Struct, Arr, ArrArrStruct, ArrArrPrim, Varr, EVarr };
-// elem is the struct for Struct, the leaf for ArrArr*, and otherwise the
-// element as the array's storage holds it.
+// family per shape: __pln_<op>_<struct>, and for an array of any element E,
+// __pln_<op>_arr_<E>, __pln_<op>_varr_<E> and __pln_<op>_evarr_<E> (`[+]$T`),
+// E written as its symbol.
+enum class AllocFamily { Struct, Arr, Varr, EVarr };
+// elem is the struct for Struct, and otherwise the element as the array's
+// storage holds it.
 struct AllocShapeRef { AllocFamily family; json elem; };
 
 struct StructDef {
@@ -413,13 +413,10 @@ class PlnSemanticAnalyzer {
 	                       size_t depth = 0);
 	json sa_embed_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json sa_owned_elem_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
-	json sa_owned_struct_arr2d_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json allocElemDesc(const json& elem, bool inPlace = false);
 	void recordArrShape(const json& elem);
-	void recordArrArrShape(const string& leafName);
 	void recordVarrShape(const json& vt);
 	json varrData(json varr);
-	void recordArrArrStructShape(const string& structName);
 	void enterBlockDecls(const json& stmts);
 	void declareLocalTypeName(const json& stmt);
 	void leaveBlockDecls();

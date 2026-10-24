@@ -71,11 +71,6 @@ inline AllocShapeRef structShape(const string& name)
 {
 	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
-inline AllocShapeRef arrArrShape(AllocFamily family, const string& leaf)
-{
-	json elem = {{"type-kind",family == AllocFamily::ArrArrPrim ? "prim" : "struct"},{"type-name",leaf}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-	return {family, move(elem)};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
 // len, push, resize and pop of the `[+]T` whose header type is varr, as call candidates.
 json varrBuiltinDefs(const json& varr);
 
@@ -236,6 +231,23 @@ inline bool isOwnedBlock(const json& vt)
 	return isStructStorage(vt) || isVarrStorage(vt)
 	    || (isArrLevel(vt) && vt.contains("arr-size") && !vt.contains("mutable"));
 }
+// The fixed array helpers for owned elements E. A row's length, which may be
+// known only at run time, is the helpers' argument rather than part of E, so
+// every array of rows of one element shares them.
+inline AllocShapeRef arrShape(const json& elem)
+{
+	json e = elem;
+	if (isArrLevel(e)) e.erase("arr-size");
+	return {AllocFamily::Arr, move(e)};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+// The lengths an arrShape helper takes after the array of type arrType.
+inline vector<int64_t> arrShapeLens(const json& arrType)
+{
+	vector<int64_t> lens = {arrType["arr-size"].get<int64_t>()};
+	const json& elem = arrType["base-type"];
+	if (isArrLevel(elem)) lens.push_back(elem["arr-size"].get<int64_t>());
+	return lens;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 // An owned element (a struct's, a `[+]T`'s or a row's storage) has no
 // permission of its own: it is writable only as far as the array it is
 // reached through.

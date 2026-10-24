@@ -262,7 +262,7 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 		if (f.elemKind == "struct") {
 			json elem = toStructPntrType({{"type-kind","prim"},{"type-name",f.typeName}}); // LCOV_EXCL_EXCEPTION_BR_LINE
-			ownedArr.back()["shape-key"] = allocShapeKey({AllocFamily::Arr, elem});
+			ownedArr.back()["shape-key"] = allocShapeKey(arrShape(elem));
 			recordArrShape(elem);
 		}
 	}

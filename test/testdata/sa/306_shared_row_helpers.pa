@@ -1,0 +1,6 @@
+type P { int32 x; int32 y; };
+int64 k = 3;
+[2][k]int32 m;
+[+][3]int32 v;
+[2][4]P mp;
+[+][4]P vp;

@@ -231,9 +231,7 @@ For a shape key `K`, the functions are:
 | Shape | `K` | Functions |
 |-------|-----|-----------|
 | struct `T` (one that owns nothing only as a part of another shape) | `T` | all; `init`/`fini` only when it owns fields |
-| `[n]T` with `T` a struct | `arr_E` | all |
-| `[m][n]T` with `T` a struct | `arr_arr_T` | all |
-| `[m][n]P` with `P` a primitive | `arr_arr_P` | all |
+| `[n]T` with `T` a struct, and `[m][n]T`/`[m][n]$T` (the element a row) | `arr_E` | all; a row's also take its length after `n` |
 | a struct's owned `[n]P` field | `arr_prim_P` | `alloc`, `free` |
 | `[+]T` (`T` a primitive, a struct, a `[+]U` or a row `[n]U`) | `varr_E` | all, and `push`/`resize`/`pop`; `copy(h, src, n)` copies a run of elements |
 | `[+]$T` with `T` a struct or a row `[n]U` | `evarr_E` | as `varr_E` |
@@ -248,7 +246,10 @@ helpers `__pln_build/drop/set/copyrun_E` shared by `arr_E` and `varr_E`; any oth
 plain bytes, zeroed and copied in bulk. A row element is described by its own element: a row in a
 block of its own is an owned element built and dropped through its elements' helpers, and a row
 laid out in place (`[+]$[n]U`) is `n` slots of its element, so it is owned exactly when that
-element is.
+element is. A row in its own block may have a length known only at run time (`[m][k]int32`), so
+its key leaves the length out (`[m][n]int32` is `arr_Pint32`) and its helpers take it as an
+argument: a fixed array passes its own, `varr_A4_Pint32` the type's 4, and both share
+`__pln_build_Pint32` and the rest.
 
 Like any Palan function, each links by a symbol made from its module and parameter types, so
 palan-sa names the module `__allocators` (`PALAN_ALLOCATORS_MODULE` in `src/common/PlnDefs.h`,

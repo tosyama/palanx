@@ -1219,9 +1219,8 @@ int64 cols = 3;
 
 Both row and column indices must be integer types.
 
-**Memory management:** The compiler automatically generates `__pln_alloc_arr_arr_<leaf>` and
-`__pln_free_arr_arr_<leaf>` functions (via build-mgr) and inserts the allocation call at
-declaration and the free call at scope exit. No manual memory management is required.
+**Memory management:** The compiler allocates the outer array and each row at declaration and
+frees them at scope exit. No manual memory management is required.
 
 ### Contiguous Two-Dimensional Arrays (`[n]$[m]T`)
 

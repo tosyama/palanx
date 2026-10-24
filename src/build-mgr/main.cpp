@@ -189,9 +189,7 @@ int main(int argc, char* argv[])
 	// deduplicated by key (used below to synthesize shared allocators).
 	{
 		set<string> seen_shapes;
-		vector<json> arr_shapes;
 		vector<json> struct_shapes;
-		vector<json> arr_arr_struct_shapes;
 		// Arrays of any element ("arr", "varr"), in the order SA met them:
 		// an element's own array helpers come before the arrays holding it.
 		vector<json> elem_arr_shapes;
@@ -215,12 +213,8 @@ int main(int argc, char* argv[])
 				string kind = shape.value("shape-kind", "");
 				if (kind == "struct")
 					struct_shapes.push_back(shape);
-				else if (kind == "arr-arr-struct")
-					arr_arr_struct_shapes.push_back(shape);
-				else if (kind == "arr" || kind == "varr")
-					elem_arr_shapes.push_back(shape);
 				else
-					arr_shapes.push_back(shape);
+					elem_arr_shapes.push_back(shape);
 			}
 		}
 
@@ -235,7 +229,7 @@ int main(int argc, char* argv[])
 						arr_prim_shapes.push_back({{"leaf-type", leaf}});
 				}
 
-		if (!arr_shapes.empty() || !struct_shapes.empty() || !elem_arr_shapes.empty()) {
+		if (!struct_shapes.empty() || !elem_arr_shapes.empty()) {
 			string workdir = fs::path(ast_files[0]).parent_path().string();
 			string alloc_pa  = workdir + "/" PALAN_ALLOCATORS_MODULE ".pa";
 			string alloc_ast = alloc_pa + ".ast.json";
@@ -444,10 +438,11 @@ int main(int argc, char* argv[])
 					string key;        // the element's type symbol
 					string type;       // one element's type name in the source
 					int64_t size;      // the bytes a slot takes
-					int64_t count;     // a row's elements
+					int64_t count;     // a row's elements, when its type fixes them
 					bool owned;
 					bool embedded;     // laid out in the slot itself (`[+]$T`, `[+]$[n]T`)
 					string buildElem;  // a slot as the build helper fills it
+					string declElem;   // a slot as a local array declares it
 					string ownElem;    // a slot as the drop and copy helpers read it
 					string value;      // what push takes
 					string popped;     // what pop returns
@@ -471,11 +466,14 @@ int main(int argc, char* argv[])
 						e.value = "[]" + lrun;
 						if (!e.embedded) {
 							// A row is a block of its own, which the slot points at.
+							// Its helpers take its length as m.
 							e.owned = true;
 							e.buildElem = "@!" + (l.owned ? l.buildElem : l.type);
-							e.ownElem = "[" + to_string(e.count) + "]" + lrun;
+							// A local array of `@!@!T` slots must be spelled `[n]@![]@!T`.
+							e.declElem = "@![]" + (l.owned ? l.buildElem : lrun);
+							e.ownElem = "[]" + lrun;
 							e.popped = e.buildElem;
-							e.run = "[]" + e.ownElem;
+							e.run = "[][" + to_string(e.count) + "]" + lrun;
 							e.data = "@!" + e.buildElem;
 						} else {
 							// A row laid out in place is its elements' slots, n to a row.
@@ -493,6 +491,7 @@ int main(int argc, char* argv[])
 					e.owned = kind == "struct" || kind == "varr";
 					e.embedded = kind == "embed-struct";
 					e.buildElem = "@!" + e.type;
+					e.declElem = e.buildElem;
 					e.ownElem = e.type;
 					e.value = e.type;
 					// The caller takes a struct's storage, which a `@!T` return carries the same way.
@@ -515,9 +514,8 @@ int main(int argc, char* argv[])
 					if (e.kind == "varr") return indent + "calloc(1, 24) -> " + slot + ";\n";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
-						string n = to_string(e.count);
-						string s = indent + "calloc(" + n + ", " + to_string(l.size) + ") -> " + slot + ";\n";
-						if (l.owned) s += indent + "__pln_build_" + l.key + "(" + slot + ", 0, " + n + ");\n";
+						string s = indent + "calloc(m, " + to_string(l.size) + ") -> " + slot + ";\n";
+						if (l.owned) s += indent + "__pln_build_" + l.key + "(" + slot + ", 0, m);\n";
 						return s;
 					}
 					return structElemBuild(e.type, slot, indent);
@@ -528,8 +526,8 @@ int main(int argc, char* argv[])
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
 						if (!l.owned) return "free(" + slot + ");";
-						return "if " + slot + " != NULL { __pln_drop_" + l.key + "(" + slot + ", 0, "
-							+ to_string(e.count) + "); }\n        free(" + slot + ");";
+						return "if " + slot + " != NULL { __pln_drop_" + l.key + "(" + slot
+							+ ", 0, m); }\n        free(" + slot + ");";
 					}
 					return hasOwned(e.type) ? "__pln_free_" + e.type + "(" + slot + ");" : "free(" + slot + ");";
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
@@ -538,20 +536,24 @@ int main(int argc, char* argv[])
 						return "__pln_copy_" + e.inner + "(@!" + dst + ", " + src + ".data, " + src + ".len);";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
-						string n = to_string(e.count);
-						if (l.owned) return "__pln_copyrun_" + l.key + "(" + dst + ", " + src + ", " + n + ");";
-						return "memcpy(" + dst + ", " + src + ", " + to_string(e.count * l.size) + ");";
+						if (l.owned) return "__pln_copyrun_" + l.key + "(" + dst + ", " + src + ", m);";
+						return "memcpy(" + dst + ", " + src + ", m * " + to_string(l.size) + ");";
 					}
 					return structCopy(e.type, dst, src);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// A row block's helpers take its length after their own arguments:
+				// m inside the helpers and a fixed array's, the type's for `[+][n]T`.
+				auto rowLenParam = [](const ElemOps& e) { return e.kind == "row" ? string(", int64 m") : string(); };
+				auto rowLenArg = [](const ElemOps& e, const string& m) { return e.kind == "row" ? ", " + m : string(); };
 				set<string> elemHelpersDone;
 				function<void(const ElemOps&)> emitElemHelpers = [&](const ElemOps& e) {
 					if (!e.owned || !elemHelpersDone.insert(e.key).second) return;
 					if (e.leaf) emitElemHelpers(*e.leaf);
-					string head = "\nfunc __pln_build_" + e.key + "([]" + e.buildElem + " slots, int64 from, int64 to) {\n";
-					string dropHead = "func __pln_drop_" + e.key + "([]" + e.ownElem + " slots, int64 from, int64 to) {\n";
-					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + e.value + " x) {\n";
-					string runHead = "func __pln_copyrun_" + e.key + "([]" + e.ownElem + " dst, []" + e.ownElem + " src, int64 n) {\n";
+					string mp = rowLenParam(e), ma = rowLenArg(e, "m");
+					string head = "\nfunc __pln_build_" + e.key + "([]" + e.buildElem + " slots, int64 from, int64 to" + mp + ") {\n";
+					string dropHead = "func __pln_drop_" + e.key + "([]" + e.ownElem + " slots, int64 from, int64 to" + mp + ") {\n";
+					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + e.value + " x" + mp + ") {\n";
+					string runHead = "func __pln_copyrun_" + e.key + "([]" + e.ownElem + " dst, []" + e.ownElem + " src, int64 n" + mp + ") {\n";
 					if (e.kind == "embed-row") {
 						// Rows laid out in place are runs of their elements' slots.
 						string l = e.leaf->key, n = to_string(e.count);
@@ -593,7 +595,7 @@ int main(int argc, char* argv[])
 					    << runHead
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
-					    << "        __pln_set_" << e.key << "(dst, i, src[i]);\n"
+					    << "        __pln_set_" << e.key << "(dst, i, src[i]" << ma << ");\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n";
@@ -606,28 +608,30 @@ int main(int argc, char* argv[])
 					if (shape["shape-kind"] == "arr") {
 						// A fixed array of owned elements, all of them live.
 						string buildRun = "[]" + e.buildElem, ownRun = "[]" + e.ownElem;
-						out << "\nexport func __pln_init_" << key << "(" << buildRun << " outer, int64 n) {\n"
-						    << "    __pln_build_" << e.key << "(outer, 0, n);\n"
+						string mp = rowLenParam(e), ma = rowLenArg(e, "m");
+						out << "\nexport func __pln_init_" << key << "(" << buildRun << " outer, int64 n" << mp << ") {\n"
+						    << "    __pln_build_" << e.key << "(outer, 0, n" << ma << ");\n"
 						    << "}\n"
-						    << "export func __pln_alloc_" << key << "(int64 n) -> " << buildRun << " {\n"
-						    << "    [n]" << e.buildElem << " outer;\n"
-						    << "    __pln_init_" << key << "(outer, n);\n"
+						    << "export func __pln_alloc_" << key << "(int64 n" << mp << ") -> []" << e.declElem << " {\n"
+						    << "    [n]" << e.declElem << " outer;\n"
+						    << "    __pln_init_" << key << "(outer, n" << ma << ");\n"
 						    << "    return outer;\n"
 						    << "}\n"
-						    << "export func __pln_fini_" << key << "(" << ownRun << " pts, int64 n) {\n"
-						    << "    __pln_drop_" << e.key << "(pts, 0, n);\n"
+						    << "export func __pln_fini_" << key << "(" << ownRun << " pts, int64 n" << mp << ") {\n"
+						    << "    __pln_drop_" << e.key << "(pts, 0, n" << ma << ");\n"
 						    << "}\n"
-						    << "export func __pln_free_" << key << "(" << ownRun << " pts, int64 n) {\n"
+						    << "export func __pln_free_" << key << "(" << ownRun << " pts, int64 n" << mp << ") {\n"
 						    << "    if (pts == NULL) { return; }\n"
-						    << "    __pln_fini_" << key << "(pts, n);\n"
+						    << "    __pln_fini_" << key << "(pts, n" << ma << ");\n"
 						    << "    free(pts);\n"
 						    << "    return;\n"
 						    << "}\n"
-						    << "export func __pln_copy_" << key << "(" << ownRun << " dst, " << ownRun << " src, int64 n) {\n"
-						    << "    __pln_copyrun_" << e.key << "(dst, src, n);\n"
+						    << "export func __pln_copy_" << key << "(" << ownRun << " dst, " << ownRun << " src, int64 n" << mp << ") {\n"
+						    << "    __pln_copyrun_" << e.key << "(dst, src, n" << ma << ");\n"
 						    << "}\n";
 						continue;
 					}
+					string ml = rowLenArg(e, to_string(e.count));
 					// A variable-length array's header {len, cap, data}. The header
 					// starts zeroed (calloc or the frame's memset), so data stays
 					// NULL while the capacity is 0. Only the elements below len are
@@ -641,14 +645,14 @@ int main(int argc, char* argv[])
 					    << "    len -> h.len;\n"
 					    << "    cap -> h.cap;\n"
 					    << "    if cap > 0 { calloc(cap, " << size << ") -> h.data; }\n";
-					if (e.owned) out << "    __pln_build_" << e.key << "(h.data, 0, len);\n";
+					if (e.owned) out << "    __pln_build_" << e.key << "(h.data, 0, len" << ml << ");\n";
 					out << "}\n"
 					    << "export func __pln_alloc_" << key
 					    << "(int64 len, int64 cap) -> " << hdr << " h {\n"
 					    << "    __pln_init_" << key << "(@!h, len, cap);\n"
 					    << "}\n"
 					    << "export func __pln_fini_" << key << "(" << hdr << " h) {\n";
-					if (e.owned) out << "    __pln_drop_" << e.key << "(h.data, 0, h.len);\n";
+					if (e.owned) out << "    __pln_drop_" << e.key << "(h.data, 0, h.len" << ml << ");\n";
 					out << "    free(h.data);\n"
 					    << "}\n"
 					    << "export func __pln_free_" << key << "(" << hdr << " h) {\n"
@@ -672,8 +676,8 @@ int main(int argc, char* argv[])
 					if (e.kind == "varr")
 						out << "    @!x -> h.data[h.len];\n";
 					else if (e.owned)
-						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1);\n"
-						    << "    __pln_set_" << e.key << "(h.data, h.len, x);\n";
+						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1" << ml << ");\n"
+						    << "    __pln_set_" << e.key << "(h.data, h.len, x" << ml << ");\n";
 					else if (e.embedded)
 						out << "    memcpy(" << slotAddr(e, "h.data", "h.len") << ", x, " << size << ");\n";
 					else
@@ -684,8 +688,8 @@ int main(int argc, char* argv[])
 					    << "    if n < 0 { abort(); }\n"
 					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n); }\n";
 					if (e.owned)
-						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n); }\n"
-						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len); }\n";
+						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ml << "); }\n"
+						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ml << "); }\n";
 					else
 					// Shrinking keeps the old elements past the length, so growing
 					// zeroes what it brings back.
@@ -698,9 +702,9 @@ int main(int argc, char* argv[])
 					    << "export func __pln_copy_" << key << "(@!" << hdr << " h, " << e.run << " src, int64 n) {\n"
 					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n); }\n";
 					if (e.owned)
-						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n); }\n"
-						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len); }\n"
-						    << "    __pln_copyrun_" << e.key << "(h.data, src, n);\n";
+						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ml << "); }\n"
+						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ml << "); }\n"
+						    << "    __pln_copyrun_" << e.key << "(h.data, src, n" << ml << ");\n";
 					else
 						out << "    memmove(h.data, src, n * " << size << ");\n";
 					out << "    n -> h.len;\n"
@@ -723,98 +727,6 @@ int main(int argc, char* argv[])
 					else
 						out << "    h.data[h.len] -> x;\n";
 					out << "}\n";
-				}
-
-				// Owned 2D struct array: each row is an owned struct array from above
-				for (auto& shape : arr_arr_struct_shapes) {
-					string struct_name = shape["struct-name"];
-					string shape_key   = shape["shape-key"];
-					string row_key     = shape["row-key"];
-					out << "\nexport func __pln_init_" << shape_key
-					    << "([]@![]@!" << struct_name << " outer, int64 d0, int64 d1) {\n"
-					    << "    int64 i = 0;\n"
-					    << "    while i < d0 {\n"
-					    << "        calloc(d1, 8) -> outer[i];\n"
-					    << "        int64 j = 0;\n"
-					    << "        while j < d1 {\n"
-					    << structElemBuild(struct_name, "outer[i][j]", "            ")
-					    << "            j + 1 -> j;\n"
-					    << "        }\n"
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n"
-					    << "export func __pln_alloc_" << shape_key
-					    << "(int64 d0, int64 d1) -> []@![]@!" << struct_name << " {\n"
-					    << "    [d0]@![]@!" << struct_name << " outer;\n"
-					    << "    __pln_init_" << shape_key << "(outer, d0, d1);\n"
-					    << "    return outer;\n"
-					    << "}\n"
-					    << "export func __pln_fini_" << shape_key
-					    << "([][]" << struct_name << " outer, int64 d0, int64 d1) {\n"
-					    << "    int64 i = 0;\n"
-					    << "    while i < d0 {\n"
-					    << "        __pln_free_" << row_key << "(outer[i], d1);\n"
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n"
-					    << "export func __pln_free_" << shape_key
-					    << "([][]" << struct_name << " outer, int64 d0, int64 d1) {\n"
-					    << "    if (outer == NULL) { return; }\n"
-					    << "    __pln_fini_" << shape_key << "(outer, d0, d1);\n"
-					    << "    free(outer);\n"
-					    << "    return;\n"
-					    << "}\n"
-					    << "export func __pln_copy_" << shape_key
-					    << "([][]" << struct_name << " dst, [][]" << struct_name
-					    << " src, int64 d0, int64 d1) {\n"
-					    << "    int64 i = 0;\n"
-					    << "    while i < d0 {\n"
-					    << "        __pln_copy_" << row_key << "(dst[i], src[i], d1);\n"
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n";
-				}
-
-				// Array allocator/free functions
-				for (auto& shape : arr_shapes) {
-					string leaf = shape["leaf-type"];
-					out << "\nexport func __pln_init_arr_arr_" << leaf
-					    << "([]@![]" << leaf << " outer, int64 d0, int64 d1) {\n"
-					    << "    int64 i = 0;\n"
-					    << "    while i < d0 {\n"
-					    << "        malloc(d1 * " << shape["leaf-size"].get<int64_t>() << ") -> outer[i];\n"
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n"
-					    << "export func __pln_alloc_arr_arr_" << leaf
-					    << "(int64 d0, int64 d1) -> []@![]" << leaf << " {\n"
-					    << "    [d0]@![]" << leaf << " outer;\n"
-					    << "    __pln_init_arr_arr_" << leaf << "(outer, d0, d1);\n"
-					    << "    return outer;\n"
-					    << "}\n"
-					    << "export func __pln_fini_arr_arr_" << leaf
-					    << "([][]" << leaf << " outer, int64 d0) {\n"
-					    << "    int64 i = 0;\n"
-					    << "    while i < d0 {\n"
-					    << "        free(outer[i]);\n"
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n"
-					    << "export func __pln_free_arr_arr_" << leaf
-					    << "([][]" << leaf << " outer, int64 d0) {\n"
-					    << "    if (outer == NULL) { return; }\n"
-					    << "    __pln_fini_arr_arr_" << leaf << "(outer, d0);\n"
-					    << "    free(outer);\n"
-					    << "    return;\n"
-					    << "}\n"
-					    << "export func __pln_copy_arr_arr_" << leaf
-					    << "([][]" << leaf << " dst, [][]" << leaf << " src, int64 d0, int64 d1) {\n"
-					    << "    int64 i = 0;\n"
-					    << "    while i < d0 {\n"
-					    << "        memcpy(dst[i], src[i], d1 * " << shape["leaf-size"].get<int64_t>() << ");\n"
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n";
 				}
 
 			}

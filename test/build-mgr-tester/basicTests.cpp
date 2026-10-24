@@ -3679,3 +3679,20 @@ TEST(build_mgr, varr_row_owned_mtrace) {
 	ASSERT_EQ(output, "5 7 3 7\n4 5 1\n2 1 0\n6 1 1\n");
 	expectBalancedMtrace(traceFile, 83);
 }
+
+// A fixed array of rows of a run-time length and `[+][n]T` share the row
+// helpers, which take the row length as an argument.
+TEST(build_mgr, shared_row_mtrace) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(
+		"bin/palan -o /tmp/palan_shared_row_mtrace_bin "
+		"../test/testdata/build-mgr/344_shared_row_mtrace.pa"), "");
+
+	string traceFile = "/tmp/palan_shared_row_mtrace.log";
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " "
+		"/tmp/palan_shared_row_mtrace_bin");
+	ASSERT_EQ(output, "10 6 6\n");
+	expectBalancedMtrace(traceFile, 27);
+}

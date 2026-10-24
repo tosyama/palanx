@@ -1368,31 +1368,22 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	if (t.value("embedded", false)) {
 		return memcpyStmt(n * t["stride"].get<int64_t>());
 	}
-	if (isArrLevel(elem)) {
-		int64_t m = elem["arr-size"];
-		const json& leaf = elem["base-type"];
-		if (elem.value("embedded", false) && elem.contains("stride")) {
-			// [n][m]$T: rows are byte blocks, allocated as arr_arr_uint8.
-			recordArrArrShape("uint8");
-			return copyStmt(arrArrShape(AllocFamily::ArrArrPrim, "uint8"),
-				json::array({dst, src, lit(n), lit(m * elem["stride"].get<int64_t>())})); // LCOV_EXCL_EXCEPTION_BR_LINE
+	// A row is copied as its owner holds it, whatever permission a borrow gives it.
+	json owned = isArrLevel(elem) ? withoutArrPermission(elem) : elem;
+	if (isArrLevel(owned)) {
+		const json& leaf = owned["base-type"];
+		if (isArrLevel(leaf) || isVarrPntr(leaf) || isPtrBorrow(leaf)) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, typeDisplayName(t)) << endl;
+			exit(1);
 		}
-		if (isStructStorage(leaf)) {
-			string name = leaf["base-type"]["type-name"];
-			recordArrArrStructShape(name);
-			return copyStmt(arrArrShape(AllocFamily::ArrArrStruct, name), json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
-		}
-		if (leaf.value("type-kind","") == "prim" && !elem.value("embedded", false)) {
-			string leafName = leaf["type-name"];
-			recordArrArrShape(leafName);
-			return copyStmt(arrArrShape(AllocFamily::ArrArrPrim, leafName), json::array({dst, src, lit(n), lit(m)})); // LCOV_EXCL_EXCEPTION_BR_LINE
-		}
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, typeDisplayName(t)) << endl;
-		exit(1);
 	}
-	if (isOwnedBlock(elem)) {
-		recordArrShape(elem);
-		return copyStmt({AllocFamily::Arr, elem}, json::array({dst, src, lit(n)})); // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (isOwnedBlock(owned)) {
+		recordArrShape(owned);
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json args = json::array({dst, src});
+		for (int64_t len : arrShapeLens(t)) args.push_back(lit(len));
+		return copyStmt(arrShape(owned), move(args));
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 	}
 	// Primitive elements, or '@T' slots whose pointers are copied as they are.
 	int64_t elemBytes = isPtrBorrow(elem) ? 8 : elemSizeBytes(elem["type-name"]);

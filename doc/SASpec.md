@@ -24,13 +24,7 @@ Root
   manager unions it across modules and passes each path to `ld` after the program's own objects.
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
-  Five entry kinds:
-
-  **Array entry** (multi-dimensional arrays):
-  - shape-key\* - Shape key string (e.g. "arr\_arr\_int32")
-  - leaf-type\* - Innermost element type name (e.g. "int32")
-  - leaf-size\* - Size of the leaf type in bytes, for the row copy
-  - depth\* - Nesting depth integer (currently always 2 for `[m][n]T`)
+  Three entry kinds: struct, arr and varr.
 
   The arr and varr entries describe their element as `data` (or the array) holds it:
   - elem\* - `{"kind", "key", "size"}` and the type: `"prim"` with `"type"` (a primitive),
@@ -39,28 +33,24 @@ Root
     slot holding a `[+]U`, 8 bytes; the name is its header type, `__pln_varr_U`) and `"shape-key"`
     (the `[+]U`'s own entry), or, for a row `[n]U`, `"row"` (an owned slot holding the row's
     own block, 8 bytes) or `"embed-row"` (the row laid out in place, `n` elements' bytes), each
-    with `"count"` (`n`) and `"elem"` (the row's element, described the same way). `key` is the
-    element type written as in a symbol (see "Symbol names"): `int32`, `P5Point`, `5Point`,
-    `PVint32`, `A4_Pint32`; an `"embed-row"`'s is prefixed with `C` (`CA4_Pint32`), since it is
-    built differently from a `"row"` of the same type.
+    with `"elem"` (the row's element, described the same way) and `"count"` (`n`; a `"row"` has
+    it only in a varr entry, whose type fixes `n`). `key` is the element type written as in a
+    symbol (see "Symbol names"): `int32`, `P5Point`, `5Point`, `PVint32`. A `"row"`'s leaves out
+    the length (`Pint32` for `[4]int32` and `[k]int32` alike): its helpers take the length as
+    their last argument `m`, so every array of such rows shares them. An `"embed-row"`'s keeps the
+    length and is prefixed with `C` (`CA4_Pint32`), since it is built differently from a `"row"`.
   - Their shape key is `arr_`, `varr_` or `evarr_` followed by the element's `key`, so a key names
     its element type exactly. A struct element's struct entry and a `[+]U` element's varr entry
     precede the entry.
 
-  **Arr entry** (`[n]T` with `T` a struct or a `[+]U`, a variable or an owned field): build-mgr generates
+  **Arr entry** (`[n]T` with `T` a struct or a `[+]U`, a variable or an owned field, and
+  `[m][n]T`, `[m][n]$T` variables, whose element is the row): build-mgr generates
   `__pln_alloc_arr_E(n)`, `__pln_init_arr_E(outer, n)`, `__pln_free_arr_E(pts, n)`,
-  `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`, `E` being the element's `key`:
+  `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`, `E` being the element's `key`;
+  with a `"row"` element each also takes the row length after `n` (`__pln_alloc_arr_Pint32(m, n)`):
   - shape-kind\* - "arr"
-  - shape-key\* - Shape key string (e.g. "arr\_P5Point")
+  - shape-key\* - Shape key string (e.g. "arr\_P5Point", "arr\_Pint32")
   - elem\* - The element, as above
-
-  **Arr-arr-struct entry** (`[m][n]T` variable where `T` is a struct): build-mgr generates
-  `__pln_alloc_arr_arr_T(d0, d1)`/`__pln_free_arr_arr_T(pts, d0, d1)`, which allocate and free
-  each row with the row's arr helpers (its arr entry is always emitted alongside):
-  - shape-kind\* - "arr-arr-struct"
-  - shape-key\* - Shape key string (e.g. "arr\_arr\_Point")
-  - struct-name\* - Leaf struct type name (e.g. "Point")
-  - row-key\* - The shape key of a row, `[n]T` (e.g. "arr\_P5Point")
 
   **Varr entry** (`[+]T` / `[+]$T` variable; `T` below names the shape key's element part): for `[+]T`, build-mgr declares the header as
   `type __pln_varr_T { int64 len; int64 cap; @!T data; }` and generates
@@ -334,29 +324,14 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - The outer array is freed at scope exit. What the slots point to is not freed; a slot cannot
     take ownership with `->>` (E_TransferToBorrowSlot).
 
-  **`[m][n]T` (2D array):** A `var-decl` with `arr` type-kind where `base-type` is itself an
-  `arr(prim T)` is transformed to a 2D allocation:
-  - A temp var `__<name>_d0` (uint64) is prepended, capturing the outer dimension expression.
-  - `var-type`: changed to `pntr(pntr(T))`
-  - `init`: palan call to `__pln_alloc_arr_arr_<leaf>(__<name>_d0, <inner-dim-expr>)`
-  - A shape entry `{"shape-key": "arr\_arr\_<leaf>", "leaf-type": "<leaf>", "depth": 2}` is added
-    to the root `alloc-shapes` array (deduplicated by shape-key across all var-decls).
-  - Scope-exit free: palan call stmt `__pln_free_arr_arr_<leaf>(<name>, __<name>_d0)`.
-  - build-mgr auto-generates the allocator/free Palan source from `alloc-shapes` and links it.
-
-  **`[m][n]T` (2D struct array, `T` a struct):** Each row is an owned `[n]T` array.
-  - Temp vars `__<name>_d0` and `__<name>_d1` (uint64) are prepended; the free call needs both.
-  - `var-type`: `pntr(pntr(pntr(struct(T))))`, with `arr-size` on the outer two levels when constant.
-  - `init`: palan call to `__pln_alloc_arr_arr_<T>(__<name>_d0, __<name>_d1)`.
-  - "arr" and "arr-arr-struct" entries are added to `alloc-shapes`.
-  - Scope-exit free: palan call stmt `__pln_free_arr_arr_<T>(<name>, __<name>_d0, __<name>_d1)`.
-
-  **`[m][n]$T` (2D array of contiguous struct rows, `T` a struct):** Lowered like `[m][n]T` for a
-  primitive leaf, with each row an `n * sizeof(T)` byte block (`T` owns nothing, so no per-element
-  allocation is needed).
-  - `var-type`: `pntr(pntr{embedded, stride, base-type: struct(T)})`, with `arr-size` on both levels when constant.
-  - `init`: palan call to `__pln_alloc_arr_arr_uint8(__<name>_d0, n * sizeof(T))`, which registers the
-    `arr_arr_uint8` shape; scope-exit free: `__pln_free_arr_arr_uint8(<name>, __<name>_d0)`.
+  **`[m][n]T`, `[m][n]$T` (2D array of owned rows):** An array of `m` owned row blocks, lowered
+  like `[n]T` for a struct `T` with the row as the element (an arr entry with a `"row"` element).
+  - Temp vars `__<name>_d0` and `__<name>_d1` (uint64) capture both lengths; the free call needs both.
+  - `var-type`: `pntr(row)`, the row being `pntr(T)` for a primitive `T`, `pntr(pntr(struct(T)))`
+    for a struct `T`, and `pntr{embedded, stride, base-type: struct(T)}` for `$T` (which must own
+    nothing); `arr-size` is on both levels when constant.
+  - `init`: palan call to `__pln_alloc_arr_<E>(__<name>_d0, __<name>_d1)`, `E` the row's key
+    (`arr_Pint32` for `[m][n]int32`); scope-exit free: `__pln_free_arr_<E>(<name>, __<name>_d0, __<name>_d1)`.
 
   Other 2D struct forms (`[m]$[n]T`, `[m]$[n]$T`) are compile errors.
 
@@ -608,9 +583,8 @@ Additional statement kinds emitted by SA:
   - No owned parts (a primitive, `$T`, `$[m]T` or `@T` element array, a struct without owned
     fields): C `memcpy(dst, src, bytes)` with a `lit-uint` byte count.
   - Struct `T` with owned fields: `__pln_copy_T(dst, src)`.
-  - `[n]T` (T a struct): `__pln_copy_arr_T(dst, src, n)`; `[m][n]T`: `__pln_copy_arr_arr_T(dst, src, m, n)`.
-  - `[m][n]T` (T primitive): `__pln_copy_arr_arr_<T>(dst, src, m, n)`; `[m][n]$T`:
-    `__pln_copy_arr_arr_uint8(dst, src, m, n * sizeof(T))`.
+  - `[n]T` (T a struct): `__pln_copy_arr_T(dst, src, n)`; `[m][n]T`, `[m][n]$T`:
+    `__pln_copy_arr_<E>(dst, src, m, n)`, `E` the row's key.
 
   The routine's `alloc-shapes` entry is recorded as for a declaration, and build-mgr generates
   the copy function next to that shape's allocator. The source's value-type must match the
