@@ -60,6 +60,20 @@ enum class AllocFamily { Struct, Arr, Varr, EVarr };
 // storage holds it.
 struct AllocShapeRef { AllocFamily family; json elem; };
 
+// A declared array's storage type, and the lengths of its own levels as SA
+// expressions, outermost first; a length known only at run time is absent from
+// the type.
+struct Storage { json type; vector<json> lens; };
+// How an aggregate variable's own block is obtained and released on the heap,
+// and what it takes in a stack frame (see placeAggregateVar).
+struct AggregatePlace {
+	json heapInit;
+	json release;
+	int64_t frameBytes;
+	int frameAlign;
+	optional<AllocShapeRef> shape;
+};
+
 struct StructDef {
 	string name;
 	vector<FieldLayout> fields;
@@ -389,9 +403,12 @@ class PlnSemanticAnalyzer {
 	// all vars share one var-type; returns array of statements
 	json sa_var_decl_group(const json& stmt, VarStorage storage);
 	json sa_arr_var_decl(const json& stmt, VarStorage storage);       // returns array of statements
+	json sa_arr_var_decl(const json& stmt, VarStorage storage, const Storage& st, bool litLen);
+	Storage arrVarStorage(const json& locNode, const json& vtype);
+	AggregatePlace arrPlace(const json& self, const vector<json>& lens, bool litLen);
+	json structAllocExpr(const string& name);
 	json sa_arr_lit_var_decl(const json& stmt, VarStorage storage);   // single var; returns array of statements
 	json sa_arr_copy_var_decl(const json& stmt, VarStorage storage);  // single var; returns array of statements
-	json sa_varr_var_decl(const json& stmt, VarStorage storage, bool litLen = false);
 	json sa_struct_lit_var_decl(const json& stmt, VarStorage storage); // single var; returns array of statements
 	json placeAggregateVar(const json& stmt, const string& name, const json& varType,
 	                       json heapInit, json heapRelease, VarStorage storage,
@@ -405,14 +422,13 @@ class PlnSemanticAnalyzer {
 	// numeric leaf values or structs (structDef set) given as struct literals.
 	struct ArrLitLevel { int64_t size; json varr; };
 	struct ArrLitShape { vector<ArrLitLevel> levels; json leaf; const StructDef* structDef; };
-	ArrLitShape arrLitShape(const json& locNode, const string& name, const json& saType);
+	// varrTop: saType itself may be a `[+]T`, the first level.
+	ArrLitShape arrLitShape(const json& locNode, const string& name, const json& saType, bool varrTop = false);
 	json sa_arr_lit_values(const json& lit, const ArrLitShape& shape, const string& name, size_t depth = 0);
 	void checkArrLitCount(const json& locNode, const json& items, const string& name,
 	                      const ArrLitShape& shape, size_t depth = 0);
 	void emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out,
 	                       size_t depth = 0);
-	json sa_embed_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
-	json sa_owned_elem_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json allocElemDesc(const json& elem, bool inPlace = false);
 	void recordArrShape(const json& elem);
 	void recordVarrShape(const json& vt);
@@ -443,8 +459,7 @@ class PlnSemanticAnalyzer {
 	void recordAllocShape(const string& structName);
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
 	json makeOwnedFreeStmt(const string& name, const json& pntrType);
-	json makeStructFreeCall(json ptr, const string& structName);
-	json makeOwnedValueFreeStmt(json value);
+	json makeOwnedValueFreeStmt(json value, json lens = json());
 	bool isStructType(const json& type) const;
 	// True if the program-wide name `name` is a primitive or a registered struct.
 	bool isKnownTypeName(const string& name) const;
@@ -462,7 +477,6 @@ class PlnSemanticAnalyzer {
 	json  unsizedArrToPntr(const json& locNode, const json& type);
 	// A '@T'/'@!T' array element (a pointer slot) as SA represents it.
 	json  ptrSlotElemType(const json& locNode, const json& type);
-	void  normalizeUnsizedArrSig(json& funcDef);
 	json  deepNormalizePrimToStruct(const json& type) const;
 	// The type a written name is bound to in this scope, or null.
 	const json* findTypeBinding(const string& written) const;
@@ -476,10 +490,11 @@ class PlnSemanticAnalyzer {
 	// The canonical form of a signature type (an owned struct becomes pntr(struct)),
 	// also what a tapple-decl variable's declared type is compared in.
 	json  normalizeSigType(const json& type) const;
-	void  normalizeStructSig(json& funcDef);
+	json  sigType(const json& locNode, const json& type, bool isParam);
+	void  normalizeSig(json& funcDef);
 	// Diagnose (and exit) if `funcDef`'s parameters/ret-type/rets use a type
 	// PlnTypeRegistry::fromJson cannot represent. Must be called after
-	// normalizeStructSig -- a struct parameter is still prim(Name) before
+	// normalizeSig -- a struct parameter is still prim(Name) before
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
@@ -489,11 +504,10 @@ class PlnSemanticAnalyzer {
 	json  varrRowType(const json& locNode, const json& row);
 	json  takeOverType(const json& locNode, const json& varType);
 	int64_t inPlaceSize(const json& elem) const;
-	json  normalizeVarrType(const json& locNode, const json& type);
 	// isMutable: the borrow's permission, or none for an owned level.
-	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable);
+	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable,
+	                    vector<json>* lens = nullptr);
 	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);
-	void  normalizeArrSig(json& funcDef);
 	const json* firstNonConstName(const json& expr) const;
 	optional<SaDiag> elemShapeMismatch(const json& saValue, const json& dstType);
 	void  checkElemShape(const json& locNode, const json& saValue, const json& dstType);
@@ -514,7 +528,7 @@ class PlnSemanticAnalyzer {
 	void  preregisterFunc(const json& f, const string& scope);
 	json  normalizeFuncSig(const json& f, const string& scope);
 	// Diagnose Linux syscall ABI constraints on a syscall declaration
-	// (funcDef must already be normalizeStructSig'd) and fold its
+	// (funcDef must already be normalizeSig'd) and fold its
 	// "syscall-number" expression node into a plain JSON integer.
 	void  validateSyscallDecl(json& funcDef);
 	void  rejectNotImplSig(const json& f);

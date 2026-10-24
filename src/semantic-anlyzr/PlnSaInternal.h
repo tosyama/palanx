@@ -356,7 +356,7 @@ inline json fieldValueType(const FieldLayout& f)
 		// Primitive leaf: field is a plain pointer to inline malloc'd values
 		// (pntr(prim)); pts[i] loads the value directly.
 		// Struct leaf: field cascades to __pln_alloc_arr_T, matching the
-		// variable-level owned struct array shape (sa_owned_elem_arr_var_decl) —
+		// variable-level owned struct array shape (sa_arr_var_decl) —
 		// a pointer to an array of struct-pointers (pntr(pntr(struct))); pts[i]
 		// loads the i-th element's pointer.
 		if (f.elemKind == "struct") {
@@ -516,6 +516,15 @@ inline void setArrSize(json& pntrType, const json& saSize) {
 // '@T'/'@!T' pointer.
 inline bool isArrLevel(const json& t) {
 	return t.value("type-kind","") == "pntr" && !isStructStorage(t) && !isPtrBorrow(t) && !isVarrPntr(t);
+}
+// An array whose elements are blocks of their own (structs, `[+]U`s, rows of
+// any length), built and freed through the generated helpers, rather than
+// laid out in the array's block.
+inline bool ownsElems(const json& arrType)
+{
+	const json& elem = arrType["base-type"];
+	return !arrType.value("embedded", false)
+	    && (isOwnedBlock(elem) || (isArrLevel(elem) && !elem.contains("mutable")));
 }
 
 // Renders an SA type as source-like text for diagnostics: a struct's own

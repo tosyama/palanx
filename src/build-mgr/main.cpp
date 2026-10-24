@@ -334,10 +334,13 @@ int main(int argc, char* argv[])
 					auto& owned = shape["owned-fields"];
 					auto& ownedArr = shape["owned-array-fields"];
 
+					// The block is returned as `@!T`: a `T` return would be allocated
+					// by this very function.
 					out << "\nexport func __pln_alloc_" << name
-					    << "() -> " << name << " p {\n";
+					    << "() -> @!" << name << " p {\n"
+					    << "    calloc(1, " << shape["total-size"].get<int64_t>() << ") -> p;\n";
 					if (hasOwned(name))
-						out << "    __pln_init_" << name << "(@!p);\n";
+						out << "    __pln_init_" << name << "(p);\n";
 					out << "}\n";
 
 					if (hasOwned(name))

@@ -2188,7 +2188,7 @@ TEST(sa_error, arr_lit_init)
 		{"error_220_arr_lit_row_size_declared.pa", ":1:19: error: array 'm' has rows of size 3 but a row of its array literal has 2 elements."},
 		{"error_221_arr_lit_row_count.pa", ":1:1: error: array 'm' has size 3 but its array literal has 2 elements."},
 		{"error_222_arr_lit_2d_given_1d.pa", ":1:18: error: the array literal's dimensions do not match array 'm'."},
-		{"error_223_arr_lit_3d.pa", ":1:1: error: array 'm' cannot be given an array literal: only numeric and struct element types are supported."},
+		{"error_223_arr_lit_3d.pa", ":1:1: error: this statement is not supported in this version."},
 		{"error_224_arr_lit_row_size_not_const.pa", ":2:1: error: array 'm' given an array literal must have a compile-time constant size."},
 		{"error_375_struct_lit_void_field.pa", ":3:16: error: Void function call cannot be used as a value."},
 	};

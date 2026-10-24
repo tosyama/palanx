@@ -6,6 +6,7 @@ add_executable(palan-sa
 	PlnSaExpr.cpp
 	PlnSaCall.cpp
 	PlnSaDecl.cpp
+	PlnSaStorage.cpp
 	PlnSaStmt.cpp
 	PlnSaMessage.cpp
 	PlnType.cpp

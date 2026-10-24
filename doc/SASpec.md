@@ -307,11 +307,18 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
 - **var-decl** (array transformation) - Array variable declarations are transformed by SA:
 
+  Each fixed level's size of the variable's own blocks (the array, and the rows of `[m][n]T`)
+  and a `[+n]T`'s capacity are evaluated once per statement. A constant is used as it is; a size
+  known only at run time is held in a temp var `__<name>_d<k>` (uint64, `k` counting levels from
+  the outermost), declared before the variable, which its allocation, its free and a row index
+  without a `stride` read. Each later variable of the statement declares its own, copied from the
+  first variable's.
+
   **`[n]T` (raw array):** A `var-decl` with `arr` type-kind (`specifier: "raw"`, non-null `size-expr`,
   prim `base-type`) is rewritten as a `var-decl` with `pntr` type and a synthesized `malloc` call as init:
   - `var-type`: changed from `arr` to `pntr` (pointer to the element type)
   - `init`: `{"expr-type":"call","name":"malloc","func-type":"c","args":[<size_bytes>],"value-type":<pntr_type>}`
-    where `size_bytes` = `size-expr` (when elem_size == 1) or `mul(size-expr, lit-uint(elem_size))` otherwise
+    where `size_bytes` = the size (when elem_size == 1) or `mul(<size>, lit-uint(elem_size))` otherwise
   - The variable is registered in scope with `pntr` type
   - The `size-expr` must evaluate to an integer type; a float size is a compile error
 
@@ -326,12 +333,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
   **`[m][n]T`, `[m][n]$T` (2D array of owned rows):** An array of `m` owned row blocks, lowered
   like `[n]T` for a struct `T` with the row as the element (an arr entry with a `"row"` element).
-  - Temp vars `__<name>_d0` and `__<name>_d1` (uint64) capture both lengths; the free call needs both.
   - `var-type`: `pntr(row)`, the row being `pntr(T)` for a primitive `T`, `pntr(pntr(struct(T)))`
     for a struct `T`, and `pntr{embedded, stride, base-type: struct(T)}` for `$T` (which must own
     nothing); `arr-size` is on both levels when constant.
-  - `init`: palan call to `__pln_alloc_arr_<E>(__<name>_d0, __<name>_d1)`, `E` the row's key
-    (`arr_Pint32` for `[m][n]int32`); scope-exit free: `__pln_free_arr_<E>(<name>, __<name>_d0, __<name>_d1)`.
+  - `init`: palan call to `__pln_alloc_arr_<E>(<m>, <n>)`, `E` the row's key (`arr_Pint32` for
+    `[m][n]int32`); scope-exit free: `__pln_free_arr_<E>(<name>, <m>, <n>)`. A constant length is
+    passed as an int64 literal.
 
   Other 2D struct forms (`[m]$[n]T`, `[m]$[n]$T`) are compile errors.
 
@@ -345,8 +352,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - When `m` is a constant (e.g. `[n]$[4]int32`):
     - `init`: C call `malloc(mul(<n-expr>, lit-uint(m * sizeof(T))))`
   - When `m` is a variable (e.g. `[n]$[cols]int32`):
-    - A temp var `__<name>_d1` (uint64) is prepended, capturing the inner dimension expression.
-    - `init`: C call `malloc(mul(<n-expr>, mul(__<name>_d1, lit-uint(sizeof(T)))))`
+    - `init`: C call `malloc(mul(<n>, mul(__<name>_d1, lit-uint(sizeof(T)))))`
   - Scope-exit free: C call `free(<name>)` (no custom allocator; no `alloc-shapes` entry needed).
   - `n` (row count) is not stored; only `m` (inner dimension) needs to be retained for row indexing.
 

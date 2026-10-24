@@ -235,15 +235,14 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	json ownedParams = json::array();
 	if (sig.contains("parameters"))
 		for (auto& p : sig["parameters"]) {
-			json vt = deepNormalizePrimToStruct(toStructPntrType(normalizeVarrType(funcDef,
-				normalizeArrBorrowType(funcDef, unsizedArrToPntr(funcDef, p["var-type"])))));
+			json vt = sigType(funcDef, p["var-type"], true);
 			if (isVarrStorage(vt)) ownedParams.push_back(p["name"]);
 			declareVar(p["name"], move(vt), &funcDef);
 		}
 	if (sig.contains("rets"))
 		for (auto& r : sig["rets"]) {
 			if (!allocatedAtEntry(r["var-type"])) {
-				declareVar(r["name"], deepNormalizePrimToStruct(unsizedArrToPntr(funcDef, r["var-type"])), &funcDef);
+				declareVar(r["name"], sigType(funcDef, r["var-type"], false), &funcDef);
 			} else if (r.contains("init")) {
 				cerr << locPrefix(r["init"]) << PlnSaMessage::getMessage(E_NamedRetInitOnStruct, r["name"].get<string>()) << endl;
 				exit(1);
@@ -279,10 +278,8 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 
 	json saFunc = sig;
 	saFunc["name"] = (*currentFunc_)["symbol"];
-	normalizeUnsizedArrSig(saFunc);
-	normalizeArrSig(saFunc);
+	normalizeSig(saFunc);
 	validateEmbeddedParams(saFunc);
-	normalizeStructSig(saFunc);
 	validateNativeSig(saFunc);
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
@@ -1201,7 +1198,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		// declared from the temp like a single `$T x = f();`, which moves a
 		// returned block's contents into the frame and frees the block.
 		bool movesIntoFrame = storage == VarStorage::Frame && isOwnedBlock(retType);
-		if (storage == VarStorage::Frame || normalizeSigType(normalizeVarrType(stmt, varType)) != retType) {
+		if (storage == VarStorage::Frame || sigType(stmt, varType, false) != retType) {
 			string temp = "__tap_" + to_string(tempVarCounter_++);
 			json init = {{"expr-type", "id"}, {"name", temp}, {"loc", stmt["loc"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 			if (movesIntoFrame)
@@ -1302,90 +1299,4 @@ json PlnSemanticAnalyzer::makeFieldAssign(const FieldChain& chain, const FieldLa
 		return {{"stmt-type","field-assign"},{"ptr-expr",chain.ptrExpr},
 		        {"offset",off},{"value-type",fieldType},{"value",move(value)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-
-json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, const json& src)
-{
-	const json& t = dst["value-type"];
-	const json& st = src["value-type"];
-	// A lone struct may be copied from a '@T' as well as from another struct's
-	// storage; a `[+]T` takes any run of its elements and their count.
-	bool match = isStructStorage(t) ? isStructPntr(st) && st["base-type"] == t["base-type"]
-	           : isVarrStorage(t) ? varrCopySourceMatch(st, t)
-	           : copyShapeMatch(st, t);
-	if (!match) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
-			typeDisplayName(t), typeDisplayName(st)) << endl;
-		exit(1);
-	}
-
-	// A struct returned by a Palan call is owned by nobody yet: receive it in a
-	// temp, copy from it like from a named value, and free it.
-	if (isExpiringOwned(src)) {
-		// LCOV_EXCL_EXCEPTION_BR_START
-		string temp = "__cpy_" + to_string(tempVarCounter_++);
-		json decl = {{"stmt-type","var-decl"},
-		             {"vars",json::array({{{"name",temp},{"var-type",st},{"init",src}}})}};
-		json tempId = {{"expr-type","id"},{"name",temp},{"var-type",st},{"value-type",st}};
-		json body = json::array({decl, makeCopyStmt(locNode, dst, tempId), makeOwnedFreeStmt(temp, st)});
-		return {{"stmt-type","block"},{"body",move(body)}};
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-	}
-
-	// LCOV_EXCL_EXCEPTION_BR_START
-	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-	auto lit = [&](int64_t v) -> json {
-		return {{"expr-type","lit-uint"},{"value",to_string(v)},{"value-type",uint64_type}};
-	};
-	auto copyStmt = [&](const AllocShapeRef& shape, json args) -> json {
-		return {{"stmt-type","expr"},{"body",allocHelperCall(shape, "copy", move(args))}};
-	};
-	auto memcpyStmt = [&](int64_t bytes) {
-		return json{{"stmt-type","expr"},{"body",{{"expr-type","call"},{"name","memcpy"},{"func-type","c"},
-			{"args",json::array({dst, src, lit(bytes)})}}}};
-	};
-	auto structHasOwned = [&](const string& name) {
-		const StructDef& def = requireCompleteStruct(name, locNode);
-		return def.ownsFields;
-	};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-
-	if (isVarrStorage(t)) {
-		json args = isVarrPntr(st) ? json::array({dst, varrData(src), varrLen(src)})
-		                           : json::array({dst, src, lit(st["arr-size"].get<int64_t>())});
-		return copyStmt(varrShape(t), move(args));
-	}
-	if (isStructStorage(t)) {
-		string name = t["base-type"]["type-name"];
-		if (!structHasOwned(name))
-			return memcpyStmt(structDefs_[name].totalSize);
-		recordAllocShape(name);
-		return copyStmt(structShape(name), json::array({dst, src})); // LCOV_EXCL_EXCEPTION_BR_LINE
-	}
-
-	int64_t n = t["arr-size"];
-	const json& elem = t["base-type"];
-	if (t.value("embedded", false)) {
-		return memcpyStmt(n * t["stride"].get<int64_t>());
-	}
-	// A row is copied as its owner holds it, whatever permission a borrow gives it.
-	json owned = isArrLevel(elem) ? withoutArrPermission(elem) : elem;
-	if (isArrLevel(owned)) {
-		const json& leaf = owned["base-type"];
-		if (isArrLevel(leaf) || isVarrPntr(leaf) || isPtrBorrow(leaf)) {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_CopyUnsupportedShape, typeDisplayName(t)) << endl;
-			exit(1);
-		}
-	}
-	if (isOwnedBlock(owned)) {
-		recordArrShape(owned);
-		// LCOV_EXCL_EXCEPTION_BR_START
-		json args = json::array({dst, src});
-		for (int64_t len : arrShapeLens(t)) args.push_back(lit(len));
-		return copyStmt(arrShape(owned), move(args));
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-	}
-	// Primitive elements, or '@T' slots whose pointers are copied as they are.
-	int64_t elemBytes = isPtrBorrow(elem) ? 8 : elemSizeBytes(elem["type-name"]);
-	return memcpyStmt(n * elemBytes);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
