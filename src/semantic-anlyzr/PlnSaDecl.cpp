@@ -75,9 +75,16 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 	for (auto& f : fields) {
 		fieldPacked = f.value("packed", false);
 		fieldAligned = f.value("aligned", 1);
-		const json& vtype = f["var-type"];
+		json vtype = f["var-type"];
 		string tk = vtype.value("type-kind", "");
 		string fieldName = f.value("name", "");
+		// A field is laid out in the struct already, so `$[n]T` places the
+		// array there as `[n]$T` does.
+		if (tk == "embed" && vtype["base-type"].value("type-kind", "") == "arr") {
+			vtype = json(vtype["base-type"]);
+			vtype["embedded"] = true;
+			tk = "arr";
+		}
 
 		if (tk == "prim") {
 			string tname = vtype["type-name"].get<string>();
@@ -104,6 +111,11 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 				                      .offset=at, .size=sz, .enumName=vtype.value("enum", "")});
 			}
 		} else if (tk == "embed") {
+			if (vtype["base-type"].value("type-kind", "") != "prim") {
+				cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedElemNotStruct,
+				                                  typeDisplayName(vtype["base-type"])) << endl;
+				exit(1);
+			}
 			string structName = vtype["base-type"]["type-name"].get<string>();
 			if (structName == name) {
 				cerr << errPrefix << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;

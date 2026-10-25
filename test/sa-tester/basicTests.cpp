@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <fstream>
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <set>
 #include <regex>
@@ -5259,6 +5260,26 @@ TEST(sa, layout_share)
 	ASSERT_EQ(stmts[5]["body"]["name"], stmts[6]["body"]["name"]);
 	ASSERT_EQ(stmts[6]["body"]["args"][1]["value-type"]["type-name"], "uint32");
 	ASSERT_EQ(funcName(stmts[7]["body"]["name"]), "__pln_push_varr_flo32");
+}
+
+// A field is laid out in its struct already: `$[n]T` is `[n]$T`.
+TEST(sa, embed_field_dollar_arr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/312_embed_field_dollar_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+	function<json(json)> noLoc = [&](json j) {
+		if (j.is_object()) j.erase("loc");
+		for (auto& c : j) if (c.is_structured()) c = noLoc(c);
+		return j;
+	};
+	const auto& stmts = jout["statements"];
+	for (size_t i : {2, 4}) {
+		string s = noLoc(stmts[i]).dump(), t = noLoc(stmts[i + 1]).dump();
+		size_t at = s.find("\"var\":\"s\"");
+		ASSERT_NE(at, string::npos);
+		ASSERT_EQ(s.replace(at, 9, "\"var\":\"t\""), t);
+	}
 }
 
 TEST(sa, struct_field_const_size)

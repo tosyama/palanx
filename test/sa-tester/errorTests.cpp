@@ -2485,6 +2485,7 @@ TEST(sa_error, embed_elem_not_struct)
 		{"error_321_embed_prim_param.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 		{"error_322_embed_ptr_elem.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not '@int32'."},
 		{"error_572_embed_prim_field.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
+		{"error_808_embed_ptr_field.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not '@int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
