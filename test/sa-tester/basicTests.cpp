@@ -5302,6 +5302,22 @@ TEST(sa, struct_varr_field)
 	ASSERT_EQ(stmts[4]["value"]["value"], "7");
 }
 
+// An array's element may be any pointer, in an array variable as in a borrow.
+TEST(sa, ptr_ptr_slot_arr)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/314_ptr_ptr_slot_arr.pa");
+	ASSERT_TRUE(jout.is_object());
+	const json& v = jout["statements"][0]["vars"][0]["var-type"];
+	ASSERT_EQ(v["arr-size"], 3);
+	ASSERT_EQ(v["base-type"]["mutable"], true);
+	ASSERT_EQ(v["base-type"]["base-type"]["mutable"], true);
+	ASSERT_EQ(v["base-type"]["base-type"]["base-type"]["type-name"], "int32");
+	const json& a = jout["functions"][0]["parameters"][0]["var-type"];
+	ASSERT_EQ(a["base-type"]["mutable"], false);
+	ASSERT_EQ(a["base-type"]["base-type"]["base-type"]["type-kind"], "struct");
+}
+
 TEST(sa, struct_field_const_size)
 {
 	cleanTestEnv();

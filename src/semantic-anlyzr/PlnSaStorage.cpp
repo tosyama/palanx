@@ -99,6 +99,17 @@ json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type
 	return {{"type-kind","pntr"}, {"base-type", elem}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// A pointer may name a struct whose layout is not resolved yet (a struct
+// pointing at its own kind), so any name but a primitive's is a struct.
+static json pointeeNamesAsStructs(json t)
+{
+	if (t.value("type-kind","") == "pntr")
+		t["base-type"] = pointeeNamesAsStructs(move(t["base-type"]));
+	else if (t.value("type-kind","") == "prim" && !isPrimPointeeName(t.value("type-name","")))
+		t = {{"type-kind","struct"},{"type-name",t["type-name"]}};
+	return t;
+}
+
 // A slot to an unsized array ('@![]T') points at the array's elements, so it
 // is that array's pointer carrying the slot's permission.
 json PlnSemanticAnalyzer::ptrSlotElemType(const json& locNode, const json& type)
@@ -108,7 +119,7 @@ json PlnSemanticAnalyzer::ptrSlotElemType(const json& locNode, const json& type)
 		? unsizedArrToPntr(locNode, target)
 		: json{{"type-kind","pntr"},{"base-type",target}};
 	elem["mutable"] = type.value("mutable", false);
-	return deepNormalizePrimToStruct(elem);
+	return pointeeNamesAsStructs(deepNormalizePrimToStruct(elem));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 int64_t PlnSemanticAnalyzer::constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow)
@@ -176,16 +187,10 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 		out["base-type"] = sizedArrLevel(locNode, leaf, isMutable, lens);
 		return out;
 	}
-	if (lens && leaf.value("type-kind","") == "pntr") {
+	// [n]@T / [n]@!T: the element pointer keeps its own permission.
+	if (leaf.value("type-kind","") == "pntr") {
 		out["base-type"] = ptrSlotElemType(locNode, leaf);
 		return out;
-	}
-	// [n]@T / [n]@!T: the element pointer keeps its own permission.
-	json ptrElem;
-	if (leaf.value("type-kind","") == "pntr" && !out.value("embedded", false)) {
-		ptrElem = {{"type-kind","pntr"},{"mutable",leaf.value("mutable", true)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		json pointee = leaf["base-type"];
-		leaf = move(pointee);
 	}
 	string tname = leaf.value("type-name","");
 	bool isStruct = structDefs_.count(tname) > 0;
@@ -195,14 +200,7 @@ json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, op
 	}
 	// An owned struct element is built by its allocator, which needs its layout.
 	if (!isMutable && isStruct) requireCompleteStruct(tname, locNode);
-	// LCOV_EXCL_EXCEPTION_BR_START
-	if (!ptrElem.is_null()) {
-		ptrElem["base-type"] = isStruct ? json{{"type-kind","struct"},{"type-name",tname}} : leaf;
-		out["base-type"] = move(ptrElem);
-	} else {
-		out["base-type"] = isStruct ? toStructPntrType(leaf) : leaf;
-	}
-	// LCOV_EXCL_EXCEPTION_BR_STOP
+	out["base-type"] = isStruct ? toStructPntrType(leaf) : leaf;
 	return out;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

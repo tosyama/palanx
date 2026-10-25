@@ -3035,6 +3035,13 @@ TEST(build_mgr, ptr_ptr_field) {
 	ASSERT_EQ(output, "7 6\n7 6\n");
 }
 
+// An array's element may be any pointer: here a pointer to a pointer.
+TEST(build_mgr, ptr_ptr_slot_arr) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/352_ptr_ptr_slot_arr.pa");
+	ASSERT_EQ(output, "8 5 8\n");
+}
+
 TEST(build_mgr, c_linked_list) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/286_c_linked_list.pa");

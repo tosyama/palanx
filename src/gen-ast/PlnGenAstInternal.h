@@ -149,10 +149,13 @@ inline bool isDeclarableVarType(const json& t)
 			&& ibt.contains("size-expr") && ibt["size-expr"].is_null())
 			return true;  // array of @! slots into an unsized array (owning-slot array)
 	}
-	if (btk == "pntr" && bt["base-type"].value("type-kind", "") == "prim")
-		return true;  // array of struct-record pointers (@T elements)
-	if (btk == "pntr" && bt["base-type"].value("type-kind", "") == "func")
-		return true;  // array of function pointers
+	if (btk == "pntr") {
+		const json* pointee = &bt["base-type"];
+		while (pointee->value("type-kind", "") == "pntr") pointee = &(*pointee)["base-type"];
+		string pk = pointee->value("type-kind", "");
+		if (pk == "prim" || pk == "func")
+			return true;  // array of pointers (@T, @!@T, @func(...) elements)
+	}
 	if (btk == "arr" && bt.value("specifier", "") == "raw" && !bt["size-expr"].is_null()) {
 		// fixed-size multidim array (also covers embedded-struct arrays), but not rows of pointers
 		const json* leaf = &bt;

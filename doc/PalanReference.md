@@ -1380,7 +1380,9 @@ or placed in the stack frame with `$` (see [Stack Arrays](#stack-arrays-nt)).
 `pts[i]` yields a `T` pointer for all four forms. Fields are accessed with `pts[i].field`.
 
 The pointer-slot forms also take a primitive element type: `[n]@int32` / `[n]@!int32` hold
-`@int32` / `@!int32` pointers, and `pts[i][0]` reads or writes the value one points to.
+`@int32` / `@!int32` pointers, and `pts[i][0]` reads or writes the value one points to. The
+element may be any pointer type: `[n]@!@int32` holds pointers to `@int32` pointers, and
+`[n]@func(...)` holds function pointers.
 
 ```palan
 cinclude <stdio.h>;
