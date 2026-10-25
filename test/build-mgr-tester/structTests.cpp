@@ -1304,6 +1304,11 @@ TEST(build_mgr, field_inline_arr_mtrace) {
 	expectMtraceRun("354_field_inline_arr_mtrace", "88 6 30 20 20 11 31\n7 31\n5\n", 5);
 }
 
+// Owned slots laid out in a struct are built, copied and freed with it.
+TEST(build_mgr, field_inline_owned_mtrace) {
+	expectMtraceRun("355_field_inline_owned_mtrace", "25 37 2 7 2\n2 9 2\n2 1\n", 83);
+}
+
 // Arrays of elements laid out alike share their functions, which store and
 // return a narrow integer by its width; its reader extends it by its own type.
 TEST(build_mgr, layout_share_mtrace) {

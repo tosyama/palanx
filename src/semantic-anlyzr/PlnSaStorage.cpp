@@ -597,10 +597,12 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	}
 	const StructDef& def = structDefs_[name];
 	// An owned field is a slot holding an element, built, dropped and copied
-	// as an array's is; its helpers take its lengths.
+	// as an array's is; its helpers take its lengths. An array laid out in the
+	// struct holding owned elements is one such element, a row laid out in place.
 	json owned = json::array();
 	for (auto& f : def.fields) {
-		if (f.typeKind != "owned") continue;
+		bool inPlace = f.typeKind == "embed-arr";
+		if (f.typeKind != "owned" && !(inPlace && ownsElems(f.type))) continue;
 		// LCOV_EXCL_EXCEPTION_BR_START
 		json lens = json::array();
 		for (const json* level : helperLevels(f.type))
@@ -608,7 +610,7 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 		owned.push_back({
 			{"name",   f.name},
 			{"offset", f.offset},
-			{"elem",   allocElemDesc(layoutElem(f.type))},
+			{"elem",   allocElemDesc(layoutElem(f.type), inPlace)},
 			{"lens",   move(lens)}
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP

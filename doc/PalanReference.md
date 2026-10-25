@@ -1577,14 +1577,17 @@ An array field takes the type an array variable can, with the same meaning. Wher
 |---------------|-------------------------------------------|----------------------------------|
 | `[n]T field`, `[n]$T field`, `[n][m]T field`, `[n][+]T field`, `[+]T field`, ... | Owned array, as an array variable of that type | cascaded alloc/free with parent |
 | `$[n]T field` (primitive `T`), `$[n]$T field` (struct `T`), `$[n]$[m]T field`, ... | Array laid out in the struct | parent's block |
+| `$[n]T field` (struct `T`), `$[n][m]T field`, `$[n][+]T field`, ... | Array laid out in the struct, holding elements that own storage | parent's block (slots); elements cascade with parent's alloc/free |
 | `$[n]@T field` / `$[n]@!T field` | Non-owning pointer slots laid out in the struct | parent's block (slots only) |
 
 `n` (and each `m`) must be a compile-time integer: a literal, a [const](#constant-declarations),
 or `sizeof(T)`. An owned array field is allocated, copied and freed with its struct; its
 primitive elements start undefined, as an array variable's do. An array laid out in the struct
-is copied with it; it cannot hold elements that own storage (`$[n]T` with a struct `T`,
-`$[n][m]T`, `$[n][+]T`) in this version, and `$` on an element that owns storage is rejected as
-for a variable.
+is copied with it. When its elements own storage (`$[n]T` with a struct `T`, `$[n][m]T`,
+`$[n][+]T`), their slots lie in the struct and the elements are allocated, copied and freed
+with it, as those of an array variable in the stack frame are with the variable; a struct
+with such a field owns storage itself. `$` on an element that owns storage is rejected as for
+a variable.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 

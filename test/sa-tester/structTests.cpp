@@ -1375,6 +1375,27 @@ TEST(sa, field_inline_arr)
 	ASSERT_EQ(q["owned-fields"][0]["elem"]["elem"]["kind"], "embed-struct");
 }
 
+// An array laid out in the struct holding owned elements is one owned field,
+// a row laid out in place, whose slots are built with the struct.
+TEST(sa, field_inline_owned)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/315_field_inline_owned.pa");
+	ASSERT_TRUE(jout.is_object());
+	const json& owned = jout["alloc-shapes"].back()["owned-fields"];
+	ASSERT_EQ(owned.size(), 3u);
+	ASSERT_EQ(owned[0]["offset"], 8);
+	ASSERT_EQ(owned[0]["elem"]["kind"], "embed-row");
+	ASSERT_EQ(owned[0]["elem"]["depth"], 1);
+	ASSERT_EQ(owned[0]["elem"]["elem"]["kind"], "struct");
+	ASSERT_EQ(owned[0]["lens"], json::array({2}));
+	ASSERT_EQ(owned[1]["offset"], 24);
+	ASSERT_EQ(owned[1]["elem"]["depth"], 2);
+	ASSERT_EQ(owned[1]["lens"], json::array({2, 3}));
+	ASSERT_EQ(owned[2]["offset"], 72);
+	ASSERT_EQ(owned[2]["elem"]["elem"]["kind"], "varr");
+}
+
 // A `[+]T` field is an owned slot built as a `[+]T` element is; a struct
 // literal resizes it to the literal's length before setting the elements.
 TEST(sa, struct_varr_field)

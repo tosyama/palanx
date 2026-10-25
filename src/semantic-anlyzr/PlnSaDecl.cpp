@@ -81,11 +81,6 @@ FieldLayout PlnSemanticAnalyzer::inlineArrField(const json& locNode, const strin
 		f.enumName = leaf->value("enum", "");
 	}
 	f.type = sizedArrLevel(locNode, laidOut, nullopt);
-	// The slots of owned elements are built with the struct.
-	if (ownsElems(f.type)) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
-		exit(1);
-	}
 	f.size = inPlaceSize(f.type);
 	return f;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -153,6 +148,8 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 			FieldLayout fl = inlineArrField(locNode, name, vtype["base-type"]);
 			fl.name = fieldName;
 			fl.offset = place(fl.size, inPlaceAlign(fl.type));
+			// Its owned elements' slots are built with the struct.
+			if (ownsElems(fl.type)) def.ownsFields = true;
 			const json* leaf = &fl.type;
 			while (isArrLevel(*leaf)) leaf = &(*leaf)["base-type"];
 			if (leaf->value("type-kind", "") == "struct"
@@ -1261,11 +1258,7 @@ void PlnSemanticAnalyzer::adoptStruct(PlnSemanticAnalyzer& sub, const string& na
 	}
 	if (!adopted) return;
 	for (auto& f : def.fields) {
-		if (f.typeKind == "embed-arr") {
-			adoptTypeDeps(sub, f.type, locNode);
-			continue;
-		}
-		if (f.typeKind == "owned") {
+		if (f.typeKind == "owned" || f.typeKind == "embed-arr") {
 			adoptTypeDeps(sub, f.type, locNode);
 			// The defining module got the builtins of each `[+]U` level from
 			// varrStorageType; a field access here needs them too.

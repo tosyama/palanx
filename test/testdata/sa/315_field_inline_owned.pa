@@ -1,0 +1,3 @@
+type P { int32 x; };
+type S { int8 k; $[2]P a; $[2]$[3]P b; $[2][+]int32 c; };
+S s;

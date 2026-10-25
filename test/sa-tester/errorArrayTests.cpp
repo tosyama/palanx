@@ -336,7 +336,7 @@ TEST(sa_error, field_arr_level_errors)
 		{"error_809_field_sized_varr.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 		{"error_810_field_embed_varr_rows.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 		{"error_811_field_inline_embed_owning.pa", ":2:1: error: cannot embed 'O' with '$': it owns storage of its own; use 'O' without '$'."},
-		{"error_812_field_inline_owned_slots.pa", ":2:1: error: this statement is not supported in this version."},
+		{"error_812_field_inline_owned_embed.pa", ":3:1: error: cannot embed 'S' with '$': it owns storage of its own; use 'S' without '$'."},
 		{"error_813_field_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 	};
 	for (auto& [file, expected] : cases) {

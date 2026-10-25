@@ -403,6 +403,7 @@ int main(int argc, char* argv[])
 				// data starts undefined, as an array variable's does; its owned
 				// elements are built at once, so no slot is left unset.
 				auto elemBuild = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
+					if (e.kind == "embed-row") return indent + "__pln_build_" + e.key + "(" + slot + " as " + e.data + ", 0, 1" + lenArgs(names) + ");\n";
 					if (e.kind == "varr") return indent + "calloc(1, 24) -> " + slot + ";\n";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
@@ -414,6 +415,7 @@ int main(int argc, char* argv[])
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				// A row moved out by `->>` leaves NULL in its slot.
 				auto elemDrop = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
+					if (e.kind == "embed-row") return "__pln_drop_" + e.key + "(" + slot + " as " + e.data + ", 0, 1" + lenArgs(names) + ");";
 					if (e.kind == "varr") return "__pln_free_" + e.inner + "(" + slot + lenArgs(names) + ");";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
@@ -425,6 +427,8 @@ int main(int argc, char* argv[])
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				// dst is the slot as its build fills it, a writable reference.
 				auto elemSet = [&](const ElemOps& e, const string& dst, const string& src, const vector<string>& names) {
+					if (e.kind == "embed-row")
+						return "__pln_copyrun_" + e.key + "(" + dst + " as " + e.data + ", " + src + " as " + e.data + ", 1" + lenArgs(names) + ");";
 					if (e.kind == "varr")
 						return "__pln_copy_" + e.inner + "(" + dst + ", " + src + ".data, " + src + ".len" + lenArgs(names) + ");";
 					if (e.kind == "row") {
@@ -506,10 +510,18 @@ int main(int argc, char* argv[])
 					string name = shape["shape-name"];
 					// An owned field is declared as the slot its build fills, so
 					// this module neither copies nor frees what it is given.
-					vector<pair<int64_t, string>> owned_decls;
-					for (auto& of : shape.value("owned-fields", json::array()))
+					// A row laid out in place is a run of its elements' slots, which its
+					// helpers take as a data pointer, as a `[+]T`'s, since an array of
+					// these slots would not pass where owned ones are expected.
+					vector<tuple<int64_t, string, int64_t>> owned_decls;
+					for (auto& of : shape.value("owned-fields", json::array())) {
+						ElemOps e = opsOf(of["elem"]);
+						int64_t count = 1;
+						for (int i = 0; i < e.depth; i++) count *= of["lens"][i].get<int64_t>();
+						string run = e.kind == "embed-row" ? "$[" + to_string(count) + "]" : "";
 						owned_decls.push_back({of["offset"].get<int64_t>(),
-							opsOf(of["elem"]).buildElem + " " + of["name"].get<string>()});
+							run + e.buildElem + " " + of["name"].get<string>(), count * 8});
+					}
 					sort(owned_decls.begin(), owned_decls.end());
 
 					out << "\nexport type " << name << " {";
@@ -521,10 +533,10 @@ int main(int argc, char* argv[])
 						out << " $[" << (end - pos) << "]uint8 " << pad << ";";
 						struct_pads[name].push_back({pad, end - pos});
 					};
-					for (auto& [offset, decl] : owned_decls) {
+					for (auto& [offset, decl, size] : owned_decls) {
 						pad_to(offset);
 						out << " " << decl << ";";
-						pos = offset + 8;
+						pos = offset + size;
 					}
 					pad_to(shape["total-size"].get<int64_t>());
 					out << " };\n";
@@ -539,7 +551,8 @@ int main(int argc, char* argv[])
 					for (auto& of : shape["owned-fields"]) {
 						OwnedField f{of["name"], opsOf(of["elem"]), {}};
 						for (auto& len : of["lens"]) f.lens.push_back(to_string(len.get<int64_t>()));
-						if (f.e.leaf) emitElemHelpers(*f.e.leaf);
+						if (f.e.kind == "embed-row") emitElemHelpers(f.e);
+						else if (f.e.leaf) emitElemHelpers(*f.e.leaf);
 						owned.push_back(move(f));
 					}
 

@@ -109,12 +109,15 @@ Root
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
   - owned-fields\* - Owned fields (`T field`, `[n]U field`, `[n][m]U field`, `[+]U field`,
-    `[n][+]U field`, ...). Each is a slot holding one element, built, dropped and copied as an
-    array element of that type is (a `[+]U` field's header is built empty with its struct):
+    `[n][+]U field`, ...), and arrays laid out in the struct whose elements own storage
+    (`$[n]T field`, `$[n][m]U field`, `$[n]$[m]T field`, ...). Each is one element built,
+    dropped and copied as an array element of that type is (a `[+]U` field's header is built
+    empty with its struct); an array laid out in the struct is a row laid out in place, the run
+    of its elements' slots:
     - name\* - Field name string
     - offset\* - Byte offset within the struct
     - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"varr"` for
-      `[+]U`, `"row"` for an array)
+      `[+]U`, `"row"` for an owned array, `"embed-row"` for an array laid out in the struct)
     - lens\* - The lengths of the field's levels, outermost first and on through the elements
       of a `[+]U`, which its element's helpers take (`[3]`, `[3, 4]`; empty for `T`)
 
