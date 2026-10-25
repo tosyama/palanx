@@ -225,15 +225,16 @@ int64_t PlnSemanticAnalyzer::fieldArrSize(const json& locNode, const json& sizeE
 }
 
 // An owned array field holds its block as a variable of its type does. Its
-// levels are checked first, so that their errors are the field's own.
+// levels are checked first, so that their errors are the field's own. A
+// `[+]T` field is a slot like an element's, starting empty.
 json PlnSemanticAnalyzer::ownedFieldType(const json& locNode, const json& vtype)
 {
 	auto unsupported = [&] {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 		exit(1);
 	};
-	if (isVarrAstType(vtype)) unsupported();
 	requireKnownTypeNames(locNode, vtype);
+	if (isVarrAstType(vtype)) return varrElemType(locNode, vtype);
 	const json* t = &vtype;
 	for (; t->value("type-kind","") == "arr" && !isVarrAstType(*t); t = &(*t)["base-type"]) {
 		if ((*t)["size-expr"].is_null()) unsupported();

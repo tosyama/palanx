@@ -3738,6 +3738,13 @@ TEST(build_mgr, struct_multilevel_field_mtrace) {
 		"5 9 6 8 2 3 5\n1 2\n3 4\n11\n3 1\n", 67);
 }
 
+// A `[+]T` field's header is built with its struct, which copies, moves and
+// frees it, and a struct literal sets its length.
+TEST(build_mgr, struct_varr_field_mtrace) {
+	expectMtraceRun("351_struct_varr_field_mtrace",
+		"3 5 1 1\n20 9 39\n4 5\n2 2 5\n8 3 9 1\n2 9\n3 2 9 6 5\n1 2 3 3\n", 72);
+}
+
 // Arrays of elements laid out alike share their functions, which store and
 // return a narrow integer by its width; its reader extends it by its own type.
 TEST(build_mgr, layout_share_mtrace) {

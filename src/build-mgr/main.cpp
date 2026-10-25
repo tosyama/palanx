@@ -423,9 +423,10 @@ int main(int argc, char* argv[])
 					}
 					return hasOwned(e.type) ? "__pln_free_" + e.type + "(" + slot + ");" : "free(" + slot + ");";
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// dst is the slot as its build fills it, a writable reference.
 				auto elemSet = [&](const ElemOps& e, const string& dst, const string& src, const vector<string>& names) {
 					if (e.kind == "varr")
-						return "__pln_copy_" + e.inner + "(@!" + dst + ", " + src + ".data, " + src + ".len" + lenArgs(names) + ");";
+						return "__pln_copy_" + e.inner + "(" + dst + ", " + src + ".data, " + src + ".len" + lenArgs(names) + ");";
 					if (e.kind == "row") {
 						const ElemOps& l = *e.leaf;
 						if (l.owned) return "__pln_copyrun_" + l.key + "(" + dst + ", " + src + ", " + names[0] + lenArgs(names, 1) + ");";
@@ -479,7 +480,7 @@ int main(int argc, char* argv[])
 					    << "    }\n"
 					    << "}\n"
 					    << setHead
-					    << "    " << elemSet(e, "slots[i]", "x", names) << "\n"
+					    << "    " << elemSet(e, "@!slots[i]", "x", names) << "\n"
 					    << "}\n"
 					    << runHead
 					    << "    int64 i = 0;\n"

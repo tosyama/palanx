@@ -330,7 +330,7 @@ inline string fieldStructName(const FieldLayout& f)
 // An array a struct literal gives the field, embedded or owned.
 inline bool isLitArrField(const FieldLayout& f)
 {
-	return f.typeKind == "embed-arr" || (f.typeKind == "owned" && isArrLevel(f.type));
+	return f.typeKind == "embed-arr" || (f.typeKind == "owned" && (isArrLevel(f.type) || isVarrStorage(f.type)));
 }
 
 inline json fieldValueType(const FieldLayout& f)

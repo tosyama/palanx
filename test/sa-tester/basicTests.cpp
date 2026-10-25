@@ -5282,6 +5282,26 @@ TEST(sa, embed_field_dollar_arr)
 	}
 }
 
+// A `[+]T` field is an owned slot built as a `[+]T` element is; a struct
+// literal resizes it to the literal's length before setting the elements.
+TEST(sa, struct_varr_field)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/313_struct_varr_field.pa");
+	ASSERT_TRUE(jout.is_object());
+	const json& owned = jout["alloc-shapes"][1]["owned-fields"];
+	ASSERT_EQ(owned.size(), 1);
+	ASSERT_EQ(owned[0]["name"], "a");
+	ASSERT_EQ(owned[0]["offset"], 8);
+	ASSERT_EQ(owned[0]["elem"]["kind"], "varr");
+	ASSERT_EQ(owned[0]["elem"]["shape-key"], "varr_int32");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(funcName(stmts[2]["body"]["name"]), "__pln_resize_varr_int32");
+	ASSERT_EQ(stmts[2]["body"]["args"][1]["value"], "2");
+	ASSERT_EQ(stmts[3]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[4]["value"]["value"], "7");
+}
+
 TEST(sa, struct_field_const_size)
 {
 	cleanTestEnv();

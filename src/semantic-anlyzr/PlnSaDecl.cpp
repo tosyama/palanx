@@ -81,6 +81,11 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 		// A field is laid out in the struct already, so `$[n]T` places the
 		// array there as `[n]$T` does.
 		if (tk == "embed" && vtype["base-type"].value("type-kind", "") == "arr") {
+			if (isVarrAstType(vtype["base-type"])) {
+				cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningType,
+				                                  typeDisplayName(ownedFieldType(locNode, vtype["base-type"]))) << endl;
+				exit(1);
+			}
 			vtype = json(vtype["base-type"]);
 			vtype["embedded"] = true;
 			tk = "arr";
@@ -165,6 +170,11 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 			                      .innerPtrMutable=leaf.innerPtrMutable,
 			                      .unsupported=unsupportedPointee(leaf),
 			                      .funcType=pointeeFuncType(leaf)});
+		} else if (isVarrAstType(vtype)) {
+			int at = place(8, 8);
+			def.fields.push_back({.name=fieldName, .typeKind="owned", .isMutable=false,
+			                      .offset=at, .size=8, .type=ownedFieldType(locNode, vtype)});
+			def.ownsFields = true;
 		} else if (tk == "arr") {
 			const json& size_expr = vtype["size-expr"];
 			if (size_expr.is_null()) {
@@ -606,27 +616,27 @@ void PlnSemanticAnalyzer::checkArrLitCount(const json& locNode, const json& item
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out,
-                                            size_t depth)
+                                            bool sized, size_t depth)
 {
 	auto indexOf = [](json array, size_t i) -> json {
 		return {{"expr-type", "arr-index"}, {"array", move(array)},
 		        {"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}};
 	};
+	const json& varr = shape.levels[depth].varr;
+	if (!sized && !varr.is_null()) {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		json n = {{"expr-type","lit-int"},{"value",to_string(values.size())},
+		          {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
+		json resize = allocHelperCall(varrShape(varr), "resize", json::array({sa_expression(arrAst), n}));
+		out.push_back({{"stmt-type","expr"},{"body",move(resize)}});
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
 	bool isRow = depth + 1 < shape.levels.size();
 	for (size_t i = 0; i < values.size(); i++) {
 		json elemAst = indexOf(arrAst, i);
 		const json& value = values[i];
 		if (isRow) {
-			const json& rowVarr = shape.levels[depth + 1].varr;
-			if (!rowVarr.is_null()) {
-				// LCOV_EXCL_EXCEPTION_BR_START
-				json n = {{"expr-type","lit-int"},{"value",to_string(value.size())},
-				          {"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
-				json resize = allocHelperCall(varrShape(rowVarr), "resize", json::array({sa_expression(elemAst), n}));
-				out.push_back({{"stmt-type","expr"},{"body",move(resize)}});
-				// LCOV_EXCL_EXCEPTION_BR_STOP
-			}
-			emitArrLitAssigns(elemAst, shape, value, out, depth + 1);
+			emitArrLitAssigns(elemAst, shape, value, out, false, depth + 1);
 		} else if (shape.structDef && value.is_object()) {
 			out.push_back(makeCopyStmt(elemAst, sa_expression(elemAst), value));
 		} else if (shape.structDef) {
@@ -738,7 +748,7 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 				cerr << locPrefix(v) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, f.name) << endl;
 				exit(1);
 			}
-			ArrLitShape shape = arrLitShape(v, f.name, fieldValueType(f));
+			ArrLitShape shape = arrLitShape(v, f.name, fieldValueType(f), true);
 			values.push_back(sa_arr_lit_values(v, shape, f.name));
 			checkArrLitCount(v, v["items"], f.name, shape);
 			continue;
@@ -765,7 +775,7 @@ void PlnSemanticAnalyzer::emitStructLitAssigns(const json& objAst, const StructD
 		}
 		json fieldAst = {{"expr-type", "field-access"}, {"object", objAst}, {"field", f.name}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 		if (isLitArrField(f))
-			emitArrLitAssigns(fieldAst, arrLitShape(objAst, f.name, fieldValueType(f)), values[k], out); // LCOV_EXCL_EXCEPTION_BR_LINE
+			emitArrLitAssigns(fieldAst, arrLitShape(objAst, f.name, fieldValueType(f), true), values[k], out, false); // LCOV_EXCL_EXCEPTION_BR_LINE
 		else if (values[k].is_object())
 			out.push_back(makeCopyStmt(objAst, makeFieldAccess(resolveObjectChain(objAst, /*forWrite=*/true), f), values[k])); // LCOV_EXCL_EXCEPTION_BR_LINE
 		else

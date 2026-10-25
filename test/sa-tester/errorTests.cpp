@@ -2502,11 +2502,12 @@ TEST(sa_error, field_arr_level_errors)
 	// An owned field's every level is checked as the field's own.
 	const pair<string, string> cases[] = {
 		{"error_324_field_2d_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
-		{"error_524_field_var_arr_type.pa", ":1:1: error: unsupported struct field type."},
+		{"error_524_field_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 		{"error_804_field_row_size_not_const.pa", ":3:2: error: struct field array size must be a compile-time constant integer; 'n' is not a const."},
 		{"error_805_field_unsized_row.pa", ":1:1: error: unsupported struct field type."},
 		{"error_806_field_ptr_slot_rows.pa", ":1:1: error: unsupported struct field type."},
 		{"error_807_field_sized_varr_elem.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
+		{"error_809_field_sized_varr.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

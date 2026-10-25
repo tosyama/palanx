@@ -108,12 +108,13 @@ Root
   - shape-kind\* - "struct"
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
-  - owned-fields\* - Owned fields (`T field`, `[n]U field`, `[n][m]U field`, `[n][+]U field`, ...).
-    Each is a slot holding one element, built, dropped and copied as an array element of that
-    type is:
+  - owned-fields\* - Owned fields (`T field`, `[n]U field`, `[n][m]U field`, `[+]U field`,
+    `[n][+]U field`, ...). Each is a slot holding one element, built, dropped and copied as an
+    array element of that type is (a `[+]U` field's header is built empty with its struct):
     - name\* - Field name string
     - offset\* - Byte offset within the struct
-    - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"row"` for an array)
+    - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"varr"` for
+      `[+]U`, `"row"` for an array)
     - lens\* - The lengths of the field's levels, outermost first and on through the elements
       of a `[+]U`, which its element's helpers take (`[3]`, `[3, 4]`; empty for `T`)
 
@@ -471,7 +472,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     resized to its own count (`__pln_resize_varr_U(<row>, count)`, an empty `[]` included) before
     its elements are stored; a fixed level still needs the exact count, and a fixed size taken from
     an empty `[]` is E_ArrLitEmptySize.
-  - A field is not supported yet.
+  - A field `[+]U` is an owned field (see the struct entry of alloc-shapes): its header is built
+    empty with the struct, and `s.a[i]`, the builtins, borrows, copies and `->>` treat `s.a` as a
+    `[+]U` variable. A struct literal resizes it to the literal's count before storing the
+    elements, as an inner row. `$[+]U` is E_EmbedOwningType and `[+n]U` is E_VarrElemSized.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
   `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`
@@ -571,8 +575,8 @@ Additional statement kinds emitted by SA:
   source variable to NULL. The variable remains in `arrayScopeVars_` and receives `free(NULL)` at
   scope exit (C standard guarantees no-op).
 
-  A `->>` into a struct field (`val ->> obj.field`) is accepted only for an owned field (`T` or
-  `[n]T`; otherwise E_TransferToNonOwnedField), and emits the same three statements with a
+  A `->>` into a struct field (`val ->> obj.field`) is accepted only for an owned field (`T`,
+  `[n]T` or `[+]T`; otherwise E_TransferToNonOwnedField), and emits the same three statements with a
   `field-assign`.
 
   A `->>` into a variable (`val ->> var`, an `assign` with `ownership-transfer`) is accepted only

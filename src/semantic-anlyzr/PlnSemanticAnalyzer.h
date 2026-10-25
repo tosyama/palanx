@@ -433,8 +433,10 @@ class PlnSemanticAnalyzer {
 	json sa_arr_lit_values(const json& lit, const ArrLitShape& shape, const string& name, size_t depth = 0);
 	void checkArrLitCount(const json& locNode, const json& items, const string& name,
 	                      const ArrLitShape& shape, size_t depth = 0);
+	// sized: a `[+]T` array already has the literal's length, as a declared
+	// variable does; otherwise it is resized to it first.
 	void emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out,
-	                       size_t depth = 0);
+	                       bool sized = true, size_t depth = 0);
 	json allocElemDesc(const json& elem, bool inPlace = false);
 	json layoutElem(const json& elem);
 	// The generated helpers of a fixed array of owned elements elem, which take
