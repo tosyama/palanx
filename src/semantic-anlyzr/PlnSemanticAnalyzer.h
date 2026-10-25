@@ -57,10 +57,10 @@ enum class VarStorage { Heap, Frame };
 // The allocator helpers build-mgr generates (SpecAndDesign.md 3.6), one
 // family per shape: __pln_<op>_<struct>, and for an array of any element E,
 // __pln_<op>_arr_<E>, __pln_<op>_varr_<E> and __pln_<op>_evarr_<E> (`[+]$T`),
-// E written as its symbol.
+// E written as the symbol of its layout.
 enum class AllocFamily { Struct, Arr, Varr, EVarr };
 // elem is the struct for Struct, and otherwise the element as the array's
-// storage holds it.
+// storage lays it out (layoutElem).
 struct AllocShapeRef { AllocFamily family; json elem; };
 
 // A declared array's storage type, and the lengths of its own levels as SA
@@ -189,6 +189,8 @@ class PlnSemanticAnalyzer {
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
+	// __pln_B<n> -> n: the struct an element struct owning nothing is laid out as.
+	map<string, int>       byteTypes_;
 	// Written type name -> the type it names in this scope, in program-wide
 	// names: aliases, C typedefs, enums, and every Palan struct source may
 	// write here. An unbound C struct is written by its program-wide name.
@@ -434,8 +436,14 @@ class PlnSemanticAnalyzer {
 	void emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out,
 	                       size_t depth = 0);
 	json allocElemDesc(const json& elem, bool inPlace = false);
+	json layoutElem(const json& elem);
+	// The generated helpers of a fixed array of owned elements elem, which take
+	// the array's length and then those of elem's levels, and of the `[+]T` vt.
+	AllocShapeRef arrShape(const json& elem) { return {AllocFamily::Arr, layoutElem(elem)}; }
+	AllocShapeRef varrShape(const json& vt);
 	void recordArrShape(const json& elem);
 	void recordVarrShape(const json& vt);
+	void recordElemShape(const AllocShapeRef& shape);
 	json varrData(json varr);
 	void enterBlockDecls(const json& stmts);
 	void declareLocalTypeName(const json& stmt);

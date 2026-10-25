@@ -3737,3 +3737,11 @@ TEST(build_mgr, struct_multilevel_field_mtrace) {
 	expectMtraceRun("349_struct_multilevel_field_mtrace",
 		"5 9 6 8 2 3 5\n1 2\n3 4\n11\n3 1\n", 67);
 }
+
+// Arrays of elements laid out alike share their functions, which store and
+// return a narrow integer by its width; its reader extends it by its own type.
+TEST(build_mgr, layout_share_mtrace) {
+	expectMtraceRun("350_layout_share_mtrace",
+		"-7 4000000001 1 1\n-128 255 0 -2 254\n2.25 1\n5 6 2.5 4000000000 1\n"
+		"2 6 0.25 4000000000\n-3 252 0 0\n", 47);
+}

@@ -73,8 +73,9 @@ inline AllocShapeRef structShape(const string& name)
 {
 	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
-// len, push, resize and pop of the `[+]T` whose header type is varr, as call candidates.
-json varrBuiltinDefs(const json& varr);
+// len, push, resize and pop of the `[+]T` whose header type is varr, as call
+// candidates calling impl's helpers; only their signatures without impl.
+json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl = nullptr);
 
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 
@@ -203,11 +204,6 @@ inline json varrPntrType(const json& elem, bool embedded)
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 inline bool isVarrEmbedded(const json& vt) { return vt["base-type"].value("embedded", false); }
-// The generated helpers a `[+]T` uses, named after its element's type.
-inline AllocShapeRef varrShape(const json& vt)
-{
-	return {isVarrEmbedded(vt) ? AllocFamily::EVarr : AllocFamily::Varr, vt["base-type"]["base-type"]};
-}
 // The header's len, which `len(@v)` reads in place of a call.
 inline json varrLen(json varr)
 {
@@ -233,9 +229,6 @@ inline bool isOwnedBlock(const json& vt)
 	return isStructStorage(vt) || isVarrStorage(vt)
 	    || (isArrLevel(vt) && vt.contains("arr-size") && !vt.contains("mutable"));
 }
-// The fixed array helpers for owned elements E, which take the array's length
-// and then those of E's levels.
-inline AllocShapeRef arrShape(const json& elem) { return {AllocFamily::Arr, elem}; }
 // An owned element (a struct's, a `[+]T`'s or a row's storage) has no
 // permission of its own: it is writable only as far as the array it is
 // reached through.

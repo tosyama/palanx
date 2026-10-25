@@ -1,0 +1,62 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type Q { flo32 a; uint32 b; };
+mtrace();
+{
+	[+]int32 si = [-1, 2];
+	[+]uint32 ui = [4000000000, 3];
+	si.push(-7);
+	ui.push(4000000001);
+	int32 s = si.pop();
+	uint32 u = ui.pop();
+	printf("%d %u %d %d\n", s, u, s < 0, u > 4000000000);
+
+	[+]int8 sb = [-2];
+	[+]uint8 ub = [254];
+	[+]bool bb = [true];
+	sb.push(-128);
+	ub.push(255);
+	bb.push(false);
+	int8 sv = sb.pop();
+	uint8 uv = ub.pop();
+	bool bv = bb.pop();
+	int32 sw = sv;
+	uint32 uw = uv;
+	printf("%d %u %d %d %d\n", sw, uw, bv, sb[0], ub[0]);
+
+	[+]flo32 fv = [1.5];
+	fv.push(2.25);
+	flo64 f = fv.pop();
+	printf("%g %d\n", f, len(@fv));
+
+	[+]P vp;
+	[+]Q vq;
+	vp.push([1, -2]);
+	vq.push([0.5, 3000000000]);
+	[2]P ap = [[3, 4], [5, 6]];
+	[2]Q aq = [[1.5, 7], [2.5, 4000000000]];
+	ap -> vp;
+	aq -> vq;
+	P p = vp.pop();
+	Q q = vq.pop();
+	flo64 qa = q.a;
+	printf("%d %d %g %u %d\n", p.x, p.y, qa, q.b, len(@vq));
+
+	[+]$P ep = [[7, 8]];
+	[+]$Q eq = [[0.25, 9]];
+	ep.push(p);
+	eq.push(q);
+	Q eq1 = eq.pop();
+	flo64 ea = eq[0].a;
+	printf("%d %d %g %u\n", len(@ep), ep[1].y, ea, eq1.b);
+
+	[+][3]int8 rs = [[-1, -2, -3]];
+	[+][3]uint8 ru = [[250, 251, 252]];
+	[3]int8 r1 = rs.pop();
+	[3]uint8 r2 = ru.pop();
+	int32 r1v = r1[2];
+	uint32 r2v = r2[2];
+	printf("%d %u %d %d\n", r1v, r2v, len(@rs), len(@ru));
+}
+muntrace();

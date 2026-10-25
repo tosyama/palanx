@@ -217,7 +217,9 @@ at link time), and writes the functions as Palan source `__allocators.pa` in the
 of the given source file, with `__allocators.h` declaring the C functions it calls. It is compiled
 as one more module (`--no-entry`). Each struct appears there as an exported type declaring only
 its owned fields, at their offsets, with the rest of its bytes as padding, so a C struct or a type
-of another module needs no Palan declaration of its other fields.
+of another module needs no Palan declaration of its other fields. A struct owning nothing is
+only bytes to allocate, copy and free, so an element or owned field of one is declared as
+`__pln_B<n>`, a type of its `n` bytes (`[n]$uint8`), whatever struct it is.
 
 For a shape key `K`, the functions are:
 
@@ -231,22 +233,29 @@ For a shape key `K`, the functions are:
 
 | Shape | `K` | Functions |
 |-------|-----|-----------|
-| struct `T` (one that owns nothing only as a part of another shape) | `T` | all; `init`/`fini` only when it owns fields |
+| struct `T` owning fields | `T` | all |
+| struct owning nothing, as an element or a field (`bytes`) | `__pln_B<n>` | none; only declared |
 | `[n]T` whose element owns storage (a struct, a `[+]U`, a row) | `arr_E` | all |
 | `[+]T` (`T` a primitive, a struct, a `[+]U` or a row `[n]U`) | `varr_E` | all, and `push`/`resize`/`pop`; `copy(h, src, n)` copies a run of elements |
 | `[+]$T` with `T` a struct or rows `[n]U`, `[n]$[m]U`, … | `evarr_E` | as `varr_E` |
 
-`E` is the element as the array's storage holds it, written as a parameter type is in a symbol
-(SASpec.md's Symbol names): `[n]Point` is `arr_P5Point` (an owned slot), `[+]int32` is
-`varr_int32`, `[+]$Point` is `evarr_5Point`, `[+][4]int32` is `varr_Pint32`. A key thus names
-its element type exactly but for its lengths, whatever a struct's name spells. The build manager generates the arrays
+`E` is the layout of the element as the array's storage holds it, written as a parameter type
+is in a symbol (SASpec.md's Symbol names). The layout replaces each integer type by the signed one
+of its width and each struct owning nothing by its `__pln_B<n>`: with `Point` 16 bytes owning
+nothing, `[n]Point` is `arr_P9__pln_B16` (an owned slot), `[+]$Point` is `evarr_9__pln_B16`,
+`[+]int32` and `[+]uint32` are both `varr_int32`, `[+][4]int32` is `varr_Pint32`. A key thus
+names how its elements are stored, moved and passed, and elements laid out alike share their
+functions: a narrow integer passes as its width and whoever reads it extends it as its own type
+says, so only the types the built-ins take and return differ, not the functions they call; a
+float, passed in another register, has a key of its own. The build manager generates the arrays
 of any element from one description of the element (`elem` in the shape, `ElemOps` in the build
 manager): an owned element is built when its slot comes into use and dropped when it leaves, by
 helpers `__pln_build/drop/set/copyrun_E` shared by `arr_E` and `varr_E`; any other element is
 plain bytes, copied in bulk. A row element is described by its own element: a row in a
 block of its own is an owned element built and dropped through its elements' helpers, and a row
 laid out in place (`[+]$[n]U`) is `n` slots of its element, so it is owned exactly when that
-element is; rows laid out in place in turn are one run of slots (`[2]$[3]S` is `arr_P1S` of 6).
+element is; rows laid out in place in turn are one run of slots (with `S` owning fields,
+`[2]$[3]S` is `arr_P1S` of 6).
 A struct's owned field is a slot of the same kind, described the same way: `__pln_init/fini/copy_T`
 build, drop and copy each field through its element's helpers, and the generated module declares
 the field as the slot its build fills (`@!int32` for `[3]int32`), so it copies and frees nothing

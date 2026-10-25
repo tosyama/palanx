@@ -204,14 +204,16 @@ int main(int argc, char* argv[])
 			for (auto& o : sa["objs"]) link_objs.insert(o.get<string>());
 			if (!sa.contains("alloc-shapes")) continue;
 			for (auto& shape : sa["alloc-shapes"]) {
+				string kind = shape.value("shape-kind", "");
+				// A bytes shape is a struct the module only declares.
+				bool isStruct = kind == "struct" || kind == "bytes";
 				string key;
-				if (shape.value("shape-kind", "") == "struct")
+				if (isStruct)
 					key = "struct:" + shape["shape-name"].get<string>();
 				else
 					key = shape["shape-key"].get<string>();
 				if (!seen_shapes.insert(key).second) continue;
-				string kind = shape.value("shape-kind", "");
-				if (kind == "struct")
+				if (isStruct)
 					struct_shapes.push_back(shape);
 				else
 					elem_arr_shapes.push_back(shape);
@@ -247,9 +249,9 @@ int main(int argc, char* argv[])
 				map<string, const json*> struct_by_name;
 				for (auto& shape : struct_shapes)
 					struct_by_name[shape["shape-name"].get<string>()] = &shape;
+				// A struct owning nothing comes only as its layout, a bytes shape.
 				auto hasOwned = [&](const string& name) {
-					const json& ss = *struct_by_name.at(name);
-					return !ss["owned-fields"].empty();
+					return struct_by_name.at(name)->at("shape-kind") == "struct";
 				};
 				// Copies one struct's storage into another's: a flat struct is a
 				// byte copy, one owning sub-objects goes through its copy function.
@@ -504,7 +506,7 @@ int main(int argc, char* argv[])
 					// An owned field is declared as the slot its build fills, so
 					// this module neither copies nor frees what it is given.
 					vector<pair<int64_t, string>> owned_decls;
-					for (auto& of : shape["owned-fields"])
+					for (auto& of : shape.value("owned-fields", json::array()))
 						owned_decls.push_back({of["offset"].get<int64_t>(),
 							opsOf(of["elem"]).buildElem + " " + of["name"].get<string>()});
 					sort(owned_decls.begin(), owned_decls.end());
@@ -527,8 +529,9 @@ int main(int argc, char* argv[])
 					out << " };\n";
 				}
 
-				// Struct allocator/free functions
+				// Struct allocator/free functions, for structs owning fields
 				for (auto& shape : struct_shapes) {
+					if (shape["shape-kind"] == "bytes") continue;
 					string name = shape["shape-name"];
 					struct OwnedField { string slot; ElemOps e; vector<string> lens; };
 					vector<OwnedField> owned;
@@ -543,27 +546,23 @@ int main(int argc, char* argv[])
 					// by this very function.
 					out << "\nexport func __pln_alloc_" << name
 					    << "() -> @!" << name << " p {\n"
-					    << "    malloc(" << shape["total-size"].get<int64_t>() << ") -> p;\n";
-					if (hasOwned(name))
-						out << "    __pln_init_" << name << "(p);\n";
-					out << "}\n";
+					    << "    malloc(" << shape["total-size"].get<int64_t>() << ") -> p;\n"
+					    << "    __pln_init_" << name << "(p);\n"
+					    << "}\n";
 
 					// A struct in a stack frame releases only what it owns (fini);
 					// a heap one also frees its own block.
-					if (hasOwned(name)) {
-						out << "export func __pln_init_" << name << "(@!" << name << " p) {\n";
-						for (auto& f : owned) out << elemBuild(f.e, "p." + f.slot, "    ", f.lens);
-						out << "}\n"
-						    << "export func __pln_fini_" << name << "(" << name << " p) {\n";
-						for (auto& f : owned) out << "    " << elemDrop(f.e, "p." + f.slot, "    ", f.lens) << "\n";
-						out << "}\n";
-					}
-					out << "export func __pln_free_" << name
+					out << "export func __pln_init_" << name << "(@!" << name << " p) {\n";
+					for (auto& f : owned) out << elemBuild(f.e, "p." + f.slot, "    ", f.lens);
+					out << "}\n"
+					    << "export func __pln_fini_" << name << "(" << name << " p) {\n";
+					for (auto& f : owned) out << "    " << elemDrop(f.e, "p." + f.slot, "    ", f.lens) << "\n";
+					out << "}\n"
+					    << "export func __pln_free_" << name
 					    << "(" << name << " p) {\n"
-					    << "    if (p == NULL) { return; }\n";
-					if (hasOwned(name))
-						out << "    __pln_fini_" << name << "(p);\n";
-					out << "    free(p);\n"
+					    << "    if (p == NULL) { return; }\n"
+					    << "    __pln_fini_" << name << "(p);\n"
+					    << "    free(p);\n"
 					    << "    return;\n"
 					    << "}\n";
 

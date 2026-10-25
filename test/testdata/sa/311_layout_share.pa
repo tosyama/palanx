@@ -1,0 +1,10 @@
+type P { int32 x; int32 y; };
+type Q { flo32 a; uint32 b; };
+[+]int32 a;
+[+]uint32 b;
+[+]flo32 f;
+[+]P p;
+[+]Q q;
+a.push(1);
+b.push(2);
+f.push(1.5);

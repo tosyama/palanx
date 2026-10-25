@@ -2025,18 +2025,18 @@ TEST(sa, alloc_shape_owned)
 	ASSERT_EQ(v["init"]["func-type"], "palan");
 	ASSERT_TRUE(v["init"]["args"].empty());
 
-	// alloc-shapes: Point first (leaf), then Rect (root)
+	// alloc-shapes: Point's layout first (leaf), then Rect (root)
 	const auto& shapes = jout["alloc-shapes"];
 	ASSERT_EQ(shapes.size(), 2u);
-	ASSERT_EQ(shapes[0]["shape-name"], "Point");
-	ASSERT_EQ(shapes[0]["shape-kind"], "struct");
+	ASSERT_EQ(shapes[0]["shape-name"], "__pln_B16");
+	ASSERT_EQ(shapes[0]["shape-kind"], "bytes");
 	ASSERT_EQ(shapes[0]["total-size"], 16);
-	ASSERT_EQ(shapes[0]["owned-fields"].size(), 0u);
+	ASSERT_FALSE(shapes[0].contains("owned-fields"));
 	ASSERT_EQ(shapes[1]["shape-name"], "Rect");
 	ASSERT_EQ(shapes[1]["total-size"], 16);
 	ASSERT_EQ(shapes[1]["owned-fields"].size(), 2u);
-	ASSERT_EQ(shapes[1]["owned-fields"][0]["elem"]["name"], "Point");
-	ASSERT_EQ(shapes[1]["owned-fields"][1]["elem"]["name"], "Point");
+	ASSERT_EQ(shapes[1]["owned-fields"][0]["elem"]["name"], "__pln_B16");
+	ASSERT_EQ(shapes[1]["owned-fields"][1]["elem"]["name"], "__pln_B16");
 }
 
 TEST(sa, malloc_no_owned)
@@ -2494,27 +2494,27 @@ TEST(sa, owned_struct_arr_decl)
 	json jout = written(run_sa("../test/testdata/sa/099_owned_struct_arr.pa"));
 	ASSERT_TRUE(jout.is_object());
 
-	// alloc-shapes: struct shape for Point, then the arr shape of its owned slots
+	// alloc-shapes: Point's layout, then the arr shape of its owned slots
 	const auto& shapes = jout["alloc-shapes"];
 	ASSERT_GE(shapes.size(), 2u);
 	auto arr_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
 		return s.value("shape-kind","") == "arr";
 	});
 	ASSERT_NE(arr_it, shapes.end());
-	ASSERT_EQ((*arr_it)["shape-key"], "arr_P5Point");
-	ASSERT_EQ((*arr_it)["elem"], json({{"kind","struct"},{"key","P5Point"},{"name","Point"},{"size",8}}));
+	ASSERT_EQ((*arr_it)["shape-key"], "arr_P9__pln_B16");
+	ASSERT_EQ((*arr_it)["elem"], json({{"kind","struct"},{"key","P9__pln_B16"},{"name","__pln_B16"},{"size",8}}));
 
 	auto struct_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
-		return s.value("shape-kind","") == "struct";
+		return s.value("shape-kind","") == "bytes";
 	});
 	ASSERT_NE(struct_it, shapes.end());
-	ASSERT_EQ((*struct_it)["shape-name"], "Point");
+	ASSERT_EQ((*struct_it)["shape-name"], "__pln_B16");
 
 	ASSERT_FALSE(jout["functions"].empty());
 	const auto& body = jout["functions"][0]["body"];
 	ASSERT_GE(body.size(), 2u);
 
-	// body[0]: pts = __pln_alloc_arr_P5Point(2), the constant count passed as it is
+	// body[0]: pts = __pln_alloc_arr_P9__pln_B16(2), the constant count passed as it is
 	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
 	ASSERT_EQ(body[0]["vars"][0]["name"], "pts");
 	const auto& vt = body[0]["vars"][0]["var-type"];
@@ -2524,7 +2524,7 @@ TEST(sa, owned_struct_arr_decl)
 	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
 	const auto& init = body[0]["vars"][0]["init"];
 	ASSERT_EQ(init["expr-type"], "call");
-	ASSERT_EQ(funcName(init["name"]),      "__pln_alloc_arr_P5Point");
+	ASSERT_EQ(funcName(init["name"]),      "__pln_alloc_arr_P9__pln_B16");
 	ASSERT_EQ(init["func-type"], "palan");
 	ASSERT_EQ(init["args"][0]["value"], "2");
 
@@ -2538,11 +2538,11 @@ TEST(sa, owned_struct_arr_decl)
 	ASSERT_EQ(idx["elem-size"]["expr-type"], "lit-uint");
 	ASSERT_EQ(idx["elem-size"]["value"], "8");
 
-	// __pln_free_arr_P5Point(pts, 2), then the trailing return
+	// __pln_free_arr_P9__pln_B16(pts, 2), then the trailing return
 	ASSERT_EQ(body.back()["stmt-type"], "return");
 	const auto& last = body[body.size() - 2];
 	ASSERT_EQ(last["stmt-type"], "expr");
-	ASSERT_EQ(funcName(last["body"]["name"]),      "__pln_free_arr_P5Point");
+	ASSERT_EQ(funcName(last["body"]["name"]),      "__pln_free_arr_P9__pln_B16");
 	ASSERT_EQ(last["body"]["func-type"], "palan");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "pts");
 	ASSERT_EQ(last["body"]["args"][1]["value"], "2");
@@ -2882,7 +2882,7 @@ TEST(sa, owned_struct_arr_field)
 	ASSERT_EQ(shapes.size(), 2u);
 
 	auto point_it = find_if(shapes.begin(), shapes.end(), [](const json& s){
-		return s.value("shape-kind","") == "struct" && s.value("shape-name","") == "Point";
+		return s.value("shape-kind","") == "bytes" && s.value("shape-name","") == "__pln_B16";
 	});
 	ASSERT_NE(point_it, shapes.end());
 
@@ -2897,7 +2897,7 @@ TEST(sa, owned_struct_arr_field)
 	ASSERT_EQ(owned[0]["offset"], 0);
 	ASSERT_EQ(owned[0]["elem"]["kind"], "row");
 	ASSERT_EQ(owned[0]["elem"]["elem"]["kind"], "struct");
-	ASSERT_EQ(owned[0]["elem"]["elem"]["name"], "Point");
+	ASSERT_EQ(owned[0]["elem"]["elem"]["name"], "__pln_B16");
 	ASSERT_EQ(owned[0]["lens"], json::array({4}));
 }
 
@@ -4580,16 +4580,16 @@ TEST(sa, struct_arr_2d)
 	json kinds = json::array();
 	for (auto& s : jout["alloc-shapes"])
 		kinds.push_back(s["shape-kind"]);
-	ASSERT_EQ(kinds, json::array({"struct", "arr"}));
+	ASSERT_EQ(kinds, json::array({"bytes", "arr"}));
 	const json& shape = jout["alloc-shapes"][1];
-	ASSERT_EQ(shape["shape-key"], "arr_PP5Point");
+	ASSERT_EQ(shape["shape-key"], "arr_PP8__pln_B8");
 	ASSERT_EQ(shape["elem"]["kind"], "row");
 	ASSERT_EQ(shape["elem"]["elem"]["kind"], "struct");
 
 	const json& stmts = jout["statements"];
 	const json& m = stmts[0]["vars"][0];
 	ASSERT_EQ(m["name"], "m");
-	ASSERT_EQ(funcName(m["init"]["name"]), "__pln_alloc_arr_PP5Point");
+	ASSERT_EQ(funcName(m["init"]["name"]), "__pln_alloc_arr_PP8__pln_B8");
 	ASSERT_EQ(m["init"]["args"].size(), 2);
 	json point = {{"type-kind","struct"},{"type-name","Point"}};
 	ASSERT_EQ(m["var-type"]["base-type"]["base-type"]["base-type"], point);
@@ -4608,13 +4608,13 @@ TEST(sa, embed_struct_arr_2d)
 	json kinds = json::array();
 	for (auto& s : jout["alloc-shapes"])
 		kinds.push_back(s["shape-kind"]);
-	ASSERT_EQ(kinds, json::array({"struct", "arr"}));
-	ASSERT_EQ(jout["alloc-shapes"][1]["shape-key"], "arr_ES8_P5Point");
+	ASSERT_EQ(kinds, json::array({"bytes", "arr"}));
+	ASSERT_EQ(jout["alloc-shapes"][1]["shape-key"], "arr_ES8_P8__pln_B8");
 	ASSERT_EQ(jout["alloc-shapes"][1]["elem"]["elem"]["kind"], "embed-struct");
 
 	const json& m = jout["statements"][0]["vars"][0];
 	ASSERT_EQ(m["name"], "m");
-	ASSERT_EQ(funcName(m["init"]["name"]), "__pln_alloc_arr_ES8_P5Point");
+	ASSERT_EQ(funcName(m["init"]["name"]), "__pln_alloc_arr_ES8_P8__pln_B8");
 	ASSERT_EQ(m["init"]["args"][1]["value"], "3");
 
 	json row = {{"type-kind","pntr"},{"embedded",true},{"stride",8},{"arr-size",3},
@@ -4824,7 +4824,7 @@ TEST(sa, field_transfer) {
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 5);
 	// The field's previous array is freed before it takes over pa.
-	ASSERT_EQ(funcName(stmts[2]["body"]["name"]), "__pln_free_arr_P1P");
+	ASSERT_EQ(funcName(stmts[2]["body"]["name"]), "__pln_free_arr_P8__pln_B4");
 	ASSERT_EQ(stmts[2]["body"]["args"][0]["expr-type"], "field-access");
 	ASSERT_EQ(stmts[2]["body"]["args"][1]["value"], "2");
 	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
@@ -5101,7 +5101,7 @@ TEST(sa, import_type)
 	const auto& p = stmts[0]["vars"][0]["init"];
 	ASSERT_EQ(p["name"], "malloc");
 	ASSERT_EQ(p["args"][0]["value"], "24");
-	ASSERT_EQ(funcName(stmts[1]["vars"][0]["init"]["name"]), "__pln_alloc_arr_P3Vec");
+	ASSERT_EQ(funcName(stmts[1]["vars"][0]["init"]["name"]), "__pln_alloc_arr_P9__pln_B24");
 	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["type-name"], "int64");
 	ASSERT_EQ(stmts[3]["vars"][0]["var-type"]["enum"], "Color");
 	ASSERT_EQ(stmts[3]["vars"][0]["init"]["value"], "5");
@@ -5208,7 +5208,7 @@ TEST(sa, import_type_field)
 	ASSERT_EQ(shape["total-size"], 112);
 	ASSERT_EQ(shape["owned-fields"].size(), 1u);
 	ASSERT_EQ(shape["owned-fields"][0]["name"], "o");
-	ASSERT_EQ(shape["owned-fields"][0]["elem"]["name"], "Vec");
+	ASSERT_EQ(shape["owned-fields"][0]["elem"]["name"], "__pln_B24");
 }
 
 // A field's array is typed and described as a variable's: rows of rows,
@@ -5237,6 +5237,28 @@ TEST(sa, struct_multilevel_fields)
 	ASSERT_EQ(m["arr-size"], 3);
 	ASSERT_EQ(m["base-type"]["arr-size"], 4);
 	ASSERT_EQ(m["base-type"]["base-type"]["type-name"], "int32");
+}
+
+// Elements laid out alike share their functions: integers of one width and
+// structs of one size owning nothing; a float has a layout of its own.
+TEST(sa, layout_share)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/311_layout_share.pa"));
+	ASSERT_TRUE(jout.is_object());
+	vector<string> keys;
+	for (auto& s : jout["alloc-shapes"])
+		keys.push_back(s.value("shape-key", s.value("shape-name", "")));
+	ASSERT_EQ(keys, (vector<string>{"varr_int32", "varr_flo32", "__pln_B8", "varr_P8__pln_B8"}));
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(funcName(stmts[0]["vars"][0]["init"]["name"]), "__pln_alloc_varr_int32");
+	ASSERT_EQ(funcName(stmts[1]["vars"][0]["init"]["name"]), "__pln_alloc_varr_int32");
+	ASSERT_EQ(funcName(stmts[3]["vars"][0]["init"]["name"]), "__pln_alloc_varr_P8__pln_B8");
+	ASSERT_EQ(funcName(stmts[4]["vars"][0]["init"]["name"]), "__pln_alloc_varr_P8__pln_B8");
+	// push takes each array's own element type but calls the shared function.
+	ASSERT_EQ(stmts[5]["body"]["name"], stmts[6]["body"]["name"]);
+	ASSERT_EQ(stmts[6]["body"]["args"][1]["value-type"]["type-name"], "uint32");
+	ASSERT_EQ(funcName(stmts[7]["body"]["name"]), "__pln_push_varr_flo32");
 }
 
 TEST(sa, struct_field_const_size)
@@ -5268,7 +5290,7 @@ TEST(sa, top_decl_order)
 		if (s.value("shape-name", "") == "S") shape = s;
 	// a 8 + ts 16 + v [3]$int32 12 + t 4 + u 8 + al 8 + e 4 (+4) + p 8
 	ASSERT_EQ(shape["total-size"], 72);
-	ASSERT_EQ(shape["owned-fields"][0]["elem"]["name"], "U");
+	ASSERT_EQ(shape["owned-fields"][0]["elem"]["name"], "__pln_B4");
 }
 
 TEST(sa, import_mutual_type)
@@ -5997,11 +6019,11 @@ TEST(sa, varr_struct)
 	const auto& v = stmts[0]["vars"][0];
 	ASSERT_EQ(v["var-type"]["base-type"]["base-type"]["type-kind"], "pntr");
 	ASSERT_EQ(v["var-type"]["base-type"]["base-type"]["base-type"]["type-name"], "P");
-	ASSERT_EQ(funcName(v["init"]["name"]), "__pln_alloc_varr_P1P");
+	ASSERT_EQ(funcName(v["init"]["name"]), "__pln_alloc_varr_P8__pln_B8");
 	const auto& e = stmts[1]["vars"][0];
 	ASSERT_EQ(e["var-type"]["base-type"]["embedded"], true);
 	ASSERT_EQ(e["var-type"]["base-type"]["base-type"]["type-kind"], "struct");
-	ASSERT_EQ(funcName(e["init"]["name"]), "__pln_alloc_evarr_1P");
+	ASSERT_EQ(funcName(e["init"]["name"]), "__pln_alloc_evarr_8__pln_B8");
 	// The literal is stored field by field into the elements init built.
 	ASSERT_EQ(stmts[2]["stmt-type"], "field-assign");
 	ASSERT_EQ(stmts[3]["stmt-type"], "field-assign");
@@ -6015,22 +6037,23 @@ TEST(sa, varr_struct)
 	ASSERT_EQ(inPlace["array"]["value-type"]["embedded"], true);
 	ASSERT_EQ(inPlace["array"]["value-type"]["stride"], 8);
 
-	ASSERT_EQ(funcName(stmts[6]["body"]["name"]), "__pln_push_varr_P1P");
+	ASSERT_EQ(funcName(stmts[6]["body"]["name"]), "__pln_push_varr_P8__pln_B8");
 	ASSERT_EQ(stmts[6]["body"]["args"][1]["expr-type"], "temp");
 	const auto& popped = stmts[7]["vars"][0]["init"];
-	ASSERT_EQ(funcName(popped["name"]), "__pln_pop_varr_P1P");
+	ASSERT_EQ(funcName(popped["name"]), "__pln_pop_varr_P8__pln_B8");
 	ASSERT_EQ(popped["category"], "expiring");
-	ASSERT_EQ(funcName(stmts[8]["body"]["name"]), "__pln_push_evarr_1P");
-	ASSERT_EQ(funcName(stmts[9]["body"]["name"]), "__pln_resize_varr_P1P");
+	ASSERT_EQ(funcName(stmts[8]["body"]["name"]), "__pln_push_evarr_8__pln_B8");
+	ASSERT_EQ(funcName(stmts[9]["body"]["name"]), "__pln_resize_varr_P8__pln_B8");
 
-	// A struct element's own shape comes before its varr shape.
+	// A struct element's own shape comes before its varr shape; P owns
+	// nothing, so it is laid out as bytes and its arrays are named after them.
 	const auto& shapes = jout["alloc-shapes"];
 	ASSERT_EQ(shapes.size(), 5);
-	ASSERT_EQ(shapes[0]["shape-name"], "P");
-	ASSERT_EQ(shapes[1]["shape-key"], "varr_P1P");
+	ASSERT_EQ(shapes[0]["shape-name"], "__pln_B8");
+	ASSERT_EQ(shapes[1]["shape-key"], "varr_P8__pln_B8");
 	ASSERT_EQ(shapes[1]["elem"]["kind"], "struct");
 	ASSERT_EQ(shapes[1]["elem"]["size"], 8);
-	ASSERT_EQ(shapes[2]["shape-key"], "evarr_1P");
+	ASSERT_EQ(shapes[2]["shape-key"], "evarr_8__pln_B8");
 	ASSERT_EQ(shapes[2]["elem"]["kind"], "embed-struct");
 	ASSERT_EQ(shapes[3]["shape-name"], "Q");
 	ASSERT_EQ(shapes[4]["shape-key"], "varr_P1Q");
@@ -6212,8 +6235,8 @@ TEST(sa, shared_row_helpers)
 	ASSERT_FALSE(elems.at("arr_Pint32").contains("count"));
 	ASSERT_EQ(elems.at("varr_Pint32")["key"], "Pint32");
 	ASSERT_FALSE(elems.at("varr_Pint32").contains("count"));
-	ASSERT_EQ(elems.at("arr_PP1P")["key"], "PP1P");
-	ASSERT_EQ(elems.at("varr_PP1P")["key"], "PP1P");
+	ASSERT_EQ(elems.at("arr_PP8__pln_B8")["key"], "PP8__pln_B8");
+	ASSERT_EQ(elems.at("varr_PP8__pln_B8")["key"], "PP8__pln_B8");
 }
 
 TEST(sa, nested_arr_depth)
@@ -6738,11 +6761,11 @@ TEST(sa, frame_arr)
 	ASSERT_EQ(sizeAlign(3), make_pair(12, 2));
 	// Only the pointer array is in the frame; its elements or rows are on the heap.
 	ASSERT_EQ(sizeAlign(4), make_pair(24, 8));
-	ASSERT_EQ(funcName(stmts[5]["body"]["name"]), "__pln_init_arr_P1P");
+	ASSERT_EQ(funcName(stmts[5]["body"]["name"]), "__pln_init_arr_P9__pln_B16");
 	ASSERT_EQ(sizeAlign(6), make_pair(16, 8));
 	ASSERT_EQ(funcName(stmts[7]["body"]["name"]), "__pln_init_arr_Pint32");
-	ASSERT_EQ(funcName(stmts[9]["body"]["name"]), "__pln_init_arr_ES16_P1P");
-	ASSERT_EQ(funcName(stmts[11]["body"]["name"]), "__pln_init_arr_PP1P");
+	ASSERT_EQ(funcName(stmts[9]["body"]["name"]), "__pln_init_arr_ES16_P9__pln_B16");
+	ASSERT_EQ(funcName(stmts[11]["body"]["name"]), "__pln_init_arr_PP9__pln_B16");
 	ASSERT_EQ(stmts[11]["body"]["args"].size(), 3);
 	ASSERT_EQ(sizeAlign(12), make_pair(12, 4));
 	ASSERT_EQ(stmts[13]["stmt-type"], "arr-assign");

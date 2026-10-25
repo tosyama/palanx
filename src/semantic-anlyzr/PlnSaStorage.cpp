@@ -460,8 +460,8 @@ json helperLens(const json& elem)
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// A family taking any element names it by the element's symbol, so two
-// element types never share a key, whatever their struct names spell.
+// A family taking any element names it by the symbol of the element's layout
+// (layoutElem), so element types laid out alike share their helpers.
 string allocShapeKey(const AllocShapeRef& shape)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
@@ -490,6 +490,12 @@ json permPtrTo(json base, bool isMutable)
 	return {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",move(base)}};
 }
 
+// vt's element is laid out already.
+AllocShapeRef laidOutVarrShape(const json& vt)
+{
+	return {isVarrEmbedded(vt) ? AllocFamily::EVarr : AllocFamily::Varr, vt["base-type"]["base-type"]};
+}
+
 // stride is the size of a struct laid out in place, which its level carries.
 GenElem genElem(const json& e, bool inPlace, int64_t stride)
 {
@@ -511,7 +517,7 @@ GenElem genElem(const json& e, bool inPlace, int64_t stride)
 		g.build = permPtrTo(l.fill, true);
 	} else if (isVarrStorage(e)) {
 		g.owned = true;
-		g.type = {{"type-kind","struct"},{"type-name","__pln_" + allocShapeKey(varrShape(e))}};
+		g.type = {{"type-kind","struct"},{"type-name","__pln_" + allocShapeKey(laidOutVarrShape(e))}};
 		g.own = g.value = ptrTo(g.type);
 		g.build = permPtrTo(g.type, true);
 	} else if (isStructStorage(e)) {
@@ -590,6 +596,14 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	if (allocShapeNames_.count(name)) return;
 	allocShapeNames_.insert(name);
 
+	// Only declared, for the helpers of its elements.
+	auto bytes = byteTypes_.find(name);
+	if (bytes != byteTypes_.end()) {
+		sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
+			{"shape-kind","bytes"}, {"shape-name",name}, {"total-size",bytes->second}
+		});
+		return;
+	}
 	const StructDef& def = structDefs_[name];
 	// An owned field is a slot holding an element, built, dropped and copied
 	// as an array's is; its helpers take its lengths.
@@ -603,7 +617,7 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 		owned.push_back({
 			{"name",   f.name},
 			{"offset", f.offset},
-			{"elem",   allocElemDesc(f.type)},
+			{"elem",   allocElemDesc(layoutElem(f.type))},
 			{"lens",   move(lens)}
 		});
 		// LCOV_EXCL_EXCEPTION_BR_STOP
@@ -618,8 +632,8 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// One element as the array's storage holds it, as build-mgr builds, frees and
-// copies it. A struct's shape is recorded first, so build-mgr sees an
+// One element as the array's storage lays it out, as build-mgr builds, frees
+// and copies it. A struct's shape is recorded first, so build-mgr sees an
 // element's helpers before the array's.
 json PlnSemanticAnalyzer::allocElemDesc(const json& elem, bool inPlace)
 {
@@ -650,47 +664,86 @@ json PlnSemanticAnalyzer::allocElemDesc(const json& elem, bool inPlace)
 		return {{"kind","struct"},{"key",symbolType(elem)},{"name",name},{"size",8}};
 	}
 	if (isVarrStorage(elem)) {
-		recordVarrShape(elem);
-		string key = allocShapeKey(varrShape(elem));
+		AllocShapeRef shape = laidOutVarrShape(elem);
+		recordElemShape(shape);
+		string key = allocShapeKey(shape);
 		return {{"kind","varr"},{"key",symbolType(shapeElem(elem))},{"name","__pln_" + key},{"shape-key",key},{"size",8}};
 	}
 	string name = elem["type-name"];
 	recordAllocShape(name);
-	return {{"kind","embed-struct"},{"key",symbolType(elem)},{"name",name},{"size",structDefs_.at(name).totalSize}};
+	// A struct laid out in place owns nothing, so it is bytes.
+	return {{"kind","embed-struct"},{"key",symbolType(elem)},{"name",name},{"size",byteTypes_.at(name)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The type an element is laid out as, which names its helpers, so that types
+// laid out alike share them. An integer is stored and passed by its width
+// alone: whoever reads one extends it as its own type says. A struct owning
+// nothing is only bytes to allocate, copy and free.
+json PlnSemanticAnalyzer::layoutElem(const json& elem)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	static const map<string, string> sameWidthInt = {
+		{"uint8","int8"}, {"bool","int8"}, {"uint16","int16"}, {"uint32","int32"}, {"uint64","int64"}
+	};
+	json out = elem;
+	string kind = out.value("type-kind","");
+	if (kind == "prim") {
+		out.erase("enum");
+		auto it = sameWidthInt.find(out["type-name"].get<string>());
+		if (it != sameWidthInt.end()) out["type-name"] = it->second;
+		return out;
+	}
+	if (kind == "struct") {
+		const StructDef& def = structDefs_.at(out["type-name"].get<string>());
+		if (def.ownsFields) return out;
+		string bytes = "__pln_B" + to_string(def.totalSize);
+		byteTypes_[bytes] = def.totalSize;
+		out["type-name"] = bytes;
+		return out;
+	}
+	if (out.contains("base-type") && out["base-type"].is_object())
+		out["base-type"] = layoutElem(out["base-type"]);
+	return out;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+AllocShapeRef PlnSemanticAnalyzer::varrShape(const json& vt)
+{
+	return laidOutVarrShape(layoutElem(vt));
+}
+
+void PlnSemanticAnalyzer::recordElemShape(const AllocShapeRef& shape)
+{
+	string shape_key = allocShapeKey(shape);
+	for (auto& s : sa["alloc-shapes"])
+		if (s.value("shape-key","") == shape_key) return;
+	json desc = allocElemDesc(shape.elem, shape.family == AllocFamily::EVarr);
+	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
+		{"shape-kind", shape.family == AllocFamily::Arr ? "arr" : "varr"}, {"shape-key",shape_key}, {"elem",move(desc)}
+	});
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::recordArrShape(const json& elem)
 {
-	AllocShapeRef shape = arrShape(elem);
-	string shape_key = allocShapeKey(shape);
-	for (auto& s : sa["alloc-shapes"])
-		if (s.value("shape-key","") == shape_key) return;
-	json desc = allocElemDesc(shape.elem);
-	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
-		{"shape-kind","arr"}, {"shape-key",shape_key}, {"elem",move(desc)}
-	});
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	recordElemShape(arrShape(elem));
+}
 
 // `[+][3]T` and `[+][4]T` share their shape but not their builtins, which
-// take different rows and pass different lengths.
+// take different rows and pass different lengths; `[+]uint32` shares that of
+// `[+]int32` but has builtins of its own types.
 void PlnSemanticAnalyzer::recordVarrShape(const json& vt)
 {
 	if (!varrBuiltinTypes_.insert(symbolType(vt)).second) return;
-	for (auto& def : varrBuiltinDefs(vt["base-type"]))
+	AllocShapeRef shape = varrShape(vt);
+	for (auto& def : varrBuiltinDefs(vt["base-type"], &shape))
 		varrBuiltins_[def["name"].get<string>()].push_back(def);
-	string shape_key = allocShapeKey(varrShape(vt));
-	for (auto& s : sa["alloc-shapes"])
-		if (s.value("shape-key","") == shape_key) return;
-	json desc = allocElemDesc(vt["base-type"]["base-type"], isVarrEmbedded(vt));
-	sa["alloc-shapes"].push_back({ // LCOV_EXCL_EXCEPTION_BR_LINE
-		{"shape-kind","varr"}, {"shape-key",shape_key}, {"elem",move(desc)}
-	});
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	recordElemShape(shape);
+}
 
 // push takes an element by value and pop returns one; a struct goes as its
 // storage, copied in by push and owned by pop's caller.
-json varrBuiltinDefs(const json& varr)
+json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
@@ -700,7 +753,6 @@ json varrBuiltinDefs(const json& varr)
 	json value = elem.value("type-kind","") == "struct" ? json{{"type-kind","pntr"},{"base-type",elem}}
 	           : isArrLevel(elem) ? withArrPermission(elem, false) : elem;
 	const json& popped = isArrLevel(elem) ? elem : value;
-	AllocShapeRef shape = varrShape(varrPntrType(elem, embedded));
 	auto self = [&](bool isMutable) {
 		json vt = varrPntrType(elem, embedded);
 		vt["mutable"] = isMutable;
@@ -711,9 +763,9 @@ json varrBuiltinDefs(const json& varr)
 		json def = {{"name",name},{"func-type","palan"},{"parameters",move(params)}};
 		if (name == "len") {
 			def["inline"] = true;
-		} else {
-			def["symbol"] = allocHelperSymbol(shape, name);
-			def["len-args"] = helperLens(shape.elem);
+		} else if (impl) {
+			def["symbol"] = allocHelperSymbol(*impl, name);
+			def["len-args"] = helperLens(impl->elem);
 		}
 		if (ret) def["ret-type"] = *ret;
 		defs.push_back(move(def));

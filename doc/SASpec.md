@@ -24,9 +24,14 @@ Root
   manager unions it across modules and passes each path to `ld` after the program's own objects.
 - alloc-shapes\* - List of shape descriptors for arrays and structs requiring custom allocators.
   Empty array when no qualifying var-decls are present.
-  Three entry kinds: struct, arr and varr.
+  Four entry kinds: struct, bytes, arr and varr.
 
-  The arr and varr entries describe their element as `data` (or the array) holds it:
+  The arr and varr entries describe their element by its layout: the element as `data` (or the
+  array) holds it, with each integer type replaced by the signed one of its width (`uint32` and
+  an enum become `int32`, `bool` becomes `int8`) and each struct owning nothing by
+  `__pln_B<n>`, its `total-size` bytes (see the bytes entry). Arrays whose elements are laid out
+  alike thus share their functions; whoever reads an integer from one extends it as its own
+  type says. The element:
   - elem\* - `{"kind", "key", "size"}` and the type: `"prim"` with `"type"` (a primitive),
     `"struct"` with `"name"` (an owned slot holding a struct `T`, 8 bytes), `"embed-struct"`
     with `"name"` (the struct itself, `total-size` bytes), or `"varr"` with `"name"` (an owned
@@ -36,24 +41,26 @@ Root
     `"embed-row"` (rows laid out in place; no `"size"`, which depends on the lengths) with `"depth"` (how many consecutive levels are laid
     out in place: `[+]$[3]$[4]int32`'s element is one `"embed-row"` of depth 2) and `"elem"` (the
     first element below them that is not laid out in place). `key` is the element type written
-    as in a symbol (see "Symbol names") without its lengths: `int32`, `P5Point`, `5Point`,
+    layout written as in a symbol (see "Symbol names") without its lengths: `int32`,
+    `P9__pln_B16` (`[n]Point`, Point 16 bytes owning nothing), `9__pln_B16` (`[+]$Point`),
     `PVint32`, `Pint32` for `[4]int32` and `[k]int32` alike, `C` and the levels below for an
     `"embed-row"` (`CPint32`). Lengths are passed instead: every arr and varr function takes,
     after its own arguments, one `int64` per array level below it, outermost first, through rows
     and `[+]U` elements alike (`[+][3][+][4]int32`'s `__pln_push_varr_PVPint32(h, x, 3, 4)`), so
     arrays differing only in lengths share their functions.
   - Their shape key is `arr_`, `varr_` or `evarr_` followed by the element's `key`, so a key names
-    its element type exactly. A struct element's struct entry and a `[+]U` element's varr entry
-    precede the entry.
+    its element's layout. A struct element's struct or bytes entry and a `[+]U` element's varr
+    entry precede the entry.
 
   **Arr entry** (`[n]T` whose element owns storage, a variable or an owned field; a row is such
   an element): build-mgr generates `__pln_alloc_arr_E(n)`, `__pln_init_arr_E(outer, n)`,
   `__pln_free_arr_E(pts, n)`, `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`,
   `E` being the element's `key`, each followed by the lengths below it
   (`[2][3][4]int32` is `__pln_alloc_arr_PPint32(2, 3, 4)`). Levels laid out in place in the
-  array itself are one run of their elements: `[2]$[3]S` is `__pln_alloc_arr_P1S(6)`:
+  array itself are one run of their elements: with `S` owning fields, `[2]$[3]S` is
+  `__pln_alloc_arr_P1S(6)`:
   - shape-kind\* - "arr"
-  - shape-key\* - Shape key string (e.g. "arr\_P5Point", "arr\_Pint32")
+  - shape-key\* - Shape key string (e.g. "arr\_P9\_\_pln\_B16", "arr\_Pint32")
   - elem\* - The element, as above
 
   **Varr entry** (`[+]T` / `[+]$T` variable; `T` below names the shape key's element part): for `[+]T`, build-mgr declares the header as
@@ -87,16 +94,23 @@ Root
   takes `[]U`, `copy` takes the run of elements (`[]U` for owned ones, `@U` otherwise), and
   `pop` moves the row into a newly allocated block:
   - shape-kind\* - "varr"
-  - shape-key\* - Shape key string (e.g. "varr\_int32", "varr\_P5Point", "evarr\_5Point")
+  - shape-key\* - Shape key string (e.g. "varr\_int32", "varr\_P9\_\_pln\_B16", "evarr\_9\_\_pln\_B16")
   - elem\* - The element, as above
 
-  **Struct entry**:
+  **Bytes entry** (`__pln_B<n>`, the layout of a struct owning nothing that an element or an
+  owned field holds): build-mgr only declares it, as `type __pln_B<n> { [n]$uint8 …; }`, for
+  the functions of the arrays and structs holding it:
+  - shape-kind\* - "bytes"
+  - shape-name\* - `__pln_B<n>`
+  - total-size\* - `n`
+
+  **Struct entry** (a struct owning fields):
   - shape-kind\* - "struct"
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
-  - owned-fields\* - Owned fields (`T field`, `[n]U field`, `[n][m]U field`, `[n][+]U field`, ...);
-    empty array if none. Each is a slot holding one element, built, dropped and copied as an
-    array element of that type is:
+  - owned-fields\* - Owned fields (`T field`, `[n]U field`, `[n][m]U field`, `[n][+]U field`, ...).
+    Each is a slot holding one element, built, dropped and copied as an array element of that
+    type is:
     - name\* - Field name string
     - offset\* - Byte offset within the struct
     - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"row"` for an array)
@@ -376,7 +390,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     for `[n]$U`, or an owned `[+]V`), with `"embedded": true` on the `varr` for `[+]$[n]U`. The
     row size must be a constant (E_UnsizedArrRowSizeNotConst). A pointer element (`[+]@T`,
     `[+][n]@T`) and a second fixed level (`[+][m][n]U`, `[+][m]$[n]U`) are not supported
-    (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key.
+    (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key, made from
+    `E`'s layout.
   - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
     with an array literal, whose size is the length. The literal's size is its element count
@@ -413,7 +428,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     unchanged). `len` becomes the header's len, `field-access` at offset 0 of the borrowed
     header pointer, typed `int64`; the others are a `palan` call to
     `__pln_push/resize/pop_varr_T`, whose symbol is built from the generated signature (see the
-    varr `alloc-shapes` entry). A Palan function with a built-in's name and parameter types, for
+    varr `alloc-shapes` entry); the built-in keeps `E`'s own types, and only the function it calls
+    is shared with every element laid out alike. A Palan function with a built-in's name and parameter types, for
     any `T`, is E_DuplicateFuncDef regardless of declaration order, as is a `len` taking one
     borrowed constant-size array (that `len` is folded).
   - Copying (`[+]T w = v;`, `v -> w`, and an owned parameter, below) takes a `[+]T` or
