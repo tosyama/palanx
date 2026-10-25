@@ -1069,6 +1069,25 @@ func sum_arr([]int32 a, int64 n) -> int64 {
 
 Using `[]T` in a variable declaration is a compile error.
 
+### Sized Arrays in Function Signatures
+
+A `[n]T` parameter receives a copy of the argument, which it owns. A `[n]T` return, named or
+not, gives the caller an array it owns, as a struct return does; returning a borrow returns a
+copy. `n` must be a constant.
+
+```palan
+func bumped([3]int32 a) -> [3]int32 {
+    a[0] + 1 -> a[0];        // a is the caller's array copied in
+    return a;
+}
+func same(@[3]int32 a) -> [3]int32 { return a; }   // returns a copy
+
+[3]int32 x = [1, 2, 3];
+[3]int32 y = bumped(x);
+[3]int32 z = same(@x);
+printf("%d %d %d\n", x[0], y[0], z[0]);   // 1 2 1
+```
+
 ### Borrowing Arrays
 
 `@[n]T` borrows an array read-only and `@![n]T` borrows it writable. Pass the array with
@@ -1276,6 +1295,149 @@ int64 k = 3;
 [2]$[k]$[4]int32 c;     // one block of 2 * k * 4 elements
 ```
 
+### Variable-Length Arrays (`[+]T`)
+
+`[+]T` is an array whose length changes at run time. It starts empty; `[+n]T` starts empty
+with room for `n` elements, and an array literal sets its length. `v[i]` reads and writes an
+element as in other arrays, without bounds checking. Four built-in functions work on it:
+
+| Function | Meaning |
+|----------|---------|
+| `len(@v)` | the number of elements, an `int64` |
+| `push(@!v, x)` | appends a copy of `x` |
+| `resize(@!v, n)` | sets the length to `n` (an `int64`); new elements are undefined, as an array variable's are |
+| `pop(@!v)` | removes the last element and returns it |
+
+They are ordinary functions, so they can be called in method form (`v.push(x)`) or after `->`
+(`x -> v.push()`, `v -> len()`; see [Chained Calls](#chained-calls)).
+
+```palan
+cinclude <stdio.h>;
+
+[+]int32 v;                  // empty
+v.push(10);
+20 -> v.push();
+push(@!v, 30);
+printf("%ld %d\n", len(@v), v[2]);      // 3 30
+v.resize(4);                 // v[3] is undefined until written
+40 -> v[3];
+int32 last = v.pop();
+printf("%ld %d\n", v -> len(), last);   // 3 40
+
+[+16]int32 w;                // room for 16, length 0
+[+]int32 u = [1, 2, 3];      // length 3
+printf("%ld %ld\n", len(@w), len(@u));  // 0 3
+
+int64 i = 0;
+while i < u -> len() {
+    printf("%d ", u[i]);
+    i + 1 -> i;
+}
+printf("\n");                // 1 2 3
+```
+
+- Growing past the room it has reallocates the elements, at least doubling the room, so adding
+  one element at a time reallocates only now and then. Shrinking keeps the room.
+- `pop` on an empty array and `resize` to a negative length abort the program.
+- `[+n]T v = [...]` takes `n` elements, the literal's first and the rest undefined; `n` must be
+  a constant no less than the literal's length.
+- `$[+]T v` keeps the array's header in the stack frame; its elements are on the heap either way.
+- `len` also takes an array of constant size (`len(@a)` for `[4]int32 a` is 4), and is then a
+  constant: `const N = len(@a);`. An array whose size is known only at run time, or a `[]T`, has
+  no length to give and is a compile error.
+- A function with the same parameter types as a built-in one is a compile error.
+
+**Borrowing and passing.** `@[+]T` and `@![+]T` borrow the array, as for other arrays (see
+[Borrowing Arrays](#borrowing-arrays)); only `@!` can change its length. Passed to a `[]T`
+parameter, such as a C function's pointer, the array gives its elements. A `[+]T` parameter, a
+`[+]T` return and copying follow the rules of other arrays and structs:
+
+```palan
+cinclude <stdio.h>;
+
+func total([]int32 a, int64 n) -> int64 s {
+    int64 i = 0;
+    while i < n { s + a[i] -> s; i + 1 -> i; }
+}
+func sum(@[+]int32 v) -> int64 s {
+    int64 i = 0;
+    while i < v -> len() { s + v[i] -> s; i + 1 -> i; }
+}
+func addTo(@![+]int32 v, int32 x) { x -> v.push(); }
+func evens(int64 n) -> [+]int32 r {
+    int64 i = 0;
+    while i < n { r.push(int32(i * 2)); i + 1 -> i; }
+}
+func grown([+]int32 v) -> [+]int32 {
+    v.push(99);
+    return v;
+}
+
+[+]int32 v = evens(4);       // 0 2 4 6
+addTo(@!v, 8);
+printf("%ld %ld\n", sum(@v), total(v, len(@v)));   // 20 20
+[+]int32 c = v;              // a copy
+1 -> c[0];
+[3]int32 a = [7, 8, 9];
+[+]int32 d;
+a -> d;                      // d has 3 elements
+[+]int32 g = grown(v);       // v is copied in, so it keeps its length
+printf("%d %d %ld %ld %ld\n", v[0], c[0], len(@d), len(@v), len(@g));  // 0 1 3 5 6
+[+]int32 m;
+v ->> m;                     // m takes v's array; v is left NULL
+printf("%ld\n", len(@m));    // 5
+```
+
+- A `[+]T` parameter receives a copy of the argument. Returning a borrow (`return v;` for a
+  `@[+]T v`) returns a copy, as for a struct.
+- Copying into a `[+]T` takes any number of elements and sets the length to it; a `[+]T` cannot
+  be copied into a `[n]T`.
+- Changing the length can move the elements, so a borrow of an element (`@!v[i]`) or the
+  elements given to a `[]T` must not be kept across a `push` or `resize`. This is not checked.
+
+**Elements.** An element can be a struct, a row or another variable-length array, nested to
+any depth:
+
+```palan
+cinclude <stdio.h>;
+
+type Point { int64 x; int64 y; };
+
+[+]Point ps;                 // each element is its own block
+Point p;
+3 -> p.x;
+ps.push(p);                  // copies p in
+ps.push({x: 5, y: 6});
+ps.resize(3);                // ps[2] is a new Point
+9 -> ps[2].y;
+Point q = ps.pop();          // q owns the last element
+printf("%ld %ld %ld\n", len(@ps), ps[1].x, q.y);   // 2 5 9
+
+[+]$Point qs;                // elements laid out in the array's data
+qs.push(p);
+printf("%ld\n", qs[0].x);    // 3
+
+[+][+]int32 m;               // a row of its own length per element
+m.resize(2);
+7 -> m[1].push();
+printf("%ld %ld\n", len(@m[0]), len(@m[1]));      // 0 1
+
+[+][3]int32 rows;            // rows of 3
+[3]int32 r = [1, 2, 3];
+rows.push(@r);               // copies r in
+rows.resize(2);
+printf("%ld %d\n", len(@rows), rows[0][2]);       // 2 3
+
+[2][+]int32 two;             // two variable-length arrays
+4 -> two[1].push();
+printf("%d\n", two[1][0]);   // 4
+```
+
+- `push` copies a struct or a row in; `pop` returns an element the caller then owns.
+- `$` cannot lay out something that owns storage: `[+]$[+]T` and `$[+]T` as an element are
+  compile errors.
+- A `[+]T` struct field is described in [Array Fields](#array-fields).
+
 ### Array Literals
 
 An array variable can be initialized with an array literal `[a, b, c]` in its declaration.
@@ -1444,6 +1606,8 @@ Array **variables** (this section) allow non-constant `n`, except a stack array 
 - An array declared at the top level (outside any block) is not freed when the top-level statements end; the OS reclaims the memory at process exit.
 - Boundary checking is not performed.
 - `[n]$T` is not supported when `T` owns fields.
+- `[+]@T` (a variable-length array of pointer slots), `[+][n]@T` and a `[][+]T` parameter are not
+  supported.
 
 ---
 
@@ -1740,8 +1904,7 @@ compile error. A pointer field (`@T`/`@!T`) may close a cycle.
 
 ### Restrictions
 
-- An embedded array of rows (`[n]$[m]T field`), an unsized array (`[]T field`) and a
-  variable-length array (`[+]T field`) are not supported as fields.
+- An unsized array (`[]T field`) is not supported as a field.
 - Recursive embedding (`type A { $A a; }`) is a compile error.
 - An [incomplete struct type](#incomplete-struct-types-opaque-handles) — a tag whose layout
   isn't known, e.g. a cincluded `DIR` — cannot be used as a by-value variable (`DIR d;`), an

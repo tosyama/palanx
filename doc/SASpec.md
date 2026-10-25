@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.2.0
+ver. 0.2.1
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -392,9 +392,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     E_VarrElemSized); for a row (`[+][n]U`, `[+]$[n]U`), the level a row of `[m][n]U` has
     (`pntr` with `arr-size`, over a primitive, an owned struct slot, a struct laid out in place
     for `[n]$U`, or an owned `[+]V`), with `"embedded": true` on the `varr` for `[+]$[n]U`. The
-    row size must be a constant (E_UnsizedArrRowSizeNotConst). A pointer element (`[+]@T`,
-    `[+][n]@T`) and a second fixed level (`[+][m][n]U`, `[+][m]$[n]U`) are not supported
-    (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key, made from
+    row size must be a constant (E_UnsizedArrRowSizeNotConst). Further levels follow the same
+    rules at any depth (`[+][m][n]U`, `[+][m]$[n]U`). A pointer element (`[+]@T`, `[+][n]@T`) is
+    not supported (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key, made from
     `E`'s layout.
   - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
@@ -445,8 +445,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     `[n]T` it is E_CopyShapeMismatch. `[..] -> w` (also into an element, `[..] -> m[i]`) is a
     block declaring the literal as a frame array `$[]T __lit_N` (an empty `[]` as a frame
     `$[+]T`) and copying it, so every element is read before `w` changes; its diagnostics name
-    `w`. For rows holding a `[+]V` (`[+][n][+]V`) the frame array is a `$[+]` one, as a
-    `[k][n][+]V` is not supported.
+    `w`.
   - `->>` into such a variable is the transfer of any owned value: `__pln_free_varr_T(w)`, the
     assign, and the source set to NULL. The source is an owning variable (not `$[+]T`) or a call
     result, of the same element type.
@@ -470,7 +469,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     freeing the outer array reach it through the generated helpers. `[n][+]U` is an arr entry of
     the element (`__pln_alloc_arr_PVU(n)` …, or in the frame for `$[n][+]U`), and `@[n][+]U`
     borrows it with each element left as the owned `[+]U`. Not supported: `[n]$[+]U`
-    (E_EmbedOwningType), `[m][n][+]U` (E_VarrIn2DArr), an unsized `[][+]U`
+    (E_EmbedOwningType), an unsized `[][+]U`
     (E_UnsizedVarrElemArr). An array literal fills `[+]` levels at any depth: each inner row is
     resized to its own count (`__pln_resize_varr_U(<row>, count)`, an empty `[]` included) before
     its elements are stored; a fixed level still needs the exact count, and a fixed size taken from
@@ -1436,9 +1435,10 @@ An array field is typed as an array variable of its type is. Without a leading `
 (`[n]U`, `[+]U`, `[n]$S`, `[n]@T`) it is an owned field, an 8-byte slot holding its block. With
 one (`$[n]U`) the array is laid out in the struct as `$[n]U` lays it out in a frame: it takes
 the bytes and alignment of its elements laid out in place, and a field access yields it as the
-address of that place (`addr-only`) typed as a `[n]U` variable is. Such an array cannot hold
-owned elements yet (`$[n]S`, `$[n][m]U`, `$[n][+]U` are E_StmtNotImplemented); `$` on an element
-that owns storage is E_EmbedOwningType, as for a variable.
+address of that place (`addr-only`) typed as a `[n]U` variable is. When it holds owned elements
+(`$[n]S`, `$[n][m]U`, `$[n][+]U`), their slots are built, freed and copied with the struct (an
+`owned-fields` entry), which then owns fields itself; `$` on an element that owns storage is
+E_EmbedOwningType, as for a variable.
 
 ### struct variable declaration → sa.json
 
