@@ -308,7 +308,7 @@ inline json fieldPrimLeaf(const FieldLayout& f)
 	return t;
 }
 
-// What a raw-ptr field / embed-ptr-arr slot points to.
+// What a raw-ptr field points to.
 inline json fieldPointeeType(const FieldLayout& f)
 {
 	json t = f.elemKind == "func" ? f.funcType
@@ -337,17 +337,7 @@ inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
 		return fieldPrimLeaf(f);
-	if (f.typeKind == "embed-arr") {
-		json bt = (f.elemKind == "struct")
-			? json{{"type-kind","struct"},{"type-name",f.typeName}}
-			: fieldPrimLeaf(f);
-		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"arr-size",f.count},{"base-type",bt}};
-	}
-	if (f.typeKind == "embed-ptr-arr") {
-		json elem_pntr = {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
-		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
-	}
-	if (f.typeKind == "owned")
+	if (f.typeKind == "owned" || f.typeKind == "embed-arr")
 		return f.type;
 	if (f.typeKind == "raw-ptr")
 		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
@@ -370,6 +360,21 @@ inline int elemSizeBytes(const string& typeName)
 inline bool isPrimPointeeName(const string& name)
 {
 	return name == "void" || elemSizeBytes(name) >= 0;
+}
+
+// The bytes an element takes when it is laid out in place: a primitive or a
+// slot, a struct, or a row of them, whose own rows may be laid out in place
+// in turn; -1 when a row's length is known only at run time.
+inline int64_t inPlaceBytes(const json& elem, const map<string, StructDef>& defs)
+{
+	string kind = elem.value("type-kind","");
+	if (kind == "struct") return defs.at(elem["type-name"].get<string>()).totalSize;
+	if (kind == "prim") return elemSizeBytes(elem["type-name"].get<string>());
+	if (!isArrLevel(elem)) return 8;
+	if (!elem.contains("arr-size")) return -1;
+	const json& child = elem["base-type"];
+	int64_t childSize = !elem.value("embedded", false) && isArrLevel(child) ? 8 : inPlaceBytes(child, defs);
+	return childSize < 0 ? -1 : elem["arr-size"].get<int64_t>() * childSize;
 }
 
 // SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct passed or returned by value.
@@ -400,20 +405,27 @@ inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
 			mark(off, f.size, isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
 		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned") {
 			mark(off, 8, EightbyteClass::Integer);
-		} else if (f.typeKind == "embed-ptr-arr") {
-			for (int64_t i = 0; i < f.count; i++)
-				mark(off + (int)(i * 8), 8, EightbyteClass::Integer);
 		} else if (f.typeKind == "embed") {
 			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, cls);
 		} else if (f.typeKind == "embed-arr") {
-			bool leafFloat = (f.typeName == "flo32" || f.typeName == "flo64");
-			for (int64_t i = 0; i < f.count; i++) {
-				int elemOff = off + (int)(i * f.stride);
-				if (f.elemKind == "struct")
-					classifySysVWalk(defs.at(f.typeName), elemOff, nEightbytes, defs, cls);
-				else
-					mark(elemOff, f.stride, leafFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
-			}
+			// Each element laid out in place, down to primitives, structs and pointers.
+			function<void(const json&, int)> walk = [&](const json& t, int at) {
+				string kind = t.value("type-kind", "");
+				if (kind == "struct") {
+					classifySysVWalk(defs.at(t["type-name"].get<string>()), at, nEightbytes, defs, cls);
+				} else if (kind == "prim") {
+					string name = t["type-name"].get<string>();
+					bool isFloat = (name == "flo32" || name == "flo64");
+					mark(at, elemSizeBytes(name), isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+				} else if (isArrLevel(t)) {
+					const json& elem = t["base-type"];
+					int64_t size = inPlaceBytes(elem, defs);
+					for (int64_t i = 0; i < t["arr-size"].get<int64_t>(); i++) walk(elem, at + (int)(i * size));
+				} else {
+					mark(at, 8, EightbyteClass::Integer);
+				}
+			};
+			walk(f.type, off);
 		}
 	}
 }

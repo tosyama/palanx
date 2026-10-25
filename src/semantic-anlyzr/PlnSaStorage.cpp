@@ -234,11 +234,13 @@ json PlnSemanticAnalyzer::ownedFieldType(const json& locNode, const json& vtype)
 	requireKnownTypeNames(locNode, vtype);
 	if (isVarrAstType(vtype)) return varrElemType(locNode, vtype);
 	const json* t = &vtype;
-	for (; t->value("type-kind","") == "arr" && !isVarrAstType(*t); t = &(*t)["base-type"]) {
+	int levels = 0;
+	for (; t->value("type-kind","") == "arr" && !isVarrAstType(*t); t = &(*t)["base-type"], levels++) {
 		if ((*t)["size-expr"].is_null()) unsupported();
 		fieldArrSize(locNode, (*t)["size-expr"]);
 	}
-	if (t->value("type-kind","") == "pntr") unsupported();
+	// Rows of pointer slots, which no array variable can declare either.
+	if (t->value("type-kind","") == "pntr" && levels > 1) unsupported();
 	return sizedArrLevel(locNode, vtype, nullopt);
 }
 
@@ -293,19 +295,9 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 	return vt;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// The bytes an element takes when it is laid out in place: a primitive or a
-// slot, a struct, or a row of them, whose own rows may be laid out in place
-// in turn; -1 when a row's length is known only at run time.
 int64_t PlnSemanticAnalyzer::inPlaceSize(const json& elem) const
 {
-	string kind = elem.value("type-kind","");
-	if (kind == "struct") return structDefs_.at(elem["type-name"].get<string>()).totalSize;
-	if (kind == "prim") return elemSizeBytes(elem["type-name"].get<string>());
-	if (!isArrLevel(elem)) return 8;
-	if (!elem.contains("arr-size")) return -1;
-	const json& child = elem["base-type"];
-	int64_t childSize = !elem.value("embedded", false) && isArrLevel(child) ? 8 : inPlaceSize(child);
-	return childSize < 0 ? -1 : elem["arr-size"].get<int64_t>() * childSize;
+	return inPlaceBytes(elem, structDefs_);
 }
 
 // The same as an expression, for an element at level `level` of an array
@@ -685,6 +677,8 @@ json PlnSemanticAnalyzer::layoutElem(const json& elem)
 	static const map<string, string> sameWidthInt = {
 		{"uint8","int8"}, {"bool","int8"}, {"uint16","int16"}, {"uint32","int32"}, {"uint64","int64"}
 	};
+	// A pointer slot is a plain word, as a 64-bit integer is.
+	if (isPtrBorrow(elem)) return {{"type-kind","prim"},{"type-name","int64"}};
 	json out = elem;
 	string kind = out.value("type-kind","");
 	if (kind == "prim") {

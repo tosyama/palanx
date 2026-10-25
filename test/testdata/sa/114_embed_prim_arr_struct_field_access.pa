@@ -1,6 +1,6 @@
 cinclude <stdlib.h>;
 cinclude <stdio.h>;
-type Buf { [4]$int64 data; };
+type Buf { $[4]int64 data; };
 func test() {
     Buf buf;
     10 -> buf.data[0];

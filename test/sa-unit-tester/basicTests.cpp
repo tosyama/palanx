@@ -542,7 +542,8 @@ TEST(sysv_struct, fractional_tail_width) {
     StructDef def;
     def.totalSize = 3;
     def.fields = {
-        {"a", "embed-arr", "int8", false, 0, 3, /*count*/3, /*elemKind*/"prim", /*stride*/1},
+        {.name="a", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=3,
+         .type={{"type-kind","pntr"},{"arr-size",3},{"base-type",{{"type-kind","prim"},{"type-name","int8"}}}}},
     };
     map<string, StructDef> defs;
     auto result = classifySysVStruct(def, defs);
@@ -608,11 +609,12 @@ TEST(sysv_struct, embed_struct_recursion) {
 }
 
 TEST(sysv_struct, embed_arr_prim_float) {
-    // `[4]flo32 v;` embedded fixed-size array (not an owned pointer array).
+    // `$[4]flo32 v;` -- an array laid out in the struct.
     StructDef def;
     def.totalSize = 16;
     def.fields = {
-        {"v", "embed-arr", "flo32", false, 0, 16, /*count*/4, /*elemKind*/"prim", /*stride*/4},
+        {.name="v", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=16,
+         .type={{"type-kind","pntr"},{"arr-size",4},{"base-type",{{"type-kind","prim"},{"type-name","flo32"}}}}},
     };
     map<string, StructDef> defs;
     auto result = classifySysVStruct(def, defs);
@@ -622,7 +624,7 @@ TEST(sysv_struct, embed_arr_prim_float) {
 }
 
 TEST(sysv_struct, embed_arr_struct_leaf) {
-    // `[2]$Elem arr;` where Elem { int32 a; int32 b; } -- each element must
+    // `$[2]$Elem arr;` where Elem { int32 a; int32 b; } -- each element must
     // recurse via `defs.at("Elem")` at its own element offset.
     StructDef elem;
     elem.totalSize = 8;
@@ -634,7 +636,9 @@ TEST(sysv_struct, embed_arr_struct_leaf) {
     StructDef def;
     def.totalSize = 16;
     def.fields = {
-        {"arr", "embed-arr", "Elem", false, 0, 16, /*count*/2, /*elemKind*/"struct", /*stride*/8},
+        {.name="arr", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=16,
+         .type={{"type-kind","pntr"},{"arr-size",2},{"embedded",true},{"stride",8},
+                {"base-type",{{"type-kind","struct"},{"type-name","Elem"}}}}},
     };
 
     map<string, StructDef> defs = { {"Elem", elem} };
@@ -644,12 +648,32 @@ TEST(sysv_struct, embed_arr_struct_leaf) {
     EXPECT_EQ(result[1].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct, embed_ptr_arr_field) {
-    // `[2]@!int32 v;` -- a fixed-count array of pointer slots, each 8 bytes.
+TEST(sysv_struct, embed_arr_rows) {
+    // `$[2]$[1]int32 m; flo64 f;` -- the rows laid out in place make the
+    // first eightbyte INTEGER, leaving the flo64's SSE.
+    json row = {{"type-kind","pntr"},{"arr-size",1},{"base-type",{{"type-kind","prim"},{"type-name","int32"}}}};
     StructDef def;
     def.totalSize = 16;
     def.fields = {
-        {"v", "embed-ptr-arr", "int32", true, 0, 16, /*count*/2, /*elemKind*/"", /*stride*/0},
+        {.name="m", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=8,
+         .type={{"type-kind","pntr"},{"arr-size",2},{"embedded",true},{"stride",4},{"base-type",row}}},
+        {.name="f", .typeKind="prim", .typeName="flo64", .isMutable=false, .offset=8, .size=8},
+    };
+    map<string, StructDef> defs;
+    auto result = classifySysVStruct(def, defs);
+    ASSERT_EQ(result.size(), 2);
+    EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
+    EXPECT_EQ(result[1].cls, EightbyteClass::Sse);
+}
+
+TEST(sysv_struct, embed_arr_ptr_slots) {
+    // `$[2]@!int32 v;` -- pointer slots laid out in the struct, each 8 bytes.
+    StructDef def;
+    def.totalSize = 16;
+    def.fields = {
+        {.name="v", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=16,
+         .type={{"type-kind","pntr"},{"arr-size",2},{"base-type",{{"type-kind","pntr"},{"mutable",true},
+                {"base-type",{{"type-kind","prim"},{"type-name","int32"}}}}}}},
     };
     map<string, StructDef> defs;
     auto result = classifySysVStruct(def, defs);

@@ -1,7 +1,7 @@
 cinclude <stdio.h>;
 cinclude "284_ptr_ptr_field.h";
 
-type S { @!@!int32 pp; [2]@@int64 slots; };
+type S { @!@!int32 pp; $[2]@@int64 slots; };
 
 int32 x = 5;
 int64 y = 6;

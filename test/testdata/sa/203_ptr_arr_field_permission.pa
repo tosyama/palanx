@@ -1,5 +1,5 @@
 type In { int64 v; };
-type P { [2]$int64 arr; [2]$In sa; @!int64 f; };
+type P { $[2]int64 arr; $[2]$In sa; @!int64 f; };
 func rd(@P p) -> int64 n {
 	@In q = @p.sa[0];
 	p.arr[1] + q.v -> n;

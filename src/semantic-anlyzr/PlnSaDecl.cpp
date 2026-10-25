@@ -45,6 +45,51 @@ static json pointeeFuncType(const PointeeLeaf& leaf)
 	return leaf.type->value("type-kind", "") == "func" ? *leaf.type : json();
 }
 
+// Its levels are checked first, so that their errors are the field's own. A
+// C pointer slot keeps its place even when its pointee cannot be accessed.
+FieldLayout PlnSemanticAnalyzer::inlineArrField(const json& locNode, const string& structName, const json& arr)
+{
+	if (isVarrAstType(arr)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType,
+		                                  typeDisplayName(ownedFieldType(locNode, arr))) << endl;
+		exit(1);
+	}
+	const json* leaf = &arr;
+	for (; leaf->value("type-kind", "") == "arr" && !isVarrAstType(*leaf); leaf = &(*leaf)["base-type"]) {
+		if ((*leaf)["size-expr"].is_null()) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
+			exit(1);
+		}
+		fieldArrSize(locNode, (*leaf)["size-expr"]);
+	}
+	if (leaf->value("type-name", "") == structName) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_RecursiveStruct, structName) << endl;
+		exit(1);
+	}
+	FieldLayout f{.typeKind="embed-arr", .isMutable=false};
+	json laidOut = arr;
+	if (leaf->value("type-kind", "") == "pntr") {
+		f.unsupported = unsupportedPointee(pointeeLeaf(*leaf));
+		// Only the slots' layout is needed of a field nothing can access.
+		if (!f.unsupported.empty()) {
+			json* slot = &laidOut;
+			while (slot->value("type-kind", "") == "arr") slot = &(*slot)["base-type"];
+			*slot = {{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","prim"},{"type-name","void"}}}};
+		}
+	} else {
+		requireKnownTypeNames(locNode, arr);
+		f.enumName = leaf->value("enum", "");
+	}
+	f.type = sizedArrLevel(locNode, laidOut, nullopt);
+	// The slots of owned elements are built with the struct.
+	if (ownsElems(f.type)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_StmtNotImplemented) << endl;
+		exit(1);
+	}
+	f.size = inPlaceSize(f.type);
+	return f;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fields,
                                               const json& locNode, bool isUnion, bool packed, int aligned)
 {
@@ -75,21 +120,9 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 	for (auto& f : fields) {
 		fieldPacked = f.value("packed", false);
 		fieldAligned = f.value("aligned", 1);
-		json vtype = f["var-type"];
+		const json& vtype = f["var-type"];
 		string tk = vtype.value("type-kind", "");
 		string fieldName = f.value("name", "");
-		// A field is laid out in the struct already, so `$[n]T` places the
-		// array there as `[n]$T` does.
-		if (tk == "embed" && vtype["base-type"].value("type-kind", "") == "arr") {
-			if (isVarrAstType(vtype["base-type"])) {
-				cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningType,
-				                                  typeDisplayName(ownedFieldType(locNode, vtype["base-type"]))) << endl;
-				exit(1);
-			}
-			vtype = json(vtype["base-type"]);
-			vtype["embedded"] = true;
-			tk = "arr";
-		}
 
 		if (tk == "prim") {
 			string tname = vtype["type-name"].get<string>();
@@ -115,6 +148,17 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 				                      .typeName=tname, .isMutable=false,
 				                      .offset=at, .size=sz, .enumName=vtype.value("enum", "")});
 			}
+		} else if (tk == "embed" && vtype["base-type"].value("type-kind", "") == "arr") {
+			// `$[n]U`: the array laid out in the struct, as `$[n]U` lays it out in a frame.
+			FieldLayout fl = inlineArrField(locNode, name, vtype["base-type"]);
+			fl.name = fieldName;
+			fl.offset = place(fl.size, inPlaceAlign(fl.type));
+			const json* leaf = &fl.type;
+			while (isArrLevel(*leaf)) leaf = &(*leaf)["base-type"];
+			if (leaf->value("type-kind", "") == "struct"
+			    && structDefs_.at((*leaf)["type-name"].get<string>()).hasUnalignedField)
+				def.hasUnalignedField = true;
+			def.fields.push_back(move(fl));
 		} else if (tk == "embed") {
 			if (vtype["base-type"].value("type-kind", "") != "prim") {
 				cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedElemNotStruct,
@@ -170,94 +214,11 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 			                      .innerPtrMutable=leaf.innerPtrMutable,
 			                      .unsupported=unsupportedPointee(leaf),
 			                      .funcType=pointeeFuncType(leaf)});
-		} else if (isVarrAstType(vtype)) {
+		} else if (tk == "arr") {
 			int at = place(8, 8);
 			def.fields.push_back({.name=fieldName, .typeKind="owned", .isMutable=false,
 			                      .offset=at, .size=8, .type=ownedFieldType(locNode, vtype)});
 			def.ownsFields = true;
-		} else if (tk == "arr") {
-			const json& size_expr = vtype["size-expr"];
-			if (size_expr.is_null()) {
-				// []T (unsized array) -- not a valid struct field form
-				cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
-				exit(1);
-			}
-			const json& base = vtype["base-type"];
-			bool embedded = vtype.value("embedded", false);
-			if (!embedded && base.value("type-kind", "") != "pntr") {
-				int at = place(8, 8);
-				def.fields.push_back({.name=fieldName, .typeKind="owned", .isMutable=false,
-				                      .offset=at, .size=8, .type=ownedFieldType(locNode, vtype)});
-				def.ownsFields = true;
-				continue;
-			}
-			int64_t count = fieldArrSize(locNode, size_expr);
-
-			if (!embedded) {
-				// [n]@T / [n]@!T: embedded array of n non-owning pointer slots (8B each)
-				bool isMut = base.value("mutable", false);
-				PointeeLeaf leaf = pointeeLeaf(base);
-				string leaf_name = leaf.type->value("type-name", "");
-
-				int align = 8;
-				int at = place(count*8, align);
-				def.fields.push_back({.name=fieldName, .typeKind="embed-ptr-arr",
-				                      .typeName=leaf_name, .isMutable=isMut,
-				                      .offset=at, .size=(int)(count*8),
-				                      .count=count, .elemKind=pointeeElemKind(leaf), .stride=8,
-				                      .enumName=leaf.type->value("enum", ""),
-				                      .innerPtrMutable=leaf.innerPtrMutable,
-				                      .unsupported=unsupportedPointee(leaf),
-				                      .funcType=pointeeFuncType(leaf)});
-				continue;
-			}
-
-			string base_kind = base.value("type-kind", "");
-			string leaf_name = base.value("type-name", "");
-
-			int stride = 0;
-			string elemKind;
-			int align;
-			if (base_kind == "prim" && leaf_name == name) {
-				cerr << errPrefix << PlnSaMessage::getMessage(E_RecursiveStruct, name) << endl;
-				exit(1);
-			} else if (base_kind == "prim" && !structDefs_.count(leaf_name)) {
-				// primitive leaf
-				stride = elemSizeBytes(leaf_name);
-				if (stride < 0) {
-					cerr << errPrefix << PlnSaMessage::getMessage(E_UnknownType, leaf_name) << endl;
-					exit(1);
-				}
-				elemKind = "prim";
-				align = stride;
-			} else if (base_kind == "prim") {
-				// struct leaf ([n]$Point)
-				const StructDef& leafDef = structDefs_.at(leaf_name);
-				if (!leafDef.isComplete) {
-					cerr << errPrefix << PlnSaMessage::getMessage(E_IncompleteStructType, leaf_name,
-					                                  leafDef.incompleteReason, leafDef.keyword()) << endl;
-					exit(1);
-				}
-				if (leafDef.ownsFields) {
-					cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningType, leaf_name) << endl;
-					exit(1);
-				}
-				stride = leafDef.totalSize;
-				elemKind = "struct";
-				align = leafDef.maxAlign;
-				if (leafDef.hasUnalignedField) def.hasUnalignedField = true;
-			} else {
-				// base_kind == "arr" ([n]$[m]T nested) -- not supported
-				cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
-				exit(1);
-			}
-
-			int at = place(count*stride, align);
-			def.fields.push_back({.name=fieldName, .typeKind="embed-arr",
-			                      .typeName=leaf_name, .isMutable=false,
-			                      .offset=at, .size=(int)(count*stride),
-			                      .count=count, .elemKind=elemKind, .stride=stride,
-			                      .enumName=base.value("enum", "")});
 		} else {
 			cerr << errPrefix << PlnSaMessage::getMessage(E_UnsupportedStructFieldType) << endl;
 			exit(1);
@@ -875,13 +836,14 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		f["var-type"] = resolveWrittenType(stmt, f["var-type"]);
 		// Only a pointee may name a struct that is not registered yet; every
 		// other field type is checked by buildStructDef against structDefs_.
-		const json* t = &f["var-type"];
-		if (t->value("type-kind", "") == "arr" && !t->value("embedded", false))
-			t = &(*t)["base-type"];
+		const json* type = &f["var-type"];
+		if (type->value("type-kind", "") == "embed") type = &(*type)["base-type"];
+		const json* t = type;
+		while (t->value("type-kind", "") == "arr") t = &(*t)["base-type"];
 		if (t->value("type-kind", "") != "pntr") continue;
 		string pointee = pointeeLeaf(*t).type->value("type-name", "");
 		bool laterDef = pointee == name || declaredStructs_.count(pointee);
-		if (!laterDef) requireKnownTypeNames(stmt, f["var-type"]);
+		if (!laterDef) requireKnownTypeNames(stmt, *type);
 		json* leaf = const_cast<json*>(t);
 		while (leaf->value("type-kind", "") == "pntr") leaf = &(*leaf)["base-type"];
 		if (leaf->value("type-kind", "") == "func") *leaf = deepNormalizePrimToStruct(*leaf);
@@ -900,27 +862,24 @@ static json cFieldVarType(const json& vtype)
 		return {{"type-kind", "embed"}, // LCOV_EXCL_EXCEPTION_BR_LINE
 		        {"base-type", {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
-	if (vtype.value("type-kind", "") == "arr" && vtype.contains("base-type")) {
-		json v = vtype;
-		json& bt = v["base-type"];
-		// Inside an array, a struct-by-value leaf is Palan's [n]$Foo / [n]Foo
-		// shape, named with a plain prim type-name rather than wrapped in "embed".
-		if (isStruct(bt)) {
+	if (vtype.value("type-kind", "") != "arr" || !vtype.contains("base-type"))
+		return vtype;
+	// A C array lies in its struct, as Palan's `$[n]T` does; c2ast marks every
+	// level "embedded", which in Palan marks only the levels whose elements
+	// (rows, struct values) are laid out in place.
+	function<json(json)> level = [&](json t) { // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+		json& bt = t["base-type"];
+		if (bt.value("type-kind", "") == "arr" && bt.contains("base-type")) {
+			bt = level(move(bt));
+		} else if (isStruct(bt)) {
 			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}};
-		} else if (bt.value("type-kind", "") == "pntr") {
-			// An inline array of pointer slots ("T *field[n];") is Palan's
-			// [n]@T / [n]@!T shape; c2ast sets "embedded" here unlike native
-			// syntax, so strip it for a single embed-ptr-arr shape either way.
-			v.erase("embedded");
-			json& leaf = bt["base-type"];
-			if (isStruct(leaf)) {
-				leaf = {{"type-kind", "prim"}, {"type-name", leaf["type-name"]}};
-			}
+		} else {
+			t.erase("embedded");
 		}
-		return v;
-	}
-	return vtype;
-}
+		return t;
+	};
+	return {{"type-kind", "embed"}, {"base-type", level(vtype)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // An unsupported field type (e.g. a C bitfield) registers its
 // owning tag as an incomplete struct -- usable only through @T/@!T -- rather
@@ -930,33 +889,24 @@ static json cFieldVarType(const json& vtype)
 static bool isSupportedCFieldType(const json& vtype, const map<string, StructDef>& structDefs,
                                    const string& ownerName)
 {
+	auto isCompleteStruct = [&](const string& name) {
+		return name != ownerName && structDefs.count(name) && structDefs.at(name).isComplete;
+	};
 	string tk = vtype.value("type-kind", "");
 	if (tk == "prim")
 		return elemSizeBytes(vtype.value("type-name", "")) >= 0;
-	if (tk == "embed") {
-		string structName = vtype["base-type"].value("type-name", "");
-		return structName != ownerName && structDefs.count(structName)
-			&& structDefs.at(structName).isComplete;
-	}
-	if (tk == "arr") {
-		if (!vtype.contains("size-expr") || !vtype.contains("base-type")) return false;
-		const json& size_expr = vtype["size-expr"];
-		if (size_expr.is_null()) return false;  // e.g. "T name[];" -- not a constant size
-		string set = size_expr.value("expr-type", "");
+	if (tk != "embed")
+		return tk == "pntr";
+	const json* t = &vtype["base-type"];
+	for (; t->value("type-kind", "") == "arr"; t = &(*t)["base-type"]) {
+		if (!t->contains("size-expr") || !t->contains("base-type")) return false;
+		// e.g. "T name[];" -- not a constant size
+		string set = (*t)["size-expr"].is_null() ? "" : (*t)["size-expr"].value("expr-type", "");
 		if (set != "lit-int" && set != "lit-uint") return false;
-
-		const json& bt = vtype["base-type"];
-		string btk = bt.value("type-kind", "");
-		if (btk == "arr") return false;  // 2D+ array fields: buildStructDef doesn't lay these out
-		if (btk == "pntr") return true;  // [n]@T / [n]@!T slot array
-		if (btk == "prim") {
-			string leaf = bt.value("type-name", "");
-			return elemSizeBytes(leaf) >= 0
-				|| (structDefs.count(leaf) > 0 && structDefs.at(leaf).isComplete);
-		}
-		return false;
 	}
-	return tk == "pntr";
+	if (t->value("type-kind", "") == "pntr") return true;
+	string leaf = t->value("type-name", "");
+	return elemSizeBytes(leaf) >= 0 || isCompleteStruct(leaf);
 }
 
 void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& s)
@@ -1311,6 +1261,10 @@ void PlnSemanticAnalyzer::adoptStruct(PlnSemanticAnalyzer& sub, const string& na
 	}
 	if (!adopted) return;
 	for (auto& f : def.fields) {
+		if (f.typeKind == "embed-arr") {
+			adoptTypeDeps(sub, f.type, locNode);
+			continue;
+		}
 		if (f.typeKind == "owned") {
 			adoptTypeDeps(sub, f.type, locNode);
 			// The defining module got the builtins of each `[+]U` level from

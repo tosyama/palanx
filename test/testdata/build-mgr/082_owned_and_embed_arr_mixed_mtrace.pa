@@ -5,8 +5,8 @@ type Widget {
     [2]Point owned_pts;
     [3]int64 owned_vals;
     [2]int64 owned_more;
-    [3]$Point tris;
-    [4]@!Point slots;
+    $[3]$Point tris;
+    $[4]@!Point slots;
 };
 mtrace();
 {

@@ -1,0 +1,22 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int64 y; };
+type S { int8 k; $[2]$[3]int32 m; $[2]$P ps; $[2]@!P sl; [2]$P own; };
+func sum(@[2]$[3]int32 a) -> int32 t { a[0][0] + a[1][2] -> t; }
+mtrace();
+{
+	S s;
+	[[1, 2, 3], [4, 5, 6]] -> s.m;
+	[{x: 7, y: 8}, {x: 9, y: 10}] -> s.ps;
+	[{x: 11, y: 12}, {x: 13, y: 14}] -> s.own;
+	@!s.ps[1] -> s.sl[0];
+	20 -> s.sl[0].y;
+	S t = s;
+	30 -> t.m[1][2];
+	31 -> t.own[0].x;
+	printf("%d %d %d %ld %ld %d %d\n", sizeof(S), s.m[1][2], t.m[1][2], s.ps[1].y, t.ps[1].y, s.own[0].x, t.own[0].x);
+	printf("%d %d\n", sum(@s.m), sum(@t.m));
+	[2]$[3]int32 row = s.m;
+	printf("%d\n", row[1][1]);
+}
+muntrace();

@@ -98,7 +98,7 @@ Root
   - elem\* - The element, as above
 
   **Bytes entry** (`__pln_B<n>`, the layout of a struct owning nothing that an element or an
-  owned field holds): build-mgr only declares it, as `type __pln_B<n> { [n]$uint8 …; }`, for
+  owned field holds): build-mgr only declares it, as `type __pln_B<n> { $[n]uint8 …; }`, for
   the functions of the arrays and structs holding it:
   - shape-kind\* - "bytes"
   - shape-name\* - `__pln_B<n>`
@@ -1374,7 +1374,7 @@ type" error — but any use that requires a known layout is E_IncompleteStructTy
 - A by-value struct variable declaration of the tag (`T x;`), a `[n]T` owned-pointer-array
   declaration, or a `[n]$T` contiguous embedded-array declaration.
 - Embedding the tag as another struct's field — as a `$T` embed leaf, an owned struct-pointer
-  leaf, or a struct-element array leaf (`[n]T`/`[n]$T` field) — checked while the *enclosing*
+  leaf, or a struct-element array leaf (`[n]T`/`$[n]$T` field) — checked while the *enclosing*
   struct is being built, so an incomplete struct cannot be smuggled in as a sub-struct either.
 
 An incomplete struct remains fully usable as a pointer: a local variable, function
@@ -1399,27 +1399,18 @@ the failing one are discarded, and no partial layout is kept:
 
 - A by-value struct or union leaf (`type-kind:"struct"` after `normalizeCType`, from
   `struct Foo f;`) is rewritten to `type-kind:"embed"` — same shape a native `$Foo` field
-  produces. A by-value struct leaf inside an array (`struct Foo arr[n];`) is instead rewritten to a plain `prim` type-name leaf, matching
-  the native `[n]$Foo` shape (`buildStructDef`'s array case looks the leaf up in the struct
-  registry by name, not by a distinct type-kind).
+  produces.
 - A `prim` field is supported iff `elemSizeBytes` resolves its type-name.
 - An `embed` field is supported iff its struct name is already registered and is not the
   enclosing struct itself (no direct self-embedding).
-- An `arr` field (a C array declarator — ASTSpec.md's `embedded:true` array shape) is supported
-  only when its `size-expr` is a literal (a `T name[];` field has no fixed size and is rejected)
-  and its base-type is one of: a pointer (`[n]@T`/`[n]@!T` slot array), a primitive with a known
-  size, or a primitive naming an already-registered struct (`[n]$T`/`[n]T`). **A 2D-or-deeper
-  array field (`int cells[2][3];`, base-type itself `arr`) is not supported** — the whole struct
-  is registered incomplete, so `Sample s;` for a `struct Sample { int cells[2][3]; };` fails with
-  E_IncompleteStructType even though `cells` is the only unsupported field (the tag `Sample`
-  itself still resolves, and is usable through `@Sample`/`@!Sample`).
-  - A pointer base-type (`T *field[n];`, e.g. glibc's `struct __locale_data *__locales[13];`)
-    is Palan's `[n]@T`/`[n]@!T` pointer-slot-array shape. Native syntax never sets `embedded`
-    for this shape (only the `$`-prefixed inline-storage forms do), so the `embedded` key
-    c2ast always stamps on a raw C array declarator is stripped during this same normalization
-    step — both origins reach the struct layout code as the single canonical (no-`embedded`)
-    shape. A by-value struct leaf under the pointer (`struct Foo *field[n];`) is rewritten to a
-    plain `prim` type-name leaf, same as the direct-array case above.
+- An `arr` field (a C array declarator, of any number of dimensions) lies in its struct, so it
+  is rewritten to the native `$[n]…` shape: wrapped in `embed`, with `embedded` kept only on the
+  levels whose elements are laid out in place (rows and by-value struct leaves, the latter
+  rewritten to a plain `prim` type-name leaf). `int cells[2][3];` becomes `$[2]$[3]int32`,
+  `struct Foo a[4];` `$[4]$Foo` and `T *f[n];` `$[n]@!T`. It is supported only when every
+  `size-expr` is a literal (a `T name[];` field has no fixed size and is rejected) and its leaf
+  is a pointer, a primitive with a known size, or an already-registered complete struct other
+  than the enclosing one.
 
 ### C ABI layout
 
@@ -1437,6 +1428,14 @@ totalSize = alignUp(offset, maxAlign)
 ```
 
 Example: `type Mixed { int32 a; int64 b; }` → a@0 (4B), 4B padding, b@8 (8B), total=16B.
+
+An array field is typed as an array variable of its type is. Without a leading `$`
+(`[n]U`, `[+]U`, `[n]$S`, `[n]@T`) it is an owned field, an 8-byte slot holding its block. With
+one (`$[n]U`) the array is laid out in the struct as `$[n]U` lays it out in a frame: it takes
+the bytes and alignment of its elements laid out in place, and a field access yields it as the
+address of that place (`addr-only`) typed as a `[n]U` variable is. Such an array cannot hold
+owned elements yet (`$[n]S`, `$[n][m]U`, `$[n][+]U` are E_StmtNotImplemented); `$` on an element
+that owns storage is E_EmbedOwningType, as for a variable.
 
 ### struct variable declaration → sa.json
 

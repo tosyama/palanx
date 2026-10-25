@@ -518,7 +518,7 @@ int main(int argc, char* argv[])
 					auto pad_to = [&](int64_t end) {
 						if (end <= pos) return;
 						string pad = "__pln_pad" + to_string(pad_no++);
-						out << " [" << (end - pos) << "]$uint8 " << pad << ";";
+						out << " $[" << (end - pos) << "]uint8 " << pad << ";";
 						struct_pads[name].push_back({pad, end - pos});
 					};
 					for (auto& [offset, decl] : owned_decls) {

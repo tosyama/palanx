@@ -1,6 +1,0 @@
-type P { int32 x; int64 y; };
-type S { int8 k; $[3]int32 a; $[2]P b; };
-type T { int8 k; [3]$int32 a; [2]$P b; };
-S s; T t;
-5 -> s.a[2]; 5 -> t.a[2];
-6 -> s.b[1].y; 6 -> t.b[1].y;

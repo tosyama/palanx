@@ -794,15 +794,13 @@ TEST(sa_error, struct_embed_arr_field_unknown_prim_type)
 	ASSERT_NE(sa.find(":1:1: error: unknown type"), string::npos);
 }
 
-TEST(sa_error, struct_nested_embed_arr_field_unsupported)
+TEST(sa_error, field_inline_unsized_row)
 {
-	// type T { [4]$[2]int64 field; }; -- [n]$[m]T nested embed array, not supported
-	// Covers: buildStructDef "arr" branch, embed-arr leaf-kind chain final else
-	// (base_kind=="arr"), E_UnsupportedStructFieldType
+	// type T { $[4]$[]int64 field; }; -- an array laid out in the struct needs every length
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_088_nested_embed_arr_field_unsupported.pa -o " + ast_out), "");
+		"bin/palan-gen-ast ../test/testdata/sa/error_088_field_inline_unsized_row.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":1:1: error: unsupported struct field type"), string::npos);
@@ -1220,7 +1218,7 @@ TEST(sa_error, ptr_decl_unknown_type)
 
 TEST(sa_error, incomplete_struct_var_decl)
 {
-	// `struct Tag { int x; int cells[2][3]; };` (cinclude'd, "cells" unsupported)
+	// `struct Tag { int x; int cells[]; };` (cinclude'd, "cells" unsupported)
 	// then `Tag t;` -- an owned declaration needs Tag's totalSize to malloc it.
 	// registerCStruct downgrades Tag to an incomplete struct
 	// (opaque handle) instead of leaving the tag unregistered, so this is a
@@ -2508,6 +2506,10 @@ TEST(sa_error, field_arr_level_errors)
 		{"error_806_field_ptr_slot_rows.pa", ":1:1: error: unsupported struct field type."},
 		{"error_807_field_sized_varr_elem.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 		{"error_809_field_sized_varr.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
+		{"error_810_field_embed_varr_rows.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
+		{"error_811_field_inline_embed_owning.pa", ":2:1: error: cannot embed 'O' with '$': it owns storage of its own; use 'O' without '$'."},
+		{"error_812_field_inline_owned_slots.pa", ":2:1: error: this statement is not supported in this version."},
+		{"error_813_field_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -3238,7 +3240,7 @@ TEST(sa_error, arr_lit_assign)
 		{"error_464_struct_lit_arr_field_count.pa", ":2:8: error: array 'albedo' has size 4 but its array literal has 2 elements."},
 		{"error_465_struct_lit_arr_field_not_lit.pa", ":3:8: error: the array literal's dimensions do not match array 'v'."},
 		{"error_466_struct_lit_arr_field_dict.pa", ":2:8: error: a '{name: value}' literal can only be used as a struct value"},
-		{"error_467_struct_lit_ptr_arr_field.pa", ":3:8: error: field 'ps' of struct 'M' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
+		{"error_467_struct_lit_ptr_arr_field.pa", ":3:8: error: array 'ps' cannot be given an array literal: only numeric and struct element types are supported."},
 		{"error_468_struct_lit_not_struct.pa", ":3:8: error: a value of struct 'P' must be written as '[...]' or '{name: value, ...}'."},
 		{"error_469_struct_lit_other_struct.pa", ":4:12: error: cannot copy 'R' into 'P'"},
 		{"error_470_embed_field_to_borrow.pa", ":4:1: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' ('@f()' or '@!f()' for a call returning it, '@[..]' or '@![..]' for a literal)."},

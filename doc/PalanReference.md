@@ -391,7 +391,7 @@ Declare a compile-time constant with `const`:
 const MaxLen = 256;
 
 [MaxLen]uint8 buf;
-type Msg { [MaxLen]$uint8 body; };
+type Msg { $[MaxLen]uint8 body; };
 printf("%ld\n", MaxLen);   // 256
 ```
 
@@ -1109,7 +1109,7 @@ func fill(@![H][W]int32 g, int32 x) {
 - A row of a multi-dimensional array is borrowed the same way: `@g[i]` / `@!g[i]` gives the row of
   `[n][m]T`, `[n]$[m]T`, `[n][m]$T` or `[n][m]T` (struct `T`) as `@[m]T`, `@[m]$T` and so on, also
   when `g` is itself a borrowed array.
-- An array field is borrowed the same way: `@s.v` / `@!s.v` gives a `[n]T`, `[n]$T` or `[n]@T`
+- An array field is borrowed the same way: `@s.v` / `@!s.v` gives a `[n]T`, `$[n]$T` or `$[n]@T`
   field as `@[n]T`, `@[n]$T` or `@[n]@T`.
 - A borrowed array can also be a local variable (`@[4]int64 p = @v;`).
 - A borrowed array is already a borrow, like a `@T`/`@!T` pointer: pass it on, bind it, and
@@ -1570,38 +1570,41 @@ printf("%ld %ld\n", original.x, original.y);   // 20 10
 
 ### Array Fields
 
+An array field takes the type an array variable can, with the same meaning. Where a variable's
+`$` puts the array in the stack frame, a field's `$` puts it in the struct's own block.
+
 | Syntax        | Meaning                                  | Memory                          |
 |---------------|-------------------------------------------|----------------------------------|
-| `[n]$T field` | Embedded contiguous array                 | parent's block                   |
-| `[n]T field`  | Owned array                               | cascaded alloc/free with parent  |
-| `[n][m]T field`, `[n][m]$T field`, `[n][+]T field`, ... | Owned array of rows, as an array variable of that type | cascaded alloc/free with parent |
-| `[n]@T field` | Non-owning read-only pointer-slot array   | parent's block (slots only)      |
-| `[n]@!T field`| Non-owning mutable pointer-slot array     | parent's block (slots only)      |
+| `[n]T field`, `[n]$T field`, `[n][m]T field`, `[n][+]T field`, `[+]T field`, ... | Owned array, as an array variable of that type | cascaded alloc/free with parent |
+| `$[n]T field` (primitive `T`), `$[n]$T field` (struct `T`), `$[n]$[m]T field`, ... | Array laid out in the struct | parent's block |
+| `$[n]@T field` / `$[n]@!T field` | Non-owning pointer slots laid out in the struct | parent's block (slots only) |
 
-`T` may be a primitive type or a struct name. `n` (and each `m`) must be a compile-time integer:
-a literal, a [const](#constant-declarations), or `sizeof(T)`. An owned array field takes the
-forms an array variable can, and is allocated, copied and freed with its struct; its primitive
-elements start undefined, as an array variable's do.
+`n` (and each `m`) must be a compile-time integer: a literal, a [const](#constant-declarations),
+or `sizeof(T)`. An owned array field is allocated, copied and freed with its struct; its
+primitive elements start undefined, as an array variable's do. An array laid out in the struct
+is copied with it; it cannot hold elements that own storage (`$[n]T` with a struct `T`,
+`$[n][m]T`, `$[n][+]T`) in this version, and `$` on an element that owns storage is rejected as
+for a variable.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 
 ```palan
 type Point { int64 x; int64 y; };
 
-// [n]$T -- embedded array field (struct leaf)
-type Polygon { [4]$Point pts; };
+// $[n]$T -- structs laid out in the struct
+type Polygon { $[4]$Point pts; };
 Polygon poly;
 10 -> poly.pts[0].x;  20 -> poly.pts[0].y;
 printf("%ld %ld\n", poly.pts[0].x, poly.pts[0].y);  // 10 20
 
-// [n]T -- owned pointer array field (struct leaf, cascades with parent's alloc/free)
+// [n]T -- owned array of owned structs (cascades with parent's alloc/free)
 type Cluster { [4]Point pts; };
 Cluster c;
 5 -> c.pts[0].x;
 printf("%ld\n", c.pts[0].x);  // 5
 
-// [n]@T / [n]@!T -- non-owning pointer-slot array field
-type Ring { [4]@!Point nodes; };
+// $[n]@!T -- non-owning pointer slots laid out in the struct
+type Ring { $[4]@!Point nodes; };
 Point p;  99 -> p.x;
 Ring r;
 @!p -> r.nodes[0];
@@ -1622,7 +1625,7 @@ printf("%ld %ld\n", l.a.x, l.a.y);   // 10 20
 ```
 
 `$Point` fields are stored directly inside `Line`'s memory block. No separate allocation.
-Because nothing allocates on its behalf, a `$T` field (and a `[n]$T` field) requires that `T`
+Because nothing allocates on its behalf, a `$T` field (and a `$[n]$T` field) requires that `T`
 owns no fields (no `U field` or `[k]U field`); use `T field` instead.
 A `$T` field can be read as a struct value (`l.a -> p;`, `Point p = l.a;`), which copies it.
 
@@ -2365,15 +2368,13 @@ printf("%d %d %d %d\n", arr[0], arr[1], arr[2], arr[3]);   // 1 3 4 5
 
 ### C Array Fields
 
-- A fixed-size C array field (`char name[16];`) becomes a fixed-size [array field](#array-fields)
-  on the Palan side, laid out inline in the struct exactly like a native `[16]int8 name;` field —
-  element access and taking the address of an element both work. A C function parameter declared
+- A fixed-size C array field (`char name[16];`) becomes an [array field](#array-fields) laid out
+  in the struct, exactly like a native `$[16]int8 name;` field — element access and taking the
+  address of an element both work. A field with more dimensions (`int cells[2][3];`) is the
+  same as `$[2]$[3]int32 cells;`, an array of structs (`struct pt p[4];`) as `$[4]$pt p;`, and an
+  array of pointers (`char *argv[4];`) as `$[4]@!int8 argv;`. A C function parameter declared
   as an array (`void take(char buf[32])`) decays to a plain pointer, same as in C — only the
-  outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row. A C
-  struct field with two or more array dimensions (`int cells[2][3];`) is not supported this
-  version — the field is left with no known layout, which downgrades the whole struct to an
-  [incomplete struct type](#incomplete-struct-types-opaque-handles) rather than making just that
-  field unusable.
+  outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row.
 
 ### Union Types
 

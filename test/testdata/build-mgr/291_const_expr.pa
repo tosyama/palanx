@@ -1,5 +1,5 @@
 cinclude <stdio.h>;
 
 const N = 2 + 1;
-type S { [N * 2]$int32 v; int32 last; };
+type S { $[N * 2]int32 v; int32 last; };
 printf("%ld %ld %g\n", sizeof(S), N * 2 - 1, 1.5 * N);

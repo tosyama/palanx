@@ -23,30 +23,26 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeKind;   // "prim" | "embed" | "owned" | "raw-ptr" | "embed-arr" | "embed-ptr-arr"
-	string typeName;   // prim type name, embed struct name, raw-ptr base type name,
-	                    // embed-arr/embed-ptr-arr: leaf prim type name or struct name
-	bool   isMutable;  // raw-ptr/embed-ptr-arr: @T=false, @!T=true
+	string typeKind;   // "prim" | "embed" | "owned" | "raw-ptr" | "embed-arr"
+	string typeName;   // prim type name, embed struct name, raw-ptr base type name
+	bool   isMutable;  // raw-ptr: @T=false, @!T=true
 	int    offset;     // byte offset from struct start (C ABI aligned)
 	int    size;       // prim: type size, embed: sub-struct totalSize, owned/raw-ptr: 8,
-	                    // embed-arr/embed-ptr-arr: count*stride
-
-	// Array-field-only members (valid when typeKind == "embed-arr" or "embed-ptr-arr")
-	int64_t count    = 0;   // element count n (compile-time constant)
-	string  elemKind = "";  // "prim" | "struct"; also set for typeKind == "raw-ptr" (pointee kind);
-	                        // "func" for a function pointer (see funcType)
-	int     stride   = 0;   // bytes per element
+	                    // embed-arr: the array's bytes
+	string  elemKind = "";  // raw-ptr: the pointee's kind, "prim" | "struct" | "func" (see funcType)
 
 	string  enumName = "";  // enum the primitive leaf is typed as, if any
-	// raw-ptr/embed-ptr-arr: mutability of each pointer level between the
-	// field's own pointer and the leaf (typeName), outermost first; empty = @T.
+	// raw-ptr: mutability of each pointer level between the field's own
+	// pointer and the leaf (typeName), outermost first; empty = @T.
 	vector<bool> innerPtrMutable;
 	// A C type this version cannot represent (e.g. "function pointer"): the
 	// field keeps its place in the layout but cannot be accessed.
 	string  unsupported = "";
 	json    funcType;  // elemKind == "func": the pointee function type
 	// An owned field (a struct `T` or an array `[n]...`) is a slot holding the
-	// block it owns, typed as a variable holding that block is.
+	// block it owns, typed as a variable holding that block is; an embed-arr
+	// field (`$[n]...`) is the array laid out in the struct, typed as a
+	// variable whose array is laid out in a frame.
 	json    type;
 };
 
@@ -459,6 +455,7 @@ class PlnSemanticAnalyzer {
 	                         bool isUnion = false, bool packed = false, int aligned = 1);
 	int64_t fieldArrSize(const json& locNode, const json& sizeExpr);
 	json ownedFieldType(const json& locNode, const json& vtype);
+	FieldLayout inlineArrField(const json& locNode, const string& structName, const json& arr);
 	void registerCStruct(const json& cincludeStmt, const json& s);  // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_

@@ -20,7 +20,7 @@ const LN = 3;
 
 type Material {
 	flo32 refractive_index;
-	[4]$flo32 albedo;
+	$[4]flo32 albedo;
 	$color diffuse_color;
 	flo32 specular_exponent;
 };

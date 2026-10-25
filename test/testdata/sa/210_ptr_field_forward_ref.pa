@@ -1,4 +1,4 @@
-type A { @B b; [2]@B bs; };
+type A { @B b; $[2]@B bs; };
 type B { int32 x; @A a; };
 {
 	type C { @D d; };

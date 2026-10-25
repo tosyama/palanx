@@ -235,7 +235,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		string fn = obj["field"].get<string>();
 		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
 		bool isOwned = fld.typeKind == "owned";
-		bool isArrField = (isOwned && isArrLevel(fld.type)) || fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr";
+		bool isArrField = (isOwned && isArrLevel(fld.type)) || fld.typeKind == "embed-arr";
 		if (fld.typeKind != "prim" && fld.typeKind != "embed" && !isOwned && !isArrField) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, fn) << endl;
 			exit(1);
@@ -1196,10 +1196,10 @@ json PlnSemanticAnalyzer::makeFieldAccess(const FieldChain& chain, const FieldLa
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json vt = fieldValueType(fld);
 	int off = chain.offset + fld.offset;
-	// embed/embed-arr/embed-ptr-arr fields are inline data (no pointer is
-	// actually stored at this offset): the field's "value" is its own address,
-	// computed as ptr+offset, not a load of the memory there.
-	bool addrOnly = (fld.typeKind == "embed" || fld.typeKind == "embed-arr" || fld.typeKind == "embed-ptr-arr");
+	// embed/embed-arr fields are inline data (no pointer is actually stored
+	// at this offset): the field's "value" is its own address, computed as
+	// ptr+offset, not a load of the memory there.
+	bool addrOnly = (fld.typeKind == "embed" || fld.typeKind == "embed-arr");
 	if (!chain.isPointerBased)
 		return {{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",vt},{"addr-only",addrOnly}};
 	else

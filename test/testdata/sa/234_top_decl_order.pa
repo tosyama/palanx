@@ -1,4 +1,4 @@
-type S { int64 a; $timespec ts; [N]$int32 v; $T t; U u; A al; E e; @Later p; };
+type S { int64 a; $timespec ts; $[N]int32 v; $T t; U u; A al; E e; @Later p; };
 cinclude <time.h>;
 const N = M;
 const M = 3;

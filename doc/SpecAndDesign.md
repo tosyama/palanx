@@ -219,7 +219,7 @@ as one more module (`--no-entry`). Each struct appears there as an exported type
 its owned fields, at their offsets, with the rest of its bytes as padding, so a C struct or a type
 of another module needs no Palan declaration of its other fields. A struct owning nothing is
 only bytes to allocate, copy and free, so an element or owned field of one is declared as
-`__pln_B<n>`, a type of its `n` bytes (`[n]$uint8`), whatever struct it is.
+`__pln_B<n>`, a type of its `n` bytes (`$[n]uint8`), whatever struct it is.
 
 For a shape key `K`, the functions are:
 

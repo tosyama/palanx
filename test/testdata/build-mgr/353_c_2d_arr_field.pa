@@ -1,0 +1,9 @@
+cinclude <stdio.h>;
+cinclude "353_c_2d_arr_field.h";
+
+Grid2D g;
+6 -> g.cells[1][2];
+7 -> g.pts[1][0].y;
+"ab" -> g.names[1];
+Grid2D h = g;
+printf("%d %ld %s %d\n", h.cells[1][2], h.pts[1][0].y, h.names[1], sizeof(Grid2D));

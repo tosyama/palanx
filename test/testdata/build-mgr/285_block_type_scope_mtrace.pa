@@ -6,7 +6,7 @@ func f() -> int64 r {
 	[2]P a;
 	N -> a[1].x;
 	a[1].x -> r;
-	type P { int64 x; [2]@!P next; };
+	type P { int64 x; $[2]@!P next; };
 	const N = 5;
 }
 

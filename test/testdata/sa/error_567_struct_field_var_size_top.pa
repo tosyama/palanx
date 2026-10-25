@@ -1,2 +1,2 @@
 int32 n = 3;
-type L { [n]$int32 v; };
+type L { $[n]int32 v; };

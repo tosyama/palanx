@@ -1,5 +1,5 @@
 type P { int32 x; int32 y; };
-type M { [4]flo32 albedo; [2]$P ps; };
+type M { [4]flo32 albedo; $[2]$P ps; };
 [2]int32 a = [0, 0];
 [a[1], a[0]] -> a;
 M m;

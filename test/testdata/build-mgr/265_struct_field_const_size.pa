@@ -2,7 +2,7 @@ cinclude <stdio.h>;
 
 const N = 3;
 type Point { int32 x; int32 y; };
-type S { [N]$int32 a; [N]$Point b; [N]int64 c; };
+type S { $[N]int32 a; $[N]$Point b; [N]int64 c; };
 
 S s;
 int32 i = 0;

@@ -2904,7 +2904,7 @@ TEST(sa, owned_struct_arr_field)
 
 TEST(sa, embed_prim_arr_struct_field_access)
 {
-	// type Buf { [4]$int64 data; }; Buf buf; 10->buf.data[0]; printf(buf.data[0],buf.data[1]);
+	// type Buf { $[4]int64 data; }; Buf buf; 10->buf.data[0]; printf(buf.data[0],buf.data[1]);
 	// Covers: sa_expr_arr_index's 1D primitive embedded array field branch.
 	// The "array" (buf.data) must be addr-only (FieldAccessExpr computes ptr+offset,
 	// not a load), and the arr-index result itself must be a plain scalar (not pntr)
@@ -2925,9 +2925,10 @@ TEST(sa, embed_prim_arr_struct_field_access)
 	const auto& arr = target["array"];
 	ASSERT_EQ(arr["expr-type"], "field-access");
 	ASSERT_EQ(arr["addr-only"], true);
+	// Typed as a `[4]int64` variable is.
 	ASSERT_EQ(arr["value-type"]["type-kind"], "pntr");
-	ASSERT_EQ(arr["value-type"]["embedded"], true);
-	ASSERT_EQ(arr["value-type"]["stride"], 8);
+	ASSERT_EQ(arr["value-type"]["arr-size"], 4);
+	ASSERT_FALSE(arr["value-type"].contains("embedded"));
 	ASSERT_EQ(arr["value-type"]["base-type"]["type-kind"], "prim");
 	ASSERT_EQ(arr["value-type"]["base-type"]["type-name"], "int64");
 
@@ -3817,9 +3818,9 @@ TEST(sa, struct_field_type_alias)
 
 TEST(sa, incomplete_struct_ptr)
 {
-	// struct Tag { int x; int cells[2][3]; }; (cinclude'd) -- "cells" is a 2D
-	// array field, a shape buildStructDef can't lay out (matches native
-	// `[n]$[m]T` struct fields, also unsupported). isSupportedCFieldType
+	// struct Tag { int x; int cells[]; }; (cinclude'd) -- "cells" is an
+	// array field without a length, which buildStructDef can't lay out.
+	// isSupportedCFieldType
 	// downgrades the whole tag to an incomplete struct (opaque handle, C
 	// incomplete-type equivalent) instead of leaving it unregistered, so `Tag`
 	// is still a known type name -- unusable for a sized declaration, but usable
@@ -5262,24 +5263,34 @@ TEST(sa, layout_share)
 	ASSERT_EQ(funcName(stmts[7]["body"]["name"]), "__pln_push_varr_flo32");
 }
 
-// A field is laid out in its struct already: `$[n]T` is `[n]$T`.
-TEST(sa, embed_field_dollar_arr)
+// A field's `$[n]...` lays the array out in the struct, typed as a variable
+// of `[n]...` is; a field without the `$` owns its array, as the variable does.
+TEST(sa, field_inline_arr)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/312_embed_field_dollar_arr.pa");
+	json jout = run_sa("../test/testdata/sa/312_field_inline_arr.pa");
 	ASSERT_TRUE(jout.is_object());
-	function<json(json)> noLoc = [&](json j) {
-		if (j.is_object()) j.erase("loc");
-		for (auto& c : j) if (c.is_structured()) c = noLoc(c);
-		return j;
-	};
 	const auto& stmts = jout["statements"];
-	for (size_t i : {2, 4}) {
-		string s = noLoc(stmts[i]).dump(), t = noLoc(stmts[i + 1]).dump();
-		size_t at = s.find("\"var\":\"s\"");
-		ASSERT_NE(at, string::npos);
-		ASSERT_EQ(s.replace(at, 9, "\"var\":\"t\""), t);
-	}
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["args"][0]["value"], "88");
+	auto fieldOf = [](const json& target) {
+		const json* t = &target;
+		while (t->value("expr-type", "") != "field-access") t = &(*t)["array"];
+		return *t;
+	};
+	const json a = fieldOf(stmts[4]["target"]);
+	const json b = fieldOf(stmts[5]["ptr-expr"]);
+	const json c = fieldOf(stmts[6]["target"]);
+	ASSERT_EQ(a["offset"], 4);
+	ASSERT_EQ(b["offset"], 32);
+	ASSERT_EQ(c["offset"], 64);
+	ASSERT_EQ(a["value-type"], stmts[1]["vars"][0]["var-type"]);
+	ASSERT_EQ(b["value-type"], stmts[2]["vars"][0]["var-type"]);
+	ASSERT_EQ(c["value-type"], stmts[3]["vars"][0]["var-type"]);
+	// Without the `$`, `[2]$P` is an owned block of structs, as a variable's.
+	const json& q = jout["alloc-shapes"][1];
+	ASSERT_EQ(q["owned-fields"][0]["name"], "d");
+	ASSERT_EQ(q["owned-fields"][0]["elem"]["kind"], "row");
+	ASSERT_EQ(q["owned-fields"][0]["elem"]["elem"]["kind"], "embed-struct");
 }
 
 // A `[+]T` field is an owned slot built as a `[+]T` element is; a struct
@@ -5326,8 +5337,8 @@ TEST(sa, struct_field_const_size)
 	map<string, json> shapes;
 	for (auto& s : jout["alloc-shapes"])
 		if (s.value("shape-kind", "") == "struct") shapes[s["shape-name"]] = s;
-	// a [3]$int32 12 + b [3]$Point 24 (+4) + c [3]@Point 24 + d 8 + e 8
-	// + r [3]$int16 6 + z [8]$uint8 8 (+2)
+	// a $[3]int32 12 + b $[3]$Point 24 (+4) + c $[3]@Point 24 + d 8 + e 8
+	// + r $[3]int16 6 + z $[8]uint8 8 (+2)
 	ASSERT_EQ(shapes["S"]["total-size"], 96);
 	ASSERT_EQ(shapes["S"]["owned-fields"].size(), 2u);
 	ASSERT_EQ(shapes["S"]["owned-fields"][0]["name"], "d");
@@ -5345,7 +5356,7 @@ TEST(sa, top_decl_order)
 	json shape;
 	for (auto& s : jout["alloc-shapes"])
 		if (s.value("shape-name", "") == "S") shape = s;
-	// a 8 + ts 16 + v [3]$int32 12 + t 4 + u 8 + al 8 + e 4 (+4) + p 8
+	// a 8 + ts 16 + v $[3]int32 12 + t 4 + u 8 + al 8 + e 4 (+4) + p 8
 	ASSERT_EQ(shape["total-size"], 72);
 	ASSERT_EQ(shape["owned-fields"][0]["elem"]["name"], "__pln_B4");
 }

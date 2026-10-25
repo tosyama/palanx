@@ -1,4 +1,4 @@
-type S { @!@!int32 pp; [2]@@!int32 slots; @!@Later pl; };
+type S { @!@!int32 pp; $[2]@@!int32 slots; @!@Later pl; };
 type Later { int64 v; };
 
 S s;

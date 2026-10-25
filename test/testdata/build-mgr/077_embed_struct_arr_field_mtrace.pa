@@ -1,7 +1,7 @@
 cinclude <stdio.h>;
 cinclude <mcheck.h>;
 type Point { int64 x; int64 y; };
-type Polygon { [4]$Point pts; };
+type Polygon { $[4]$Point pts; };
 mtrace();
 {
     Polygon poly;

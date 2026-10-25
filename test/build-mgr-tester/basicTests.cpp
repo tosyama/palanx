@@ -3042,6 +3042,14 @@ TEST(build_mgr, ptr_ptr_slot_arr) {
 	ASSERT_EQ(output, "8 5 8\n");
 }
 
+// A C array field of any dimensions lies in its struct, rows and structs
+// included, and is copied with it.
+TEST(build_mgr, c_2d_arr_field) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/353_c_2d_arr_field.pa");
+	ASSERT_EQ(output, "6 7 ab 112\n");
+}
+
 TEST(build_mgr, c_linked_list) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/286_c_linked_list.pa");
@@ -3750,6 +3758,12 @@ TEST(build_mgr, struct_multilevel_field_mtrace) {
 TEST(build_mgr, struct_varr_field_mtrace) {
 	expectMtraceRun("351_struct_varr_field_mtrace",
 		"3 5 1 1\n20 9 39\n4 5\n2 2 5\n8 3 9 1\n2 9\n3 2 9 6 5\n1 2 3 3\n", 72);
+}
+
+// A field's `$[n]...` lies in its struct, rows, structs and pointer slots
+// alike, and is copied with it; an owned array field beside it is copied deep.
+TEST(build_mgr, field_inline_arr_mtrace) {
+	expectMtraceRun("354_field_inline_arr_mtrace", "88 6 30 20 20 11 31\n7 31\n5\n", 5);
 }
 
 // Arrays of elements laid out alike share their functions, which store and

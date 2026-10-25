@@ -1,7 +1,7 @@
 type I = int32;
 type Point { int64 x; int64 y; };
 type PT = Point;
-type S { I a; $PT e; @PT p; [2]$PT ea; };
+type S { I a; $PT e; @PT p; $[2]$PT ea; };
 
 S s;
 Point q;
