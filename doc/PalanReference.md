@@ -378,6 +378,11 @@ and is currently a compile error. It is not an assignment — assignment is writ
 type (`$Point p;`, `$[4]int32 a;`) it is placed in the function's stack frame instead. See
 [Stack Arrays](#stack-arrays-nt) and [Stack Structs](#stack-structs-t).
 
+**Initial contents:** A new struct or array starts undefined, as memory from C's `malloc` does:
+its primitive fields and elements, and its pointers (`@T`), hold whatever was there before, so
+write them before reading them. Only what Palan itself releases is set up: an owned field or
+element (`T`, `[n]U`) is allocated with it.
+
 ### Constant Declarations
 
 Declare a compile-time constant with `const`:
@@ -1369,8 +1374,8 @@ or placed in the stack frame with `$` (see [Stack Arrays](#stack-arrays-nt)).
 |---|---|---|
 | `[n]$T pts` | `malloc(n * T.totalSize)` / `free(pts)` | contiguous inline elements |
 | `[n]T pts` | `__pln_alloc_arr_T(n)` / `__pln_free_arr_T(pts, n)` | owned pointers, each element allocated separately |
-| `[n]@T pts` | `malloc(n * 8)`, null-initialized / `free(pts)` | non-owning read-only pointers |
-| `[n]@!T pts` | `malloc(n * 8)`, null-initialized / `free(pts)` | non-owning mutable pointers |
+| `[n]@T pts` | `malloc(n * 8)` / `free(pts)` | non-owning read-only pointers |
+| `[n]@!T pts` | `malloc(n * 8)` / `free(pts)` | non-owning mutable pointers |
 
 `pts[i]` yields a `T` pointer for all four forms. Fields are accessed with `pts[i].field`.
 
@@ -1470,14 +1475,15 @@ A call returning an owned struct (`T`) or a C struct by value has nothing that w
 result, so `mk().x` and `div(7, 2).quot` are compile errors: receive the result into a variable
 with `->` first.
 
-- **Memory management**: heap-allocated (zero-initialized); automatically freed at scope exit.
+- **Memory management**: heap-allocated, with undefined contents (see
+  [Initial contents](#4-variables-constants-and-type-aliases)); automatically freed at scope exit.
   With `$` (`$Point p;`) the struct is placed in the stack frame instead; see
   [Stack Structs](#stack-structs-t).
 - **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
 
 ### Stack Structs (`$T`)
 
-`$Point p;` places the struct in the function's stack frame, zero-initialized like a heap struct.
+`$Point p;` places the struct in the function's stack frame, its contents undefined like a heap struct's.
 What it owns (`U field`, `[k]U field`) is still allocated when the declaration is reached and freed
 at scope exit; only the struct's own storage is in the frame. Initializers work as for a heap
 struct, copying the value: `$Point p = q;`, `$Point p = {x: 1, y: 2};`, and
@@ -1536,9 +1542,9 @@ Struct-type fields are written with a prefix that controls ownership and memory 
 
 | Syntax     | Meaning                              | Memory          |
 |------------|--------------------------------------|-----------------|
-| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation | parent calloc   |
+| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation | parent's block  |
 | `T field`  | Owned pointer — 8-byte pointer; T is auto-allocated/freed with parent | `__pln_alloc_T` |
-| `@T field` | Non-owning read-only pointer — 8-byte null pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
+| `@T field` | Non-owning read-only pointer — 8-byte pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
 | `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
 
 The pointee of `@T`/`@!T` may itself be a pointer, each level with its own permission

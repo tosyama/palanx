@@ -13,9 +13,11 @@ printf("%ld %ld\n", len(@v), v -> len());
 int32 x = v.pop();
 printf("%d %ld\n", x, len(@v));
 
-// Growing back after shrinking brings back zeros, not the old elements.
+// The elements growing adds are undefined, even those shrinking left behind.
 v.resize(3);
 v.resize(5);
+30 -> v[3];
+40 -> v[4];
 0 -> i;
 while i < len(@v) {
 	printf("%d ", v[i]);

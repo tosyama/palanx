@@ -208,8 +208,7 @@ Design:
 
 An owned aggregate made of more than one heap block — a struct that owns fields, an array of
 structs, a `[m][n]T` array — is allocated, released and copied by generated functions instead of
-inline loops. A struct that owns nothing and a `[n]T` array of primitives use `calloc`/`malloc` and
-`free` directly.
+inline loops. A struct that owns nothing and a `[n]T` array of primitives use `malloc` and `free` directly.
 
 palan-sa emits only calls to these functions; it records each shape it needs in sa.json's
 `alloc-shapes` (SASpec.md's Root), as it collects `str-literals`. The build manager collects the
@@ -226,7 +225,7 @@ For a shape key `K`, the functions are:
 |----------|------|
 | `__pln_alloc_K(sizes...)` | allocates and builds the value |
 | `__pln_free_K(p, sizes...)` | releases what `p` owns, then `p`; `p` may be NULL |
-| `__pln_init_K(p, sizes...)` | builds the value in an existing zeroed block (a `$` variable) |
+| `__pln_init_K(p, sizes...)` | builds the value in an existing block (a `$` variable) |
 | `__pln_fini_K(p, sizes...)` | releases what `p` owns, but not `p` (a `$` variable) |
 | `__pln_copy_K(dst, src, sizes...)` | copies `src` into `dst`, owned parts included |
 
@@ -244,15 +243,17 @@ its element type exactly but for its lengths, whatever a struct's name spells. T
 of any element from one description of the element (`elem` in the shape, `ElemOps` in the build
 manager): an owned element is built when its slot comes into use and dropped when it leaves, by
 helpers `__pln_build/drop/set/copyrun_E` shared by `arr_E` and `varr_E`; any other element is
-plain bytes, zeroed and copied in bulk. A row element is described by its own element: a row in a
+plain bytes, copied in bulk. A row element is described by its own element: a row in a
 block of its own is an owned element built and dropped through its elements' helpers, and a row
 laid out in place (`[+]$[n]U`) is `n` slots of its element, so it is owned exactly when that
 element is; rows laid out in place in turn are one run of slots (`[2]$[3]S` is `arr_P1S` of 6).
 A struct's owned field is a slot of the same kind, described the same way: `__pln_init/fini/copy_T`
 build, drop and copy each field through its element's helpers, and the generated module declares
 the field as the slot its build fills (`@!int32` for `[3]int32`), so it copies and frees nothing
-on its own. Palan zeroes only what it manages (owned slots, `[+]U` headers, pointer slots); a
-row's data starts undefined, as an array variable's does.
+on its own. Palan sets only what it reads to release a value: owned slots and `[+]U` headers
+(an inner `[+]U` starts as an empty header, `calloc(1, 24)`). Everything else starts undefined,
+as with C's `malloc`: a struct's other fields, pointers included, an array's elements, the
+elements `resize` adds and those past a `[+n]T` literal's.
 A length may be known only at run time (`[m][k]int32`), so keys leave every length out and every
 `arr_E`/`varr_E` function and helper takes, after its own arguments, one length per array level
 below it, outermost first, through rows and `[+]U` elements alike: `[m][3]int32` and `[+][3]int32`

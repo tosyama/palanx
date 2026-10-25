@@ -23,6 +23,7 @@ mtrace();
     [3]P ps;
     [3]P qs;
     9 -> ps[1].x;
+    0 -> ps[2].x;
     ps ->> qs;
     printf("%d\n", qs[1].x);
     W w;

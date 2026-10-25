@@ -416,7 +416,7 @@ class PlnSemanticAnalyzer {
 	json sa_struct_lit_var_decl(const json& stmt, VarStorage storage); // single var; returns array of statements
 	json placeAggregateVar(const json& stmt, const string& name, const json& varType,
 	                       json heapInit, json heapRelease, VarStorage storage,
-	                       int64_t frameBytes, int frameAlign, bool zeroFill, json& post,
+	                       int64_t frameBytes, int frameAlign, json& post,
 	                       optional<AllocShapeRef> shape = nullopt);
 	json sa_struct_lit(const json& item, const StructDef& def);
 	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);

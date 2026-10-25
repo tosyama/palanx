@@ -502,8 +502,7 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage stora
 	// cannot read the array it is initializing.
 	json values = sa_arr_lit_values(var["init"], shape, name);
 
-	// A variable-length array's size is its length; the elements past the
-	// literal's are zero.
+	// A variable-length array's size is its length.
 	bool isVarr = isVarrStorage(st.type);
 	if (isVarr && stoull(declared) < items.size()) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArrLitCountMismatch,
@@ -1427,7 +1426,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 				heapInit = structAllocExpr(structName);
 			}
 			init = placeAggregateVar(stmt, name, pntr_type, move(heapInit), makeOwnedFreeStmt(name, pntr_type),
-			                         storage, def.totalSize, def.maxAlign, fresh, post,
+			                         storage, def.totalSize, def.maxAlign, post,
 			                         structShape(structName));
 		}
 

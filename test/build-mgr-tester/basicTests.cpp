@@ -1036,7 +1036,7 @@ TEST(build_mgr, addr_of_arr_elem) {
 	// element's offset, not the array start.
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/137_addr_of_arr_elem.pa");
-	ASSERT_EQ(output, "0 0 99 0\n");
+	ASSERT_EQ(output, "1 2 99 4\n");
 }
 
 TEST(build_mgr, addr_of_borrow_mtrace) {
@@ -2116,7 +2116,7 @@ TEST(build_mgr, copy_struct) {
 TEST(build_mgr, copy_struct_arr) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/234_copy_struct_arr.pa");
-	ASSERT_EQ(output, "3 2 0\n2 3 1\n2 1\n5 0\n");
+	ASSERT_EQ(output, "3 2 0\n2 3 1\n2 1\n5 6\n");
 }
 
 TEST(build_mgr, copy_mtrace) {
@@ -2537,7 +2537,7 @@ TEST(build_mgr, alias_cast) {
 TEST(build_mgr, struct_ptr_elem_copy) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/268_struct_ptr_elem_copy.pa");
-	ASSERT_EQ(output, "1 2\n5 6\n0 10\n");
+	ASSERT_EQ(output, "1 2\n5 6\n0 11\n");
 }
 
 TEST(build_mgr, struct_lit_init_assign) {
@@ -3120,7 +3120,7 @@ static void expectFrameMtrace(const string& base, const string& expected)
 
 TEST(build_mgr, frame_mtrace) {
 	expectFrameMtrace("300_frame_mtrace",
-		"0 0\n7\n2 6\n1 9 0\n6 10\n7 5\n3\n5\n8\n4\n3 4\n11\n");
+		"7\n2 6\n1 9 0\n6 10\n7 5\n3\n5\n8\n4\n3 4\n11\n");
 }
 
 TEST(build_mgr, frame_c) {
@@ -3348,7 +3348,7 @@ TEST(build_mgr, chain_method_mtrace) {
 TEST(build_mgr, varr_basic) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/325_varr_basic.pa");
-	ASSERT_EQ(output, "7 8\n10 20 30\n2 0 0\nAA\n3 4\n6\n");
+	ASSERT_EQ(output, "7 8\n10 20 30\n2 5 9\nAA\n3 4\n6\n");
 }
 
 TEST(build_mgr, varr_mtrace) {
@@ -3383,7 +3383,7 @@ TEST(build_mgr, varr_mtrace) {
 TEST(build_mgr, varr_builtins) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/327_varr_builtins.pa");
-	ASSERT_EQ(output, "12 12\n200 11\n0 1 2 0 0 \n2.5 1.5 1\n7 19 20\n");
+	ASSERT_EQ(output, "12 12\n200 11\n0 1 2 30 40 \n2.5 1.5 1\n7 19 20\n");
 }
 
 TEST(build_mgr, arr_len) {

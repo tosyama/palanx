@@ -12,11 +12,13 @@ func bump(@!int32 x) -> int32 { x[0] + 1 -> x[0]; return 0; }
 func inner(@!Acc a) { 1 -> a.add(); }
 
 Acc acc;
+0 -> acc.n;
 5 -> acc.add();
 divmod(7, 2) -> acc.add3(9);
 printf("%d\n", acc.n);
 
 [3]Acc accs;
+0 -> accs[0].n; 0 -> accs[1].n; 0 -> accs[2].n;
 int32 i = 0;
 next(@!i) -> accs[i].add();
 printf("%d %d %d\n", i, accs[0].n, accs[1].n);
@@ -27,11 +29,13 @@ printf("%d %d\n", x, accs[0].n);
 printf("%d\n", accs[1].n);
 
 Acc b;
+0 -> b.n;
 V v = [1, 2];
 v -> b.add();
 inner(@!b);
 printf("%d\n", 4 -> b.add());
 Acc c;
+0 -> c.n;
 int32 y;
 2 -> b.add() -> c.add() -> y;
 printf("%d %d %d\n", b.n, c.n, y);

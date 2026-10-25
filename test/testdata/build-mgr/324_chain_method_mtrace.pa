@@ -15,6 +15,7 @@ mtrace();
 {
 	Acc acc;
 	[2]Acc accs;
+	0 -> acc.n; 0 -> accs[0].n; 0 -> accs[1].n;
 	mk(1, 2) -> acc.addv();
 	@mk(3, 4) -> acc.addv();
 	split(5) -> acc.addvn();

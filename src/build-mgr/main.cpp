@@ -240,7 +240,6 @@ int main(int argc, char* argv[])
 				    << "void *memcpy(void *dest, const void *src, unsigned long n);\n"
 				    << "void *memmove(void *dest, const void *src, unsigned long n);\n"
 				    << "void *realloc(void *ptr, unsigned long size);\n"
-				    << "void *memset(void *s, int c, unsigned long n);\n"
 				    << "void abort(void);\n";
 				ofstream out(alloc_pa);
 				out << "cinclude \"__allocators.h\";\n";
@@ -264,7 +263,7 @@ int main(int argc, char* argv[])
 				// Slots are filled with raw C allocations: a borrow slot never takes
 				// ownership, and the array's free function releases the elements.
 				auto structElemBuild = [&](const string& name, const string& slot, const string& indent) {
-					string s = indent + "calloc(1, "
+					string s = indent + "malloc("
 						+ to_string(struct_by_name.at(name)->at("total-size").get<int64_t>())
 						+ ") -> " + slot + ";\n";
 					if (hasOwned(name))
@@ -277,7 +276,7 @@ int main(int argc, char* argv[])
 				// leaves, through helpers named after the element's type that take
 				// the slots as `[]@!T` to build and as `[]T` to free and copy, the
 				// views of a struct array's own. Any other element is plain bytes,
-				// zeroed and copied in bulk.
+				// copied in bulk.
 				struct ElemOps {
 					string kind;       // the shape entry's element kind
 					string inner;      // an inner `[+]T` element's shape key
@@ -544,7 +543,7 @@ int main(int argc, char* argv[])
 					// by this very function.
 					out << "\nexport func __pln_alloc_" << name
 					    << "() -> @!" << name << " p {\n"
-					    << "    calloc(1, " << shape["total-size"].get<int64_t>() << ") -> p;\n";
+					    << "    malloc(" << shape["total-size"].get<int64_t>() << ") -> p;\n";
 					if (hasOwned(name))
 						out << "    __pln_init_" << name << "(p);\n";
 					out << "}\n";
@@ -608,11 +607,9 @@ int main(int argc, char* argv[])
 						    << "}\n";
 						continue;
 					}
-					// A variable-length array's header {len, cap, data}. The header
-					// starts zeroed (calloc or the frame's memset), so data stays
-					// NULL while the capacity is 0. Only the elements below len are
-					// live: an owned element is built when the length grows over its
-					// slot and dropped when it shrinks below it.
+					// A variable-length array's header {len, cap, data}. Only the
+					// elements below len are live: an owned element is built when the
+					// length grows over its slot and dropped when it shrinks below it.
 					string hdr = "__pln_" + key;
 					string size = sizeOf(e, names);
 					out << "\nexport type " << hdr << " { int64 len; int64 cap; " << e.data << " data; };\n";
@@ -620,7 +617,8 @@ int main(int argc, char* argv[])
 					    << "(@!" << hdr << " h, int64 len, int64 cap" << mp << ") {\n"
 					    << "    len -> h.len;\n"
 					    << "    cap -> h.cap;\n"
-					    << "    if cap > 0 { calloc(cap, " << size << ") -> h.data; }\n";
+					    << "    if cap > 0 { malloc(cap * " << size << ") -> h.data; }\n"
+					    << "    else { NULL -> h.data; }\n";
 					if (e.owned) out << "    __pln_build_" << e.key << "(h.data, 0, len" << ma << ");\n";
 					out << "}\n"
 					    << "export func __pln_alloc_" << key
@@ -666,10 +664,6 @@ int main(int argc, char* argv[])
 					if (e.owned)
 						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ma << "); }\n"
 						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ma << "); }\n";
-					else
-					// Shrinking keeps the old elements past the length, so growing
-					// zeroes what it brings back.
-						out << "    if n > h.len { memset(" << slotAddr(e, "h.data", "h.len", names) << ", 0, (n - h.len) * " << size << "); }\n";
 					out << "    n -> h.len;\n"
 					    << "}\n"
 					// The source is any run of elements, which may be h's own

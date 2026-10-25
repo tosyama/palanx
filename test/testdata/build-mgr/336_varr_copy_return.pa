@@ -47,6 +47,11 @@ func sum([+]int32 x) -> int64 s
 func two(int64 n) -> [+]int32 v, int64 m
 {
 	n -> v.resize();
+	int64 i = 0;
+	while i < n {
+		0 -> v[i];
+		i + 1 -> i;
+	}
 	n * 2 -> m;
 }
 

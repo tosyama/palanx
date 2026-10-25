@@ -1221,7 +1221,7 @@ TEST(sa_error, ptr_decl_unknown_type)
 TEST(sa_error, incomplete_struct_var_decl)
 {
 	// `struct Tag { int x; int cells[2][3]; };` (cinclude'd, "cells" unsupported)
-	// then `Tag t;` -- an owned declaration needs Tag's totalSize to calloc it.
+	// then `Tag t;` -- an owned declaration needs Tag's totalSize to malloc it.
 	// registerCStruct downgrades Tag to an incomplete struct
 	// (opaque handle) instead of leaving the tag unregistered, so this is a
 	// diagnosed E_IncompleteStructType, not "unknown type".

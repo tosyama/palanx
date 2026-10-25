@@ -20,6 +20,8 @@ func split(@!Counter c) -> int32 n, int32 v {
 func set0(@![3]int32 a, int32 v) { v -> a[0]; }
 
 Counter c;
+0 -> c.n;
+0 -> c.inner.v;
 c.add(1);
 c.twice();
 c.inner.bump();
@@ -37,6 +39,8 @@ tm t;
 0 -> t.tm_mon;
 32 -> t.tm_mday;
 12 -> t.tm_hour;
+0 -> t.tm_min;
+0 -> t.tm_sec;
 -1 -> t.tm_isdst;
 t.mktime();
 printf("%d %d\n", t.tm_mon, t.tm_mday);

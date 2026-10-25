@@ -7,6 +7,9 @@ func cwrite(@!void cookie, @int8 buf, uint64 size) -> int64 n {
 
 cookie_io_functions_t io;
 cwrite -> io.write;
+NULL -> io.read;
+NULL -> io.seek;
+NULL -> io.close;
 @!FILE f = fopencookie(NULL, "w", io);
 fprintf(f, "hello %d", 42);
 fclose(f);

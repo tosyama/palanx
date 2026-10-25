@@ -31,6 +31,7 @@ func sum([]int32 a, int64 n) -> int64
 func grow(@![+]int32 a)
 {
 	a.resize(len(a) + 2);
+	0 -> a[len(a) - 2];
 	7 -> a[len(a) - 1];
 }
 

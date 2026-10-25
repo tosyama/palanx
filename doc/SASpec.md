@@ -58,15 +58,15 @@ Root
 
   **Varr entry** (`[+]T` / `[+]$T` variable; `T` below names the shape key's element part): for `[+]T`, build-mgr declares the header as
   `type __pln_varr_T { int64 len; int64 cap; @!T data; }` and generates
-  `__pln_alloc_varr_T(len, cap)`, `__pln_init_varr_T(h, len, cap)` (calloc's `cap` elements when
-  `cap > 0`; the header starts zeroed, so `data` stays NULL otherwise), `__pln_fini_varr_T(h)`
+  `__pln_alloc_varr_T(len, cap)`, `__pln_init_varr_T(h, len, cap)` (mallocs `cap` elements when
+  `cap > 0` and sets `data` to NULL otherwise), `__pln_fini_varr_T(h)`
   (frees `data`) and `__pln_free_varr_T(h)` (fini, then the header), and the built-ins
   `__pln_push_varr_T(@!hdr h, T x)`,
   `__pln_resize_varr_T(@!hdr h, int64 n)` and `__pln_pop_varr_T(@!hdr h) -> T`, and
   `__pln_copy_varr_T(@!hdr h, @T src, int64 n)` (grows as needed, then sets the length to `n`
   and copies `n` elements from `src`, which may be `h`'s own). Growing
   reallocates `data` to max(needed, cap × 2, 4) elements; shrinking keeps the capacity, and
-  `resize` zeroes the elements it adds. An empty `pop` or a negative `resize` calls `abort()`.
+  the elements `resize` adds are undefined. An empty `pop` or a negative `resize` calls `abort()`.
   With a struct `T` (elem kind `"struct"`), `data` is `@!@!T`, an array of owned slots, of
   which exactly the first `len` hold an element: growing (`init`, `resize`, `push`, `copy`)
   builds the new ones as `[n]T` does, shrinking (`resize`, `copy`) and `fini` free them with
@@ -381,9 +381,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
     with an array literal, whose size is the length. The literal's size is its element count
     when omitted, and otherwise must be a constant no smaller than the count; the elements past
-    the literal's are zero.
+    the literal's are undefined.
   - Scope-exit free: `__pln_free_varr_T(<name>)`. `$[+]T` places the header in the frame:
-    `memset` + `__pln_init_varr_T(<name>, len, cap)`, released by `__pln_fini_varr_T(<name>)`.
+    `__pln_init_varr_T(<name>, len, cap)`, released by `__pln_fini_varr_T(<name>)`.
   - `arr[i]` on such a variable indexes its data: SA replaces the `array` operand with
     `{"expr-type":"field-access","ptr-expr":<array>,"offset":16,"value-type":pntr(E)}`, and the
     `arr-index` is then the one for a `pntr(E)`; for `[+]$T` and `[+]$[n]U` the `pntr` carries
@@ -1424,10 +1424,8 @@ Example: `type Mixed { int32 a; int64 b; }` → a@0 (4B), 4B padding, b@8 (8B), 
 {"stmt-type":"var-decl","vars":[{
   "name":"p",
   "var-type":{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Point"}},
-  "init":{"expr-type":"call","name":"calloc","func-type":"c",
-          "args":[{"expr-type":"lit-int","value":"1",
-                   "value-type":{"type-kind":"prim","type-name":"uint64"}},
-                  {"expr-type":"lit-int","value":"16",
+  "init":{"expr-type":"call","name":"malloc","func-type":"c",
+          "args":[{"expr-type":"lit-int","value":"16",
                    "value-type":{"type-kind":"prim","type-name":"uint64"}}],
           "value-type":{"type-kind":"pntr","base-type":{"type-kind":"struct","type-name":"Point"}}}
 }]}
@@ -1437,7 +1435,7 @@ Struct variables are registered in `arrayScopeVars_` and a `free()` statement is
 at scope exit (same mechanism as heap-allocated arrays).
 
 When the initializer is a call to a C function that returns a struct by value (e.g. `div_t d =
-div(7, 2);`), the var-decl's own `init` is unchanged (still the ordinary `calloc` shown above) —
+div(7, 2);`), the var-decl's own `init` is unchanged (still the ordinary `malloc` shown above) —
 the call is instead emitted as a separate statement immediately following the var-decl,
 `{"stmt-type":"expr","body":<call with a "struct-ret" descriptor, see the call expression entry
 above>}`, whose `struct-ret.var` names the just-declared variable. Discarding such a call as a
@@ -1445,7 +1443,7 @@ bare statement with no destination (not immediately following a matching var-dec
 E_ByvalStructRetDiscarded.
 
 When the initializer is a call to a Palan function returning the same struct (`Point p =
-makePoint();`), the call itself is the var-decl's `init` in place of `calloc`: the variable takes
+makePoint();`), the call itself is the var-decl's `init` in place of `malloc`: the variable takes
 over the returned storage and frees it at scope exit. A struct variable with an initializer is
 always emitted as its own var-decl, so `Point a = b, c = f();` evaluates left to right.
 
@@ -1455,8 +1453,8 @@ A struct or array variable declared with `$` (`$Point p;`, `$[4]int32 a;`) gets 
 `var-type` as without `$`; its `init` is a `frame-alloc` instead of the allocation call, and
 what the heap version does through its allocator and free functions is derived from them:
 
-- `calloc` → `memset(v, 0, size)` follows the var-decl; `malloc` → nothing (left uninitialized).
-- `__pln_alloc_K(args)` → `memset(v, 0, size)` then `__pln_init_K(v, args)` follow the var-decl.
+- `malloc` → nothing (left undefined).
+- `__pln_alloc_K(args)` → `__pln_init_K(v, args)` follows the var-decl.
   build-mgr generates `__pln_init_K` (fill an existing block) and `__pln_fini_K` (release what
   the block owns, not the block) for every alloc-shape alongside the alloc/free pair.
 - At scope exit, `free` → nothing; `__pln_free_K(v, args)` → `__pln_fini_K(v, args)`.

@@ -11,6 +11,7 @@ mtrace();
 	v.pop();
 	v.push(@r);
 	v.resize(4);
+	0 -> v[3][3];
 	printf("%d %d %d %d\n", r[3], v[1][0], v[3][3], v->len());
 	[+]$[4]int32 w = v;
 	77 -> w[1][1];
@@ -30,6 +31,7 @@ mtrace();
 	q.push(@pr);
 	q.resize(1);
 	q.resize(3);
+	0 -> q[1][1].q.y;
 	p.pop();
 	printf("%d %d %d %d %d\n", pr[0].x, pr[1].q.y, q[1][1].q.y, q->len(), p->len());
 

@@ -18,6 +18,7 @@ func second([]$P a) -> int32 { return a[1].x; }
 
 func make(int64 n) -> []P {
     [n]P a;
+    0 -> a[0].x;
     7 -> a[n - 1].x;
     return a;
 }

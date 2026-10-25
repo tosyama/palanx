@@ -878,12 +878,12 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 // The heap and frame versions of an aggregate variable share one var-type and
 // differ only in how the outermost block is obtained and released, so each
 // handler describes the heap version and the frame version is derived from it:
-// __pln_alloc_K(args) becomes __pln_init_K(v, args) on the zeroed frame block,
+// __pln_alloc_K(args) becomes __pln_init_K(v, args) on the frame block,
 // and __pln_free_K becomes __pln_fini_K, which leaves the block itself alone.
 // An empty `heapInit` means the frame block's contents come from elsewhere.
 json PlnSemanticAnalyzer::placeAggregateVar(const json& stmt, const string& name, const json& varType,
                                             json heapInit, json heapRelease, VarStorage storage,
-                                            int64_t frameBytes, int frameAlign, bool zeroFill, json& post,
+                                            int64_t frameBytes, int frameAlign, json& post,
                                             optional<AllocShapeRef> shape)
 {
 	if (storage == VarStorage::Heap) {
@@ -899,16 +899,7 @@ json PlnSemanticAnalyzer::placeAggregateVar(const json& stmt, const string& name
 	auto helperName = [&](const char* op) {
 		return allocHelperSymbol(*shape, op);
 	};
-	bool helperInit = shape && heapInit.value("name", "") == helperName("alloc");
-	if (zeroFill || helperInit) {
-		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-		json args = json::array({self,
-			{{"expr-type","lit-int"},{"value","0"},{"value-type",{{"type-kind","prim"},{"type-name","int32"}}}},
-			{{"expr-type","lit-uint"},{"value",to_string(frameBytes)},{"value-type",uint64_type}}});
-		post.push_back({{"stmt-type","expr"},{"body",{
-			{"expr-type","call"},{"name","memset"},{"func-type","c"},{"args",move(args)}}}});
-	}
-	if (helperInit) {
+	if (shape && heapInit.value("name", "") == helperName("alloc")) {
 		json args = json::array({self});
 		for (auto& a : heapInit["args"]) args.push_back(a);
 		post.push_back({{"stmt-type","expr"},{"body",allocHelperCall(*shape, "init", move(args))}});
@@ -923,8 +914,7 @@ json PlnSemanticAnalyzer::placeAggregateVar(const json& stmt, const string& name
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// A struct variable's heap block: zeroed, then built by its allocator when it
-// owns fields.
+// A struct variable's heap block, built by its allocator when it owns fields.
 json PlnSemanticAnalyzer::structAllocExpr(const string& name)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
@@ -937,8 +927,7 @@ json PlnSemanticAnalyzer::structAllocExpr(const string& name)
 	} else {
 		json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
 		json size_arg = {{"expr-type","lit-int"},{"value",to_string(def.totalSize)},{"value-type",uint64_type}};
-		json one_arg  = {{"expr-type","lit-int"},{"value","1"},{"value-type",uint64_type}};
-		call = {{"expr-type","call"},{"name","calloc"},{"func-type","c"},{"args",json::array({one_arg, size_arg})}};
+		call = {{"expr-type","call"},{"name","malloc"},{"func-type","c"},{"args",json::array({size_arg})}};
 	}
 	call["value-type"] = move(pntrType);
 	return call;
@@ -1030,7 +1019,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage, 
 		declareVar(name, st.type, &stmt);
 		json post = json::array();
 		json init = placeAggregateVar(stmt, name, st.type, move(place.heapInit), move(place.release), storage,
-		                              place.frameBytes, place.frameAlign, false, post, place.shape);
+		                              place.frameBytes, place.frameAlign, post, place.shape);
 		result.push_back({{"stmt-type","var-decl"},
 			{"vars",json::array({{{"name",name},{"var-type",st.type},{"init",move(init)}}})}});
 		for (auto& s : post) result.push_back(move(s));

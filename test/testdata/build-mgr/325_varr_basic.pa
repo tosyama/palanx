@@ -6,12 +6,14 @@ v[2] + 1 -> v[3];
 printf("%d %d\n", v[2], v[3]);
 [+]int64 w = [10, 20, 30];
 printf("%ld %ld %ld\n", w[0], w[1], w[2]);
-// Elements past the literal's are zero.
+// The size is the length; the elements past the literal's are undefined.
 [+5]int32 z = [1, 2];
-printf("%d %d %d\n", z[1], z[2], z[4]);
+9 -> z[4];
+printf("%d %ld %d\n", z[1], len(@z), z[4]);
 {
 	$[+3]uint8 s;
 	memset(s, 65, 2);
+	0 -> s[2];
 	printf("%s\n", s);
 }
 int32 n = 2;
