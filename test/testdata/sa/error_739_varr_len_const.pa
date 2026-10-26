@@ -1,0 +1,2 @@
+[+]int32 v;
+const N = len(@v);

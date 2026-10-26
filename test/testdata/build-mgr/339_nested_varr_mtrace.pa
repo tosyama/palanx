@@ -1,0 +1,68 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type S { [2]int32 a; };
+type Q { int32 n; S s; };
+func show(@[+][+]int32 m) {
+	int64 i = 0;
+	while i < m->len() {
+		printf("[");
+		int64 j = 0;
+		while j < m[i]->len() { printf("%d", m[i][j]); j + 1 -> j; }
+		printf("]");
+		i + 1 -> i;
+	}
+	printf("\n");
+}
+func rows(int32 n) -> [+][+]int32 m {
+	int32 i = 0;
+	while i < n {
+		[+]int32 r = [i, i + 1];
+		r -> m.push();
+		i + 1 -> i;
+	}
+}
+func total([+][+]int32 m) -> int32 t {
+	0 -> t;
+	while m->len() > 0 {
+		[+]int32 r = m.pop();
+		while r->len() > 0 { t + r.pop() -> t; }
+	}
+}
+func grow(@![+][+]int32 m) { 9 -> m[0].push(); m.resize(m->len() + 1); }
+mtrace();
+{
+	[+][+]int32 m = [[1], [], [2, 3]];
+	show(@m);
+	m.pop();
+	[4, 5, 6] -> m[1];
+	show(@m);
+	[+][+]int32 c = m;
+	7 -> c[0].push();
+	c.resize(1);
+	show(@m); show(@c);
+	grow(@!c);
+	show(@c);
+	c ->> m;
+	show(@m);
+	rows(3) -> m;
+	show(@m);
+	printf("%d\n", total(m));
+	[[8], []] -> m;
+	show(@m);
+	[+]int32 x;
+	[0, 1] -> m[1] -> x;
+	printf("%d %d\n", x->len(), m[1][1]);
+	[] -> m;
+	printf("%d\n", m->len());
+
+	[+][+][+]int32 d = [[[1], [2, 3]], []];
+	d[1].push(d[0][1]);
+	printf("%d %d %d\n", d[1]->len(), d[1][0][1], d[0][1][0]);
+
+	[+][+]Q q;
+	q.resize(1);
+	q[0].resize(2);
+	5 -> q[0][1].s.a[1];
+	[+][+]Q q2 = q;
+	printf("%d %d\n", q2[0]->len(), q2[0][1].s.a[1]);
+}

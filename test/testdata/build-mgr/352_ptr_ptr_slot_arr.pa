@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+func first(@[2]@!@!int32 a) -> int32 r { a[0][0][0] -> r; }
+int32 x = 5;
+int32 y = 6;
+@!int32 p = @!x;
+@!int32 q = @!y;
+[2]@!@!int32 v;
+@!p -> v[0];
+@!q -> v[1];
+7 -> v[1][0][0];
+$[2]@!@!int32 w;
+v[1] -> w[0];
+8 -> w[0][0][0];
+printf("%d %d %d\n", y, first(@v), v[1][0][0]);

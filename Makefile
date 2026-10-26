@@ -52,7 +52,6 @@ coverage-sa: build-cov/CMakeCache.txt
 	find build-cov -name "*.gcda" -delete 2>/dev/null; true
 	cmake --build build-cov
 	cd build-cov && bin/sa-tester
-	cd build-cov && bin/sa-unit-tester
 	cd build-cov && lcov -c -d . -b src -o all.info $(LCOV_FLAGS) --ignore-errors mismatch
 	cd build-cov && lcov -e all.info '*/palanx/src/semantic-anlyzr/*' -o lcov.info $(LCOV_FLAGS) $(LCOV_FILTER)
 

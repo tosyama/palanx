@@ -1,0 +1,3 @@
+func g(int32 a) -> int32 { return a; }
+func g(flo32 a) -> flo32 { return a; }
+g(1);

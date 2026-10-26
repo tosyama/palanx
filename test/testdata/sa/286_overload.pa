@@ -1,0 +1,38 @@
+cinclude <stdlib.h>;
+type Vec { int64 x; };
+type Counter { int32 n; };
+func f(int32 a) -> int32 { return a; }
+func f(int64 a) -> int64 { return a; }
+func g(int32 a) -> int32 { return a; }
+func g(flo32 a) -> flo32 { return a; }
+func abs(flo64 x) -> flo64 { return x; }
+func len(@Vec v) -> int64 { return v.x; }
+func len(@Counter c) -> int64 { return c.n; }
+func add(@!Counter c, int32 d) { c.n + d -> c.n; }
+func add(Counter c, int64 d) { }
+func h(int32 x) -> int32 { return x; }
+func h(flo64 x) -> flo64 { return x; }
+int32 x = 1;
+int64 y = 2;
+int16 z = 3;
+f(x);
+f(y);
+f(1);
+f(int32(1));
+abs(x);
+abs(-1.5);
+Vec v;
+Counter c;
+v -> len();
+c -> len();
+c.add(1);
+@func(int32) -> int32 p = h;
+func apply(@func(int32) -> int32 fn, int32 a) -> int32 { return fn(a); }
+apply(h, 2);
+func s(@[2]int32 a) -> int32 { return a[0]; }
+func s(int32 a) -> int32 { return a; }
+s(@[1, 2]);
+1 -> f();
+func dm(int32 a) -> int64 q, int64 r { a -> q; a -> r; }
+func dm(int64 a) -> int64 q, int64 r { a -> q; a -> r; }
+(int64 q, int64 r) = dm(x);

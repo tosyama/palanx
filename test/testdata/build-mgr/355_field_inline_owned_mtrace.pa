@@ -1,0 +1,29 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; [+]int32 v; };
+type S { int8 k; $[2]P ps; $[2][3]int32 rows; $[2][+]int32 vs; $[2]$[2]P grid; };
+func total(@S s) -> int32 t {
+	s.ps[0].x + s.ps[1].x + s.rows[1][2] + s.vs[1][0] + s.grid[1][1].x -> t;
+}
+mtrace();
+{
+	S s;
+	[{x: 1, v: [5]}, {x: 2, v: [3]}] -> s.ps;
+	[[1, 2, 3], [4, 5, 6]] -> s.rows;
+	7 -> s.vs[1].push();
+	8 -> s.vs[1].push();
+	9 -> s.grid[1][1].x;
+	S t = s;
+	10 -> t.ps[1].x;
+	11 -> t.vs[1][0];
+	printf("%d %d %d %d %ld\n", total(@s), total(@t), s.ps[1].x, s.vs[1][0], len(@t.vs[1]));
+	$S h = s;
+	[+]S a;
+	a.push(h);
+	@P q = @a[0].ps[1];
+	printf("%d %d %ld\n", q.x, a[0].grid[1][1].x, len(@a[0].vs[1]));
+	P m;
+	s.ps[1] ->> m;
+	printf("%d %ld\n", m.x, len(@m.v));
+}
+muntrace();

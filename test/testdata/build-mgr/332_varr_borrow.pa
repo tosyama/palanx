@@ -1,0 +1,52 @@
+cinclude <stdio.h>;
+import "lib_varr_fill.pa";
+
+func add(@![+]int32 a, int32 x)
+{
+	x -> a.push();
+}
+
+func total(@[+]int32 a) -> int64
+{
+	int64 s = 0;
+	int64 i = 0;
+	while i < len(a) {
+		s + a[i] -> s;
+		i + 1 -> i;
+	}
+	return s;
+}
+
+func sum([]int32 a, int64 n) -> int64
+{
+	int64 s = 0;
+	int64 i = 0;
+	while i < n {
+		s + a[i] -> s;
+		i + 1 -> i;
+	}
+	return s;
+}
+
+func grow(@![+]int32 a)
+{
+	a.resize(len(a) + 2);
+	0 -> a[len(a) - 2];
+	7 -> a[len(a) - 1];
+}
+
+[+]int32 v;
+add(@!v, 5);
+add(@!v, 6);
+grow(@!v);
+printf("%lld %lld %lld\n", len(@v), total(@v), total(@!v));
+printf("%lld\n", sum(v, len(@v)));
+[+]int32 w;
+@![+]int32 p = @!v;
+push(p, 1);
+@!w -> p;
+p -> push(2);
+printf("%lld %lld %d\n", len(@v), len(@w), w[0]);
+[+]int64 sq;
+fill(@!sq, 5);
+printf("%lld %lld\n", len(@sq), sq[4]);

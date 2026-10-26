@@ -1,4 +1,4 @@
-type S { [4]$int64 data; };
+type S { $[4]int64 data; };
 cinclude <string.h>;
 func test() {
 	S s;

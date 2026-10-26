@@ -1,0 +1,15 @@
+type P { int32 x; [5]int32 arr; };
+func f(@[3]int32 b) -> int64 r { len(@b) -> r; }
+func len([]int32 p) -> int64 r { 7 -> r; }
+[]int32 a = [1, 2, 3];
+const N = len(@a);
+[len(@a) * 2]int32 b;
+[3][4]int32 c;
+P p;
+int64 x = len(@c);
+int64 y = len(@c[0]);
+int64 z = len(@p.arr);
+int64 w = a -> len();
+int64 u = len(@!a);
+int64 n = N;
+int64 m = len(a);

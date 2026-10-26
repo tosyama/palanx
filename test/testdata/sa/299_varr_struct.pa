@@ -1,0 +1,11 @@
+export type P { int32 x; int32 y; };
+export type Q { int32 a; P p; };
+[+]P v;
+[+2]$P e = [[1, 2]];
+3 -> v[0].x;
+int32 y = e[1].y;
+v.push([4, 5]);
+P p = v.pop();
+p -> e.push();
+v.resize(2);
+[+]Q w;

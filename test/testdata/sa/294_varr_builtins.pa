@@ -1,0 +1,8 @@
+[+]int32 v;
+push(@!v, 1);
+v.push(2);
+3 -> v.push();
+int64 n = len(@v);
+int64 m = v -> len();
+int32 x = v.pop();
+v.resize(n);

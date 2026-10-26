@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.2.0
+ver. 0.2.1
 
 \* - Required
 
@@ -225,7 +225,7 @@ Used in Palan function `parameters` and `rets`.
   parameter, since default values are not implemented)
 
 A parameter or return the grammar parses but the compiler does not implement (`T >> name`, an
-untyped `name = expr`, a type with no declarable form such as `[+]T`) stays in the list as
+untyped `name = expr`, a type with no declarable form such as `[#]T`) stays in the list as
 `{"not-impl": true, "loc": ...}`, plus `untyped-var` (the name) for `name = expr`; SA rejects
 the function at its definition. An unimplemented unnamed return type is a `ret-type` of the
 same shape.
@@ -291,7 +291,8 @@ Variable type
       - null semantics differ by specifier:
         - "raw"      (`[]type`)  — initialization required; element count determined by SA from initializer
         - "fixed"    (`[#]type`) — initialization required; element count determined by SA from initializer
-        - "variable" (`[+]type`) — no initial capacity; allocation deferred (no initialization required)
+        - "variable" (`[+]type`) — no initial capacity: the header is allocated, its data is not
+          (no initialization required)
     - embedded - Boolean, true when the array's storage is laid out inline/contiguous rather than
       as a separately-allocated block; omitted when false. Native syntax sets this for the
       `$`-prefixed inline-storage forms, both 1D (`[n]$T`) and a contiguous 2D array (`[n]$[m]T`,
@@ -630,7 +631,8 @@ Expression model
   31. sizeof - Byte size of a type (`sizeof(T)`). A type with a `[#n]`/`[+n]` level or a
       template argument is emitted as `not-impl` instead
     - type\* - Type model
-  32. chain-call - A chained call `value -> f(args)` (`f(value, args)`), or `value -> L.f(args)`;
+  32. chain-call - A chained call `value -> f(args)` (`f(value, args)`), `value -> L.f(args)`, or
+      a method-form call `value -> s.f(args)` (`f(@!s, value, args)`);
       consumed by SA, not emitted to sa.json (see SASpec.md "Chained calls")
     - value\* - Expression model whose value (or return values) come first in the arguments; a
       nested `chain-call` for `x -> f() -> g()`, or an assignment statement node for `x -> v -> f()`

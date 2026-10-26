@@ -63,6 +63,20 @@ inline bool isFloatPrim(const PlnType* t) {
 // struct/array variables, which carry no read-only concept of their own.
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
+// The symbol of one of the functions build-mgr generates, and a call to it.
+json shapeElem(const json& elem);
+json helperLens(const json& elem);
+string allocShapeKey(const AllocShapeRef& shape);
+string allocHelperSymbol(const AllocShapeRef& shape, const string& op);
+json allocHelperCall(const AllocShapeRef& shape, const string& op, json args);
+inline AllocShapeRef structShape(const string& name)
+{
+	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+// len, push, resize and pop of the `[+]T` whose header type is varr, as call
+// candidates calling impl's helpers; only their signatures without impl.
+json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl = nullptr);
+
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 
 // Checks binding `from` to `to` level by level down their pointer chains.
@@ -157,6 +171,47 @@ inline bool isFuncPtr(const json& vt)
 	    && vt["base-type"].value("type-kind","") == "func";
 }
 inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.contains("mutable"); }
+// `[+]T` as written, before SA gives it its representation below.
+inline bool isVarrAstType(const json& t)
+{
+	return t.value("type-kind","") == "arr" && t.value("specifier","") == "variable";
+}
+// A `[+]T` value: one word pointing at its {len, cap, data} header.
+inline bool isVarrPntr(const json& vt)
+{
+	return vt.value("type-kind","") == "pntr" && vt.contains("base-type")
+	    && vt["base-type"].value("type-kind","") == "varr";
+}
+inline bool isVarrStorage(const json& vt) { return isVarrPntr(vt) && !vt.contains("mutable"); }
+// Where a `[+]T` argument passes its data instead of its header: to C, or to
+// an unsized `[]T` (whose length the callee is told some other way).
+inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
+{
+	if (!isVarrPntr(argVT)) return false;
+	return isCFunc || (paramVT && paramVT->value("type-kind","") == "pntr" && !paramVT->contains("mutable")
+	                   && !paramVT->contains("arr-size") && !isStructStorage(*paramVT) && !isVarrPntr(*paramVT));
+}
+// elem is one element as the data holds it: a primitive, an owned struct's
+// storage (`[+]T`), or the struct itself (`[+]$T`). `embedded` marks the
+// last, since an element type alone cannot tell a row of `[+][n]T` from one
+// laid out in place.
+inline json varrPntrType(const json& elem, bool embedded)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json varr = {{"type-kind","varr"},{"base-type",elem}};
+	if (embedded) varr["embedded"] = true;
+	return {{"type-kind","pntr"},{"base-type",move(varr)}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+inline bool isVarrEmbedded(const json& vt) { return vt["base-type"].value("embedded", false); }
+// The header's len, which `len(@v)` reads in place of a call.
+inline json varrLen(json varr)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
+	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",0},{"value-type",move(i64)}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 // Strips a declared variable's `$` and returns where its storage lives.
 inline VarStorage takeVarStorage(json& varType)
@@ -166,10 +221,24 @@ inline VarStorage takeVarStorage(json& varType)
 	varType = move(base);
 	return VarStorage::Frame;
 }
-// A struct returned by a Palan call, owned by whoever receives it.
-inline bool isExpiringStruct(const json& v)
+inline bool isArrLevel(const json& t);
+// A struct's, a `[+]T`'s or a constant-size array's own block: what a variable
+// owns and frees, and what a copy into it fills.
+inline bool isOwnedBlock(const json& vt)
 {
-	return v.value("category", "") == "expiring" && isStructStorage(v["value-type"]);
+	return isStructStorage(vt) || isVarrStorage(vt)
+	    || (isArrLevel(vt) && vt.contains("arr-size") && !vt.contains("mutable"));
+}
+// An owned element (a struct's, a `[+]T`'s or a row's storage) has no
+// permission of its own: it is writable only as far as the array it is
+// reached through.
+inline bool isWritableElem(const json& saIdx) {
+	return !isOwnedBlock(saIdx["value-type"]) || isWritableThrough(saIdx["array"]["value-type"]);
+}
+// A block returned by a Palan call, owned by whoever receives it.
+inline bool isExpiringOwned(const json& v)
+{
+	return v.value("category", "") == "expiring" && isOwnedBlock(v["value-type"]);
 }
 inline bool returnsBorrow(const json& call)
 {
@@ -219,6 +288,11 @@ inline bool hasCall(const json& e)
 	}
 	return false;
 }
+inline bool isLocationExpr(const json& e)
+{
+	string et = e.value("expr-type", "");
+	return et == "id" || et == "arr-index" || et == "field-access";
+}
 inline bool isCallBorrow(const json& expr)
 {
 	if (expr.value("expr-type", "") != "addr-of") return false;
@@ -234,7 +308,7 @@ inline json fieldPrimLeaf(const FieldLayout& f)
 	return t;
 }
 
-// What a raw-ptr field / embed-ptr-arr slot points to.
+// What a raw-ptr field points to.
 inline json fieldPointeeType(const FieldLayout& f)
 {
 	json t = f.elemKind == "func" ? f.funcType
@@ -245,35 +319,26 @@ inline json fieldPointeeType(const FieldLayout& f)
 	return t;
 }
 
+// The struct a field holds, embedded or owned; empty for any other field.
+inline string fieldStructName(const FieldLayout& f)
+{
+	if (f.typeKind == "embed") return f.typeName;
+	if (f.typeKind == "owned" && isStructPntr(f.type)) return f.type["base-type"]["type-name"];
+	return "";
+}
+
+// An array a struct literal gives the field, embedded or owned.
+inline bool isLitArrField(const FieldLayout& f)
+{
+	return f.typeKind == "embed-arr" || (f.typeKind == "owned" && (isArrLevel(f.type) || isVarrStorage(f.type)));
+}
+
 inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
 		return fieldPrimLeaf(f);
-	if (f.typeKind == "embed-arr") {
-		json bt = (f.elemKind == "struct")
-			? json{{"type-kind","struct"},{"type-name",f.typeName}}
-			: fieldPrimLeaf(f);
-		return {{"type-kind","pntr"},{"embedded",true},{"stride",f.stride},{"arr-size",f.count},{"base-type",bt}};
-	}
-	if (f.typeKind == "embed-ptr-arr") {
-		json elem_pntr = {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
-		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
-	}
-	if (f.typeKind == "arr-ptr") {
-		// Primitive leaf: field is a plain pointer to inline malloc'd values
-		// (pntr(prim)); pts[i] loads the value directly.
-		// Struct leaf: field cascades to __pln_alloc_arr_T, matching the
-		// variable-level owned struct array shape (sa_owned_struct_arr_var_decl) —
-		// a pointer to an array of struct-pointers (pntr(pntr(struct))); pts[i]
-		// loads the i-th element's pointer.
-		if (f.elemKind == "struct") {
-			json struct_type = {{"type-kind","struct"},{"type-name",f.typeName}};
-			json elem_pntr   = {{"type-kind","pntr"},{"base-type",struct_type}};
-			return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",elem_pntr}};
-		}
-		json bt = fieldPrimLeaf(f);
-		return {{"type-kind","pntr"},{"arr-size",f.count},{"base-type",bt}};
-	}
+	if (f.typeKind == "owned" || f.typeKind == "embed-arr")
+		return f.type;
 	if (f.typeKind == "raw-ptr")
 		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
 	return {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",f.typeName}}}};
@@ -295,6 +360,21 @@ inline int elemSizeBytes(const string& typeName)
 inline bool isPrimPointeeName(const string& name)
 {
 	return name == "void" || elemSizeBytes(name) >= 0;
+}
+
+// The bytes an element takes when it is laid out in place: a primitive or a
+// slot, a struct, or a row of them, whose own rows may be laid out in place
+// in turn; -1 when a row's length is known only at run time.
+inline int64_t inPlaceBytes(const json& elem, const map<string, StructDef>& defs)
+{
+	string kind = elem.value("type-kind","");
+	if (kind == "struct") return defs.at(elem["type-name"].get<string>()).totalSize;
+	if (kind == "prim") return elemSizeBytes(elem["type-name"].get<string>());
+	if (!isArrLevel(elem)) return 8;
+	if (!elem.contains("arr-size")) return -1;
+	const json& child = elem["base-type"];
+	int64_t childSize = !elem.value("embedded", false) && isArrLevel(child) ? 8 : inPlaceBytes(child, defs);
+	return childSize < 0 ? -1 : elem["arr-size"].get<int64_t>() * childSize;
 }
 
 // SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct passed or returned by value.
@@ -323,22 +403,29 @@ inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
 		if (f.typeKind == "prim") {
 			bool isFloat = (f.typeName == "flo32" || f.typeName == "flo64");
 			mark(off, f.size, isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
-		} else if (f.typeKind == "raw-ptr" || f.typeKind == "struct-ptr" || f.typeKind == "arr-ptr") {
+		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned") {
 			mark(off, 8, EightbyteClass::Integer);
-		} else if (f.typeKind == "embed-ptr-arr") {
-			for (int64_t i = 0; i < f.count; i++)
-				mark(off + (int)(i * 8), 8, EightbyteClass::Integer);
 		} else if (f.typeKind == "embed") {
 			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, cls);
 		} else if (f.typeKind == "embed-arr") {
-			bool leafFloat = (f.typeName == "flo32" || f.typeName == "flo64");
-			for (int64_t i = 0; i < f.count; i++) {
-				int elemOff = off + (int)(i * f.stride);
-				if (f.elemKind == "struct")
-					classifySysVWalk(defs.at(f.typeName), elemOff, nEightbytes, defs, cls);
-				else
-					mark(elemOff, f.stride, leafFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
-			}
+			// Each element laid out in place, down to primitives, structs and pointers.
+			function<void(const json&, int)> walk = [&](const json& t, int at) {
+				string kind = t.value("type-kind", "");
+				if (kind == "struct") {
+					classifySysVWalk(defs.at(t["type-name"].get<string>()), at, nEightbytes, defs, cls);
+				} else if (kind == "prim") {
+					string name = t["type-name"].get<string>();
+					bool isFloat = (name == "flo32" || name == "flo64");
+					mark(at, elemSizeBytes(name), isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+				} else if (isArrLevel(t)) {
+					const json& elem = t["base-type"];
+					int64_t size = inPlaceBytes(elem, defs);
+					for (int64_t i = 0; i < t["arr-size"].get<int64_t>(); i++) walk(elem, at + (int)(i * size));
+				} else {
+					mark(at, 8, EightbyteClass::Integer);
+				}
+			};
+			walk(f.type, off);
 		}
 	}
 }
@@ -422,7 +509,20 @@ inline void setArrSize(json& pntrType, const json& saSize) {
 // The array levels stop at an element that is a struct's own storage or a
 // '@T'/'@!T' pointer.
 inline bool isArrLevel(const json& t) {
-	return t.value("type-kind","") == "pntr" && !isStructStorage(t) && !isPtrBorrow(t);
+	return t.value("type-kind","") == "pntr" && !isStructStorage(t) && !isPtrBorrow(t) && !isVarrPntr(t);
+}
+// An array whose elements are blocks of their own (structs, `[+]U`s, rows of
+// any length), built and freed through the generated helpers, rather than
+// laid out in the array's block.
+// Rows laid out in place hold their own elements' slots, so `[2]$[3]T` owns
+// what `[3]T` does.
+inline bool ownsElems(const json& arrType)
+{
+	const json* t = &arrType;
+	while (t->value("embedded", false) && isArrLevel((*t)["base-type"])) t = &(*t)["base-type"];
+	const json& elem = (*t)["base-type"];
+	return !t->value("embedded", false)
+	    && (isOwnedBlock(elem) || (isArrLevel(elem) && !elem.contains("mutable")));
 }
 
 // Renders an SA type as source-like text for diagnostics: a struct's own
@@ -453,6 +553,9 @@ inline string typeDisplayName(const json& t) {
 		return unrepresentableTypeName(t);
 	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
 	auto perm = [](const json& p) { return string(isWritableThrough(p) ? "@!" : "@"); };
+	if (isVarrPntr(t))
+		return (isVarrStorage(t) ? "" : perm(t)) + "[+]" + (isVarrEmbedded(t) ? "$" : "")
+		     + typeDisplayName(t["base-type"]["base-type"]);
 	if (isStructStorage(t))
 		return typeDisplayName(t["base-type"]);
 	if (isPtrBorrow(t))
@@ -470,23 +573,23 @@ inline string typeDisplayName(const json& t) {
 
 // Shape equality for binding an array to a borrowed array type: same depth,
 // same embedded layout, every size `to` names known and equal (a borrowed
-// array type names them all), structs stored in both or
-// neither, and pointer elements in both or neither. The element type is left
+// array type names them all), owned elements (a struct's storage or a `[+]T`)
+// in both or neither, and pointer elements in both or neither. The element type is left
 // to the usual type compatibility check, which cannot tell a stored struct
 // from a pointer to one and ignores pointer permissions. A pointer element
 // keeps its permission, except that read-only slots may narrow '@!T' to '@T':
 // with writable slots the callee could store a '@T' where the caller expects
-// a '@!T'. An owned element (a row or a struct's storage) may be lent to a
+// a '@!T'. An owned element (a row, a struct's storage or a `[+]T`) may be lent to a
 // read-only '@T' slot when the slots are read-only too: the callee can neither
 // replace it nor free a borrow.
 inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable = true) {
 	bool fp = isArrLevel(from), tp = isArrLevel(to);
 	if (!toSlotsMutable && isPtrBorrow(to) && !isWritableThrough(to)) {
 		if (fp) return arrShapeMatch(from["base-type"], to["base-type"], false);
-		if (isStructStorage(from)) return true;
+		if (isOwnedBlock(from)) return true;
 	}
 	if (!fp || !tp) {
-		if (fp != tp || isStructStorage(from) != isStructStorage(to) || isPtrBorrow(from) != isPtrBorrow(to))
+		if (fp != tp || isOwnedBlock(from) != isOwnedBlock(to) || isPtrBorrow(from) != isPtrBorrow(to))
 			return false;
 		return !isPtrBorrow(to) || isWritableThrough(from) == isWritableThrough(to)
 		    || (!toSlotsMutable && !isWritableThrough(to));
@@ -502,7 +605,10 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 // keeps rows of another size out and keeps the elements' owner unchanged:
 // either side would free, or overwrite, what the other one owns. A 'void*'
 // on either side (NULL, a C 'void*') says nothing about the elements.
+// A '[+]T' borrow must name the same rows, laid out the same way.
 inline bool elemShapeMatch(const json& from, const json& to) {
+	if (isVarrPntr(from) && isVarrPntr(to) && isArrLevel(to["base-type"]["base-type"]))
+		return from["base-type"] == to["base-type"];
 	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(from))
 		return true;
 	auto isVoid = [](const json& t) {
@@ -515,27 +621,31 @@ inline bool elemShapeMatch(const json& from, const json& to) {
 
 // '->' into a value of this type copies its contents: a struct's own storage
 // or an array level. Rebinding would alias the source and free it twice.
-inline bool isCopiedByValue(const json& t) { return isStructStorage(t) || isArrLevel(t); }
+inline bool isCopiedByValue(const json& t) { return isOwnedBlock(t) || isArrLevel(t); }
 
-// The source type that declares an owned array of the levels of saType (a
-// borrowed array parameter); null when an element is not one a literal gives.
-inline json astArrType(const json& saType)
+// The source type that declares an owned value of saType: an array of its
+// levels (a borrowed array parameter's), a `[+]T`, a struct or a primitive;
+// null when an element is not one a literal gives.
+inline json astTypeOf(const json& saType)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
-	json out = {{"type-kind","arr"},{"specifier","raw"},
-		{"size-expr",{{"expr-type","lit-uint"},{"value",to_string(saType["arr-size"].get<int64_t>())}}}};
-	if (saType.value("embedded", false))
-		out["embedded"] = true;
-	const json& base = saType["base-type"];
-	json elem;
-	if (isArrLevel(base) && base.contains("arr-size"))
-		elem = astArrType(base);
-	else if (base.value("type-kind","") == "struct")
-		elem = {{"type-kind","prim"},{"type-name",base["type-name"]}};
-	else if (isStructStorage(base))
-		elem = {{"type-kind","prim"},{"type-name",base["base-type"]["type-name"]}};
-	else if (base.value("type-kind","") == "prim")
-		elem = base;
+	json out, elem;
+	if (isVarrPntr(saType)) {
+		out = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr}};
+		if (isVarrEmbedded(saType)) out["embedded"] = true;
+		elem = astTypeOf(saType["base-type"]["base-type"]);
+	} else if (isArrLevel(saType) && saType.contains("arr-size")) {
+		out = {{"type-kind","arr"},{"specifier","raw"},
+			{"size-expr",{{"expr-type","lit-uint"},{"value",to_string(saType["arr-size"].get<int64_t>())}}}};
+		if (saType.value("embedded", false)) out["embedded"] = true;
+		elem = astTypeOf(saType["base-type"]);
+	} else if (saType.value("type-kind","") == "struct") {
+		return {{"type-kind","prim"},{"type-name",saType["type-name"]}};
+	} else if (isStructStorage(saType)) {
+		return {{"type-kind","prim"},{"type-name",saType["base-type"]["type-name"]}};
+	} else if (saType.value("type-kind","") == "prim") {
+		return saType;
+	}
 	if (elem.is_null())
 		return nullptr;
 	out["base-type"] = move(elem);
@@ -561,9 +671,47 @@ inline bool copyShapeMatch(const json& from, const json& to) {
 		return ptrPermissionOk(from, to) && from["base-type"] == to["base-type"];
 	if (isStructStorage(to))
 		return from["base-type"] == to["base-type"];
+	if (isVarrPntr(from) || isVarrPntr(to))
+		return isVarrPntr(from) && isVarrPntr(to) && from["base-type"] == to["base-type"];
 	return from.value("type-kind","") == to.value("type-kind","")
 	    && from.value("type-name","") == to.value("type-name","");
 }
+
+// An array type as its owner holds it, without a borrow's permissions.
+inline json withoutArrPermission(json t)
+{
+	json* cur = &t;
+	while (isArrLevel(*cur)) {
+		cur->erase("mutable");
+		cur->erase("unsized");
+		cur = &(*cur)["base-type"];
+	}
+	return t;
+}
+// What `[+]T` vt can be copied from: another `[+]T` (owned or borrowed) or a
+// sized array, of exactly its element type and layout.
+inline bool varrCopySourceMatch(const json& from, const json& vt)
+{
+	const json& elem = vt["base-type"]["base-type"];
+	// The layouts must agree too: `[+][n]T` and `[+]$[n]T` share an element type.
+	if (isVarrPntr(from))
+		return from["base-type"] == vt["base-type"];
+	// A contiguous struct array's type has the same shape as a lone struct's
+	// storage, so only its stride tells it from one.
+	if (isVarrEmbedded(vt))
+		return from.contains("stride") && from.contains("arr-size") && withoutArrPermission(from["base-type"]) == elem;
+	return isArrLevel(from) && from.contains("arr-size") && !from.value("embedded", false)
+	    && withoutArrPermission(from["base-type"]) == elem;
+}
+// What a copy into vt, other than a lone struct, can take: a `[+]T` any run
+// of its elements, anything else the same shape.
+inline bool copySourceMatch(const json& from, const json& vt)
+{
+	return isVarrStorage(vt) ? varrCopySourceMatch(from, vt) : copyShapeMatch(from, vt);
+}
+// A Palan parameter that owns what it is given (a copy, or a call's result)
+// and frees it. A struct parameter only borrows.
+inline bool isOwnedParam(const json& vt) { return isOwnedBlock(vt) && !isStructStorage(vt); }
 
 // An array is borrowed with one permission for every level down to its
 // elements, so a read-only 2D borrow also makes its rows read-only. A struct

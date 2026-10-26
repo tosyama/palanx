@@ -101,6 +101,25 @@ inline bool isImplementedTypeExpr(const json& t)
 	return !t.contains("base-type") || isImplementedTypeExpr(t["base-type"]);
 }
 
+// `[+]$T` keeps its elements in place, marked like `[n]$T`.
+inline json varrTypeExpr(json sizeExpr, json base)
+{
+	json t = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",std::move(sizeExpr)}};
+	if (base.value("type-kind", "") == "embed") {
+		t["embedded"] = true;
+		t["base-type"] = std::move(base["base-type"]);
+	} else {
+		t["base-type"] = std::move(base);
+	}
+	return t;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// A variable-length array.
+inline bool isVarrType(const json& t)
+{
+	return t.value("type-kind", "") == "arr" && t.value("specifier", "") == "variable";
+}
+
 // Whether a type_expr result is one gen-ast currently knows how to carry as
 // a declared variable's type (a bare, uninitialized var_declaration). Shared
 // by var_declaration and return_def (ARROW type_expr) so a bare-return-type
@@ -112,6 +131,8 @@ inline bool isDeclarableVarType(const json& t)
 	string tk = t.value("type-kind", "");
 	if (tk == "prim" || tk == "pntr")
 		return true;
+	if (isVarrType(t))
+		return t["base-type"].value("type-kind", "") == "prim" || isDeclarableVarType(t["base-type"]);
 	if (tk != "arr" || t.value("specifier", "") != "raw")
 		return false;
 	if (t["size-expr"].is_null())
@@ -120,19 +141,27 @@ inline bool isDeclarableVarType(const json& t)
 	string btk = bt.value("type-kind", "");
 	if (btk == "prim")
 		return true;  // fixed-size array of prim
+	if (isVarrType(bt))
+		return isDeclarableVarType(bt);  // fixed-size array of [+]T
 	if (btk == "pntr" && bt.value("mutable", false) == true && bt.contains("base-type")) {
 		const json& ibt = bt["base-type"];
 		if (ibt.value("type-kind", "") == "arr" && ibt.value("specifier", "") == "raw"
 			&& ibt.contains("size-expr") && ibt["size-expr"].is_null())
 			return true;  // array of @! slots into an unsized array (owning-slot array)
 	}
-	if (btk == "pntr" && bt["base-type"].value("type-kind", "") == "prim")
-		return true;  // array of struct-record pointers (@T elements)
-	if (btk == "pntr" && bt["base-type"].value("type-kind", "") == "func")
-		return true;  // array of function pointers
-	if (btk == "arr" && bt.value("specifier", "") == "raw" && !bt["size-expr"].is_null()
-		&& bt["base-type"].value("type-kind", "") == "prim")
-		return true;  // fixed-size multidim array (also covers embedded-struct arrays)
+	if (btk == "pntr") {
+		const json* pointee = &bt["base-type"];
+		while (pointee->value("type-kind", "") == "pntr") pointee = &(*pointee)["base-type"];
+		string pk = pointee->value("type-kind", "");
+		if (pk == "prim" || pk == "func")
+			return true;  // array of pointers (@T, @!@T, @func(...) elements)
+	}
+	if (btk == "arr" && bt.value("specifier", "") == "raw" && !bt["size-expr"].is_null()) {
+		// fixed-size multidim array (also covers embedded-struct arrays), but not rows of pointers
+		const json* leaf = &bt;
+		while (leaf->value("type-kind", "") == "arr" && !isVarrType(*leaf)) leaf = &(*leaf)["base-type"];
+		return leaf->value("type-kind", "") != "pntr" && isDeclarableVarType(bt);
+	}
 	return false;
 }
 

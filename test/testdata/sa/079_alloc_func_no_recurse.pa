@@ -1,5 +1,0 @@
-cinclude <stdlib.h>;
-export type Point { int64 x; int64 y; };
-export type Rect { Point tl; Point br; };
-func __pln_alloc_Rect() -> Rect ret {
-}

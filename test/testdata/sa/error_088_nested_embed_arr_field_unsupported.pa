@@ -1,1 +1,0 @@
-type T { [4]$[2]int64 field; };

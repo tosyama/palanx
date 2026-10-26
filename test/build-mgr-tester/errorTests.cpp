@@ -82,18 +82,9 @@ TEST(build_mgr_error, inline_as_value) {
 	ASSERT_NE(out.find(":5:1: error: cannot convert 'Point' to 'int64'."), string::npos);
 }
 
-TEST(build_mgr_error, cinclude_2d_arr_field) {
-	// A nested-array struct field (matches native `[n]$[m]T` fields, also
-	// unsupported) makes buildStructDef register Grid2D as incomplete rather
-	// than leaving the tag unregistered -- a graceful diagnostic, not a crash.
-	cleanTestEnv();
-	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_053_cinclude_2d_arr_field.pa");
-	ASSERT_NE(out.find("struct 'Grid2D' has no known layout"), string::npos);
-}
-
 TEST(build_mgr_error, cinclude_arr_field_cast_size) {
 	// A non-literal array size-expr ("(int)4.0" resolves to "cast", not
-	// "lit-int") hits the same incomplete-struct path as cinclude_2d_arr_field.
+	// "lit-int") registers the struct as incomplete, a diagnostic rather than a crash.
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_054_cinclude_arr_field_cast_size.pa");
 	ASSERT_NE(out.find("struct 'CastSized' has no known layout"), string::npos);

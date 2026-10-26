@@ -268,11 +268,11 @@ struct BodyList {
 // A function pointer type's return is taken greedily: `e as @func(T) -> X`
 // casts to a type returning X rather than chaining the cast into X.
 %precedence FPTR_NORET
-%left ARROW DBL_ARROW
 %left OPE_OR
 %left OPE_AND
 %left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
+%left ARROW DBL_ARROW
 %left OPE_SHL OPE_SHR
 %left '+' '-'
 %left '*' '/' '%' '&' '|' '^'
@@ -1011,6 +1011,8 @@ array_row: '[' array_items ']'
 	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| '[' array_items ',' ']'
 	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	| '[' ']'
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", json::array()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	;
 
 array_items: expression
@@ -1253,9 +1255,9 @@ type_expr: ID
 	| '[' '#' expression ']' type_expr
 	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",move($3)},{"base-type",move($5)}}; }
 	| '[' '+' ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr},{"base-type",move($4)}}; }
+	{ $$ = varrTypeExpr(nullptr, move($4)); }
 	| '[' '+' expression ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",move($3)},{"base-type",move($5)}}; }
+	{ $$ = varrTypeExpr(move($3), move($5)); }
 	;
 
 fptr_params: /* empty */

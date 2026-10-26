@@ -1,0 +1,26 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+
+func show(int32 x) { printf("int %d\n", x); }
+func show(flo64 x) { printf("float %.1f\n", x); }
+
+int32 n = 3;
+show(n);
+show(2.5);
+
+func twice(int32 x) -> int32 { return x * 2; }
+func twice(flo64 x) -> flo64 { return x * 2.0; }
+@func(int32) -> int32 f = twice;
+@func(flo64) -> flo64 g = twice;
+printf("%d %.1f\n", f(4), g(1.5));
+
+func cmp(@void a, @void b) -> int32 {
+    @int32 x = a;
+    @int32 y = b;
+    return x[0] - y[0];
+}
+func cmp(int32 a, int32 b) -> int32 { return b - a; }
+[4]int32 arr;
+5 -> arr[0];  3 -> arr[1];  1 -> arr[2];  4 -> arr[3];
+qsort(arr, uint64(4), uint64(4), cmp);
+printf("%d %d %d %d %d\n", arr[0], arr[1], arr[2], arr[3], cmp(int32(1), int32(2)));

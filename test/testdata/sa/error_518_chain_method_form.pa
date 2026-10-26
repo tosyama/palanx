@@ -1,5 +1,0 @@
-type V { flo32 x; };
-func setx(@!V v, flo32 x) { x -> v.x; }
-V v = [1];
-flo32 f = 2;
-f -> v.setx();

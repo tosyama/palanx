@@ -378,6 +378,11 @@ and is currently a compile error. It is not an assignment — assignment is writ
 type (`$Point p;`, `$[4]int32 a;`) it is placed in the function's stack frame instead. See
 [Stack Arrays](#stack-arrays-nt) and [Stack Structs](#stack-structs-t).
 
+**Initial contents:** A new struct or array starts undefined, as memory from C's `malloc` does:
+its primitive fields and elements, and its pointers (`@T`), hold whatever was there before, so
+write them before reading them. Only what Palan itself releases is set up: an owned field or
+element (`T`, `[n]U`) is allocated with it.
+
 ### Constant Declarations
 
 Declare a compile-time constant with `const`:
@@ -386,7 +391,7 @@ Declare a compile-time constant with `const`:
 const MaxLen = 256;
 
 [MaxLen]uint8 buf;
-type Msg { [MaxLen]$uint8 body; };
+type Msg { $[MaxLen]uint8 body; };
 printf("%ld\n", MaxLen);   // 256
 ```
 
@@ -468,7 +473,12 @@ func addOne(MyInt n) -> MyInt result {
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
 
 Operator precedence (high to low): unary minus / `!` / `~`, `as`, `* / % & | ^`, `+ -`,
-`<<< >>>`, comparisons, `&&`, `||`, `->`. All binary operators are left-associative.
+`<<< >>>`, `->` / `->>`, comparisons, `&&`, `||`. All binary operators are left-associative.
+
+`->` sits below arithmetic, so `x + 1 -> x` stores the sum, and above comparisons, so a chained
+call can be compared: `i < a -> len()` is `i < (a -> len())`. To store a comparison or a logical
+result, parenthesize it: `(x < y) -> b`. Without the parentheses, `x < y -> b` puts an assignment
+inside the comparison, which is a compile error.
 
 Note the bitwise operators `&`/`|`/`^` share a precedence class with `*`/`/`/`%` — one level
 **above** `+`/`-` — rather than C's much lower placement below comparisons. This is a deliberate
@@ -667,13 +677,13 @@ int64 x = 10;
 printf("%ld\n", x);   // x is still visible
 ```
 
-Shadowing — declaring a variable or Palan function with the same name as one in an outer scope — is a compile error. A variable (including a parameter) and a const cannot share a name either way.
+Shadowing — declaring a variable with the same name as one in an outer scope, or a Palan function with the same name and parameter types as one in an outer scope — is a compile error (functions of one name with different parameter types are [overloads](#overloading)). A variable (including a parameter) and a const cannot share a name either way.
 
 Palan function definitions inside a block are block-scoped and support forward references within the same block.
 
 Types and consts declared inside a block follow the same rules (see [Declaration order](#declaration-order)).
 
-`cinclude` inside a block makes the imported C functions available only within that block. Shadowing of C function names is allowed.
+`cinclude` inside a block makes the imported C functions available only within that block. A C function brought in again is the same function.
 
 ### Optional Semicolons
 
@@ -774,6 +784,7 @@ cinfo.jpeg_set_defaults();  // jpeg_set_defaults(@!cinfo)
 - A function whose first parameter is not `@!` (a value, `@T`, or no parameters) cannot be called
   this way.
 - If `x` is both a variable and a module alias (§11), the variable is used.
+- A method-form call can follow `->`; see [Chained Calls](#chained-calls).
 
 ### Chained Calls
 
@@ -793,8 +804,13 @@ divmod(17, 5) -> add3(100);                    // add3(q, r, 100)
 - For a read-only borrow parameter (`@T`, `@[n]T`, or a C function's const pointer), `@` may be
   omitted: `v -> len()` is `len(@v)`. `@!` must be written: `@!v -> scale(2)`.
 - As a statement, `x -> v -> f()` stores `x` in `v`, then calls `f(v)`. A call is evaluated once.
-- Not supported in this version: `->>` to a call, a method-form call after `->` (`v -> s.f()`),
-  and receiving the return values of a call given several chained values with `(a, b) = ...`.
+- A method-form call takes the chained values after `x`: `v -> x.f(args)` is `f(@!x, v, args)`,
+  and `divmod(7, 2) -> acc.add3(9)` is `add3(@!acc, q, r, 9)`. `v` is evaluated before `x`, so in
+  `next(@!i) -> a[i].f()` `a[i]` uses the `i` `next` changed, and in `n -> a[bump(@!n)].f()` the
+  `n` passed is the one before `bump`.
+- Not supported in this version: `->>` to a call, and receiving with `(a, b) = ...` the return
+  values of a chain whose value is evaluated first: a call given several chained values, or a
+  method-form call where the value or `x` has a call (`(a, b) = g() -> acc.two()`).
 
 ### Receiving Multiple Return Values
 
@@ -870,6 +886,40 @@ printf("%d\n", o.op(4));           // 8
   (its first parameter is `@!`).
 - Not supported in this version: calling the result of an expression directly, such as
   `tbl[0](3)` or `pick(true)(3)`; store it in a variable first.
+
+### Overloading
+
+Functions may share a name when their parameter types differ. A call takes the one its
+arguments fit:
+
+```palan
+cinclude <stdio.h>;
+
+func show(int32 x) { printf("int %d\n", x); }
+func show(flo64 x) { printf("float %.1f\n", x); }
+
+int32 n = 3;
+show(n);            // int 3
+show(2.5);          // float 2.5
+```
+
+- Two functions with the same parameter types are a compile error, even if they return
+  different types.
+- C functions and imported functions of the name are candidates too: after
+  `cinclude <stdlib.h>;`, `func abs(flo64 x) -> flo64` adds a float version of C's `abs(int)`.
+- If one function fits the arguments, it is called. If several fit, the one every argument
+  matches exactly (same type, and for a pointer the same `@`/`@!`) is called; otherwise the call
+  is ambiguous and a compile error. With `f(int32)` and `f(int64)`, an `int16` argument is
+  ambiguous: write `f(int32(x))`.
+- A literal matches exactly only its default type: `int64` for an integer, `uint64` with `u`,
+  `flo64` for a decimal. With `f(int32)` and `f(int64)`, `f(1)` calls `f(int64)`.
+- A method-form call `x.f()` considers only the functions whose first parameter is `@!`. In a
+  chained call `v -> f()`, `v` fits a `@T` parameter as `@v`.
+- A function name used as a value takes the function of the pointer type it is given to:
+  `@func(int32) -> int32 g = show;` is an error here (no `show` returns `int32`), and one
+  written where no function pointer type is expected is a compile error.
+- Receiving several return values (`(a, b) = f(x)`) needs the functions returning that many to
+  return the same types.
 
 ---
 
@@ -1019,6 +1069,25 @@ func sum_arr([]int32 a, int64 n) -> int64 {
 
 Using `[]T` in a variable declaration is a compile error.
 
+### Sized Arrays in Function Signatures
+
+A `[n]T` parameter receives a copy of the argument, which it owns. A `[n]T` return, named or
+not, gives the caller an array it owns, as a struct return does; returning a borrow returns a
+copy. `n` must be a constant.
+
+```palan
+func bumped([3]int32 a) -> [3]int32 {
+    a[0] + 1 -> a[0];        // a is the caller's array copied in
+    return a;
+}
+func same(@[3]int32 a) -> [3]int32 { return a; }   // returns a copy
+
+[3]int32 x = [1, 2, 3];
+[3]int32 y = bumped(x);
+[3]int32 z = same(@x);
+printf("%d %d %d\n", x[0], y[0], z[0]);   // 1 2 1
+```
+
 ### Borrowing Arrays
 
 `@[n]T` borrows an array read-only and `@![n]T` borrows it writable. Pass the array with
@@ -1059,7 +1128,7 @@ func fill(@![H][W]int32 g, int32 x) {
 - A row of a multi-dimensional array is borrowed the same way: `@g[i]` / `@!g[i]` gives the row of
   `[n][m]T`, `[n]$[m]T`, `[n][m]$T` or `[n][m]T` (struct `T`) as `@[m]T`, `@[m]$T` and so on, also
   when `g` is itself a borrowed array.
-- An array field is borrowed the same way: `@s.v` / `@!s.v` gives a `[n]T`, `[n]$T` or `[n]@T`
+- An array field is borrowed the same way: `@s.v` / `@!s.v` gives a `[n]T`, `$[n]$T` or `$[n]@T`
   field as `@[n]T`, `@[n]$T` or `@[n]@T`.
 - A borrowed array can also be a local variable (`@[4]int64 p = @v;`).
 - A borrowed array is already a borrow, like a `@T`/`@!T` pointer: pass it on, bind it, and
@@ -1174,9 +1243,8 @@ int64 cols = 3;
 
 Both row and column indices must be integer types.
 
-**Memory management:** The compiler automatically generates `__pln_alloc_arr_arr_<leaf>` and
-`__pln_free_arr_arr_<leaf>` functions (via build-mgr) and inserts the allocation call at
-declaration and the free call at scope exit. No manual memory management is required.
+**Memory management:** The compiler allocates the outer array and each row at declaration and
+frees them at scope exit. No manual memory management is required.
 
 ### Contiguous Two-Dimensional Arrays (`[n]$[m]T`)
 
@@ -1210,6 +1278,165 @@ rejects calls where the argument's inner dimension is variable or does not match
 
 **Memory management:** A single `malloc` is called at declaration and a single `free` is
 inserted at scope exit. No helper functions are generated.
+
+### Arrays of More Levels
+
+The levels combine in any order and number: `[2][3][4]int32` has rows of rows, each in its own
+block; `[2]$[3]$[4]int32` lays all 24 elements out in one block; `[2]$[3][4]int32` lays out
+the 6 rows' slots in one block. They are indexed, copied, moved and borrowed like 2D arrays, and
+any level may have a length known only at run time. A function parameter or a borrow needs the
+lengths of the levels laid out in place to be constants.
+
+```palan
+[2][3][4]int32 a;
+5 -> a[1][2][3];
+[2][3][4]int32 b = a;   // copies every level
+int64 k = 3;
+[2]$[k]$[4]int32 c;     // one block of 2 * k * 4 elements
+```
+
+### Variable-Length Arrays (`[+]T`)
+
+`[+]T` is an array whose length changes at run time. It starts empty; `[+n]T` starts empty
+with room for `n` elements, and an array literal sets its length. `v[i]` reads and writes an
+element as in other arrays, without bounds checking. Four built-in functions work on it:
+
+| Function | Meaning |
+|----------|---------|
+| `len(@v)` | the number of elements, an `int64` |
+| `push(@!v, x)` | appends a copy of `x` |
+| `resize(@!v, n)` | sets the length to `n` (an `int64`); new elements are undefined, as an array variable's are |
+| `pop(@!v)` | removes the last element and returns it |
+
+They are ordinary functions, so they can be called in method form (`v.push(x)`) or after `->`
+(`x -> v.push()`, `v -> len()`; see [Chained Calls](#chained-calls)).
+
+```palan
+cinclude <stdio.h>;
+
+[+]int32 v;                  // empty
+v.push(10);
+20 -> v.push();
+push(@!v, 30);
+printf("%ld %d\n", len(@v), v[2]);      // 3 30
+v.resize(4);                 // v[3] is undefined until written
+40 -> v[3];
+int32 last = v.pop();
+printf("%ld %d\n", v -> len(), last);   // 3 40
+
+[+16]int32 w;                // room for 16, length 0
+[+]int32 u = [1, 2, 3];      // length 3
+printf("%ld %ld\n", len(@w), len(@u));  // 0 3
+
+int64 i = 0;
+while i < u -> len() {
+    printf("%d ", u[i]);
+    i + 1 -> i;
+}
+printf("\n");                // 1 2 3
+```
+
+- Growing past the room it has reallocates the elements, at least doubling the room, so adding
+  one element at a time reallocates only now and then. Shrinking keeps the room.
+- `pop` on an empty array and `resize` to a negative length abort the program.
+- `[+n]T v = [...]` takes `n` elements, the literal's first and the rest undefined; `n` must be
+  a constant no less than the literal's length.
+- `$[+]T v` keeps the array's header in the stack frame; its elements are on the heap either way.
+- `len` also takes an array of constant size (`len(@a)` for `[4]int32 a` is 4), and is then a
+  constant: `const N = len(@a);`. An array whose size is known only at run time, or a `[]T`, has
+  no length to give and is a compile error.
+- A function with the same parameter types as a built-in one is a compile error.
+
+**Borrowing and passing.** `@[+]T` and `@![+]T` borrow the array, as for other arrays (see
+[Borrowing Arrays](#borrowing-arrays)); only `@!` can change its length. Passed to a `[]T`
+parameter, such as a C function's pointer, the array gives its elements. A `[+]T` parameter, a
+`[+]T` return and copying follow the rules of other arrays and structs:
+
+```palan
+cinclude <stdio.h>;
+
+func total([]int32 a, int64 n) -> int64 s {
+    int64 i = 0;
+    while i < n { s + a[i] -> s; i + 1 -> i; }
+}
+func sum(@[+]int32 v) -> int64 s {
+    int64 i = 0;
+    while i < v -> len() { s + v[i] -> s; i + 1 -> i; }
+}
+func addTo(@![+]int32 v, int32 x) { x -> v.push(); }
+func evens(int64 n) -> [+]int32 r {
+    int64 i = 0;
+    while i < n { r.push(int32(i * 2)); i + 1 -> i; }
+}
+func grown([+]int32 v) -> [+]int32 {
+    v.push(99);
+    return v;
+}
+
+[+]int32 v = evens(4);       // 0 2 4 6
+addTo(@!v, 8);
+printf("%ld %ld\n", sum(@v), total(v, len(@v)));   // 20 20
+[+]int32 c = v;              // a copy
+1 -> c[0];
+[3]int32 a = [7, 8, 9];
+[+]int32 d;
+a -> d;                      // d has 3 elements
+[+]int32 g = grown(v);       // v is copied in, so it keeps its length
+printf("%d %d %ld %ld %ld\n", v[0], c[0], len(@d), len(@v), len(@g));  // 0 1 3 5 6
+[+]int32 m;
+v ->> m;                     // m takes v's array; v is left NULL
+printf("%ld\n", len(@m));    // 5
+```
+
+- A `[+]T` parameter receives a copy of the argument. Returning a borrow (`return v;` for a
+  `@[+]T v`) returns a copy, as for a struct.
+- Copying into a `[+]T` takes any number of elements and sets the length to it; a `[+]T` cannot
+  be copied into a `[n]T`.
+- Changing the length can move the elements, so a borrow of an element (`@!v[i]`) or the
+  elements given to a `[]T` must not be kept across a `push` or `resize`. This is not checked.
+
+**Elements.** An element can be a struct, a row or another variable-length array, nested to
+any depth:
+
+```palan
+cinclude <stdio.h>;
+
+type Point { int64 x; int64 y; };
+
+[+]Point ps;                 // each element is its own block
+Point p;
+3 -> p.x;
+ps.push(p);                  // copies p in
+ps.push({x: 5, y: 6});
+ps.resize(3);                // ps[2] is a new Point
+9 -> ps[2].y;
+Point q = ps.pop();          // q owns the last element
+printf("%ld %ld %ld\n", len(@ps), ps[1].x, q.y);   // 2 5 9
+
+[+]$Point qs;                // elements laid out in the array's data
+qs.push(p);
+printf("%ld\n", qs[0].x);    // 3
+
+[+][+]int32 m;               // a row of its own length per element
+m.resize(2);
+7 -> m[1].push();
+printf("%ld %ld\n", len(@m[0]), len(@m[1]));      // 0 1
+
+[+][3]int32 rows;            // rows of 3
+[3]int32 r = [1, 2, 3];
+rows.push(@r);               // copies r in
+rows.resize(2);
+printf("%ld %d\n", len(@rows), rows[0][2]);       // 2 3
+
+[2][+]int32 two;             // two variable-length arrays
+4 -> two[1].push();
+printf("%d\n", two[1][0]);   // 4
+```
+
+- `push` copies a struct or a row in; `pop` returns an element the caller then owns.
+- `$` cannot lay out something that owns storage: `[+]$[+]T` and `$[+]T` as an element are
+  compile errors.
+- A `[+]T` struct field is described in [Array Fields](#array-fields).
 
 ### Array Literals
 
@@ -1309,13 +1536,15 @@ or placed in the stack frame with `$` (see [Stack Arrays](#stack-arrays-nt)).
 |---|---|---|
 | `[n]$T pts` | `malloc(n * T.totalSize)` / `free(pts)` | contiguous inline elements |
 | `[n]T pts` | `__pln_alloc_arr_T(n)` / `__pln_free_arr_T(pts, n)` | owned pointers, each element allocated separately |
-| `[n]@T pts` | `malloc(n * 8)`, null-initialized / `free(pts)` | non-owning read-only pointers |
-| `[n]@!T pts` | `malloc(n * 8)`, null-initialized / `free(pts)` | non-owning mutable pointers |
+| `[n]@T pts` | `malloc(n * 8)` / `free(pts)` | non-owning read-only pointers |
+| `[n]@!T pts` | `malloc(n * 8)` / `free(pts)` | non-owning mutable pointers |
 
 `pts[i]` yields a `T` pointer for all four forms. Fields are accessed with `pts[i].field`.
 
 The pointer-slot forms also take a primitive element type: `[n]@int32` / `[n]@!int32` hold
-`@int32` / `@!int32` pointers, and `pts[i][0]` reads or writes the value one points to.
+`@int32` / `@!int32` pointers, and `pts[i][0]` reads or writes the value one points to. The
+element may be any pointer type: `[n]@!@int32` holds pointers to `@int32` pointers, and
+`[n]@func(...)` holds function pointers.
 
 ```palan
 cinclude <stdio.h>;
@@ -1366,7 +1595,7 @@ printf("%ld\n", tiles[1][2].y);  // 7
 
 **Restrictions:**
 - `[n]$T` and `[m][n]$T` require that `T` owns no fields (no `U field` or `[k]U field`). Use `[n]T` / `[m][n]T` instead when it does.
-- Other two-dimensional struct array forms (`[m]$[n]T`, `[m]$[n]$T`) are not supported.
+- `[m]$[n]T` lays out the `m × n` struct slots in one block; `[m]$[n]$T`, the structs themselves (`T` owning no fields).
 
 Array **fields** (declared inside `type { ... }`, see Section 19) use the same four forms but
 require `n` to be a compile-time integer literal, since struct layout must be statically known.
@@ -1377,6 +1606,8 @@ Array **variables** (this section) allow non-constant `n`, except a stack array 
 - An array declared at the top level (outside any block) is not freed when the top-level statements end; the OS reclaims the memory at process exit.
 - Boundary checking is not performed.
 - `[n]$T` is not supported when `T` owns fields.
+- `[+]@T` (a variable-length array of pointer slots), `[+][n]@T` and a `[][+]T` parameter are not
+  supported.
 
 ---
 
@@ -1410,14 +1641,15 @@ A call returning an owned struct (`T`) or a C struct by value has nothing that w
 result, so `mk().x` and `div(7, 2).quot` are compile errors: receive the result into a variable
 with `->` first.
 
-- **Memory management**: heap-allocated (zero-initialized); automatically freed at scope exit.
+- **Memory management**: heap-allocated, with undefined contents (see
+  [Initial contents](#4-variables-constants-and-type-aliases)); automatically freed at scope exit.
   With `$` (`$Point p;`) the struct is placed in the stack frame instead; see
   [Stack Structs](#stack-structs-t).
 - **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
 
 ### Stack Structs (`$T`)
 
-`$Point p;` places the struct in the function's stack frame, zero-initialized like a heap struct.
+`$Point p;` places the struct in the function's stack frame, its contents undefined like a heap struct's.
 What it owns (`U field`, `[k]U field`) is still allocated when the declaration is reached and freed
 at scope exit; only the struct's own storage is in the frame. Initializers work as for a heap
 struct, copying the value: `$Point p = q;`, `$Point p = {x: 1, y: 2};`, and
@@ -1476,9 +1708,9 @@ Struct-type fields are written with a prefix that controls ownership and memory 
 
 | Syntax     | Meaning                              | Memory          |
 |------------|--------------------------------------|-----------------|
-| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation | parent calloc   |
+| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation | parent's block  |
 | `T field`  | Owned pointer — 8-byte pointer; T is auto-allocated/freed with parent | `__pln_alloc_T` |
-| `@T field` | Non-owning read-only pointer — 8-byte null pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
+| `@T field` | Non-owning read-only pointer — 8-byte pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
 | `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
 
 The pointee of `@T`/`@!T` may itself be a pointer, each level with its own permission
@@ -1502,35 +1734,44 @@ printf("%ld %ld\n", original.x, original.y);   // 20 10
 
 ### Array Fields
 
+An array field takes the type an array variable can, with the same meaning. Where a variable's
+`$` puts the array in the stack frame, a field's `$` puts it in the struct's own block.
+
 | Syntax        | Meaning                                  | Memory                          |
 |---------------|-------------------------------------------|----------------------------------|
-| `[n]$T field` | Embedded contiguous array                 | parent's block                   |
-| `[n]T field`  | Owned pointer array                       | cascaded alloc/free with parent  |
-| `[n]@T field` | Non-owning read-only pointer-slot array   | parent's block (slots only)      |
-| `[n]@!T field`| Non-owning mutable pointer-slot array     | parent's block (slots only)      |
+| `[n]T field`, `[n]$T field`, `[n][m]T field`, `[n][+]T field`, `[+]T field`, ... | Owned array, as an array variable of that type | cascaded alloc/free with parent |
+| `$[n]T field` (primitive `T`), `$[n]$T field` (struct `T`), `$[n]$[m]T field`, ... | Array laid out in the struct | parent's block |
+| `$[n]T field` (struct `T`), `$[n][m]T field`, `$[n][+]T field`, ... | Array laid out in the struct, holding elements that own storage | parent's block (slots); elements cascade with parent's alloc/free |
+| `$[n]@T field` / `$[n]@!T field` | Non-owning pointer slots laid out in the struct | parent's block (slots only) |
 
-`T` may be a primitive type or a struct name. `n` must be a compile-time integer: a literal, a
-[const](#constant-declarations), or `sizeof(T)`.
+`n` (and each `m`) must be a compile-time integer: a literal, a [const](#constant-declarations),
+or `sizeof(T)`. An owned array field is allocated, copied and freed with its struct; its
+primitive elements start undefined, as an array variable's do. An array laid out in the struct
+is copied with it. When its elements own storage (`$[n]T` with a struct `T`, `$[n][m]T`,
+`$[n][+]T`), their slots lie in the struct and the elements are allocated, copied and freed
+with it, as those of an array variable in the stack frame are with the variable; a struct
+with such a field owns storage itself. `$` on an element that owns storage is rejected as for
+a variable.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 
 ```palan
 type Point { int64 x; int64 y; };
 
-// [n]$T -- embedded array field (struct leaf)
-type Polygon { [4]$Point pts; };
+// $[n]$T -- structs laid out in the struct
+type Polygon { $[4]$Point pts; };
 Polygon poly;
 10 -> poly.pts[0].x;  20 -> poly.pts[0].y;
 printf("%ld %ld\n", poly.pts[0].x, poly.pts[0].y);  // 10 20
 
-// [n]T -- owned pointer array field (struct leaf, cascades with parent's alloc/free)
+// [n]T -- owned array of owned structs (cascades with parent's alloc/free)
 type Cluster { [4]Point pts; };
 Cluster c;
 5 -> c.pts[0].x;
 printf("%ld\n", c.pts[0].x);  // 5
 
-// [n]@T / [n]@!T -- non-owning pointer-slot array field
-type Ring { [4]@!Point nodes; };
+// $[n]@!T -- non-owning pointer slots laid out in the struct
+type Ring { $[4]@!Point nodes; };
 Point p;  99 -> p.x;
 Ring r;
 @!p -> r.nodes[0];
@@ -1551,7 +1792,7 @@ printf("%ld %ld\n", l.a.x, l.a.y);   // 10 20
 ```
 
 `$Point` fields are stored directly inside `Line`'s memory block. No separate allocation.
-Because nothing allocates on its behalf, a `$T` field (and a `[n]$T` field) requires that `T`
+Because nothing allocates on its behalf, a `$T` field (and a `$[n]$T` field) requires that `T`
 owns no fields (no `U field` or `[k]U field`); use `T field` instead.
 A `$T` field can be read as a struct value (`l.a -> p;`, `Point p = l.a;`), which copies it.
 
@@ -1663,7 +1904,7 @@ compile error. A pointer field (`@T`/`@!T`) may close a cycle.
 
 ### Restrictions
 
-- Nested/2D array fields (`[n]$[m]T field`, etc.) are not supported.
+- An unsized array (`[]T field`) is not supported as a field.
 - Recursive embedding (`type A { $A a; }`) is a compile error.
 - An [incomplete struct type](#incomplete-struct-types-opaque-handles) — a tag whose layout
   isn't known, e.g. a cincluded `DIR` — cannot be used as a by-value variable (`DIR d;`), an
@@ -2293,15 +2534,13 @@ printf("%d %d %d %d\n", arr[0], arr[1], arr[2], arr[3]);   // 1 3 4 5
 
 ### C Array Fields
 
-- A fixed-size C array field (`char name[16];`) becomes a fixed-size [array field](#array-fields)
-  on the Palan side, laid out inline in the struct exactly like a native `[16]int8 name;` field —
-  element access and taking the address of an element both work. A C function parameter declared
+- A fixed-size C array field (`char name[16];`) becomes an [array field](#array-fields) laid out
+  in the struct, exactly like a native `$[16]int8 name;` field — element access and taking the
+  address of an element both work. A field with more dimensions (`int cells[2][3];`) is the
+  same as `$[2]$[3]int32 cells;`, an array of structs (`struct pt p[4];`) as `$[4]$pt p;`, and an
+  array of pointers (`char *argv[4];`) as `$[4]@!int8 argv;`. A C function parameter declared
   as an array (`void take(char buf[32])`) decays to a plain pointer, same as in C — only the
-  outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row. A C
-  struct field with two or more array dimensions (`int cells[2][3];`) is not supported this
-  version — the field is left with no known layout, which downgrades the whole struct to an
-  [incomplete struct type](#incomplete-struct-types-opaque-handles) rather than making just that
-  field unusable.
+  outermost dimension decays, so `char buf[2][3]` becomes a pointer to a 3-element row.
 
 ### Union Types
 

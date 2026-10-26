@@ -1,0 +1,8 @@
+import "lib_sa_import.pa";
+import "lib_sa_import.pa";
+func square(flo64 x) -> flo64 { return x * x; }
+flo64 a = square(2.5);
+int64 b = square(3);
+func local() -> int32 { return 1; }
+int32 c = local();
+int64 d = 3 -> square();

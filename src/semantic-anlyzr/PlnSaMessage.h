@@ -50,7 +50,7 @@ enum PlnSaMessageCode {
 	E_RecursiveStruct,			// arg1: struct name
 	E_FieldAccessOnNonStruct,
 	E_WriteToImmutablePtrField,
-	E_EmbedOwningStruct,			// arg1: struct name
+	E_EmbedOwningType,			// arg1: type display name
 	E_WriteToReadOnlyArrElem,
 	E_ArrFieldSizeNotConstant,	// arg1 (optional): the name that is not a const
 	E_ConflictingTypedef,			// arg1: typedef name
@@ -103,7 +103,6 @@ enum PlnSaMessageCode {
 	E_ArrBorrowNeedsAddrOf,
 	E_ArrBorrowShapeMismatch,	// arg1: expected shape, arg2: actual shape
 	E_StructBorrowNeedsAddrOf,
-	E_Unsupported2DStructArr,
 	E_StructLitFieldCount,	// arg1: struct name, arg2: field count, arg3: value count
 	E_StructLitDupField,	// arg1: field name
 	E_StructLitMissingField,	// arg1: struct name, arg2: field name
@@ -147,7 +146,6 @@ enum PlnSaMessageCode {
 	E_BorrowOfTempEscapes,
 	E_UnownedCallResult,
 	E_AssignInExpr,
-	E_ChainToMethodCall,
 	E_ChainMultiToTapple,
 	E_UnsupportedCFieldType,	// arg1: struct name, arg2: field name, arg3: unsupported type display name
 	E_PtrInnerPermissionNarrowing,	// arg1: from type display name, arg2: to type display name
@@ -158,6 +156,17 @@ enum PlnSaMessageCode {
 	E_FrameVarType,	// arg1: type display name
 	E_FrameArrSizeNotConst,	// arg1: variable name
 	E_ReturnFrameArr,	// arg1: variable name
+	E_NoMatchingFunc,	// arg1: function name, arg2: argument types, arg3: candidates
+	E_FuncNameNeedsType,	// arg1: function name, arg2: candidates
+	E_VarrBorrowNeedsAddrOf,
+	E_ArrLenNotConst,
+	E_ArrLenNeedsAddrOf,
+	E_VarrBorrowSized,
+	E_ArrowBindsTighter,	// arg1: operator
+	E_VarrElemSized,
+	E_UnsizedVarrElemArr,
+	E_ArrLitEmptySize,	// arg1: variable name
+	E_SigArrSizeNotConst,
 };
 
 class PlnSaMessage

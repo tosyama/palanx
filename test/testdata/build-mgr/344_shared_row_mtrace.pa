@@ -1,0 +1,21 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+mtrace();
+{
+	int64 k = 3;
+	[2][k]int32 m;
+	[+][3]int32 v = [[1, 2, 3]];
+	7 -> m[1][2];
+	v[0][2] + m[1][2] -> v[0][2];
+	[2][2]P mp;
+	[+][2]P vp;
+	vp.resize(2);
+	5 -> mp[1][1].y;
+	mp[1][1].y + 1 -> vp[1][1].y;
+	[2][3]int32 c = [1, 2, 3][4, 5, 6];
+	[2][3]int32 d;
+	c -> d;
+	printf("%d %d %d\n", v[0][2], vp[1][1].y, d[1][2]);
+}
+muntrace();

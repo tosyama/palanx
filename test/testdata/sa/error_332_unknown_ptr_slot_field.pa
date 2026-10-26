@@ -1,1 +1,1 @@
-type A { [2]@Foo b; };
+type A { $[2]@Foo b; };

@@ -1,1 +1,1 @@
-struct Tag { int x; int cells[2][3]; };
+struct Tag { int x; int cells[]; };

@@ -1,0 +1,63 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int64 y; };
+type S { int32 k; [+]int32 a; };
+type N { [+][+]int32 g; [+][3]int32 r; [+]$P q; [+]P o; };
+func total(@[+]int32 v) -> int64 t {
+	0 -> t;
+	int64 i = 0;
+	while i < len(v) { t + v[i] -> t; i + 1 -> i; }
+}
+func fill([]int32 d, int64 n) {
+	int64 i = 0;
+	while i < n { int32(i) * 10 -> d[i]; i + 1 -> i; }
+}
+func grow(@!S s) { 9 -> s.a.push(); }
+mtrace();
+{
+	S s;
+	3 -> s.a.push();
+	4 -> s.a.push();
+	5 -> s.a[1];
+	int32 p = s.a.pop();
+	printf("%d %d %d %d\n", s.a[0], p, len(@s.a), s.a -> len());
+	s.a.resize(3);
+	fill(s.a, 3);
+	grow(@!s);
+	printf("%d %d %d\n", s.a[2], s.a[3], total(@s.a));
+
+	S t = s;
+	7 -> t.a.push();
+	printf("%d %d\n", len(@s.a), len(@t.a));
+	[+]int32 v = [1, 2];
+	v ->> s.a;
+	[+]int32 w;
+	t.a -> w;
+	printf("%d %d %d\n", s.a[1], len(@s.a), len(@w));
+	S u = {k: 1, a: [6, 7, 8]};
+	{k: 2, a: [9]} -> t;
+	printf("%d %d %d %d\n", u.a[2], len(@u.a), t.a[0], len(@t.a));
+	t ->> u;
+	printf("%d %d\n", u.k, u.a[0]);
+
+	N n = {g: [[1], [2, 3]], r: [[4, 5, 6]], q: [{x: 1, y: 2}], o: [{x: 3, y: 4}]};
+	n.g[1][1] -> n.g[0].push();
+	[3]int32 row = [7, 8, 9];
+	row -> n.r.push();
+	P e = {x: 5, y: 6};
+	e -> n.q.push();
+	e -> n.o.push();
+	N m = n;
+	printf("%d %d %d %d %d\n", m.g[0][1], len(@m.g[1]), m.r[1][2], m.q[1].y, m.o[1].x);
+
+	$S fs;
+	1 -> fs.a.push();
+	[2]S xs;
+	2 -> xs[1].a.push();
+	[+]S vs;
+	vs.resize(2);
+	3 -> vs[1].a.push();
+	[+]S ws = vs;
+	printf("%d %d %d %d\n", fs.a[0], xs[1].a[0], vs[1].a[0], ws[1].a[0]);
+}
+muntrace();

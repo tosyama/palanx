@@ -22,6 +22,8 @@ printf("%ld\n", p[0]);
 
 Reading through `p` after the block exits reads freed memory — undefined behavior, observed to print a garbage value rather than crash. Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today. A stack variable (`$Point s;`) widens the reach of the same gap: a pointer into it that is returned from the function points into a frame that no longer exists.
 
+A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` can move its elements, so a borrow of an element (`@!v[i]`) or the elements given to a `[]T` parameter dangles after the length changes, within the same block.
+
 ---
 
 ## 2. Function-Like Macro Export
@@ -109,3 +111,51 @@ Reading through `p` after the block exits reads freed memory — undefined behav
 ## 14. Float Values Are Never Kept in Registers
 
 **Summary:** `PlnRegAlloc` assigns no XMM registers, so every `flo32`/`flo64` value lives in a stack slot and each arithmetic operation stores its result to memory and reloads it. `samples/raytracer/vecmath.pa`'s `dot` compiles to 32 instructions, most of them `movss` to and from the frame. Allocating XMM registers needs to save values that live across a call, since SysV makes every XMM register caller-saved. Together with #13, this keeps the raytracer far slower than C.
+
+---
+
+## 15. Exported Palan Functions Cannot Be Called from C by Name
+
+**Summary:** Every Palan function links by a symbol made from its module, name and parameter types (`util..show.int32`, v0.2.1), which is no C identifier. C code linked in with `cinclude ... link "x.o"` can call a Palan function only through a function pointer it is given (a callback). Calling one by name would need a way to give an exported function its plain name, like C++'s `extern "C"`.
+
+---
+
+## 16. Same-Named Source Files in Different Directories Share a Module Name
+
+**Summary:** The module part of a symbol is the source file's name without its directory, so a symbol does not depend on where the source is checked out. Two modules `a/util.pa` and `b/util.pa` that export a function of the same name and parameter types therefore give it the same symbol, and `ld` reports it as defined twice. Escaping `-` and `.` as `_` plus hex digits can likewise make two file names meet (`my-lib.pa` and `my_2dlib.pa`).
+
+---
+
+## 17. `->>` Into a Call Argument
+
+**Summary:** A parameter that takes an owned array or struct (`[+]T`, `[n]T`, `T`) receives a copy of the argument. Handing a variable's storage over instead, as `v ->> f()` would, is not supported ("this expression is not supported"), so a function that consumes a large array always costs a copy. It needs a parameter form that takes ownership, and the caller's variable to be left NULL as `->>` into a variable does.
+
+---
+
+## 18. Using a Value After `->>` Is Not Detected
+
+**Summary:** `a ->> b` leaves `a` NULL, and nothing stops `a` from being used afterwards: `len(@a)`, `a[0]` or `a.x` dereferences NULL and the program crashes. This holds for structs, `[+]T` and rows alike, and for a field or element given away (`p ->> q; s -> p;` copies into a NULL struct). Detecting it needs flow analysis of moved-from variables.
+
+---
+
+## 19. Run-Time Failures of Array Allocation Are Unchecked
+
+**Summary:** A size or capacity known only at run time is not checked: a negative `n` in `[n]T` or `[+n]T` becomes a huge `uint64`. Nor is the result of `malloc`/`calloc`/`realloc` for any heap allocation, so running out of memory dereferences NULL later. `pop` on an empty `[+]T` and a negative `resize` do abort; an option to leave those checks out of a release build has been requested.
+
+---
+
+## 20. `len` Error Messages
+
+**Summary:** `len` reports a missing length only for an array it recognizes (an array whose size is known only at run time, or a `[]T`). A target containing a call, such as `len(@c[f()])`, is not folded, and a value that is not an array, such as `len(@x)` for an `int32 x`, both report "Undefined function 'len'", which does not say what was given. `len` of a run-time-sized array would need the array to keep its length, which it does not.
+
+---
+
+## 21. Variable-Length Arrays of Pointer Slots
+
+**Summary:** `[+]@T`/`[+]@!T` (a variable-length array of borrowed pointers) and `[+][n]@T` (rows of them) are not supported. Neither is a `[][+]T` parameter, which would need each element's header to be passed rather than its data; `@[n][+]T` or `@[+][+]T` borrows such an array instead.
+
+---
+
+## 22. A Row Is Pushed with `@`, a Struct Without
+
+**Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which borrows a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal but copy it twice, unless the parameter's storage could be handed over (see #17). Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.

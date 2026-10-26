@@ -1,0 +1,4 @@
+[+]flo64 f;
+[+]int32 v;
+int64 n = 1;
+push(@!v, n);

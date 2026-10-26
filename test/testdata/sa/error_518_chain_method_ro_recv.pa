@@ -1,0 +1,5 @@
+type V { flo32 x; };
+func setx(@!V v, flo32 x) { x -> v.x; }
+func f(@V v, flo32 x) {
+	x -> v.setx();
+}

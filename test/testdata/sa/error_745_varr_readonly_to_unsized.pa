@@ -1,0 +1,2 @@
+func f([]int32 a) { }
+func g(@[+]int32 a) { f(a); }

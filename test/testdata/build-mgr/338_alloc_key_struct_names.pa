@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+export type P { int32 x; };
+export type arr_P { int32 y; };
+[2]arr_P a;
+[2][3]P b;
+3 -> b[1][2].x;
+4 -> a[1].y;
+printf("%d %d\n", b[1][2].x, a[1].y);

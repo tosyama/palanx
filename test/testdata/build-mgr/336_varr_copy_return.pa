@@ -1,0 +1,111 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+
+func show(@[+]int32 v)
+{
+	int64 i = 0;
+	while i < len(v) {
+		printf("%d ", v[i]);
+		i + 1 -> i;
+	}
+	printf("(%lld)\n", len(v));
+}
+
+func mk(int64 n) -> [+]int32 r
+{
+	n -> r.resize();
+	int64 i = 0;
+	while i < n {
+		int32(i * 10) -> r[i];
+		i + 1 -> i;
+	}
+}
+
+func dup(@[+]int32 p, int64 c) -> [+]int32
+{
+	[+]int32 v = [7, 8];
+	if c == 0 { return v; }
+	return p;
+}
+
+func framed() -> [+]int32
+{
+	$[+]int32 f = [9, 9];
+	return f;
+}
+
+func sum([+]int32 x) -> int64 s
+{
+	x.push(100);
+	int64 i = 0;
+	while i < len(@x) {
+		s + x[i] -> s;
+		i + 1 -> i;
+	}
+}
+
+func two(int64 n) -> [+]int32 v, int64 m
+{
+	n -> v.resize();
+	int64 i = 0;
+	while i < n {
+		0 -> v[i];
+		i + 1 -> i;
+	}
+	n * 2 -> m;
+}
+
+type P { int64 x; };
+func cp(@P p) -> P { return p; }
+
+mtrace();
+{
+	// Copies
+	[+]int32 a = [1, 2, 3];
+	[+]int32 b;
+	a -> b;
+	show(@b);
+	[4]int32 c = [4, 5, 6, 7];
+	c -> b;
+	show(@b);
+	[+]int32 d = a;
+	show(@d);
+	[d[2], d[1]] -> d;
+	show(@d);
+	$[+]int32 e = mk(2);
+	a -> e;
+	show(@e);
+
+	// Returns
+	[+]int32 f = mk(3);
+	show(@f);
+	mk(2) -> f;
+	show(@f);
+	show(@mk(4));
+	printf("%lld\n", mk(5) -> len());
+	[+]int32 g = dup(@a, 0);
+	[+]int32 h = dup(@a, 1);
+	show(@g);
+	show(@h);
+	[+]int32 k = framed();
+	show(@k);
+	([+]int32 t, int64 m) = two(3);
+	show(@t);
+	two(1) -> (t, m);
+	show(@t);
+	P p;
+	5 -> p.x;
+	P q = cp(@p);
+	printf("%lld\n", q.x);
+
+	// Owned parameters
+	printf("%lld %lld\n", sum(a), len(@a));
+	printf("%lld %lld\n", sum(@a), sum(c));
+	printf("%lld %lld\n", sum(mk(3)), sum([1, 1]));
+
+	// Transfers
+	a ->> b;
+	show(@b);
+	mk(1) ->> b;
+	show(@b);
+}

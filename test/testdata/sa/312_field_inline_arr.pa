@@ -1,0 +1,11 @@
+type P { int32 x; int64 y; };
+type S { int8 k; $[2]$[3]int32 a; $[2]$P b; $[3]@!P c; };
+S s;
+[2]$[3]int32 va;
+[2]$P vb;
+[3]@!P vc;
+5 -> s.a[1][2];
+6 -> s.b[1].y;
+@!s.b[0] -> s.c[2];
+type Q { [2]$P d; };
+Q q;

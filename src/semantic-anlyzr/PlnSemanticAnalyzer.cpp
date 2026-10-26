@@ -22,13 +22,13 @@ struct PlnSemanticAnalyzer::TypeProgram {
 };
 
 // Collect release stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
-json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx)
+json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx, const string& keep)
 {
 	json result = json::array();
 	for (size_t i = to_idx; i > from_idx; --i) {
 		auto& scope = arrayScopeVars_[i - 1];
 		for (auto it = scope.rbegin(); it != scope.rend(); ++it)
-			if (!it->release.is_null())
+			if (!it->release.is_null() && it->name != keep)
 				result.push_back(it->release);
 	}
 	return result;
@@ -134,15 +134,6 @@ void PlnSemanticAnalyzer::registerCFunc(const string& name, const json& def)
 	cFuncScopes.back()[name] = def;  // shadow allowed
 }
 
-const json* PlnSemanticAnalyzer::findCFunc(const string& name) const
-{
-	for (auto it = cFuncScopes.rbegin(); it != cFuncScopes.rend(); ++it) {
-		auto f = it->find(name);
-		if (f != it->end()) return &f->second;
-	}
-	return nullptr;
-}
-
 void PlnSemanticAnalyzer::registerCGlobal(const string& name, const json& def)
 {
 	cGlobalScopes.back()[name] = def;  // shadow allowed
@@ -169,48 +160,57 @@ void PlnSemanticAnalyzer::undefinedNameError(const json& at, const json& ref, Pl
 	exit(1);
 }
 
+void PlnSemanticAnalyzer::reportDiag(const json& locNode, const SaDiag& diag) const
+{
+	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(diag.code, diag.arg1, diag.arg2) << endl;
+	exit(1);
+}
+
+static bool sameParamTypes(const json& a, const json& b)
+{
+	const json& pa = a.value("parameters", json::array());
+	const json& pb = b.value("parameters", json::array());
+	if (pa.size() != pb.size()) return false;
+	for (size_t i = 0; i < pa.size(); i++)
+		if (pa[i]["var-type"] != pb[i]["var-type"]) return false;
+	return true;
+}
+
+// The builtins exist for every T, whether or not a `[+]T` has made them
+// candidates yet, so declaration order does not matter. A `len` of a borrowed
+// constant-size array would never be called: such a len is folded first.
+static bool definesBuiltin(const string& name, const json& def)
+{
+	const json& params = def.value("parameters", json::array());
+	if (params.empty()) return false;
+	const json& first = params[0]["var-type"];
+	if (name == "len" && params.size() == 1 && first.contains("arr-size") && first.contains("mutable"))
+		return true;
+	if (!isVarrPntr(first)) return false;
+	for (auto& builtin : varrBuiltinDefs(first["base-type"]))
+		if (builtin["name"] == name && sameParamTypes(builtin, def)) return true;
+	return false;
+}
+
+// Functions of one name are told apart by their parameter types alone, since
+// a call chooses among them by its arguments.
 void PlnSemanticAnalyzer::registerPlnFunc(const string& name, const json& def, const json& locNode)
 {
-	for (auto& scope : plnFuncScopes)
-		if (scope.count(name)) {
-			cerr << locPrefix(locNode)
-			     << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
-			exit(1);
-		}
-	plnFuncScopes.back()[name] = def;
-}
-
-const json* PlnSemanticAnalyzer::findPlnFunc(const string& name) const
-{
-	for (auto it = plnFuncScopes.rbegin(); it != plnFuncScopes.rend(); ++it) {
-		auto f = it->find(name);
-		if (f != it->end()) return &f->second;
+	if (definesBuiltin(name, def)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
+		exit(1);
 	}
-	return nullptr;
-}
-
-const json* PlnSemanticAnalyzer::findImportFunc(const string& fname) const
-{
-	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it) {
-		auto alias_it = it->find("");
-		if (alias_it == it->end()) continue;
-		auto f_it = alias_it->second.find(fname);
-		if (f_it != alias_it->second.end())
-			return &f_it->second;
+	for (auto& scope : plnFuncScopes) {
+		auto it = scope.find(name);
+		if (it == scope.end()) continue;
+		for (auto& other : it->second)
+			if (sameParamTypes(other, def)) {
+				cerr << locPrefix(locNode)
+				     << PlnSaMessage::getMessage(E_DuplicateFuncDef, name) << endl;
+				exit(1);
+			}
 	}
-	return nullptr;
-}
-
-const json* PlnSemanticAnalyzer::findImportFuncByAlias(const string& alias, const string& fname) const
-{
-	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it) {
-		auto alias_it = it->find(alias);
-		if (alias_it == it->end()) continue;
-		auto f_it = alias_it->second.find(fname);
-		if (f_it != alias_it->second.end())
-			return &f_it->second;
-	}
-	return nullptr;
+	plnFuncScopes.back()[name].push_back(def);
 }
 
 void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
@@ -226,65 +226,6 @@ void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
 		}
 	}
 }
-
-void PlnSemanticAnalyzer::recordAllocShape(const string& name)
-{
-	if (allocShapeNames_.count(name)) return;
-	allocShapeNames_.insert(name);
-
-	const StructDef& def = structDefs_[name];
-	json owned = json::array();
-	for (auto& f : def.fields) {
-		if (f.typeKind != "struct-ptr") continue;
-		const StructDef& sub = structDefs_[f.typeName];
-		// LCOV_EXCL_EXCEPTION_BR_START
-		owned.push_back({
-			{"name",              f.name},
-			{"offset",            f.offset},
-			{"struct-name",       f.typeName},
-			{"struct-total-size", sub.totalSize}
-		});
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-		recordAllocShape(f.typeName);
-	}
-	json ownedArr = json::array();
-	for (auto& f : def.fields) {
-		if (f.typeKind != "arr-ptr") continue;
-		// LCOV_EXCL_EXCEPTION_BR_START
-		ownedArr.push_back({
-			{"name",      f.name},
-			{"offset",    f.offset},
-			{"elem-kind", f.elemKind},
-			{"leaf-name", f.typeName},
-			{"count",     f.count},
-			{"elem-size", f.stride}
-		});
-		// LCOV_EXCL_EXCEPTION_BR_STOP
-		if (f.elemKind == "struct") {
-			recordAllocShape(f.typeName);
-			string shape_key = "arr_" + f.typeName;
-			if (!allocShapeNames_.count(shape_key)) {
-				allocShapeNames_.insert(shape_key);
-				// LCOV_EXCL_EXCEPTION_BR_START
-				sa["alloc-shapes"].push_back({
-					{"shape-kind",   "arr-struct"},
-					{"shape-key",    shape_key},
-					{"struct-name",  f.typeName}
-				});
-				// LCOV_EXCL_EXCEPTION_BR_STOP
-			}
-		}
-	}
-	// LCOV_EXCL_EXCEPTION_BR_START
-	sa["alloc-shapes"].push_back({
-		{"shape-kind",         "struct"},
-		{"shape-name",         name},
-		{"total-size",         def.totalSize},
-		{"owned-fields",       move(owned)},
-		{"owned-array-fields", move(ownedArr)}
-	});
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 bool PlnSemanticAnalyzer::isStructType(const json& type) const
 {
@@ -359,94 +300,6 @@ void PlnSemanticAnalyzer::requireFuncSigTypes(const json& locNode, const json& f
 	check(func["ret-type"], true);
 }
 
-json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
-{
-	if (!isStructType(type)) return type;
-	// LCOV_EXCL_EXCEPTION_BR_START
-	string name = type["type-name"].get<string>();
-	return {{"type-kind","pntr"},
-	        {"base-type",{{"type-kind","struct"},{"type-name",name}}}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-
-// A struct element gets the same representation as in the sized array: its own
-// storage in `[]T`, laid out with its stride in `[]$T`.
-json PlnSemanticAnalyzer::unsizedArrToPntr(const json& locNode, const json& type)
-{
-	if (type.value("type-kind","") != "arr" || type.value("specifier","") != "raw"
-	    || !type["size-expr"].is_null())
-		return type;
-	if (type.value("embedded", false)) {
-		json embed_bt = type["base-type"];  // [m]T or a struct
-		json pntr = {{"type-kind","pntr"},{"embedded",true}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		if (isStructType(embed_bt)) {
-			string tname = embed_bt["type-name"].get<string>();
-			// LCOV_EXCL_EXCEPTION_BR_START
-			pntr["stride"]    = requireCompleteStruct(tname, locNode).totalSize;
-			pntr["base-type"] = {{"type-kind","struct"},{"type-name",tname}};
-			// LCOV_EXCL_EXCEPTION_BR_STOP
-			return pntr;
-		}
-		bool isRow = embed_bt.value("type-kind","") == "arr";
-		if (isRow && isStructType(embed_bt["base-type"])) {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_Unsupported2DStructArr) << endl;
-			exit(1);
-		}
-		json leaf = embed_bt.value("base-type", json{});
-		json row = {{"type-kind","pntr"},{"base-type",leaf}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		if (isRow && !embed_bt["size-expr"].is_null()) {
-			const auto& sz = embed_bt["size-expr"];
-			string et = sz.value("expr-type","");
-			if (et == "lit-int" || et == "lit-uint") {
-				int64_t m = stoll(sz["value"].get<string>());
-				row["arr-size"] = m;
-				pntr["stride"]  = m * elemSizeBytes(leaf.value("type-name",""));
-			}
-		}
-		// []$[]T or []$[var]T: no stride -> validateEmbeddedParams reports it
-		pntr["base-type"] = move(row);
-		return pntr;
-	}
-	json bt = type["base-type"];
-	if (bt.value("type-kind","") == "arr" && !bt["size-expr"].is_null()) {
-		json leaf = bt["base-type"];
-		string lk = leaf.value("type-kind","");
-		if (lk == "arr" || lk == "pntr") {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsizedArrRowUnsupported) << endl;
-			exit(1);
-		}
-		return {{"type-kind","pntr"}, {"base-type", sizedArrLevel(locNode, bt, nullopt)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-	}
-	json elem = isStructType(bt) ? toStructPntrType(bt)
-	          : bt.value("type-kind","") == "pntr" ? ptrSlotElemType(locNode, bt)
-	          : unsizedArrToPntr(locNode, type["base-type"]);
-	return {{"type-kind","pntr"}, {"base-type", elem}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-
-// A slot to an unsized array ('@![]T') points at the array's elements, so it
-// is that array's pointer carrying the slot's permission.
-json PlnSemanticAnalyzer::ptrSlotElemType(const json& locNode, const json& type)
-{
-	const json& target = type["base-type"];
-	json elem = target.value("type-kind","") == "arr"
-		? unsizedArrToPntr(locNode, target)
-		: json{{"type-kind","pntr"},{"base-type",target}};
-	elem["mutable"] = type.value("mutable", false);
-	return deepNormalizePrimToStruct(elem);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
-
-void PlnSemanticAnalyzer::normalizeUnsizedArrSig(json& funcDef)
-{
-	if (funcDef.contains("parameters"))
-		for (auto& p : funcDef["parameters"])
-			p["var-type"] = unsizedArrToPntr(funcDef, p["var-type"]);
-	if (funcDef.contains("ret-type"))
-		funcDef["ret-type"] = unsizedArrToPntr(funcDef, funcDef["ret-type"]);
-	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"])
-			r["var-type"] = unsizedArrToPntr(funcDef, r["var-type"]);
-}
-
 json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 {
 	// Converts prim(Name) -> struct(Name) at every level of a pntr chain.
@@ -467,33 +320,17 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
 	return resolved;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::normalizeSigType(const json& type) const
-{
-	return isStructType(type) ? toStructPntrType(type) : deepNormalizePrimToStruct(type);
-}
-
-void PlnSemanticAnalyzer::normalizeStructSig(json& funcDef)
-{
-	if (funcDef.contains("parameters"))
-		for (auto& p : funcDef["parameters"])
-			p["var-type"] = normalizeSigType(p["var-type"]);
-	if (funcDef.contains("rets"))
-		for (auto& r : funcDef["rets"])
-			r["var-type"] = normalizeSigType(r["var-type"]);
-	if (funcDef.contains("ret-type"))
-		funcDef["ret-type"] = normalizeSigType(funcDef["ret-type"]);
-}
-
 // Structural-only counterpart to unrepresentableTypeName for native Palan
 // signatures: names were already checked by preregisterFunc, so only a
-// type-kind that can never build (currently just "arr") is reported. A
-// function type's own parameters were checked by requireFuncSigTypes.
+// type-kind that can never build is reported: "arr", left only under a
+// returned array borrow by sigType. A function type's own parameters were
+// checked by requireFuncSigTypes.
 static string unsupportedNativeSigTypeKind(const json& vt)
 {
 	string k = vt.value("type-kind", "");
 	if (k == "pntr")
 		return vt.contains("base-type") ? unsupportedNativeSigTypeKind(vt["base-type"]) : "";
-	if (k == "prim" || k == "struct" || k == "func" || k.empty())
+	if (k == "prim" || k == "struct" || k == "func" || k == "varr" || k.empty())
 		return "";
 	return k == "arr" ? "array" : k;
 }
@@ -522,125 +359,69 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 	}
 }
 
-int64_t PlnSemanticAnalyzer::constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow)
+// The header's data pointer: what `v[i]` indexes and a C function or a `[]T`
+// receives. Through a read-only borrow the elements are read-only too.
+json PlnSemanticAnalyzer::varrData(json varr)
 {
-	int64_t n = sizeExprAst.is_null() ? -1 : constArrSize(sa_arr_size_expr(locNode, sizeExprAst));
-	if (n < 0) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(
-			isBorrow ? E_ArrBorrowSizeNotConst : E_UnsizedArrRowSizeNotConst) << endl;
-		exit(1);
-	}
-	return n;
-}
-
-// A sized array level as the variable holding it is typed, which a borrow of it
-// shares except that every level carries the borrow's permission.
-json PlnSemanticAnalyzer::sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable)
-{
-	json out = {{"type-kind","pntr"},{"arr-size",constLevelSize(locNode, arr["size-expr"], isMutable.has_value())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-	if (isMutable) out["mutable"] = *isMutable;
-	json leaf = arr["base-type"];
-	if (arr.value("embedded", false)) {
-		out["embedded"] = true;
-		if (leaf.value("type-kind","") != "arr") {
-			// [n]$T: the structs themselves are laid out in the array, as in the variable.
-			string tname = leaf.value("type-name","");
-			// LCOV_EXCL_EXCEPTION_BR_START
-			out["stride"]    = requireCompleteStruct(tname, locNode).totalSize;
-			out["base-type"] = {{"type-kind","struct"},{"type-name",tname}};
-			// LCOV_EXCL_EXCEPTION_BR_STOP
-			return out;
-		}
-		json row = sizedArrLevel(locNode, leaf, isMutable);
-		const json& rowElem = row["base-type"];
-		if (rowElem.value("type-kind","") != "prim") {
-			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
-			exit(1);
-		}
-		out["stride"]    = row["arr-size"].get<int64_t>() * elemSizeBytes(rowElem["type-name"].get<string>());
-		out["base-type"] = move(row);
-		return out;
-	} else if (leaf.value("type-kind","") == "arr") {
-		out["base-type"] = sizedArrLevel(locNode, leaf, isMutable);
-		return out;
-	}
-	// [n]@T / [n]@!T: the element pointer keeps its own permission.
-	json ptrElem;
-	if (leaf.value("type-kind","") == "pntr" && !out.value("embedded", false)) {
-		ptrElem = {{"type-kind","pntr"},{"mutable",leaf.value("mutable", true)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		json pointee = leaf["base-type"];
-		leaf = move(pointee);
-	}
-	string tname = leaf.value("type-name","");
-	bool isStruct = structDefs_.count(tname) > 0;
-	if (leaf.value("type-kind","") != "prim" || (isStruct && out.value("embedded", false))) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowUnsupportedElem) << endl;
-		exit(1);
-	}
 	// LCOV_EXCL_EXCEPTION_BR_START
-	if (!ptrElem.is_null()) {
-		ptrElem["base-type"] = isStruct ? json{{"type-kind","struct"},{"type-name",tname}} : leaf;
-		out["base-type"] = move(ptrElem);
-	} else {
-		out["base-type"] = isStruct ? toStructPntrType(leaf) : leaf;
+	const json& vt = varr["value-type"];
+	json elems = {{"type-kind","pntr"},{"base-type",vt["base-type"]["base-type"]}};
+	if (isVarrEmbedded(vt)) {
+		elems["embedded"] = true;
+		elems["stride"] = inPlaceSize(vt["base-type"]["base-type"]);
 	}
+	// A row carries the permission on each of its levels, as in a borrowed `[m][n]T`.
+	if (!isWritableThrough(vt) || (varr.value("expr-type","") == "arr-index" && !isWritableElem(varr))) {
+		elems["mutable"] = false;
+		elems["base-type"] = withArrPermission(elems["base-type"], false);
+	}
+	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
-	return out;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json& type)
-{
-	if (type.value("type-kind","") != "pntr" || type["base-type"].value("type-kind","") != "arr")
-		return type;
-	return sizedArrLevel(locNode, type["base-type"], type.value("mutable", false));
-}
-
-// Parameters only: a borrowed array return would outlive the storage it
-// borrows, so it stays rejected by validateNativeSig.
-void PlnSemanticAnalyzer::normalizeArrBorrowSig(json& funcDef)
-{
-	if (!funcDef.contains("parameters")) return;
-	for (auto& p : funcDef["parameters"])
-		p["var-type"] = normalizeArrBorrowType(funcDef, p["var-type"]);
-}
-
-void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json& srcAst,
+optional<SaDiag> PlnSemanticAnalyzer::arrBorrowBindingMismatch(const json& srcAst,
 		const json& saValue, const json& dstType)
 {
 	bool namesBorrow = saValue.value("expr-type","") == "id" && saValue.contains("var-type")
 	                   && isArrBorrowVar(saValue["var-type"]);
 	// Only an explicit cast converts into a borrowed array type.
 	bool castBorrow = saValue.value("expr-type","") == "convert";
-	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow && !castBorrow) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowNeedsAddrOf) << endl;
-		exit(1);
-	}
+	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow && !castBorrow)
+		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (!arrShapeMatch(saValue["value-type"], dstType)) {
 		// Shown as the owned type, without the permission the borrow added.
 		const json& srcType = saValue.contains("var-type") ? saValue["var-type"]
 			: saValue.value("expr-type","") == "arr-index" ? saValue["array"]["value-type"]["base-type"]
 			: saValue["value-type"];
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowShapeMismatch,
-			typeDisplayName(dstType), typeDisplayName(srcType)) << endl;
-		exit(1);
+		return SaDiag{E_ArrBorrowShapeMismatch, typeDisplayName(dstType), typeDisplayName(srcType)}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
+	return nullopt;
 }
+
+void PlnSemanticAnalyzer::checkArrBorrowBinding(const json& locNode, const json& srcAst,
+		const json& saValue, const json& dstType)
+{
+	if (auto d = arrBorrowBindingMismatch(srcAst, saValue, dstType)) reportDiag(locNode, *d);
+}
+
+optional<SaDiag> PlnSemanticAnalyzer::elemShapeMismatch(const json& saValue, const json& dstType)
+{
+	if (!saValue.contains("value-type") || elemShapeMatch(saValue["value-type"], dstType)) return nullopt;
+	json dstShape = dstType;
+	dstShape.erase("mutable");  // a slot reads as the array it points to
+	return SaDiag{E_ArrElemShapeMismatch, typeDisplayName(dstShape), typeDisplayName(saValue["value-type"])}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 void PlnSemanticAnalyzer::checkElemShape(const json& locNode, const json& saValue, const json& dstType)
 {
-	if (!saValue.contains("value-type") || elemShapeMatch(saValue["value-type"], dstType)) return;
-	json dstShape = dstType;
-	dstShape.erase("mutable");  // a slot reads as the array it points to
-	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrElemShapeMismatch,
-		typeDisplayName(dstShape), typeDisplayName(saValue["value-type"])) << endl;
-	exit(1);
-} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+	if (auto d = elemShapeMismatch(saValue, dstType)) reportDiag(locNode, *d);
+}
 
 // Diagnoses a "syscall" declaration against the Linux syscall ABI (<=6
 // GP-register args, no float, single raw-rax return) and folds its number
 // into a plain integer. The number must be a literal, not a symbolic
 // constant, since a constant's value can't be resolved across an import
-// boundary. Must run after normalizeStructSig.
+// boundary. Must run after normalizeSig.
 void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 {
 	string funcName = funcDef["name"].get<string>();
@@ -731,7 +512,7 @@ void PlnSemanticAnalyzer::rejectNotImplSig(const json& f)
 	}
 }
 
-json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
+json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 {
 	rejectNotImplSig(f);
 	for (auto& p : f.value("parameters", json::array()))
@@ -741,15 +522,16 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f)
 	if (f.contains("ret-type")) ensureTypeRefs(f["ret-type"]);
 
 	json funcEntry = resolveSigTypes(f);
-	normalizeUnsizedArrSig(funcEntry);
-	normalizeArrBorrowSig(funcEntry);
+	normalizeSig(funcEntry);
 	validateEmbeddedParams(funcEntry);
 	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
-	normalizeStructSig(funcEntry);
 	validateNativeSig(funcEntry);
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
+	else
+		funcEntry["symbol"] = scope + ".."
+			+ funcSymbol(funcEntry["name"].get<string>(), funcEntry.value("parameters", json::array()));
 	return funcEntry;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
@@ -766,9 +548,9 @@ json PlnSemanticAnalyzer::resolveSigTypes(const json& f) const
 	return sig;
 }
 
-void PlnSemanticAnalyzer::preregisterFunc(const json& f)
+void PlnSemanticAnalyzer::preregisterFunc(const json& f, const string& scope)
 {
-	json funcEntry = normalizeFuncSig(f);
+	json funcEntry = normalizeFuncSig(f, scope);
 	registerPlnFunc(funcEntry["name"], funcEntry, f);
 }
 
@@ -795,6 +577,7 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 {
 	inputFilePath = ast["original"];
 	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
+	symbolScope_  = moduleSymbol(moduleId_);
 	sa["original"]      = ast["original"];
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
@@ -1013,7 +796,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"])
-			preregisterFunc(f);
+			preregisterFunc(f, symbolScope_);
 	// 2. Process top-level statements (cinclude/import registered here,
 	//    visible in Palan function bodies processed next).
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
@@ -1189,7 +972,7 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 				resolveCTypeRefs(entry);
 				normalizeCFuncSig(entry);
 				entry["_c-func"] = true;
-				currentScope[alias][fname] = entry;
+				currentScope[alias][fname].push_back(entry);
 			}
 		} else {
 			for (auto& f : stmt["functions"]) {
@@ -1275,20 +1058,14 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 
 		// Resolved in the exporting module, where the type names it uses mean
 		// what its author meant.
-		json funcEntry = sub.normalizeFuncSig(f);
+		json funcEntry = sub.normalizeFuncSig(f, moduleSymbol(sub.moduleId_));
+		funcEntry["_module"] = sub.moduleId_;
 		for (auto& p : funcEntry.value("parameters", json::array()))
 			adoptTypeDeps(sub, p["var-type"], stmt);
 		for (auto& r : funcEntry.value("rets", json::array()))
 			adoptTypeDeps(sub, r["var-type"], stmt);
 		if (funcEntry.contains("ret-type")) adoptTypeDeps(sub, funcEntry["ret-type"], stmt);
 
-		if (hasAlias) {
-			currentScope[alias][fname] = funcEntry;
-		} else {
-			if (currentScope[""].count(fname))
-				currentScope[""][fname] = json{};  // ambiguous sentinel
-			else
-				currentScope[""][fname] = funcEntry;
-		}
+		currentScope[alias][fname].push_back(funcEntry);
 	}
 }

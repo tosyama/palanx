@@ -1,0 +1,22 @@
+func add(@![+]int32 a, int32 x)
+{
+	x -> a.push();
+}
+
+func total(@[+]int32 a) -> int64
+{
+	return len(a) + a[0];
+}
+
+func first([]int32 a) -> int32
+{
+	return a[0];
+}
+
+[+]int32 v;
+[+]int32 w;
+add(@!v, 1);
+int64 t = total(@!v);
+int32 f = first(v);
+@![+]int32 p = @!v;
+@!w -> p;

@@ -25,7 +25,10 @@ init_pair(7, COLOR_BLACK, COLOR_WHITE);
 const FLD_W = 10;
 const FLD_H = 20;
 @!WINDOW fldwin = newwin(FLD_H + 2, FLD_W * 2 + 2, 1, 0);
-[FLD_H][FLD_W]int32 field;
+
+type Field = [FLD_H][FLD_W]int32;
+Field field;
+
 {
 	int32 i = 0;
 	while i < FLD_H {
@@ -37,9 +40,10 @@ const FLD_H = 20;
 
 @!WINDOW nextwin = newwin(4, 10, 1, 23);
 
-const NUM_MINO = 7;
 type Point { int32 x; int32 y; };
-[NUM_MINO][4]$Point minos = [
+type Mino = [4]$Point;
+
+[]Mino minos = [
 	[-1,0][0,0][1,0][2,0],	// I
 	[0,0][1,0][0,1][1,1],	// O
 	[-1,0][0,0][1,0][0,1],	// T
@@ -48,6 +52,7 @@ type Point { int32 x; int32 y; };
 	[-1,-1][-1,0][0,0][1,0],	// J
 	[1,-1][-1,0][0,0][1,0],	// L
 ];
+const NUM_MINO = minos->len();
 
 bool gameover = false;
 bool new_mino = true;
@@ -55,7 +60,7 @@ bool deleting_line = false;
 int32 score = 0;
 int32 mino_no = 0;
 int32 next_mino_no = rand() % NUM_MINO;
-[4]$Point mino, tmp_mino;
+Mino mino, tmp_mino;
 int32 K; // Rotation center parameter for I and O minos
 int32 mx, my;
 int32 tick = 0;
@@ -161,10 +166,10 @@ endwin();
 
 // end of game
 
-func rotateMino(@![4]$Point mino, int32 K)
+func rotateMino(@!Mino mino, int32 K)
 {
 	int32 i = 0;
-	while i < 4 {
+	while i < mino->len() {
 		int32 tmp = mino[i].x;
 		K - mino[i].y -> mino[i].x; 
 		tmp -> mino[i].y;
@@ -172,11 +177,11 @@ func rotateMino(@![4]$Point mino, int32 K)
 	}
 }
 
-func fits(@[FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my)
+func fits(@Field field, @Mino mino, int32 mx, int32 my)
 	-> bool
 {
 	int32 i = 0;
-	while i < 4 {
+	while i < mino->len() {
 		int32 x = mino[i].x + mx;
 		int32 y = mino[i].y + my;
 		if x < 0 || x >= FLD_W || y >= FLD_H { return false }
@@ -186,10 +191,10 @@ func fits(@[FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my)
 	return true;
 }
 
-func placeMino(@![FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my, int32 color)
+func placeMino(@!Field field, @Mino mino, int32 mx, int32 my, int32 color)
 {
 	int32 i = 0;
-	while i < 4 {
+	while i < mino->len() {
 		int32 x = mino[i].x + mx;
 		int32 y = mino[i].y + my;
 		if y >= 0 { color -> field[y][x] }
@@ -197,9 +202,9 @@ func placeMino(@![FLD_H][FLD_W]int32 field, @[4]$Point mino, int32 mx, int32 my,
 	}
 }
 
-func draw(@!WINDOW win, @!WINDOW nextwin, @[FLD_H][FLD_W]int32 field,
-		@[4]$Point mino, int32 mx, int32 my, int32 mino_no,
-		@[4]$Point next_mino, int32 next_mino_no,
+func draw(@!WINDOW win, @!WINDOW nextwin, @Field field,
+		@Mino mino, int32 mx, int32 my, int32 mino_no,
+		@Mino next_mino, int32 next_mino_no,
 		int32 score, int32 level, bool placed)
 {
 	win.werase();
@@ -223,7 +228,7 @@ func draw(@!WINDOW win, @!WINDOW nextwin, @[FLD_H][FLD_W]int32 field,
 	nextwin.wrefresh();
 }
 
-func drawField(@!WINDOW win, @[FLD_H][FLD_W]int32 field)
+func drawField(@!WINDOW win, @Field field)
 {
 	int32 y = 0;
 	while y < FLD_H {
@@ -236,7 +241,7 @@ func drawField(@!WINDOW win, @[FLD_H][FLD_W]int32 field)
 	}
 }
 
-func drawNextMino(@!WINDOW win, @[4]$Point mino, int32 mino_no)
+func drawNextMino(@!WINDOW win, @Mino mino, int32 mino_no)
 {
 	win.werase();
 	win.box( 0, 0);
@@ -250,10 +255,10 @@ func drawNextMino(@!WINDOW win, @[4]$Point mino, int32 mino_no)
 	win.drawMino(mino, 3+offset_x, 1+offset_y, mino_no);
 }
 
-func drawMino(@!WINDOW win, @[4]$Point mino, int32 mx, int32 my, int32 mino_no)
+func drawMino(@!WINDOW win, @Mino mino, int32 mx, int32 my, int32 mino_no)
 {
 	int32 i = 0;
-	while i < 4 {
+	while i < mino->len() {
 		int32 x = mino[i].x * 2 + mx;
 		int32 y = mino[i].y + my;
 		if y >= 0 { win.draw1block(x, y, mino_no+1); }
@@ -268,7 +273,7 @@ func draw1block(@!WINDOW win, int32 x, int32 y, int32 color)
 	win.wattroff(COLOR_PAIR(color));
 }
 
-func clearLines(@![FLD_H][FLD_W]int32 field)
+func clearLines(@!Field field)
 	-> int32 deleted_num = 0, int32 lowest_del_y = FLD_H
 {
 	int32 y = 0;
@@ -294,7 +299,7 @@ func clearLines(@![FLD_H][FLD_W]int32 field)
 	}
 }
 
-func pressDown(@![FLD_H][FLD_W]int32 field, int32 dst_y)
+func pressDown(@!Field field, int32 dst_y)
 {
 	int32 src_y = dst_y - 1;
 	int32 last_src_y = src_y;

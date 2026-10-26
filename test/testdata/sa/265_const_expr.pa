@@ -9,7 +9,7 @@ const G = A + 0.25;
 const H = sizeof(int32) * 2;
 const U = 10u + A;
 type K enum { X = A + 1, Y };
-type S { [A + 1]$int32 v; };
+type S { $[A + 1]int32 v; };
 int64 b = B;
 int64 c = C;
 int64 d = D;

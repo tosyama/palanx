@@ -1,0 +1,38 @@
+cinclude <stdio.h>;
+
+// Past the minimum capacity 4 and its doubling to 8.
+[+]int32 v;
+int32 i = 0;
+while i < 10 {
+	push(@!v, i);
+	i + 1 -> i;
+}
+v.push(100);
+200 -> v.push();
+printf("%ld %ld\n", len(@v), v -> len());
+int32 x = v.pop();
+printf("%d %ld\n", x, len(@v));
+
+// The elements growing adds are undefined, even those shrinking left behind.
+v.resize(3);
+v.resize(5);
+30 -> v[3];
+40 -> v[4];
+0 -> i;
+while i < len(@v) {
+	printf("%d ", v[i]);
+	i + 1 -> i;
+}
+printf("\n");
+
+[+]flo64 f;
+f.push(1.5);
+f.push(2.5);
+flo64 y = f.pop();
+printf("%.1f %.1f %ld\n", y, f[0], len(@f));
+
+[+2]int8 c;
+c.resize(20);
+19 -> c[19];
+c.push(int8(7));
+printf("%d %d %ld\n", c.pop(), c[19], len(@c));

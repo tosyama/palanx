@@ -19,6 +19,7 @@ setOwn(@!o, @w);
 printf("%ld %ld\n", o.v.x, o.n);
 
 [2]$V arr;
+0 -> arr[0].x; 1 -> arr[1].x;
 @!V p = @!arr[0];
 bump(@!p[1]);
 printf("%ld %ld\n", arr[0].x, arr[1].x);

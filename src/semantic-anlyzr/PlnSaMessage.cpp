@@ -157,7 +157,8 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_AmbiguousCall:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "Ambiguous function call '" + arg1 + "': imported from multiple modules.";
+			BOOST_ASSERT(arg2 != "\x01");
+			return "Ambiguous function call '" + arg1 + "': it can mean " + arg2 + ".";
 
 		case E_UnknownAlias:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -190,8 +191,8 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_WriteToImmutablePtrField:
 			return "cannot write through read-only pointer field '@T'; use '@!T' for mutable.";
 
-		case E_EmbedOwningStruct:
-			return "cannot embed '" + arg1 + "' with '$': it owns fields; use '" + arg1 + "' without '$'.";
+		case E_EmbedOwningType:
+			return "cannot embed '" + arg1 + "' with '$': it owns storage of its own; use '" + arg1 + "' without '$'.";
 
 		case E_WriteToReadOnlyArrElem:
 			return "cannot write through read-only pointer array element; use [n]@!T for mutable.";
@@ -233,7 +234,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_AddrOfNotAddressable:
 			return "cannot take the address of this expression: '@'/'@!' supports a local variable, a "
 			       "primitive-typed or embedded-struct field of a struct it names, a primitive-typed "
-			       "array element, or a call returning a struct given as a call argument.";
+			       "array element, or a call returning a struct or array given as a call argument.";
 
 		case E_ReadOnlyPtrToNonConstCParam:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -421,7 +422,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "every size in a borrowed array type ('@[n]T'/'@![n]T') must be a compile-time constant.";
 
 		case E_ArrBorrowUnsupportedElem:
-			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements, and neither a struct nor a pointer inside a '$[m]' row, in this version.";
+			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements in this version.";
 
 		case E_ArrBorrowNeedsAddrOf:
 			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' "
@@ -436,8 +437,35 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' "
 			       "('@f()' or '@!f()' for a call returning it, '@[..]' or '@![..]' for a literal).";
 
-		case E_Unsupported2DStructArr:
-			return "a two-dimensional struct array must be declared as '[m][n]T' or '[m][n]$T'.";
+		case E_VarrBorrowNeedsAddrOf:
+			return "a variable-length array given to '@[+]T'/'@![+]T' must be written as '@name' or '@!name'.";
+
+		case E_VarrBorrowSized:
+			return "a borrowed variable-length array type is written '@[+]T' or '@![+]T', without a size.";
+
+		case E_VarrElemSized:
+			return "a variable-length array element is written '[+]T', without a size: it starts empty.";
+
+		case E_UnsizedVarrElemArr:
+			return "an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'.";
+
+		case E_SigArrSizeNotConst:
+			return "every size in an array parameter or return type must be a compile-time constant.";
+
+		case E_ArrLitEmptySize:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "array '" + arg1 + "' cannot take its size from an empty array literal '[]'.";
+
+		case E_ArrowBindsTighter:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->' binds tighter than '" + arg1 + "'; parenthesize the operation to store its result: "
+			       "'(a " + arg1 + " b) -> c'.";
+
+		case E_ArrLenNotConst:
+			return "'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time.";
+
+		case E_ArrLenNeedsAddrOf:
+			return "an array given to 'len' must be written as '@name'.";
 
 		case E_StructLitFieldCount:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -521,15 +549,15 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_NamedRetInitOnStruct:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "struct-type named return '" + arg1 + "' cannot have an initializer.";
+			return "named return '" + arg1 + "' of a struct or array type cannot have an initializer.";
 
 		case E_TransferToNonOwnedField:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'->>' needs a field that owns its value (T or [n]T); '" + arg1 + "' does not.";
 
 		case E_ExpiringStructToBorrow:
-			return "a struct returned by a call has no owner to borrow from; receive it into a "
-			       "struct variable with '->' and borrow it with '@name' or '@!name' (only a call "
+			return "a struct or array returned by a call has no owner to borrow from; receive "
+			       "it into a variable with '->' and borrow it with '@name' or '@!name' (only a call "
 			       "argument can borrow it directly, as '@f()' or '@!f()').";
 
 		case E_BorrowOfTempEscapes:
@@ -544,12 +572,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_AssignInExpr:
 			return "an assignment cannot be used inside an expression; write it as its own statement.";
 
-		case E_ChainToMethodCall:
-			return "'->' cannot pass a value to a method-form call 'x.f()'; name the function, as '-> f(..)'.";
-
 		case E_ChainMultiToTapple:
-			return "the return values of a call chained with '->' into a multiple-return call cannot be "
-			       "received with '(..)' in this version.";
+			return "the return values of a '->' chain whose value is evaluated first (a multiple-return call, "
+			       "or a value given to a method-form call where it or the receiver has a call) cannot be received with '(..)' "
+			       "in this version.";
 
 		case E_TransferFromNonOwner:
 			return "'->>' needs a source that owns its value: an owning variable, an owned field "
@@ -572,10 +598,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "'->>' cannot give '" + arg1 + "' to itself.";
 
 		case E_UnsizedArrRowSizeNotConst:
-			return "the row size in '[][m]T' must be a compile-time constant.";
+			return "the row size in '[][m]T' or '[+][m]T' must be a compile-time constant.";
 
 		case E_UnsizedArrRowUnsupported:
-			return "'[][m]T' supports only '[m]T' rows of a primitive or struct element and '[m]$T' rows of a struct, in this version.";
+			return "'[][m]T' does not support rows of '@T'/'@!T' pointers in this version.";
 
 		case E_ArrElemShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -670,6 +696,17 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ReturnFrameArr:
 			return "stack array '" + arg1 + "' cannot be returned; its storage ends with the function.";
+
+		case E_NoMatchingFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			BOOST_ASSERT(arg3 != "\x01");
+			return "No function '" + arg1 + "' takes (" + arg2 + "); there are " + arg3 + ".";
+
+		case E_FuncNameNeedsType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "'" + arg1 + "' names " + arg2 + "; it must be given where a function pointer type chooses one.";
 
 		default:
 			BOOST_ASSERT(false);

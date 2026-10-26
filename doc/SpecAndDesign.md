@@ -6,20 +6,26 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-10-15)
-version: 0.2.0 — release preparation
+### 2.1 Iteration Goal (2026-10-20)
+version: 0.2.1 — variable-length arrays
 
-No new language features are planned. The iteration brings the existing implementation and
-its documentation into a consistent, releasable state:
+Add `[+]T` / `[+n]T`, an array that keeps its length and capacity at run time and can grow and
+shrink. It is the base for receiving command-line arguments, a `for` loop that cannot index out
+of range, and a string type.
 
-- Triage `doc/Issues.md` and fix the items that should not remain in 0.2.0.
-- Verify that the examples in `doc/PalanReference.md` work as written, and correct stale
-  descriptions in the other documents.
-- Rewrite `README.md` as an introduction to the language.
-- Shorten the test suite's running time without lowering coverage.
+- Representation: the variable is one word pointing to a heap header `{len, cap, data}`; growing
+  or shrinking reallocates only `data`, so the variable and any borrow of it stay valid.
+- Elements: primitives, structs (`[+]T` owned, `[+]$T` contiguous), and nested `[+][+]T`. Fixed
+  levels, `[+]` levels and `$` combine in any order and depth (`[+][3][4]T`, `[2][3][+]T`,
+  `[+]$[3]$[4]T`); only `$` on an element that owns storage (`[n]$[+]T`, `[+]$O`) is rejected
+  for now. Also usable as borrows (`@[+]T`/`@![+]T`), parameters, return values and struct fields.
+- Operations `len`, `push`, `resize` and `pop` are built-in functions, resolved through function
+  overloading, which this iteration adds for Palan functions in general.
+- A method-form call after `->` (`x -> v.push()`) is added as a general feature.
 
-Other rough edges found along the way are ticketed and fixed as they come up.
-The ticket list is kept in `localtickets/iteration-2026-10-15-v0200-release.md`.
+Out of scope: `[#]T`, and `->>` into a call (a parameter that takes ownership); an owned element
+is moved in with `v.resize(n + 1); p ->> v[n];`.
+The ticket list is kept in `localtickets/iteration-2026-10-20-v0210-varray.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
@@ -182,6 +188,9 @@ Design:
  - The `_start` entry point uses `call exit` as its epilogue; `return` statements are rejected by palan-sa.
  - Symbol visibility: `_start` and `export func` functions are emitted with `.globl`. All other Palan
    functions are local symbols (no `.globl`), equivalent to `static` in C.
+ - Symbol names: a Palan function's symbol is the `name` palan-sa gives it, built from its module,
+   its name and its parameter types (`util..show.int32`; SASpec.md "Symbol names"), so overloads
+   and same-named functions of different modules link side by side. codegen emits it as given.
 
  String literals are collected by palan-sa into the `str-literals` table in sa.json,
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
@@ -199,8 +208,7 @@ Design:
 
 An owned aggregate made of more than one heap block — a struct that owns fields, an array of
 structs, a `[m][n]T` array — is allocated, released and copied by generated functions instead of
-inline loops. A struct that owns nothing and a `[n]T` array of primitives use `calloc`/`malloc` and
-`free` directly.
+inline loops. A struct that owns nothing and a `[n]T` array of primitives use `malloc` and `free` directly.
 
 palan-sa emits only calls to these functions; it records each shape it needs in sa.json's
 `alloc-shapes` (SASpec.md's Root), as it collects `str-literals`. The build manager collects the
@@ -209,7 +217,9 @@ at link time), and writes the functions as Palan source `__allocators.pa` in the
 of the given source file, with `__allocators.h` declaring the C functions it calls. It is compiled
 as one more module (`--no-entry`). Each struct appears there as an exported type declaring only
 its owned fields, at their offsets, with the rest of its bytes as padding, so a C struct or a type
-of another module needs no Palan declaration of its other fields.
+of another module needs no Palan declaration of its other fields. A struct owning nothing is
+only bytes to allocate, copy and free, so an element or owned field of one is declared as
+`__pln_B<n>`, a type of its `n` bytes (`$[n]uint8`), whatever struct it is.
 
 For a shape key `K`, the functions are:
 
@@ -217,17 +227,52 @@ For a shape key `K`, the functions are:
 |----------|------|
 | `__pln_alloc_K(sizes...)` | allocates and builds the value |
 | `__pln_free_K(p, sizes...)` | releases what `p` owns, then `p`; `p` may be NULL |
-| `__pln_init_K(p, sizes...)` | builds the value in an existing zeroed block (a `$` variable) |
+| `__pln_init_K(p, sizes...)` | builds the value in an existing block (a `$` variable) |
 | `__pln_fini_K(p, sizes...)` | releases what `p` owns, but not `p` (a `$` variable) |
 | `__pln_copy_K(dst, src, sizes...)` | copies `src` into `dst`, owned parts included |
 
 | Shape | `K` | Functions |
 |-------|-----|-----------|
-| struct `T` (one that owns nothing only as a part of another shape) | `T` | all; `init`/`fini` only when it owns fields |
-| `[n]T` with `T` a struct | `arr_T` | all |
-| `[m][n]T` with `T` a struct | `arr_arr_T` | all |
-| `[m][n]P` with `P` a primitive | `arr_arr_P` | all |
-| a struct's owned `[n]P` field | `arr_prim_P` | `alloc`, `free` |
+| struct `T` owning fields | `T` | all |
+| struct owning nothing, as an element or a field (`bytes`) | `__pln_B<n>` | none; only declared |
+| `[n]T` whose element owns storage (a struct, a `[+]U`, a row) | `arr_E` | all |
+| `[+]T` (`T` a primitive, a struct, a `[+]U` or a row `[n]U`) | `varr_E` | all, and `push`/`resize`/`pop`; `copy(h, src, n)` copies a run of elements |
+| `[+]$T` with `T` a struct or rows `[n]U`, `[n]$[m]U`, … | `evarr_E` | as `varr_E` |
+
+`E` is the layout of the element as the array's storage holds it, written as a parameter type
+is in a symbol (SASpec.md's Symbol names). The layout replaces each integer type by the signed one
+of its width and each struct owning nothing by its `__pln_B<n>`: with `Point` 16 bytes owning
+nothing, `[n]Point` is `arr_P9__pln_B16` (an owned slot), `[+]$Point` is `evarr_9__pln_B16`,
+`[+]int32` and `[+]uint32` are both `varr_int32`, `[+][4]int32` is `varr_Pint32`. A key thus
+names how its elements are stored, moved and passed, and elements laid out alike share their
+functions: a narrow integer passes as its width and whoever reads it extends it as its own type
+says, so only the types the built-ins take and return differ, not the functions they call; a
+float, passed in another register, has a key of its own. The build manager generates the arrays
+of any element from one description of the element (`elem` in the shape, `ElemOps` in the build
+manager): an owned element is built when its slot comes into use and dropped when it leaves, by
+helpers `__pln_build/drop/set/copyrun_E` shared by `arr_E` and `varr_E`; any other element is
+plain bytes, copied in bulk. A row element is described by its own element: a row in a
+block of its own is an owned element built and dropped through its elements' helpers, and a row
+laid out in place (`[+]$[n]U`) is `n` slots of its element, so it is owned exactly when that
+element is; rows laid out in place in turn are one run of slots (with `S` owning fields,
+`[2]$[3]S` is `arr_P1S` of 6).
+A struct's owned field is a slot of the same kind, described the same way: `__pln_init/fini/copy_T`
+build, drop and copy each field through its element's helpers, and the generated module declares
+the field as the slot its build fills (`@!int32` for `[3]int32`), so it copies and frees nothing
+on its own. Palan sets only what it reads to release a value: owned slots and `[+]U` headers
+(an inner `[+]U` starts as an empty header, `calloc(1, 24)`). Everything else starts undefined,
+as with C's `malloc`: a struct's other fields, pointers included, an array's elements, the
+elements `resize` adds and those past a `[+n]T` literal's.
+A length may be known only at run time (`[m][k]int32`), so keys leave every length out and every
+`arr_E`/`varr_E` function and helper takes, after its own arguments, one length per array level
+below it, outermost first, through rows and `[+]U` elements alike: `[m][3]int32` and `[+][3]int32`
+pass 3, `[+][4]int32` passes 4, and all share `__pln_build_Pint32` and the rest. palan-sa appends
+a type's lengths to its `push`/`resize`/`pop` calls itself.
+
+Like any Palan function, each links by a symbol made from its module and parameter types, so
+palan-sa names the module `__allocators` (`PALAN_ALLOCATORS_MODULE` in `src/common/PlnDefs.h`,
+which the build manager also uses for the file name) and the parameter types of each signature
+above when it calls one (`allocHelperCall`).
 
 ## 4. Expression Value Categories
 

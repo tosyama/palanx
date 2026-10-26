@@ -3,7 +3,7 @@ cinclude <string.h>;
 cinclude <mcheck.h>;
 type P { int32 x; int32 y; };
 type O { P p; int32 n; };
-type M { [4]flo32 albedo; [2]$P ps; [2]O os; };
+type M { [4]flo32 albedo; $[2]$P ps; [2]O os; };
 func fill(@![4]flo32 a) { 9 -> a[0]; 6 -> a[3]; }
 func next(@!int32 c) -> int32 { c[0] + 1 -> c[0]; return 1; }
 mtrace();

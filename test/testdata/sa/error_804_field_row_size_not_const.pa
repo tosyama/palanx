@@ -1,0 +1,4 @@
+func f(int64 n)
+{
+	type A { [2][n]int32 x; };
+}

@@ -16,6 +16,7 @@ func worker(@!void arg) -> @!void {
 }
 
 Shared s;
+0 -> s.count;
 pthread_mutex_init(@!s.m, NULL);
 pthread_t t1;
 pthread_t t2;

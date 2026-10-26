@@ -542,7 +542,8 @@ TEST(sysv_struct, fractional_tail_width) {
     StructDef def;
     def.totalSize = 3;
     def.fields = {
-        {"a", "embed-arr", "int8", false, 0, 3, /*count*/3, /*elemKind*/"prim", /*stride*/1},
+        {.name="a", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=3,
+         .type={{"type-kind","pntr"},{"arr-size",3},{"base-type",{{"type-kind","prim"},{"type-name","int8"}}}}},
     };
     map<string, StructDef> defs;
     auto result = classifySysVStruct(def, defs);
@@ -576,20 +577,10 @@ TEST(sysv_struct, raw_ptr_field) {
     EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct, struct_ptr_field) {
+TEST(sysv_struct, owned_field) {
     StructDef def;
     def.totalSize = 8;
-    def.fields = { {"p", "struct-ptr", "Point", false, 0, 8} };
-    map<string, StructDef> defs;
-    auto result = classifySysVStruct(def, defs);
-    ASSERT_EQ(result.size(), 1);
-    EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
-}
-
-TEST(sysv_struct, arr_ptr_field) {
-    StructDef def;
-    def.totalSize = 8;
-    def.fields = { {"p", "arr-ptr", "int32", true, 0, 8} };
+    def.fields = { {"p", "owned", "", false, 0, 8} };
     map<string, StructDef> defs;
     auto result = classifySysVStruct(def, defs);
     ASSERT_EQ(result.size(), 1);
@@ -618,11 +609,12 @@ TEST(sysv_struct, embed_struct_recursion) {
 }
 
 TEST(sysv_struct, embed_arr_prim_float) {
-    // `[4]flo32 v;` embedded fixed-size array (not an owned pointer array).
+    // `$[4]flo32 v;` -- an array laid out in the struct.
     StructDef def;
     def.totalSize = 16;
     def.fields = {
-        {"v", "embed-arr", "flo32", false, 0, 16, /*count*/4, /*elemKind*/"prim", /*stride*/4},
+        {.name="v", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=16,
+         .type={{"type-kind","pntr"},{"arr-size",4},{"base-type",{{"type-kind","prim"},{"type-name","flo32"}}}}},
     };
     map<string, StructDef> defs;
     auto result = classifySysVStruct(def, defs);
@@ -632,7 +624,7 @@ TEST(sysv_struct, embed_arr_prim_float) {
 }
 
 TEST(sysv_struct, embed_arr_struct_leaf) {
-    // `[2]$Elem arr;` where Elem { int32 a; int32 b; } -- each element must
+    // `$[2]$Elem arr;` where Elem { int32 a; int32 b; } -- each element must
     // recurse via `defs.at("Elem")` at its own element offset.
     StructDef elem;
     elem.totalSize = 8;
@@ -644,7 +636,9 @@ TEST(sysv_struct, embed_arr_struct_leaf) {
     StructDef def;
     def.totalSize = 16;
     def.fields = {
-        {"arr", "embed-arr", "Elem", false, 0, 16, /*count*/2, /*elemKind*/"struct", /*stride*/8},
+        {.name="arr", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=16,
+         .type={{"type-kind","pntr"},{"arr-size",2},{"embedded",true},{"stride",8},
+                {"base-type",{{"type-kind","struct"},{"type-name","Elem"}}}}},
     };
 
     map<string, StructDef> defs = { {"Elem", elem} };
@@ -654,12 +648,32 @@ TEST(sysv_struct, embed_arr_struct_leaf) {
     EXPECT_EQ(result[1].cls, EightbyteClass::Integer);
 }
 
-TEST(sysv_struct, embed_ptr_arr_field) {
-    // `[2]@!int32 v;` -- a fixed-count array of pointer slots, each 8 bytes.
+TEST(sysv_struct, embed_arr_rows) {
+    // `$[2]$[1]int32 m; flo64 f;` -- the rows laid out in place make the
+    // first eightbyte INTEGER, leaving the flo64's SSE.
+    json row = {{"type-kind","pntr"},{"arr-size",1},{"base-type",{{"type-kind","prim"},{"type-name","int32"}}}};
     StructDef def;
     def.totalSize = 16;
     def.fields = {
-        {"v", "embed-ptr-arr", "int32", true, 0, 16, /*count*/2, /*elemKind*/"", /*stride*/0},
+        {.name="m", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=8,
+         .type={{"type-kind","pntr"},{"arr-size",2},{"embedded",true},{"stride",4},{"base-type",row}}},
+        {.name="f", .typeKind="prim", .typeName="flo64", .isMutable=false, .offset=8, .size=8},
+    };
+    map<string, StructDef> defs;
+    auto result = classifySysVStruct(def, defs);
+    ASSERT_EQ(result.size(), 2);
+    EXPECT_EQ(result[0].cls, EightbyteClass::Integer);
+    EXPECT_EQ(result[1].cls, EightbyteClass::Sse);
+}
+
+TEST(sysv_struct, embed_arr_ptr_slots) {
+    // `$[2]@!int32 v;` -- pointer slots laid out in the struct, each 8 bytes.
+    StructDef def;
+    def.totalSize = 16;
+    def.fields = {
+        {.name="v", .typeKind="embed-arr", .isMutable=false, .offset=0, .size=16,
+         .type={{"type-kind","pntr"},{"arr-size",2},{"base-type",{{"type-kind","pntr"},{"mutable",true},
+                {"base-type",{{"type-kind","prim"},{"type-name","int32"}}}}}}},
     };
     map<string, StructDef> defs;
     auto result = classifySysVStruct(def, defs);
@@ -695,4 +709,60 @@ TEST(bool_type, arg_conv) {
     EXPECT_TRUE(argConvOk(b, reg.prim(N::Int32)));
     EXPECT_FALSE(argConvOk(reg.prim(N::Int8), b));
     EXPECT_FALSE(argConvOk(reg.prim(N::Uint8), b));
+}
+
+// -------- symbols --------
+
+static json params(std::initializer_list<json> types) {
+    json ps = json::array();
+    for (auto& t : types) ps.push_back({{"var-type", t}});
+    return ps;
+}
+static json prim(const char* n) { return {{"type-kind","prim"},{"type-name",n}}; }
+static json strct(const char* n) { return {{"type-kind","struct"},{"type-name",n}}; }
+static json pntr(json base) { return {{"type-kind","pntr"},{"base-type",base}}; }
+static json pntr(json base, bool mut) { json p = pntr(base); p["mutable"] = mut; return p; }
+
+TEST(symbol, module) {
+    EXPECT_EQ(moduleSymbol("/home/u/src/util.pa"), "util");
+    EXPECT_EQ(moduleSymbol("/a.pa/b.pa"), "b");
+    // A leading digit is read as a number by `as`; '-' and '.' are no symbol characters.
+    EXPECT_EQ(moduleSymbol("/t/001_hello.pa"), "_001_hello");
+    EXPECT_EQ(moduleSymbol("/t/my-lib.v2.pa"), "my_2dlib_2ev2");
+}
+
+TEST(symbol, prim_and_user_types) {
+    EXPECT_EQ(funcSymbol("f", json::array()), "f.v");
+    EXPECT_EQ(funcSymbol("show", params({prim("int32")})), "show.int32");
+    EXPECT_EQ(funcSymbol("show", params({prim("flo64"), prim("bool")})), "show.flo64.bool");
+    EXPECT_EQ(funcSymbol("f", params({strct("Point")})), "f.5Point");
+    json color = prim("int32");
+    color["enum"] = "Color";
+    EXPECT_EQ(funcSymbol("f", params({color})), "f.N5Colorint32");
+}
+
+TEST(symbol, pointer_permissions) {
+    // Owned or by value, read borrow and write borrow are different parameters.
+    EXPECT_EQ(funcSymbol("f", params({pntr(strct("P"))})), "f.P1P");
+    EXPECT_EQ(funcSymbol("f", params({pntr(strct("P"), false)})), "f.R1P");
+    EXPECT_EQ(funcSymbol("f", params({pntr(strct("P"), true)})), "f.W1P");
+    EXPECT_EQ(funcSymbol("f", params({pntr(pntr(prim("int8"), true))})), "f.PWint8");
+}
+
+TEST(symbol, array_shapes) {
+    json rows = pntr(prim("int32"), false);
+    rows["arr-size"] = 4;
+    EXPECT_EQ(funcSymbol("f", params({rows})), "f.A4_Rint32");
+    json embed = pntr(strct("P"));
+    embed["embedded"] = true;
+    embed["stride"] = 16;
+    EXPECT_EQ(funcSymbol("f", params({embed})), "f.ES16_P1P");
+}
+
+TEST(symbol, func_pointer) {
+    json fn = {{"type-kind","func"},{"parameters",params({prim("int32"), pntr(prim("void"), false)})},
+               {"ret-type",prim("int32")}};
+    EXPECT_EQ(funcSymbol("apply", params({pntr(fn, false)})), "apply.RF2_int32Rvoidint32");
+    json proc = {{"type-kind","func"},{"parameters",json::array()},{"ret-type",prim("void")}};
+    EXPECT_EQ(funcSymbol("on", params({pntr(proc, false)})), "on.RF0_void");
 }

@@ -24,6 +24,7 @@ printf("%d %d\n", minos2[0][2].y, minos2[1][2].x);
 
 [2][2]Seg ss;
 5 -> ss[1][0].b.y;
+6 -> ss[0][1].b.y;
 [2][2]Seg st = ss;
 0 -> ss[1][0].b.y;
 ss[0][1] -> st[1][1];

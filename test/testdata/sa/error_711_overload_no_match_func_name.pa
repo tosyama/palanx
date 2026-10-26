@@ -1,0 +1,5 @@
+func f(int32 a) -> int32 { return a; }
+func f(int64 a) -> int64 { return a; }
+func h(int32 x) -> int32 { return x; }
+func h(flo64 x) -> flo64 { return x; }
+f(h);

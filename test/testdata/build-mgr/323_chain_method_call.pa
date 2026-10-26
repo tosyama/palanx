@@ -1,0 +1,41 @@
+cinclude <stdio.h>;
+
+type Acc { int32 n; };
+type V { int32 x; int32 y; };
+
+func add(@!Acc a, int32 d) -> int32 { a.n + d -> a.n; return a.n; }
+func add(@!Acc a, @V v) -> int32 { a.n + v.x + v.y -> a.n; return a.n; }
+func add3(@!Acc a, int32 p, int32 q, int32 r) { a.n + p * 100 + q * 10 + r -> a.n; }
+func divmod(int32 a, int32 b) -> int32 q, int32 r { a / b -> q; a % b -> r; }
+func next(@!int32 i) -> int32 { i[0] + 1 -> i[0]; return i[0] * 10; }
+func bump(@!int32 x) -> int32 { x[0] + 1 -> x[0]; return 0; }
+func inner(@!Acc a) { 1 -> a.add(); }
+
+Acc acc;
+0 -> acc.n;
+5 -> acc.add();
+divmod(7, 2) -> acc.add3(9);
+printf("%d\n", acc.n);
+
+[3]Acc accs;
+0 -> accs[0].n; 0 -> accs[1].n; 0 -> accs[2].n;
+int32 i = 0;
+next(@!i) -> accs[i].add();
+printf("%d %d %d\n", i, accs[0].n, accs[1].n);
+int32 x = 7;
+x -> accs[bump(@!x)].add();
+printf("%d %d\n", x, accs[0].n);
+1 -> i -> accs[i].add();
+printf("%d\n", accs[1].n);
+
+Acc b;
+0 -> b.n;
+V v = [1, 2];
+v -> b.add();
+inner(@!b);
+printf("%d\n", 4 -> b.add());
+Acc c;
+0 -> c.n;
+int32 y;
+2 -> b.add() -> c.add() -> y;
+printf("%d %d %d\n", b.n, c.n, y);

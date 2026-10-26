@@ -1,0 +1,16 @@
+cinclude <stdio.h>;
+
+func a() -> int64 { func f() -> int64 { return 1; } return f(); }
+func b() -> int64 { func f() -> int64 { return 2; } return f(); }
+
+func c() -> int64 {
+    int64 r = 0;
+    { func f() -> int64 { return 30; } r + f() -> r; }
+    { func f() -> int64 { return 400; } r + f() -> r; }
+    return r;
+}
+
+{ func f() -> int64 { return 5000; } printf("%ld\n", f()); }
+{ func f() -> int64 { return 60000; } printf("%ld\n", f()); }
+
+printf("%ld %ld %ld\n", a(), b(), c());

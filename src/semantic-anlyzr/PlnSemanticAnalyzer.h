@@ -6,6 +6,7 @@
 #pragma once
 #include <string>
 #include <map>
+#include <deque>
 #include <memory>
 #include <set>
 #include <vector>
@@ -22,40 +23,62 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeKind;   // "prim" | "embed" | "struct-ptr" | "raw-ptr" | "embed-arr" | "embed-ptr-arr" | "arr-ptr"
-	string typeName;   // prim type name, embed/struct-ptr struct name, raw-ptr base type name,
-	                    // embed-arr/embed-ptr-arr/arr-ptr: leaf prim type name or struct name
-	bool   isMutable;  // raw-ptr/embed-ptr-arr: @T=false, @!T=true
+	string typeKind;   // "prim" | "embed" | "owned" | "raw-ptr" | "embed-arr"
+	string typeName;   // prim type name, embed struct name, raw-ptr base type name
+	bool   isMutable;  // raw-ptr: @T=false, @!T=true
 	int    offset;     // byte offset from struct start (C ABI aligned)
-	int    size;       // prim: type size, embed: sub-struct totalSize, struct-ptr/raw-ptr/arr-ptr: 8,
-	                    // embed-arr/embed-ptr-arr: count*stride
-
-	// Array-field-only members (valid when typeKind == "embed-arr", "embed-ptr-arr", or "arr-ptr")
-	int64_t count    = 0;   // element count n (compile-time constant)
-	string  elemKind = "";  // "prim" | "struct"; also set for typeKind == "raw-ptr" (pointee kind);
-	                        // "func" for a function pointer (see funcType)
-	int     stride   = 0;   // bytes per element
+	int    size;       // prim: type size, embed: sub-struct totalSize, owned/raw-ptr: 8,
+	                    // embed-arr: the array's bytes
+	string  elemKind = "";  // raw-ptr: the pointee's kind, "prim" | "struct" | "func" (see funcType)
 
 	string  enumName = "";  // enum the primitive leaf is typed as, if any
-	// raw-ptr/embed-ptr-arr: mutability of each pointer level between the
-	// field's own pointer and the leaf (typeName), outermost first; empty = @T.
+	// raw-ptr: mutability of each pointer level between the field's own
+	// pointer and the leaf (typeName), outermost first; empty = @T.
 	vector<bool> innerPtrMutable;
 	// A C type this version cannot represent (e.g. "function pointer"): the
 	// field keeps its place in the layout but cannot be accessed.
 	string  unsupported = "";
 	json    funcType;  // elemKind == "func": the pointee function type
+	// An owned field (a struct `T` or an array `[n]...`) is a slot holding the
+	// block it owns, typed as a variable holding that block is; an embed-arr
+	// field (`$[n]...`) is the array laid out in the struct, typed as a
+	// variable whose array is laid out in a frame.
+	json    type;
 };
 
 // Where an aggregate variable's outermost storage block lives: `$T v;` puts it
 // in the function's stack frame.
 enum class VarStorage { Heap, Frame };
 
+// The allocator helpers build-mgr generates (SpecAndDesign.md 3.6), one
+// family per shape: __pln_<op>_<struct>, and for an array of any element E,
+// __pln_<op>_arr_<E>, __pln_<op>_varr_<E> and __pln_<op>_evarr_<E> (`[+]$T`),
+// E written as the symbol of its layout.
+enum class AllocFamily { Struct, Arr, Varr, EVarr };
+// elem is the struct for Struct, and otherwise the element as the array's
+// storage lays it out (layoutElem).
+struct AllocShapeRef { AllocFamily family; json elem; };
+
+// A declared array's storage type, and the lengths of its own levels as SA
+// expressions, outermost first; a length known only at run time is absent from
+// the type.
+struct Storage { json type; vector<json> lens; };
+// How an aggregate variable's own block is obtained and released on the heap,
+// and what it takes in a stack frame (see placeAggregateVar).
+struct AggregatePlace {
+	json heapInit;
+	json release;
+	int64_t frameBytes;
+	int frameAlign;
+	optional<AllocShapeRef> shape;
+};
+
 struct StructDef {
 	string name;
 	vector<FieldLayout> fields;
 	int  totalSize = -1;
 	int  maxAlign  = 0;
-	bool ownsFields = false;  // has a struct-ptr (T) or arr-ptr ([n]T) field
+	bool ownsFields = false;  // has an owned field
 	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;
@@ -77,6 +100,35 @@ struct FieldChain {
 	string structName;      // struct type currently being resolved
 };
 
+// A function a call can name: from a cinclude (isC) or a Palan definition.
+struct Callee {
+	const json* def;
+	bool        isC;
+};
+
+// A call argument before the callee's parameter is known. A pending one gets
+// its type only from the parameter (see takesExpectedType), so it is analyzed
+// once the callee is chosen.
+// A chained value (`v -> f()`) becomes `v` or `@v` by the parameter, so it is
+// pending too. probe is what a pending argument is matched by: a literal's
+// default type, or a chained value's analysis.
+struct CallArg {
+	json ast;
+	bool pending;
+	json sa;
+	bool chained = false;
+	json probe;
+};
+
+enum class ArgFit { None, Viable, Exact };
+
+// A diagnostic decided without exiting, so a check can also just test a fit.
+struct SaDiag {
+	PlnSaMessageCode code;
+	string arg1 = "\x01";
+	string arg2 = "\x01";
+};
+
 // The value of a constant expression under evaluation.
 struct ConstVal {
 	enum class Kind { Int, Uint, Flo } kind;
@@ -96,15 +148,25 @@ class PlnSemanticAnalyzer {
 	map<string, string> strLiteralLabels;  // value -> label
 	const json*       currentFunc_    = nullptr;  // null = _start level
 	const json*       currentFuncDef_ = nullptr;  // currentFunc_'s types resolved, not normalized
+	// Prefix of the symbols of functions defined here: the module, or the
+	// enclosing function's symbol, plus `..b<n>` inside a block.
+	string            symbolScope_;
+	int               blockSymbolSeq_ = 0;       // blocks with functions seen in this function
 	int               loopDepth_     = 0;        // nesting depth of while loops
 	size_t            funcBodyScopeIdx_ = 0;     // 0 = top-level (no function)
 
 	vector<map<string, json>> varScopes;
 	vector<map<string, json>> cFuncScopes;
 	vector<map<string, json>> cGlobalScopes;
-	vector<map<string, json>> plnFuncScopes;
-	// scope stack: alias("" = unqualified) → funcname → funcDef (empty json{} = ambiguous sentinel)
-	vector<map<string, map<string, json>>> importScopes;
+	// A deque keeps every definition where it is while overloads are added.
+	vector<map<string, deque<json>>> plnFuncScopes;
+	// len/push/resize/pop for each `[+]T` element type, outside every scope:
+	// they exist for every T, and are registered as each T is first used.
+	map<string, deque<json>> varrBuiltins_;
+	set<string> varrBuiltinTypes_;
+	// scope stack: alias("" = unqualified) → funcname → funcDefs (several
+	// when unqualified imports of different modules export the same name)
+	vector<map<string, map<string, vector<json>>>> importScopes;
 
 	// Aggregate variables per scope (parallel to varScopes) and what runs when
 	// each goes out of scope. A frame variable is listed even with nothing to
@@ -123,6 +185,8 @@ class PlnSemanticAnalyzer {
 	// Registered struct type definitions
 	map<string, StructDef> structDefs_;
 	set<string>            allocShapeNames_;  // dedup guard for struct alloc-shapes
+	// __pln_B<n> -> n: the struct an element struct owning nothing is laid out as.
+	map<string, int>       byteTypes_;
 	// Written type name -> the type it names in this scope, in program-wide
 	// names: aliases, C typedefs, enums, and every Palan struct source may
 	// write here. An unbound C struct is written by its program-wide name.
@@ -190,9 +254,10 @@ class PlnSemanticAnalyzer {
 
 	void enterScope();
 	void leaveScope();
-	json collectFreeStmts(size_t from_idx, size_t to_idx);
+	json collectFreeStmts(size_t from_idx, size_t to_idx, const string& keep = "");
 
 	string locPrefix(const json& node) const;
+	void   rejectArrowOperand(const json& expr, const string& op) const;
 
 	void        declareVar(const string& name, const json& type, const json* loc_node = nullptr);
 	const json* findVar(const string& name) const;
@@ -210,9 +275,20 @@ class PlnSemanticAnalyzer {
 	[[noreturn]] void undefinedNameError(const json& at, const json& ref, PlnSaMessageCode undefinedCode) const;
 
 	void        registerPlnFunc(const string& name, const json& def, const json& locNode);
-	const json* findPlnFunc(const string& name) const;
-	const json* findImportFunc(const string& fname) const;
-	const json* findImportFuncByAlias(const string& alias, const string& fname) const;
+	const json* findPlnFuncDef(const json& funcDef) const;
+	string calleeKey(const json& def, bool isC) const;
+	vector<Callee> findCallees(const string& name) const;
+	vector<Callee> findCalleesByAlias(const string& alias, const string& name) const;
+	size_t countCallees(const json& call) const;
+	void   requireAlias(const json& locNode, const string& alias) const;
+	Callee selectCallee(const json& locNode, const string& name, const vector<Callee>& cands,
+	                    const vector<CallArg>& args);
+	ArgFit argFit(const CallArg& arg, const json& param, size_t argIdx, bool isCFunc, const string& funcName);
+	bool   sameArgType(const json& argVT, const json& paramVT);
+	string argTypesText(const vector<CallArg>& args);
+	string calleesText(const string& name, const vector<Callee>& cands) const;
+	json   makeCall(const json& expr, const vector<Callee>& cands, const string& writtenName);
+	vector<Callee> usableCallees(const json& expr, const vector<Callee>& cands) const;
 
 	json sa_statements(const json& stmts);
 	void beginModule(const json& ast);
@@ -257,6 +333,7 @@ class PlnSemanticAnalyzer {
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
 	json foldConstExpr(const json& expr);
 	optional<ConstVal> evalConst(const json& expr);
+	optional<int64_t> constArrLen(const json& expr);
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	// Also gives back a void call or a multi-value call, which has no value-type.
 	json sa_expr_maybe_void(const json &expr, const PlnType* expectedType = nullptr);
@@ -264,7 +341,11 @@ class PlnSemanticAnalyzer {
 	json sa_expr_shift(const json& expr, const PlnType* expectedType);
 	void checkIntLiteralRange(const json& lit);
 	json sa_expr_call(const json& expr);
-	json sa_func_ref(const json& expr);
+	json sa_func_ref(const json& expr, const PlnType* expectedType);
+	string funcRefType(const json& def, json& funcPtr) const;
+	bool namesOverloadedFunc(const json& expr) const;
+	json literalDefaultType(const json& expr);
+	bool isPureOperand(const json& expr);
 	const json* findFuncPtrVar(const json& call) const;
 	json funcPtrField(const json& memberCall);
 	json sa_expr_call_ptr(const json& expr, json callee, const string& funcName);
@@ -274,23 +355,33 @@ class PlnSemanticAnalyzer {
 	const json* findCalleeByName(const string& name, bool& isCFunc) const;
 	const json* findCallee(const json& call, bool& isCFunc) const;
 	json operandValueType(const json& obj);
-	json chainArg(const json& value, const json* paramVT, bool isCFunc);
+	json chainArg(const json& value, const json* paramVT, bool isCFunc, const json* valueType = nullptr);
 	size_t chainRetCount(const json& value) const;
+	json chainTarget(const json& call, size_t& at);
+	json chainInto(json call, size_t at, const vector<json>& values);
+	json chainValueAhead(const json& value, const json* paramVT, json& body);
 	json normalizeChainCall(const json& expr);
-	json chainMultiCall(const json& chain, json& body);
+	json chainAheadCall(const json& chain, json& body);
 	json sa_expr_chain_call(const json& expr);
 	json tappleCallExpr(const json& stmt);
 	// Analyze a call's argument list against the callee's parameter list.
 	json saCallArgs(const json& locNode, const json& args, const json& funcParams,
 	                bool isCFunc, const string& funcName);
-	void checkArgPtrPermission(const json& expr, const string& funcName, bool isCFunc,
-	                           const json& saArg, const json& param, size_t argIdx);
+	bool takesExpectedType(const json& expr);
+	vector<CallArg> analyzeCallArgs(const json& args);
+	optional<SaDiag> callArgMismatch(const json& argAst, const json& saArg, const json& param,
+	                                 size_t argIdx, bool isCFunc, const string& funcName);
+	json ownedBlockArg(const json& locNode, const json& arg, CallArg& ca, const json& param,
+	                   size_t argIdx, const string& funcName);
+	json bindCallArgs(const json& locNode, vector<CallArg>& args, const json& funcParams,
+	                  bool isCFunc, const string& funcName);
+	[[noreturn]] void reportDiag(const json& locNode, const SaDiag& diag) const;
+	optional<SaDiag> ptrPermissionMismatch(const json& from, const json& to);
 	void checkPtrPermission(const json& locNode, const json& from, const json& to);
 	// Shared narrowing rule for every binding site.
 	json convertForBinding(const json& locNode, json value, const PlnType* toType, const json& toTypeJson);
-	// Convert a single call argument to a parameter's type, diagnosing
-	// E_InvalidNarrowingConv if it doesn't fit without an explicit cast.
-	json convertCallArg(const json& locNode, json saArg, const json& paramVT);
+	optional<SaDiag> callArgConvMismatch(const json& saArg, const json& paramVT);
+	json convertCallArg(json saArg, const json& paramVT);
 	// forWrite: the result is written through (store, '@!', or a field write
 	// below it), so every hop back to the chain's root must be writable --
 	// the same rule resolveObjectChain applies to struct field chains.
@@ -314,29 +405,44 @@ class PlnSemanticAnalyzer {
 	// all vars share one var-type; returns array of statements
 	json sa_var_decl_group(const json& stmt, VarStorage storage);
 	json sa_arr_var_decl(const json& stmt, VarStorage storage);       // returns array of statements
+	json sa_arr_var_decl(const json& stmt, VarStorage storage, const Storage& st, bool litLen);
+	Storage arrVarStorage(const json& locNode, const json& vtype);
+	AggregatePlace arrPlace(const json& self, const vector<json>& lens, bool litLen);
+	json structAllocExpr(const string& name);
 	json sa_arr_lit_var_decl(const json& stmt, VarStorage storage);   // single var; returns array of statements
 	json sa_arr_copy_var_decl(const json& stmt, VarStorage storage);  // single var; returns array of statements
 	json sa_struct_lit_var_decl(const json& stmt, VarStorage storage); // single var; returns array of statements
 	json placeAggregateVar(const json& stmt, const string& name, const json& varType,
 	                       json heapInit, json heapRelease, VarStorage storage,
-	                       int64_t frameBytes, int frameAlign, bool zeroFill, json& post);
+	                       int64_t frameBytes, int frameAlign, json& post,
+	                       optional<AllocShapeRef> shape = nullopt);
 	json sa_struct_lit(const json& item, const StructDef& def);
 	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
-	// Where an array literal's elements go: numeric leaf values, or structs
-	// (structDef set) given as struct literals.
-	struct ArrLitShape { bool is2d; json leaf; const StructDef* structDef; };
-	ArrLitShape arrLitShape(const json& locNode, const string& name, const json& saType);
-	json sa_arr_lit_values(const json& lit, const ArrLitShape& shape, const string& name);
+	// Where an array literal's elements go: through its levels, each of a
+	// fixed size or a `[+]T` (size -1, varr its type) as long as its row, to
+	// numeric leaf values or structs (structDef set) given as struct literals.
+	struct ArrLitLevel { int64_t size; json varr; };
+	struct ArrLitShape { vector<ArrLitLevel> levels; json leaf; const StructDef* structDef; };
+	// varrTop: saType itself may be a `[+]T`, the first level.
+	ArrLitShape arrLitShape(const json& locNode, const string& name, const json& saType, bool varrTop = false);
+	json sa_arr_lit_values(const json& lit, const ArrLitShape& shape, const string& name, size_t depth = 0);
 	void checkArrLitCount(const json& locNode, const json& items, const string& name,
-	                      bool is2d, uint64_t size, uint64_t rowSize);
-	void emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out);
-	json sa_embed_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
-	json sa_owned_struct_arr_var_decl(const json& stmt, VarStorage storage); // returns array of statements
-	json sa_owned_struct_arr2d_var_decl(const json& stmt, VarStorage storage); // returns array of statements
-	void recordArrStructShape(const string& structName);
-	void recordArrArrShape(const string& leafName);
-	void recordArrArrStructShape(const string& structName);
+	                      const ArrLitShape& shape, size_t depth = 0);
+	// sized: a `[+]T` array already has the literal's length, as a declared
+	// variable does; otherwise it is resized to it first.
+	void emitArrLitAssigns(const json& arrAst, const ArrLitShape& shape, const json& values, json& out,
+	                       bool sized = true, size_t depth = 0);
+	json allocElemDesc(const json& elem, bool inPlace = false);
+	json layoutElem(const json& elem);
+	// The generated helpers of a fixed array of owned elements elem, which take
+	// the array's length and then those of elem's levels, and of the `[+]T` vt.
+	AllocShapeRef arrShape(const json& elem) { return {AllocFamily::Arr, layoutElem(elem)}; }
+	AllocShapeRef varrShape(const json& vt);
+	void recordArrShape(const json& elem);
+	void recordVarrShape(const json& vt);
+	void recordElemShape(const AllocShapeRef& shape);
+	json varrData(json varr);
 	void enterBlockDecls(const json& stmts);
 	void declareLocalTypeName(const json& stmt);
 	void leaveBlockDecls();
@@ -345,6 +451,11 @@ class PlnSemanticAnalyzer {
 	bool isWrittenNameTaken(const string& name) const;  // isDeclNameTaken but for topDecls_
 	static void addDeclaredVarNames(const json& stmt, set<string>& names);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
+	StructDef buildStructDef(const string& name, const json& fields, const json& locNode,
+	                         bool isUnion = false, bool packed = false, int aligned = 1);
+	int64_t fieldArrSize(const json& locNode, const json& sizeExpr);
+	json ownedFieldType(const json& locNode, const json& vtype);
+	FieldLayout inlineArrField(const json& locNode, const string& structName, const json& arr);
 	void registerCStruct(const json& cincludeStmt, const json& s);  // consume c2ast "structs" entry, register in structDefs_
 	json sa_struct_var_decl(const json& stmt, VarStorage storage); // returns array of statements
 	json sa_type_alias(const json& stmt);         // consume type-alias, register in typeAliases_
@@ -362,10 +473,8 @@ class PlnSemanticAnalyzer {
 	int64_t typeByteSize(const json& locNode, json type);  // `sizeof(type)`, type resolved
 	void recordAllocShape(const string& structName);
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
-	json makeStructFreeStmt(const string& name, const json& pntrType);
-	json makeStructFreeCall(json ptr, const string& structName);
-	pair<string, string> structFreeFunc(const string& structName);
-	json makeOwnedValueFreeStmt(json value);
+	json makeOwnedFreeStmt(const string& name, const json& pntrType);
+	json makeOwnedValueFreeStmt(json value, json lens = json());
 	bool isStructType(const json& type) const;
 	// True if the program-wide name `name` is a primitive or a registered struct.
 	bool isKnownTypeName(const string& name) const;
@@ -383,7 +492,6 @@ class PlnSemanticAnalyzer {
 	json  unsizedArrToPntr(const json& locNode, const json& type);
 	// A '@T'/'@!T' array element (a pointer slot) as SA represents it.
 	json  ptrSlotElemType(const json& locNode, const json& type);
-	void  normalizeUnsizedArrSig(json& funcDef);
 	json  deepNormalizePrimToStruct(const json& type) const;
 	// The type a written name is bound to in this scope, or null.
 	const json* findTypeBinding(const string& written) const;
@@ -397,19 +505,30 @@ class PlnSemanticAnalyzer {
 	// The canonical form of a signature type (an owned struct becomes pntr(struct)),
 	// also what a tapple-decl variable's declared type is compared in.
 	json  normalizeSigType(const json& type) const;
-	void  normalizeStructSig(json& funcDef);
+	json  sigType(const json& locNode, const json& type, bool isParam);
+	void  normalizeSig(json& funcDef);
 	// Diagnose (and exit) if `funcDef`'s parameters/ret-type/rets use a type
 	// PlnTypeRegistry::fromJson cannot represent. Must be called after
-	// normalizeStructSig -- a struct parameter is still prim(Name) before
+	// normalizeSig -- a struct parameter is still prim(Name) before
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
+	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
+	json  varrStorageType(const json& locNode, const json& arr);
+	json  varrElemType(const json& locNode, const json& varr);
+	json  takeOverType(const json& locNode, const json& varType);
+	int64_t inPlaceSize(const json& elem) const;
+	json  inPlaceSizeExpr(const json& elem, size_t level, const function<json(size_t)>& lenAt) const;
+	int   inPlaceAlign(const json& elem) const;
 	// isMutable: the borrow's permission, or none for an owned level.
-	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable);
+	json  sizedArrLevel(const json& locNode, const json& arr, optional<bool> isMutable,
+	                    vector<json>* lens = nullptr);
 	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);
-	void  normalizeArrBorrowSig(json& funcDef);
 	const json* firstNonConstName(const json& expr) const;
+	optional<SaDiag> elemShapeMismatch(const json& saValue, const json& dstType);
 	void  checkElemShape(const json& locNode, const json& saValue, const json& dstType);
+	optional<SaDiag> arrBorrowBindingMismatch(const json& srcAst, const json& saValue,
+	                                          const json& dstType);
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);
 	json  sa_call_borrow_arg(const json& arg);
@@ -422,18 +541,15 @@ class PlnSemanticAnalyzer {
 	void  registerCFuncTypedefAliases(const json& locNode, json& funcEntry);
 	// Shared function pre-registration sequence (normalize + validate + register)
 	// used by top-level, block-local, and function-nested func-defs alike.
-	void  preregisterFunc(const json& f);
-	json  normalizeFuncSig(const json& f);
+	void  preregisterFunc(const json& f, const string& scope);
+	json  normalizeFuncSig(const json& f, const string& scope);
 	// Diagnose Linux syscall ABI constraints on a syscall declaration
-	// (funcDef must already be normalizeStructSig'd) and fold its
+	// (funcDef must already be normalizeSig'd) and fold its
 	// "syscall-number" expression node into a plain JSON integer.
 	void  validateSyscallDecl(json& funcDef);
 	void  rejectNotImplSig(const json& f);
-	// Copy a resolved Palan/syscall callee's func-type, ret-type (as
-	// value-type) and, for a syscall, its folded syscall-number onto a call
-	// node. Shared by sa_expr_call and sa_expr_member_call so the two paths
-	// can't drift on which fields a syscall call carries.
-	void  applyPlnCalleeSig(json& sa_expr, const json& pFunc);
+	json  makeCallNode(const json& expr, const Callee& callee, const string& writtenName,
+	                   vector<CallArg>* analyzedArgs = nullptr);
 	json sa_field_assign(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	FieldChain resolveObjectChain(const json& obj, bool forWrite);
 	void requireOwnedBase(const json& saBase, const json& locNode);
@@ -461,6 +577,7 @@ class PlnSemanticAnalyzer {
 	json sa_store_steps(const json& stmt, json& body, bool readBack);
 	json storeTargetType(const json& stmt);
 	json pinLocation(json loc, json& body);
+	string pinTemp(json saValue, const json& locNode, json& body);
 	json pinValue(json saValue, const json& astValue, json& body);
 	bool valueFirst(json& s, json& pre, json& post, set<string>& roots);
 	json snapshotCopy(const json& saSrc, const json& locNode, json& pre, json& post);
@@ -470,6 +587,7 @@ class PlnSemanticAnalyzer {
 	bool storageRoots(const json& v, set<string>& roots, bool contents);
 	void resolvePending(json& stmts);
 	json sa_assign_stmt(const json& stmt);  // returns json::array()
+	json sa_varr_lit_assign(const json& stmt, const json& varType, json* litAddr = nullptr);
 	json sa_transfer_to_var(const json& stmt, const string& name, const json& varType, const PlnType* toType);
 	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
@@ -485,8 +603,8 @@ class PlnSemanticAnalyzer {
 	json transferStmts(const json& stmt, json targetRelease, json store, const json& value);
 	json sa_return_stmt(const json& stmt);
 	json bindReturnValueToTemp(const json& stmt, json& ret);
-	json bindReturnStructLit(json& stmt);
-	json copyReturnStruct(const json& stmt, json& ret);
+	json bindReturnLit(json& stmt);
+	json copyReturnBlock(const json& stmt, json& ret);
 	const json& findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount);
 	json sa_tapple_decl(const json& stmt);       // returns array of statements
 	json sa_tapple_assign(const json& stmt);

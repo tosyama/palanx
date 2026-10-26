@@ -1,0 +1,17 @@
+func mk(int64 n) -> [+]int32 r {
+	n -> r.resize();
+}
+func dup(@[+]int32 p) -> [+]int32 {
+	return p;
+}
+func own([+]int32 x) -> [+]int32 {
+	return x;
+}
+[+]int32 a = mk(2);
+mk(3) -> a;
+[+]int32 b = own(a);
+[+]int32 c = own(mk(1));
+type P { int64 x; };
+func cp(@P p) -> P {
+	return p;
+}

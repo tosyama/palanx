@@ -2,7 +2,7 @@ cinclude <stdio.h>;
 import "lib_import_type.pa";
 import "lib_import_type.pa" as T;
 
-type S { $Pt e; Vec o; [2]$Pt arr; Color c; $T.Pt q; };
+type S { $Pt e; Vec o; $[2]$Pt arr; Color c; $T.Pt q; };
 S s;
 1.0 -> s.e.x;
 s.o.setX(2.0);

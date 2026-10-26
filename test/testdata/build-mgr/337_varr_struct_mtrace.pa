@@ -1,0 +1,71 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type Q { int32 a; P p; };
+func mk(int32 n) -> P { return [n, n + 1]; }
+func sum(@[+]Q v) -> int32 r {
+	0 -> r;
+	int64 i = 0;
+	while i < v->len() { r + v[i].p.y -> r; i + 1 -> i; }
+}
+func mkv(int32 n) -> [+]Q v {
+	v.resize(2);
+	n -> v[0].p.y;
+	n + 1 -> v[1].p.y;
+}
+func bump(@![+]$P v) { v.push([100, 101]); 5 -> v[0].x; }
+mtrace();
+{
+	[+]P v;
+	P p = [1, 2];
+	v.push(p);
+	v.push([3, 4]);
+	v.push(mk(5));
+	printf("%d %d %d %d\n", len(@v), v[0].x, v[1].y, v[2].x);
+	v.resize(5);
+	0 -> v[3].x;
+	9 -> v[4].y;
+	printf("%d %d %d\n", len(@v), v[3].x, v[4].y);
+	v.resize(2);
+	P q = v.pop();
+	printf("%d %d %d\n", len(@v), q.x, q.y);
+
+	[+]Q w;
+	w.resize(3);
+	0 -> w[0].p.y;
+	0 -> w[2].p.y;
+	Q t = [1, [2, 3]];
+	t ->> w[1];
+	[+]Q w2 = w;
+	Q t2 = [4, [5, 6]];
+	w2.push(t2);
+	w2 -> w;
+	printf("%d %d\n", len(@w), sum(@w));
+	w -> w;
+	[+]Q w3 = mkv(10);
+	mkv(20) -> w3;
+	printf("%d\n", sum(@w3));
+	w3 ->> w;
+	Q z = w.pop();
+	printf("%d %d\n", sum(@w), z.p.y);
+	[2]Q arr;
+	0 -> arr[0].p.y;
+	7 -> arr[1].p.y;
+	arr -> w;
+	printf("%d %d\n", len(@w), sum(@w));
+
+	[+]$P e = [[7, 8], [9, 10]];
+	e.push(p);
+	P r = e.pop();
+	printf("%d %d %d %d\n", len(@e), e[1].x, r.x, r.y);
+	$[+]$P f;
+	f.push(mk(1));
+	bump(@!f);
+	printf("%d %d %d\n", len(@f), f[0].x, f[1].y);
+	[2]$P ea = [[1, 2], [3, 4]];
+	ea -> e;
+	e.resize(3);
+	0 -> e[2].x;
+	printf("%d %d %d\n", len(@e), e[1].y, e[2].x);
+}
+muntrace();

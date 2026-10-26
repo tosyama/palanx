@@ -1,0 +1,45 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type S { int32 x; [3]int32 v; };
+type P { int32 x; int64 y; };
+func sum([]$[3]P a, int64 n) -> int64 s {
+	0 -> s;
+	int64 i = 0;
+	while i < n { s + a[i][2].y -> s; i + 1 -> i; }
+}
+func get(@[2][3][4]int32 a) -> int32 r { a[1][2][3] -> r; }
+mtrace();
+{
+	[2]$[3]S a;
+	5 -> a[1][2].v[0];
+	7 -> a[0][1].x;
+	[2]$[3]S b = a;
+	6 -> b[1][2].v[1];
+	printf("%d %d %d\n", a[1][2].v[0], b[1][2].v[1], b[0][1].x);
+	[+]$[3]$[4]int32 c;
+	c.resize(2);
+	9 -> c[1][2][3];
+	[+]$[3]$[4]int32 d = c;
+	int64 dl = len(@d); printf("%d %d\n", d[1][2][3], dl);
+	[+]$[3][4]S e;
+	e.resize(2);
+	4 -> e[1][2][3].v[0];
+	[+]$[3][4]S f = e;
+	f.pop(); int64 fl = len(@f);
+	printf("%d %d\n", e[1][2][3].v[0], fl);
+	int64 k = 3; int64 j = 4;
+	[2]$[k]$[j]int32 g;
+	8 -> g[1][2][3];
+	1 -> g[0][0][0];
+	printf("%d %d\n", g[1][2][3], g[0][0][0]);
+	[2]$[3]P h;
+	10 -> h[0][2].y; 20 -> h[1][2].y;
+	printf("%d\n", sum(h, 2));
+	[2][3][4]int32 t;
+	11 -> t[1][2][3];
+	printf("%d\n", get(@t));
+	[2][2][2]int32 l = [[[1,2],[3,4]],[[5,6],[7,8]]];
+	[+][2][+]int32 m = [[[1],[2,3]],[[4,5,6],[]]];
+	int64 ml = len(@m[0][1]);
+	printf("%d %d %d\n", l[1][0][1], m[1][0][2], ml);
+}

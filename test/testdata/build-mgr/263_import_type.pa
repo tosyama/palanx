@@ -11,5 +11,6 @@ show(@p);
 
 T.Pair q;
 1.0 -> q[1].x;
+0 -> q[1].owned.a;
 T.Color.Green -> q[1].c;
 T.show(@q[1]);
