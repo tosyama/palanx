@@ -1135,6 +1135,10 @@ func fill(@![H][W]int32 g, int32 x) {
   rebind it by name (`sum(g)`, `@[4]int64 q = p;`, `q -> p`). `@g` on it is a compile error. A
   `@!` borrow may be given where `@` is expected. A row (`g[i]`) is part of the borrowed storage,
   not a borrow of its own, and cannot be given by name.
+- An array given to a `@T`/`@!T` pointer (a parameter, a variable, a pointer field or slot) is
+  written with `@`/`@!` too (`f(@!v)`, `@!v -> slots[0]`), and so is a row (`@!m[i]`) or an array
+  field (`@!s.v`). Only a `[]T` parameter and a C function take an array by name, as in C, and a
+  `[]T` parameter, which owns nothing, is passed on by name.
 - `@!arr` also works where a C function takes a pointer to the elements (`memset(@!v, 0, 32)`).
 - A borrowed array cannot be a return type.
 
@@ -1143,7 +1147,7 @@ func fill(@![H][W]int32 g, int32 x) {
 `[n]@![]T` declares an array of `n` writable pointer slots, each capable of holding a `[]T`
 pointer. The outer array is heap-allocated (`malloc(n * 8)`) and automatically freed at scope
 exit. A slot borrows what it points to and never owns it: store into it with `->` (for example
-memory from C `malloc`) and free that memory yourself. `->>` into a slot is a compile error.
+memory from C `malloc`, or an array as `@!arr`) and free that memory yourself. `->>` into a slot is a compile error.
 `[n]@![]$[m]T` and `[n]@![]$T` are slots the same way, pointing at contiguous rows or structs.
 
 ```palan

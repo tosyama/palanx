@@ -29,5 +29,5 @@ ps(s);
 7 -> e[0][1].x; 8 -> e[1][0].y;
 es(e);
 [2]@![][3]int32 slot;
-m -> slot[0];
+@!m -> slot[0];
 printf("%d\n", slot[0][1][2]);

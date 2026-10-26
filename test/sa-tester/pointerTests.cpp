@@ -758,6 +758,14 @@ TEST(sa, ptr_ptr_slot_arr)
 	ASSERT_EQ(a["base-type"]["base-type"]["base-type"]["type-kind"], "struct");
 }
 
+// A `[]T` parameter, a C function and a pointer value take an array by name.
+TEST(sa, arr_to_ptr_addr_of)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/316_arr_to_ptr_addr_of.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
 TEST(sa, struct_ptr_elem_copy)
 {
 	cleanTestEnv();

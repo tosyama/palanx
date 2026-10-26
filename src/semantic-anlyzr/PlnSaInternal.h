@@ -240,6 +240,18 @@ inline bool isExpiringOwned(const json& v)
 {
 	return v.value("category", "") == "expiring" && isOwnedBlock(v["value-type"]);
 }
+// An owned array, row or array field named as it is: its value is a pointer to
+// its elements, so only the missing permission tells it from `@a`. A `[]T`
+// parameter is the same pointer but owns nothing, so it is told by the
+// variable having neither a known size nor ownership.
+inline bool namesArrStorage(const json& v)
+{
+	const json& vt = v["value-type"];
+	if (!isArrLevel(vt) || vt.contains("mutable") || v.value("category", "") == "expiring")
+		return false;
+	return vt.contains("arr-size") || v.value("category", "") == "owned"
+	    || v.value("expr-type", "") == "arr-index";
+}
 inline bool returnsBorrow(const json& call)
 {
 	bool retBorrow = call.contains("value-type") && isPtrBorrow(call["value-type"]);

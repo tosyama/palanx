@@ -425,7 +425,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements in this version.";
 
 		case E_ArrBorrowNeedsAddrOf:
-			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' "
+			return "an array given to a borrowed array ('@[n]T'/'@![n]T') or a '@T'/'@!T' pointer must be written as '@name' or '@!name' "
 			       "('@[..]' or '@![..]' for a literal).";
 
 		case E_ArrBorrowShapeMismatch:

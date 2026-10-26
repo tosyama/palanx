@@ -643,6 +643,9 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 		return SaDiag{E_StructBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (isVarrPntr(paramVT) && isPtrBorrow(paramVT) && isVarrStorage(saArg["value-type"]))
 		return SaDiag{E_VarrBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	// A C function takes an array by name, as C passes one.
+	if (!isCFunc && isPtrBorrow(paramVT) && namesArrStorage(saArg))
+		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	// A by-value struct is only read, to copy it, so a read-only source is fine.
 	if (isCFunc && isStructStorage(paramVT)) return nullopt;
 	// An upgrade's diagnostic differs by callee kind, since a C parameter's
