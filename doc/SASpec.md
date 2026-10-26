@@ -17,7 +17,13 @@ Root
   program's `_start`, built at link time for the entry module, calls it.
 - str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
 - functions\* - Processed Palan function list (empty array when no functions defined)
-- statements\* - Top-level statement list
+- statements\* - Top-level statement list. When a top-level statement names the implicit
+  `args` (a read-only `@[+]@[]uint8` borrow, declared in the top-level scope before anything
+  else), the list starts with its header, built from `main`'s parameters and never freed: a
+  `var-decl` of `args` (`pntr(varr(pntr(uint8) mutable false))` with `"mutable": false`) whose
+  `init` is a 24-byte `frame-alloc`, then `field-assign`s with `"var":"args"` of `__argc` at
+  offsets 0 (len) and 8 (cap) and `__argv` at 16 (data). The varr shape and builtins of that
+  type are registered then too; a module that does not name `args` has neither.
 - libs\* - Link library name list collected from `link` clauses on `cinclude` statements
   anywhere in this source file, including block-scoped and function-body-scoped ones
   (sorted, deduplicated). Empty array when none. Each module's sa.json carries only its
@@ -891,7 +897,8 @@ SA-only expression kinds (not present in AST JSON):
   statement and its `release`.
 
 - frame-alloc - A block in the function's stack frame; its value is the block's address. Appears
-  only as the `init` of a stack variable's var-decl (see Stack variable declarations).
+  only as the `init` of a stack variable's var-decl (see Stack variable declarations) or of
+  `args`'s (see Root `statements`).
   - expr-type\*: "frame-alloc"
   - size\*: block size in bytes (compile-time constant)
   - align\*: block alignment in bytes (1, 2, 4, 8 or 16)

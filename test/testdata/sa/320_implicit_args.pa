@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+func count(@[+]@[]uint8 a) -> int64 { return len(a); }
+int64 n = count(args);
+printf("%s\n", args[0]);

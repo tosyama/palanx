@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+mtrace();
+{
+	[+]@[]uint8 c = args;
+	push(@!c, "end");
+	printf("%ld %s %s\n", len(@c), c[1], c[len(@c) - 1]);
+}

@@ -363,3 +363,20 @@ TEST(build_mgr, entry_at_link) {
 	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_entry_demo.pa"), "demo 12\n");
 	ASSERT_EQ(execTestCommand("cmp out/lib_entry_demo_imported.o " + libObj), "");
 }
+
+TEST(build_mgr, implicit_args) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan -o out/args_bin ../test/testdata/build-mgr/359_args.pa"), "");
+	ASSERT_EQ(execTestCommand("out/args_bin"), "1\nrebound\n");
+	ASSERT_EQ(execTestCommand("out/args_bin x 'y z'"), "3\n1:x\n2:y z\nrebound\n");
+
+	// An imported module's top level reads `args` only when it is the entry.
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/360_args_import.pa"), "hello main\n");
+	ASSERT_EQ(execTestCommand("bin/palan -o out/lib_args_bin ../test/testdata/build-mgr/lib_args_demo.pa"), "");
+	ASSERT_EQ(execTestCommand("out/lib_args_bin a b"), "hello a\nhello b\n");
+}
+
+// The header of `args` is in the frame: only the copy is allocated and freed.
+TEST(build_mgr, implicit_args_mtrace) {
+	expectMtraceRun("361_args_mtrace", "4 a end\n", 2, " a b");
+}

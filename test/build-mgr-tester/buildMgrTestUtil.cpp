@@ -83,7 +83,7 @@ void expectBalancedMtrace(const string& traceFile, int expectedAllocs)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
-void expectMtraceRun(const string& name, const string& expected, int expectedAllocs)
+void expectMtraceRun(const string& name, const string& expected, int expectedAllocs, const string& runArgs)
 {
 	cleanTestEnv();
 	string bin = "/tmp/palan_" + name.substr(4) + "_bin";
@@ -91,7 +91,7 @@ void expectMtraceRun(const string& name, const string& expected, int expectedAll
 	string traceFile = "/tmp/palan_" + name.substr(4) + ".log";
 	string output = execTestCommand(
 		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
-		"MALLOC_TRACE=" + traceFile + " " + bin);
+		"MALLOC_TRACE=" + traceFile + " " + bin + runArgs);
 	ASSERT_EQ(output, expected);
 	expectBalancedMtrace(traceFile, expectedAllocs);
 }

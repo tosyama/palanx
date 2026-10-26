@@ -1219,3 +1219,39 @@ TEST(sa, call_arg_expected_type)
 	ASSERT_EQ(stmts[10]["body"]["args"][0]["right"]["left"]["value-type"]["type-name"], "int32");
 	ASSERT_EQ(stmts[11]["body"]["args"][0]["left"]["left"]["value-type"]["type-name"], "int32");
 }
+
+// The top level builds the header of `args` from its argc/argv only when it
+// names `args`, and the builtins come with it.
+TEST(sa, implicit_args)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/320_implicit_args.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& decl = stmts[0]["vars"][0];
+	ASSERT_EQ(decl["name"], "args");
+	ASSERT_EQ(decl["var-type"]["mutable"], false);
+	ASSERT_EQ(decl["var-type"]["base-type"]["type-kind"], "varr");
+	ASSERT_EQ(decl["var-type"]["base-type"]["base-type"]["mutable"], false);
+	ASSERT_EQ(decl["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(decl["init"]["size"], 24);
+	const pair<int, string> fields[] = {{0, "__argc"}, {8, "__argc"}, {16, "__argv"}};
+	for (int i = 0; i < 3; i++) {
+		const auto& fa = stmts[i + 1];
+		ASSERT_EQ(fa["stmt-type"], "field-assign");
+		ASSERT_EQ(fa["var"], "args");
+		ASSERT_EQ(fa["offset"], fields[i].first);
+		ASSERT_EQ(fa["value"]["name"], fields[i].second);
+	}
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["args"][0]["name"], "args");
+	ASSERT_EQ(jout["alloc-shapes"].size(), 1);
+	ASSERT_EQ(jout["alloc-shapes"][0]["shape-key"], "varr_int64");
+
+	// A function's own `args` is unrelated, and leaves the top level as it was.
+	jout = run_sa("../test/testdata/sa/321_implicit_args_unused.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"].size(), 1);
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["name"], "n");
+	ASSERT_TRUE(jout["alloc-shapes"].empty());
+	ASSERT_EQ(jout["functions"][0]["parameters"][0]["name"], "args");
+}

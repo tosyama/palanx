@@ -1,0 +1,14 @@
+cinclude <stdio.h>;
+func show(@[+]@[]uint8 a) {
+	int64 i = 1;
+	while i < len(a) {
+		printf("%ld:%s\n", i, a[i]);
+		i + 1 -> i;
+	}
+}
+printf("%ld\n", len(args));
+show(args);
+[+]@[]uint8 w;
+push(@!w, "rebound");
+@w -> args;
+printf("%s\n", args[0]);

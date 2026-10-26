@@ -1224,3 +1224,22 @@ TEST(sa_error, overload)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, implicit_args)
+{
+	const pair<string, string> cases[] = {
+		{"error_833_args_redecl.pa", ":1:1: error: Variable 'args' is already declared."},
+		{"error_834_args_redecl_block.pa", ":2:2: error: Variable 'args' is already declared."},
+		{"error_835_args_const.pa", ":1:1: error: Constant 'args' is already defined."},
+		{"error_836_args_addr_of.pa", ":1:15: error: cannot take the address of 'args'"},
+		{"error_837_args_resize.pa", ":1:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

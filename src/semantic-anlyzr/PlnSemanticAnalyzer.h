@@ -178,6 +178,8 @@ class PlnSemanticAnalyzer {
 	vector<size_t> whileScopeStack_;
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
+	// The top level names the implicit `args`; its header is built only then.
+	bool argsUsed_ = false;
 	// Variables of the function being analyzed (the top level counts as one)
 	// whose storage a pointer has been given to, and the count of
 	// `pending-alias` statements waiting for that to be known.
@@ -267,6 +269,8 @@ class PlnSemanticAnalyzer {
 	bool        isFrameVar(const string& name) const;
 	void        removeFromArrayScope(const string& name);
 	void        addOwnedScopeVar(const string& name, json release);
+	void        noteImplicitArgs(const json& stmts);
+	json        implicitArgsDecl() const;
 
 	void        registerCFunc(const string& name, const json& def);
 	const json* findCFunc(const string& name) const;
