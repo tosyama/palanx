@@ -435,19 +435,11 @@ json PlnSemanticAnalyzer::sa_arr_size_expr(const json& stmt, const json& sizeExp
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
 		exit(1);
 	}
-	// A macro-folded lit-int keeps its own (possibly narrower) C-declared
-	// type instead of taking uint64 from expectedType, unlike a plain
-	// source literal (which the lit-int/lit-uint branches above always
-	// force to uint64 here). Left as-is, it would be codegen'd as an
-	// inline immediate sized to its own width while every caller of this
-	// helper embeds it into hand-built uint64 byte-count math, producing a
-	// register-width mismatch at the assembler. Narrow this widening to
-	// the literal case only -- a variable/expression operand already
-	// reaches codegen as a load sized to the context, same as before this
-	// helper existed, and widening it here would just wrap already-working
-	// output in a redundant convert node.
-	string et = sz.value("expr-type", "");
-	if ((et == "lit-int" || et == "lit-uint") && t != uint64Type)
+	// Every user of the size (a uint64 length variable, the byte-count
+	// math) reads it as 8 bytes, so a narrower value -- a variable, an
+	// expression, or a macro-folded lit-int that keeps its C-declared type --
+	// must be widened here.
+	if (t != uint64Type)
 		sz = wrapConvert(sz, registry_.toJson(uint64Type));
 	return sz;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
