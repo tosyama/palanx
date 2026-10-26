@@ -203,6 +203,23 @@ TEST(c2ast, typedef_anon_union) {
     ASSERT_EQ(structs[0]["fields"].size(), 1u);
 }
 
+TEST(c2ast, extension_keyword) {
+    cleanTestEnv();
+    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/052_extension.h");
+    json ast = json::parse(output);
+    auto& structs = ast["ast"]["structs"];
+
+    ASSERT_EQ(ast["ast"]["typedefs"][0]["name"], "ll_t");
+    ASSERT_EQ(structs.size(), 2u);
+    ASSERT_EQ(structs[0]["union"], true);
+    ASSERT_EQ(structs[1]["name"], "E");
+    auto& fields = structs[1]["fields"];
+    ASSERT_EQ(fields.size(), 3u);
+    ASSERT_EQ(fields[1]["name"], "b");
+    ASSERT_EQ(fields[1]["var-type"]["type-name"], "int64");
+    ASSERT_EQ(fields[2]["var-type"]["type-kind"], "union");
+}
+
 TEST(c2ast, typedef_pointer_chain) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/022_typedef_pointer_chain.h");
