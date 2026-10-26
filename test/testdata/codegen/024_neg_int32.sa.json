@@ -1,5 +1,6 @@
 {
   "original": "/test/neg_int32.pa",
+  "main": {"name": "neg_int32..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
   "str-literals": [
     { "label": ".str0", "value": "%d\n" }
   ],

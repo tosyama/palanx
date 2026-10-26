@@ -2186,7 +2186,7 @@ int64 x = 10;
 printf("%lld\n", x);
 ```
 
-- Top-level statements execute as the `_start` entry point, only in the file being built. The
+- Top-level statements run when the program starts, only in the file being built. The
   top-level statements of an imported file are not executed, so a module can hold its own tests
   or usage examples.
 - There are no global variables: a top-level variable is visible to the top-level statements

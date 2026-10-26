@@ -579,6 +579,13 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
 	symbolScope_  = moduleSymbol(moduleId_);
 	sa["original"]      = ast["original"];
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json u8 = {{"type-kind","prim"},{"type-name","uint8"}};
+	sa["main"] = {{"name", symbolScope_ + "..main"}, {"parameters", {
+		{{"name","__argc"}, {"var-type", {{"type-kind","prim"},{"type-name","int64"}}}},
+		{{"name","__argv"}, {"var-type", {{"type-kind","pntr"},{"base-type", {{"type-kind","pntr"},{"base-type",u8}}}}}},
+	}}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();

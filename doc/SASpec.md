@@ -11,6 +11,10 @@ type information and pre-collected literal tables.
 Root
 ----
 - original\* - original source file path
+- main\* - The module's top-level function, whose body is `statements`: `name` (its symbol,
+  `<module>..main`; see Symbol names) and `parameters` (`__argc` int64 and `__argv`
+  `pntr(pntr(uint8))`, in the Function definition model's form). It is exported, and the
+  program's `_start`, built at link time for the entry module, calls it.
 - str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
 - functions\* - Processed Palan function list (empty array when no functions defined)
 - statements\* - Top-level statement list
@@ -158,7 +162,8 @@ Note: cinclude statements are not present in function bodies (they are top-level
 Every Palan function links by a symbol SA builds from its module and its parameter types, so
 functions of one name (overloads, or the same function exported by two modules) have distinct
 symbols. It is the `name` of the function, of a `call` resolved to it and of a `func-ref` to it.
-`_start`, C functions and syscalls are not renamed.
+C functions and syscalls are not renamed. A module's top-level function is `<module>..main`, which
+no other function's symbol can be: theirs always end in a parameter list or `.v`.
 
 `<module>..<name>.<param>.<param>...` — `<name>.v` when there are no parameters.
 

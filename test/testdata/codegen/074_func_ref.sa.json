@@ -1,5 +1,6 @@
 {
   "original": "/test/074_func_ref.pa",
+  "main": {"name": "_074_func_ref..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
   "statements": [
     {
       "stmt-type": "expr",

@@ -439,6 +439,15 @@ static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr)
     return result;
 }
 
+static PlnFunc deserializeSig(const json& jf)
+{
+    PlnFunc pf;
+    pf.name = jf["name"];
+    for (auto& jp : jf["parameters"])
+        pf.params.push_back({jp["name"], toVRegType(jp["var-type"])});
+    return pf;
+}
+
 Module deserialize(const json& sa)
 {
     Module mod;
@@ -452,10 +461,7 @@ Module deserialize(const json& sa)
 
     if (sa.contains("functions")) {
         for (auto& jf : sa["functions"]) {
-            PlnFunc pf;
-            pf.name = jf["name"];
-            for (auto& jp : jf["parameters"])
-                pf.params.push_back({jp["name"], toVRegType(jp["var-type"])});
+            PlnFunc pf = deserializeSig(jf);
             if (jf.contains("ret-type")) {
                 pf.hasRetType = true;
                 pf.retType    = toVRegType(jf["ret-type"]);
@@ -472,8 +478,13 @@ Module deserialize(const json& sa)
         }
     }
 
+    // The top-level statements are the body of the module's exported
+    // `<module>..main`; the program's _start is a separate link-time stub.
+    PlnFunc top = deserializeSig(sa["main"]);
+    top.isExport = true;
     if (sa.contains("statements"))
-        mod.statements = deserializeStatements(sa["statements"]);
+        top.body = deserializeStatements(sa["statements"]);
+    mod.functions.push_back(move(top));
 
     return mod;
 }

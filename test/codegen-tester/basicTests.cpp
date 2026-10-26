@@ -138,8 +138,9 @@ TEST(codegen, var_decl_int32) {
     // int32 init must use movl, not movq
     ASSERT_NE(asm_text.find("movl $10,"),    string::npos);
     ASSERT_EQ(asm_text.find("movq $10,"),    string::npos);
-    // int32 arg to printf must use 32-bit register (%edi), not 64-bit (%rdi)
-    ASSERT_NE(asm_text.find("%edi"),         string::npos);
+    // int32 arg to printf must use 32-bit register (%esi), not 64-bit (%rsi)
+    ASSERT_NE(asm_text.find(", %esi\n"),     string::npos);
+    ASSERT_EQ(asm_text.find(", %rsi\n"),     string::npos);
     ASSERT_EQ(asm_text.find("movq -"),       string::npos);
     ASSERT_NE(asm_text.find("call printf"),  string::npos);
 }
@@ -209,7 +210,6 @@ TEST(codegen, callpln_retpln_regalloc) {
     // Simulate: caller calls add(v0=1, v1=2) -> v2, then returns v2
     VFunc f;
     f.name    = "caller";
-    f.isEntry = false;
     f.instrs.push_back(MovImm{0, VRegType::Int32, 1});
     f.instrs.push_back(MovImm{1, VRegType::Int32, 2});
     f.instrs.push_back(CallPln{"add", {0, 1}, {2}, {VRegType::Int32}});
@@ -334,10 +334,10 @@ TEST(codegen, helloworld_asm_output) {
     ASSERT_NE(asm_text.find(".str0"),          string::npos);
     ASSERT_NE(asm_text.find("Hello World!\\n"), string::npos);
     ASSERT_NE(asm_text.find(".text"),          string::npos);
-    ASSERT_NE(asm_text.find("_start"),         string::npos);
+    ASSERT_NE(asm_text.find("\t.globl helloworld..main\nhelloworld..main:\n"), string::npos);
     ASSERT_NE(asm_text.find("%rdi"),           string::npos);
     ASSERT_NE(asm_text.find("call printf"),    string::npos);
-    ASSERT_NE(asm_text.find("call exit"),      string::npos);
+    ASSERT_EQ(asm_text.find("_start"),         string::npos);
 }
 
 TEST(codegen, block_stmt) {
@@ -349,9 +349,9 @@ TEST(codegen, block_stmt) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // block generates valid asm: printf call and exit
+    // block generates valid asm: printf call and return
     ASSERT_NE(asm_text.find("call printf"), string::npos);
-    ASSERT_NE(asm_text.find("call exit"),   string::npos);
+    ASSERT_NE(asm_text.find("\tleave\n\tret\n"), string::npos);
     // no extra block-related assembly instructions leaked
     ASSERT_EQ(asm_text.find("BlockEnter"),  string::npos);
     ASSERT_EQ(asm_text.find("BlockLeave"),  string::npos);
@@ -1042,8 +1042,8 @@ TEST(codegen, struct_trailing_pad) {
     ASSERT_NE(asm_text.find("movq"),   string::npos);
     ASSERT_NE(asm_text.find(", (%r"),  string::npos);
     ASSERT_NE(asm_text.find("movl"),   string::npos);
-    ASSERT_NE(asm_text.find("8(%r"),   string::npos);
-    ASSERT_EQ(asm_text.find("4(%r"),   string::npos);
+    ASSERT_NE(asm_text.find(" 8(%r"),  string::npos);
+    ASSERT_EQ(asm_text.find(" 4(%r"),  string::npos);
 }
 
 // Verify that Multi { int8 a; int32 b; int64 c; } has two padding gaps:
@@ -1324,7 +1324,7 @@ TEST(codegen, struct_ret_memory) {
     ASSERT_NE(asm_text.find("movq %rax, %rdi"), string::npos);
     ASSERT_NE(asm_text.find("call get_big"),    string::npos);
     ASSERT_EQ(asm_text.find("%xmm"),            string::npos);
-    ASSERT_NE(asm_text.find("call get_big\n\tmovl $0, %edi"), string::npos);
+    ASSERT_NE(asm_text.find("call get_big\n\tleave\n"), string::npos);
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/072_struct_ret_memory.o"), "");
 }
@@ -1378,7 +1378,7 @@ TEST(codegen, syscall) {
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
-    // getpid in _start: result must survive the later pwrite64/exit_group
+    // getpid at the top level: result must survive the later pwrite64/exit_group
     // calls, so it lands in a callee-saved register -- a real copy out of %eax.
     ASSERT_NE(asm_text.find("movl $39, %eax\n\tsyscall\n\tmovl %eax, %"), string::npos);
     // getpid inside get_pid_wrap, whose sole statement returns it directly:
@@ -1394,46 +1394,57 @@ TEST(codegen, syscall) {
     // exit_group: argument only, no result to copy back.
     ASSERT_NE(asm_text.find("movl $231, %eax\n\tsyscall\n"), string::npos);
     ASSERT_EQ(countOccurrences(asm_text, "\tsyscall\n"),    4u);
-    ASSERT_EQ(countOccurrences(asm_text, "\tcall "),        2u);  // get_pid_wrap + exit
+    ASSERT_EQ(countOccurrences(asm_text, "\tcall "),        1u);  // get_pid_wrap
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/075_syscall.o"), "");
 }
 
-TEST(codegen, elf_crt_glue_entry_object) {
+TEST(codegen, entry) {
     // Palan links no crt startup objects, so the entry object itself must
     // supply __dso_handle and .note.GNU-stack, the ELF/libc glue those objects
     // would otherwise provide.
     cleanTestEnv();
-    string sa   = "../test/testdata/codegen/002_printf_int_literal.sa.json";
-    string asmf = "out/002_elf_crt_glue.s";
+    string asmf = "out/entry.s";
 
-    string err = run_codegen(sa, asmf);
+    string err = execTestCommand("bin/palan-codegen --entry app..main -o " + asmf);
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("\t.globl _start\n_start:\n"
+                            "\tmovq (%rsp), %rdi\n\tleaq 8(%rsp), %rsi\n"
+                            "\tcall app..main\n\tmovl $0, %edi\n\tcall exit\n"), string::npos);
     ASSERT_NE(asm_text.find("\t.section .data\n"),         string::npos);
     ASSERT_NE(asm_text.find("\t.globl __dso_handle\n"),    string::npos);
     ASSERT_NE(asm_text.find("\t.hidden __dso_handle\n"),   string::npos);
     ASSERT_NE(asm_text.find("__dso_handle:\n\t.quad 0\n"), string::npos);
     ASSERT_NE(asm_text.find(".note.GNU-stack"),            string::npos);
 
-    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/002_elf_crt_glue.o"), "");
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/entry.o"), "");
 }
 
-TEST(codegen, elf_crt_glue_no_entry) {
-    // --no-entry means this object must not define __dso_handle (exactly one
-    // per link), but .note.GNU-stack stays unconditional.
+TEST(codegen, entry_usage) {
     cleanTestEnv();
-    string asmf = "out/002_no_entry_crt_glue.s";
+    string usage = "Usage: palan-codegen -e <symbol> -o <file>";
+    ASSERT_NE(execTestCommand("bin/palan-codegen --entry app..main").find(usage), string::npos);
+    ASSERT_NE(execTestCommand("bin/palan-codegen --entry app..main -o out/entry.s "
+                              "../test/testdata/codegen/001_helloworld.sa.json").find(usage), string::npos);
+    ASSERT_NE(execTestCommand("bin/palan-codegen --entry app..main -o out/no-such-dir/entry.s")
+              .find("Could not open output file"), string::npos);
+}
 
-    string err = execTestCommand(
-        "bin/palan-codegen --no-entry "
-        "../test/testdata/codegen/002_printf_int_literal.sa.json -o " + asmf);
+TEST(codegen, module_object_crt_glue) {
+    // A module object is the same whichever module is the entry: it must not
+    // define _start or __dso_handle (exactly one per link), but
+    // .note.GNU-stack stays unconditional.
+    cleanTestEnv();
+    string asmf = "out/002_module_crt_glue.s";
+
+    string err = run_codegen("../test/testdata/codegen/002_printf_int_literal.sa.json", asmf);
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
     ASSERT_EQ(asm_text.find("__dso_handle"),    string::npos);
-    ASSERT_EQ(asm_text.find(".globl _start"),   string::npos);
+    ASSERT_EQ(asm_text.find("_start"),          string::npos);
     ASSERT_NE(asm_text.find(".note.GNU-stack"), string::npos);
 }
 
@@ -1476,7 +1487,7 @@ TEST(codegen, frame_alloc)
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("leaq -88(%rbp)"), string::npos);
     ASSERT_NE(asm_text.find("leaq -96(%rbp)"), string::npos);
-    ASSERT_NE(asm_text.find("leaq -16(%rbp)"), string::npos);
+    ASSERT_NE(asm_text.find("leaq -32(%rbp)"), string::npos);  // below the top level's two callee-saved slots
     ASSERT_NE(asm_text.find("call memset"), string::npos);
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/077_frame_alloc.o"), "");

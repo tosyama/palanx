@@ -169,11 +169,7 @@ int main(int argc, char* argv[])
 		string obj_file = base + ".o";
 
 		// palan-codegen
-		bool is_entry = (i == 0);
-		vector<string> codegenArgv{exec_path + "/palan-codegen"};
-		if (!is_entry) codegenArgv.push_back("--no-entry");
-		codegenArgv.push_back(sa_file);
-		if (int ret = runTool(codegenArgv))
+		if (int ret = runTool({exec_path + "/palan-codegen", sa_file}))
 			return ret;
 
 		// as
@@ -181,6 +177,22 @@ int main(int argc, char* argv[])
 			return ret;
 
 		obj_files.push_back(obj_file);
+	}
+
+	// The entry is chosen here, at link time: every module compiles the same
+	// whichever role it plays, and only this stub names the first one's
+	// top-level function.
+	{
+		string base = ast_files[0].substr(0, ast_files[0].size() - 9);
+		ifstream f(base + ".sa.json");
+		string main_symbol = json::parse(f)["main"]["name"];
+		string entry_s = base + ".entry.s";
+		string entry_o = base + ".entry.o";
+		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s}))
+			return ret;
+		if (int ret = runTool({"as", entry_s, "-o", entry_o}))
+			return ret;
+		obj_files.push_back(entry_o);
 	}
 
 	// Single pass over every module's sa.json to aggregate whole-program
@@ -720,7 +732,7 @@ int main(int argc, char* argv[])
 				return ret;
 			if (int ret = runTool({exec_path + "/palan-sa", alloc_ast}))
 				return ret;
-			if (int ret = runTool({exec_path + "/palan-codegen", "--no-entry", alloc_sa}))
+			if (int ret = runTool({exec_path + "/palan-codegen", alloc_sa}))
 				return ret;
 			if (int ret = runTool({"as", alloc_s, "-o", alloc_o}))
 				return ret;

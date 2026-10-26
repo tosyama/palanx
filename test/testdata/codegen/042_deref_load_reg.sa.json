@@ -46,6 +46,7 @@
         }
     ],
     "original": "042_deref_load_reg.pa",
+    "main": {"name": "_042_deref_load_reg..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
     "str-literals": [],
     "statements": [
         {

@@ -16,14 +16,13 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitGlobal(const string& name);
     void emitLabel(const string& name);
     void emitStringLiteral(const string& label, const string& value);
-    void emitElfCrtGlue(bool isEntryObject);
+    void emitNoteGnuStack();
     void emitLeaLabel(const string& reg, const string& label);
     void emitMovImm(const string& dst, bool dst_is_mem, VRegType type, long long value);
     void emitConvert(const string& dstBase, const PhysLoc& src, VRegType from, VRegType to);
     void emitCallC(const string& name, int nFloatArgs = 0, bool indirect = false);
     int  emitCallArgs(const vector<VReg>& args, const RegMap& rm, int& nFloatArgs,
                       const PhysLoc* callee = nullptr, const vector<StructArgSpan>& structArgs = {});
-    void emitExit(int code);
 
     // Per-function prologue
     void emitFuncPrologue(const VFunc& func, const RegAllocResult& ra, const RegMap& rm);
@@ -69,4 +68,6 @@ public:
     explicit PlnX86CodeGen(std::ostream& out) : out(out) {}
 
     void emit(const VProg& prog, const vector<RegAllocResult>& allocs) override;
+    // The program entry: a _start that calls mainSymbol(argc, argv), then exit(0).
+    void emitEntry(const string& mainSymbol);
 };

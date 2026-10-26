@@ -12,8 +12,10 @@ version: 0.2.2 — bit-field layout, command-line arguments, `for` loop
 - Bit-fields: c2ast reads C bit-fields, and SA lays out structs that contain them by the x86-64
   C rules, so headers such as `netinet/tcp.h` (and `uv.h` through it) can be included. Accessing
   a bit-field member from Palan is an error. `__extension__` before a struct member is accepted.
-- Command-line arguments: the top-level statements of the entry module see an implicit read-only
+- Command-line arguments: the top-level statements of a module see an implicit read-only
   `args`, a borrowed `[+]` array of borrowed C strings (`@[+]@[]uint8`) built from argc/argv.
+  The entry module is chosen at link time, so a module compiles the same whether it is the entry
+  or imported, and its top level can be run on its own as its tests or demo.
   `[+]@T`/`[+]@!T` (variable-length arrays of pointer slots) are added for it.
 - `for a in arr { }` and `for a, i in arr { }` loop over every array whose length `len` can give;
   `i` is the `int64` index. `a` is a copy, `@a` a read-only borrow and `@!a` a writable borrow of
@@ -45,10 +47,11 @@ Usage: palan [options] <source file>
 Design:
  The build manager generates the AST of the given source file by invoking palan-gen-ast, then
  follows its `import`s of other Palan source files and generates their ASTs in turn.
- For each module it then invokes palan-sa and palan-codegen (`--no-entry` for every module but
- the given one) and assembles the result with `as`. The allocators the modules need are generated
- as one more module (see 3.6), and all object files are linked with `ld` to create the final
- executable (default: `a.out`).
+ For each module it then invokes palan-sa and palan-codegen and assembles the result with `as`;
+ a module compiles the same whichever module is the entry. The allocators the modules need are
+ generated as one more module (see 3.6). The entry is chosen only at link time: `palan-codegen
+ --entry` emits a `_start` calling the given module's top-level function, and all object files are
+ linked with `ld` to create the final executable (default: `a.out`).
  If `-o` is not specified, the resulting `a.out` is executed immediately after linking and then removed.
  This allows palan to be used as a script runner without leaving build artifacts.
  Before linking, the build manager unions the `libs` and `objs` arrays (see SASpec.md's Root)
@@ -158,16 +161,20 @@ Responsibility:
 
 ```
 Usage: palan-codegen [options] <SA file>
+       palan-codegen -e <symbol> -o <file path>
  options:
    -o, --output <file path> Specify output assembly file path. If not specified, defaults to <source>.s.
-   -n, --no-entry           Do not export _start or define __dso_handle (for every module but the entry one)
+   -e, --entry <symbol>     Emit the program entry instead: a _start calling <symbol>, a module's
+                            top-level function, and __dso_handle
    -h, --help               Display help information
    -v, --version            Display version information
 ```
 
 Design:
  The code generator reads sa.json and emits x86-64 AT&T syntax assembly for use with `as`.
- The entry point is `_start`. The final executable is produced by the build manager,
+ A module's top-level statements are its exported function `<module>..main`, which takes argc and
+ argv. The entry point `_start` (from `--entry`) calls it with argc and argv from the initial
+ stack, then `exit(0)`. The final executable is produced by the build manager,
  which assembles the `.s` file with `as` and links with `ld` (specifying the dynamic linker
  and required libraries).
 
@@ -182,8 +189,10 @@ Design:
    (integers in rdi/rsi/rdx/..., floats in xmm0/xmm1/...; caller-saved, read immediately after call).
  - Normal Palan functions use standard frame setup (pushq %rbp / movq %rsp, %rbp / subq $N, %rsp)
    with frameSize rounded to a multiple of 16, and epilogue `leave; ret`.
- - The `_start` entry point uses `call exit` as its epilogue; `return` statements are rejected by palan-sa.
- - Symbol visibility: `_start` and `export func` functions are emitted with `.globl`. All other Palan
+ - A module's top-level function returns like any Palan function; `return` statements are
+   rejected there by palan-sa.
+ - Symbol visibility: `_start`, each module's top-level function and `export func` functions are
+   emitted with `.globl`. All other Palan
    functions are local symbols (no `.globl`), equivalent to `static` in C.
  - Symbol names: a Palan function's symbol is the `name` palan-sa gives it, built from its module,
    its name and its parameter types (`util..show.int32`; SASpec.md "Symbol names"), so overloads
@@ -195,7 +204,7 @@ Design:
 
  Palan links no crt startup objects (no crt1.o/crti.o/crtbegin.o -- the build manager
  links `ld <objs> -lc` directly), so the code generator supplies the ELF/libc glue those
- objects would otherwise provide: the entry object defines `__dso_handle` (needed by
+ objects would otherwise provide: the `--entry` object defines `__dso_handle` (needed by
  glibc's `atexit`/`at_quick_exit`/`pthread_atfork`, which forward to `__cxa_atexit`-family
  calls taking it), and every object emits `.note.GNU-stack` (otherwise `ld` marks the
  whole binary's stack executable as soon as any note-carrying libc object joins the link).
@@ -212,7 +221,7 @@ palan-sa emits only calls to these functions; it records each shape it needs in 
 shapes of all modules, deduplicates them by key (each module defining its own copy would collide
 at link time), and writes the functions as Palan source `__allocators.pa` in the working directory
 of the given source file, with `__allocators.h` declaring the C functions it calls. It is compiled
-as one more module (`--no-entry`). Each struct appears there as an exported type declaring only
+as one more module. Each struct appears there as an exported type declaring only
 its owned fields, at their offsets, with the rest of its bytes as padding, so a C struct or a type
 of another module needs no Palan declaration of its other fields. A struct owning nothing is
 only bytes to allocate, copy and free, so an element or owned field of one is declared as

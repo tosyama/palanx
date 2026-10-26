@@ -15,11 +15,13 @@ string PlnCodegenMessage::getMessage(PlnCodegenMessageCode msg_code, string arg1
 		case M_Help:
 			return
 				"Usage: palan-codegen [options] <SA file>\n"
-				"Generate x86-64 assembly from palan SA Json.\n"
+				"       palan-codegen -e <symbol> -o <file>\n"
+				"Generate x86-64 assembly from palan SA Json, or the program entry.\n"
 				"\n"
 				"Options\n"
 				" -o, --output <file>   Output assembly file path.\n"
-				" -n, --no-entry        Do not emit .globl for _start.\n"
+				" -e, --entry <symbol>  Emit the _start that calls <symbol>, a module's\n"
+				"                       top-level function, instead of compiling an SA file.\n"
 				" -v, --version         Display version.\n"
 				" -h, --help            Display help.\n";
 

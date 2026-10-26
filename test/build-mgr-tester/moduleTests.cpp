@@ -350,3 +350,16 @@ TEST(build_mgr, chain_method_mtrace) {
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
+
+// The entry is chosen at link time: an imported module's top level runs only
+// when that module is the entry, and its object is the same either way.
+TEST(build_mgr, entry_at_link) {
+	cleanTestEnv();
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
+	string libObj = string(getenv("HOME")) + "/.palan/work" + dir + "/lib_entry_demo.pa.o";
+
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/358_entry_at_link.pa"), "15\n");
+	fs::copy_file(libObj, "out/lib_entry_demo_imported.o");
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_entry_demo.pa"), "demo 12\n");
+	ASSERT_EQ(execTestCommand("cmp out/lib_entry_demo_imported.o " + libObj), "");
+}

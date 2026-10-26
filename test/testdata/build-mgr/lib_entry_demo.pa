@@ -1,0 +1,3 @@
+cinclude <stdio.h>;
+export func triple(int32 x) -> int32 { return x * 3; }
+printf("demo %d\n", triple(4));

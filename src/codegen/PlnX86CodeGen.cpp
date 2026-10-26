@@ -43,7 +43,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
         const RegAllocResult& ra = allocs[idx];
         const RegMap& rm  = ra.regMap;
 
-        if (func.isEntry || func.isExport)
+        if (func.isExport)
             emitGlobal(func.name);
         emitLabel(func.name);
 
@@ -72,7 +72,6 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<CallPln>  (&instr)) emitInstrCallPln(*i, rm);
             else if (auto* i  = std::get_if<CallSys>  (&instr)) emitInstrCallSys(*i, rm);
             else if (auto* i  = std::get_if<RetPln>   (&instr)) emitInstrRetPln(*i, rm, ra.usedCalleeSaved);
-            else if (auto* i  = std::get_if<ExitCode> (&instr)) emitExit(i->code);
             else if (auto* l  = std::get_if<Label>    (&instr)) out << l->name << ":\n";
             else if (auto* j  = std::get_if<Jmp>      (&instr)) out << "\tjmp " << j->label << "\n";
             else if (auto* i  = std::get_if<CondJmp>  (&instr)) emitInstrCondJmp(*i, rm);
@@ -90,40 +89,25 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
         }
     }
 
-    // "Which object is the entry object" is already represented exactly once,
-    // by the _start VFunc that PlnVCodeGen marks (PlnVCodeGen.cpp:744) -- derive
-    // it rather than adding a second VProg flag that could disagree.
-    bool isEntryObject = false;
-    for (auto& f : prog.funcs)
-        if (f.isEntry) { isEntryObject = true; break; }
-    emitElfCrtGlue(isEntryObject);
+    emitNoteGnuStack();
 }
 
 void PlnX86CodeGen::emitFuncPrologue(const VFunc& func, const RegAllocResult& ra, const RegMap& rm)
 {
-    if (func.isEntry) {
-        // _start: set up frame only when stack space is needed
-        if (ra.frameSize > 0) {
-            out << "\tpushq %rbp\n";
-            out << "\tmovq %rsp, %rbp\n";
-            out << "\tsubq $" << ra.frameSize << ", %rsp\n";
-        }
-    } else {
-        // Regular Palan function: always save %rbp for leave/ret
-        out << "\tpushq %rbp\n";
-        out << "\tmovq %rsp, %rbp\n";
-        if (ra.frameSize > 0)
-            out << "\tsubq $" << ra.frameSize << ", %rsp\n";
-        // Save callee-saved registers into reserved frame slots (top of frame)
-        for (int i = 0; i < (int)ra.usedCalleeSaved.size(); i++)
-            out << "\tmovq " << ra.usedCalleeSaved[i] << ", " << -(i + 1) * 8 << "(%rbp)\n";
-        // Copy parameters remapped from argument registers to their allocated locations
-        for (auto& pc : ra.paramCopies) {
-            string src = sizedRegName(pc.srcArgReg, pc.type);
-            string dst = srcOperand(pc.dst);
-            if (src != dst)
-                out << "\t" << movInstrForType(pc.type) << " " << src << ", " << dst << "\n";
-        }
+    // Always save %rbp for leave/ret
+    out << "\tpushq %rbp\n";
+    out << "\tmovq %rsp, %rbp\n";
+    if (ra.frameSize > 0)
+        out << "\tsubq $" << ra.frameSize << ", %rsp\n";
+    // Save callee-saved registers into reserved frame slots (top of frame)
+    for (int i = 0; i < (int)ra.usedCalleeSaved.size(); i++)
+        out << "\tmovq " << ra.usedCalleeSaved[i] << ", " << -(i + 1) * 8 << "(%rbp)\n";
+    // Copy parameters remapped from argument registers to their allocated locations
+    for (auto& pc : ra.paramCopies) {
+        string src = sizedRegName(pc.srcArgReg, pc.type);
+        string dst = srcOperand(pc.dst);
+        if (src != dst)
+            out << "\t" << movInstrForType(pc.type) << " " << src << ", " << dst << "\n";
     }
 }
 
@@ -235,13 +219,25 @@ void PlnX86CodeGen::emitStringLiteral(const string& label, const string& value)
 }
 
 // ELF/System V target glue that a C program's crt startup objects would supply.
-// Palan owns its own program entry -- it emits _start itself and the build
-// manager links `ld <objs> -lc` with no crt1.o/crti.o/crtbegin.o -- so it must
-// supply these itself. A non-ELF backend must not inherit this method; see the
-// ticket for the deferred VProg-level VGlobal promotion if a second backend or
-// a second compiler-emitted global ever appears.
-void PlnX86CodeGen::emitElfCrtGlue(bool isEntryObject)
+// Palan owns its own program entry -- the entry object holds the _start
+// emitted here and the build manager links `ld <objs> -lc` with no
+// crt1.o/crti.o/crtbegin.o -- so it must supply these itself. A non-ELF backend
+// must not inherit these methods; see the ticket for the deferred VProg-level
+// VGlobal promotion if a second backend or a second compiler-emitted global
+// ever appears.
+void PlnX86CodeGen::emitEntry(const string& mainSymbol)
 {
+    // The kernel enters _start with %rsp 16-byte aligned and argc, argv[0..]
+    // on the stack, so a plain call keeps the callee's alignment standard.
+    emitSection(".text");
+    emitGlobal("_start");
+    emitLabel("_start");
+    out << "\tmovq (%rsp), %rdi\n";
+    out << "\tleaq 8(%rsp), %rsi\n";
+    out << "\tcall " << mainSymbol << "\n";
+    out << "\tmovl $0, %edi\n";
+    out << "\tcall exit\n";
+
     // Mirrors crtbegin.o's definition for an executable (gcc crtstuff.c's
     // `void *__dso_handle = 0;`): GLOBAL, HIDDEN, 8-byte aligned, in .data, and
     // with no .size directive -- crtbegin's own symbol has size 0. glibc's
@@ -251,21 +247,24 @@ void PlnX86CodeGen::emitElfCrtGlue(bool isEntryObject)
     // models no "which libc symbols will this link pull in" fact, and
     // at_quick_exit/pthread_atfork reference it too, so a use-site gate would
     // grow into a whitelist of C function names.
-    if (isEntryObject) {
-        emitSection(".data");
-        emitGlobal("__dso_handle");
-        out << "\t.hidden __dso_handle\n";
-        out << "\t.type __dso_handle, @object\n";
-        out << "\t.align 8\n";
-        emitLabel("__dso_handle");
-        out << "\t.quad 0\n";
-    }
+    emitSection(".data");
+    emitGlobal("__dso_handle");
+    out << "\t.hidden __dso_handle\n";
+    out << "\t.type __dso_handle, @object\n";
+    out << "\t.align 8\n";
+    emitLabel("__dso_handle");
+    out << "\t.quad 0\n";
 
-    // Every object, entry or not: ld takes the union of its inputs, so a single
-    // note-less object marks the whole output's stack executable -- and since
-    // binutils 2.39 also warns on stderr. Without it, a program linking
-    // libc_nonshared.a gets PT_GNU_STACK RWE, and one that does not gets no
-    // PT_GNU_STACK at all (kernel default: READ_IMPLIES_EXEC).
+    emitNoteGnuStack();
+}
+
+// Every object, the entry one or not: ld takes the union of its inputs, so a
+// single note-less object marks the whole output's stack executable -- and since
+// binutils 2.39 also warns on stderr. Without it, a program linking
+// libc_nonshared.a gets PT_GNU_STACK RWE, and one that does not gets no
+// PT_GNU_STACK at all (kernel default: READ_IMPLIES_EXEC).
+void PlnX86CodeGen::emitNoteGnuStack()
+{
     out << "\t.section .note.GNU-stack,\"\",@progbits\n";
 }
 
@@ -290,8 +289,3 @@ void PlnX86CodeGen::emitMovImm(const string& dst, bool dst_is_mem, VRegType type
     out << "\t" << movInstrForType(type) << " $" << value << ", " << dst << "\n";
 }
 
-void PlnX86CodeGen::emitExit(int code)
-{
-    out << "\tmovl $" << code << ", %edi\n";
-    out << "\tcall exit\n";
-}

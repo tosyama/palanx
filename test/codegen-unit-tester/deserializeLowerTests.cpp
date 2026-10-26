@@ -20,6 +20,7 @@ using json = nlohmann::json;
 // dst vreg is allocated and retTypes carries the call's value-type.
 TEST(syscall_lower, value_context) {
     json sa = json::parse(R"({
+        "main": {"name":"t..main", "parameters":[]},
         "functions": [
             {"name":"main", "func-type":"palan", "parameters":[],
              "ret-type":{"type-kind":"prim","type-name":"int64"},
@@ -40,7 +41,7 @@ TEST(syscall_lower, value_context) {
     })");
 
     Module mod = deserialize(sa);
-    VProg prog = PlnVCodeGen().generate(mod, true);
+    VProg prog = PlnVCodeGen().generate(mod);
 
     const VFunc* mainFunc = nullptr;
     for (auto& f : prog.funcs) if (f.name == "main") mainFunc = &f;
@@ -61,6 +62,7 @@ TEST(syscall_lower, value_context) {
 // statement-context call), the return is discarded -- 0 dsts, 0 retTypes.
 TEST(syscall_lower, stmt_context_discards_return) {
     json sa = json::parse(R"({
+        "main": {"name":"t..main", "parameters":[]},
         "functions": [
             {"name":"main", "func-type":"palan", "parameters":[],
              "body":[
@@ -75,7 +77,7 @@ TEST(syscall_lower, stmt_context_discards_return) {
     })");
 
     Module mod = deserialize(sa);
-    VProg prog = PlnVCodeGen().generate(mod, true);
+    VProg prog = PlnVCodeGen().generate(mod);
 
     const VFunc* mainFunc = nullptr;
     for (auto& f : prog.funcs) if (f.name == "main") mainFunc = &f;
@@ -94,6 +96,7 @@ TEST(syscall_lower, stmt_context_discards_return) {
 // PlnDeserialize.cpp must not have broken the pre-existing fallthrough.
 TEST(syscall_lower, palan_call_unaffected) {
     json sa = json::parse(R"({
+        "main": {"name":"t..main", "parameters":[]},
         "functions": [
             {"name":"main", "func-type":"palan", "parameters":[],
              "body":[
@@ -104,7 +107,7 @@ TEST(syscall_lower, palan_call_unaffected) {
     })");
 
     Module mod = deserialize(sa);
-    VProg prog = PlnVCodeGen().generate(mod, true);
+    VProg prog = PlnVCodeGen().generate(mod);
 
     const VFunc* mainFunc = nullptr;
     for (auto& f : prog.funcs) if (f.name == "main") mainFunc = &f;

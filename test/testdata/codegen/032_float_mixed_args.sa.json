@@ -1,6 +1,7 @@
 {
     "functions": [],
     "original": "032_float_mixed_args.pa",
+    "main": {"name": "_032_float_mixed_args..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
     "statements": [
         {
             "stmt-type": "var-decl",

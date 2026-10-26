@@ -1,5 +1,6 @@
 {
   "original": "/test/071_struct_ret_mixed.pa",
+  "main": {"name": "_071_struct_ret_mixed..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
   "str-literals": [],
   "statements": [
     {
