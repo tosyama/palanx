@@ -1,0 +1,12 @@
+type P { int32 x; };
+func f(@[2]@P a) -> int32 { return 1; }
+func f(@[2]@!P a) -> int64 { return 2; }
+func g(@![2]@!P b) { f(b); }
+func k(@@int32 a) -> int32 { return 1; }
+func k(@@!int32 a) -> int64 { return 2; }
+[2]@!P s;
+[2]@P r;
+@!int32 x;
+f(@s);
+f(@r);
+k(@x);

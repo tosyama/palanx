@@ -1194,6 +1194,7 @@ TEST(sa_error, overload)
 	const pair<string, string> cases[] = {
 		// Both fit only by widening, and neither matches exactly.
 		{"error_703_overload_ambiguous.pa", ":4:1: error: Ambiguous function call 'f': it can mean f(int32), f(int64)."},
+		{"error_825_overload_narrowed_ambiguous.pa", ":5:1: error: Ambiguous function call 'f': it can mean f(@int32, @!int32), f(@!int32, @int32)."},
 		// A literal matches exactly only its default type, int64.
 		{"error_704_overload_literal_ambiguous.pa", ":3:1: error: Ambiguous function call 'g': it can mean g(int32), g(flo32)."},
 		{"error_705_overload_no_match.pa", ":5:1: error: No function 'f' takes (@P); there are f(int32), f(int64)."},

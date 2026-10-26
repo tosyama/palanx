@@ -129,12 +129,25 @@ static bool firstParamMutable(const json& def)
 	return !params.empty() && params[0]["var-type"].value("mutable", false);
 }
 
-// The type registry does not tell a read-only pointer from a writable one.
-bool PlnSemanticAnalyzer::sameArgType(const json& argVT, const json& paramVT)
+// The type registry does not tell a read-only pointer from a writable one at
+// any level, down through the pointers and a `[+]T`'s elements.
+ArgFit PlnSemanticAnalyzer::typeFit(const json& argVT, const json& paramVT)
 {
-	if (registry_.fromJson(argVT) != registry_.fromJson(paramVT)) return false;
-	return paramVT.value("type-kind", "") != "pntr" // LCOV_EXCL_EXCEPTION_BR_LINE
-		|| argVT.value("mutable", true) == paramVT.value("mutable", true); // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (registry_.fromJson(argVT) != registry_.fromJson(paramVT)) return ArgFit::Viable;
+	ArgFit fit = ArgFit::Exact;
+	const json* a = &argVT;
+	const json* p = &paramVT;
+	for (bool outermost = true; ; outermost = false) {
+		string kind = p->value("type-kind", "");
+		if (kind != "pntr" && kind != "varr") return fit;
+		bool aw = a->value("mutable", true), pw = p->value("mutable", true);
+		if (kind == "pntr" && aw != pw) {
+			if (!outermost || !aw) return ArgFit::Viable;
+			fit = ArgFit::Narrowed;
+		}
+		a = &(*a)["base-type"];
+		p = &(*p)["base-type"];
+	}
 }
 
 // How an argument fits a parameter. A pending argument is judged by what it
@@ -149,7 +162,7 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
 	auto fitOf = [&](const json& ast, const json& sa0) {
 		json sa = takesVarrData(sa0["value-type"], &paramVT, isCFunc) ? varrData(sa0) : sa0;
 		if (callArgMismatch(ast, sa, param, argIdx, isCFunc, funcName)) return ArgFit::None;
-		return sameArgType(sa["value-type"], paramVT) ? ArgFit::Exact : ArgFit::Viable;
+		return typeFit(sa["value-type"], paramVT);
 	};
 	if (!arg.pending) return fitOf(arg.ast, arg.sa);
 	if (isAggregateLitArg(arg.ast))
@@ -165,7 +178,7 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
 	if (!arg.chained || !arg.probe.contains("expr-type")) {
 		const PlnType* t = registry_.fromJson(paramVT);
 		if (t->kind != PlnType::Kind::Prim) return ArgFit::None;
-		return !arg.probe.is_null() && sameArgType(arg.probe, paramVT) ? ArgFit::Exact : ArgFit::Viable;
+		return !arg.probe.is_null() && typeFit(arg.probe, paramVT) == ArgFit::Exact ? ArgFit::Exact : ArgFit::Viable;
 	}
 	// A chained value: '@v' when the parameter would take it so.
 	const json& vt = arg.probe["value-type"];
@@ -214,26 +227,28 @@ string PlnSemanticAnalyzer::calleesText(const string& name, const vector<Callee>
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 // Among several functions of one name, the one every argument fits; when more
-// than one fits, the one every argument matches exactly.
+// than one fits, the one every argument matches exactly, or else the one every
+// argument matches but for a writable borrow given as read-only.
 Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name,
                                          const vector<Callee>& cands, const vector<CallArg>& args)
 {
-	vector<Callee> viable, exact;
+	vector<Callee> viable, exact, narrowed;
 	for (auto& c : cands) {
 		const json& params = (*c.def)["parameters"];
 		bool variadic = isVariadicSig(params);
 		size_t fixedCount = params.size() - (variadic ? 1 : 0);
 		if (variadic ? args.size() < fixedCount : args.size() != fixedCount) continue;
 		bool fits = true;
-		bool allExact = args.size() == fixedCount;
+		ArgFit worst = args.size() == fixedCount ? ArgFit::Exact : ArgFit::Viable;
 		for (size_t i = 0; i < fixedCount && fits; i++) {
 			ArgFit f = argFit(args[i], params[i], i, c.isC, name);
 			fits = f != ArgFit::None;
-			if (f == ArgFit::Viable) allExact = false;
+			worst = min(worst, f);
 		}
 		if (!fits) continue;
 		viable.push_back(c);
-		if (allExact) exact.push_back(c);
+		if (worst == ArgFit::Exact) exact.push_back(c);
+		if (worst == ArgFit::Narrowed) narrowed.push_back(c);
 	}
 	if (viable.size() == 1) return viable[0];
 	if (viable.empty()) {
@@ -242,8 +257,10 @@ Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name
 		exit(1);
 	}
 	if (exact.size() == 1) return exact[0];
+	if (exact.empty() && narrowed.size() == 1) return narrowed[0];
+	const vector<Callee>& best = !exact.empty() ? exact : !narrowed.empty() ? narrowed : viable;
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_AmbiguousCall,
-		name, calleesText(name, exact.empty() ? viable : exact)) << endl;
+		name, calleesText(name, best)) << endl;
 	exit(1);
 }
 
