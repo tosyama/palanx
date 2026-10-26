@@ -1413,6 +1413,12 @@ the failing one are discarded, and no partial layout is kept:
   `size-expr` is a literal (a `T name[];` field has no fixed size and is rejected) and its leaf
   is a pointer, a primitive with a known size, or an already-registered complete struct other
   than the enclosing one.
+- A field with `bits` (a C bit-field) must have a folded width (a `null` one is rejected).
+  It is laid out as GCC does on x86-64: it moves to the next unit of its declared type only when
+  it would straddle one (packed: never), a zero-width one moves to the next unit even when
+  packed, and only a named, unpacked one raises the struct's alignment. A named one is a field
+  covering the bytes its bits occupy, but reading, writing or taking its address, or giving it
+  in a struct literal, is E_UnsupportedCFieldType; an unnamed one only takes its place.
 
 ### C ABI layout
 

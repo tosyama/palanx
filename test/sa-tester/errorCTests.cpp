@@ -933,6 +933,26 @@ TEST(sa_error, unsupported_c_field)
 	}
 }
 
+TEST(sa_error, c_bit_field)
+{
+	const string msg = "cannot access field 'flag' of 'BF': its type uses 'bit-field', a C type this version cannot represent.";
+	const pair<string, string> cases[] = {
+		{"error_814_c_bitfield_read.pa", ":3:11: error: " + msg},
+		{"error_815_c_bitfield_write.pa", ":3:1: error: " + msg},
+		{"error_816_c_bitfield_addr.pa", ":3:14: error: " + msg},
+		{"error_817_c_bitfield_lit.pa", ":2:21: error: " + msg},
+		{"error_818_c_bitfield_width.pa", ":2:1: error: struct 'BN' has no known layout"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
 TEST(sa_error, c_const_ptr_field)
 {
 	const pair<string, string> cases[] = {

@@ -172,6 +172,9 @@ AST in. Same field-list shape as the native `struct-def` statement.
     C-origin field admission rules for which array shapes SA accepts)
   - packed / aligned - The same attributes on the field alone: `packed` aligns it to 1,
     `aligned` raises its alignment to at least N. Omitted otherwise.
+  - bits - A bit-field's width (`unsigned a:4;`), an integer; `null` when the width does not
+    fold to a constant. An unnamed bit-field (`int :3;`) has `bits` and no `name`. Omitted for
+    any other field.
 
 c2ast reads GCC's `__attribute__((...))` itself (it is a keyword, so the empty
 `#define __attribute__(xyz)` that `sys/cdefs.h` issues for a non-GNU compiler has no effect).

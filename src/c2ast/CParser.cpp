@@ -21,6 +21,7 @@ using namespace std;
 #include "CPreprocessor.h"
 #include "CParser.h"
 #include "PlnC2AstMessage.h"
+#include "../common/PlnCBitField.h"
 
 // void CParser::debug_token(const CToken* token)
 // {
@@ -365,6 +366,9 @@ static void mergeAttributes(json &into, const json &from)
 		into["unsupported"] = from["unsupported"];
 }
 
+static bool isLitInt(const json &node);
+static unsigned long long litIntBits(const json &node);
+
 bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_struct)
 {
 	int index = result_index;
@@ -411,11 +415,20 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 			json spec_attrs = flocal.value("attributes", json::object());
 			do {
 				json field = {{"var-type", base_vt}, {"attributes", spec_attrs}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-				if (!declarator(field, tokens, index, false)) {
+				int peek = index;
+				bool unnamed_bits = consume_punc(':', tokens, peek);
+				if (!unnamed_bits && !declarator(field, tokens, index, false)) {
 					return false;
 				}
 				json attrs = move(field["attributes"]);
 				field.erase("attributes");
+				if (CONSUME_PUNC(':')) {
+					json width;
+					if (!constant_expression(width, tokens, index)) return false;
+					// A width that doesn't fold leaves the struct's layout unknown.
+					field["bits"] = isLitInt(width) ? json(litIntBits(width)) : json(); // LCOV_EXCL_EXCEPTION_BR_LINE
+					if (!attribute_specifiers(attrs, tokens, index)) return false;
+				}
 				if (attrs.contains("unsupported")) throwUnsupportedAttribute(attrs);
 				for (const char *key : {"packed", "aligned"})
 					if (attrs.contains(key)) field[key] = attrs[key];
@@ -1444,9 +1457,28 @@ bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
 		bool is_union = tk == "union";
 		bool packed = entry.value("packed", false);
 		long long offset = 0, max_align = entry.value("aligned", 1LL);
+		long long tail_bits = 0;  // unused bits of offset's last byte, after a bit-field
 		for (size_t i = 0; i < fields.size(); i++) {
 			const json &fvt = fields[i]["var-type"];
+			bool field_packed = packed || fields[i].value("packed", false);
 			long long fsize, falign;
+			if (fields[i].contains("bits")) {
+				const json &bits = fields[i]["bits"];
+				if (bits.is_null() || !typeSizeAlign(fvt, fsize, falign)) return false;
+				long long width = bits.get<long long>();
+				if (fields[i].contains("name") && !field_packed)
+					max_align = max(max_align, falign);
+				if (is_union) {
+					offset = max(offset, (width + 7) / 8);
+				} else {
+					long long at = placeCBitField(offset * 8 - tail_bits, width, falign, field_packed);
+					long long end = at + width;
+					offset = (end + 7) / 8;
+					tail_bits = offset * 8 - end;
+				}
+				continue;
+			}
+			tail_bits = 0;
 			// A flexible array member adds only its alignment.
 			if (!is_union && i == fields.size() - 1 && fvt.value("type-kind", "") == "arr"
 					&& fvt["size-expr"].is_null()) {
@@ -1456,7 +1488,7 @@ bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
 			} else if (!typeSizeAlign(fvt, fsize, falign)) {
 				return false;
 			}
-			if (packed || fields[i].value("packed", false)) falign = 1;
+			if (field_packed) falign = 1;
 			falign = max(falign, fields[i].value("aligned", 1LL));
 			max_align = max(max_align, falign);
 			if (is_union) offset = max(offset, fsize);
