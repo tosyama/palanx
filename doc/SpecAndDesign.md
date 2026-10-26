@@ -6,26 +6,23 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-10-20)
-version: 0.2.1 — variable-length arrays
+### 2.1 Iteration Goal (2026-10-26)
+version: 0.2.2 — bit-field layout, command-line arguments, `for` loop
 
-Add `[+]T` / `[+n]T`, an array that keeps its length and capacity at run time and can grow and
-shrink. It is the base for receiving command-line arguments, a `for` loop that cannot index out
-of range, and a string type.
+- Bit-fields: c2ast reads C bit-fields, and SA lays out structs that contain them by the x86-64
+  C rules, so headers such as `netinet/tcp.h` (and `uv.h` through it) can be included. Accessing
+  a bit-field member from Palan is an error. `__extension__` before a struct member is accepted.
+- Command-line arguments: the top-level statements of the entry module see an implicit read-only
+  `args`, a borrowed `[+]` array of borrowed C strings (`@[+]@[]uint8`) built from argc/argv.
+  `[+]@T`/`[+]@!T` (variable-length arrays of pointer slots) are added for it.
+- `for a in arr { }` and `for a, i in arr { }` loop over every array whose length `len` can give;
+  `i` is the `int64` index. `a` is a copy, `@a` a read-only borrow and `@!a` a writable borrow of
+  the element. Changing the length of `arr` inside the loop (`push`, `pop`, `resize`, replacing it
+  with `->`/`->>`, or passing `@!arr`) is an error.
 
-- Representation: the variable is one word pointing to a heap header `{len, cap, data}`; growing
-  or shrinking reallocates only `data`, so the variable and any borrow of it stay valid.
-- Elements: primitives, structs (`[+]T` owned, `[+]$T` contiguous), and nested `[+][+]T`. Fixed
-  levels, `[+]` levels and `$` combine in any order and depth (`[+][3][4]T`, `[2][3][+]T`,
-  `[+]$[3]$[4]T`); only `$` on an element that owns storage (`[n]$[+]T`, `[+]$O`) is rejected
-  for now. Also usable as borrows (`@[+]T`/`@![+]T`), parameters, return values and struct fields.
-- Operations `len`, `push`, `resize` and `pop` are built-in functions, resolved through function
-  overloading, which this iteration adds for Palan functions in general.
-- A method-form call after `->` (`x -> v.push()`) is added as a general feature.
-
-Out of scope: `[#]T`, and `->>` into a call (a parameter that takes ownership); an owned element
-is moved in with `v.resize(n + 1); p ->> v[n];`.
-The ticket list is kept in `localtickets/iteration-2026-10-20-v0210-varray.md`.
+Out of scope: reading or writing bit-field members; `len` and `for` over an array whose size is
+known only at run time; detecting a length change made through another borrow of the array.
+The ticket list is kept in `localtickets/iteration-2026-10-26-v0220-bitfield-args-for.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
