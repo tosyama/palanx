@@ -1,2 +1,2 @@
 type P { int32 x; };
-func f(@[+]@P a) { }
+[+][2]@P v;

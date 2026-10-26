@@ -618,9 +618,14 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 // either side would free, or overwrite, what the other one owns. A 'void*'
 // on either side (NULL, a C 'void*') says nothing about the elements.
 // A '[+]T' borrow must name the same rows, laid out the same way.
+// Pointer elements follow the slots of a borrowed `[n]@T`.
 inline bool elemShapeMatch(const json& from, const json& to) {
-	if (isVarrPntr(from) && isVarrPntr(to) && isArrLevel(to["base-type"]["base-type"]))
-		return from["base-type"] == to["base-type"];
+	if (isVarrPntr(from) && isVarrPntr(to)) {
+		const json& fe = from["base-type"]["base-type"];
+		const json& te = to["base-type"]["base-type"];
+		if (isArrLevel(te)) return from["base-type"] == to["base-type"];
+		if (isPtrBorrow(te)) return isPtrBorrow(fe) && arrShapeMatch(fe, te, isWritableThrough(to));
+	}
 	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(from))
 		return true;
 	auto isVoid = [](const json& t) {
@@ -705,6 +710,13 @@ inline json withoutArrPermission(json t)
 inline bool varrCopySourceMatch(const json& from, const json& vt)
 {
 	const json& elem = vt["base-type"]["base-type"];
+	// A writable pointer slot may be copied into a read-only one, as between sized arrays.
+	if (isPtrBorrow(elem)) {
+		const json* fe = isVarrPntr(from) ? &from["base-type"]["base-type"]
+		               : isArrLevel(from) && from.contains("arr-size") && !from.value("embedded", false)
+		               ? &from["base-type"] : nullptr;
+		return fe && copyShapeMatch(*fe, elem);
+	}
 	// The layouts must agree too: `[+][n]T` and `[+]$[n]T` share an element type.
 	if (isVarrPntr(from))
 		return from["base-type"] == vt["base-type"];

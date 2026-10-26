@@ -766,6 +766,27 @@ TEST(sa, arr_to_ptr_addr_of)
 	ASSERT_TRUE(jout.is_object());
 }
 
+// A `[+]@T` holds pointer slots as `[n]@T` does, in the generated functions of `[+]int64`.
+TEST(sa, varr_ptr_slot)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/318_varr_ptr_slot.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const json& v = stmts[0]["vars"][0]["var-type"]["base-type"];
+	ASSERT_EQ(v["type-kind"], "varr");
+	ASSERT_EQ(v["base-type"]["mutable"], true);
+	ASSERT_EQ(v["base-type"]["base-type"]["type-kind"], "struct");
+	const json& s = stmts[1]["vars"][0]["var-type"]["base-type"]["base-type"];
+	ASSERT_EQ(s["mutable"], false);
+	ASSERT_EQ(s["base-type"]["type-name"], "uint8");
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["base-type"]["base-type"]["type-kind"], "varr");
+	const json& f = jout["functions"][0];
+	ASSERT_EQ(f["parameters"][0]["var-type"]["mutable"], false);
+	ASSERT_FALSE(f["ret-type"].contains("mutable"));
+	ASSERT_EQ(jout["alloc-shapes"][0]["shape-key"], "varr_int64");
+}
+
 TEST(sa, struct_ptr_elem_copy)
 {
 	cleanTestEnv();

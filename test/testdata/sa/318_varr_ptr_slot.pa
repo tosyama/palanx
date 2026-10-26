@@ -1,0 +1,6 @@
+type P { int32 x; };
+type Q { [+]@P ps; };
+func f(@[+]@P v) -> [+]@P { return v; }
+[+]@!P v;
+[+]@[]uint8 s;
+[2][+]@!P m;

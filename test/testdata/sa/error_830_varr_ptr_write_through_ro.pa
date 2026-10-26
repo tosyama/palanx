@@ -1,0 +1,2 @@
+type P { int32 x; };
+func f(@[+]@P v) { 1 -> v[0].x; }

@@ -631,3 +631,9 @@ TEST(build_mgr, arr_return_param_mtrace) {
 		"1 2 3\n101 2 3\n110 11 12\n1 2 3\n8 8 8\n4 5 6\n4 5 6\n6 6 6\n1 0\n7 8 9\n9\n"
 		"104 5 6\n101 2 3\n3\n20 21 22\n", 35);
 }
+
+// A `[+]@T` frees its header and slots, never what they point to.
+TEST(build_mgr, varr_ptr_slot_mtrace) {
+	expectMtraceRun("357_varr_ptr_slot_mtrace",
+		"3 6\n101 102 103\n102 2\n5 103 101\n5 7\n102 2 7\nHi 1\n", 21);
+}

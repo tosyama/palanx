@@ -274,6 +274,8 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 			exit(1);
 		}
 		elem = sizedArrLevel(locNode, base, nullopt);
+	} else if (!embedded && base.value("type-kind","") == "pntr") {
+		elem = ptrSlotElemType(locNode, base);
 	} else if (!embedded && elemSizeBytes(name) >= 0) {
 		elem = base;
 	} else if (structDefs_.count(name)) {
