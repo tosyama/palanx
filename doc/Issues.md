@@ -153,3 +153,9 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 21. Variable-Length Arrays of Pointer Slots
 
 **Summary:** `[+]@T`/`[+]@!T` (a variable-length array of borrowed pointers) and `[+][n]@T` (rows of them) are not supported. Neither is a `[][+]T` parameter, which would need each element's header to be passed rather than its data; `@[n][+]T` or `@[+][+]T` borrows such an array instead.
+
+---
+
+## 22. A Row Is Pushed with `@`, a Struct Without
+
+**Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which borrows a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal but copy it twice, unless the parameter's storage could be handed over (see #17). Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
