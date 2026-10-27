@@ -1153,7 +1153,7 @@ multiple-return declaration/assignment):
   is a candidate; if no function `f` has one, it is E_MethodNeedsMutableFirstParam.
 - `recv` is `addr-of` (`@!aa`) of the object, so the object must be addressable as for `@!` (a
   call returning a struct is, as a call argument). An
-  object that is already a borrow (a `@T`/`@!T`/`@[n]T`/`@![n]T` variable, parameter or field) is
+  object that is already a borrow (a `@T`/`@!T`/`@[n]T`/`@![n]T`/`@[+]T`/`@![+]T` variable, parameter or field) is
   passed as is; a read-only one is then rejected by the usual permission check.
 
 sa.json carries only the resulting `call`; `member-call` is never emitted. A method-form call

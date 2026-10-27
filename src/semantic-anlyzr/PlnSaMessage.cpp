@@ -552,7 +552,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_AddrOfBorrowed:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "'" + arg1 + "' is already a borrow ('@T'/'@[n]T'); pass it by name.";
+			return "'" + arg1 + "' is already a borrow ('@T'/'@[n]T'/'@[+]T'); pass it by name.";
 
 		case E_EmbedElemNotStruct:
 			BOOST_ASSERT(arg1 != "\x01");

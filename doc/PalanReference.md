@@ -2060,7 +2060,7 @@ to its storage, so `@s`/`@!s` and `@arr`/`@!arr` borrow it as it is (see
 
 - Not usable on function parameters, except a struct-type parameter.
 - Not usable on a borrow: a struct pointer (`@T`/`@!T` where `T` is a struct) or a borrowed array
-  (`@[n]T`) is passed by name.
+  (`@[n]T`, `@[+]T`) is passed by name.
 - On a local variable, usable only when the variable is primitive-typed, itself a pointer to a
   primitive (`@T`/`@!T`), a struct, or an array with primitive, struct, or `@T`/`@!T` pointer
   elements.

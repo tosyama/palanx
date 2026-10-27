@@ -1,0 +1,3 @@
+[+]int64 v;
+@[+]int64 h = @v;
+int64 n = len(@h);

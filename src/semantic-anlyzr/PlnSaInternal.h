@@ -144,14 +144,6 @@ inline bool isPtrBorrow(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && !vt.contains("arr-size") && !vt.contains("unsized");
 }
-// A variable or parameter declared as a borrowed array ('@[n]T'/'@![n]T').
-// Checked on its var-type: a row reached through it also carries "mutable" but
-// is part of the borrowed storage, not a borrow of its own.
-inline bool isArrBorrowVar(const json& vt)
-{
-	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
-	    && vt.contains("arr-size");
-}
 inline bool isAggregateLit(const json& expr)
 {
 	string et = expr.value("expr-type", "");
@@ -183,6 +175,14 @@ inline bool isVarrPntr(const json& vt)
 	    && vt["base-type"].value("type-kind","") == "varr";
 }
 inline bool isVarrStorage(const json& vt) { return isVarrPntr(vt) && !vt.contains("mutable"); }
+// A variable or parameter declared as a borrowed array ('@[n]T'/'@![n]T',
+// '@[+]T'/'@![+]T'). Checked on its var-type: a row reached through it also
+// carries "mutable" but is part of the borrowed storage, not a borrow of its own.
+inline bool isArrBorrowVar(const json& vt)
+{
+	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
+	    && (vt.contains("arr-size") || isVarrPntr(vt));
+}
 // Where a `[+]T` argument passes its data instead of its header: to C, or to
 // an unsized `[]T` (whose length the callee is told some other way).
 inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)

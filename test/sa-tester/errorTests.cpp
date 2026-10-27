@@ -1231,7 +1231,7 @@ TEST(sa_error, implicit_args)
 		{"error_833_args_redecl.pa", ":1:1: error: Variable 'args' is already declared."},
 		{"error_834_args_redecl_block.pa", ":2:2: error: Variable 'args' is already declared."},
 		{"error_835_args_const.pa", ":1:1: error: Constant 'args' is already defined."},
-		{"error_836_args_addr_of.pa", ":1:15: error: cannot take the address of 'args'"},
+		{"error_836_args_addr_of.pa", ":1:15: error: 'args' is already a borrow ('@T'/'@[n]T'/'@[+]T'); pass it by name."},
 		{"error_837_args_resize.pa", ":1:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 	};
 	for (auto& [file, expected] : cases) {
