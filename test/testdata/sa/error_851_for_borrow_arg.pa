@@ -1,0 +1,2 @@
+func g(@![+]int64 q) { }
+func f(@![+]int64 p) { for a in p { g(p); } }

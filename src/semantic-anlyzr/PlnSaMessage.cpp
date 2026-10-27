@@ -471,6 +471,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot assign to '" + arg1 + "': the index of a 'for' loop is read-only.";
 
+		case E_ChangeForRange:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot change the array a 'for' loop iterates over ('" + arg1 + "').";
+
 		case E_ArrLenNeedsAddrOf:
 			return "an array given to 'len' must be written as '@name'.";
 

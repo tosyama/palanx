@@ -1,0 +1,2 @@
+type S { [+]int64 arr; };
+S s; S t; for a in s.arr { t.arr ->> s.arr; }

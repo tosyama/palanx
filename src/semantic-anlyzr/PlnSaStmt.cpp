@@ -199,6 +199,56 @@ json PlnSemanticAnalyzer::sa_loop_body(const json& astBody, const json& head, js
 	return body;
 }
 
+// The path checkRangeChange compares: a variable, then "." + field or "[]"
+// for an element, whatever its index.
+static bool locationPath(const json& e, vector<string>& path)
+{
+	string et = e.value("expr-type", "");
+	if (et == "id") {
+		path.push_back(e["name"]);
+		return true;
+	}
+	if (et == "field-access" && locationPath(e["object"], path)) {
+		path.push_back("." + e["field"].get<string>());
+		return true;
+	}
+	if (et == "arr-index" && locationPath(e["array"], path)) {
+		path.push_back("[]");
+		return true;
+	}
+	return false;
+}
+
+// A 'for' holds the storage and the length of what it iterates over until it
+// ends, so nothing in its body may free or replace that array or change its
+// length, through it or through what contains it. A copy into a fixed-length
+// array or a borrow of one changes neither, nor does rebinding a borrow.
+void PlnSemanticAnalyzer::checkRangeChange(const json& locNode, const json& locAst, RangeChange change)
+{
+	vector<string> path;
+	if (pinnedRanges_.empty() || !locationPath(locAst, path))
+		return;
+	for (auto& r : pinnedRanges_) {
+		if (path.size() > r.path.size() || !equal(path.begin(), path.end(), r.path.begin()))
+			continue;
+		if (path.size() == r.path.size()) {
+			if (r.borrow && change != RangeChange::Borrow) continue;
+			if (!r.resizable && change != RangeChange::Transfer) continue;
+		}
+		string name;
+		for (auto& p : r.path) name += p;
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ChangeForRange, name) << endl;
+		exit(1);
+	}
+}
+
+// A writable borrow passed on as it is, e.g. `p` for a `@![+]T` p.
+void PlnSemanticAnalyzer::checkRangeBorrowBinding(const json& locNode, const json& srcAst, const json& dstType)
+{
+	if (dstType.value("mutable", false))
+		checkRangeChange(locNode, srcAst, RangeChange::Borrow);
+}
+
 // `for a, i in arr { }` becomes a while over i, in a block of its own that
 // holds arr, evaluated once, and its length.
 json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
@@ -217,6 +267,7 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 
 	json range = sa_expression(stmt["range"]);
 	json arrType = range["value-type"];
+	bool rangeBorrow = arrType.contains("mutable");
 	if (!isVarrPntr(arrType) && !isArrLevel(arrType)) {
 		cerr << locPrefix(stmt["range"]) << PlnSaMessage::getMessage(E_ForRangeNotArray) << endl;
 		exit(1);
@@ -262,9 +313,15 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	}
 	json head = varDecl(elem["name"], declType, move(init), elem["loc"]);
 
+	const json& rangeAst = stmt["range"];
+	bool viaAddrOf = rangeAst.value("expr-type", "") == "addr-of";
+	vector<string> path;
+	bool pinned = locationPath(viaAddrOf ? rangeAst["object"] : rangeAst, path);
+	if (pinned) pinnedRanges_.push_back({move(path), isVarrPntr(arrType), !viaAddrOf && rangeBorrow});
 	forIndexVars_.insert(idx);
 	json body = sa_loop_body(stmt["body"], head, move(step));
 	forIndexVars_.erase(idx);
+	if (pinned) pinnedRanges_.pop_back();
 	block.push_back({{"stmt-type","while"},{"cond",move(cond)},{"body",move(body)},{"loc",loc}});
 
 	size_t scope = arrayScopeVars_.size() - 1;
@@ -307,11 +364,13 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	auto savedFuncBodyIdx    = funcBodyScopeIdx_;
 	auto savedEscapedVars    = move(escapedVars_);
 	auto savedForIndexVars   = move(forIndexVars_);
+	auto savedPinnedRanges   = move(pinnedRanges_);
 	auto savedPendingAliases = pendingAliases_;
 	auto savedSymbolScope    = symbolScope_;
 	auto savedBlockSymbolSeq = blockSymbolSeq_;
 	escapedVars_.clear();
 	forIndexVars_.clear();
+	pinnedRanges_.clear();
 	pendingAliases_ = 0;
 
 	varScopes       = {{}};
@@ -418,6 +477,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	currentFuncDef_  = savedCurrentFuncDef;
 	escapedVars_     = move(savedEscapedVars);
 	forIndexVars_    = move(savedForIndexVars);
+	pinnedRanges_    = move(savedPinnedRanges);
 	pendingAliases_  = savedPendingAliases;
 	symbolScope_     = savedSymbolScope;
 	blockSymbolSeq_  = savedBlockSymbolSeq;
@@ -460,6 +520,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 	checkBorrowSource(stmt, value, *varType);
 	checkPtrPermission(stmt, value["value-type"], *varType);
+	checkRangeBorrowBinding(stmt, stmt["value"], *varType);
 	return json::array({{{"stmt-type", "assign"}, {"name", name}, {"value", value}}}); // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -601,6 +662,10 @@ json PlnSemanticAnalyzer::sa_store_scope(const json& stmt)
 json PlnSemanticAnalyzer::sa_store_stmt(const json& stmt, json* litAddr)
 {
 	string t = stmt["stmt-type"];
+	json target = t == "assign" ? json{{"expr-type", "id"}, {"name", stmt["name"]}}
+	            : t == "arr-assign" ? stmt["target"]
+	            : json{{"expr-type", "field-access"}, {"object", stmt["object"]}, {"field", stmt["field"]}};
+	checkRangeChange(stmt, target, stmt.value("ownership-transfer", false) ? RangeChange::Transfer : RangeChange::Copy);
 	if (t == "assign")
 		return sa_assign_stmt(stmt);
 	if (t == "arr-assign")
@@ -980,6 +1045,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt, json* litAddr)
 	checkElemShape(stmt, sa_value, targetType);
 	checkBorrowSource(stmt, sa_value, targetType);
 	checkPtrPermission(stmt, sa_value["value-type"], targetType);
+	checkRangeBorrowBinding(stmt, stmt["value"], targetType);
 
 	json arr_assign = {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
 	if (!transfer)
@@ -1113,6 +1179,7 @@ void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& stm
 	if (saValue.value("category", "") == "expiring")
 		return;
 	const json& src = stmt["value"];
+	checkRangeChange(stmt, src, RangeChange::Transfer);
 	string et = src.value("expr-type", "");
 	auto nullOf = [](const json& vt) -> json {
 		return {{"expr-type","lit-int"},{"value","0"},{"value-type",vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -1385,6 +1452,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt, json* litAddr)
 	value = convertForBinding(stmt, value, toType, fieldType);
 	checkBorrowSource(stmt, value, fieldType);
 	checkPtrPermission(stmt, value["value-type"], fieldType);
+	checkRangeBorrowBinding(stmt, stmt["value"], fieldType);
 	if (!transfer)
 		return json::array({makeFieldAssign(chain, *it, move(value))}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	// The field owns what it held, so '->>' releases that before taking over.

@@ -414,6 +414,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 			init = convertForBinding(stmt2, init, toType, varType);
 			checkBorrowSource(stmt2, init, varType);
 			checkPtrPermission(stmt2, init["value-type"], varType);
+			checkRangeBorrowBinding(stmt2, var["init"], varType);
 			sa_var["init"] = init;
 		}
 		declareVar(name, varType, &stmt2);

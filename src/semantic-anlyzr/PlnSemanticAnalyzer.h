@@ -179,6 +179,12 @@ class PlnSemanticAnalyzer {
 	// What each enclosing loop runs before its next iteration; a 'continue' runs it too.
 	vector<json> loopSteps_;
 	set<string> forIndexVars_;
+	// The location each enclosing 'for' iterates over, as a path from its
+	// variable: "." + field, or "[]" for any index. Its storage and length are
+	// held for the whole loop.
+	struct PinnedRange { vector<string> path; bool resizable; bool borrow; };
+	vector<PinnedRange> pinnedRanges_;
+	enum class RangeChange { Borrow, Copy, Transfer };
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
 	// The top level names the implicit `args`; its header is built only then.
@@ -546,6 +552,8 @@ class PlnSemanticAnalyzer {
 	                 const string& funcName, json& argAst, json& body, json& release);
 	json  bindCallTemp(json saArg);
 	void  checkBorrowSource(const json& locNode, const json& saValue, const json& dstType);
+	void  checkRangeChange(const json& locNode, const json& locAst, RangeChange change);
+	void  checkRangeBorrowBinding(const json& locNode, const json& srcAst, const json& dstType);
 	void  registerTypeAliasChecked(const json& locNode, const string& aliasName, const json& resolved);
 	void  registerTypedefAliasInType(const json& locNode, json& vtype);
 	void  registerCFuncTypedefAliases(const json& locNode, json& funcEntry);

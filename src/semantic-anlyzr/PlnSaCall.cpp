@@ -713,6 +713,8 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		if (paramVT) {
 			if (auto d = callArgMismatch(argAst, saArg, *param, argIdx, isCFunc, funcName))
 				reportDiag(locNode, *d);
+			if (!isCFunc)
+				checkRangeBorrowBinding(locNode, argAst, *paramVT);
 			saArg = convertCallArg(move(saArg), *paramVT);
 		} else if (isVariadic) {
 			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);

@@ -1291,3 +1291,13 @@ TEST(sa, for_loop)
 	ASSERT_EQ(x["var-type"]["mutable"], true);
 	ASSERT_EQ(x["init"]["addr-only"], true);
 }
+
+// Changes that leave the iterated array's storage and length alone: its
+// elements, deeper arrays, read-only borrows, a fixed-length array in place,
+// and rebinding a borrow.
+TEST(sa, for_loop_allowed_changes)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/323_for_mutation.pa");
+	ASSERT_TRUE(jout.is_object());
+}

@@ -1,0 +1,1 @@
+[3]int64 c; [3]int64 d; for a in c { d ->> c; }

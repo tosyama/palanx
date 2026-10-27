@@ -169,6 +169,7 @@ enum PlnSaMessageCode {
 	E_SigArrSizeNotConst,
 	E_ForRangeNotArray,
 	E_AssignToForIndex,	// arg1: variable name
+	E_ChangeForRange,	// arg1: the array iterated over
 };
 
 class PlnSaMessage

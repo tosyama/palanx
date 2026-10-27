@@ -178,6 +178,8 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	bool isMutable = expr.value("mutable", false);
 	const json& obj = expr["object"];
 	string obj_type = obj.value("expr-type", "");
+	if (isMutable)
+		checkRangeChange(expr, obj, RangeChange::Borrow);
 
 	// A literal operand is accepted only as a call argument (sa_lit_arg).
 	if (isAggregateLit(obj))
