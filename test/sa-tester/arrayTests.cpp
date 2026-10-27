@@ -769,6 +769,26 @@ TEST(sa, arr_len)
 	ASSERT_EQ(ret["value"]["value"], "3");
 }
 
+// A borrowed array is given to len by name, as to a function; a row of it
+// is not a borrow of its own and keeps '@'.
+TEST(sa, len_borrow)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/326_len_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto expectLen = [&](const json& stmt, const string& value) {
+		const auto& init = stmt["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "lit-int");
+		ASSERT_EQ(init["value"], value);
+	};
+	expectLen(stmts[5], "2");	// len(r)
+	expectLen(stmts[6], "2");	// len(@g[1])
+	expectLen(stmts[8], "3");	// N = len(g)
+	// len(h) of a '@[+]T' reads the length at run time.
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["expr-type"], "field-access");
+}
+
 // A borrow passes the header itself; a `[]T` parameter gets the data.
 TEST(sa, varr_borrow)
 {

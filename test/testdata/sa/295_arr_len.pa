@@ -1,5 +1,5 @@
 type P { int32 x; [5]int32 arr; };
-func f(@[3]int32 b) -> int64 r { len(@b) -> r; }
+func f(@[3]int32 b) -> int64 r { len(b) -> r; }
 func len([]int32 p) -> int64 r { 7 -> r; }
 []int32 a = [1, 2, 3];
 const N = len(@a);

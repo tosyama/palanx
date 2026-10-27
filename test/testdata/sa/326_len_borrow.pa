@@ -1,0 +1,10 @@
+[3]$[2]int64 a;
+@[3]$[2]int64 g = @a;
+@[2]int64 r = @a[1];
+[+]int64 v;
+@[+]int64 h = @v;
+const N = len(g);
+int64 x = len(r);
+int64 y = len(@g[1]);
+int64 z = len(h);
+int64 n = N;

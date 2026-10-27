@@ -413,26 +413,39 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 	return lit;
 }
 
-// `len(@a)` or `a -> len()` of an array whose size is a constant: like
-// sizeof, it needs only a's type, so an `a` with a call to evaluate is left
-// to the call's analysis.
+// `len(@a)`, `len(h)` of a borrow h, or `a -> len()` of an array whose size
+// is a constant: like sizeof, it needs only a's type, so an `a` with a call to
+// evaluate is left to the call's analysis.
 optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 {
 	auto lenCall = [&](const json& call, size_t argc) {
 		return call.value("expr-type", "") == "call" && call["name"] == "len"
 		    && call["args"].size() == argc && !findVar("len");
 	};
+	// A borrowed array variable is passed by name, as to a function's parameter.
+	auto namesArrBorrow = [&](const json& e) {
+		if (e.value("expr-type", "") != "id") return false;
+		const json* vt = findVar(e["name"].get<string>());
+		return vt && isArrBorrowVar(*vt);
+	};
 	const json* arr;
 	bool borrowed = true;
 	if (expr["expr-type"] == "call") {
 		if (!lenCall(expr, 1)) return nullopt;
 		arr = &expr["args"][0];
-		borrowed = arr->value("expr-type", "") == "addr-of";
+		borrowed = arr->value("expr-type", "") == "addr-of" || namesArrBorrow(*arr);
 	} else {
 		if (!lenCall(expr["call"], 0)) return nullopt;
 		arr = &expr["value"];
 	}
-	if (arr->value("expr-type", "") == "addr-of") arr = &(*arr)["object"];
+	if (arr->value("expr-type", "") == "addr-of") {
+		const json& addrOf = *arr;
+		arr = &addrOf["object"];
+		if (namesArrBorrow(*arr)) {
+			cerr << locPrefix(addrOf) << PlnSaMessage::getMessage(E_AddrOfBorrowed, (*arr)["name"].get<string>()) << endl;
+			exit(1);
+		}
+	}
 	if (!isLocationExpr(*arr) || hasCall(*arr)) return nullopt;
 	json vt = operandValueType(*arr);
 	if (!isArrLevel(vt)) return nullopt;

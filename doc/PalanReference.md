@@ -1135,9 +1135,9 @@ func fill(@![H][W]int32 g, int32 x) {
   field as `@[n]T`, `@[n]$T` or `@[n]@T`.
 - A borrowed array can also be a local variable (`@[4]int64 p = @v;`).
 - A borrowed array is already a borrow, like a `@T`/`@!T` pointer: pass it on, bind it, and
-  rebind it by name (`sum(g)`, `@[4]int64 q = p;`, `q -> p`). `@g` on it is a compile error. A
-  `@!` borrow may be given where `@` is expected. A row (`g[i]`) is part of the borrowed storage,
-  not a borrow of its own, and cannot be given by name.
+  rebind it by name (`sum(g)`, `len(g)`, `@[4]int64 q = p;`, `q -> p`). `@g` on it is a compile
+  error. A `@!` borrow may be given where `@` is expected. A row (`g[i]`) is part of the borrowed
+  storage, not a borrow of its own, and cannot be given by name.
 - An array given to a `@T`/`@!T` pointer (a parameter, a variable, a pointer field or slot) is
   written with `@`/`@!` too (`f(@!v)`, `@!v -> slots[0]`), and so is a row (`@!m[i]`) or an array
   field (`@!s.v`). Only a `[]T` parameter and a C function take an array by name, as in C, and a

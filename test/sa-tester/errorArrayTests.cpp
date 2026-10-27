@@ -468,6 +468,7 @@ TEST(sa_error, varr)
 		{"error_734_varr_push_no_match.pa", ":4:1: error: No function 'push' takes (@![+]int32, int64); there are push(@![+]flo64, flo64), push(@![+]int32, int32)."},
 		{"error_735_varr_borrow_needs_addr.pa", ":2:11: error: a variable-length array given to '@[+]T'/'@![+]T' must be written as '@name' or '@!name'."},
 		{"error_736_arr_len_needs_addr.pa", ":2:11: error: an array given to 'len' must be written as '@name'."},
+		{"error_861_len_addr_of_borrow.pa", ":3:15: error: 'h' is already a borrow ('@T'/'@[n]T'); pass it by name."},
 		{"error_737_arr_len_unsized_param.pa", ":2:2: error: 'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time."},
 		{"error_738_arr_len_runtime_size.pa", ":3:11: error: 'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time."},
 		{"error_739_varr_len_const.pa", ":2:1: error: const 'N' must be initialized with a compile-time constant."},
