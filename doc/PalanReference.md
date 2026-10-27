@@ -56,12 +56,16 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 ## 1. Command-Line Usage
 
 ```
-palan source.pa                  # compile, link, run -> removes a.out after execution
+palan source.pa                  # compile, link and run
+palan source.pa a -b             # run with the arguments "a" and "-b"
 palan -o myapp source.pa         # compile & link -> ./myapp
 palan --clean                    # clean intermediate files
 ```
 
 The build manager (`palan`) orchestrates the full pipeline: parse → semantic analysis → code generation → assemble → link.
+Options go before the source file; everything after it is passed to the program (see
+[Program Structure](#program-structure) for `args`). Without `-o`, the executable is built among
+the intermediate files under `~/.palan/work/`, not in the current directory.
 
 ---
 
@@ -555,6 +559,8 @@ foo() -> (a, b);           // assign multiple return values to existing variable
 import "lib.pa";           // import Palan source file (see §11)
 if expr { ... }            // conditional (see §6)
 if expr { ... } else { ... }  // conditional with else (see §6)
+while expr { ... }         // loop (see §6)
+for a, i in arr { ... }    // loop over an array's elements (see §6)
 ```
 
 ### If / If-Else Statements
@@ -625,9 +631,42 @@ func fizzbuzz(int64 n) {
 fizzbuzz(20);
 ```
 
+### For Loops
+
+`for a in arr { body }` runs `body` once for each element of `arr`, in order. `for a, i in arr`
+also gives the element's index as `i`, an `int64`.
+
+```palan
+cinclude <stdio.h>;
+
+[+]int64 v = [10, 20, 30];
+int64 s = 0;
+for a in v { s + a -> s; }
+printf("%ld\n", s);                    // 60
+
+for @!a in v { a[0] * 2 -> a[0]; }     // write through a borrow
+for a, i in v { printf("%ld:%ld ", i, a); }
+printf("\n");                          // 0:20 1:40 2:60
+```
+
+- `arr` can be any array `len` gives the length of (see [Variable-Length
+  Arrays](#variable-length-arrays-t)): a fixed-size or variable-length array, a borrowed one, a
+  struct's array field or a row. It is evaluated once, before the first iteration; an array
+  returned by a function call is freed after the loop.
+- The loop variable has no type written. `a` is a copy of the element (an owned struct or array
+  is copied deeply and freed at the end of each iteration), `@a` borrows it read-only and `@!a`
+  writably, as a `@T`/`@!T` pointer does: a primitive element is read and written as `a[0]`, a
+  struct's fields as `a.x`.
+- `i` cannot be assigned to.
+- The body cannot change `arr`'s length or replace it, directly or through what contains it:
+  `push`, `pop`, `resize`, `->>` into or out of it, `->` into a variable-length one, and passing
+  `@!arr` are compile errors. Writing elements, changing an inner array (`m[0].push(1)` in
+  `for r in m`) and `@arr` are fine. A change made through another borrow of `arr` is not
+  detected.
+
 ### break / continue
 
-`break` exits the innermost `while` loop immediately. `continue` skips the rest of the loop body and jumps to the next iteration's condition check. Both are only valid inside a `while` loop; using them outside a loop is a compile error.
+`break` exits the innermost `while` or `for` loop immediately. `continue` skips the rest of the loop body and goes on to the next iteration. Both are only valid inside a loop; using them outside a loop is a compile error.
 
 ```palan
 cinclude <stdio.h>;
@@ -908,8 +947,10 @@ show(2.5);          // float 2.5
 - C functions and imported functions of the name are candidates too: after
   `cinclude <stdlib.h>;`, `func abs(flo64 x) -> flo64` adds a float version of C's `abs(int)`.
 - If one function fits the arguments, it is called. If several fit, the one every argument
-  matches exactly (same type, and for a pointer the same `@`/`@!`) is called; otherwise the call
-  is ambiguous and a compile error. With `f(int32)` and `f(int64)`, an `int16` argument is
+  matches exactly (same type, and for a pointer the same `@`/`@!`, down to the elements of a
+  borrowed array) is called. Failing that, the one that differs only by taking a `@!` argument as
+  `@`, at its outermost level, is called: given `@!s` of a `[2]@!P s`, `f(@[2]@!P)` is chosen
+  over `f(@[2]@P)`. Otherwise the call is ambiguous and a compile error. With `f(int32)` and `f(int64)`, an `int16` argument is
   ambiguous: write `f(int32(x))`.
 - A literal matches exactly only its default type: `int64` for an integer, `uint64` with `u`,
   `flo64` for a decimal. With `f(int32)` and `f(int64)`, `f(1)` calls `f(int64)`.
@@ -1446,6 +1487,11 @@ printf("%d\n", two[1][0]);   // 4
 - `$` cannot lay out something that owns storage: `[+]$[+]T` and `$[+]T` as an element are
   compile errors.
 - A `[+]T` struct field is described in [Array Fields](#array-fields).
+- `[+]@T` / `[+]@!T` holds pointer slots, as `[n]@T` does (see [Array of Pointer
+  Slots](#array-of-pointer-slots-nt)): each element borrows what it points to, so it takes
+  `@x` / `@!x` (`ps.push(@!p)`, `@!q -> ps[0]`) and nothing it points to is freed. `[+]@[]T`
+  holds pointers to arrays of any length; the program's arguments, `args`, are a
+  `@[+]@[]uint8` (see [Program Structure](#program-structure)).
 
 ### Array Literals
 
@@ -1615,7 +1661,7 @@ Array **variables** (this section) allow non-constant `n`, except a stack array 
 - An array declared at the top level (outside any block) is not freed when the top-level statements end; the OS reclaims the memory at process exit.
 - Boundary checking is not performed.
 - `[n]$T` is not supported when `T` owns fields.
-- `[+]@T` (a variable-length array of pointer slots), `[+][n]@T` and a `[][+]T` parameter are not
+- `[+][n]@T` (a variable-length array of rows of pointer slots) and a `[][+]T` parameter are not
   supported.
 
 ---
@@ -2194,6 +2240,23 @@ printf("%lld\n", x);
 - Top-level statements run when the program starts, only in the file being built. The
   top-level statements of an imported file are not executed, so a module can hold its own tests
   or usage examples.
+- The top-level statements see the program's command-line arguments as `args`, a read-only
+  borrowed variable-length array of C strings (`@[+]@[]uint8`). `args[0]` is the program's
+  path, and `len(args)` counts it. `args` is a borrow, so it is used by name: `len(args)`,
+  `args[i]`, `for a in args`, `f(args)` for a `@[+]@[]uint8` parameter. Functions do not see it
+  unless it is passed, and declaring another `args` at the top level is a compile error.
+  Every module has its own, so an imported module's top-level demo can read the arguments when
+  it is the file being built.
+
+  ```palan
+  cinclude <stdio.h>;
+
+  for a, i in args {
+      if i > 0 { printf("%s\n", a); }
+  }
+  ```
+
+  `palan echo.pa x y` prints `x` and `y`.
 - There are no global variables: a top-level variable is visible to the top-level statements
   after it, but not inside functions.
 - User-defined functions can be placed before or after top-level statements.
@@ -2625,6 +2688,13 @@ carries one is not imported, and on a struct field the header is rejected. A typ
 `packed`/`aligned` after its own name (`typedef struct { ... } T __attribute__((aligned(16)));`)
 is not imported either; the attribute on the struct itself (`typedef struct { ... }
 __attribute__((aligned(16))) T;`) is fine.
+
+### Bit-Fields
+
+A C struct with bit-fields (`unsigned th_off:4;`) has the same layout in Palan as in C, so a
+header such as `netinet/tcp.h` can be included and the struct passed to and from C. A bit-field
+member itself cannot be read, written, have its address taken or be given in a struct literal;
+each of these is a compile error. The struct's other fields work as usual.
 
 ### C Enum Types
 

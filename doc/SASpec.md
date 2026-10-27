@@ -405,8 +405,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     (`pntr` with `arr-size`, over a primitive, an owned struct slot, a struct laid out in place
     for `[n]$U`, or an owned `[+]V`), with `"embedded": true` on the `varr` for `[+]$[n]U`. The
     row size must be a constant (E_UnsizedArrRowSizeNotConst). Further levels follow the same
-    rules at any depth (`[+][m][n]U`, `[+][m]$[n]U`). A pointer element (`[+]@T`, `[+][n]@T`) is
-    not supported (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key, made from
+    rules at any depth (`[+][m][n]U`, `[+][m]$[n]U`). For a pointer element (`[+]@T`, `[+]@!T`,
+    `[+]@[]T`), `pntr(T, mutable)`, the slot a `[n]@T` element is; it borrows and is laid out as
+    an `int64`, so its shape key is `varr_int64`. A row of pointers (`[+][n]@T`) is not supported
+    (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key, made from
     `E`'s layout.
   - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
@@ -564,6 +566,22 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - stmt-type\*: "while"
   - cond\*: SA-annotated condition expression (value-type present; integer or bool expected)
   - body\*: SA-annotated statement list (raw array; variables declared inside are scoped to the loop body)
+
+- **for** - not emitted; SA lowers `for a, i in arr { body }` to a `block` holding, in order:
+  - a `var-decl` of a hidden variable (`__for_N`) bound to `arr`, so `arr` is evaluated once.
+    An array the expression returns is owned by the block and freed when it ends; otherwise the
+    variable borrows `arr`.
+  - the `int64` index (`i`, or a hidden name when omitted) initialized to 0, and a hidden
+    variable holding the length, found as `len` finds it.
+  - a `while` on `index < length` whose body declares `a` from element `index` (a copy, or a
+    `@`/`@!` borrow as written), then `body`, then `index + 1 -> index`; the step is also
+    inserted before each `continue` of this loop.
+  The range must be an array `len` accepts (E_ForRangeNotArray, or `len`'s own errors). The
+  index is read-only (E_AssignToForIndex). In `body`, an operation that frees, replaces or
+  resizes the range or anything containing it is E_ChangeForRange: `->>` into or out of it,
+  `->` into it (allowed into a fixed-length range), and a writable borrow of it (`@!v`,
+  method-form push/pop/resize, or a `@!` borrow passed on or bound as is). Indices on the path
+  are not compared, so any index counts as the iterated one.
 
 - **break** - exit the innermost while loop
   - stmt-type\*: "break"
@@ -1170,7 +1188,8 @@ not fit it. With several, each argument is analyzed once without a parameter typ
 
 - A candidate fits when the argument count matches (at least the fixed parameters for a C
   variadic function) and every argument passes the parameter's checks; an argument matches
-  exactly when its type is the parameter's, including a pointer's `mutable`.
+  exactly when its type is the parameter's, including `mutable` on every pointer level (through
+  pointers and a `[+]T`'s elements).
 - An argument whose type comes only from its parameter is matched by what it can become: an
   untyped literal (or one the parameter's type reaches through `-`, `~`, a shift or arithmetic)
   fits any primitive and matches exactly its default type (int64, uint64, flo64; for an
@@ -1179,7 +1198,8 @@ not fit it. With several, each argument is analyzed once without a parameter typ
   parameter of one of its functions' types. It is analyzed with the chosen parameter's type.
 - A chained value fits as `@v` where the parameter would take it so, and as `v` otherwise.
 - The one fitting candidate is chosen; of several, the one every argument matches exactly
-  (and no variadic argument is passed). Otherwise E_NoMatchingFunc (the argument types and
+  (and no variadic argument is passed), or else the one every argument matches exactly but for
+  a writable outermost pointer given to a read-only parameter. Otherwise E_NoMatchingFunc (the argument types and
   the candidates) or E_AmbiguousCall (the candidates that fit).
 - Receiving several values (`(a, b) = f(x)`) considers only the candidates returning that many,
   which must agree on what they return, since the receivers are declared before the arguments
