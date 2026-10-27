@@ -1121,6 +1121,9 @@ func fill(@![H][W]int32 g, int32 x) {
   array's, except that a `@` borrow may take `[n]@!T` as `@[n]@T`.
 - The array's shape must match exactly: the number of dimensions, contiguous (`$`) or not, and
   every size. An array whose size is only known at run time cannot be borrowed as `@[n]T`.
+- `@[]T` / `@![]T` leaves out the outer size and borrows the elements of an array of any length
+  (`func greet(@[]uint8 name)`, `greet(args[0])`, `greet(@buf)`). It is the same type as a
+  `@T` / `@!T` pointer: its elements are read with `p[i]` unchecked, and `len` does not apply.
 - Through `@`, no element can be written, including elements reached through a row
   (`g[i][j]`) and the fields of a struct element (`g[i].x`). A `@` borrow cannot be passed
   where `@!` is expected.

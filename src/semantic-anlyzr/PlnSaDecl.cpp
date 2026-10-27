@@ -396,12 +396,13 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 
 	json borrowType = normalizeArrBorrowType(stmt2, vtype);
 	bool isArrBorrow = borrowType.contains("arr-size");
+	bool reshaped = borrowType != vtype;
 
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
 	for (auto& var : stmt2["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = deepNormalizePrimToStruct(isArrBorrow || isVarrPntr(borrowType) ? borrowType : var["var-type"]);
+		json varType = deepNormalizePrimToStruct(reshaped ? borrowType : var["var-type"]);
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable

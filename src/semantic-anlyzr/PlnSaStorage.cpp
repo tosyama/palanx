@@ -249,6 +249,9 @@ json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json
 	const json& arr = type["base-type"];
 	if (arr.value("specifier","") == "variable")
 		return varrBorrowType(locNode, arr, type.value("mutable", false));
+	// `@[]T` borrows elements of no known count, as a slot of `[n]@[]T` does.
+	if (arr["size-expr"].is_null())
+		return ptrSlotElemType(locNode, type);
 	return sizedArrLevel(locNode, arr, type.value("mutable", false));
 }
 

@@ -532,7 +532,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `mutable` and none of `arr-size`, `embedded` and `unsized` is a `@T`/`@!T` pointer, never an
   array level. `@name` of an array whose size is known only at run time marks each such level
   `"unsized": true` beside its `mutable`, so it stays an array level.
-  Every size must be constant
+  Without the outer size, `@[]T` / `@![]T` becomes the element type of a `[n]@[]T` / `[n]@![]T`
+  slot, `pntr(T, mutable)` (a row keeping `mutable: false` on each level when read-only), so it
+  is the same type as `@T` / `@!T`. Every other size must be constant
   (`E_ArrBorrowSizeNotConst`) and `T` primitive, struct or a pointer to one, with neither a
   struct nor a pointer inside a `$[m]` row (`E_ArrBorrowUnsupportedElem`). A
   return type of this form stays rejected (`E_UnsupportedParamType`). At a call argument, a

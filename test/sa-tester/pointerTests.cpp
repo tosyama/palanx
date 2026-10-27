@@ -756,6 +756,18 @@ TEST(sa, ro_ptr_slot_store) {
 	ASSERT_EQ(stmts[13]["stmt-type"], "arr-assign");
 }
 
+// '@[]T' of no known count is the same type as '@T', in a parameter as in a local.
+TEST(sa, ro_unsized_borrow) {
+	json jout = run_sa("../test/testdata/sa/325_ro_unsized_borrow.pa");
+	const auto& funcs = jout["functions"];
+	json ro = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}, {"mutable", false}};
+	ASSERT_EQ(funcs[0]["parameters"][0]["var-type"], ro);
+	ASSERT_EQ(funcs[1]["parameters"][0]["var-type"]["mutable"], true);
+	ASSERT_FALSE(funcs[1]["parameters"][0]["var-type"].contains("arr-size"));
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[6]["vars"][0]["var-type"], ro);
+}
+
 // An array's element may be any pointer, in an array variable as in a borrow.
 TEST(sa, ptr_ptr_slot_arr)
 {
