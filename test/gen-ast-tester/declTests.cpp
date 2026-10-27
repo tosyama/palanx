@@ -1048,3 +1048,14 @@ TEST(gen_ast, frame_var) {
 	ASSERT_EQ(funcs[1]["rets"][0]["not-impl"], true);
 	ASSERT_EQ(funcs[2]["ret-type"]["not-impl"], true);
 }
+
+TEST(gen_ast, ro_ptr_slot_decl) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/149_ro_ptr_slot_decl.pa");
+	ASSERT_TRUE(checkerr(output));
+	json ast = json::parse(output)["ast"];
+	const auto& stmts = ast["statements"];
+	ASSERT_EQ(stmts[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[0]["vars"][0]["var-type"]["base-type"]["mutable"], false);
+	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"]["mutable"], true);
+}

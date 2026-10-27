@@ -742,6 +742,20 @@ TEST(sa, embed_ptr_slot_store) {
 	ASSERT_EQ(stmts[1]["value"]["name"], "malloc");
 }
 
+TEST(sa, ro_ptr_slot_store) {
+	json jout = run_sa("../test/testdata/sa/324_ro_ptr_slot.pa");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 14);
+	ASSERT_EQ(stmts[11]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[11]["target"]["value-type"]["mutable"], false);
+	// Read-only reaches every row level, so '@m' of rows fits the slot.
+	const auto& row = stmts[12]["target"]["value-type"];
+	ASSERT_EQ(row["embedded"], true);
+	ASSERT_EQ(row["mutable"], false);
+	ASSERT_EQ(row["base-type"]["mutable"], false);
+	ASSERT_EQ(stmts[13]["stmt-type"], "arr-assign");
+}
+
 // An array's element may be any pointer, in an array variable as in a borrow.
 TEST(sa, ptr_ptr_slot_arr)
 {

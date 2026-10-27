@@ -158,6 +158,12 @@ TEST(build_mgr, embed_ptr_slot) {
 	ASSERT_EQ(output, "7 11 11\n");
 }
 
+TEST(build_mgr, ro_ptr_slot) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/364_ro_ptr_slot.pa");
+	ASSERT_EQ(output, "7 11 3 5\n");
+}
+
 TEST(build_mgr, ptr_ptr_field) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/284_ptr_ptr_field.pa");

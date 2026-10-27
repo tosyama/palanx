@@ -1149,6 +1149,8 @@ pointer. The outer array is heap-allocated (`malloc(n * 8)`) and automatically f
 exit. A slot borrows what it points to and never owns it: store into it with `->` (for example
 memory from C `malloc`, or an array as `@!arr`) and free that memory yourself. `->>` into a slot is a compile error.
 `[n]@![]$[m]T` and `[n]@![]$T` are slots the same way, pointing at contiguous rows or structs.
+`[n]@[]T` declares read-only slots the same way: they take `@arr` as well as `@!arr`, and
+nothing can be written through them.
 
 ```palan
 int64 rows = 4;

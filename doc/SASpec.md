@@ -357,11 +357,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - The variable is registered in scope with `pntr` type
   - The `size-expr` must evaluate to an integer type; a float size is a compile error
 
-  **`[n]@![]T` (array of pointer slots):** A `var-decl` with `arr` type-kind where `base-type` is
-  `pntr(mutable=true, base=arr(T))` is also transformed:
+  **`[n]@![]T`, `[n]@[]T` (array of pointer slots):** A `var-decl` with `arr` type-kind where
+  `base-type` is `pntr(mutable, base=arr(T))` is also transformed:
   - `var-type`: changed to `pntr(pntr(T, mutable))` (pointer to pointer); like `[n]@T`/`[n]@!T`,
     the element carries the slot's permission, so a slot is a borrow and `->` into it stores the
-    pointer
+    pointer. A read-only slot to rows (`[n]@[]$[m]T`) has `"mutable": false` on each row level
+    too, as a read-only `@[k][m]T` does
   - `init`: `malloc(size-expr * 8)` (each slot is a pointer; elem-size is always 8)
   - The outer array is freed at scope exit. What the slots point to is not freed; a slot cannot
     take ownership with `->>` (E_TransferToBorrowSlot).
