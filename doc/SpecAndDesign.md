@@ -16,6 +16,8 @@ version: 0.2.2 — bit-field layout, command-line arguments, `for` loop
   `args`, a borrowed `[+]` array of borrowed C strings (`@[+]@[]uint8`) built from argc/argv.
   The entry module is chosen at link time, so a module compiles the same whether it is the entry
   or imported, and its top level can be run on its own as its tests or demo.
+  `palan source.pa arg...` passes everything after the source to the program it runs, and
+  builds that program in the working directory instead of the current one.
   `[+]@T`/`[+]@!T` (variable-length arrays of pointer slots) are added for it.
 - `for a in arr { }` and `for a, i in arr { }` loop over every array whose length `len` can give;
   `i` is the `int64` index. `a` is a copy, `@a` a read-only borrow and `@!a` a writable borrow of
@@ -35,10 +37,11 @@ Responsibility:
   The tool is responsible for orchestrating the compilation process.
 
 ```
-Usage: palan [options] <source file>
+Usage: palan [options] <source file> [program arguments...]
  options:
    -o, --output <file path> Specify output file path. If not specified, the binary is
-                            executed immediately after linking and then removed.
+                            linked in the working directory and run with the program
+                            arguments.
    -c, --clean              Remove all cached work files (the whole working directory)
    -h, --help               Display help information
    -v, --version            Display version information
@@ -51,9 +54,14 @@ Design:
  a module compiles the same whichever module is the entry. The allocators the modules need are
  generated as one more module (see 3.6). The entry is chosen only at link time: `palan-codegen
  --entry` emits a `_start` calling the given module's top-level function, and all object files are
- linked with `ld` to create the final executable (default: `a.out`).
- If `-o` is not specified, the resulting `a.out` is executed immediately after linking and then removed.
- This allows palan to be used as a script runner without leaving build artifacts.
+ linked with `ld` to create the final executable.
+ Options are read only before the source file; every argument after it goes to the program.
+ With `-o`, the executable is written to the given path and not run, and an argument after the
+ source file is an error. Without it, the executable is linked as `<source file path>.out` in the
+ working directory (see 5.1) and run with those arguments, and left there like the other work
+ files, which `--clean` removes. Only `-o` writes into the current directory, so palan can be used
+ as a script runner without leaving build artifacts, without touching an `a.out` already there,
+ and with several sources in one directory run at the same time.
  Before linking, the build manager unions the `libs` and `objs` arrays (see SASpec.md's Root)
  across every module's sa.json, in the same pass it already makes over all modules to collect
  `alloc-shapes`. It appends `-l<name>` to the `ld` invocation for each library named by a `link`
@@ -320,7 +328,8 @@ related output files will be stored under `~/.palan/work/home/user/project/`.
   - Output assembly file: `<source file path>.s`
     e.g., for source file `main.pa`, the output assembly file will be `main.pa.s`
 - palan (build manager):
-  - Assembles `.s` files with `as` and links with `ld` to produce the final executable (default: `a.out`).
+  - Assembles `.s` files with `as` and links with `ld` to produce the final executable: the `-o`
+    path, or without `-o` `<source file path>.out` in the working directory (e.g. `main.pa.out`).
 
 ### 5.3 Error Output Format
 

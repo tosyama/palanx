@@ -376,6 +376,20 @@ TEST(build_mgr, implicit_args) {
 	ASSERT_EQ(execTestCommand("out/lib_args_bin a b"), "hello a\nhello b\n");
 }
 
+// Without -o, everything after the source goes to the program, options too,
+// and the executable is kept in the working directory, not the current one.
+TEST(build_mgr, run_args) {
+	cleanTestEnv();
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
+	string bin = string(getenv("HOME")) + "/.palan/work" + dir + "/359_args.pa.out";
+	fs::remove(bin);
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/359_args.pa x -o 'y z'"),
+		"4\n1:x\n2:-o\n3:y z\nrebound\n");
+	EXPECT_TRUE(fs::exists(bin));
+	EXPECT_FALSE(fs::exists("a.out"));
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_args_demo.pa a"), "hello a\n");
+}
+
 // The header of `args` is in the frame: only the copy is allocated and freed.
 TEST(build_mgr, implicit_args_mtrace) {
 	expectMtraceRun("361_args_mtrace", "4 a end\n", 2, " a b");

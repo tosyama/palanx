@@ -14,7 +14,7 @@ string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string ar
 	switch (msg_code) {
 		case M_Help:
 			return
-				"Usage: palan [options] <source.pa>\n"
+				"Usage: palan [options] <source.pa> [program arguments...]\n"
 				"Compile and run a Palan source file.\n"
 				"\n"
 				"Options\n"
