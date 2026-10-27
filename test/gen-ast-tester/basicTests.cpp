@@ -1263,3 +1263,26 @@ TEST(gen_ast, nested_varr) {
 	ASSERT_EQ(stmts[2]["stmt-type"], "arr-assign");
 	ASSERT_EQ(stmts[2]["value"]["items"].size(), 0);
 }
+
+// 'in' is matched by spelling, so a field may still be named 'in'.
+TEST(gen_ast, for_loop) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/148_for.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts[0]["stmt-type"], "for");
+	ASSERT_EQ(stmts[0]["elem"]["name"], "a");
+	ASSERT_EQ(stmts[0]["elem"]["borrow"], false);
+	ASSERT_FALSE(stmts[0].contains("index"));
+	ASSERT_EQ(stmts[0]["range"]["name"], "v");
+	ASSERT_EQ(stmts[0]["body"].size(), 0);
+	ASSERT_EQ(stmts[1]["elem"]["borrow"], true);
+	ASSERT_EQ(stmts[1]["elem"]["mutable"], false);
+	ASSERT_EQ(stmts[1]["index"], "i");
+	ASSERT_EQ(stmts[1]["range"]["field"], "in");
+	ASSERT_EQ(stmts[1]["body"][0]["stmt-type"], "continue");
+	ASSERT_EQ(stmts[2]["elem"]["mutable"], true);
+	ASSERT_EQ(stmts[2]["elem"]["loc"][1], 5);
+	ASSERT_EQ(stmts[2]["range"]["expr-type"], "call");
+}

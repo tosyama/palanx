@@ -65,6 +65,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "tapple-assign") result.push_back(sa_tapple_assign(stmt));
 		else if (t == "if")       result.push_back(sa_if_stmt(stmt));
 		else if (t == "while")    result.push_back(sa_while_stmt(stmt));
+		else if (t == "for")      result.push_back(sa_for_stmt(stmt));
 		else if (t == "break") {
 			if (!whileScopeStack_.empty()) {
 				json frees = collectFreeStmts(whileScopeStack_.back(), arrayScopeVars_.size());
@@ -76,6 +77,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 			if (!whileScopeStack_.empty()) {
 				json frees = collectFreeStmts(whileScopeStack_.back(), arrayScopeVars_.size());
 				for (auto& s : frees) result.push_back(s);
+				for (auto& s : loopSteps_.back()) result.push_back(s);
 			}
 			result.push_back(sa_continue_stmt(stmt));
 		}
@@ -165,28 +167,112 @@ json PlnSemanticAnalyzer::sa_while_stmt(const json& stmt)
 	json result;
 	result["stmt-type"] = "while";
 	result["cond"] = sa_expression(stmt["cond"]);
+	result["body"] = sa_loop_body(stmt["body"], json(), json::array());
+	if (stmt.contains("loc"))
+		result["loc"] = stmt["loc"];
+	return result;
+}
+
+// head: a var-decl declared in the loop's scope ahead of the body, or null.
+json PlnSemanticAnalyzer::sa_loop_body(const json& astBody, const json& head, json step)
+{
 	enterScope();
 	whileScopeStack_.push_back(arrayScopeVars_.size() - 1);
+	loopSteps_.push_back(step);
 	loopDepth_++;
-	enterBlockDecls(stmt["body"]);
+	enterBlockDecls(astBody);
 
-	json body = sa_statements(stmt["body"]);
+	json body = head.is_null() ? json::array() : sa_resolved_var_decl(head, {});
+	for (auto& s : sa_statements(astBody)) body.push_back(move(s));
 
 	// Append free() for array vars in while body scope (reverse declaration order)
 	size_t idx = arrayScopeVars_.size() - 1;
 	json frees = collectFreeStmts(idx, idx + 1);
 	for (auto& s : frees) body.push_back(s);
+	for (auto& s : step) body.push_back(move(s));
 
 	leaveBlockDecls();
 	loopDepth_--;
+	loopSteps_.pop_back();
 	whileScopeStack_.pop_back();
 	leaveScope();
-
-	result["body"] = move(body);
-	if (stmt.contains("loc"))
-		result["loc"] = stmt["loc"];
-	return result;
+	return body;
 }
+
+// `for a, i in arr { }` becomes a while over i, in a block of its own that
+// holds arr, evaluated once, and its length.
+json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	const json& loc = stmt["loc"];
+	const json& elem = stmt["elem"];
+	auto id = [&](const string& name) { return json{{"expr-type","id"},{"name",name},{"loc",loc}}; };
+	auto varDecl = [&](const string& name, const json& type, json init, const json& loc) {
+		return json{{"stmt-type","var-decl"},{"loc",loc},
+		            {"vars",json::array({{{"name",name},{"var-type",type},{"init",move(init)}}})}};
+	};
+	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
+	enterScope();
+	json block = json::array();
+
+	json range = sa_expression(stmt["range"]);
+	json arrType = range["value-type"];
+	if (!isVarrPntr(arrType) && !isArrLevel(arrType)) {
+		cerr << locPrefix(stmt["range"]) << PlnSaMessage::getMessage(E_ForRangeNotArray) << endl;
+		exit(1);
+	}
+	string arr = "__for_" + to_string(tempVarCounter_++);
+	if (isExpiringOwned(range)) {
+		declareVar(arr, arrType);
+		addOwnedScopeVar(arr, makeOwnedFreeStmt(arr, arrType));
+	} else {
+		if (holdsCallTemps(range)) {
+			cerr << locPrefix(stmt["range"]) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
+			exit(1);
+		}
+		arrType["mutable"] = isWritableThrough(arrType);
+		declareVar(arr, arrType);
+	}
+	block.push_back({{"stmt-type","var-decl"},
+	                 {"vars",json::array({{{"name",arr},{"var-type",arrType},{"init",move(range)}}})}});
+
+	string idx = stmt.value("index", "__for_i_" + to_string(tempVarCounter_++));
+	for (auto& s : sa_var_decl(varDecl(idx, i64, {{"expr-type","lit-int"},{"value","0"},{"loc",loc}}, loc)))
+		block.push_back(move(s));
+	string len = "__for_len_" + to_string(tempVarCounter_++);
+	json saArr = {{"expr-type","id"},{"name",arr},{"var-type",arrType},{"value-type",arrType}};
+	json lenVal = arrLenOf(saArr, stmt["range"]);
+	declareVar(len, i64);
+	block.push_back({{"stmt-type","var-decl"},
+	                 {"vars",json::array({{{"name",len},{"var-type",i64},{"init",move(lenVal)}}})}});
+
+	json cond = sa_expression({{"expr-type","cmp"},{"op","<"},{"left",id(idx)},{"right",id(len)},{"loc",loc}});
+	json step = json::array({{{"stmt-type","assign"},{"name",idx},
+		{"value",sa_expression({{"expr-type","add"},{"left",id(idx)},{"loc",loc},
+		                        {"right",{{"expr-type","lit-int"},{"value","1"},{"loc",loc}}}})}}});
+
+	// The element is declared as if written: its copy, or a borrow of it.
+	const json& elemType = isVarrPntr(arrType) ? arrType["base-type"]["base-type"] : arrType["base-type"];
+	json declType = astTypeOf(elemType);
+	if (declType.is_null()) declType = elemType;
+	json init = {{"expr-type","arr-index"},{"array",id(arr)},{"index",id(idx)},{"loc",elem["loc"]}};
+	if (elem["borrow"]) {
+		declType = {{"type-kind","pntr"},{"mutable",elem["mutable"]},{"base-type",move(declType)}};
+		init = {{"expr-type","addr-of"},{"object",move(init)},{"mutable",elem["mutable"]},{"loc",elem["loc"]}};
+	}
+	json head = varDecl(elem["name"], declType, move(init), elem["loc"]);
+
+	forIndexVars_.insert(idx);
+	json body = sa_loop_body(stmt["body"], head, move(step));
+	forIndexVars_.erase(idx);
+	block.push_back({{"stmt-type","while"},{"cond",move(cond)},{"body",move(body)},{"loc",loc}});
+
+	size_t scope = arrayScopeVars_.size() - 1;
+	for (auto& s : collectFreeStmts(scope, scope + 1)) block.push_back(move(s));
+	leaveScope();
+	return {{"stmt-type","block"},{"body",move(block)}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_break_stmt(const json& stmt)
 {
@@ -220,10 +306,12 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	auto savedArrayScopeVars = arrayScopeVars_;
 	auto savedFuncBodyIdx    = funcBodyScopeIdx_;
 	auto savedEscapedVars    = move(escapedVars_);
+	auto savedForIndexVars   = move(forIndexVars_);
 	auto savedPendingAliases = pendingAliases_;
 	auto savedSymbolScope    = symbolScope_;
 	auto savedBlockSymbolSeq = blockSymbolSeq_;
 	escapedVars_.clear();
+	forIndexVars_.clear();
 	pendingAliases_ = 0;
 
 	varScopes       = {{}};
@@ -329,6 +417,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	currentFunc_     = savedCurrentFunc;
 	currentFuncDef_  = savedCurrentFuncDef;
 	escapedVars_     = move(savedEscapedVars);
+	forIndexVars_    = move(savedForIndexVars);
 	pendingAliases_  = savedPendingAliases;
 	symbolScope_     = savedSymbolScope;
 	blockSymbolSeq_  = savedBlockSymbolSeq;
@@ -346,6 +435,10 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 			exit(1);
 		}
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
+		exit(1);
+	}
+	if (forIndexVars_.count(name)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AssignToForIndex, name) << endl;
 		exit(1);
 	}
 	if (isAggregateLit(stmt["value"]) && (isStructPntr(*varType) || isArrLevel(*varType)))

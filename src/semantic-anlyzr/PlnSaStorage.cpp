@@ -11,11 +11,6 @@
 #include "../common/PlnDefs.h"
 
 // LCOV_EXCL_EXCEPTION_BR_START
-static json lenLit(int64_t v)
-{
-	return {{"expr-type","lit-int"},{"value",to_string(v)},{"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
-}
-
 static json byteLit(int64_t v)
 {
 	return {{"expr-type","lit-uint"},{"value",to_string(v)},{"value-type",{{"type-kind","prim"},{"type-name","uint64"}}}};

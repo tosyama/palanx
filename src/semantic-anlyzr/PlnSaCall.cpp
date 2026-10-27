@@ -419,7 +419,7 @@ json PlnSemanticAnalyzer::makeCallNode(const json& expr, const Callee& callee, c
 	sa_expr["args"] = analyzedArgs
 		? bindCallArgs(expr, *analyzedArgs, def["parameters"], callee.isC, writtenName)
 		: saCallArgs(expr, expr["args"], def["parameters"], callee.isC, writtenName);
-	if (def.value("inline", false)) return varrLen(move(sa_expr["args"][0]));
+	if (def.value("inline", false)) return arrLenOf(sa_expr["args"][0], expr);
 	// A builtin's generated function also takes the lengths the element's type gives.
 	if (def.contains("len-args"))
 		for (auto& len : def["len-args"]) sa_expr["args"].push_back(len);

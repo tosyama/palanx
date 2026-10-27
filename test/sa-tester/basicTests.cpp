@@ -1255,3 +1255,39 @@ TEST(sa, implicit_args)
 	ASSERT_TRUE(jout["alloc-shapes"].empty());
 	ASSERT_EQ(jout["functions"][0]["parameters"][0]["name"], "args");
 }
+
+// A for loop becomes a block holding the array and its length, around a while
+// that steps the index at its end and before each continue.
+TEST(sa, for_loop)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/322_for.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& b = stmts[3]["body"];
+	ASSERT_EQ(stmts[3]["stmt-type"], "block");
+	ASSERT_EQ(b.size(), 4);
+	ASSERT_EQ(b[0]["vars"][0]["init"]["name"], "v");
+	ASSERT_EQ(b[0]["vars"][0]["var-type"]["mutable"], true);
+	ASSERT_EQ(b[1]["vars"][0]["name"], "i");
+	ASSERT_EQ(b[2]["vars"][0]["init"]["expr-type"], "field-access");
+	ASSERT_EQ(b[2]["vars"][0]["init"]["offset"], 0);
+	const auto& w = b[3];
+	ASSERT_EQ(w["stmt-type"], "while");
+	ASSERT_EQ(w["cond"]["op"], "<");
+	ASSERT_EQ(w["body"][0]["vars"][0]["name"], "a");
+	ASSERT_EQ(w["body"][0]["vars"][0]["init"]["expr-type"], "arr-index");
+	const auto& cont = w["body"][1]["then"]["body"];
+	ASSERT_EQ(cont[0]["stmt-type"], "assign");
+	ASSERT_EQ(cont[0]["name"], "i");
+	ASSERT_EQ(cont[1]["stmt-type"], "continue");
+	ASSERT_EQ(w["body"].back()["stmt-type"], "assign");
+
+	// A constant-size array's length is a literal; '@!x' borrows each element.
+	const auto& c = stmts[5]["body"];
+	ASSERT_EQ(c[2]["vars"][0]["init"]["value"], "3");
+	const auto& x = c[3]["body"][0]["vars"][0];
+	ASSERT_EQ(x["name"], "x");
+	ASSERT_EQ(x["var-type"]["mutable"], true);
+	ASSERT_EQ(x["init"]["addr-only"], true);
+}

@@ -464,6 +464,13 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_ArrLenNotConst:
 			return "'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time.";
 
+		case E_ForRangeNotArray:
+			return "'for' takes an array to iterate over.";
+
+		case E_AssignToForIndex:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot assign to '" + arg1 + "': the index of a 'for' loop is read-only.";
+
 		case E_ArrLenNeedsAddrOf:
 			return "an array given to 'len' must be written as '@name'.";
 

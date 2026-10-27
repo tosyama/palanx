@@ -1243,3 +1243,25 @@ TEST(sa_error, implicit_args)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, for_loop)
+{
+	const pair<string, string> cases[] = {
+		{"error_838_for_not_array.pa", ":1:23: error: 'for' takes an array to iterate over."},
+		{"error_839_for_index_assign.pa", ":1:29: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
+		{"error_840_for_index_addr_of.pa", ":1:41: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
+		{"error_841_for_unsized.pa", ":1:30: error: 'len' takes a variable-length array or an array of constant size"},
+		{"error_842_for_runtime_size.pa", ":1:40: error: 'len' takes a variable-length array or an array of constant size"},
+		{"error_843_for_ro_write.pa", ":1:27: error: cannot write through read-only pointer '@T'"},
+		{"error_844_for_ptr_elem_addr_of.pa", ":1:5: error: cannot take the address of this array element"},
+		{"error_845_for_dup_name.pa", ":1:17: error: Variable 'a' is already declared."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

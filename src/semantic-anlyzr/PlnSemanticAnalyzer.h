@@ -176,6 +176,9 @@ class PlnSemanticAnalyzer {
 	vector<vector<ScopeVar>> arrayScopeVars_;
 	// Stack of while-body scope indices (for break/continue cleanup)
 	vector<size_t> whileScopeStack_;
+	// What each enclosing loop runs before its next iteration; a 'continue' runs it too.
+	vector<json> loopSteps_;
+	set<string> forIndexVars_;
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
 	// The top level names the implicit `args`; its header is built only then.
@@ -339,6 +342,8 @@ class PlnSemanticAnalyzer {
 	json foldConstExpr(const json& expr);
 	optional<ConstVal> evalConst(const json& expr);
 	optional<int64_t> constArrLen(const json& expr);
+	int64_t constArrSizeOrExit(const json& arrType, const json& locNode);
+	json arrLenOf(const json& saArr, const json& locNode);
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	// Also gives back a void call or a multi-value call, which has no value-type.
 	json sa_expr_maybe_void(const json &expr, const PlnType* expectedType = nullptr);
@@ -616,6 +621,8 @@ class PlnSemanticAnalyzer {
 	json sa_block(const json& stmt);
 	json sa_if_stmt(const json& stmt);
 	json sa_while_stmt(const json& stmt);
+	json sa_loop_body(const json& astBody, const json& head, json step);
+	json sa_for_stmt(const json& stmt);
 	json sa_break_stmt(const json& stmt);
 	json sa_continue_stmt(const json& stmt);
 

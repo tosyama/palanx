@@ -396,7 +396,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "break" "continue" "not-impl" "enum-def"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "for" "break" "continue" "not-impl" "enum-def"
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -482,13 +482,23 @@ Statement model
   16. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  17. break - exit the innermost while loop (no additional fields)
-  18. continue - skip to next iteration of innermost while loop (no additional fields)
-  19. not-impl - a statement the grammar parses but the compiler does not implement (e.g. `for`,
-      `interface`, `x++`, a type-omitted declaration). Rejected by SA.
+  17. for - loop over an array's elements (`for a, i in arr { ... }`; SA lowers it to a block
+      holding a while)
+    - elem\* - The loop variable
+      - name\* - Variable name string
+      - borrow\* - Boolean, true for `@a`/`@!a` (a borrow of the element) and false for `a` (a copy)
+      - mutable - Boolean, true for `@!a`; present only when borrow is true
+      - loc\* - Location Array
+    - index - Name string of the int64 index variable (omitted when absent)
+    - range\* - The array expression model
+    - body\* - Statement model list (raw array, no block wrapper)
+  18. break - exit the innermost while or for loop (no additional fields)
+  19. continue - skip to next iteration of innermost while or for loop (no additional fields)
+  20. not-impl - a statement the grammar parses but the compiler does not implement (e.g.
+      `construct`, `interface`, `x++`, a type-omitted declaration). Rejected by SA.
     - untyped-var - Name of the first type-omitted variable; present only for a `name = expr;`
       declaration (reserved for type inference; an assignment is `expr -> name`)
-  20. enum-def - enum type definition (`type Name enum { X, Y = expr, ... }`; consumed by SA, not
+  21. enum-def - enum type definition (`type Name enum { X, Y = expr, ... }`; consumed by SA, not
       emitted to sa.json)
     - name\* - Enum name string
     - export - Boolean, true if declared with `export` (omitted when false)

@@ -204,6 +204,12 @@ inline json varrPntrType(const json& elem, bool embedded)
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 inline bool isVarrEmbedded(const json& vt) { return vt["base-type"].value("embedded", false); }
+inline json lenLit(int64_t v)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	return {{"expr-type","lit-int"},{"value",to_string(v)},{"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 // The header's len, which `len(@v)` reads in place of a call.
 inline json varrLen(json varr)
 {

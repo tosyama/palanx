@@ -13,7 +13,7 @@ data ->> quicksort()
 	-> show();
 
 func show(@[#]int16 data) {
-	for d: data {
+	for d in data {
 		printf(" %d", d);
 	}
 	printf("\n");

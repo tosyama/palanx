@@ -193,6 +193,10 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			}
 			undefinedNameError(expr, obj, E_UndefinedVariable);
 		}
+		if (isMutable && forIndexVars_.count(name)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AssignToForIndex, name) << endl;
+			exit(1);
+		}
 		// '@' on a borrow would name its variable's slot; only a primitive
 		// pointer has a use for that (a C 'T **' out-param).
 		if (isArrBorrowVar(*varType) || isStructBorrow(*varType)) {
@@ -438,11 +442,24 @@ optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLenNeedsAddrOf) << endl;
 		exit(1);
 	}
-	if (!vt.contains("arr-size")) {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLenNotConst) << endl;
+	return constArrSizeOrExit(vt, expr);
+}
+
+int64_t PlnSemanticAnalyzer::constArrSizeOrExit(const json& arrType, const json& locNode)
+{
+	if (!arrType.contains("arr-size")) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLenNotConst) << endl;
 		exit(1);
 	}
-	return vt["arr-size"].get<int64_t>();
+	return arrType["arr-size"].get<int64_t>();
+}
+
+// The length `len` gives for an array value.
+json PlnSemanticAnalyzer::arrLenOf(const json& saArr, const json& locNode)
+{
+	const json& vt = saArr["value-type"];
+	if (isVarrPntr(vt)) return varrLen(saArr);
+	return lenLit(constArrSizeOrExit(vt, locNode));
 }
 
 // Evaluates in int64, or uint64 once a 'u' operand joins, like the usual

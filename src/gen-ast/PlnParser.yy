@@ -155,6 +155,14 @@ struct BodyList {
 		}                                                                 \
 	} while (false)
 
+	static void requireInKeyword(const string& file, const string& word,
+	                             const palan::PlnParser::location_type& loc)
+	{
+		if (word != "in")
+			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
+				PlnGenAstMessage::getMessage(E_ExpectedInKeyword, word)));
+	}
+
 	// A parameter or return the compiler does not implement stays in the
 	// signature as is, so SA can reject the function where it is defined.
 	static json funcDecl(json& ast, bool exported, json fn, const vector<json>& params, const json& ret,
@@ -260,7 +268,8 @@ struct BodyList {
 %type <NodeRef>	block_obj standalone_block block_body_items
 %type <json>	tapple_decl tapple_inner
 %type <PList<json>>	tapple_decl_inner
-%type <NodeRef>	if_stmt else_stmt while_loop
+%type <NodeRef>	if_stmt else_stmt while_loop for_loop
+%type <json>	for_elem
 %type <json>		type_decl type_member const_decl
 %type <PList<json>>	type_members enumerators
 %type <json>	enumerator
@@ -306,7 +315,7 @@ block_stmt: standalone_block
 	| construct_def
 	{ json j = {{"stmt-type", "not-impl"}}; LOC(j, @$); $$ = leafNode(move(j)); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| for_loop
-	{ json j = {{"stmt-type", "not-impl"}}; LOC(j, @$); $$ = leafNode(move(j)); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = $1; }
 	| while_loop
 	{ $$ = $1; }
 	| if_stmt
@@ -1183,7 +1192,29 @@ return: KW_RETURN
 	{ $$["values"] = $2.toVector(); }
 	;
 
-for_loop: KW_FOR ID ':' expression block
+// 'in' stays an identifier elsewhere: C structs and existing code name fields 'in'.
+for_loop: KW_FOR for_elem ID expression block
+	{
+		requireInKeyword(lexer.inputFile, $3, @3);
+		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"range", move($4)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		LOC(f, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $5}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
+	| KW_FOR for_elem ',' ID ID expression block
+	{
+		requireInKeyword(lexer.inputFile, $5, @5);
+		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"index", $4}, {"range", move($6)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		LOC(f, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $7}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
+	;
+
+for_elem: ID
+	{ $$ = {{"name", $1}, {"borrow", false}}; LOC($$, @$); }
+	| '@' ID
+	{ $$ = {{"name", $2}, {"borrow", true}, {"mutable", false}}; LOC($$, @$); }
+	| AT_EXCL ID
+	{ $$ = {{"name", $2}, {"borrow", true}, {"mutable", true}}; LOC($$, @$); }
 	;
 
 while_loop: KW_WHILE expression block
