@@ -171,6 +171,8 @@ enum PlnSaMessageCode {
 	E_ForRangeNotArray,
 	E_AssignToForIndex,	// arg1: variable name
 	E_ChangeForRange,	// arg1: the array iterated over
+	E_ForIndexNotInteger,	// arg1: type display name
+	E_ForIndexTooNarrow,	// arg1: type display name, arg2: the array's length
 };
 
 class PlnSaMessage

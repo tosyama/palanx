@@ -1,0 +1,2 @@
+for @a, int32 i in v { }
+for copy a, Idx i in v { }

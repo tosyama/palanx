@@ -657,3 +657,10 @@ TEST(build_mgr, for_loop) {
 TEST(build_mgr, for_loop_mtrace) {
 	expectMtraceRun("363_for_mtrace", "(1,2) 7 8 1 2 3\n", 36);
 }
+
+TEST(build_mgr, for_loop_index_type) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan -o out/for_idx_bin ../test/testdata/build-mgr/367_for_index_type.pa"), "");
+	ASSERT_EQ(execTestCommand("out/for_idx_bin"),
+		"(0,0)1(4,0)3(0,1)4(4,1)6\n254:254 255:255 0:256 1:257 \n");
+}

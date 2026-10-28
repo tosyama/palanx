@@ -20,8 +20,9 @@ version: 0.2.2 — bit-field layout, command-line arguments, `for` loop
   builds that program in the working directory instead of the current one.
   `[+]@T`/`[+]@!T` (variable-length arrays of pointer slots) are added for it.
 - `for copy a in arr { }` and `for copy a, i in arr { }` loop over every array whose length `len`
-  can give; `i` is the `int64` index. `copy a` is a copy; `@a` and `@!a` are the element itself,
-  read-only and writable (`0 -> a` writes `arr[i]`). A bare `a` is a compile error, so a copy is
+  can give; `i` is the index, `int64` unless a type is written (`for @a, int32 i in arr`).
+  `copy a` is a copy; `@a` and `@!a` are the element itself, read-only and writable
+  (`0 -> a` writes `arr[i]`). A bare `a` is a compile error, so a copy is
   always chosen explicitly. Changing the length of `arr` inside the loop (`push`, `pop`, `resize`, replacing it
   with `->`/`->>`, or passing `@!arr`) is an error.
 

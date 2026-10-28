@@ -1,0 +1,21 @@
+cinclude <stdio.h>;
+
+func show(int32 x, int32 y, int32 c) { printf("(%d,%d)%d", x, y, c); }
+
+[2][3]int32 g = [[1, 2, 3], [4, 5, 6]];
+for @row, int32 y in g {
+	for @c, int32 x in row {
+		if x == 1 { continue; }
+		show(x * 2, y, c);
+	}
+}
+printf("\n");
+
+// The index wraps as its type does; the elements are still reached in order.
+[+]int32 v;
+int32 n = 0;
+while n < 258 { v.push(n); n + 1 -> n; }
+for copy a, uint8 i in v {
+	if a >= 254 { printf("%d:%d ", i, a); }
+}
+printf("\n");

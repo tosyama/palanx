@@ -571,11 +571,14 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - a `var-decl` of a hidden variable (`__for_N`) bound to `arr`, so `arr` is evaluated once.
     An array the expression returns is owned by the block and freed when it ends; otherwise the
     variable borrows `arr`.
-  - the `int64` index (`i`, or a hidden name when omitted) initialized to 0, and a hidden
-    variable holding the length, found as `len` finds it.
+  - the `int64` index (`i`, or a hidden name when omitted or typed) initialized to 0, and a
+    hidden variable holding the length, found as `len` finds it.
   - a `while` on `index < length` whose body is `body`, then `index + 1 -> index`; the step is
-    also inserted before each `continue` of this loop. For `copy a`, the body first declares `a`
-    from element `index`. For `@a`/`@!a`, no variable is declared: each `a` in `body` (outside
+    also inserted before each `continue` of this loop. With an index type (`for @a, T i in arr`),
+    the body first declares `i` of type `T` from a `convert` of the hidden index; `T` must be an
+    integer type (E_ForIndexNotInteger), and for an array of constant size `n`, `n - 1` must fit
+    in it (E_ForIndexTooNarrow). For `copy a`, the body next declares `a` from element `index`.
+    For `@a`/`@!a`, no variable is declared: each `a` in `body` (outside
     nested functions) is replaced by the element `__for_N[index]` before analysis, and `... -> a`
     becomes an `arr-assign`. The name stays declared, so `body` cannot declare it again.
     `__for_N` is read-only for `@a` (an owned range gets a read-only `__for_ro_N` bound to it);

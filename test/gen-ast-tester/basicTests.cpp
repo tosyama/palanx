@@ -1289,3 +1289,16 @@ TEST(gen_ast, for_loop) {
 	ASSERT_EQ(stmts[3]["elem"]["borrow"], false);
 	ASSERT_EQ(stmts[3]["range"]["name"], "copy");
 }
+
+TEST(gen_ast, for_loop_index_type) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/150_for_index_type.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts[0]["index"], "i");
+	ASSERT_EQ(stmts[0]["index-type"]["type-name"], "int32");
+	ASSERT_EQ(stmts[0]["range"]["name"], "v");
+	ASSERT_EQ(stmts[1]["elem"]["borrow"], false);
+	ASSERT_EQ(stmts[1]["index-type"]["type-name"], "Idx");
+}

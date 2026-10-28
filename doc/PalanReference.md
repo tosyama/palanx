@@ -660,6 +660,11 @@ printf("\n");                          // 0:20 1:40 2:60
   function as an element is (`f(@!a)`, `len(@a)`). `copy` is not a reserved word; it can still
   name a variable or field.
 - `i` cannot be assigned to.
+- A type can be written before `i`: `for @c, int32 x in row` gives `x` as an `int32`, so it is
+  passed to an `int32` parameter without a cast. It must be an integer type, and for an array of
+  constant size every index must fit in it. For an array whose length is known only at run time
+  it is not checked: an index too large for the type wraps as `int32(i)` would, while `a` is
+  still each element in order.
 - The body cannot change `arr`'s length or replace it, directly or through what contains it:
   `push`, `pop`, `resize`, `->>` into or out of it, `->` into a variable-length one, and passing
   `@!arr` are compile errors. Writing elements, changing an inner array (`m[0].push(1)` in

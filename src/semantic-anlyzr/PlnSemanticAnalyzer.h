@@ -630,7 +630,7 @@ class PlnSemanticAnalyzer {
 	json sa_block(const json& stmt);
 	json sa_if_stmt(const json& stmt);
 	json sa_while_stmt(const json& stmt);
-	json sa_loop_body(const json& astBody, const json& head, json step);
+	json sa_loop_body(const json& astBody, const json& heads, json step);
 	json sa_for_stmt(const json& stmt);
 	json sa_break_stmt(const json& stmt);
 	json sa_continue_stmt(const json& stmt);

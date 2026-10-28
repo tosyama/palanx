@@ -5,6 +5,7 @@
 
 #pragma once
 #include <string>
+#include <charconv>
 #include <boost/assert.hpp>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
@@ -44,6 +45,36 @@ inline bool isIntegerPrim(const PlnType* t) {
 	auto pn = static_cast<const PrimType*>(t)->name;
 	return pn != PrimType::Name::Float32 && pn != PrimType::Name::Float64
 	    && pn != PrimType::Name::Void;
+}
+
+inline bool intLiteralFits(const string& value, PrimType::Name pn)
+{
+	bool neg = value[0] == '-';
+	const char* first = value.data() + (neg ? 1 : 0);
+	const char* last = value.data() + value.size();
+	uint64_t mag;
+	// The lexer only produces digit strings, so the only failure is overflow.
+	if (from_chars(first, last, mag).ec != errc()) return false;
+
+	int bits = 64;
+	bool isSigned = true;
+	switch (pn) {
+		case PrimType::Name::Int8:   bits = 8;  break;
+		case PrimType::Name::Int16:  bits = 16; break;
+		case PrimType::Name::Int32:  bits = 32; break;
+		case PrimType::Name::Int64:  bits = 64; break;
+		case PrimType::Name::Uint8:  bits = 8;  isSigned = false; break;
+		case PrimType::Name::Uint16: bits = 16; isSigned = false; break;
+		case PrimType::Name::Uint32: bits = 32; isSigned = false; break;
+		case PrimType::Name::Bool:   bits = 1;  isSigned = false; break;
+		default:                     bits = 64; isSigned = false; break;
+	}
+	if (isSigned) {
+		uint64_t posMax = (uint64_t(1) << (bits - 1)) - 1;
+		return mag <= (neg ? posMax + 1 : posMax);
+	}
+	if (neg) return mag == 0;
+	return bits == 64 || mag <= (uint64_t(1) << bits) - 1;
 }
 
 inline bool isBoolPrim(const PlnType* t) {

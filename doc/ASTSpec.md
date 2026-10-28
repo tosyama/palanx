@@ -489,7 +489,9 @@ Statement model
       - borrow\* - Boolean, true for `@a`/`@!a` (the element itself, read-only or writable) and false for `copy a` (a copy)
       - mutable - Boolean, true for `@!a`; present only when borrow is true
       - loc\* - Location Array
-    - index - Name string of the int64 index variable (omitted when absent)
+    - index - Name string of the index variable (omitted when absent)
+    - index-type - Type model of the index written before its name (`for @a, int32 i in arr`);
+      omitted when not written, and the index is then `int64`
     - range\* - The array expression model
     - body\* - Statement model list (raw array, no block wrapper)
   18. break - exit the innermost while or for loop (no additional fields)

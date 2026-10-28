@@ -475,6 +475,14 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot change the array a 'for' loop iterates over ('" + arg1 + "').";
 
+		case E_ForIndexNotInteger:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the index of a 'for' loop must be of an integer type, not '" + arg1 + "'.";
+
+		case E_ForIndexTooNarrow:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "the index type '" + arg1 + "' cannot hold every index of an array of length " + arg2 + ".";
+
 		case E_ArrLenNeedsAddrOf:
 			return "an array given to 'len' must be written as '@name'.";
 

@@ -1272,6 +1272,9 @@ TEST(sa_error, for_loop)
 		{"error_872_for_ro_row_inner_for.pa", ":2:21: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'"},
 		{"error_873_for_ro_row_write.pa", ":2:17: error: cannot write through read-only pointer '@T'"},
 		{"error_874_for_ro_row_write_borrow.pa", ":1:43: error: cannot write through read-only pointer '@T'"},
+		{"error_875_for_index_not_integer.pa", ":2:1: error: the index of a 'for' loop must be of an integer type, not 'flo64'."},
+		{"error_876_for_index_too_narrow.pa", ":2:1: error: the index type 'int8' cannot hold every index of an array of length 129."},
+		{"error_877_for_typed_index_assign.pa", ":2:28: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

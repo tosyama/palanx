@@ -1207,6 +1207,13 @@ for_loop: KW_FOR for_elem ID expression block
 		LOC(f, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
 		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $7}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
+	| KW_FOR for_elem ',' type_expr ID ID expression block
+	{
+		requireInKeyword(lexer.inputFile, $6, @6);
+		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"index", $5}, {"index-type", move($4)}, {"range", move($7)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		LOC(f, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $8}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+	}
 	;
 
 // 'copy' stays an identifier elsewhere, like 'in'. A bare loop variable is

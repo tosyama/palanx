@@ -1297,6 +1297,23 @@ TEST(sa, for_loop)
 	ASSERT_EQ(d[3]["body"][0]["vars"][0]["init"]["array"]["name"], d[0]["vars"][0]["name"]);
 }
 
+// A typed index is declared in each iteration from the hidden int64 counter.
+TEST(sa, for_loop_index_type)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/327_for_index_type.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& b = jout["statements"][1]["body"];
+	ASSERT_EQ(b[1]["vars"][0]["var-type"]["type-name"], "int64");
+	string counter = b[1]["vars"][0]["name"];
+	ASSERT_NE(counter, "i");
+	const auto& head = b[3]["body"][0]["vars"][0];
+	ASSERT_EQ(head["name"], "i");
+	ASSERT_EQ(head["var-type"]["type-name"], "uint8");
+	ASSERT_EQ(head["init"]["expr-type"], "convert");
+	ASSERT_EQ(head["init"]["src"]["name"], counter);
+}
+
 // Changes that leave the iterated array's storage and length alone: its
 // elements, deeper arrays, read-only borrows, a fixed-length array in place,
 // and rebinding a borrow.

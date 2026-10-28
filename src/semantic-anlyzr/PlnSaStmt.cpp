@@ -167,14 +167,14 @@ json PlnSemanticAnalyzer::sa_while_stmt(const json& stmt)
 	json result;
 	result["stmt-type"] = "while";
 	result["cond"] = sa_expression(stmt["cond"]);
-	result["body"] = sa_loop_body(stmt["body"], json(), json::array());
+	result["body"] = sa_loop_body(stmt["body"], json::array(), json::array());
 	if (stmt.contains("loc"))
 		result["loc"] = stmt["loc"];
 	return result;
 }
 
 // head: a var-decl declared in the loop's scope ahead of the body, or null.
-json PlnSemanticAnalyzer::sa_loop_body(const json& astBody, const json& head, json step)
+json PlnSemanticAnalyzer::sa_loop_body(const json& astBody, const json& heads, json step)
 {
 	enterScope();
 	whileScopeStack_.push_back(arrayScopeVars_.size() - 1);
@@ -182,7 +182,9 @@ json PlnSemanticAnalyzer::sa_loop_body(const json& astBody, const json& head, js
 	loopDepth_++;
 	enterBlockDecls(astBody);
 
-	json body = head.is_null() ? json::array() : sa_resolved_var_decl(head, {});
+	json body = json::array();
+	for (auto& head : heads)
+		for (auto& s : sa_resolved_var_decl(head, {})) body.push_back(move(s));
 	for (auto& s : sa_statements(astBody)) body.push_back(move(s));
 
 	// Append free() for array vars in while body scope (reverse declaration order)
@@ -321,7 +323,11 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	block.push_back({{"stmt-type","var-decl"},
 	                 {"vars",json::array({{{"name",arr},{"var-type",arrType},{"init",move(range)}}})}});
 
-	string idx = stmt.value("index", "__for_i_" + to_string(tempVarCounter_++));
+	// A typed index is a conversion of a hidden int64 counter, so an index type
+	// too narrow for a run-time length wraps like `int32(i)` instead of
+	// looping forever, and the elements are still reached through the counter.
+	bool typedIdx = stmt.contains("index-type");
+	string idx = typedIdx || !stmt.contains("index") ? "__for_i_" + to_string(tempVarCounter_++) : stmt["index"].get<string>();
 	for (auto& s : sa_var_decl(varDecl(idx, i64, {{"expr-type","lit-int"},{"value","0"},{"loc",loc}}, loc)))
 		block.push_back(move(s));
 	string len = "__for_len_" + to_string(tempVarCounter_++);
@@ -339,7 +345,25 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	const json& elemType = isVarrPntr(arrType) ? arrType["base-type"]["base-type"] : arrType["base-type"];
 	json declType = astTypeOf(elemType);
 	if (declType.is_null()) declType = elemType;
-	json head;
+	json heads = json::array();
+	if (typedIdx) {
+		json idxType = resolveKnownType(stmt, stmt["index-type"]);
+		const PlnType* t = registry_.fromJson(idxType);
+		if (!isIntegerPrim(t) || isBoolPrim(t)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ForIndexNotInteger, typeDisplayName(idxType)) << endl;
+			exit(1);
+		}
+		if (!isVarrPntr(arrType)) {
+			int64_t n = constArrSizeOrExit(arrType, stmt["range"]);
+			if (n > 0 && !intLiteralFits(to_string(n - 1), static_cast<const PrimType*>(t)->name)) {
+				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ForIndexTooNarrow,
+					typeDisplayName(idxType), to_string(n)) << endl;
+				exit(1);
+			}
+		}
+		json conv = {{"expr-type","cast"},{"target-type",idxType},{"src",id(idx)},{"loc",loc}};
+		heads.push_back(varDecl(stmt["index"], idxType, move(conv), loc));
+	}
 	json astBody = stmt["body"];
 	if (elem["borrow"]) {
 		// `@a`/`@!a` is the element itself, so the body reads and writes it as
@@ -363,7 +387,7 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 		aliasLoopElem(astBody, elem["name"], {{"expr-type","arr-index"},{"array",id(view)},{"index",id(idx)}});
 	} else {
 		json init = {{"expr-type","arr-index"},{"array",id(arr)},{"index",id(idx)},{"loc",elem["loc"]}};
-		head = varDecl(elem["name"], declType, move(init), elem["loc"]);
+		heads.push_back(varDecl(elem["name"], declType, move(init), elem["loc"]));
 	}
 
 	const json& rangeAst = stmt["range"];
@@ -371,9 +395,10 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	vector<string> path;
 	bool pinned = locationPath(viaAddrOf ? rangeAst["object"] : rangeAst, path);
 	if (pinned) pinnedRanges_.push_back({move(path), isVarrPntr(arrType), !viaAddrOf && rangeBorrow});
-	forIndexVars_.insert(idx);
-	json body = sa_loop_body(astBody, head, move(step));
-	forIndexVars_.erase(idx);
+	string idxName = stmt.value("index", idx);
+	forIndexVars_.insert(idxName);
+	json body = sa_loop_body(astBody, heads, move(step));
+	forIndexVars_.erase(idxName);
 	if (pinned) pinnedRanges_.pop_back();
 	block.push_back({{"stmt-type","while"},{"cond",move(cond)},{"body",move(body)},{"loc",loc}});
 
