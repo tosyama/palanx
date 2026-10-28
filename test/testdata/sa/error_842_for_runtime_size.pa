@@ -1,1 +1,1 @@
-func g(int32 n) { [n]int64 x; for a in x { } }
+func g(int32 n) { [n]int64 x; for copy a in x { } }

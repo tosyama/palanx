@@ -1264,7 +1264,7 @@ TEST(gen_ast, nested_varr) {
 	ASSERT_EQ(stmts[2]["value"]["items"].size(), 0);
 }
 
-// 'in' is matched by spelling, so a field may still be named 'in'.
+// 'in' and 'copy' are matched by spelling, so a field or variable may still be named so.
 TEST(gen_ast, for_loop) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/148_for.pa");
@@ -1285,4 +1285,7 @@ TEST(gen_ast, for_loop) {
 	ASSERT_EQ(stmts[2]["elem"]["mutable"], true);
 	ASSERT_EQ(stmts[2]["elem"]["loc"][1], 5);
 	ASSERT_EQ(stmts[2]["range"]["expr-type"], "call");
+	ASSERT_EQ(stmts[3]["elem"]["name"], "b");
+	ASSERT_EQ(stmts[3]["elem"]["borrow"], false);
+	ASSERT_EQ(stmts[3]["range"]["name"], "copy");
 }

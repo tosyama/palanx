@@ -21,6 +21,8 @@ enum PlnMessageCode {
 	E_InvalidNumberLiteral,		// literal text
 	E_SyscallNamedReturn,
 	E_ExpectedInKeyword,		// identifier
+	E_ForElemNoMode,		// loop variable name
+	E_ExpectedCopyKeyword,	// identifier
 };
 
 class PlnGenAstMessage

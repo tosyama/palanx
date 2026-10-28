@@ -19,9 +19,10 @@ version: 0.2.2 — bit-field layout, command-line arguments, `for` loop
   `palan source.pa arg...` passes everything after the source to the program it runs, and
   builds that program in the working directory instead of the current one.
   `[+]@T`/`[+]@!T` (variable-length arrays of pointer slots) are added for it.
-- `for a in arr { }` and `for a, i in arr { }` loop over every array whose length `len` can give;
-  `i` is the `int64` index. `a` is a copy, `@a` a read-only borrow and `@!a` a writable borrow of
-  the element. Changing the length of `arr` inside the loop (`push`, `pop`, `resize`, replacing it
+- `for copy a in arr { }` and `for copy a, i in arr { }` loop over every array whose length `len`
+  can give; `i` is the `int64` index. `copy a` is a copy, `@a` a read-only borrow and `@!a` a
+  writable borrow of the element; a bare `a` is a compile error, so a copy is always chosen
+  explicitly. Changing the length of `arr` inside the loop (`push`, `pop`, `resize`, replacing it
   with `->`/`->>`, or passing `@!arr`) is an error.
 
 Out of scope: reading or writing bit-field members; `len` and `for` over an array whose size is

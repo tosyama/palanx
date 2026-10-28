@@ -2,7 +2,7 @@ cinclude <stdio.h>;
 func greet(@[]uint8 who) { printf("hi %s\n", who); }
 func bump(@![]int32 a, int64 i) { a[i] + 1 -> a[i]; }
 func second(@[]$[2]int32 m) -> int32 { return m[1][0]; }
-for w, i in args { if i > 0 { greet(w); } }
+for copy w, i in args { if i > 0 { greet(w); } }
 [3]uint8 buf = [111,107,0];
 @[]uint8 s = @buf;
 greet(s);

@@ -1209,8 +1209,20 @@ for_loop: KW_FOR for_elem ID expression block
 	}
 	;
 
+// 'copy' stays an identifier elsewhere, like 'in'. A bare loop variable is
+// rejected so a write meant for the element never lands in a silent copy.
 for_elem: ID
-	{ $$ = {{"name", $1}, {"borrow", false}}; LOC($$, @$); }
+	{
+		throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, @1.begin.line, @1.begin.column,
+			PlnGenAstMessage::getMessage(E_ForElemNoMode, $1)));
+	}
+	| ID ID
+	{
+		if ($1 != "copy")
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, @1.begin.line, @1.begin.column,
+				PlnGenAstMessage::getMessage(E_ExpectedCopyKeyword, $1)));
+		$$ = {{"name", $2}, {"borrow", false}}; LOC($$, @$);
+	}
 	| '@' ID
 	{ $$ = {{"name", $2}, {"borrow", true}, {"mutable", false}}; LOC($$, @$); }
 	| AT_EXCL ID

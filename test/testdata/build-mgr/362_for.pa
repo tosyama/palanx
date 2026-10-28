@@ -9,12 +9,12 @@ func makeArr() -> [+]int64 r
 func sumRo(@[+]int64 v) -> int64 s
 {
 	0 -> s;
-	for a in v { s + a -> s; }
+	for copy a in v { s + a -> s; }
 }
 
 [+]int64 v = [10, 20, 30, 40];
 int64 s = 0;
-for a, i in v {
+for copy a, i in v {
 	if i == 1 { continue; }
 	if i == 3 { break; }
 	s + a -> s;
@@ -30,17 +30,17 @@ printf("\n");
 
 [2]$[3]int64 rows = [[1, 2, 3], [4, 5, 6]];
 for @r in rows {
-	for x in r { printf("%ld ", x); }
+	for copy x in r { printf("%ld ", x); }
 }
 printf("\n");
 
-for x, i in makeArr() { printf("%ld=%ld ", i, x); }
+for copy x, i in makeArr() { printf("%ld=%ld ", i, x); }
 printf("\n");
 
 [+]Point ps = [{x: 1, y: 2}, {x: 3, y: 4}];
-for p in ps { printf("(%ld,%ld)", p.x, p.y); }
+for copy p in ps { printf("(%ld,%ld)", p.x, p.y); }
 for @!p in ps { 0 -> p.x; }
 for @p in ps { printf("(%ld,%ld)", p.x, p.y); }
 printf("\n");
 
-for a, i in args { printf("%ld %s\n", i, a); }
+for copy a, i in args { printf("%ld %s\n", i, a); }

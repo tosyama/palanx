@@ -169,7 +169,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 24. A `for` Loop Does Not Track Other Names for Its Array
 
-**Summary:** A `for` loop holds its array's storage and length until it ends, so its body may not change the array's length or replace it (v0.2.2). The check follows only the name the loop was given: a borrow made before the loop (`@![+]int64 q = @!v;` and then `q.push(1)` in `for a in v { }`) or a pointer stored elsewhere changes the array unnoticed, and the loop then reads freed or moved elements. It is conservative the other way: indices on the path are not compared, so in `for a in vv[0] { }` a `vv[1].push(1)` is rejected too.
+**Summary:** A `for` loop holds its array's storage and length until it ends, so its body may not change the array's length or replace it (v0.2.2). The check follows only the name the loop was given: a borrow made before the loop (`@![+]int64 q = @!v;` and then `q.push(1)` in `for copy a in v { }`) or a pointer stored elsewhere changes the array unnoticed, and the loop then reads freed or moved elements. It is conservative the other way: indices on the path are not compared, so in `for copy a in vv[0] { }` a `vv[1].push(1)` is rejected too.
 
 ---
 

@@ -1,5 +1,5 @@
 [+]int64 v = [1, 2];
-for a, i in v {
+for copy a, i in v {
 	if i == 0 { continue; }
 }
 [3]int64 c;

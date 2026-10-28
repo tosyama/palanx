@@ -560,7 +560,7 @@ import "lib.pa";           // import Palan source file (see §11)
 if expr { ... }            // conditional (see §6)
 if expr { ... } else { ... }  // conditional with else (see §6)
 while expr { ... }         // loop (see §6)
-for a, i in arr { ... }    // loop over an array's elements (see §6)
+for copy a, i in arr { ... }  // loop over an array's elements (see §6)
 ```
 
 ### If / If-Else Statements
@@ -633,19 +633,19 @@ fizzbuzz(20);
 
 ### For Loops
 
-`for a in arr { body }` runs `body` once for each element of `arr`, in order. `for a, i in arr`
-also gives the element's index as `i`, an `int64`.
+`for copy a in arr { body }` runs `body` once for each element of `arr`, in order, with `a` a
+copy of the element. `for copy a, i in arr` also gives the element's index as `i`, an `int64`.
 
 ```palan
 cinclude <stdio.h>;
 
 [+]int64 v = [10, 20, 30];
 int64 s = 0;
-for a in v { s + a -> s; }
+for copy a in v { s + a -> s; }
 printf("%ld\n", s);                    // 60
 
 for @!a in v { a[0] * 2 -> a[0]; }     // write through a borrow
-for a, i in v { printf("%ld:%ld ", i, a); }
+for copy a, i in v { printf("%ld:%ld ", i, a); }
 printf("\n");                          // 0:20 1:40 2:60
 ```
 
@@ -653,15 +653,16 @@ printf("\n");                          // 0:20 1:40 2:60
   Arrays](#variable-length-arrays-t)): a fixed-size or variable-length array, a borrowed one, a
   struct's array field or a row. It is evaluated once, before the first iteration; an array
   returned by a function call is freed after the loop.
-- The loop variable has no type written. `a` is a copy of the element (an owned struct or array
-  is copied deeply and freed at the end of each iteration), `@a` borrows it read-only and `@!a`
-  writably, as a `@T`/`@!T` pointer does: a primitive element is read and written as `a[0]`, a
-  struct's fields as `a.x`.
+- The loop variable has no type written, but one of `copy`, `@` or `@!` is required. `copy a` is
+  a copy of the element (an owned struct or array is copied deeply and freed at the end of each
+  iteration), `@a` borrows it read-only and `@!a` writably, as a `@T`/`@!T` pointer does: a
+  primitive element is read and written as `a[0]`, a struct's fields as `a.x`. `copy` is not a
+  reserved word; it can still name a variable or field.
 - `i` cannot be assigned to.
 - The body cannot change `arr`'s length or replace it, directly or through what contains it:
   `push`, `pop`, `resize`, `->>` into or out of it, `->` into a variable-length one, and passing
   `@!arr` are compile errors. Writing elements, changing an inner array (`m[0].push(1)` in
-  `for r in m`) and `@arr` are fine. A change made through another borrow of `arr` is not
+  `for copy r in m`) and `@arr` are fine. A change made through another borrow of `arr` is not
   detected.
 
 ### break / continue
@@ -2243,7 +2244,7 @@ printf("%lld\n", x);
 - The top-level statements see the program's command-line arguments as `args`, a read-only
   borrowed variable-length array of C strings (`@[+]@[]uint8`). `args[0]` is the program's
   path, and `len(args)` counts it. `args` is a borrow, so it is used by name: `len(args)`,
-  `args[i]`, `for a in args`, `f(args)` for a `@[+]@[]uint8` parameter. Functions do not see it
+  `args[i]`, `for copy a in args`, `f(args)` for a `@[+]@[]uint8` parameter. Functions do not see it
   unless it is passed, and declaring another `args` at the top level is a compile error.
   Every module has its own, so an imported module's top-level demo can read the arguments when
   it is the file being built.
@@ -2251,7 +2252,7 @@ printf("%lld\n", x);
   ```palan
   cinclude <stdio.h>;
 
-  for a, i in args {
+  for copy a, i in args {
       if i > 0 { printf("%s\n", a); }
   }
   ```

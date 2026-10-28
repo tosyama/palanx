@@ -1,1 +1,1 @@
-[+][+]int64 vv; [+]int64 w; for a in vv[0] { w -> vv[0]; }
+[+][+]int64 vv; [+]int64 w; for copy a in vv[0] { w -> vv[0]; }

@@ -64,7 +64,7 @@ printf("%.1f\n", len(@v));  // 5.0
 ```
 
 Other features include variable-length arrays (`[+]T` with `len`/`push`/`resize`/`pop`),
-`for a, i in arr` loops, command-line arguments as `args`, function overloading, multiple named
+`for copy a, i in arr` loops, command-line arguments as `args`, function overloading, multiple named
 return values, method-form calls (`c.add(1)` for `add(@!c, 1)`), function pointers, enums,
 modules (`import`/`export`), and raw Linux syscalls.
 See the [Palan Language Reference](doc/PalanReference.md) for the whole language.

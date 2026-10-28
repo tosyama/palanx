@@ -65,6 +65,15 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Expected 'in' after the loop variable, but found '" + arg1 + "'.";
 
+		case E_ForElemNoMode:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "The loop variable '" + arg1 + "' needs 'copy', '@' or '@!': 'copy " + arg1
+			       + "' copies each element, '@" + arg1 + "'/'@!" + arg1 + "' borrows it.";
+
+		case E_ExpectedCopyKeyword:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Expected 'copy', '@' or '@!' before the loop variable, but found '" + arg1 + "'.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

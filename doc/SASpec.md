@@ -567,7 +567,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - cond\*: SA-annotated condition expression (value-type present; integer or bool expected)
   - body\*: SA-annotated statement list (raw array; variables declared inside are scoped to the loop body)
 
-- **for** - not emitted; SA lowers `for a, i in arr { body }` to a `block` holding, in order:
+- **for** - not emitted; SA lowers `for copy a, i in arr { body }` to a `block` holding, in order:
   - a `var-decl` of a hidden variable (`__for_N`) bound to `arr`, so `arr` is evaluated once.
     An array the expression returns is owned by the block and freed when it ends; otherwise the
     variable borrows `arr`.

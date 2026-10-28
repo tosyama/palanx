@@ -1,1 +1,1 @@
-func f(@![+]int64 p) { for a in p { @![+]int64 q = p; } }
+func f(@![+]int64 p) { for copy a in p { @![+]int64 q = p; } }
