@@ -1268,6 +1268,10 @@ TEST(sa_error, for_loop)
 		{"error_869_for_ro_elem_write.pa", ":1:33: error: cannot write through read-only pointer '@T'"},
 		{"error_870_for_ro_elem_write_owned.pa", ":2:18: error: cannot write through read-only pointer '@T'"},
 		{"error_871_for_elem_struct_by_name.pa", ":4:17: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'"},
+		// A read-only '@row' makes the row's elements read-only too.
+		{"error_872_for_ro_row_inner_for.pa", ":2:21: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'"},
+		{"error_873_for_ro_row_write.pa", ":2:17: error: cannot write through read-only pointer '@T'"},
+		{"error_874_for_ro_row_write_borrow.pa", ":1:43: error: cannot write through read-only pointer '@T'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

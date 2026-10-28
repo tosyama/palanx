@@ -1,0 +1,1 @@
+func h(@![3][2]int32 q) { for @row in q { 0 -> row[0]; } }

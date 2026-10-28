@@ -288,6 +288,12 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 		            {"vars",json::array({{{"name",name},{"var-type",type},{"init",move(init)}}})}};
 	};
 	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
+	// A read-only view of a `[m][n]T` makes its rows read-only too, as a borrow does.
+	auto readOnly = [](json t) {
+		if (isArrLevel(t)) return withArrPermission(move(t), false);
+		t["mutable"] = false;
+		return t;
+	};
 	enterScope();
 	json block = json::array();
 
@@ -308,7 +314,8 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 			exit(1);
 		}
 		// Through a read-only '@a', the range is only read.
-		arrType["mutable"] = isWritableThrough(arrType) && !(elem["borrow"] && !elem["mutable"]);
+		if (isWritableThrough(arrType) && !(elem["borrow"] && !elem["mutable"])) arrType["mutable"] = true;
+		else arrType = readOnly(move(arrType));
 		declareVar(arr, arrType);
 	}
 	block.push_back({{"stmt-type","var-decl"},
@@ -346,8 +353,7 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 		string view = arr;
 		if (!mut && isWritableThrough(arrType)) {
 			view = "__for_ro_" + to_string(tempVarCounter_++);
-			json roType = arrType;
-			roType["mutable"] = false;
+			json roType = readOnly(arrType);
 			declareVar(view, roType);
 			block.push_back({{"stmt-type","var-decl"},
 			                 {"vars",json::array({{{"name",view},{"var-type",roType},{"init",saArr}}})}});
