@@ -644,7 +644,7 @@ int64 s = 0;
 for copy a in v { s + a -> s; }
 printf("%ld\n", s);                    // 60
 
-for @!a in v { a[0] * 2 -> a[0]; }     // write through a borrow
+for @!a in v { a * 2 -> a; }           // write the element itself
 for copy a, i in v { printf("%ld:%ld ", i, a); }
 printf("\n");                          // 0:20 1:40 2:60
 ```
@@ -655,9 +655,10 @@ printf("\n");                          // 0:20 1:40 2:60
   returned by a function call is freed after the loop.
 - The loop variable has no type written, but one of `copy`, `@` or `@!` is required. `copy a` is
   a copy of the element (an owned struct or array is copied deeply and freed at the end of each
-  iteration), `@a` borrows it read-only and `@!a` writably, as a `@T`/`@!T` pointer does: a
-  primitive element is read and written as `a[0]`, a struct's fields as `a.x`. `copy` is not a
-  reserved word; it can still name a variable or field.
+  iteration). `@a` and `@!a` are the element itself, read-only and writable: `a` stands for
+  `arr[i]` wherever it is written (`0 -> a`, `a.x`, `a[j]`, `a.push(1)`), so it is given to a
+  function as an element is (`f(@!a)`, `len(@a)`). `copy` is not a reserved word; it can still
+  name a variable or field.
 - `i` cannot be assigned to.
 - The body cannot change `arr`'s length or replace it, directly or through what contains it:
   `push`, `pop`, `resize`, `->>` into or out of it, `->` into a variable-length one, and passing

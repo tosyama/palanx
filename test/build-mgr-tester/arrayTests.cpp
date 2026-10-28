@@ -648,7 +648,7 @@ TEST(build_mgr, for_loop) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand("bin/palan -o out/for_bin ../test/testdata/build-mgr/362_for.pa"), "");
 	ASSERT_EQ(execTestCommand("out/for_bin x 'y z'"),
-		"40\n11 104\n0:1 1:2 2:3 \n1 2 3 4 5 6 \n0=1 1=2 2=3 \n(1,2)(3,4)(0,2)(0,4)\n"
+		"40\n11 104\n0:1 1:2 2:3 \n1 2 3 4 5 6 \n60\n0=1 1=2 2=3 \n(1,2)(3,4)(0,2)(0,4)\n"
 		"0 out/for_bin\n1 x\n2 y z\n");
 }
 

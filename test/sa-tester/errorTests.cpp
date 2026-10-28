@@ -1252,8 +1252,7 @@ TEST(sa_error, for_loop)
 		{"error_840_for_index_addr_of.pa", ":1:46: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
 		{"error_841_for_unsized.pa", ":1:35: error: 'len' takes a variable-length array or an array of constant size"},
 		{"error_842_for_runtime_size.pa", ":1:45: error: 'len' takes a variable-length array or an array of constant size"},
-		{"error_843_for_ro_write.pa", ":1:27: error: cannot write through read-only pointer '@T'"},
-		{"error_844_for_ptr_elem_addr_of.pa", ":1:5: error: cannot take the address of this array element"},
+		{"error_843_for_ro_write.pa", ":1:27: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 		{"error_845_for_dup_name.pa", ":1:17: error: Variable 'a' is already declared."},
 		{"error_846_for_push.pa", ":1:37: error: cannot change the array a 'for' loop iterates over ('v')."},
 		{"error_847_for_copy_varr.pa", ":1:49: error: cannot change the array a 'for' loop iterates over ('v')."},
@@ -1265,6 +1264,10 @@ TEST(sa_error, for_loop)
 		{"error_853_for_any_index.pa", ":1:39: error: cannot change the array a 'for' loop iterates over ('vv[]')."},
 		{"error_854_for_field_transfer.pa", ":2:33: error: cannot change the array a 'for' loop iterates over ('s.arr')."},
 		{"error_855_for_elem_copy.pa", ":1:51: error: cannot change the array a 'for' loop iterates over ('vv[]')."},
+		// '@a' is the element itself, written through a read-only view of the range.
+		{"error_869_for_ro_elem_write.pa", ":1:33: error: cannot write through read-only pointer '@T'"},
+		{"error_870_for_ro_elem_write_owned.pa", ":2:18: error: cannot write through read-only pointer '@T'"},
+		{"error_871_for_elem_struct_by_name.pa", ":4:17: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

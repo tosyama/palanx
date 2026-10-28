@@ -1283,13 +1283,18 @@ TEST(sa, for_loop)
 	ASSERT_EQ(cont[1]["stmt-type"], "continue");
 	ASSERT_EQ(w["body"].back()["stmt-type"], "assign");
 
-	// A constant-size array's length is a literal; '@!x' borrows each element.
+	// A constant-size array's length is a literal; '@!x' is the element itself.
 	const auto& c = stmts[5]["body"];
 	ASSERT_EQ(c[2]["vars"][0]["init"]["value"], "3");
-	const auto& x = c[3]["body"][0]["vars"][0];
-	ASSERT_EQ(x["name"], "x");
-	ASSERT_EQ(x["var-type"]["mutable"], true);
-	ASSERT_EQ(x["init"]["addr-only"], true);
+	const auto& x = c[3]["body"][0];
+	ASSERT_EQ(x["stmt-type"], "arr-assign");
+	ASSERT_EQ(x["target"]["array"]["name"], c[0]["vars"][0]["name"]);
+	ASSERT_EQ(x["target"]["index"]["name"], c[1]["vars"][0]["name"]);
+
+	// '@y' reads the range through a read-only binding.
+	const auto& d = stmts[6]["body"];
+	ASSERT_EQ(d[0]["vars"][0]["var-type"]["mutable"], false);
+	ASSERT_EQ(d[3]["body"][0]["vars"][0]["init"]["array"]["name"], d[0]["vars"][0]["name"]);
 }
 
 // Changes that leave the iterated array's storage and length alone: its

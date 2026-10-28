@@ -249,6 +249,32 @@ void PlnSemanticAnalyzer::checkRangeBorrowBinding(const json& locNode, const jso
 		checkRangeChange(locNode, srcAst, RangeChange::Borrow);
 }
 
+// Each use of `name` in a loop body becomes `elem`, keeping its loc; an
+// assignment to it becomes one to the element. A nested function can't see
+// the loop's variables, so its body is left alone.
+static void aliasLoopElem(json& node, const string& name, const json& elem)
+{
+	if (node.is_array()) {
+		for (auto& n : node) aliasLoopElem(n, name, elem);
+		return;
+	}
+	if (!node.is_object()) return;
+	if (node.value("expr-type", "") == "id" && node["name"] == name) {
+		json e = elem;
+		if (node.contains("loc")) e["loc"] = node["loc"];
+		node = move(e);
+		return;
+	}
+	if (node.value("stmt-type", "") == "assign" && node["name"] == name) {
+		node["stmt-type"] = "arr-assign";
+		node["target"] = elem;
+		if (node.contains("loc")) node["target"]["loc"] = node["loc"];
+		node.erase("name");
+	}
+	for (auto& [k, v] : node.items())
+		if (k != "functions") aliasLoopElem(v, name, elem);
+}
+
 // `for a, i in arr { }` becomes a while over i, in a block of its own that
 // holds arr, evaluated once, and its length.
 json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
@@ -281,7 +307,8 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 			cerr << locPrefix(stmt["range"]) << PlnSaMessage::getMessage(E_BorrowOfTempEscapes) << endl;
 			exit(1);
 		}
-		arrType["mutable"] = isWritableThrough(arrType);
+		// Through a read-only '@a', the range is only read.
+		arrType["mutable"] = isWritableThrough(arrType) && !(elem["borrow"] && !elem["mutable"]);
 		declareVar(arr, arrType);
 	}
 	block.push_back({{"stmt-type","var-decl"},
@@ -302,16 +329,36 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 		{"value",sa_expression({{"expr-type","add"},{"left",id(idx)},{"loc",loc},
 		                        {"right",{{"expr-type","lit-int"},{"value","1"},{"loc",loc}}}})}}});
 
-	// The element is declared as if written: its copy, or a borrow of it.
 	const json& elemType = isVarrPntr(arrType) ? arrType["base-type"]["base-type"] : arrType["base-type"];
 	json declType = astTypeOf(elemType);
 	if (declType.is_null()) declType = elemType;
-	json init = {{"expr-type","arr-index"},{"array",id(arr)},{"index",id(idx)},{"loc",elem["loc"]}};
+	json head;
+	json astBody = stmt["body"];
 	if (elem["borrow"]) {
-		declType = {{"type-kind","pntr"},{"mutable",elem["mutable"]},{"base-type",move(declType)}};
-		init = {{"expr-type","addr-of"},{"object",move(init)},{"mutable",elem["mutable"]},{"loc",elem["loc"]}};
+		// `@a`/`@!a` is the element itself, so the body reads and writes it as
+		// it would `arr[i]`. An owned range is writable, so a read-only `@a`
+		// reads it through a read-only view.
+		bool mut = elem["mutable"];
+		if (mut && !isWritableThrough(arrType)) {
+			cerr << locPrefix(elem) << PlnSaMessage::getMessage(E_PtrMutabilityUpgrade) << endl;
+			exit(1);
+		}
+		string view = arr;
+		if (!mut && isWritableThrough(arrType)) {
+			view = "__for_ro_" + to_string(tempVarCounter_++);
+			json roType = arrType;
+			roType["mutable"] = false;
+			declareVar(view, roType);
+			block.push_back({{"stmt-type","var-decl"},
+			                 {"vars",json::array({{{"name",view},{"var-type",roType},{"init",saArr}}})}});
+		}
+		// The name stays declared so the body can't declare it again.
+		declareVar(elem["name"], {{"type-kind","pntr"},{"mutable",mut},{"base-type",move(declType)}});
+		aliasLoopElem(astBody, elem["name"], {{"expr-type","arr-index"},{"array",id(view)},{"index",id(idx)}});
+	} else {
+		json init = {{"expr-type","arr-index"},{"array",id(arr)},{"index",id(idx)},{"loc",elem["loc"]}};
+		head = varDecl(elem["name"], declType, move(init), elem["loc"]);
 	}
-	json head = varDecl(elem["name"], declType, move(init), elem["loc"]);
 
 	const json& rangeAst = stmt["range"];
 	bool viaAddrOf = rangeAst.value("expr-type", "") == "addr-of";
@@ -319,7 +366,7 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	bool pinned = locationPath(viaAddrOf ? rangeAst["object"] : rangeAst, path);
 	if (pinned) pinnedRanges_.push_back({move(path), isVarrPntr(arrType), !viaAddrOf && rangeBorrow});
 	forIndexVars_.insert(idx);
-	json body = sa_loop_body(stmt["body"], head, move(step));
+	json body = sa_loop_body(astBody, head, move(step));
 	forIndexVars_.erase(idx);
 	if (pinned) pinnedRanges_.pop_back();
 	block.push_back({{"stmt-type","while"},{"cond",move(cond)},{"body",move(body)},{"loc",loc}});

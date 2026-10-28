@@ -1,0 +1,4 @@
+type P { int32 x; };
+func g(@!P p) { }
+[2]$P ps;
+for @!p in ps { g(p); }

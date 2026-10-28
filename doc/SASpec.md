@@ -573,9 +573,13 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     variable borrows `arr`.
   - the `int64` index (`i`, or a hidden name when omitted) initialized to 0, and a hidden
     variable holding the length, found as `len` finds it.
-  - a `while` on `index < length` whose body declares `a` from element `index` (a copy, or a
-    `@`/`@!` borrow as written), then `body`, then `index + 1 -> index`; the step is also
-    inserted before each `continue` of this loop.
+  - a `while` on `index < length` whose body is `body`, then `index + 1 -> index`; the step is
+    also inserted before each `continue` of this loop. For `copy a`, the body first declares `a`
+    from element `index`. For `@a`/`@!a`, no variable is declared: each `a` in `body` (outside
+    nested functions) is replaced by the element `__for_N[index]` before analysis, and `... -> a`
+    becomes an `arr-assign`. The name stays declared, so `body` cannot declare it again.
+    `__for_N` is read-only for `@a` (an owned range gets a read-only `__for_ro_N` bound to it);
+    `@!a` over a read-only range is E_PtrMutabilityUpgrade.
   The range must be an array `len` accepts (E_ForRangeNotArray, or `len`'s own errors). The
   index is read-only (E_AssignToForIndex). In `body`, an operation that frees, replaces or
   resizes the range or anything containing it is E_ChangeForRange: `->>` into or out of it,
