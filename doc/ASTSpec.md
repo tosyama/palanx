@@ -486,7 +486,7 @@ Statement model
       holding a while)
     - elem\* - The loop variable
       - name\* - Variable name string
-      - borrow\* - Boolean, true for `@a`/`@!a` (a borrow of the element) and false for `copy a` (a copy)
+      - borrow\* - Boolean, true for `@a`/`@!a` (the element itself, read-only or writable) and false for `copy a` (a copy)
       - mutable - Boolean, true for `@!a`; present only when borrow is true
       - loc\* - Location Array
     - index - Name string of the int64 index variable (omitted when absent)

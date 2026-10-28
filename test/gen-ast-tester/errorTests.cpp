@@ -183,7 +183,7 @@ TEST(gen_ast_error, for_expected_in) {
 
 TEST(gen_ast_error, for_elem_mode) {
 	const pair<string, string> cases[] = {
-		{"error_022_for_bare_elem.pa", ":1:5: error: The loop variable 'a' needs 'copy', '@' or '@!': 'copy a' copies each element, '@a'/'@!a' borrows it."},
+		{"error_022_for_bare_elem.pa", ":1:5: error: The loop variable 'a' needs 'copy', '@' or '@!': 'copy a' copies each element, '@a'/'@!a' is the element itself."},
 		{"error_023_for_expected_copy.pa", ":1:5: error: Expected 'copy', '@' or '@!' before the loop variable, but found 'cpy'."},
 	};
 	for (auto& [file, expected] : cases) {

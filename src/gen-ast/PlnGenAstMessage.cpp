@@ -68,7 +68,7 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 		case E_ForElemNoMode:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "The loop variable '" + arg1 + "' needs 'copy', '@' or '@!': 'copy " + arg1
-			       + "' copies each element, '@" + arg1 + "'/'@!" + arg1 + "' borrows it.";
+			       + "' copies each element, '@" + arg1 + "'/'@!" + arg1 + "' is the element itself.";
 
 		case E_ExpectedCopyKeyword:
 			BOOST_ASSERT(arg1 != "\x01");
