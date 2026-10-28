@@ -630,6 +630,11 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "enum '" + arg2 + "' has no enumerator '" + arg1 + "'.";
 
+		case E_UnqualifiedEnumerator:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "Undefined variable '" + arg1 + "'; write " + arg2 + " for the enumerator.";
+
 		case E_DuplicateEnumerator:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");

@@ -1,0 +1,2 @@
+import Vec from "lib_sa_types.pa";
+int32 x = Red;

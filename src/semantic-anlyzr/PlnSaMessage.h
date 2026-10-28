@@ -129,6 +129,7 @@ enum PlnSaMessageCode {
 	E_ArrElemShapeMismatch,	// arg1: expected shape, arg2: actual shape
 	E_ArgCountMismatch,	// arg1: function name, arg2: expected count, arg3: actual count
 	E_UnknownEnumerator,	// arg1: enumerator name, arg2: enum type name
+	E_UnqualifiedEnumerator,	// arg1: enumerator name, arg2: quoted `Name.X` candidates
 	E_DuplicateEnumerator,	// arg1: enumerator name, arg2: enum type name
 	E_EnumValueNotConst,	// arg1: enumerator name
 	E_EnumValueOutOfRange,	// arg1: enumerator name, arg2: value

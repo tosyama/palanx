@@ -1,0 +1,5 @@
+int32 n = Q;
+type A enum { Q };
+type B enum { Q, R };
+type C enum { Q };
+type Alias = C;

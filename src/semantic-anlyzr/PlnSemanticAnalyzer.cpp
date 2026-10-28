@@ -217,7 +217,18 @@ void PlnSemanticAnalyzer::undefinedNameError(const json& at, const json& ref, Pl
 	PlnSaMessageCode code = macro == "function-like" ? E_CMacroFuncLike
 	                      : macro == "not-constant" ? E_CMacroNotConstant
 	                      : undefinedCode;
-	cerr << locPrefix(at) << PlnSaMessage::getMessage(code, ref["name"].get<string>()) << endl;
+	string name = ref["name"].get<string>();
+	if (code == E_UndefinedVariable) {
+		vector<string> spellings = enumeratorSpellings(name);
+		if (!spellings.empty()) {
+			string list;
+			for (size_t i = 0; i < spellings.size(); i++)
+				list += (i == 0 ? "" : i + 1 == spellings.size() ? " or " : ", ") + ("'" + spellings[i] + "'");
+			cerr << locPrefix(at) << PlnSaMessage::getMessage(E_UnqualifiedEnumerator, name, list) << endl;
+			exit(1);
+		}
+	}
+	cerr << locPrefix(at) << PlnSaMessage::getMessage(code, name) << endl;
 	exit(1);
 }
 

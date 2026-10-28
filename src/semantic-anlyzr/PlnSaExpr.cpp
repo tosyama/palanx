@@ -1220,6 +1220,28 @@ json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)
 	return lit;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// `Name.X` for each enum with an enumerator `name`, as source can write it
+// here. An enum's own name (`V.Name` under an alias import) is preferred over
+// an alias of it, such as a C typedef of a tagged enum.
+vector<string> PlnSemanticAnalyzer::enumeratorSpellings(const string& name) const
+{
+	map<string, string> spelling;  // program-wide enum name -> written name
+	for (auto& [written, t] : typeAliases_) {
+		if (!t.contains("enum")) continue;
+		string enumName = t["enum"].get<string>();
+		if (!enumDefs_.at(enumName).values.count(name)) continue;
+		size_t dot = written.find('.');
+		bool own = declaredTypeName(written) == enumName
+		        || (dot != string::npos && written.substr(dot + 1) == enumName);
+		auto [it, isNew] = spelling.emplace(enumName, written);
+		if (!isNew && own) it->second = written;
+	}
+	vector<string> result;
+	for (auto& [enumName, written] : spelling) result.push_back(written + "." + name);
+	sort(result.begin(), result.end());
+	return result;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)
 {
 	FieldChain chain = resolveObjectChain(expr["object"], forWrite);

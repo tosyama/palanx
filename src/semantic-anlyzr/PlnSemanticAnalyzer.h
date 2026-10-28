@@ -486,6 +486,7 @@ class PlnSemanticAnalyzer {
 	json aliasCast(const json& expr, const string& typeName);
 	json sa_expr_cast(const json& expr);
 	json resolveEnumerator(const json& expr);     // `Name.X` as a lit-int, or null for a field access
+	vector<string> enumeratorSpellings(const string& name) const;
 	int64_t typeByteSize(const json& locNode, json type);  // `sizeof(type)`, type resolved
 	void recordAllocShape(const string& structName);
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).

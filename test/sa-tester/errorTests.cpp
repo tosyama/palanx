@@ -1291,3 +1291,24 @@ TEST(sa_error, ro_ptr_slot)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, unqualified_enumerator)
+{
+	const pair<string, string> cases[] = {
+		// The enum's own name, not an alias of it, even one sorting first.
+		{"error_865_unqualified_enumerator.pa", ":1:11: error: Undefined variable 'Q'; write 'A.Q', 'B.Q' or 'C.Q' for the enumerator."},
+		{"error_866_unqualified_c_enumerator.pa", ":2:11: error: Undefined variable 'MODE_X'; write 'Mode.MODE_X' for the enumerator."},
+		{"error_867_unqualified_import_enumerator.pa", ":2:11: error: Undefined variable 'Red'; write 'V.Color.Red' for the enumerator."},
+		// Color is brought along by Vec only, so source can't write it here.
+		{"error_868_unqualified_hidden_enumerator.pa", ":2:11: error: Undefined variable 'Red'.\n"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_types.pa -o out/lib_sa_types.pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
