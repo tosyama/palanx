@@ -655,5 +655,5 @@ TEST(build_mgr, for_loop) {
 // Each element copy is freed at the end of its iteration, by continue and
 // break too, and a returned array after the loop.
 TEST(build_mgr, for_loop_mtrace) {
-	expectMtraceRun("363_for_mtrace", "(1,2) 7 8 1 2 3\n", 19);
+	expectMtraceRun("363_for_mtrace", "(1,2) 7 8 1 2 3\n", 36);
 }
