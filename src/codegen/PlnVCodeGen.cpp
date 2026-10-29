@@ -43,19 +43,36 @@ void PlnVCodeGen::leaveVarScope()
     varScopes.pop_back();
 }
 
-VReg PlnVCodeGen::findVar(const string& name) const
+const PlnVCodeGen::VarBinding& PlnVCodeGen::findBinding(const string& name) const
 {
     for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
         auto f = it->find(name);
         if (f != it->end()) return f->second;
     }
     BOOST_ASSERT(false);  // variable not declared
-    return -1;
+    static const VarBinding none;
+    return none;  // LCOV_EXCL_LINE
+}
+
+VReg PlnVCodeGen::findVar(const string& name, VFunc& func)
+{
+    const VarBinding& b = findBinding(name);
+    if (b.label.empty()) return b.reg;
+    VReg addr = allocVReg();
+    func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, b.label});
+    VReg dst = allocVReg();
+    func.instrs.push_back(DerefLoad{dst, addr, 0, b.type});
+    return dst;
 }
 
 void PlnVCodeGen::declareVar(const string& name, VReg r)
 {
-    varScopes.back()[name] = r;
+    varScopes.back()[name] = VarBinding{r, "", VRegType::Int64};
+}
+
+void PlnVCodeGen::bindStatic(const string& name, const string& label, VRegType type)
+{
+    varScopes.back()[name] = VarBinding{-1, label, type};
 }
 
 // -------- Utilities --------
@@ -76,12 +93,11 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.label});
             return r;
         }
-        case ExprKind::CGlobal: {
-            auto& e = static_cast<const CGlobalExpr&>(expr);
-            VReg addr = allocVReg();
-            func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, e.label});
+        case ExprKind::StaticAlloc: {
+            auto& e = static_cast<const StaticAllocExpr&>(expr);
+            prog_->bss.push_back({e.label, e.size, e.align}); // LCOV_EXCL_EXCEPTION_BR_LINE
             VReg dst = allocVReg();
-            func.instrs.push_back(DerefLoad{dst, addr, 0, e.type});
+            func.instrs.push_back(LeaLabel{dst, VRegType::Ptr64, e.label});
             return dst;
         }
         case ExprKind::FuncRef: {
@@ -115,7 +131,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::Id: {
             auto& e = static_cast<const IdExpr&>(expr);
-            return findVar(e.name);
+            return findVar(e.name, func);
         }
         case ExprKind::FrameAlloc: {
             auto& e = static_cast<const FrameAllocExpr&>(expr);
@@ -126,9 +142,12 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::AddrOf: {
             auto& e = static_cast<const AddrOfExpr&>(expr);
-            VReg local = findVar(e.name);
+            const VarBinding& b = findBinding(e.name);
             VReg dst = allocVReg();
-            func.instrs.push_back(LeaLocal{dst, local});
+            if (b.label.empty())
+                func.instrs.push_back(LeaLocal{dst, b.reg});
+            else
+                func.instrs.push_back(LeaLabel{dst, VRegType::Ptr64, b.label});
             return dst;
         }
         case ExprKind::Add: {
@@ -354,7 +373,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             return lowerArrIndexExpr(static_cast<const ArrIndexExpr&>(expr), func);
         case ExprKind::FieldAccess: {
             auto& e   = static_cast<const FieldAccessExpr&>(expr);
-            VReg  ptr = e.ptrExpr ? lowerExpr(*e.ptrExpr, func) : findVar(e.varName);
+            VReg  ptr = e.ptrExpr ? lowerExpr(*e.ptrExpr, func) : findVar(e.varName, func);
             VReg  dst = allocVReg();
             if (e.addrOnly)
                 func.instrs.push_back(CalcAddr{dst, ptr, e.offset});
@@ -472,7 +491,7 @@ void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
     // per eightbyte copies it into the destination struct's heap storage.
     // var-decl always precedes this call in the same var-decl statement
     // (sa_struct_var_decl), so the destination is already declared.
-    VReg dstPtr = findVar(expr.structRetVar);
+    VReg dstPtr = findVar(expr.structRetVar, func);
     vector<VReg> dsts;
     vector<VRegType> types;
     for (const Eightbyte& eb : expr.structRetEightbytes) {
@@ -529,20 +548,19 @@ void PlnVCodeGen::flushReleases(VFunc& func)
 void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
 {
     VReg src = lowerExpr(*stmt.value, func);
-    // Find the variable's canonical VReg and emit a Mov to update it in place.
-    // This keeps the VReg identity stable so that backward references — most
-    // importantly, while-loop condition VInstrs that captured the VReg before the
-    // loop body ran — always see the current value after each iteration.
-    for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
-        auto f = it->find(stmt.name);
-        if (f != it->end()) {
-            VReg old_vreg = f->second;
-            if (old_vreg != src)
-                func.instrs.push_back(Mov{old_vreg, src, stmt.type});
-            return;
-        }
+    const VarBinding& b = findBinding(stmt.name);
+    if (!b.label.empty()) {
+        VReg addr = allocVReg();
+        func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, b.label});
+        func.instrs.push_back(DerefStore{addr, 0, src, stmt.type});
+        return;
     }
-    BOOST_ASSERT(false);  // variable not found
+    // Update the variable's canonical VReg in place with a Mov. This keeps the
+    // VReg identity stable so that backward references — most importantly,
+    // while-loop condition VInstrs that captured the VReg before the loop body
+    // ran — always see the current value after each iteration.
+    if (b.reg != src)
+        func.instrs.push_back(Mov{b.reg, src, stmt.type});
 }
 
 VReg PlnVCodeGen::lowerArrIndexExpr(const ArrIndexExpr& e, VFunc& func)
@@ -593,7 +611,7 @@ void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
         vector<VReg>     rets;
         vector<VRegType> types;
         for (auto& rv : currentPlnFunc_->retVars) {
-            rets.push_back(findVar(rv.name));
+            rets.push_back(findVar(rv.name, func));
             types.push_back(rv.type);
         }
         func.instrs.push_back(RetPln{rets, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -612,7 +630,7 @@ void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
     } else {
         // Bare return: return named variable's current value
         BOOST_ASSERT(!currentPlnFunc_->retVarName.empty());
-        VReg r = findVar(currentPlnFunc_->retVarName);
+        VReg r = findVar(currentPlnFunc_->retVarName, func);
         func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
     }
 }
@@ -759,6 +777,16 @@ string PlnVCodeGen::addFloatLiteral(const string& value, VRegType type)
 void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
 {
     for (auto& ve : stmt.vars) {
+        if (!ve.label.empty()) {
+            if (ve.init) {
+                VReg v = lowerExpr(*ve.init, func);
+                VReg addr = allocVReg();
+                func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, ve.label});
+                func.instrs.push_back(DerefStore{addr, 0, v, ve.type});
+            }
+            bindStatic(ve.varName, ve.label, ve.type);
+            continue;
+        }
         VReg r;
         if (ve.init) {
             if (ve.init->kind == ExprKind::FloLit) {
@@ -957,7 +985,7 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
         case StmtKind::FieldAssign: {
             auto& s   = static_cast<const FieldAssignStmt&>(stmt);
             VReg  src = lowerExpr(*s.value, func);
-            VReg  ptr = s.ptrExpr ? lowerExpr(*s.ptrExpr, func) : findVar(s.varName);
+            VReg  ptr = s.ptrExpr ? lowerExpr(*s.ptrExpr, func) : findVar(s.varName, func);
             func.instrs.push_back(DerefStore{ptr, s.offset, src, s.type});
             break;
         }
@@ -977,6 +1005,8 @@ VProg PlnVCodeGen::generate(const Module& module)
     // Populate .rodata entries
     for (auto& d : module.strLiterals)
         prog.data.push_back(VStringLiteral{d.label, d.value}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    for (auto& label : module.globalLabels)
+        prog.bss.push_back({label, 8, 8}); // LCOV_EXCL_EXCEPTION_BR_LINE
 
     for (auto& pf : module.functions) {
         VFunc vf;
@@ -988,6 +1018,8 @@ VProg PlnVCodeGen::generate(const Module& module)
             vf.params.push_back({r, p.type});
             declareVar(p.name, r);
         }
+        for (auto& g : pf.globals)
+            bindStatic(g.name, g.label, g.type);
         // Pre-declare single named return variable
         auto zeroInit = [&](VReg r, VRegType t) {
             if (t == VRegType::Float32 || t == VRegType::Float64)
@@ -1016,12 +1048,12 @@ VProg PlnVCodeGen::generate(const Module& module)
                 vector<VReg>     rets;
                 vector<VRegType> types;
                 for (auto& rv : pf.retVars) {
-                    rets.push_back(findVar(rv.name));
+                    rets.push_back(findVar(rv.name, vf));
                     types.push_back(rv.type);
                 }
                 vf.instrs.push_back(RetPln{rets, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
             } else if (pf.hasRetType && !pf.retVarName.empty()) {
-                VReg r = findVar(pf.retVarName);
+                VReg r = findVar(pf.retVarName, vf);
                 vf.instrs.push_back(RetPln{{r}, {pf.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
             } else {
                 vf.instrs.push_back(RetPln{{}, {}});

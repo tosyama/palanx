@@ -1,0 +1,5 @@
+cinclude <stdio.h>;
+global stderr for f;
+func f() {
+	stdout -> stderr;
+}

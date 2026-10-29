@@ -12,17 +12,19 @@ version: 0.2.3 — improvements found through the samples (ray tracer, echo serv
 - Top-level variable declarations are resolved when first needed, as top-level types and consts
   are, so a const computed from one (`const LN = lights->len();`) can size a borrowed array
   parameter (`@[LN]Light`).
-- Global variables: a module's functions can use its top-level variables, which are kept in
-  static storage, and the access functions have to them can be restricted. A module's top level
-  runs only when it is the entry, so importing a module whose functions use its top-level
-  variables is a compile error.
+- Global variables: a top-level variable declared `global` is kept in static storage, and the
+  functions its declaration lists (`global int32 hits = 0 for count!, report;`, `!` for writing)
+  can use it, so a callback C calls with fixed arguments (a libuv `on_new_connection`) can reach
+  the event loop. A module's top level runs only when it is the entry, so importing a module
+  whose functions use its globals is a compile error. A C global variable becomes writable the
+  same way (`global optind for parse!;`); reading it stays unrestricted.
 - Operator functions: a function named by an operator (`func -(@vec3 a, @vec3 b) -> vec3`)
   defines binary `+ - * / %` or unary `-` when at least one operand is a struct. It is chosen
   like any overloaded function; an operand is passed to a `@T` parameter as it is written, and a
   `@!T` parameter is not allowed.
 - Performance: a function returning a struct returns it into storage the caller provides (frame
   storage for a temporary or a `$T` variable) instead of allocating it on the heap on every call
-  (Issues.md #13), and `flo32`/`flo64` values are kept in XMM registers (Issues.md #14). Both are
+  (Issues.md #12), and `flo32`/`flo64` values are kept in XMM registers (Issues.md #13). Both are
   measured on the ray tracer before and after.
 - Samples: the ray tracer is rewritten with the above, and a libuv echo server is added; gaps
   found while writing them are fixed as they are found.
@@ -101,6 +103,9 @@ Design:
  A growing list is therefore a persistent list (`PList`) that shares its prefix, and statements
  hold nested blocks by handle (`LazyNode`) and are converted to JSON once at the end; appending or
  nesting never copies what is already built.
+ The `for` list of a `global` declaration is emitted as a `global-permit` statement right after
+ its `var-decl`, the statement a later `global hits for log!;` also produces, so a permission has
+ one AST form.
 
 ### 3.3 C-to-AST Translator (palan-c2ast)
 Responsibility:
@@ -175,6 +180,22 @@ Design:
  names a top-level variable is evaluated from that variable's type alone, taken from the shape of
  its declaration (the written type and an array literal's element count); its initializer is still
  analyzed in statement order. A const sees only the variables declared before it in the source.
+ A static variable is a name bound to an assembly label: a top-level variable declared `global`
+ (label `<module>.<name>`, which no function symbol can be, since those continue `<module>..`) or a
+ C global variable a cinclude captures (label: its C name). Both are checked by one rule, the one
+ a parameter of the same type follows. A function sees a Palan global only when a
+ `global-permit` lists it; the global joins the function's parameter scope, as a `@T` borrow
+ (`@!T` with `!`) when it holds an array or struct, else with its own type, assignable only with
+ `!`. A C global stays visible from its cinclude on and readable anywhere, and is writable only
+ where a permit allows: in a function listed with `!`, or at the top level after a `global`
+ statement names it. palan-sa records which functions each top-level statement and each function
+ calls or takes the address of; after the module is analyzed, a top-level statement before a
+ Palan global's declaration that reaches a function permitted to use it is an error, since the
+ global is not initialized yet. A Palan global lives as long as the process: what it owns is not
+ freed at the end of the top level (only a value it is reassigned away from is), and the storage
+ of a `$T` or fixed-size array global is a `static-alloc` instead of a `frame-alloc`, so a
+ function C calls after the top level returns (an `atexit` handler) still finds it. Importing a module that permits a function to use one of its
+ Palan globals is an error, since an imported module's top level never runs.
 
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:
@@ -218,6 +239,14 @@ Design:
  - Symbol names: a Palan function's symbol is the `name` palan-sa gives it, built from its module,
    its name and its parameter types (`util..show.int32`; SASpec.md "Symbol names"), so overloads
    and same-named functions of different modules link side by side. codegen emits it as given.
+
+ Static variables: each function, the top-level one included, lists in sa.json the names it binds
+ to labels at entry (`globals`), and a top-level `global` declaration binds its name where it is
+ declared. A name bound to a label is read by loading from the label and assigned by storing to
+ it; the slot holds what a local's virtual register would (a scalar or a pointer). Every access
+ goes to memory, since a call may change the variable. Palan globals are emitted as local `.bss`
+ slots, and a `static-alloc` (the storage of a `$T` or fixed-size array global) as a local `.bss`
+ block; a C global is the C library's own symbol.
 
  String literals are collected by palan-sa into the `str-literals` table in sa.json,
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),

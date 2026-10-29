@@ -1,0 +1,29 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+cinclude <unistd.h>;
+type Pt { int32 x; int32 y; };
+global int32 calls = 0 for cmp!, report;
+global int32 dir = 1;
+global dir for cmp;
+global $Pt origin = [3, 4] for report, move!;
+global @!FILE out = stdout for report;
+global optind for reset!;
+
+func cmp(@int32 a, @int32 b) -> int32 r {
+    calls + 1 -> calls;
+    (a[0] - b[0]) * dir -> r;
+}
+func move() { origin.x + 10 -> origin.x; }
+func reset() { 7 -> optind; }
+func report() { fprintf(out, "%d %d %d\n", calls > 0, origin.x, origin.y); }
+
+[5]int32 v = [5, 3, 1, 4, 2];
+qsort(@!v, 5, sizeof(int32), cmp);
+printf("%d %d %d\n", v[0], v[2], v[4]);
+-1 -> dir;
+qsort(@!v, 5, sizeof(int32), cmp);
+printf("%d %d %d\n", v[0], v[2], v[4]);
+move();
+report();
+reset();
+printf("%d\n", optind);

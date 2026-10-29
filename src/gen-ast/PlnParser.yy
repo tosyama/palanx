@@ -99,6 +99,14 @@ inline NodeRef blockStmtNode(const PList<NodeRef>& body) {
 	return std::make_shared<const LazyNode>(LazyNode{ {{"stmt-type", "block"}}, {}, {{"body", body}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// A `global` declaration with a `for` list is two statements (a json array).
+inline PList<NodeRef> pushStmt(const PList<NodeRef>& list, json stmt) {
+	if (!stmt.is_array()) return list.push(leafNode(std::move(stmt)));
+	PList<NodeRef> l = list;
+	for (auto& s : stmt) l = l.push(leafNode(std::move(s)));
+	return l;
+}
+
 struct BodyList {
 	PList<NodeRef> functions, body;
 	NodeRef toNode() const {
@@ -154,6 +162,27 @@ struct BodyList {
 			(Current).begin = (Current).end = YYRHSLOC(Rhs, 0).end;       \
 		}                                                                 \
 	} while (false)
+
+	// Only a single typed variable can be global; anything else stays
+	// unimplemented for SA to report.
+	static json globalDecl(const json& var, const palan::PlnParser::location_type& loc)
+	{
+		json j;
+		if (var.contains("var-type") && !var.contains("not-impl"))
+			j = {{"stmt-type", "var-decl"}, {"global", true}, {"vars", json::array({var})}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		else
+			j = {{"stmt-type", "not-impl"}};
+		LOC(j, loc);
+		return j;
+	} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+	static json globalPermit(const string& name, const PList<json>& funcs,
+	                         const palan::PlnParser::location_type& loc)
+	{
+		json j = {{"stmt-type", "global-permit"}, {"name", name}, {"funcs", funcs.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		LOC(j, loc);
+		return j;
+	} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 	static void requireInKeyword(const string& file, const string& word,
 	                             const palan::PlnParser::location_type& loc)
@@ -217,6 +246,7 @@ struct BodyList {
 %token KW_CONSTRUCT	"construct"
 %token KW_INTERFACE	"interface"
 %token KW_CONST	"const"
+%token KW_GLOBAL	"global"
 %token KW_VOID	"void"
 %token KW_RETURN	"return"
 %token KW_FOR	"for"
@@ -259,7 +289,8 @@ struct BodyList {
 %type <json>	type_expr fptr_ret
 %type <PList<json>>	fptr_params fptr_param_list
 %type <json>	var_declaration inherit_var_decl
-%type <PList<json>>	var_declarations
+%type <PList<json>>	var_declarations global_funcs
+%type <json>	global_func
 %type <NodeRef>	func_def func_item syscall_decl
 %type <json>	return_def syscall_ret ret_type
 %type <json>	return
@@ -389,6 +420,14 @@ expr_stmt: import
 			}
 		}
 	}
+	| KW_GLOBAL var_declaration
+	{ $$ = globalDecl($2, @$); }
+	| KW_GLOBAL var_declaration KW_FOR global_funcs
+	{ $$ = json::array({globalDecl($2, @$), globalPermit($2.value("name", ""), $4, @$)}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	| KW_GLOBAL ID
+	{ $$ = globalPermit($2, PList<json>(), @$); }
+	| KW_GLOBAL ID KW_FOR global_funcs
+	{ $$ = globalPermit($2, $4, @$); }
 	| const_decl
 	{ $$ = {{"stmt-type", "const-decl"}, {"name", $1["name"]}, {"value", move($1["value"])}}; LOC($$, @$); }
 	| type_decl
@@ -435,13 +474,13 @@ expr_stmt: import
 	;
 
 stmt_list_e: expr_stmt
-	{ $$ = PList<NodeRef>().push(leafNode(move($1))); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = pushStmt(PList<NodeRef>(), move($1)); }
 	| stmt_list_b expr_stmt
-	{ $$ = $1.push(leafNode(move($2))); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = pushStmt($1, move($2)); }
 	| stmt_list_b ';' expr_stmt
-	{ $$ = $1.push(leafNode(move($3))); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = pushStmt($1, move($3)); }
 	| stmt_list_e ';' expr_stmt
-	{ $$ = $1.push(leafNode(move($3))); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = pushStmt($1, move($3)); }
 	;
 
 stmt_list_b: block_stmt
@@ -560,22 +599,22 @@ block: '{' statements '}'
 
 body_list_e: expr_stmt
 	{
-		$$.body = $$.body.push(leafNode(move($1))); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$.body = pushStmt($$.body, move($1));
 	}
 	| body_list_b expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push(leafNode(move($2))); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$.body = pushStmt($$.body, move($2));
 	}
 	| body_list_b ';' expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push(leafNode(move($3))); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$.body = pushStmt($$.body, move($3));
 	}
 	| body_list_e ';' expr_stmt
 	{
 		$$ = $1;
-		$$.body = $$.body.push(leafNode(move($3))); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$.body = pushStmt($$.body, move($3));
 	}
 	;
 
@@ -653,6 +692,18 @@ var_declarations: var_declaration
 		}
 		$$ = $1.push(move(next));
 	}
+	;
+
+global_funcs: global_func
+	{ $$ = PList<json>().push($1); }
+	| global_funcs ',' global_func
+	{ $$ = $1.push($3); }
+	;
+
+global_func: ID
+	{ $$ = {{"name", $1}, {"writable", false}}; LOC($$, @$); }
+	| ID '!'
+	{ $$ = {{"name", $1}, {"writable", true}}; LOC($$, @$); }
 	;
 
 inherit_var_decl: ID

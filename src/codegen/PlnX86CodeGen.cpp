@@ -37,6 +37,15 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
         }
     }
 
+    if (!prog.bss.empty()) {
+        emitSection(".bss");
+        for (auto& b : prog.bss) {
+            out << "\t.align " << b.align << "\n";
+            emitLabel(b.label);
+            out << "\t.zero " << b.size << "\n";
+        }
+    }
+
     emitSection(".text");
     for (size_t idx = 0; idx < prog.funcs.size(); ++idx) {
         const VFunc& func = prog.funcs[idx];
@@ -113,6 +122,7 @@ void PlnX86CodeGen::emitFuncPrologue(const VFunc& func, const RegAllocResult& ra
 
 void PlnX86CodeGen::emitInstrLeaLabel(const LeaLabel& i, const RegMap& rm)
 {
+    if (!rm.count(i.dst)) return;  // dead: result never used
     const PhysLoc& loc = rm.at(i.dst);
     if (!loc.isStack()) {
         emitLeaLabel(sizedRegName(loc.base, loc.type), i.label);

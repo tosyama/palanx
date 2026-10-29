@@ -20,13 +20,18 @@ class PlnVCodeGen {
     int floatLabelCounter_ = 0;  // unique label index for float literals
     VProg* prog_ = nullptr;      // set during generate(); used to push float literals
 
-    // Variable symbol table: scoped stack of name -> VReg mappings.
-    // enterVarScope/leaveVarScope push/pop; findVar searches from innermost.
-    vector<map<string, VReg>> varScopes;
+    // Variable symbol table: scoped stack of name -> storage mappings.
+    // enterVarScope/leaveVarScope push/pop; lookups search from innermost.
+    // A global lives in a static slot instead of a VReg; every access goes to
+    // memory, since a call may change it.
+    struct VarBinding { VReg reg = -1; string label; VRegType type = VRegType::Int64; };
+    vector<map<string, VarBinding>> varScopes;
     void enterVarScope();
     void leaveVarScope();
-    VReg findVar(const string& name) const;
+    const VarBinding& findBinding(const string& name) const;
+    VReg findVar(const string& name, VFunc& func);
     void declareVar(const string& name, VReg r);
+    void bindStatic(const string& name, const string& label, VRegType type);
 
     VReg allocVReg();
 

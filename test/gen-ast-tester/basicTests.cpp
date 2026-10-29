@@ -1302,3 +1302,31 @@ TEST(gen_ast, for_loop_index_type) {
 	ASSERT_EQ(stmts[1]["elem"]["borrow"], false);
 	ASSERT_EQ(stmts[1]["index-type"]["type-name"], "Idx");
 }
+
+TEST(gen_ast, global_decl) {
+	// A `for` list becomes its own global-permit statement after the var-decl,
+	// the same statement a later `global name for ...;` produces.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/151_global.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 6);
+	ASSERT_EQ(stmts[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[0]["global"], true);
+	ASSERT_EQ(stmts[0]["vars"][0]["name"], "hits");
+	ASSERT_EQ(stmts[1]["stmt-type"], "global-permit");
+	ASSERT_EQ(stmts[1]["name"], "hits");
+	ASSERT_EQ(stmts[1]["funcs"][0]["name"], "count");
+	ASSERT_EQ(stmts[1]["funcs"][0]["writable"], true);
+	ASSERT_EQ(stmts[1]["funcs"][1]["name"], "report");
+	ASSERT_EQ(stmts[1]["funcs"][1]["writable"], false);
+	ASSERT_EQ(stmts[2]["global"], true);
+	ASSERT_FALSE(stmts[2]["vars"][0].contains("init"));
+	ASSERT_EQ(stmts[3]["stmt-type"], "global-permit");
+	ASSERT_EQ(stmts[3]["funcs"].size(), 1);
+	ASSERT_EQ(stmts[4]["stmt-type"], "global-permit");
+	ASSERT_EQ(stmts[4]["name"], "optind");
+	ASSERT_TRUE(stmts[4]["funcs"].empty());
+	ASSERT_EQ(stmts[5]["stmt-type"], "not-impl");
+}

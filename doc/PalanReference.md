@@ -2267,10 +2267,47 @@ printf("%lld\n", x);
   ```
 
   `palan echo.pa x y` prints `x` and `y`.
-- There are no global variables: a top-level variable is visible to the top-level statements
-  after it, but not inside functions.
+- A top-level variable is visible to the top-level statements after it, but not inside
+  functions, unless it is a [global variable](#global-variables).
 - User-defined functions can be placed before or after top-level statements.
 - `return` is not valid at top-level. To exit early, call `exit()` from `<stdlib.h>`.
+
+### Global Variables
+
+```palan
+cinclude <stdlib.h>;
+
+global int32 calls = 0 for cmp!, report;
+global int32 dir = 1;
+global dir for cmp;
+
+func cmp(@int32 a, @int32 b) -> int32 r {
+    calls + 1 -> calls;
+    (a[0] - b[0]) * dir -> r;
+}
+```
+
+- A top-level variable declared with `global` can be used by the functions its `for` list
+  names. A function named alone may only read the variable; with `!` after its name it may also
+  write it. A `global` statement without a type adds functions to the list later
+  (`global dir for cmp;`). Functions not listed do not see the variable, so they may use its
+  name for their own parameters and variables; a listed function may not.
+- This is how a function C calls with fixed arguments, such as a `qsort` comparator or a libuv
+  callback, gets at what it needs.
+- `global` is a reserved word. It is written only at the top level of a file, declares one
+  variable, and lists only functions defined at the top level of the same file (a name covers all
+  its overloads).
+- A listed function sees an array or struct variable as it would a `@` parameter (`@!` with `!`):
+  it reads (or writes) the elements and fields, but cannot replace the variable itself. A
+  number or pointer variable it can assign only with `!`; what a pointer points to keeps the
+  pointer's own type (`@!T` stays writable through).
+- The variable is initialized where it is declared, so a top-level statement before the
+  declaration may not call a listed function, directly or through other functions, nor take its
+  address (a compile error).
+- What a global variable owns lives until the program ends; it is not freed at the end of the
+  top level. A value it is reassigned away from at the top level is freed as usual.
+- A file whose global variables are used by its functions cannot be imported, since an imported
+  file's top-level statements, which would initialize them, do not run.
 
 ---
 
@@ -2447,11 +2484,14 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   fprintf(stderr, "starting up\n");   // stderr resolves to the C global
   ```
 
-- **Read-only from Palan**: assigning to a C global (`x -> stdout`) is a compile error, and so is
-  taking its address (`@stdout`) or reaching a field through it. This is a restriction on the
-  variable binding itself, not on what it points to — the *pointee* keeps its own C-declared
-  mutability, so `fwrite(data, 1, n, stdout)` (writing through the `FILE *` value `stdout` holds)
-  works normally.
+- **Written only with permission**: a C global can be read anywhere it is visible, but writing
+  it needs a `global` statement, the same one that lists the functions of a
+  [global variable](#global-variables): `global optind;` lets the top-level statements after it
+  write `optind`, and `global optind for parse!;` lets `parse` write it too. Without one,
+  assigning to it (`x -> stdout`) or taking a writable address (`@!optind`) is a compile error.
+  This restricts the variable itself, not what it points to — the *pointee* keeps its own
+  C-declared mutability, so `fwrite(data, 1, n, stdout)` (writing through the `FILE *` value
+  `stdout` holds) works normally.
 - Aliased cinclude (`cinclude <x.h> as X;`) does not namespace C globals either — like typedefs
   and constants, they are always registered globally; only a function call needs the `X.`
   qualifier.

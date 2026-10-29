@@ -1339,3 +1339,35 @@ TEST(sa_error, const_used_before_known)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, global_var)
+{
+	const string notWritable = "a global variable is written only where a 'global' statement permits it";
+	const pair<string, string> cases[] = {
+		{"error_881_global_in_func.pa", ":2:2: error: 'global' is allowed only at the top level of a module."},
+		{"error_882_global_in_block.pa", ":2:2: error: 'global' is allowed only at the top level of a module."},
+		{"error_883_permit_not_global.pa", ":2:1: error: 'x' is not a global variable: declare it with 'global', or cinclude the C global first."},
+		{"error_884_permit_not_func.pa", ":1:24: error: 'y' is not a function at the top level of this module."},
+		{"error_885_permit_duplicate.pa", ":2:14: error: 'f' is already permitted to use 'x'."},
+		{"error_886_global_before_decl.pa", ":1:1: error: this reaches 'f', which uses global variable 'x', before 'x' is declared."},
+		{"error_887_global_before_decl_indirect.pa", ":1:1: error: this reaches 'f', which uses global variable 'x', before 'x' is declared."},
+		{"error_888_global_before_decl_ref.pa", ":2:8: error: this reaches 'f', which uses global variable 'x', before 'x' is declared."},
+		{"error_889_global_read_only.pa", ":3:2: error: cannot write to 'x': " + notWritable},
+		{"error_890_global_replace.pa", ":3:2: error: cannot assign to 'a': a function writes the elements or fields of an array or struct global variable, but does not replace it."},
+		{"error_891_global_read_only_elem.pa", ":3:2: error: cannot write through read-only pointer"},
+		{"error_892_c_global_read_only_func.pa", ":4:2: error: cannot write to 'stderr': " + notWritable},
+		{"error_893_import_global.pa", ":1:1: error: cannot import a module whose functions use its global variable 'x'"},
+		{"error_894_global_param_clash.pa", ":2:1: error: Variable 'x' is already declared."},
+		{"error_895_global_init_uses_self.pa", ":1:18: error: this reaches 'f', which uses global variable 'x', before 'x' is declared."},
+		{"error_896_global_addr_read_only.pa", ":3:14: error: cannot write to 'x': " + notWritable},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_global.pa -o out/lib_sa_global.pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

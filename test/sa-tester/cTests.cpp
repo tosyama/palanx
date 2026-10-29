@@ -578,11 +578,9 @@ TEST(sa, c_widen_arg)
 
 TEST(sa, c_global)
 {
-	// `stderr` referenced as `fprintf`'s first argument
-	// resolves through the cGlobalScopes -> "id" fallback chain (findVar
-	// -> constDecls_ -> findCGlobal) into a "c-global" node, not a plain "id"
-	// (which would otherwise carry the raw name and no linker label).
-	// Covers: sa_expression "id" branch, findCGlobal fallback
+	// `stderr` referenced as `fprintf`'s first argument is a plain "id"; the
+	// top level binds the name to the C symbol's label in `main.globals`.
+	// Covers: lookupVar findCGlobal fallback, bindStatic
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/164_c_global.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -592,9 +590,11 @@ TEST(sa, c_global)
 	ASSERT_EQ(call["func-type"], "c");
 	ASSERT_EQ(call["name"], "fprintf");
 	const auto& arg = call["args"][0];
-	ASSERT_EQ(arg["expr-type"], "c-global");
-	ASSERT_EQ(arg["label"], "stderr");
-	ASSERT_FALSE(arg.contains("name"));
+	ASSERT_EQ(arg["expr-type"], "id");
+	ASSERT_EQ(arg["name"], "stderr");
+	ASSERT_EQ(jout["main"]["globals"].size(), 1);
+	ASSERT_EQ(jout["main"]["globals"][0]["name"], "stderr");
+	ASSERT_EQ(jout["main"]["globals"][0]["label"], "stderr");
 	ASSERT_EQ(arg["value-type"]["type-kind"], "pntr");
 	ASSERT_EQ(arg["value-type"]["mutable"], true);
 	ASSERT_EQ(arg["value-type"]["base-type"]["type-kind"], "struct");
@@ -613,8 +613,8 @@ TEST(sa, c_global_alias)
 
 	const auto& call = jout["statements"][0]["body"];
 	ASSERT_EQ(call["name"], "fprintf");
-	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
-	ASSERT_EQ(call["args"][0]["label"], "stderr");
+	ASSERT_EQ(call["args"][0]["name"], "stderr");
+	ASSERT_EQ(jout["main"]["globals"][0]["label"], "stderr");
 }
 
 TEST(sa, c_global_block_scope)
@@ -629,7 +629,8 @@ TEST(sa, c_global_block_scope)
 	ASSERT_EQ(jout["statements"][0]["stmt-type"], "block");
 	const auto& call = jout["statements"][0]["body"][0]["body"];
 	ASSERT_EQ(call["func-type"], "c");
-	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
+	ASSERT_EQ(call["args"][0]["name"], "stderr");
+	ASSERT_EQ(jout["main"]["globals"][0]["label"], "stderr");
 }
 
 TEST(sa, neg_lit_expected_type)

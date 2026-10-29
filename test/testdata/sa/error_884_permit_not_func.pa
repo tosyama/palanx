@@ -1,0 +1,2 @@
+global int32 x = 0 for y;
+int32 y = 1;

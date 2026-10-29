@@ -394,3 +394,33 @@ TEST(build_mgr, run_args) {
 TEST(build_mgr, implicit_args_mtrace) {
 	expectMtraceRun("361_args_mtrace", "4 a end\n", 2, " a b");
 }
+
+// A callback C calls with fixed arguments (qsort's comparator) reaches what it
+// needs through globals.
+TEST(build_mgr, global_var) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/370_global.pa"),
+		"1 3 5\n5 3 1\n1 13 4\n7\n");
+}
+
+// What a global owns lives as long as the process: only the value it was
+// moved away from is freed.
+TEST(build_mgr, global_var_mtrace) {
+	cleanTestEnv();
+	string bin = "/tmp/palan_global_mtrace_bin";
+	ASSERT_EQ(execTestCommand("bin/palan -o " + bin + " ../test/testdata/build-mgr/371_global_mtrace.pa"), "");
+	string traceFile = "/tmp/palan_global_mtrace.log";
+	ASSERT_EQ(execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " " + bin), "6\n15\n");
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	EXPECT_EQ(allocs, 2);
+	EXPECT_EQ(frees, 1);
+}
+
+TEST(build_mgr, import_global_var) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/372_import_global.pa");
+	ASSERT_NE(out.find("372_import_global.pa:1:1: error: cannot import a module whose functions use its global variable 'x'"),
+		string::npos) << out;
+}

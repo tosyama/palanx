@@ -1444,3 +1444,209 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
+
+const json* PlnSemanticAnalyzer::lookupVar(const string& name, const json& locNode)
+{
+	if (const json* vt = findVar(name)) return vt;
+	const json* g = findCGlobal(name);
+	if (!g) return nullptr;
+	requireSupportedCGlobal(*g, name, locNode);
+	bindStatic(name, name, (*g)["var-type"]);
+	return &(*g)["var-type"];
+}
+
+void PlnSemanticAnalyzer::bindStatic(const string& name, const string& label, const json& type)
+{
+	for (auto& b : staticBindings_)
+		if (b["name"] == name) return;
+	staticBindings_.push_back({{"name", name}, {"label", label}, {"var-type", type}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+}
+
+bool PlnSemanticAnalyzer::isStaticBound(const string& name) const
+{
+	for (auto& b : staticBindings_)
+		if (b["name"] == name) return true;
+	return false;
+}
+
+// Only reached for a name lookupVar resolved, so one not in varScopes is a C global.
+void PlnSemanticAnalyzer::requireAssignable(const string& name, const json& locNode) const
+{
+	if (forIndexVars_.count(name)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_AssignToForIndex, name) << endl;
+		exit(1);
+	}
+	auto ro = readOnlyGlobals_.find(name);
+	if (ro != readOnlyGlobals_.end()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(
+			ro->second ? E_GlobalNotReplaceable : E_GlobalNotWritable, name) << endl;
+		exit(1);
+	}
+	if (findVar(name)) return;
+	auto p = cGlobalPermits_.find(name);
+	bool writable = p != cGlobalPermits_.end()
+		&& (!currentFunc_ || (p->second.count(permitFunc_) && p->second.at(permitFunc_)));
+	if (!writable) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_GlobalNotWritable, name) << endl;
+		exit(1);
+	}
+}
+
+// A global's declaration lowers as a top-level variable's does; its value then
+// lives in static storage under its label instead of in the frame.
+void PlnSemanticAnalyzer::sa_global_decl(const json& stmt, json& out)
+{
+	if (varScopes.size() != 1 || currentFunc_) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_GlobalNotTopLevel) << endl;
+		exit(1);
+	}
+	json plain = stmt;
+	plain.erase("global");
+	string name = stmt["vars"][0]["name"];
+	string label = symbolScope_ + "." + name;
+	bool labeled = false;
+	for (auto& s : sa_var_decl(plain)) {
+		if (!labeled && s.value("stmt-type", "") == "var-decl")
+			for (auto& v : s["vars"])
+				if (v["name"] == name) {
+					v["label"] = label;
+					if (v.contains("init") && v["init"].value("expr-type", "") == "frame-alloc") {
+						v["init"]["expr-type"] = "static-alloc";
+						v["init"]["label"] = label + ".data";
+					}
+					labeled = true;
+				}
+		out.push_back(move(s));
+	}
+	BOOST_ASSERT(labeled);
+	for (auto& v : arrayScopeVars_.back())
+		if (v.name == name) v.global = true;
+	const json& type = *findVar(name);
+	GlobalVar g{label, type, &stmt, {}, {}};
+	if (!isArrBorrowVar(type) && !isStructBorrow(type)) {
+		g.view[0] = storageBorrowType(name, type, false);
+		g.view[1] = storageBorrowType(name, type, true);
+	}
+	globals_[name] = move(g);
+	sa["globals"].push_back({{"label", label}, {"var-type", type}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+}
+
+void PlnSemanticAnalyzer::sa_global_permit(const json& stmt)
+{
+	if (varScopes.size() != 1 || currentFunc_) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_GlobalNotTopLevel) << endl;
+		exit(1);
+	}
+	string name = stmt["name"];
+	map<string, bool>* funcs;
+	auto g = globals_.find(name);
+	if (g != globals_.end()) {
+		funcs = &g->second.funcs;
+	} else if (!findVar(name) && findCGlobal(name)) {
+		funcs = &cGlobalPermits_[name];
+	} else {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_GlobalPermitUnknownVar, name) << endl;
+		exit(1);
+	}
+	for (auto& f : stmt["funcs"]) {
+		string fn = f["name"];
+		if (!topFuncSymbols_.count(fn)) {
+			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_GlobalPermitNotFunc, fn) << endl;
+			exit(1);
+		}
+		if (funcs->count(fn)) {
+			cerr << locPrefix(f) << PlnSaMessage::getMessage(E_GlobalPermitDuplicate, name, fn) << endl;
+			exit(1);
+		}
+		(*funcs)[fn] = f["writable"].get<bool>();
+	}
+}
+
+// A function sees a global as it would a parameter: an array or struct as a
+// borrow of it, anything else with its own type.
+void PlnSemanticAnalyzer::declarePermittedGlobals(const string& funcName, const json& funcDef)
+{
+	for (auto& [name, g] : globals_) {
+		auto f = g.funcs.find(funcName);
+		if (f == g.funcs.end()) continue;
+		bool writable = f->second;
+		const json& borrowed = g.view[writable];
+		const json& type = borrowed.is_null() ? g.type : borrowed;
+		declareVar(name, type, &funcDef);
+		bindStatic(name, g.label, type);
+		if (!borrowed.is_null()) readOnlyGlobals_[name] = true;
+		else if (!writable) readOnlyGlobals_[name] = false;
+	}
+}
+
+// Every call and function address in `node`, with its location.
+static void collectCallees(const json& node, vector<pair<string, json>>& out)
+{
+	if (node.is_object()) {
+		string et = node.value("expr-type", "");
+		if ((et == "call" && node.value("func-type", "") == "palan") || et == "func-ref")
+			out.push_back({node["name"].get<string>(), node.value("loc", json())});
+		for (auto& [k, v] : node.items()) collectCallees(v, out);
+	} else if (node.is_array()) {
+		for (auto& v : node) collectCallees(v, out);
+	}
+}
+
+// A global is initialized where it is declared, so the top level may not
+// reach a function using it before that.
+void PlnSemanticAnalyzer::checkGlobalsReachedBeforeDecl() const
+{
+	map<string, vector<pair<string, json>>> callees;
+	for (auto& f : sa["functions"])
+		collectCallees(f["body"], callees[f["name"].get<string>()]);
+
+	auto reaches = [&](const string& from, const set<string>& targets) {
+		set<string> seen;
+		vector<string> todo = {from};
+		while (!todo.empty()) {
+			string s = todo.back();
+			todo.pop_back();
+			if (targets.count(s)) return true;
+			if (!seen.insert(s).second) continue;
+			auto c = callees.find(s);
+			if (c != callees.end())
+				for (auto& [callee, loc] : c->second) todo.push_back(callee);
+		}
+		return false;
+	};
+
+	vector<pair<string, json>> before;
+	// A global's own initializer runs before it is set too.
+	for (auto& stmt : sa["statements"]) {
+		collectCallees(stmt, before);
+		if (stmt.value("stmt-type", "") == "var-decl" && stmt["vars"][0].contains("label")) {
+			const GlobalVar& g = globals_.at(stmt["vars"][0]["name"].get<string>());
+			for (auto& [fn, w] : g.funcs) {
+				set<string> targets(topFuncSymbols_.at(fn).begin(), topFuncSymbols_.at(fn).end());
+				for (auto& [callee, loc] : before)
+					if (reaches(callee, targets)) {
+						json at = loc.is_null() ? *g.decl : json{{"loc", loc}};
+						cerr << locPrefix(at) << PlnSaMessage::getMessage(
+							E_GlobalUsedBeforeDecl, stmt["vars"][0]["name"].get<string>(), fn) << endl;
+						exit(1);
+					}
+			}
+		}
+	}
+}
+
+void PlnSemanticAnalyzer::rejectImportedGlobals(const json& importStmt, const json& impAst) const
+{
+	if (!impAst["ast"].contains("statements")) return;
+	set<string> globals;
+	for (auto& s : impAst["ast"]["statements"]) {
+		string t = s.value("stmt-type", "");
+		if (t == "var-decl" && s.value("global", false))
+			globals.insert(s["vars"][0]["name"].get<string>());
+		else if (t == "global-permit" && globals.count(s["name"].get<string>()) && !s["funcs"].empty()) {
+			cerr << locPrefix(importStmt) << PlnSaMessage::getMessage(
+				E_ImportModuleWithGlobals, s["name"].get<string>()) << endl;
+			exit(1);
+		}
+	}
+}

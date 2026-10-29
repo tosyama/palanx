@@ -29,7 +29,7 @@ json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx, const
 	for (size_t i = to_idx; i > from_idx; --i) {
 		auto& scope = arrayScopeVars_[i - 1];
 		for (auto it = scope.rbegin(); it != scope.rend(); ++it)
-			if (!it->release.is_null() && it->name != keep)
+			if (!it->release.is_null() && it->name != keep && !it->global)
 				result.push_back(it->release);
 	}
 	return result;
@@ -974,8 +974,11 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
-		for (auto& f : ast["ast"]["functions"])
+		for (auto& f : ast["ast"]["functions"]) {
 			preregisterFunc(f, symbolScope_);
+			if (f.value("func-type", "") != "syscall")
+				topFuncSymbols_[f["name"].get<string>()].push_back((*findPlnFuncDef(f))["symbol"].get<string>());
+		}
 	// 2. Process top-level statements (cinclude/import registered here,
 	//    visible in Palan function bodies processed next).
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
@@ -989,6 +992,9 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 3. Process each function body
 	if (ast["ast"].contains("functions"))
 		sa_functions(ast["ast"]["functions"]);
+	if (!staticBindings_.empty())
+		sa["main"]["globals"] = staticBindings_;
+	checkGlobalsReachedBeforeDecl();
 	// 4. Emit the libraries collected from cinclude `link` clauses, after
 	//    steps 2-3 since a cinclude may sit inside a block or function body.
 	for (auto& lib : linkLibs_) sa["libs"].push_back(lib);
@@ -1220,6 +1226,7 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 	json imp_ast = loadImportAst(stmt, imp_path);
 	if (imp_ast.is_null()) return;
 
+	rejectImportedGlobals(stmt, imp_ast);
 	PlnSemanticAnalyzer& sub = importTypeContext(imp_ast, imp_path);
 	adoptExportedTypes(stmt, imp_ast, sub);
 

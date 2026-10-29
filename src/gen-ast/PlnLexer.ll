@@ -39,6 +39,7 @@ enum {
 	KW_CONSTRUCT =	PlnParser::token::KW_CONSTRUCT,
 	KW_INTERFACE =	PlnParser::token::KW_INTERFACE,
 	KW_CONST =	PlnParser::token::KW_CONST,
+	KW_GLOBAL =	PlnParser::token::KW_GLOBAL,
 	KW_VOID =	PlnParser::token::KW_VOID,
 	KW_RETURN = PlnParser::token::KW_RETURN,
 	KW_FOR =	PlnParser::token::KW_FOR,
@@ -149,6 +150,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>"construct" { return KW_CONSTRUCT; }
 <*>"interface" { return KW_INTERFACE; }
 <*>"const" { return KW_CONST; }
+<*>"global" { return KW_GLOBAL; }
 <*>"void" { return KW_VOID; }
 <*>"return" { return KW_RETURN; }
 <*>"for" { return KW_FOR; }

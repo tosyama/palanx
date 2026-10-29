@@ -64,12 +64,6 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->label = j["label"];
         return e;
     }
-    if (expr_type == "c-global") {
-        auto e = make_unique<CGlobalExpr>();
-        e->label = j["label"];
-        e->type  = toVRegType(j["value-type"]);
-        return e;
-    }
     if (expr_type == "lit-int") {
         auto e = make_unique<IntLitExpr>();
         e->value = j["value"];
@@ -102,6 +96,13 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     }
     if (expr_type == "frame-alloc") {
         auto e = make_unique<FrameAllocExpr>();
+        e->size  = j["size"];
+        e->align = j["align"];
+        return e;
+    }
+    if (expr_type == "static-alloc") {
+        auto e = make_unique<StaticAllocExpr>();
+        e->label = j["label"];
         e->size  = j["size"];
         e->align = j["align"];
         return e;
@@ -337,6 +338,7 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
             VarEntry ve;
             ve.varName  = jv["name"];
             ve.type     = toVRegType(jv["var-type"]);
+            ve.label    = jv.value("label", "");
             if (jv.contains("init")) {
                 ve.init = deserializeExpr(jv["init"]);
             }
@@ -445,6 +447,8 @@ static PlnFunc deserializeSig(const json& jf)
     pf.name = jf["name"];
     for (auto& jp : jf["parameters"])
         pf.params.push_back({jp["name"], toVRegType(jp["var-type"])});
+    for (auto& jg : jf.value("globals", json::array()))
+        pf.globals.push_back({jg["name"], jg["label"], toVRegType(jg["var-type"])});
     return pf;
 }
 
@@ -458,6 +462,9 @@ Module deserialize(const json& sa)
             mod.strLiterals.push_back({j["label"], j["value"]});
         }
     }
+
+    for (auto& g : sa.value("globals", json::array()))
+        mod.globalLabels.push_back(g["label"]);
 
     if (sa.contains("functions")) {
         for (auto& jf : sa["functions"]) {

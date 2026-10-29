@@ -1323,3 +1323,35 @@ TEST(sa, for_loop_allowed_changes)
 	json jout = run_sa("../test/testdata/sa/323_for_mutation.pa");
 	ASSERT_TRUE(jout.is_object());
 }
+
+TEST(sa, global_var)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/329_global.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["globals"].size(), 3);
+	ASSERT_EQ(jout["globals"][0]["label"], "_329_global.hits");
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["label"], "_329_global.hits");
+	// A `$T` global's storage is static too, so it outlives the top level.
+	const auto& origin = stmts[4]["vars"][0];
+	ASSERT_EQ(origin["label"], "_329_global.origin");
+	ASSERT_EQ(origin["init"]["expr-type"], "static-alloc");
+	ASSERT_EQ(origin["init"]["label"], "_329_global.origin.data");
+	// What a global owns is never freed: the call is the last statement.
+	ASSERT_EQ(stmts.size(), 8);
+	ASSERT_EQ(stmts[7]["body"]["name"], "_329_global..count.v");
+
+	const auto& fs = jout["functions"];
+	// count: a writable scalar and a C global it is permitted to write.
+	ASSERT_EQ(fs[0]["globals"][0]["name"], "hits");
+	ASSERT_EQ(fs[0]["globals"][1]["label"], "optind");
+	ASSERT_EQ(fs[0]["body"][1]["stmt-type"], "assign");
+	ASSERT_EQ(fs[0]["body"][1]["name"], "optind");
+	// move: a struct global seen as a '@!' borrow.
+	ASSERT_EQ(fs[1]["globals"][0]["var-type"]["mutable"], true);
+	// report: an array global seen as a '@' borrow.
+	ASSERT_EQ(fs[2]["globals"][0]["name"], "arr");
+	ASSERT_EQ(fs[2]["globals"][0]["var-type"]["mutable"], false);
+}

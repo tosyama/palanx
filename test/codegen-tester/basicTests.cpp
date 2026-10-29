@@ -1253,8 +1253,8 @@ TEST(codegen, bitwise_ops) {
 }
 
 TEST(codegen, c_global) {
-    // A C global reference (e.g. `stderr`) lowers to the same LeaLabel+DerefLoad
-    // as a string literal, with no dedicated VInstr of its own.
+    // A name bound to a static slot (here the C global `stderr`) is read with
+    // LeaLabel+DerefLoad, with no dedicated VInstr of its own.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/069_c_global.sa.json";
     string asmf = "out/069_c_global.s";
@@ -1491,4 +1491,26 @@ TEST(codegen, frame_alloc)
     ASSERT_NE(asm_text.find("call memset"), string::npos);
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/077_frame_alloc.o"), "");
+}
+
+TEST(codegen, global_var)
+{
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/078_global.sa.json";
+    string asmf = "out/078_global.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // A slot per global, and the `$P` global's storage, in .bss.
+    ASSERT_NE(asm_text.find(".section .bss"), string::npos);
+    ASSERT_NE(asm_text.find("_078_global.n:\n\t.zero 8"), string::npos);
+    ASSERT_NE(asm_text.find("_078_global.p.data:\n\t.zero 16"), string::npos);
+    // Every access goes through the label, a C global's as well.
+    ASSERT_NE(asm_text.find("leaq _078_global.n(%rip)"), string::npos);
+    ASSERT_NE(asm_text.find("leaq _078_global.p(%rip)"), string::npos);
+    ASSERT_NE(asm_text.find("leaq optind(%rip)"), string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/078_global.o"), "");
 }

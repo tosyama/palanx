@@ -43,7 +43,7 @@ enum class ExprKind {
     LogicalAnd,
     LogicalOr,
     AddrOf,
-    CGlobal,
+    StaticAlloc,
     FuncRef,
     PtrCall,
     Temp,
@@ -64,10 +64,12 @@ struct StrLitExpr : Expr {
 
 // Reference to a cinclude'd C global variable (e.g. `stdout`). Lowered to
 // LeaLabel+DerefLoad in PlnVCodeGen -- no dedicated VInstr, no x86 change.
-struct CGlobalExpr : Expr {
-    CGlobalExpr() : Expr(ExprKind::CGlobal) {}
-    string   label;
-    VRegType type = VRegType::Ptr64;
+// A block in static storage; its value is the block's address.
+struct StaticAllocExpr : Expr {
+    StaticAllocExpr() : Expr(ExprKind::StaticAlloc) {}
+    string label;
+    int    size  = 0;
+    int    align = 1;
 };
 
 // A function's address, as a function pointer value. Functions are emitted
@@ -307,6 +309,7 @@ struct ExprStmt : Stmt {
 
 struct VarEntry {
     string           varName;
+    string           label;      // a global's static slot; empty for a frame variable
     VRegType         type = VRegType::Int64;
     unique_ptr<Expr> init;       // nullable
 };
@@ -425,8 +428,12 @@ struct StrLiteralDef {
     string value;
 };
 
+// A name a function binds to a static slot at its entry.
+struct StaticBinding { string name; string label; VRegType type; };
+
 struct PlnFunc {
     string             name;
+    vector<StaticBinding> globals;
     vector<VarDef>     params;
     bool               hasRetType = false;
     VRegType           retType    = VRegType::Int64;
@@ -439,5 +446,6 @@ struct PlnFunc {
 struct Module {
     string original;
     vector<StrLiteralDef>    strLiterals;
+    vector<string>           globalLabels;  // this module's global slots
     vector<PlnFunc>          functions;
 };

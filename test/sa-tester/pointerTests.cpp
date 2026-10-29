@@ -894,7 +894,8 @@ TEST(sa, func_ptr_paths)
 	ASSERT_EQ(stmts[0]["vars"][0]["init"]["value-type"]["base-type"]["ret-type"]["type-name"], "void");
 	const auto& hook = stmts[1]["vars"][0]["init"];
 	ASSERT_EQ(hook["expr-type"], "call-ptr");
-	ASSERT_EQ(hook["callee"]["expr-type"], "c-global");
+	ASSERT_EQ(hook["callee"]["expr-type"], "id");
+	ASSERT_EQ(jout["main"]["globals"][0]["label"], hook["callee"]["name"]);
 	// A function whose receiver is read-only is not the method form of a
 	// call through a '@!H', so the field is called.
 	const auto& field = stmts[3]["vars"][0]["init"];

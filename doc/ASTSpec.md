@@ -397,7 +397,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "for" "break" "continue" "not-impl" "enum-def"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "for" "break" "continue" "not-impl" "enum-def" "global-permit"
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -426,6 +426,9 @@ Statement model
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement
+    - global - Boolean, true for a `global` declaration (omitted when false); `vars` then holds
+      exactly one typed variable; any other `global` declaration (a type-omitted or tuple one) is
+      a `not-impl` statement instead.
     - vars\* - Variable declaration list
       - name\* - Variable name string
       - var-type\* - Variable type
@@ -508,6 +511,14 @@ Statement model
     - enumerators\* - Enumerator list, in source order
       - name\* - Enumerator name string
       - value - Value expression model (omitted when the value is implicit)
+      - loc\* - Location Array
+  22. global-permit - the functions allowed to use a global variable: the `for` list of a
+      `global` declaration (emitted right after its `var-decl`) or a later `global name for ...;`,
+      or, with no list, `global name;`
+    - name\* - Variable name string
+    - funcs\* - Permitted function list, in source order (empty for `global name;`)
+      - name\* - Function name string
+      - writable\* - Boolean, true when written with a trailing `!`
       - loc\* - Location Array
 
 Expression model

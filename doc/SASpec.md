@@ -13,8 +13,11 @@ Root
 - original\* - original source file path
 - main\* - The module's top-level function, whose body is `statements`: `name` (its symbol,
   `<module>..main`; see Symbol names) and `parameters` (`__argc` int64 and `__argv`
-  `pntr(pntr(uint8))`, in the Function definition model's form). It is exported, and the
-  program's `_start`, built at link time for the entry module, calls it.
+  `pntr(pntr(uint8))`, in the Function definition model's form), and `globals` as a Palan
+  function has (the C globals the top level uses). It is exported, and the program's `_start`,
+  built at link time for the entry module, calls it.
+- globals - The module's `global` variables, each a static slot codegen emits in `.bss`:
+  `label` (`<module>.<name>`) and `var-type`. Omitted when there are none.
 - str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
 - functions\* - Processed Palan function list (empty array when no functions defined)
 - statements\* - Top-level statement list. When a top-level statement names the implicit
@@ -155,6 +158,9 @@ SA-annotated statements.
 - parameters\* - Parameter list (Palan parameter: name, var-type; empty array when no parameters)
 - ret-type - Return variable type (single-return functions only)
 - rets - Return value list (multi-return functions only)
+- globals - The names the function binds to static slots at its entry: `name`, `label` and
+  `var-type` of each Palan global it is permitted to use (`var-type` is how it sees the global;
+  see Static variables below) and each C global it uses. Omitted when there are none.
 - body\* - SA-annotated statement list (same rules as top-level statements below)
 
 Note: a `syscall` declaration is a prototype with no block, so it never appears in this
@@ -253,9 +259,8 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `globals` list) are registered the same way as typedefs, not
   like C functions: always unqualified, even under `cinclude ... as S;`
   (only `S.func(...)` calls require the alias qualifier). A registered global
-  is read-only from Palan -- assigning to it (`E_CGlobalNotAssignable`) or
-  taking its address / accessing a field through it (`E_CGlobalNotAddressable`)
-  is a compile error. Visibility follows the same scope rule as C functions
+  is a static variable (see Static variables below), writable only where a
+  `global` statement permits it (`E_GlobalNotWritable`). Visibility follows the same scope rule as C functions
   from cinclude (see the **block** entry below): visible from the cinclude
   point to the end of the enclosing scope. A global whose type SA cannot
   represent (see PlnType.h's `unrepresentableTypeName`, e.g. C's `long
@@ -295,6 +300,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   resolved where the alias is declared, so its names keep meaning the types they
   named there, and inlined at each reference site (see Type Aliases in
   PalanReference.md)
+- global-permit statements are consumed by SA and not emitted. A `var-decl` with `global` is
+  emitted as a top-level variable's is, its variable given `label` (see Static variables below);
+  it is `E_GlobalNotTopLevel` anywhere but the top level, as a `global-permit` is. A permit names
+  a `global` variable of the module or a C global visible there (`E_GlobalPermitUnknownVar`) and
+  top-level Palan functions of the module (`E_GlobalPermitNotFunc`), each once
+  (`E_GlobalPermitDuplicate`).
 - const-decl statements are consumed by SA and not emitted; the value is
   folded to an untyped literal and inlined at each reference site (see
   Constant Declarations in PalanReference.md)
@@ -717,8 +728,6 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
   - id: same object as var-type
-  - c-global: the global's registered var-type (fully normalized: `strct`/`union`→`struct`,
-    pointee `const`→pointer `mutable`, no leftover `typedef-name`)
   - add: promoted type of left and right operands (see Promotion rules);
     the narrower operand is wrapped in a convert node if types differ
   - sub: same promotion rules as add
@@ -924,6 +933,9 @@ SA-only expression kinds (not present in AST JSON):
   bound). One discarded as an `expr` statement becomes a `block` of its `body`, the call's
   statement and its `release`.
 
+- static-alloc - The storage of a `$T` or fixed-size array `global` variable, in place of its
+  `frame-alloc`: a block in `.bss`, so it outlives the top level. Its value is the block's
+  address. Same fields as `frame-alloc`, plus `label` (the variable's label + `.data`).
 - frame-alloc - A block in the function's stack frame; its value is the block's address. Appears
   only as the `init` of a stack variable's var-decl (see Stack variable declarations) or of
   `args`'s (see Root `statements`).
@@ -1024,21 +1036,6 @@ Additional fields per expression kind:
 
 - lit-str expression: value replaced by label (assembly label string, e.g. ".str0")
 - id expression: var-type added (Variable type object from ASTSpec.md)
-- c-global expression: an `id` expression referencing a registered C global
-  variable is replaced wholesale by this node (the original `name` key is not
-  kept): `{"expr-type":"c-global","label":<global name>,"value-type":<Variable
-  type object>}`, plus `loc` carried over unchanged from the source `id`
-  expression when present. `label` is the raw C symbol name, emitted verbatim by
-  codegen as a `leaq <label>(%rip), <reg>` assembly reference (no
-  `.extern`/`.globl` declaration needed, same as an undeclared `call
-  printf`) followed by a load through it -- see codegen's `LeaLabel`+
-  `DerefLoad` lowering, no dedicated instruction. Example -- `stderr` (from
-  `extern FILE *stderr;` in stdio.h):
-  ```json
-  {"expr-type":"c-global","label":"stderr",
-   "value-type":{"type-kind":"pntr","mutable":true,
-                 "base-type":{"type-kind":"struct","type-name":"_IO_FILE"}}}
-  ```
 - call expression:
   - func-type\* added: "c" for C functions, "palan" for Palan user-defined functions, "syscall"
     for a call resolved to a `syscall` declaration (local or imported)
@@ -1541,6 +1538,29 @@ A stack variable is registered in `arrayScopeVars_` with its scope-exit statemen
 as an owner: an `id` naming it has no `"category":"owned"`, so it cannot be the source of `->>`,
 and `return` of a stack struct or `$[+]T` returns a copy. `return` of a stack array is E_ReturnFrameArr;
 `$` on a non-aggregate type is E_FrameVarType.
+
+### Static variables
+
+A `global` variable of the module and a C global are static variables: a name bound to a slot at
+an assembly label. Expressions and statements refer to one by `name`, as to any variable; what
+binds the name is a function's (or `main`'s) `globals` entry, made at its entry, or, for a
+`global` variable at the top level, its `var-decl`, whose variable carries `label`. The slot holds
+what a frame variable's value would be, a pointer for an array or struct.
+
+- A Palan global's `label` is `<module>.<name>`; its `var-decl` lowers as a top-level variable's
+  does, except that a `frame-alloc` becomes a `static-alloc` and what it owns is never freed (a
+  value it is reassigned away from still is).
+- A function sees a Palan global its permit lists as it would a parameter: an array or struct as
+  `storageBorrowType` gives (`@` without `!`, `@!` with it), and the function cannot assign the
+  variable itself (`E_GlobalNotReplaceable`); anything else with the variable's type, assignable
+  only with `!` (`E_GlobalNotWritable`).
+- A C global's `label` is its C name. It is readable anywhere it is visible, and writable at the
+  top level after a `global` statement names it, or in a function a permit lists with `!`.
+- A top-level statement before a Palan global's `var-decl`, the declaration's own initializer
+  included, whose calls or function addresses reach a function permitted to use it is
+  `E_GlobalUsedBeforeDecl`; reaching is followed through every function's calls and function
+  addresses. Importing a module whose AST permits a function to use one of its Palan globals is
+  `E_ImportModuleWithGlobals`.
 
 ### field-assign statement → sa.json
 

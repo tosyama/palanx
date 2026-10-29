@@ -273,15 +273,11 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       + "', a C type this version cannot represent; only integer and floating-point "
 			         "types, pointers, and struct pointers are supported in a cinclude'd signature.";
 
-		case E_CGlobalNotAssignable:
+		case E_GlobalNotWritable:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot assign to '" + arg1 + "': a cinclude'd C global variable is read-only.";
-
-		case E_CGlobalNotAddressable:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot take the address of, or access a field through, '" + arg1
-			       + "': it is a cinclude'd C global variable's value, not a storage location "
-			         "Palan owns.";
+			return "cannot write to '" + arg1 + "': a global variable is written only where a 'global' "
+			       "statement permits it ('global " + arg1 + " for f!;' for function f; for a C global at "
+			       "the top level, 'global " + arg1 + ";').";
 
 		case E_UnsupportedCGlobalType:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -472,6 +468,36 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ForRangeNotArray:
 			return "'for' takes an array to iterate over.";
+
+		case E_GlobalNotReplaceable:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot assign to '" + arg1 + "': a function writes the elements or fields of an array "
+			       "or struct global variable, but does not replace it.";
+
+		case E_GlobalNotTopLevel:
+			return "'global' is allowed only at the top level of a module.";
+
+		case E_GlobalPermitUnknownVar:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is not a global variable: declare it with 'global', or cinclude the C global first.";
+
+		case E_GlobalPermitNotFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is not a function at the top level of this module.";
+
+		case E_GlobalPermitDuplicate:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "'" + arg2 + "' is already permitted to use '" + arg1 + "'.";
+
+		case E_GlobalUsedBeforeDecl:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "this reaches '" + arg2 + "', which uses global variable '" + arg1
+			       + "', before '" + arg1 + "' is declared.";
+
+		case E_ImportModuleWithGlobals:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot import a module whose functions use its global variable '" + arg1
+			       + "': an imported module's top level does not run, so '" + arg1 + "' is never initialized.";
 
 		case E_AssignToForIndex:
 			BOOST_ASSERT(arg1 != "\x01");

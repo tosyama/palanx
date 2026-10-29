@@ -1,0 +1,2 @@
+global int32 x = 0 for f;
+export func f() { x + 1 -> x; }

@@ -15,14 +15,9 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 {
 	if (obj.value("expr-type","") == "id") {
 		string varName = obj["name"].get<string>();
-		const json* vt = findVar(varName);
-		if (!vt) {
-			if (findCGlobal(varName) != nullptr) {
-				cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_CGlobalNotAddressable, varName) << endl;
-				exit(1);
-			}
+		const json* vt = lookupVar(varName, obj);
+		if (!vt)
 			undefinedNameError(obj, obj, E_UndefinedVariable);
-		}
 		if (!isStructPntr(*vt)) {
 			cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 			exit(1);
@@ -173,6 +168,21 @@ void PlnSemanticAnalyzer::requireSupportedCGlobal(const json& entry, const strin
 	exit(1);
 }
 
+// What '@x' / '@!x' borrows a struct or array variable as: the variable is
+// already a pointer to its storage, so it is borrowed as it is rather than
+// taking the address of its slot. Null for any other variable.
+json PlnSemanticAnalyzer::storageBorrowType(const string& name, const json& varType, bool isMutable) const
+{
+	if (isStructStorage(varType) || isVarrStorage(varType)) {
+		json vt = varType;
+		vt["mutable"] = isMutable;
+		return vt;
+	}
+	if (isOwnedVar(name) || varType.contains("arr-size"))
+		return withArrPermission(varType, isMutable);
+	return nullptr;
+}
+
 json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 {
 	bool isMutable = expr.value("mutable", false);
@@ -187,40 +197,24 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 
 	if (obj_type == "id") {
 		string name = obj["name"].get<string>();
-		const json* varType = findVar(name);
-		if (varType == nullptr) {
-			if (findCGlobal(name) != nullptr) {
-				cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CGlobalNotAddressable, name) << endl;
-				exit(1);
-			}
+		const json* varType = lookupVar(name, expr);
+		if (varType == nullptr)
 			undefinedNameError(expr, obj, E_UndefinedVariable);
-		}
-		if (isMutable && forIndexVars_.count(name)) {
-			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AssignToForIndex, name) << endl;
-			exit(1);
-		}
 		// '@' on a borrow would name its variable's slot; only a primitive
 		// pointer has a use for that (a C 'T **' out-param).
 		if (isArrBorrowVar(*varType) || isStructBorrow(*varType)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfBorrowed, name) << endl;
 			exit(1);
 		}
-		// A struct or array variable is already a pointer to its storage, so '@'
-		// borrows it as it is rather than taking the address of the variable's slot.
-		if (isStructStorage(*varType) || isVarrStorage(*varType)) {
-			json vt = *varType;
-			vt["mutable"] = isMutable;
-			json out = {{"expr-type","id"},{"name",name},{"var-type",*varType},{"value-type",vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json borrowed = storageBorrowType(name, *varType, isMutable);
+		if (!borrowed.is_null()) {
+			json out = {{"expr-type","id"},{"name",name},{"var-type",*varType},{"value-type",move(borrowed)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 			if (expr.contains("loc")) out["loc"] = expr["loc"];
 			return out;
 		}
-		if (isOwnedVar(name) || varType->contains("arr-size")) {
-			json out = {{"expr-type","id"},{"name",name},{"var-type",*varType},
-			            {"value-type",withArrPermission(*varType, isMutable)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-			if (expr.contains("loc")) out["loc"] = expr["loc"];
-			return out;
-		}
-		if (!isLocalVar(name)) {
+		if (isMutable)
+			requireAssignable(name, expr);
+		if (!isLocalVar(name) && !isStaticBound(name)) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotLocalVar, name) << endl;
 			exit(1);
 		}
@@ -691,24 +685,16 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		sa_expr["value-type"] = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}};
 
 	} else if (expr_type == "id") {
-		const json* varType = findVar(expr["name"].get<string>());
+		const json* varType = lookupVar(expr["name"].get<string>(), expr);
 		if (varType != nullptr) {
 			sa_expr["var-type"]   = *varType;
 			sa_expr["value-type"] = *varType;
 			if (isOwnedVar(expr["name"].get<string>()))
 				sa_expr["category"] = "owned";
 		} else {
-			string name = expr["name"].get<string>();
-			const json* cglobal = findCGlobal(name);
-			if (cglobal != nullptr) {
-				requireSupportedCGlobal(*cglobal, name, expr);
-				sa_expr = {{"expr-type", "c-global"}, {"label", name}, {"value-type", (*cglobal)["var-type"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-				if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
-			} else {
-				json ref = sa_func_ref(expr, expectedType);
-				if (!ref.is_null()) return ref;
-				undefinedNameError(expr, expr, E_UndefinedVariable);
-			}
+			json ref = sa_func_ref(expr, expectedType);
+			if (!ref.is_null()) return ref;
+			undefinedNameError(expr, expr, E_UndefinedVariable);
 		}
 
 	} else if (expr_type == "addr-of") {

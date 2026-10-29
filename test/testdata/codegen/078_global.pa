@@ -1,0 +1,12 @@
+cinclude <unistd.h>;
+type P { int32 x; int64 y; };
+global int32 n = 5 for inc!;
+global $P p for inc!;
+global optind for inc!;
+func inc() {
+    n + 1 -> n;
+    n -> p.x;
+    n -> optind;
+    @!int32 q = @!n;
+}
+inc();

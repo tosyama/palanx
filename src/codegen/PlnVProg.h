@@ -160,6 +160,7 @@ struct VFloatLiteral {
 };
 
 struct FrameBlock { int size; int align; };
+struct StaticBlock { string label; int size; int align; };
 
 struct VFunc {
     string         name;
@@ -172,6 +173,7 @@ struct VFunc {
 struct VProg {
     vector<VStringLiteral> data;       // .rodata string literals
     vector<VFloatLiteral>  floatData;  // .rodata float literals
+    vector<StaticBlock>    bss;        // .bss global slots and storage
     vector<VFunc>          funcs;      // .text
     bool needsF32Neg = false;          // true if any Neg{Float32} instruction exists
     bool needsF64Neg = false;          // true if any Neg{Float64} instruction exists

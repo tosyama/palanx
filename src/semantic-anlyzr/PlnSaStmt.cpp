@@ -19,7 +19,9 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 		else if (t == "cinclude") sa_cinclude(stmt);
 		else if (t == "expr" && chainsFromStore(stmt["body"])) { for (auto& s : sa_store_scope(stmt)) result.push_back(s); }
 		else if (t == "expr")     result.push_back(sa_expression_stmt(stmt));
+		else if (t == "var-decl" && stmt.value("global", false)) sa_global_decl(stmt, result);
 		else if (t == "var-decl") { for (auto& s : sa_var_decl(stmt)) result.push_back(s); }
+		else if (t == "global-permit") sa_global_permit(stmt);
 		else if (isStoreStmt(stmt)) { for (auto& s : sa_store_scope(stmt)) result.push_back(s); }
 		else if (prescannedDecls_.count(&stmt)) continue;
 		else if (t == "struct-def")   sa_struct_def(stmt);
@@ -103,7 +105,7 @@ json PlnSemanticAnalyzer::sa_statements(const json& stmts)
 
 void PlnSemanticAnalyzer::sa_functions(const json& funcs)
 {
-	for (auto& f : funcs) sa_function(f);
+	for (auto& f : funcs) sa_function(f, true);
 }
 
 json PlnSemanticAnalyzer::sa_block(const json& stmt)
@@ -427,7 +429,7 @@ json PlnSemanticAnalyzer::sa_continue_stmt(const json& stmt)
 	return {{"stmt-type", "continue"}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-void PlnSemanticAnalyzer::sa_function(const json& funcDef)
+void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 {
 	// A syscall declaration is a prototype: no block to analyze, and nothing to emit.
 	if (funcDef.value("func-type", "") == "syscall") return;
@@ -446,6 +448,12 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	auto savedPendingAliases = pendingAliases_;
 	auto savedSymbolScope    = symbolScope_;
 	auto savedBlockSymbolSeq = blockSymbolSeq_;
+	auto savedPermitFunc     = move(permitFunc_);
+	auto savedStaticBindings = move(staticBindings_);
+	auto savedReadOnlyGlobals = move(readOnlyGlobals_);
+	permitFunc_ = topLevel ? funcDef["name"].get<string>() : "";
+	staticBindings_ = json::array();
+	readOnlyGlobals_.clear();
 	escapedVars_.clear();
 	forIndexVars_.clear();
 	pinnedRanges_.clear();
@@ -473,6 +481,9 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 				exit(1);
 			}
 		}
+
+	if (topLevel)
+		declarePermittedGlobals(permitFunc_, funcDef);
 
 	currentFunc_ = findPlnFuncDef(funcDef);
 	currentFuncDef_ = &sig;
@@ -545,6 +556,8 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 		resolvePending(body);
 	saFunc["body"] = move(body);
 	saFunc.erase("block");
+	if (!staticBindings_.empty())
+		saFunc["globals"] = staticBindings_;
 
 	leaveBlockDecls();
 	leaveScope();
@@ -558,6 +571,9 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	pinnedRanges_    = move(savedPinnedRanges);
 	pendingAliases_  = savedPendingAliases;
 	symbolScope_     = savedSymbolScope;
+	permitFunc_      = move(savedPermitFunc);
+	staticBindings_  = move(savedStaticBindings);
+	readOnlyGlobals_ = move(savedReadOnlyGlobals);
 	blockSymbolSeq_  = savedBlockSymbolSeq;
 
 	sa["functions"].push_back(saFunc);
@@ -566,19 +582,12 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 {
 	string name = stmt["name"];
-	const json* varType = findVar(name);
+	const json* varType = lookupVar(name, stmt);
 	if (varType == nullptr) {
-		if (findCGlobal(name) != nullptr) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_CGlobalNotAssignable, name) << endl;
-			exit(1);
-		}
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_UndefinedVariable, name) << endl;
 		exit(1);
 	}
-	if (forIndexVars_.count(name)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_AssignToForIndex, name) << endl;
-		exit(1);
-	}
+	requireAssignable(name, stmt);
 	if (isAggregateLit(stmt["value"]) && (isStructPntr(*varType) || isArrLevel(*varType)))
 		return json::array({sa_aggregate_lit_assign(stmt, {{"expr-type", "id"}, {"name", name}}, *varType)}); // LCOV_EXCL_EXCEPTION_BR_LINE
 	if (isAggregateLit(stmt["value"]) && isVarrStorage(*varType))

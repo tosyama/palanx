@@ -172,13 +172,34 @@ class PlnSemanticAnalyzer {
 	// Aggregate variables per scope (parallel to varScopes) and what runs when
 	// each goes out of scope. A frame variable is listed even with nothing to
 	// release, but only a heap variable owns its storage.
-	struct ScopeVar { string name; json release; bool owned; };
+	// A global's release never runs: what it owns lives as long as the process.
+	struct ScopeVar { string name; json release; bool owned; bool global = false; };
 	vector<vector<ScopeVar>> arrayScopeVars_;
 	// Stack of while-body scope indices (for break/continue cleanup)
 	vector<size_t> whileScopeStack_;
 	// What each enclosing loop runs before its next iteration; a 'continue' runs it too.
 	vector<json> loopSteps_;
 	set<string> forIndexVars_;
+	// A top-level `global` variable of this module.
+	struct GlobalVar {
+		string            label;
+		json              type;
+		const json*       decl;
+		json              view[2];  // an array or struct as a function sees it: [writable]; else null
+		map<string, bool> funcs;    // permitted top-level function name -> writable
+	};
+	map<string, GlobalVar> globals_;
+	// The C globals a `global` statement has named, with the functions it permits.
+	map<string, map<string, bool>> cGlobalPermits_;
+	// This module's top-level Palan functions: written name -> their symbols.
+	map<string, vector<string>> topFuncSymbols_;
+	// The top-level function being analyzed, by written name; empty elsewhere.
+	string permitFunc_;
+	// The names the function being analyzed binds to static storage at its
+	// entry ({name, label, var-type}), and the Palan globals among them it may
+	// only read.
+	json staticBindings_ = json::array();
+	map<string, bool> readOnlyGlobals_;  // -> true for an array or struct, never replaced
 	// The location each enclosing 'for' iterates over, as a path from its
 	// variable: "." + field, or "[]" for any index. Its storage and length are
 	// held for the whole loop.
@@ -285,6 +306,17 @@ class PlnSemanticAnalyzer {
 
 	void        declareVar(const string& name, const json& type, const json* loc_node = nullptr);
 	const json* findVar(const string& name) const;
+	// findVar, or else a C global, which the current function then binds.
+	const json* lookupVar(const string& name, const json& locNode);
+	void        bindStatic(const string& name, const string& label, const json& type);
+	void        requireAssignable(const string& name, const json& locNode) const;
+	bool        isStaticBound(const string& name) const;
+	json        storageBorrowType(const string& name, const json& varType, bool isMutable) const;
+	void        sa_global_decl(const json& stmt, json& out);
+	void        sa_global_permit(const json& stmt);
+	void        declarePermittedGlobals(const string& funcName, const json& funcDef);
+	void        checkGlobalsReachedBeforeDecl() const;
+	void        rejectImportedGlobals(const json& importStmt, const json& impAst) const;
 	bool        isLocalVar(const string& name) const;
 	bool        isOwnedVar(const string& name) const;
 	bool        isFrameVar(const string& name) const;
@@ -608,7 +640,7 @@ class PlnSemanticAnalyzer {
 	json sa_expr_addr_of(const json& expr);
 	void validateEmbeddedParams(const json& funcDef);
 	void sa_functions(const json& funcs);
-	void sa_function(const json& funcDef);
+	void sa_function(const json& funcDef, bool topLevel = false);
 	json sa_store_scope(const json& stmt);  // returns json::array()
 	json sa_store_stmt(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	void hoistStores(json& value, json& body);

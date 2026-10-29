@@ -67,8 +67,8 @@ enum PlnSaMessageCode {
 	E_IncompleteStructType,		// arg1: struct name, arg2: incomplete reason ("unsupported-field" or "forward-declared")
 	E_UnsupportedParamType,		// arg1: function name, arg2: unsupported type display name
 	E_UnsupportedCFuncSignature,	// arg1: C function name, arg2: unsupported type display name
-	E_CGlobalNotAssignable,		// arg1: C global variable name
-	E_CGlobalNotAddressable,		// arg1: C global variable name
+	E_GlobalNotWritable,		// arg1: variable name
+	E_GlobalNotReplaceable,		// arg1: variable name
 	E_UnsupportedCGlobalType,		// arg1: C global variable name, arg2: unsupported type display name
 	E_ArithOpNotNumeric,
 	E_StructInitNotSupported,	// arg1: struct type name
@@ -174,6 +174,12 @@ enum PlnSaMessageCode {
 	E_ForIndexNotInteger,	// arg1: type display name
 	E_ForIndexTooNarrow,	// arg1: type display name, arg2: the array's length
 	E_ConstUsedBeforeKnown,	// arg1: const name, arg2: the name its value waits for
+	E_GlobalNotTopLevel,
+	E_GlobalPermitUnknownVar,	// arg1: variable name
+	E_GlobalPermitNotFunc,	// arg1: function name
+	E_GlobalPermitDuplicate,	// arg1: variable name, arg2: function name
+	E_GlobalUsedBeforeDecl,	// arg1: variable name, arg2: function name
+	E_ImportModuleWithGlobals,	// arg1: variable name
 };
 
 class PlnSaMessage
