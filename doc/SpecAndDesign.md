@@ -6,32 +6,30 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-10-26)
-version: 0.2.2 — bit-field layout, command-line arguments, `for` loop
+### 2.1 Iteration Goal (2026-10-29)
+version: 0.2.3 — improvements found through the samples (ray tracer, echo server)
 
-- Bit-fields: c2ast reads C bit-fields, and SA lays out structs that contain them by the x86-64
-  C rules, so headers such as `netinet/tcp.h` (and `uv.h` through it) can be included. Accessing
-  a bit-field member from Palan is an error. `__extension__` before a struct member is accepted.
-  Each `cinclude` also starts from the typedefs, structs and enums of the earlier ones, not just
-  their macros, so a header whose dependencies an earlier `cinclude` already read
-  (`cinclude <stdio.h>; cinclude <uv.h>;`) can still size their types.
-- Command-line arguments: the top-level statements of a module see an implicit read-only
-  `args`, a borrowed `[+]` array of borrowed C strings (`@[+]@[]uint8`) built from argc/argv.
-  The entry module is chosen at link time, so a module compiles the same whether it is the entry
-  or imported, and its top level can be run on its own as its tests or demo.
-  `palan source.pa arg...` passes everything after the source to the program it runs, and
-  builds that program in the working directory instead of the current one.
-  `[+]@T`/`[+]@!T` (variable-length arrays of pointer slots) are added for it.
-- `for copy a in arr { }` and `for copy a, i in arr { }` loop over every array whose length `len`
-  can give; `i` is the index, `int64` unless a type is written (`for @a, int32 i in arr`).
-  `copy a` is a copy; `@a` and `@!a` are the element itself, read-only and writable
-  (`0 -> a` writes `arr[i]`). A bare `a` is a compile error, so a copy is
-  always chosen explicitly. Changing the length of `arr` inside the loop (`push`, `pop`, `resize`, replacing it
-  with `->`/`->>`, or passing `@!arr`) is an error.
+- Top-level variable declarations are resolved when first needed, as top-level types and consts
+  are, so a const computed from one (`const LN = lights->len();`) can size a borrowed array
+  parameter (`@[LN]Light`).
+- Global variables: a module's functions can use its top-level variables, which are kept in
+  static storage, and the access functions have to them can be restricted. A module's top level
+  runs only when it is the entry, so importing a module whose functions use its top-level
+  variables is a compile error.
+- Operator functions: a function named by an operator (`func -(@vec3 a, @vec3 b) -> vec3`)
+  defines binary `+ - * / %` or unary `-` when at least one operand is a struct. It is chosen
+  like any overloaded function; an operand is passed to a `@T` parameter as it is written, and a
+  `@!T` parameter is not allowed.
+- Performance: a function returning a struct returns it into storage the caller provides (frame
+  storage for a temporary or a `$T` variable) instead of allocating it on the heap on every call
+  (Issues.md #13), and `flo32`/`flo64` values are kept in XMM registers (Issues.md #14). Both are
+  measured on the ray tracer before and after.
+- Samples: the ray tracer is rewritten with the above, and a libuv echo server is added; gaps
+  found while writing them are fixed as they are found.
 
-Out of scope: reading or writing bit-field members; `len` and `for` over an array whose size is
-known only at run time; detecting a length change made through another borrow of the array.
-The ticket list is kept in `localtickets/iteration-2026-10-26-v0220-bitfield-args-for.md`.
+Out of scope: exporting global variables and initializing an imported module's top-level
+variables; comparison operators as operator functions.
+The ticket list is kept in `localtickets/iteration-2026-10-29-v0230-samples.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design

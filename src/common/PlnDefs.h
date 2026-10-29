@@ -5,7 +5,7 @@
 
 #pragma once
 
-#define PALAN_VERSION "0.2.2"
+#define PALAN_VERSION "0.2.3"
 
 // Stem of the module build-mgr generates the __pln_* allocators into. palan-sa
 // names that module in the symbols of the calls it makes to them.
