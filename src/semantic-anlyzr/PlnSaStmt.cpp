@@ -561,7 +561,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef)
 	blockSymbolSeq_  = savedBlockSymbolSeq;
 
 	sa["functions"].push_back(saFunc);
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 {
@@ -740,16 +740,18 @@ json PlnSemanticAnalyzer::sa_store_scope(const json& stmt)
 json PlnSemanticAnalyzer::sa_store_stmt(const json& stmt, json* litAddr)
 {
 	string t = stmt["stmt-type"];
+	// LCOV_EXCL_EXCEPTION_BR_START
 	json target = t == "assign" ? json{{"expr-type", "id"}, {"name", stmt["name"]}}
 	            : t == "arr-assign" ? stmt["target"]
 	            : json{{"expr-type", "field-access"}, {"object", stmt["object"]}, {"field", stmt["field"]}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 	checkRangeChange(stmt, target, stmt.value("ownership-transfer", false) ? RangeChange::Transfer : RangeChange::Copy);
 	if (t == "assign")
 		return sa_assign_stmt(stmt);
 	if (t == "arr-assign")
 		return sa_arr_assign_stmt(stmt, litAddr);
 	return sa_field_assign(stmt, litAddr);
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Runs the store `value` is, or the store a chained call's value starts from,
 // and replaces it with the target it stored, read back.

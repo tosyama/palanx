@@ -669,7 +669,7 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	json argsType = argsStorageType();
 	argsType["mutable"] = false;
 	declareVar("args", argsType);
-}
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Resolve every top-level type and const declaration, and the types
 // top-level imports bring in, so function signatures pre-registered in
