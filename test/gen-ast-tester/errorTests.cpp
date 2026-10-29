@@ -174,6 +174,26 @@ TEST(gen_ast_error, syscall_named_return) {
 	}
 }
 
+TEST(gen_ast_error, for_expected_in) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/error_021_for_expected_in.pa");
+	EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
+	EXPECT_NE(out.find(":1:12: error: Expected 'in' after the loop variable, but found 'on'."), string::npos) << out;
+}
+
+TEST(gen_ast_error, for_elem_mode) {
+	const pair<string, string> cases[] = {
+		{"error_022_for_bare_elem.pa", ":1:5: error: The loop variable 'a' needs 'copy', '@' or '@!': 'copy a' copies each element, '@a'/'@!a' is the element itself."},
+		{"error_023_for_expected_copy.pa", ":1:5: error: Expected 'copy', '@' or '@!' before the loop variable, but found 'cpy'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string out = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/" + file);
+		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
+		EXPECT_NE(out.find(expected), string::npos) << out;
+	}
+}
+
 TEST(gen_ast_error, cinclude_local_path_injection) {
 	// Same shell-metacharacter-injection risk as cinclude_sys_path_injection
 	// above, for the "..." local-path branch (fs::path(base_dir) / resolved).

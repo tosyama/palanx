@@ -1,0 +1,1 @@
+func f([]int64 x) { for copy a in x { } }

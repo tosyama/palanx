@@ -1,0 +1,2 @@
+[3][2]int32 f;
+for @row in f { 0 -> row[0]; }

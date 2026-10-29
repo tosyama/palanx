@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.2.1
+ver. 0.2.2
 
 \* - Required
 
@@ -100,9 +100,10 @@ table and, instead of folding, sets `c-macro`
 on a later `id` or `call` that names one (see Expression model's `id`), so SA reports the macro
 rather than an undefined name.
 
-Each c2ast run starts from the previous `cinclude`'s macros (SpecAndDesign.md §3.3), so these
-lists hold only the macros the header itself (re)defines, and `ast.undefined-macros` names the
-ones it `#undef`s. gen-ast keeps each name's registrations in source order, and a reference uses
+Each c2ast run starts from the previous `cinclude`'s macros and types (SpecAndDesign.md §3.3),
+so these lists hold only the macros the header itself (re)defines, and `ast.undefined-macros`
+names the ones it `#undef`s. Likewise a `cinclude`'s `structs`, `enums` and `typedefs` hold only
+what an earlier `cinclude` didn't already give, such as a struct it only referenced. gen-ast keeps each name's registrations in source order, and a reference uses
 the last one before it; an `#undef` registration leaves the reference unfolded.
 
 An enumerator (see Enum definition model below) is an integer operand in these expressions,
@@ -172,6 +173,9 @@ AST in. Same field-list shape as the native `struct-def` statement.
     C-origin field admission rules for which array shapes SA accepts)
   - packed / aligned - The same attributes on the field alone: `packed` aligns it to 1,
     `aligned` raises its alignment to at least N. Omitted otherwise.
+  - bits - A bit-field's width (`unsigned a:4;`), an integer; `null` when the width does not
+    fold to a constant. An unnamed bit-field (`int :3;`) has `bits` and no `name`. Omitted for
+    any other field.
 
 c2ast reads GCC's `__attribute__((...))` itself (it is a keyword, so the empty
 `#define __attribute__(xyz)` that `sys/cdefs.h` issues for a non-GNU compiler has no effect).
@@ -393,7 +397,7 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "break" "continue" "not-impl" "enum-def"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "for" "break" "continue" "not-impl" "enum-def"
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
@@ -479,13 +483,25 @@ Statement model
   16. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  17. break - exit the innermost while loop (no additional fields)
-  18. continue - skip to next iteration of innermost while loop (no additional fields)
-  19. not-impl - a statement the grammar parses but the compiler does not implement (e.g. `for`,
-      `interface`, `x++`, a type-omitted declaration). Rejected by SA.
+  17. for - loop over an array's elements (`for copy a, i in arr { ... }`; SA lowers it to a block
+      holding a while)
+    - elem\* - The loop variable
+      - name\* - Variable name string
+      - borrow\* - Boolean, true for `@a`/`@!a` (the element itself, read-only or writable) and false for `copy a` (a copy)
+      - mutable - Boolean, true for `@!a`; present only when borrow is true
+      - loc\* - Location Array
+    - index - Name string of the index variable (omitted when absent)
+    - index-type - Type model of the index written before its name (`for @a, int32 i in arr`);
+      omitted when not written, and the index is then `int64`
+    - range\* - The array expression model
+    - body\* - Statement model list (raw array, no block wrapper)
+  18. break - exit the innermost while or for loop (no additional fields)
+  19. continue - skip to next iteration of innermost while or for loop (no additional fields)
+  20. not-impl - a statement the grammar parses but the compiler does not implement (e.g.
+      `construct`, `interface`, `x++`, a type-omitted declaration). Rejected by SA.
     - untyped-var - Name of the first type-omitted variable; present only for a `name = expr;`
       declaration (reserved for type inference; an assignment is `expr -> name`)
-  20. enum-def - enum type definition (`type Name enum { X, Y = expr, ... }`; consumed by SA, not
+  21. enum-def - enum type definition (`type Name enum { X, Y = expr, ... }`; consumed by SA, not
       emitted to sa.json)
     - name\* - Enum name string
     - export - Boolean, true if declared with `export` (omitted when false)

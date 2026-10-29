@@ -1,6 +1,7 @@
 {
     "functions": [],
     "original": "065_float_to_uint.pa",
+    "main": {"name": "_065_float_to_uint..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
     "statements": [
         { "stmt-type": "var-decl", "vars": [{
             "name": "x",

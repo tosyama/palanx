@@ -1,0 +1,4 @@
+for copy a in v { }
+for @a, i in s.in { continue; }
+for @!a in f() { break; }
+for copy b in copy { }

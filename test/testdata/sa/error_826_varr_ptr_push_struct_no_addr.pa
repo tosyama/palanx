@@ -1,0 +1,4 @@
+type P { int32 x; };
+P p;
+[+]@!P v;
+v.push(p);

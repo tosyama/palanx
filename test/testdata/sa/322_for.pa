@@ -1,0 +1,10 @@
+[+]int64 v = [1, 2];
+for copy a, i in v {
+	if i == 0 { continue; }
+}
+[3]int64 c;
+for @!x in c {
+	func f() { int64 i = 0; 1 -> i; }
+	5 -> x;
+}
+for @y in c { int64 z = y; }

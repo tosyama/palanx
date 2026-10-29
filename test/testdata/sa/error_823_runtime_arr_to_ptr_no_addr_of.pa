@@ -1,0 +1,5 @@
+func g(int64 n) {
+	[n]int32 a;
+	[2]@!int32 s;
+	a -> s[0];
+}

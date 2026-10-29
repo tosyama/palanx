@@ -1,0 +1,2 @@
+[256]int32 c;
+for @x, uint8 i in c { uint8 k = i; }

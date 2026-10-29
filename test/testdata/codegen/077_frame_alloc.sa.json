@@ -348,6 +348,7 @@
   "libs": [],
   "objs": [],
   "original": "/test/077_frame_alloc.pa",
+  "main": {"name": "_077_frame_alloc..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
   "statements": [
     {
       "stmt-type": "var-decl",

@@ -141,7 +141,6 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // reuse the isVar mechanism rather than a second forced-stack path.
             [&](const LeaLocal&   ll)    { setDef(ll.dst, VRegType::Ptr64); meta[ll.local].isVar = true; addUse(ll.local); },
             [&](const FrameAddr&  fa)    { setDef(fa.dst, VRegType::Ptr64); },
-            [&](const ExitCode&)   {},
             [&](const BlockEnter&) {},
             [&](const BlockLeave&) {},
             [&](const Jmp&)        {},
@@ -432,11 +431,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
     }
 
-    // For non-entry functions, reserve stack slots at the top of the frame to
-    // save any callee-saved registers that were allocated.  Shift existing stack
-    // slot offsets down to make room, then include the save area in stack_bytes.
+    // Reserve stack slots at the top of the frame to save any callee-saved
+    // registers that were allocated.  Shift existing stack slot offsets down to
+    // make room, then include the save area in stack_bytes.
     int k = callee_idx;
-    if (!func.isEntry && k > 0) {
+    if (k > 0) {
         int save_area = k * 8;
         for (auto& [vreg, loc] : result) {
             if (loc.isStack() && loc.stackOffset < 0)
@@ -446,30 +445,20 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     }
 
     // Frame blocks go below everything already placed, so the callee-saved
-    // shift above cannot break their alignment. %rbp itself is 16-byte aligned
-    // except in _start, which has no return address below it.
+    // shift above cannot break their alignment; %rbp itself is 16-byte aligned.
     vector<int> frameBlockOffsets;
-    int rbpBias = func.isEntry ? 8 : 0;
     for (auto& b : func.frameBlocks) {
         assert(b.align > 0 && b.align <= 16 && 16 % b.align == 0);
-        // A non-empty block also makes _start set up %rbp, which its address is relative to.
-        int s = stack_bytes + std::max(b.size, 1);
-        while ((s - rbpBias) % b.align != 0) s++;
+        int s = stack_bytes + b.size;
+        while (s % b.align != 0) s++;
         frameBlockOffsets.push_back(-s);
         stack_bytes = s;
     }
 
-    // Align frame size for ABI compliance.
-    // _start (isEntry): entered with RSP 16-byte aligned; pushq %rbp shifts by 8,
-    //   so frameSize must be ≡ 8 (mod 16) when non-zero.
-    // Regular Palan function: call pushes 8-byte return address, then pushq %rbp
-    //   restores 16-byte alignment, so frameSize must be a multiple of 16.
-    int frameSize = alignUp(stack_bytes, 8);
-    if (func.isEntry) {
-        if (frameSize > 0 && frameSize % 16 == 0) frameSize += 8;
-    } else {
-        frameSize = alignUp(frameSize, 16);
-    }
+    // Align frame size for ABI compliance: call pushes the 8-byte return
+    // address, then pushq %rbp restores 16-byte alignment, so frameSize must
+    // be a multiple of 16.
+    int frameSize = alignUp(stack_bytes, 16);
 
     vector<string> usedCallee;
     for (int i = 0; i < k; i++)

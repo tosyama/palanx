@@ -93,7 +93,6 @@ struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VReg
 // name -- num is the Linux syscall number (raw syscall ABI, not System V).
 struct CallSys  { long long num; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
 struct RetPln   { vector<VReg> rets; vector<VRegType> types; };
-struct ExitCode { int code; };
 struct BlockEnter {};
 struct BlockLeave { vector<VReg> expiredVars; };
 struct Label      { string name; };                              // name:
@@ -112,7 +111,7 @@ struct FrameAddr     { VReg dst; int block; };                                  
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, DeclVar, Add, Sub, Mul, Div, Mod, Neg,
                              BitAnd, BitOr, BitXor, BitNot, Shift, ShiftImm, Cmp, Convert,
-                             CallC, CallPln, CallSys, RetPln, ExitCode,
+                             CallC, CallPln, CallSys, RetPln,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov, Copy, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
                              DerefLoad, DerefStore, CalcAddr, LeaLocal, FrameAddr>;
@@ -166,7 +165,6 @@ struct VFunc {
     string         name;
     vector<VInstr> instrs;
     vector<FrameBlock> frameBlocks;   // stack-frame storage of `$` variables, indexed by FrameAddr::block
-    bool           isEntry  = false;  // true only for _start
     bool           isExport = false;  // true for export func
     vector<std::pair<VReg, VRegType>> params;  // (vreg, type) in arg order
 };

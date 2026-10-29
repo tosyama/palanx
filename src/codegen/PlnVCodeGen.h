@@ -71,5 +71,5 @@ class PlnVCodeGen {
     void lowerContinueStmt(VFunc& func);
 
 public:
-    VProg generate(const Module& module, bool noEntry = false);
+    VProg generate(const Module& module);
 };

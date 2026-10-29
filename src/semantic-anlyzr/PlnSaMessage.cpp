@@ -425,7 +425,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "a borrowed array type ('@[n]T'/'@![n]T') supports only primitive, struct and '@T'/'@!T' pointer elements in this version.";
 
 		case E_ArrBorrowNeedsAddrOf:
-			return "an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' "
+			return "an array given to a borrowed array ('@[n]T'/'@![n]T') or a '@T'/'@!T' pointer must be written as '@name' or '@!name' "
 			       "('@[..]' or '@![..]' for a literal).";
 
 		case E_ArrBorrowShapeMismatch:
@@ -463,6 +463,25 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ArrLenNotConst:
 			return "'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time.";
+
+		case E_ForRangeNotArray:
+			return "'for' takes an array to iterate over.";
+
+		case E_AssignToForIndex:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot assign to '" + arg1 + "': the index of a 'for' loop is read-only.";
+
+		case E_ChangeForRange:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot change the array a 'for' loop iterates over ('" + arg1 + "').";
+
+		case E_ForIndexNotInteger:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the index of a 'for' loop must be of an integer type, not '" + arg1 + "'.";
+
+		case E_ForIndexTooNarrow:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "the index type '" + arg1 + "' cannot hold every index of an array of length " + arg2 + ".";
 
 		case E_ArrLenNeedsAddrOf:
 			return "an array given to 'len' must be written as '@name'.";
@@ -541,7 +560,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_AddrOfBorrowed:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "'" + arg1 + "' is already a borrow ('@T'/'@[n]T'); pass it by name.";
+			return "'" + arg1 + "' is already a borrow ('@T'/'@[n]T'/'@[+]T'); pass it by name.";
 
 		case E_EmbedElemNotStruct:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -618,6 +637,11 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "enum '" + arg2 + "' has no enumerator '" + arg1 + "'.";
+
+		case E_UnqualifiedEnumerator:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "Undefined variable '" + arg1 + "'; write " + arg2 + " for the enumerator.";
 
 		case E_DuplicateEnumerator:
 			BOOST_ASSERT(arg1 != "\x01");

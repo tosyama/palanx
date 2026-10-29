@@ -1,0 +1,28 @@
+cinclude <stdio.h>;
+cinclude "356_c_bitfield.h" link "356_c_bitfield.o";
+
+layout();
+
+Bf f;
+1 -> f.c; 2 -> f.d; 3 -> f.f;
+set_bf(@!f);
+show_bf(@f);
+printf("%d %d %d / %ld %ld\n", f.c, f.d, f.f,
+	(@f.d as int64) - (@f.c as int64), (@f.f as int64) - (@f.c as int64));
+
+Bp p;
+4 -> p.c; 5 -> p.d;
+show_bp(p);
+printf("%ld\n", (@p.d as int64) - (@p.c as int64));
+
+Bl l;
+6 -> l.c;
+show_bl(@l);
+printf("%ld\n", (@l.c as int64) - (@l as int64));
+
+Bs s;
+1.5 -> s.x; 2.5 -> s.y;
+show_bs(s);
+Bs r = make_bs();
+printf("%.2f %.2f\n", r.x, r.y);
+show_bs(r);

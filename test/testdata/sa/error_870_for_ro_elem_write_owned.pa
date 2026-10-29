@@ -1,0 +1,2 @@
+func mk() -> [3]int32 r { }
+for @a in mk() { 0 -> a; }

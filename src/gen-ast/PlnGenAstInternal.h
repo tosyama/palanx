@@ -143,11 +143,11 @@ inline bool isDeclarableVarType(const json& t)
 		return true;  // fixed-size array of prim
 	if (isVarrType(bt))
 		return isDeclarableVarType(bt);  // fixed-size array of [+]T
-	if (btk == "pntr" && bt.value("mutable", false) == true && bt.contains("base-type")) {
+	if (btk == "pntr" && bt.contains("base-type")) {
 		const json& ibt = bt["base-type"];
 		if (ibt.value("type-kind", "") == "arr" && ibt.value("specifier", "") == "raw"
 			&& ibt.contains("size-expr") && ibt["size-expr"].is_null())
-			return true;  // array of @! slots into an unsized array (owning-slot array)
+			return true;  // array of @/@! slots into an unsized array
 	}
 	if (btk == "pntr") {
 		const json* pointee = &bt["base-type"];

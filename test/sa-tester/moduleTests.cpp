@@ -669,6 +669,23 @@ TEST(sa, overload)
 	ASSERT_EQ(stmts[18]["value"]["args"][0]["value-type"]["type-name"], "int32");   // dm(x): dm(int32)
 }
 
+// Permissions count at every level; with no exact match, the one that only
+// takes a writable borrow as read-only is chosen.
+TEST(sa, overload_permission)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/317_overload_permission.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto retName = [&](size_t i) { return stmts[i]["body"]["value-type"]["type-name"].get<string>(); };
+	ASSERT_EQ(retName(3), "int64");                       // f(@s): f(@[2]@!P)
+	ASSERT_EQ(retName(4), "int32");                       // f(@r): f(@[2]@P)
+	ASSERT_EQ(retName(5), "int64");                       // k(@x): k(@@!int32)
+	const json& g = jout["functions"][2];
+	ASSERT_EQ(funcName(g["name"]), "g");
+	ASSERT_EQ(g["body"][0]["body"]["value-type"]["type-name"], "int64");  // f(b): f(@[2]@!P)
+}
+
 // Imported functions are candidates as well, and a module imported twice
 // gives each function once.
 TEST(sa, overload_import)

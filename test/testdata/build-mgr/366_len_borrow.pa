@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+func sum(@[3]int32 b) -> int64 s {
+	0 -> s;
+	int64 i = 0;
+	while i < len(b) { s + b[i] -> s; i + 1 -> i; }
+}
+func count(@[+]int32 v) -> int64 { return len(v); }
+[]int32 a = [1, 2, 3];
+[+]int32 v = [4, 5];
+@[+]int32 h = @v;
+printf("%ld %ld %ld\n", sum(@a), count(@v), len(h));

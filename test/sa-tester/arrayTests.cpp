@@ -205,7 +205,8 @@ TEST(sa, array_multi_var_shared_size) {
 
 	// stmts[2] is `int64 n = 3;`. c's size is n, held in __c_d0; d's copies it.
 	ASSERT_EQ(stmts[3]["vars"][0]["name"], "__c_d0");
-	ASSERT_EQ(stmts[3]["vars"][0]["init"]["name"], "n");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["expr-type"], "convert");
+	ASSERT_EQ(stmts[3]["vars"][0]["init"]["src"]["name"], "n");
 	ASSERT_EQ(stmts[4]["vars"][0]["name"], "c");
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["args"][0]["left"]["name"], "__c_d0");
 	ASSERT_EQ(stmts[5]["vars"][0]["name"], "__d_d0");
@@ -380,9 +381,9 @@ TEST(sa, 2d_arr_decl) {
 	ASSERT_EQ(body[2]["vars"][0]["name"], "__mat_d0");
 	ASSERT_EQ(body[2]["vars"][0]["var-type"]["type-kind"], "prim");
 	ASSERT_EQ(body[2]["vars"][0]["var-type"]["type-name"], "uint64");
-	ASSERT_EQ(body[2]["vars"][0]["init"]["name"], "rows");
+	ASSERT_EQ(body[2]["vars"][0]["init"]["src"]["name"], "rows");
 	ASSERT_EQ(body[3]["vars"][0]["name"], "__mat_d1");
-	ASSERT_EQ(body[3]["vars"][0]["init"]["name"], "cols");
+	ASSERT_EQ(body[3]["vars"][0]["init"]["src"]["name"], "cols");
 
 	// body[4]: mat = __pln_alloc_arr_Pint32(__mat_d0, __mat_d1)
 	ASSERT_EQ(body[4]["stmt-type"], "var-decl");
@@ -421,7 +422,7 @@ TEST(sa, embed_arr_decl_const_inner) {
 
 	// body[0]: __mat_d0 = rows, the run-time row count
 	ASSERT_EQ(body_f[0]["vars"][0]["name"], "__mat_d0");
-	ASSERT_EQ(body_f[0]["vars"][0]["init"]["name"], "rows");
+	ASSERT_EQ(body_f[0]["vars"][0]["init"]["src"]["name"], "rows");
 
 	// body[1]: mat = malloc(__mat_d0 * 16)
 	ASSERT_EQ(body_f[1]["stmt-type"], "var-decl");
@@ -458,12 +459,12 @@ TEST(sa, embed_arr_decl_variable_inner) {
 
 	// body[0..1]: __mat_d0 = rows, __mat_d1 = cols (uint64 hidden vars for both dimensions)
 	ASSERT_EQ(body_g[0]["vars"][0]["name"], "__mat_d0");
-	ASSERT_EQ(body_g[0]["vars"][0]["init"]["name"], "rows");
+	ASSERT_EQ(body_g[0]["vars"][0]["init"]["src"]["name"], "rows");
 	ASSERT_EQ(body_g[1]["stmt-type"], "var-decl");
 	ASSERT_EQ(body_g[1]["vars"][0]["name"], "__mat_d1");
 	ASSERT_EQ(body_g[1]["vars"][0]["var-type"]["type-kind"], "prim");
 	ASSERT_EQ(body_g[1]["vars"][0]["var-type"]["type-name"], "uint64");
-	ASSERT_EQ(body_g[1]["vars"][0]["init"]["name"], "cols");
+	ASSERT_EQ(body_g[1]["vars"][0]["init"]["src"]["name"], "cols");
 
 	// body[2]: mat = malloc(__mat_d0 * (__mat_d1 * 4))  — the row size is not in the type
 	ASSERT_EQ(body_g[2]["stmt-type"], "var-decl");
@@ -542,7 +543,7 @@ TEST(sa, embed_arr_var_row_access) {
 	ASSERT_EQ(body[0]["vars"][0]["name"], "__mat_d0");
 	ASSERT_EQ(body[1]["stmt-type"], "var-decl");
 	ASSERT_EQ(body[1]["vars"][0]["name"], "__mat_d1");
-	ASSERT_EQ(body[1]["vars"][0]["init"]["name"], "cols");
+	ASSERT_EQ(body[1]["vars"][0]["init"]["src"]["name"], "cols");
 
 	// body[2]: mat = malloc(__mat_d0 * (__mat_d1 * 4)), no stride
 	ASSERT_EQ(body[2]["vars"][0]["name"], "mat");
@@ -766,6 +767,26 @@ TEST(sa, arr_len)
 	const auto& ret = jout["functions"][0]["body"][0];
 	ASSERT_EQ(ret["value"]["expr-type"], "lit-int");
 	ASSERT_EQ(ret["value"]["value"], "3");
+}
+
+// A borrowed array is given to len by name, as to a function; a row of it
+// is not a borrow of its own and keeps '@'.
+TEST(sa, len_borrow)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/326_len_borrow.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto expectLen = [&](const json& stmt, const string& value) {
+		const auto& init = stmt["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "lit-int");
+		ASSERT_EQ(init["value"], value);
+	};
+	expectLen(stmts[5], "2");	// len(r)
+	expectLen(stmts[6], "2");	// len(@g[1])
+	expectLen(stmts[8], "3");	// N = len(g)
+	// len(h) of a '@[+]T' reads the length at run time.
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["expr-type"], "field-access");
 }
 
 // A borrow passes the header itself; a `[]T` parameter gets the data.
@@ -1223,5 +1244,21 @@ TEST(sa, runtime_size_aggregates)
 	for (int i : {2, 4, 6, 8}) {
 		ASSERT_EQ(stmts[i - 1]["vars"][0]["name"], "__" + stmts[i]["vars"][0]["name"].get<string>() + "_d0");
 		ASSERT_EQ(stmts[i]["vars"][0]["init"]["expr-type"], "call");
+	}
+}
+
+// A narrower size is widened before it is held in the uint64 __<name>_d0,
+// which is read as 8 bytes.
+TEST(sa, arr_size_width)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/319_arr_size_width.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	for (int i : {1, 3}) {
+		const auto& init = stmts[i]["vars"][0]["init"];
+		ASSERT_EQ(init["expr-type"], "convert");
+		ASSERT_EQ(init["value-type"]["type-name"], "uint64");
+		ASSERT_EQ(init["src"]["name"], "n");
 	}
 }

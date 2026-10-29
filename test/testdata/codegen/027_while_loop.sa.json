@@ -1,5 +1,6 @@
 {
   "original": "/test/while_loop.pa",
+  "main": {"name": "while_loop..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
   "str-literals": [
     { "label": ".str0", "value": "%lld\n" }
   ],

@@ -742,6 +742,32 @@ TEST(sa, embed_ptr_slot_store) {
 	ASSERT_EQ(stmts[1]["value"]["name"], "malloc");
 }
 
+TEST(sa, ro_ptr_slot_store) {
+	json jout = run_sa("../test/testdata/sa/324_ro_ptr_slot.pa");
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts.size(), 14);
+	ASSERT_EQ(stmts[11]["stmt-type"], "arr-assign");
+	ASSERT_EQ(stmts[11]["target"]["value-type"]["mutable"], false);
+	// Read-only reaches every row level, so '@m' of rows fits the slot.
+	const auto& row = stmts[12]["target"]["value-type"];
+	ASSERT_EQ(row["embedded"], true);
+	ASSERT_EQ(row["mutable"], false);
+	ASSERT_EQ(row["base-type"]["mutable"], false);
+	ASSERT_EQ(stmts[13]["stmt-type"], "arr-assign");
+}
+
+// '@[]T' of no known count is the same type as '@T', in a parameter as in a local.
+TEST(sa, ro_unsized_borrow) {
+	json jout = run_sa("../test/testdata/sa/325_ro_unsized_borrow.pa");
+	const auto& funcs = jout["functions"];
+	json ro = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}, {"mutable", false}};
+	ASSERT_EQ(funcs[0]["parameters"][0]["var-type"], ro);
+	ASSERT_EQ(funcs[1]["parameters"][0]["var-type"]["mutable"], true);
+	ASSERT_FALSE(funcs[1]["parameters"][0]["var-type"].contains("arr-size"));
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[6]["vars"][0]["var-type"], ro);
+}
+
 // An array's element may be any pointer, in an array variable as in a borrow.
 TEST(sa, ptr_ptr_slot_arr)
 {
@@ -756,6 +782,35 @@ TEST(sa, ptr_ptr_slot_arr)
 	const json& a = jout["functions"][0]["parameters"][0]["var-type"];
 	ASSERT_EQ(a["base-type"]["mutable"], false);
 	ASSERT_EQ(a["base-type"]["base-type"]["base-type"]["type-kind"], "struct");
+}
+
+// A `[]T` parameter, a C function and a pointer value take an array by name.
+TEST(sa, arr_to_ptr_addr_of)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/316_arr_to_ptr_addr_of.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
+// A `[+]@T` holds pointer slots as `[n]@T` does, in the generated functions of `[+]int64`.
+TEST(sa, varr_ptr_slot)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/318_varr_ptr_slot.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const json& v = stmts[0]["vars"][0]["var-type"]["base-type"];
+	ASSERT_EQ(v["type-kind"], "varr");
+	ASSERT_EQ(v["base-type"]["mutable"], true);
+	ASSERT_EQ(v["base-type"]["base-type"]["type-kind"], "struct");
+	const json& s = stmts[1]["vars"][0]["var-type"]["base-type"]["base-type"];
+	ASSERT_EQ(s["mutable"], false);
+	ASSERT_EQ(s["base-type"]["type-name"], "uint8");
+	ASSERT_EQ(stmts[2]["vars"][0]["var-type"]["base-type"]["base-type"]["type-kind"], "varr");
+	const json& f = jout["functions"][0];
+	ASSERT_EQ(f["parameters"][0]["var-type"]["mutable"], false);
+	ASSERT_FALSE(f["ret-type"].contains("mutable"));
+	ASSERT_EQ(jout["alloc-shapes"][0]["shape-key"], "varr_int64");
 }
 
 TEST(sa, struct_ptr_elem_copy)

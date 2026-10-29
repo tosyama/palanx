@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.2.1
+ver. 0.2.2
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -11,9 +11,19 @@ type information and pre-collected literal tables.
 Root
 ----
 - original\* - original source file path
+- main\* - The module's top-level function, whose body is `statements`: `name` (its symbol,
+  `<module>..main`; see Symbol names) and `parameters` (`__argc` int64 and `__argv`
+  `pntr(pntr(uint8))`, in the Function definition model's form). It is exported, and the
+  program's `_start`, built at link time for the entry module, calls it.
 - str-literals\* - String literal table (collected by SA, used by codegen for .rodata)
 - functions\* - Processed Palan function list (empty array when no functions defined)
-- statements\* - Top-level statement list
+- statements\* - Top-level statement list. When a top-level statement names the implicit
+  `args` (a read-only `@[+]@[]uint8` borrow, declared in the top-level scope before anything
+  else), the list starts with its header, built from `main`'s parameters and never freed: a
+  `var-decl` of `args` (`pntr(varr(pntr(uint8) mutable false))` with `"mutable": false`) whose
+  `init` is a 24-byte `frame-alloc`, then `field-assign`s with `"var":"args"` of `__argc` at
+  offsets 0 (len) and 8 (cap) and `__argv` at 16 (data). The varr shape and builtins of that
+  type are registered then too; a module that does not name `args` has neither.
 - libs\* - Link library name list collected from `link` clauses on `cinclude` statements
   anywhere in this source file, including block-scoped and function-body-scoped ones
   (sorted, deduplicated). Empty array when none. Each module's sa.json carries only its
@@ -158,7 +168,8 @@ Note: cinclude statements are not present in function bodies (they are top-level
 Every Palan function links by a symbol SA builds from its module and its parameter types, so
 functions of one name (overloads, or the same function exported by two modules) have distinct
 symbols. It is the `name` of the function, of a `call` resolved to it and of a `func-ref` to it.
-`_start`, C functions and syscalls are not renamed.
+C functions and syscalls are not renamed. A module's top-level function is `<module>..main`, which
+no other function's symbol can be: theirs always end in a parameter list or `.v`.
 
 `<module>..<name>.<param>.<param>...` — `<name>.v` when there are no parameters.
 
@@ -346,11 +357,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - The variable is registered in scope with `pntr` type
   - The `size-expr` must evaluate to an integer type; a float size is a compile error
 
-  **`[n]@![]T` (array of pointer slots):** A `var-decl` with `arr` type-kind where `base-type` is
-  `pntr(mutable=true, base=arr(T))` is also transformed:
+  **`[n]@![]T`, `[n]@[]T` (array of pointer slots):** A `var-decl` with `arr` type-kind where
+  `base-type` is `pntr(mutable, base=arr(T))` is also transformed:
   - `var-type`: changed to `pntr(pntr(T, mutable))` (pointer to pointer); like `[n]@T`/`[n]@!T`,
     the element carries the slot's permission, so a slot is a borrow and `->` into it stores the
-    pointer
+    pointer. A read-only slot to rows (`[n]@[]$[m]T`) has `"mutable": false` on each row level
+    too, as a read-only `@[k][m]T` does
   - `init`: `malloc(size-expr * 8)` (each slot is a pointer; elem-size is always 8)
   - The outer array is freed at scope exit. What the slots point to is not freed; a slot cannot
     take ownership with `->>` (E_TransferToBorrowSlot).
@@ -393,8 +405,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     (`pntr` with `arr-size`, over a primitive, an owned struct slot, a struct laid out in place
     for `[n]$U`, or an owned `[+]V`), with `"embedded": true` on the `varr` for `[+]$[n]U`. The
     row size must be a constant (E_UnsizedArrRowSizeNotConst). Further levels follow the same
-    rules at any depth (`[+][m][n]U`, `[+][m]$[n]U`). A pointer element (`[+]@T`, `[+][n]@T`) is
-    not supported (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key, made from
+    rules at any depth (`[+][m][n]U`, `[+][m]$[n]U`). For a pointer element (`[+]@T`, `[+]@!T`,
+    `[+]@[]T`), `pntr(T, mutable)`, the slot a `[n]@T` element is; it borrows and is laid out as
+    an `int64`, so its shape key is `varr_int64`. A row of pointers (`[+][n]@T`) is not supported
+    (E_StmtNotImplemented). Below, `T` stands for `E` and `varr_T` for the shape key, made from
     `E`'s layout.
   - `init`: `__pln_alloc_varr_T(len, cap)` (see the varr `alloc-shapes` entry): `(0, 0)` for
     `[+]T`, `(0, n)` for `[+n]T` (`n` is converted to uint64 like `[n]T`'s size), and `(n, n)`
@@ -520,7 +534,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `mutable` and none of `arr-size`, `embedded` and `unsized` is a `@T`/`@!T` pointer, never an
   array level. `@name` of an array whose size is known only at run time marks each such level
   `"unsized": true` beside its `mutable`, so it stays an array level.
-  Every size must be constant
+  Without the outer size, `@[]T` / `@![]T` becomes the element type of a `[n]@[]T` / `[n]@![]T`
+  slot, `pntr(T, mutable)` (a row keeping `mutable: false` on each level when read-only), so it
+  is the same type as `@T` / `@!T`. Every other size must be constant
   (`E_ArrBorrowSizeNotConst`) and `T` primitive, struct or a pointer to one, with neither a
   struct nor a pointer inside a `$[m]` row (`E_ArrBorrowUnsupportedElem`). A
   return type of this form stays rejected (`E_UnsupportedParamType`). At a call argument, a
@@ -550,6 +566,29 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - stmt-type\*: "while"
   - cond\*: SA-annotated condition expression (value-type present; integer or bool expected)
   - body\*: SA-annotated statement list (raw array; variables declared inside are scoped to the loop body)
+
+- **for** - not emitted; SA lowers `for copy a, i in arr { body }` to a `block` holding, in order:
+  - a `var-decl` of a hidden variable (`__for_N`) bound to `arr`, so `arr` is evaluated once.
+    An array the expression returns is owned by the block and freed when it ends; otherwise the
+    variable borrows `arr`.
+  - the `int64` index (`i`, or a hidden name when omitted or typed) initialized to 0, and a
+    hidden variable holding the length, found as `len` finds it.
+  - a `while` on `index < length` whose body is `body`, then `index + 1 -> index`; the step is
+    also inserted before each `continue` of this loop. With an index type (`for @a, T i in arr`),
+    the body first declares `i` of type `T` from a `convert` of the hidden index; `T` must be an
+    integer type (E_ForIndexNotInteger), and for an array of constant size `n`, `n - 1` must fit
+    in it (E_ForIndexTooNarrow). For `copy a`, the body next declares `a` from element `index`.
+    For `@a`/`@!a`, no variable is declared: each `a` in `body` (outside
+    nested functions) is replaced by the element `__for_N[index]` before analysis, and `... -> a`
+    becomes an `arr-assign`. The name stays declared, so `body` cannot declare it again.
+    `__for_N` is read-only for `@a` (an owned range gets a read-only `__for_ro_N` bound to it);
+    `@!a` over a read-only range is E_PtrMutabilityUpgrade.
+  The range must be an array `len` accepts (E_ForRangeNotArray, or `len`'s own errors). The
+  index is read-only (E_AssignToForIndex). In `body`, an operation that frees, replaces or
+  resizes the range or anything containing it is E_ChangeForRange: `->>` into or out of it,
+  `->` into it (allowed into a fixed-length range), and a writable borrow of it (`@!v`,
+  method-form push/pop/resize, or a `@!` borrow passed on or bound as is). Indices on the path
+  are not compared, so any index counts as the iterated one.
 
 - **break** - exit the innermost while loop
   - stmt-type\*: "break"
@@ -886,7 +925,8 @@ SA-only expression kinds (not present in AST JSON):
   statement and its `release`.
 
 - frame-alloc - A block in the function's stack frame; its value is the block's address. Appears
-  only as the `init` of a stack variable's var-decl (see Stack variable declarations).
+  only as the `init` of a stack variable's var-decl (see Stack variable declarations) or of
+  `args`'s (see Root `statements`).
   - expr-type\*: "frame-alloc"
   - size\*: block size in bytes (compile-time constant)
   - align\*: block alignment in bytes (1, 2, 4, 8 or 16)
@@ -1138,7 +1178,7 @@ multiple-return declaration/assignment):
   is a candidate; if no function `f` has one, it is E_MethodNeedsMutableFirstParam.
 - `recv` is `addr-of` (`@!aa`) of the object, so the object must be addressable as for `@!` (a
   call returning a struct is, as a call argument). An
-  object that is already a borrow (a `@T`/`@!T`/`@[n]T`/`@![n]T` variable, parameter or field) is
+  object that is already a borrow (a `@T`/`@!T`/`@[n]T`/`@![n]T`/`@[+]T`/`@![+]T` variable, parameter or field) is
   passed as is; a read-only one is then rejected by the usual permission check.
 
 sa.json carries only the resulting `call`; `member-call` is never emitted. A method-form call
@@ -1155,7 +1195,8 @@ not fit it. With several, each argument is analyzed once without a parameter typ
 
 - A candidate fits when the argument count matches (at least the fixed parameters for a C
   variadic function) and every argument passes the parameter's checks; an argument matches
-  exactly when its type is the parameter's, including a pointer's `mutable`.
+  exactly when its type is the parameter's, including `mutable` on every pointer level (through
+  pointers and a `[+]T`'s elements).
 - An argument whose type comes only from its parameter is matched by what it can become: an
   untyped literal (or one the parameter's type reaches through `-`, `~`, a shift or arithmetic)
   fits any primitive and matches exactly its default type (int64, uint64, flo64; for an
@@ -1164,7 +1205,8 @@ not fit it. With several, each argument is analyzed once without a parameter typ
   parameter of one of its functions' types. It is analyzed with the chosen parameter's type.
 - A chained value fits as `@v` where the parameter would take it so, and as `v` otherwise.
 - The one fitting candidate is chosen; of several, the one every argument matches exactly
-  (and no variadic argument is passed). Otherwise E_NoMatchingFunc (the argument types and
+  (and no variadic argument is passed), or else the one every argument matches exactly but for
+  a writable outermost pointer given to a read-only parameter. Otherwise E_NoMatchingFunc (the argument types and
   the candidates) or E_AmbiguousCall (the candidates that fit).
 - Receiving several values (`(a, b) = f(x)`) considers only the candidates returning that many,
   which must agree on what they return, since the receivers are declared before the arguments
@@ -1413,6 +1455,12 @@ the failing one are discarded, and no partial layout is kept:
   `size-expr` is a literal (a `T name[];` field has no fixed size and is rejected) and its leaf
   is a pointer, a primitive with a known size, or an already-registered complete struct other
   than the enclosing one.
+- A field with `bits` (a C bit-field) must have a folded width (a `null` one is rejected).
+  It is laid out as GCC does on x86-64: it moves to the next unit of its declared type only when
+  it would straddle one (packed: never), a zero-width one moves to the next unit even when
+  packed, and only a named, unpacked one raises the struct's alignment. A named one is a field
+  covering the bytes its bits occupy, but reading, writing or taking its address, or giving it
+  in a struct literal, is E_UnsupportedCFieldType; an unnamed one only takes its place.
 
 ### C ABI layout
 

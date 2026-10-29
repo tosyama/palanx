@@ -41,6 +41,12 @@ TEST(build_mgr, cinclude_typedef_size_t) {
 	ASSERT_EQ(output, "5\n");
 }
 
+TEST(build_mgr, cinclude_state) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/368_cinclude_state.pa");
+	ASSERT_EQ(output, "8080 16\n");
+}
+
 TEST(build_mgr, null_strchr_notfound) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/105_null_strchr_notfound.pa");
@@ -501,6 +507,19 @@ TEST(build_mgr, c_packed_aligned) {
 		"fa 4 5 12\n"
 		"tpk 6 7\n"
 		"outer 8 9 10 11 13\n");
+}
+
+TEST(build_mgr, c_bit_field) {
+	// Palan writes and reads the fields around C's bit-fields, which C sets;
+	// Bs's bit-field shares an eightbyte with a float, passed by value.
+	cleanTestEnv();
+	ASSERT_EQ(runWithCObj("356_c_bitfield"),
+		"Bf 12 4 8, Bp 7 6, Bl 16 8, Bs 12 8\n"
+		"bf 1 9 33 2 -2 3\n"
+		"1 2 3 / 4 8\n"
+		"bp 4 0 0 5\n6\n"
+		"bl 0 0 6\n8\n"
+		"bs 1.50 0 2.50\n1.25 3.50\nbs 1.25 7 3.50\n");
 }
 
 TEST(build_mgr, epoll_packed) {

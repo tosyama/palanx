@@ -1,0 +1,2 @@
+[+]int32 v;
+for copy a, int32 i in v { 0 -> i; }

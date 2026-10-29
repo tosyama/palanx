@@ -6,26 +6,32 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-10-20)
-version: 0.2.1 — variable-length arrays
+### 2.1 Iteration Goal (2026-10-26)
+version: 0.2.2 — bit-field layout, command-line arguments, `for` loop
 
-Add `[+]T` / `[+n]T`, an array that keeps its length and capacity at run time and can grow and
-shrink. It is the base for receiving command-line arguments, a `for` loop that cannot index out
-of range, and a string type.
+- Bit-fields: c2ast reads C bit-fields, and SA lays out structs that contain them by the x86-64
+  C rules, so headers such as `netinet/tcp.h` (and `uv.h` through it) can be included. Accessing
+  a bit-field member from Palan is an error. `__extension__` before a struct member is accepted.
+  Each `cinclude` also starts from the typedefs, structs and enums of the earlier ones, not just
+  their macros, so a header whose dependencies an earlier `cinclude` already read
+  (`cinclude <stdio.h>; cinclude <uv.h>;`) can still size their types.
+- Command-line arguments: the top-level statements of a module see an implicit read-only
+  `args`, a borrowed `[+]` array of borrowed C strings (`@[+]@[]uint8`) built from argc/argv.
+  The entry module is chosen at link time, so a module compiles the same whether it is the entry
+  or imported, and its top level can be run on its own as its tests or demo.
+  `palan source.pa arg...` passes everything after the source to the program it runs, and
+  builds that program in the working directory instead of the current one.
+  `[+]@T`/`[+]@!T` (variable-length arrays of pointer slots) are added for it.
+- `for copy a in arr { }` and `for copy a, i in arr { }` loop over every array whose length `len`
+  can give; `i` is the index, `int64` unless a type is written (`for @a, int32 i in arr`).
+  `copy a` is a copy; `@a` and `@!a` are the element itself, read-only and writable
+  (`0 -> a` writes `arr[i]`). A bare `a` is a compile error, so a copy is
+  always chosen explicitly. Changing the length of `arr` inside the loop (`push`, `pop`, `resize`, replacing it
+  with `->`/`->>`, or passing `@!arr`) is an error.
 
-- Representation: the variable is one word pointing to a heap header `{len, cap, data}`; growing
-  or shrinking reallocates only `data`, so the variable and any borrow of it stay valid.
-- Elements: primitives, structs (`[+]T` owned, `[+]$T` contiguous), and nested `[+][+]T`. Fixed
-  levels, `[+]` levels and `$` combine in any order and depth (`[+][3][4]T`, `[2][3][+]T`,
-  `[+]$[3]$[4]T`); only `$` on an element that owns storage (`[n]$[+]T`, `[+]$O`) is rejected
-  for now. Also usable as borrows (`@[+]T`/`@![+]T`), parameters, return values and struct fields.
-- Operations `len`, `push`, `resize` and `pop` are built-in functions, resolved through function
-  overloading, which this iteration adds for Palan functions in general.
-- A method-form call after `->` (`x -> v.push()`) is added as a general feature.
-
-Out of scope: `[#]T`, and `->>` into a call (a parameter that takes ownership); an owned element
-is moved in with `v.resize(n + 1); p ->> v[n];`.
-The ticket list is kept in `localtickets/iteration-2026-10-20-v0210-varray.md`.
+Out of scope: reading or writing bit-field members; `len` and `for` over an array whose size is
+known only at run time; detecting a length change made through another borrow of the array.
+The ticket list is kept in `localtickets/iteration-2026-10-26-v0220-bitfield-args-for.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
@@ -36,10 +42,11 @@ Responsibility:
   The tool is responsible for orchestrating the compilation process.
 
 ```
-Usage: palan [options] <source file>
+Usage: palan [options] <source file> [program arguments...]
  options:
    -o, --output <file path> Specify output file path. If not specified, the binary is
-                            executed immediately after linking and then removed.
+                            linked in the working directory and run with the program
+                            arguments.
    -c, --clean              Remove all cached work files (the whole working directory)
    -h, --help               Display help information
    -v, --version            Display version information
@@ -48,12 +55,18 @@ Usage: palan [options] <source file>
 Design:
  The build manager generates the AST of the given source file by invoking palan-gen-ast, then
  follows its `import`s of other Palan source files and generates their ASTs in turn.
- For each module it then invokes palan-sa and palan-codegen (`--no-entry` for every module but
- the given one) and assembles the result with `as`. The allocators the modules need are generated
- as one more module (see 3.6), and all object files are linked with `ld` to create the final
- executable (default: `a.out`).
- If `-o` is not specified, the resulting `a.out` is executed immediately after linking and then removed.
- This allows palan to be used as a script runner without leaving build artifacts.
+ For each module it then invokes palan-sa and palan-codegen and assembles the result with `as`;
+ a module compiles the same whichever module is the entry. The allocators the modules need are
+ generated as one more module (see 3.6). The entry is chosen only at link time: `palan-codegen
+ --entry` emits a `_start` calling the given module's top-level function, and all object files are
+ linked with `ld` to create the final executable.
+ Options are read only before the source file; every argument after it goes to the program.
+ With `-o`, the executable is written to the given path and not run, and an argument after the
+ source file is an error. Without it, the executable is linked as `<source file path>.out` in the
+ working directory (see 5.1) and run with those arguments, and left there like the other work
+ files, which `--clean` removes. Only `-o` writes into the current directory, so palan can be used
+ as a script runner without leaving build artifacts, without touching an `a.out` already there,
+ and with several sources in one directory run at the same time.
  Before linking, the build manager unions the `libs` and `objs` arrays (see SASpec.md's Root)
  across every module's sa.json, in the same pass it already makes over all modules to collect
  `alloc-shapes`. It appends `-l<name>` to the `ld` invocation for each library named by a `link`
@@ -80,9 +93,10 @@ Design:
  When a `cinclude` statement is encountered, the AST generator invokes palan-c2ast internally via popen()
  to translate the C header into AST nodes, and embeds the resulting function declarations directly
  into the cinclude statement node of the ast.json output.
- It passes each run the `macro-state` the previous run output (`--macros`, through a temporary file),
- so every header is preprocessed with the macros in effect at its `cinclude`, in source order,
- as if all of a file's cincluded headers were included into one C translation unit.
+ It passes each run the `c-state` the previous run output (`--state`, through a temporary file),
+ so every header is preprocessed and parsed with the macros, typedefs, struct/union tags and
+ enums in effect at its `cinclude`, in source order, as if all of a file's cincluded headers were
+ included into one C translation unit.
  To parse the Palan source code, the AST generator uses a parser generated by Flex and Bison.
  The parser is a GLR parser (Bison's `glr2.cc`), which passes `$N` to grammar actions as `const`
  references because split stacks may share a value, so actions never move from or modify `$N`.
@@ -103,7 +117,7 @@ Usage: palan-c2ast [options] <C header file>
    -c, --curdir             Specify current directory for relative includes
    -s, --sysheader          Specify when input C header file is a system header
    -i, --indent             Generate indented (pretty-printed) JSON output
-   -m, --macros <file>      Start from a macro state (a previous run's `macro-state`) instead of predefined.h
+   -S, --state <file>       Start from a previous run's `c-state` instead of predefined.h
    -v, --version            Display version information
 ```
 
@@ -114,12 +128,16 @@ Design:
  In the normal pipeline, palan-gen-ast invokes palan-c2ast and reads its stdout output directly;
  no intermediate file is produced.
  The predefined macros will be read from `./c2ast/predefined.h` in the execution directory of palan-c2ast.
- The output's top-level `macro-state` is the macro table after the header, written as `#define`
- lines (each body re-spelled token by token) plus a `#pragma palan_once_included "<path>"` line per
- file read under `#pragma once`. `--macros` loads such a file in place of predefined.h, so
- predefined macros an earlier header `#undef`ed stay undefined. Macros loaded this way are not
- exported to `ast.constants` again unless the header redefines them, and the ones the header
- `#undef`s are listed in `ast.undefined-macros`.
+ The output's top-level `c-state` is where the header leaves off, for the next run to start from:
+ `macros`, the macro table written as `#define` lines (each body re-spelled token by token) plus a
+ `#pragma palan_once_included "<path>"` line per file read under `#pragma once`; and `typedefs`,
+ `structs`, `enums` and `enumerators`, the parser's tables, including entries the AST leaves out
+ (an enum whose values can't be computed). `--state` loads it in place of predefined.h, so
+ predefined macros an earlier header `#undef`ed stay undefined, and a header whose include guard
+ skips it still has its types for `sizeof` and its enumerators for constant expressions.
+ Nothing loaded this way is exported to the AST again unless the header changes it: a redefined
+ macro, or a struct the earlier header only referenced and this one defines. The macros the
+ header `#undef`s are listed in `ast.undefined-macros`.
  The included C header files will be expanded recursively, searching for headers in the specified search paths and current directory.
  `__GNUC__` is not predefined, so headers take their non-GNU paths, but `__attribute__` is a
  keyword: `packed` and `aligned` reach the struct layout (ASTSpec.md, Struct definition model).
@@ -161,16 +179,20 @@ Responsibility:
 
 ```
 Usage: palan-codegen [options] <SA file>
+       palan-codegen -e <symbol> -o <file path>
  options:
    -o, --output <file path> Specify output assembly file path. If not specified, defaults to <source>.s.
-   -n, --no-entry           Do not export _start or define __dso_handle (for every module but the entry one)
+   -e, --entry <symbol>     Emit the program entry instead: a _start calling <symbol>, a module's
+                            top-level function, and __dso_handle
    -h, --help               Display help information
    -v, --version            Display version information
 ```
 
 Design:
  The code generator reads sa.json and emits x86-64 AT&T syntax assembly for use with `as`.
- The entry point is `_start`. The final executable is produced by the build manager,
+ A module's top-level statements are its exported function `<module>..main`, which takes argc and
+ argv. The entry point `_start` (from `--entry`) calls it with argc and argv from the initial
+ stack, then `exit(0)`. The final executable is produced by the build manager,
  which assembles the `.s` file with `as` and links with `ld` (specifying the dynamic linker
  and required libraries).
 
@@ -185,8 +207,10 @@ Design:
    (integers in rdi/rsi/rdx/..., floats in xmm0/xmm1/...; caller-saved, read immediately after call).
  - Normal Palan functions use standard frame setup (pushq %rbp / movq %rsp, %rbp / subq $N, %rsp)
    with frameSize rounded to a multiple of 16, and epilogue `leave; ret`.
- - The `_start` entry point uses `call exit` as its epilogue; `return` statements are rejected by palan-sa.
- - Symbol visibility: `_start` and `export func` functions are emitted with `.globl`. All other Palan
+ - A module's top-level function returns like any Palan function; `return` statements are
+   rejected there by palan-sa.
+ - Symbol visibility: `_start`, each module's top-level function and `export func` functions are
+   emitted with `.globl`. All other Palan
    functions are local symbols (no `.globl`), equivalent to `static` in C.
  - Symbol names: a Palan function's symbol is the `name` palan-sa gives it, built from its module,
    its name and its parameter types (`util..show.int32`; SASpec.md "Symbol names"), so overloads
@@ -198,7 +222,7 @@ Design:
 
  Palan links no crt startup objects (no crt1.o/crti.o/crtbegin.o -- the build manager
  links `ld <objs> -lc` directly), so the code generator supplies the ELF/libc glue those
- objects would otherwise provide: the entry object defines `__dso_handle` (needed by
+ objects would otherwise provide: the `--entry` object defines `__dso_handle` (needed by
  glibc's `atexit`/`at_quick_exit`/`pthread_atfork`, which forward to `__cxa_atexit`-family
  calls taking it), and every object emits `.note.GNU-stack` (otherwise `ld` marks the
  whole binary's stack executable as soon as any note-carrying libc object joins the link).
@@ -215,7 +239,7 @@ palan-sa emits only calls to these functions; it records each shape it needs in 
 shapes of all modules, deduplicates them by key (each module defining its own copy would collide
 at link time), and writes the functions as Palan source `__allocators.pa` in the working directory
 of the given source file, with `__allocators.h` declaring the C functions it calls. It is compiled
-as one more module (`--no-entry`). Each struct appears there as an exported type declaring only
+as one more module. Each struct appears there as an exported type declaring only
 its owned fields, at their offsets, with the rest of its bytes as padding, so a C struct or a type
 of another module needs no Palan declaration of its other fields. A struct owning nothing is
 only bytes to allocate, copy and free, so an element or owned field of one is declared as
@@ -314,7 +338,8 @@ related output files will be stored under `~/.palan/work/home/user/project/`.
   - Output assembly file: `<source file path>.s`
     e.g., for source file `main.pa`, the output assembly file will be `main.pa.s`
 - palan (build manager):
-  - Assembles `.s` files with `as` and links with `ld` to produce the final executable (default: `a.out`).
+  - Assembles `.s` files with `as` and links with `ld` to produce the final executable: the `-o`
+    path, or without `-o` `<source file path>.out` in the working directory (e.g. `main.pa.out`).
 
 ### 5.3 Error Output Format
 

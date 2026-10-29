@@ -129,6 +129,67 @@ void PlnSemanticAnalyzer::addOwnedScopeVar(const string& name, json release)
 	arrayScopeVars_.back().push_back({name, move(release), true});
 }
 
+// `@[+]@[]uint8` as its owner would hold it; `args` borrows it read-only.
+static json argsStorageType()
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json elem = {{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","prim"},{"type-name","uint8"}}}};
+	return varrPntrType(elem, false);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// Whether a top-level statement names `args`, which no declaration there can
+// shadow. A function's body has a scope of its own, so it is not looked into.
+static bool namesArgs(const json& node)
+{
+	if (node.is_object()) {
+		if ((node.value("expr-type","") == "id" || node.value("stmt-type","") == "assign")
+		    && node.value("name","") == "args")
+			return true;
+		for (auto& [k, v] : node.items())
+			if (k != "functions" && namesArgs(v)) return true;
+	} else if (node.is_array()) {
+		for (auto& v : node)
+			if (namesArgs(v)) return true;
+	}
+	return false;
+}
+
+// Its builtins and shape are registered only when the top level names it, so
+// a module that does not leaves its output as it was. A call looks its
+// callee up by name before reading its arguments, so this comes first.
+void PlnSemanticAnalyzer::noteImplicitArgs(const json& stmts)
+{
+	if (!namesArgs(stmts)) return;
+	argsUsed_ = true;
+	recordVarrShape(argsStorageType());
+}
+
+// The header lives in the top-level function's frame and is never freed.
+json PlnSemanticAnalyzer::implicitArgsDecl() const
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	const json& vt = *findVar("args");
+	const json& params = sa["main"]["parameters"];
+	auto param = [&](size_t i) {
+		const json& t = params[i]["var-type"];
+		return json{{"expr-type","id"},{"name",params[i]["name"]},{"var-type",t},{"value-type",t}};
+	};
+	json data = {{"type-kind","pntr"},{"base-type",vt["base-type"]["base-type"]}};
+	auto store = [&](int offset, const json& type, json value) {
+		return json{{"stmt-type","field-assign"},{"var","args"},{"offset",offset},
+		            {"value-type",type},{"value",move(value)}};
+	};
+	json init = {{"expr-type","frame-alloc"},{"size",24},{"align",8},{"value-type",vt}};
+	return json::array({
+		{{"stmt-type","var-decl"},{"vars",json::array({{{"name","args"},{"var-type",vt},{"init",move(init)}}})}},
+		store(0, params[0]["var-type"], param(0)),
+		store(8, params[0]["var-type"], param(0)),
+		store(16, data, param(1)),
+	});
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 void PlnSemanticAnalyzer::registerCFunc(const string& name, const json& def)
 {
 	cFuncScopes.back()[name] = def;  // shadow allowed
@@ -156,7 +217,18 @@ void PlnSemanticAnalyzer::undefinedNameError(const json& at, const json& ref, Pl
 	PlnSaMessageCode code = macro == "function-like" ? E_CMacroFuncLike
 	                      : macro == "not-constant" ? E_CMacroNotConstant
 	                      : undefinedCode;
-	cerr << locPrefix(at) << PlnSaMessage::getMessage(code, ref["name"].get<string>()) << endl;
+	string name = ref["name"].get<string>();
+	if (code == E_UndefinedVariable) {
+		vector<string> spellings = enumeratorSpellings(name);
+		if (!spellings.empty()) {
+			string list;
+			for (size_t i = 0; i < spellings.size(); i++)
+				list += (i == 0 ? "" : i + 1 == spellings.size() ? " or " : ", ") + ("'" + spellings[i] + "'");
+			cerr << locPrefix(at) << PlnSaMessage::getMessage(E_UnqualifiedEnumerator, name, list) << endl;
+			exit(1);
+		}
+	}
+	cerr << locPrefix(at) << PlnSaMessage::getMessage(code, name) << endl;
 	exit(1);
 }
 
@@ -579,6 +651,13 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
 	symbolScope_  = moduleSymbol(moduleId_);
 	sa["original"]      = ast["original"];
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json u8 = {{"type-kind","prim"},{"type-name","uint8"}};
+	sa["main"] = {{"name", symbolScope_ + "..main"}, {"parameters", {
+		{{"name","__argc"}, {"var-type", {{"type-kind","prim"},{"type-name","int64"}}}},
+		{{"name","__argv"}, {"var-type", {{"type-kind","pntr"},{"base-type", {{"type-kind","pntr"},{"base-type",u8}}}}}},
+	}}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
@@ -587,7 +666,10 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	program_->modules[moduleId_] = this;
 	moduleAstRoot_ = &ast;
 	enterScope();
-}
+	json argsType = argsStorageType();
+	argsType["mutable"] = false;
+	declareVar("args", argsType);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // Resolve every top-level type and const declaration, and the types
 // top-level imports bring in, so function signatures pre-registered in
@@ -649,7 +731,7 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 		string name = stmt["name"].get<string>();
 		bool localType = (t == "struct-def" || t == "enum-def") && !stmt.value("export", false);
 		bool clash = topDecls_.at(name).stmt != &stmt || isWrittenNameTaken(name);
-		if (t == "const-decl") clash = clash || vars.count(name);
+		if (t == "const-decl") clash = clash || vars.count(name) || findVar(name);
 		if (clash) {
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(
 				t == "const-decl" ? E_DuplicateConstDecl : E_DuplicateTypeName, name) << endl;
@@ -791,8 +873,10 @@ void PlnSemanticAnalyzer::whenSettled(function<void()> f)
 void PlnSemanticAnalyzer::analysis(const json &ast)
 {
 	beginModule(ast);
-	if (ast["ast"].contains("statements"))
+	if (ast["ast"].contains("statements")) {
 		prescanTypes(ast["ast"]["statements"]);
+		noteImplicitArgs(ast["ast"]["statements"]);
+	}
 	// 1. Pre-register Palan functions so calls can resolve them
 	if (ast["ast"].contains("functions"))
 		for (auto& f : ast["ast"]["functions"])
@@ -800,6 +884,11 @@ void PlnSemanticAnalyzer::analysis(const json &ast)
 	// 2. Process top-level statements (cinclude/import registered here,
 	//    visible in Palan function bodies processed next).
 	sa["statements"] = sa_statements(ast["ast"]["statements"]);
+	if (argsUsed_) {
+		json stmts = implicitArgsDecl();
+		for (auto& s : sa["statements"]) stmts.push_back(move(s));
+		sa["statements"] = move(stmts);
+	}
 	if (pendingAliases_)
 		resolvePending(sa["statements"]);
 	// 3. Process each function body

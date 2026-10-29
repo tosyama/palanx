@@ -2,6 +2,7 @@
     "alloc-shapes": [],
     "functions": [],
     "original": "062_addr_of_dst_stack_spill.pa",
+    "main": {"name": "_062_addr_of_dst_stack_spill..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
     "statements": [
         {"stmt-type": "var-decl", "vars": [{"name": "a", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},
         {"stmt-type": "var-decl", "vars": [{"name": "b", "var-type": {"type-kind": "prim", "type-name": "int64"}}]},

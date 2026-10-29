@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+cinclude <netinet/in.h>;
+
+// netinet/in.h's dependencies were read by stdio.h, but sockaddr_in can still be sized.
+sockaddr_in addr;
+8080 -> addr.sin_port;
+printf("%d %d\n", addr.sin_port, sizeof(sockaddr_in));

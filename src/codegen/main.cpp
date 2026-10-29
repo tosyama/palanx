@@ -25,15 +25,15 @@ int main(int argc, char* argv[])
 		{ "help",     no_argument,       NULL, 'h' },
 		{ "version",  no_argument,       NULL, 'v' },
 		{ "output",   required_argument, NULL, 'o' },
-		{ "no-entry", no_argument,       NULL, 'n' },
+		{ "entry",    required_argument, NULL, 'e' },
 		{ 0 }
 	};
 
 	int opt, option_index = 0;
 	char *output_file = NULL;
-	bool no_entry = false;
+	char *entry_symbol = NULL;
 
-	while (0 < (opt = getopt_long(argc, argv, "hvo:n", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "hvo:e:", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
 				cout << PlnCodegenMessage::getMessage(M_Help) << endl;
@@ -44,12 +44,26 @@ int main(int argc, char* argv[])
 			case 'o':
 				output_file = optarg;
 				break;
-			case 'n':
-				no_entry = true;
+			case 'e':
+				entry_symbol = optarg;
 				break;
 			default:
 				break;
 		}
+	}
+
+	if (entry_symbol) {
+		if (argc != optind || !output_file) {
+			cerr << "Usage: palan-codegen -e <symbol> -o <file>" << endl;
+			return 1;
+		}
+		ofstream asmfile(output_file);
+		if (!asmfile) {
+			cerr << "palan-codegen: Could not open output file '" << output_file << "'." << endl;
+			return 1;
+		}
+		PlnX86CodeGen(asmfile).emitEntry(entry_symbol);
+		return 0;
 	}
 
 	if ((argc - optind) != 1) {
@@ -88,7 +102,7 @@ int main(int argc, char* argv[])
 	Module module = deserialize(sa);
 
 	PlnVCodeGen vgen;
-	VProg vprog = vgen.generate(module, no_entry);
+	VProg vprog = vgen.generate(module);
 
 	vector<RegAllocResult> allocs;
 	allocs.reserve(vprog.funcs.size());

@@ -46,7 +46,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 5. No CRT Startup Objects Are Linked — `palan-codegen` Supplies ELF/libc Glue Itself
 
-**Summary:** The build manager links a binary with a bare `ld <objs> -lc [-l<lib>...]` (`src/build-mgr/main.cpp`; the `-l<lib>` flags come from `link` clauses on `cinclude`, v0.1.31), never crt1.o/crti.o/crtbegin.o, and `palan-codegen` emits `_start` itself. This works for ordinary programs, but v0.1.30's `atexit` support surfaced two gaps those missing CRT objects would otherwise have closed: `__dso_handle` was undefined (glibc's `atexit` forwards to `__cxa_atexit(func, arg, __dso_handle)`), and `.note.GNU-stack` was never emitted (so linking any note-carrying libc object made `ld` mark the whole binary's stack executable, `PT_GNU_STACK` RWE, with a linker warning). Both are now patched over by `PlnX86CodeGen::emitElfCrtGlue()`, which emits `__dso_handle` on the entry object and `.note.GNU-stack` unconditionally on every object (see SpecAndDesign.md §3.5). This closes the two gaps v0.1.30 actually hit, but a real CRT strategy — linking via crtbegin/crtend, PIE support, or driving the link through `cc` instead of bare `ld` — remains undesigned; the next libc-glue requirement this same root cause produces will need one. To be revisited together with the design for receiving command-line arguments, since switching to a C `main` linked through `cc` changes the program's entry point.
+**Summary:** The build manager links a binary with a bare `ld <objs> -lc [-l<lib>...]` (`src/build-mgr/main.cpp`; the `-l<lib>` flags come from `link` clauses on `cinclude`, v0.1.31), never crt1.o/crti.o/crtbegin.o, and `palan-codegen --entry` emits `_start` itself. This works for ordinary programs, but v0.1.30's `atexit` support surfaced two gaps those missing CRT objects would otherwise have closed: `__dso_handle` was undefined (glibc's `atexit` forwards to `__cxa_atexit(func, arg, __dso_handle)`), and `.note.GNU-stack` was never emitted (so linking any note-carrying libc object made `ld` mark the whole binary's stack executable, `PT_GNU_STACK` RWE, with a linker warning). Both are now patched over by `PlnX86CodeGen`, which emits `__dso_handle` on the entry object and `.note.GNU-stack` unconditionally on every object (see SpecAndDesign.md §3.5). This closes the two gaps v0.1.30 actually hit, but a real CRT strategy — linking via crtbegin/crtend, PIE support, or driving the link through `cc` instead of bare `ld` — remains undesigned; the next libc-glue requirement this same root cause produces will need one. Since v0.2.2 the entry object holds only `_start`, which reads argc/argv from the initial stack and calls the entry module's top-level function `<module>..main(argc, argv)`; switching to a C `main` linked through `cc` would replace just that object with a `main` making the same call.
 
 ---
 
@@ -76,7 +76,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 10. A Header Read Inside a Block Is Skipped by a Later `cinclude` Outside It
 
-**Summary:** Each `cinclude` is preprocessed with the macros every earlier `cinclude` in the file left defined, in source order, so a header an earlier `cinclude` already read is skipped by its include guard. Its declarations come from that earlier `cinclude`, but C functions are visible only in the `cinclude`'s scope. When the earlier one is inside a block, the functions are not visible after the block: `func f() { cinclude <stdio.h>; ... }` followed by a top-level `cinclude <stdio.h>; printf("x\n");` reports `Undefined function 'printf'`. Fixing this needs either the macro state to follow block scope or SA to register the skipped declarations for the later `cinclude` as well.
+**Summary:** Each `cinclude` is preprocessed and parsed with the macros and types every earlier `cinclude` in the file left defined, in source order, so a header an earlier `cinclude` already read is skipped by its include guard. Its declarations come from that earlier `cinclude`, but C functions are visible only in the `cinclude`'s scope. When the earlier one is inside a block, the functions are not visible after the block: `func f() { cinclude <stdio.h>; ... }` followed by a top-level `cinclude <stdio.h>; printf("x\n");` reports `Undefined function 'printf'`. Fixing this needs either the macro state to follow block scope or SA to register the skipped declarations for the later `cinclude` as well.
 
 
 ---
@@ -89,16 +89,15 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 12. glibc Headers c2ast Cannot Read
 
-**Summary:** Of the 242 public headers in libc6-dev (excluding `bits/` and `gnu/`), c2ast reads 200 (v0.2.0). 4 of the rest are not meant to be read (`regexp.h`, `sys/elf.h` and `sys/vm86.h` stop with `#error`; `finclude/math-vector-fortran.h` is not C). The other 38 fail on these constructs, each also failing every header that includes the one named:
-- (a) Bit-fields — `a.out.h`, `arpa/nameser_compat.h` (`arpa/nameser.h`, `resolv.h`), `fenv.h`, `ieee754.h`, `netinet/ip.h` (`netinet/ip_icmp.h`), `netinet/tcp.h`, `obstack.h`, `printf.h`, `regex.h` (`re_comp.h`), `scsi/sg.h`, `sys/mtio.h`, `sys/timex.h`.
-- (b) `restrict` in an unnamed parameter or inside array brackets (`const char *restrict)`, `p[restrict]`) — `glob.h`, `aio.h`, `spawn.h`. The non-GNU path defines `__restrict` as `restrict`; c2ast accepts `__restrict` in the same positions.
+**Summary:** Of the 242 public headers in libc6-dev (excluding `bits/` and `gnu/`), c2ast reads 214 (v0.2.2). 4 of the rest are not meant to be read (`regexp.h`, `sys/elf.h` and `sys/vm86.h` stop with `#error`; `finclude/math-vector-fortran.h` is not C). The other 24 fail on these constructs, each also failing every header that includes the one named:
+- (a) A qualifier after the base type (`char const *`) — `resolv.h`.
+- (b) `restrict` in an unnamed parameter or inside array brackets (`const char *restrict)`, `p[restrict]`) — `glob.h`, `aio.h`, `regex.h` (`re_comp.h`), `spawn.h`. The non-GNU path defines `__restrict` as `restrict`; c2ast accepts `__restrict` in the same positions.
 - (c) `__signed__` — `asm-generic/int-ll64.h`, reached from `net/ethernet.h`, `net/if_ppp.h`, `net/ppp_defs.h`, `netatalk/at.h`, `netinet/ether.h`, `netinet/if_ether.h`, `netinet/if_fddi.h`, `nfs/nfs.h`, `sys/fanotify.h`, `sys/prctl.h`, `sys/quota.h`, `sys/sysinfo.h`. Linux kernel headers use GNU keywords whether or not `__GNUC__` is defined.
 - (d) `__has_include` in `#if` — `sys/mount.h`, `sys/rseq.h`.
-- (e) `__extension__` before a struct member — `sys/user.h`.
-- (f) `_Complex` — `complex.h`.
-- (g) `#include` inside an enum body — `stab.h`.
-- (h) A `static __inline__` function definition — `sys/platform/x86.h`.
-- (i) `#error` for non-GNU compilers — `tgmath.h`. Its type-generic macros are function-like and would not be usable from Palan anyway (#2).
+- (e) `_Complex` — `complex.h`.
+- (f) `#include` inside an enum body — `stab.h`.
+- (g) A `static __inline__` function definition — `sys/platform/x86.h`.
+- (h) `#error` for non-GNU compilers — `tgmath.h`. Its type-generic macros are function-like and would not be usable from Palan anyway (#2).
 
 ---
 
@@ -152,10 +151,28 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 21. Variable-Length Arrays of Pointer Slots
 
-**Summary:** `[+]@T`/`[+]@!T` (a variable-length array of borrowed pointers) and `[+][n]@T` (rows of them) are not supported. Neither is a `[][+]T` parameter, which would need each element's header to be passed rather than its data; `@[n][+]T` or `@[+][+]T` borrows such an array instead.
+**Summary:** `[+][n]@T` (a variable-length array of rows of borrowed pointers) is not supported; `[+]@T`/`[+]@!T` are (v0.2.2). Neither is a `[][+]T` parameter, which would need each element's header to be passed rather than its data; `@[n][+]T` or `@[+][+]T` borrows such an array instead.
 
 ---
 
 ## 22. A Row Is Pushed with `@`, a Struct Without
 
 **Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which borrows a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal but copy it twice, unless the parameter's storage could be handed over (see #17). Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
+
+---
+
+## 23. C Bit-Fields Cannot Be Accessed
+
+**Summary:** A struct from a C header that has bit-fields gets the same layout as in C (v0.2.2), but a bit-field member cannot be read, written, have its address taken or be given in a struct literal (E_UnsupportedCFieldType). Accessing one needs loads and stores that shift and mask within the storage unit, which codegen does not have.
+
+---
+
+## 24. A `for` Loop Does Not Track Other Names for Its Array
+
+**Summary:** A `for` loop holds its array's storage and length until it ends, so its body may not change the array's length or replace it (v0.2.2). The check follows only the name the loop was given: a borrow made before the loop (`@![+]int64 q = @!v;` and then `q.push(1)` in `for copy a in v { }`) or a pointer stored elsewhere changes the array unnoticed, and the loop then reads freed or moved elements. It is conservative the other way: indices on the path are not compared, so in `for copy a in vv[0] { }` a `vv[1].push(1)` is rejected too.
+
+---
+
+## 25. c2ast Reports a Syntax Error at the Start of the Declaration
+
+**Summary:** When c2ast fails to parse a declaration, it backtracks to the declaration's first token and tries the next form, so the error it finally reports points there (often `1:1` of a line) rather than at the token that failed. Reporting the furthest token reached would need every consume helper to record it, and would change the positions in existing expected messages.

@@ -1219,3 +1219,107 @@ TEST(sa, call_arg_expected_type)
 	ASSERT_EQ(stmts[10]["body"]["args"][0]["right"]["left"]["value-type"]["type-name"], "int32");
 	ASSERT_EQ(stmts[11]["body"]["args"][0]["left"]["left"]["value-type"]["type-name"], "int32");
 }
+
+// The top level builds the header of `args` from its argc/argv only when it
+// names `args`, and the builtins come with it.
+TEST(sa, implicit_args)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/320_implicit_args.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& decl = stmts[0]["vars"][0];
+	ASSERT_EQ(decl["name"], "args");
+	ASSERT_EQ(decl["var-type"]["mutable"], false);
+	ASSERT_EQ(decl["var-type"]["base-type"]["type-kind"], "varr");
+	ASSERT_EQ(decl["var-type"]["base-type"]["base-type"]["mutable"], false);
+	ASSERT_EQ(decl["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(decl["init"]["size"], 24);
+	const pair<int, string> fields[] = {{0, "__argc"}, {8, "__argc"}, {16, "__argv"}};
+	for (int i = 0; i < 3; i++) {
+		const auto& fa = stmts[i + 1];
+		ASSERT_EQ(fa["stmt-type"], "field-assign");
+		ASSERT_EQ(fa["var"], "args");
+		ASSERT_EQ(fa["offset"], fields[i].first);
+		ASSERT_EQ(fa["value"]["name"], fields[i].second);
+	}
+	ASSERT_EQ(stmts[4]["vars"][0]["init"]["args"][0]["name"], "args");
+	ASSERT_EQ(jout["alloc-shapes"].size(), 1);
+	ASSERT_EQ(jout["alloc-shapes"][0]["shape-key"], "varr_int64");
+
+	// A function's own `args` is unrelated, and leaves the top level as it was.
+	jout = run_sa("../test/testdata/sa/321_implicit_args_unused.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["statements"].size(), 1);
+	ASSERT_EQ(jout["statements"][0]["vars"][0]["name"], "n");
+	ASSERT_TRUE(jout["alloc-shapes"].empty());
+	ASSERT_EQ(jout["functions"][0]["parameters"][0]["name"], "args");
+}
+
+// A for loop becomes a block holding the array and its length, around a while
+// that steps the index at its end and before each continue.
+TEST(sa, for_loop)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/322_for.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& b = stmts[3]["body"];
+	ASSERT_EQ(stmts[3]["stmt-type"], "block");
+	ASSERT_EQ(b.size(), 4);
+	ASSERT_EQ(b[0]["vars"][0]["init"]["name"], "v");
+	ASSERT_EQ(b[0]["vars"][0]["var-type"]["mutable"], true);
+	ASSERT_EQ(b[1]["vars"][0]["name"], "i");
+	ASSERT_EQ(b[2]["vars"][0]["init"]["expr-type"], "field-access");
+	ASSERT_EQ(b[2]["vars"][0]["init"]["offset"], 0);
+	const auto& w = b[3];
+	ASSERT_EQ(w["stmt-type"], "while");
+	ASSERT_EQ(w["cond"]["op"], "<");
+	ASSERT_EQ(w["body"][0]["vars"][0]["name"], "a");
+	ASSERT_EQ(w["body"][0]["vars"][0]["init"]["expr-type"], "arr-index");
+	const auto& cont = w["body"][1]["then"]["body"];
+	ASSERT_EQ(cont[0]["stmt-type"], "assign");
+	ASSERT_EQ(cont[0]["name"], "i");
+	ASSERT_EQ(cont[1]["stmt-type"], "continue");
+	ASSERT_EQ(w["body"].back()["stmt-type"], "assign");
+
+	// A constant-size array's length is a literal; '@!x' is the element itself.
+	const auto& c = stmts[5]["body"];
+	ASSERT_EQ(c[2]["vars"][0]["init"]["value"], "3");
+	const auto& x = c[3]["body"][0];
+	ASSERT_EQ(x["stmt-type"], "arr-assign");
+	ASSERT_EQ(x["target"]["array"]["name"], c[0]["vars"][0]["name"]);
+	ASSERT_EQ(x["target"]["index"]["name"], c[1]["vars"][0]["name"]);
+
+	// '@y' reads the range through a read-only binding.
+	const auto& d = stmts[6]["body"];
+	ASSERT_EQ(d[0]["vars"][0]["var-type"]["mutable"], false);
+	ASSERT_EQ(d[3]["body"][0]["vars"][0]["init"]["array"]["name"], d[0]["vars"][0]["name"]);
+}
+
+// A typed index is declared in each iteration from the hidden int64 counter.
+TEST(sa, for_loop_index_type)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/327_for_index_type.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& b = jout["statements"][1]["body"];
+	ASSERT_EQ(b[1]["vars"][0]["var-type"]["type-name"], "int64");
+	string counter = b[1]["vars"][0]["name"];
+	ASSERT_NE(counter, "i");
+	const auto& head = b[3]["body"][0]["vars"][0];
+	ASSERT_EQ(head["name"], "i");
+	ASSERT_EQ(head["var-type"]["type-name"], "uint8");
+	ASSERT_EQ(head["init"]["expr-type"], "convert");
+	ASSERT_EQ(head["init"]["src"]["name"], counter);
+}
+
+// Changes that leave the iterated array's storage and length alone: its
+// elements, deeper arrays, read-only borrows, a fixed-length array in place,
+// and rebinding a borrow.
+TEST(sa, for_loop_allowed_changes)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/323_for_mutation.pa");
+	ASSERT_TRUE(jout.is_object());
+}

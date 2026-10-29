@@ -1,0 +1,3 @@
+cinclude <stdio.h>;
+import "lib_entry_demo.pa";
+printf("%d\n", triple(5));

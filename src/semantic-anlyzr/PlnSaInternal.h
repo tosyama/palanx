@@ -5,6 +5,7 @@
 
 #pragma once
 #include <string>
+#include <charconv>
 #include <boost/assert.hpp>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
@@ -44,6 +45,36 @@ inline bool isIntegerPrim(const PlnType* t) {
 	auto pn = static_cast<const PrimType*>(t)->name;
 	return pn != PrimType::Name::Float32 && pn != PrimType::Name::Float64
 	    && pn != PrimType::Name::Void;
+}
+
+inline bool intLiteralFits(const string& value, PrimType::Name pn)
+{
+	bool neg = value[0] == '-';
+	const char* first = value.data() + (neg ? 1 : 0);
+	const char* last = value.data() + value.size();
+	uint64_t mag;
+	// The lexer only produces digit strings, so the only failure is overflow.
+	if (from_chars(first, last, mag).ec != errc()) return false;
+
+	int bits = 64;
+	bool isSigned = true;
+	switch (pn) {
+		case PrimType::Name::Int8:   bits = 8;  break;
+		case PrimType::Name::Int16:  bits = 16; break;
+		case PrimType::Name::Int32:  bits = 32; break;
+		case PrimType::Name::Int64:  bits = 64; break;
+		case PrimType::Name::Uint8:  bits = 8;  isSigned = false; break;
+		case PrimType::Name::Uint16: bits = 16; isSigned = false; break;
+		case PrimType::Name::Uint32: bits = 32; isSigned = false; break;
+		case PrimType::Name::Bool:   bits = 1;  isSigned = false; break;
+		default:                     bits = 64; isSigned = false; break;
+	}
+	if (isSigned) {
+		uint64_t posMax = (uint64_t(1) << (bits - 1)) - 1;
+		return mag <= (neg ? posMax + 1 : posMax);
+	}
+	if (neg) return mag == 0;
+	return bits == 64 || mag <= (uint64_t(1) << bits) - 1;
 }
 
 inline bool isBoolPrim(const PlnType* t) {
@@ -144,14 +175,6 @@ inline bool isPtrBorrow(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && !vt.contains("arr-size") && !vt.contains("unsized");
 }
-// A variable or parameter declared as a borrowed array ('@[n]T'/'@![n]T').
-// Checked on its var-type: a row reached through it also carries "mutable" but
-// is part of the borrowed storage, not a borrow of its own.
-inline bool isArrBorrowVar(const json& vt)
-{
-	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
-	    && vt.contains("arr-size");
-}
 inline bool isAggregateLit(const json& expr)
 {
 	string et = expr.value("expr-type", "");
@@ -183,6 +206,14 @@ inline bool isVarrPntr(const json& vt)
 	    && vt["base-type"].value("type-kind","") == "varr";
 }
 inline bool isVarrStorage(const json& vt) { return isVarrPntr(vt) && !vt.contains("mutable"); }
+// A variable or parameter declared as a borrowed array ('@[n]T'/'@![n]T',
+// '@[+]T'/'@![+]T'). Checked on its var-type: a row reached through it also
+// carries "mutable" but is part of the borrowed storage, not a borrow of its own.
+inline bool isArrBorrowVar(const json& vt)
+{
+	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
+	    && (vt.contains("arr-size") || isVarrPntr(vt));
+}
 // Where a `[+]T` argument passes its data instead of its header: to C, or to
 // an unsized `[]T` (whose length the callee is told some other way).
 inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
@@ -204,6 +235,12 @@ inline json varrPntrType(const json& elem, bool embedded)
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 inline bool isVarrEmbedded(const json& vt) { return vt["base-type"].value("embedded", false); }
+inline json lenLit(int64_t v)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	return {{"expr-type","lit-int"},{"value",to_string(v)},{"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
 // The header's len, which `len(@v)` reads in place of a call.
 inline json varrLen(json varr)
 {
@@ -239,6 +276,18 @@ inline bool isWritableElem(const json& saIdx) {
 inline bool isExpiringOwned(const json& v)
 {
 	return v.value("category", "") == "expiring" && isOwnedBlock(v["value-type"]);
+}
+// An owned array, row or array field named as it is: its value is a pointer to
+// its elements, so only the missing permission tells it from `@a`. A `[]T`
+// parameter is the same pointer but owns nothing, so it is told by the
+// variable having neither a known size nor ownership.
+inline bool namesArrStorage(const json& v)
+{
+	const json& vt = v["value-type"];
+	if (!isArrLevel(vt) || vt.contains("mutable") || v.value("category", "") == "expiring")
+		return false;
+	return vt.contains("arr-size") || v.value("category", "") == "owned"
+	    || v.value("expr-type", "") == "arr-index";
 }
 inline bool returnsBorrow(const json& call)
 {
@@ -606,9 +655,14 @@ inline bool arrShapeMatch(const json& from, const json& to, bool toSlotsMutable 
 // either side would free, or overwrite, what the other one owns. A 'void*'
 // on either side (NULL, a C 'void*') says nothing about the elements.
 // A '[+]T' borrow must name the same rows, laid out the same way.
+// Pointer elements follow the slots of a borrowed `[n]@T`.
 inline bool elemShapeMatch(const json& from, const json& to) {
-	if (isVarrPntr(from) && isVarrPntr(to) && isArrLevel(to["base-type"]["base-type"]))
-		return from["base-type"] == to["base-type"];
+	if (isVarrPntr(from) && isVarrPntr(to)) {
+		const json& fe = from["base-type"]["base-type"];
+		const json& te = to["base-type"]["base-type"];
+		if (isArrLevel(te)) return from["base-type"] == to["base-type"];
+		if (isPtrBorrow(te)) return isPtrBorrow(fe) && arrShapeMatch(fe, te, isWritableThrough(to));
+	}
 	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(from))
 		return true;
 	auto isVoid = [](const json& t) {
@@ -693,6 +747,13 @@ inline json withoutArrPermission(json t)
 inline bool varrCopySourceMatch(const json& from, const json& vt)
 {
 	const json& elem = vt["base-type"]["base-type"];
+	// A writable pointer slot may be copied into a read-only one, as between sized arrays.
+	if (isPtrBorrow(elem)) {
+		const json* fe = isVarrPntr(from) ? &from["base-type"]["base-type"]
+		               : isArrLevel(from) && from.contains("arr-size") && !from.value("embedded", false)
+		               ? &from["base-type"] : nullptr;
+		return fe && copyShapeMatch(*fe, elem);
+	}
 	// The layouts must agree too: `[+][n]T` and `[+]$[n]T` share an element type.
 	if (isVarrPntr(from))
 		return from["base-type"] == vt["base-type"];

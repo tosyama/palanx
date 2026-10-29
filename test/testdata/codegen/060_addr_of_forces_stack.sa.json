@@ -2,6 +2,7 @@
     "alloc-shapes": [],
     "functions": [],
     "original": "060_addr_of_forces_stack.pa",
+    "main": {"name": "_060_addr_of_forces_stack..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
     "statements": [
         {
             "stmt-type": "var-decl",

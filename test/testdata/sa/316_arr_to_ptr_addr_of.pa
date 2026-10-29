@@ -1,0 +1,19 @@
+cinclude <string.h>;
+cinclude <stdlib.h>;
+func f(@!int32 p) {}
+func g([]int32 p) {
+	f(p);
+	[1]@!int32 s;
+	p -> s[0];
+}
+[3]int32 a;
+f(@!a);
+g(a);
+memset(a, 0, 12);
+[2][3]int32 m;
+[2]@![]int32 o;
+@!m[0] -> o[0];
+malloc(12) -> o[1];
+[2]@![]int32 t;
+o[1] -> t[0];
+free(t[0]);

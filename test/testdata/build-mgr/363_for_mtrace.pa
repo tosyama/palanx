@@ -1,0 +1,36 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Point { int64 x; int64 y; };
+type Line { [+]int64 a; int64 n; };
+
+func makeArr() -> [+]int64 r
+{
+	[1, 2, 3] -> r;
+}
+
+mtrace();
+{
+	[+]Point ps = [{x: 1, y: 2}, {x: 3, y: 4}, {x: 5, y: 6}];
+	for copy p, i in ps {
+		if i == 1 { continue; }
+		if i == 2 { break; }
+		printf("(%ld,%ld)", p.x, p.y);
+	}
+	[2][+]int64 vs;
+	push(@!vs[0], 7);
+	push(@!vs[1], 8);
+	for copy v in vs { printf(" %ld", v[0]); }
+	for copy x in makeArr() { printf(" %ld", x); }
+	for copy v, i in vs {
+		if i == 0 { continue; }
+		break;
+	}
+	[2]Line ls;
+	push(@!ls[0].a, 1);
+	push(@!ls[1].a, 2);
+	for copy l, i in ls {
+		if i == 0 { continue; }
+		break;
+	}
+	printf("\n");
+}

@@ -120,7 +120,8 @@ struct CallArg {
 	json probe;
 };
 
-enum class ArgFit { None, Viable, Exact };
+// Narrowed: exact but for a writable outermost pointer given as read-only.
+enum class ArgFit { None, Viable, Narrowed, Exact };
 
 // A diagnostic decided without exiting, so a check can also just test a fit.
 struct SaDiag {
@@ -175,8 +176,19 @@ class PlnSemanticAnalyzer {
 	vector<vector<ScopeVar>> arrayScopeVars_;
 	// Stack of while-body scope indices (for break/continue cleanup)
 	vector<size_t> whileScopeStack_;
+	// What each enclosing loop runs before its next iteration; a 'continue' runs it too.
+	vector<json> loopSteps_;
+	set<string> forIndexVars_;
+	// The location each enclosing 'for' iterates over, as a path from its
+	// variable: "." + field, or "[]" for any index. Its storage and length are
+	// held for the whole loop.
+	struct PinnedRange { vector<string> path; bool resizable; bool borrow; };
+	vector<PinnedRange> pinnedRanges_;
+	enum class RangeChange { Borrow, Copy, Transfer };
 	// Counter for generating unique temporary variable names
 	int tempVarCounter_ = 0;
+	// The top level names the implicit `args`; its header is built only then.
+	bool argsUsed_ = false;
 	// Variables of the function being analyzed (the top level counts as one)
 	// whose storage a pointer has been given to, and the count of
 	// `pending-alias` statements waiting for that to be known.
@@ -266,6 +278,8 @@ class PlnSemanticAnalyzer {
 	bool        isFrameVar(const string& name) const;
 	void        removeFromArrayScope(const string& name);
 	void        addOwnedScopeVar(const string& name, json release);
+	void        noteImplicitArgs(const json& stmts);
+	json        implicitArgsDecl() const;
 
 	void        registerCFunc(const string& name, const json& def);
 	const json* findCFunc(const string& name) const;
@@ -284,7 +298,7 @@ class PlnSemanticAnalyzer {
 	Callee selectCallee(const json& locNode, const string& name, const vector<Callee>& cands,
 	                    const vector<CallArg>& args);
 	ArgFit argFit(const CallArg& arg, const json& param, size_t argIdx, bool isCFunc, const string& funcName);
-	bool   sameArgType(const json& argVT, const json& paramVT);
+	ArgFit typeFit(const json& argVT, const json& paramVT);
 	string argTypesText(const vector<CallArg>& args);
 	string calleesText(const string& name, const vector<Callee>& cands) const;
 	json   makeCall(const json& expr, const vector<Callee>& cands, const string& writtenName);
@@ -334,6 +348,8 @@ class PlnSemanticAnalyzer {
 	json foldConstExpr(const json& expr);
 	optional<ConstVal> evalConst(const json& expr);
 	optional<int64_t> constArrLen(const json& expr);
+	int64_t constArrSizeOrExit(const json& arrType, const json& locNode);
+	json arrLenOf(const json& saArr, const json& locNode);
 	json sa_expression(const json &expr, const PlnType* expectedType = nullptr);
 	// Also gives back a void call or a multi-value call, which has no value-type.
 	json sa_expr_maybe_void(const json &expr, const PlnType* expectedType = nullptr);
@@ -470,6 +486,7 @@ class PlnSemanticAnalyzer {
 	json aliasCast(const json& expr, const string& typeName);
 	json sa_expr_cast(const json& expr);
 	json resolveEnumerator(const json& expr);     // `Name.X` as a lit-int, or null for a field access
+	vector<string> enumeratorSpellings(const string& name) const;
 	int64_t typeByteSize(const json& locNode, json type);  // `sizeof(type)`, type resolved
 	void recordAllocShape(const string& structName);
 	// Scope-exit release of an owned struct variable (pntrType is pntr(struct)).
@@ -536,6 +553,8 @@ class PlnSemanticAnalyzer {
 	                 const string& funcName, json& argAst, json& body, json& release);
 	json  bindCallTemp(json saArg);
 	void  checkBorrowSource(const json& locNode, const json& saValue, const json& dstType);
+	void  checkRangeChange(const json& locNode, const json& locAst, RangeChange change);
+	void  checkRangeBorrowBinding(const json& locNode, const json& srcAst, const json& dstType);
 	void  registerTypeAliasChecked(const json& locNode, const string& aliasName, const json& resolved);
 	void  registerTypedefAliasInType(const json& locNode, json& vtype);
 	void  registerCFuncTypedefAliases(const json& locNode, json& funcEntry);
@@ -611,6 +630,8 @@ class PlnSemanticAnalyzer {
 	json sa_block(const json& stmt);
 	json sa_if_stmt(const json& stmt);
 	json sa_while_stmt(const json& stmt);
+	json sa_loop_body(const json& astBody, const json& heads, json step);
+	json sa_for_stmt(const json& stmt);
 	json sa_break_stmt(const json& stmt);
 	json sa_continue_stmt(const json& stmt);
 

@@ -26,6 +26,9 @@ TEST(build_mgr_error, wrong_number_of_args) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan");
 	ASSERT_NE(out.find("wrong number of arguments"), string::npos);
+	// With -o the program is not run, so it takes no arguments.
+	out = execTestCommand("bin/palan -o out/x ../test/testdata/build-mgr/359_args.pa x");
+	ASSERT_NE(out.find("wrong number of arguments"), string::npos);
 }
 
 TEST(build_mgr_error, could_not_open_file) {

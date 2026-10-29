@@ -178,6 +178,8 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	bool isMutable = expr.value("mutable", false);
 	const json& obj = expr["object"];
 	string obj_type = obj.value("expr-type", "");
+	if (isMutable)
+		checkRangeChange(expr, obj, RangeChange::Borrow);
 
 	// A literal operand is accepted only as a call argument (sa_lit_arg).
 	if (isAggregateLit(obj))
@@ -192,6 +194,10 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 				exit(1);
 			}
 			undefinedNameError(expr, obj, E_UndefinedVariable);
+		}
+		if (isMutable && forIndexVars_.count(name)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AssignToForIndex, name) << endl;
+			exit(1);
 		}
 		// '@' on a borrow would name its variable's slot; only a primitive
 		// pointer has a use for that (a C 'T **' out-param).
@@ -310,36 +316,6 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-static bool intLiteralFits(const string& value, PrimType::Name pn)
-{
-	bool neg = value[0] == '-';
-	const char* first = value.data() + (neg ? 1 : 0);
-	const char* last = value.data() + value.size();
-	uint64_t mag;
-	// The lexer only produces digit strings, so the only failure is overflow.
-	if (from_chars(first, last, mag).ec != errc()) return false;
-
-	int bits = 64;
-	bool isSigned = true;
-	switch (pn) {
-		case PrimType::Name::Int8:   bits = 8;  break;
-		case PrimType::Name::Int16:  bits = 16; break;
-		case PrimType::Name::Int32:  bits = 32; break;
-		case PrimType::Name::Int64:  bits = 64; break;
-		case PrimType::Name::Uint8:  bits = 8;  isSigned = false; break;
-		case PrimType::Name::Uint16: bits = 16; isSigned = false; break;
-		case PrimType::Name::Uint32: bits = 32; isSigned = false; break;
-		case PrimType::Name::Bool:   bits = 1;  isSigned = false; break;
-		default:                     bits = 64; isSigned = false; break;
-	}
-	if (isSigned) {
-		uint64_t posMax = (uint64_t(1) << (bits - 1)) - 1;
-		return mag <= (neg ? posMax + 1 : posMax);
-	}
-	if (neg) return mag == 0;
-	return bits == 64 || mag <= (uint64_t(1) << bits) - 1;
-}
-
 void PlnSemanticAnalyzer::checkIntLiteralRange(const json& lit)
 {
 	const PlnType* t = registry_.fromJson(lit["value-type"]);
@@ -407,26 +383,39 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 	return lit;
 }
 
-// `len(@a)` or `a -> len()` of an array whose size is a constant: like
-// sizeof, it needs only a's type, so an `a` with a call to evaluate is left
-// to the call's analysis.
+// `len(@a)`, `len(h)` of a borrow h, or `a -> len()` of an array whose size
+// is a constant: like sizeof, it needs only a's type, so an `a` with a call to
+// evaluate is left to the call's analysis.
 optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 {
 	auto lenCall = [&](const json& call, size_t argc) {
 		return call.value("expr-type", "") == "call" && call["name"] == "len"
 		    && call["args"].size() == argc && !findVar("len");
 	};
+	// A borrowed array variable is passed by name, as to a function's parameter.
+	auto namesArrBorrow = [&](const json& e) {
+		if (e.value("expr-type", "") != "id") return false;
+		const json* vt = findVar(e["name"].get<string>());
+		return vt && isArrBorrowVar(*vt);
+	};
 	const json* arr;
 	bool borrowed = true;
 	if (expr["expr-type"] == "call") {
 		if (!lenCall(expr, 1)) return nullopt;
 		arr = &expr["args"][0];
-		borrowed = arr->value("expr-type", "") == "addr-of";
+		borrowed = arr->value("expr-type", "") == "addr-of" || namesArrBorrow(*arr);
 	} else {
 		if (!lenCall(expr["call"], 0)) return nullopt;
 		arr = &expr["value"];
 	}
-	if (arr->value("expr-type", "") == "addr-of") arr = &(*arr)["object"];
+	if (arr->value("expr-type", "") == "addr-of") {
+		const json& addrOf = *arr;
+		arr = &addrOf["object"];
+		if (namesArrBorrow(*arr)) {
+			cerr << locPrefix(addrOf) << PlnSaMessage::getMessage(E_AddrOfBorrowed, (*arr)["name"].get<string>()) << endl;
+			exit(1);
+		}
+	}
 	if (!isLocationExpr(*arr) || hasCall(*arr)) return nullopt;
 	json vt = operandValueType(*arr);
 	if (!isArrLevel(vt)) return nullopt;
@@ -438,11 +427,24 @@ optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLenNeedsAddrOf) << endl;
 		exit(1);
 	}
-	if (!vt.contains("arr-size")) {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLenNotConst) << endl;
+	return constArrSizeOrExit(vt, expr);
+}
+
+int64_t PlnSemanticAnalyzer::constArrSizeOrExit(const json& arrType, const json& locNode)
+{
+	if (!arrType.contains("arr-size")) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrLenNotConst) << endl;
 		exit(1);
 	}
-	return vt["arr-size"].get<int64_t>();
+	return arrType["arr-size"].get<int64_t>();
+}
+
+// The length `len` gives for an array value.
+json PlnSemanticAnalyzer::arrLenOf(const json& saArr, const json& locNode)
+{
+	const json& vt = saArr["value-type"];
+	if (isVarrPntr(vt)) return varrLen(saArr);
+	return lenLit(constArrSizeOrExit(vt, locNode));
 }
 
 // Evaluates in int64, or uint64 once a 'u' operand joins, like the usual
@@ -1011,6 +1013,10 @@ void PlnSemanticAnalyzer::checkBorrowSource(const json& locNode, const json& saV
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VarrBorrowNeedsAddrOf) << endl;
 		exit(1);
 	}
+	if (isPtrBorrow(dstType) && namesArrStorage(saValue)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArrBorrowNeedsAddrOf) << endl;
+		exit(1);
+	}
 	if (!isStructBorrow(dstType) || !isStructStorage(saValue["value-type"]))
 		return;
 	if (isExpiringOwned(saValue)) {
@@ -1182,6 +1188,28 @@ json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)
 	json lit = {{"expr-type", "lit-int"}, {"value", to_string(it->second)}, {"value-type", enumType}};
 	if (expr.contains("loc")) lit["loc"] = expr["loc"];
 	return lit;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// `Name.X` for each enum with an enumerator `name`, as source can write it
+// here. An enum's own name (`V.Name` under an alias import) is preferred over
+// an alias of it, such as a C typedef of a tagged enum.
+vector<string> PlnSemanticAnalyzer::enumeratorSpellings(const string& name) const
+{
+	map<string, string> spelling;  // program-wide enum name -> written name
+	for (auto& [written, t] : typeAliases_) {
+		if (!t.contains("enum")) continue;
+		string enumName = t["enum"].get<string>();
+		if (!enumDefs_.at(enumName).values.count(name)) continue;
+		size_t dot = written.find('.');
+		bool own = declaredTypeName(written) == enumName
+		        || (dot != string::npos && written.substr(dot + 1) == enumName);
+		auto [it, isNew] = spelling.emplace(enumName, written);
+		if (!isNew && own) it->second = written;
+	}
+	vector<string> result;
+	for (auto& [enumName, written] : spelling) result.push_back(written + "." + name);
+	sort(result.begin(), result.end());
+	return result;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)

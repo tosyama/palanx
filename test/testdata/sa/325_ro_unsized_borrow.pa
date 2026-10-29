@@ -1,0 +1,7 @@
+func g(@[]uint8 who) -> uint8 { return who[0]; }
+func h(@![]int32 a) { 5 -> a[1]; }
+[2]uint8 buf;
+for copy w in args { g(w); }
+@[]uint8 x = @buf;
+[2]int32 a;
+h(@!a);

@@ -1053,7 +1053,7 @@ TEST(sa_error, lit_arg)
 {
 	const pair<string, string> cases[] = {
 		{"error_495_lit_arg_needs_at.pa", ":3:1: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name' ('@f()' or '@!f()' for a call returning it, '@[..]' or '@![..]' for a literal)."},
-		{"error_496_arr_lit_arg_needs_at.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') must be written as '@name' or '@!name' ('@[..]' or '@![..]' for a literal)."},
+		{"error_496_arr_lit_arg_needs_at.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') or a '@T'/'@!T' pointer must be written as '@name' or '@!name' ('@[..]' or '@![..]' for a literal)."},
 		{"error_497_lit_arg_count.pa", ":2:5: error: array 'a' has size 3 but its array literal has 2 elements."},
 		{"error_498_lit_arg_field_count.pa", ":3:5: error: struct 'P' has 2 fields but its literal has 1 values."},
 		{"error_499_dict_lit_arr_arg.pa", ":2:5: error: parameter 'a' of type '@[3]int32' cannot take a '{name: value}' literal: only a struct parameter can."},
@@ -1194,6 +1194,7 @@ TEST(sa_error, overload)
 	const pair<string, string> cases[] = {
 		// Both fit only by widening, and neither matches exactly.
 		{"error_703_overload_ambiguous.pa", ":4:1: error: Ambiguous function call 'f': it can mean f(int32), f(int64)."},
+		{"error_825_overload_narrowed_ambiguous.pa", ":5:1: error: Ambiguous function call 'f': it can mean f(@int32, @!int32), f(@!int32, @int32)."},
 		// A literal matches exactly only its default type, int64.
 		{"error_704_overload_literal_ambiguous.pa", ":3:1: error: Ambiguous function call 'g': it can mean g(int32), g(flo32)."},
 		{"error_705_overload_no_match.pa", ":5:1: error: No function 'f' takes (@P); there are f(int32), f(int64)."},
@@ -1216,6 +1217,104 @@ TEST(sa_error, overload)
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, implicit_args)
+{
+	const pair<string, string> cases[] = {
+		{"error_833_args_redecl.pa", ":1:1: error: Variable 'args' is already declared."},
+		{"error_834_args_redecl_block.pa", ":2:2: error: Variable 'args' is already declared."},
+		{"error_835_args_const.pa", ":1:1: error: Constant 'args' is already defined."},
+		{"error_836_args_addr_of.pa", ":1:15: error: 'args' is already a borrow ('@T'/'@[n]T'/'@[+]T'); pass it by name."},
+		{"error_837_args_resize.pa", ":1:1: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, for_loop)
+{
+	const pair<string, string> cases[] = {
+		{"error_838_for_not_array.pa", ":1:28: error: 'for' takes an array to iterate over."},
+		{"error_839_for_index_assign.pa", ":1:34: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
+		{"error_840_for_index_addr_of.pa", ":1:46: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
+		{"error_841_for_unsized.pa", ":1:35: error: 'len' takes a variable-length array or an array of constant size"},
+		{"error_842_for_runtime_size.pa", ":1:45: error: 'len' takes a variable-length array or an array of constant size"},
+		{"error_843_for_ro_write.pa", ":1:27: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_845_for_dup_name.pa", ":1:17: error: Variable 'a' is already declared."},
+		{"error_846_for_push.pa", ":1:37: error: cannot change the array a 'for' loop iterates over ('v')."},
+		{"error_847_for_copy_varr.pa", ":1:49: error: cannot change the array a 'for' loop iterates over ('v')."},
+		{"error_848_for_transfer_fixed.pa", ":1:43: error: cannot change the array a 'for' loop iterates over ('c')."},
+		{"error_849_for_transfer_source.pa", ":1:49: error: cannot change the array a 'for' loop iterates over ('v')."},
+		{"error_850_for_container_borrow.pa", ":3:30: error: cannot change the array a 'for' loop iterates over ('s.arr')."},
+		{"error_851_for_borrow_arg.pa", ":2:42: error: cannot change the array a 'for' loop iterates over ('p')."},
+		{"error_852_for_borrow_decl.pa", ":1:42: error: cannot change the array a 'for' loop iterates over ('p')."},
+		{"error_853_for_any_index.pa", ":1:39: error: cannot change the array a 'for' loop iterates over ('vv[]')."},
+		{"error_854_for_field_transfer.pa", ":2:33: error: cannot change the array a 'for' loop iterates over ('s.arr')."},
+		{"error_855_for_elem_copy.pa", ":1:51: error: cannot change the array a 'for' loop iterates over ('vv[]')."},
+		// '@a' is the element itself, written through a read-only view of the range.
+		{"error_869_for_ro_elem_write.pa", ":1:33: error: cannot write through read-only pointer '@T'"},
+		{"error_870_for_ro_elem_write_owned.pa", ":2:18: error: cannot write through read-only pointer '@T'"},
+		{"error_871_for_elem_struct_by_name.pa", ":4:17: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'"},
+		// A read-only '@row' makes the row's elements read-only too.
+		{"error_872_for_ro_row_inner_for.pa", ":2:21: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'"},
+		{"error_873_for_ro_row_write.pa", ":2:17: error: cannot write through read-only pointer '@T'"},
+		{"error_874_for_ro_row_write_borrow.pa", ":1:43: error: cannot write through read-only pointer '@T'"},
+		{"error_875_for_index_not_integer.pa", ":2:1: error: the index of a 'for' loop must be of an integer type, not 'flo64'."},
+		{"error_876_for_index_too_narrow.pa", ":2:1: error: the index type 'int8' cannot hold every index of an array of length 129."},
+		{"error_877_for_typed_index_assign.pa", ":2:28: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, ro_ptr_slot)
+{
+	const pair<string, string> cases[] = {
+		{"error_856_ro_ptr_slot_write.pa", ":4:1: error: cannot write through read-only pointer '@T'"},
+		{"error_857_ro_ptr_slot_row_write.pa", ":4:1: error: cannot write through read-only pointer '@T'"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, unqualified_enumerator)
+{
+	const pair<string, string> cases[] = {
+		// The enum's own name, not an alias of it, even one sorting first.
+		{"error_865_unqualified_enumerator.pa", ":1:11: error: Undefined variable 'Q'; write 'A.Q', 'B.Q' or 'C.Q' for the enumerator."},
+		{"error_866_unqualified_c_enumerator.pa", ":2:11: error: Undefined variable 'MODE_X'; write 'Mode.MODE_X' for the enumerator."},
+		{"error_867_unqualified_import_enumerator.pa", ":2:11: error: Undefined variable 'Red'; write 'V.Color.Red' for the enumerator."},
+		// Color is brought along by Vec only, so source can't write it here.
+		{"error_868_unqualified_hidden_enumerator.pa", ":2:11: error: Undefined variable 'Red'.\n"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_types.pa -o out/lib_sa_types.pa.ast.json");
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");

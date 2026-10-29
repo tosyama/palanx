@@ -13,14 +13,18 @@ using namespace std;
 #include "CFileInfo.h"
 
 CFileInfo::CFileInfo(string fname)
+	: CFileInfo(fname, ifstream(fname))
+{
+}
+
+CFileInfo::CFileInfo(string fname, istream&& in)
 	: fname(fname)
 {
-	ifstream infile(fname);
-	BOOST_ASSERT(!infile.fail());
+	BOOST_ASSERT(!in.fail());
 
 	// Read all lines.
 	string str;
-	while (getline(infile, str)) {
+	while (getline(in, str)) {
 		lines.push_back(str);
 	}
 

@@ -1,0 +1,51 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; };
+type Q { [+]@P ps; };
+
+func sum(@[+]@P v) -> int32 {
+	int32 s = 0;
+	int64 i = 0;
+	while i < v->len() { s + v[i].x -> s; i + 1 -> i; }
+	return s;
+}
+
+func bump(@![+]@!P v) {
+	int64 i = 0;
+	while i < v->len() { v[i].x + 100 -> v[i].x; i + 1 -> i; }
+}
+
+func keep(@[+]@!P v) -> [+]@!P { return v; }
+
+mtrace();
+{
+	P a; P b; P c;
+	1 -> a.x; 2 -> b.x; 3 -> c.x;
+	[+]@!P v;
+	v.push(@!a);
+	v.push(@!b);
+	@!c -> v[1];
+	v.push(@!b);
+	printf("%ld %d\n", v->len(), sum(@v));
+	bump(@!v);
+	printf("%d %d %d\n", a.x, b.x, c.x);
+	@!P q = v.pop();
+	printf("%d %ld\n", q.x, v->len());
+	v.resize(5);
+	@!a -> v[4];
+	[+]@P w = v;
+	printf("%ld %d %d\n", w->len(), w[1].x, w[4].x);
+	[+]@!P k = keep(@v);
+	7 -> k[1].x;
+	printf("%ld %d\n", k->len(), c.x);
+	Q s;
+	s.ps.push(@b);
+	[+][+]@P n;
+	n.resize(2);
+	n[1].push(@c);
+	printf("%d %ld %d\n", s.ps[0].x, n->len(), n[1][0].x);
+	[3]uint8 s1 = [72, 105, 0];
+	[+]@[]uint8 ss;
+	ss.push(@s1);
+	printf("%s %ld\n", ss[0], ss->len());
+}

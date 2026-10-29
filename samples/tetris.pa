@@ -1,4 +1,4 @@
-// Tetris Game
+// Tetris Game for Terminal
 cinclude <ncurses.h> link "ncursesw";
 cinclude <unistd.h>;
 cinclude <stdlib.h>;
@@ -29,13 +29,8 @@ const FLD_H = 20;
 type Field = [FLD_H][FLD_W]int32;
 Field field;
 
-{
-	int32 i = 0;
-	while i < FLD_H {
-		int32 j = 0;
-		while j < FLD_W { 0 -> field[i][j]; j + 1 -> j; }
-		i + 1 -> i;
-	}
+for @!row in field {
+	for @!c in row { 0 -> c }
 }
 
 @!WINDOW nextwin = newwin(4, 10, 1, 23);
@@ -168,37 +163,31 @@ endwin();
 
 func rotateMino(@!Mino mino, int32 K)
 {
-	int32 i = 0;
-	while i < mino->len() {
-		int32 tmp = mino[i].x;
-		K - mino[i].y -> mino[i].x; 
-		tmp -> mino[i].y;
-		i + 1 -> i;
+	for @!m in mino {
+		int32 tmp = m.x;
+		K - m.y -> m.x;
+		tmp -> m.y;
 	}
 }
 
 func fits(@Field field, @Mino mino, int32 mx, int32 my)
 	-> bool
 {
-	int32 i = 0;
-	while i < mino->len() {
-		int32 x = mino[i].x + mx;
-		int32 y = mino[i].y + my;
+	for @m in mino {
+		int32 x = m.x + mx;
+		int32 y = m.y + my;
 		if x < 0 || x >= FLD_W || y >= FLD_H { return false }
 		if y >= 0 && field[y][x] != 0 { return false }
-		i + 1 -> i;
 	}
 	return true;
 }
 
 func placeMino(@!Field field, @Mino mino, int32 mx, int32 my, int32 color)
 {
-	int32 i = 0;
-	while i < mino->len() {
-		int32 x = mino[i].x + mx;
-		int32 y = mino[i].y + my;
+	for @m in mino {
+		int32 x = m.x + mx;
+		int32 y = m.y + my;
 		if y >= 0 { color -> field[y][x] }
-		i + 1 -> i;
 	}
 }
 
@@ -230,14 +219,10 @@ func draw(@!WINDOW win, @!WINDOW nextwin, @Field field,
 
 func drawField(@!WINDOW win, @Field field)
 {
-	int32 y = 0;
-	while y < FLD_H {
-		int32 x = 0;
-		while x < FLD_W {
-			if field[y][x] != 0 { draw1block(win, x * 2, y, field[y][x]) }
-			x + 1 -> x;
+	for @row, int32 y in field {
+		for @c, int32 x in row {
+			if c != 0 { win.draw1block(x * 2, y, c) }
 		}
-		y + 1 -> y;
 	}
 }
 
@@ -257,12 +242,10 @@ func drawNextMino(@!WINDOW win, @Mino mino, int32 mino_no)
 
 func drawMino(@!WINDOW win, @Mino mino, int32 mx, int32 my, int32 mino_no)
 {
-	int32 i = 0;
-	while i < mino->len() {
-		int32 x = mino[i].x * 2 + mx;
-		int32 y = mino[i].y + my;
+	for @m in mino {
+		int32 x = m.x * 2 + mx;
+		int32 y = m.y + my;
 		if y >= 0 { win.draw1block(x, y, mino_no+1); }
-		i + 1 -> i;
 	}
 }
 
@@ -276,26 +259,17 @@ func draw1block(@!WINDOW win, int32 x, int32 y, int32 color)
 func clearLines(@!Field field)
 	-> int32 deleted_num = 0, int32 lowest_del_y = FLD_H
 {
-	int32 y = 0;
-
-	while y < FLD_H {
-		bool full = 1;
-		int32 x = 0;
-		while x < FLD_W {
-			if field[y][x] == 0 { 0 -> full; break; }
-			x + 1 -> x;
+	for @!row, int32 y in field {
+		bool full = true;
+		for @c in row {
+			if c == 0 { false -> full; break; }
 		}
 
 		if full {
 			y -> lowest_del_y;
 			deleted_num + 1 -> deleted_num;
-			0 -> x;
-			while x < FLD_W {
-				0 -> field[y][x];
-				x + 1 -> x;
-			}
+			for @!c in row { 0 -> c }
 		}
-		y + 1 -> y;
 	}
 }
 
@@ -306,11 +280,9 @@ func pressDown(@!Field field, int32 dst_y)
 	while true {
 		// find the first non-empty line above dst_y
 		while src_y >= 0 {
-			bool empty = 1;
-			int32 x = 0;
-			while x < FLD_W {
-				if field[src_y][x] != 0 { 0 -> empty; break; }
-				x + 1 -> x;
+			bool empty = true;
+			for @c in field[src_y] {
+				if c != 0 { false -> empty; break; }
 			}
 			if !empty { break }
 			src_y - 1 -> src_y;
@@ -320,11 +292,7 @@ func pressDown(@!Field field, int32 dst_y)
 			// fill the remaining lines with empty
 			if last_src_y < 0 { return }
 			while dst_y >= last_src_y {
-				int32 x = 0;
-				while x < FLD_W {
-					0 -> field[dst_y][x];
-					x + 1 -> x;
-				}
+				for @!c in field[dst_y] { 0 -> c }
 				dst_y - 1 -> dst_y;
 			}
 			return;

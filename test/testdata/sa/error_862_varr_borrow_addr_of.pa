@@ -1,0 +1,4 @@
+func f(@[+]int64 x) { }
+[+]int64 v;
+@[+]int64 h = @v;
+f(@h);

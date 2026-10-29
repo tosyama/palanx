@@ -64,8 +64,9 @@ printf("%.1f\n", len(@v));  // 5.0
 ```
 
 Other features include variable-length arrays (`[+]T` with `len`/`push`/`resize`/`pop`),
-function overloading, multiple named return values, method-form calls (`c.add(1)` for
-`add(@!c, 1)`), function pointers, enums, modules (`import`/`export`), and raw Linux syscalls.
+`for copy a, i in arr` loops, command-line arguments as `args`, function overloading, multiple named
+return values, method-form calls (`c.add(1)` for `add(@!c, 1)`), function pointers, enums,
+modules (`import`/`export`), and raw Linux syscalls.
 See the [Palan Language Reference](doc/PalanReference.md) for the whole language.
 
 ## Quick Start
@@ -82,7 +83,9 @@ build/bin/palan hello.pa
 # Hello World!
 ```
 
-Without `-o`, `palan` runs the binary right after linking and removes it. To keep it:
+Without `-o`, `palan` builds the binary among its work files and runs it right after linking;
+arguments after the source file go to the program (`build/bin/palan hello.pa a b`). To write the
+binary to the current directory instead:
 
 ```bash
 build/bin/palan -o hello hello.pa

@@ -1,0 +1,18 @@
+type S { [+]int64 arr; };
+func show(@[+]int64 v) { }
+func fill(@![3]int64 c) { }
+func g(@![+]int64 q) { }
+func rebind(@![+]int64 p, @![+]int64 o) { for copy a in p { o -> p; } }
+func fillAll(@![3]int64 p) { for copy a in p { fill(p); } }
+[+]int64 v = [1, 2];
+for copy a, i in v { a + 1 -> v[i]; show(@v); @[+]int64 r = @v; }
+for @!a in v { 0 -> a; }
+[+][+]int64 vv;
+for @!row in vv { row.push(1); }
+for copy a, i in vv { vv[i].push(1); g(@!vv[i]); }
+[3]int64 c; [3]int64 d;
+for copy a in c { fill(@!c); d -> c; }
+S s;
+for copy a in s.arr { show(@s.arr); }
+for copy a in v { [+]int64 w; w.push(1); func k() { [+]int64 v; v.push(1); } }
+v.push(3);

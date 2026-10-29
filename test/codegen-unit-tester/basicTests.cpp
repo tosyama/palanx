@@ -16,10 +16,9 @@ static const PhysRegs testPhys = {
 
 // -------- Stack slot sizing --------
 
-// int64 variable → 8-byte slot at -8(%rbp), frameSize 8
+// int64 variable → 8-byte slot at -8(%rbp), frameSize 16
 TEST(regalloc, stack_int64) {
     VFunc func;
-    func.isEntry = true;
     func.instrs.push_back(InitVar{0, VRegType::Int64, 0});
 
     auto r = allocateRegisters(func, testPhys);
@@ -27,13 +26,12 @@ TEST(regalloc, stack_int64) {
     ASSERT_TRUE(r.regMap.at(0).isStack());
     EXPECT_EQ(r.regMap.at(0).stackOffset, -8);
     EXPECT_EQ(r.regMap.at(0).type,        VRegType::Int64);
-    EXPECT_EQ(r.frameSize, 8);
+    EXPECT_EQ(r.frameSize, 16);
 }
 
-// int32 variable → 4-byte slot at -4(%rbp), frameSize 8 (alignUp(4,8))
+// int32 variable → 4-byte slot at -4(%rbp), frameSize 16
 TEST(regalloc, stack_int32) {
     VFunc func;
-    func.isEntry = true;
     func.instrs.push_back(InitVar{0, VRegType::Int32, 0});
 
     auto r = allocateRegisters(func, testPhys);
@@ -41,13 +39,12 @@ TEST(regalloc, stack_int32) {
     ASSERT_TRUE(r.regMap.at(0).isStack());
     EXPECT_EQ(r.regMap.at(0).stackOffset, -4);
     EXPECT_EQ(r.regMap.at(0).type,        VRegType::Int32);
-    EXPECT_EQ(r.frameSize, 8);
+    EXPECT_EQ(r.frameSize, 16);
 }
 
 // int32 then int64 → int64 aligned to 8-byte boundary; padding between them
 TEST(regalloc, stack_mixed_alignment) {
     VFunc func;
-    func.isEntry = true;
     func.instrs.push_back(InitVar{0, VRegType::Int32, 0});  // offset -4
     func.instrs.push_back(InitVar{1, VRegType::Int64, 0});  // alignUp(4,8)=8, offset -16
 
@@ -55,13 +52,12 @@ TEST(regalloc, stack_mixed_alignment) {
 
     EXPECT_EQ(r.regMap.at(0).stackOffset, -4);
     EXPECT_EQ(r.regMap.at(1).stackOffset, -16);
-    EXPECT_EQ(r.frameSize, 24);  // alignUp(16,8)=16, 16%16==0 → +8 → 24
+    EXPECT_EQ(r.frameSize, 16);
 }
 
-// Two int64 variables → frameSize bumped to keep 16-byte call alignment
+// Two int64 variables → frameSize stays a multiple of 16
 TEST(regalloc, stack_frame_alignment) {
     VFunc func;
-    func.isEntry = true;
     func.instrs.push_back(InitVar{0, VRegType::Int64, 0});  // offset -8
     func.instrs.push_back(InitVar{1, VRegType::Int64, 0});  // offset -16
 
@@ -69,7 +65,7 @@ TEST(regalloc, stack_frame_alignment) {
 
     EXPECT_EQ(r.regMap.at(0).stackOffset, -8);
     EXPECT_EQ(r.regMap.at(1).stackOffset, -16);
-    EXPECT_EQ(r.frameSize, 24);  // 16%16==0 → +8 → 24
+    EXPECT_EQ(r.frameSize, 16);
 }
 
 // -------- Register assignment --------
@@ -117,7 +113,6 @@ TEST(regalloc, dead_vreg_not_allocated) {
 TEST(regalloc, callee_saved_spill_to_stack) {
     // testPhys has only 1 callee-saved (%rbx); second vreg needing callee-saved spills.
     VFunc func;
-    func.isEntry = true;
     func.instrs.push_back(MovImm{0, VRegType::Ptr64, 0});   // r0 def at 0
     func.instrs.push_back(MovImm{1, VRegType::Int32, 42});  // r1 def at 1
     func.instrs.push_back(CallC{"foo", {}, {}, {}});                 // idx 2: intervening call
@@ -131,9 +126,9 @@ TEST(regalloc, callee_saved_spill_to_stack) {
     EXPECT_EQ(r.regMap.at(0).base, "%rbx");
     // r1 spills; must use 4-byte slot (Int32), not 8-byte
     ASSERT_TRUE(r.regMap.at(1).isStack());
-    EXPECT_EQ(r.regMap.at(1).stackOffset, -4);
+    EXPECT_EQ(r.regMap.at(1).stackOffset, -12);  // below the %rbx save slot
     EXPECT_EQ(r.regMap.at(1).type, VRegType::Int32);
-    EXPECT_EQ(r.frameSize, 8);  // alignUp(4,8)=8
+    EXPECT_EQ(r.frameSize, 16);
 }
 
 // Convert src: has last_any_use but no call_uses → allocCalleeSavedOrStack path
@@ -225,7 +220,6 @@ TEST(regalloc, convert_result_as_arg_register) {
 // Sequential blocks with same-size vars → second block reuses first block's stack slot
 TEST(regalloc, block_reuse_same_size) {
     VFunc func;
-    func.isEntry = true;
     // block 1: v0 (Int64) allocated, then freed
     func.instrs.push_back(BlockEnter{});
     func.instrs.push_back(InitVar{0, VRegType::Int64, 0});
@@ -240,14 +234,13 @@ TEST(regalloc, block_reuse_same_size) {
     ASSERT_TRUE(r.regMap.at(0).isStack());
     ASSERT_TRUE(r.regMap.at(1).isStack());
     EXPECT_EQ(r.regMap.at(0).stackOffset, r.regMap.at(1).stackOffset);
-    // Only one slot allocated — frameSize should reflect a single Int64 slot
-    EXPECT_EQ(r.frameSize, 8);
+    // Only one slot allocated — frameSize should reflect a single Int64 slot, aligned to 16
+    EXPECT_EQ(r.frameSize, 16);
 }
 
 // Sequential blocks with different-size vars → slots must NOT be shared
 TEST(regalloc, block_reuse_size_mismatch) {
     VFunc func;
-    func.isEntry = true;
     // block 1: v0 (Int32)
     func.instrs.push_back(BlockEnter{});
     func.instrs.push_back(InitVar{0, VRegType::Int32, 0});
@@ -329,7 +322,6 @@ TEST(regalloc, ret_value_across_call_not_in_rax) {
 // flo64 variable → 8-byte slot at -8(%rbp)
 TEST(regalloc, stack_float64) {
     VFunc func;
-    func.isEntry = true;
     func.instrs.push_back(InitVarF{0, VRegType::Float64, ".LF0"});
 
     auto r = allocateRegisters(func, testPhys);
@@ -337,13 +329,12 @@ TEST(regalloc, stack_float64) {
     ASSERT_TRUE(r.regMap.at(0).isStack());
     EXPECT_EQ(r.regMap.at(0).stackOffset, -8);
     EXPECT_EQ(r.regMap.at(0).type,        VRegType::Float64);
-    EXPECT_EQ(r.frameSize, 8);
+    EXPECT_EQ(r.frameSize, 16);
 }
 
 // flo32 variable → 4-byte slot at -4(%rbp)
 TEST(regalloc, stack_float32) {
     VFunc func;
-    func.isEntry = true;
     func.instrs.push_back(InitVarF{0, VRegType::Float32, ".LF0"});
 
     auto r = allocateRegisters(func, testPhys);
@@ -351,7 +342,7 @@ TEST(regalloc, stack_float32) {
     ASSERT_TRUE(r.regMap.at(0).isStack());
     EXPECT_EQ(r.regMap.at(0).stackOffset, -4);
     EXPECT_EQ(r.regMap.at(0).type,        VRegType::Float32);
-    EXPECT_EQ(r.frameSize, 8);
+    EXPECT_EQ(r.frameSize, 16);
 }
 
 // -------- CallSys argument register table (IT-3206) --------
@@ -428,21 +419,6 @@ TEST(x86, setcc_for_op_by_type) {
 
 // -------- Frame blocks --------
 
-// _start's %rbp is 8 mod 16, so a 16-aligned block sits at an offset of 8 mod 16.
-TEST(regalloc, frame_block_entry_alignment) {
-    VFunc func;
-    func.isEntry = true;
-    func.instrs.push_back(InitVar{0, VRegType::Int64, 0});
-    func.frameBlocks.push_back({16, 16});
-    func.instrs.push_back(FrameAddr{1, 0});
-
-    auto r = allocateRegisters(func, testPhys);
-
-    EXPECT_EQ(r.regMap.at(0).stackOffset, -8);
-    EXPECT_EQ(r.frameBlockOffsets.at(0), -24);
-    EXPECT_EQ(r.frameSize, 24);
-}
-
 // Blocks go below the callee-saved save area, so its shift can't misalign them.
 TEST(regalloc, frame_block_below_callee_saved) {
     VFunc func;
@@ -462,15 +438,3 @@ TEST(regalloc, frame_block_below_callee_saved) {
     EXPECT_EQ(r.frameSize, 32);
 }
 
-// An empty block still reserves a byte, so _start sets up the %rbp it is addressed from.
-TEST(regalloc, frame_block_empty) {
-    VFunc func;
-    func.isEntry = true;
-    func.frameBlocks.push_back({0, 4});
-    func.instrs.push_back(FrameAddr{0, 0});
-
-    auto r = allocateRegisters(func, testPhys);
-
-    EXPECT_EQ(r.frameBlockOffsets.at(0), -4);
-    EXPECT_GT(r.frameSize, 0);
-}

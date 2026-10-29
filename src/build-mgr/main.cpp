@@ -66,10 +66,10 @@ int main(int argc, char* argv[])
 
 	int opt, option_index = 0;
 	bool do_clean = false;
-	string binary_name = "a.out";
+	string binary_name;
 	bool output_specified = false;
 
-	while (0 < (opt = getopt_long(argc, argv, "hvco:", long_options, NULL))) {
+	while (0 < (opt = getopt_long(argc, argv, "+hvco:", long_options, NULL))) {
 		switch (opt) {
 			case 'h':
 				cout << PlnBuildMgrMessage::getMessage(M_Help) << endl;
@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
 		return 0;
 	}
 
-	if ((argc-optind) != 1) {
+	if ((argc-optind) < 1 || (output_specified && (argc-optind) != 1)) {
 		cerr << PlnBuildMgrMessage::getMessage(E_WrongNumberOfArgs) << endl;
 		return 1;
 	}
@@ -108,6 +108,12 @@ int main(int argc, char* argv[])
 	vector<string> target_files;
 	vector<string> ast_files;
 	target_files.push_back(fs::weakly_canonical(argv[optind]).string());
+	vector<string> run_argv;
+	if (!output_specified) {
+		binary_name = palan_work_path + target_files[0] + ".out";
+		run_argv.push_back(binary_name);
+		run_argv.insert(run_argv.end(), argv + optind + 1, argv + argc);
+	}
 
 	// Compile target files.
 	for (int i=0; i<target_files.size(); i++) {
@@ -169,11 +175,7 @@ int main(int argc, char* argv[])
 		string obj_file = base + ".o";
 
 		// palan-codegen
-		bool is_entry = (i == 0);
-		vector<string> codegenArgv{exec_path + "/palan-codegen"};
-		if (!is_entry) codegenArgv.push_back("--no-entry");
-		codegenArgv.push_back(sa_file);
-		if (int ret = runTool(codegenArgv))
+		if (int ret = runTool({exec_path + "/palan-codegen", sa_file}))
 			return ret;
 
 		// as
@@ -181,6 +183,22 @@ int main(int argc, char* argv[])
 			return ret;
 
 		obj_files.push_back(obj_file);
+	}
+
+	// The entry is chosen here, at link time: every module compiles the same
+	// whichever role it plays, and only this stub names the first one's
+	// top-level function.
+	{
+		string base = ast_files[0].substr(0, ast_files[0].size() - 9);
+		ifstream f(base + ".sa.json");
+		string main_symbol = json::parse(f)["main"]["name"];
+		string entry_s = base + ".entry.s";
+		string entry_o = base + ".entry.o";
+		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s}))
+			return ret;
+		if (int ret = runTool({"as", entry_s, "-o", entry_o}))
+			return ret;
+		obj_files.push_back(entry_o);
 	}
 
 	// Single pass over every module's sa.json to aggregate whole-program
@@ -720,7 +738,7 @@ int main(int argc, char* argv[])
 				return ret;
 			if (int ret = runTool({exec_path + "/palan-sa", alloc_ast}))
 				return ret;
-			if (int ret = runTool({exec_path + "/palan-codegen", "--no-entry", alloc_sa}))
+			if (int ret = runTool({exec_path + "/palan-codegen", alloc_sa}))
 				return ret;
 			if (int ret = runTool({"as", alloc_s, "-o", alloc_o}))
 				return ret;
@@ -749,11 +767,8 @@ int main(int argc, char* argv[])
 	if (int ret = runTool(ldArgv))
 		return ret;
 
-	// When no explicit output is specified, run the binary and remove it.
-	// This enables script-style usage: palan script.pa
 	if (!output_specified) {
-		PlnProcResult r = runProcess({"./" + binary_name});
-		fs::remove(binary_name);
+		PlnProcResult r = runProcess(run_argv);
 		if (r.status == PlnSpawnStatus::Exited)
 			return r.exit_code;
 		if (r.status == PlnSpawnStatus::SpawnFailed) {	// LCOV_EXCL_START
@@ -761,7 +776,7 @@ int main(int argc, char* argv[])
 			// OS-level condition (e.g. a noexec mount, disk full) rather than
 			// anything reproducible from Palan source under test.
 			cerr << PlnBuildMgrMessage::getMessage(
-				E_FailedToExecute, "./" + binary_name, strerror(r.err_no)) << endl;
+				E_FailedToExecute, binary_name, strerror(r.err_no)) << endl;
 			return 127;
 		}	// LCOV_EXCL_STOP
 		return -1;

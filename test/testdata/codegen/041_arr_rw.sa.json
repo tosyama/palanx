@@ -1,6 +1,7 @@
 {
     "functions": [],
     "original": "041_arr_rw.pa",
+    "main": {"name": "_041_arr_rw..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
     "str-literals": [],
     "statements": [
         {

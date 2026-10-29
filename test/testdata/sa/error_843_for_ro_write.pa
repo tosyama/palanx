@@ -1,0 +1,1 @@
+func f(@[+]int64 v) { for @!a in v { } }

@@ -332,6 +332,12 @@ TEST(build_mgr, arr_len) {
 	ASSERT_EQ(output, "10 20 30 10 20 30 \n5 6 2\n");
 }
 
+TEST(build_mgr, len_borrow) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/366_len_borrow.pa");
+	ASSERT_EQ(output, "6 2 2\n");
+}
+
 TEST(build_mgr, varr_builtins_mtrace) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(
@@ -630,4 +636,31 @@ TEST(build_mgr, arr_return_param_mtrace) {
 	expectMtraceRun("348_arr_return_param_mtrace",
 		"1 2 3\n101 2 3\n110 11 12\n1 2 3\n8 8 8\n4 5 6\n4 5 6\n6 6 6\n1 0\n7 8 9\n9\n"
 		"104 5 6\n101 2 3\n3\n20 21 22\n", 35);
+}
+
+// A `[+]@T` frees its header and slots, never what they point to.
+TEST(build_mgr, varr_ptr_slot_mtrace) {
+	expectMtraceRun("357_varr_ptr_slot_mtrace",
+		"3 6\n101 102 103\n102 2\n5 103 101\n5 7\n102 2 7\nHi 1\n", 21);
+}
+
+TEST(build_mgr, for_loop) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan -o out/for_bin ../test/testdata/build-mgr/362_for.pa"), "");
+	ASSERT_EQ(execTestCommand("out/for_bin x 'y z'"),
+		"40\n11 104\n0:1 1:2 2:3 \n1 2 3 4 5 6 \n60\n0=1 1=2 2=3 \n(1,2)(3,4)(0,2)(0,4)\n"
+		"0 out/for_bin\n1 x\n2 y z\n");
+}
+
+// Each element copy is freed at the end of its iteration, by continue and
+// break too, and a returned array after the loop.
+TEST(build_mgr, for_loop_mtrace) {
+	expectMtraceRun("363_for_mtrace", "(1,2) 7 8 1 2 3\n", 36);
+}
+
+TEST(build_mgr, for_loop_index_type) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan -o out/for_idx_bin ../test/testdata/build-mgr/367_for_index_type.pa"), "");
+	ASSERT_EQ(execTestCommand("out/for_idx_bin"),
+		"(0,0)1(4,0)3(0,1)4(4,1)6\n254:254 255:255 0:256 1:257 \n");
 }

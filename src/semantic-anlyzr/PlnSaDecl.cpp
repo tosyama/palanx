@@ -10,6 +10,7 @@
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
 #include "../common/PlnDefs.h"
+#include "../common/PlnCBitField.h"
 
 static int alignUp(int val, int align) { return (val + align - 1) & ~(align - 1); }
 
@@ -93,6 +94,7 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 	def.name = name;
 	def.isUnion = isUnion;
 	int offset = 0, maxAlign = aligned;
+	int64_t tailBits = 0;  // unused bits of offset's last byte, after a bit-field
 	bool fieldPacked = false;
 	int fieldAligned = 1;
 	// Returns the new field's offset; a union overlays every field at 0 and
@@ -118,6 +120,30 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 		const json& vtype = f["var-type"];
 		string tk = vtype.value("type-kind", "");
 		string fieldName = f.value("name", "");
+
+		if (f.contains("bits")) {
+			// Only C structs have bit-fields, always of an integer type. Laid out
+			// so the struct matches C, but nothing in Palan can read or write one.
+			string tname = vtype["type-name"].get<string>();
+			int64_t width = f["bits"].get<int64_t>();
+			int align = elemSizeBytes(tname);
+			bool isPacked = packed || fieldPacked;
+			if (!fieldName.empty() && !isPacked) maxAlign = max(maxAlign, align);
+			int64_t at = 0;
+			if (isUnion) {
+				offset = max<int64_t>(offset, (width + 7) / 8);
+			} else {
+				at = placeCBitField(int64_t(offset) * 8 - tailBits, width, align, isPacked);
+				offset = (at + width + 7) / 8;
+				tailBits = int64_t(offset) * 8 - (at + width);
+			}
+			if (!fieldName.empty())
+				def.fields.push_back({.name=fieldName, .typeKind="prim", .typeName=tname, .isMutable=false,
+				                      .offset=int(at / 8), .size=int((at + width + 7) / 8 - at / 8),
+				                      .unsupported="bit-field"});
+			continue;
+		}
+		tailBits = 0;
 
 		if (tk == "prim") {
 			string tname = vtype["type-name"].get<string>();
@@ -370,12 +396,13 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 
 	json borrowType = normalizeArrBorrowType(stmt2, vtype);
 	bool isArrBorrow = borrowType.contains("arr-size");
+	bool reshaped = borrowType != vtype;
 
 	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
 	for (auto& var : stmt2["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = deepNormalizePrimToStruct(isArrBorrow || isVarrPntr(borrowType) ? borrowType : var["var-type"]);
+		json varType = deepNormalizePrimToStruct(reshaped ? borrowType : var["var-type"]);
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
@@ -388,6 +415,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 			init = convertForBinding(stmt2, init, toType, varType);
 			checkBorrowSource(stmt2, init, varType);
 			checkPtrPermission(stmt2, init["value-type"], varType);
+			checkRangeBorrowBinding(stmt2, var["init"], varType);
 			sa_var["init"] = init;
 		}
 		declareVar(name, varType, &stmt2);
@@ -409,19 +437,11 @@ json PlnSemanticAnalyzer::sa_arr_size_expr(const json& stmt, const json& sizeExp
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ArraySizeNotInteger) << endl;
 		exit(1);
 	}
-	// A macro-folded lit-int keeps its own (possibly narrower) C-declared
-	// type instead of taking uint64 from expectedType, unlike a plain
-	// source literal (which the lit-int/lit-uint branches above always
-	// force to uint64 here). Left as-is, it would be codegen'd as an
-	// inline immediate sized to its own width while every caller of this
-	// helper embeds it into hand-built uint64 byte-count math, producing a
-	// register-width mismatch at the assembler. Narrow this widening to
-	// the literal case only -- a variable/expression operand already
-	// reaches codegen as a load sized to the context, same as before this
-	// helper existed, and widening it here would just wrap already-working
-	// output in a redundant convert node.
-	string et = sz.value("expr-type", "");
-	if ((et == "lit-int" || et == "lit-uint") && t != uint64Type)
+	// Every user of the size (a uint64 length variable, the byte-count
+	// math) reads it as 8 bytes, so a narrower value -- a variable, an
+	// expression, or a macro-folded lit-int that keeps its C-declared type --
+	// must be widened here.
+	if (t != uint64Type)
 		sz = wrapConvert(sz, registry_.toJson(uint64Type));
 	return sz;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -691,6 +711,10 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 	for (size_t k = 0; k < def.fields.size(); k++) {
 		const FieldLayout& f = def.fields[k];
 		const json& v = *given[k];
+		if (!f.unsupported.empty()) {
+			cerr << locPrefix(v) << PlnSaMessage::getMessage(E_UnsupportedCFieldType, def.name, f.name, f.unsupported) << endl;
+			exit(1);
+		}
 		string structName = fieldStructName(f);
 		if (!structName.empty()) {
 			values.push_back(sa_struct_lit(v, requireCompleteStruct(structName, v)));
@@ -933,7 +957,8 @@ void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& 
 		json vt = f["var-type"];
 		resolveCTypeRefs(vt);
 		vt = cFieldVarType(normalizeCType(vt));
-		if (!isSupportedCFieldType(vt, structDefs_, name)) {
+		bool unknownWidth = f.contains("bits") && f["bits"].is_null();
+		if (unknownWidth || !isSupportedCFieldType(vt, structDefs_, name)) {
 			// Register the tag as an incomplete struct rather than not at all: the
 			// name is real (glibc defines it), only its layout is unavailable this
 			// version. This lets SA report E_IncompleteStructType -- distinct from
@@ -946,7 +971,7 @@ void PlnSemanticAnalyzer::registerCStruct(const json& cincludeStmt, const json& 
 			return;
 		}
 		json field = {{"var-type", vt}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		for (const char* key : {"name", "packed", "aligned"})
+		for (const char* key : {"name", "packed", "aligned", "bits"})
 			if (f.contains(key)) field[key] = f[key];
 		fields.push_back(field);
 	}

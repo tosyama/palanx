@@ -330,6 +330,10 @@
 #define __amd64 1
 #define __amd64__ 1
 #define __code_model_small__ 1
+// Not a GCC predefine: GCC treats this as a keyword, and sys/cdefs.h only
+// erases it for non-GNU compilers, but headers such as sys/user.h use it
+// without including sys/cdefs.h.
+#define __extension__
 #define __gnu_linux__ 1
 #define __has_include(STR) __has_include__(STR)
 #define __has_include_next(STR) __has_include_next__(STR)

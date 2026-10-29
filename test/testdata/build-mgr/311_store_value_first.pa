@@ -51,7 +51,7 @@ a -> m[byArr(a)];
 printf("%d %d\n", m[0][0], a[0]);
 
 [2]int32 b = [1, 2];
-@!int32 bp = b;
+@!int32 bp = @!b;
 b[0] -> r[viaPtr(bp)];
 printf("%d %d\n", r[0], b[0]);
 

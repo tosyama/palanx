@@ -1,0 +1,2 @@
+cinclude "223_c_enum.h";
+int32 n = MODE_X;

@@ -1,5 +1,6 @@
 {
   "original": "/test/073_struct_ret_int_tail_widths.pa",
+  "main": {"name": "_073_struct_ret_int_tail_widths..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
   "str-literals": [],
   "statements": [
     {

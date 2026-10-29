@@ -11,11 +11,6 @@
 #include "../common/PlnDefs.h"
 
 // LCOV_EXCL_EXCEPTION_BR_START
-static json lenLit(int64_t v)
-{
-	return {{"expr-type","lit-int"},{"value",to_string(v)},{"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
-}
-
 static json byteLit(int64_t v)
 {
 	return {{"expr-type","lit-uint"},{"value",to_string(v)},{"value-type",{{"type-kind","prim"},{"type-name","uint64"}}}};
@@ -119,6 +114,9 @@ json PlnSemanticAnalyzer::ptrSlotElemType(const json& locNode, const json& type)
 		? unsizedArrToPntr(locNode, target)
 		: json{{"type-kind","pntr"},{"base-type",target}};
 	elem["mutable"] = type.value("mutable", false);
+	// A row carries the permission on each of its levels, as in a borrowed `[m][n]T`.
+	if (!elem["mutable"].get<bool>() && isArrLevel(elem["base-type"]))
+		elem["base-type"] = withArrPermission(elem["base-type"], false);
 	return pointeeNamesAsStructs(deepNormalizePrimToStruct(elem));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
@@ -251,6 +249,9 @@ json PlnSemanticAnalyzer::normalizeArrBorrowType(const json& locNode, const json
 	const json& arr = type["base-type"];
 	if (arr.value("specifier","") == "variable")
 		return varrBorrowType(locNode, arr, type.value("mutable", false));
+	// `@[]T` borrows elements of no known count, as a slot of `[n]@[]T` does.
+	if (arr["size-expr"].is_null())
+		return ptrSlotElemType(locNode, type);
 	return sizedArrLevel(locNode, arr, type.value("mutable", false));
 }
 
@@ -274,6 +275,8 @@ json PlnSemanticAnalyzer::varrStorageType(const json& locNode, const json& arr)
 			exit(1);
 		}
 		elem = sizedArrLevel(locNode, base, nullopt);
+	} else if (!embedded && base.value("type-kind","") == "pntr") {
+		elem = ptrSlotElemType(locNode, base);
 	} else if (!embedded && elemSizeBytes(name) >= 0) {
 		elem = base;
 	} else if (structDefs_.count(name)) {

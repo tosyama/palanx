@@ -350,3 +350,47 @@ TEST(build_mgr, chain_method_mtrace) {
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
+
+// The entry is chosen at link time: an imported module's top level runs only
+// when that module is the entry, and its object is the same either way.
+TEST(build_mgr, entry_at_link) {
+	cleanTestEnv();
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
+	string libObj = string(getenv("HOME")) + "/.palan/work" + dir + "/lib_entry_demo.pa.o";
+
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/358_entry_at_link.pa"), "15\n");
+	fs::copy_file(libObj, "out/lib_entry_demo_imported.o");
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_entry_demo.pa"), "demo 12\n");
+	ASSERT_EQ(execTestCommand("cmp out/lib_entry_demo_imported.o " + libObj), "");
+}
+
+TEST(build_mgr, implicit_args) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan -o out/args_bin ../test/testdata/build-mgr/359_args.pa"), "");
+	ASSERT_EQ(execTestCommand("out/args_bin"), "1\nrebound\n");
+	ASSERT_EQ(execTestCommand("out/args_bin x 'y z'"), "3\n1:x\n2:y z\nrebound\n");
+
+	// An imported module's top level reads `args` only when it is the entry.
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/360_args_import.pa"), "hello main\n");
+	ASSERT_EQ(execTestCommand("bin/palan -o out/lib_args_bin ../test/testdata/build-mgr/lib_args_demo.pa"), "");
+	ASSERT_EQ(execTestCommand("out/lib_args_bin a b"), "hello a\nhello b\n");
+}
+
+// Without -o, everything after the source goes to the program, options too,
+// and the executable is kept in the working directory, not the current one.
+TEST(build_mgr, run_args) {
+	cleanTestEnv();
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
+	string bin = string(getenv("HOME")) + "/.palan/work" + dir + "/359_args.pa.out";
+	fs::remove(bin);
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/359_args.pa x -o 'y z'"),
+		"4\n1:x\n2:-o\n3:y z\nrebound\n");
+	EXPECT_TRUE(fs::exists(bin));
+	EXPECT_FALSE(fs::exists("a.out"));
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_args_demo.pa a"), "hello a\n");
+}
+
+// The header of `args` is in the frame: only the copy is allocated and freed.
+TEST(build_mgr, implicit_args_mtrace) {
+	expectMtraceRun("361_args_mtrace", "4 a end\n", 2, " a b");
+}

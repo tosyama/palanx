@@ -394,7 +394,7 @@ TEST(c2ast, macro_state) {
     cleanTestEnv();
     string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/045_macro_state_a.h");
     json a = json::parse(output);
-    string state = a["macro-state"];
+    string state = a["c-state"]["macros"];
     // Spelled back token by token, so each line re-lexes to the same macro.
     for (const char* line : {
             "#define A_FLAG\n", "#define A_CAT(x, y) x ## y\n", "#define A_STR(x) # x\n",
@@ -406,8 +406,8 @@ TEST(c2ast, macro_state) {
     ASSERT_EQ(state.find("__CHAR_BIT__"), string::npos);
 
     string state_file = "045_macro_state.tmp";
-    ofstream(state_file) << state;
-    output = execTestCommand("bin/palan-c2ast -m " + state_file + " ../test/testdata/c2ast/045_macro_state_b.h");
+    ofstream(state_file) << a["c-state"].dump();
+    output = execTestCommand("bin/palan-c2ast -S " + state_file + " ../test/testdata/c2ast/045_macro_state_b.h");
     remove(state_file.c_str());
     json b = json::parse(output);
     // a.h is skipped by its #pragma once, so a_func is not declared again.
@@ -420,9 +420,34 @@ TEST(c2ast, macro_state) {
     ASSERT_EQ(b["ast"]["undefined-macros"], json::parse(R"(["A_GONE"])"));
     ASSERT_FALSE(b["ast"].contains("unexported-macros"));
 
-    string b_state = b["macro-state"];
+    string b_state = b["c-state"]["macros"];
     ASSERT_EQ(b_state.find("A_GONE"), string::npos);
     ASSERT_NE(b_state.find("#define A_VAL 5\n"), string::npos);
+}
+
+// A header its include guard skips still has its types and enumerators;
+// only what this header adds or completes is exported.
+TEST(c2ast, c_state_types) {
+    cleanTestEnv();
+    json a = json::parse(execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/054_c_state_a.h"));
+    string state_file = "054_c_state.tmp";
+    ofstream(state_file) << a["c-state"].dump();
+    string output = execTestCommand("bin/palan-c2ast --state " + state_file + " ../test/testdata/c2ast/054_c_state_b.h");
+    remove(state_file.c_str());
+    json b = json::parse(output);
+    ASSERT_EQ(b["ast"]["structs"], json::parse(R"([
+        {"name":"st_later","fields":[{"name":"y","var-type":
+            {"type-kind":"prim","type-name":"uint16","typedef-name":"st_u16"}}]},
+        {"name":"st_u","fields":[{"name":"z","var-type":{"type-kind":"arr","specifier":"raw",
+            "embedded":true,"base-type":{"type-kind":"prim","type-name":"uint8"},
+            "size-expr":{"expr-type":"lit-int","value":"11",
+                "value-type":{"type-kind":"prim","type-name":"uint64"}}}}]}])"));
+    ASSERT_FALSE(b["ast"].contains("enums"));
+    ASSERT_FALSE(b["ast"].contains("typedefs"));
+    ASSERT_FALSE(b["ast"].contains("constants"));
+    ASSERT_FALSE(b["ast"].contains("functions"));
+    ASSERT_EQ(b["c-state"]["typedefs"], a["c-state"]["typedefs"]);
+    ASSERT_EQ(b["c-state"]["enumerators"]["ST_ANON"], json::parse("[3, 1]"));
 }
 
 TEST(c2ast, func_alias_macro) {

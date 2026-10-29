@@ -28,6 +28,6 @@ func make(int64 n) -> []P {
 [2]$P es;
 4 -> es[0].x; 5 -> es[1].x;
 [2]@![]P rows;
-ps -> rows[1];
+@!ps -> rows[1];
 10 -> rows[1][0].x;
 printf("%d %d %d %d\n", sum(ps, 3), second(bump(es, 2)), sum(make(2), 2), rows[1][0].x + rows[1][2].x);

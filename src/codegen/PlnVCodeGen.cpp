@@ -969,7 +969,7 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
 
 // -------- Entry point --------
 
-VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
+VProg PlnVCodeGen::generate(const Module& module)
 {
     VProg prog;
     prog_ = &prog;
@@ -978,7 +978,6 @@ VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
     for (auto& d : module.strLiterals)
         prog.data.push_back(VStringLiteral{d.label, d.value}); // LCOV_EXCL_EXCEPTION_BR_LINE
 
-    // Lower Palan user-defined functions before _start
     for (auto& pf : module.functions) {
         VFunc vf;
         vf.name = pf.name;
@@ -1031,17 +1030,6 @@ VProg PlnVCodeGen::generate(const Module& module, bool noEntry)
         leaveVarScope();
         prog.funcs.push_back(move(vf));
     }
-
-    // Build _start function
-    VFunc startFunc;
-    startFunc.name = "_start";
-    enterVarScope();
-    for (auto& stmt : module.statements)
-        lowerStmt(*stmt, startFunc);
-    leaveVarScope();
-    startFunc.isEntry = !noEntry;
-    startFunc.instrs.push_back(ExitCode{0});
-    prog.funcs.push_back(move(startFunc));
 
     return prog;
 }

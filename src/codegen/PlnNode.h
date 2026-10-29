@@ -440,5 +440,4 @@ struct Module {
     string original;
     vector<StrLiteralDef>    strLiterals;
     vector<PlnFunc>          functions;
-    vector<unique_ptr<Stmt>> statements;
 };
