@@ -1128,7 +1128,10 @@ TEST(sa, cross_cinclude_typedef) {
 	json constU64 = u64;
 	constU64["const"] = true;
 	ASSERT_EQ(stmts[4]["vars"][0]["init"]["array"]["value-type"]["base-type"], constU64);
-	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value-type"], u64);   // ((my_size)8) macro
+	// ((my_size)8) macro: typed by its cast as in my_size's own header.
+	json mySize = u64;
+	mySize["typedef-name"] = "my_size";
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["value-type"], mySize);
 }
 
 TEST(sa, c_func_ptr_field)

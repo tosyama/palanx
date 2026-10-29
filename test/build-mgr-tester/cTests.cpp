@@ -41,6 +41,12 @@ TEST(build_mgr, cinclude_typedef_size_t) {
 	ASSERT_EQ(output, "5\n");
 }
 
+TEST(build_mgr, cinclude_state) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/368_cinclude_state.pa");
+	ASSERT_EQ(output, "8080 16\n");
+}
+
 TEST(build_mgr, null_strchr_notfound) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/105_null_strchr_notfound.pa");

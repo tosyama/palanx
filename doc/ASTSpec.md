@@ -100,9 +100,10 @@ table and, instead of folding, sets `c-macro`
 on a later `id` or `call` that names one (see Expression model's `id`), so SA reports the macro
 rather than an undefined name.
 
-Each c2ast run starts from the previous `cinclude`'s macros (SpecAndDesign.md §3.3), so these
-lists hold only the macros the header itself (re)defines, and `ast.undefined-macros` names the
-ones it `#undef`s. gen-ast keeps each name's registrations in source order, and a reference uses
+Each c2ast run starts from the previous `cinclude`'s macros and types (SpecAndDesign.md §3.3),
+so these lists hold only the macros the header itself (re)defines, and `ast.undefined-macros`
+names the ones it `#undef`s. Likewise a `cinclude`'s `structs`, `enums` and `typedefs` hold only
+what an earlier `cinclude` didn't already give, such as a struct it only referenced. gen-ast keeps each name's registrations in source order, and a reference uses
 the last one before it; an `#undef` registration leaves the reference unfolded.
 
 An enumerator (see Enum definition model below) is an integer operand in these expressions,

@@ -9,6 +9,7 @@ public:
 	vector<string> lines;
 
 	CFileInfo(string fname);
+	CFileInfo(string fname, istream&& in);
 	CFileInfo(CFileInfo&& fingo);
 	string& getLine(int n);
 

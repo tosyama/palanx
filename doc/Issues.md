@@ -76,7 +76,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 10. A Header Read Inside a Block Is Skipped by a Later `cinclude` Outside It
 
-**Summary:** Each `cinclude` is preprocessed with the macros every earlier `cinclude` in the file left defined, in source order, so a header an earlier `cinclude` already read is skipped by its include guard. Its declarations come from that earlier `cinclude`, but C functions are visible only in the `cinclude`'s scope. When the earlier one is inside a block, the functions are not visible after the block: `func f() { cinclude <stdio.h>; ... }` followed by a top-level `cinclude <stdio.h>; printf("x\n");` reports `Undefined function 'printf'`. Fixing this needs either the macro state to follow block scope or SA to register the skipped declarations for the later `cinclude` as well.
+**Summary:** Each `cinclude` is preprocessed and parsed with the macros and types every earlier `cinclude` in the file left defined, in source order, so a header an earlier `cinclude` already read is skipped by its include guard. Its declarations come from that earlier `cinclude`, but C functions are visible only in the `cinclude`'s scope. When the earlier one is inside a block, the functions are not visible after the block: `func f() { cinclude <stdio.h>; ... }` followed by a top-level `cinclude <stdio.h>; printf("x\n");` reports `Undefined function 'printf'`. Fixing this needs either the macro state to follow block scope or SA to register the skipped declarations for the later `cinclude` as well.
 
 
 ---

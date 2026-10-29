@@ -52,9 +52,9 @@ public:
 	vector<CToken*> expandObjectMacroBody(CMacro *m);
 
 	// Loads #define/#undef lines and the "#pragma palan_once_included" lines
-	// dumpMacroState writes; used for predefined.h and for a macro state.
+	// dumpMacroState writes; used for predefined.h and for a c-state's macros.
 	// Every macro defined once it returns is marked inherited.
-	void loadMacroFile(const string& filepath);
+	void loadMacros(CFileInfo finfo);
 	void dumpMacroState(ostream& os);
 	// true: success, false: failed
 	bool preprocess(const string& filepath, vector<CToken*> *tokens=NULL);

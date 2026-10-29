@@ -46,12 +46,11 @@ CMacro::CMacro(CMacroType type, string name, int lexer_no)
 }
 
 //== CPreprocessor ==
-void CPreprocessor::loadMacroFile(const string& filepath)
+void CPreprocessor::loadMacros(CFileInfo finfo)
 {
 	// Registered like a preprocessed file: macro body tokens point back into
 	// this lexer, and CParser looks tokens' locations up through `lexers`.
 	int lexer_no = lexers.size();
-	CFileInfo finfo(filepath);
 	lexers.push_back(new CLexer(finfo));
 	CLexer& lexer = *lexers.back();
 	lexer.no = lexer_no;

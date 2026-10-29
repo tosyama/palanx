@@ -65,8 +65,8 @@ int main(int argc, char* argv[])
 		PlnLexer lexer(input_file.string());
 		json ast;
 		MacroTable macros;
-		string cMacroState;
-		PlnParser parser(lexer, ast, macros, cMacroState);
+		string cState;
+		PlnParser parser(lexer, ast, macros, cState);
 
 		int ret;
 		ret = parser.parse();

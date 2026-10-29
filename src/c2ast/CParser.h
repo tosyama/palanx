@@ -58,6 +58,11 @@ class CParser {
 	map<string, Enumerator> enumerators_;
 	void nameAnonEnumByTypedef(json &vt, const string &typedefName);
 
+	// The tables as loadState left them, by name: an entry still equal to its
+	// inherited one was exported by the earlier run, so parse() leaves it out.
+	map<string, json> inheritedTypedefs_, inheritedStructs_, inheritedEnums_;
+	json enumState(const CapturedEnum &e) const;
+
 	int parse(json &ast, const vector<CToken*>& tokens);
 
 	bool declaration(json &ast, const vector<CToken*> &tokens, int &index, bool is_top_level);
@@ -106,4 +111,7 @@ public:
 	CParser(const vector<CToken*> &top_tokens, const vector<CLexer*> &lexers);
 	int parse(json &ast);
 	void exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPreprocessor &cpp);
+	// The tables a later run starts from, in the c-state.
+	json dumpState() const;
+	void loadState(const json &state);
 };

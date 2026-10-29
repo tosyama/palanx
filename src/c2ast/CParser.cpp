@@ -2110,14 +2110,21 @@ int CParser::parse(json &ast, const vector<CToken*> &tokens)
 // Entry point of parsing
 int CParser::parse(json &ast)
 {
+	auto inherited = [](const map<string, json> &m, const string &name, const json &entry) {
+		auto it = m.find(name);
+		return it != m.end() && it->second == entry;
+	};
 	int ret = parse(ast, top_tokens);
 	if (ret == 0) {
-		if (!capturedStructs_.empty())
-			ast["ast"]["structs"] = capturedStructs_;
+		json structs = json::array();
+		for (const json &s : capturedStructs_)
+			if (!inherited(inheritedStructs_, s["name"], s)) structs.push_back(s);
+		if (!structs.empty())
+			ast["ast"]["structs"] = move(structs);
 
 		json enums = json::array();
 		for (const CapturedEnum &e : capturedEnums_) {
-			if (!e.evaluable) continue;
+			if (!e.evaluable || inherited(inheritedEnums_, e.name, enumState(e))) continue;
 			json enumerators = json::array();
 			for (auto &[ename, v] : e.values) {
 				enumerators.push_back({{"name", ename}, {"value", to_string(v)}}); // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -2131,6 +2138,7 @@ int CParser::parse(json &ast)
 
 		json typedefs = json::array();
 		for (const auto &[name, vt] : typedefs_) {
+			if (inherited(inheritedTypedefs_, name, vt)) continue;
 			string tk = vt.value("type-kind", "");
 			if (tk == "prim" || tk == "pntr" || tk == "user" || ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")))
 				typedefs.push_back({{"name", name}, {"var-type", vt}}); // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -2139,4 +2147,43 @@ int CParser::parse(json &ast)
 			ast["ast"]["typedefs"] = move(typedefs);
 	}
 	return ret;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json CParser::enumState(const CapturedEnum &e) const
+{
+	json values = json::array();
+	for (auto &[ename, v] : e.values) values.push_back({ename, v}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"name", e.name}, {"anonymous", e.anonymous}, {"evaluable", e.evaluable}, {"values", move(values)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json CParser::dumpState() const
+{
+	json enums = json::array();
+	for (const CapturedEnum &e : capturedEnums_) enums.push_back(enumState(e));
+	json enumerators = json::object();
+	for (auto &[name, en] : enumerators_) enumerators[name] = {en.value, en.enumIndex}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"typedefs", typedefs_}, {"structs", capturedStructs_}, {"enums", move(enums)}, // LCOV_EXCL_EXCEPTION_BR_LINE
+	        {"enumerators", move(enumerators)}};
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void CParser::loadState(const json &state)
+{
+	for (auto &[name, vt] : state["typedefs"].items()) {
+		typedefs_[name] = vt;
+		inheritedTypedefs_[name] = vt;
+	}
+	for (const json &s : state["structs"]) {
+		structIndex_[s["name"]] = (int)capturedStructs_.size();
+		capturedStructs_.push_back(s);
+		inheritedStructs_[s["name"]] = s;
+	}
+	for (const json &e : state["enums"]) {
+		CapturedEnum captured = {e["name"], e["anonymous"], e["evaluable"], {}};
+		for (const json &v : e["values"]) captured.values.push_back({v[0], v[1]});
+		enumIndex_[captured.name] = (int)capturedEnums_.size();
+		capturedEnums_.push_back(move(captured));
+		inheritedEnums_[e["name"]] = e;
+	}
+	for (auto &[name, en] : state["enumerators"].items())
+		enumerators_[name] = {en[0], en[1]};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
