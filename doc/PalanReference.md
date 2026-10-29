@@ -423,8 +423,11 @@ printf("%ld\n", MaxLen);   // 256
 
 #### Restrictions
 
-- Only a top-level const can size a borrowed array parameter (`@[N]T`); function signatures are
-  registered before any other statement is processed.
+- Only a top-level const can size a borrowed array parameter (`@[N]T`). Its value may use the
+  length of a top-level array declared before it (`[]Light lights = [...]; const LN =
+  lights->len();`) when the array's declaration fixes its size, but not other variables: such a
+  const is known only from its own statement on, so it cannot size a parameter or a top-level
+  type.
 
 ### Type Aliases
 

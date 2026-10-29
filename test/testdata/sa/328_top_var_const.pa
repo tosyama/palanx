@@ -1,0 +1,17 @@
+type P { int32 x; int32 y; };
+[]P ps = [[1, 2], [3, 4], [5, 6]];
+const PN = ps->len();
+const M = PN * 2;
+[]$[]int32 g = [[1, 2], [3, 4], [5, 6], [7, 8]];
+const GN = len(@g);
+const GR = g[0]->len();
+type Q { [M]int32 v; };
+
+func sumX(@[PN]P a) -> int32 s {
+	for @e in a { s + e.x -> s; }
+}
+
+func count(@[GN][GR]int32 a, @Q q) -> int64 n {
+	len(a) + len(@q.v) -> n;
+}
+int32 s = sumX(@ps);

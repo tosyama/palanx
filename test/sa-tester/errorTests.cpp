@@ -930,6 +930,7 @@ TEST(sa_error, circular_type_decl)
 		{"error_433_import_mutual_embed.pa", "error_433_import_mutual_embed.pa:2:1: error: type 'B' depends on itself: B -> A -> B."},
 		{"error_434_owned_cycle.pa", ":2:1: error: type 'P' depends on itself: P -> Q -> P."},
 		{"error_435_alias_cycle.pa", ":2:1: error: type 'X' depends on itself: X -> Y -> X."},
+		{"error_879_top_const_var_cycle.pa", ":1:1: error: type 'N' depends on itself: N -> a -> N."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -1315,6 +1316,22 @@ TEST(sa_error, unqualified_enumerator)
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_types.pa -o out/lib_sa_types.pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, const_used_before_known)
+{
+	const pair<string, string> cases[] = {
+		{"error_878_top_const_before_var.pa", ":3:10: error: const 'N' cannot be used here: its value uses 'a', which is not a top-level variable declared before the const."},
+		{"error_880_top_const_cglobal.pa", ":3:11: error: const 'N' cannot be used here: its value uses 'stdin', which is not a top-level variable declared before the const."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");

@@ -664,3 +664,9 @@ TEST(build_mgr, for_loop_index_type) {
 	ASSERT_EQ(execTestCommand("out/for_idx_bin"),
 		"(0,0)1(4,0)3(0,1)4(4,1)6\n254:254 255:255 0:256 1:257 \n");
 }
+
+TEST(build_mgr, top_var_const_in_sig) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/369_top_var_const.pa");
+	ASSERT_EQ(output, "3 10.20\n");
+}

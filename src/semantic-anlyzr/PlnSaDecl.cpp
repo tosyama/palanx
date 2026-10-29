@@ -464,22 +464,12 @@ string PlnSemanticAnalyzer::arrLitDimSize(const json& stmt, const string& name, 
 	return lit["value"].get<string>();
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage storage)
+// An omitted fixed size is the literal's count (of its first row, for a
+// row's size); a `[+]T` row takes any count. Returns the top level's size.
+string PlnSemanticAnalyzer::fillArrLitSizes(const json& stmt, const string& name, json& varType, const json& items)
 {
-	const json& var = stmt["vars"][0];
-	// A literal stored through a temp is reported by the store's target.
-	string name = var.value("lit-name", var["name"].get<string>());
-	const json& items = var["init"]["items"];
-
-	json declStmt = stmt;
-	json& declVar = declStmt["vars"][0];
-	declVar.erase("init");
-	declVar.erase("lit-name");
-
-	// An omitted fixed size is the literal's count (of its first row, for a
-	// row's size); a `[+]T` row takes any count.
 	static const json noRows = json::array();
-	json* level = &declVar["var-type"];
+	json* level = &varType;
 	const json* rows = &items;
 	string declared;
 	for (bool top = true; level->value("type-kind", "") == "arr"; top = false) {
@@ -495,6 +485,22 @@ json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage stora
 		rows = !rows->empty() && (*rows)[0].contains("items") ? &(*rows)[0]["items"] : &noRows;
 		level = &(*level)["base-type"];
 	}
+	return declared;
+}
+
+json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage storage)
+{
+	const json& var = stmt["vars"][0];
+	// A literal stored through a temp is reported by the store's target.
+	string name = var.value("lit-name", var["name"].get<string>());
+	const json& items = var["init"]["items"];
+
+	json declStmt = stmt;
+	json& declVar = declStmt["vars"][0];
+	declVar.erase("init");
+	declVar.erase("lit-name");
+
+	string declared = fillArrLitSizes(stmt, name, declVar["var-type"], items);
 	Storage st = arrVarStorage(stmt, declVar["var-type"]);
 	ArrLitShape shape = arrLitShape(stmt, name, st.type, true);
 

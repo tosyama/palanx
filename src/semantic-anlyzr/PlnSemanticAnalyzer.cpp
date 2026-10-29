@@ -9,6 +9,7 @@
 #include <set>
 #include <deque>
 #include <stdexcept>
+#include <boost/assert.hpp>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
@@ -78,6 +79,12 @@ void PlnSemanticAnalyzer::declareVar(const string& name, const json& type, const
 		cerr << locPrefix(loc_node ? *loc_node : json{})
 		     << PlnSaMessage::getMessage(E_DuplicateVarDecl, name) << endl;
 		exit(1);
+	}
+	// A const may have read this type early, from the declaration's shape.
+	if (varScopes.size() == 1 && loc_node) {
+		auto v = topVars_.find(name);
+		BOOST_ASSERT(v == topVars_.end() || v->second.type.is_null()
+		             || (*v->second.stmt)["loc"] != loc_node->value("loc", json()) || v->second.type == type);
 	}
 	varScopes.back()[name] = type;
 }
@@ -587,11 +594,15 @@ void PlnSemanticAnalyzer::rejectNotImplSig(const json& f)
 json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 {
 	rejectNotImplSig(f);
+	auto ensureSigType = [&](const json& t) {
+		ensureTypeRefs(t);
+		rejectDeferredConstRefs(f, t);
+	};
 	for (auto& p : f.value("parameters", json::array()))
-		ensureTypeRefs(p["var-type"]);
+		ensureSigType(p["var-type"]);
 	for (auto& r : f.value("rets", json::array()))
-		ensureTypeRefs(r["var-type"]);
-	if (f.contains("ret-type")) ensureTypeRefs(f["ret-type"]);
+		ensureSigType(r["var-type"]);
+	if (f.contains("ret-type")) ensureSigType(f["ret-type"]);
 
 	json funcEntry = resolveSigTypes(f);
 	normalizeSig(funcEntry);
@@ -626,23 +637,27 @@ void PlnSemanticAnalyzer::preregisterFunc(const json& f, const string& scope)
 	registerPlnFunc(funcEntry["name"], funcEntry, f);
 }
 
-// A const whose value names a variable can only be diagnosed once variables
-// are declared, so the pre-scan leaves it to step 2.
 const json* PlnSemanticAnalyzer::firstNonConstName(const json& expr) const
 {
+	vector<const json*> ids;
+	nonConstNames(expr, ids);
+	return ids.empty() ? nullptr : ids[0];
+}
+
+void PlnSemanticAnalyzer::nonConstNames(const json& expr, vector<const json*>& ids) const
+{
 	if (expr.is_object()) {
-		if (expr.value("expr-type","") == "id" && !constDecls_.count(expr.value("name","")))
-			return &expr;
+		if (expr.value("expr-type","") == "id" && !constDecls_.count(expr.value("name",""))) {
+			ids.push_back(&expr);
+			return;
+		}
 		if (expr.value("expr-type","") == "field-access"
 		    && !enumTypeNamed(typeNameWritten(expr["object"])).is_null())
-			return nullptr;
-		for (auto& [k, v] : expr.items())
-			if (const json* id = firstNonConstName(v)) return id;
+			return;
+		for (auto& [k, v] : expr.items()) nonConstNames(v, ids);
 	} else if (expr.is_array()) {
-		for (auto& v : expr)
-			if (const json* id = firstNonConstName(v)) return id;
+		for (auto& v : expr) nonConstNames(v, ids);
 	}
-	return nullptr;
 }
 
 void PlnSemanticAnalyzer::beginModule(const json& ast)
@@ -694,11 +709,15 @@ void PlnSemanticAnalyzer::prescanTypes(const json& stmts)
 // here, ahead of any Palan declaration that may use them.
 void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 {
-	for (auto& stmt : stmts) {
+	for (size_t pos = 0; pos < stmts.size(); pos++) {
+		const json& stmt = stmts[pos];
 		string t = stmt.value("stmt-type", "");
-		if (t == "struct-def" || t == "enum-def" || t == "type-alias" || t == "const-decl") {
+		if (t == "var-decl") {
+			for (size_t i = 0; i < stmt["vars"].size(); i++)
+				topVars_.emplace(stmt["vars"][i]["name"].get<string>(), TopVar{&stmt, i, (int)pos});
+		} else if (t == "struct-def" || t == "enum-def" || t == "type-alias" || t == "const-decl") {
 			string name = stmt["name"].get<string>();
-			topDecls_.emplace(name, TopDecl{&stmt});
+			topDecls_.emplace(name, TopDecl{&stmt, TopDecl::Pending, (int)pos});
 			if (t == "struct-def" && stmt.value("export", false)) declaredStructs_.insert(name);
 		} else if (t == "cinclude") {
 			registerCIncludeTypes(stmt);
@@ -840,11 +859,11 @@ void PlnSemanticAnalyzer::resolveTopDecl(const string& name, TopDecl& d)
 	ensureTypeRefs(stmt);
 	string t = stmt["stmt-type"].get<string>();
 	bool resolved = true;
+	if (t != "const-decl") rejectDeferredConstRefs(stmt, stmt);
 	if      (t == "struct-def") sa_struct_def(stmt);
 	else if (t == "enum-def")   sa_enum_def(stmt);
 	else if (t == "type-alias") sa_type_alias(stmt);
-	else if (!firstNonConstName(stmt["value"])) sa_const_decl(stmt);
-	else resolved = false;
+	else resolved = resolveTopConst(d);
 	if (resolved) prescannedDecls_.insert(&stmt);
 	resolving.pop_back();
 	d.state = TopDecl::Done;
@@ -852,6 +871,82 @@ void PlnSemanticAnalyzer::resolveTopDecl(const string& name, TopDecl& d)
 		auto f = move(program_->settled.front());
 		program_->settled.pop_front();
 		f();
+	}
+}
+
+// A const naming variables is evaluated now only when each is already in
+// scope or is a top-level variable declared before it whose declaration fixes
+// its type: the value needs only that type, never the initializer. Any other
+// is left to its statement, where the variables it names are declared.
+bool PlnSemanticAnalyzer::resolveTopConst(TopDecl& d)
+{
+	const json& stmt = *d.stmt;
+	vector<const json*> ids;
+	nonConstNames(stmt["value"], ids);
+	map<string, json> vars;
+	for (const json* id : ids) {
+		string name = (*id)["name"].get<string>();
+		if (findVar(name)) continue;
+		auto v = topVars_.find(name);
+		const json* vt = d.pos >= 0 && v != topVars_.end() && v->second.pos < d.pos ? topVarType(name) : nullptr;
+		if (!vt) {
+			auto c = topDecls_.find(name);
+			bool waits = c != topDecls_.end() && !c->second.deferredBy.empty();
+			d.deferredBy = waits ? c->second.deferredBy : name;
+			return false;
+		}
+		vars[name] = *vt;
+	}
+	varScopes.push_back(move(vars));
+	sa_const_decl(stmt);
+	varScopes.pop_back();
+	return true;
+}
+
+const json* PlnSemanticAnalyzer::topVarType(const string& name)
+{
+	TopVar& v = topVars_.at(name);
+	if (v.state == TopDecl::Done) return v.type.is_null() ? nullptr : &v.type;
+	v.state = TopDecl::Resolving;
+	program_->resolving.push_back({this, name, v.stmt});
+	const json& var = (*v.stmt)["vars"][v.idx];
+	json vt = var["var-type"];
+	takeVarStorage(vt);
+	// Only an array's length can make a const; any other variable is left to
+	// its statement.
+	string spec = vt.value("specifier", "");
+	if (vt.value("type-kind", "") == "arr" && (spec == "variable" || spec == "raw")) {
+		ensureTypeRefs(vt);
+		vt = resolveKnownType(*v.stmt, vt);
+		// A size known only at run time would have its expression analyzed
+		// before the functions it may call are registered.
+		bool constSizes = true;
+		for (const json* l = &vt; l->value("type-kind", "") == "arr"; l = &(*l)["base-type"]) {
+			const json& size = (*l)["size-expr"];
+			constSizes = constSizes && (size.is_null() || (!hasCall(size) && !firstNonConstName(size)));
+		}
+		if (constSizes && var.contains("init") && var["init"].value("expr-type", "") == "arr-lit")
+			fillArrLitSizes(*v.stmt, name, vt, var["init"]["items"]);
+		if (constSizes && !vt["size-expr"].is_null())
+			v.type = arrVarStorage(*v.stmt, vt).type;
+	}
+	program_->resolving.pop_back();
+	v.state = TopDecl::Done;
+	return v.type.is_null() ? nullptr : &v.type;
+}
+
+// A const left to its statement is unknown until then.
+void PlnSemanticAnalyzer::rejectDeferredConstRefs(const json& locNode, const json& node) const
+{
+	vector<const json*> ids;
+	nonConstNames(node, ids);
+	for (const json* id : ids) {
+		string name = (*id)["name"].get<string>();
+		auto c = topDecls_.find(name);
+		if (c == topDecls_.end() || c->second.deferredBy.empty()) continue;
+		cerr << locPrefix(id->contains("loc") ? *id : locNode)
+		     << PlnSaMessage::getMessage(E_ConstUsedBeforeKnown, name, c->second.deferredBy) << endl;
+		exit(1);
 	}
 }
 

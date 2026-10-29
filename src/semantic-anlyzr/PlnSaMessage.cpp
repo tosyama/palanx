@@ -449,6 +449,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_UnsizedVarrElemArr:
 			return "an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'.";
 
+		case E_ConstUsedBeforeKnown:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "const '" + arg1 + "' cannot be used here: its value uses '" + arg2
+				+ "', which is not a top-level variable declared before the const.";
+
 		case E_SigArrSizeNotConst:
 			return "every size in an array parameter or return type must be a compile-time constant.";
 

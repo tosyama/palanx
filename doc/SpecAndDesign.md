@@ -170,6 +170,11 @@ Design:
  Explicit casts (`expr as type`, or `type-name(expr)` for a named type) allow narrowing, signed↔unsigned,
  and pointer conversions; palan-sa resolves
  the `cast` AST node to a `convert` node (or removes it for identical types) and emits `convert` to sa.json.
+ Top-level types and consts are resolved when first needed, before function signatures are
+ registered, so source order does not decide whether a signature can use them. A const whose value
+ names a top-level variable is evaluated from that variable's type alone, taken from the shape of
+ its declaration (the written type and an array literal's element count); its initializer is still
+ analyzed in statement order. A const sees only the variables declared before it in the source.
 
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:

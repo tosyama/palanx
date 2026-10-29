@@ -173,6 +173,7 @@ enum PlnSaMessageCode {
 	E_ChangeForRange,	// arg1: the array iterated over
 	E_ForIndexNotInteger,	// arg1: type display name
 	E_ForIndexTooNarrow,	// arg1: type display name, arg2: the array's length
+	E_ConstUsedBeforeKnown,	// arg1: const name, arg2: the name its value waits for
 };
 
 class PlnSaMessage

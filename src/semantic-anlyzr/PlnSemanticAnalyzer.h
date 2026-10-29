@@ -223,8 +223,20 @@ class PlnSemanticAnalyzer {
 	struct TopDecl {
 		const json* stmt;
 		enum State { Pending, Resolving, Done } state = Pending;
+		int    pos = -1;      // index among the module's top-level statements; -1 in a block
+		string deferredBy;    // a const left to its statement: the name its value waits for
 	};
 	map<string, TopDecl>   topDecls_;
+	// A top-level variable, whose type a const's value may need before the
+	// statements are analyzed.
+	struct TopVar {
+		const json* stmt;
+		size_t      idx;      // in the statement's vars
+		int         pos;
+		TopDecl::State state = TopDecl::Pending;
+		json        type;     // null when its declaration's shape does not fix it
+	};
+	map<string, TopVar>    topVars_;
 	// A type a top-level import makes writable here, keyed by how it is
 	// written (`T` or `V.T`).
 	struct ImportedType {
@@ -321,6 +333,11 @@ class PlnSemanticAnalyzer {
 	// ensureTypeName for a struct by its program-wide name.
 	void ensureStructDef(const string& name);
 	void resolveTopDecl(const string& name, TopDecl& d);
+	bool resolveTopConst(TopDecl& d);
+	// The type the declaration of the top-level variable `name` gives it,
+	// taken from the declaration's shape alone, or null.
+	const json* topVarType(const string& name);
+	void rejectDeferredConstRefs(const json& locNode, const json& node) const;
 	void adoptImportedType(ImportedType& t, const string& alias);
 	// Runs `f` once no declaration is being resolved: resolving a pointee
 	// earlier could report a cycle a pointer breaks.
@@ -435,6 +452,7 @@ class PlnSemanticAnalyzer {
 	json sa_struct_lit(const json& item, const StructDef& def);
 	void emitStructLitAssigns(const json& objAst, const StructDef& def, const json& values, json& out);
 	string arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count);
+	string fillArrLitSizes(const json& stmt, const string& name, json& varType, const json& items);
 	// Where an array literal's elements go: through its levels, each of a
 	// fixed size or a `[+]T` (size -1, varr its type) as long as its row, to
 	// numeric leaf values or structs (structDef set) given as struct literals.
@@ -542,6 +560,7 @@ class PlnSemanticAnalyzer {
 	                    vector<json>* lens = nullptr);
 	int64_t constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow);
 	const json* firstNonConstName(const json& expr) const;
+	void nonConstNames(const json& expr, vector<const json*>& ids) const;
 	optional<SaDiag> elemShapeMismatch(const json& saValue, const json& dstType);
 	void  checkElemShape(const json& locNode, const json& saValue, const json& dstType);
 	optional<SaDiag> arrBorrowBindingMismatch(const json& srcAst, const json& saValue,

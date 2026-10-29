@@ -1,0 +1,3 @@
+cinclude <stdio.h>;
+const N = len(@stdin);
+type S { [N]$int32 v; };

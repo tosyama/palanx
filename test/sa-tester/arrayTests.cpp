@@ -1262,3 +1262,16 @@ TEST(sa, arr_size_width)
 		ASSERT_EQ(init["src"]["name"], "n");
 	}
 }
+
+TEST(sa, top_var_const_in_sig)
+{
+	json jout = run_sa("../test/testdata/sa/328_top_var_const.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& fs = jout["functions"];
+	ASSERT_EQ(fs[0]["parameters"][0]["var-type"]["arr-size"], 3);	// ps->len()
+	const auto& a = fs[1]["parameters"][0]["var-type"];
+	ASSERT_EQ(a["arr-size"], 4);	// len(@g)
+	ASSERT_EQ(a["base-type"]["arr-size"], 2);	// g[0]->len()
+	// len(a) + len(@q.v): q.v is sized by M = PN * 2.
+	ASSERT_EQ(fs[1]["body"][0]["value"]["value"], "10");
+}
