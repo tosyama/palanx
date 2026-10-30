@@ -28,17 +28,9 @@
         "expr-type": "call",
         "func-type": "c",
         "name": "get_big",
-        "args": [
-          {
-            "expr-type": "id",
-            "name": "g",
-            "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Big"}},
-            "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Big"}}
-          }
-        ],
+        "args": [],
+        "ret-dest": {"expr-type": "id", "name": "g", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Big"}}, "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Big"}}},
         "struct-ret": {
-          "var": "g",
-          "struct-name": "Big",
           "size": 24,
           "eightbytes": []
         }

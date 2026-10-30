@@ -720,13 +720,9 @@ TEST(sa, usual_arith_conv)
 }
 
 TEST(sa, struct_ret_c_call) {
-	// Pins the SA->codegen contract for
-	// C-function struct-by-value return in place -- `div_t d = div(7, 2);`
-	// must emit the malloc-backed var-decl for `d` followed by a bare `call`
-	// statement carrying a `struct-ret` descriptor (var/struct-name/size/
-	// eightbytes), with `value-type` erased from that call node (codegen's
-	// toVRegType has no struct case, so a lingering value-type there would
-	// silently reach an unhandled branch instead of the struct-ret path).
+	// A C function's by-value struct return is normalized to a Palan one:
+	// `div_t d = div(7, 2);` allocates d, then the call writes into it
+	// (`ret-dest`) and has no value of its own.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/171_struct_ret_c_call.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -746,10 +742,9 @@ TEST(sa, struct_ret_c_call) {
 	ASSERT_EQ(call["func-type"], "c");
 	ASSERT_EQ(call["name"], "div");
 	ASSERT_FALSE(call.contains("value-type"));
+	ASSERT_EQ(call["ret-dest"]["name"], "d");
 
 	const auto& sr = call["struct-ret"];
-	ASSERT_EQ(sr["var"], "d");
-	ASSERT_EQ(sr["struct-name"], "div_t");
 	ASSERT_EQ(sr["size"], 8);
 	ASSERT_EQ(sr["eightbytes"].size(), 1);
 	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
@@ -757,12 +752,8 @@ TEST(sa, struct_ret_c_call) {
 }
 
 TEST(sa, struct_ret_memory_class) {
-	// MEMORY class (>16 bytes) takes a different SA-side
-	// path than the register classes -- `eightbytes` stays empty and the
-	// destination pointer is prepended to `args` as an ordinary first
-	// argument (the ABI's hidden-pointer convention), so codegen needs no
-	// struct-ret-specific lowering for this class at all.
-	// Covers: sa_struct_var_decl MEMORY-class branch (PlnSaDecl.cpp ~879-888)
+	// MEMORY class (>16 bytes) has no eightbytes; codegen passes `ret-dest`
+	// as the hidden first argument, so SA leaves `args` as written.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/172_struct_ret_memory_class.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -773,15 +764,12 @@ TEST(sa, struct_ret_memory_class) {
 	const auto& call = stmts[1]["body"];
 	ASSERT_EQ(call["name"], "get_big");
 	ASSERT_FALSE(call.contains("value-type"));
+	ASSERT_EQ(call["ret-dest"]["name"], "g");
 
 	const auto& sr = call["struct-ret"];
-	ASSERT_EQ(sr["var"], "g");
 	ASSERT_EQ(sr["size"], 24);
 	ASSERT_TRUE(sr["eightbytes"].empty());
-
-	ASSERT_EQ(call["args"].size(), 1);
-	ASSERT_EQ(call["args"][0]["expr-type"], "id");
-	ASSERT_EQ(call["args"][0]["name"], "g");
+	ASSERT_EQ(call["args"].size(), 0);
 }
 
 TEST(sa, struct_ret_ptr_field) {

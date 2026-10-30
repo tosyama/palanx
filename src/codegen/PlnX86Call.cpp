@@ -160,6 +160,9 @@ int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int&
     return stack_space;
 }
 
+static const array<const char*, 2> kIntRetRegs = {"%rax", "%rdx"};
+static const array<const char*, 2> kSseRetRegs = {"%xmm0", "%xmm1"};
+
 void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
 {
     int flt_idx;
@@ -178,8 +181,6 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
     // PlnVCodeGen::storeEightbyte), so PlnRegAlloc always places it in a
     // callee-saved register or on the stack, never in %rax/%rdx/%xmm0/%xmm1
     // themselves -- copies below need no clobber-avoiding ordering.
-    static const array<const char*, 2> kIntRetRegs = {"%rax", "%rdx"};
-    static const array<const char*, 2> kSseRetRegs = {"%xmm0", "%xmm1"};
     int intRetIdx = 0, sseRetIdx = 0;
     for (size_t k = 0; k < i.dsts.size(); k++) {
         bool ret_is_float = (i.retTypes[k] == VRegType::Float32 || i.retTypes[k] == VRegType::Float64);
@@ -195,15 +196,20 @@ void PlnX86CodeGen::emitInstrCallC(const CallC& i, const RegMap& rm)
 
 // Palan's own return convention: a single value uses the SysV return register
 // of its class (%rax/%xmm0); multiple values take each class's argument
-// register sequence in order (intArgs / floatArgs).
-static vector<string> plnRetRegs(const vector<VRegType>& types)
+// register sequence in order (intArgs / floatArgs). A struct's eightbytes
+// (sysv) take SysV's return registers of their classes, as C's do.
+static vector<string> plnRetRegs(const vector<VRegType>& types, bool sysv)
 {
     if (types.size() == 1)
         return { isFloat(types[0]) ? "%xmm0" : "%rax" };
     vector<string> regs;
     int int_idx = 0, flt_idx = 0;
-    for (VRegType t : types)
-        regs.push_back(isFloat(t) ? PlnX86CodeGen::x86PhysRegs.floatArgs[flt_idx++] : PlnX86CodeGen::x86PhysRegs.intArgs[int_idx++]);
+    for (VRegType t : types) {
+        if (sysv)
+            regs.push_back(isFloat(t) ? kSseRetRegs[flt_idx++] : kIntRetRegs[int_idx++]);
+        else
+            regs.push_back(isFloat(t) ? PlnX86CodeGen::x86PhysRegs.floatArgs[flt_idx++] : PlnX86CodeGen::x86PhysRegs.intArgs[int_idx++]);
+    }
     return regs;
 }
 
@@ -217,7 +223,7 @@ void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
     // Stack dsts first (they only read return registers), then register dsts
     // as a hazard-safe shuffle: a dst may be bound to the next call's argument
     // register that still holds another, not-yet-copied result.
-    vector<string> regs = plnRetRegs(c.retTypes);
+    vector<string> regs = plnRetRegs(c.retTypes, c.sysvRet);
     vector<RegMove> retMoves;
     for (int j = 0; j < (int)c.dsts.size(); j++) {
         if (!rm.count(c.dsts[j])) continue;
@@ -271,7 +277,7 @@ void PlnX86CodeGen::emitInstrCallSys(const CallSys& c, const RegMap& rm)
 
 void PlnX86CodeGen::emitInstrRetPln(const RetPln& r, const RegMap& rm, const vector<string>& usedCalleeSaved)
 {
-    vector<string> regs = plnRetRegs(r.types);
+    vector<string> regs = plnRetRegs(r.types, r.sysvRet);
     for (int j = 0; j < (int)r.rets.size(); j++) {
         string s = srcOperand(rm.at(r.rets[j]));
         string dst_reg = sizedRegName(regs[j], r.types[j]);

@@ -298,11 +298,6 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot convert '" + arg1 + "' to '" + arg2 + "'.";
 
-		case E_ByvalStructRetDiscarded:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "the return value of this call (a '" + arg1 + "' returned by value) is "
-			       "discarded; assign it to a newly declared '" + arg1 + "' variable instead.";
-
 		case E_FuncNotValue:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");

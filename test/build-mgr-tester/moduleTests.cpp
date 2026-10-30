@@ -190,7 +190,7 @@ TEST(build_mgr, chain_call_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 7) << "expected 7 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -222,7 +222,7 @@ TEST(build_mgr, chain_lit_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 5) << "expected 5 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -346,7 +346,7 @@ TEST(build_mgr, chain_method_mtrace) {
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 10) << "expected 10 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 5) << "expected 5 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }

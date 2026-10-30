@@ -149,6 +149,7 @@ class PlnSemanticAnalyzer {
 	map<string, string> strLiteralLabels;  // value -> label
 	const json*       currentFunc_    = nullptr;  // null = _start level
 	const json*       currentFuncDef_ = nullptr;  // currentFunc_'s types resolved, not normalized
+	string            retSlot_;                   // the variable a single returned struct is written into
 	// Prefix of the symbols of functions defined here: the module, or the
 	// enclosing function's symbol, plus `..b<n>` inside a block.
 	string            symbolScope_;
@@ -477,7 +478,15 @@ class PlnSemanticAnalyzer {
 	                     const json* taken = nullptr);
 	Storage arrVarStorage(const json& locNode, const json& vtype);
 	AggregatePlace arrPlace(const json& self, const vector<json>& lens, bool litLen);
-	json structAllocExpr(const string& name);
+	json structAllocExpr(const string& name, bool build = true);
+	// A struct a call returns is written into storage its receiver provides.
+	void markStructRet(json& call, const json& locNode);
+	json bindStructRet(json call, json dest);
+	json declareStructRet(const string& name, const json& type, json call, VarStorage storage);
+	json frameStructRelease(const string& name, const json& type);
+	json structInitStmt(const string& name, const json& type);
+	json returnIntoSlot(const json& stmt, json& ret, const string& returned);
+	json heapStructRet(json value, json& pre);
 	json sa_arr_lit_var_decl(const json& stmt, VarStorage storage);   // single var; returns array of statements
 	json sa_arr_copy_var_decl(const json& stmt, VarStorage storage);  // single var; returns array of statements
 	json sa_struct_lit_var_decl(const json& stmt, VarStorage storage); // single var; returns array of statements

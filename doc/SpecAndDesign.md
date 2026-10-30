@@ -25,7 +25,8 @@ version: 0.2.3 — improvements found through the samples (ray tracer, echo serv
 - Performance: a function returning a struct returns it into storage the caller provides (frame
   storage for a temporary or a `$T` variable) instead of allocating it on the heap on every call
   (Issues.md #12), and `flo32`/`flo64` values are kept in XMM registers (Issues.md #13). Both are
-  measured on the ray tracer before and after.
+  measured on the ray tracer before and after. A C function returning a struct by value is
+  called the same way and can be used wherever a Palan one can, not only as an initializer.
 - A struct parameter `T` owns its argument as a `[n]T` one does (a copy the callee frees), where
   it used to borrow it.
 - Ownership across calls: `x>>` passes an owned value to a parameter owning it without a copy,
@@ -240,6 +241,14 @@ Design:
  - A single return value is returned in rax, or xmm0 for a float (System V compatible).
  - Two or more return values take each class's argument register sequence in order
    (integers in rdi/rsi/rdx/..., floats in xmm0/xmm1/...; caller-saved, read immediately after call).
+ - A struct is returned as System V returns it, by Palan and C functions and through function
+   pointers alike, into storage the caller provides: one of up to 16 bytes comes back in rax/rdx
+   and xmm0/xmm1 by its eightbytes' classes and the caller stores it; a larger one is written
+   through a pointer the caller passes as a hidden first argument (rdi), which the callee
+   returns in rax. Each struct among two or more return values is written through such a
+   pointer, one per struct in order, ahead of the arguments. palan-sa only says where the value
+   goes (`ret-dest`, SASpec.md); the hidden arguments and the stores are codegen's. An array is
+   still returned as a pointer to a heap block.
  - Normal Palan functions use standard frame setup (pushq %rbp / movq %rsp, %rbp / subq $N, %rsp)
    with frameSize rounded to a multiple of 16, and epilogue `leave; ret`.
  - A module's top-level function returns like any Palan function; `return` statements are
@@ -348,24 +357,32 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
 | Category | Expression |
 |----------|------------|
 | `owned`    | an `id` naming a variable that owns its storage and releases it at scope exit (a heap struct or array, not a `$` variable) |
-| `expiring` | a Palan function call returning a pointer type; a returned struct has no owner yet |
+| `expiring` | a call returning an owned value that has no owner yet: an array as a heap block, a struct as contents written to storage the receiver provides |
 | `owner-view` | a pointer cast to an owned type (`p as T`): what it points to, viewed as an owner that is no Palan variable |
 | (absent)   | anything else |
 
-- A returned struct initializing a variable becomes owned by it without a copy; a `$T` variable
-  gets its contents and the returned block is freed. Assigned with `->`, it is copied and freed.
+- A returned struct is written into storage its receiver provides, and what the struct owns
+  goes with it. A variable it initializes (`T v = f();`, `$T v = f();`, `T v <<= f();`) and an
+  owning parameter it is given to provide their own storage (a raw heap block, or the frame for
+  `$T`), so it is not copied. `return f();` passes the function's own return storage on.
+  Anywhere else it goes to a frame temp: assigned with `->` it is copied from there, and the
+  parts it owns are released once the statement has been evaluated.
 - A Palan parameter of an owned type (a struct `T`, `[n]T`, `[+]T`) owns its argument: the caller
   passes a copy, or hands a returned value over without one, and the callee frees it at exit.
 - A returned struct given to a borrowing parameter (`@T`/`@!T`, a C function's), or not used, is
-  freed once the statement has been evaluated. Binding it to a `@T`/`@!T` borrow is an error.
-- `return v` of an owned `v` drops it from scope-exit release; the caller owns the value.
-  Returning a struct the function doesn't own returns a copy.
+  released once the statement has been evaluated. Binding it to a `@T`/`@!T` borrow is an error.
+- `return v` of an owned `v` drops it from scope-exit release; the caller owns the value. A
+  returned struct is moved into the return storage: its bytes are copied and, for a heap `v`,
+  only `v`'s block is freed. A named struct return is the return storage itself. Returning a
+  struct the function doesn't own returns a copy.
 - `v ->> target` needs an owned `v` and sets `v` to NULL after the transfer, so its scope-exit
   free is a no-op; an `expiring` source has nothing to reset.
 - `v>>` gives a call argument away the same way, to a parameter owning its type, without a copy;
   anywhere else it is an error. `v ->> f()` is `f(v>>)`.
 - A function pointer type can have owned parameters and an owned return, with a Palan function's
-  convention (the callee owns an argument, the caller the returned value). Ownership is part of
+  convention (the callee owns an argument, the caller the returned value; a struct is returned
+  by value, so a pointer C returns is taken over by viewing it as an owner:
+  `(f as @func() -> @!T)() as T`). Ownership is part of
   the signature: a pointer to a function owning a parameter does not bind where one borrowing it
   is expected, or the reverse. A C function hands ownership across only when called through a
   cast to such a type, so ownership leaves or enters Palan only where the call says so.

@@ -175,6 +175,18 @@ void PlnX86CodeGen::emitInstrShiftImm(const ShiftImm& s, const RegMap& rm)
                 s.dst, s.src, s.type, rm);
 }
 
+// %xmm8/%xmm9 are free as scratch for the same reason as in
+// emitInstrConvert: all float VRegs are currently stack-allocated.
+void PlnX86CodeGen::emitInstrPackF32x2(const PackF32x2& p, const RegMap& rm)
+{
+    if (!rm.count(p.dst)) return;  // dead
+    out << "\tmovss " << srcOperand(rm.at(p.lo)) << ", %xmm8\n";
+    out << "\tmovss " << srcOperand(rm.at(p.hi)) << ", %xmm9\n";
+    out << "\tunpcklps %xmm9, %xmm8\n";
+    const PhysLoc& dst = rm.at(p.dst);
+    out << "\tmovsd %xmm8, " << (dst.isStack() ? srcOperand(dst) : dst.base) << "\n";
+}
+
 void PlnX86CodeGen::emitInstrCmp(const Cmp& cm, const RegMap& rm)
 {
     if (!rm.count(cm.dst)) return;  // dead

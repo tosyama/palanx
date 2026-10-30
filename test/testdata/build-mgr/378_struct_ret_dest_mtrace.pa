@@ -1,0 +1,39 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type V { flo32 x; flo32 y; flo32 z; };
+type M { int32 i; flo32 f; int64 k; };
+type B { int64 a; int64 b; int64 c; };
+type O { int32 n; [2]int32 a; V v; };
+func add(@V a, @V b) -> V { return [a.x + b.x, a.y + b.y, a.z + b.z]; }
+func sum(@V a) -> flo32 { return a.x + a.y + a.z; }
+func mix(int32 i) -> M m { [i, 1.5, 7] -> m; }
+func big(int64 n) -> B { B r = [n, n * 2, n * 3]; return r; }
+func fwd(int64 n) -> B { return big(n); }
+func mko(int32 n) -> O { return {n: n, a: [n, n + 1], v: [1, 2, 3]}; }
+func copyo(@O o) -> O { return o; }
+func frame(int32 n) -> O { $O t = mko(n); return t; }
+func two(int64 n) -> V v, O o, int32 k { [1, 2, 3] -> v; mko(int32(n)) -> o; 9 -> k; }
+func take(O o) -> int32 { return o.a[1]; }
+func through(@func(int32) -> O f, int32 n) -> int32 { O o = f(n); return o.a[0]; }
+mtrace();
+{
+	V p = add(@[1, 2, 3], @[4, 5, 6]);
+	printf("%.0f %.0f\n", sum(@add(@p, @p)), p.z);
+	add(@p, @p) -> p;
+	$V q = add(@p, @p);
+	printf("%.0f %.0f\n", p.x, q.y);
+	M m = mix(3);
+	B b = fwd(5);
+	printf("%d %.1f %ld %ld\n", m.i, m.f, m.k, b.c);
+	O o = mko(4);
+	$O fo = frame(6);
+	O c = copyo(@o);
+	printf("%d %d %d %.0f\n", o.a[1], fo.a[0], c.n, c.v.z);
+	(V v2, O o2, int32 k2) = two(7);
+	printf("%.0f %d %d\n", v2.z, o2.a[1], k2);
+	printf("%d %d\n", take(mko(8)), mko(9) -> take());
+	mko(10);
+	mko(11) -> o;
+	printf("%d %d\n", o.n, through(mko, 12));
+}
+muntrace();

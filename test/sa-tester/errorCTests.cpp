@@ -489,21 +489,6 @@ TEST(sa_error, call_arg_ptr_mismatch_c)
 	ASSERT_NE(sa.find("cannot convert '@!int32' to '@!int64'"), string::npos);
 }
 
-TEST(sa_error, byval_struct_ret_discarded)
-{
-	// `div(7, 2);` as a bare statement -- a C function's
-	// struct-by-value return reaching sa_expression_stmt with no
-	// destination variable to write it into.
-	// Covers: sa_expression_stmt struct value-type rejection, E_ByvalStructRetDiscarded
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_157_byval_struct_ret_discarded.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("the return value of this call (a 'div_t' returned by value) is discarded"), string::npos);
-}
-
 TEST(sa_error, callback_arg_not_func)
 {
 	// A variable of another type in a C function's function pointer parameter.

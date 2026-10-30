@@ -331,9 +331,14 @@ json PlnSemanticAnalyzer::bindCallTemp(json saArg)
 	json storage = saArg["value-type"];
 	storage.erase("mutable");
 	json valueType = saArg["value-type"];
+	json value = {{"expr-type","id"},{"name",name},{"var-type",storage},{"value-type",move(valueType)}};
+	if (isStructRetCall(saArg)) {
+		json release = frameStructRelease(name, storage);
+		return makeTempExpr(declareStructRet(name, storage, move(saArg), VarStorage::Frame), move(value),
+		                    release.is_null() ? json::array() : json::array({move(release)}));
+	}
 	json decl = {{"stmt-type","var-decl"},
 	             {"vars",json::array({{{"name",name},{"var-type",storage},{"init",move(saArg)}}})}};
-	json value = {{"expr-type","id"},{"name",name},{"var-type",storage},{"value-type",move(valueType)}};
 	return makeTempExpr(json::array({move(decl)}), move(value),
 	                    json::array({makeOwnedFreeStmt(name, storage)}));
 	// LCOV_EXCL_EXCEPTION_BR_STOP
@@ -444,6 +449,7 @@ json PlnSemanticAnalyzer::makeCallNode(const json& expr, const Callee& callee, c
 	}
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
+	markStructRet(sa_expr, expr);
 	sa_expr["args"] = analyzedArgs
 		? bindCallArgs(expr, *analyzedArgs, def["parameters"], callee.isC, writtenName)
 		: saCallArgs(expr, expr["args"], def["parameters"], callee.isC, writtenName);
@@ -586,6 +592,7 @@ json PlnSemanticAnalyzer::sa_expr_call_ptr(const json& expr, json callee, const 
 	if (func["ret-type"].value("type-name", "") != "void")
 		sa_expr["value-type"] = func["ret-type"];
 	if (isOwnedBlock(func["ret-type"])) sa_expr["category"] = "expiring";
+	markStructRet(sa_expr, expr);
 	sa_expr["args"] = saCallArgs(expr, expr["args"], func["parameters"], false, funcName);
 	return sa_expr;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -776,8 +783,9 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 	return saArgs;
 }
 
-// An owned parameter takes the argument over: a returned block as it is,
-// anything else as a copy the callee frees.
+// An owned parameter takes the argument over: a returned array block as it
+// is, a returned struct written into a block of its own, anything else as a
+// copy the callee frees.
 json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, CallArg& ca,
                                          const json& param, size_t argIdx, const string& funcName)
 {
@@ -788,6 +796,13 @@ json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, Ca
 		saArg = !ca.pending ? move(ca.sa) : sa_arg_expression(arg, registry_.fromJson(paramVT));
 		if (auto d = callArgMismatch(arg, saArg, param, argIdx, false, funcName))
 			reportDiag(locNode, *d);
+		if (isStructRetCall(saArg)) {
+			// LCOV_EXCL_EXCEPTION_BR_START
+			string name = "__arg_" + to_string(tempVarCounter_++);
+			json value = {{"expr-type","id"},{"name",name},{"var-type",paramVT},{"value-type",paramVT}};
+			return makeTempExpr(declareStructRet(name, paramVT, move(saArg), VarStorage::Heap), move(value), json::array());
+			// LCOV_EXCL_EXCEPTION_BR_STOP
+		}
 		if (isExpiringOwned(saArg)) return saArg;
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
@@ -1002,12 +1017,26 @@ json PlnSemanticAnalyzer::chainValueAhead(const json& value, const json* paramVT
 		if (value.contains("loc")) id["loc"] = value["loc"];
 		return id;
 	};
+	// A returned struct is written into a frame temp of the statement's scope.
+	auto frameTemp = [&](json sa) {
+		json type = sa["value-type"];
+		string name = "__pin_" + to_string(tempVarCounter_++);
+		declareVar(name, type);
+		for (auto& s : declareStructRet(name, type, move(sa), VarStorage::Frame)) body.push_back(move(s));
+		arrayScopeVars_.back().push_back({name, frameStructRelease(name, type), false});
+		return name;
+	};
 	if (isCallBorrow(value)) {
 		json sa = sa_call_borrow_arg(value);
 		sa["value-type"].erase("mutable");
-		json storage = sa["value-type"];
-		string name = pinTemp(move(sa), value, body);
-		addOwnedScopeVar(name, makeOwnedFreeStmt(name, storage));
+		string name;
+		if (isStructRetCall(sa)) {
+			name = frameTemp(move(sa));
+		} else {
+			json storage = sa["value-type"];
+			name = pinTemp(move(sa), value, body);
+			addOwnedScopeVar(name, makeOwnedFreeStmt(name, storage));
+		}
 		return {{"expr-type", "addr-of"}, {"mutable", value["mutable"]}, {"object", tempId(name)}};
 	}
 	json sa;
@@ -1023,6 +1052,8 @@ json PlnSemanticAnalyzer::chainValueAhead(const json& value, const json* paramVT
 		if (!sa.contains("value-type")) return value;
 	}
 	noteEscape(sa);
+	if (isStructRetCall(sa))
+		return tempId(frameTemp(move(sa)));
 	bool owned = isExpiringOwned(sa);
 	json type = sa["value-type"];
 	string name = pinTemp(move(sa), value, body);

@@ -111,8 +111,7 @@ void PlnSemanticAnalyzer::requireOwnedBase(const json& saBase, const json& locNo
 		exit(1);
 	}
 	json vt = saBase.value("value-type", json::object());
-	if (vt.value("type-kind", "") == "struct"
-	    || (saBase.value("category", "") == "expiring" && !isPtrBorrow(vt))) {
+	if (saBase.value("category", "") == "expiring" && !isPtrBorrow(vt)) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnownedCallResult) << endl;
 		exit(1);
 	}

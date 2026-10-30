@@ -271,15 +271,18 @@ json PlnSemanticAnalyzer::discardedValueStmt(const json& stmt, json body)
 		return {{"stmt-type","block"},{"body",move(stmts)}};
 		// LCOV_EXCL_EXCEPTION_BR_STOP
 	} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-	// A bare `struct` value-type only comes from a C function's by-value
-	// struct return; discarding it as a statement has no codegen lowering,
-	// so it's rejected here rather than adding one.
-	if (body.contains("value-type") && body["value-type"].value("type-kind","") == "struct") {
-		string structName = body["value-type"].value("type-name", "");
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ByvalStructRetDiscarded, structName) << endl;
-		exit(1);
+	// A discarded struct is written into the frame and only what it owns released.
+	if (isStructRetCall(body)) {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		string temp = "__tmp_" + to_string(tempVarCounter_++);
+		json st = body["value-type"];
+		json stmts = declareStructRet(temp, st, move(body), VarStorage::Frame);
+		json release = frameStructRelease(temp, st);
+		if (!release.is_null()) stmts.push_back(move(release));
+		return {{"stmt-type","block"},{"body",move(stmts)}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
 	}
-	// A discarded struct returned by a Palan call has no other owner.
+	// A discarded block returned by a call has no other owner.
 	if (isExpiringOwned(body)) {
 		// LCOV_EXCL_EXCEPTION_BR_START
 		string temp = "__tmp_" + to_string(tempVarCounter_++);
@@ -377,9 +380,9 @@ json PlnSemanticAnalyzer::sa_resolved_var_decl(const json& stmt2, vector<VarStor
 	// share one evaluation of its size expression. Each array literal fixes its own
 	// variable's size (`[]int32 a = [1,2], b = [1,2,3]`), so it always gets its own run,
 	// as does an array initialized by copying another one or a struct literal.
-	// An initialized struct gets its own run too: a call it takes over runs in its
-	// var-decl, while copies and C struct-ret calls run after the var-decl, so a
-	// shared run would break left-to-right order (`Pair a = b, c = mutate(@!b);`).
+	// An initialized struct gets its own run too: a copy or a call returning into
+	// it runs after the var-decl, so a shared run would break left-to-right order
+	// (`Pair a = b, c = mutate(@!b);`).
 	json result = json::array();
 	const json& vars = stmt2["vars"];
 	size_t begin = 0;
@@ -1403,23 +1406,20 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 	// LCOV_EXCL_EXCEPTION_BR_START
 	for (auto& var : stmt["vars"]) {
 		string name = var["name"].get<string>();
-		json structRetCall;  // stays null unless `var` has a valid struct-returning C call initializer
 		json copySrc;        // stays null unless `var` is initialized by copying another struct
-		json takenOver;      // stays null unless `var` takes over a struct returned by a Palan call
+		json returned;       // stays null unless a call returns `var`'s value into it
+		json takenOver;      // stays null unless `var` takes over a block given by `<<=`
 		if (var.contains("init")) {
 			// Evaluate before declareVar: the initializer must not see the
 			// variable it is initializing (same rule as sa_var_decl).
 			json userInit = sa_expression(var["init"]);
-			bool isStructRetCall = userInit.contains("value-type")
-				&& userInit.value("expr-type", "") == "call"
-				&& userInit.value("func-type", "") == "c"
-				&& userInit["value-type"].value("type-kind","") == "struct"
-				&& userInit["value-type"].value("type-name","") == structName;
-			if (isExpiringOwned(userInit) && userInit["value-type"]["base-type"] == pntr_type["base-type"]) {
-				// The variable becomes the owner of the returned struct, as in
-				// `(T v) = f()`, instead of allocating storage only to copy over it.
+			bool sameStruct = userInit.contains("value-type")
+				&& userInit["value-type"].value("base-type", json()) == pntr_type["base-type"];
+			if (isStructRetCall(userInit) && sameStruct) {
+				returned = move(userInit);
+			} else if (isExpiringOwned(userInit) && sameStruct) {
 				takenOver = move(userInit);
-			} else if (!isStructRetCall) {
+			} else {
 				// A struct of another type is left to makeCopyStmt's shape check.
 				if (!userInit.contains("value-type")
 						|| (userInit.value("category", "") == "expiring" && !isExpiringOwned(userInit))) {
@@ -1427,23 +1427,6 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 					exit(1);
 				}
 				copySrc = move(userInit);
-			} else {
-				userInit.erase("value-type");
-				json ebs = eightbytesJson(def, structDefs_);
-				bool inMemory = ebs.empty();
-				userInit["struct-ret"] = {{"var",name}, {"struct-name",structName},
-				                          {"size",def.totalSize}, {"eightbytes",move(ebs)}};
-				if (inMemory) {
-					// MEMORY class (>16 bytes): prepend the destination pointer as an
-					// ordinary first argument -- the callee writes the whole struct
-					// through it directly, so codegen needs no struct-ret-specific
-					// lowering for this class.
-					json var_id = {{"expr-type","id"},{"name",name},
-					               {"var-type",pntr_type},{"value-type",pntr_type}};
-					if (!userInit.contains("args")) userInit["args"] = json::array();
-					userInit["args"].insert(userInit["args"].begin(), var_id);
-				}
-				structRetCall = {{"stmt-type","expr"},{"body",userInit}};
 			}
 		}
 		declareVar(name, pntr_type, &stmt);
@@ -1454,33 +1437,30 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 			init = move(takenOver);
 			addOwnedScopeVar(name, makeOwnedFreeStmt(name, pntr_type));
 		} else {
-			json heapInit;
-			bool fresh = takenOver.is_null();
-			if (!fresh) {
-				// Frame storage can't take the returned block over: its contents,
-				// owned fields included, move into the frame and only the block is freed.
-				string temp = "__tmp_" + to_string(tempVarCounter_++);
-				json tempId = {{"expr-type","id"},{"name",temp},{"var-type",pntr_type},{"value-type",pntr_type}};
-				json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-				json size_arg = {{"expr-type","lit-uint"},{"value",to_string(def.totalSize)},{"value-type",uint64_type}};
-				json body = json::array({
-					{{"stmt-type","var-decl"},{"vars",json::array({{{"name",temp},{"var-type",pntr_type},{"init",move(takenOver)}}})}},
-					{{"stmt-type","expr"},{"body",{{"expr-type","call"},{"name","memcpy"},{"func-type","c"},
-						{"args",json::array({var_id, tempId, size_arg})}}}},
-					makeFreeStmt(temp, pntr_type)});
-				initStmts.push_back({{"stmt-type","block"},{"body",move(body)}});
-				heapInit = json::object();
-			} else {
-				heapInit = structAllocExpr(structName);
-			}
-			init = placeAggregateVar(stmt, name, pntr_type, move(heapInit), makeOwnedFreeStmt(name, pntr_type),
-			                         storage, def.totalSize, def.maxAlign, post,
-			                         structShape(structName));
+			// The callee builds what a returned struct owns, and a frame variable
+			// gets what a taken-over block owns, so their storage is only allocated.
+			bool build = returned.is_null() && takenOver.is_null();
+			init = placeAggregateVar(stmt, name, pntr_type, structAllocExpr(structName, build),
+			                         makeOwnedFreeStmt(name, pntr_type), storage, def.totalSize, def.maxAlign,
+			                         post, structShape(structName));
 		}
-
+		if (!takenOver.is_null()) {
+			// Frame storage can't take the block over: its contents, owned
+			// fields included, move into the frame and only the block is freed.
+			string temp = "__tmp_" + to_string(tempVarCounter_++);
+			json tempId = {{"expr-type","id"},{"name",temp},{"var-type",pntr_type},{"value-type",pntr_type}};
+			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+			json size_arg = {{"expr-type","lit-uint"},{"value",to_string(def.totalSize)},{"value-type",uint64_type}};
+			json body = json::array({
+				{{"stmt-type","var-decl"},{"vars",json::array({{{"name",temp},{"var-type",pntr_type},{"init",move(takenOver)}}})}},
+				{{"stmt-type","expr"},{"body",{{"expr-type","call"},{"name","memcpy"},{"func-type","c"},
+					{"args",json::array({var_id, tempId, size_arg})}}}},
+				makeFreeStmt(temp, pntr_type)});
+			initStmts.push_back({{"stmt-type","block"},{"body",move(body)}});
+		}
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
-		if (!structRetCall.is_null())
-			initStmts.push_back(structRetCall);
+		if (!returned.is_null())
+			for (auto& st : bindStructRet(move(returned), var_id)) initStmts.push_back(move(st));
 		if (!copySrc.is_null())
 			initStmts.push_back(makeCopyStmt(stmt, var_id, copySrc));
 	}

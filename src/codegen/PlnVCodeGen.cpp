@@ -3,6 +3,7 @@
 /// @file PlnVCodeGen.cpp
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
+#include <algorithm>
 #include "PlnVCodeGen.h"
 #include <boost/assert.hpp>
 
@@ -263,11 +264,9 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::CCCall: {
             auto& e = static_cast<const CCCallExpr&>(expr);
-            // A struct-ret call produces no scalar value to plug into an
-            // expression context; sa_expression_stmt (E_ByvalStructRetDiscarded)
-            // and sa_struct_var_decl are the only SA producers of one, and both
-            // always place it as a bare statement (lowerExprStmt), never here.
-            BOOST_ASSERT(e.hasRet && !e.hasStructRet);
+            // A call returning a struct has no value; palan-sa always makes it
+            // a statement of its own (lowerExprStmt).
+            BOOST_ASSERT(e.hasRet && !e.structRet);
             vector<StructArgSpan> spans;
             vector<VReg> args = lowerCCallArgs(e, spans, func);
             VReg dst = allocVReg();
@@ -276,7 +275,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::PlnCall: {
             auto& e = static_cast<const PlnCallExpr&>(expr);
-            BOOST_ASSERT(e.hasRet);
+            BOOST_ASSERT(e.hasRet && !e.structRet);
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
             func.instrs.push_back(CallPln{e.name, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
@@ -284,7 +283,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::PtrCall: {
             auto& e = static_cast<const PtrCallExpr&>(expr);
-            BOOST_ASSERT(e.hasRet);
+            BOOST_ASSERT(e.hasRet && !e.structRet);
             VReg callee = lowerExpr(*e.callee, func);
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
@@ -407,6 +406,15 @@ static bool isWholeEightbyte(const Eightbyte& eb)
 
 VReg PlnVCodeGen::loadEightbyte(VReg ptr, int offset, const Eightbyte& eb, VFunc& func)
 {
+    // An eightbyte of two floats is usually just written as two 4-byte stores,
+    // which an 8-byte load spanning both would wait for (no store forwarding).
+    if (eb.type == VRegType::Float64 && eb.size == 8) {
+        VReg lo = allocVReg(), hi = allocVReg(), packed = allocVReg();
+        func.instrs.push_back(DerefLoad{lo, ptr, offset, VRegType::Float32});
+        func.instrs.push_back(DerefLoad{hi, ptr, offset + 4, VRegType::Float32});
+        func.instrs.push_back(PackF32x2{packed, lo, hi});
+        return packed;
+    }
     VReg acc = allocVReg();
     if (isWholeEightbyte(eb)) {
         func.instrs.push_back(DerefLoad{acc, ptr, offset, eb.type});
@@ -449,9 +457,9 @@ void PlnVCodeGen::storeEightbyte(VReg ptr, int offset, VReg src, const Eightbyte
 // A struct passed by value becomes its eightbytes, read from the struct the
 // argument points at; MEMORY class is read the same way, in 8-byte INTEGER
 // units, for the emitter to copy to the stack.
-vector<VReg> PlnVCodeGen::lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func)
+vector<VReg> PlnVCodeGen::lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func,
+                                         vector<VReg> args)
 {
-    vector<VReg> args;
     for (size_t i = 0; i < expr.args.size(); i++) {
         VReg v = lowerExpr(*expr.args[i], func);
         if (!expr.structArgs[i]) {
@@ -474,39 +482,65 @@ vector<VReg> PlnVCodeGen::lowerCCallArgs(const CCCallExpr& expr, vector<StructAr
     return args;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// The pointer a call returning a struct writes it through, evaluated ahead of
+// the arguments; a MEMORY-class one is also the hidden first argument.
+VReg PlnVCodeGen::lowerStructRetDest(const std::optional<StructRet>& sr, vector<VReg>& args, VFunc& func)
+{
+    if (!sr) return VReg{};
+    VReg dest = lowerExpr(*sr->dest, func);
+    if (sr->eightbytes.empty()) args.push_back(dest);
+    return dest;
+}
+
+// A struct of up to 16 bytes comes back as its eightbytes in fresh vregs...
+std::pair<vector<VReg>, vector<VRegType>> PlnVCodeGen::structRetDsts(const std::optional<StructRet>& sr)
+{
+    std::pair<vector<VReg>, vector<VRegType>> out;
+    if (!sr) return out;
+    for (const Eightbyte& eb : sr->eightbytes) {
+        out.first.push_back(allocVReg());
+        out.second.push_back(eb.type);
+    }
+    return out;
+}
+
+// ...which are stored through the destination right after the call.
+void PlnVCodeGen::storeStructRet(VReg dest, const std::optional<StructRet>& sr, const vector<VReg>& dsts, VFunc& func)
+{
+    for (size_t i = 0; i < dsts.size(); i++)
+        storeEightbyte(dest, 8 * (int)i, dsts[i], sr->eightbytes[i], func);
+}
+
 void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
 {
+    vector<VReg> prefix;
+    VReg dest = lowerStructRetDest(expr.structRet, prefix, func);
     vector<StructArgSpan> spans;
-    vector<VReg> args = lowerCCallArgs(expr, spans, func);
-    if (!expr.hasStructRet || expr.structRetEightbytes.empty()) {
-        // Plain void-context call, or a MEMORY-class (>16B) struct return --
-        // sa_struct_var_decl already prepended the destination pointer to
-        // args as an ordinary first argument for the MEMORY case, so the
-        // callee writes the whole struct through it directly; no dsts needed.
-        func.instrs.push_back(CallC{expr.name, args, {}, {}, std::nullopt, spans}); // LCOV_EXCL_EXCEPTION_BR_LINE
-        return;
-    }
-    // Register-class struct return (<=16B): the call writes each eightbyte
-    // into a fresh vreg (from %rax/%rdx or %xmm0/%xmm1), then a DerefStore
-    // per eightbyte copies it into the destination struct's heap storage.
-    // var-decl always precedes this call in the same var-decl statement
-    // (sa_struct_var_decl), so the destination is already declared.
-    VReg dstPtr = findVar(expr.structRetVar, func);
-    vector<VReg> dsts;
-    vector<VRegType> types;
-    for (const Eightbyte& eb : expr.structRetEightbytes) {
-        dsts.push_back(allocVReg());
-        types.push_back(eb.type);
-    }
+    vector<VReg> args = lowerCCallArgs(expr, spans, func, move(prefix));
+    auto [dsts, types] = structRetDsts(expr.structRet);
     func.instrs.push_back(CallC{expr.name, args, dsts, types, std::nullopt, spans}); // LCOV_EXCL_EXCEPTION_BR_LINE
-    for (size_t i = 0; i < dsts.size(); i++)
-        storeEightbyte(dstPtr, 8 * (int)i, dsts[i], expr.structRetEightbytes[i], func);
+    storeStructRet(dest, expr.structRet, dsts, func);
 }
 
 void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 {
-    vector<VReg> args = lowerArgs(expr.args, func);
-    func.instrs.push_back(CallPln{expr.name, args, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    vector<VReg> args;
+    VReg dest = lowerStructRetDest(expr.structRet, args, func);
+    for (VReg a : lowerArgs(expr.args, func)) args.push_back(a);
+    auto [dsts, types] = structRetDsts(expr.structRet);
+    func.instrs.push_back(CallPln{expr.name, args, dsts, types, true}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    storeStructRet(dest, expr.structRet, dsts, func);
+}
+
+void PlnVCodeGen::lowerPtrCallStmt(const PtrCallExpr& expr, VFunc& func)
+{
+    vector<VReg> args;
+    VReg dest = lowerStructRetDest(expr.structRet, args, func);
+    VReg callee = lowerExpr(*expr.callee, func);
+    for (VReg a : lowerArgs(expr.args, func)) args.push_back(a);
+    auto [dsts, types] = structRetDsts(expr.structRet);
+    func.instrs.push_back(CallC{"", args, dsts, types, callee}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    storeStructRet(dest, expr.structRet, dsts, func);
 }
 
 void PlnVCodeGen::lowerSysCallExpr(const SysCallExpr& expr, VFunc& func)
@@ -603,8 +637,27 @@ void PlnVCodeGen::lowerArrAssignStmt(const ArrAssignStmt& s, VFunc& func)
     func.instrs.push_back(DerefStoreIdx{base, idx, s.scale, src, s.type, s.idx_type});
 }
 
+// A struct built in the frame returns as its eightbytes in the SysV return registers.
+void PlnVCodeGen::lowerSlotReturn(VFunc& func)
+{
+    VReg slot = findVar(currentPlnFunc_->retSlot, func);
+    vector<VReg>     rets;
+    vector<VRegType> types;
+    for (size_t i = 0; i < currentPlnFunc_->retSlotEightbytes.size(); i++) {
+        const Eightbyte& eb = currentPlnFunc_->retSlotEightbytes[i];
+        rets.push_back(loadEightbyte(slot, 8 * (int)i, eb, func));
+        types.push_back(eb.type);
+    }
+    func.instrs.push_back(RetPln{rets, types, true}); // LCOV_EXCL_EXCEPTION_BR_LINE
+}
+
 void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
 {
+    if (currentPlnFunc_ && !currentPlnFunc_->retSlot.empty()) {
+        BOOST_ASSERT(stmt.values.empty());
+        lowerSlotReturn(func);
+        return;
+    }
     // Multi-return: bare return using retVars
     if (currentPlnFunc_ && !currentPlnFunc_->retVars.empty()) {
         BOOST_ASSERT(stmt.values.empty());
@@ -637,7 +690,9 @@ void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
 
 void PlnVCodeGen::lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func)
 {
-    vector<VReg> args = lowerArgs(stmt.args, func);
+    // Each returned struct is written through a hidden argument, in order, ahead of the arguments.
+    vector<VReg> args = lowerArgs(stmt.retDests, func);
+    for (VReg a : lowerArgs(stmt.args, func)) args.push_back(a);
 
     vector<VReg>     dsts;
     vector<VRegType> types;
@@ -662,13 +717,9 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
         case ExprKind::SysCall:
             lowerSysCallExpr(static_cast<const SysCallExpr&>(*stmt.body), func);
             return;
-        case ExprKind::PtrCall: {
-            auto& e = static_cast<const PtrCallExpr&>(*stmt.body);
-            VReg callee = lowerExpr(*e.callee, func);
-            vector<VReg> args = lowerArgs(e.args, func);
-            func.instrs.push_back(CallC{"", args, {}, {}, callee}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        case ExprKind::PtrCall:
+            lowerPtrCallStmt(static_cast<const PtrCallExpr&>(*stmt.body), func);
             return;
-        }
         default:
             BOOST_ASSERT(false);  // only call expressions are valid as statements
     }
@@ -1027,7 +1078,10 @@ VProg PlnVCodeGen::generate(const Module& module)
             else
                 vf.instrs.push_back(InitVar{r, t, 0});
         };
-        if (!pf.retVarName.empty()) {
+        // A MEMORY-class struct's slot is the hidden parameter, already declared.
+        bool retIsParam = std::any_of(pf.params.begin(), pf.params.end(),
+                                      [&](const VarDef& p) { return p.name == pf.retVarName; });
+        if (!pf.retVarName.empty() && !retIsParam) {
             VReg r = allocVReg();
             zeroInit(r, pf.retType);
             declareVar(pf.retVarName, r);
@@ -1044,7 +1098,11 @@ VProg PlnVCodeGen::generate(const Module& module)
         currentPlnFunc_ = nullptr;
         // Append implicit return if the last instruction is not RetPln.
         if (vf.instrs.empty() || !std::get_if<RetPln>(&vf.instrs.back())) {
-            if (!pf.retVars.empty()) {
+            if (!pf.retSlot.empty()) {
+                currentPlnFunc_ = &pf;
+                lowerSlotReturn(vf);
+                currentPlnFunc_ = nullptr;
+            } else if (!pf.retVars.empty()) {
                 vector<VReg>     rets;
                 vector<VRegType> types;
                 for (auto& rv : pf.retVars) {

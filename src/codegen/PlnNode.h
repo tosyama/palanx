@@ -82,12 +82,26 @@ struct FuncRefExpr : Expr {
 };
 
 // A call through a function pointer.
+// One eightbyte of a struct passed or returned by value: the register type
+// it travels in, and how many of its bytes belong to the struct (1-8; a width
+// other than 1/2/4/8 is read or written piecewise).
+struct Eightbyte { VRegType type; int size; };
+
+// Where a call returning a struct writes it (a pointer), and the struct's
+// eightbytes when it comes back in registers; none means MEMORY class, for
+// which dest is passed as the hidden first argument.
+struct StructRet {
+    unique_ptr<Expr>  dest;
+    vector<Eightbyte> eightbytes;
+};
+
 struct PtrCallExpr : Expr {
     PtrCallExpr() : Expr(ExprKind::PtrCall) {}
     unique_ptr<Expr> callee;
     bool     hasRet  = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
+    std::optional<StructRet> structRet;
 };
 
 struct IntLitExpr : Expr {
@@ -216,28 +230,13 @@ struct ConvertExpr : Expr {
     unique_ptr<Expr> src;
 };
 
-// One eightbyte of a struct passed or returned by value: the register type
-// it travels in, and how many of its bytes belong to the struct (1-8; a width
-// other than 1/2/4/8 is read or written piecewise).
-struct Eightbyte { VRegType type; int size; };
-
 struct CCCallExpr : Expr {
     CCCallExpr() : Expr(ExprKind::CCCall) {}
     string name;
     bool     hasRet = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
-    // Set when sa.json's call node carries a "struct-ret" descriptor (a C
-    // function returning a struct by value, classified per the System V
-    // AMD64 ABI by palan-sa). Mutually exclusive with hasRet: this call has
-    // no ordinary scalar/pointer return value, only this side effect.
-    // structRetVar names the (already-declared) destination struct variable;
-    // structRetEightbytes lists the classified eightbytes in order (empty
-    // means MEMORY class -- the destination pointer was already prepended to
-    // args as an ordinary argument, so no further lowering is needed here).
-    bool              hasStructRet = false;
-    string            structRetVar;
-    vector<Eightbyte> structRetEightbytes;
+    std::optional<StructRet> structRet;
     // Parallel to args: set for an argument passed to a by-value struct
     // parameter, whose expression yields a pointer to the struct to copy.
     // Empty eightbytes means MEMORY class (copied to the stack).
@@ -251,6 +250,7 @@ struct PlnCallExpr : Expr {
     bool     hasRet  = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
+    std::optional<StructRet> structRet;
 };
 
 // A raw Linux syscall call (Linux syscall ABI, not System V) -- resolved by
@@ -333,10 +333,11 @@ struct ReturnStmt : Stmt {
 
 struct TappleDeclStmt : Stmt {
     TappleDeclStmt() : Stmt(StmtKind::TappleDecl) {}
-    vector<VarDef>           vars;
+    vector<VarDef>           vars;      // the values returned in registers
     string                   funcName;
     vector<unique_ptr<Expr>> args;
     vector<VRegType>         retTypes;
+    vector<unique_ptr<Expr>> retDests;  // where each returned struct is written, in order
 };
 
 struct BlockStmt : Stmt {
@@ -439,6 +440,11 @@ struct PlnFunc {
     VRegType           retType    = VRegType::Int64;
     string             retVarName;   // single named return variable; empty if none
     vector<VarDef>     retVars;      // multiple named return variables (size>=2)
+    // A single returned struct is built in retSlot, a frame variable, and
+    // returned in registers by these eightbytes; a MEMORY-class one's slot is
+    // the hidden first parameter, returned as retVarName.
+    string             retSlot;
+    vector<Eightbyte>  retSlotEightbytes;
     vector<unique_ptr<Stmt>> body;
     bool               isExport = false;
 };

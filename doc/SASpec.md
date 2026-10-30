@@ -162,6 +162,13 @@ SA-annotated statements.
 - parameters\* - Parameter list (Palan parameter: name, var-type; empty array when no parameters)
 - ret-type - Return variable type (single-return functions only)
 - rets - Return value list (multi-return functions only)
+- ret-slot - Present when the single return value is a struct: `{"name":<variable>,"size":<bytes>,
+  "eightbytes":[...]}` (`eightbytes` as in a call's `struct-ret`). The body writes the value into
+  the struct variable `name` (the named return, or `__ret` for an unnamed one) and returns with a
+  bare `return`. With `"eightbytes":[]` (MEMORY class) `name` is bound at entry to the hidden
+  first argument; otherwise the body declares it as a `frame-alloc` and codegen returns its
+  eightbytes in registers. In `rets`, a struct entry carries `"slot":true`: its variable is bound
+  at entry to a hidden argument, one per struct return in order, ahead of the parameters.
 - globals - The names the function binds to static slots at its entry: `name`, `label` and
   `var-type` of each Palan global it is permitted to use (`var-type` is how it sees the global;
   see Static variables below) and each C global it uses. Omitted when there are none.
@@ -699,17 +706,23 @@ Additional statement kinds emitted by SA:
   `arrayScopeVars_`, SA removes it from the free-tracking set before emitting scope-exit
   cleanup. The caller receives ownership of the returned pointer.
 
+  A function with a `ret-slot` returns with a bare `return`, after statements that write the
+  value into the slot: a struct-returning call gets the slot as its `ret-dest`; a literal is
+  stored into it field by field; an owned variable's bytes are `memcpy`d in and, for a heap
+  variable, its block alone is `free`d (what it owns moves with the bytes); anything else is
+  copied in as `->` would copy it into a fresh struct.
+
 - **tapple-decl** - tuple-style multiple return value declaration
   - stmt-type\*: "tapple-decl"
-  - vars\*: variable list (var-name, var-type per entry; var-type is the function's ret type)
+  - vars\*: one entry per return value, in order: `var-name` and `var-type` (the function's
+    ret type), or for a struct return `ret-dest`, an expression giving the storage it is written
+    to (declared by a preceding statement, as for a call's `ret-dest`)
   - value\*: SA-annotated call expression (func-type: "palan"; carries value-types field)
 
-  A declared variable whose type differs from its ret type, or one declared with `$`, is
-  received into a temporary and declared by a following `var-decl` initialized from it. For a
-  `$T` variable receiving a struct, that initializer is the temporary as an `expiring` value, so
-  the contents move in as for `$T p = f();` (see Stack variable declarations) and the temporary
-  is not freed at scope exit.
-  A variable receiving a struct owns it and is freed at scope exit like a declared struct.
+  A declared variable whose type differs from its ret type is received into a temporary and
+  declared by a following `var-decl` initialized from it. A struct variable is declared before
+  the `tapple-decl` (a raw `malloc`ed block, or a `frame-alloc` for `$T`) and is its own
+  `ret-dest`; it owns what it receives and is released at scope exit like a declared struct.
   A `tapple-assign` is emitted as a `block` holding a `tapple-decl` into temporaries followed by
   one `assign`, `arr-assign` or `field-assign` per target, in target order; a struct is copied
   into its target and its temporary freed at the end of the block.
@@ -878,9 +891,11 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
 
     **Temp arguments:** an argument with no owner is emitted as a `temp` (below), since the callee
     may return a borrow of it:
-    - a struct returned by a Palan call (`category: "expiring"`, with `mutable` in its
-      `value-type` when written `@f()`/`@!f()`): `body` is a `var-decl` of `__tmp_N` initialized
-      by the call, `release` its `free` / `__pln_free_T`.
+    - a struct returned by a call (`category: "expiring"`, with `mutable` in its `value-type`
+      when written `@f()`/`@!f()`): `body` declares `__tmp_N` as a `frame-alloc` and makes the
+      call with it as `ret-dest`, `release` is its `__pln_fini_T` (nothing for a struct owning
+      nothing). Given to a parameter owning it, the struct is written into a raw `malloc`ed
+      block instead, which the callee frees.
     - a literal (`[..]`/`{..}` for a struct parameter `T`, `@[..]`/`@![..]`/`@{..}`/`@!{..}` for
       a `@T`/`@!T` or a borrowed array `@[n]T`/`@![n]T` parameter): `body` declares `__lit_N` of
       the parameter's struct or (owned) array type and initializes it as a variable's initializer
@@ -891,8 +906,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
       `[]T`) is E_ArrLitArgType / E_DictLitArgType, naming the parameter and its type; one for
       a C function's parameter other than a by-value struct is E_LitArgCFunc.
 
-    A struct returned by a call and discarded as an `expr` statement becomes a `block` of a temp
-    `var-decl` initialized by the call and the temp's free.
+    A struct returned by a call and discarded as an `expr` statement becomes a `block` of the
+    temp's `frame-alloc`, the call into it and its `__pln_fini_T` (if any).
 
     A call returning a `@T`/`@!T` (one of its `value-types` for a `tapple-decl`) with a
     `temp` argument, directly or through a nested call of the same kind, may return a
@@ -1069,19 +1084,21 @@ Additional fields per expression kind:
   - value-type added when the function has a single return type (ret-type in its definition)
   - value-types added when the function has multiple return values (rets in its definition);
     array of Variable type objects in declaration order
-  - struct-ret added instead of value-type when a C function returns a struct **by value**
-    (SysV AMD64 classification, see "Struct variable declaration → sa.json" below for how this
-    call is placed): `{"var":<destination variable name string>,"struct-name":<struct tag
-    name>,"size":<total struct size in bytes>,"eightbytes":[{"class":"int"|"sse","size":1..8},
-    ...]}`. Each array entry is one eightbyte of the classified return value in order — its
-    byte offset within the struct is implied by its index (`index * 8`), there is no explicit
-    `offset` key; `size` on the last entry is the tail width when the struct isn't a multiple of
-    8 bytes (codegen writes a width other than 1/2/4/8 piecewise). A
-    struct over 16 bytes (the System V AMD64 MEMORY class) is `"eightbytes":[]`, and the hidden
-    destination pointer is prepended by SA as an ordinary first entry in the call's own `args`
-    array (an `id` expression of type `pntr(struct)`) — codegen has no MEMORY-specific lowering,
-    it is just another argument. When `struct-ret` is present the call node never carries
-    `value-type`/`value-types` (SA removes it) since the call has no ordinary return-value slot.
+  - ret-dest and struct-ret added instead of value-type when the function (Palan or C, or a
+    function pointer) returns a struct: `ret-dest` is an expression of type `pntr(struct)`
+    giving the storage the value is written to, and `struct-ret` is `{"size":<total struct size
+    in bytes>,"eightbytes":[{"class":"int"|"sse","size":1..8},...]}` (System V AMD64
+    classification). Each array entry is one eightbyte of the classified return value in order —
+    its byte offset within the struct is implied by its index (`index * 8`), there is no
+    explicit `offset` key; `size` on the last entry is the tail width when the struct isn't a
+    multiple of 8 bytes (codegen writes a width other than 1/2/4/8 piecewise). A struct over 16
+    bytes (the System V AMD64 MEMORY class) is `"eightbytes":[]`: codegen passes `ret-dest` as
+    the hidden first argument. Such a call has no value and is always the `body` of an `expr`
+    statement; where its value is used, SA emits a `temp` whose `body` declares the storage and
+    makes the call, and whose `value` names the storage with `"category":"expiring"`. Where the
+    receiver provides storage of its own (see Struct variable declaration and Value categories
+    in SpecAndDesign.md §4), that storage is the `ret-dest`. A C function's by-value struct
+    return type is normalized to `pntr(struct)` when it is registered, as a Palan `-> T` is.
   - struct-arg added on an argument (in `args`) given to a C function's by-value struct
     parameter: `{"size":<total struct size in bytes>,"eightbytes":[...]}`, with `eightbytes` as
     in `struct-ret` (`[]` for MEMORY class). The argument expression itself is a pointer to the
@@ -1556,17 +1573,10 @@ E_EmbedOwningType, as for a variable.
 Struct variables are registered in `arrayScopeVars_` and a `free()` statement is auto-inserted
 at scope exit (same mechanism as heap-allocated arrays).
 
-When the initializer is a call to a C function that returns a struct by value (e.g. `div_t d =
-div(7, 2);`), the var-decl's own `init` is unchanged (still the ordinary `malloc` shown above) —
-the call is instead emitted as a separate statement immediately following the var-decl,
-`{"stmt-type":"expr","body":<call with a "struct-ret" descriptor, see the call expression entry
-above>}`, whose `struct-ret.var` names the just-declared variable. Discarding such a call as a
-bare statement with no destination (not immediately following a matching var-decl) is
-E_ByvalStructRetDiscarded.
-
-When the initializer is a call to a Palan function returning the same struct (`Point p =
-makePoint();`), the call itself is the var-decl's `init` in place of `malloc`: the variable takes
-over the returned storage and frees it at scope exit. A struct variable with an initializer is
+When the initializer is a call returning the same struct (`Point p = makePoint();`,
+`div_t d = div(7, 2);`), the var-decl's `init` is a raw `malloc` of the struct's size even when
+the struct owns fields, since the callee builds them, and the call follows the var-decl as an
+`expr` statement whose `ret-dest` is the variable. A struct variable with an initializer is
 always emitted as its own var-decl, so `Point a = b, c = f();` evaluates left to right.
 
 ### Stack variable declarations
@@ -1583,9 +1593,9 @@ what the heap version does through its allocator and free functions is derived f
 
 Only the outermost block is in the frame, so a `[n]T` struct array or a 2D array keeps its heap
 elements or rows. `size` must be a compile-time constant (E_FrameArrSizeNotConst). A struct
-returned by a Palan call (`$Point p = makePoint();`) is copied in, as a `block` following the
-var-decl: a temp takes the call, `memcpy` copies it into `p`, and `free` releases the returned
-block without `__pln_free_K`, since `p` now holds what it owned.
+returned by a call (`$Point p = makePoint();`) is written into `p` directly: the call follows
+the var-decl with `p` as its `ret-dest`, and no `__pln_init_K` is emitted, since the callee
+builds what the struct owns.
 
 A stack variable is registered in `arrayScopeVars_` with its scope-exit statement (if any) but not
 as an owner: an `id` naming it has no `"category":"owned"`, so it cannot be the source of `->>`,

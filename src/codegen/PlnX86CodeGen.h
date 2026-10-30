@@ -45,6 +45,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrBitNot(const BitNot& i, const RegMap& rm);
     void emitInstrShift(const Shift& i, const RegMap& rm);
     void emitInstrShiftImm(const ShiftImm& i, const RegMap& rm);
+    void emitInstrPackF32x2(const PackF32x2& i, const RegMap& rm);
     void emitInstrCmp(const Cmp& i, const RegMap& rm);
     void emitInstrConvert(const Convert& i, const RegMap& rm);
     void emitInstrCallC(const CallC& i, const RegMap& rm);

@@ -73,7 +73,6 @@ enum PlnSaMessageCode {
 	E_ArithOpNotNumeric,
 	E_StructInitNotSupported,	// arg1: struct type name
 	E_IncompatibleTypes,		// arg1: from type display name, arg2: to type display name
-	E_ByvalStructRetDiscarded,	// arg1: struct type name
 	E_FuncNotValue,		// arg1: function name, arg2: the reason
 	E_FuncPtrMutable,
 	E_FuncPtrSigType,	// arg1: type display name

@@ -75,6 +75,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<BitNot>   (&instr)) emitInstrBitNot(*i, rm);
             else if (auto* i  = std::get_if<Shift>    (&instr)) emitInstrShift(*i, rm);
             else if (auto* i  = std::get_if<ShiftImm> (&instr)) emitInstrShiftImm(*i, rm);
+            else if (auto* i  = std::get_if<PackF32x2>(&instr)) emitInstrPackF32x2(*i, rm);
             else if (auto* i  = std::get_if<Cmp>      (&instr)) emitInstrCmp(*i, rm);
             else if (auto* i  = std::get_if<Convert>  (&instr)) emitInstrConvert(*i, rm);
             else if (auto* i  = std::get_if<CallC>    (&instr)) emitInstrCallC(*i, rm);

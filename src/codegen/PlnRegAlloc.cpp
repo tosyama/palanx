@@ -92,6 +92,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const BitNot& n)   { setDef(n.dst, n.type); addUse(n.src); },
             [&](const Shift& s)    { setBinOp(s.dst, s.lhs, s.rhs, s.type); },
             [&](const ShiftImm& s) { setDef(s.dst, s.type); addUse(s.src); },
+            [&](const PackF32x2& p) { setDef(p.dst, VRegType::Float64); addUse(p.lo); addUse(p.hi); },
             [&](const Cmp& c)      { setDef(c.dst, VRegType::Uint8); addUse(c.lhs); addUse(c.rhs); },
             [&](const Convert& c)  { setDef(c.dst, c.to); addUse(c.src); },
             [&](const CallC& c) {

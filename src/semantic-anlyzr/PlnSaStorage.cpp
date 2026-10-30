@@ -910,8 +910,21 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 		exit(1);
 	}
 
-	// A struct returned by a Palan call is owned by nobody yet: receive it in a
-	// temp, copy from it like from a named value, and free it.
+	// A struct returned by a call is written into a frame temp, copied from like
+	// a named value, and what it owns released.
+	if (isStructRetCall(src)) {
+		// LCOV_EXCL_EXCEPTION_BR_START
+		string temp = "__cpy_" + to_string(tempVarCounter_++);
+		json tempId = {{"expr-type","id"},{"name",temp},{"var-type",st},{"value-type",st}};
+		json body = declareStructRet(temp, st, src, VarStorage::Frame);
+		body.push_back(makeCopyStmt(locNode, dst, tempId));
+		json release = frameStructRelease(temp, st);
+		if (!release.is_null()) body.push_back(move(release));
+		return {{"stmt-type","block"},{"body",move(body)}};
+		// LCOV_EXCL_EXCEPTION_BR_STOP
+	}
+	// A block returned by a call is owned by nobody yet: receive it in a temp,
+	// copy from it like from a named value, and free it.
 	if (isExpiringOwned(src)) {
 		// LCOV_EXCL_EXCEPTION_BR_START
 		string temp = "__cpy_" + to_string(tempVarCounter_++);
@@ -1014,14 +1027,15 @@ json PlnSemanticAnalyzer::placeAggregateVar(const json& stmt, const string& name
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-// A struct variable's heap block, built by its allocator when it owns fields.
-json PlnSemanticAnalyzer::structAllocExpr(const string& name)
+// A struct variable's heap block, built by its allocator when it owns fields
+// and `build` says so.
+json PlnSemanticAnalyzer::structAllocExpr(const string& name, bool build)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json pntrType = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",name}}}};
 	const StructDef& def = structDefs_.at(name);
 	json call;
-	if (def.ownsFields) {
+	if (def.ownsFields && build) {
 		recordAllocShape(name);
 		call = allocHelperCall(structShape(name), "alloc", json::array());
 	} else {
@@ -1032,6 +1046,75 @@ json PlnSemanticAnalyzer::structAllocExpr(const string& name)
 	call["value-type"] = move(pntrType);
 	return call;
 	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+void PlnSemanticAnalyzer::markStructRet(json& call, const json& locNode)
+{
+	if (!call.contains("value-type") || !isStructStorage(call["value-type"]))
+		return;
+	const StructDef& def = requireCompleteStruct(call["value-type"]["base-type"]["type-name"].get<string>(), locNode);
+	call["struct-ret"] = {{"size", def.totalSize}, {"eightbytes", eightbytesJson(def, structDefs_)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+}
+
+// The statements making `call` (or the temp holding it) write its struct into
+// dest. The call then has no value of its own.
+json PlnSemanticAnalyzer::bindStructRet(json call, json dest)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	if (call["expr-type"] == "temp") {
+		json stmts = move(call["body"]);
+		for (auto& s : bindStructRet(move(call["value"]), move(dest))) stmts.push_back(move(s));
+		for (auto& r : call["release"]) stmts.push_back(move(r));
+		return json::array({{{"stmt-type","block"},{"body",move(stmts)}}});
+	}
+	call.erase("value-type");
+	call.erase("category");
+	call["ret-dest"] = move(dest);
+	return json::array({{{"stmt-type","expr"},{"body",move(call)}}});
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// `name` declared as the storage `call` writes its struct into. A heap block
+// is only allocated, since the callee builds what the struct owns; its owner
+// releases it as any struct, a frame one as frameStructRelease says.
+json PlnSemanticAnalyzer::declareStructRet(const string& name, const json& type, json call, VarStorage storage)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	const StructDef& def = structDefs_.at(type["base-type"]["type-name"].get<string>());
+	json init = storage == VarStorage::Frame
+		? json{{"expr-type","frame-alloc"},{"size",def.totalSize},{"align",def.maxAlign},{"value-type",type}}
+		: structAllocExpr(def.name, false);
+	json stmts = json::array({{{"stmt-type","var-decl"},{"vars",json::array({{{"name",name},{"var-type",type},{"init",move(init)}}})}}});
+	json dest = {{"expr-type","id"},{"name",name},{"var-type",type},{"value-type",type}};
+	for (auto& s : bindStructRet(move(call), move(dest))) stmts.push_back(move(s));
+	return stmts;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// What builds the owned fields of a struct in storage obtained without them;
+// null when it owns none.
+json PlnSemanticAnalyzer::structInitStmt(const string& name, const json& type)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	string structName = type["base-type"]["type-name"];
+	if (!structDefs_.at(structName).ownsFields)
+		return json();
+	recordAllocShape(structName);
+	json self = {{"expr-type","id"},{"name",name},{"var-type",type},{"value-type",type}};
+	return {{"stmt-type","expr"},{"body",allocHelperCall(structShape(structName), "init", json::array({move(self)}))}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// What releasing a struct in the frame takes: its owned fields only; null
+// when it owns none.
+json PlnSemanticAnalyzer::frameStructRelease(const string& name, const json& type)
+{
+	string structName = type["base-type"]["type-name"];
+	if (!structDefs_.at(structName).ownsFields)
+		return json();
+	json release = makeOwnedFreeStmt(name, type);
+	release["body"]["name"] = allocHelperSymbol(structShape(structName), "fini");
+	return release;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 // How an array variable's own block is obtained and released, given its

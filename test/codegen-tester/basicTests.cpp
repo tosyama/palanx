@@ -1310,9 +1310,8 @@ TEST(codegen, struct_ret_mixed) {
 }
 
 TEST(codegen, struct_ret_memory) {
-    // >16 bytes: MEMORY class -- the caller's calloc'd pointer is prepended
-    // as an ordinary first argument (hidden pointer); no register-based
-    // eightbyte store follows the call.
+    // >16 bytes: MEMORY class -- the ret-dest pointer is passed as the hidden
+    // first argument; no register-based eightbyte store follows the call.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/072_struct_ret_memory.sa.json";
     string asmf = "out/072_struct_ret_memory.s";

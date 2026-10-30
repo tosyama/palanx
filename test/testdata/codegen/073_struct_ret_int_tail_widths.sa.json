@@ -29,9 +29,8 @@
         "func-type": "c",
         "name": "get_tinya",
         "args": [],
+        "ret-dest": {"expr-type": "id", "name": "a", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyA"}}, "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyA"}}},
         "struct-ret": {
-          "var": "a",
-          "struct-name": "TinyA",
           "size": 1,
           "eightbytes": [{"class": "int", "size": 1}]
         }
@@ -63,9 +62,8 @@
         "func-type": "c",
         "name": "get_tinyb",
         "args": [],
+        "ret-dest": {"expr-type": "id", "name": "b", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyB"}}, "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyB"}}},
         "struct-ret": {
-          "var": "b",
-          "struct-name": "TinyB",
           "size": 2,
           "eightbytes": [{"class": "int", "size": 2}]
         }
@@ -97,9 +95,8 @@
         "func-type": "c",
         "name": "get_tinyc",
         "args": [],
+        "ret-dest": {"expr-type": "id", "name": "c", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyC"}}, "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "TinyC"}}},
         "struct-ret": {
-          "var": "c",
-          "struct-name": "TinyC",
           "size": 4,
           "eightbytes": [{"class": "int", "size": 4}]
         }

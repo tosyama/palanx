@@ -869,13 +869,17 @@ TEST(sa, varr_return_param)
 	const auto& mk = funcs[0]["body"];
 	ASSERT_EQ(mk.size(), 2);
 	ASSERT_EQ(funcName(mk[0]["vars"][0]["init"]["name"]), "__pln_alloc_varr_int32");
-	// A borrow and a borrowed struct are returned as copies.
-	for (int i : {1, 3}) {
-		const auto& body = funcs[i]["body"];
-		ASSERT_EQ(body.size(), 3) << i;
-		ASSERT_EQ(body[2]["values"][0]["name"], body[0]["vars"][0]["name"]) << i;
-	}
-	ASSERT_EQ(funcName(funcs[1]["body"][1]["body"]["name"]), "__pln_copy_varr_int32");
+	// A borrow is returned as a copy; a borrowed struct is copied into the return slot.
+	const auto& dup = funcs[1]["body"];
+	ASSERT_EQ(dup.size(), 3);
+	ASSERT_EQ(dup[2]["values"][0]["name"], dup[0]["vars"][0]["name"]);
+	ASSERT_EQ(funcName(dup[1]["body"]["name"]), "__pln_copy_varr_int32");
+	const auto& cp = funcs[3];
+	ASSERT_EQ(cp["ret-slot"]["name"], "__ret");
+	ASSERT_EQ(cp["body"].size(), 3);
+	ASSERT_EQ(cp["body"][1]["body"]["name"], "memcpy");
+	ASSERT_EQ(cp["body"][1]["body"]["args"][0]["name"], "__ret");
+	ASSERT_FALSE(cp["body"][2].contains("values"));
 	// The owned parameter is returned as it is.
 	ASSERT_EQ(funcs[2]["name"], "_298_varr_return_param..own.PVint32");
 	const auto& own = funcs[2]["body"];
@@ -904,7 +908,7 @@ TEST(sa, varr_struct)
 	json jout = run_sa("../test/testdata/sa/299_varr_struct.pa");
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
-	ASSERT_EQ(stmts.size(), 11);
+	ASSERT_EQ(stmts.size(), 12);
 
 	const auto& v = stmts[0]["vars"][0];
 	ASSERT_EQ(v["var-type"]["base-type"]["base-type"]["type-kind"], "pntr");
@@ -929,11 +933,13 @@ TEST(sa, varr_struct)
 
 	ASSERT_EQ(funcName(stmts[6]["body"]["name"]), "__pln_push_varr_P8__pln_B8");
 	ASSERT_EQ(stmts[6]["body"]["args"][1]["expr-type"], "temp");
-	const auto& popped = stmts[7]["vars"][0]["init"];
+	// A popped struct is returned into the receiving variable's storage.
+	ASSERT_EQ(stmts[7]["vars"][0]["init"]["name"], "malloc");
+	const auto& popped = stmts[8]["body"];
 	ASSERT_EQ(funcName(popped["name"]), "__pln_pop_varr_P8__pln_B8");
-	ASSERT_EQ(popped["category"], "expiring");
-	ASSERT_EQ(funcName(stmts[8]["body"]["name"]), "__pln_push_evarr_8__pln_B8");
-	ASSERT_EQ(funcName(stmts[9]["body"]["name"]), "__pln_resize_varr_P8__pln_B8");
+	ASSERT_EQ(popped["ret-dest"]["name"], "p");
+	ASSERT_EQ(funcName(stmts[9]["body"]["name"]), "__pln_push_evarr_8__pln_B8");
+	ASSERT_EQ(funcName(stmts[10]["body"]["name"]), "__pln_resize_varr_P8__pln_B8");
 
 	// A struct element's own shape comes before its varr shape; P owns
 	// nothing, so it is laid out as bytes and its arrays are named after them.

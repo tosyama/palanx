@@ -1133,7 +1133,6 @@ TEST(sa_error, chain_call)
 		{"error_721_chain_method_type.pa", ":4:6: error: cannot convert 'V' to 'int32'."},
 		{"error_722_chain_method_ahead_to_tapple.pa", ":5:1: error: the return values of a '->' chain whose value is evaluated first"},
 		{"error_723_chain_method_borrow_escapes.pa", ":6:10: error: a borrow returned by a call given a temporary struct may point to that struct"},
-		{"error_724_chain_method_c_struct_value.pa", ":6:16: error: cannot convert 'div_t' to '@div_t'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

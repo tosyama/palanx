@@ -440,9 +440,10 @@ TEST(sa, chain_call)
 	ASSERT_EQ(stmts[9]["body"]["args"][0]["value-type"]["mutable"], true);
 
 	const auto& temp = stmts[10]["body"]["args"][0];
-	ASSERT_EQ(funcName(tempInit(temp)["name"]), "mk");
+	ASSERT_EQ(tempInit(temp)["expr-type"], "frame-alloc");
+	ASSERT_EQ(funcName(temp["body"][1]["body"]["name"]), "mk");
 	ASSERT_EQ(temp["value"]["value-type"]["mutable"], false);
-	ASSERT_EQ(tempRelease(temp), "free");
+	ASSERT_EQ(temp["release"].size(), 0u);
 
 	// Return values are received into temps for the statement.
 	const auto& multi = stmts[11];
@@ -454,14 +455,16 @@ TEST(sa, chain_call)
 	ASSERT_EQ(show["args"][1]["name"], multi["body"][0]["vars"][1]["var-name"]);
 	ASSERT_EQ(show["args"][2]["value"], "1");
 
-	// A returned struct is borrowed for a '@T' parameter and freed after the call.
+	// A returned struct is written into a temp allocated ahead of the call,
+	// borrowed for a '@T' parameter and freed after the call.
 	const auto& structRet = stmts[12]["body"];
-	ASSERT_EQ(structRet.size(), 3);
-	string vtemp = structRet[0]["vars"][0]["var-name"];
-	ASSERT_EQ(structRet[1]["body"]["args"][0]["name"], vtemp);
-	ASSERT_EQ(structRet[1]["body"]["args"][0]["value-type"]["mutable"], false);
-	ASSERT_EQ(structRet[2]["body"]["name"], "free");
+	ASSERT_EQ(structRet.size(), 4);
+	string vtemp = structRet[0]["vars"][0]["name"];
+	ASSERT_EQ(structRet[1]["vars"][0]["ret-dest"]["name"], vtemp);
 	ASSERT_EQ(structRet[2]["body"]["args"][0]["name"], vtemp);
+	ASSERT_EQ(structRet[2]["body"]["args"][0]["value-type"]["mutable"], false);
+	ASSERT_EQ(structRet[3]["body"]["name"], "free");
+	ASSERT_EQ(structRet[3]["body"]["args"][0]["name"], vtemp);
 
 	const auto& twice = stmts[13]["body"];
 	ASSERT_EQ(funcName(twice[0]["value"]["name"]), "divmod");
@@ -546,22 +549,23 @@ TEST(sa, chain_method_call)
 	ASSERT_EQ(funcName(stmts[7]["body"][0]["vars"][0]["init"]["name"]), "g");
 	ASSERT_EQ(stmts[8]["body"][0]["vars"][0]["init"]["name"], "x");
 
-	// A returned struct is borrowed for the call and freed after it.
+	// A returned struct is written into a frame temp and borrowed for the call;
+	// it owns nothing to release.
 	const auto& owned = stmts[9]["body"];
 	ASSERT_EQ(owned.size(), 3);
 	string vtemp = owned[0]["vars"][0]["name"];
-	ASSERT_EQ(owned[1]["body"]["args"][1]["name"], vtemp);
-	ASSERT_EQ(owned[1]["body"]["args"][1]["value-type"]["mutable"], false);
-	ASSERT_EQ(owned[2]["body"]["name"], "free");
-	ASSERT_EQ(owned[2]["body"]["args"][0]["name"], vtemp);
+	ASSERT_EQ(owned[0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(owned[1]["body"]["ret-dest"]["name"], vtemp);
+	ASSERT_EQ(owned[2]["body"]["args"][1]["name"], vtemp);
+	ASSERT_EQ(owned[2]["body"]["args"][1]["value-type"]["mutable"], false);
 
 	ASSERT_EQ(stmts[10]["stmt-type"], "tapple-decl");
 	ASSERT_EQ(stmts[10]["value"]["args"][1]["name"], "x");
 
 	const auto& callBorrow = stmts[12]["body"];
 	ASSERT_EQ(callBorrow.size(), 3);
-	ASSERT_EQ(callBorrow[1]["body"]["args"][1]["name"], callBorrow[0]["vars"][0]["name"]);
-	ASSERT_EQ(callBorrow[2]["body"]["name"], "free");
+	ASSERT_EQ(callBorrow[0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(callBorrow[2]["body"]["args"][1]["name"], callBorrow[0]["vars"][0]["name"]);
 
 	// A struct field is held by its address; a struct variable stays in place.
 	const auto& field = stmts[13]["body"];

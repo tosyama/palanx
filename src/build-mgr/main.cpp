@@ -373,8 +373,8 @@ int main(int argc, char* argv[])
 					e.slotRun = (e.embedded ? "$" : "") + e.type;
 					e.fill = e.owned ? e.buildElem : e.type;
 					e.value = e.type;
-					// The caller takes a struct's storage, which a `@!T` return carries the same way.
-					e.popped = e.owned ? "@!" + e.type : e.type;
+					// A struct is returned by value, as any struct is; another owned element as its block.
+					e.popped = e.owned && kind != "struct" ? "@!" + e.type : e.type;
 					e.run = e.owned ? "[]" + e.ownElem : "@" + e.type;
 					e.data = e.owned ? "@!@!" + e.type : "@!" + e.type;
 					return e;
@@ -657,9 +657,11 @@ int main(int argc, char* argv[])
 					    << "    else { NULL -> h.data; }\n";
 					if (e.owned) out << "    __pln_build_" << e.key << "(h.data, 0, len" << ma << ");\n";
 					out << "}\n"
+					// The header is returned as its block, as a struct allocator's is.
 					    << "export func __pln_alloc_" << key
-					    << "(int64 len, int64 cap" << mp << ") -> " << hdr << " h {\n"
-					    << "    __pln_init_" << key << "(@!h, len, cap" << ma << ");\n"
+					    << "(int64 len, int64 cap" << mp << ") -> @!" << hdr << " h {\n"
+					    << "    malloc(24) -> h;\n"
+					    << "    __pln_init_" << key << "(h, len, cap" << ma << ");\n"
 					    << "}\n"
 					    << "export func __pln_fini_" << key << "(@!" << hdr << " h" << mp << ") {\n";
 					if (e.owned) out << "    __pln_drop_" << e.key << "(h.data, 0, h.len" << ma << ");\n";
@@ -720,6 +722,16 @@ int main(int argc, char* argv[])
 						out << "    memmove(h.data, src, n * " << size << ");\n";
 					out << "    n -> h.len;\n"
 					    << "}\n";
+					// An owned struct moves out of its block, which return then frees.
+					if (e.kind == "struct") {
+						out << "export func __pln_pop_" << key << "(@!" << hdr << " h" << mp << ") -> " << e.type << " {\n"
+						    << "    if h.len == 0 { abort(); }\n"
+						    << "    h.len - 1 -> h.len;\n"
+						    << "    " << e.type << " x <<= h.data[h.len] as " << e.type << ";\n"
+						    << "    return x;\n"
+						    << "}\n";
+						continue;
+					}
 					// An owned element leaves its slot for the caller.
 					out << "export func __pln_pop_" << key << "(@!" << hdr << " h" << mp << ") -> " << e.popped << " x {\n"
 					    << "    if h.len == 0 { abort(); }\n"

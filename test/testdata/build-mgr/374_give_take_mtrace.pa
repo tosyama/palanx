@@ -25,7 +25,7 @@ mtrace();
 	printf("%d\n", acc.y);
 
 	Q q; 7 -> q.y;
-	Q r <<= (realloc as @func(Q, uint64) -> Q)(q>>, 16);
+	Q r <<= (realloc as @func(Q, uint64) -> @!Q)(q>>, 16) as Q;
 	[4]int32 b = [9, 8, 7, 6];
 	[4]int32 c <<= b, d <<= c;
 	[+]int32 w = [1, 2, 3, 4, 5];

@@ -1,0 +1,23 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+cinclude <mcheck.h>;
+type H { int32 n; div_t d; ldiv_t l; };
+func half(int32 n) -> div_t { return div(n, 2); }
+func quot(@div_t d) -> int32 { return d.quot; }
+func addq(@!H h, @div_t d) { h.n + d.quot -> h.n; }
+func viaPtr(@func(int32, int32) -> div_t f) -> int32 { div_t d = f(17, 5); return d.rem; }
+mtrace();
+{
+	H h;
+	0 -> h.n;
+	div(7, 2) -> h.d;
+	ldiv(100, 7) -> h.l;
+	printf("%d %d %ld %ld\n", h.d.quot, h.d.rem, h.l.quot, h.l.rem);
+	div_t d = half(9);
+	printf("%d %d %d\n", d.quot, quot(@div(10, 3)), div(20, 6) -> quot());
+	div(1, 1);
+	div(8, 2) -> h.addq();
+	$div_t e = div(30, 4);
+	printf("%d %d %d\n", h.n, e.rem, viaPtr(div));
+}
+muntrace();

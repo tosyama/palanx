@@ -1038,10 +1038,12 @@ TEST(sa, struct_borrow)
 	ASSERT_EQ(args[2]["expr-type"], "arr-index");
 	ASSERT_EQ(args[2]["value-type"]["mutable"], false);
 
-	// '@mk()' borrows the returned struct for the call, which then releases it.
+	// '@mk()' borrows the returned struct, written into a frame temp for the
+	// call; it owns nothing to release.
 	ASSERT_EQ(args[3]["value"]["value-type"]["mutable"], false);
-	ASSERT_EQ(tempInit(args[3])["category"], "expiring");
-	ASSERT_EQ(tempRelease(args[3]), "free");
+	ASSERT_EQ(tempInit(args[3])["expr-type"], "frame-alloc");
+	ASSERT_EQ(args[3]["body"][1]["body"]["ret-dest"]["name"], args[3]["value"]["name"]);
+	ASSERT_EQ(args[3]["release"].size(), 0u);
 
 	vector<json> setArgs;
 	for (auto& st : jout["statements"])
@@ -1051,7 +1053,7 @@ TEST(sa, struct_borrow)
 	ASSERT_EQ(setArgs.size(), 2u);
 	for (auto& a : setArgs) {
 		ASSERT_EQ(a["value"]["value-type"]["mutable"], true);
-		ASSERT_EQ(tempRelease(a), "free");
+		ASSERT_EQ(tempInit(a)["expr-type"], "frame-alloc");
 	}
 }
 
@@ -1183,21 +1185,25 @@ TEST(sa, tapple_struct)
 	json jout = run_sa("../test/testdata/sa/214_tapple_struct.pa");
 	ASSERT_TRUE(jout.is_object());
 
-	// A returned struct is received as the caller's owned pointer and freed at scope exit.
+	// A returned struct is written into the variable's storage, allocated ahead
+	// of the call, and freed at scope exit.
 	size_t b = 0;
 	while (jout["statements"][b]["stmt-type"] != "block") b++;
 	const json& stmts = jout["statements"][b]["body"];
-	const json& vt = stmts[0]["vars"][0]["var-type"];
-	ASSERT_EQ(vt["type-kind"], "pntr");
-	ASSERT_EQ(vt["base-type"]["type-kind"], "struct");
+	ASSERT_EQ(stmts[0]["vars"][0]["name"], "s");
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["name"], "malloc");
+	ASSERT_EQ(stmts[1]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(stmts[1]["vars"][0]["ret-dest"]["name"], "s");
+	ASSERT_EQ(stmts[1]["vars"][1]["var-name"], "c");
 	const json& last = stmts.back();
 	ASSERT_EQ(last["body"]["name"], "free");
 	ASSERT_EQ(last["body"]["args"][0]["name"], "s");
 
 	// The temps of `f() -> (s, n)` live only in its block: s is copied, then the temp is freed.
 	const json& body = stmts[stmts.size() - 2]["body"];
-	string t0 = body[0]["vars"][0]["var-name"];
-	ASSERT_EQ(body[1]["body"]["name"], "memcpy");
+	string t0 = body[0]["vars"][0]["name"];
+	ASSERT_EQ(body[1]["vars"][0]["ret-dest"]["name"], t0);
+	ASSERT_EQ(body[2]["body"]["name"], "memcpy");
 	ASSERT_EQ(body.back()["body"]["name"], "free");
 	ASSERT_EQ(body.back()["body"]["args"][0]["name"], t0);
 }
@@ -1236,41 +1242,43 @@ TEST(sa, struct_ret_copy) {
 	json jout = run_sa("../test/testdata/sa/216_struct_ret_copy.pa");
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 2);
-	// The returned struct is received in a temp, copied into s, and freed.
+	// The returned struct is written into a frame temp and copied into s; it
+	// owns nothing to release.
 	const auto& blk = stmts[1];
 	ASSERT_EQ(blk["stmt-type"], "block");
 	const auto& body = blk["body"];
 	ASSERT_EQ(body.size(), 3);
 	ASSERT_EQ(body[0]["stmt-type"], "var-decl");
 	string temp = body[0]["vars"][0]["name"];
-	ASSERT_EQ(funcName(body[0]["vars"][0]["init"]["name"]), "g");
-	ASSERT_EQ(body[1]["body"]["name"], "memcpy");
-	ASSERT_EQ(body[1]["body"]["args"][0]["name"], "s");
-	ASSERT_EQ(body[1]["body"]["args"][1]["name"], temp);
-	ASSERT_EQ(body[2]["body"]["name"], "free");
-	ASSERT_EQ(body[2]["body"]["args"][0]["name"], temp);
+	ASSERT_EQ(body[0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(funcName(body[1]["body"]["name"]), "g");
+	ASSERT_EQ(body[1]["body"]["ret-dest"]["name"], temp);
+	ASSERT_EQ(body[2]["body"]["name"], "memcpy");
+	ASSERT_EQ(body[2]["body"]["args"][0]["name"], "s");
+	ASSERT_EQ(body[2]["body"]["args"][1]["name"], temp);
 }
 
 TEST(sa, struct_ret_temp) {
 	json jout = written(run_sa("../test/testdata/sa/217_struct_ret_temp.pa"));
 	const auto& stmts = jout["statements"];
 	ASSERT_EQ(stmts.size(), 3);
-	// A returned struct passed as an argument is held in a temp and released.
+	// A returned struct passed as an argument is written into a frame temp;
+	// only what it owns is released.
 	const auto& argP = stmts[0]["vars"][0]["init"]["args"][0];
-	ASSERT_EQ(tempRelease(argP), "free");
-	ASSERT_EQ(argP["release"][0]["body"]["func-type"], "c");
+	ASSERT_EQ(tempInit(argP)["expr-type"], "frame-alloc");
+	ASSERT_EQ(argP["release"].size(), 0u);
 	const auto& argQ = stmts[1]["vars"][0]["init"]["args"][0];
-	ASSERT_EQ(tempRelease(argQ), "__pln_free_Q");
+	ASSERT_EQ(tempRelease(argQ), "__pln_fini_Q");
 	ASSERT_EQ(argQ["release"][0]["body"]["func-type"], "palan");
-	// A discarded one is received in a temp and freed.
+	// A discarded one is written into a frame temp too.
 	const auto& blk = stmts[2];
 	ASSERT_EQ(blk["stmt-type"], "block");
 	const auto& body = blk["body"];
 	ASSERT_EQ(body.size(), 2);
 	string temp = body[0]["vars"][0]["name"];
-	ASSERT_EQ(funcName(body[0]["vars"][0]["init"]["name"]), "g");
-	ASSERT_EQ(body[1]["body"]["name"], "free");
-	ASSERT_EQ(body[1]["body"]["args"][0]["name"], temp);
+	ASSERT_EQ(body[0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(funcName(body[1]["body"]["name"]), "g");
+	ASSERT_EQ(body[1]["body"]["ret-dest"]["name"], temp);
 }
 
 TEST(sa, unsized_struct_arr_sig) {
@@ -1476,16 +1484,21 @@ TEST(sa, named_ret_struct_auto_decl)
 	cleanTestEnv();
 	json jout = written(run_sa("../test/testdata/sa/239_named_ret_struct_auto_decl.pa"));
 	ASSERT_TRUE(jout.is_object());
-	// Allocated at entry and handed to the caller, so no free follows.
-	const auto& fbody = jout["functions"][0]["body"];
+	// A named struct return is the storage the caller provides: a frame slot
+	// returned in registers, or a hidden argument whose owned fields are built
+	// at entry. Nothing frees it.
+	const auto& f = jout["functions"][0];
+	ASSERT_EQ(f["ret-slot"]["name"], "p");
+	const auto& fbody = f["body"];
 	ASSERT_EQ(fbody.size(), 2);
-	ASSERT_EQ(fbody[0]["stmt-type"], "var-decl");
 	ASSERT_EQ(fbody[0]["vars"][0]["name"], "p");
-	ASSERT_EQ(fbody[0]["vars"][0]["init"]["name"], "malloc");
-	const auto& gbody = jout["functions"][1]["body"];
+	ASSERT_EQ(fbody[0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	const auto& g = jout["functions"][1];
+	ASSERT_EQ(g["rets"][0]["slot"], true);
+	const auto& gbody = g["body"];
 	ASSERT_EQ(gbody.size(), 3);
-	ASSERT_EQ(gbody[0]["vars"][0]["name"], "o");
-	ASSERT_EQ(funcName(gbody[0]["vars"][0]["init"]["name"]), "__pln_alloc_O");
+	ASSERT_EQ(funcName(gbody[0]["body"]["name"]), "__pln_init_O");
+	ASSERT_EQ(gbody[0]["body"]["args"][0]["name"], "o");
 }
 
 TEST(sa, struct_init_from_call)
@@ -1493,16 +1506,19 @@ TEST(sa, struct_init_from_call)
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/240_struct_init_from_call.pa");
 	ASSERT_TRUE(jout.is_object());
-	// The variable takes over the returned struct: no malloc, no copy.
+	// The struct is returned into the variable's storage: no copy.
 	const auto& stmts = jout["statements"];
-	ASSERT_EQ(stmts.size(), 3);
+	ASSERT_EQ(stmts.size(), 6);
 	const char* expected[][2] = {{"a", "named"}, {"b", "plain"}, {"c", "named"}};
 	for (int i = 0; i < 3; i++) {
-		ASSERT_EQ(stmts[i]["stmt-type"], "var-decl");
-		ASSERT_EQ(stmts[i]["vars"].size(), 1);
-		ASSERT_EQ(stmts[i]["vars"][0]["name"], expected[i][0]);
-		ASSERT_EQ(stmts[i]["vars"][0]["init"]["expr-type"], "call");
-		ASSERT_EQ(funcName(stmts[i]["vars"][0]["init"]["name"]), expected[i][1]);
+		const auto& decl = stmts[2 * i];
+		ASSERT_EQ(decl["stmt-type"], "var-decl");
+		ASSERT_EQ(decl["vars"].size(), 1);
+		ASSERT_EQ(decl["vars"][0]["name"], expected[i][0]);
+		ASSERT_EQ(decl["vars"][0]["init"]["name"], "malloc");
+		const auto& call = stmts[2 * i + 1]["body"];
+		ASSERT_EQ(funcName(call["name"]), expected[i][1]);
+		ASSERT_EQ(call["ret-dest"]["name"], expected[i][0]);
 	}
 }
 
@@ -1512,18 +1528,19 @@ TEST(sa, return_struct_lit)
 	genLibSaTypes();
 	json jout = run_sa("../test/testdata/sa/241_return_struct_lit.pa");
 	ASSERT_TRUE(jout.is_object());
-	// The literal initializes a temp that is returned like a variable: not freed.
+	// The literal is stored field by field into the return slot.
 	for (int i = 0; i < 3; i++) {
-		const auto& body = jout["functions"][i]["body"];
-		ASSERT_EQ(body[0]["stmt-type"], "var-decl");
-		string name = body[0]["vars"][0]["name"];
-		ASSERT_EQ(name.rfind("__ret_", 0), 0);
+		const auto& func = jout["functions"][i];
+		ASSERT_EQ(func["ret-slot"]["name"], "__ret");
+		const auto& body = func["body"];
+		ASSERT_EQ(body[0]["vars"][0]["name"], "__ret");
+		for (size_t k = 1; k + 1 < body.size(); k++) {
+			ASSERT_EQ(body[k]["stmt-type"], "field-assign") << k;
+			ASSERT_EQ(body[k]["var"], "__ret") << k;
+		}
 		const auto& ret = body[body.size() - 1];
 		ASSERT_EQ(ret["stmt-type"], "return");
-		ASSERT_EQ(ret["values"][0]["expr-type"], "id");
-		ASSERT_EQ(ret["values"][0]["name"], name);
-		for (auto& s : body)
-			ASSERT_NE(s.value("stmt-type", ""), "free") << s;
+		ASSERT_FALSE(ret.contains("values"));
 	}
 }
 
@@ -1558,10 +1575,11 @@ TEST(sa, struct_lit_struct_expr)
 	json jout = run_sa("../test/testdata/sa/244_struct_lit_struct_expr.pa");
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
-	// Q q = [v, mk(3)]: copy from v, and from the call result through a freed temp.
+	// Q q = [v, mk(3)]: copy from v, and from the call result through a frame temp.
 	ASSERT_EQ(stmts[4]["body"]["name"], "memcpy");
 	ASSERT_EQ(stmts[4]["body"]["args"][1]["name"], "v");
-	ASSERT_EQ(funcName(stmts[5]["body"][0]["vars"][0]["init"]["name"]), "mk");
+	ASSERT_EQ(stmts[5]["body"][0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(funcName(stmts[5]["body"][1]["body"]["name"]), "mk");
 
 	// [q.b, @q.a] -> q: both values are copied into temp structs before the
 	// stores, which copy from the temps; the temps are freed at the end.
@@ -1578,9 +1596,11 @@ TEST(sa, struct_lit_struct_expr)
 	// [os[1], os[0]] -> os: struct elements go through temps as well.
 	ASSERT_EQ(stmts[13]["body"][7]["body"]["name"], "free");
 
-	// return [p, mk(1)] from f: copies from the '@P' parameter.
+	// return [p, mk(1)] from f: the slot's owned field is built, then copied
+	// into from the '@P' parameter.
 	const auto& fbody = jout["functions"][1]["body"];
-	ASSERT_EQ(fbody[1]["body"]["args"][1]["name"], "p");
+	ASSERT_EQ(funcName(fbody[1]["body"]["name"]).rfind("__pln_init_", 0), 0);
+	ASSERT_EQ(fbody[2]["body"]["args"][1]["name"], "p");
 }
 
 TEST(sa, return_unowned_struct)
@@ -1593,14 +1613,13 @@ TEST(sa, return_unowned_struct)
 			if (funcName(f["name"]) == name) return f["body"];
 		throw runtime_error("no function " + name);
 	};
-	// A struct the function doesn't own is copied into a fresh one, which is returned.
+	// A struct the function doesn't own is copied into the return slot.
 	for (string name : {"ra", "rb", "rc", "rf"}) {
 		const auto& body = func(name);
 		ASSERT_EQ(body.size(), 3) << name;
-		string ret = body[0]["vars"][0]["name"];
 		ASSERT_EQ(body[1]["body"]["name"], "memcpy") << name;
-		ASSERT_EQ(body[1]["body"]["args"][0]["name"], ret) << name;
-		ASSERT_EQ(body[2]["values"][0]["name"], ret) << name;
+		ASSERT_EQ(body[1]["body"]["args"][0]["name"], "__ret") << name;
+		ASSERT_FALSE(body[2].contains("values")) << name;
 	}
 	ASSERT_EQ(func("ra")[1]["body"]["args"][1]["name"], "p");
 	ASSERT_EQ(func("rc")[1]["body"]["args"][1]["expr-type"], "field-access");
@@ -1608,24 +1627,30 @@ TEST(sa, return_unowned_struct)
 	// From a local: the copy is made before the local is freed.
 	const auto& rd = func("rd");
 	ASSERT_EQ(rd[5]["body"]["name"], "memcpy");
-	ASSERT_EQ(funcName(rd[7]["body"]["name"]), "__pln_free_Q");
+	ASSERT_EQ(funcName(rd[6]["body"]["name"]), "__pln_free_Q");
 	ASSERT_EQ(func("re")[4]["body"]["name"], "memcpy");
 
-	// A struct owning fields is copied with what it owns.
+	// A struct owning fields is copied with what it owns, into a slot built first.
 	const auto& rg = func("rg");
-	ASSERT_EQ(funcName(rg[0]["vars"][0]["init"]["name"]), "__pln_alloc_Q");
-	ASSERT_EQ(funcName(rg[1]["body"]["name"]), "__pln_copy_Q");
-	ASSERT_EQ(rg[1]["body"]["args"][1]["name"], "q");
+	ASSERT_EQ(funcName(rg[1]["body"]["name"]), "__pln_init_Q");
+	ASSERT_EQ(funcName(rg[2]["body"]["name"]), "__pln_copy_Q");
+	ASSERT_EQ(rg[2]["body"]["args"][1]["name"], "q");
 
-	// A local struct variable, a struct parameter and a call result are returned as they are.
-	const auto& rh = func("rh");
-	ASSERT_EQ(rh.back()["values"][0]["name"], "l");
-	const auto& rk = func("rk");
-	ASSERT_EQ(rk.size(), 1);
-	ASSERT_EQ(rk[0]["values"][0]["name"], "p");
+	// A local struct variable and a struct parameter move into the slot: their
+	// bytes are copied and only their block is freed. A call result is
+	// returned straight into the slot.
+	for (auto [name, var] : {pair{"rh", "l"}, pair{"rk", "p"}}) {
+		const auto& body = func(name);
+		size_t n = body.size();
+		ASSERT_EQ(body[n - 3]["body"]["name"], "memcpy") << name;
+		ASSERT_EQ(body[n - 3]["body"]["args"][1]["name"], var) << name;
+		ASSERT_EQ(body[n - 2]["body"]["name"], "free") << name;
+		ASSERT_EQ(body[n - 2]["body"]["args"][0]["name"], var) << name;
+	}
 	const auto& ri = func("ri");
-	ASSERT_EQ(ri.size(), 1);
-	ASSERT_EQ(funcName(ri[0]["values"][0]["name"]), "mk");
+	ASSERT_EQ(ri.size(), 3);
+	ASSERT_EQ(funcName(ri[1]["body"]["name"]), "mk");
+	ASSERT_EQ(ri[1]["body"]["ret-dest"]["name"], "__ret");
 
 	// A returned borrow stays a borrow.
 	const auto& rj = func("rj");
@@ -1656,8 +1681,8 @@ TEST(sa, embed_field_value)
 	ASSERT_EQ(ra[1]["body"]["name"], "memcpy");
 	ASSERT_EQ(ra[1]["body"]["args"][1]["addr-only"], true);
 	// An embedded field of a cinclude'd struct.
-	ASSERT_EQ(stmts[14]["body"]["name"], "memcpy");
-	ASSERT_EQ(stmts[14]["body"]["args"][1]["addr-only"], true);
+	ASSERT_EQ(stmts[15]["body"]["name"], "memcpy");
+	ASSERT_EQ(stmts[15]["body"]["args"][1]["addr-only"], true);
 }
 
 TEST(sa, member_call_borrow)
@@ -1675,16 +1700,16 @@ TEST(sa, member_call_borrow)
 	ASSERT_EQ(args.size(), 5u);
 	const char* names[] = {"scaled", "scaled", "mk", "mk", "scaled"};
 	const bool muts[] = {false, true, false, true, false};
+	// Each returned struct is written into a frame temp for the call.
 	for (size_t i = 0; i < args.size(); i++) {
-		const json& call = tempInit(args[i]);
+		ASSERT_EQ(tempInit(args[i])["expr-type"], "frame-alloc") << i;
+		const json& call = args[i]["body"][1]["body"];
 		ASSERT_EQ(funcName(call["name"]), names[i]) << i;
-		ASSERT_EQ(call["category"], "expiring") << i;
+		ASSERT_EQ(call["ret-dest"]["name"], args[i]["value"]["name"]) << i;
 		ASSERT_EQ(args[i]["value"]["value-type"]["mutable"], muts[i]) << i;
-		ASSERT_EQ(tempRelease(args[i]), "free") << i;
 	}
-	const auto& inner = tempInit(args[4])["args"][0];
-	ASSERT_EQ(funcName(tempInit(inner)["name"]), "mk");
-	ASSERT_EQ(tempRelease(inner), "free");
+	const auto& inner = args[4]["body"][1]["body"]["args"][0];
+	ASSERT_EQ(funcName(inner["body"][1]["body"]["name"]), "mk");
 }
 
 TEST(sa, frame_struct)
@@ -1705,23 +1730,23 @@ TEST(sa, frame_struct)
 	ASSERT_EQ(stmts[1]["vars"][0]["init"]["size"], 24);
 	ASSERT_EQ(funcName(call(2)["name"]), "__pln_init_Q");
 
-	// A struct returned by a call is moved into the frame and only its block freed.
+	// A struct returned by a call is written into the frame, which the callee
+	// builds, so no init follows.
 	ASSERT_EQ(stmts[3]["vars"][0]["init"]["expr-type"], "frame-alloc");
-	const auto& adopt = stmts[4]["body"];
-	ASSERT_EQ(funcName(adopt[0]["vars"][0]["init"]["name"]), "makeQ");
-	ASSERT_EQ(adopt[1]["body"]["name"], "memcpy");
-	ASSERT_EQ(adopt[2]["body"]["name"], "free");
-	ASSERT_EQ(adopt.size(), 3);
+	ASSERT_EQ(funcName(call(4)["name"]), "makeQ");
+	ASSERT_EQ(call(4)["ret-dest"]["name"], "r");
 
 	ASSERT_EQ(call(6)["name"], "memcpy");
 	ASSERT_EQ(stmts[7]["vars"].size(), 2);
 	ASSERT_EQ(stmts[7]["vars"][1]["init"]["expr-type"], "frame-alloc");
 
-	// Returning a stack struct returns a heap copy, and the stack one is finalized.
+	// A returned stack struct moves into the return slot: its bytes are copied
+	// and nothing it owns is released.
 	const auto& retQ = jout["functions"][1]["body"];
-	ASSERT_EQ(funcName(retQ[3]["body"]["name"]), "__pln_copy_Q");
-	ASSERT_EQ(funcName(retQ[5]["body"]["name"]), "__pln_fini_Q");
-	ASSERT_EQ(retQ[6]["stmt-type"], "return");
+	ASSERT_EQ(retQ.size(), 4);
+	ASSERT_EQ(retQ[2]["body"]["name"], "memcpy");
+	ASSERT_EQ(retQ[2]["body"]["args"][1]["name"], "t");
+	ASSERT_EQ(retQ[3]["stmt-type"], "return");
 }
 
 TEST(sa, frame_arr)

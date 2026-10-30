@@ -288,6 +288,13 @@ inline bool isExpiringOwned(const json& v)
 {
 	return v.value("category", "") == "expiring" && isOwnedBlock(v["value-type"]);
 }
+// A call returning a struct (or a temp holding one) whose receiver has not yet
+// given it the storage to write the struct into.
+inline bool isStructRetCall(const json& v)
+{
+	if (v.value("expr-type", "") == "temp") return isStructRetCall(v["value"]);
+	return v.contains("struct-ret") && !v.contains("ret-dest");
+}
 // An owned array, row or array field named as it is: its value is a pointer to
 // its elements, so only the missing permission tells it from `@a`. A `[]T`
 // parameter is the same pointer but owns nothing, so it is told by the
@@ -877,9 +884,10 @@ inline const json& cLinkName(const json& funcDef) {
 
 // An unrepresentable parameter/return type is recorded as "_unsupported-sig"
 // rather than rejected here, so cinclude'ing the header is not itself an
-// error -- only calling the function is. A by-value struct parameter takes
-// the shape of a native `T` parameter, so a call checks its argument the same
-// way; the call then passes a copy (saCallArgs marks it "struct-arg").
+// error -- only calling the function is. A by-value struct parameter or return
+// takes the shape of a native `T` one, so a call checks its argument and is
+// received the same way; the call then passes a copy (saCallArgs marks it
+// "struct-arg") and returns the struct as a Palan function does.
 inline void normalizeCFuncSig(json& funcDef) {
 	string bad;
 	if (funcDef.contains("parameters"))
@@ -893,8 +901,12 @@ inline void normalizeCFuncSig(json& funcDef) {
 				p["var-type"] = move(vt);
 			}
 	if (funcDef.contains("ret-type")) {
-		funcDef["ret-type"] = normalizeCType(funcDef["ret-type"]);
-		if (bad.empty()) bad = unrepresentableTypeName(funcDef["ret-type"]);
+		json rt = normalizeCType(funcDef["ret-type"]);
+		if (bad.empty()) bad = unrepresentableTypeName(rt);
+		if (rt.value("type-kind", "") == "struct")
+			rt = {{"type-kind","pntr"}, // LCOV_EXCL_EXCEPTION_BR_LINE
+			      {"base-type",{{"type-kind","struct"},{"type-name",rt["type-name"]}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		funcDef["ret-type"] = move(rt);
 	}
 	if (!bad.empty()) funcDef["_unsupported-sig"] = bad;
 }
