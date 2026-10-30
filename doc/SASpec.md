@@ -754,9 +754,10 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     "base-type":{"type-kind":"func","parameters":[{"var-type":T}...],"ret-type":R}}`, built from
     the function's signature; a function returning nothing has a `void` prim `ret-type`, and a
     single named return gives its type. The function must be a Palan function (local or imported)
-    or a non-variadic C function, and every parameter and the return must be a primitive or a
-    borrowed pointer (`isFuncSigType`); otherwise E_FuncNotValue (multiple returns, variadic,
-    syscall, or a type that can't pass through a function pointer). Lowered by codegen to the
+    or a non-variadic C function, and every parameter and the return must be a primitive, a
+    borrowed pointer, or an owned block (`isFuncSigType`; not a C function's by-value struct,
+    which is passed in registers); otherwise E_FuncNotValue (multiple returns, variadic, syscall,
+    or a type that can't pass through a function pointer). Lowered by codegen to the
     `LeaLabel` of the function's label.
   - call-ptr: a call through a function pointer, `{"expr-type":"call-ptr","callee":<expression of
     a function pointer type>,"args":[...],"value-type":R}` (`value-type` absent for a void
@@ -764,9 +765,15 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     one with an `id` callee, and a `member-call` `s.f(args)` whose object's struct has a function
     pointer field `f` becomes one with a `field-access` callee. If a function of the same name is
     visible (for `s.f(args)`, one whose first parameter is `@!`, i.e. a method-form candidate) the
-    call is E_AmbiguousFuncPtrCall. Arguments are checked against the function type's parameters
-    by the rules for a Palan callee, whatever the pointer's origin. Lowered to a C-convention
-    indirect call.
+    call is E_AmbiguousFuncPtrCall. An AST `call-ptr` (`(e)(args)`) keeps its callee, which must
+    have a function pointer type (else E_CallNonFuncPtr). Arguments are checked against the
+    function type's parameters by the rules for a Palan callee, whatever the pointer's origin, so
+    an owned parameter takes a copy or a value given with `>>`; an owned return has category
+    `expiring`. Lowered to a C-convention indirect call.
+    A function type's parameter and return types take the form a Palan function's do (`sigType`),
+    wherever the type is written, so an owned struct is `pntr(struct)` without `mutable`. A
+    binding between function pointer types also requires each parameter and the return to agree
+    in being owned (`isOwnedBlock`), which the type registry does not tell apart.
   - addr-of: SA dispatches on the AST node's `object` (see ASTSpec.md) and emits one of three
     shapes — the `addr-of` expr-type only ever appears for the plain-variable case; a struct-field
     or array-element target lowers to an ordinary `field-access`/`arr-index` node instead:
@@ -1251,29 +1258,31 @@ sa.json never carries `chain-call`.
 
 ### Giving values away (`>>`, `<<=`)
 
-A value is given away by an owner (an owning variable, an owned field or element) or as a call
-result; anything else is E_TransferFromNonOwner (naming `>>`, `->>` or `<<=`). The owner's value
-is held in a temp (`__pin_N`, typed as the owned value) and the owner is then set to NULL, as
-the source of `->>` is; a call result is given as it is.
+A value is given away by an owner (an owning variable, an owned field or element), as a call
+result, or by an `owner-view`; anything else is E_TransferFromNonOwner (naming `>>`, `->>` or
+`<<=`). The owner's value is held in a temp (`__pin_N`, typed as the owned value) and the owner is
+then set to NULL, as the source of `->>` is; a call result is given as it is, and an
+`owner-view` is pinned but not reset (the pointer is no Palan owner; a read-only one is
+E_MoveFromReadOnlyView).
 
-- `transfer` (`x>>`) is analyzed only as a call argument, under any casts of it; elsewhere it is
-  E_TransferNotArg. Its value is a `temp` whose `body` holds the pin and the reset and whose
-  value is the pointer `@!X` to what `x` owned (a `[+]T`'s header: a C function is not given
-  its data, as it is for a `[+]T` argument otherwise), with no `category` and an empty
-  `release`, so nothing frees it after the call.
-  - To a Palan parameter owning `X` (`T`, `[n]T`, `[+]T`) it is retyped back to `X` with
-    category `expiring` and passed as a call result is, without a copy; a cast of it is
-    E_TransferCastToOwnedParam.
-  - To a C function's non-const pointer parameter it is passed as it is; the C side owns it.
-  - To any other parameter (a Palan `@T`/`@!T`, a C const pointer, a variadic argument, a
-    function pointer's) it is E_TransferToParam.
-  - `x ->> f(args)` is `f(x>>, args)` (`op` "->>").
+- `transfer` (`x>>`) is analyzed only as a direct call argument; elsewhere it is
+  E_TransferNotArg, and as the source of a cast E_TransferCast. Its value is the owned value
+  with category `expiring`, passed to a parameter owning it (a Palan function's or a function
+  pointer type's `T`, `[n]T`, `[+]T`) as a call result is, without a copy. Any other parameter
+  (`@T`/`@!T`, any C function's, a variadic argument) is E_TransferToParam. `x ->> f(args)` is
+  `f(x>>, args)` (`op` "->>").
 - `T b <<= v` declares `b` on its own, after `v` is evaluated: `<<=` initializers of one
   declaration run in order. `v` becomes a `pinned` value of `b`'s owned type with category
-  `expiring`, which `b` takes over as it does a call result: what an owner gives away, a call
-  result, or a pointer `@!X` adopted as the block it points to (its permission dropped). A
-  read-only pointer is E_TakeFromReadOnly, another type E_TransferShapeMismatch, a `$` variable
-  E_TakeIntoFrameVar, and a variable owning no block E_TransferToNonOwnedVar.
+  `expiring`, which `b` takes over as it does a call result. Another type is
+  E_TransferShapeMismatch, a `$` variable E_TakeIntoFrameVar, and a variable owning no block
+  E_TransferToNonOwnedVar.
+- A cast whose target is an owned struct or array (`ownedTypeOf`) from a `@!X`/`@X` pointer is a
+  `convert` to the owned type with category `owner-view` (and `read-only: true` from `@X`);
+  from anything else it is E_OwnerViewNeedsPtr. An `owner-view` is copied where an owned
+  variable would be.
+- A cast's `target-type` has each `keep` replaced by the source's type at the same place, the
+  source being a function pointer with as many parameters (else E_KeepWithoutSource). A `keep`
+  anywhere else is E_KeepOutsideCast.
 
 ### Call arguments
 

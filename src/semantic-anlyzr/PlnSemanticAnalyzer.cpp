@@ -367,8 +367,15 @@ void PlnSemanticAnalyzer::requireFuncSigTypes(const json& locNode, const json& f
 {
 	auto check = [&](const json& t, bool isRet) {
 		string tk = t.value("type-kind","");
-		bool ok = tk == "prim" ? (isRet || t.value("type-name","") != "void") && !isStructType(t)
-		        : tk == "pntr" && t["base-type"].value("type-kind","") != "arr";
+		if (tk == "keep") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_KeepOutsideCast) << endl;
+			exit(1);
+		}
+		bool ownedArr = tk == "arr" && !t.value("embedded", false)
+		             && (isVarrAstType(t) || !t["size-expr"].is_null());
+		bool ok = tk == "prim" ? isRet || t.value("type-name","") != "void"
+		        : tk == "pntr" ? t["base-type"].value("type-kind","") != "arr"
+		        : ownedArr;
 		if (!ok) {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_FuncPtrSigType, typeDisplayName(t)) << endl;
 			exit(1);
@@ -379,19 +386,19 @@ void PlnSemanticAnalyzer::requireFuncSigTypes(const json& locNode, const json& f
 	check(func["ret-type"], true);
 }
 
-json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& type) const
+json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& locNode, const json& type)
 {
 	// Converts prim(Name) -> struct(Name) at every level of a pntr chain.
 	json resolved = type;
 	if (resolved.value("type-kind","") == "pntr") {
 		json t = resolved;
-		t["base-type"] = deepNormalizePrimToStruct(resolved["base-type"]);
+		t["base-type"] = deepNormalizePrimToStruct(locNode, resolved["base-type"]);
 		return t;
 	}
 	if (resolved.value("type-kind","") == "func") {
 		json t = resolved;
-		for (auto& p : t["parameters"]) p["var-type"] = deepNormalizePrimToStruct(p["var-type"]);
-		t["ret-type"] = deepNormalizePrimToStruct(t["ret-type"]);
+		for (auto& p : t["parameters"]) p["var-type"] = sigType(locNode, p["var-type"], true);
+		t["ret-type"] = sigType(locNode, t["ret-type"], false);
 		return t;
 	}
 	if (isStructType(resolved))

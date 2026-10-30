@@ -1267,6 +1267,14 @@ void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& stm
 {
 	if (saValue.value("category", "") == "expiring")
 		return;
+	// A pointer viewed as an owner is no Palan owner to reset.
+	if (saValue.value("category", "") == "owner-view") {
+		if (saValue.value("read-only", false)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_MoveFromReadOnlyView, op) << endl;
+			exit(1);
+		}
+		return;
+	}
 	const json& src = stmt["value"];
 	checkRangeChange(stmt, src, RangeChange::Transfer);
 	string et = src.value("expr-type", "");

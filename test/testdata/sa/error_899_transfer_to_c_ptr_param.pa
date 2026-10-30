@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+type Q { int32 y; };
+Q q;
+free(q>>);

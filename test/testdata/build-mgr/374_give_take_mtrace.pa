@@ -25,16 +25,16 @@ mtrace();
 	printf("%d\n", acc.y);
 
 	Q q; 7 -> q.y;
-	Q r <<= realloc(q>> as @!void, 16) as @!Q;
+	Q r <<= (realloc as @func(Q, uint64) -> Q)(q>>, 16);
 	[4]int32 b = [9, 8, 7, 6];
 	[4]int32 c <<= b, d <<= c;
 	[+]int32 w = [1, 2, 3, 4, 5];
-	@!void held = memmove(w>> as @!void, NULL, 0);
-	[+]int32 w2 <<= held as @![+]int32;
+	@!void held = (memmove as @func([+]int32, @void, uint64) -> _)(w>>, NULL, 0);
+	[+]int32 w2 <<= held as [+]int32;
 	P m <<= mkP(4);
 	Q e <<= h.qs[0];
 	printf("%d %d %d %d %d %d\n", r.y, d[0], c == NULL, int32(len(@w2)), m.x, e.y);
 	Q s;
-	free(s>> as @!void);
+	(free as @func(Q))(s>>);
 }
 muntrace();

@@ -118,6 +118,7 @@ enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 // Non-pointer types, and narrowing while every level above is read-only, are fine.
 // FuncSigMismatch: the function types reached differ in a pointer permission.
 inline bool funcSigPermissionOk(const json& from, const json& to);
+inline bool isOwnedBlock(const json& vt);
 
 inline PtrPermission ptrPermission(const json& from, const json& to)
 {
@@ -151,9 +152,13 @@ inline bool funcSigPermissionOk(const json& from, const json& to)
 	const json& fp = from["parameters"];
 	const json& tp = to["parameters"];
 	BOOST_ASSERT(fp.size() == tp.size());
+	// A function owning a parameter frees it, so it cannot stand in for one
+	// borrowing it, nor the reverse.
+	auto sameOwnership = [](const json& a, const json& b) { return isOwnedBlock(a) == isOwnedBlock(b); };
 	for (size_t i = 0; i < fp.size(); i++)
-		if (!ptrPermissionOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
-	return ptrPermissionOk(from["ret-type"], to["ret-type"]);
+		if (!sameOwnership(tp[i]["var-type"], fp[i]["var-type"])
+		    || !ptrPermissionOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
+	return sameOwnership(from["ret-type"], to["ret-type"]) && ptrPermissionOk(from["ret-type"], to["ret-type"]);
 }
 
 // A pntr(struct) with no "mutable" key is a struct's own storage (a struct
@@ -180,13 +185,13 @@ inline bool isAggregateLit(const json& expr)
 	string et = expr.value("expr-type", "");
 	return et == "arr-lit" || et == "dict-lit";
 }
-// A type a function pointer's parameter or return may have: a scalar or a
-// borrow. An owned struct or array passes ownership by a convention the
-// function pointer does not carry.
+// A type a function pointer's parameter or return may have: a scalar, a
+// borrow, or an owned block, passed as a function passes it.
 inline bool isFuncSigType(const json& vt)
 {
 	string tk = vt.value("type-kind","");
-	return (tk == "prim" && vt.value("type-name","") != "void") || (tk == "pntr" && vt.contains("mutable"));
+	return (tk == "prim" && vt.value("type-name","") != "void") || (tk == "pntr" && vt.contains("mutable"))
+	    || isOwnedBlock(vt);
 }
 inline bool isFuncPtr(const json& vt)
 {
@@ -328,7 +333,7 @@ inline bool hasCall(const json& e)
 {
 	if (e.is_object()) {
 		string et = e.value("expr-type", "");
-		if (et == "call" || et == "member-call" || et == "chain-call") return true;
+		if (et == "call" || et == "member-call" || et == "chain-call" || et == "call-ptr") return true;
 		for (auto& [k, v] : e.items())
 			if (hasCall(v)) return true;
 	} else if (e.is_array()) {

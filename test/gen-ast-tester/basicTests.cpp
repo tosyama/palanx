@@ -1228,7 +1228,7 @@ TEST(gen_ast, give_take) {
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
-	ASSERT_EQ(stmts.size(), 4);
+	ASSERT_EQ(stmts.size(), 6);
 
 	// '>>' marks the value given away, binding tighter than 'as' and a binary operator.
 	const auto& args = stmts[0]["body"]["args"];
@@ -1252,6 +1252,18 @@ TEST(gen_ast, give_take) {
 	ASSERT_EQ(stmts[2]["body"]["value"]["op"], "->>");
 	ASSERT_EQ(stmts[3]["body"]["call"]["expr-type"], "member-call");
 	ASSERT_EQ(stmts[3]["body"]["value"]["expr-type"], "transfer");
+
+	// A parenthesized expression is called through, and '_' in a function type keeps a place.
+	const auto& cast = stmts[4]["body"]["callee"];
+	ASSERT_EQ(stmts[4]["body"]["expr-type"], "call-ptr");
+	ASSERT_EQ(stmts[4]["body"]["args"].size(), 2);
+	ASSERT_EQ(cast["expr-type"], "cast");
+	const auto& func = cast["target-type"]["base-type"];
+	ASSERT_EQ(func["parameters"][0]["var-type"]["type-kind"], "keep");
+	ASSERT_EQ(func["parameters"][1]["var-type"]["type-name"], "P");
+	ASSERT_EQ(func["ret-type"]["type-kind"], "keep");
+	ASSERT_EQ(stmts[5]["body"]["callee"]["name"], "g");
+	ASSERT_EQ(stmts[5]["body"]["args"].size(), 0);
 }
 
 // '->' binds tighter than comparisons and logical operators, looser than arithmetic.

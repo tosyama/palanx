@@ -1,0 +1,2 @@
+int64 n = 0;
+int64 m = (n as @func(_))(1);

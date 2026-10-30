@@ -28,9 +28,12 @@ version: 0.2.3 — improvements found through the samples (ray tracer, echo serv
   measured on the ray tracer before and after.
 - A struct parameter `T` owns its argument as a `[n]T` one does (a copy the callee frees), where
   it used to borrow it.
-- Ownership across calls: `x>>` passes an owned value to a Palan parameter without a copy, or
-  gives it to a C function, which keeps it (`uv_close(client>> as @!uv_handle_t, on_close)`);
-  `T b <<= p;` takes it back from a pointer (or moves it from another owner).
+- Ownership across calls: `x>>` passes an owned value to a parameter owning it without a copy,
+  and `T b <<= v;` moves one from another owner. A C function takes or returns ownership when
+  it is called through a cast to a function pointer type that owns that parameter or return
+  (`(uv_close as @func(uv_tcp_t, @func(uv_tcp_t)))(client>>, on_close)`, `_` keeping a type as
+  it is), and a pointer C hands back in a struct field is viewed as its owner with `as`
+  (`[n]uint8 data <<= buf.base as [n]uint8;`).
 - Samples: the ray tracer is rewritten with the above, and a libuv echo server is added; gaps
   found while writing them are fixed as they are found.
 
@@ -343,6 +346,7 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
 |----------|------------|
 | `owned`    | an `id` naming a variable that owns its storage and releases it at scope exit (a heap struct or array, not a `$` variable) |
 | `expiring` | a Palan function call returning a pointer type; a returned struct has no owner yet |
+| `owner-view` | a pointer cast to an owned type (`p as T`): what it points to, viewed as an owner that is no Palan variable |
 | (absent)   | anything else |
 
 - A returned struct initializing a variable becomes owned by it without a copy; a `$T` variable
@@ -355,14 +359,18 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
   Returning a struct the function doesn't own returns a copy.
 - `v ->> target` needs an owned `v` and sets `v` to NULL after the transfer, so its scope-exit
   free is a no-op; an `expiring` source has nothing to reset.
-- `v>>` gives a call argument away the same way. Its value is a `@!X` pointer to what `v` owns
-  (a `[+]T`'s header, not its elements). Given to a Palan parameter owning that type it is passed
-  without a copy; given to a C function's non-const pointer parameter Palan stops tracking it,
-  and the C side owns it from then on. Anywhere else it is an error, so ownership leaves Palan
-  only at a C call. `v ->> f()` is `f(v>>)`.
-- `T b <<= v;` initializes `b` with what `v` owns: an owned `v` moves into it (and is set to
-  NULL), a call result is taken over as with `=`, and a `@!T` pointer (one C handed back) is
-  adopted, `b` freeing it at its scope exit as its own.
+- `v>>` gives a call argument away the same way, to a parameter owning its type, without a copy;
+  anywhere else it is an error. `v ->> f()` is `f(v>>)`.
+- A function pointer type can have owned parameters and an owned return, with a Palan function's
+  convention (the callee owns an argument, the caller the returned value). Ownership is part of
+  the signature: a pointer to a function owning a parameter does not bind where one borrowing it
+  is expected, or the reverse. A C function hands ownership across only when called through a
+  cast to such a type, so ownership leaves or enters Palan only where the call says so.
+- `p as T` for a `@!X` pointer `p` and an owned type `T` is an `owner-view`: `=` or an owning
+  parameter copies it as from an owned variable, and `<<=`, `->>` or `>>` move it. A move leaves
+  `p` as it is, since `p` is not an owner; a `@X` pointer cannot be moved from.
+- `T b <<= v;` initializes `b` with what `v` owns: an owned `v` (set to NULL) or an
+  `owner-view` moves into it, and a call result is taken over as with `=`.
 - `v -> target` with an owned array or struct `target` and a non-expiring `v` copies the contents
   (owned parts included); neither side's ownership changes.
 

@@ -1,4 +1,4 @@
 type Q { int32 y; };
 Q q;
 @Q p = @q;
-Q r <<= p;
+Q r <<= p as Q;

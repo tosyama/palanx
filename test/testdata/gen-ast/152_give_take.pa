@@ -1,4 +1,6 @@
 f(a>>, b>> as @!int8, c + d>>);
-P x <<= y as @!P, z <<= w;
+P x <<= y as P, z <<= w;
 v ->> g();
 v ->> s.h(1);
+(f as @func(_, P) -> _)(a>>, b);
+(g)();

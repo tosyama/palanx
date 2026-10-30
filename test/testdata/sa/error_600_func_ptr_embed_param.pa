@@ -1,2 +1,2 @@
 type P { int32 x; };
-@func(P) f;
+@func($P) f;

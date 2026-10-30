@@ -92,6 +92,14 @@ inline json funcTypeExpr(std::vector<json> params, json ret)
 	return {{"type-kind","func"},{"parameters",std::move(params)},{"ret-type",std::move(ret)}};
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// `_` in a function type keeps the type a cast's source has at that place.
+inline json fptrSigType(json t)
+{
+	if (t.value("type-kind","") == "prim" && t.value("type-name","") == "_")
+		return {{"type-kind","keep"}};
+	return t;
+}
+
 // Whether a type_expr result has no array level other than a plain '[n]'/'[]'
 // one ('[#n]'/'[+n]' are not implemented).
 inline bool isImplementedTypeExpr(const json& t)

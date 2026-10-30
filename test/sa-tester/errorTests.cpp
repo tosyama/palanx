@@ -945,9 +945,9 @@ TEST(sa_error, circular_type_decl)
 TEST(sa_error, alias_cast)
 {
 	const pair<string, string> cases[] = {
-		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
-		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
-		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a pointer ('@!X') can be viewed as an owner"},
+		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a pointer ('@!X') can be viewed as an owner"},
+		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a pointer ('@!X') can be viewed as an owner"},
 		{"error_439_cast_alias_arg_count.pa", ":2:8: error: cast 'U8(...)' takes exactly one argument."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -963,11 +963,11 @@ TEST(sa_error, alias_cast)
 TEST(sa_error, as_cast)
 {
 	const pair<string, string> cases[] = {
-		{"error_579_cast_owned_arr.pa", ":2:14: error: cannot cast to an owned array: only a borrowed array ('@[n]T'/'@![n]T') can be a cast target."},
+		{"error_579_cast_owned_arr.pa", ":2:14: error: cannot cast to 'array': only a pointer ('@!X') can be viewed as an owner"},
 		{"error_580_cast_ptr_to_narrow_int.pa", ":3:11: error: Cannot cast type '@!int32' to 'int32'."},
 		{"error_581_cast_int_to_ptr.pa", ":2:13: error: Cannot cast type 'int32' to '@!int32'."},
 		{"error_582_cast_int_to_borrowed_arr.pa", ":2:16: error: Cannot cast type 'uint64' to '@![4]int32'."},
-		{"error_583_cast_struct_value.pa", ":3:7: error: cannot cast to 'P': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_583_cast_struct_value.pa", ":3:7: error: cannot cast to 'P': only a pointer ('@!X') can be viewed as an owner"},
 		{"error_584_cast_struct_to_ptr.pa", ":3:13: error: Cannot cast type 'P' to '@!uint8'."},
 		{"error_585_cast_enum_to_ptr.pa", ":3:13: error: Cannot cast type 'Big' to '@!int32'."},
 		{"error_586_cast_ptr_to_enum.pa", ":3:9: error: Cannot cast type '@!int32' to 'Big'."},
@@ -1371,22 +1371,33 @@ TEST(sa_error, global_var)
 
 TEST(sa_error, give_and_take)
 {
+	const string nonOwner = " needs a source that owns its value: an owning variable, an owned field or element, "
+	                        "a call result, or a pointer viewed as an owner ('p as T').";
+	const string toParam = " cannot take a value given away with '>>': only a parameter that owns it can.";
+	const string castGiven = ": a value given away with '>>' cannot be cast: it is given as the type it has.";
 	const pair<string, string> cases[] = {
-		{"error_553_arg_move_owner.pa", ":3:3: error: '>>' needs a source that owns its value"},
-		{"error_554_c_arg_move_owner.pa", ":3:16: error: '>>' needs a source that owns its value"},
-		{"error_517_chain_transfer.pa", ":3:1: error: '->>' needs a source that owns its value"},
-		{"error_897_transfer_not_arg.pa", ":3:7: error: '>>' gives a value away only as a call argument"},
-		{"error_898_transfer_to_borrow_param.pa", ":4:1: error: parameter 'q' of 'f' cannot take a value given away with '>>'"},
-		{"error_899_transfer_to_c_const_param.pa", ":3:1: error: parameter '__s' of 'strlen' cannot take a value given away with '>>'"},
-		{"error_900_transfer_to_variadic.pa", ":4:1: error: parameter '#2' of 'printf' cannot take a value given away with '>>'"},
-		{"error_901_transfer_cast_to_owned_param.pa", ":4:1: error: a value given away to parameter 'q' with '>>' cannot be cast"},
-		{"error_902_transfer_from_frame_var.pa", ":4:6: error: '>>' needs a source that owns its value"},
-		{"error_903_take_from_read_only.pa", ":4:1: error: '<<=' cannot take over a read-only pointer '@T'"},
+		{"error_553_arg_move_owner.pa", ":3:3: error: '>>'" + nonOwner},
+		{"error_554_c_arg_move_owner.pa", ":3:16: error: '>>'" + nonOwner},
+		{"error_517_chain_transfer.pa", ":3:1: error: '->>'" + nonOwner},
+		{"error_897_transfer_not_arg.pa", ":3:7: error: '>>' gives a value away only as a call argument, to a parameter that owns it."},
+		{"error_898_transfer_to_borrow_param.pa", ":4:1: error: parameter 'q' of 'f'" + toParam},
+		// A C function's pointer parameter borrows; only a cast of the function hands ownership over.
+		{"error_899_transfer_to_c_ptr_param.pa", ":4:1: error: parameter '__ptr' of 'free'" + toParam},
+		{"error_900_transfer_to_variadic.pa", ":4:1: error: parameter '#2' of 'printf'" + toParam},
+		{"error_901_transfer_cast.pa", ":4:3: error" + castGiven},
+		{"error_902_transfer_from_frame_var.pa", ":4:20: error: '>>'" + nonOwner},
+		{"error_903_take_from_read_only_view.pa",
+		 ":4:1: error: '<<=' cannot move from a read-only pointer viewed as an owner ('@X as T')"},
 		{"error_904_take_shape_mismatch.pa", ":3:1: error: cannot transfer 'Q' into '[2]int32'"},
 		{"error_905_take_into_frame_var.pa", ":3:1: error: '<<=' needs a variable that owns its storage; 'r' is laid out in place."},
 		{"error_906_take_into_prim.pa", ":2:1: error: '<<=' needs a variable that owns its array or struct; 'm' does not."},
-		{"error_907_take_from_non_owner.pa", ":3:1: error: '<<=' needs a source that owns its value"},
-		{"error_908_take_from_prim.pa", ":3:1: error: '<<=' needs a source that owns its value"},
+		{"error_907_take_from_non_owner.pa", ":3:1: error: '<<='" + nonOwner},
+		{"error_908_take_from_prim.pa", ":3:1: error: '<<='" + nonOwner},
+		{"error_909_call_non_func_ptr.pa", ":2:1: error: 'int32' is not a function pointer and cannot be called."},
+		{"error_910_keep_param_count.pa",
+		 ":2:13: error: '_' keeps the type of the cast's source at its place, but '@func(uint64) -> @!void' has no such place."},
+		{"error_911_keep_from_non_func.pa",
+		 ":2:12: error: '_' keeps the type of the cast's source at its place, but 'int64' has no such place."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

@@ -1,4 +1,4 @@
 cinclude <stdlib.h>;
 type Q { int32 y; };
 $Q q;
-free(q>> as @!void);
+(free as @func(Q))(q>>);

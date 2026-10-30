@@ -35,9 +35,9 @@ json PlnSemanticAnalyzer::toStructPntrType(const json& type) const
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::normalizeSigType(const json& type) const
+json PlnSemanticAnalyzer::normalizeSigType(const json& locNode, const json& type)
 {
-	return isStructType(type) ? toStructPntrType(type) : deepNormalizePrimToStruct(type);
+	return isStructType(type) ? toStructPntrType(type) : deepNormalizePrimToStruct(locNode, type);
 }
 
 // The innermost element under an array type's levels as written.
@@ -117,7 +117,7 @@ json PlnSemanticAnalyzer::ptrSlotElemType(const json& locNode, const json& type)
 	// A row carries the permission on each of its levels, as in a borrowed `[m][n]T`.
 	if (!elem["mutable"].get<bool>() && isArrLevel(elem["base-type"]))
 		elem["base-type"] = withArrPermission(elem["base-type"], false);
-	return pointeeNamesAsStructs(deepNormalizePrimToStruct(elem));
+	return pointeeNamesAsStructs(deepNormalizePrimToStruct(locNode, elem));
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 int64_t PlnSemanticAnalyzer::constLevelSize(const json& locNode, const json& sizeExprAst, bool isBorrow)
@@ -380,6 +380,12 @@ json PlnSemanticAnalyzer::takeOverType(const json& locNode, const json& varType)
 	return st.type;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+json PlnSemanticAnalyzer::ownedTypeOf(const json& locNode, const json& varType)
+{
+	if (isStructType(varType)) return toStructPntrType(varType);
+	return takeOverType(locNode, varType);
+}
+
 // A parameter's or return value's type as the function and its callers see it.
 // Only a parameter may borrow an array: a returned borrow would outlive the
 // storage it borrows, so it stays for validateNativeSig to reject.
@@ -396,7 +402,7 @@ json PlnSemanticAnalyzer::sigType(const json& locNode, const json& type, bool is
 			exit(1);
 		}
 	}
-	return normalizeSigType(t);
+	return normalizeSigType(locNode, t);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 void PlnSemanticAnalyzer::normalizeSig(json& funcDef)

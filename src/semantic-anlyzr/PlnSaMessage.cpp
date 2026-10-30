@@ -314,7 +314,14 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_FuncPtrSigType:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'" + arg1 + "' cannot be a parameter or return type of a function pointer; "
-			       "use a primitive type or a borrowed pointer ('@T'/'@!T').";
+			       "use a primitive type, a pointer, or an owned struct or array ('T', '[n]T', '[+]T').";
+
+		case E_CallNonFuncPtr:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is not a function pointer and cannot be called.";
+
+		case E_KeepOutsideCast:
+			return "'_' keeps a type only in a function type a function pointer is cast to.";
 
 		case E_AmbiguousFuncPtrCall:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -631,25 +638,26 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_TransferFromNonOwner:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'" + arg1 + "' needs a source that owns its value: an owning variable, an owned field "
-			       "or element, or a call result.";
+			       "or element, a call result, or a pointer viewed as an owner ('p as T').";
 
 		case E_TransferNotArg:
-			return "'>>' gives a value away only as a call argument: to a parameter that owns it, "
-			       "or to a C function's non-const pointer parameter.";
+			return "'>>' gives a value away only as a call argument, to a parameter that owns it.";
 
 		case E_TransferToParam:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "parameter '" + arg1 + "' of '" + arg2 + "' cannot take a value given away with '>>': "
-			       "only a parameter that owns it, or a C function's non-const pointer parameter, can.";
+			       "only a parameter that owns it can. A C function takes it when called through a "
+			       "function pointer type owning that parameter: '(f as @func(T))(x>>)'.";
 
-		case E_TransferCastToOwnedParam:
+		case E_TransferCast:
+			return "a value given away with '>>' cannot be cast: it is given as the type it has. "
+			       "To give it to a C function, cast the function instead: '(f as @func(T))(x>>)'.";
+
+		case E_MoveFromReadOnlyView:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "a value given away to parameter '" + arg1 + "' with '>>' cannot be cast: "
-			       "the parameter owns it as the type it has.";
-
-		case E_TakeFromReadOnly:
-			return "'<<=' cannot take over a read-only pointer '@T': the variable frees what it owns.";
+			return "'" + arg1 + "' cannot move from a read-only pointer viewed as an owner ('@X as T'): "
+			       "what it points to is not to be freed through it.";
 
 		case E_TakeIntoFrameVar:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -742,12 +750,19 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "type '" + arg1 + "' depends on itself: " + arg2 + ".";
 
-		case E_CastToOwnedArr:
-			return "cannot cast to an owned array: only a borrowed array ('@[n]T'/'@![n]T') can be a cast target.";
+		case E_OwnerViewNeedsPtr:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot cast to '" + arg1 + "': only a pointer ('@!X') can be viewed as an owner, "
+			       "and a cast never creates ownership of a value.";
+
+		case E_KeepWithoutSource:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'_' keeps the type of the cast's source at its place, but '" + arg1 + "' has no such place.";
 
 		case E_InvalidCastTarget:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot cast to '" + arg1 + "': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target.";
+			return "cannot cast to '" + arg1 + "': only a primitive, enum, pointer, borrowed array ('@[n]T'/'@![n]T'), "
+			       "or owned struct or array viewed from a pointer can be a cast target.";
 
 		case E_UnsupportedCFieldType:
 			BOOST_ASSERT(arg1 != "\x01");

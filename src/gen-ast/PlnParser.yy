@@ -998,6 +998,15 @@ term: INT
 			$$ = $2;
 		}
 	}
+	| '(' tapple_inner ')' '(' arguments ')'
+	{
+		if ($2.count("not-impl") || $2.count("tapple-items")) {
+			$$ = {{"expr-type", "not-impl"}};
+		} else {
+			$$ = {{"expr-type", "call-ptr"}, {"callee", move($2)}, {"args", $5.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		}
+		LOC($$, @$);
+	}
 	| term '.' ID
 	{ $$ = {{"expr-type", "field-access"}, {"object", move($1)}, {"field", move($3)}}; LOC($$, @$); }
 	| term '[' expression ']'
@@ -1376,15 +1385,15 @@ fptr_params: /* empty */
 	;
 
 fptr_param_list: type_expr
-	{ $$ = PList<json>().push({{"var-type", move($1)}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = PList<json>().push({{"var-type", fptrSigType(move($1))}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	| fptr_param_list ',' type_expr
-	{ $$ = $1.push({{"var-type", move($3)}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = $1.push({{"var-type", fptrSigType(move($3))}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
 	;
 
 fptr_ret: /* empty */ %prec FPTR_NORET
 	{ $$ = voidTypeExpr(); }
 	| ARROW type_expr
-	{ $$ = move($2); }
+	{ $$ = fptrSigType(move($2)); }
 	;
 
 

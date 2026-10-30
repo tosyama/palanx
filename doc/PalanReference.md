@@ -186,6 +186,10 @@ A cast can convert:
   `@T as @!T` drops the read-only restriction, for a C function whose parameter is not
   `const` but which doesn't write through it. No bits change; reading or writing through the
   result as the new type is the programmer's responsibility, as in C.
+- From a function pointer to another function pointer type. Writing `_` for a parameter or
+  return type keeps the one the source has there, so `free as @func(Q)` and
+  `memmove as @func([4]int8, _, _) -> _` change only what they name. This is how a C function
+  takes or returns ownership (see [Giving Values Away](#giving-values-away--and-taking-them-over-)).
 - Between a pointer and `int64`/`uint64`, in either direction. A narrower integer is rejected
   rather than dropping the upper half of the address.
 - From a pointer or an array to a borrowed array (`@[n]T`/`@![n]T`, including `@[n]$[m]T`),
@@ -201,9 +205,13 @@ cinclude <stdlib.h>;
 255 -> img[10][20];
 ```
 
-An owned array (`[n]T`) or a struct value can't be a cast target — a cast never creates
-ownership — and a struct value can't be cast into a pointer: take its address first
-(`@!s as @!uint8`).
+- From a pointer (`@!X`) to an owned struct or array (`T`, `[n]T`, `[+]T`), which views what it
+  points to as that type's owner, as C hands such a thing back. It is copied like an owned
+  variable when assigned or passed, and moved by `<<=`, `->>` or `>>`; a move leaves the pointer
+  as it is. A `@X` pointer can be viewed this way only to copy from it.
+
+A value is never cast into an owned type — a cast never creates ownership — and a struct value
+can't be cast into a pointer: take its address first (`@!s as @!uint8`).
 
 `as` binds tighter than every binary operator and looser than a unary one: `p as @!int32 == NULL`
 compares the cast pointer, `a + b as int64` casts only `b`, and `-x as uint32` casts `-x`.
@@ -917,26 +925,30 @@ printf("%d\n", o.op(4));           // 8
   element (`[4]@func(int32) -> int32`). Parameter names are not written.
 - It is read-only like `@T`: code is never written through it, so `@!func(...)` is an error.
   The variable itself can be given another function with `->`.
-- A parameter or return type must be a primitive or a borrowed pointer (`@T`/`@!T`, including
-  another function pointer). A struct or an array passed or returned by value is not allowed.
+- A parameter or return type is a primitive, a borrowed pointer (`@T`/`@!T`, including another
+  function pointer), or an owned struct or array (`T`, `[n]T` with a constant `n`, `[+]T`), which
+  is passed and returned as a function passes it: the called function owns an owned argument and
+  frees it, and the caller owns an owned return value. A `$T` or `[]T` is not allowed.
 - A function becomes a function pointer by writing its name where a value is expected. This works
   for a Palan function returning nothing or one value (a single named return counts as one), an
   imported function, and a C function that is not variadic. A function with several return
-  values, a variadic C function, and a `syscall` cannot be used this way. A variable of the same
+  values, a variadic C function, a C function taking or returning a struct by value, and a
+  `syscall` cannot be used this way. A variable of the same
   name is used in preference to the function.
 - A function fits a function pointer type when the parameter count is the same, each parameter
   and the return type are the same type (no widening: `int32` does not fit `int64`), and pointer
   permissions flow the right way: a function taking `@!T` does not fit a pointer that passes
-  `@T`, while a function taking `@T` fits one that passes `@!T`. A `@void` parameter or return
-  matches any pointer, as it does elsewhere.
+  `@T`, while a function taking `@T` fits one that passes `@!T`. Ownership must match too: a
+  function owning a parameter (`T`) does not fit a pointer that lends it (`@!T`), nor the
+  reverse. A `@void` parameter or return matches any pointer, as it does elsewhere.
 - A function pointer is a pointer otherwise: it can be `NULL` and compared with `==`/`!=`, a
   `@void` converts to it, and `as` converts it to `@void` or `int64`/`uint64` and back. Calling a
   `NULL` function pointer is not checked.
 - `f(x)` when both a function pointer `f` and a function `f` are visible is an error, and so is
   `s.f(x)` when `s` has a function pointer field `f` and a function `f` could take `s` as a method
   (its first parameter is `@!`).
-- Not supported in this version: calling the result of an expression directly, such as
-  `tbl[0](3)` or `pick(true)(3)`; store it in a variable first.
+- A parenthesized expression is called through: `(tbl[0])(3)`, `(pick(true))(3)`,
+  `(f as @func(@!int8))(p)`. Without the parentheses (`tbl[0](3)`) it is not supported.
 
 ### Overloading
 
@@ -1303,38 +1315,50 @@ total(big>>);                // no copy; big is now NULL
 big ->> total();             // the same, chained
 ```
 
-Given to a C function's non-const pointer parameter, it leaves Palan: nothing frees it, and the
-C side owns it from then on. `v>>` is a pointer to what `v` owns (`@!T` for a struct, the array
-for `[n]T`, the array's own header for `[+]T`), which `as` converts as any pointer:
-
-```palan
-uv_close(client>> as @!uv_handle_t, on_close);   // libuv frees nothing; on_close takes it back
-```
-
 - The source is an owner, as for `->>`: a variable that owns its array or struct, an owned field
-  or element, or a value a call returns.
-- `v>>` is written only as a call argument. Given to a `@T`/`@!T` parameter, a C function's
-  const pointer parameter, or a variadic argument, it is a compile error, since nothing would
-  own it. To a parameter that owns it, it cannot be cast.
+  or element, a value a call returns, or a pointer viewed as an owner (`p as T`).
+- `v>>` is written only as a call argument to a parameter that owns it, and cannot be cast.
+  Given to a `@T`/`@!T` parameter, a C function's pointer parameter, or a variadic argument, it
+  is a compile error, since nothing would own it.
 
 `T b <<= v;` declares `b` taking over what `v` owns, without a copy. `v` is an owner (set to
-NULL), a call result, or a `@!T` pointer, such as one C hands back, that `b` adopts and frees as
-its own:
+NULL) or a call result:
 
 ```palan
-func on_close(@!uv_handle_t handle)
-{
-    uv_tcp_t client <<= handle as @!uv_tcp_t;
-}   // client is freed here
-
 [4]int32 a = [1, 2, 3, 4];
 [4]int32 c <<= a;                     // a is now NULL
 ```
 
 - `b` must own its array or struct: not a `$` variable, a borrow or a primitive. `v` must have
-  `b`'s type (the same sizes for an array); a `@T` pointer is a compile error, since `b` will
-  free it.
+  `b`'s type (the same sizes for an array).
+
+#### Ownership Across C Functions
+
+A C function's pointer parameter only borrows, as C's types say nothing about who frees what. A
+C function that keeps what it is given, or hands back what the caller is to free, is called
+through a [cast](#explicit-cast) to a function pointer type owning that parameter or return
+value, and `>>` gives the value to it. Nothing frees it in Palan from then on:
+
+```palan
+uv_tcp_t client;
+...
+(uv_close as @func(uv_tcp_t, @func(uv_tcp_t)))(client>>, on_close);
+
+func on_close(uv_tcp_t client) { }    // libuv hands client back; it is freed here
+```
+
+A pointer C hands back inside a struct is viewed as its owner with `as` and taken over:
+
+```palan
+func on_read(@!uv_stream_t s, int64 nread, @uv_buf_t buf)
+{
+    [65536]int8 data <<= buf.base as [65536]int8;
+}   // data is freed here; buf.base is left as it is
+```
+
 - Whether a pointer really points to a `T` that Palan can free is not checked, as in C.
+- A Palan function owning a parameter frees what it owns inside it; C's `free` does not, so give
+  C's `free` only a struct or array that owns nothing further.
 
 ### Two-Dimensional Arrays (`[m][n]T`)
 

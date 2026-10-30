@@ -790,6 +790,18 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		json call = normalizeMethodCall(expr);
 		return call["expr-type"] == "call" ? sa_expr_call(call) : sa_expr_member_call(expr);
 
+	} else if (expr_type == "call-ptr") {
+		json callee = sa_expression(expr["callee"]);
+		if (!isFuncPtr(callee["value-type"])) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CallNonFuncPtr,
+				typeDisplayName(callee["value-type"])) << endl;
+			exit(1);
+		}
+		const json* named = &expr["callee"];
+		while ((*named)["expr-type"] == "cast") named = &(*named)["src"];
+		string funcName = (*named)["expr-type"] == "id" ? (*named)["name"].get<string>() : "function pointer";
+		return sa_expr_call_ptr(expr, move(callee), funcName);
+
 	} else if (expr_type == "chain-call") {
 		return sa_expr_chain_call(expr);
 
@@ -1094,23 +1106,86 @@ json PlnSemanticAnalyzer::aliasCast(const json& expr, const string& typeName)
 	return sa_expression(cast);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
+// `_` in a function type keeps the type the cast's source has at that place.
+static bool hasKeptType(const json& t)
 {
-	const json& written = expr["target-type"];
-	json resolved = resolveKnownType(expr, written);
-	string tk = resolved.value("type-kind", "");
-	if (written.value("type-kind", "") == "arr") {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_CastToOwnedArr) << endl;
+	if (t.value("type-kind", "") == "keep") return true;
+	if (t.contains("base-type") && t["base-type"].is_object()) return hasKeptType(t["base-type"]);
+	if (t.value("type-kind", "") != "func") return false;
+	for (auto& p : t["parameters"])
+		if (hasKeptType(p["var-type"])) return true;
+	return hasKeptType(t["ret-type"]);
+}
+
+json PlnSemanticAnalyzer::fillKeptTypes(const json& locNode, json target, const json& from, const json& srcType)
+{
+	if (target.value("type-kind", "") == "keep") return from;
+	if (!hasKeptType(target)) return target;
+	string tk = target.value("type-kind", "");
+	if (tk == "pntr" && from.value("type-kind", "") == "pntr") {
+		target["base-type"] = fillKeptTypes(locNode, move(target["base-type"]), from["base-type"], srcType);
+		return target;
+	}
+	if (tk != "func" || from.value("type-kind", "") != "func"
+	    || target["parameters"].size() != from["parameters"].size()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_KeepWithoutSource, typeDisplayName(srcType)) << endl;
 		exit(1);
 	}
-	if (tk == "arr" || isStructType(resolved)) {
-		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InvalidCastTarget, typeDisplayName(written)) << endl;
+	for (size_t i = 0; i < target["parameters"].size(); i++)
+		target["parameters"][i]["var-type"] = fillKeptTypes(locNode,
+			move(target["parameters"][i]["var-type"]), from["parameters"][i]["var-type"], srcType);
+	target["ret-type"] = fillKeptTypes(locNode, move(target["ret-type"]), from["ret-type"], srcType);
+	return target;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The owned type `p as T` views a pointer as, or null when `written` is not one.
+json PlnSemanticAnalyzer::ownedCastType(const json& locNode, const json& written)
+{
+	json resolved = resolveKnownType(locNode, written);
+	if (isStructType(resolved))
+		requireCompleteStruct(resolved["type-name"].get<string>(), locNode);
+	else if (resolved.value("type-kind", "") != "arr")
+		return json();
+	json owned = ownedTypeOf(locNode, resolved);
+	if (owned.is_null()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_InvalidCastTarget, typeDisplayName(written)) << endl;
+		exit(1);
+	}
+	return owned;
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
+{
+	if (expr["src"].value("expr-type", "") == "transfer") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_TransferCast) << endl;
 		exit(1);
 	}
 	json src = sa_expression(expr["src"]);
 	// An address cast to an integer can be cast back.
 	noteEscape(src);
 	const json& from = src["value-type"];
+	json written = fillKeptTypes(expr, expr["target-type"], from, from);
+
+	// A pointer viewed as the owner of what it points to: no bits change, and
+	// whether it really holds that is the programmer's responsibility.
+	json owned = ownedCastType(expr, written);
+	if (!owned.is_null()) {
+		if (from.value("type-kind", "") != "pntr" || !from.contains("mutable")) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_OwnerViewNeedsPtr, typeDisplayName(written)) << endl;
+			exit(1);
+		}
+		json view = wrapConvert(src, owned);
+		view["category"] = "owner-view";
+		if (!from["mutable"].get<bool>()) view["read-only"] = true;
+		return view;
+	}
+
+	json resolved = resolveKnownType(expr, written);
+	string tk = resolved.value("type-kind", "");
+	if (tk == "arr" || tk == "embed") {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InvalidCastTarget, typeDisplayName(written)) << endl;
+		exit(1);
+	}
 	// A struct value is held as a pointer to its storage, but it is not one.
 	bool fromPntr = from.value("type-kind", "") == "pntr" && !isStructStorage(from);
 	auto incompatible = [&](const json& target) __attribute__((noreturn)) {
@@ -1128,7 +1203,7 @@ json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
 		return n == "int64" || n == "uint64";
 	};
 	if (tk == "pntr") {
-		json target = deepNormalizePrimToStruct(normalizeArrBorrowType(expr, resolved));
+		json target = deepNormalizePrimToStruct(expr, normalizeArrBorrowType(expr, resolved));
 		if (from == target) return src;
 		bool toArr = target.contains("arr-size");
 		if (!fromPntr && (toArr || !isWord(from))) incompatible(target);

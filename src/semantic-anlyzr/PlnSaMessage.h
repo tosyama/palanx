@@ -77,6 +77,8 @@ enum PlnSaMessageCode {
 	E_FuncNotValue,		// arg1: function name, arg2: the reason
 	E_FuncPtrMutable,
 	E_FuncPtrSigType,	// arg1: type display name
+	E_KeepOutsideCast,
+	E_CallNonFuncPtr,	// arg1: type display name
 	E_AmbiguousFuncPtrCall,	// arg1: the name called
 	E_DerefVoidPointer,		// no args
 	E_InvalidLinkLibName,		// arg1: the library name as written
@@ -122,8 +124,8 @@ enum PlnSaMessageCode {
 	E_TransferFromNonOwner,	// arg1: operator
 	E_TransferNotArg,
 	E_TransferToParam,	// arg1: parameter, arg2: function
-	E_TransferCastToOwnedParam,	// arg1: parameter
-	E_TakeFromReadOnly,
+	E_TransferCast,
+	E_MoveFromReadOnlyView,	// arg1: operator
 	E_TakeIntoFrameVar,	// arg1: variable name
 	E_TransferToBorrowSlot,
 	E_TransferShapeMismatch,	// arg1: destination shape, arg2: source shape
@@ -146,7 +148,8 @@ enum PlnSaMessageCode {
 	E_UnqualifiedAliasType,	// arg1: type name, arg2: module alias
 	E_CircularTypeDecl,	// arg1: type name, arg2: dependency path
 	E_InvalidCastTarget,	// arg1: target type name
-	E_CastToOwnedArr,
+	E_OwnerViewNeedsPtr,	// arg1: target type name
+	E_KeepWithoutSource,	// arg1: source type name
 	E_StructLitTarget,
 	E_ArrLitTarget,	// arg1: variable name
 	E_BorrowOfTempEscapes,

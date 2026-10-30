@@ -257,7 +257,7 @@ Same structure as Palan Parameter.
 
 Variable type
 -------------
-- type-kind\* - Type kind string: "prim" "pntr" "arr" "embed" "strct" "union" "enum" "func" "user"
+- type-kind\* - Type kind string: "prim" "pntr" "arr" "embed" "strct" "union" "enum" "func" "user" "keep"
 - const - Boolean, true if const qualified (omitted when false). c2ast/cinclude-only: a C
   pointer's own qualifier (`T * const`) is emitted on the `pntr` node itself; the pointee's
   qualifier (`const T *`) is emitted on `pntr`'s `base-type`. SA folds pointee `const` into
@@ -364,6 +364,7 @@ Variable type
       reject. A function's return type is taken greedily, so `e as @func(T) -> X` is a cast
       to a function returning `X`. A C typedef of a function type is expanded where it is
       referenced (not listed in `typedefs`).
+    - A parameter or return type written `_` is `keep` (below).
   9. user - An identifier used as a type that c2ast could not resolve to a recognized keyword
      or a previously-registered typedef — including an anonymous struct/union body via a
      multi-declarator or derived-declarator typedef (see type-kind "strct" above for the one
@@ -373,6 +374,9 @@ Variable type
      reference with that typedef's type at ingestion. Otherwise unrepresentable in SA this
      version (see SASpec.md's C-origin signature admission).
     - type-name\* - The unresolved identifier string
+  10. keep - `_` as a function type's parameter or return type: the type a cast's source has at
+      that place (`free as @func(Q)`, `f as @func(_, P) -> _`). SA accepts it only in a cast's
+      `target-type`. No other fields.
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
 
@@ -525,7 +529,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer" "call-ptr"
 - loc\* - Location Array
   1. lit-str - String literal
     - value\* - String value
@@ -668,11 +672,15 @@ Expression model
     - call\* - `call` or `member-call` expression model, its `args` without the chained value
     `value ->> f(args)` is a `chain-call` whose `value` is a `transfer` of the value (`op` "->>").
   33. transfer - A value given away (`v>>`), written after it and binding tighter than `as` and
-      the binary operators: `v>> as @!T` casts the value given away. SA accepts it only as a call
-      argument (see SASpec.md "Call arguments")
+      the binary operators (`v>> as T` is a cast of it, which SA rejects). SA accepts it only as a
+      call argument (see SASpec.md "Giving values away")
     - value\* - Expression model whose owned value is given away
     - op - Operator string for diagnostics: "->>" when it comes from `value ->> f(args)`;
       omitted for `>>`
+  34. call-ptr - A call through a parenthesized expression, `(callee)(args)`. A parenthesized
+      list of several expressions called this way is `not-impl`
+    - callee\* - Expression model of a function pointer
+    - args\* - Argument expression list
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

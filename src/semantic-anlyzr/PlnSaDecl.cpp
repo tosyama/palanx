@@ -334,12 +334,7 @@ json PlnSemanticAnalyzer::takeOverInit(const json& stmt, const json& var, VarSto
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TakeIntoFrameVar, name) << endl;
 		exit(1);
 	}
-	const json& vtype = var["var-type"];
-	json owned;
-	if (vtype.value("type-kind", "") == "prim" && structDefs_.count(vtype.value("type-name", "")))
-		owned = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",vtype["type-name"]}}}};
-	else
-		owned = takeOverType(stmt, vtype);
+	json owned = ownedTypeOf(stmt, var["var-type"]);
 	if (owned.is_null()) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedVar, name, "<<=") << endl;
 		exit(1);
@@ -349,14 +344,6 @@ json PlnSemanticAnalyzer::takeOverInit(const json& stmt, const json& var, VarSto
 	const json& vt = value["value-type"];
 	if (isOwnedBlock(vt)) {
 		value = giveValue(src, move(value), stmt, "<<=", pre);
-	} else if (vt.value("type-kind", "") == "pntr" && vt.contains("mutable")) {
-		// A pointer handed back (by C) is adopted as the block it points to.
-		if (!vt["mutable"].get<bool>()) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TakeFromReadOnly) << endl;
-			exit(1);
-		}
-		value["value-type"] = isArrLevel(vt) ? withoutArrPermission(vt) : [&] { json t = vt; t.erase("mutable"); return t; }();
-		value["category"] = "expiring";
 	} else {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, "<<=") << endl;
 		exit(1);
@@ -465,7 +452,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 	for (auto& var : stmt2["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
-		json varType = deepNormalizePrimToStruct(reshaped ? borrowType : var["var-type"]);
+		json varType = deepNormalizePrimToStruct(stmt2, reshaped ? borrowType : var["var-type"]);
 		sa_var["var-type"] = varType;
 		if (var.contains("init")) {
 			// Evaluate init before declaring the variable so that the variable
@@ -936,7 +923,7 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		if (!laterDef) requireKnownTypeNames(stmt, *type);
 		json* leaf = const_cast<json*>(t);
 		while (leaf->value("type-kind", "") == "pntr") leaf = &(*leaf)["base-type"];
-		if (leaf->value("type-kind", "") == "func") *leaf = deepNormalizePrimToStruct(*leaf);
+		if (leaf->value("type-kind", "") == "func") *leaf = deepNormalizePrimToStruct(stmt, *leaf);
 	}
 	structDefs_[name] = buildStructDef(name, fields, stmt);
 	return json::array();

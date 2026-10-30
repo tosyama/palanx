@@ -121,7 +121,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 16. Using a Value After `->>` Is Not Detected
 
-**Summary:** `a ->> b` leaves `a` NULL (as do `f(a>>)` and `T b <<= a;`), and nothing stops `a` from being used afterwards: `len(@a)`, `a[0]` or `a.x` dereferences NULL and the program crashes. This holds for structs, `[+]T` and rows alike, and for a field or element given away (`p ->> q; s -> p;` copies into a NULL struct). Detecting it needs flow analysis of moved-from variables.
+**Summary:** `a ->> b` leaves `a` NULL (as do `f(a>>)` and `T b <<= a;`), and nothing stops `a` from being used afterwards: `len(@a)`, `a[0]` or `a.x` dereferences NULL and the program crashes. This holds for structs, `[+]T` and rows alike, and for a field or element given away (`p ->> q; s -> p;` copies into a NULL struct). A pointer viewed as an owner (`T b <<= p as T;`) is not even reset, so `p` is left dangling once `b` is freed. Detecting it needs flow analysis of moved-from variables.
 
 ---
 

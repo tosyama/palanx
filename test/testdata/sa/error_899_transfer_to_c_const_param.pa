@@ -1,3 +1,0 @@
-cinclude <string.h>;
-[4]uint8 s;
-strlen(s>> as @int8);

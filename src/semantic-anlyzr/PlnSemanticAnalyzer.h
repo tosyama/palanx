@@ -410,7 +410,7 @@ class PlnSemanticAnalyzer {
 	void checkIntLiteralRange(const json& lit);
 	json sa_expr_call(const json& expr);
 	json sa_func_ref(const json& expr, const PlnType* expectedType);
-	string funcRefType(const json& def, json& funcPtr) const;
+	string funcRefType(const Callee& callee, json& funcPtr) const;
 	bool namesOverloadedFunc(const json& expr) const;
 	json literalDefaultType(const json& expr);
 	bool isPureOperand(const json& expr);
@@ -562,7 +562,11 @@ class PlnSemanticAnalyzer {
 	json  unsizedArrToPntr(const json& locNode, const json& type);
 	// A '@T'/'@!T' array element (a pointer slot) as SA represents it.
 	json  ptrSlotElemType(const json& locNode, const json& type);
-	json  deepNormalizePrimToStruct(const json& type) const;
+	// A function type's parameters and return take sigType's form, so a
+	// function pointer passes and returns owned values as a function does.
+	json  deepNormalizePrimToStruct(const json& locNode, const json& type);
+	json  fillKeptTypes(const json& locNode, json target, const json& from, const json& srcType);
+	json  ownedCastType(const json& locNode, const json& written);
 	// The type a written name is bound to in this scope, or null.
 	const json* findTypeBinding(const string& written) const;
 	// A type as written in source -> the same type in program-wide names, at
@@ -574,7 +578,7 @@ class PlnSemanticAnalyzer {
 	json  resolveSigTypes(const json& f) const;
 	// The canonical form of a signature type (an owned struct becomes pntr(struct)),
 	// also what a tapple-decl variable's declared type is compared in.
-	json  normalizeSigType(const json& type) const;
+	json  normalizeSigType(const json& locNode, const json& type);
 	json  sigType(const json& locNode, const json& type, bool isParam);
 	void  normalizeSig(json& funcDef);
 	// Diagnose (and exit) if `funcDef`'s parameters/ret-type/rets use a type
@@ -587,6 +591,9 @@ class PlnSemanticAnalyzer {
 	json  varrStorageType(const json& locNode, const json& arr);
 	json  varrElemType(const json& locNode, const json& varr);
 	json  takeOverType(const json& locNode, const json& varType);
+	// The owned block a variable of `varType` holds (a struct's or a
+	// constant-size array's), or null for any other type.
+	json  ownedTypeOf(const json& locNode, const json& varType);
 	int64_t inPlaceSize(const json& elem) const;
 	json  inPlaceSizeExpr(const json& elem, size_t level, const function<json(size_t)>& lenAt) const;
 	int   inPlaceAlign(const json& elem) const;
