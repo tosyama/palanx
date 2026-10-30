@@ -433,6 +433,8 @@ Statement model
       - name\* - Variable name string
       - var-type\* - Variable type
       - init - Initializer expression model (omitted if no initializer)
+      - ownership-transfer - Boolean, true if the initializer is given with `<<=` (`T b <<= v`),
+        taking over what `v` owns; omitted when false
   5. assign - assignment statement (`expr -> var` or `expr ->> var`)
     - name\* - Target variable name string
     - value\* - Source expression model
@@ -523,7 +525,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer"
 - loc\* - Location Array
   1. lit-str - String literal
     - value\* - String value
@@ -664,6 +666,13 @@ Expression model
     - value\* - Expression model whose value (or return values) come first in the arguments; a
       nested `chain-call` for `x -> f() -> g()`, or an assignment statement node for `x -> v -> f()`
     - call\* - `call` or `member-call` expression model, its `args` without the chained value
+    `value ->> f(args)` is a `chain-call` whose `value` is a `transfer` of the value (`op` "->>").
+  33. transfer - A value given away (`v>>`), written after it and binding tighter than `as` and
+      the binary operators: `v>> as @!T` casts the value given away. SA accepts it only as a call
+      argument (see SASpec.md "Call arguments")
+    - value\* - Expression model whose owned value is given away
+    - op - Operator string for diagnostics: "->>" when it comes from `value ->> f(args)`;
+      omitted for `>>`
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

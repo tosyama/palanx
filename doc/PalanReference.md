@@ -857,7 +857,9 @@ divmod(17, 5) -> add3(100);                    // add3(q, r, 100)
   and `divmod(7, 2) -> acc.add3(9)` is `add3(@!acc, q, r, 9)`. `v` is evaluated before `x`, so in
   `next(@!i) -> a[i].f()` `a[i]` uses the `i` `next` changed, and in `n -> a[bump(@!n)].f()` the
   `n` passed is the one before `bump`.
-- Not supported in this version: `->>` to a call, and receiving with `(a, b) = ...` the return
+- `v ->> f()` gives `v` away to `f`, as `f(v>>)` does (see
+  [Giving Values Away](#giving-values-away--and-taking-them-over-)).
+- Not supported in this version: receiving with `(a, b) = ...` the return
   values of a chain whose value is evaluated first: a call given several chained values, or a
   method-form call where the value or `x` has a call (`(a, b) = g() -> acc.two()`).
 
@@ -1284,6 +1286,55 @@ a function. A field or element source is set to NULL like a variable. A borrow (
 
 `return` on a tracked array variable also transfers ownership: the variable is removed from
 free-tracking and the caller receives the pointer.
+
+### Giving Values Away (`>>`) and Taking Them Over (`<<=`)
+
+`v>>` gives what `v` owns away as a call argument, and `v` is set to NULL as by `->>`. Given to a
+parameter that owns its argument (a struct `T`, `[n]T`, `[+]T`), it is passed without a copy:
+
+```palan
+func total([+]int32 v) -> int64 t {   // v is freed when total returns
+    0 -> t;
+    for copy e in v { t + e -> t; }
+}
+
+[+]int32 big = [1, 2, 3];
+total(big>>);                // no copy; big is now NULL
+big ->> total();             // the same, chained
+```
+
+Given to a C function's non-const pointer parameter, it leaves Palan: nothing frees it, and the
+C side owns it from then on. `v>>` is a pointer to what `v` owns (`@!T` for a struct, the array
+for `[n]T`, the array's own header for `[+]T`), which `as` converts as any pointer:
+
+```palan
+uv_close(client>> as @!uv_handle_t, on_close);   // libuv frees nothing; on_close takes it back
+```
+
+- The source is an owner, as for `->>`: a variable that owns its array or struct, an owned field
+  or element, or a value a call returns.
+- `v>>` is written only as a call argument. Given to a `@T`/`@!T` parameter, a C function's
+  const pointer parameter, or a variadic argument, it is a compile error, since nothing would
+  own it. To a parameter that owns it, it cannot be cast.
+
+`T b <<= v;` declares `b` taking over what `v` owns, without a copy. `v` is an owner (set to
+NULL), a call result, or a `@!T` pointer, such as one C hands back, that `b` adopts and frees as
+its own:
+
+```palan
+func on_close(@!uv_handle_t handle)
+{
+    uv_tcp_t client <<= handle as @!uv_tcp_t;
+}   // client is freed here
+
+[4]int32 a = [1, 2, 3, 4];
+[4]int32 c <<= a;                     // a is now NULL
+```
+
+- `b` must own its array or struct: not a `$` variable, a borrow or a primitive. `v` must have
+  `b`'s type (the same sizes for an array); a `@T` pointer is a compile error, since `b` will
+  free it.
+- Whether a pointer really points to a `T` that Palan can free is not checked, as in C.
 
 ### Two-Dimensional Arrays (`[m][n]T`)
 

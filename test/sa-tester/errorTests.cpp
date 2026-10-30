@@ -828,8 +828,6 @@ TEST(sa_error, expr_not_implemented)
 		{"error_417_expr_not_impl_stmt.pa", ":1:1: error: this expression is not supported"},
 		{"error_521_chain_tapple_value.pa", ":4:1: error: this expression is not supported"},
 		{"error_523_expr_not_impl_sizeof_nested.pa", ":1:12: error: this expression is not supported"},
-		{"error_553_arg_move_owner.pa", ":3:3: error: this expression is not supported"},
-		{"error_554_c_arg_move_owner.pa", ":3:16: error: this expression is not supported"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -1129,7 +1127,6 @@ TEST(sa_error, chain_call)
 		{"error_514_chain_mut_needs_at.pa", ":4:6: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'"},
 		{"error_515_chain_multi_to_mut.pa", ":3:17: error: cannot convert 'int32' to '@!int32'."},
 		{"error_516_chain_void_value.pa", ":3:1: error: Void function call cannot be used as a value."},
-		{"error_517_chain_transfer.pa", ":3:1: error: this expression is not supported in this version."},
 		{"error_518_chain_method_ro_recv.pa", ":4:7: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 		{"error_519_chain_multi_to_tapple.pa", ":3:1: error: the return values of a '->' chain whose value is evaluated first"},
 		{"error_520_chain_multi_borrow_escapes.pa", ":4:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
@@ -1364,6 +1361,35 @@ TEST(sa_error, global_var)
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_global.pa -o out/lib_sa_global.pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, give_and_take)
+{
+	const pair<string, string> cases[] = {
+		{"error_553_arg_move_owner.pa", ":3:3: error: '>>' needs a source that owns its value"},
+		{"error_554_c_arg_move_owner.pa", ":3:16: error: '>>' needs a source that owns its value"},
+		{"error_517_chain_transfer.pa", ":3:1: error: '->>' needs a source that owns its value"},
+		{"error_897_transfer_not_arg.pa", ":3:7: error: '>>' gives a value away only as a call argument"},
+		{"error_898_transfer_to_borrow_param.pa", ":4:1: error: parameter 'q' of 'f' cannot take a value given away with '>>'"},
+		{"error_899_transfer_to_c_const_param.pa", ":3:1: error: parameter '__s' of 'strlen' cannot take a value given away with '>>'"},
+		{"error_900_transfer_to_variadic.pa", ":4:1: error: parameter '#2' of 'printf' cannot take a value given away with '>>'"},
+		{"error_901_transfer_cast_to_owned_param.pa", ":4:1: error: a value given away to parameter 'q' with '>>' cannot be cast"},
+		{"error_902_transfer_from_frame_var.pa", ":4:6: error: '>>' needs a source that owns its value"},
+		{"error_903_take_from_read_only.pa", ":4:1: error: '<<=' cannot take over a read-only pointer '@T'"},
+		{"error_904_take_shape_mismatch.pa", ":3:1: error: cannot transfer 'Q' into '[2]int32'"},
+		{"error_905_take_into_frame_var.pa", ":3:1: error: '<<=' needs a variable that owns its storage; 'r' is laid out in place."},
+		{"error_906_take_into_prim.pa", ":2:1: error: '<<=' needs a variable that owns its array or struct; 'm' does not."},
+		{"error_907_take_from_non_owner.pa", ":3:1: error: '<<=' needs a source that owns its value"},
+		{"error_908_take_from_prim.pa", ":3:1: error: '<<=' needs a source that owns its value"},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");

@@ -210,6 +210,9 @@ class PlnSemanticAnalyzer {
 	int tempVarCounter_ = 0;
 	// The top level names the implicit `args`; its header is built only then.
 	bool argsUsed_ = false;
+	// Set while a call argument giving its value away (`x>>`) is analyzed; a
+	// `>>` anywhere else is an error.
+	bool transferAllowed_ = false;
 	// Variables of the function being analyzed (the top level counts as one)
 	// whose storage a pointer has been given to, and the count of
 	// `pending-alias` statements waiting for that to be known.
@@ -668,7 +671,14 @@ class PlnSemanticAnalyzer {
 	// sets litAddr to the target's address, held in a temp, to read it back.
 	json sa_aggregate_lit_assign(const json& stmt, const json& targetAst, const json& targetType,
 	                             json* litAddr = nullptr);
-	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue);
+	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue, const string& op = "->>");
+	// What srcAst owns, given away by `op`: held in a temp declared in body, with
+	// the owner reset to NULL after it. Typed as the owned value, category "expiring".
+	json giveValue(const json& srcAst, json saValue, const json& locNode, const string& op, json& body);
+	json sa_expr_transfer(const json& expr);
+	json sa_arg_expression(const json& ast, const PlnType* expectedType = nullptr);
+	// `T b <<= v`: the initializer as a pinned value b takes over; its evaluation goes to pre.
+	json takeOverInit(const json& stmt, const json& var, VarStorage storage, json& pre);
 	// `value ->> target`: releases what target holds, stores, and resets the source.
 	json transferStmts(const json& stmt, json targetRelease, json store, const json& value);
 	json sa_return_stmt(const json& stmt);

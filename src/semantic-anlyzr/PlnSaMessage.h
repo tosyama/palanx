@@ -119,10 +119,15 @@ enum PlnSaMessageCode {
 	E_NamedRetInitOnStruct,	// arg1: return name
 	E_TransferToNonOwnedField,	// arg1: field name
 	E_ExpiringStructToBorrow,
-	E_TransferFromNonOwner,
+	E_TransferFromNonOwner,	// arg1: operator
+	E_TransferNotArg,
+	E_TransferToParam,	// arg1: parameter, arg2: function
+	E_TransferCastToOwnedParam,	// arg1: parameter
+	E_TakeFromReadOnly,
+	E_TakeIntoFrameVar,	// arg1: variable name
 	E_TransferToBorrowSlot,
 	E_TransferShapeMismatch,	// arg1: destination shape, arg2: source shape
-	E_TransferToNonOwnedVar,	// arg1: variable name
+	E_TransferToNonOwnedVar,	// arg1: variable name, arg2: operator
 	E_TransferToSelf,	// arg1: variable name
 	E_UnsizedArrRowSizeNotConst,
 	E_UnsizedArrRowUnsupported,

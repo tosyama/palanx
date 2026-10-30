@@ -1,0 +1,40 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+cinclude <string.h>;
+cinclude <mcheck.h>;
+type P { int32 x; [+]int32 v; };
+type Q { int32 y; };
+type H { P p; [2]Q qs; };
+func sumP(P p) -> int32 { return p.x + int32(len(@p.v)); }
+func lastA([4]int32 a) -> int32 { return a[3]; }
+func lenV([+]int32 v) -> int32 { return int32(len(@v)); }
+func mkP(int32 x) -> P { return {x: x, v: [1]}; }
+func addY(@!Q acc, Q q) { acc.y + q.y -> acc.y; }
+mtrace();
+{
+	P p = {x: 3, v: [1, 2]};
+	printf("%d %d\n", sumP(p>>), p == NULL);
+	[4]int32 a = [1, 2, 3, 4];
+	printf("%d\n", lastA(a>>));
+	[+]int32 v = [5, 6, 7];
+	printf("%d\n", v ->> lenV());
+	H h = {p: {x: 10, v: []}, qs: [[1], [2]]};
+	printf("%d\n", sumP(h.p>>));
+	Q acc; 100 -> acc.y;
+	h.qs[1] ->> acc.addY();
+	printf("%d\n", acc.y);
+
+	Q q; 7 -> q.y;
+	Q r <<= realloc(q>> as @!void, 16) as @!Q;
+	[4]int32 b = [9, 8, 7, 6];
+	[4]int32 c <<= b, d <<= c;
+	[+]int32 w = [1, 2, 3, 4, 5];
+	@!void held = memmove(w>> as @!void, NULL, 0);
+	[+]int32 w2 <<= held as @![+]int32;
+	P m <<= mkP(4);
+	Q e <<= h.qs[0];
+	printf("%d %d %d %d %d %d\n", r.y, d[0], c == NULL, int32(len(@w2)), m.x, e.y);
+	Q s;
+	free(s>> as @!void);
+}
+muntrace();

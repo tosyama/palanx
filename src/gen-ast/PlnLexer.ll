@@ -60,6 +60,7 @@ enum {
 	OPE_SHR =	PlnParser::token::OPE_SHR,
 	ARROW =	PlnParser::token::ARROW,
 	DBL_ARROW =	PlnParser::token::DBL_ARROW,
+	OPE_TAKE =	PlnParser::token::OPE_TAKE,
 	AT_EXCL =	PlnParser::token::AT_EXCL,
 	DBL_PLUS =	PlnParser::token::DBL_PLUS,
 	OPE_EQ =	PlnParser::token::OPE_EQ,
@@ -191,6 +192,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>">>>"	{ return OPE_SHR; }
 <*>"->"	{ return ARROW; }
 <*>"->>"	{ return DBL_ARROW; }
+<*>"<<="	{ return OPE_TAKE; }
 <*>"@!"	{ return AT_EXCL; }
 <*>"++"	{ return DBL_PLUS; }
 <*>"=="	{ return OPE_EQ; }

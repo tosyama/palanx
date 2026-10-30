@@ -266,6 +266,7 @@ struct BodyList {
 %token OPE_SHR	">>>"
 %token ARROW	"->"
 %token DBL_ARROW	"->>"
+%token OPE_TAKE	"<<="
 %token AT_EXCL	"@!"
 %token DBL_PLUS	"++"
 %token OPE_EQ	"=="
@@ -317,6 +318,7 @@ struct BodyList {
 %left '+' '-'
 %left '*' '/' '%' '&' '|' '^'
 %left KW_AS
+%left DBL_GRTR
 %right UNARY_MINUS '!' '~'
 %left '.'
 
@@ -710,6 +712,8 @@ inherit_var_decl: ID
 	{ $$ = {{"name", $1}, {"inherit-type", true}}; }
 	| ID '=' expression
 	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}}; }
+	| ID OPE_TAKE expression
+	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}, {"ownership-transfer", true}}; }
 	;
 
 var_declaration: type_expr ID
@@ -727,6 +731,15 @@ var_declaration: type_expr ID
 	{
 		if (isDeclarableVarType($1) || isFrameVarType($1)) {
 			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}};
+		} else {
+			$$ = {{"not-impl", true}};
+			LOC($$, @$);
+		}
+	}
+	| type_expr ID OPE_TAKE expression
+	{
+		if (isDeclarableVarType($1) || isFrameVarType($1)) {
+			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}, {"ownership-transfer", true}};
 		} else {
 			$$ = {{"not-impl", true}};
 			LOC($$, @$);
@@ -933,12 +946,19 @@ expression: term
 	| expression DBL_ARROW store_loc
 	{
 		string kind = $3.value("kind", "");
-		if (kind == "var" || kind == "arr-index" || kind == "field")
+		if (kind == "var" || kind == "arr-index" || kind == "field") {
 			$$ = storeStmt(move($3), move($1), true);
-		else
+		} else if (kind == "call" && !isStoreStmt($1)) {
+			json value = {{"expr-type", "transfer"}, {"value", move($1)}, {"op", "->>"}};
+			LOC(value, @1);
+			$$ = {{"expr-type", "chain-call"}, {"value", move(value)}, {"call", move($3["call"])}};
+		} else {
 			$$ = {{"expr-type", "not-impl"}};
+		}
 		LOC($$, @$);
 	}
+	| expression DBL_GRTR
+	{ $$ = {{"expr-type", "transfer"}, {"value", move($1)}}; LOC($$, @$); }
 	| noname_func
 	{ $$ = {{"expr-type", "not-impl"}}; LOC($$, @$); }
 	;
@@ -1035,20 +1055,8 @@ arguments: /* empty */
 	{ }
 	| expression
 	{ $$ = PList<json>().push($1); }
-	| expression DBL_GRTR
-	{
-		json arg = {{"expr-type", "not-impl"}};
-		LOC(arg, @$);
-		$$ = PList<json>().push(move(arg));
-	}
 	| arguments ',' expression
 	{ $$ = $1.push($3); }
-	| arguments ',' expression DBL_GRTR
-	{
-		json arg = {{"expr-type", "not-impl"}};
-		LOC_BE(arg, @3, @4);
-		$$ = $1.push(move(arg));
-	}
 	;
 
 array_desc: array_row

@@ -629,7 +629,7 @@ static string arrLitTargetName(const json& ast)
 json PlnSemanticAnalyzer::sa_varr_lit_assign(const json& stmt, const json& varType, json* litAddr)
 {
 	if (stmt.value("ownership-transfer", false)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, "->>") << endl;
 		exit(1);
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
@@ -662,7 +662,7 @@ json PlnSemanticAnalyzer::sa_transfer_to_var(const json& stmt, const string& nam
                                              const PlnType* toType)
 {
 	if (!isOwnedVar(name)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedVar, name) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedVar, name, "->>") << endl;
 		exit(1);
 	}
 	const json& src = stmt["value"];
@@ -1157,7 +1157,7 @@ json PlnSemanticAnalyzer::sa_aggregate_lit_assign(const json& stmt, const json& 
                                                    json* litAddr)
 {
 	if (stmt.value("ownership-transfer", false)) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, "->>") << endl;
 		exit(1);
 	}
 	bool isStruct = isStructPntr(targetType);
@@ -1263,7 +1263,7 @@ json PlnSemanticAnalyzer::transferStmts(const json& stmt, json targetRelease, js
 // Only an owner may give its value away, and it then holds NULL so its own free
 // is a no-op: C free and the build-mgr generated __pln_free_* functions all
 // accept NULL. A call result has no owner to reset.
-void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue)
+void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue, const string& op)
 {
 	if (saValue.value("category", "") == "expiring")
 		return;
@@ -1299,8 +1299,25 @@ void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& stm
 			return;
 		}
 	}
-	cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner) << endl;
+	cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, op) << endl;
 	exit(1);
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::giveValue(const json& srcAst, json saValue, const json& locNode, const string& op, json& body)
+{
+	if (!isOwnedBlock(saValue["value-type"])) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_TransferFromNonOwner, op) << endl;
+		exit(1);
+	}
+	if (isExpiringOwned(saValue))
+		return saValue;
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json owner = {{"value", srcAst}, {"loc", locNode.value("loc", json::array())}};
+	json given = pinValue(saValue, srcAst, body)["sa"];
+	appendTransferSourceReset(body, owner, saValue, op);
+	given["category"] = "expiring";
+	return given;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)

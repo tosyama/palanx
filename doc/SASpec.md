@@ -1249,6 +1249,32 @@ of a multiple-return declaration/assignment) by `normalizeChainCall`, after its 
 
 sa.json never carries `chain-call`.
 
+### Giving values away (`>>`, `<<=`)
+
+A value is given away by an owner (an owning variable, an owned field or element) or as a call
+result; anything else is E_TransferFromNonOwner (naming `>>`, `->>` or `<<=`). The owner's value
+is held in a temp (`__pin_N`, typed as the owned value) and the owner is then set to NULL, as
+the source of `->>` is; a call result is given as it is.
+
+- `transfer` (`x>>`) is analyzed only as a call argument, under any casts of it; elsewhere it is
+  E_TransferNotArg. Its value is a `temp` whose `body` holds the pin and the reset and whose
+  value is the pointer `@!X` to what `x` owned (a `[+]T`'s header: a C function is not given
+  its data, as it is for a `[+]T` argument otherwise), with no `category` and an empty
+  `release`, so nothing frees it after the call.
+  - To a Palan parameter owning `X` (`T`, `[n]T`, `[+]T`) it is retyped back to `X` with
+    category `expiring` and passed as a call result is, without a copy; a cast of it is
+    E_TransferCastToOwnedParam.
+  - To a C function's non-const pointer parameter it is passed as it is; the C side owns it.
+  - To any other parameter (a Palan `@T`/`@!T`, a C const pointer, a variadic argument, a
+    function pointer's) it is E_TransferToParam.
+  - `x ->> f(args)` is `f(x>>, args)` (`op` "->>").
+- `T b <<= v` declares `b` on its own, after `v` is evaluated: `<<=` initializers of one
+  declaration run in order. `v` becomes a `pinned` value of `b`'s owned type with category
+  `expiring`, which `b` takes over as it does a call result: what an owner gives away, a call
+  result, or a pointer `@!X` adopted as the block it points to (its permission dropped). A
+  read-only pointer is E_TakeFromReadOnly, another type E_TransferShapeMismatch, a `$` variable
+  E_TakeIntoFrameVar, and a variable owning no block E_TransferToNonOwnedVar.
+
 ### Call arguments
 
 A fixed (non-variadic) call argument is checked against its parameter's type by `argConvOk(from,

@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+type Q { int32 y; };
+Q q;
+printf("%p", q>>);

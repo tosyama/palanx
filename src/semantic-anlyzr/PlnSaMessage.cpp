@@ -629,8 +629,31 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       "in this version.";
 
 		case E_TransferFromNonOwner:
-			return "'->>' needs a source that owns its value: an owning variable, an owned field "
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' needs a source that owns its value: an owning variable, an owned field "
 			       "or element, or a call result.";
+
+		case E_TransferNotArg:
+			return "'>>' gives a value away only as a call argument: to a parameter that owns it, "
+			       "or to a C function's non-const pointer parameter.";
+
+		case E_TransferToParam:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg1 + "' of '" + arg2 + "' cannot take a value given away with '>>': "
+			       "only a parameter that owns it, or a C function's non-const pointer parameter, can.";
+
+		case E_TransferCastToOwnedParam:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a value given away to parameter '" + arg1 + "' with '>>' cannot be cast: "
+			       "the parameter owns it as the type it has.";
+
+		case E_TakeFromReadOnly:
+			return "'<<=' cannot take over a read-only pointer '@T': the variable frees what it owns.";
+
+		case E_TakeIntoFrameVar:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'<<=' needs a variable that owns its storage; '" + arg1 + "' is laid out in place.";
 
 		case E_TransferToBorrowSlot:
 			return "'->>' cannot give ownership to a borrowed pointer slot ('@T'/'@!T'); store into it with '->'.";
@@ -642,7 +665,8 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_TransferToNonOwnedVar:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "'->>' needs a variable that owns its array or struct; '" + arg1 + "' does not.";
+			BOOST_ASSERT(arg2 != "\x01");
+			return "'" + arg2 + "' needs a variable that owns its array or struct; '" + arg1 + "' does not.";
 
 		case E_TransferToSelf:
 			BOOST_ASSERT(arg1 != "\x01");

@@ -20,6 +20,61 @@ static json makeTempExpr(json body, json value, json release)
 }
 // LCOV_EXCL_EXCEPTION_BR_STOP
 
+// The `x>>` an argument gives away, under any casts of it.
+static const json* givenIn(const json& arg)
+{
+	const json* a = &arg;
+	while (a->value("expr-type", "") == "cast") a = &(*a)["src"];
+	return a->value("expr-type", "") == "transfer" ? a : nullptr;
+}
+
+// A pointer type's own permission, or every level's for an array.
+static json withPermission(json vt, bool isMutable)
+{
+	if (isArrLevel(vt)) return isMutable ? withArrPermission(move(vt), true) : withoutArrPermission(move(vt));
+	if (isMutable) vt["mutable"] = true;
+	else vt.erase("mutable");
+	return vt;
+}
+
+json PlnSemanticAnalyzer::sa_arg_expression(const json& ast, const PlnType* expectedType)
+{
+	bool saved = transferAllowed_;
+	transferAllowed_ = givenIn(ast) != nullptr;
+	json out = sa_expression(ast, expectedType);
+	transferAllowed_ = saved;
+	return out;
+}
+
+// `x>>` is the pointer to what x owned, `@!X`, as a C function takes it; a
+// parameter owning X takes it back as the block it is (ownedGiven).
+json PlnSemanticAnalyzer::sa_expr_transfer(const json& expr)
+{
+	if (!transferAllowed_) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_TransferNotArg) << endl;
+		exit(1);
+	}
+	transferAllowed_ = false;
+	json body = json::array();
+	json given = giveValue(expr["value"], sa_expression(expr["value"]), expr, expr.value("op", ">>"), body);
+	transferAllowed_ = true;
+	given["value-type"] = withPermission(given["value-type"], true);
+	given.erase("category");
+	if (body.empty()) return given;
+	return makeTempExpr(move(body), move(given), json::array());
+}
+
+static json ownedGiven(json saArg)
+{
+	json vt = withPermission(saArg["value-type"], false);
+	for (json* v = &saArg; ; v = &(*v)["value"]) {
+		(*v)["value-type"] = vt;
+		(*v)["category"] = "expiring";
+		if ((*v)["expr-type"] != "temp") break;
+	}
+	return saArg;
+}
+
 // The registered definition of the function `funcDef` defines, among those
 // sharing its name.
 const json* PlnSemanticAnalyzer::findPlnFuncDef(const json& funcDef) const
@@ -615,7 +670,7 @@ vector<CallArg> PlnSemanticAnalyzer::analyzeCallArgs(const json& args)
 		if (literal)
 			a.probe = literalDefaultType(a.ast);
 		else if (!typeless)
-			(a.chained ? a.probe : a.sa) = isCallBorrow(a.ast) ? sa_call_borrow_arg(a.ast) : sa_expression(a.ast);
+			(a.chained ? a.probe : a.sa) = isCallBorrow(a.ast) ? sa_call_borrow_arg(a.ast) : sa_arg_expression(a.ast);
 		callArgs.push_back(move(a));
 	}
 	return callArgs;
@@ -696,7 +751,24 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		json argAst = arg;
 		json litBody, litRelease;
 		bool isLit = isAggregateLitArg(arg);
-		if (!isCFunc && paramVT && isOwnedBlock(*paramVT)) {
+		bool ownedParam = !isCFunc && paramVT && isOwnedBlock(*paramVT);
+		const json* given = givenIn(arg);
+		if (given) {
+			bool cPtr = isCFunc && paramVT && paramVT->value("type-kind", "") == "pntr"
+			         && paramVT->value("mutable", false);
+			if (!ownedParam && !cPtr) {
+				string paramName = param ? param->value("name", "") : "";
+				if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_TransferToParam, paramName, funcName) << endl;
+				exit(1);
+			}
+			if (ownedParam && given != &arg) {
+				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_TransferCastToOwnedParam,
+					param->value("name", "")) << endl;
+				exit(1);
+			}
+		}
+		if (ownedParam) {
 			saArgs.push_back(ownedBlockArg(locNode, arg, ca, *param, argIdx, funcName));
 			continue;
 		}
@@ -706,9 +778,10 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		           : probed && arg == ca.ast ? move(ca.probe)
 		           : !ca.pending ? move(ca.sa)
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
-		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		           : sa_arg_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
 		bool expiring = isCallBorrow(arg) || isExpiringOwned(saArg);
-		if (takesVarrData(saArg["value-type"], paramVT, isCFunc))
+		// A `[+]T` given away is its header, not its elements.
+		if (!given && takesVarrData(saArg["value-type"], paramVT, isCFunc))
 			saArg = varrData(move(saArg));
 		if (paramVT) {
 			if (auto d = callArgMismatch(argAst, saArg, *param, argIdx, isCFunc, funcName))
@@ -746,7 +819,8 @@ json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, Ca
 	bool isLit = isAggregateLitArg(arg);
 	json saArg;
 	if (!isLit) {
-		saArg = !ca.pending ? move(ca.sa) : sa_expression(arg, registry_.fromJson(paramVT));
+		saArg = !ca.pending ? move(ca.sa) : sa_arg_expression(arg, registry_.fromJson(paramVT));
+		if (givenIn(arg)) saArg = ownedGiven(move(saArg));
 		if (auto d = callArgMismatch(arg, saArg, param, argIdx, false, funcName))
 			reportDiag(locNode, *d);
 		if (isExpiringOwned(saArg)) return saArg;
@@ -902,7 +976,8 @@ static const json* fixedParamType(const json* callee, size_t idx)
 // visible at the call. A C function takes an array as it is.
 json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool isCFunc, const json* valueType)
 {
-	if (!paramVT || value.value("expr-type", "") == "addr-of") return value;
+	string vet = value.value("expr-type", "");
+	if (!paramVT || vet == "addr-of" || vet == "transfer") return value;
 	if (paramVT->value("type-kind", "") != "pntr" || paramVT->value("mutable", true)) return value;
 	// A literal has no type of its own until it is given a target, so it is
 	// borrowed as '@[..]'/'@{..}' and checked against the parameter.
@@ -955,7 +1030,7 @@ json PlnSemanticAnalyzer::chainValueAhead(const json& value, const json* paramVT
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	if (foldConstExpr(value)["expr-type"].get<string>().rfind("lit-", 0) == 0
-	    || isAggregateLitArg(value) || namesOverloadedFunc(value))
+	    || isAggregateLitArg(value) || namesOverloadedFunc(value) || value["expr-type"] == "transfer")
 		return value;
 	auto tempId = [&](const string& name) {
 		json id = {{"expr-type", "id"}, {"name", name}};

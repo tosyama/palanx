@@ -1218,8 +1218,40 @@ TEST(gen_ast, shift) {
 	ASSERT_EQ(stmts[2]["body"]["left"]["expr-type"], "shr");
 	ASSERT_EQ(stmts[3]["body"]["expr-type"], "shr");
 	ASSERT_EQ(stmts[3]["body"]["left"]["expr-type"], "shl");
-	// '>>' stays the move-owner mark.
-	ASSERT_EQ(stmts[4]["body"]["args"][0]["expr-type"], "not-impl");
+	// '>>' stays the mark that gives a value away.
+	ASSERT_EQ(stmts[4]["body"]["args"][0]["expr-type"], "transfer");
+}
+
+TEST(gen_ast, give_take) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/152_give_take.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+
+	// '>>' marks the value given away, binding tighter than 'as' and a binary operator.
+	const auto& args = stmts[0]["body"]["args"];
+	ASSERT_EQ(args[0]["expr-type"], "transfer");
+	ASSERT_EQ(args[0]["value"]["name"], "a");
+	ASSERT_EQ(args[1]["expr-type"], "cast");
+	ASSERT_EQ(args[1]["src"]["expr-type"], "transfer");
+	ASSERT_EQ(args[2]["expr-type"], "add");
+	ASSERT_EQ(args[2]["right"]["expr-type"], "transfer");
+
+	// '<<=' initializes a variable by taking over its value, also an inherited-type one.
+	const auto& vars = stmts[1]["vars"];
+	ASSERT_EQ(vars[0]["ownership-transfer"], true);
+	ASSERT_EQ(vars[0]["init"]["expr-type"], "cast");
+	ASSERT_EQ(vars[1]["ownership-transfer"], true);
+	ASSERT_EQ(vars[1]["var-type"]["type-name"], "P");
+
+	// 'v ->> f()' chains v given away.
+	ASSERT_EQ(stmts[2]["body"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[2]["body"]["value"]["expr-type"], "transfer");
+	ASSERT_EQ(stmts[2]["body"]["value"]["op"], "->>");
+	ASSERT_EQ(stmts[3]["body"]["call"]["expr-type"], "member-call");
+	ASSERT_EQ(stmts[3]["body"]["value"]["expr-type"], "transfer");
 }
 
 // '->' binds tighter than comparisons and logical operators, looser than arithmetic.

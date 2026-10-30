@@ -793,6 +793,9 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 	} else if (expr_type == "chain-call") {
 		return sa_expr_chain_call(expr);
 
+	} else if (expr_type == "transfer") {
+		return sa_expr_transfer(expr);
+
 	} else if (expr_type == "field-access") {
 		json enumerator = resolveEnumerator(expr);
 		if (!enumerator.is_null()) return enumerator;

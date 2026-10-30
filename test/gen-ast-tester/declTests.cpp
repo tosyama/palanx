@@ -921,7 +921,7 @@ TEST(gen_ast, decl_variants) {
 	ASSERT_EQ(stmts[2]["stmt-type"], "struct-def");
 	ASSERT_EQ(stmts[2]["fields"].size(), 1);
 	ASSERT_EQ(stmts[3]["body"]["args"].size(), 2);
-	ASSERT_EQ(stmts[3]["body"]["args"][1]["expr-type"], "not-impl");
+	ASSERT_EQ(stmts[3]["body"]["args"][1]["expr-type"], "transfer");
 	ASSERT_EQ(stmts[3]["body"]["args"][1]["loc"], json::array({7, 6, 7, 9}));
 	ASSERT_EQ(stmts[4]["vars"].size(), 1);
 	ASSERT_EQ(stmts[4]["vars"][0]["var-name"], "c");

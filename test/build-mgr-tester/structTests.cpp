@@ -1223,6 +1223,12 @@ TEST(build_mgr, struct_param_owned_mtrace) {
 	expectMtraceRun("373_struct_param_owned_mtrace", "11 1\n15 17\n8 2\n1 1 2\n", 14);
 }
 
+TEST(build_mgr, give_take_mtrace) {
+	// '>>' moves a value into a parameter owning it or gives it to C, which
+	// realloc hands back for '<<=' to take over; nothing leaks or is freed twice.
+	expectMtraceRun("374_give_take_mtrace", "5 1\n4\n3\n10\n102\n7 9 1 5 4 1\n", 22);
+}
+
 TEST(build_mgr, store_value_first) {
 	cleanTestEnv();
 	// A call in the target that writes the value through a pointer it was

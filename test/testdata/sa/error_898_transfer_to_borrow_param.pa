@@ -1,0 +1,4 @@
+type Q { int32 y; };
+func f(@!Q q) { }
+Q q;
+f(q>>);

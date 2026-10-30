@@ -299,11 +299,74 @@ json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
 {
 	json stmt2 = stmt;
 	vector<VarStorage> storage;
+	bool takes = false;
 	for (auto& var : stmt2["vars"]) {
 		storage.push_back(takeVarStorage(var["var-type"]));
 		var["var-type"] = resolveKnownType(stmt2, var["var-type"]);
+		takes = takes || var.value("ownership-transfer", false);
 	}
-	return sa_resolved_var_decl(stmt2, move(storage));
+	if (!takes)
+		return sa_resolved_var_decl(stmt2, move(storage));
+	// A `<<=` initializer is evaluated (and its owner reset) before its variable
+	// is declared, so each variable is declared on its own, in order.
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json result = json::array();
+	const json& vars = stmt2["vars"];
+	for (size_t i = 0; i < vars.size(); i++) {
+		json one = stmt2;
+		one["vars"] = json::array({vars[i]});
+		if (vars[i].value("ownership-transfer", false)) {
+			json& var = one["vars"][0];
+			var["init"] = takeOverInit(one, var, storage[i], result);
+			var.erase("ownership-transfer");
+		}
+		for (auto& s : sa_resolved_var_decl(one, {storage[i]}))
+			result.push_back(move(s));
+	}
+	return result;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+json PlnSemanticAnalyzer::takeOverInit(const json& stmt, const json& var, VarStorage storage, json& pre)
+{
+	const string& name = var["name"].get<string>();
+	if (storage == VarStorage::Frame) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TakeIntoFrameVar, name) << endl;
+		exit(1);
+	}
+	const json& vtype = var["var-type"];
+	json owned;
+	if (vtype.value("type-kind", "") == "prim" && structDefs_.count(vtype.value("type-name", "")))
+		owned = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",vtype["type-name"]}}}};
+	else
+		owned = takeOverType(stmt, vtype);
+	if (owned.is_null()) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedVar, name, "<<=") << endl;
+		exit(1);
+	}
+	const json& src = var["init"];
+	json value = sa_expression(src);
+	const json& vt = value["value-type"];
+	if (isOwnedBlock(vt)) {
+		value = giveValue(src, move(value), stmt, "<<=", pre);
+	} else if (vt.value("type-kind", "") == "pntr" && vt.contains("mutable")) {
+		// A pointer handed back (by C) is adopted as the block it points to.
+		if (!vt["mutable"].get<bool>()) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TakeFromReadOnly) << endl;
+			exit(1);
+		}
+		value["value-type"] = isArrLevel(vt) ? withoutArrPermission(vt) : [&] { json t = vt; t.erase("mutable"); return t; }();
+		value["category"] = "expiring";
+	} else {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, "<<=") << endl;
+		exit(1);
+	}
+	if (value["value-type"] != owned) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferShapeMismatch,
+			typeDisplayName(owned), typeDisplayName(value["value-type"])) << endl;
+		exit(1);
+	}
+	return {{"expr-type", "pinned"}, {"sa", move(value)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 }
 
 json PlnSemanticAnalyzer::sa_resolved_var_decl(const json& stmt2, vector<VarStorage> storage)

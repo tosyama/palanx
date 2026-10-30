@@ -119,54 +119,48 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ---
 
-## 16. `->>` Into a Call Argument
+## 16. Using a Value After `->>` Is Not Detected
 
-**Summary:** A parameter that takes an owned array or struct (`[+]T`, `[n]T`, `T`) receives a copy of the argument. Handing a variable's storage over instead, as `v ->> f()` would, is not supported ("this expression is not supported"), so a function that consumes a large array always costs a copy. It needs a parameter form that takes ownership, and the caller's variable to be left NULL as `->>` into a variable does.
-
----
-
-## 17. Using a Value After `->>` Is Not Detected
-
-**Summary:** `a ->> b` leaves `a` NULL, and nothing stops `a` from being used afterwards: `len(@a)`, `a[0]` or `a.x` dereferences NULL and the program crashes. This holds for structs, `[+]T` and rows alike, and for a field or element given away (`p ->> q; s -> p;` copies into a NULL struct). Detecting it needs flow analysis of moved-from variables.
+**Summary:** `a ->> b` leaves `a` NULL (as do `f(a>>)` and `T b <<= a;`), and nothing stops `a` from being used afterwards: `len(@a)`, `a[0]` or `a.x` dereferences NULL and the program crashes. This holds for structs, `[+]T` and rows alike, and for a field or element given away (`p ->> q; s -> p;` copies into a NULL struct). Detecting it needs flow analysis of moved-from variables.
 
 ---
 
-## 18. Run-Time Failures of Array Allocation Are Unchecked
+## 17. Run-Time Failures of Array Allocation Are Unchecked
 
 **Summary:** A size or capacity known only at run time is not checked: a negative `n` in `[n]T` or `[+n]T` becomes a huge `uint64`. Nor is the result of `malloc`/`calloc`/`realloc` for any heap allocation, so running out of memory dereferences NULL later. `pop` on an empty `[+]T` and a negative `resize` do abort; an option to leave those checks out of a release build has been requested.
 
 ---
 
-## 19. `len` Error Messages
+## 18. `len` Error Messages
 
 **Summary:** `len` reports a missing length only for an array it recognizes (an array whose size is known only at run time, or a `[]T`). A target containing a call, such as `len(@c[f()])`, is not folded, and a value that is not an array, such as `len(@x)` for an `int32 x`, both report "Undefined function 'len'", which does not say what was given. `len` of a run-time-sized array would need the array to keep its length, which it does not.
 
 ---
 
-## 20. Variable-Length Arrays of Pointer Slots
+## 19. Variable-Length Arrays of Pointer Slots
 
 **Summary:** `[+][n]@T` (a variable-length array of rows of borrowed pointers) is not supported; `[+]@T`/`[+]@!T` are (v0.2.2). Neither is a `[][+]T` parameter, which would need each element's header to be passed rather than its data; `@[n][+]T` or `@[+][+]T` borrows such an array instead.
 
 ---
 
-## 21. A Row Is Pushed with `@`, a Struct Without
+## 20. A Row Is Pushed with `@`, a Struct Without
 
-**Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which takes a copy of a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal but copy it twice, unless the parameter's storage could be handed over (see #16). Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
+**Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which takes a copy of a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal, and a row given away with `>>` would then be taken without a copy. Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
 
 ---
 
-## 22. C Bit-Fields Cannot Be Accessed
+## 21. C Bit-Fields Cannot Be Accessed
 
 **Summary:** A struct from a C header that has bit-fields gets the same layout as in C (v0.2.2), but a bit-field member cannot be read, written, have its address taken or be given in a struct literal (E_UnsupportedCFieldType). Accessing one needs loads and stores that shift and mask within the storage unit, which codegen does not have.
 
 ---
 
-## 23. A `for` Loop Does Not Track Other Names for Its Array
+## 22. A `for` Loop Does Not Track Other Names for Its Array
 
 **Summary:** A `for` loop holds its array's storage and length until it ends, so its body may not change the array's length or replace it (v0.2.2). The check follows only the name the loop was given: a borrow made before the loop (`@![+]int64 q = @!v;` and then `q.push(1)` in `for copy a in v { }`) or a pointer stored elsewhere changes the array unnoticed, and the loop then reads freed or moved elements. It is conservative the other way: indices on the path are not compared, so in `for copy a in vv[0] { }` a `vv[1].push(1)` is rejected too.
 
 ---
 
-## 24. c2ast Reports a Syntax Error at the Start of the Declaration
+## 23. c2ast Reports a Syntax Error at the Start of the Declaration
 
 **Summary:** When c2ast fails to parse a declaration, it backtracks to the declaration's first token and tries the next form, so the error it finally reports points there (often `1:1` of a line) rather than at the token that failed. Reporting the furthest token reached would need every consume helper to record it, and would change the positions in existing expected messages.
