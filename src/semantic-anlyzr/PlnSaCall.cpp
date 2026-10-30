@@ -627,7 +627,7 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 {
 	const json& paramVT = param["var-type"];
 	// What an owned parameter takes is copied into it.
-	if (!isCFunc && isOwnedParam(paramVT)) {
+	if (!isCFunc && isOwnedBlock(paramVT)) {
 		if (copySourceMatch(saArg["value-type"], paramVT)) return nullopt;
 		return SaDiag{E_IncompatibleTypes, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
@@ -696,7 +696,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		json argAst = arg;
 		json litBody, litRelease;
 		bool isLit = isAggregateLitArg(arg);
-		if (!isCFunc && paramVT && isOwnedParam(*paramVT)) {
+		if (!isCFunc && paramVT && isOwnedBlock(*paramVT)) {
 			saArgs.push_back(ownedBlockArg(locNode, arg, ca, *param, argIdx, funcName));
 			continue;
 		}

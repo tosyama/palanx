@@ -1052,7 +1052,7 @@ TEST(build_mgr, embed_field_value_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 7) << "expected 7 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 8) << "expected 8 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -1217,13 +1217,19 @@ TEST(build_mgr, store_eval_once_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, struct_param_owned_mtrace) {
+	// A struct parameter owns a copy of its argument, or the struct a call
+	// returned, and frees it unless it gives it away.
+	expectMtraceRun("373_struct_param_owned_mtrace", "11 1\n15 17\n8 2\n1 1 2\n", 14);
+}
+
 TEST(build_mgr, store_value_first) {
 	cleanTestEnv();
 	// A call in the target that writes the value through a pointer it was
-	// given -- by '@', a struct or []T parameter, a raw pointer or an integer
+	// given -- by '@', a []T parameter, a raw pointer or an integer
 	// cast, even one given later in a loop -- does not change what is stored.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/311_store_value_first.pa");
-	ASSERT_EQ(output, "5 5\n1 2\n1 11\n1 2\n1 11\n1 101\n1 1001\n3 9\ng i 1 2\n"
+	ASSERT_EQ(output, "5 5\n1 2\n1 1\n1 2\n1 11\n1 101\n1 1001\n3 9\ng i 1 2\n"
 	                  "1 2 27\ni i i 6 4 1\ni 2 2\n");
 }
 
@@ -1295,7 +1301,7 @@ TEST(build_mgr, struct_multilevel_field_mtrace) {
 // frees it, and a struct literal sets its length.
 TEST(build_mgr, struct_varr_field_mtrace) {
 	expectMtraceRun("351_struct_varr_field_mtrace",
-		"3 5 1 1\n20 9 39\n4 5\n2 2 5\n8 3 9 1\n2 9\n3 2 9 6 5\n1 2 3 3\n", 72);
+		"3 5 1 1\n20 9 39\n4 5\n2 2 5\n8 3 9 1\n2 9\n3 2 9 6 5\n1 2 3 3\n", 73);
 }
 
 // A field's `$[n]...` lies in its struct, rows, structs and pointer slots

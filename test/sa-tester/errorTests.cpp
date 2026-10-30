@@ -561,7 +561,7 @@ TEST(sa_error, unknown_type_name)
 		{"error_371_borrow_elems_arg_as_owned.pa", ":6:1: error: array shape '[1]@!P' does not match '[?]P'"},
 		{"error_665_transfer_to_frame_var.pa", ":4:1: error: '->>' needs a variable that owns its array or struct; 'q' does not."},
 		{"error_666_transfer_to_borrow_var.pa", ":4:1: error: '->>' needs a variable that owns its array or struct; 'b' does not."},
-		{"error_667_transfer_to_struct_param.pa", ":2:20: error: '->>' needs a variable that owns its array or struct; 'p' does not."},
+		{"error_667_transfer_to_borrow_param.pa", ":2:22: error: '->>' needs a variable that owns its array or struct; 'p' does not."},
 		{"error_668_transfer_to_prim_var.pa", ":3:1: error: '->>' needs a variable that owns its array or struct; 'x' does not."},
 		{"error_669_transfer_to_self.pa", ":2:1: error: '->>' cannot give 'a' to itself."},
 		{"error_670_transfer_var_size_mismatch.pa", ":3:1: error: cannot transfer '[4]int32' into '[3]int32'"},

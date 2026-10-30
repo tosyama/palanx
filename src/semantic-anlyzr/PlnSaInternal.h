@@ -259,8 +259,8 @@ inline VarStorage takeVarStorage(json& varType)
 	return VarStorage::Frame;
 }
 inline bool isArrLevel(const json& t);
-// A struct's, a `[+]T`'s or a constant-size array's own block: what a variable
-// owns and frees, and what a copy into it fills.
+// A struct's, a `[+]T`'s or a constant-size array's own block: what a variable or a Palan
+// parameter owns and frees, and what a copy into it fills.
 inline bool isOwnedBlock(const json& vt)
 {
 	return isStructStorage(vt) || isVarrStorage(vt)
@@ -770,9 +770,6 @@ inline bool copySourceMatch(const json& from, const json& vt)
 {
 	return isVarrStorage(vt) ? varrCopySourceMatch(from, vt) : copyShapeMatch(from, vt);
 }
-// A Palan parameter that owns what it is given (a copy, or a call's result)
-// and frees it. A struct parameter only borrows.
-inline bool isOwnedParam(const json& vt) { return isOwnedBlock(vt) && !isStructStorage(vt); }
 
 // An array is borrowed with one permission for every level down to its
 // elements, so a read-only 2D borrow also makes its rows read-only. A struct

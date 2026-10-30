@@ -469,7 +469,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	if (sig.contains("parameters"))
 		for (auto& p : sig["parameters"]) {
 			json vt = sigType(funcDef, p["var-type"], true);
-			if (isOwnedParam(vt)) ownedParams.push_back(p["name"]);
+			if (isOwnedBlock(vt)) ownedParams.push_back(p["name"]);
 			declareVar(p["name"], move(vt), &funcDef);
 		}
 	if (sig.contains("rets"))

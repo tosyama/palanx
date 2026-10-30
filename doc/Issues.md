@@ -151,7 +151,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 21. A Row Is Pushed with `@`, a Struct Without
 
-**Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which borrows a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal but copy it twice, unless the parameter's storage could be handed over (see #16). Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
+**Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which takes a copy of a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal but copy it twice, unless the parameter's storage could be handed over (see #16). Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
 
 ---
 

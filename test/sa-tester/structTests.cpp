@@ -1617,9 +1617,12 @@ TEST(sa, return_unowned_struct)
 	ASSERT_EQ(funcName(rg[1]["body"]["name"]), "__pln_copy_Q");
 	ASSERT_EQ(rg[1]["body"]["args"][1]["name"], "q");
 
-	// A local struct variable and a call result are returned as they are.
+	// A local struct variable, a struct parameter and a call result are returned as they are.
 	const auto& rh = func("rh");
 	ASSERT_EQ(rh.back()["values"][0]["name"], "l");
+	const auto& rk = func("rk");
+	ASSERT_EQ(rk.size(), 1);
+	ASSERT_EQ(rk[0]["values"][0]["name"], "p");
 	const auto& ri = func("ri");
 	ASSERT_EQ(ri.size(), 1);
 	ASSERT_EQ(funcName(ri[0]["values"][0]["name"]), "mk");
@@ -1644,8 +1647,8 @@ TEST(sa, embed_field_value)
 	ASSERT_TRUE(isEmbedA(stmts[6]["body"]["args"][1]));
 	ASSERT_EQ(stmts[8]["body"]["name"], "memcpy");
 	ASSERT_TRUE(isEmbedA(stmts[8]["body"]["args"][1]));
-	// g(q.a): passed as a struct argument.
-	ASSERT_TRUE(isEmbedA(stmts[9]["vars"][0]["init"]["args"][0]));
+	// g(q.a): copied into the struct parameter from the field's address.
+	ASSERT_TRUE(isEmbedA(stmts[9]["vars"][0]["init"]["args"][0]["body"][1]["body"]["args"][1]));
 	// [q.b, q.a] -> q: q.a is copied into a temp struct first.
 	ASSERT_TRUE(isEmbedA(stmts[10]["body"][3]["body"]["args"][1]));
 	// return q.a: copied into the returned struct.

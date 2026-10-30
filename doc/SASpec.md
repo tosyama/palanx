@@ -79,8 +79,8 @@ Root
   **Varr entry** (`[+]T` / `[+]$T` variable; `T` below names the shape key's element part): for `[+]T`, build-mgr declares the header as
   `type __pln_varr_T { int64 len; int64 cap; @!T data; }` and generates
   `__pln_alloc_varr_T(len, cap)`, `__pln_init_varr_T(h, len, cap)` (mallocs `cap` elements when
-  `cap > 0` and sets `data` to NULL otherwise), `__pln_fini_varr_T(h)`
-  (frees `data`) and `__pln_free_varr_T(h)` (fini, then the header), and the built-ins
+  `cap > 0` and sets `data` to NULL otherwise), `__pln_fini_varr_T(@!hdr h)`
+  (frees `data`) and `__pln_free_varr_T(@!hdr h)` (fini, then the header), and the built-ins
   `__pln_push_varr_T(@!hdr h, T x)`,
   `__pln_resize_varr_T(@!hdr h, int64 n)` and `__pln_pop_varr_T(@!hdr h) -> T`, and
   `__pln_copy_varr_T(@!hdr h, @T src, int64 n)` (grows as needed, then sets the length to `n`
@@ -90,11 +90,15 @@ Root
   With a struct `T` (elem kind `"struct"`), `data` is `@!@!T`, an array of owned slots, of
   which exactly the first `len` hold an element: growing (`init`, `resize`, `push`, `copy`)
   builds the new ones as `[n]T` does, shrinking (`resize`, `copy`) and `fini` free them with
-  `__pln_free_T` (or `free`), and `pop` returns the last one without freeing it; `push` and
-  `copy` copy into the element (`__pln_copy_T` or memcpy), and `copy`'s source is a run of slots
-  (`[]T src`). `[+]$T` (elem kind `"embed-struct"`, shape key `evarr_T`, functions
-  `__pln_*_evarr_T`) keeps the elements in `data` like a primitive's, `T` taking its
-  `total-size` bytes and owning nothing; `pop` returns a newly allocated copy. With a `[+]U`
+  `__pln_free_T` (or `free`), and `pop` returns the last one without freeing it; `push` stores
+  the struct it is given as the new slot, `copy` copies into the elements (`__pln_copy_T` or
+  memcpy), and `copy`'s source is a run of slots (`[]T src`). `[+]$T` (elem kind
+  `"embed-struct"`, shape key `evarr_T`, functions `__pln_*_evarr_T`) keeps the elements in
+  `data` like a primitive's, `T` taking its `total-size` bytes and owning nothing; `push` copies
+  the struct it is given in and frees it, and `pop` returns a newly allocated copy. `push`'s
+  struct (a `[+]U` element's header too) is the caller's to give, as a struct parameter's
+  argument is: the built-in's parameter is the owned `T`, and the generated function takes it
+  as `@!T` (`W` in its symbol), since it keeps or frees the struct itself. With a `[+]U`
   element (elem kind `"varr"`) the slots hold the elements' headers the same way: a new element is
   an empty header (`calloc(1, 24)`), a dropped one is freed with `__pln_free_varr_U`, and a copy
   into one is `__pln_copy_varr_U`; `push` stores the header it is given, which the caller hands
@@ -218,6 +222,12 @@ result as it is and otherwise a copy, of what a copy into it accepts (E_Incompat
 an owning variable's included, is E_CopyShapeMismatch; `return [..]` declares `__ret_N` from the
 literal, as for a struct. Only a parameter may borrow an array, so `-> @[n]T` is
 E_UnsupportedParamType.
+
+A struct parameter `T` (`pntr(struct)` with no `mutable`) is owned the same way: a call result
+is passed as it is, anything else (a struct literal included) is copied into a `temp`
+(`__arg_N`), and the function frees it at exit unless it returns it or gives it away with
+`->>`. The functions build-mgr generates for structs (`__pln_init/fini/free/copy_T`) take them
+as `@!T` (`copy`'s source as `@T`), since they work on storage they do not own.
 
 Statement model
 ---------------

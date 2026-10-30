@@ -496,7 +496,7 @@ TEST(build_mgr, varr_struct_mtrace) {
 		if (!fromSharedLib && (line.find(" - ") != string::npos || line.find(" < ") != string::npos)) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 62) << "expected 62 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 61) << "expected 61 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }

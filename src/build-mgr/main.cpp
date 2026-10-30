@@ -456,6 +456,11 @@ int main(int argc, char* argv[])
 					}
 					return structCopy(e.type, dst, src);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// An owned struct slot (an inner `[+]T`'s header is one) is passed to
+				// the helpers as a borrow, since a struct parameter would own and free it.
+				auto borrowed = [](const ElemOps& e, const string& v, bool isMutable = false) {
+					return e.kind == "struct" || e.kind == "varr" ? (isMutable ? "@!" : "@") + v : v;
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				set<string> elemHelpersDone;
 				function<void(const ElemOps&)> emitElemHelpers = [&](const ElemOps& e) {
 					if (!e.owned || !elemHelpersDone.insert(e.key).second) return;
@@ -464,7 +469,7 @@ int main(int argc, char* argv[])
 					string mp = lenParams(e.nlens), ma = lenArgs(names);
 					string head = "\nfunc __pln_build_" + e.key + "([]" + e.buildElem + " slots, int64 from, int64 to" + mp + ") {\n";
 					string dropHead = "func __pln_drop_" + e.key + "([]" + e.ownElem + " slots, int64 from, int64 to" + mp + ") {\n";
-					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + e.value + " x" + mp + ") {\n";
+					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + borrowed(e, e.value) + " x" + mp + ") {\n";
 					string runHead = "func __pln_copyrun_" + e.key + "([]" + e.ownElem + " dst, []" + e.ownElem + " src, int64 n" + mp + ") {\n";
 					if (e.kind == "embed-row") {
 						// Rows laid out in place are runs of their elements' slots.
@@ -478,7 +483,7 @@ int main(int argc, char* argv[])
 						    << setHead
 						    << "    int64 j = 0;\n"
 						    << "    while j < " << n << " {\n"
-						    << "        __pln_set_" << l << "(slots, i * " << n << " + j, x[j]" << la << ");\n"
+						    << "        __pln_set_" << l << "(slots, i * " << n << " + j, " << borrowed(*e.leaf, "x[j]") << la << ");\n"
 						    << "        j + 1 -> j;\n"
 						    << "    }\n"
 						    << "}\n"
@@ -497,7 +502,7 @@ int main(int argc, char* argv[])
 					    << dropHead
 					    << "    int64 i = from;\n"
 					    << "    while i < to {\n"
-					    << "        " << elemDrop(e, "slots[i]", "        ", names) << "\n"
+					    << "        " << elemDrop(e, borrowed(e, "slots[i]", true), "        ", names) << "\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n"
@@ -507,7 +512,7 @@ int main(int argc, char* argv[])
 					    << runHead
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
-					    << "        __pln_set_" << e.key << "(dst, i, src[i]" << ma << ");\n"
+					    << "        __pln_set_" << e.key << "(dst, i, " << borrowed(e, "src[i]") << ma << ");\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n";
@@ -587,11 +592,11 @@ int main(int argc, char* argv[])
 					out << "export func __pln_init_" << name << "(@!" << name << " p) {\n";
 					for (auto& f : owned) out << elemBuild(f.e, "p." + f.slot, "    ", f.lens);
 					out << "}\n"
-					    << "export func __pln_fini_" << name << "(" << name << " p) {\n";
+					    << "export func __pln_fini_" << name << "(@!" << name << " p) {\n";
 					for (auto& f : owned) out << "    " << elemDrop(f.e, "p." + f.slot, "    ", f.lens) << "\n";
 					out << "}\n"
 					    << "export func __pln_free_" << name
-					    << "(" << name << " p) {\n"
+					    << "(@!" << name << " p) {\n"
 					    << "    if (p == NULL) { return; }\n"
 					    << "    __pln_fini_" << name << "(p);\n"
 					    << "    free(p);\n"
@@ -599,7 +604,7 @@ int main(int argc, char* argv[])
 					    << "}\n";
 
 					out << "export func __pln_copy_" << name
-					    << "(" << name << " dst, " << name << " src) {\n";
+					    << "(@!" << name << " dst, @" << name << " src) {\n";
 					for (auto& [pad, size] : struct_pads[name])
 						out << "    memcpy(dst." << pad << ", src." << pad << ", " << size << ");\n";
 					for (auto& f : owned)
@@ -656,11 +661,11 @@ int main(int argc, char* argv[])
 					    << "(int64 len, int64 cap" << mp << ") -> " << hdr << " h {\n"
 					    << "    __pln_init_" << key << "(@!h, len, cap" << ma << ");\n"
 					    << "}\n"
-					    << "export func __pln_fini_" << key << "(" << hdr << " h" << mp << ") {\n";
+					    << "export func __pln_fini_" << key << "(@!" << hdr << " h" << mp << ") {\n";
 					if (e.owned) out << "    __pln_drop_" << e.key << "(h.data, 0, h.len" << ma << ");\n";
 					out << "    free(h.data);\n"
 					    << "}\n"
-					    << "export func __pln_free_" << key << "(" << hdr << " h" << mp << ") {\n"
+					    << "export func __pln_free_" << key << "(@!" << hdr << " h" << mp << ") {\n"
 					    << "    if (h == NULL) { return; }\n"
 					    << "    __pln_fini_" << key << "(h" << ma << ");\n"
 					    << "    free(h);\n"
@@ -674,17 +679,22 @@ int main(int argc, char* argv[])
 					    << "    if c < 4 { 4 -> c; }\n"
 					    << "    realloc(h.data, c * " << size << ") -> h.data;\n"
 					    << "    c -> h.cap;\n"
-					    << "}\n"
-					    << "export func __pln_push_" << key << "(@!" << hdr << " h, " << e.value << " x" << mp << ") {\n"
+					    << "}\n";
+					// A struct (an inner `[+]T`'s header too) comes as the caller's to
+					// own, as a struct parameter's argument does: an owned one becomes the
+					// slot, and one laid out in place is copied into it and freed.
+					bool takesStruct = e.kind == "varr" || e.kind == "struct" || e.kind == "embed-struct";
+					out << "export func __pln_push_" << key << "(@!" << hdr << " h, " << (takesStruct ? "@!" : "")
+					    << e.value << " x" << mp << ") {\n"
 					    << "    if h.len == h.cap { __pln_reserve_" << key << "(h, h.len + 1" << ma << "); }\n";
-					// The caller hands an inner `[+]T` over, so its header becomes the slot.
-					if (e.kind == "varr")
-						out << "    @!x -> h.data[h.len];\n";
+					if (e.kind == "varr" || e.kind == "struct")
+						out << "    x -> h.data[h.len];\n";
 					else if (e.owned)
 						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1" << ma << ");\n"
 						    << "    __pln_set_" << e.key << "(h.data, h.len, x" << ma << ");\n";
 					else if (e.embedded)
-						out << "    memcpy(" << slotAddr(e, "h.data", "h.len", names) << ", x, " << size << ");\n";
+						out << "    memcpy(" << slotAddr(e, "h.data", "h.len", names) << ", x, " << size << ");\n"
+						    << (e.kind == "embed-struct" ? "    free(x);\n" : "");
 					else
 						out << "    x -> h.data[h.len];\n";
 					out << "    h.len + 1 -> h.len;\n"

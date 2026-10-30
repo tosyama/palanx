@@ -1268,7 +1268,7 @@ p ->> w.pt;              // w's original Point is freed; p is set to NULL
 `val ->> var` transfers `val` into a variable that owns its array or struct. What the variable
 held is freed first, and `val` is set to NULL as above. An array must have the same element type
 and the same sizes as the variable, both known at compile time; a struct must be of the same
-type. A stack (`$`) variable, a borrow, a struct parameter, or `val` naming the variable itself is
+type. A stack (`$`) variable, a borrow, or `val` naming the variable itself is
 a compile error.
 
 ```palan
@@ -1280,7 +1280,7 @@ a ->> c;                 // c's original array is freed; a is set to NULL
 The source must own what it gives away: a variable that owns its array or struct, an owned
 field or element (`v.pt ->> w.pt`, `pts[1] ->> w.pt`, `m[1] ->> w.arr`), or a value returned by
 a function. A field or element source is set to NULL like a variable. A borrow (`@T`/`@!T`,
-`@[n]T`), a struct parameter, a stack (`$`) variable, or a `@T` field is a compile error.
+`@[n]T`), a stack (`$`) variable, or a `@T` field is a compile error.
 
 `return` on a tracked array variable also transfers ownership: the variable is removed from
 free-tracking and the caller receives the pointer.
@@ -1898,12 +1898,19 @@ printf("%ld\n", n2.val);               // 42
 
 ### Struct Types in Function Signatures
 
-A struct-type parameter is passed as a pointer (borrowed, not freed by the callee):
+A struct-type parameter owns its argument, as a `[n]T` parameter does: the caller passes a copy
+(a struct a call returns is handed over without one), and the function frees it when it returns,
+unless it returns it or gives it away with `->>`. Writing to it does not change the caller's
+struct:
 
 ```palan
-func getX(Point p) -> int64 x {
-    p.x -> x;
+func shifted(Point p) -> Point {
+    p.x + 1 -> p.x;
+    return p;
 }
+
+Point pt;
+Point q = shifted(pt);       // pt.x stays 0; q.x is 1
 ```
 
 A `@T`/`@!T` parameter borrows a struct, and the caller writes `@s` (read-only) or `@!s`

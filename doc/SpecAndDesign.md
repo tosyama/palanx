@@ -26,6 +26,8 @@ version: 0.2.3 — improvements found through the samples (ray tracer, echo serv
   storage for a temporary or a `$T` variable) instead of allocating it on the heap on every call
   (Issues.md #12), and `flo32`/`flo64` values are kept in XMM registers (Issues.md #13). Both are
   measured on the ray tracer before and after.
+- A struct parameter `T` owns its argument as a `[n]T` one does (a copy the callee frees), where
+  it used to borrow it.
 - Samples: the ray tracer is rewritten with the above, and a libuv echo server is added; gaps
   found while writing them are fixed as they are found.
 
@@ -342,8 +344,10 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
 
 - A returned struct initializing a variable becomes owned by it without a copy; a `$T` variable
   gets its contents and the returned block is freed. Assigned with `->`, it is copied and freed.
-- A returned struct given as an argument, or not used, is freed once the statement has been
-  evaluated: the callee only borrows it. Binding it to a `@T`/`@!T` borrow is an error.
+- A Palan parameter of an owned type (a struct `T`, `[n]T`, `[+]T`) owns its argument: the caller
+  passes a copy, or hands a returned value over without one, and the callee frees it at exit.
+- A returned struct given to a borrowing parameter (`@T`/`@!T`, a C function's), or not used, is
+  freed once the statement has been evaluated. Binding it to a `@T`/`@!T` borrow is an error.
 - `return v` of an owned `v` drops it from scope-exit release; the caller owns the value.
   Returning a struct the function doesn't own returns a copy.
 - `v ->> target` needs an owned `v` and sets `v` to NULL after the transfer, so its scope-exit

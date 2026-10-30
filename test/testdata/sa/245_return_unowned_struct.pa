@@ -1,13 +1,14 @@
 type P { int32 x; int32 y; };
 type Q { $P a; P b; };
 func mk(int32 n) -> P { return [n, n + 1]; }
-func ra(P p) -> P { return p; }
+func ra(@P p) -> P { return p; }
 func rb(@P p) -> P { return p[0]; }
 func rc(@Q q) -> P { return q.b; }
 func rd() -> P { Q l = [[1, 2], mk(3)]; return l.b; }
 func re() -> P { [2]P l = [mk(1), mk(2)]; return l[1]; }
 func rf(@[2]$P es) -> P { return es[1]; }
-func rg(Q q) -> Q { return q; }
+func rg(@Q q) -> Q { return q; }
 func rh() -> P { P l = [1, 2]; return l; }
 func ri() -> P { return mk(3); }
 func rj(@!P p) -> @!P { return p; }
+func rk(P p) -> P { return p; }

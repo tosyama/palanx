@@ -536,15 +536,22 @@ GenElem genElem(const json& e, bool inPlace, int64_t stride)
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 } // namespace
 
+// push owns the struct it is given, as a struct parameter does; the generated
+// one takes it as a pointer and keeps it in the slot instead of freeing it.
+static json pushedValue(json value)
+{
+	if (isStructStorage(value)) value["mutable"] = true;
+	return value;
+}
+
 string allocHelperSymbol(const AllocShapeRef& shape, const string& op)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
 	vector<json> params;
 	if (shape.family == AllocFamily::Struct) {
-		if (op == "init") params.push_back(permPtrTo(shape.elem, true));
-		else if (op == "copy") params = {ptrTo(shape.elem), ptrTo(shape.elem)};
-		else if (op != "alloc") params.push_back(ptrTo(shape.elem));
+		if (op == "copy") params = {permPtrTo(shape.elem, true), permPtrTo(shape.elem, false)};
+		else if (op != "alloc") params.push_back(permPtrTo(shape.elem, true));
 	} else {
 		bool isVarr = shape.family != AllocFamily::Arr;
 		GenElem g = genElem(shapeElem(shape.elem), shape.family == AllocFamily::EVarr, 0);
@@ -557,10 +564,9 @@ string allocHelperSymbol(const AllocShapeRef& shape, const string& op)
 		} else {
 			// The generated module sees the header as a struct of its own.
 			json header = {{"type-kind","struct"},{"type-name","__pln_" + allocShapeKey(shape)}};
-			if (op == "fini" || op == "free") params.push_back(ptrTo(header));
-			else if (op != "alloc") params.push_back(permPtrTo(header, true));
+			if (op != "alloc") params.push_back(permPtrTo(header, true));
 			if (op == "alloc" || op == "init") params.insert(params.end(), {i64, i64});   // len, cap
-			else if (op == "push") params.push_back(g.value);
+			else if (op == "push") params.push_back(pushedValue(g.value));
 			else if (op == "resize") params.push_back(i64);
 			else if (op == "copy") params.insert(params.end(), {g.run, i64});
 		}
@@ -740,7 +746,7 @@ void PlnSemanticAnalyzer::recordVarrShape(const json& vt)
 }
 
 // push takes an element by value and pop returns one; a struct goes as its
-// storage, copied in by push and owned by pop's caller.
+// storage, which push takes over and pop's caller owns.
 json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START

@@ -5,13 +5,13 @@ type P { int64 x; $In e; In o; @!In r; };
 func setv(@!In q, int64 n) { n -> q.v; }
 func getv(@In q) -> int64 n { q.v -> n; }
 func setx(@!P q) { 5 -> q.x; }
-func fwd(P p) { setv(@!p.o, 7); }
+func fwd(@!P p) { setv(@!p.o, 7); }
 
 P s;
 [3]In a;
 [3]$In b;
 setx(@!s);
-fwd(s);
+fwd(@!s);
 @!P v = @!s;
 setv(@!v.e, 1);
 setv(@!a[1], 2);
