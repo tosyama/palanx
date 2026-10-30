@@ -1,0 +1,4 @@
+type B { @int8 base; };
+[4]int8 x;
+B b;
+x ->> b.base as [4]int8;

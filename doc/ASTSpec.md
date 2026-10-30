@@ -443,10 +443,14 @@ Statement model
     - name\* - Target variable name string
     - value\* - Source expression model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
+    - owner-view-type - With `ownership-transfer`, the type the target is viewed as the owner of
+      (`expr ->> loc as T`); omitted otherwise
   6. arr-assign - array element assignment statement (`expr -> arr[i]` or `expr ->> arr[i]`)
     - target\* - arr-index expression model (see Expression model §12)
     - value\* - Source expression model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
+    - owner-view-type - With `ownership-transfer`, the type the target is viewed as the owner of
+      (`expr ->> loc as T`); omitted otherwise
   7. struct-def - struct type definition (`type Name { field_decl... }`; consumed by SA, not emitted to sa.json)
     - name\* - Struct name string
     - export - Boolean, true if declared with `export` (omitted when false)
@@ -467,6 +471,8 @@ Statement model
     - field\*  - Field name string
     - value\*  - Source expression model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
+    - owner-view-type - With `ownership-transfer`, the type the target is viewed as the owner of
+      (`expr ->> loc as T`); omitted otherwise
   11. return - return statement
     - values - Return expression list (omitted for bare `return;`)
   12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)

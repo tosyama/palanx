@@ -680,6 +680,44 @@ json PlnSemanticAnalyzer::sa_transfer_to_var(const json& stmt, const string& nam
 	return transferStmts(stmt, scopeRelease(name), move(store), value);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+// `v ->> loc as T` stores the pointer to what v owns into loc, for C to hold.
+// What loc held is no Palan owner's, so nothing frees it.
+json PlnSemanticAnalyzer::sa_transfer_to_owner_view(const json& stmt, const json& target)
+{
+	string et = target["expr-type"];
+	json loc = et == "id" ? sa_expression(target)
+	         : et == "arr-index" ? sa_expr_arr_index(target, /*forWrite=*/true)
+	         : sa_expr_field_access(target, /*forWrite=*/true);
+	const json& locType = loc["value-type"];
+	json owned = ownedCastType(stmt, stmt["owner-view-type"]);
+	if (owned.is_null() || !isPtrBorrow(locType) || !locType["mutable"].get<bool>()) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_OwnerViewTargetNeedsPtr, typeDisplayName(locType)) << endl;
+		exit(1);
+	}
+	json value = sa_expression(stmt["value"]);
+	if (!isOwnedBlock(value["value-type"])) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, "->>") << endl;
+		exit(1);
+	}
+	if (!copyShapeMatch(value["value-type"], owned)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferShapeMismatch,
+			typeDisplayName(owned), typeDisplayName(value["value-type"])) << endl;
+		exit(1);
+	}
+	// LCOV_EXCL_EXCEPTION_BR_START
+	json pointer = value;
+	pointer.erase("category");
+	pointer["value-type"] = locType;
+	json store = stmt;
+	store.erase("ownership-transfer");
+	store.erase("owner-view-type");
+	store["value"] = {{"expr-type","pinned"},{"sa",move(pointer)}};
+	json result = sa_store_stmt(store);
+	appendTransferSourceReset(result, stmt, value);
+	return result;
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // The key of the location a store writes to; none for a plain variable.
 static const char* storeTargetKey(const json& stmt)
 {
@@ -755,6 +793,8 @@ json PlnSemanticAnalyzer::sa_store_stmt(const json& stmt, json* litAddr)
 	            : json{{"expr-type", "field-access"}, {"object", stmt["object"]}, {"field", stmt["field"]}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	checkRangeChange(stmt, target, stmt.value("ownership-transfer", false) ? RangeChange::Transfer : RangeChange::Copy);
+	if (stmt.contains("owner-view-type"))
+		return sa_transfer_to_owner_view(stmt, target);
 	if (t == "assign")
 		return sa_assign_stmt(stmt);
 	if (t == "arr-assign")

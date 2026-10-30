@@ -548,7 +548,6 @@ TEST(sa_error, unknown_type_name)
 		{"error_356_transfer_to_ptr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
 		{"error_357_transfer_to_arr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
 		{"error_358_transfer_row_size_mismatch.pa", ":3:1: error: cannot transfer '[5]int32' into '[3]int32'"},
-		{"error_359_transfer_to_dynamic_row.pa", ":4:1: error: cannot transfer '[3]int32' into '[?]int32'"},
 		{"error_361_struct_to_embed_struct_param.pa", ":4:1: error: cannot convert 'P' to '[?]$P'."},
 		{"error_362_transfer_to_embed_ptr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
 		{"error_363_unsized_rows_arg_mismatch.pa", ":3:1: error: array shape '[2][4]int32' does not match '[?][3]int32'"},
@@ -566,7 +565,6 @@ TEST(sa_error, unknown_type_name)
 		{"error_669_transfer_to_self.pa", ":2:1: error: '->>' cannot give 'a' to itself."},
 		{"error_670_transfer_var_size_mismatch.pa", ":3:1: error: cannot transfer '[4]int32' into '[3]int32'"},
 		// The variable frees by the size it was declared with.
-		{"error_671_transfer_var_runtime_size.pa", ":4:1: error: cannot transfer '[?]int32' into '[?]int32'"},
 		{"error_672_transfer_var_struct_mismatch.pa", ":5:1: error: cannot transfer 'P' into 'Q'"},
 		{"error_673_transfer_frame_arr_to_var.pa", ":3:1: error: '->>' needs a source that owns its value"},
 		{"error_372_owned_elems_arg_as_borrow.pa", ":5:1: error: array shape '[2]P' does not match '[?]@!P'"},
@@ -1374,6 +1372,8 @@ TEST(sa_error, give_and_take)
 	const string nonOwner = " needs a source that owns its value: an owning variable, an owned field or element, "
 	                        "a call result, or a pointer viewed as an owner ('p as T').";
 	const string toParam = " cannot take a value given away with '>>': only a parameter that owns it can.";
+	const string viewTarget = ": '->> loc as T' needs a location holding a writable pointer ('@!X') "
+	                          "and an owned type T (a struct, '[n]T' or '[+]T').";
 	const string castGiven = ": a value given away with '>>' cannot be cast: it is given as the type it has.";
 	const pair<string, string> cases[] = {
 		{"error_553_arg_move_owner.pa", ":3:3: error: '>>'" + nonOwner},
@@ -1398,6 +1398,13 @@ TEST(sa_error, give_and_take)
 		 ":2:13: error: '_' keeps the type of the cast's source at its place, but '@func(uint64) -> @!void' has no such place."},
 		{"error_911_keep_from_non_func.pa",
 		 ":2:12: error: '_' keeps the type of the cast's source at its place, but 'int64' has no such place."},
+		{"error_912_owner_view_target_read_only.pa", ":4:1: error: '->>' cannot give a value to '@int8'" + viewTarget},
+		{"error_913_owner_view_target_not_ptr.pa", ":3:1: error: '->>' cannot give a value to 'int64'" + viewTarget},
+		{"error_914_owner_view_target_not_owned.pa", ":3:1: error: '->>' cannot give a value to '@!int8'" + viewTarget},
+		{"error_915_owner_view_target_shape.pa", ":3:1: error: cannot transfer '[4]int8' into '[4]int32'"},
+		// A `[]T` parameter keeps no length, nor does a `[+]T` take one from the array it copies.
+		{"error_916_copy_from_unsized_borrow.pa", ":4:2: error: cannot copy '[?]int32' into '[4]int32'"},
+		{"error_917_varr_copy_from_run_size.pa", ":4:1: error: cannot copy '[?]int32' into '[+]int32'"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

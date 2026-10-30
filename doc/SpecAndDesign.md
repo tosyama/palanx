@@ -33,7 +33,10 @@ version: 0.2.3 — improvements found through the samples (ray tracer, echo serv
   it is called through a cast to a function pointer type that owns that parameter or return
   (`(uv_close as @func(uv_tcp_t, @func(uv_tcp_t)))(client>>, on_close)`, `_` keeping a type as
   it is), and a pointer C hands back in a struct field is viewed as its owner with `as`
-  (`[n]uint8 data <<= buf.base as [n]uint8;`).
+  (`[n]uint8 data <<= buf.base as [n]uint8;`), as is one C is to hold
+  (`data ->> buf.base as [n]uint8;`).
+- An array whose size is known only at run time is moved, given, taken over and copied like
+  any other, by the lengths of the variable receiving it.
 - Samples: the ray tracer is rewritten with the above, and a libuv echo server is added; gaps
   found while writing them are fixed as they are found.
 
@@ -369,6 +372,15 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
 - `p as T` for a `@!X` pointer `p` and an owned type `T` is an `owner-view`: `=` or an owning
   parameter copies it as from an owned variable, and `<<=`, `->>` or `>>` move it. A move leaves
   `p` as it is, since `p` is not an owner; a `@X` pointer cannot be moved from.
+- `v ->> loc as T` for a writable location `loc` of a `@!X` pointer type stores what `v` owns
+  there, as the pointer C is to hold; what `loc` held is not freed, since it is no Palan owner.
+  Without `as T`, `->>` into a location that does not own its value is an error.
+- An array level whose size is known only at run time has no `arr-size` in its type. Its owner
+  is a variable keeping that size from its declaration (`__<name>_d<k>`), or a row of one, so a
+  free or a copy uses the lengths of the owner receiving or releasing the value, and a size
+  known only at run time on either side matches any size; that the sizes agree is the
+  programmer's responsibility. A borrowed `[]T` has no lengths to copy by, and a signature's
+  sizes stay constant.
 - `T b <<= v;` initializes `b` with what `v` owns: an owned `v` (set to NULL) or an
   `owner-view` moves into it, and a call result is taken over as with `=`.
 - `v -> target` with an owned array or struct `target` and a non-expiring `v` copies the contents

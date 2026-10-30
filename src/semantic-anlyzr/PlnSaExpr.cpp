@@ -1362,15 +1362,9 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 		}
 
 		// [n]$[m]T row access: mat[i] -> the row, laid out in place. A row
-		// whose length is known only at run time is a variable's, which keeps
-		// level k's length in __name_d<k>.
-		size_t level = 1;
-		const json* root = &sa_array;
-		for (; root->value("expr-type","") == "arr-index"; level++) root = &(*root)["array"];
-		json elem_size_node = inPlaceSizeExpr(elem_type, level, [&](size_t k) {
-			return json{{"expr-type","id"},{"name","__" + (*root)["name"].get<string>() + "_d" + to_string(k)},
-			            {"var-type",uint64_type},{"value-type",uint64_type}};
-		});
+		// whose length is known only at run time is a variable's.
+		auto [root, depth] = arrRoot(sa_array);
+		json elem_size_node = inPlaceSizeExpr(elem_type, depth + 1, [&](size_t k) { return runtimeLen(*root, k); });
 		sa_expr["array"]      = sa_array;
 		sa_expr["index"]      = sa_index;
 		sa_expr["elem-size"]  = elem_size_node;

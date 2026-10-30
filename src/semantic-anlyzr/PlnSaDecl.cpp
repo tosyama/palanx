@@ -348,11 +348,13 @@ json PlnSemanticAnalyzer::takeOverInit(const json& stmt, const json& var, VarSto
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, "<<=") << endl;
 		exit(1);
 	}
-	if (value["value-type"] != owned) {
+	if (!copyShapeMatch(value["value-type"], owned)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferShapeMismatch,
 			typeDisplayName(owned), typeDisplayName(value["value-type"])) << endl;
 		exit(1);
 	}
+	// Sizes known only at run time on either side are the variable's from here on.
+	value["value-type"] = owned;
 	return {{"expr-type", "pinned"}, {"sa", move(value)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 }
 
@@ -413,12 +415,8 @@ json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage stor
 	// A heap `[+]T` or `[n]T` takes over a returned block instead of copying from it.
 	if (storage == VarStorage::Heap && isExpiringOwned(src)) {
 		json vt = takeOverType(stmt, var["var-type"]);
-		if (!vt.is_null() && src["value-type"] == vt) {
-			declareVar(name, vt, &stmt);
-			addOwnedScopeVar(name, makeOwnedFreeStmt(name, vt));
-			return json::array({{{"stmt-type","var-decl"}, // LCOV_EXCL_EXCEPTION_BR_LINE
-				{"vars",json::array({{{"name",name},{"var-type",vt},{"init",move(src)}}})}}});
-		}
+		if (!vt.is_null() && src["value-type"] == vt)
+			return sa_arr_var_decl(stmt, storage, arrVarStorage(stmt, var["var-type"]), false, &src);
 	}
 	json declStmt = stmt;
 	declStmt["vars"][0].erase("init");

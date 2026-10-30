@@ -164,3 +164,9 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 23. c2ast Reports a Syntax Error at the Start of the Declaration
 
 **Summary:** When c2ast fails to parse a declaration, it backtracks to the declaration's first token and tries the next form, so the error it finally reports points there (often `1:1` of a line) rather than at the token that failed. Reporting the furthest token reached would need every consume helper to record it, and would change the positions in existing expected messages.
+
+---
+
+## 24. Arrays Sized at Run Time Are Moved and Copied Unchecked
+
+**Summary:** An array whose size is known only at run time is moved, given, taken over and copied by the sizes of the variable or row receiving or releasing it (v0.2.3); whether the other side has those sizes is not checked, so a shorter source is read past its end and a block freed by the wrong sizes leaks or frees elements it does not have. Two cases have no sizes on one side and stay compile errors: copying from a `[]T` parameter into an array, and copying an array sized at run time into a `[+]T`. Keeping each array's length with it (see #18) would allow checking and both cases.

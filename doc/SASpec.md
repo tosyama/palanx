@@ -535,8 +535,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
 
   **`arr-size`:** Every `pntr` level that stands for an array dimension carries `arr-size`
   (its element count) when that size is a compile-time constant (a literal or a `const`),
-  including an array field's value-type. It is absent for a size known only at run time. It is
-  only used by SA for borrowed-array and copy checks; codegen ignores it.
+  including an array field's value-type. It is absent for a size known only at run time, where
+  an owned variable's level (and so its rows') has `"run-size": true` instead, the size being
+  kept in `__<name>_d<k>`; a `[]T` parameter's level has neither. Both are only used by SA for
+  borrowed-array, ownership and copy checks; codegen ignores them. A copy or a free of an array
+  takes its lengths from the location receiving or releasing it, and a `run-size` level matches
+  any size.
 
   **`@[n]T` / `@![n]T` (borrowed array):** In a parameter or a local variable declaration, a
   `pntr` whose `base-type` is an `arr` is normalized to the array's own pntr chain, with
@@ -1273,13 +1277,17 @@ E_MoveFromReadOnlyView).
   `f(x>>, args)` (`op` "->>").
 - `T b <<= v` declares `b` on its own, after `v` is evaluated: `<<=` initializers of one
   declaration run in order. `v` becomes a `pinned` value of `b`'s owned type with category
-  `expiring`, which `b` takes over as it does a call result. Another type is
-  E_TransferShapeMismatch, a `$` variable E_TakeIntoFrameVar, and a variable owning no block
+  `expiring`, which `b` takes over as it does a call result, declared as an array variable is
+  (its run-time sizes kept). Another type is E_TransferShapeMismatch, a `$` variable E_TakeIntoFrameVar, and a variable owning no block
   E_TransferToNonOwnedVar.
 - A cast whose target is an owned struct or array (`ownedTypeOf`) from a `@!X`/`@X` pointer is a
   `convert` to the owned type with category `owner-view` (and `read-only: true` from `@X`);
   from anything else it is E_OwnerViewNeedsPtr. An `owner-view` is copied where an owned
-  variable would be.
+  variable would be. Sizes known only at run time in the target type are not evaluated.
+- A store with `owner-view-type` (`v ->> loc as T`) is the plain store of `v`, given away as
+  above and retyped as `loc`'s pointer type, into `loc`, with nothing freed first. `loc` must
+  hold a `@!X` and `T` be owned (else E_OwnerViewTargetNeedsPtr), and `v` match `T`
+  (else E_TransferShapeMismatch).
 - A cast's `target-type` has each `keep` replaced by the source's type at the same place, the
   source being a function pointer with as many parameters (else E_KeepWithoutSource). A `keep`
   anywhere else is E_KeepOutsideCast.

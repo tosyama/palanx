@@ -208,7 +208,9 @@ cinclude <stdlib.h>;
 - From a pointer (`@!X`) to an owned struct or array (`T`, `[n]T`, `[+]T`), which views what it
   points to as that type's owner, as C hands such a thing back. It is copied like an owned
   variable when assigned or passed, and moved by `<<=`, `->>` or `>>`; a move leaves the pointer
-  as it is. A `@X` pointer can be viewed this way only to copy from it.
+  as it is. A `@X` pointer can be viewed this way only to copy from it. A `@!X` location is
+  viewed this way to be given a value: `v ->> loc as T` (see
+  [Ownership Across C Functions](#ownership-across-c-functions)).
 
 A value is never cast into an owned type — a cast never creates ownership — and a struct value
 can't be cast into a pointer: take its address first (`@!s as @!uint8`).
@@ -1010,6 +1012,25 @@ cinclude <stdio.h>;
 }                             // free(buf) called here automatically
 ```
 
+### Sizes Known Only at Run Time
+
+An array variable whose size is known only at run time (`[n]int32 a;` for a variable `n`) keeps
+that size from its declaration. It is moved, given, taken over and copied like any other
+array, by the sizes of the variable or row receiving the value or releasing it; that the two
+sizes agree is the program's responsibility, as it is not checked:
+
+```palan
+int64 n = 100;
+[n]int32 a;
+[n]int32 b <<= a;        // a is now NULL
+[n]int32 c;
+b -> c;                  // copies n elements
+```
+
+- A `[]T` parameter keeps no size, so it cannot be copied from into an array, and a `[+]T`
+  cannot copy from an array whose size is known only at run time.
+- A parameter's or return value's sizes are known at compile time.
+
 ### Stack Arrays (`$[n]T`)
 
 `$` in front of an array type places the array in the function's stack frame: nothing is
@@ -1243,8 +1264,9 @@ minos[0][3] -> mino[0];      // copy one struct element
 2 -> mino[1].x;              // minos is unchanged
 ```
 
-- The source must have the same element type and the same sizes as the destination, all known
-  at compile time; otherwise it is a compile error. A source may be borrowed (`@[n]T`, `@T`).
+- The source must have the same element type and layout as the destination, and the same sizes
+  where both are known at compile time; otherwise it is a compile error. A source may be borrowed
+  (`@[n]T`, `@T`). A size known only at run time is [the owner's](#sizes-known-only-at-run-time).
 - What the destination owns is copied too: owned struct fields and arrays, and the structs of a
   `[n]T` array, get copies of the source's. A `@T`/`@!T` pointer is copied as a pointer.
 - A struct returned by a function is copied the same way, and then freed. A `[]T` return has
@@ -1265,7 +1287,8 @@ inner ->> outer[0];      // outer's original row 0 is freed; inner is set to NUL
 // free(inner) at scope exit → free(NULL) = no-op
 ```
 
-A row must have the same element type and the same size as `val`, both known at compile time.
+A row must have the same element type as `val`, and the same size where both are known at
+compile time.
 A `@T`/`@!T` pointer slot (including `[n]@![]T`) cannot take ownership; `->>` into one is a
 compile error.
 
@@ -1281,8 +1304,8 @@ p ->> w.pt;              // w's original Point is freed; p is set to NULL
 
 `val ->> var` transfers `val` into a variable that owns its array or struct. What the variable
 held is freed first, and `val` is set to NULL as above. An array must have the same element type
-and the same sizes as the variable, both known at compile time; a struct must be of the same
-type. A stack (`$`) variable, a borrow, or `val` naming the variable itself is
+as the variable, and the same sizes where both are known at compile time; a struct must be of
+the same type. A stack (`$`) variable, a borrow, or `val` naming the variable itself is
 a compile error.
 
 ```palan
@@ -1330,7 +1353,7 @@ NULL) or a call result:
 ```
 
 - `b` must own its array or struct: not a `$` variable, a borrow or a primitive. `v` must have
-  `b`'s type (the same sizes for an array).
+  `b`'s type (for an array, the same sizes where both are known at compile time).
 
 #### Ownership Across C Functions
 
@@ -1354,6 +1377,18 @@ func on_read(@!uv_stream_t s, int64 nread, @uv_buf_t buf)
 {
     [65536]int8 data <<= buf.base as [65536]int8;
 }   // data is freed here; buf.base is left as it is
+```
+
+A pointer C is to hold is given the same way, by viewing the location it goes to as an owner.
+What the location held is not freed, as it is no Palan owner:
+
+```palan
+func alloc_buffer(@!uv_handle_t handle, uint64 size, @!uv_buf_t buf)
+{
+    [size]int8 data;
+    data ->> buf.base as [size]int8;     // data is now NULL; buf.base holds the block
+    size -> buf.len;
+}
 ```
 
 - Whether a pointer really points to a `T` that Palan can free is not checked, as in C.

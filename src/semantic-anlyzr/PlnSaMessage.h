@@ -149,6 +149,7 @@ enum PlnSaMessageCode {
 	E_CircularTypeDecl,	// arg1: type name, arg2: dependency path
 	E_InvalidCastTarget,	// arg1: target type name
 	E_OwnerViewNeedsPtr,	// arg1: target type name
+	E_OwnerViewTargetNeedsPtr,	// arg1: target type name
 	E_KeepWithoutSource,	// arg1: source type name
 	E_StructLitTarget,
 	E_ArrLitTarget,	// arg1: variable name

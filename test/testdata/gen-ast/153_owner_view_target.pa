@@ -1,0 +1,4 @@
+x ->> b.base as [8]int8;
+x ->> p as [n]int8;
+x ->> a[1] as [8]int8;
+int32 y = x ->> f() as int32;

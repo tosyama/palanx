@@ -591,7 +591,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_CopyShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "cannot copy '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+			return "cannot copy '" + arg2 + "' into '" + arg1 + "': both need the same element type and layout, and the same sizes where both are known at compile time; a size known only at run time must be its owner's.";
 
 		case E_CopyUnsupportedShape:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -669,7 +669,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_TransferShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and layout, and the same sizes where both are known at compile time; a size known only at run time must be its owner's.";
 
 		case E_TransferToNonOwnedVar:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -754,6 +754,11 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot cast to '" + arg1 + "': only a pointer ('@!X') can be viewed as an owner, "
 			       "and a cast never creates ownership of a value.";
+
+		case E_OwnerViewTargetNeedsPtr:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->>' cannot give a value to '" + arg1 + "': '->> loc as T' needs a location holding a "
+			       "writable pointer ('@!X') and an owned type T (a struct, '[n]T' or '[+]T').";
 
 		case E_KeepWithoutSource:
 			BOOST_ASSERT(arg1 != "\x01");

@@ -97,6 +97,12 @@ inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true)
 // The symbol of one of the functions build-mgr generates, and a call to it.
 json shapeElem(const json& elem);
 json helperLens(const json& elem);
+// The root of an array location (the variable `a` of `a[i][j]`) and how many
+// levels down it the location lies.
+std::pair<const json*, size_t> arrRoot(const json& location);
+// Level `level` of the array variable `root`, known only at run time, which the
+// variable keeps from its declaration as __<name>_d<level>.
+json runtimeLen(const json& root, size_t level);
 string allocShapeKey(const AllocShapeRef& shape);
 string allocHelperSymbol(const AllocShapeRef& shape, const string& op);
 json allocHelperCall(const AllocShapeRef& shape, const string& op, json args);
@@ -269,7 +275,7 @@ inline bool isArrLevel(const json& t);
 inline bool isOwnedBlock(const json& vt)
 {
 	return isStructStorage(vt) || isVarrStorage(vt)
-	    || (isArrLevel(vt) && vt.contains("arr-size") && !vt.contains("mutable"));
+	    || (isArrLevel(vt) && (vt.contains("arr-size") || vt.contains("run-size")) && !vt.contains("mutable"));
 }
 // An owned element (a struct's, a `[+]T`'s or a row's storage) has no
 // permission of its own: it is writable only as far as the array it is
@@ -555,9 +561,12 @@ inline int64_t constArrSize(const json& sz) {
 	return stoll((*e)["value"].get<string>());
 }
 
+// A size known only at run time is kept by the variable owning the array,
+// which a `[]T` parameter's level, also without "arr-size", is not.
 inline void setArrSize(json& pntrType, const json& saSize) {
 	int64_t n = constArrSize(saSize);
 	if (n >= 0) pntrType["arr-size"] = n;
+	else pntrType["run-size"] = true;
 }
 
 // The array levels stop at an element that is a struct's own storage or a
@@ -712,15 +721,20 @@ inline json astTypeOf(const json& saType)
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+
 // Shape equality for such a copy, which is a plain byte copy level by level:
-// every size known and equal, the same layout and the exact same element
-// type, since no conversion can apply.
+// the same layout and the exact same element type, since no conversion can
+// apply, and equal sizes where both are known. A size known only at run time
+// matches any: the lengths are the receiving owner's, and that they agree is
+// the programmer's responsibility.
 inline bool copyShapeMatch(const json& from, const json& to) {
 	if (isArrLevel(to)) {
-		if (!isArrLevel(from) || !to.contains("arr-size") || from.value("arr-size", -1) != to["arr-size"]
-		    || from.value("embedded", false) != to.value("embedded", false))
+		if (!isArrLevel(from) || from.value("embedded", false) != to.value("embedded", false))
 			return false;
-		if (to.value("embedded", false) && !to.contains("stride"))
+		bool fromSized = from.contains("arr-size"), toSized = to.contains("arr-size");
+		if ((!fromSized && !from.contains("run-size")) || (!toSized && !to.contains("run-size")))
+			return false;
+		if (fromSized && toSized && from["arr-size"] != to["arr-size"])
 			return false;
 		return copyShapeMatch(from["base-type"], to["base-type"]);
 	}

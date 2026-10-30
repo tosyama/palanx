@@ -957,6 +957,25 @@ expression: term
 		}
 		LOC($$, @$);
 	}
+	// `as` binds tighter than `->>`, so it is shifted here: a location takes it as
+	// the owner it is viewed as, and a chained call's result is cast as before.
+	| expression DBL_ARROW store_loc KW_AS type_expr
+	{
+		string kind = $3.value("kind", "");
+		if (kind == "var" || kind == "arr-index" || kind == "field") {
+			$$ = storeStmt(move($3), move($1), true);
+			if ($$.contains("stmt-type")) $$["owner-view-type"] = move($5);
+		} else if (kind == "call" && !isStoreStmt($1)) {
+			json value = {{"expr-type", "transfer"}, {"value", move($1)}, {"op", "->>"}};
+			LOC(value, @1);
+			json chain = {{"expr-type", "chain-call"}, {"value", move(value)}, {"call", move($3["call"])}};
+			LOC_BE(chain, @1, @3);
+			$$ = {{"expr-type", "cast"}, {"target-type", move($5)}, {"src", move(chain)}};
+		} else {
+			$$ = {{"expr-type", "not-impl"}};
+		}
+		LOC($$, @$);
+	}
 	| expression DBL_GRTR
 	{ $$ = {{"expr-type", "transfer"}, {"value", move($1)}}; LOC($$, @$); }
 	| noname_func

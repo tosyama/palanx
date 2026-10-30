@@ -1236,6 +1236,18 @@ TEST(build_mgr, func_cast_ownership_mtrace) {
 	expectMtraceRun("375_func_cast_ownership_mtrace", "work 3 2\n1\n2 1\n", 5);
 }
 
+TEST(build_mgr, runtime_size_ownership_mtrace) {
+	// Arrays sized at run time, of structs and rows too, are moved, given, taken
+	// over and copied by the lengths their receiving variable keeps.
+	expectMtraceRun("376_runtime_size_ownership_mtrace", "1 4 3 10\n3:1 1:1 \n7 9\n5 5\n", 43);
+}
+
+TEST(build_mgr, owner_view_target_mtrace) {
+	// A block given to a C pointer viewed as its owner is held there until it is
+	// taken back over, sized at run time on both sides.
+	expectMtraceRun("377_owner_view_target_mtrace", "16 7\n3 1\n", 3);
+}
+
 TEST(build_mgr, store_value_first) {
 	cleanTestEnv();
 	// A call in the target that writes the value through a pointer it was

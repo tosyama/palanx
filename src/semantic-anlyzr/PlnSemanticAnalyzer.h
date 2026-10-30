@@ -473,7 +473,8 @@ class PlnSemanticAnalyzer {
 	// all vars share one var-type; returns array of statements
 	json sa_var_decl_group(const json& stmt, VarStorage storage);
 	json sa_arr_var_decl(const json& stmt, VarStorage storage);       // returns array of statements
-	json sa_arr_var_decl(const json& stmt, VarStorage storage, const Storage& st, bool litLen);
+	json sa_arr_var_decl(const json& stmt, VarStorage storage, const Storage& st, bool litLen,
+	                     const json* taken = nullptr);
 	Storage arrVarStorage(const json& locNode, const json& vtype);
 	AggregatePlace arrPlace(const json& self, const vector<json>& lens, bool litLen);
 	json structAllocExpr(const string& name);
@@ -669,6 +670,7 @@ class PlnSemanticAnalyzer {
 	json sa_assign_stmt(const json& stmt);  // returns json::array()
 	json sa_varr_lit_assign(const json& stmt, const json& varType, json* litAddr = nullptr);
 	json sa_transfer_to_var(const json& stmt, const string& name, const json& varType, const PlnType* toType);
+	json sa_transfer_to_owner_view(const json& stmt, const json& target);
 	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);

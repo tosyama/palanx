@@ -1266,6 +1266,27 @@ TEST(gen_ast, give_take) {
 	ASSERT_EQ(stmts[5]["body"]["args"].size(), 0);
 }
 
+// 'as' after a '->>' target views that location as the owner it receives; after
+// a chained call it still casts the call's result.
+TEST(gen_ast, owner_view_target) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/153_owner_view_target.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+	ASSERT_EQ(stmts[0]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[0]["ownership-transfer"], true);
+	ASSERT_EQ(stmts[0]["owner-view-type"]["size-expr"]["value"], "8");
+	ASSERT_EQ(stmts[1]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[1]["owner-view-type"]["size-expr"]["name"], "n");
+	ASSERT_EQ(stmts[2]["stmt-type"], "arr-assign");
+	ASSERT_TRUE(stmts[2].contains("owner-view-type"));
+	const auto& init = stmts[3]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "cast");
+	ASSERT_EQ(init["src"]["expr-type"], "chain-call");
+}
+
 // '->' binds tighter than comparisons and logical operators, looser than arithmetic.
 TEST(gen_ast, arrow_precedence) {
 	cleanTestEnv();

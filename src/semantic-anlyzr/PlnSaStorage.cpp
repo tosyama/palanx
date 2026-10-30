@@ -374,10 +374,7 @@ json PlnSemanticAnalyzer::takeOverType(const json& locNode, const json& varType)
 	if (varType.value("type-kind","") != "arr") return json();
 	bool sized = !varType["size-expr"].is_null();
 	if (isVarrAstType(varType) ? sized : !sized) return json();
-	Storage st = arrVarStorage(locNode, varType);
-	for (auto& len : st.lens)
-		if (constArrSize(len) < 0) return json();
-	return st.type;
+	return arrVarStorage(locNode, varType).type;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
 json PlnSemanticAnalyzer::ownedTypeOf(const json& locNode, const json& varType)
@@ -397,7 +394,10 @@ json PlnSemanticAnalyzer::sigType(const json& locNode, const json& type, bool is
 		t = varrStorageType(locNode, t);
 	} else if (t.value("type-kind","") == "arr") {
 		t = takeOverType(locNode, t);
-		if (t.is_null()) {
+		// The caller and the callee keep no lengths for each other.
+		const json* level = t.is_null() ? nullptr : &t;
+		while (level && isArrLevel(*level) && level->contains("arr-size")) level = &(*level)["base-type"];
+		if (!level || isArrLevel(*level)) {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_SigArrSizeNotConst) << endl;
 			exit(1);
 		}
@@ -425,6 +425,7 @@ json shapeElem(const json& elem)
 	json out = elem;
 	if (isArrLevel(out)) {
 		out.erase("arr-size");
+		out.erase("run-size");
 		if (isArrLevel(out["base-type"])) out.erase("stride");
 	}
 	if (out.contains("base-type") && out["base-type"].is_object())
@@ -806,6 +807,41 @@ static json arrLens(const json& vt, const vector<json>& known = {})
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+pair<const json*, size_t> arrRoot(const json& location)
+{
+	const json* root = &location;
+	size_t depth = 0;
+	for (; root->value("expr-type", "") == "arr-index"; depth++) root = &(*root)["array"];
+	return {root, depth};
+}
+
+json runtimeLen(const json& root, size_t level)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	BOOST_ASSERT(root.value("expr-type", "") == "id");
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	return {{"expr-type","id"},{"name","__" + root["name"].get<string>() + "_d" + to_string(level)},
+	        {"var-type",uint64_type},{"value-type",uint64_type}};
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
+// The lengths of the array at `location` as arrLens gives them. A length its
+// type leaves out is known only at run time, so the location is a variable,
+// or a row of one, keeping it from its declaration.
+static json locationLens(const json& location)
+{
+	// LCOV_EXCL_EXCEPTION_BR_START
+	const json& vt = location["value-type"];
+	auto [root, depth] = arrRoot(location);
+	vector<json> known;
+	size_t k = 0;
+	for (const json* t = &vt; isArrLevel(*t) && !isVarrStorage(*t); t = &(*t)["base-type"], k++)
+		known.push_back(t->contains("arr-size") ? lenLit((*t)["arr-size"].get<int64_t>())
+		                                        : runtimeLen(*root, depth + k));
+	return arrLens(vt, known);
+	// LCOV_EXCL_EXCEPTION_BR_STOP
+} // LCOV_EXCL_EXCEPTION_BR_LINE
+
 // An owned array's elements as its helpers take them, and the lengths they
 // take: rows laid out in place are one run of their elements' slots, so
 // `[2]$[3]S` is a run of 6 struct slots.
@@ -833,8 +869,8 @@ json PlnSemanticAnalyzer::makeOwnedFreeStmt(const string& name, const json& pntr
 
 // What an owned struct, array or row holds, freed the way its owner's
 // __pln_free_* would. Every free here accepts NULL. An array's helpers take
-// its levels' lengths, `lens` (as arrLens gives them) when some are known
-// only at run time.
+// its levels' lengths: `lens` (as arrLens gives them) when given, those of
+// the location `value` is otherwise.
 json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value, json lens)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
@@ -853,7 +889,7 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value, json lens)
 	if (isVarrStorage(vt))
 		return {{"stmt-type","expr"},{"body",allocHelperCall(varrShape(vt), "free", move(args))}};
 	if (!ownsElems(vt)) return freeCall();
-	auto [elem, lenArgs] = ownedRun(vt, lens.is_null() ? arrLens(vt) : lens);
+	auto [elem, lenArgs] = ownedRun(vt, lens.is_null() ? locationLens(args[0]) : lens);
 	recordArrShape(elem);
 	for (auto& len : lenArgs) args.push_back(len);
 	return {{"stmt-type","expr"},{"body",allocHelperCall(arrShape(elem), "free", move(args))}};
@@ -895,9 +931,9 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	auto copyStmt = [&](const AllocShapeRef& shape, json args) -> json {
 		return {{"stmt-type","expr"},{"body",allocHelperCall(shape, "copy", move(args))}};
 	};
-	auto memcpyStmt = [&](int64_t bytes) {
+	auto memcpyStmt = [&](json bytes) {
 		return json{{"stmt-type","expr"},{"body",{{"expr-type","call"},{"name","memcpy"},{"func-type","c"},
-			{"args",json::array({dst, src, lit(bytes)})}}}};
+			{"args",json::array({dst, src, move(bytes)})}}}};
 	};
 	auto structHasOwned = [&](const string& name) {
 		const StructDef& def = requireCompleteStruct(name, locNode);
@@ -913,17 +949,19 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 	if (isStructStorage(t)) {
 		string name = t["base-type"]["type-name"];
 		if (!structHasOwned(name))
-			return memcpyStmt(structDefs_[name].totalSize);
+			return memcpyStmt(lit(structDefs_[name].totalSize));
 		recordAllocShape(name);
 		return copyStmt(structShape(name), json::array({dst, src})); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
 
 	// An array is copied as its owner holds it, whatever permission a borrow gives it.
+	// The lengths are the receiving owner's.
 	json owned = withoutArrPermission(t);
+	auto [root, depth] = arrRoot(dst);
 	if (!ownsElems(owned))
-		return memcpyStmt(inPlaceSize(owned));
+		return memcpyStmt(inPlaceSizeExpr(owned, depth, [&](size_t k) { return runtimeLen(*root, k); }));
 	// LCOV_EXCL_EXCEPTION_BR_START
-	auto [elem, lens] = ownedRun(owned, arrLens(owned));
+	auto [elem, lens] = ownedRun(owned, locationLens(dst));
 	const json* leaf = &elem;
 	while (isArrLevel(*leaf)) leaf = &(*leaf)["base-type"];
 	if (isPtrBorrow(*leaf)) {
@@ -1051,8 +1089,10 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage)
 // The lengths are evaluated once for all the variables of a statement. Each
 // variable keeps one known only at run time in __<name>_d<k> (level k), which
 // a row laid out in place without a stride is also indexed by. With an array
-// literal (`litLen`), a `[+]T`'s declared size is its length.
-json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage, const Storage& st, bool litLen)
+// literal (`litLen`), a `[+]T`'s declared size is its length. A variable taking
+// over a block (`taken`) owns it in place of one it allocates.
+json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage, const Storage& st, bool litLen,
+                                          const json* taken)
 {
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
@@ -1078,6 +1118,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage, 
 		}
 		if (first.empty()) first = name;
 		AggregatePlace place = arrPlace(id(name, st.type), lens, litLen);
+		if (taken) place.heapInit = *taken;
 		declareVar(name, st.type, &stmt);
 		json post = json::array();
 		json init = placeAggregateVar(stmt, name, st.type, move(place.heapInit), move(place.release), storage,
