@@ -126,8 +126,8 @@ func cast_ray(@vec3 orig, @vec3 dir, @[LN]Light lights, @[SN]Sphere spheres, int
 		if shadow_hit && norm(@(shadow_pt - point)) < norm(@(l.position - point)) {
 			continue;
 		}
-		diffuse_light_intensity + (l.intensity * fmaxf(0, dot(@light_dir, @N))) -> diffuse_light_intensity;
-		specular_light_intensity + powf(fmaxf(0, dot(@reflect(@light_dir, @N), dir)), material.specular_exponent) * l.intensity -> specular_light_intensity;
+		diffuse_light_intensity + (l.intensity * fmaxf(0, light_dir * N)) -> diffuse_light_intensity;
+		specular_light_intensity + powf(fmaxf(0, reflect(@light_dir, @N) * dir), material.specular_exponent) * l.intensity -> specular_light_intensity;
 	}
 
 	material.diffuse_color -> c;
@@ -181,8 +181,8 @@ func ray_intersect_sphere(@vec3 orig, @vec3 dir, @Sphere s)
 	0 -> dist_i;
 
 	$vec3 L = s.center - orig;
-	flo32 tca = dot(@L, dir);
-	flo32 d2 = dot(@L, @L) - tca * tca;
+	flo32 tca = L * dir;
+	flo32 d2 = L * L - tca * tca;
 	flo32 r2 = s.radius * s.radius;
 	if d2 > r2 { return; }
 	flo32 thc = sqrtf(r2 - d2);
@@ -193,12 +193,12 @@ func ray_intersect_sphere(@vec3 orig, @vec3 dir, @Sphere s)
 
 func reflect(@vec3 I, @vec3 N) -> vec3
 {
-	return I - N * (2 * dot(I, N));
+	return I - N * (2 * (I * N));
 }
 
 func refract(@vec3 I, @vec3 N, flo32 eta_t, flo32 eta_i) -> vec3
 {
-	flo32 cosi = -fmaxf(-1, fminf(1, dot(I, N)));
+	flo32 cosi = -fmaxf(-1, fminf(1, I * N));
 	if cosi < 0 { return refract(I, @(N * -1), eta_i, eta_t); }
 	flo32 eta = eta_i / eta_t;
 	flo32 k = 1 - eta * eta * (1 - cosi * cosi);
