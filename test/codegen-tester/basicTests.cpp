@@ -718,8 +718,8 @@ TEST(codegen, float_neg) {
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("xorpd"), string::npos);  // flo64 neg
     ASSERT_NE(asm_text.find("xorps"), string::npos);  // flo32 neg
-    ASSERT_NE(asm_text.find(".neg_mask_f64"), string::npos);
-    ASSERT_NE(asm_text.find(".neg_mask_f32"), string::npos);
+    ASSERT_NE(asm_text.find("\t.p2align 4\n.neg_mask_f64:\n\t.quad 0x8000000000000000, 0\n"), string::npos);
+    ASSERT_NE(asm_text.find("\t.p2align 4\n.neg_mask_f32:\n\t.long 0x80000000, 0, 0, 0\n"), string::npos);
 }
 
 TEST(codegen, array_buf) {
