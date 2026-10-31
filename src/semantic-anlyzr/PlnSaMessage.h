@@ -150,6 +150,7 @@ enum PlnSaMessageCode {
 	E_OwnerViewNeedsPtr,	// arg1: target type name
 	E_OwnerViewTargetNeedsPtr,	// arg1: target type name
 	E_KeepWithoutSource,	// arg1: source type name
+	E_KeepParamCount,	// arg1: cast's parameter count, arg2: source type name, arg3: its parameter count
 	E_StructLitTarget,
 	E_ArrLitTarget,	// arg1: variable name
 	E_BorrowOfTempEscapes,

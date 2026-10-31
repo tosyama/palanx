@@ -759,6 +759,11 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'_' keeps the type of the cast's source at its place, but '" + arg1 + "' has no such place.";
 
+		case E_KeepParamCount:
+			BOOST_ASSERT(arg3 != "\x01");
+			return "the cast's function type has " + arg1 + (arg1 == "1" ? " parameter" : " parameters")
+			       + ", but '" + arg2 + "' has " + arg3 + ".";
+
 		case E_InvalidCastTarget:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot cast to '" + arg1 + "': only a primitive, enum, pointer, borrowed array ('@[n]T'/'@![n]T'), "

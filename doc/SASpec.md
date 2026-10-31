@@ -1312,7 +1312,8 @@ E_MoveFromReadOnlyView).
   hold a `@!X` and `T` be owned (else E_OwnerViewTargetNeedsPtr), and `v` match `T`
   (else E_TransferShapeMismatch).
 - A cast's `target-type` has each `keep` replaced by the source's type at the same place, the
-  source being a function pointer with as many parameters (else E_KeepWithoutSource). A `keep`
+  source being a function pointer (else E_KeepWithoutSource) with as many parameters (else
+  E_KeepParamCount, naming the source's function type at that place). A `keep`
   anywhere else is E_KeepOutsideCast.
 
 ### Call arguments

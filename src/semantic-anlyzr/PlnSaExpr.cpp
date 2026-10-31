@@ -1196,18 +1196,25 @@ json PlnSemanticAnalyzer::fillKeptTypes(const json& locNode, json target, const 
 	if (!hasKeptType(target)) return target;
 	string tk = target.value("type-kind", "");
 	if (tk == "pntr" && from.value("type-kind", "") == "pntr") {
-		target["base-type"] = fillKeptTypes(locNode, move(target["base-type"]), from["base-type"], srcType);
+		target["base-type"] = fillKeptTypes(locNode, move(target["base-type"]), from["base-type"], from);
 		return target;
 	}
-	if (tk != "func" || from.value("type-kind", "") != "func"
-	    || target["parameters"].size() != from["parameters"].size()) {
+	if (tk != "func" || from.value("type-kind", "") != "func") {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_KeepWithoutSource, typeDisplayName(srcType)) << endl;
 		exit(1);
 	}
-	for (size_t i = 0; i < target["parameters"].size(); i++)
+	if (target["parameters"].size() != from["parameters"].size()) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_KeepParamCount,
+			to_string(target["parameters"].size()), typeDisplayName(srcType),
+			to_string(from["parameters"].size())) << endl;
+		exit(1);
+	}
+	for (size_t i = 0; i < target["parameters"].size(); i++) {
+		const json& fp = from["parameters"][i]["var-type"];
 		target["parameters"][i]["var-type"] = fillKeptTypes(locNode,
-			move(target["parameters"][i]["var-type"]), from["parameters"][i]["var-type"], srcType);
-	target["ret-type"] = fillKeptTypes(locNode, move(target["ret-type"]), from["ret-type"], srcType);
+			move(target["parameters"][i]["var-type"]), fp, fp);
+	}
+	target["ret-type"] = fillKeptTypes(locNode, move(target["ret-type"]), from["ret-type"], from["ret-type"]);
 	return target;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

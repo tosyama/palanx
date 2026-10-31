@@ -1394,7 +1394,7 @@ TEST(sa_error, give_and_take)
 		{"error_908_take_from_prim.pa", ":3:1: error: '<<='" + nonOwner},
 		{"error_909_call_non_func_ptr.pa", ":2:1: error: 'int32' is not a function pointer and cannot be called."},
 		{"error_910_keep_param_count.pa",
-		 ":2:13: error: '_' keeps the type of the cast's source at its place, but '@func(uint64) -> @!void' has no such place."},
+		 ":2:13: error: the cast's function type has 2 parameters, but '@func(uint64) -> @!void' has 1."},
 		{"error_911_keep_from_non_func.pa",
 		 ":2:12: error: '_' keeps the type of the cast's source at its place, but 'int64' has no such place."},
 		{"error_912_owner_view_target_read_only.pa", ":4:1: error: '->>' cannot give a value to '@int8'" + viewTarget},
@@ -1414,6 +1414,8 @@ TEST(sa_error, give_and_take)
 		{"error_922_operator_func_ambiguous.pa", ":5:10: error: Ambiguous function call '-': it can mean -(@vec2), -(vec2)."},
 		{"error_923_operator_func_no_match.pa",
 		 ":4:10: error: No function '+' takes (vec2, flo64); there are +(@vec2, @vec2)."},
+		{"error_924_keep_param_count_nested.pa",
+		 ":3:2: error: the cast's function type has 2 parameters, but '@func(int32)' has 1."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
