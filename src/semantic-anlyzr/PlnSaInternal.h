@@ -448,50 +448,57 @@ inline int64_t inPlaceBytes(const json& elem, const map<string, StructDef>& defs
 
 // SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct passed or returned by value.
 enum class EightbyteClass { Integer, Sse };
-struct Eightbyte { EightbyteClass cls; int size; };  // only the last eightbyte may be <8
+struct Eightbyte {
+	EightbyteClass cls;
+	int size;            // only the last eightbyte may be <8
+	bool flo64 = false;  // taken up by one flo64 (codegen loads it whole)
+};
 
 // Recursively marks the eightbytes covered by one field as INTEGER; SSE is
-// `cls`'s initial value, so an all-float field simply leaves it unmarked
+// each eightbyte's initial class, so an all-float field simply leaves it unmarked
 // (mixing within one eightbyte follows the "any INTEGER wins" merge rule).
+// A flo64 is 8-byte aligned (or the struct is MEMORY class), so it takes up
+// exactly one eightbyte, which is marked as such.
 // `base` is the field's struct-relative offset already shifted by every
 // enclosing embed/embed-arr, so recursion always marks against the same
-// top-level `cls` vector.
+// top-level `ebs` vector.
 inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
                               const map<string, StructDef>& defs,
-                              vector<EightbyteClass>& cls)
+                              vector<Eightbyte>& ebs)
 {
-	auto mark = [&](int offset, int size, EightbyteClass fieldCls) {
-		if (fieldCls != EightbyteClass::Integer) return;  // Sse is the default; nothing to mark
+	auto markInt = [&](int offset, int size) {
 		for (int b = offset; b < offset + size; b++) {
 			int eb = b / 8;
-			if (eb < nEightbytes) cls[eb] = EightbyteClass::Integer;
+			if (eb < nEightbytes) ebs[eb].cls = EightbyteClass::Integer;
 		}
+	};
+	auto markPrim = [&](int offset, const string& name, int size) {
+		if (name == "flo64") ebs[offset / 8].flo64 = true;
+		else if (name != "flo32") markInt(offset, size);  // Sse is the default
 	};
 	for (auto& f : d.fields) {
 		int off = base + f.offset;
 		if (f.typeKind == "prim") {
-			bool isFloat = (f.typeName == "flo32" || f.typeName == "flo64");
-			mark(off, f.size, isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+			markPrim(off, f.typeName, f.size);
 		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned") {
-			mark(off, 8, EightbyteClass::Integer);
+			markInt(off, 8);
 		} else if (f.typeKind == "embed") {
-			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, cls);
+			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, ebs);
 		} else if (f.typeKind == "embed-arr") {
 			// Each element laid out in place, down to primitives, structs and pointers.
 			function<void(const json&, int)> walk = [&](const json& t, int at) {
 				string kind = t.value("type-kind", "");
 				if (kind == "struct") {
-					classifySysVWalk(defs.at(t["type-name"].get<string>()), at, nEightbytes, defs, cls);
+					classifySysVWalk(defs.at(t["type-name"].get<string>()), at, nEightbytes, defs, ebs);
 				} else if (kind == "prim") {
 					string name = t["type-name"].get<string>();
-					bool isFloat = (name == "flo32" || name == "flo64");
-					mark(at, elemSizeBytes(name), isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+					markPrim(at, name, elemSizeBytes(name));
 				} else if (isArrLevel(t)) {
 					const json& elem = t["base-type"];
 					int64_t size = inPlaceBytes(elem, defs);
 					for (int64_t i = 0; i < t["arr-size"].get<int64_t>(); i++) walk(elem, at + (int)(i * size));
 				} else {
-					mark(at, 8, EightbyteClass::Integer);
+					markInt(at, 8);
 				}
 			};
 			walk(f.type, off);
@@ -509,12 +516,10 @@ inline vector<Eightbyte> classifySysVStruct(const StructDef& def, const map<stri
 	int nEightbytes = (def.totalSize + 7) / 8;
 	int tailWidth = def.totalSize - 8 * (nEightbytes - 1);
 
-	vector<EightbyteClass> cls(nEightbytes, EightbyteClass::Sse);
-	classifySysVWalk(def, 0, nEightbytes, defs, cls);
-
 	vector<Eightbyte> result;
 	for (int i = 0; i < nEightbytes; i++)
-		result.push_back({cls[i], (i == nEightbytes - 1) ? tailWidth : 8});
+		result.push_back({EightbyteClass::Sse, (i == nEightbytes - 1) ? tailWidth : 8});
+	classifySysVWalk(def, 0, nEightbytes, defs, result);
 	return result;
 }
 
@@ -523,8 +528,11 @@ inline vector<Eightbyte> classifySysVStruct(const StructDef& def, const map<stri
 inline json eightbytesJson(const StructDef& def, const map<string, StructDef>& defs)
 {
 	json ebs = json::array();
-	for (auto& eb : classifySysVStruct(def, defs))
-		ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	for (auto& eb : classifySysVStruct(def, defs)) {
+		json j = {{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		if (eb.flo64) j["flo64"] = true; // LCOV_EXCL_EXCEPTION_BR_LINE
+		ebs.push_back(move(j));
+	}
 	return ebs;
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 

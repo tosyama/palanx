@@ -1310,6 +1310,27 @@ TEST(codegen, struct_ret_mixed) {
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/071_struct_ret_mixed.o"), "");
 }
 
+TEST(codegen, struct_ret_flo64) {
+    // {flo64 a; flo32 b; flo32 c;} returned from a ret-slot: the eightbyte
+    // marked flo64 is read whole, the two flo32 halves are read and packed.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/079_struct_ret_flo64.sa.json";
+    string asmf = "out/079_struct_ret_flo64.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("\tmovsd ("), string::npos);
+    ASSERT_EQ(asm_text.find("\tmovss ("), string::npos);
+    ASSERT_EQ(asm_text.find("\tmovss 4("), string::npos);
+    size_t pack = asm_text.find("unpcklps");
+    ASSERT_NE(pack, string::npos);
+    ASSERT_EQ(asm_text.find("unpcklps", pack + 1), string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/079_struct_ret_flo64.o"), "");
+}
+
 TEST(codegen, struct_ret_memory) {
     // >16 bytes: MEMORY class -- the ret-dest pointer is passed as the hidden
     // first argument; no register-based eightbyte store follows the call.

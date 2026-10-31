@@ -408,7 +408,7 @@ VReg PlnVCodeGen::loadEightbyte(VReg ptr, int offset, const Eightbyte& eb, VFunc
 {
     // An eightbyte of two floats is usually just written as two 4-byte stores,
     // which an 8-byte load spanning both would wait for (no store forwarding).
-    if (eb.type == VRegType::Float64 && eb.size == 8) {
+    if (eb.type == VRegType::Float64 && eb.size == 8 && !eb.flo64) {
         VReg lo = allocVReg(), hi = allocVReg(), packed = allocVReg();
         func.instrs.push_back(DerefLoad{lo, ptr, offset, VRegType::Float32});
         func.instrs.push_back(DerefLoad{hi, ptr, offset + 4, VRegType::Float32});

@@ -1094,7 +1094,10 @@ Additional fields per expression kind:
     classification). Each array entry is one eightbyte of the classified return value in order —
     its byte offset within the struct is implied by its index (`index * 8`), there is no
     explicit `offset` key; `size` on the last entry is the tail width when the struct isn't a
-    multiple of 8 bytes (codegen writes a width other than 1/2/4/8 piecewise). A struct over 16
+    multiple of 8 bytes (codegen writes a width other than 1/2/4/8 piecewise). An SSE eightbyte
+    taken up by one `flo64` also has `"flo64":true`: codegen reads it from memory in one 8-byte
+    load, and any other 8-byte SSE eightbyte as two 4-byte halves, since it is usually written as
+    two `flo32` stores an 8-byte load could not be forwarded from. A struct over 16
     bytes (the System V AMD64 MEMORY class) is `"eightbytes":[]`: codegen passes `ret-dest` as
     the hidden first argument. Such a call has no value and is always the `body` of an `expr`
     statement; where its value is used, SA emits a `temp` whose `body` declares the storage and

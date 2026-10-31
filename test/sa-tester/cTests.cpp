@@ -843,6 +843,7 @@ TEST(sa, struct_ret_sse_field) {
 	ASSERT_EQ(sr["size"], 8);
 	ASSERT_EQ(sr["eightbytes"].size(), 1);
 	ASSERT_EQ(sr["eightbytes"][0]["class"], "sse");
+	ASSERT_EQ(sr["eightbytes"][0]["flo64"], true);
 }
 
 TEST(sa, struct_ret_embed_arr_sse_field) {
@@ -861,6 +862,8 @@ TEST(sa, struct_ret_embed_arr_sse_field) {
 	ASSERT_EQ(sr["eightbytes"].size(), 2);
 	ASSERT_EQ(sr["eightbytes"][0]["class"], "sse");
 	ASSERT_EQ(sr["eightbytes"][1]["class"], "sse");
+	ASSERT_FALSE(sr["eightbytes"][0].contains("flo64"));
+	ASSERT_FALSE(sr["eightbytes"][1].contains("flo64"));
 }
 
 TEST(sa, c_callback_arg) {

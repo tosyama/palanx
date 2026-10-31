@@ -1361,6 +1361,14 @@ TEST(build_mgr, c_struct_ret_mtrace) {
 	expectMtraceRun("379_c_struct_ret_mtrace", "3 1 14 2\n4 3 3\n4 2 2\n", 5);
 }
 
+// Struct returns whose SSE eightbytes are one flo64, two flo32, or a flo64
+// array element.
+TEST(build_mgr, struct_ret_flo64) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/383_struct_ret_flo64.pa");
+	ASSERT_EQ(output, "1.5 2.5 5\n-4 -3.75\n0.75 -0.75\n0.5 1.5\n");
+}
+
 TEST(build_mgr, operator_func_mtrace) {
 	expectMtraceRun("380_operator_func_mtrace",
 		"1.5 2.5 3.5\n0.5 1.5 2.5\n-1 -2 -3\n-1.5 -2.5 -3.5\n1.5 3 4.5\n0 -1 -2\n3\n2.5 4.5 6.5\n", 4);

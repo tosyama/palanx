@@ -84,8 +84,9 @@ struct FuncRefExpr : Expr {
 // A call through a function pointer.
 // One eightbyte of a struct passed or returned by value: the register type
 // it travels in, and how many of its bytes belong to the struct (1-8; a width
-// other than 1/2/4/8 is read or written piecewise).
-struct Eightbyte { VRegType type; int size; };
+// other than 1/2/4/8 is read or written piecewise). flo64: taken up by one
+// flo64, so it is read whole rather than as two flo32 halves.
+struct Eightbyte { VRegType type; int size; bool flo64 = false; };
 
 // Where a call returning a struct writes it (a pointer), and the struct's
 // eightbytes when it comes back in registers; none means MEMORY class, for

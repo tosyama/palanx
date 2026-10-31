@@ -19,7 +19,7 @@ using namespace std;
 static Eightbyte toEightbyte(const json& eb) {
     int size = eb["size"].get<int>();
     if (eb["class"] == "sse")
-        return {size == 4 ? VRegType::Float32 : VRegType::Float64, size};
+        return {size == 4 ? VRegType::Float32 : VRegType::Float64, size, eb.value("flo64", false)};
     VRegType t = size == 1 ? VRegType::Int8 : size == 2 ? VRegType::Int16
                : size <= 4 ? VRegType::Int32 : VRegType::Int64;
     return {t, size};

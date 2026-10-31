@@ -1,0 +1,6 @@
+type D { flo64 a; flo32 b; flo32 c; };
+func make(flo64 a, flo32 b) -> D
+{
+	return [a, b, b];
+}
+D d = make(1.5, 2.5);
