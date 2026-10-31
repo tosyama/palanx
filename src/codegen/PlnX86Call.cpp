@@ -142,8 +142,6 @@ int PlnX86CodeGen::emitCallArgs(const vector<VReg>& args, const RegMap& rm, int&
             if (is_flt) {
                 const char* mov = movInstrForType(src_loc.type);
                 if (src_loc.isStack()) {
-                    // %xmm8 is safe as scratch here for the same reason as in
-                    // emitInstrConvert: all float VRegs are currently stack-allocated.
                     out << "\t" << mov << " " << srcOperand(src_loc) << ", %xmm8\n";
                     out << "\t" << mov << " %xmm8, " << offset << "(%rsp)\n";
                 } else {

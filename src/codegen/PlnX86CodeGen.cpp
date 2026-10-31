@@ -15,7 +15,8 @@ const PhysRegs PlnX86CodeGen::x86PhysRegs = {
     { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" },
     { "%rbx", "%r12", "%r13", "%r14", "%r15" },
     { "%rdi", "%rsi", "%rdx", "%r10", "%r8", "%r9" },
-    { "%r10", "%r11" }
+    { "%r10", "%r11" },
+    { "%xmm10", "%xmm11", "%xmm12", "%xmm13", "%xmm14", "%xmm15" }
 };
 
 void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs)
@@ -59,7 +60,8 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
 
         emitFuncPrologue(func, ra, rm);
 
-        for (auto& instr : func.instrs) {
+        for (size_t ii = 0; ii < func.instrs.size(); ++ii) {
+            auto& instr = func.instrs[ii];
             if      (auto* i  = std::get_if<LeaLabel> (&instr)) emitInstrLeaLabel(*i, rm);
             else if (auto* i  = std::get_if<MovImm>   (&instr)) emitInstrMovImm(*i, rm);
             else if (auto* i  = std::get_if<InitVar>  (&instr)) emitInstrInitVar(*i, rm);
@@ -97,10 +99,24 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<LeaLocal>     (&instr)) emitInstrLeaLocal(*i, rm);
             else if (auto* i  = std::get_if<FrameAddr>    (&instr)) emitInstrFrameAddr(*i, rm, ra.frameBlockOffsets);
             // DeclVar, BlockEnter and BlockLeave are no-ops
+            emitHomeMoves(ra.storesAfter, ii, rm, true);
+            emitHomeMoves(ra.reloadsAfter, ii, rm, false);
         }
     }
 
     emitNoteGnuStack();
+}
+
+void PlnX86CodeGen::emitHomeMoves(const map<int, vector<VReg>>& moves, int idx, const RegMap& rm, bool store)
+{
+    auto it = moves.find(idx);
+    if (it == moves.end()) return;
+    for (VReg vr : it->second) {
+        const PhysLoc& loc = rm.at(vr);
+        string home = to_string(loc.homeOffset) + "(%rbp)";
+        out << "\t" << movInstrForType(loc.type) << " "
+            << (store ? loc.base : home) << ", " << (store ? home : loc.base) << "\n";
+    }
 }
 
 void PlnX86CodeGen::emitFuncPrologue(const VFunc& func, const RegAllocResult& ra, const RegMap& rm)

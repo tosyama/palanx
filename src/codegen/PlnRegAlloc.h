@@ -20,6 +20,9 @@ struct PhysLoc {
     string   base;           // 64-bit base name; empty if stack slot
     VRegType type;
     int      stackOffset = 0;  // valid when base is empty
+    // A float value kept in a (caller-saved) XMM register across a call is
+    // also stored here after each write, and reloaded from here after each call.
+    int      homeOffset = 0;   // 0: no home slot
     bool isStack() const { return base.empty(); }
 };
 
@@ -39,6 +42,8 @@ struct RegAllocResult {
     vector<string>    usedCalleeSaved;  // callee-saved regs used, in allocation order
     vector<ParamCopy> paramCopies;      // params moved from arg regs due to call-crossing
     vector<int>       frameBlockOffsets;  // %rbp offset of each VFunc::frameBlocks entry
+    map<int, vector<VReg>> storesAfter;   // instr index -> homed VRegs it writes
+    map<int, vector<VReg>> reloadsAfter;  // call index -> homed VRegs living across it
 };
 
 // Physical register lists (architecture-specific, passed in by caller)
@@ -51,6 +56,7 @@ struct PhysRegs {
     // shuffling call args) -- never assigned to a VReg, so a value placed here
     // by the allocator could be clobbered before its next use.
     vector<string> scratch;
+    vector<string> floatAlloc;  // XMM regs assignable to float VRegs (none of floatArgs or the emitter's scratch)
 };
 
 // Live-range-based register allocator.
@@ -59,6 +65,8 @@ struct PhysRegs {
 //     assigned directly to the required argument register.
 //   - VRegs live across a call → callee-saved register.
 //   - When callee-saved registers are exhausted → spill to stack slot.
+//   - Float VRegs → phys.floatAlloc when estimated cheaper than the stack
+//     (a value living across a call is reloaded from its home slot after it).
 //   - InitVar VRegs with no uses → stack slot (preserves the store side-effect).
 //
 // Returns RegAllocResult containing the RegMap and the required frame size.

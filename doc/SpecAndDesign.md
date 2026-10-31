@@ -268,6 +268,20 @@ Design:
    its name and its parameter types (`util..show.int32`; SASpec.md "Symbol names"), so overloads
    and same-named functions of different modules link side by side. codegen emits it as given.
 
+ Register allocation (PlnRegAlloc, per function, on live ranges in instruction order; a value
+ defined before a loop and used in it lives until the loop's backward jump):
+ - An integer or pointer value used only as a call's argument, with no call in between, takes
+   that argument register; one living across a call takes a callee-saved register (rbx, r12-r15)
+   while they last. The rest, and locals initialized by a literal, take stack slots.
+ - A float value takes one of xmm10-xmm15 (xmm0-xmm7 carry arguments and return values, xmm8 and
+   xmm9 are the emitter's scratch). Every XMM register is caller-saved, so a value living across
+   a call also gets a home stack slot: it is stored there after each write and reloaded after
+   each call it lives across. A value goes to a register only when that is estimated to be
+   cheaper: on the stack it costs its reads and writes; in a register, those stores and reloads
+   (nothing if it crosses no call). Each count is weighted by 10 for every loop around it. When
+   registers run short, the values saving the most keep them.
+ - A local whose address is taken stays on the stack.
+
  Static variables: each function, the top-level one included, lists in sa.json the names it binds
  to labels at entry (`globals`), and a top-level `global` declaration binds its name where it is
  declared. A name bound to a label is read by loading from the label and assigned by storing to

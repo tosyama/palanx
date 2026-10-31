@@ -404,6 +404,129 @@ TEST(regalloc, value_spilled_across_intervening_callsys) {
     EXPECT_NE(r.regMap.at(0).base, "%rdi");
 }
 
+// -------- Float values in XMM registers --------
+
+static const PhysRegs fltPhys = {
+    { "%rdi", "%rsi" }, { "%xmm0" }, { "%rbx" }, {}, {},
+    { "%xmm10", "%xmm11", "%xmm12" },
+};
+static const VRegType F64 = VRegType::Float64;
+
+TEST(regalloc, float_without_call_in_register) {
+    VFunc func;
+    func.instrs.push_back(InitVarF{0, F64, ".LF0"});
+    func.instrs.push_back(Add{1, 0, 0, F64});
+    func.instrs.push_back(RetPln{{1}, {F64}});
+
+    auto r = allocateRegisters(func, fltPhys);
+
+    EXPECT_EQ(r.regMap.at(0).base, "%xmm10");
+    EXPECT_EQ(r.regMap.at(1).base, "%xmm11");
+    EXPECT_EQ(r.regMap.at(1).homeOffset, 0);
+    EXPECT_EQ(r.frameSize, 0);
+}
+
+// Kept in a register, it would cost a store and a reload: no cheaper than
+// its two stack accesses.
+TEST(regalloc, float_read_once_after_call_on_stack) {
+    VFunc func;
+    func.instrs.push_back(InitVarF{0, F64, ".LF0"});
+    func.instrs.push_back(Add{1, 0, 0, F64});
+    func.instrs.push_back(CallC{"f", {}, {}, {}});
+    func.instrs.push_back(RetPln{{1}, {F64}});
+
+    auto r = allocateRegisters(func, fltPhys);
+
+    EXPECT_TRUE(r.regMap.at(1).isStack());
+}
+
+TEST(regalloc, float_read_often_after_call_homed) {
+    VFunc func;
+    func.instrs.push_back(InitVarF{0, F64, ".LF0"});
+    func.instrs.push_back(Add{1, 0, 0, F64});      // idx 1
+    func.instrs.push_back(CallC{"f", {}, {}, {}}); // idx 2
+    func.instrs.push_back(Add{2, 1, 1, F64});
+    func.instrs.push_back(Add{3, 2, 1, F64});
+    func.instrs.push_back(RetPln{{3}, {F64}});
+
+    auto r = allocateRegisters(func, fltPhys);
+
+    const PhysLoc& v1 = r.regMap.at(1);
+    ASSERT_FALSE(v1.isStack());
+    EXPECT_LT(v1.homeOffset, 0);
+    EXPECT_EQ(r.storesAfter.at(1), vector<VReg>{1});
+    EXPECT_EQ(r.reloadsAfter.at(2), vector<VReg>{1});
+}
+
+// One read inside a loop with a call costs as much as reloading after the
+// call each iteration; a second read tips it to a register.
+TEST(regalloc, float_loop_weighting) {
+    for (bool twice : {false, true}) {
+        VFunc func;
+        func.instrs.push_back(InitVarF{0, F64, ".LF0"});
+        func.instrs.push_back(Add{1, 0, 0, F64});
+        func.instrs.push_back(Label{"top"});
+        func.instrs.push_back(CallC{"f", {}, {}, {}});
+        if (twice) func.instrs.push_back(Add{2, 1, 1, F64});
+        else       func.instrs.push_back(Neg{2, 1, F64});
+        func.instrs.push_back(DerefStore{9, 0, 2, F64});
+        func.instrs.push_back(Jmp{"top"});
+
+        auto r = allocateRegisters(func, fltPhys);
+
+        EXPECT_EQ(r.regMap.at(1).isStack(), !twice) << twice;
+    }
+}
+
+TEST(regalloc, float_pressure_keeps_highest_gain) {
+    static const PhysRegs onePhys = { {}, {}, {}, {}, {}, { "%xmm10" } };
+    VFunc func;
+    func.instrs.push_back(InitVarF{0, F64, ".LF0"});
+    func.instrs.push_back(InitVarF{1, F64, ".LF1"});
+    func.instrs.push_back(Add{2, 1, 1, F64});
+    func.instrs.push_back(Add{3, 2, 1, F64});
+    func.instrs.push_back(Add{4, 3, 0, F64});
+    func.instrs.push_back(RetPln{{4}, {F64}});
+
+    auto r = allocateRegisters(func, onePhys);
+
+    EXPECT_TRUE(r.regMap.at(0).isStack());
+    EXPECT_EQ(r.regMap.at(1).base, "%xmm10");
+}
+
+TEST(regalloc, float_address_taken_on_stack) {
+    VFunc func;
+    func.instrs.push_back(InitVarF{0, F64, ".LF0"});
+    func.instrs.push_back(LeaLocal{1, 0});
+    func.instrs.push_back(Add{2, 0, 0, F64});
+    func.instrs.push_back(CallC{"f", {1, 2}, {}, {}});
+
+    auto r = allocateRegisters(func, fltPhys);
+
+    EXPECT_TRUE(r.regMap.at(0).isStack());
+}
+
+// A param arriving in an XMM arg register is copied to its register, and to
+// its home slot too when it lives across a call.
+TEST(regalloc, float_param_homed) {
+    VFunc func;
+    func.params = {{0, F64}};
+    func.instrs.push_back(CallC{"f", {}, {}, {}});
+    func.instrs.push_back(Add{1, 0, 0, F64});
+    func.instrs.push_back(Add{2, 1, 0, F64});
+    func.instrs.push_back(RetPln{{2}, {F64}});
+
+    auto r = allocateRegisters(func, fltPhys);
+
+    const PhysLoc& p = r.regMap.at(0);
+    ASSERT_FALSE(p.isStack());
+    ASSERT_EQ(r.paramCopies.size(), 2u);
+    EXPECT_EQ(r.paramCopies[0].dst.base, p.base);
+    EXPECT_TRUE(r.paramCopies[1].dst.isStack());
+    EXPECT_EQ(r.paramCopies[1].dst.stackOffset, p.homeOffset);
+    EXPECT_EQ(r.reloadsAfter.at(0), vector<VReg>{0});
+}
+
 // Only signed integers take the less/greater codes; unsigned, pointers, and
 // floats (ucomis* sets CF/ZF) take below/above.
 TEST(x86, setcc_for_op_by_type) {

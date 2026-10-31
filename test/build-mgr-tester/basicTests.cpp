@@ -184,6 +184,14 @@ TEST(build_mgr, float_cmp) {
 	ASSERT_EQ(output, "1\n0\n0\n");
 }
 
+// Float values in XMM registers: across calls, in loops, under register
+// pressure, as params and multiple returns, and an address-taken local.
+TEST(build_mgr, float_regs) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/382_float_regs.pa");
+	ASSERT_EQ(output, "22.5\n38\n8.38411\n6\n7 12\n63\n3 0.75\n");
+}
+
 TEST(build_mgr, float_neg) {
 	cleanTestEnv();
 	// flo64 unary negation: literal neg and variable neg via ->

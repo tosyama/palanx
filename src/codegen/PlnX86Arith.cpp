@@ -90,12 +90,7 @@ void PlnX86CodeGen::emitInstrDiv(const Div& dv, const RegMap& rm)
         emitIntDivMod(dv.dst, dv.lhs, dv.rhs, dv.type, "%rax", rm);
         return;
     }
-    if (!rm.count(dv.dst)) return;  // dead: result never used
-    const char* mov = movInstrForType(dv.type);
-    const char* div = dv.type == VRegType::Float32 ? "divss" : "divsd";
-    out << "\t" << mov << " " << srcOperand(rm.at(dv.lhs)) << ", %xmm8\n";
-    out << "\t" << div << " " << srcOperand(rm.at(dv.rhs)) << ", %xmm8\n";
-    out << "\t" << mov << " %xmm8, " << srcOperand(rm.at(dv.dst)) << "\n";
+    emitBinArith(dv.type == VRegType::Float32 ? "divss" : "divsd", dv.dst, dv.lhs, dv.rhs, dv.type, rm);
 }
 
 void PlnX86CodeGen::emitInstrMod(const Mod& md, const RegMap& rm)
@@ -132,9 +127,11 @@ void PlnX86CodeGen::emitInstrNeg(const Neg& n, const RegMap& rm)
         const char* mov  = movInstrForType(n.type);
         const char* xorI = (n.type == VRegType::Float32) ? "xorps" : "xorpd";
         const char* mask = (n.type == VRegType::Float32) ? ".neg_mask_f32" : ".neg_mask_f64";
-        out << "\t" << mov  << " " << srcOperand(src_loc) << ", %xmm8\n";
-        out << "\t" << xorI << " " << mask << "(%rip), %xmm8\n";
-        out << "\t" << mov  << " %xmm8, " << srcOperand(dst_loc) << "\n";
+        string reg = dst_loc.isStack() ? "%xmm8" : dst_loc.base;
+        out << "\t" << mov  << " " << srcOperand(src_loc) << ", " << reg << "\n";
+        out << "\t" << xorI << " " << mask << "(%rip), " << reg << "\n";
+        if (dst_loc.isStack())
+            out << "\t" << mov  << " %xmm8, " << srcOperand(dst_loc) << "\n";
         return;
     }
     emitUnArith(negInstrForType(n.type), n.dst, n.src, n.type, rm);
@@ -175,8 +172,7 @@ void PlnX86CodeGen::emitInstrShiftImm(const ShiftImm& s, const RegMap& rm)
                 s.dst, s.src, s.type, rm);
 }
 
-// %xmm8/%xmm9 are free as scratch for the same reason as in
-// emitInstrConvert: all float VRegs are currently stack-allocated.
+// %xmm8/%xmm9 are the emitter's scratch, never assigned to a VReg.
 void PlnX86CodeGen::emitInstrPackF32x2(const PackF32x2& p, const RegMap& rm)
 {
     if (!rm.count(p.dst)) return;  // dead
@@ -215,10 +211,6 @@ void PlnX86CodeGen::emitInstrConvert(const Convert& c, const RegMap& rm)
     if (dst_loc.isStack()) {
         // Spilled dst: convert into scratch register, then store to stack slot.
         // Float results use %xmm8 as scratch; integer results use %rax.
-        // NOTE: %xmm8 is safe only because all float VRegs are currently
-        // stack-allocated (no xmm register allocator).  If XMM registers are
-        // ever assigned to live float VRegs, %xmm8 must be chosen more carefully
-        // (e.g. pick a register not live at this instruction).
         string scratchBase = dst_is_float ? "%xmm8" : "%rax";
         emitConvert(scratchBase, rm.at(c.src), c.from, c.to);
         string scratch = dst_is_float ? scratchBase : sizedRegName(scratchBase, c.to);

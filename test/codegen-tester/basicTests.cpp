@@ -1304,7 +1304,8 @@ TEST(codegen, struct_ret_mixed) {
     ASSERT_NE(asm_text.find("movq %rax,"),     string::npos);
     ASSERT_NE(asm_text.find("movsd %xmm0,"),   string::npos);
     ASSERT_NE(asm_text.find(", 8(%r"),         string::npos);
-    ASSERT_EQ(asm_text.find("%xmm1"),          string::npos);
+    ASSERT_EQ(asm_text.find("%xmm1,"),         string::npos);
+    ASSERT_EQ(asm_text.find("%xmm1\n"),        string::npos);
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/071_struct_ret_mixed.o"), "");
 }
