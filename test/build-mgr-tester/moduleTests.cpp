@@ -43,6 +43,14 @@ TEST(build_mgr, alias_import) {
 	ASSERT_EQ(output, "9\n8\n");
 }
 
+// An operator cannot be written qualified, so an alias import brings it
+// unqualified; a selective import names it.
+TEST(build_mgr, operator_func_import) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/381_operator_func_import.pa");
+	ASSERT_EQ(output, "2 4 6\n-1 -2 -3\n");
+}
+
 TEST(build_mgr, selective_alias_import) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/048_selective_alias_import.pa");

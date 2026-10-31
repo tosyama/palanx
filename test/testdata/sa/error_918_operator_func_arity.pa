@@ -1,0 +1,2 @@
+type vec2 { flo32 x; flo32 y; };
+func %(@vec2 a) -> vec2 { return [a.x, a.y]; }

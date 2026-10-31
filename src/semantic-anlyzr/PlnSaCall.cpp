@@ -312,6 +312,34 @@ static json chainedValue(const json& value)
 	return {{"expr-type", "chained-value"}, {"value", value}}; // LCOV_EXCL_EXCEPTION_BR_LINE
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
+// An arithmetic operator with a struct operand: a call of the functions the
+// operator names, given the operands as values chained into it, so that each
+// function chosen decides whether it borrows or copies one. An operand
+// already analyzed (in `probes`) is not analyzed again: a nested operator
+// would otherwise be analyzed once per enclosing one.
+json PlnSemanticAnalyzer::sa_operator_call(const json& expr, const string& op,
+                                           const vector<const json*>& operands, vector<json> probes)
+{
+	json call = {{"expr-type", "call"}, {"name", op}, {"args", json::array()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (expr.contains("loc")) call["loc"] = expr["loc"];
+	vector<CallArg> args;
+	for (size_t i = 0; i < operands.size(); i++) {
+		CallArg a;
+		a.ast = *operands[i];
+		a.pending = a.chained = true;
+		if (!probes[i].is_null()) a.probe = move(probes[i]);
+		else if (!isAggregateLitArg(a.ast)) a.probe = literalDefaultType(a.ast);
+		args.push_back(move(a));
+	}
+	vector<Callee> cands = findCallees(op);
+	if (cands.empty()) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_NoOperatorFunc, op, argTypesText(args)) << endl;
+		exit(1);
+	}
+	Callee callee = selectCallee(call, op, cands, args);
+	return makeCallNode(call, callee, op, &args);
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
 // A call of one of `cands`: a single one is bound as it is, so its own
 // diagnostics are what an unfit argument reports.
 json PlnSemanticAnalyzer::makeCall(const json& expr, const vector<Callee>& cands, const string& writtenName)
@@ -353,7 +381,11 @@ json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
 		cerr << locPrefix(arg) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
 		exit(1);
 	}
-	bool isMutable = arg["mutable"];
+	return borrowExpiring(move(saArg), arg["mutable"]);
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+json PlnSemanticAnalyzer::borrowExpiring(json saArg, bool isMutable)
+{
 	json& vt = saArg["value-type"];
 	if (isArrLevel(vt)) vt = withArrPermission(vt, isMutable);
 	else vt["mutable"] = isMutable;
@@ -746,14 +778,18 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 			saArgs.push_back(ownedBlockArg(locNode, arg, ca, *param, argIdx, funcName));
 			continue;
 		}
+		// A returned value chained as '@v' is borrowed as it was analyzed: an
+		// operator's operand may be one with no call written for '@' to take.
+		bool borrowsProbe = probed && arg != ca.ast && isExpiringOwned(ca.probe);
 		json saArg = isLit ? sa_lit_arg(arg, isCFunc && !byValStruct ? nullptr : paramVT,
 		                                param ? param->value("name", "") : "", funcName,
 		                                argAst, litBody, litRelease)
 		           : probed && arg == ca.ast ? move(ca.probe)
+		           : borrowsProbe ? borrowExpiring(move(ca.probe), arg["mutable"])
 		           : !ca.pending ? move(ca.sa)
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
 		           : sa_arg_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-		bool expiring = isCallBorrow(arg) || isExpiringOwned(saArg);
+		bool expiring = borrowsProbe || isCallBorrow(arg) || isExpiringOwned(saArg);
 		if (takesVarrData(saArg["value-type"], paramVT, isCFunc))
 			saArg = varrData(move(saArg));
 		if (paramVT) {
@@ -793,7 +829,9 @@ json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, Ca
 	bool isLit = isAggregateLitArg(arg);
 	json saArg;
 	if (!isLit) {
-		saArg = !ca.pending ? move(ca.sa) : sa_arg_expression(arg, registry_.fromJson(paramVT));
+		bool probed = ca.chained && ca.probe.contains("expr-type") && arg == ca.ast;
+		saArg = !ca.pending ? move(ca.sa) : probed ? move(ca.probe)
+		      : sa_arg_expression(arg, registry_.fromJson(paramVT));
 		if (auto d = callArgMismatch(arg, saArg, param, argIdx, false, funcName))
 			reportDiag(locNode, *d);
 		if (isStructRetCall(saArg)) {

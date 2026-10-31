@@ -20,8 +20,10 @@ version: 0.2.3 — improvements found through the samples (ray tracer, echo serv
   same way (`global optind for parse!;`); reading it stays unrestricted.
 - Operator functions: a function named by an operator (`func -(@vec3 a, @vec3 b) -> vec3`)
   defines binary `+ - * / %` or unary `-` when at least one operand is a struct. It is chosen
-  like any overloaded function; an operand is passed to a `@T` parameter as it is written, and a
-  `@!T` parameter is not allowed.
+  like any overloaded function, and an operand is passed as a value chained into a call is
+  (`a -> f()`): borrowed by a `@T` parameter, copied into a `T` one; a `@!T` parameter is not
+  allowed. A module imported under an alias brings its operators too, and a selective import
+  lists them by their symbols (`import vec3, +, - from "vecmath.pa";`).
 - Performance: a function returning a struct returns it into storage the caller provides (frame
   storage for a temporary or a `$T` variable) instead of allocating it on the heap on every call
   (Issues.md #12), and `flo32`/`flo64` values are kept in XMM registers (Issues.md #13). Both are
@@ -208,6 +210,12 @@ Design:
  of a `$T` or fixed-size array global is a `static-alloc` instead of a `frame-alloc`, so a
  function C calls after the top level returns (an `atexit` handler) still finds it. Importing a module that permits a function to use one of its
  Palan globals is an error, since an imported module's top level never runs.
+ An arithmetic operator (`+ - * / %`, unary `-`) with a struct operand (its storage or a borrow)
+ is a call of the functions named by its symbol, resolved as values chained into a call are: each
+ operand is analyzed once, and the function chosen decides whether it is borrowed or copied.
+ sa.json has no operator form; the call is an ordinary Palan call, and an operator function's
+ symbol spells the operator as a name starting with a digit (`0sub`), a valid label that no
+ written function name can be.
 
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:

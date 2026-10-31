@@ -798,6 +798,26 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg3 != "\x01");
 			return "No function '" + arg1 + "' takes (" + arg2 + "); there are " + arg3 + ".";
 
+		case E_OperatorFuncArity:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "operator function '" + arg1 + "' must take " + arg2 + ".";
+
+		case E_OperatorFuncNoStruct:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "operator function '" + arg1 + "' must take a struct ('T' or '@T') parameter.";
+
+		case E_OperatorFuncWritableParam:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg2 + "' of operator function '" + arg1
+			       + "' cannot be '@!': an operand is never passed for writing.";
+
+		case E_NoOperatorFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "No operator function '" + arg1 + "' takes (" + arg2 + ").";
+
 		case E_FuncNameNeedsType:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");

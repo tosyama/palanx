@@ -445,6 +445,31 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 	}
 }
 
+// An operator function is called only where an operand is a struct, and an
+// operand is never written with '@!' (see sa_operator_call).
+void PlnSemanticAnalyzer::validateOperatorSig(const json& funcDef)
+{
+	const string& name = funcDef["name"].get<string>();
+	if (!operatorFuncNames().count(name)) return;
+	const json& params = funcDef["parameters"];
+	size_t n = params.size();
+	if (n != 2 && !(name == "-" && n == 1)) {
+		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_OperatorFuncArity, name,
+			name == "-" ? "one or two parameters" : "two parameters") << endl;
+		exit(1);
+	}
+	for (auto& p : params)
+		if (p["var-type"].value("mutable", false)) {
+			cerr << locPrefix(p.contains("loc") ? p : funcDef) << PlnSaMessage::getMessage(
+				E_OperatorFuncWritableParam, name, p["name"].get<string>()) << endl;
+			exit(1);
+		}
+	if (none_of(params.begin(), params.end(), [](const json& p) { return isStructPntr(p["var-type"]); })) {
+		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_OperatorFuncNoStruct, name) << endl;
+		exit(1);
+	}
+}
+
 // The header's data pointer: what `v[i]` indexes and a C function or a `[]T`
 // receives. Through a read-only borrow the elements are read-only too.
 json PlnSemanticAnalyzer::varrData(json varr)
@@ -617,6 +642,7 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 	validateNativeSig(funcEntry);
+	validateOperatorSig(funcEntry);
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
 	else
@@ -1264,6 +1290,7 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 			adoptTypeDeps(sub, r["var-type"], stmt);
 		if (funcEntry.contains("ret-type")) adoptTypeDeps(sub, funcEntry["ret-type"], stmt);
 
-		currentScope[alias][fname].push_back(funcEntry);
+		// An operator cannot be written qualified, so an alias does not hide it.
+		currentScope[operatorFuncNames().count(fname) ? "" : alias][fname].push_back(funcEntry);
 	}
 }

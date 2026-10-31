@@ -407,6 +407,8 @@ class PlnSemanticAnalyzer {
 	// Also gives back a void call or a multi-value call, which has no value-type.
 	json sa_expr_maybe_void(const json &expr, const PlnType* expectedType = nullptr);
 	json sa_expr_arith(const json& expr, const PlnType* expectedType);
+	json sa_operator_call(const json& expr, const string& op,
+	                      const vector<const json*>& operands, vector<json> probes);
 	json sa_expr_shift(const json& expr, const PlnType* expectedType);
 	void checkIntLiteralRange(const json& lit);
 	json sa_expr_call(const json& expr);
@@ -437,6 +439,7 @@ class PlnSemanticAnalyzer {
 	json saCallArgs(const json& locNode, const json& args, const json& funcParams,
 	                bool isCFunc, const string& funcName);
 	bool takesExpectedType(const json& expr);
+	json knownValueType(const json& expr) const;
 	vector<CallArg> analyzeCallArgs(const json& args);
 	optional<SaDiag> callArgMismatch(const json& argAst, const json& saArg, const json& param,
 	                                 size_t argIdx, bool isCFunc, const string& funcName);
@@ -596,6 +599,7 @@ class PlnSemanticAnalyzer {
 	// normalizeSig -- a struct parameter is still prim(Name) before
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
+	void  validateOperatorSig(const json& funcDef);
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
 	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
 	json  varrStorageType(const json& locNode, const json& arr);
@@ -620,6 +624,7 @@ class PlnSemanticAnalyzer {
 	void  checkArrBorrowBinding(const json& locNode, const json& srcAst, const json& saValue,
 	                            const json& dstType);
 	json  sa_call_borrow_arg(const json& arg);
+	json  borrowExpiring(json saArg, bool isMutable);
 	json  sa_lit_arg(const json& arg, const json* paramVT, const string& paramName,
 	                 const string& funcName, json& argAst, json& body, json& release);
 	json  bindCallTemp(json saArg);

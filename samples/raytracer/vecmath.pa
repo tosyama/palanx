@@ -22,17 +22,17 @@ export func dot(@vec3 v1, @vec3 v2) -> flo32
 	return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
 }
 
-export func add(@vec3 v1, @vec3 v2) -> vec3
+export func +(@vec3 v1, @vec3 v2) -> vec3
 {
 	return [v1.x + v2.x, v1.y + v2.y, v1.z + v2.z];
 }
 
-export func sub(@vec3 v1, @vec3 v2) -> vec3
+export func -(@vec3 v1, @vec3 v2) -> vec3
 {
 	return [v1.x - v2.x, v1.y - v2.y, v1.z - v2.z];
 }
 
-export func mul(@vec3 v, flo32 f) -> vec3
+export func *(@vec3 v, flo32 f) -> vec3
 {
 	return [v.x * f, v.y * f, v.z * f];
 }

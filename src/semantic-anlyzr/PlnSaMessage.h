@@ -188,6 +188,10 @@ enum PlnSaMessageCode {
 	E_GlobalPermitDuplicate,	// arg1: variable name, arg2: function name
 	E_GlobalUsedBeforeDecl,	// arg1: variable name, arg2: function name
 	E_ImportModuleWithGlobals,	// arg1: variable name
+	E_OperatorFuncArity,	// arg1: operator, arg2: parameter counts it takes
+	E_OperatorFuncNoStruct,	// arg1: operator
+	E_OperatorFuncWritableParam,	// arg1: operator, arg2: parameter name
+	E_NoOperatorFunc,	// arg1: operator, arg2: operand types
 };
 
 class PlnSaMessage

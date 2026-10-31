@@ -170,3 +170,9 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 24. Arrays Sized at Run Time Are Moved and Copied Unchecked
 
 **Summary:** An array whose size is known only at run time is moved, given, taken over and copied by the sizes of the variable or row receiving or releasing it (v0.2.3); whether the other side has those sizes is not checked, so a shorter source is read past its end and a block freed by the wrong sizes leaks or frees elements it does not have. Two cases have no sizes on one side and stay compile errors: copying from a `[]T` parameter into an array, and copying an array sized at run time into a `[+]T`. Keeping each array's length with it (see #18) would allow checking and both cases.
+
+---
+
+## 25. An Operator Over a Call Whose Functions Return Different Types
+
+**Summary:** Before an overloaded function is chosen, an argument that is an arithmetic operator over a literal is taken to be a number the parameter types, unless an operand is known to be a struct without analyzing it: a variable, a field reached from one, or a call whose functions all return one struct type (v0.2.3). When the functions of a call's name return different types, `g(h(x) * 2.0)` is still taken to be a number, so a `g` taking the struct `h` returns is not chosen. Telling it would need the call analyzed before the choice, and once more after it.

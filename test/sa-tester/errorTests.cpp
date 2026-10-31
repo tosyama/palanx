@@ -1404,6 +1404,16 @@ TEST(sa_error, give_and_take)
 		// A `[]T` parameter keeps no length, nor does a `[+]T` take one from the array it copies.
 		{"error_916_copy_from_unsized_borrow.pa", ":4:2: error: cannot copy '[?]int32' into '[4]int32'"},
 		{"error_917_varr_copy_from_run_size.pa", ":4:1: error: cannot copy '[?]int32' into '[+]int32'"},
+		{"error_918_operator_func_arity.pa", ":2:1: error: operator function '%' must take two parameters."},
+		{"error_919_operator_func_no_struct.pa",
+		 ":1:1: error: operator function '*' must take a struct ('T' or '@T') parameter."},
+		{"error_920_operator_func_writable_param.pa",
+		 ":2:1: error: parameter 'a' of operator function '+' cannot be '@!': an operand is never passed for writing."},
+		{"error_921_no_operator_func.pa", ":3:10: error: No operator function '/' takes (vec2, vec2)."},
+		// An operand cannot be written so as to choose between a borrow and a copy.
+		{"error_922_operator_func_ambiguous.pa", ":5:10: error: Ambiguous function call '-': it can mean -(@vec2), -(vec2)."},
+		{"error_923_operator_func_no_match.pa",
+		 ":4:10: error: No function '+' takes (vec2, flo64); there are +(@vec2, @vec2)."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

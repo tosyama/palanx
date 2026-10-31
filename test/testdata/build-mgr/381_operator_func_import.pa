@@ -1,0 +1,13 @@
+cinclude <stdio.h>;
+{
+	import "lib_vec_ops.pa" as V;
+	V.vec3 a = [1.0, 2.0, 3.0];
+	V.vec3 b = a + a;
+	printf("%g %g %g\n", b.x, b.y, b.z);
+}
+{
+	import vec3, - from "lib_vec_ops.pa";
+	vec3 a = [1.0, 2.0, 3.0];
+	vec3 b = -a;
+	printf("%g %g %g\n", b.x, b.y, b.z);
+}

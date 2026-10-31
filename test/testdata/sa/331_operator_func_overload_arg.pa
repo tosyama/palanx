@@ -1,0 +1,11 @@
+type vec2 { flo32 x; flo32 y; };
+type S { vec2 v; };
+func *(@vec2 a, flo32 f) -> vec2 { return [a.x * f, a.y * f]; }
+func unit() -> vec2 { return [1.0, 0.0]; }
+func g(vec2 v) {}
+func g(int32 i) {}
+
+S s;
+g(s.v * 2.0);
+g(unit() * 2.0);
+g(1 + 2);

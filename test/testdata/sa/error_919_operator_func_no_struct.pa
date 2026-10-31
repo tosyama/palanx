@@ -1,0 +1,1 @@
+func *(flo32 a, flo32 b) -> flo32 { return a; }

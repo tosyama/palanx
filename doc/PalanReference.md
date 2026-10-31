@@ -988,6 +988,42 @@ show(2.5);          // float 2.5
 - Receiving several return values (`(a, b) = f(x)`) needs the functions returning that many to
   return the same types.
 
+### Operator Functions
+
+A function named by an operator defines binary `+`, `-`, `*`, `/`, `%` or unary `-` where an
+operand is a struct (a struct variable, field, borrow or returned struct):
+
+```palan
+cinclude <stdio.h>;
+
+type vec3 { flo32 x; flo32 y; flo32 z; };
+
+func +(@vec3 a, @vec3 b) -> vec3 { return [a.x + b.x, a.y + b.y, a.z + b.z]; }
+func *(@vec3 v, flo32 f) -> vec3 { return [v.x * f, v.y * f, v.z * f]; }
+func *(flo32 f, @vec3 v) -> vec3 { return [v.x * f, v.y * f, v.z * f]; }
+func -(vec3 v) -> vec3 {
+    -v.x -> v.x; -v.y -> v.y; -v.z -> v.z;
+    return v;
+}
+
+vec3 a = [1, 2, 3];
+vec3 b = -(a + a * 2.0);           // -3 -6 -9
+vec3 c = 2.0 * b;                  // -6 -12 -18
+printf("%g %g %g\n", c.x, c.y, c.z);
+```
+
+- `a + b` calls the `+` functions as `+(a, b)` would, chosen as an [overloaded](#overloading)
+  call among those taking two parameters; `-a` among the `-` functions taking one. With no
+  function for the operator and the operands' types, it is a compile error.
+- An operand is passed as a value chained into a call (`a -> f()`) is: a `@T` parameter borrows
+  it, a `T` parameter receives a copy, and a struct an operator or a call returns is handed over
+  without one. When both a `@T` and a `T` function fit, the operator is ambiguous.
+- `+`, `*`, `/` and `%` take two parameters, `-` one or two. At least one parameter must be a
+  struct (`T` or `@T`), and none can be `@!`.
+- An operator over numbers only is the built-in one and cannot be defined.
+- A struct an operator returns can be borrowed as a call argument: `f(@(a + b))`.
+- Comparison operators cannot be defined.
+
 ---
 
 ## 8. Arrays
@@ -2290,7 +2326,8 @@ import square from "lib_math.pa";
 printf("%ld\n", square(4));   // 16  (cube is not imported)
 ```
 
-Multiple names can be listed with commas: `import square, cube from "lib_math.pa"`.
+Multiple names can be listed with commas: `import square, cube from "lib_math.pa"`. An
+[operator function](#operator-functions) is listed by its operator: `import vec3, +, - from "vec3.pa"`.
 
 ### Alias Import
 
@@ -2305,6 +2342,7 @@ printf("%ld\n", L.cube(2));    // 8
 ```
 
 - All calls must use the `L.f()` qualified form. Unqualified `square()` is a compile error.
+- Operator functions apply unqualified (`a + b`), since an operator cannot be written with `L.`.
 - A variable named `L` hides the alias: `L.f()` is then a method-form call on the variable (see §7).
 
 ### Selective Alias Import
@@ -2405,8 +2443,8 @@ func cmp(@int32 a, @int32 b) -> int32 r {
 ```
 
 - A top-level variable declared with `global` can be used by the functions its `for` list
-  names. A function named alone may only read the variable; with `!` after its name it may also
-  write it. A `global` statement without a type adds functions to the list later
+  names, an [operator function](#operator-functions) by its operator (`for +`). A function named
+  alone may only read the variable; with `!` after its name it may also write it. A `global` statement without a type adds functions to the list later
   (`global dir for cmp;`). Functions not listed do not see the variable, so they may use its
   name for their own parameters and variables; a listed function may not.
 - This is how a function C calls with fixed arguments, such as a `qsort` comparator or a libuv

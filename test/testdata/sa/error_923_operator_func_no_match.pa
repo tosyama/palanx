@@ -1,0 +1,4 @@
+type vec2 { flo32 x; flo32 y; };
+func +(@vec2 a, @vec2 b) -> vec2 { return [a.x + b.x, a.y + b.y]; }
+vec2 a = [1.0, 2.0];
+vec2 b = a + 1.0;

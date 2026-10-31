@@ -282,7 +282,7 @@ struct BodyList {
 %type <json>	import cinclude import_path
 %type <PList<string>>	import_ids link_libs
 %type <vector<string>>	link_clause
-%type <string>	import_as
+%type <string>	import_as func_name op_func_name
 %type <json>	expression term store_loc
 %type <PList<json>>	arguments
 %type <json>	array_desc array_row dict_desc
@@ -529,9 +529,9 @@ import: KW_IMPORT import_path import_as
 	}
 	; 
 
-import_ids: ID
+import_ids: func_name
 	{ $$ = PList<string>().push($1); }
-	| import_ids ',' ID
+	| import_ids ',' func_name
 	{ $$ = $1.push($3); }
 	;
 
@@ -702,9 +702,9 @@ global_funcs: global_func
 	{ $$ = $1.push($3); }
 	;
 
-global_func: ID
+global_func: func_name
 	{ $$ = {{"name", $1}, {"writable", false}}; LOC($$, @$); }
-	| ID '!'
+	| func_name '!'
 	{ $$ = {{"name", $1}, {"writable", true}}; LOC($$, @$); }
 	;
 
@@ -1190,16 +1190,29 @@ store_loc
 	}
 	;
 
-func_def: KW_FUNC ID '(' paramaters ')' return_def block_obj
+func_def: KW_FUNC func_name '(' paramaters ')' return_def block_obj
 	{
 		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "palan"}}, $4, $6, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
 		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $7}}, {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
-	| KW_EXPORT KW_FUNC ID '(' paramaters ')' return_def block_obj
+	| KW_EXPORT KW_FUNC func_name '(' paramaters ')' return_def block_obj
 	{
 		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
 		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
 	}
+	;
+
+func_name: ID
+	{ $$ = $1; }
+	| op_func_name
+	{ $$ = $1; }
+	;
+
+op_func_name: '+' { $$ = "+"; }
+	| '-' { $$ = "-"; }
+	| '*' { $$ = "*"; }
+	| '/' { $$ = "/"; }
+	| '%' { $$ = "%"; }
 	;
 
 func_item: func_def

@@ -1287,6 +1287,27 @@ TEST(gen_ast, owner_view_target) {
 	ASSERT_EQ(init["src"]["expr-type"], "chain-call");
 }
 
+// An operator names a function where a function name can be written: its
+// definition, an import target and a global's permit.
+TEST(gen_ast, operator_func) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/154_operator_func.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& fs = jout["ast"]["functions"];
+	ASSERT_EQ(fs.size(), 2);
+	ASSERT_EQ(fs[0]["name"], "+");
+	ASSERT_EQ(fs[0]["parameters"].size(), 2);
+	ASSERT_EQ(fs[1]["name"], "-");
+	ASSERT_EQ(fs[1]["export"], true);
+	ASSERT_EQ(fs[1]["parameters"].size(), 1);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts[1]["targets"], json::array({"vec3", "*", "%"}));
+	ASSERT_EQ(stmts[3]["funcs"][0]["name"], "/");
+	ASSERT_EQ(stmts[3]["funcs"][0]["writable"], true);
+	ASSERT_EQ(stmts[3]["funcs"][1]["name"], "+");
+}
+
 // '->' binds tighter than comparisons and logical operators, looser than arithmetic.
 TEST(gen_ast, arrow_precedence) {
 	cleanTestEnv();

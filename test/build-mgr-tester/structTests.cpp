@@ -1360,3 +1360,8 @@ TEST(build_mgr, struct_ret_dest_mtrace) {
 TEST(build_mgr, c_struct_ret_mtrace) {
 	expectMtraceRun("379_c_struct_ret_mtrace", "3 1 14 2\n4 3 3\n4 2 2\n", 5);
 }
+
+TEST(build_mgr, operator_func_mtrace) {
+	expectMtraceRun("380_operator_func_mtrace",
+		"1.5 2.5 3.5\n0.5 1.5 2.5\n-1 -2 -3\n-1.5 -2.5 -3.5\n1.5 3 4.5\n0 -1 -2\n3\n2.5 4.5 6.5\n", 4);
+}

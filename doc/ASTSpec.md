@@ -38,7 +38,7 @@ AST model
 
 Function definition model
 -------------------------
-- name\* - Function name string
+- name\* - Function name string; an operator function's is its operator: "+" "-" "*" "/" "%"
 - func-type\* - Function type string: "palan" "c" "syscall"
 - loc\* - Location Array (palan, syscall only)
 
@@ -406,7 +406,7 @@ Statement model
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
-    - targets - Import target name string list, null - all
+    - targets - Import target name string list (a function name, a type name or an operator), null - all
     - alias - Alias name string
   2. cinclude - C header include statement (expands in place, scope-aware)
     - path-type\* - Path type string: "src" "inc"
@@ -529,7 +529,7 @@ Statement model
       or, with no list, `global name;`
     - name\* - Variable name string
     - funcs\* - Permitted function list, in source order (empty for `global name;`)
-      - name\* - Function name string
+      - name\* - Function name string (an operator for an operator function)
       - writable\* - Boolean, true when written with a trailing `!`
       - loc\* - Location Array
 

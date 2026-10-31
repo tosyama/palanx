@@ -433,11 +433,24 @@ std::string symbolType(const json& t)
     // LCOV_EXCL_EXCEPTION_BR_STOP
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
+const std::map<std::string, std::string>& operatorFuncNames()
+{
+    // LCOV_EXCL_EXCEPTION_BR_START
+    // A digit-led word: a label cannot hold the operator, and no written
+    // function name starts with a digit.
+    static const std::map<std::string, std::string> names = {
+        {"+", "0add"}, {"-", "0sub"}, {"*", "0mul"}, {"/", "0div"}, {"%", "0mod"},
+    };
+    // LCOV_EXCL_EXCEPTION_BR_STOP
+    return names;
+}
+
 std::string funcSymbol(const std::string& name, const json& params)
 {
     // LCOV_EXCL_EXCEPTION_BR_START
-    if (params.empty()) return name + ".v";
-    std::string s = name;
+    auto op = operatorFuncNames().find(name);
+    std::string s = op != operatorFuncNames().end() ? op->second : name;
+    if (params.empty()) return s + ".v";
     for (auto& p : params) s += "." + symbolType(p["var-type"]);
     return s;
     // LCOV_EXCL_EXCEPTION_BR_STOP

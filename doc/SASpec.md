@@ -195,6 +195,9 @@ A function defined inside another one has the enclosing function's symbol in pla
 among such blocks of the enclosing function or of the top level (`util..a.v..b1..f.v`,
 `util..b1..f.v`).
 
+- `<name>`: the function's name; an operator function's is a word that starts with a digit, so that
+  no written name can be it: `0add` `0sub` `0mul` `0div` `0mod` for `+ - * / %`
+  (`vecmath..0sub.R4vec3.R4vec3`).
 - `<module>`: the source file's name without `.pa`, with each byte outside `[A-Za-z0-9_]` written
   `_` and two lowercase hex digits, and `_` in front of a leading digit (`001_hello.pa` →
   `_001_hello`). The allocators build-mgr generates are in module `__allocators`, which SA names

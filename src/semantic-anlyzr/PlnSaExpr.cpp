@@ -708,7 +708,10 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		return sa_expr_shift(expr, expectedType);
 
 	} else if (expr_type == "neg") {
-		json operand = promoteOperand(sa_expression(expr["operand"], expectedType));
+		json operand = sa_expression(expr["operand"], expectedType);
+		if (isStructPntr(operand["value-type"]))
+			return sa_operator_call(expr, "-", {&expr["operand"]}, {move(operand)});
+		operand = promoteOperand(move(operand));
 		sa_expr["operand"]    = operand;
 		sa_expr["value-type"] = operand["value-type"];
 
@@ -851,15 +854,54 @@ bool PlnSemanticAnalyzer::takesExpectedType(const json& rawExpr)
 	string et = expr.value("expr-type", "");
 	if (et == "lit-int") return !expr.contains("value-type");
 	if (et == "lit-uint" || et == "lit-flo") return true;
-	if (et == "neg" || et == "bitnot") return takesExpectedType(expr["operand"]);
+	// Over a struct, an operator is an operator function's call, whose
+	// parameters type its literals.
+	auto structOperand = [&](const json& e) {
+		json t = knownValueType(e);
+		return t.is_object() && isStructPntr(t);
+	};
+	if (et == "neg") return !structOperand(expr["operand"]) && takesExpectedType(expr["operand"]);
+	if (et == "bitnot") return takesExpectedType(expr["operand"]);
 	if (et == "shl" || et == "shr") return takesExpectedType(expr["left"]);
 	if (arithOps.count(et)) {
+		if (structOperand(expr["left"]) || structOperand(expr["right"])) return false;
 		// A lit-int operand takes the other operand's type instead.
 		if (foldConstExpr(expr["left"])["expr-type"] == "lit-int") return takesExpectedType(expr["right"]);
 		if (foldConstExpr(expr["right"])["expr-type"] == "lit-int") return takesExpectedType(expr["left"]);
 		return takesExpectedType(expr["left"]) || takesExpectedType(expr["right"]);
 	}
 	return false;
+}
+
+// The type of a variable, of a field reached from one, or of a call whose
+// functions all return one type, told without analyzing the expression; null
+// for anything else, or where analyzing it would report an error.
+json PlnSemanticAnalyzer::knownValueType(const json& expr) const
+{
+	string et = expr.value("expr-type", "");
+	if (et == "id") {
+		const json* vt = findVar(expr["name"].get<string>());
+		return vt ? *vt : json();
+	}
+	if (et == "field-access") {
+		json objType = knownValueType(expr["object"]);
+		if (!objType.is_object() || !isStructPntr(objType)) return json();
+		auto def = structDefs_.find(objType["base-type"]["type-name"].get<string>());
+		if (def == structDefs_.end() || !def->second.isComplete) return json();
+		for (auto& f : def->second.fields)
+			if (f.name == expr["field"].get<string>() && f.unsupported.empty()) return fieldValueType(f);
+		return json();
+	}
+	if (et == "call") {
+		json ret;
+		for (auto& c : findCallees(expr["name"].get<string>())) {
+			const json* r = c.def->contains("ret-type") ? &(*c.def)["ret-type"] : nullptr;
+			if (!r || (!ret.is_null() && ret != *r)) return json();
+			ret = *r;
+		}
+		return ret;
+	}
+	return json();
 }
 
 // Literals and variables under the operators takesExpectedType follows:
@@ -901,19 +943,51 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	// Each literal is typed exactly once so its range check never fires on
 	// a provisional type.
 	if (isBoolPrim(expectedType)) expectedType = registry_.prim(PrimType::Name::Int32);
+
+	// Every operand but a lit-int is analyzed with expectedType as below, so
+	// it is analyzed first, to learn whether a struct makes this an operator
+	// function call. There, an operand that is no struct and takes the type
+	// it is given is typed by the parameter instead.
+	static const map<string, string> operators = {
+		{"add", "+"}, {"sub", "-"}, {"mul", "*"}, {"div", "/"}, {"mod", "%"},
+	};
+	json probes[2];
+	auto op = operators.find(expr_type);
+	if (op != operators.end()) {
+		bool structOperand = false;
+		for (int i : {0, 1}) {
+			const json& operand = expr[i ? "right" : "left"];
+			if (isAggregateLit(operand) || foldConstExpr(operand)["expr-type"] == "lit-int") continue;
+			probes[i] = sa_expression(operand, expectedType);
+			structOperand = structOperand || isStructPntr(probes[i]["value-type"]);
+		}
+		if (structOperand) {
+			for (int i : {0, 1})
+				if (!probes[i].is_null() && !isStructPntr(probes[i]["value-type"])
+				    && takesExpectedType(expr[i ? "right" : "left"]))
+					probes[i] = json();
+			return sa_operator_call(expr, op->second, {&expr["left"], &expr["right"]},
+			                        {move(probes[0]), move(probes[1])});
+		}
+	}
+	auto operand = [&](int i, const PlnType* type) {
+		return promoteOperand(probes[i].is_null() ? sa_expression(expr[i ? "right" : "left"], type)
+		                                          : move(probes[i]));
+	};
+
 	json left, right;
 	auto typeOf = [&](const json& other) {
 		return other.contains("value-type") ? registry_.fromJson(other["value-type"]) : expectedType;
 	};
 	if (foldConstExpr(expr["left"])["expr-type"] == "lit-int") {
-		right = promoteOperand(sa_expression(expr["right"], expectedType));
-		left  = promoteOperand(sa_expression(expr["left"],  typeOf(right)));
+		right = operand(1, expectedType);
+		left  = operand(0, typeOf(right));
 	} else if (foldConstExpr(expr["right"])["expr-type"] == "lit-int") {
-		left  = promoteOperand(sa_expression(expr["left"],  expectedType));
-		right = promoteOperand(sa_expression(expr["right"], typeOf(left)));
+		left  = operand(0, expectedType);
+		right = operand(1, typeOf(left));
 	} else {
-		left  = promoteOperand(sa_expression(expr["left"],  expectedType));
-		right = promoteOperand(sa_expression(expr["right"], expectedType));
+		left  = operand(0, expectedType);
+		right = operand(1, expectedType);
 	}
 	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 	const PlnType* rightType = registry_.fromJson(right["value-type"]);

@@ -360,11 +360,13 @@ inline bool isLocationExpr(const json& e)
 	string et = e.value("expr-type", "");
 	return et == "id" || et == "arr-index" || et == "field-access";
 }
+// An arithmetic operator is a call when an operator function defines it.
 inline bool isCallBorrow(const json& expr)
 {
 	if (expr.value("expr-type", "") != "addr-of") return false;
 	string et = expr["object"].value("expr-type", "");
-	return et == "call" || et == "member-call" || et == "chain-call";
+	return et == "call" || et == "member-call" || et == "chain-call"
+	    || et == "add" || et == "sub" || et == "mul" || et == "div" || et == "mod" || et == "neg";
 }
 
 // LCOV_EXCL_EXCEPTION_BR_START

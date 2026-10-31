@@ -121,9 +121,9 @@ func cast_ray(@vec3 orig, @vec3 dir, @[LN]Light lights, @[SN]Sphere spheres, int
 
 	flo32 diffuse_light_intensity = 0, specular_light_intensity = 0;
 	for @l in lights {	// check if the point lies in the shadow of the light source
-		$vec3 light_dir = sub(@l.position, @point) -> normalized();
+		$vec3 light_dir = l.position - point -> normalized();
 		(bool shadow_hit, $vec3 shadow_pt, $vec3 trashnm, $Material trashmat) = scene_intersect(@point, @light_dir, spheres);
-		if shadow_hit && norm(@sub(@shadow_pt, @point)) < norm(@sub(@l.position, @point)) {
+		if shadow_hit && norm(@(shadow_pt - point)) < norm(@(l.position - point)) {
 			continue;
 		}
 		diffuse_light_intensity + (l.intensity * fmaxf(0, dot(@light_dir, @N))) -> diffuse_light_intensity;
@@ -146,7 +146,7 @@ func scene_intersect(@vec3 orig, @vec3 dir, @[SN]Sphere spheres)
 
 	if fabsf(dir.y) > 0.001 { // intersect ray with checkerboard, avoid division by zero
 		flo32 d = -(orig.y + 4) / dir.y; // the checkerboard plane has equation y = -4
-		$vec3 p = mul(dir, d)->add(orig);
+		$vec3 p = dir * d + orig;
 		if (d > 0.001 && d < nearest_dist && fabsf(p.x) < 10 && p.z < -10 && p.z > -30) {
 			d -> nearest_dist;
 			p -> pt;
@@ -167,7 +167,7 @@ func scene_intersect(@vec3 orig, @vec3 dir, @[SN]Sphere spheres)
 		if (intersect && d < nearest_dist) {
 			d -> nearest_dist;
 			[orig.x + dir.x * d, orig.y + dir.y * d, orig.z + dir.z * d] -> pt;
-			sub(@pt, @s.center)-> normalized() -> N;
+			pt - s.center -> normalized() -> N;
 			s.material -> material;
 		}
 	}
@@ -180,7 +180,7 @@ func ray_intersect_sphere(@vec3 orig, @vec3 dir, @Sphere s)
 	false -> intersect;
 	0 -> dist_i;
 
-	$vec3 L = sub(@s.center, orig);
+	$vec3 L = s.center - orig;
 	flo32 tca = dot(@L, dir);
 	flo32 d2 = dot(@L, @L) - tca * tca;
 	flo32 r2 = s.radius * s.radius;
@@ -193,15 +193,15 @@ func ray_intersect_sphere(@vec3 orig, @vec3 dir, @Sphere s)
 
 func reflect(@vec3 I, @vec3 N) -> vec3
 {
-	return sub(I, @mul(N, 2 * dot(I, N)));
+	return I - N * (2 * dot(I, N));
 }
 
 func refract(@vec3 I, @vec3 N, flo32 eta_t, flo32 eta_i) -> vec3
 {
 	flo32 cosi = -fmaxf(-1, fminf(1, dot(I, N)));
-	if cosi < 0 { return refract(I, @mul(N, -1), eta_i, eta_t); }
+	if cosi < 0 { return refract(I, @(N * -1), eta_i, eta_t); }
 	flo32 eta = eta_i / eta_t;
 	flo32 k = 1 - eta * eta * (1 - cosi * cosi);
 	if k < 0 { return [1, 0, 0]; } // total internal reflection
-	return add(@mul(I, eta), @mul(N, (eta * cosi - sqrtf(k))));
+	return I * eta + N * (eta * cosi - sqrtf(k));
 }

@@ -1,0 +1,5 @@
+type vec2 { flo32 x; flo32 y; };
+func +(@vec2 a, @vec2 b) -> vec2 { return [a.x + b.x, a.y + b.y]; }
+export func -(vec2 a) -> vec2 { return [-a.x, -a.y]; }
+import vec3, *, % from "lib.pa";
+global int32 calls = 0 for /!, +;
