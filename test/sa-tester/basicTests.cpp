@@ -1361,12 +1361,12 @@ TEST(sa, global_var)
 TEST(sa, operator_func)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/330_operator_func.pa");
+	json jout = written(run_sa("../test/testdata/sa/330_operator_func.pa"));
 	ASSERT_TRUE(jout.is_object());
-	const string vec2 = "R30__pln_L9dfe5fa2dcf4da73_1_vec2";
+	const string vec2 = "R4vec2";
 	const auto& fs = jout["functions"];
 	ASSERT_EQ(fs[0]["name"], "_330_operator_func..0add." + vec2 + "." + vec2);
-	ASSERT_EQ(fs[1]["name"], "_330_operator_func..0sub.P30__pln_L9dfe5fa2dcf4da73_1_vec2");
+	ASSERT_EQ(fs[1]["name"], "_330_operator_func..0sub.P4vec2");
 
 	const auto& stmts = jout["statements"];
 	// c = a + b: both borrowed, the struct returned into c.
@@ -1395,9 +1395,9 @@ TEST(sa, operator_func)
 TEST(sa, operator_func_overload_arg)
 {
 	cleanTestEnv();
-	json jout = run_sa("../test/testdata/sa/331_operator_func_overload_arg.pa");
+	json jout = written(run_sa("../test/testdata/sa/331_operator_func_overload_arg.pa"));
 	ASSERT_TRUE(jout.is_object());
-	const string gVec2 = "_331_operator_func_overload_arg..g.P30__pln_L2fa529972619c674_1_vec2";
+	const string gVec2 = "_331_operator_func_overload_arg..g.P4vec2";
 	vector<string> names;
 	for (auto& s : jout["statements"])
 		if (s["stmt-type"] == "expr") names.push_back(s["body"]["name"]);
