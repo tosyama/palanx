@@ -1379,6 +1379,14 @@ big ->> total();             // the same, chained
 - `v>>` is written only as a call argument to a parameter that owns it, and cannot be cast.
   Given to a `@T`/`@!T` parameter, a C function's pointer parameter, or a variadic argument, it
   is a compile error, since nothing would own it.
+- The call's arguments are evaluated left to right, and `v>>` reads `v` where it is written, but
+  `v` becomes NULL only after all of them, just before the call. Another argument can still
+  borrow from it, as a C function taking a request and a part of it expects
+  (`(uv_write as @func(write_req_t, _, _, _, _))(req>>, client, @req.buf, 1, on_write)`).
+- An argument after `v>>` that could change `v` before that is a compile error: giving `v`, a
+  part of it or what contains it away again; borrowing with `@!` (or calling a method on) what
+  contains `v`, or a variable its index reads (`f(a[i]>>, g(@!i))`); or, when `v` or its index
+  is reached from a global, calling any function.
 
 `T b <<= v;` declares `b` taking over what `v` owns, without a copy. `v` is an owner (set to
 NULL) or a call result:

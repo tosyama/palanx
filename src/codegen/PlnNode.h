@@ -269,12 +269,15 @@ struct Stmt;
 
 // A temp declared and initialized by body, read as value. Its release runs
 // only once the enclosing full expression has been evaluated, since a call
-// it is given to may return a borrow of it.
+// it is given to may return a borrow of it. Its reset runs once all of the
+// arguments of the call it is given to have been evaluated, since a later
+// one may borrow from the owner it was taken from.
 struct TempExpr : Expr {
     TempExpr() : Expr(ExprKind::Temp) {}
     vector<unique_ptr<Stmt>> body;
     unique_ptr<Expr>         value;
     vector<unique_ptr<Stmt>> release;
+    vector<unique_ptr<Stmt>> reset;
 };
 
 struct VarDef { string name; VRegType type; };

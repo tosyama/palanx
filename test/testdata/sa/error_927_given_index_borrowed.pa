@@ -1,0 +1,6 @@
+type S { int32 n; };
+func f(S s, int32 n) {}
+func g(@!int32 i) -> int32 { 1 -> i; return 0; }
+[2]S arr;
+int32 i = 0;
+f(arr[i]>>, g(@!i));

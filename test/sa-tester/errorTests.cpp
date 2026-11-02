@@ -1416,6 +1416,20 @@ TEST(sa_error, give_and_take)
 		 ":4:10: error: No function '+' takes (vec2, flo64); there are +(@vec2, @vec2)."},
 		{"error_924_keep_param_count_nested.pa",
 		 ":3:2: error: the cast's function type has 2 parameters, but '@func(int32)' has 1."},
+		{"error_925_given_twice.pa",
+		 ":4:8: error: 's' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_926_given_container_borrowed.pa",
+		 ":6:18: error: 's.p' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_927_given_index_borrowed.pa",
+		 ":6:15: error: 'arr[..]' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_928_given_receiver.pa",
+		 ":6:10: error: 's.p' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_929_given_global_call.pa",
+		 ":5:9: error: 'gs' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_930_given_path_overlap.pa",
+		 ":5:8: error: 's' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_931_given_global_in_func.pa",
+		 ":4:37: error: 'arr[..]' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

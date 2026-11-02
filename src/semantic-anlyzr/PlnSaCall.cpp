@@ -41,11 +41,15 @@ json PlnSemanticAnalyzer::sa_expr_transfer(const json& expr)
 		exit(1);
 	}
 	transferAllowed_ = false;
-	json body = json::array();
-	json given = giveValue(expr["value"], sa_expression(expr["value"]), expr, expr.value("op", ">>"), body);
+	json body = json::array(), reset = json::array();
+	json given = giveValue(expr["value"], sa_expression(expr["value"]), expr, expr.value("op", ">>"), body, reset);
 	transferAllowed_ = true;
 	if (body.empty()) return given;
-	return makeTempExpr(move(body), move(given), json::array());
+	json temp = makeTempExpr(move(body), move(given), json::array());
+	// Later arguments may still borrow from the owner, so it is reset just
+	// before the call, after all of them.
+	if (!reset.empty()) temp["reset"] = move(reset);
+	return temp;
 }
 
 // The registered definition of the function `funcDef` defines, among those
@@ -747,6 +751,144 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 	return ptrPermissionMismatch(saArg["value-type"], paramVT);
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
+static json withoutLoc(const json& e)
+{
+	if (e.is_object()) {
+		json out = json::object();
+		for (auto& [k, v] : e.items())
+			if (k != "loc") out[k] = withoutLoc(v);
+		return out;
+	}
+	if (e.is_array()) {
+		json out = json::array();
+		for (auto& v : e) out.push_back(withoutLoc(v));
+		return out;
+	}
+	return e;
+}
+
+// The steps of a location path from its variable: "v:name", ".field",
+// "[index]"; empty for anything but a path.
+static vector<string> pathKeys(const json& e)
+{
+	string et = e.value("expr-type", "");
+	vector<string> keys;
+	if (et == "id") {
+		keys.push_back("v:" + e["name"].get<string>());
+	} else if (et == "field-access" || et == "arr-index") {
+		bool field = et == "field-access";
+		keys = pathKeys(e[field ? "object" : "array"]);
+		if (!keys.empty())
+			keys.push_back(field ? "." + e["field"].get<string>() : "[" + withoutLoc(e["index"]).dump() + "]");
+	}
+	return keys;
+}
+
+static bool isPrefixOf(const vector<string>& a, const vector<string>& b)
+{
+	return a.size() <= b.size() && equal(a.begin(), a.end(), b.begin());
+}
+
+// Each path read in e, and each of their own prefixes.
+static void collectPaths(const json& e, set<vector<string>>& paths, set<string>& vars)
+{
+	if (e.is_array()) {
+		for (auto& v : e) collectPaths(v, paths, vars);
+		return;
+	}
+	if (!e.is_object()) return;
+	vector<string> keys = pathKeys(e);
+	if (!keys.empty()) {
+		paths.insert(keys);
+		vars.insert(keys[0].substr(2));
+	}
+	for (auto& [k, v] : e.items()) collectPaths(v, paths, vars);
+}
+
+// What a later argument must not change while the owner given away by
+// `given` waits to be reset: the containers of the path (not the path itself,
+// whose borrow only reaches what it owns), and every path its indices read.
+struct GivenOwner {
+	string                 text;
+	vector<string>         path;
+	set<vector<string>>    changeable;
+	set<string>            vars;
+};
+
+static GivenOwner givenOwnerOf(const json& given)
+{
+	GivenOwner g;
+	g.path = pathKeys(given["value"]);
+	for (size_t n = 1; n < g.path.size(); n++)
+		g.changeable.insert(vector<string>(g.path.begin(), g.path.begin() + n));
+	if (g.path.empty()) return g;
+	g.vars.insert(g.path[0].substr(2));
+	for (auto& k : g.path)
+		g.text += k[0] == 'v' ? k.substr(2) : k[0] == '.' ? k : "[..]";
+	for (const json* e = &given["value"]; e->value("expr-type", "") != "id"; ) {
+		bool field = (*e)["expr-type"] == "field-access";
+		if (!field) collectPaths((*e)["index"], g.changeable, g.vars);
+		e = &(*e)[field ? "object" : "array"];
+	}
+	return g;
+}
+
+// The node in e that may change the owner g waits to reset, if any.
+static const json* changesGiven(const json& e, const GivenOwner& g)
+{
+	if (e.is_array()) {
+		for (auto& v : e)
+			if (const json* c = changesGiven(v, g)) return c;
+		return nullptr;
+	}
+	if (!e.is_object()) return nullptr;
+	string et = e.value("expr-type", "");
+	if (et == "transfer") {
+		vector<string> p = pathKeys(e["value"]);
+		if (!p.empty() && (isPrefixOf(p, g.path) || isPrefixOf(g.path, p))) return &e;
+	}
+	if (et == "addr-of" && e.value("mutable", false) && g.changeable.count(pathKeys(e["object"])))
+		return &e;
+	// A method-form receiver is borrowed with '@!'.
+	if (et == "member-call" && g.changeable.count(pathKeys(e["object"])))
+		return &e;
+	for (auto& [k, v] : e.items())
+		if (const json* c = changesGiven(v, g)) return c;
+	return nullptr;
+}
+
+// A function binds a global it uses statically; at the top level a global is
+// a variable of the outermost scope.
+bool PlnSemanticAnalyzer::isGlobalName(const string& name) const
+{
+	if (isStaticBound(name)) return true;
+	for (size_t i = varScopes.size(); i > 0; --i)
+		if (varScopes[i-1].count(name))
+			return i == 1 && globals_.count(name);
+	return false;
+}
+
+// An owner given away with '>>' is reset only after all of the call's
+// arguments, so none after it may change it in between.
+void PlnSemanticAnalyzer::checkGivenOwners(const json& locNode, const vector<json>& argAsts, const json& saArgs)
+{
+	for (size_t i = 0; i < argAsts.size(); i++) {
+		if (!givenIn(argAsts[i]) || !saArgs[i].contains("reset")) continue;
+		GivenOwner g = givenOwnerOf(argAsts[i]);
+		if (g.path.empty()) continue;
+		bool global = any_of(g.vars.begin(), g.vars.end(), [&](const string& v) { return isGlobalName(v); });
+		for (size_t j = i + 1; j < argAsts.size(); j++) {
+			const json* c = changesGiven(argAsts[j], g);
+			// A function a global permits may write it.
+			if (!c && global && hasCall(saArgs[j])) c = &argAsts[j];
+			if (!c) continue;
+			cerr << locPrefix(c->contains("loc") ? *c : locNode)
+			     << PlnSaMessage::getMessage(E_GivenChangedByLaterArg, g.text) << endl;
+			exit(1);
+		}
+	}
+}
+
 // Binds the analyzed arguments to the chosen callee's parameters: a pending
 // argument is analyzed now with its parameter's type, then each is checked
 // and converted.
@@ -756,6 +898,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 	bool isVariadic = isVariadicSig(funcParams);
 	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
 	json saArgs = json::array();
+	vector<json> argAsts;
 	for (size_t argIdx = 0; argIdx < args.size(); argIdx++) {
 		CallArg& ca = args[argIdx];
 		const json* param = argIdx < fixedCount ? &funcParams[argIdx] : nullptr;
@@ -768,6 +911,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		json litBody, litRelease;
 		bool isLit = isAggregateLitArg(arg);
 		bool ownedParam = !isCFunc && paramVT && isOwnedBlock(*paramVT);
+		argAsts.push_back(arg);
 		if (givenIn(arg) && !ownedParam) {
 			string paramName = param ? param->value("name", "") : "";
 			if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
@@ -816,6 +960,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		}
 		saArgs.push_back(saArg);
 	}
+	checkGivenOwners(locNode, argAsts, saArgs);
 	return saArgs;
 }
 

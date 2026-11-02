@@ -1,0 +1,6 @@
+type P { int32 n; };
+type S { P p; };
+func f(P p, int32 n) {}
+func m(@!S s) -> int32 { return 0; }
+S s;
+f(s.p>>, s.m());

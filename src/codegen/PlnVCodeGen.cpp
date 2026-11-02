@@ -551,9 +551,27 @@ void PlnVCodeGen::lowerSysCallExpr(const SysCallExpr& expr, VFunc& func)
 
 vector<VReg> PlnVCodeGen::lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc& func)
 {
+    vector<const Stmt*> outer = move(pendingResets_);
+    pendingResets_.clear();
     vector<VReg> regs;
     for (auto& a : args)
         regs.push_back(lowerExpr(*a, func));
+    for (auto s : pendingResets_) {
+        // An argument read straight from a local the reset writes is its
+        // canonical VReg, which the reset updates in place.
+        if (s->kind != StmtKind::Assign) continue;
+        const VarBinding& b = findBinding(static_cast<const AssignStmt*>(s)->name);
+        if (!b.label.empty()) continue;
+        for (VReg& r : regs) {
+            if (r != b.reg) continue;
+            VReg c = allocVReg();
+            func.instrs.push_back(Copy{c, r, VRegType::Ptr64}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            r = c;
+        }
+    }
+    for (auto s : pendingResets_)
+        lowerStmt(*s, func);
+    pendingResets_ = move(outer);
     return regs;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
@@ -568,6 +586,8 @@ VReg PlnVCodeGen::lowerTempExpr(const TempExpr& e, VFunc& func)
     pendingReleases_ = move(outer);
     for (auto& s : e.release)
         pendingReleases_.push_back(s.get()); // LCOV_EXCL_EXCEPTION_BR_LINE
+    for (auto& s : e.reset)
+        pendingResets_.push_back(s.get()); // LCOV_EXCL_EXCEPTION_BR_LINE
     return lowerExpr(*e.value, func);
 }
 

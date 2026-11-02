@@ -671,6 +671,11 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "'" + arg2 + "' needs a variable that owns its array or struct; '" + arg1 + "' does not.";
 
+		case E_GivenChangedByLaterArg:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is given away with '>>' and set to NULL just before the call, "
+			       "but this later argument of the same call may change it.";
+
 		case E_TransferToSelf:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'->>' cannot give '" + arg1 + "' to itself.";

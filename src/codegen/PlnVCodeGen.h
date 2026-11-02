@@ -41,6 +41,9 @@ class PlnVCodeGen {
     // A temp's release statements, held until its full expression has been
     // evaluated (TempExpr).
     vector<const Stmt*> pendingReleases_;
+    // A temp's reset statements, held until the arguments of the call it is
+    // given to have been evaluated (lowerArgs).
+    vector<const Stmt*> pendingResets_;
 
     struct LoopLabels { string start; string end; };
     vector<LoopLabels> loopStack_;  // push/pop in lowerWhileStmt

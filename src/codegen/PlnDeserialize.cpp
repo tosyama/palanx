@@ -93,6 +93,8 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->body    = deserializeStatements(j["body"]);
         e->value   = deserializeExpr(j["value"]);
         e->release = deserializeStatements(j["release"]);
+        if (j.contains("reset"))
+            e->reset = deserializeStatements(j["reset"]);
         return e;
     }
     if (expr_type == "frame-alloc") {

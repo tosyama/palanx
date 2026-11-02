@@ -176,3 +176,9 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 25. An Operator Over a Call Whose Functions Return Different Types
 
 **Summary:** Before an overloaded function is chosen, an argument that is an arithmetic operator over a literal is taken to be a number the parameter types, unless an operand is known to be a struct without analyzing it: a variable, a field reached from one, or a call whose functions all return one struct type (v0.2.3). When the functions of a call's name return different types, `g(h(x) * 2.0)` is still taken to be a number, so a `g` taking the struct `h` returns is not chosen. Telling it would need the call analyzed before the choice, and once more after it.
+
+---
+
+## 26. Error Messages Name a C Struct by Its Tag
+
+**Summary:** A type alias is resolved where it is used, and the resolved type keeps no record of the alias, so error messages name the type it resolves to. For a struct from a C header that is its tag: with `typedef struct uv_tcp_s uv_tcp_t;`, a bad cast of a `uv_tcp_t` value to `@!uv_stream_t` reports `Cannot cast type 'uv_tcp_s' to '@!uv_stream_s'`, names the program never wrote. The cast target could be shown as written, but the type of a value has only its resolved form; keeping the alias name on resolved types would give one type two representations.

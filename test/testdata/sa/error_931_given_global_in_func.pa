@@ -1,0 +1,5 @@
+type S { int32 n; };
+func f(S s, int32 n) {}
+func k() -> int32 { return 0; }
+func run() { [2]S arr; f(arr[gi]>>, k()); }
+global int32 gi = 0 for run, k!;

@@ -1418,7 +1418,7 @@ void PlnSemanticAnalyzer::appendTransferSourceReset(json& stmts, const json& stm
 	exit(1);
 } // LCOV_EXCL_EXCEPTION_BR_LINE
 
-json PlnSemanticAnalyzer::giveValue(const json& srcAst, json saValue, const json& locNode, const string& op, json& body)
+json PlnSemanticAnalyzer::giveValue(const json& srcAst, json saValue, const json& locNode, const string& op, json& body, json& reset)
 {
 	if (!isOwnedBlock(saValue["value-type"])) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_TransferFromNonOwner, op) << endl;
@@ -1429,7 +1429,7 @@ json PlnSemanticAnalyzer::giveValue(const json& srcAst, json saValue, const json
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json owner = {{"value", srcAst}, {"loc", locNode.value("loc", json::array())}};
 	json given = pinValue(saValue, srcAst, body)["sa"];
-	appendTransferSourceReset(body, owner, saValue, op);
+	appendTransferSourceReset(reset, owner, saValue, op);
 	given["category"] = "expiring";
 	return given;
 	// LCOV_EXCL_EXCEPTION_BR_STOP

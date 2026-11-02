@@ -400,7 +400,14 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
 - `v ->> target` needs an owned `v` and sets `v` to NULL after the transfer, so its scope-exit
   free is a no-op; an `expiring` source has nothing to reset.
 - `v>>` gives a call argument away the same way, to a parameter owning its type, without a copy;
-  anywhere else it is an error. `v ->> f()` is `f(v>>)`.
+  anywhere else it is an error. `v ->> f()` is `f(v>>)`. Arguments are still evaluated left to
+  right and `v` is read where `v>>` is written, but `v` is set to NULL only once all of the
+  call's arguments have been evaluated, just before the call, so a later argument can still
+  borrow from it (`uv_write(req>>, s, @req.buf, ...)`, as C passes a request and a part of it).
+  A later argument that may change `v` in between is an error: giving away `v` (or a path it
+  shares a prefix with) again, borrowing with `@!` (or as a method-form receiver) what contains
+  `v` or what its indices read (a borrow of `v` itself reaches only what it owns), or, when its
+  path reads a global, any call.
 - A function pointer type can have owned parameters and an owned return, with a Palan function's
   convention (the callee owns an argument, the caller the returned value; a struct is returned
   by value, so a pointer C returns is taken over by viewing it as an owner:

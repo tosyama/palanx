@@ -346,7 +346,7 @@ json PlnSemanticAnalyzer::takeOverInit(const json& stmt, const json& var, VarSto
 	json value = sa_expression(src);
 	const json& vt = value["value-type"];
 	if (isOwnedBlock(vt)) {
-		value = giveValue(src, move(value), stmt, "<<=", pre);
+		value = giveValue(src, move(value), stmt, "<<=", pre, pre);
 	} else {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, "<<=") << endl;
 		exit(1);

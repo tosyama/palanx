@@ -1,0 +1,5 @@
+type P { int32 n; };
+type S { P p; };
+func f(S s, P p) {}
+S s;
+f(s>>, s.p>>);

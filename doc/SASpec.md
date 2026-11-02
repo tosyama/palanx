@@ -966,6 +966,9 @@ SA-only expression kinds (not present in AST JSON):
     expression has been evaluated: at the end of the statement (before a `return`'s `ret`), or,
     in an `if`/`while` condition or a `&&`/`||` operand, when that operand's value is known and
     before it branches
+  - reset: statements that set the owner a `transfer` gave away to NULL; codegen runs them once
+    all of the arguments of the call the `temp` is given to have been evaluated, just before the
+    call
   - value-type: `value`'s (absent for a void `call`); `category` is `value`'s too
 
   A `temp` holding a call that returns a borrow may point to its temps (E_BorrowOfTempEscapes when
@@ -1288,7 +1291,8 @@ sa.json never carries `chain-call`.
 A value is given away by an owner (an owning variable, an owned field or element), as a call
 result, or by an `owner-view`; anything else is E_TransferFromNonOwner (naming `>>`, `->>` or
 `<<=`). The owner's value is held in a temp (`__pin_N`, typed as the owned value) and the owner is
-then set to NULL, as the source of `->>` is; a call result is given as it is, and an
+then set to NULL, as the source of `->>` is (for `x>>`, by the `temp`'s `reset`, after the call's
+other arguments); a call result is given as it is, and an
 `owner-view` is pinned but not reset (the pointer is no Palan owner; a read-only one is
 E_MoveFromReadOnlyView).
 
@@ -1298,6 +1302,12 @@ E_MoveFromReadOnlyView).
   pointer type's `T`, `[n]T`, `[+]T`) as a call result is, without a copy. Any other parameter
   (`@T`/`@!T`, any C function's, a variadic argument) is E_TransferToParam. `x ->> f(args)` is
   `f(x>>, args)` (`op` "->>").
+- A later argument of the same call that may change the owner before its `reset` is
+  E_GivenChangedByLaterArg, judged from the argument's AST at any depth: a `transfer` of a path
+  that is a prefix of the owner's or has it as one; a `@!` borrow (an `addr-of` with `mutable`,
+  or the receiver of a `member-call`) of a proper prefix of the owner's path or of a path read in
+  one of its indices; or, when one of those paths starts at a global (a `global`, or a C global),
+  any call (in the analyzed argument, so an operator function counts).
 - `T b <<= v` declares `b` on its own, after `v` is evaluated: `<<=` initializers of one
   declaration run in order. `v` becomes a `pinned` value of `b`'s owned type with category
   `expiring`, which `b` takes over as it does a call result, declared as an array variable is

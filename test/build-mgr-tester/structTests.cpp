@@ -1229,6 +1229,12 @@ TEST(build_mgr, give_take_mtrace) {
 	expectMtraceRun("374_give_take_mtrace", "5 1\n4\n3\n10\n102\n7 9 1 5 4 1\n", 22);
 }
 
+TEST(build_mgr, give_then_borrow_mtrace) {
+	// An owner given away with '>>' is set to NULL only just before the call,
+	// so the call's other arguments, before or after it, still see it.
+	expectMtraceRun("384_give_then_borrow_mtrace", "12 1\n26\n60 1\n48\n55\n", 13);
+}
+
 TEST(build_mgr, func_cast_ownership_mtrace) {
 	// A C function cast to own a parameter keeps what '>>' gives it until the
 	// Palan callback owning it frees it, and a pointer in a read-only struct's
