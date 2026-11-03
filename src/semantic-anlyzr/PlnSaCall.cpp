@@ -42,7 +42,7 @@ json PlnSemanticAnalyzer::sa_expr_transfer(const json& expr)
 	}
 	transferAllowed_ = false;
 	json body = json::array(), reset = json::array();
-	json given = giveValue(expr["value"], sa_expression(expr["value"]), expr, expr.value("op", ">>"), body, reset);
+	json given = giveValue(expr["value"], expr, expr.value("op", ">>"), body, reset);
 	transferAllowed_ = true;
 	if (body.empty()) return given;
 	json temp = makeTempExpr(move(body), move(given), json::array());

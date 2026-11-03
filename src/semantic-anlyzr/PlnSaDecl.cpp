@@ -342,15 +342,7 @@ json PlnSemanticAnalyzer::takeOverInit(const json& stmt, const json& var, VarSto
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedVar, name, "<<=") << endl;
 		exit(1);
 	}
-	const json& src = var["init"];
-	json value = sa_expression(src);
-	const json& vt = value["value-type"];
-	if (isOwnedBlock(vt)) {
-		value = giveValue(src, move(value), stmt, "<<=", pre, pre);
-	} else {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferFromNonOwner, "<<=") << endl;
-		exit(1);
-	}
+	json value = giveValue(var["init"], stmt, "<<=", pre, pre);
 	if (!copyShapeMatch(value["value-type"], owned)) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferShapeMismatch,
 			typeDisplayName(owned), typeDisplayName(value["value-type"])) << endl;

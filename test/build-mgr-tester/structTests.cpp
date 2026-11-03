@@ -1235,6 +1235,12 @@ TEST(build_mgr, give_then_borrow_mtrace) {
 	expectMtraceRun("384_give_then_borrow_mtrace", "12 1\n26\n60 1\n48\n55\n", 13);
 }
 
+TEST(build_mgr, give_path_call_once_mtrace) {
+	// The calls on the path to an owner given away run once, though the
+	// owner is read and later reset through it.
+	expectMtraceRun("385_give_path_call_once_mtrace", "1\n3\n2 4 3 2 1\n", 7);
+}
+
 TEST(build_mgr, func_cast_ownership_mtrace) {
 	// A C function cast to own a parameter keeps what '>>' gives it until the
 	// Palan callback owning it frees it, and a pointer in a read-only struct's

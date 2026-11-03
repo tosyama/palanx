@@ -697,7 +697,7 @@ class PlnSemanticAnalyzer {
 	void appendTransferSourceReset(json& stmts, const json& stmt, const json& saValue, const string& op = "->>");
 	// What srcAst owns, given away by `op`: held in a temp declared in body, with
 	// the owner reset to NULL after it. Typed as the owned value, category "expiring".
-	json giveValue(const json& srcAst, json saValue, const json& locNode, const string& op, json& body, json& reset);
+	json giveValue(const json& srcAst, const json& locNode, const string& op, json& body, json& reset);
 	json sa_expr_transfer(const json& expr);
 	json sa_arg_expression(const json& ast, const PlnType* expectedType = nullptr);
 	void checkGivenOwners(const json& locNode, const vector<json>& argAsts, const json& saArgs);

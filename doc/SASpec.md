@@ -1292,7 +1292,8 @@ A value is given away by an owner (an owning variable, an owned field or element
 result, or by an `owner-view`; anything else is E_TransferFromNonOwner (naming `>>`, `->>` or
 `<<=`). The owner's value is held in a temp (`__pin_N`, typed as the owned value) and the owner is
 then set to NULL, as the source of `->>` is (for `x>>`, by the `temp`'s `reset`, after the call's
-other arguments); a call result is given as it is, and an
+other arguments); the calls on the owner's path are evaluated once into temps first, so the reset
+reaches the location that was read; a call result is given as it is, and an
 `owner-view` is pinned but not reset (the pointer is no Palan owner; a read-only one is
 E_MoveFromReadOnlyView).
 
