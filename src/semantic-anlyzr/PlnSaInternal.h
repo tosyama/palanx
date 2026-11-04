@@ -19,7 +19,7 @@
 using json = nlohmann::json;
 using namespace std;
 
-// LCOV_EXCL_EXCEPTION_BR_START
+// LCOV_EXCL_BR_START
 inline json wrapConvert(const json& expr, const json& to_type) {
 	// Adding or dropping an enum label changes no bits, so no convert node.
 	const json& from_type = expr["value-type"];
@@ -36,7 +36,7 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 		{"src",        expr}
 	};
 }
-// LCOV_EXCL_EXCEPTION_BR_STOP
+// LCOV_EXCL_BR_STOP
 
 // True if `t` is a non-float primitive type (int8..uint64). Shared by every
 // operator that requires integer operands (logical &&/||/!, bitwise &/|/^/~)
@@ -109,8 +109,8 @@ string allocHelperSymbol(const AllocShapeRef& shape, const string& op);
 json allocHelperCall(const AllocShapeRef& shape, const string& op, json args);
 inline AllocShapeRef structShape(const string& name)
 {
-	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 // len, push, resize and pop of the `[+]T` whose header type is varr, as call
 // candidates calling impl's helpers; only their signatures without impl.
 json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl = nullptr);
@@ -261,27 +261,27 @@ inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
 // laid out in place.
 inline json varrPntrType(const json& elem, bool embedded)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json varr = {{"type-kind","varr"},{"base-type",elem}};
 	if (embedded) varr["embedded"] = true;
 	return {{"type-kind","pntr"},{"base-type",move(varr)}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 inline bool isVarrEmbedded(const json& vt) { return vt["base-type"].value("embedded", false); }
 inline json lenLit(int64_t v)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	return {{"expr-type","lit-int"},{"value",to_string(v)},{"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 // The header's len, which `len(@v)` reads in place of a call.
 inline json varrLen(json varr)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
 	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",0},{"value-type",move(i64)}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 // Strips a declared variable's `$` and returns where its storage lives.
 inline VarStorage takeVarStorage(json& varType)
@@ -391,7 +391,7 @@ inline bool isCallBorrow(const json& expr)
 	    || et == "add" || et == "sub" || et == "mul" || et == "div" || et == "mod" || et == "neg";
 }
 
-// LCOV_EXCL_EXCEPTION_BR_START
+// LCOV_EXCL_BR_START
 inline json fieldPrimLeaf(const FieldLayout& f)
 {
 	json t = {{"type-kind","prim"},{"type-name",f.typeName}};
@@ -434,7 +434,7 @@ inline json fieldValueType(const FieldLayout& f)
 		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
 	return {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",f.typeName}}}};
 }
-// LCOV_EXCL_EXCEPTION_BR_STOP
+// LCOV_EXCL_BR_STOP
 
 // Returns element byte size for a primitive type name; -1 if unknown
 inline int elemSizeBytes(const string& typeName)
@@ -551,15 +551,15 @@ inline json eightbytesJson(const StructDef& def, const map<string, StructDef>& d
 {
 	json ebs = json::array();
 	for (auto& eb : classifySysVStruct(def, defs)) {
-		json j = {{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		if (eb.flo64) j["flo64"] = true; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json j = {{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}}; // LCOV_EXCL_BR_LINE
+		if (eb.flo64) j["flo64"] = true; // LCOV_EXCL_BR_LINE
 		ebs.push_back(move(j));
 	}
 	return ebs;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Builds a synthetic free() expression statement for the named pointer variable
-// LCOV_EXCL_EXCEPTION_BR_START
+// LCOV_EXCL_BR_START
 inline json makeFreeStmt(const string& name, const json& pntrType)
 {
 	return {
@@ -573,7 +573,7 @@ inline json makeFreeStmt(const string& name, const json& pntrType)
 		}}
 	};
 }
-// LCOV_EXCL_EXCEPTION_BR_STOP
+// LCOV_EXCL_BR_STOP
 
 inline const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 {
@@ -671,7 +671,7 @@ inline string typeDisplayName(const json& t) {
 		cur = &(*cur)["base-type"];
 	}
 	return out + typeDisplayName(*cur);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Shape equality for binding an array to a borrowed array type: same depth,
 // same embedded layout, every size `to` names known and equal (a borrowed
@@ -735,7 +735,7 @@ inline bool isCopiedByValue(const json& t) { return isOwnedBlock(t) || isArrLeve
 // null when an element is not one a literal gives.
 inline json astTypeOf(const json& saType)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json out, elem;
 	if (isVarrPntr(saType)) {
 		out = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr}};
@@ -757,8 +757,8 @@ inline json astTypeOf(const json& saType)
 		return nullptr;
 	out["base-type"] = move(elem);
 	return out;
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 
 // Shape equality for such a copy, which is a plain byte copy level by level:
@@ -890,7 +890,7 @@ inline json normalizeCType(const json& type) {
 		return t;
 	}
 	return type;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // typeAliases_ holds types in native syntax's shape (what `type A = ...;`
 // writes), so a normalizeCType'd C typedef is written back into it: a struct
@@ -898,15 +898,15 @@ inline json normalizeCType(const json& type) {
 inline json cTypeAsAlias(const json& type) {
 	string tk = type.value("type-kind", "");
 	if (tk == "pntr")
-		return {{"type-kind", "pntr"}, {"mutable", type["mutable"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
-		        {"base-type", cTypeAsAlias(type["base-type"])}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return {{"type-kind", "pntr"}, {"mutable", type["mutable"]}, // LCOV_EXCL_BR_LINE
+		        {"base-type", cTypeAsAlias(type["base-type"])}}; // LCOV_EXCL_BR_LINE
 	if (tk == "struct")
-		return {{"type-kind", "prim"}, {"type-name", type["type-name"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return {{"type-kind", "prim"}, {"type-name", type["type-name"]}}; // LCOV_EXCL_BR_LINE
 	json t = type;
 	t.erase("const");
 	t.erase("typedef-name");
 	return t;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // The symbol a C call or function pointer links to: a header can declare a
 // name as an alias of another function (`#define sscanf __isoc99_sscanf`).
@@ -928,16 +928,16 @@ inline void normalizeCFuncSig(json& funcDef) {
 				json vt = normalizeCType(p["var-type"]);
 				if (bad.empty()) bad = unrepresentableTypeName(vt);
 				if (vt.value("type-kind", "") == "struct")
-					vt = {{"type-kind","pntr"}, // LCOV_EXCL_EXCEPTION_BR_LINE
-					      {"base-type",{{"type-kind","struct"},{"type-name",vt["type-name"]}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+					vt = {{"type-kind","pntr"}, // LCOV_EXCL_BR_LINE
+					      {"base-type",{{"type-kind","struct"},{"type-name",vt["type-name"]}}}}; // LCOV_EXCL_BR_LINE
 				p["var-type"] = move(vt);
 			}
 	if (funcDef.contains("ret-type")) {
 		json rt = normalizeCType(funcDef["ret-type"]);
 		if (bad.empty()) bad = unrepresentableTypeName(rt);
 		if (rt.value("type-kind", "") == "struct")
-			rt = {{"type-kind","pntr"}, // LCOV_EXCL_EXCEPTION_BR_LINE
-			      {"base-type",{{"type-kind","struct"},{"type-name",rt["type-name"]}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			rt = {{"type-kind","pntr"}, // LCOV_EXCL_BR_LINE
+			      {"base-type",{{"type-kind","struct"},{"type-name",rt["type-name"]}}}}; // LCOV_EXCL_BR_LINE
 		funcDef["ret-type"] = move(rt);
 	}
 	if (!bad.empty()) funcDef["_unsupported-sig"] = bad;

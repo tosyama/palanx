@@ -72,7 +72,7 @@ void foldMacroConstants(json& node, const MacroTable& macros)
 				node = { {"expr-type", "lit-int"}, {"value", e->value}, {"loc", loc} };
 				if (!e->valueType.is_null()) node["value-type"] = e->valueType;
 			}
-		} // LCOV_EXCL_EXCEPTION_BR_LINE
+		} // LCOV_EXCL_BR_LINE
 		if (exprType == "id") return;
 	}
 

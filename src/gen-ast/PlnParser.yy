@@ -55,7 +55,7 @@ template <class T> struct PList {
 	std::shared_ptr<const Node> last;
 	size_t size = 0;
 
-	PList push(T item) const { return { std::make_shared<const Node>(Node{ std::move(item), last }), size + 1 }; } // LCOV_EXCL_EXCEPTION_BR_LINE
+	PList push(T item) const { return { std::make_shared<const Node>(Node{ std::move(item), last }), size + 1 }; } // LCOV_EXCL_BR_LINE
 
 	vector<T> toVector() const {
 		vector<T> v(size);
@@ -94,10 +94,10 @@ struct LazyNode {
 	} // LCOV_EXCL_LINE
 };
 
-inline NodeRef leafNode(json j) { return std::make_shared<const LazyNode>(LazyNode{ std::move(j), {}, {} }); } // LCOV_EXCL_EXCEPTION_BR_LINE
+inline NodeRef leafNode(json j) { return std::make_shared<const LazyNode>(LazyNode{ std::move(j), {}, {} }); } // LCOV_EXCL_BR_LINE
 inline NodeRef blockStmtNode(const PList<NodeRef>& body) {
-	return std::make_shared<const LazyNode>(LazyNode{ {{"stmt-type", "block"}}, {}, {{"body", body}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return std::make_shared<const LazyNode>(LazyNode{ {{"stmt-type", "block"}}, {}, {{"body", body}} }); // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A `global` declaration with a `for` list is two statements (a json array).
 inline PList<NodeRef> pushStmt(const PList<NodeRef>& list, json stmt) {
@@ -110,8 +110,8 @@ inline PList<NodeRef> pushStmt(const PList<NodeRef>& list, json stmt) {
 struct BodyList {
 	PList<NodeRef> functions, body;
 	NodeRef toNode() const {
-		return std::make_shared<const LazyNode>(LazyNode{ json::object(), {}, {{"functions", functions}, {"body", body}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
-	} // LCOV_EXCL_EXCEPTION_BR_LINE
+		return std::make_shared<const LazyNode>(LazyNode{ json::object(), {}, {{"functions", functions}, {"body", body}} }); // LCOV_EXCL_BR_LINE
+	} // LCOV_EXCL_BR_LINE
 };
 }
 
@@ -169,20 +169,20 @@ struct BodyList {
 	{
 		json j;
 		if (var.contains("var-type") && !var.contains("not-impl"))
-			j = {{"stmt-type", "var-decl"}, {"global", true}, {"vars", json::array({var})}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			j = {{"stmt-type", "var-decl"}, {"global", true}, {"vars", json::array({var})}}; // LCOV_EXCL_BR_LINE
 		else
 			j = {{"stmt-type", "not-impl"}};
 		LOC(j, loc);
 		return j;
-	} // LCOV_EXCL_EXCEPTION_BR_LINE
+	} // LCOV_EXCL_BR_LINE
 
 	static json globalPermit(const string& name, const PList<json>& funcs,
 	                         const palan::PlnParser::location_type& loc)
 	{
-		json j = {{"stmt-type", "global-permit"}, {"name", name}, {"funcs", funcs.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json j = {{"stmt-type", "global-permit"}, {"name", name}, {"funcs", funcs.toVector()}}; // LCOV_EXCL_BR_LINE
 		LOC(j, loc);
 		return j;
-	} // LCOV_EXCL_EXCEPTION_BR_LINE
+	} // LCOV_EXCL_BR_LINE
 
 	static void requireInKeyword(const string& file, const string& word,
 	                             const palan::PlnParser::location_type& loc)
@@ -214,13 +214,13 @@ struct BodyList {
 			fn["rets"] = rejectUnimplemented(ret["rets"].get<vector<json>>());
 		else if (ret.contains("ret-type"))
 			fn["ret-type"] = ret["ret-type"];
-		LOC(fn, loc); // LCOV_EXCL_EXCEPTION_BR_LINE
+		LOC(fn, loc); // LCOV_EXCL_BR_LINE
 		if (exported) {
 			fn["export"] = true;
 			ast["export"].push_back(fn);
 		}
 		return fn;
-	} // LCOV_EXCL_EXCEPTION_BR_LINE
+	} // LCOV_EXCL_BR_LINE
 }
 
 %locations
@@ -346,7 +346,7 @@ statements: /* empty */
 block_stmt: standalone_block
 	{ $$ = $1; }
 	| construct_def
-	{ json j = {{"stmt-type", "not-impl"}}; LOC(j, @$); $$ = leafNode(move(j)); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ json j = {{"stmt-type", "not-impl"}}; LOC(j, @$); $$ = leafNode(move(j)); } // LCOV_EXCL_BR_LINE
 	| for_loop
 	{ $$ = $1; }
 	| while_loop
@@ -402,7 +402,7 @@ expr_stmt: import
 	{
 		vector<json> vars = $1.toVector();
 		// Detect a tapple-decl emitted by var_declaration
-		if (vars.size() == 1 && vars[0].value("stmt-type", "") == "tapple-decl") { // LCOV_EXCL_EXCEPTION_BR_LINE
+		if (vars.size() == 1 && vars[0].value("stmt-type", "") == "tapple-decl") { // LCOV_EXCL_BR_LINE
 			$$ = move(vars[0]);
 			LOC($$, @$);
 		} else {
@@ -412,7 +412,7 @@ expr_stmt: import
 					|| v.value("inherit-type", false)) { all_ok = false; break; }
 			}
 			if (all_ok) {
-				$$ = {{"stmt-type", "var-decl"}, {"vars", move(vars)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				$$ = {{"stmt-type", "var-decl"}, {"vars", move(vars)}}; // LCOV_EXCL_BR_LINE
 				LOC($$, @$);
 			} else {
 				$$ = {{"stmt-type", "not-impl"}};
@@ -425,7 +425,7 @@ expr_stmt: import
 	| KW_GLOBAL var_declaration
 	{ $$ = globalDecl($2, @$); }
 	| KW_GLOBAL var_declaration KW_FOR global_funcs
-	{ $$ = json::array({globalDecl($2, @$), globalPermit($2.value("name", ""), $4, @$)}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = json::array({globalDecl($2, @$), globalPermit($2.value("name", ""), $4, @$)}); } // LCOV_EXCL_BR_LINE
 	| KW_GLOBAL ID
 	{ $$ = globalPermit($2, PList<json>(), @$); }
 	| KW_GLOBAL ID KW_FOR global_funcs
@@ -676,7 +676,7 @@ standalone_block: block_obj
 	{
 		LazyNode blk = *$1;
 		blk.self["stmt-type"] = "block";
-		LOC(blk.self, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
+		LOC(blk.self, @$); // LCOV_EXCL_BR_LINE
 		$$ = std::make_shared<const LazyNode>(std::move(blk));
 	}
 	;
@@ -719,14 +719,14 @@ inherit_var_decl: ID
 var_declaration: type_expr ID
 	{
 		if (isDeclarableVarType($1) || isFrameVarType($1)) {
-			$$ = {{"name", $2}, {"var-type", move($1)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			$$ = {{"name", $2}, {"var-type", move($1)}}; // LCOV_EXCL_BR_LINE
 		} else {
 			$$ = {{"not-impl", true}};
 			LOC($$, @$);
 		}
 	}
 	| type_expr DBL_GRTR ID
-	{ $$ = {{"not-impl", true}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"not-impl", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| type_expr ID '=' expression
 	{
 		if (isDeclarableVarType($1) || isFrameVarType($1)) {
@@ -763,17 +763,17 @@ tapple_decl: '(' tapple_decl_inner ')'
 	;
 
 tapple_decl_inner: type_expr ID
-	{ $$ = PList<json>().push({{"var-name", $2}, {"var-type", $1}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = PList<json>().push({{"var-name", $2}, {"var-type", $1}}); } // LCOV_EXCL_BR_LINE
 	| KW_VOID
 	{ }
 	| tapple_decl_inner ',' type_expr ID
-	{ $$ = $1.push({{"var-name", $4}, {"var-type", $3}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = $1.push({{"var-name", $4}, {"var-type", $3}}); } // LCOV_EXCL_BR_LINE
 	| tapple_decl_inner ',' KW_VOID
 	{ $$ = $1; }
 	| tapple_decl_inner ',' ID   %dprec 1
 	{
 	  if (auto typed = $1.findLast([](const json& v) { return v.contains("var-type"); }))
-	      $$ = $1.push({{"var-name", $3}, {"var-type", (*typed)["var-type"]}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	      $$ = $1.push({{"var-name", $3}, {"var-type", (*typed)["var-type"]}}); // LCOV_EXCL_BR_LINE
 	  else
 	      $$ = $1;
 	}
@@ -784,15 +784,15 @@ const_decl: KW_CONST ID '=' expression
 	;
 
 type_decl: KW_TYPE ID implememts '{' type_members '}'
-	{ $$ = {{"name", $2}, {"fields", $5.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"name", $2}, {"fields", $5.toVector()}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_EXPORT KW_TYPE ID implememts '{' type_members '}'
-	{ $$ = {{"name", $3}, {"fields", $6.toVector()}, {"export", true}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"name", $3}, {"fields", $6.toVector()}, {"export", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_TYPE ID KW_ENUM '{' enumerators opt_comma '}'
-	{ $$ = {{"name", $2}, {"enumerators", $5.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"name", $2}, {"enumerators", $5.toVector()}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_EXPORT KW_TYPE ID KW_ENUM '{' enumerators opt_comma '}'
-	{ $$ = {{"name", $3}, {"enumerators", $6.toVector()}, {"export", true}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"name", $3}, {"enumerators", $6.toVector()}, {"export", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_TYPE ID '=' type_expr
-	{ $$ = {{"name", $2}, {"alias-of", move($4)}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"name", $2}, {"alias-of", move($4)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_EXPORT KW_TYPE ID '=' type_expr
 	{ $$ = {{"name", $3}, {"alias-of", move($5)}, {"export", true}}; LOC($$, @$); }
 	| KW_TYPE ID
@@ -835,7 +835,7 @@ type_members: type_member
 	}
 	| type_members type_member
 	{
-		$$ = $2.value("not-impl", false) ? $1 : $1.push($2); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = $2.value("not-impl", false) ? $1 : $1.push($2); // LCOV_EXCL_BR_LINE
 	}
 	;
 
@@ -1022,7 +1022,7 @@ term: INT
 		if ($2.count("not-impl") || $2.count("tapple-items")) {
 			$$ = {{"expr-type", "not-impl"}};
 		} else {
-			$$ = {{"expr-type", "call-ptr"}, {"callee", move($2)}, {"args", $5.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			$$ = {{"expr-type", "call-ptr"}, {"callee", move($2)}, {"args", $5.toVector()}}; // LCOV_EXCL_BR_LINE
 		}
 		LOC($$, @$);
 	}
@@ -1039,14 +1039,14 @@ term: INT
 			if ($3.size == 1) {
 				$$ = {{"expr-type",   "cast"},
 				      {"target-type", {{"type-kind", "prim"}, {"type-name", move($1)}}},
-				      {"src",         $3.last->item}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				      {"src",         $3.last->item}}; // LCOV_EXCL_BR_LINE
 				LOC($$, @$);
 			} else {
 				$$ = {{"expr-type", "not-impl"}};
 				LOC($$, @$);
 			}
 		} else {
-			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}; // LCOV_EXCL_BR_LINE
 			LOC($$, @$);
 		}
 	}
@@ -1055,7 +1055,7 @@ term: INT
 		$$ = {{"expr-type", "member-call"},
 		      {"object", move($1)},
 		      {"method", move($3)},
-		      {"args", $5.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		      {"args", $5.toVector()}}; // LCOV_EXCL_BR_LINE
 		LOC($$, @$);
 	}
 	;
@@ -1092,7 +1092,7 @@ array_desc: array_row
 	| array_rows
 	{
 		// The concatenated form [a,b][c,d] yields the same AST as the nested [[a,b],[c,d]].
-		$$ = {{"expr-type", "arr-lit"}, {"items", $1.toVector()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = {{"expr-type", "arr-lit"}, {"items", $1.toVector()}}; // LCOV_EXCL_BR_LINE
 		LOC($$, @$);
 	}
 	;
@@ -1104,11 +1104,11 @@ array_rows: array_row array_row
 	;
 
 array_row: '[' array_items ']'
-	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '[' array_items ',' ']'
-	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '[' ']'
-	{ $$ = {{"expr-type", "arr-lit"}, {"items", json::array()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"expr-type", "arr-lit"}, {"items", json::array()}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	;
 
 array_items: expression
@@ -1118,9 +1118,9 @@ array_items: expression
 	;
 
 dict_desc: '{' dict_items '}'
-	{ $$ = {{"expr-type", "dict-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '{' dict_items ',' '}'
-	{ $$ = {{"expr-type", "dict-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = {{"expr-type", "dict-lit"}, {"items", $2.toVector()}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	;
 
 dict_items: ID ':' expression
@@ -1171,7 +1171,7 @@ store_loc
 		$$ = {{"kind", "not-impl"}};
 		if (!typeNames.count($1)) {
 			$$ = {{"kind", "call"},
-			      {"call", {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			      {"call", {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}}}; // LCOV_EXCL_BR_LINE
 			LOC($$["call"], @$);
 		}
 		LOC($$, @$);
@@ -1183,7 +1183,7 @@ store_loc
 		if (obj.value("expr-type", "") != "not-impl") {
 			$$ = {{"kind", "call"},
 			      {"call", {{"expr-type", "member-call"}, {"object", move(obj)},
-			                {"method", move($3)}, {"args", $5.toVector()}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			                {"method", move($3)}, {"args", $5.toVector()}}}}; // LCOV_EXCL_BR_LINE
 			LOC($$["call"], @$);
 		}
 		LOC($$, @$);
@@ -1192,13 +1192,13 @@ store_loc
 
 func_def: KW_FUNC func_name '(' paramaters ')' return_def block_obj
 	{
-		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "palan"}}, $4, $6, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $7}}, {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "palan"}}, $4, $6, @$); // LCOV_EXCL_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $7}}, {} }); // LCOV_EXCL_BR_LINE
 	}
 	| KW_EXPORT KW_FUNC func_name '(' paramaters ')' return_def block_obj
 	{
-		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$); // LCOV_EXCL_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} }); // LCOV_EXCL_BR_LINE
 	}
 	;
 
@@ -1225,13 +1225,13 @@ func_item: func_def
 // function (Linux syscall ABI, not System V -- see doc/SpecAndDesign.md).
 syscall_decl: KW_SYSCALL ID '(' paramaters ')' syscall_ret '=' expression ';'
 	{
-		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "syscall"}, {"syscall-number", $8}}, $4, $6, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = leafNode(move(fn)); // LCOV_EXCL_EXCEPTION_BR_LINE
+		json fn = funcDecl(ast, false, {{"name", $2}, {"func-type", "syscall"}, {"syscall-number", $8}}, $4, $6, @$); // LCOV_EXCL_BR_LINE
+		$$ = leafNode(move(fn)); // LCOV_EXCL_BR_LINE
 	}
 	| KW_EXPORT KW_SYSCALL ID '(' paramaters ')' syscall_ret '=' expression ';'
 	{
-		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "syscall"}, {"syscall-number", $9}}, $5, $7, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = leafNode(move(fn)); // LCOV_EXCL_EXCEPTION_BR_LINE
+		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "syscall"}, {"syscall-number", $9}}, $5, $7, @$); // LCOV_EXCL_BR_LINE
+		$$ = leafNode(move(fn)); // LCOV_EXCL_BR_LINE
 	}
 	;
 
@@ -1296,23 +1296,23 @@ return: KW_RETURN
 for_loop: KW_FOR for_elem ID expression block
 	{
 		requireInKeyword(lexer.inputFile, $3, @3);
-		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"range", move($4)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		LOC(f, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $5}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"range", move($4)}}; // LCOV_EXCL_BR_LINE
+		LOC(f, @$); // LCOV_EXCL_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $5}} }); // LCOV_EXCL_BR_LINE
 	}
 	| KW_FOR for_elem ',' ID ID expression block
 	{
 		requireInKeyword(lexer.inputFile, $5, @5);
-		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"index", $4}, {"range", move($6)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		LOC(f, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $7}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"index", $4}, {"range", move($6)}}; // LCOV_EXCL_BR_LINE
+		LOC(f, @$); // LCOV_EXCL_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $7}} }); // LCOV_EXCL_BR_LINE
 	}
 	| KW_FOR for_elem ',' type_expr ID ID expression block
 	{
 		requireInKeyword(lexer.inputFile, $6, @6);
-		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"index", $5}, {"index-type", move($4)}, {"range", move($7)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		LOC(f, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $8}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		json f = {{"stmt-type", "for"}, {"elem", move($2)}, {"index", $5}, {"index-type", move($4)}, {"range", move($7)}}; // LCOV_EXCL_BR_LINE
+		LOC(f, @$); // LCOV_EXCL_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(f), {}, {{"body", $8}} }); // LCOV_EXCL_BR_LINE
 	}
 	;
 
@@ -1338,19 +1338,19 @@ for_elem: ID
 
 while_loop: KW_WHILE expression block
 	{
-		json w = {{"stmt-type", "while"}, {"cond", $2}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		LOC(w, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		$$ = std::make_shared<const LazyNode>(LazyNode{ move(w), {}, {{"body", $3}} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		json w = {{"stmt-type", "while"}, {"cond", $2}}; // LCOV_EXCL_BR_LINE
+		LOC(w, @$); // LCOV_EXCL_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(w), {}, {{"body", $3}} }); // LCOV_EXCL_BR_LINE
 	}
 	;
 
 if_stmt: KW_IF expression block else_stmt
 	{
-		json i = {{"stmt-type", "if"}, {"cond", $2}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-		LOC(i, @$); // LCOV_EXCL_EXCEPTION_BR_LINE
-		vector<std::pair<string, NodeRef>> children = {{"then", blockStmtNode($3)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json i = {{"stmt-type", "if"}, {"cond", $2}}; // LCOV_EXCL_BR_LINE
+		LOC(i, @$); // LCOV_EXCL_BR_LINE
+		vector<std::pair<string, NodeRef>> children = {{"then", blockStmtNode($3)}}; // LCOV_EXCL_BR_LINE
 		if ($4) children.push_back({"else", $4});
-		$$ = std::make_shared<const LazyNode>(LazyNode{ move(i), move(children), {} }); // LCOV_EXCL_EXCEPTION_BR_LINE
+		$$ = std::make_shared<const LazyNode>(LazyNode{ move(i), move(children), {} }); // LCOV_EXCL_BR_LINE
 	}
 	;
 
@@ -1417,9 +1417,9 @@ fptr_params: /* empty */
 	;
 
 fptr_param_list: type_expr
-	{ $$ = PList<json>().push({{"var-type", fptrSigType(move($1))}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = PList<json>().push({{"var-type", fptrSigType(move($1))}}); } // LCOV_EXCL_BR_LINE
 	| fptr_param_list ',' type_expr
-	{ $$ = $1.push({{"var-type", fptrSigType(move($3))}}); } // LCOV_EXCL_EXCEPTION_BR_LINE
+	{ $$ = $1.push({{"var-type", fptrSigType(move($3))}}); } // LCOV_EXCL_BR_LINE
 	;
 
 fptr_ret: /* empty */ %prec FPTR_NORET

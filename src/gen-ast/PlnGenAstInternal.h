@@ -33,7 +33,7 @@ inline json storeLocToExpr(const json& loc)
 	}
 	if (loc.contains("loc")) e["loc"] = loc["loc"];
 	return e;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 inline bool isStoreStmt(const json& e)
 {
@@ -69,13 +69,13 @@ inline json storeStmt(json loc, json value, bool transfer)
 	s["value"] = move(value);
 	if (transfer) s["ownership-transfer"] = true;
 	return s;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Build a pointer type node. `mut` distinguishes @T (false) from @!T (true).
 inline json pntrTypeExpr(json base, bool mut)
 {
 	return {{"type-kind","pntr"},{"mutable",mut},{"base-type",std::move(base)}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // The base-type node for @void/@!void -- C's void*, spelled directly instead
 // of via a primitive pointee like @!int8 (pntr(void) is bidirectionally
@@ -83,14 +83,14 @@ inline json pntrTypeExpr(json base, bool mut)
 inline json voidTypeExpr()
 {
 	return json{{"type-kind","prim"},{"type-name","void"}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // The pointee of @func(...): the same shape c2ast gives a C function type, so
 // a native function pointer and a cinclude'd one reach SA identically.
 inline json funcTypeExpr(std::vector<json> params, json ret)
 {
 	return {{"type-kind","func"},{"parameters",std::move(params)},{"ret-type",std::move(ret)}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // `_` in a function type keeps the type a cast's source has at that place.
 inline json fptrSigType(json t)
@@ -120,7 +120,7 @@ inline json varrTypeExpr(json sizeExpr, json base)
 		t["base-type"] = std::move(base);
 	}
 	return t;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A variable-length array.
 inline bool isVarrType(const json& t)
@@ -186,8 +186,8 @@ inline bool isFrameVarType(const json& t)
 inline json boolLiteral(const char* value)
 {
 	return {{"expr-type", "lit-int"}, {"value", value},
-	        {"value-type", {{"type-kind", "prim"}, {"type-name", "bool"}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	        {"value-type", {{"type-kind", "prim"}, {"type-name", "bool"}}}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Unary minus on an untyped integer literal becomes one negative literal, so
 // SA's range check sees `-128` as a single value (an int8 `neg(128)` operand
@@ -200,7 +200,7 @@ inline json negateExpr(json operand)
 		return operand;
 	}
 	return {{"expr-type", "neg"}, {"operand", std::move(operand)}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A `link` clause entry ending in ".o" names an object file rather than a -l
 // library. Resolved here, against the source file's directory as a local

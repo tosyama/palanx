@@ -140,11 +140,11 @@ void PlnSemanticAnalyzer::addOwnedScopeVar(const string& name, json release)
 // `@[+]@[]uint8` as its owner would hold it; `args` borrows it read-only.
 static json argsStorageType()
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json elem = {{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","prim"},{"type-name","uint8"}}}};
 	return varrPntrType(elem, false);
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 // Whether a top-level statement names `args`, which no declaration there can
 // shadow. A function's body has a scope of its own, so it is not looked into.
@@ -176,7 +176,7 @@ void PlnSemanticAnalyzer::noteImplicitArgs(const json& stmts)
 // The header lives in the top-level function's frame and is never freed.
 json PlnSemanticAnalyzer::implicitArgsDecl() const
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	const json& vt = *findVar("args");
 	const json& params = sa["main"]["parameters"];
 	auto param = [&](size_t i) {
@@ -195,8 +195,8 @@ json PlnSemanticAnalyzer::implicitArgsDecl() const
 		store(8, params[0]["var-type"], param(0)),
 		store(16, data, param(1)),
 	});
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 void PlnSemanticAnalyzer::registerCFunc(const string& name, const json& def)
 {
@@ -309,10 +309,10 @@ void PlnSemanticAnalyzer::validateEmbeddedParams(const json& funcDef)
 
 bool PlnSemanticAnalyzer::isStructType(const json& type) const
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	return type.value("type-kind","") == "prim" &&
 	       structDefs_.count(type.value("type-name",""));
-	// LCOV_EXCL_EXCEPTION_BR_STOP
+	// LCOV_EXCL_BR_STOP
 }
 
 bool PlnSemanticAnalyzer::isKnownTypeName(const string& name) const
@@ -341,7 +341,7 @@ void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json&
 			const json& elem = (*t)["base-type"];
 			string ek = elem.value("type-kind","");
 			string ename = elem.value("type-name","");
-			if (ek == "prim" && !isKnownTypeName(ename)) { // LCOV_EXCL_EXCEPTION_BR_LINE
+			if (ek == "prim" && !isKnownTypeName(ename)) { // LCOV_EXCL_BR_LINE
 				cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnknownType, ename) << endl;
 				exit(1);
 			}
@@ -405,7 +405,7 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& locNode, const j
 	if (isStructType(resolved))
 		return {{"type-kind","struct"},{"type-name",resolved["type-name"]}};
 	return resolved;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Structural-only counterpart to unrepresentableTypeName for native Palan
 // signatures: names were already checked by preregisterFunc, so only a
@@ -475,7 +475,7 @@ void PlnSemanticAnalyzer::validateOperatorSig(const json& funcDef)
 // receives. Through a read-only borrow the elements are read-only too.
 json PlnSemanticAnalyzer::varrData(json varr)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	const json& vt = varr["value-type"];
 	json elems = {{"type-kind","pntr"},{"base-type",vt["base-type"]["base-type"]}};
 	if (isVarrEmbedded(vt)) {
@@ -488,8 +488,8 @@ json PlnSemanticAnalyzer::varrData(json varr)
 		elems["base-type"] = withArrPermission(elems["base-type"], false);
 	}
 	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",16},{"value-type",move(elems)}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 optional<SaDiag> PlnSemanticAnalyzer::arrBorrowBindingMismatch(const json& srcAst,
 		const json& saValue, const json& dstType)
@@ -499,13 +499,13 @@ optional<SaDiag> PlnSemanticAnalyzer::arrBorrowBindingMismatch(const json& srcAs
 	// Only an explicit cast converts into a borrowed array type.
 	bool castBorrow = saValue.value("expr-type","") == "convert";
 	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow && !castBorrow)
-		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_BR_LINE
 	if (!arrShapeMatch(saValue["value-type"], dstType)) {
 		// Shown as the owned type, without the permission the borrow added.
 		const json& srcType = saValue.contains("var-type") ? saValue["var-type"]
 			: saValue.value("expr-type","") == "arr-index" ? saValue["array"]["value-type"]["base-type"]
 			: saValue["value-type"];
-		return SaDiag{E_ArrBorrowShapeMismatch, typeDisplayName(dstType), typeDisplayName(srcType)}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_ArrBorrowShapeMismatch, typeDisplayName(dstType), typeDisplayName(srcType)}; // LCOV_EXCL_BR_LINE
 	}
 	return nullopt;
 }
@@ -521,7 +521,7 @@ optional<SaDiag> PlnSemanticAnalyzer::elemShapeMismatch(const json& saValue, con
 	if (!saValue.contains("value-type") || elemShapeMatch(saValue["value-type"], dstType)) return nullopt;
 	json dstShape = dstType;
 	dstShape.erase("mutable");  // a slot reads as the array it points to
-	return SaDiag{E_ArrElemShapeMismatch, typeDisplayName(dstShape), typeDisplayName(saValue["value-type"])}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return SaDiag{E_ArrElemShapeMismatch, typeDisplayName(dstShape), typeDisplayName(saValue["value-type"])}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 void PlnSemanticAnalyzer::checkElemShape(const json& locNode, const json& saValue, const json& dstType)
@@ -700,13 +700,13 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
 	symbolScope_  = moduleSymbol(moduleId_);
 	sa["original"]      = ast["original"];
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json u8 = {{"type-kind","prim"},{"type-name","uint8"}};
 	sa["main"] = {{"name", symbolScope_ + "..main"}, {"parameters", {
 		{{"name","__argc"}, {"var-type", {{"type-kind","prim"},{"type-name","int64"}}}},
 		{{"name","__argv"}, {"var-type", {{"type-kind","pntr"},{"base-type", {{"type-kind","pntr"},{"base-type",u8}}}}}},
 	}}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
+	// LCOV_EXCL_BR_STOP
 	sa["str-literals"]  = json::array();
 	sa["functions"]     = json::array();
 	sa["alloc-shapes"]  = json::array();
@@ -718,7 +718,7 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	json argsType = argsStorageType();
 	argsType["mutable"] = false;
 	declareVar("args", argsType);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Resolve every top-level type and const declaration, and the types
 // top-level imports bring in, so function signatures pre-registered in
@@ -819,7 +819,7 @@ void PlnSemanticAnalyzer::ensureTypeName(const string& name, bool viaPointer)
 		return;
 	}
 	adoptImportedType(t->second, alias);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 void PlnSemanticAnalyzer::ensureTypeRefs(const json& node, bool viaPointer)
 {
@@ -991,7 +991,7 @@ void PlnSemanticAnalyzer::adoptImportedType(ImportedType& t, const string& alias
 		typeAliases_[alias + "." + (*t.decl)["name"].get<string>()] =
 			{{"type-kind", "prim"}, {"type-name", (*t.decl)["name"]}};
 	t.adopted = true;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 void PlnSemanticAnalyzer::whenSettled(function<void()> f)
 {
@@ -1135,7 +1135,7 @@ void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 			if (tk == "user" || tk == "enum") continue;
 			string name = td["name"].get<string>();
 			cTypedefs_[name] = vt;
-			// LCOV_EXCL_EXCEPTION_BR_START
+			// LCOV_EXCL_BR_START
 			if (tk == "pntr") {
 				// An unrepresentable pointee (e.g. a function) leaves the name unknown.
 				json n = normalizeCType(vt);
@@ -1145,9 +1145,9 @@ void PlnSemanticAnalyzer::registerCIncludeTypes(const json& stmt)
 				registerTypeAliasChecked(stmt, name, vt);
 			else
 				registerTypeAliasChecked(stmt, name, {{"type-kind", "prim"}, {"type-name", vt.value("type-name", "")}});
-			// LCOV_EXCL_EXCEPTION_BR_STOP
+			// LCOV_EXCL_BR_STOP
 		}
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 {
