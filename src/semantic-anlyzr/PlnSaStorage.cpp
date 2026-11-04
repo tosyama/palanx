@@ -366,7 +366,7 @@ Storage PlnSemanticAnalyzer::arrVarStorage(const json& locNode, const json& vtyp
 	}
 	st.type = sizedArrLevel(locNode, vtype, nullopt, &st.lens);
 	return st;
-} // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE
 
 // The block a declared `[+]T` or `[n]T` owns, or null for any other type:
 // what a call result must be for the variable to take it over.
@@ -432,7 +432,7 @@ json shapeElem(const json& elem)
 	if (out.contains("base-type") && out["base-type"].is_object())
 		out["base-type"] = shapeElem(out["base-type"]);
 	return out;
-} // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE
 
 // The levels of an element, outermost first and on through the elements of
 // a `[+]U`, whose lengths its generated functions take after their own
@@ -460,7 +460,7 @@ json helperLens(const json& elem)
 		lens.push_back(lenLit((*level)["arr-size"].get<int64_t>()));
 	return lens;
 	// LCOV_EXCL_BR_STOP
-} // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE
 
 // A family taking any element names it by the symbol of the element's layout
 // (layoutElem), so element types laid out alike share their helpers.
@@ -806,7 +806,7 @@ static json arrLens(const json& vt, const vector<json>& known = {})
 	for (auto& len : helperLens(*t)) lens.push_back(len);
 	return lens;
 	// LCOV_EXCL_BR_STOP
-} // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE
 
 pair<const json*, size_t> arrRoot(const json& location)
 {
@@ -1055,7 +1055,7 @@ void PlnSemanticAnalyzer::markStructRet(json& call, const json& locNode)
 		return;
 	const StructDef& def = requireCompleteStruct(call["value-type"]["base-type"]["type-name"].get<string>(), locNode);
 	call["struct-ret"] = {{"size", def.totalSize}, {"eightbytes", eightbytesJson(def, structDefs_)}}; // LCOV_EXCL_BR_LINE
-}
+} // LCOV_EXCL_BR_LINE
 
 // The statements making `call` (or the temp holding it) write its struct into
 // dest. The call then has no value of its own.
@@ -1067,7 +1067,7 @@ json PlnSemanticAnalyzer::bindStructRet(json call, json dest)
 		for (auto& s : bindStructRet(move(call["value"]), move(dest))) stmts.push_back(move(s));
 		for (auto& r : call["release"]) stmts.push_back(move(r));
 		return json::array({{{"stmt-type","block"},{"body",move(stmts)}}});
-	}
+	} // LCOV_EXCL_LINE
 	call.erase("value-type");
 	call.erase("category");
 	call["ret-dest"] = move(dest);

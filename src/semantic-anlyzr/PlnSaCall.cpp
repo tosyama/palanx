@@ -832,7 +832,7 @@ static GivenOwner givenOwnerOf(const json& given)
 		e = &(*e)[field ? "object" : "array"];
 	}
 	return g;
-}
+} // LCOV_EXCL_LINE
 
 // The node in e that may change the owner g waits to reset, if any.
 static const json* changesGiven(const json& e, const GivenOwner& g)
@@ -847,7 +847,7 @@ static const json* changesGiven(const json& e, const GivenOwner& g)
 	if (et == "transfer") {
 		vector<string> p = pathKeys(e["value"]);
 		if (!p.empty() && (isPrefixOf(p, g.path) || isPrefixOf(g.path, p))) return &e;
-	}
+	} // LCOV_EXCL_BR_LINE
 	if (et == "addr-of" && e.value("mutable", false) && g.changeable.count(pathKeys(e["object"])))
 		return &e;
 	// A method-form receiver is borrowed with '@!'.
@@ -918,7 +918,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 			if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_TransferToParam, paramName, funcName) << endl;
 			exit(1);
-		}
+		} // LCOV_EXCL_LINE
 		if (ownedParam) {
 			saArgs.push_back(ownedBlockArg(locNode, arg, ca, *param, argIdx, funcName));
 			continue;

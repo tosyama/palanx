@@ -1351,7 +1351,7 @@ json PlnSemanticAnalyzer::transferStmts(const json& stmt, json targetRelease, js
 	result.push_back(move(store));
 	appendTransferSourceReset(result, stmt, value);
 	return result;
-} // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE
 
 // A struct a call returns, given to an owner, as a heap block of its own
 // declared in pre.
@@ -1634,7 +1634,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		pre.push_back({{"stmt-type", "var-decl"}, {"vars", json::array({{{"name", name}, {"var-type", type}, {"init", move(init)}}})}});
 		vars.push_back({{"ret-dest", {{"expr-type", "id"}, {"name", name}, {"var-type", type}, {"value-type", type}}}});
 		// LCOV_EXCL_BR_STOP
-	};
+	}; // LCOV_EXCL_BR_LINE
 	for (size_t i = 0; i < stmt["vars"].size(); i++) {
 		const json& v = stmt["vars"][i];
 		const json& retType = rets[i]["var-type"];

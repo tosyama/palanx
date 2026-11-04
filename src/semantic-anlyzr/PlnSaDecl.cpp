@@ -399,7 +399,7 @@ json PlnSemanticAnalyzer::sa_resolved_var_decl(const json& stmt2, vector<VarStor
 		begin = i;
 	}
 	return result;
-} // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE
 
 json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage storage)
 {
@@ -488,7 +488,7 @@ json PlnSemanticAnalyzer::sa_arr_size_expr(const json& stmt, const json& sizeExp
 	if (t != uint64Type)
 		sz = wrapConvert(sz, registry_.toJson(uint64Type));
 	return sz;
-} // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE
 
 // Fills an omitted dimension with `count`; otherwise returns the declared
 // size, which must be a compile-time constant.
@@ -530,7 +530,7 @@ string PlnSemanticAnalyzer::fillArrLitSizes(const json& stmt, const string& name
 		level = &(*level)["base-type"];
 	}
 	return declared;
-}
+} // LCOV_EXCL_LINE
 
 json PlnSemanticAnalyzer::sa_arr_lit_var_decl(const json& stmt, VarStorage storage)
 {
@@ -1426,30 +1426,17 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 		json var_id = {{"expr-type","id"},{"name",name},{"var-type",pntr_type},{"value-type",pntr_type}};
 
 		json init;
-		if (!takenOver.is_null() && storage == VarStorage::Heap) {
+		if (!takenOver.is_null()) {
+			// takeOverInit rejects '<<=' into frame storage, and a call's struct
+			// is `returned` instead, so a block is only taken over by the heap.
+			BOOST_ASSERT(storage == VarStorage::Heap); // LCOV_EXCL_BR_LINE
 			init = move(takenOver);
 			addOwnedScopeVar(name, makeOwnedFreeStmt(name, pntr_type));
 		} else {
-			// The callee builds what a returned struct owns, and a frame variable
-			// gets what a taken-over block owns, so their storage is only allocated.
-			bool build = returned.is_null() && takenOver.is_null();
-			init = placeAggregateVar(stmt, name, pntr_type, structAllocExpr(structName, build),
+			// The callee builds what a returned struct owns, so its storage is only allocated.
+			init = placeAggregateVar(stmt, name, pntr_type, structAllocExpr(structName, returned.is_null()),
 			                         makeOwnedFreeStmt(name, pntr_type), storage, def.totalSize, def.maxAlign,
 			                         post, structShape(structName));
-		}
-		if (!takenOver.is_null()) {
-			// Frame storage can't take the block over: its contents, owned
-			// fields included, move into the frame and only the block is freed.
-			string temp = "__tmp_" + to_string(tempVarCounter_++);
-			json tempId = {{"expr-type","id"},{"name",temp},{"var-type",pntr_type},{"value-type",pntr_type}};
-			json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
-			json size_arg = {{"expr-type","lit-uint"},{"value",to_string(def.totalSize)},{"value-type",uint64_type}};
-			json body = json::array({
-				{{"stmt-type","var-decl"},{"vars",json::array({{{"name",temp},{"var-type",pntr_type},{"init",move(takenOver)}}})}},
-				{{"stmt-type","expr"},{"body",{{"expr-type","call"},{"name","memcpy"},{"func-type","c"},
-					{"args",json::array({var_id, tempId, size_arg})}}}},
-				makeFreeStmt(temp, pntr_type)});
-			initStmts.push_back({{"stmt-type","block"},{"body",move(body)}});
 		}
 		sa_stmt["vars"].push_back({{"name",name},{"var-type",pntr_type},{"init",init}});
 		if (!returned.is_null())
@@ -1481,7 +1468,7 @@ void PlnSemanticAnalyzer::bindStatic(const string& name, const string& label, co
 	for (auto& b : staticBindings_)
 		if (b["name"] == name) return;
 	staticBindings_.push_back({{"name", name}, {"label", label}, {"var-type", type}}); // LCOV_EXCL_BR_LINE
-}
+} // LCOV_EXCL_BR_LINE
 
 bool PlnSemanticAnalyzer::isStaticBound(const string& name) const
 {
@@ -1550,7 +1537,7 @@ void PlnSemanticAnalyzer::sa_global_decl(const json& stmt, json& out)
 	}
 	globals_[name] = move(g);
 	sa["globals"].push_back({{"label", label}, {"var-type", type}}); // LCOV_EXCL_BR_LINE
-}
+} // LCOV_EXCL_BR_LINE
 
 void PlnSemanticAnalyzer::sa_global_permit(const json& stmt)
 {
@@ -1563,7 +1550,7 @@ void PlnSemanticAnalyzer::sa_global_permit(const json& stmt)
 	auto g = globals_.find(name);
 	if (g != globals_.end()) {
 		funcs = &g->second.funcs;
-	} else if (!findVar(name) && findCGlobal(name)) {
+	} else if (!findVar(name) && findCGlobal(name)) { // LCOV_EXCL_BR_LINE
 		funcs = &cGlobalPermits_[name];
 	} else {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_GlobalPermitUnknownVar, name) << endl;
@@ -1632,9 +1619,9 @@ void PlnSemanticAnalyzer::checkGlobalsReachedBeforeDecl() const
 			auto c = callees.find(s);
 			if (c != callees.end())
 				for (auto& [callee, loc] : c->second) todo.push_back(callee);
-		}
+		} // LCOV_EXCL_BR_LINE
 		return false;
-	};
+	}; // LCOV_EXCL_BR_LINE
 
 	vector<pair<string, json>> before;
 	// A global's own initializer runs before it is set too.
@@ -1650,11 +1637,11 @@ void PlnSemanticAnalyzer::checkGlobalsReachedBeforeDecl() const
 						cerr << locPrefix(at) << PlnSaMessage::getMessage(
 							E_GlobalUsedBeforeDecl, stmt["vars"][0]["name"].get<string>(), fn) << endl;
 						exit(1);
-					}
+					} // LCOV_EXCL_LINE
 			}
 		}
 	}
-}
+} // LCOV_EXCL_BR_LINE
 
 void PlnSemanticAnalyzer::rejectImportedGlobals(const json& importStmt, const json& impAst) const
 {

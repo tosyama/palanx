@@ -670,3 +670,11 @@ TEST(build_mgr, top_var_const_in_sig) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/369_top_var_const.pa");
 	ASSERT_EQ(output, "3 10.20\n");
 }
+
+TEST(build_mgr, multi_ret_into_frame_array_mtrace) {
+	expectMtraceRun("387_multi_ret_into_frame_array_mtrace", "6 8\n", 1);
+}
+
+TEST(build_mgr, give_row_const_index_mtrace) {
+	expectMtraceRun("388_give_row_const_index_mtrace", "6\n", 3);
+}

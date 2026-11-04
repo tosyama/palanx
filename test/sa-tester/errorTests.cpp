@@ -849,6 +849,10 @@ TEST(sa_error, sig_not_implemented)
 		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
 		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
 		{"error_552_ret_untyped.pa", ":1:13: error: this return value is not supported in this version."},
+		{"error_941_take_undeclarable.pa", ":2:1: error: this statement is not supported in this version."},
+		{"error_942_transfer_to_expr.pa", ":3:1: error: this expression is not supported in this version."},
+		{"error_943_tapple_call.pa", ":3:1: error: this expression is not supported in this version."},
+		{"error_944_unknown_field_overload_arg.pa", ":5:3: error: struct 'P' has no field 'nofield'."},
 		{"error_555_import_not_impl_sig.pa", "lib_sa_not_impl_sig.pa:1:15: error: this parameter is not supported in this version."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -962,6 +966,8 @@ TEST(sa_error, as_cast)
 {
 	const pair<string, string> cases[] = {
 		{"error_579_cast_owned_arr.pa", ":2:14: error: cannot cast to 'array': only a pointer ('@!X') can be viewed as an owner"},
+		{"error_938_cast_unsized_arr.pa", ":2:12: error: cannot cast to 'array': only a primitive"},
+		{"error_939_cast_embed.pa", ":3:8: error: cannot cast to 'embed': only a primitive"},
 		{"error_580_cast_ptr_to_narrow_int.pa", ":3:11: error: Cannot cast type '@!int32' to 'int32'."},
 		{"error_581_cast_int_to_ptr.pa", ":2:13: error: Cannot cast type 'int32' to '@!int32'."},
 		{"error_582_cast_int_to_borrowed_arr.pa", ":2:16: error: Cannot cast type 'uint64' to '@![4]int32'."},
@@ -1340,6 +1346,7 @@ TEST(sa_error, global_var)
 	const pair<string, string> cases[] = {
 		{"error_881_global_in_func.pa", ":2:2: error: 'global' is allowed only at the top level of a module."},
 		{"error_882_global_in_block.pa", ":2:2: error: 'global' is allowed only at the top level of a module."},
+		{"error_937_permit_in_block.pa", ":2:3: error: 'global' is allowed only at the top level of a module."},
 		{"error_883_permit_not_global.pa", ":2:1: error: 'x' is not a global variable: declare it with 'global', or cinclude the C global first."},
 		{"error_884_permit_not_func.pa", ":1:24: error: 'y' is not a function at the top level of this module."},
 		{"error_885_permit_duplicate.pa", ":2:14: error: 'f' is already permitted to use 'x'."},
@@ -1392,6 +1399,7 @@ TEST(sa_error, give_and_take)
 		{"error_906_take_into_prim.pa", ":2:1: error: '<<=' needs a variable that owns its array or struct; 'm' does not."},
 		{"error_907_take_from_non_owner.pa", ":3:1: error: '<<='" + nonOwner},
 		{"error_908_take_from_prim.pa", ":3:1: error: '<<='" + nonOwner},
+		{"error_940_owner_view_from_non_owner.pa", ":3:1: error: '->>'" + nonOwner},
 		{"error_909_call_non_func_ptr.pa", ":2:1: error: 'int32' is not a function pointer and cannot be called."},
 		{"error_910_keep_param_count.pa",
 		 ":2:13: error: the cast's function type has 2 parameters, but '@func(uint64) -> @!void' has 1."},

@@ -899,7 +899,7 @@ json PlnSemanticAnalyzer::knownValueType(const json& expr) const
 			const json* r = c.def->contains("ret-type") ? &(*c.def)["ret-type"] : nullptr;
 			if (!r || (!ret.is_null() && ret != *r)) return json();
 			ret = *r;
-		}
+		} // LCOV_EXCL_BR_LINE
 		return ret;
 	}
 	return json();
@@ -951,7 +951,7 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 	// it is given is typed by the parameter instead.
 	static const map<string, string> operators = {
 		{"add", "+"}, {"sub", "-"}, {"mul", "*"}, {"div", "/"}, {"mod", "%"},
-	};
+	}; // LCOV_EXCL_BR_LINE
 	json probes[2];
 	auto op = operators.find(expr_type);
 	if (op != operators.end()) {
@@ -1263,7 +1263,7 @@ json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
 
 	json resolved = resolveKnownType(expr, written);
 	string tk = resolved.value("type-kind", "");
-	if (tk == "arr" || tk == "embed") {
+	if (tk == "embed") {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_InvalidCastTarget, typeDisplayName(written)) << endl;
 		exit(1);
 	}

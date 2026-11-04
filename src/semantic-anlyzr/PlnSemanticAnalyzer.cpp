@@ -930,7 +930,7 @@ bool PlnSemanticAnalyzer::resolveTopConst(TopDecl& d)
 			return false;
 		}
 		vars[name] = *vt;
-	}
+	} // LCOV_EXCL_BR_LINE
 	varScopes.push_back(move(vars));
 	sa_const_decl(stmt);
 	varScopes.pop_back();
@@ -967,7 +967,7 @@ const json* PlnSemanticAnalyzer::topVarType(const string& name)
 	program_->resolving.pop_back();
 	v.state = TopDecl::Done;
 	return v.type.is_null() ? nullptr : &v.type;
-}
+} // LCOV_EXCL_BR_LINE
 
 // A const left to its statement is unknown until then.
 void PlnSemanticAnalyzer::rejectDeferredConstRefs(const json& locNode, const json& node) const

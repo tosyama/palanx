@@ -1385,3 +1385,7 @@ TEST(build_mgr, operator_func_mtrace) {
 	expectMtraceRun("380_operator_func_mtrace",
 		"1.5 2.5 3.5\n0.5 1.5 2.5\n-1 -2 -3\n-1.5 -2.5 -3.5\n1.5 3 4.5\n0 -1 -2\n3\n2.5 4.5 6.5\n", 4);
 }
+
+TEST(build_mgr, chain_ahead_of_receiver_mtrace) {
+	expectMtraceRun("386_chain_ahead_of_receiver_mtrace", "5\n1 4\n1 4\n1 5\n4\n4\n4\n", 10);
+}

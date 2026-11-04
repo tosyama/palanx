@@ -171,7 +171,7 @@ struct BodyList {
 		if (var.contains("var-type") && !var.contains("not-impl"))
 			j = {{"stmt-type", "var-decl"}, {"global", true}, {"vars", json::array({var})}}; // LCOV_EXCL_BR_LINE
 		else
-			j = {{"stmt-type", "not-impl"}};
+			j = {{"stmt-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
 		LOC(j, loc);
 		return j;
 	} // LCOV_EXCL_BR_LINE
@@ -703,9 +703,9 @@ global_funcs: global_func
 	;
 
 global_func: func_name
-	{ $$ = {{"name", $1}, {"writable", false}}; LOC($$, @$); }
+	{ $$ = {{"name", $1}, {"writable", false}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| func_name '!'
-	{ $$ = {{"name", $1}, {"writable", true}}; LOC($$, @$); }
+	{ $$ = {{"name", $1}, {"writable", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	;
 
 inherit_var_decl: ID
@@ -713,7 +713,7 @@ inherit_var_decl: ID
 	| ID '=' expression
 	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}}; }
 	| ID OPE_TAKE expression
-	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}, {"ownership-transfer", true}}; }
+	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}, {"ownership-transfer", true}}; } // LCOV_EXCL_BR_LINE
 	;
 
 var_declaration: type_expr ID
@@ -739,9 +739,9 @@ var_declaration: type_expr ID
 	| type_expr ID OPE_TAKE expression
 	{
 		if (isDeclarableVarType($1) || isFrameVarType($1)) {
-			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}, {"ownership-transfer", true}};
+			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}, {"ownership-transfer", true}}; // LCOV_EXCL_BR_LINE
 		} else {
-			$$ = {{"not-impl", true}};
+			$$ = {{"not-impl", true}}; // LCOV_EXCL_BR_LINE
 			LOC($$, @$);
 		}
 	}
@@ -948,12 +948,12 @@ expression: term
 		string kind = $3.value("kind", "");
 		if (kind == "var" || kind == "arr-index" || kind == "field") {
 			$$ = storeStmt(move($3), move($1), true);
-		} else if (kind == "call" && !isStoreStmt($1)) {
-			json value = {{"expr-type", "transfer"}, {"value", move($1)}, {"op", "->>"}};
+		} else if (kind == "call" && !isStoreStmt($1)) { // LCOV_EXCL_BR_LINE
+			json value = {{"expr-type", "transfer"}, {"value", move($1)}, {"op", "->>"}}; // LCOV_EXCL_BR_LINE
 			LOC(value, @1);
-			$$ = {{"expr-type", "chain-call"}, {"value", move(value)}, {"call", move($3["call"])}};
+			$$ = {{"expr-type", "chain-call"}, {"value", move(value)}, {"call", move($3["call"])}}; // LCOV_EXCL_BR_LINE
 		} else {
-			$$ = {{"expr-type", "not-impl"}};
+			$$ = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
 		}
 		LOC($$, @$);
 	}
@@ -965,19 +965,19 @@ expression: term
 		if (kind == "var" || kind == "arr-index" || kind == "field") {
 			$$ = storeStmt(move($3), move($1), true);
 			if ($$.contains("stmt-type")) $$["owner-view-type"] = move($5);
-		} else if (kind == "call" && !isStoreStmt($1)) {
-			json value = {{"expr-type", "transfer"}, {"value", move($1)}, {"op", "->>"}};
+		} else if (kind == "call" && !isStoreStmt($1)) { // LCOV_EXCL_BR_LINE
+			json value = {{"expr-type", "transfer"}, {"value", move($1)}, {"op", "->>"}}; // LCOV_EXCL_BR_LINE
 			LOC(value, @1);
-			json chain = {{"expr-type", "chain-call"}, {"value", move(value)}, {"call", move($3["call"])}};
+			json chain = {{"expr-type", "chain-call"}, {"value", move(value)}, {"call", move($3["call"])}}; // LCOV_EXCL_BR_LINE
 			LOC_BE(chain, @1, @3);
-			$$ = {{"expr-type", "cast"}, {"target-type", move($5)}, {"src", move(chain)}};
+			$$ = {{"expr-type", "cast"}, {"target-type", move($5)}, {"src", move(chain)}}; // LCOV_EXCL_BR_LINE
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
 		}
 		LOC($$, @$);
 	}
 	| expression DBL_GRTR
-	{ $$ = {{"expr-type", "transfer"}, {"value", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "transfer"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| noname_func
 	{ $$ = {{"expr-type", "not-impl"}}; LOC($$, @$); }
 	;
@@ -1020,7 +1020,7 @@ term: INT
 	| '(' tapple_inner ')' '(' arguments ')'
 	{
 		if ($2.count("not-impl") || $2.count("tapple-items")) {
-			$$ = {{"expr-type", "not-impl"}};
+			$$ = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
 		} else {
 			$$ = {{"expr-type", "call-ptr"}, {"callee", move($2)}, {"args", $5.toVector()}}; // LCOV_EXCL_BR_LINE
 		}

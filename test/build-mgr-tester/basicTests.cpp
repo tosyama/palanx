@@ -508,3 +508,9 @@ TEST(build_mgr, shift) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/293_shift.pa");
 	ASSERT_EQ(output, "2147483644 144 2 2\n15 40\n-1 -3 -56 -56\n3 5 116\n-64 0 -2305843009213693952\n");
 }
+
+TEST(build_mgr, float_neg_on_stack) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/390_float_neg_on_stack.pa"),
+		"1\n2\n3\n4\n5\n6\n-2.500000\n");
+}

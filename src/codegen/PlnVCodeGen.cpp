@@ -397,7 +397,7 @@ static vector<pair<int, VRegType>> eightbytePieces(int size)
         pos += w;
     }
     return pieces;
-} // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE
 
 static bool isWholeEightbyte(const Eightbyte& eb)
 {
@@ -502,7 +502,7 @@ std::pair<vector<VReg>, vector<VRegType>> PlnVCodeGen::structRetDsts(const std::
         out.second.push_back(eb.type);
     }
     return out;
-}
+} // LCOV_EXCL_LINE
 
 // ...which are stored through the destination right after the call.
 void PlnVCodeGen::storeStructRet(VReg dest, const std::optional<StructRet>& sr, const vector<VReg>& dsts, VFunc& func)

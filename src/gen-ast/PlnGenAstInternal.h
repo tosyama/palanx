@@ -98,7 +98,7 @@ inline json fptrSigType(json t)
 	if (t.value("type-kind","") == "prim" && t.value("type-name","") == "_")
 		return {{"type-kind","keep"}};
 	return t;
-}
+} // LCOV_EXCL_BR_LINE
 
 // Whether a type_expr result has no array level other than a plain '[n]'/'[]'
 // one ('[#n]'/'[+n]' are not implemented).

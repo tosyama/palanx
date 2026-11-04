@@ -1,0 +1,10 @@
+cinclude <stdio.h>;
+flo64 x = 2.5;
+flo64 a = -x;
+puts("1");
+puts("2");
+puts("3");
+puts("4");
+puts("5");
+puts("6");
+printf("%f\n", a);

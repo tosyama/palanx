@@ -1,0 +1,3 @@
+type T { @!int32 base; };
+T t;
+3 ->> t.base as [1]int32;

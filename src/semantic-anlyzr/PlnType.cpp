@@ -444,7 +444,7 @@ const std::map<std::string, std::string>& operatorFuncNames()
     };
     // LCOV_EXCL_BR_STOP
     return names;
-}
+} // LCOV_EXCL_BR_LINE
 
 std::string funcSymbol(const std::string& name, const json& params)
 {

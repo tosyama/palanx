@@ -1,0 +1,5 @@
+type P { int32 a; };
+func g(@P p, flo32 f) { }
+func g(flo32 f) { }
+P v;
+g(v.nofield * 2.0);

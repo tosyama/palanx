@@ -432,3 +432,8 @@ TEST(build_mgr, import_global_var) {
 	ASSERT_NE(out.find("372_import_global.pa:1:1: error: cannot import a module whose functions use its global variable 'x'"),
 		string::npos) << out;
 }
+
+TEST(build_mgr, global_after_unrelated_call) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/389_global_after_unrelated_call.pa"), "x\n1\n");
+}
