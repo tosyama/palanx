@@ -4,6 +4,7 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
+#include <cstdint>
 #include "../test-base/testBase.h"
 #include "buildMgrTestUtil.h"
 

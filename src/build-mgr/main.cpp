@@ -15,6 +15,7 @@
 #include <memory>
 #include <getopt.h>
 #include <filesystem>
+#include <cstdint>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnBuildMgrMessage.h"
 #include "../common/PlnDefs.h"

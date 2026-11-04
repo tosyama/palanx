@@ -8,6 +8,7 @@
 #include <cctype>
 #include <filesystem>
 #include <set>
+#include <cstdint>
 
 // Singleton that holds bidirectional maps between type-name strings and PrimType::Name.
 // Using a struct with an explicit constructor body so gcov tracks each entry individually.

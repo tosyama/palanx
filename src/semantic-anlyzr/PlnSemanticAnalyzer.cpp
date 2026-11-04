@@ -10,6 +10,7 @@
 #include <deque>
 #include <stdexcept>
 #include <boost/assert.hpp>
+#include <cstdint>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"

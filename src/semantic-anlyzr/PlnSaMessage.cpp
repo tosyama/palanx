@@ -10,6 +10,7 @@
 #include <boost/assert.hpp>
 #include <cstdio>
 #include <regex>
+#include <cstdint>
 
 using std::regex;
 using std::to_string;

@@ -6,6 +6,7 @@
 #include <iostream>
 #include <algorithm>
 #include <functional>
+#include <cstdint>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"

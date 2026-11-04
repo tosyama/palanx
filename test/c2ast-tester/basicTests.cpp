@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <set>
+#include <cstdint>
 #include "../test-base/testBase.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 

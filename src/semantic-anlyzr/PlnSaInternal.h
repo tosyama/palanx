@@ -7,6 +7,7 @@
 #include <string>
 #include <charconv>
 #include <boost/assert.hpp>
+#include <cstdint>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
 // FieldLayout/StructDef live in PlnSemanticAnalyzer.h, not here; every SA .cpp

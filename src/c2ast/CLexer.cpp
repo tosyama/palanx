@@ -11,6 +11,7 @@
 #include <regex>
 #include <iostream>
 #include <cstring>
+#include <cstdint>
 
 using namespace std;
 #include "CFileInfo.h"

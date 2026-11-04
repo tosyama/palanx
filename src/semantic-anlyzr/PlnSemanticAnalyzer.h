@@ -13,6 +13,7 @@
 #include <optional>
 #include <functional>
 #include <filesystem>
+#include <cstdint>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
 #include "PlnSaMessage.h"
