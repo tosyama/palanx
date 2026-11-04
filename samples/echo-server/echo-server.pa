@@ -1,0 +1,86 @@
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+cinclude <uv.h> link "uv";
+
+const HTTP_SERVER_PORT = 8080;
+const DEFAULT_BACKLOG = 128;
+
+global @!uv_loop_t loop = uv_default_loop()
+	for on_new_connection;
+
+uv_tcp_t server;
+loop.uv_tcp_init(@!server);
+
+sockaddr_in addr;
+uv_ip4_addr("0.0.0.0", HTTP_SERVER_PORT, @!addr);
+
+server.uv_tcp_bind(@addr as @sockaddr, 0);
+int32 r = uv_listen(@!server as @!uv_stream_t, DEFAULT_BACKLOG, on_new_connection);
+int32 result = loop.uv_run(uv_run_mode.UV_RUN_DEFAULT);
+loop.uv_loop_close();
+
+exit(result);
+
+// end of program
+
+func on_new_connection(@!uv_stream_t server, int32 status)
+{
+	if status < 0 {
+		fprintf(stderr, "New connection error %s\n", uv_strerror(status));
+		// error!
+		return;
+	}
+
+	uv_tcp_t client;
+	loop.uv_tcp_init(@!client);
+	if server.uv_accept(@!client as @!uv_stream_t) == 0 {
+		(uv_read_start as @func(uv_tcp_t, _, _))(client>>, alloc_buffer, on_read);
+	} else {
+		(uv_close as @func(uv_tcp_t, @func(uv_tcp_t)))(client>>, on_close);
+	}	
+}
+
+func alloc_buffer(@!uv_handle_t handle, size_t suggested_size, @!uv_buf_t buf)
+{
+	[suggested_size]int8 buffer;
+
+	buffer ->> buf.base as [suggested_size]int8;
+	suggested_size -> buf.len;
+}
+
+type write_req_t {
+	$uv_write_t req;
+	$uv_buf_t buf;
+};
+
+func on_read(@!uv_stream_t client, ssize_t nread, @uv_buf_t buf)
+{
+	if nread > 0 {
+		write_req_t req;
+		uv_buf_init(buf.base, int32(nread)) -> req.buf;
+		(uv_write as @func(write_req_t, _, _, _, @func(write_req_t, int32)))(req>>, client, @req.buf, 1, echo_write);
+		return;
+	}
+	if nread < 0 {
+		if nread != uv_errno_t.UV_EOF {
+			fprintf(stderr, "Read error %s\n", uv_strerror(int32(nread)));
+		}
+		(uv_close as @func(@!uv_handle_t, @func(uv_tcp_t)))(client as @!uv_handle_t, on_close);
+	}
+
+	[buf.len]int8 buffer <<= buf.base as [buf.len]int8; // force free buffer
+}
+
+func echo_write(write_req_t req, int32 status)
+{
+	if status < 0 {
+		fprintf(stderr, "Write error %s\n", uv_strerror(status));
+	}
+	[req.buf.len]int8 buffer <<= req.buf.base as [req.buf.len]int8; // force free buffer
+}
+
+func on_close(uv_tcp_t client)
+{
+	// Free client automatically
+}
+
