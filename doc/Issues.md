@@ -95,90 +95,84 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ---
 
-## 12. Returned Structs Are Always Heap-Allocated
-
-**Summary:** A function returning a struct allocates the return value on the heap on every call, and the caller frees it when done; this holds also when the value is only a temporary (an argument such as `@sub(@a, @b)`, or the middle of `v -> f() -> g()`) and for named struct returns. In `samples/raytracer` (v0.2.0), rendering a 256×192 image makes about 6.7 million `calloc`/`free` pairs, about 137 per pixel (mostly from `sub`, `scene_intersect`'s named returns, `mul`, `normalized` and `add`), and `malloc`/`calloc`/`free` take about 66% of the instructions executed (callgrind). The 1024×768 render takes about 7.7s. A fix is to have the caller pass the storage for the return value, as C's struct return does: frame storage for a temporary or a `$T` variable, heap storage only for a variable that owns it. Receiving into `$T v = f();` copies the heap value into the frame and frees it, which is correct but does not avoid the allocation.
-
----
-
-## 13. Float Values Are Never Kept in Registers
-
-**Summary:** `PlnRegAlloc` assigns no XMM registers, so every `flo32`/`flo64` value lives in a stack slot and each arithmetic operation stores its result to memory and reloads it. `samples/raytracer/vecmath.pa`'s `dot` compiles to 32 instructions, most of them `movss` to and from the frame. Allocating XMM registers needs to save values that live across a call, since SysV makes every XMM register caller-saved. Together with #12, this keeps the raytracer far slower than C.
-
----
-
-## 14. Exported Palan Functions Cannot Be Called from C by Name
+## 12. Exported Palan Functions Cannot Be Called from C by Name
 
 **Summary:** Every Palan function links by a symbol made from its module, name and parameter types (`util..show.int32`, v0.2.1), which is no C identifier. C code linked in with `cinclude ... link "x.o"` can call a Palan function only through a function pointer it is given (a callback). Calling one by name would need a way to give an exported function its plain name, like C++'s `extern "C"`.
 
 ---
 
-## 15. Same-Named Source Files in Different Directories Share a Module Name
+## 13. Same-Named Source Files in Different Directories Share a Module Name
 
 **Summary:** The module part of a symbol is the source file's name without its directory, so a symbol does not depend on where the source is checked out. Two modules `a/util.pa` and `b/util.pa` that export a function of the same name and parameter types therefore give it the same symbol, and `ld` reports it as defined twice. Escaping `-` and `.` as `_` plus hex digits can likewise make two file names meet (`my-lib.pa` and `my_2dlib.pa`).
 
 ---
 
-## 16. Using a Value After `->>` Is Not Detected
+## 14. Using a Value After `->>` Is Not Detected
 
 **Summary:** `a ->> b` leaves `a` NULL (as do `f(a>>)` and `T b <<= a;`), and nothing stops `a` from being used afterwards: `len(@a)`, `a[0]` or `a.x` dereferences NULL and the program crashes. This holds for structs, `[+]T` and rows alike, and for a field or element given away (`p ->> q; s -> p;` copies into a NULL struct). A pointer viewed as an owner (`T b <<= p as T;`) is not even reset, so `p` is left dangling once `b` is freed. Detecting it needs flow analysis of moved-from variables.
 
 ---
 
-## 17. Run-Time Failures of Array Allocation Are Unchecked
+## 15. Run-Time Failures of Array Allocation Are Unchecked
 
 **Summary:** A size or capacity known only at run time is not checked: a negative `n` in `[n]T` or `[+n]T` becomes a huge `uint64`. Nor is the result of `malloc`/`calloc`/`realloc` for any heap allocation, so running out of memory dereferences NULL later. `pop` on an empty `[+]T` and a negative `resize` do abort; an option to leave those checks out of a release build has been requested.
 
 ---
 
-## 18. `len` Error Messages
+## 16. `len` Error Messages
 
 **Summary:** `len` reports a missing length only for an array it recognizes (an array whose size is known only at run time, or a `[]T`). A target containing a call, such as `len(@c[f()])`, is not folded, and a value that is not an array, such as `len(@x)` for an `int32 x`, both report "Undefined function 'len'", which does not say what was given. `len` of a run-time-sized array would need the array to keep its length, which it does not.
 
 ---
 
-## 19. Variable-Length Arrays of Pointer Slots
+## 17. Variable-Length Arrays of Pointer Slots
 
 **Summary:** `[+][n]@T` (a variable-length array of rows of borrowed pointers) is not supported; `[+]@T`/`[+]@!T` are (v0.2.2). Neither is a `[][+]T` parameter, which would need each element's header to be passed rather than its data; `@[n][+]T` or `@[+][+]T` borrows such an array instead.
 
 ---
 
-## 20. A Row Is Pushed with `@`, a Struct Without
+## 18. A Row Is Pushed with `@`, a Struct Without
 
 **Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which takes a copy of a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal, and a row given away with `>>` would then be taken without a copy. Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
 
 ---
 
-## 21. C Bit-Fields Cannot Be Accessed
+## 19. C Bit-Fields Cannot Be Accessed
 
 **Summary:** A struct from a C header that has bit-fields gets the same layout as in C (v0.2.2), but a bit-field member cannot be read, written, have its address taken or be given in a struct literal (E_UnsupportedCFieldType). Accessing one needs loads and stores that shift and mask within the storage unit, which codegen does not have.
 
 ---
 
-## 22. A `for` Loop Does Not Track Other Names for Its Array
+## 20. A `for` Loop Does Not Track Other Names for Its Array
 
 **Summary:** A `for` loop holds its array's storage and length until it ends, so its body may not change the array's length or replace it (v0.2.2). The check follows only the name the loop was given: a borrow made before the loop (`@![+]int64 q = @!v;` and then `q.push(1)` in `for copy a in v { }`) or a pointer stored elsewhere changes the array unnoticed, and the loop then reads freed or moved elements. It is conservative the other way: indices on the path are not compared, so in `for copy a in vv[0] { }` a `vv[1].push(1)` is rejected too.
 
 ---
 
-## 23. c2ast Reports a Syntax Error at the Start of the Declaration
+## 21. c2ast Reports a Syntax Error at the Start of the Declaration
 
 **Summary:** When c2ast fails to parse a declaration, it backtracks to the declaration's first token and tries the next form, so the error it finally reports points there (often `1:1` of a line) rather than at the token that failed. Reporting the furthest token reached would need every consume helper to record it, and would change the positions in existing expected messages.
 
 ---
 
-## 24. Arrays Sized at Run Time Are Moved and Copied Unchecked
+## 22. Arrays Sized at Run Time Are Moved and Copied Unchecked
 
-**Summary:** An array whose size is known only at run time is moved, given, taken over and copied by the sizes of the variable or row receiving or releasing it (v0.2.3); whether the other side has those sizes is not checked, so a shorter source is read past its end and a block freed by the wrong sizes leaks or frees elements it does not have. Two cases have no sizes on one side and stay compile errors: copying from a `[]T` parameter into an array, and copying an array sized at run time into a `[+]T`. Keeping each array's length with it (see #18) would allow checking and both cases.
+**Summary:** An array whose size is known only at run time is moved, given, taken over and copied by the sizes of the variable or row receiving or releasing it (v0.2.3); whether the other side has those sizes is not checked, so a shorter source is read past its end and a block freed by the wrong sizes leaks or frees elements it does not have. Two cases have no sizes on one side and stay compile errors: copying from a `[]T` parameter into an array, and copying an array sized at run time into a `[+]T`. Keeping each array's length with it (see #16) would allow checking and both cases.
 
 ---
 
-## 25. An Operator Over a Call Whose Functions Return Different Types
+## 23. An Operator Over a Call Whose Functions Return Different Types
 
 **Summary:** Before an overloaded function is chosen, an argument that is an arithmetic operator over a literal is taken to be a number the parameter types, unless an operand is known to be a struct without analyzing it: a variable, a field reached from one, or a call whose functions all return one struct type (v0.2.3). When the functions of a call's name return different types, `g(h(x) * 2.0)` is still taken to be a number, so a `g` taking the struct `h` returns is not chosen. Telling it would need the call analyzed before the choice, and once more after it.
 
 ---
 
-## 26. Error Messages Name a C Struct by Its Tag
+## 24. Error Messages Name a C Struct by Its Tag
 
 **Summary:** A type alias is resolved where it is used, and the resolved type keeps no record of the alias, so error messages name the type it resolves to. For a struct from a C header that is its tag: with `typedef struct uv_tcp_s uv_tcp_t;`, a bad cast of a `uv_tcp_t` value to `@!uv_stream_t` reports `Cannot cast type 'uv_tcp_s' to '@!uv_stream_s'`, names the program never wrote. The cast target could be shown as written, but the type of a value has only its resolved form; keeping the alias name on resolved types would give one type two representations.
+
+---
+
+## 25. Global Variables Cannot Be Exported or Initialized in an Imported File
+
+**Summary:** A `global` variable can be used only by functions of its own file, and a file whose functions use its global variables cannot be imported, since an imported file's top-level statements, which would initialize them, do not run (v0.2.3). A module keeping its own state, or state shared between modules, needs both a way to export a global variable and a way to initialize an imported file's top-level variables.

@@ -25,8 +25,8 @@ version: 0.2.3 — improvements found through the samples (ray tracer, echo serv
   allowed. A module imported under an alias brings its operators too, and a selective import
   lists them by their symbols (`import vec3, +, - from "vecmath.pa";`).
 - Performance: a function returning a struct returns it into storage the caller provides (frame
-  storage for a temporary or a `$T` variable) instead of allocating it on the heap on every call
-  (Issues.md #12), and `flo32`/`flo64` values are kept in XMM registers (Issues.md #13). Both are
+  storage for a temporary or a `$T` variable) instead of allocating it on the heap on every call,
+  and `flo32`/`flo64` values are kept in XMM registers. Both are
   measured on the ray tracer before and after. A C function returning a struct by value is
   called the same way and can be used wherever a Palan one can, not only as an initializer.
 - A struct parameter `T` owns its argument as a `[n]T` one does (a copy the callee frees), where
