@@ -333,34 +333,34 @@ CToken* CLexer::createToken(int n)
 
 		for (int i=0; i<TK_NOT_KEYWORD; i++) {
 			if (str == keywords[i]) {	
-				t = new CToken(TT_KEYWORD, no, n);
+				t = new CToken(TT_KEYWORD, no, n); // LCOV_EXCL_BR_LINE
 				t->info.keyword = (CTokenKeyword)i;
 				return t;
 			}
 		}
 
-		t = new CToken(TT_ID, no, n);
+		t = new CToken(TT_ID, no, n); // LCOV_EXCL_BR_LINE
 		t->info.id = new string(move(str));
 
 		return t;
 
 	} else if (t0->type == TT0_PUNCTUATOR) {
-		t = new CToken(TT_PUNCTUATOR, no, n);
+		t = new CToken(TT_PUNCTUATOR, no, n); // LCOV_EXCL_BR_LINE
 		t->info.punc = get_ch(t0);
 
 	} else if (t0->type == TT0_NUMBER) {
-		t = new CToken(TT_PP_NUMBER, no, n);
-		t->info.str = new string(get_str(t0));
+		t = new CToken(TT_PP_NUMBER, no, n); // LCOV_EXCL_BR_LINE
+		t->info.str = new string(get_str(t0)); // LCOV_EXCL_BR_LINE
 		return t;
 
 	} else if (t0->type == TT0_CHAR) {
-		t = new CToken(TT_CHAR, no, n);
-		t->info.str = new string(get_str(t0));
+		t = new CToken(TT_CHAR, no, n); // LCOV_EXCL_BR_LINE
+		t->info.str = new string(get_str(t0)); // LCOV_EXCL_BR_LINE
 		return t;
 
 	} else if (t0->type == TT0_STR) {
 		string str = get_str(t0);
-		t = new CToken(TT_STR, no, n);
+		t = new CToken(TT_STR, no, n); // LCOV_EXCL_BR_LINE
 		t->info.str = new string(move(str));
 		return t;
 

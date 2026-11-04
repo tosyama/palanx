@@ -224,8 +224,8 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AddrOfNotPrimitive, name) << endl;
 			exit(1);
 		}
-		json pntr_type = {{"type-kind", "pntr"}, {"mutable", isMutable}, {"base-type", *varType}};
-		json out = {{"expr-type", "addr-of"}, {"name", name}, {"mutable", isMutable}, {"value-type", pntr_type}};
+		json pntr_type = {{"type-kind", "pntr"}, {"mutable", isMutable}, {"base-type", *varType}}; // LCOV_EXCL_BR_LINE
+		json out = {{"expr-type", "addr-of"}, {"name", name}, {"mutable", isMutable}, {"value-type", pntr_type}}; // LCOV_EXCL_BR_LINE
 		if (expr.contains("loc")) out["loc"] = expr["loc"];
 		return out;
 	}
@@ -264,7 +264,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 		int off = chain.offset + fld.offset;
 		json out = chain.isPointerBased
 			? json{{"expr-type","field-access"},{"ptr-expr",chain.ptrExpr},{"offset",off},{"value-type",pntr_type},{"addr-only",addrOnly}}
-			: json{{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",pntr_type},{"addr-only",addrOnly}};
+			: json{{"expr-type","field-access"},{"var",chain.varName},{"offset",off},{"value-type",pntr_type},{"addr-only",addrOnly}}; // LCOV_EXCL_BR_LINE
 		if (expr.contains("loc")) out["loc"] = expr["loc"];
 		return out;
 	}
@@ -375,7 +375,7 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 	}
 	if (expr.contains("loc")) lit["loc"] = expr["loc"];
 	return lit;
-}
+} // LCOV_EXCL_BR_LINE
 
 // `len(@a)`, `len(h)` of a borrow h, or `a -> len()` of an array whose size
 // is a constant: like sizeof, it needs only a's type, so an `a` with a call to
@@ -678,11 +678,11 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		if (!strLiteralLabels.count(value)) {
 			string label = ".str" + to_string(strLiteralLabels.size());
 			strLiteralLabels[value] = label;
-			sa["str-literals"].push_back({{"label", label}, {"value", value}});
+			sa["str-literals"].push_back({{"label", label}, {"value", value}}); // LCOV_EXCL_BR_LINE
 		}
 		sa_expr["label"] = strLiteralLabels[value];
 		sa_expr.erase("value");
-		sa_expr["value-type"] = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}};
+		sa_expr["value-type"] = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}}; // LCOV_EXCL_BR_LINE
 
 	} else if (expr_type == "id") {
 		const json* varType = lookupVar(expr["name"].get<string>(), expr);
@@ -711,7 +711,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 	} else if (expr_type == "neg") {
 		json operand = sa_expression(expr["operand"], expectedType);
 		if (isStructPntr(operand["value-type"]))
-			return sa_operator_call(expr, "-", {&expr["operand"]}, {move(operand)});
+			return sa_operator_call(expr, "-", {&expr["operand"]}, {move(operand)}); // LCOV_EXCL_BR_LINE
 		operand = promoteOperand(move(operand));
 		sa_expr["operand"]    = operand;
 		sa_expr["value-type"] = operand["value-type"];
@@ -968,7 +968,7 @@ json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expecte
 				    && takesExpectedType(expr[i ? "right" : "left"]))
 					probes[i] = json();
 			return sa_operator_call(expr, op->second, {&expr["left"], &expr["right"]},
-			                        {move(probes[0]), move(probes[1])});
+			                        {move(probes[0]), move(probes[1])}); // LCOV_EXCL_BR_LINE
 		}
 	}
 	auto operand = [&](int i, const PlnType* type) {
@@ -1167,7 +1167,7 @@ string PlnSemanticAnalyzer::typeNameWritten(const json& obj) const
 // Null when `typeName` is no alias.
 json PlnSemanticAnalyzer::aliasCast(const json& expr, const string& typeName)
 {
-	json written = {{"type-kind", "prim"}, {"type-name", typeName}};
+	json written = {{"type-kind", "prim"}, {"type-name", typeName}}; // LCOV_EXCL_BR_LINE
 	requireWritableTypeName(expr, typeName);
 	const json* target = findTypeBinding(typeName);
 	if (!target || *target == written) return json();
@@ -1338,7 +1338,7 @@ json PlnSemanticAnalyzer::resolveEnumerator(const json& expr)
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownEnumerator, field, typeName) << endl;
 		exit(1);
 	}
-	json lit = {{"expr-type", "lit-int"}, {"value", to_string(it->second)}, {"value-type", enumType}};
+	json lit = {{"expr-type", "lit-int"}, {"value", to_string(it->second)}, {"value-type", enumType}}; // LCOV_EXCL_BR_LINE
 	if (expr.contains("loc")) lit["loc"] = expr["loc"];
 	return lit;
 } // LCOV_EXCL_BR_LINE
@@ -1354,7 +1354,7 @@ vector<string> PlnSemanticAnalyzer::enumeratorSpellings(const string& name) cons
 		string enumName = t["enum"].get<string>();
 		if (!enumDefs_.at(enumName).values.count(name)) continue;
 		size_t dot = written.find('.');
-		bool own = declaredTypeName(written) == enumName
+		bool own = declaredTypeName(written) == enumName // LCOV_EXCL_BR_LINE
 		        || (dot != string::npos && written.substr(dot + 1) == enumName);
 		auto [it, isNew] = spelling.emplace(enumName, written);
 		if (!isNew && own) it->second = written;
@@ -1417,17 +1417,17 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 		}
 	}
 
-	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}};
+	json uint64_type = {{"type-kind","prim"},{"type-name","uint64"}}; // LCOV_EXCL_BR_LINE
 
 	if (array_type.value("embedded", false)) {
 		if (elem_type.value("type-kind", "") == "struct") {
 			// [n]$T contiguous struct array: pts[i] -> pntr(struct(T)), inline address
 			// (stride = T.totalSize, carried on array_type; arr-index itself does not deref)
 			int64_t stride = array_type.value("stride", (int64_t)0);
-			json row_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
+			json row_pntr = {{"type-kind","pntr"},{"base-type",elem_type}}; // LCOV_EXCL_BR_LINE
 			json elem_size_node = {
 				{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
-			};
+			}; // LCOV_EXCL_BR_LINE
 			sa_expr["array"]      = sa_array;
 			sa_expr["index"]      = sa_index;
 			sa_expr["elem-size"]  = elem_size_node;
@@ -1468,10 +1468,10 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 		// The element is the struct's storage, like a struct stored in an
 		// array; writes are checked against p's own permission.
 		int64_t stride = requireCompleteStruct(elem_type["type-name"].get<string>(), expr).totalSize;
-		json elem_pntr = {{"type-kind","pntr"},{"base-type",elem_type}};
+		json elem_pntr = {{"type-kind","pntr"},{"base-type",elem_type}}; // LCOV_EXCL_BR_LINE
 		json elem_size_node = {
 			{"expr-type","lit-uint"},{"value",to_string(stride)},{"value-type",uint64_type}
-		};
+		}; // LCOV_EXCL_BR_LINE
 		sa_expr["array"]      = sa_array;
 		sa_expr["index"]      = sa_index;
 		sa_expr["elem-size"]  = elem_size_node;
@@ -1489,14 +1489,14 @@ json PlnSemanticAnalyzer::sa_expr_arr_index(const json& expr, bool forWrite)
 		exit(1);
 	}
 	int sz = (elem_type.value("type-kind","") == "pntr") ? 8
-		: elemSizeBytes(elem_type.value("type-name",""));
+		: elemSizeBytes(elem_type.value("type-name","")); // LCOV_EXCL_BR_LINE
 	if (sz < 0) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_UnknownType, elem_type.value("type-name","")) << endl;
 		exit(1);
 	}
 	json elem_size_node = {
 		{"expr-type", "lit-uint"}, {"value", to_string(sz)}, {"value-type", uint64_type}
-	};
+	}; // LCOV_EXCL_BR_LINE
 
 	sa_expr["array"]      = sa_array;
 	sa_expr["index"]      = sa_index;

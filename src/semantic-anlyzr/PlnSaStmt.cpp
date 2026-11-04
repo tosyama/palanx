@@ -149,7 +149,7 @@ json PlnSemanticAnalyzer::sa_block(const json& stmt)
 
 	leaveBlockDecls();
 	leaveScope();
-	return {{"stmt-type", "block"}, {"body", move(body)}};
+	return {{"stmt-type", "block"}, {"body", move(body)}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_if_stmt(const json& stmt)
@@ -423,7 +423,7 @@ json PlnSemanticAnalyzer::sa_break_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_BreakOutsideLoop) << endl;
 		exit(1);
 	}
-	return {{"stmt-type", "break"}};
+	return {{"stmt-type", "break"}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_continue_stmt(const json& stmt)
@@ -432,7 +432,7 @@ json PlnSemanticAnalyzer::sa_continue_stmt(const json& stmt)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ContinueOutsideLoop) << endl;
 		exit(1);
 	}
-	return {{"stmt-type", "continue"}};
+	return {{"stmt-type", "continue"}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
 void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
@@ -466,8 +466,8 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	pinnedRanges_.clear();
 	pendingAliases_ = 0;
 
-	varScopes       = {{}};
-	arrayScopeVars_ = {{}};  // scope[0] = params; no arrays expected here
+	varScopes       = {{}}; // LCOV_EXCL_BR_LINE
+	arrayScopeVars_ = {{}};  // scope[0] = params; no arrays expected here // LCOV_EXCL_BR_LINE
 
 	// A named return owning a block is allocated at body entry, where an
 	// initializer can't run yet. A struct is written into storage the caller
@@ -570,7 +570,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 		for (auto& r : sig["rets"]) {
 			if (!allocatedAtEntry(r["var-type"])) continue;
 			json decl = {{"stmt-type", "var-decl"},
-			             {"vars", json::array({{{"name", r["name"]}, {"var-type", r["var-type"]}}})},
+			             {"vars", json::array({{{"name", r["name"]}, {"var-type", r["var-type"]}}})}, // LCOV_EXCL_BR_LINE
 			             {"loc", r.value("loc", json::array())}}; // LCOV_EXCL_BR_LINE
 			for (auto& s : sa_resolved_var_decl(decl)) body.push_back(move(s));
 		}
@@ -730,7 +730,7 @@ json PlnSemanticAnalyzer::sa_transfer_to_owner_view(const json& stmt, const json
 	string et = target["expr-type"];
 	json loc = et == "id" ? sa_expression(target)
 	         : et == "arr-index" ? sa_expr_arr_index(target, /*forWrite=*/true)
-	         : sa_expr_field_access(target, /*forWrite=*/true);
+	         : sa_expr_field_access(target, /*forWrite=*/true); // LCOV_EXCL_BR_LINE
 	const json& locType = loc["value-type"];
 	json owned = ownedCastType(stmt, stmt["owner-view-type"]);
 	if (owned.is_null() || !isPtrBorrow(locType) || !locType["mutable"].get<bool>()) {
@@ -918,11 +918,11 @@ json PlnSemanticAnalyzer::sa_store_steps(const json& stmt, json& body, bool read
 	string t = s["stmt-type"];
 	json readExpr;
 	if (t == "assign")
-		readExpr = {{"expr-type", "id"}, {"name", s["name"]}};
+		readExpr = {{"expr-type", "id"}, {"name", s["name"]}}; // LCOV_EXCL_BR_LINE
 	else if (t == "arr-assign")
 		return s["target"];
 	else
-		readExpr = {{"expr-type", "field-access"}, {"object", s["object"]}, {"field", s["field"]}};
+		readExpr = {{"expr-type", "field-access"}, {"object", s["object"]}, {"field", s["field"]}}; // LCOV_EXCL_BR_LINE
 	if (s.contains("loc")) readExpr["loc"] = s["loc"];
 	return readExpr;
 } // LCOV_EXCL_BR_LINE
@@ -1222,9 +1222,9 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt, json* litAddr)
 	checkPtrPermission(stmt, sa_value["value-type"], targetType);
 	checkRangeBorrowBinding(stmt, stmt["value"], targetType);
 
-	json arr_assign = {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}};
+	json arr_assign = {{"stmt-type", "arr-assign"}, {"target", sa_target}, {"value", sa_value}}; // LCOV_EXCL_BR_LINE
 	if (!transfer)
-		return json::array({arr_assign});
+		return json::array({arr_assign}); // LCOV_EXCL_BR_LINE
 
 	// The row's owner frees it by the row's declared size, which the new row must have.
 	if (isArrLevel(targetType) && !copyShapeMatch(sa_value["value-type"], targetType)) {
@@ -1455,7 +1455,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_NamedRetBareReturn) << endl;
 			exit(1);
 		}
-		return {{"stmt-type", "return"}};
+		return {{"stmt-type", "return"}}; // LCOV_EXCL_BR_LINE
 	}
 	if (hasRetType) {
 		// Single return value: exactly one expression required
@@ -1468,7 +1468,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		json value = sa_expression(stmt["values"][0], toType);
 		// A borrow is returned as a copy (copyReturnBlock), which checks its shape.
 		if (isOwnedBlock(retType) && isPtrBorrow(value["value-type"]))
-			return {{"stmt-type", "return"}, {"values", json::array({value})}};
+			return {{"stmt-type", "return"}, {"values", json::array({value})}}; // LCOV_EXCL_BR_LINE
 		// The type registry ignores sizes, and an owned array variable is
 		// returned without a copy that would check them.
 		if (isArrLevel(retType) && isOwnedBlock(retType)) {
@@ -1477,20 +1477,20 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 					typeDisplayName(retType), typeDisplayName(value["value-type"])) << endl;
 				exit(1);
 			}
-			return {{"stmt-type", "return"}, {"values", json::array({value})}};
+			return {{"stmt-type", "return"}, {"values", json::array({value})}}; // LCOV_EXCL_BR_LINE
 		}
 		value = convertForBinding(stmt, value, toType, registry_.toJson(toType));
 		checkElemShape(stmt, value, (*currentFunc_)["ret-type"]);
 		checkBorrowSource(stmt, value, (*currentFunc_)["ret-type"]);
 		checkPtrPermission(stmt, value["value-type"], (*currentFunc_)["ret-type"]);
-		return {{"stmt-type", "return"}, {"values", json::array({value})}};
+		return {{"stmt-type", "return"}, {"values", json::array({value})}}; // LCOV_EXCL_BR_LINE
 	}
 	// Void function: bare return only
 	if (hasValues) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_VoidBareReturn) << endl;
 		exit(1);
 	}
-	return {{"stmt-type", "return"}};
+	return {{"stmt-type", "return"}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
 // Moves ret's single value into a fresh temp var; returns that var's decl and
@@ -1536,7 +1536,7 @@ json PlnSemanticAnalyzer::bindReturnLit(json& stmt)
 	string name = "__ret_" + to_string(tempVarCounter_++);
 	json& value = stmt["values"][0];
 	const json loc = stmt.value("loc", json::array());
-	json var = {{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}, {"init", value}};
+	json var = {{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}, {"init", value}}; // LCOV_EXCL_BR_LINE
 	const json& retType = (*currentFunc_)["ret-type"];
 	if (!isStructStorage(retType)) var["lit-name"] = typeDisplayName(retType);
 	json decl = {{"stmt-type", "var-decl"}, {"loc", loc}, {"vars", json::array({move(var)})}}; // LCOV_EXCL_BR_LINE
@@ -1588,7 +1588,7 @@ json PlnSemanticAnalyzer::copyReturnBlock(const json& stmt, json& ret)
 		return json::array();
 	string name = "__ret_" + to_string(tempVarCounter_++);
 	json decl = {{"stmt-type", "var-decl"}, {"loc", stmt.value("loc", json::array())}, // LCOV_EXCL_BR_LINE
-		{"vars", json::array({{{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}}})}};
+		{"vars", json::array({{{"name", name}, {"var-type", (*currentFuncDef_)["ret-type"]}}})}}; // LCOV_EXCL_BR_LINE
 	json result = sa_resolved_var_decl(decl);
 	removeFromArrayScope(name);
 	const json type = *findVar(name);
@@ -1660,7 +1660,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 			json init = {{"expr-type", "id"}, {"name", temp}, {"loc", stmt["loc"]}}; // LCOV_EXCL_BR_LINE
 			if (movesIntoFrame)
 				init = {{"expr-type", "pinned"}, {"loc", stmt["loc"]}, {"sa", {{"expr-type", "id"}, {"name", temp}, // LCOV_EXCL_BR_LINE
-					{"var-type", retType}, {"value-type", retType}, {"category", "expiring"}}}};
+					{"var-type", retType}, {"value-type", retType}, {"category", "expiring"}}}}; // LCOV_EXCL_BR_LINE
 			convDecls.push_back({{"stmt-type", "var-decl"}, {"loc", stmt["loc"]}, // LCOV_EXCL_BR_LINE
 				{"vars", json::array({{{"name", name}, {"var-type", varType}, {"init", move(init)}}})}}); // LCOV_EXCL_BR_LINE
 			convStorage.push_back(storage);

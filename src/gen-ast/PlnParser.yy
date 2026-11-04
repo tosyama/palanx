@@ -172,7 +172,7 @@ struct BodyList {
 			j = {{"stmt-type", "var-decl"}, {"global", true}, {"vars", json::array({var})}}; // LCOV_EXCL_BR_LINE
 		else
 			j = {{"stmt-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
-		LOC(j, loc);
+		LOC(j, loc); // LCOV_EXCL_BR_LINE
 		return j;
 	} // LCOV_EXCL_BR_LINE
 
@@ -180,7 +180,7 @@ struct BodyList {
 	                         const palan::PlnParser::location_type& loc)
 	{
 		json j = {{"stmt-type", "global-permit"}, {"name", name}, {"funcs", funcs.toVector()}}; // LCOV_EXCL_BR_LINE
-		LOC(j, loc);
+		LOC(j, loc); // LCOV_EXCL_BR_LINE
 		return j;
 	} // LCOV_EXCL_BR_LINE
 
@@ -204,11 +204,11 @@ struct BodyList {
 			for (auto& v : vars)
 				if (v.value("inherit-type", false)
 						|| (v.contains("var-type") && v["var-type"].value("type-kind", "") == "embed")) {
-					v = {{"not-impl", true}};
-					LOC(v, loc);
+					v = {{"not-impl", true}}; // LCOV_EXCL_BR_LINE
+					LOC(v, loc); // LCOV_EXCL_BR_LINE
 				}
 			return vars;
-		};
+		}; // LCOV_EXCL_BR_LINE
 		fn["parameters"] = rejectUnimplemented(params);
 		if (ret.contains("rets"))
 			fn["rets"] = rejectUnimplemented(ret["rets"].get<vector<json>>());
@@ -359,7 +359,7 @@ expr_stmt: import
 	{
 		$$ = move($1);
 		$$["stmt-type"] = "import";
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	| cinclude
 	{
@@ -387,7 +387,7 @@ expr_stmt: import
 				$$["typedefs"] = move(c_ast["ast"]["typedefs"]);
 			}
 		}
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 		if (c_ast.is_object() && c_ast.contains("ast") && c_ast["ast"].contains("constants")) {
 			registerMacroConstants(macros, c_ast["ast"]["constants"], $$["loc"]);
 		}
@@ -404,7 +404,7 @@ expr_stmt: import
 		// Detect a tapple-decl emitted by var_declaration
 		if (vars.size() == 1 && vars[0].value("stmt-type", "") == "tapple-decl") { // LCOV_EXCL_BR_LINE
 			$$ = move(vars[0]);
-			LOC($$, @$);
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		} else {
 			bool all_ok = true;
 			for (auto& v : vars) {
@@ -413,12 +413,12 @@ expr_stmt: import
 			}
 			if (all_ok) {
 				$$ = {{"stmt-type", "var-decl"}, {"vars", move(vars)}}; // LCOV_EXCL_BR_LINE
-				LOC($$, @$);
+				LOC($$, @$); // LCOV_EXCL_BR_LINE
 			} else {
-				$$ = {{"stmt-type", "not-impl"}};
+				$$ = {{"stmt-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
 				for (auto& v : vars)
 					if (v.contains("untyped-var")) { $$["untyped-var"] = v["untyped-var"]; break; }
-				LOC($$, @$);
+				LOC($$, @$); // LCOV_EXCL_BR_LINE
 			}
 		}
 	}
@@ -431,48 +431,48 @@ expr_stmt: import
 	| KW_GLOBAL ID KW_FOR global_funcs
 	{ $$ = globalPermit($2, $4, @$); }
 	| const_decl
-	{ $$ = {{"stmt-type", "const-decl"}, {"name", $1["name"]}, {"value", move($1["value"])}}; LOC($$, @$); }
+	{ $$ = {{"stmt-type", "const-decl"}, {"name", $1["name"]}, {"value", move($1["value"])}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| type_decl
 	{
 		if ($1.contains("alias-of")) {
-			$$ = {{"stmt-type", "type-alias"}, {"name", $1["name"]}, {"type", move($1["alias-of"])}};
-			LOC($$, @$);
+			$$ = {{"stmt-type", "type-alias"}, {"name", $1["name"]}, {"type", move($1["alias-of"])}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		} else if ($1.contains("enumerators")) {
-			$$ = {{"stmt-type", "enum-def"}, {"name", $1["name"]}, {"enumerators", move($1["enumerators"])}};
-			LOC($$, @$);
+			$$ = {{"stmt-type", "enum-def"}, {"name", $1["name"]}, {"enumerators", move($1["enumerators"])}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		} else if ($1.contains("name")) {
-			$$ = {{"stmt-type", "struct-def"}, {"name", $1["name"]}, {"fields", move($1["fields"])}};
-			LOC($$, @$);
+			$$ = {{"stmt-type", "struct-def"}, {"name", $1["name"]}, {"fields", move($1["fields"])}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		} else {
-			$$ = {{"stmt-type", "not-impl"}};
-			LOC($$, @$);
+			$$ = {{"stmt-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		}
 		if ($1.contains("export")) $$["export"] = true;
 	}
 	| interface_decl
-	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
+	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression
 	{
 		if (isStoreStmt($1)) {
 			$$ = move($1);
 		} else {
-			$$ = {{"stmt-type", "expr"}, {"body", move($1)}};
-			LOC($$, @$);
+			$$ = {{"stmt-type", "expr"}, {"body", move($1)}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		}
 	}
 	| return
 	{
-		$$ = {{"stmt-type", "return"}};
+		$$ = {{"stmt-type", "return"}}; // LCOV_EXCL_BR_LINE
 		if ($1.contains("values"))
 			$$["values"] = move($1["values"]);
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	| term DBL_PLUS
-	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); }
+	{ $$ = {{"stmt-type", "not-impl"}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_BREAK
-	{ $$ = {{"stmt-type", "break"}}; LOC($$, @$); }
+	{ $$ = {{"stmt-type", "break"}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_CONTINUE
-	{ $$ = {{"stmt-type", "continue"}}; LOC($$, @$); }
+	{ $$ = {{"stmt-type", "continue"}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	;
 
 stmt_list_e: expr_stmt
@@ -540,7 +540,7 @@ import_path: PATH
 		json pathinf = {
 			{"path-type", "src"},
 			{"path", $1}
-		};
+		}; // LCOV_EXCL_BR_LINE
 		$$ = move(pathinf);
 	}
 	| INCLUDE_FILE
@@ -548,7 +548,7 @@ import_path: PATH
 		json pathinf = {
 			{"path-type", "inc"},
 			{"path", $1}
-		};
+		}; // LCOV_EXCL_BR_LINE
 		$$ = move(pathinf);
 	}
 	;
@@ -709,9 +709,9 @@ global_func: func_name
 	;
 
 inherit_var_decl: ID
-	{ $$ = {{"name", $1}, {"inherit-type", true}}; }
+	{ $$ = {{"name", $1}, {"inherit-type", true}}; } // LCOV_EXCL_BR_LINE
 	| ID '=' expression
-	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}}; }
+	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}}; } // LCOV_EXCL_BR_LINE
 	| ID OPE_TAKE expression
 	{ $$ = {{"name", $1}, {"inherit-type", true}, {"init", $3}, {"ownership-transfer", true}}; } // LCOV_EXCL_BR_LINE
 	;
@@ -721,8 +721,8 @@ var_declaration: type_expr ID
 		if (isDeclarableVarType($1) || isFrameVarType($1)) {
 			$$ = {{"name", $2}, {"var-type", move($1)}}; // LCOV_EXCL_BR_LINE
 		} else {
-			$$ = {{"not-impl", true}};
-			LOC($$, @$);
+			$$ = {{"not-impl", true}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		}
 	}
 	| type_expr DBL_GRTR ID
@@ -730,10 +730,10 @@ var_declaration: type_expr ID
 	| type_expr ID '=' expression
 	{
 		if (isDeclarableVarType($1) || isFrameVarType($1)) {
-			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}};
+			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}}; // LCOV_EXCL_BR_LINE
 		} else {
-			$$ = {{"not-impl", true}};
-			LOC($$, @$);
+			$$ = {{"not-impl", true}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		}
 	}
 	| type_expr ID OPE_TAKE expression
@@ -742,19 +742,19 @@ var_declaration: type_expr ID
 			$$ = {{"name", $2}, {"var-type", move($1)}, {"init", move($4)}, {"ownership-transfer", true}}; // LCOV_EXCL_BR_LINE
 		} else {
 			$$ = {{"not-impl", true}}; // LCOV_EXCL_BR_LINE
-			LOC($$, @$);
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		}
 	}
 	| ID '=' expression
-	{ $$ = {{"not-impl", true}, {"untyped-var", $1}}; LOC($$, @$); }
+	{ $$ = {{"not-impl", true}, {"untyped-var", $1}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| tapple_decl '=' expression
 	{
 		string et = $3.value("expr-type","");
 		if ($1.is_array() && (et == "call" || et == "member-call" || et == "chain-call"))
-			$$ = {{"stmt-type", "tapple-decl"}, {"vars", $1}, {"value", $3}};
+			$$ = {{"stmt-type", "tapple-decl"}, {"vars", $1}, {"value", $3}}; // LCOV_EXCL_BR_LINE
 		else
-			$$ = {{"not-impl", true}};
-		LOC($$, @$);
+			$$ = {{"not-impl", true}}; // LCOV_EXCL_BR_LINE
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	;
 
@@ -780,7 +780,7 @@ tapple_decl_inner: type_expr ID
 	;
 
 const_decl: KW_CONST ID '=' expression
-	{ $$ = {{"name", $2}, {"value", move($4)}}; LOC($$, @$); }
+	{ $$ = {{"name", $2}, {"value", move($4)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	;
 
 type_decl: KW_TYPE ID implememts '{' type_members '}'
@@ -794,7 +794,7 @@ type_decl: KW_TYPE ID implememts '{' type_members '}'
 	| KW_TYPE ID '=' type_expr
 	{ $$ = {{"name", $2}, {"alias-of", move($4)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_EXPORT KW_TYPE ID '=' type_expr
-	{ $$ = {{"name", $3}, {"alias-of", move($5)}, {"export", true}}; LOC($$, @$); }
+	{ $$ = {{"name", $3}, {"alias-of", move($5)}, {"export", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_TYPE ID
 	{ $$ = json{}; }
 	| KW_EXPORT KW_TYPE ID
@@ -808,9 +808,9 @@ enumerators: enumerator
 	;
 
 enumerator: ID
-	{ $$ = {{"name", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"name", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| ID '=' expression
-	{ $$ = {{"name", move($1)}, {"value", move($3)}}; LOC($$, @$); }
+	{ $$ = {{"name", move($1)}, {"value", move($3)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	;
 
 opt_comma: /* empty */
@@ -840,9 +840,9 @@ type_members: type_member
 	;
 
 type_member: type_expr ID ';'
-	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; }
+	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; } // LCOV_EXCL_BR_LINE
 	| KW_FUNC long_func_name '(' paramaters ')' return_def block
-	{ $$ = {{"not-impl", true}}; }
+	{ $$ = {{"not-impl", true}}; } // LCOV_EXCL_BR_LINE
 	;
 
 long_func_name: ID
@@ -865,82 +865,82 @@ expression: term
 	| dict_desc
 	{ $$ = move($1); }
 	| expression '+' expression
-	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "add"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '-' expression
-	{ $$ = {{"expr-type", "sub"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "sub"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '-' expression %prec UNARY_MINUS
-	{ $$ = negateExpr(move($2)); LOC($$, @$); }
+	{ $$ = negateExpr(move($2)); LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '*' expression
-	{ $$ = {{"expr-type", "mul"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "mul"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '/' expression
-	{ $$ = {{"expr-type", "div"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "div"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '%' expression
-	{ $$ = {{"expr-type", "mod"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "mod"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '&' expression
-	{ $$ = {{"expr-type", "bitand"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "bitand"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '|' expression
-	{ $$ = {{"expr-type", "bitor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "bitor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '^' expression
-	{ $$ = {{"expr-type", "bitxor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "bitxor"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_SHL expression
-	{ $$ = {{"expr-type", "shl"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "shl"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_SHR expression
-	{ $$ = {{"expr-type", "shr"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "shr"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression KW_AS type_expr
-	{ $$ = {{"expr-type", "cast"}, {"target-type", move($3)}, {"src", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "cast"}, {"target-type", move($3)}, {"src", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '~' expression %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "bitnot"}, {"operand", $2}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "bitnot"}, {"operand", $2}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_LE expression
-	{ $$ = {{"expr-type", "cmp"}, {"op", "<="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "cmp"}, {"op", "<="}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_GE expression
-	{ $$ = {{"expr-type", "cmp"}, {"op", ">="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "cmp"}, {"op", ">="}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '<' expression
-	{ $$ = {{"expr-type", "cmp"}, {"op", "<"},  {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "cmp"}, {"op", "<"},  {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression '>' expression
-	{ $$ = {{"expr-type", "cmp"}, {"op", ">"},  {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "cmp"}, {"op", ">"},  {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_EQ expression
-	{ $$ = {{"expr-type", "cmp"}, {"op", "=="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "cmp"}, {"op", "=="}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_NE expression
-	{ $$ = {{"expr-type", "cmp"}, {"op", "!="}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "cmp"}, {"op", "!="}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_AND expression
-	{ $$ = {{"expr-type", "logical-and"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "logical-and"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_OR expression
-	{ $$ = {{"expr-type", "logical-or"}, {"left", $1}, {"right", $3}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "logical-or"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '!' expression
-	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "logical-not"}, {"operand", $2}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '@' store_loc %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", false}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", false}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| AT_EXCL store_loc %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", true}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", storeLocToExpr($2)}, {"mutable", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '@' array_desc %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", false}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", false}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| AT_EXCL array_desc %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", true}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '@' dict_desc %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", false}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", false}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| AT_EXCL dict_desc %prec UNARY_MINUS
-	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", true}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "addr-of"}, {"object", move($2)}, {"mutable", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression ARROW store_loc
 	{
 		string kind = $3.value("kind", "");
 		if (kind == "tapple") {
 			string et = $1.value("expr-type", "");
 			if (et == "call" || et == "member-call" || et == "chain-call") {
-				$$ = {{"stmt-type", "tapple-assign"}, {"targets", move($3["targets"])}, {"value", move($1)}};
-				LOC($$, @$);
+				$$ = {{"stmt-type", "tapple-assign"}, {"targets", move($3["targets"])}, {"value", move($1)}}; // LCOV_EXCL_BR_LINE
+				LOC($$, @$); // LCOV_EXCL_BR_LINE
 			} else {
-				$$ = {{"expr-type", "not-impl"}};
-				LOC($$, @$);
+				$$ = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
+				LOC($$, @$); // LCOV_EXCL_BR_LINE
 			}
 		} else if (kind == "call" && !chainsThroughTapple($1)) {
-			$$ = {{"expr-type", "chain-call"}, {"value", move($1)}, {"call", move($3["call"])}};
-			LOC($$, @$);
+			$$ = {{"expr-type", "chain-call"}, {"value", move($1)}, {"call", move($3["call"])}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		} else if (kind == "call") {
-			$$ = {{"expr-type", "not-impl"}};
-			LOC($$, @$);
+			$$ = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		} else {
 			$$ = storeStmt(move($3), move($1), false);
-			LOC($$, @$);
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		}
 	}
 	| expression DBL_ARROW store_loc
@@ -950,12 +950,12 @@ expression: term
 			$$ = storeStmt(move($3), move($1), true);
 		} else if (kind == "call" && !isStoreStmt($1)) { // LCOV_EXCL_BR_LINE
 			json value = {{"expr-type", "transfer"}, {"value", move($1)}, {"op", "->>"}}; // LCOV_EXCL_BR_LINE
-			LOC(value, @1);
+			LOC(value, @1); // LCOV_EXCL_BR_LINE
 			$$ = {{"expr-type", "chain-call"}, {"value", move(value)}, {"call", move($3["call"])}}; // LCOV_EXCL_BR_LINE
 		} else {
 			$$ = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
 		}
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	// `as` binds tighter than `->>`, so it is shifted here: a location takes it as
 	// the owner it is viewed as, and a chained call's result is cast as before.
@@ -967,52 +967,52 @@ expression: term
 			if ($$.contains("stmt-type")) $$["owner-view-type"] = move($5);
 		} else if (kind == "call" && !isStoreStmt($1)) { // LCOV_EXCL_BR_LINE
 			json value = {{"expr-type", "transfer"}, {"value", move($1)}, {"op", "->>"}}; // LCOV_EXCL_BR_LINE
-			LOC(value, @1);
+			LOC(value, @1); // LCOV_EXCL_BR_LINE
 			json chain = {{"expr-type", "chain-call"}, {"value", move(value)}, {"call", move($3["call"])}}; // LCOV_EXCL_BR_LINE
-			LOC_BE(chain, @1, @3);
+			LOC_BE(chain, @1, @3); // LCOV_EXCL_BR_LINE
 			$$ = {{"expr-type", "cast"}, {"target-type", move($5)}, {"src", move(chain)}}; // LCOV_EXCL_BR_LINE
 		} else {
 			$$ = {{"expr-type", "not-impl"}};
 		}
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	| expression DBL_GRTR
 	{ $$ = {{"expr-type", "transfer"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| noname_func
-	{ $$ = {{"expr-type", "not-impl"}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "not-impl"}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	;
 
 term: INT
-	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| UINT
-	{ $$ = {{"expr-type", "lit-uint"}, {"value", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "lit-uint"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| FLO
-	{ $$ = {{"expr-type", "lit-flo"}, {"value", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "lit-flo"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| STRING
-	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_TRUE
-	{ $$ = boolLiteral("1"); LOC($$, @$); }
+	{ $$ = boolLiteral("1"); LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_FALSE
-	{ $$ = boolLiteral("0"); LOC($$, @$); }
+	{ $$ = boolLiteral("0"); LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_SIZEOF '(' type_expr ')'
 	{
 		if (isImplementedTypeExpr($3)) {
-			$$ = {{"expr-type", "sizeof"}, {"type", move($3)}};
-			LOC($$, @$);
+			$$ = {{"expr-type", "sizeof"}, {"type", move($3)}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		} else {
-			$$ = {{"expr-type", "not-impl"}};
-			LOC($$, @$);
+			$$ = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		}
 	}
 	| ID
-	{ $$ = {{"expr-type", "id"}, {"name", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "id"}, {"name", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '(' tapple_inner ')'
 	{
 		// Single-expression grouping (e.g. -(2+3)): pass the inner expression through.
 		// Multi-expression tapple (e.g. (a, b)) is only a multiple-assignment target.
 		if ($2.count("not-impl") || $2.count("tapple-items")) {
-			$$ = {{"expr-type", "not-impl"}};
-			LOC($$, @$);
+			$$ = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		} else {
 			$$ = $2;
 		}
@@ -1024,14 +1024,14 @@ term: INT
 		} else {
 			$$ = {{"expr-type", "call-ptr"}, {"callee", move($2)}, {"args", $5.toVector()}}; // LCOV_EXCL_BR_LINE
 		}
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	| term '.' ID
-	{ $$ = {{"expr-type", "field-access"}, {"object", move($1)}, {"field", move($3)}}; LOC($$, @$); }
+	{ $$ = {{"expr-type", "field-access"}, {"object", move($1)}, {"field", move($3)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| term '[' expression ']'
 	{
-		$$ = {{"expr-type", "arr-index"}, {"array", move($1)}, {"index", move($3)}};
-		LOC($$, @$);
+		$$ = {{"expr-type", "arr-index"}, {"array", move($1)}, {"index", move($3)}}; // LCOV_EXCL_BR_LINE
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	| ID '(' arguments ')'
 	{
@@ -1040,14 +1040,14 @@ term: INT
 				$$ = {{"expr-type",   "cast"},
 				      {"target-type", {{"type-kind", "prim"}, {"type-name", move($1)}}},
 				      {"src",         $3.last->item}}; // LCOV_EXCL_BR_LINE
-				LOC($$, @$);
+				LOC($$, @$); // LCOV_EXCL_BR_LINE
 			} else {
-				$$ = {{"expr-type", "not-impl"}};
-				LOC($$, @$);
+				$$ = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
+				LOC($$, @$); // LCOV_EXCL_BR_LINE
 			}
 		} else {
 			$$ = {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}; // LCOV_EXCL_BR_LINE
-			LOC($$, @$);
+			LOC($$, @$); // LCOV_EXCL_BR_LINE
 		}
 	}
 	| term '.' ID '(' arguments ')'
@@ -1056,14 +1056,14 @@ term: INT
 		      {"object", move($1)},
 		      {"method", move($3)},
 		      {"args", $5.toVector()}}; // LCOV_EXCL_BR_LINE
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	;
 
 tapple_inner: expression
 	{ $$ = $1; }
 	| '-'
-	{ $$ = {{"not-impl", true}}; }
+	{ $$ = {{"not-impl", true}}; } // LCOV_EXCL_BR_LINE
 	| tapple_inner ',' expression
 	{
 		if ($1.count("not-impl")) {
@@ -1072,11 +1072,11 @@ tapple_inner: expression
 			$$ = move($1);
 			$$["tapple-items"].push_back(move($3));
 		} else {
-			$$ = {{"tapple-items", json::array({move($1), move($3)})}};
+			$$ = {{"tapple-items", json::array({move($1), move($3)})}}; // LCOV_EXCL_BR_LINE
 		}
 	}
 	| tapple_inner ',' '-'
-	{ $$ = {{"not-impl", true}}; }
+	{ $$ = {{"not-impl", true}}; } // LCOV_EXCL_BR_LINE
 	;
 
 arguments: /* empty */
@@ -1093,7 +1093,7 @@ array_desc: array_row
 	{
 		// The concatenated form [a,b][c,d] yields the same AST as the nested [[a,b],[c,d]].
 		$$ = {{"expr-type", "arr-lit"}, {"items", $1.toVector()}}; // LCOV_EXCL_BR_LINE
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	;
 
@@ -1125,68 +1125,68 @@ dict_desc: '{' dict_items '}'
 
 dict_items: ID ':' expression
 	{
-		json item = {{"name", move($1)}, {"value", move($3)}};
-		LOC(item, @$);
+		json item = {{"name", move($1)}, {"value", move($3)}}; // LCOV_EXCL_BR_LINE
+		LOC(item, @$); // LCOV_EXCL_BR_LINE
 		$$ = PList<json>().push(move(item));
 	}
 	| dict_items ',' ID ':' expression
 	{
-		json item = {{"name", move($3)}, {"value", move($5)}};
-		LOC_BE(item, @3, @5);
+		json item = {{"name", move($3)}, {"value", move($5)}}; // LCOV_EXCL_BR_LINE
+		LOC_BE(item, @3, @5); // LCOV_EXCL_BR_LINE
 		$$ = $1.push(move(item));
 	}
 	;
 
 store_loc
 	: ID
-	{ $$ = {{"kind", "var"}, {"name", move($1)}}; LOC($$, @$); }
+	{ $$ = {{"kind", "var"}, {"name", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| store_loc '[' expression ']'
 	{
 		json array_expr = storeLocToExpr($1);
-		$$ = {{"kind", "arr-index"}, {"array", move(array_expr)}, {"index", move($3)}};
-		LOC($$, @$);
+		$$ = {{"kind", "arr-index"}, {"array", move(array_expr)}, {"index", move($3)}}; // LCOV_EXCL_BR_LINE
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	| store_loc '.' ID
-	{ $$ = {{"kind", "field"}, {"base", move($1)}, {"field", move($3)}}; LOC($$, @$); }
+	{ $$ = {{"kind", "field"}, {"base", move($1)}, {"field", move($3)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '(' tapple_inner ')'
 	{
-		$$ = {{"kind", "not-impl"}};
+		$$ = {{"kind", "not-impl"}}; // LCOV_EXCL_BR_LINE
 		if (!$2.count("tapple-items") && !$2.count("not-impl")) {
-			$$ = {{"kind", "expr"}, {"expr", move($2)}};
+			$$ = {{"kind", "expr"}, {"expr", move($2)}}; // LCOV_EXCL_BR_LINE
 		} else if ($2.count("tapple-items")) {
 			bool all_ok = true;
 			for (auto& t : $2["tapple-items"]) {
 				string et = t.value("expr-type", "");
 				if (et != "id" && et != "arr-index" && et != "field-access") { all_ok = false; break; }
 			}
-			if (all_ok) $$ = {{"kind", "tapple"}, {"targets", move($2["tapple-items"])}};
+			if (all_ok) $$ = {{"kind", "tapple"}, {"targets", move($2["tapple-items"])}}; // LCOV_EXCL_BR_LINE
 		}
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	// Not term's call rules: a term-rooted member call would let every `-> x[i]`
 	// also parse as the object of a pending `.f()` and split the GLR parse
 	// exponentially along an assignment chain.
 	| ID '(' arguments ')'
 	{
-		$$ = {{"kind", "not-impl"}};
+		$$ = {{"kind", "not-impl"}}; // LCOV_EXCL_BR_LINE
 		if (!typeNames.count($1)) {
 			$$ = {{"kind", "call"},
 			      {"call", {{"expr-type", "call"}, {"name", move($1)}, {"args", $3.toVector()}}}}; // LCOV_EXCL_BR_LINE
-			LOC($$["call"], @$);
+			LOC($$["call"], @$); // LCOV_EXCL_BR_LINE
 		}
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	| store_loc '.' ID '(' arguments ')'
 	{
-		$$ = {{"kind", "not-impl"}};
+		$$ = {{"kind", "not-impl"}}; // LCOV_EXCL_BR_LINE
 		json obj = storeLocToExpr($1);
 		if (obj.value("expr-type", "") != "not-impl") {
 			$$ = {{"kind", "call"},
 			      {"call", {{"expr-type", "member-call"}, {"object", move(obj)},
 			                {"method", move($3)}, {"args", $5.toVector()}}}}; // LCOV_EXCL_BR_LINE
-			LOC($$["call"], @$);
+			LOC($$["call"], @$); // LCOV_EXCL_BR_LINE
 		}
-		LOC($$, @$);
+		LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	;
 
@@ -1272,8 +1272,8 @@ ret_type: type_expr
 		if (isDeclarableVarType($1)) {
 			$$ = move($1);
 		} else {
-			$$ = {{"not-impl", true}};
-			LOC($$, @1);
+			$$ = {{"not-impl", true}}; // LCOV_EXCL_BR_LINE
+			LOC($$, @1); // LCOV_EXCL_BR_LINE
 		}
 	}
 	;
@@ -1328,12 +1328,12 @@ for_elem: ID
 		if ($1 != "copy")
 			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, @1.begin.line, @1.begin.column,
 				PlnGenAstMessage::getMessage(E_ExpectedCopyKeyword, $1)));
-		$$ = {{"name", $2}, {"borrow", false}}; LOC($$, @$);
+		$$ = {{"name", $2}, {"borrow", false}}; LOC($$, @$); // LCOV_EXCL_BR_LINE
 	}
 	| '@' ID
-	{ $$ = {{"name", $2}, {"borrow", true}, {"mutable", false}}; LOC($$, @$); }
+	{ $$ = {{"name", $2}, {"borrow", true}, {"mutable", false}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| AT_EXCL ID
-	{ $$ = {{"name", $2}, {"borrow", true}, {"mutable", true}}; LOC($$, @$); }
+	{ $$ = {{"name", $2}, {"borrow", true}, {"mutable", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	;
 
 while_loop: KW_WHILE expression block
@@ -1369,9 +1369,9 @@ expressions: expression
 	;
 
 type_expr: ID
-	{ $$ = {{"type-kind","prim"},{"type-name",move($1)}}; }
+	{ $$ = {{"type-kind","prim"},{"type-name",move($1)}}; } // LCOV_EXCL_BR_LINE
 	| ID '.' ID
-	{ $$ = {{"type-kind","prim"},{"type-name",$1 + "." + $3}}; }
+	{ $$ = {{"type-kind","prim"},{"type-name",$1 + "." + $3}}; } // LCOV_EXCL_BR_LINE
 	| '@' type_expr
 	{ $$ = pntrTypeExpr(move($2), false); }
 	| AT_EXCL type_expr
@@ -1385,25 +1385,25 @@ type_expr: ID
 	| AT_EXCL KW_FUNC '(' fptr_params ')' fptr_ret
 	{ $$ = pntrTypeExpr(funcTypeExpr($4.toVector(), move($6)), true); }
 	| '$' type_expr
-	{ $$ = {{"type-kind","embed"},{"base-type",move($2)}}; }
+	{ $$ = {{"type-kind","embed"},{"base-type",move($2)}}; } // LCOV_EXCL_BR_LINE
 	| '[' expression ']' type_expr
 	{
 		if ($4.value("type-kind","") == "embed")
-			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",move($2)},{"embedded",true},{"base-type",move($4["base-type"])}};
+			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",move($2)},{"embedded",true},{"base-type",move($4["base-type"])}}; // LCOV_EXCL_BR_LINE
 		else
-			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",move($2)},{"base-type",move($4)}};
+			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",move($2)},{"base-type",move($4)}}; // LCOV_EXCL_BR_LINE
 	}
 	| '[' ']' type_expr
 	{
 		if ($3.value("type-kind","") == "embed")
-			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"embedded",true},{"base-type",move($3["base-type"])}};
+			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"embedded",true},{"base-type",move($3["base-type"])}}; // LCOV_EXCL_BR_LINE
 		else
-			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"base-type",move($3)}};
+			$$ = {{"type-kind","arr"},{"specifier","raw"},{"size-expr",nullptr},{"base-type",move($3)}}; // LCOV_EXCL_BR_LINE
 	}
 	| '[' '#' ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",nullptr},{"base-type",move($4)}}; }
+	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",nullptr},{"base-type",move($4)}}; } // LCOV_EXCL_BR_LINE
 	| '[' '#' expression ']' type_expr
-	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",move($3)},{"base-type",move($5)}}; }
+	{ $$ = {{"type-kind","arr"},{"specifier","fixed"},{"size-expr",move($3)},{"base-type",move($5)}}; } // LCOV_EXCL_BR_LINE
 	| '[' '+' ']' type_expr
 	{ $$ = varrTypeExpr(nullptr, move($4)); }
 	| '[' '+' expression ']' type_expr

@@ -941,7 +941,7 @@ inline void normalizeCFuncSig(json& funcDef) {
 		funcDef["ret-type"] = move(rt);
 	}
 	if (!bad.empty()) funcDef["_unsupported-sig"] = bad;
-}
+} // LCOV_EXCL_BR_LINE
 
 // Symmetric counterpart to normalizeCFuncSig for a single cinclude'd C global
 // object declaration (see the "Global variable model" in ASTSpec.md). Same

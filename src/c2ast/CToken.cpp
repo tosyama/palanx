@@ -30,7 +30,7 @@ CToken::CToken(const CToken& token)
 {
 	switch (type) {
 		case TT_ID:
-			info.id = new string(*token.info.id); break;
+			info.id = new string(*token.info.id); break; // LCOV_EXCL_BR_LINE
 
 		case TT_KEYWORD:
 			info.keyword = token.info.keyword; break;
@@ -41,14 +41,14 @@ CToken::CToken(const CToken& token)
 		case TT_PP_NUMBER:
 		case TT_CHAR:
 		case TT_STR:
-			info.str = new string(*token.info.str); break;
+			info.str = new string(*token.info.str); break; // LCOV_EXCL_BR_LINE
 	
 		default: // TT_INCLUDE
 			BOOST_ASSERT(false);
 	}
 
 	if (token.hide_set) {
-		hide_set = new vector<CMacro*>(*token.hide_set);
+		hide_set = new vector<CMacro*>(*token.hide_set); // LCOV_EXCL_BR_LINE
 	} else {
 		hide_set = NULL;
 	}

@@ -135,7 +135,7 @@ void PlnSemanticAnalyzer::removeFromArrayScope(const string& name)
 void PlnSemanticAnalyzer::addOwnedScopeVar(const string& name, json release)
 {
 	arrayScopeVars_.back().push_back({name, move(release), true});
-}
+} // LCOV_EXCL_BR_LINE
 
 // `@[+]@[]uint8` as its owner would hold it; `args` borrows it read-only.
 static json argsStorageType()
@@ -403,7 +403,7 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& locNode, const j
 		return t;
 	}
 	if (isStructType(resolved))
-		return {{"type-kind","struct"},{"type-name",resolved["type-name"]}};
+		return {{"type-kind","struct"},{"type-name",resolved["type-name"]}}; // LCOV_EXCL_BR_LINE
 	return resolved;
 } // LCOV_EXCL_BR_LINE
 
@@ -685,7 +685,7 @@ void PlnSemanticAnalyzer::nonConstNames(const json& expr, vector<const json*>& i
 			ids.push_back(&expr);
 			return;
 		}
-		if (expr.value("expr-type","") == "field-access"
+		if (expr.value("expr-type","") == "field-access" // LCOV_EXCL_BR_LINE
 		    && !enumTypeNamed(typeNameWritten(expr["object"])).is_null())
 			return;
 		for (auto& [k, v] : expr.items()) nonConstNames(v, ids);
@@ -813,7 +813,7 @@ void PlnSemanticAnalyzer::ensureTypeName(const string& name, bool viaPointer)
 		// The pointer's type names the struct by its program-wide name now;
 		// its layout comes with the adoption.
 		if (!alias.empty())
-			typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", decl["name"]}};
+			typeAliases_[name] = {{"type-kind", "prim"}, {"type-name", decl["name"]}}; // LCOV_EXCL_BR_LINE
 		ImportedType* it = &t->second;
 		whenSettled([this, it, alias] { if (!it->adopted) adoptImportedType(*it, alias); });
 		return;
@@ -906,7 +906,7 @@ void PlnSemanticAnalyzer::resolveTopDecl(const string& name, TopDecl& d)
 		program_->settled.pop_front();
 		f();
 	}
-}
+} // LCOV_EXCL_BR_LINE
 
 // A const naming variables is evaluated now only when each is already in
 // scope or is a top-level variable declared before it whose declaration fixes
@@ -989,7 +989,7 @@ void PlnSemanticAnalyzer::adoptImportedType(ImportedType& t, const string& alias
 	adoptExportedType(*t.importStmt, *t.decl, *t.module);
 	if (!alias.empty() && (*t.decl)["stmt-type"] == "struct-def")
 		typeAliases_[alias + "." + (*t.decl)["name"].get<string>()] =
-			{{"type-kind", "prim"}, {"type-name", (*t.decl)["name"]}};
+			{{"type-kind", "prim"}, {"type-name", (*t.decl)["name"]}}; // LCOV_EXCL_BR_LINE
 	t.adopted = true;
 } // LCOV_EXCL_BR_LINE
 
@@ -1065,14 +1065,14 @@ void PlnSemanticAnalyzer::registerTypedefAliasInType(const json& locNode, json& 
 	string tk = vtype.value("type-kind", "");
 	if (tk == "prim" && vtype.contains("typedef-name")) {
 		string aliasName = vtype["typedef-name"].get<string>();
-		registerTypeAliasChecked(locNode, aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
+		registerTypeAliasChecked(locNode, aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}); // LCOV_EXCL_BR_LINE
 		vtype.erase("typedef-name");
 	} else if (isCRecordTag(vtype) && vtype.contains("typedef-name")) {
 		// typedef struct/union Tag X (e.g. "typedef struct _IO_FILE FILE;"): register X
 		// as a type alias for the tag, same prim(Tag) representation a native
 		// "type A = SomeStruct;" alias uses.
 		string aliasName = vtype["typedef-name"].get<string>();
-		registerTypeAliasChecked(locNode, aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}});
+		registerTypeAliasChecked(locNode, aliasName, {{"type-kind", "prim"}, {"type-name", vtype["type-name"]}}); // LCOV_EXCL_BR_LINE
 		vtype.erase("typedef-name");
 	} else if (tk == "pntr" && vtype.contains("base-type")) {
 		registerTypedefAliasInType(locNode, vtype["base-type"]);

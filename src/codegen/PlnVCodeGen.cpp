@@ -68,12 +68,12 @@ VReg PlnVCodeGen::findVar(const string& name, VFunc& func)
 
 void PlnVCodeGen::declareVar(const string& name, VReg r)
 {
-    varScopes.back()[name] = VarBinding{r, "", VRegType::Int64};
+    varScopes.back()[name] = VarBinding{r, "", VRegType::Int64}; // LCOV_EXCL_BR_LINE
 }
 
 void PlnVCodeGen::bindStatic(const string& name, const string& label, VRegType type)
 {
-    varScopes.back()[name] = VarBinding{-1, label, type};
+    varScopes.back()[name] = VarBinding{-1, label, type}; // LCOV_EXCL_BR_LINE
 }
 
 // -------- Utilities --------
@@ -384,7 +384,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             BOOST_ASSERT(false);
             return -1;
     }
-}
+} // LCOV_EXCL_BR_LINE
 
 // A width other than 1/2/4/8 is moved as 4-, 2- and 1-byte pieces from the
 // low end, so no byte outside the struct is touched.
@@ -1003,7 +1003,7 @@ void PlnVCodeGen::lowerWhileStmt(const WhileStmt& stmt, VFunc& func)
     func.instrs.push_back(Jmp{startLabel});
     func.instrs.push_back(Label{endLabel});
     loopStack_.pop_back();
-}
+} // LCOV_EXCL_BR_LINE
 
 void PlnVCodeGen::lowerBreakStmt(VFunc& func)
 {
@@ -1142,4 +1142,4 @@ VProg PlnVCodeGen::generate(const Module& module)
     }
 
     return prog;
-}
+} // LCOV_EXCL_BR_LINE

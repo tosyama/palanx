@@ -102,9 +102,9 @@ static json pointeeNamesAsStructs(json t)
 	if (t.value("type-kind","") == "pntr")
 		t["base-type"] = pointeeNamesAsStructs(move(t["base-type"]));
 	else if (t.value("type-kind","") == "prim" && !isPrimPointeeName(t.value("type-name","")))
-		t = {{"type-kind","struct"},{"type-name",t["type-name"]}};
+		t = {{"type-kind","struct"},{"type-name",t["type-name"]}}; // LCOV_EXCL_BR_LINE
 	return t;
-}
+} // LCOV_EXCL_BR_LINE
 
 // A slot to an unsized array ('@![]T') points at the array's elements, so it
 // is that array's pointer carrying the slot's permission.
@@ -113,7 +113,7 @@ json PlnSemanticAnalyzer::ptrSlotElemType(const json& locNode, const json& type)
 	const json& target = type["base-type"];
 	json elem = target.value("type-kind","") == "arr"
 		? unsizedArrToPntr(locNode, target)
-		: json{{"type-kind","pntr"},{"base-type",target}};
+		: json{{"type-kind","pntr"},{"base-type",target}}; // LCOV_EXCL_BR_LINE
 	elem["mutable"] = type.value("mutable", false);
 	// A row carries the permission on each of its levels, as in a borrowed `[m][n]T`.
 	if (!elem["mutable"].get<bool>() && isArrLevel(elem["base-type"]))
@@ -314,7 +314,7 @@ json PlnSemanticAnalyzer::inPlaceSizeExpr(const json& elem, size_t level,
 	json n = elem.contains("arr-size") ? lenLit(elem["arr-size"].get<int64_t>()) : lenAt(level);
 	const json& child = elem["base-type"];
 	json childSize = !elem.value("embedded", false) && isArrLevel(child) ? byteLit(8)
-	               : inPlaceSizeExpr(child, level + 1, lenAt);
+	               : inPlaceSizeExpr(child, level + 1, lenAt); // LCOV_EXCL_BR_LINE
 	return mulLen(move(n), move(childSize));
 }
 
@@ -486,11 +486,11 @@ namespace {
 // stands for its elements' slots.
 struct GenElem { json type, own, build, value, run, slots, fill; bool owned = false; };
 
-json ptrTo(json base) { return {{"type-kind","pntr"},{"base-type",move(base)}}; }
+json ptrTo(json base) { return {{"type-kind","pntr"},{"base-type",move(base)}}; } // LCOV_EXCL_BR_LINE
 json permPtrTo(json base, bool isMutable)
 {
-	return {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",move(base)}};
-}
+	return {{"type-kind","pntr"},{"mutable",isMutable},{"base-type",move(base)}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // vt's element is laid out already.
 AllocShapeRef laidOutVarrShape(const json& vt)
@@ -957,7 +957,7 @@ json PlnSemanticAnalyzer::makeCopyStmt(const json& locNode, const json& dst, con
 
 	if (isVarrStorage(t)) {
 		json args = isVarrPntr(st) ? json::array({dst, varrData(src), varrLen(src)})
-		                           : json::array({dst, src, lit(st["arr-size"].get<int64_t>())});
+		                           : json::array({dst, src, lit(st["arr-size"].get<int64_t>())}); // LCOV_EXCL_BR_LINE
 		return copyStmt(varrShape(t), move(args));
 	}
 	if (isStructStorage(t)) {

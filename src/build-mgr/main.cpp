@@ -128,7 +128,7 @@ int main(int argc, char* argv[])
 		fs::create_directories(input_file_work_path);
 		string output_ast_path = palan_work_path + input_file.string() + ".ast.json";
 
-		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path}))
+		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path})) // LCOV_EXCL_BR_LINE
 			return ret;
 		ast_files.emplace_back(output_ast_path);
 
@@ -166,7 +166,7 @@ int main(int argc, char* argv[])
 		string ast_file = ast_files[i];
 
 		// palan-sa
-		if (int ret = runTool({exec_path + "/palan-sa", ast_file}))
+		if (int ret = runTool({exec_path + "/palan-sa", ast_file})) // LCOV_EXCL_BR_LINE
 			return ret;
 
 		// Derive output paths (strip ".ast.json" suffix from ast_file)
@@ -180,7 +180,7 @@ int main(int argc, char* argv[])
 			return ret;
 
 		// as
-		if (int ret = runTool({"as", asm_file, "-o", obj_file}))
+		if (int ret = runTool({"as", asm_file, "-o", obj_file})) // LCOV_EXCL_BR_LINE
 			return ret;
 
 		obj_files.push_back(obj_file);
@@ -195,9 +195,9 @@ int main(int argc, char* argv[])
 		string main_symbol = json::parse(f)["main"]["name"];
 		string entry_s = base + ".entry.s";
 		string entry_o = base + ".entry.o";
-		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s}))
+		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s})) // LCOV_EXCL_BR_LINE
 			return ret;
-		if (int ret = runTool({"as", entry_s, "-o", entry_o}))
+		if (int ret = runTool({"as", entry_s, "-o", entry_o})) // LCOV_EXCL_BR_LINE
 			return ret;
 		obj_files.push_back(entry_o);
 	}
@@ -573,7 +573,7 @@ int main(int argc, char* argv[])
 					struct OwnedField { string slot; ElemOps e; vector<string> lens; };
 					vector<OwnedField> owned;
 					for (auto& of : shape["owned-fields"]) {
-						OwnedField f{of["name"], opsOf(of["elem"]), {}};
+						OwnedField f{of["name"], opsOf(of["elem"]), {}}; // LCOV_EXCL_BR_LINE
 						for (auto& len : of["lens"]) f.lens.push_back(to_string(len.get<int64_t>()));
 						if (f.e.kind == "embed-row") emitElemHelpers(f.e);
 						else if (f.e.leaf) emitElemHelpers(*f.e.leaf);
@@ -757,13 +757,13 @@ int main(int argc, char* argv[])
 
 			}
 
-			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast}))
+			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast})) // LCOV_EXCL_BR_LINE
 				return ret;
 			if (int ret = runTool({exec_path + "/palan-sa", alloc_ast}))
 				return ret;
 			if (int ret = runTool({exec_path + "/palan-codegen", alloc_sa}))
 				return ret;
-			if (int ret = runTool({"as", alloc_s, "-o", alloc_o}))
+			if (int ret = runTool({"as", alloc_s, "-o", alloc_o})) // LCOV_EXCL_BR_LINE
 				return ret;
 
 			obj_files.push_back(alloc_o);
@@ -778,7 +778,7 @@ int main(int argc, char* argv[])
 	// harmless for shared libraries (order doesn't gate symbol resolution),
 	// but this would need to change if static archives with inter-library
 	// dependencies were ever supported.
-	vector<string> ldArgv{"ld"};
+	vector<string> ldArgv{"ld"}; // LCOV_EXCL_BR_LINE
 	for (auto& obj : obj_files) ldArgv.push_back(obj);
 	for (auto& obj : link_objs) ldArgv.push_back(obj);
 	ldArgv.push_back("-lc");

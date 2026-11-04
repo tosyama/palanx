@@ -172,7 +172,7 @@ json PlnTypeRegistry::toJson(const PlnType* t)
     if (t->kind == PlnType::Kind::Prim) {
         const auto* p = static_cast<const PrimType*>(t);
         auto& fromEnum = PrimTypeNames::instance().fromEnum;
-        return {{"type-kind", "prim"}, {"type-name", fromEnum.at(p->name)}};
+        return {{"type-kind", "prim"}, {"type-name", fromEnum.at(p->name)}}; // LCOV_EXCL_BR_LINE
     }
     if (t->kind == PlnType::Kind::Enum) {
         const auto* e = static_cast<const EnumType*>(t);
@@ -182,23 +182,23 @@ json PlnTypeRegistry::toJson(const PlnType* t)
     }
     if (t->kind == PlnType::Kind::Ptr) {
         const auto* p = static_cast<const PtrType*>(t);
-        return {{"type-kind", "pntr"}, {"base-type", toJson(p->base)}};
+        return {{"type-kind", "pntr"}, {"base-type", toJson(p->base)}}; // LCOV_EXCL_BR_LINE
     }
     if (t->kind == PlnType::Kind::Varr) {
         const auto* v = static_cast<const VarrType*>(t);
-        json j = {{"type-kind", "varr"}, {"base-type", toJson(v->elem)}};
+        json j = {{"type-kind", "varr"}, {"base-type", toJson(v->elem)}}; // LCOV_EXCL_BR_LINE
         if (v->embedded) j["embedded"] = true;
         return j;
     }
     if (t->kind == PlnType::Kind::Struct) {
         const auto* s = static_cast<const StructType*>(t);
-        return {{"type-kind", "struct"}, {"type-name", s->name}};
+        return {{"type-kind", "struct"}, {"type-name", s->name}}; // LCOV_EXCL_BR_LINE
     }
     if (t->kind == PlnType::Kind::Func) {
         const auto* f = static_cast<const FuncType*>(t);
         json params = json::array();
-        for (auto* p : f->params) params.push_back({{"var-type", toJson(p)}});
-        return {{"type-kind", "func"}, {"parameters", params}, {"ret-type", toJson(f->ret)}};
+        for (auto* p : f->params) params.push_back({{"var-type", toJson(p)}}); // LCOV_EXCL_BR_LINE
+        return {{"type-kind", "func"}, {"parameters", params}, {"ret-type", toJson(f->ret)}}; // LCOV_EXCL_BR_LINE
     }
     throw std::runtime_error("unknown PlnType::Kind"); // LCOV_EXCL_LINE
 } // LCOV_EXCL_BR_LINE

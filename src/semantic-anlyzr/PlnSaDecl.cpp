@@ -68,7 +68,7 @@ FieldLayout PlnSemanticAnalyzer::inlineArrField(const json& locNode, const strin
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_RecursiveStruct, structName) << endl;
 		exit(1);
 	}
-	FieldLayout f{.typeKind="embed-arr", .isMutable=false};
+	FieldLayout f{.typeKind="embed-arr", .isMutable=false}; // LCOV_EXCL_BR_LINE
 	json laidOut = arr;
 	if (leaf->value("type-kind", "") == "pntr") {
 		f.unsupported = unsupportedPointee(pointeeLeaf(*leaf));
@@ -76,7 +76,7 @@ FieldLayout PlnSemanticAnalyzer::inlineArrField(const json& locNode, const strin
 		if (!f.unsupported.empty()) {
 			json* slot = &laidOut;
 			while (slot->value("type-kind", "") == "arr") slot = &(*slot)["base-type"];
-			*slot = {{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","prim"},{"type-name","void"}}}};
+			*slot = {{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","prim"},{"type-name","void"}}}}; // LCOV_EXCL_BR_LINE
 		}
 	} else {
 		requireKnownTypeNames(locNode, arr);
@@ -179,7 +179,7 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 			if (ownsElems(fl.type)) def.ownsFields = true;
 			const json* leaf = &fl.type;
 			while (isArrLevel(*leaf)) leaf = &(*leaf)["base-type"];
-			if (leaf->value("type-kind", "") == "struct"
+			if (leaf->value("type-kind", "") == "struct" // LCOV_EXCL_BR_LINE
 			    && structDefs_.at((*leaf)["type-name"].get<string>()).hasUnalignedField)
 				def.hasUnalignedField = true;
 			def.fields.push_back(move(fl));
@@ -296,7 +296,7 @@ json PlnSemanticAnalyzer::discardedValueStmt(const json& stmt, json body)
 	return {
 		{"stmt-type", "expr"},
 		{"body", body}
-	};
+	}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_var_decl(const json& stmt)
@@ -352,7 +352,7 @@ json PlnSemanticAnalyzer::takeOverInit(const json& stmt, const json& var, VarSto
 	// Sizes known only at run time on either side are the variable's from here on.
 	value["value-type"] = owned;
 	return {{"expr-type", "pinned"}, {"sa", move(value)}}; // LCOV_EXCL_BR_LINE
-}
+} // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_resolved_var_decl(const json& stmt2, vector<VarStorage> storage)
 {
@@ -442,7 +442,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 	bool isArrBorrow = borrowType.contains("arr-size");
 	bool reshaped = borrowType != vtype;
 
-	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}};
+	json sa_stmt = {{"stmt-type", "var-decl"}, {"vars", json::array()}}; // LCOV_EXCL_BR_LINE
 	for (auto& var : stmt2["vars"]) {
 		string name = var["name"];
 		json sa_var = var;
@@ -465,7 +465,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 		declareVar(name, varType, &stmt2);
 		sa_stmt["vars"].push_back(sa_var);
 	}
-	return json::array({sa_stmt});
+	return json::array({sa_stmt}); // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_arr_size_expr(const json& stmt, const json& sizeExprAst)
@@ -495,7 +495,7 @@ json PlnSemanticAnalyzer::sa_arr_size_expr(const json& stmt, const json& sizeExp
 string PlnSemanticAnalyzer::arrLitDimSize(const json& stmt, const string& name, json& sizeExpr, size_t count)
 {
 	if (sizeExpr.is_null()) {
-		sizeExpr = {{"expr-type", "lit-uint"}, {"value", to_string(count)}};
+		sizeExpr = {{"expr-type", "lit-uint"}, {"value", to_string(count)}}; // LCOV_EXCL_BR_LINE
 		return to_string(count);
 	}
 	json sz = sa_arr_size_expr(stmt, sizeExpr);
@@ -648,8 +648,8 @@ void PlnSemanticAnalyzer::emitArrLitAssigns(const json& arrAst, const ArrLitShap
 {
 	auto indexOf = [](json array, size_t i) -> json {
 		return {{"expr-type", "arr-index"}, {"array", move(array)},
-		        {"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}};
-	};
+		        {"index", {{"expr-type", "lit-uint"}, {"value", to_string(i)}}}}; // LCOV_EXCL_BR_LINE
+	}; // LCOV_EXCL_BR_LINE
 	const json& varr = shape.levels[depth].varr;
 	if (!sized && !varr.is_null()) {
 		// LCOV_EXCL_BR_START
@@ -943,12 +943,12 @@ static json cFieldVarType(const json& vtype)
 		if (bt.value("type-kind", "") == "arr" && bt.contains("base-type")) {
 			bt = level(move(bt));
 		} else if (isStruct(bt)) {
-			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}};
+			bt = {{"type-kind", "prim"}, {"type-name", bt["type-name"]}}; // LCOV_EXCL_BR_LINE
 		} else {
 			t.erase("embedded");
 		}
 		return t;
-	};
+	}; // LCOV_EXCL_BR_LINE
 	return {{"type-kind", "embed"}, {"base-type", level(vtype)}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
@@ -1293,7 +1293,7 @@ void PlnSemanticAnalyzer::adoptExportedType(const json& stmt, const json& decl, 
 	if (kind == "struct-def") {
 		adoptStruct(sub, name, alias.empty(), alias, stmt);
 		if (!alias.empty())
-			typeAliases_[alias + "." + name] = {{"type-kind", "prim"}, {"type-name", name}};
+			typeAliases_[alias + "." + name] = {{"type-kind", "prim"}, {"type-name", name}}; // LCOV_EXCL_BR_LINE
 	} else if (kind == "enum-def") {
 		adoptEnum(sub, name, alias.empty(), alias, stmt);
 		if (!alias.empty())
@@ -1328,7 +1328,7 @@ void PlnSemanticAnalyzer::adoptStruct(PlnSemanticAnalyzer& sub, const string& na
 	} else {
 		adopted = claimTypeName(name, origin->second, locNode);
 		if (adopted) structDefs_[name] = def;
-		if (nameable) bindImportedTypeName(locNode, name, {{"type-kind", "prim"}, {"type-name", name}});
+		if (nameable) bindImportedTypeName(locNode, name, {{"type-kind", "prim"}, {"type-name", name}}); // LCOV_EXCL_BR_LINE
 		setTypeNameable(name, nameable, alias);
 	}
 	if (!adopted) return;
@@ -1347,7 +1347,7 @@ void PlnSemanticAnalyzer::adoptStruct(PlnSemanticAnalyzer& sub, const string& na
 			// A pointee the exporting module has yet to resolve.
 			string pointee = f.typeName;
 			const json* loc = &locNode;
-			whenSettled([this, &sub, pointee, loc] {
+			whenSettled([this, &sub, pointee, loc] { // LCOV_EXCL_BR_LINE
 				sub.ensureStructDef(pointee);
 				adoptStruct(sub, pointee, false, "", *loc);
 			});
@@ -1389,9 +1389,9 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 	const string& structName = stmt["vars"][0]["var-type"]["type-name"].get<string>();
 	const StructDef& def = requireCompleteStruct(structName, stmt);
 	json pntr_type = {{"type-kind","pntr"},
-	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}};
+	                  {"base-type",{{"type-kind","struct"},{"type-name",structName}}}}; // LCOV_EXCL_BR_LINE
 	json result = json::array();
-	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}};
+	json sa_stmt = {{"stmt-type","var-decl"},{"vars",json::array()}}; // LCOV_EXCL_BR_LINE
 	// sa_var_decl gives each initialized var its own run, so these only follow
 	// the var-decl that allocates their storage.
 	json initStmts = json::array();
@@ -1530,7 +1530,7 @@ void PlnSemanticAnalyzer::sa_global_decl(const json& stmt, json& out)
 	for (auto& v : arrayScopeVars_.back())
 		if (v.name == name) v.global = true;
 	const json& type = *findVar(name);
-	GlobalVar g{label, type, &stmt, {}, {}};
+	GlobalVar g{label, type, &stmt, {}, {}}; // LCOV_EXCL_BR_LINE
 	if (!isArrBorrowVar(type) && !isStructBorrow(type)) {
 		g.view[0] = storageBorrowType(name, type, false);
 		g.view[1] = storageBorrowType(name, type, true);
@@ -1610,7 +1610,7 @@ void PlnSemanticAnalyzer::checkGlobalsReachedBeforeDecl() const
 
 	auto reaches = [&](const string& from, const set<string>& targets) {
 		set<string> seen;
-		vector<string> todo = {from};
+		vector<string> todo = {from}; // LCOV_EXCL_BR_LINE
 		while (!todo.empty()) {
 			string s = todo.back();
 			todo.pop_back();

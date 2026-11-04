@@ -31,7 +31,7 @@ static RegMove makeIntArgMove(const PhysLoc& src_loc, const string& dstBase)
 {
     VRegType t = src_loc.type;
     bool narrow = isNarrowInt(t);
-    return RegMove{
+    return RegMove{ // LCOV_EXCL_BR_LINE
         narrow ? extendMnemonic(isSignedInt(t), intWidth(t), 4) : string(movInstrForType(t)), t,
         srcOperand(src_loc), src_loc.isStack() ? "" : src_loc.base,
         dstBase, sizedRegName(dstBase, narrow ? VRegType::Int32 : t)
@@ -209,7 +209,7 @@ static vector<string> plnRetRegs(const vector<VRegType>& types, bool sysv)
             regs.push_back(isFloat(t) ? PlnX86CodeGen::x86PhysRegs.floatArgs[flt_idx++] : PlnX86CodeGen::x86PhysRegs.intArgs[int_idx++]);
     }
     return regs;
-}
+} // LCOV_EXCL_BR_LINE
 
 void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
 {
@@ -231,7 +231,7 @@ void PlnX86CodeGen::emitInstrCallPln(const CallPln& c, const RegMap& rm)
         if (dst.isStack())
             out << "\t" << movInstrForType(t) << " " << src_reg << ", " << srcOperand(dst) << "\n";
         else
-            retMoves.push_back(RegMove{movInstrForType(t), t, src_reg, regs[j], dst.base, sizedRegName(dst.base, t)});
+            retMoves.push_back(RegMove{movInstrForType(t), t, src_reg, regs[j], dst.base, sizedRegName(dst.base, t)}); // LCOV_EXCL_BR_LINE
     }
     emitSafeRegMoves(out, retMoves, "%r11");
 }

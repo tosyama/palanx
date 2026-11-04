@@ -158,7 +158,7 @@ inline string sizedRegName(const string& base, VRegType type)
     }
 
     return base;  // fallback
-}
+} // LCOV_EXCL_BR_LINE
 
 // Return the AT&T source operand string for a PhysLoc:
 //   stack  → "-8(%rbp)"  (memory reference)

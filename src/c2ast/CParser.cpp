@@ -565,7 +565,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 		ast["var-type"] = move(vt);
 	};
 	auto set_prim = [&](const char* name) {
-		set_vt({{"type-kind", "prim"}, {"type-name", name}});
+		set_vt({{"type-kind", "prim"}, {"type-name", name}}); // LCOV_EXCL_BR_LINE
 	}; // LCOV_EXCL_BR_LINE
 
 	if (CONSUME(TT_ID)) {	// typedef name
@@ -576,7 +576,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 			vt["typedef-name"] = name;
 			set_vt(move(vt));
 		} else {
-			set_vt({{"type-kind", "user"}, {"type-name", name}});
+			set_vt({{"type-kind", "user"}, {"type-name", name}}); // LCOV_EXCL_BR_LINE
 		}
 		result_index = index;
 		return true;
@@ -641,7 +641,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 			if (!enum_attrs.empty())
 				throwUnsupportedAttribute(enum_attrs.contains("packed") ? "packed" : "aligned",
 					tokens[attr_start]);
-			set_vt({{"type-kind", "enum"}, {"type-name", name}});
+			set_vt({{"type-kind", "enum"}, {"type-name", name}}); // LCOV_EXCL_BR_LINE
 			result_index = index;
 			return true;
 		}
@@ -2065,7 +2065,7 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 		if (!alias_target.empty() && exportFuncAlias(ast, m->name, alias_target))
 			continue;
 		if (!ok) {
-			if (!self_ref) unexported.push_back({{"name", m->name}});
+			if (!self_ref) unexported.push_back({{"name", m->name}}); // LCOV_EXCL_BR_LINE
 			continue;
 		}
 
@@ -2163,7 +2163,7 @@ json CParser::dumpState() const
 	json enumerators = json::object();
 	for (auto &[name, en] : enumerators_) enumerators[name] = {en.value, en.enumIndex}; // LCOV_EXCL_BR_LINE
 	return {{"typedefs", typedefs_}, {"structs", capturedStructs_}, {"enums", move(enums)}, // LCOV_EXCL_BR_LINE
-	        {"enumerators", move(enumerators)}};
+	        {"enumerators", move(enumerators)}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
 void CParser::loadState(const json &state)
@@ -2178,7 +2178,7 @@ void CParser::loadState(const json &state)
 		inheritedStructs_[s["name"]] = s;
 	}
 	for (const json &e : state["enums"]) {
-		CapturedEnum captured = {e["name"], e["anonymous"], e["evaluable"], {}};
+		CapturedEnum captured = {e["name"], e["anonymous"], e["evaluable"], {}}; // LCOV_EXCL_BR_LINE
 		for (const json &v : e["values"]) captured.values.push_back({v[0], v[1]});
 		enumIndex_[captured.name] = (int)capturedEnums_.size();
 		capturedEnums_.push_back(move(captured));

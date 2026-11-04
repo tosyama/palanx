@@ -963,7 +963,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 	}
 	checkGivenOwners(locNode, argAsts, saArgs);
 	return saArgs;
-}
+} // LCOV_EXCL_BR_LINE
 
 // An owned parameter takes the argument over: a returned array block as it
 // is, a returned struct written into a block of its own, anything else as a
@@ -1153,7 +1153,7 @@ json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool 
 				&& !(ownedArr && !isCFunc && isArrBorrowVar(*paramVT)))
 			return value;
 	}
-	json out = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}};
+	json out = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}}; // LCOV_EXCL_BR_LINE
 	if (value.contains("loc")) out["loc"] = value["loc"];
 	return out;
 } // LCOV_EXCL_BR_LINE
@@ -1266,7 +1266,7 @@ json PlnSemanticAnalyzer::normalizeChainCall(const json& expr)
 	}
 	size_t at;
 	json target = chainTarget(call, at);
-	return chainInto(move(target), at, {move(value)});
+	return chainInto(move(target), at, {move(value)}); // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 
 // Evaluates a chained call's values into temps, appending their declarations

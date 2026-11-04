@@ -434,7 +434,7 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     }
     cerr << PlnCodegenMessage::getMessage(E_UnknownStmtType, stmt_type) << endl;
     exit(1);
-}
+} // LCOV_EXCL_BR_LINE
 
 static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr)
 {
@@ -464,7 +464,7 @@ static PlnFunc deserializeSig(const json& jf)
     for (auto& jg : jf.value("globals", json::array()))
         pf.globals.push_back({jg["name"], jg["label"], toVRegType(jg["var-type"])});
     return pf;
-}
+} // LCOV_EXCL_BR_LINE
 
 Module deserialize(const json& sa)
 {
@@ -525,4 +525,4 @@ Module deserialize(const json& sa)
     mod.functions.push_back(move(top));
 
     return mod;
-}
+} // LCOV_EXCL_BR_LINE

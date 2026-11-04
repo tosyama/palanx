@@ -222,7 +222,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     auto allocStackSlot = [&](VReg vreg, VRegType type) {
         int size    = sizeOfType(type);
         stack_bytes = alignUp(stack_bytes, size) + size;
-        result[vreg] = PhysLoc{"", type, -stack_bytes};
+        result[vreg] = PhysLoc{"", type, -stack_bytes}; // LCOV_EXCL_BR_LINE
     };
 
     // For temporary VRegs (non-variable, non-return-value, no call args): reuse an expired
@@ -242,7 +242,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
         for (auto& [offset, max_end] : slot_end) {
             if (max_end < def_idx) {
-                result[vreg] = PhysLoc{"", type, offset};
+                result[vreg] = PhysLoc{"", type, offset}; // LCOV_EXCL_BR_LINE
                 return;
             }
         }
@@ -253,7 +253,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         // Float VRegs cannot use integer callee-saved registers; always spill to stack.
         bool is_flt = (type == VRegType::Float32 || type == VRegType::Float64);
         if (!is_flt && callee_idx < (int)phys.calleeSaved.size()) {
-            result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], type};
+            result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], type}; // LCOV_EXCL_BR_LINE
         } else {
             const VRegMeta& vm = meta[vreg];
             if (!vm.isVar && !vm.isRetValue && vm.call_uses.empty()) {
@@ -278,7 +278,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         if (!in_regs) {
             // Stack parameter: passed by caller above %rbp → 16(%rbp), 24(%rbp), ...
             // The caller's stack is stable across all calls within this function.
-            result[vreg] = PhysLoc{"", type, (stack_idx++ + 2) * 8};
+            result[vreg] = PhysLoc{"", type, (stack_idx++ + 2) * 8}; // LCOV_EXCL_BR_LINE
             continue;
         }
         if (is_flt) {
@@ -300,7 +300,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             allocCalleeSavedOrStack(vreg, type);
             pendingParamCopies.push_back({argReg, vreg, type});
         } else {
-            result[vreg] = PhysLoc{argReg, type};
+            result[vreg] = PhysLoc{argReg, type}; // LCOV_EXCL_BR_LINE
         }
     }
 
@@ -409,7 +409,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                     }
                 }
                 if (rax_safe) {
-                    result[vreg] = PhysLoc{"%rax", m.type};
+                    result[vreg] = PhysLoc{"%rax", m.type}; // LCOV_EXCL_BR_LINE
                 } else {
                     allocCalleeSavedOrStack(vreg, m.type);
                 }
@@ -486,7 +486,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             if (conflict) {
                 allocCalleeSavedOrStack(vreg, m.type);
             } else {
-                result[vreg] = PhysLoc{desired, m.type};
+                result[vreg] = PhysLoc{desired, m.type}; // LCOV_EXCL_BR_LINE
             }
         }
     }
@@ -514,7 +514,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             if (!pool.empty()) {
                 int off = pool.back();
                 pool.pop_back();
-                result[dst] = PhysLoc{"", type, off};
+                result[dst] = PhysLoc{"", type, off}; // LCOV_EXCL_BR_LINE
             } else {
                 allocStackSlot(dst, type);
             }
@@ -576,4 +576,4 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         paramCopies.push_back({argReg, PhysLoc{"", ptype, result[vreg].homeOffset}, ptype});
 
     return {result, frameSize, usedCallee, paramCopies, frameBlockOffsets, storesAfter, reloadsAfter};
-}
+} // LCOV_EXCL_BR_LINE
