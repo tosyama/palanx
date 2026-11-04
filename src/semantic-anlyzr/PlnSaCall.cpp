@@ -570,7 +570,7 @@ json PlnSemanticAnalyzer::sa_func_ref(const json& expr, const PlnType* expectedT
 	}
 	// LCOV_EXCL_EXCEPTION_BR_START
 	json out = {{"expr-type", "func-ref"}, {"name", callee.isC ? cLinkName(*callee.def) : (*callee.def)["symbol"]},
-	            {"value-type", move(funcPtr)}};
+	            {"func-type", callee.isC ? "c" : "palan"}, {"value-type", move(funcPtr)}};
 	// LCOV_EXCL_EXCEPTION_BR_STOP
 	if (expr.contains("loc")) out["loc"] = expr["loc"];
 	return out;

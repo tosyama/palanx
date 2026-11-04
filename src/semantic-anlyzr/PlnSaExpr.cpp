@@ -1285,6 +1285,14 @@ json PlnSemanticAnalyzer::sa_expr_cast(const json& expr)
 	if (tk == "pntr") {
 		json target = deepNormalizePrimToStruct(expr, normalizeArrBorrowType(expr, resolved));
 		if (from == target) return src;
+		// C's types say nothing of ownership, so only a cast of a C function
+		// itself tells it; any other function already frees by its signature.
+		bool fromCFunc = src.value("expr-type", "") == "func-ref" && src.value("func-type", "") == "c";
+		if (!fromCFunc && !funcSigOwnershipOk(from, target)) {
+			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_FuncCastOwnership,
+				typeDisplayName(from), typeDisplayName(target)) << endl;
+			exit(1);
+		}
 		bool toArr = target.contains("arr-size");
 		if (!fromPntr && (toArr || !isWord(from))) incompatible(target);
 		return wrapConvert(src, target);

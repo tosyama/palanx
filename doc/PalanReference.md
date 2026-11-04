@@ -1414,6 +1414,11 @@ uv_tcp_t client;
 func on_close(uv_tcp_t client) { }    // libuv hands client back; it is freed here
 ```
 
+Only a C function named in the cast can be read this way. A Palan function frees what its own
+parameters own, so casting it, or any function pointer value, to a type that owns or borrows
+differently is an error: `on_close as @func(@!uv_handle_t)` would have the caller keep what
+`on_close` frees.
+
 A pointer C hands back inside a struct is viewed as its owner with `as` and taken over:
 
 ```palan

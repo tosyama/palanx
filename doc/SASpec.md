@@ -769,8 +769,9 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
   - logical-or: same as logical-and
   - logical-not: always `{"type-kind": "prim", "type-name": "bool"}`; operand must be integer type
   - func-ref: a function name written where a value is expected (an `id` naming no variable or
-    C global). Emitted as `{"expr-type":"func-ref","name":<its link name>,"value-type":<its
-    function pointer type>}` (plus `loc`). The type is `{"type-kind":"pntr","mutable":false,
+    C global). Emitted as `{"expr-type":"func-ref","name":<its link name>,"func-type":<"c" or
+    "palan">,"value-type":<its function pointer type>}` (plus `loc`); `func-type` tells a cast
+    whether it may change the function's ownership (only a C function's). The type is `{"type-kind":"pntr","mutable":false,
     "base-type":{"type-kind":"func","parameters":[{"var-type":T}...],"ret-type":R}}`, built from
     the function's signature; a function returning nothing has a `void` prim `ret-type`, and a
     single named return gives its type. The function must be a Palan function (local or imported)

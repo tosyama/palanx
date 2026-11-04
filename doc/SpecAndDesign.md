@@ -35,7 +35,7 @@ version: 0.2.3 — improvements found through the samples (ray tracer, echo serv
   and `T b <<= v;` moves one from another owner. A C function takes or returns ownership when
   it is called through a cast to a function pointer type that owns that parameter or return
   (`(uv_close as @func(uv_tcp_t, @func(uv_tcp_t)))(client>>, on_close)`, `_` keeping a type as
-  it is), and a pointer C hands back in a struct field is viewed as its owner with `as`
+  it is; only a C function's own name can be cast so), and a pointer C hands back in a struct field is viewed as its owner with `as`
   (`[n]uint8 data <<= buf.base as [n]uint8;`), as is one C is to hold
   (`data ->> buf.base as [n]uint8;`).
 - An array whose size is known only at run time is moved, given, taken over and copied like
@@ -414,7 +414,10 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
   `(f as @func() -> @!T)() as T`). Ownership is part of
   the signature: a pointer to a function owning a parameter does not bind where one borrowing it
   is expected, or the reverse. A C function hands ownership across only when called through a
-  cast to such a type, so ownership leaves or enters Palan only where the call says so.
+  cast to such a type, so ownership leaves or enters Palan only where the call says so. Only a C
+  function named in the cast may change ownership this way, as C's types say nothing about it;
+  any other cast to a function pointer type (a Palan function, a function pointer variable or
+  field) keeps it, as binding does, since the function frees what its own signature says.
 - `p as T` for a `@!X` pointer `p` and an owned type `T` is an `owner-view`: `=` or an owning
   parameter copies it as from an owned variable, and `<<=`, `->>` or `>>` move it. A move leaves
   `p` as it is, since `p` is not an owner; a `@X` pointer cannot be moved from.

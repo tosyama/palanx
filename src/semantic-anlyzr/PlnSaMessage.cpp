@@ -769,6 +769,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "the cast's function type has " + arg1 + (arg1 == "1" ? " parameter" : " parameters")
 			       + ", but '" + arg2 + "' has " + arg3 + ".";
 
+		case E_FuncCastOwnership:
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot cast '" + arg1 + "' to '" + arg2 + "': only a C function can be cast to take or give ownership.";
+
 		case E_InvalidCastTarget:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot cast to '" + arg1 + "': only a primitive, enum, pointer, borrowed array ('@[n]T'/'@![n]T'), "

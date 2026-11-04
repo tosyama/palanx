@@ -1430,6 +1430,17 @@ TEST(sa_error, give_and_take)
 		 ":5:8: error: 's' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
 		{"error_931_given_global_in_func.pa",
 		 ":4:37: error: 'arr[..]' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		// Only a C function's cast may change ownership: any other function frees by its signature.
+		{"error_932_func_cast_owned_to_borrow.pa",
+		 ":4:2: error: cannot cast '@func(P)' to '@func(@P)': only a C function can be cast to take or give ownership."},
+		{"error_933_func_cast_borrow_to_owned.pa",
+		 ":4:2: error: cannot cast '@func(@P)' to '@func(P)': only a C function can be cast to take or give ownership."},
+		{"error_934_func_cast_owned_ret.pa",
+		 ":3:9: error: cannot cast '@func() -> P' to '@func() -> @P': only a C function can be cast to take or give ownership."},
+		{"error_935_func_ptr_var_cast_ownership.pa",
+		 ":4:15: error: cannot cast '@func(P)' to '@func(@P)': only a C function can be cast to take or give ownership."},
+		{"error_936_func_cast_nested_ownership.pa",
+		 ":4:2: error: cannot cast '@func(@func(P))' to '@func(@func(@P))': only a C function can be cast to take or give ownership."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

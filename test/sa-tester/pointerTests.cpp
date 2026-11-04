@@ -866,6 +866,7 @@ TEST(sa, func_ptr)
 	const auto& ref = stmts[0]["vars"][0]["init"];
 	ASSERT_EQ(ref["expr-type"], "func-ref");
 	ASSERT_EQ(funcName(ref["name"]), "twice");
+	ASSERT_EQ(ref["func-type"], "palan");
 	// A single named return is the function's return value.
 	ASSERT_EQ(funcName(stmts[1]["value"]["name"]), "one");
 	ASSERT_EQ(stmts[1]["value"]["value-type"]["base-type"]["ret-type"]["type-name"], "int32");
@@ -901,4 +902,18 @@ TEST(sa, func_ptr_paths)
 	const auto& field = stmts[3]["vars"][0]["init"];
 	ASSERT_EQ(field["expr-type"], "call-ptr");
 	ASSERT_EQ(field["callee"]["expr-type"], "field-access");
+}
+
+TEST(sa, func_cast_keeps_ownership)
+{
+	// A Palan function's cast may change a pointer's permission or keep a type
+	// with `_`; only a C function's may change ownership.
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/332_func_cast_keeps_ownership.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const auto& palanRef = stmts[2]["body"]["callee"]["src"];
+	ASSERT_EQ(palanRef["func-type"], "palan");
+	const auto& cRef = stmts[3]["body"]["callee"]["src"];
+	ASSERT_EQ(cRef["func-type"], "c");
 }

@@ -148,6 +148,10 @@ inline bool ptrPermissionOk(const json& from, const json& to)
 	return ptrPermission(from, to) == PtrPermission::Ok;
 }
 
+// A function owning a parameter frees it, so it cannot stand in for one
+// borrowing it, nor the reverse.
+inline bool sameOwnership(const json& a, const json& b) { return isOwnedBlock(a) == isOwnedBlock(b); }
+
 // A function stored as `to` is called with `to`'s arguments and its result is
 // read as `to`'s, so permissions are checked in the direction each value
 // flows: reversed for the parameters. Types themselves are compared by the
@@ -158,13 +162,30 @@ inline bool funcSigPermissionOk(const json& from, const json& to)
 	const json& fp = from["parameters"];
 	const json& tp = to["parameters"];
 	BOOST_ASSERT(fp.size() == tp.size());
-	// A function owning a parameter frees it, so it cannot stand in for one
-	// borrowing it, nor the reverse.
-	auto sameOwnership = [](const json& a, const json& b) { return isOwnedBlock(a) == isOwnedBlock(b); };
 	for (size_t i = 0; i < fp.size(); i++)
 		if (!sameOwnership(tp[i]["var-type"], fp[i]["var-type"])
 		    || !ptrPermissionOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
 	return sameOwnership(from["ret-type"], to["ret-type"]) && ptrPermissionOk(from["ret-type"], to["ret-type"]);
+}
+
+// funcSigPermissionOk's ownership half alone, for a cast: a cast may change
+// pointer permissions, but not who frees what a function is given or returns.
+inline bool funcSigOwnershipOk(const json& from, const json& to)
+{
+	const json* f = &from;
+	const json* t = &to;
+	while (f->value("type-kind","") == "pntr" && t->value("type-kind","") == "pntr") {
+		f = &(*f)["base-type"];
+		t = &(*t)["base-type"];
+	}
+	if (f->value("type-kind","") != "func" || t->value("type-kind","") != "func") return true;
+	const json& fp = (*f)["parameters"];
+	const json& tp = (*t)["parameters"];
+	BOOST_ASSERT(fp.size() == tp.size());
+	for (size_t i = 0; i < fp.size(); i++)
+		if (!sameOwnership(tp[i]["var-type"], fp[i]["var-type"])
+		    || !funcSigOwnershipOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
+	return sameOwnership((*f)["ret-type"], (*t)["ret-type"]) && funcSigOwnershipOk((*f)["ret-type"], (*t)["ret-type"]);
 }
 
 // A pntr(struct) with no "mutable" key is a struct's own storage (a struct
