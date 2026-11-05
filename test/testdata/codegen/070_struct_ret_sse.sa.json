@@ -29,9 +29,8 @@
         "func-type": "c",
         "name": "get_flo",
         "args": [],
+        "ret-dest": {"expr-type": "id", "name": "f", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "FloBox"}}, "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "FloBox"}}},
         "struct-ret": {
-          "var": "f",
-          "struct-name": "FloBox",
           "size": 8,
           "eightbytes": [{"class": "sse", "size": 8}]
         }

@@ -1,0 +1,20 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type S { int32 n; };
+type H { [2]S a; };
+global int32 kc = 0 for k!;
+global int32 hc = 0 for h!;
+func f(S s) -> int32 { return s.n; }
+func k() -> int32 { kc + 1 -> kc; return kc - 1; }
+func h(@!H x) -> @!H { hc + 1 -> hc; return x; }
+mtrace();
+{
+	[2]S arr = [[1], [2]];
+	H hh = {a: [[3], [4]]};
+	printf("%d\n", f(arr[k()]>>));
+	S b <<= arr[k()];
+	printf("%d\n", f(h(@!hh).a[0]>>));
+	S c <<= h(@!hh).a[k() - 1];
+	printf("%d %d %d %d %d\n", b.n, c.n, kc, hc, arr[0] == NULL && arr[1] == NULL && hh.a[0] == NULL && hh.a[1] == NULL);
+}
+muntrace();

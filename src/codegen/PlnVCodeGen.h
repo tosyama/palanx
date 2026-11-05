@@ -20,13 +20,18 @@ class PlnVCodeGen {
     int floatLabelCounter_ = 0;  // unique label index for float literals
     VProg* prog_ = nullptr;      // set during generate(); used to push float literals
 
-    // Variable symbol table: scoped stack of name -> VReg mappings.
-    // enterVarScope/leaveVarScope push/pop; findVar searches from innermost.
-    vector<map<string, VReg>> varScopes;
+    // Variable symbol table: scoped stack of name -> storage mappings.
+    // enterVarScope/leaveVarScope push/pop; lookups search from innermost.
+    // A global lives in a static slot instead of a VReg; every access goes to
+    // memory, since a call may change it.
+    struct VarBinding { VReg reg = -1; string label; VRegType type = VRegType::Int64; };
+    vector<map<string, VarBinding>> varScopes;
     void enterVarScope();
     void leaveVarScope();
-    VReg findVar(const string& name) const;
+    const VarBinding& findBinding(const string& name) const;
+    VReg findVar(const string& name, VFunc& func);
     void declareVar(const string& name, VReg r);
+    void bindStatic(const string& name, const string& label, VRegType type);
 
     VReg allocVReg();
 
@@ -36,6 +41,9 @@ class PlnVCodeGen {
     // A temp's release statements, held until its full expression has been
     // evaluated (TempExpr).
     vector<const Stmt*> pendingReleases_;
+    // A temp's reset statements, held until the arguments of the call it is
+    // given to have been evaluated (lowerArgs).
+    vector<const Stmt*> pendingResets_;
 
     struct LoopLabels { string start; string end; };
     vector<LoopLabels> loopStack_;  // push/pop in lowerWhileStmt
@@ -53,7 +61,13 @@ class PlnVCodeGen {
     void lowerArrAssignStmt(const ArrAssignStmt& stmt, VFunc& func);
     void lowerReturnStmt(const ReturnStmt& stmt, VFunc& func);
     void lowerCCCallExpr(const CCCallExpr& expr, VFunc& func);
-    vector<VReg> lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func);
+    vector<VReg> lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func,
+                                vector<VReg> args = {});
+    VReg lowerStructRetDest(const std::optional<StructRet>& sr, vector<VReg>& args, VFunc& func);
+    std::pair<vector<VReg>, vector<VRegType>> structRetDsts(const std::optional<StructRet>& sr);
+    void storeStructRet(VReg dest, const std::optional<StructRet>& sr, const vector<VReg>& dsts, VFunc& func);
+    void lowerSlotReturn(VFunc& func);
+    void lowerPtrCallStmt(const PtrCallExpr& expr, VFunc& func);
     VReg loadEightbyte(VReg ptr, int offset, const Eightbyte& eb, VFunc& func);
     void storeEightbyte(VReg ptr, int offset, VReg src, const Eightbyte& eb, VFunc& func);
     void lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func);

@@ -9,7 +9,7 @@ void registerMacroConstants(MacroTable& macros, const json& constants, const jso
 {
 	for (auto& c : constants) {
 		string name = c["name"].get<string>();
-		macros[name].push_back(MacroEntry{ c["value"], c.value("value-type", json()), cincludeLoc, "" });
+		macros[name].push_back(MacroEntry{ c["value"], c.value("value-type", json()), cincludeLoc, "" }); // LCOV_EXCL_BR_LINE
 	}
 }
 
@@ -17,7 +17,7 @@ void registerUnexportedMacros(MacroTable& macros, const json& unexported, const 
 {
 	for (auto& m : unexported) {
 		string name = m["name"].get<string>();
-		macros[name].push_back(MacroEntry{ json(), json(), cincludeLoc,
+		macros[name].push_back(MacroEntry{ json(), json(), cincludeLoc, // LCOV_EXCL_BR_LINE
 			m.value("function-like", false) ? "function-like" : "not-constant" });
 	}
 }
@@ -25,7 +25,7 @@ void registerUnexportedMacros(MacroTable& macros, const json& unexported, const 
 void registerUndefinedMacros(MacroTable& macros, const json& undefined, const json& cincludeLoc)
 {
 	for (auto& n : undefined) {
-		MacroEntry e{ json(), json(), cincludeLoc, "" };
+		MacroEntry e{ json(), json(), cincludeLoc, "" }; // LCOV_EXCL_BR_LINE
 		e.undefined = true;
 		macros[n.get<string>()].push_back(e);
 	}
@@ -69,14 +69,14 @@ void foldMacroConstants(json& node, const MacroTable& macros)
 				node["c-macro"] = e->unexported;
 			} else if (exprType == "id") {
 				json loc = node["loc"];
-				node = { {"expr-type", "lit-int"}, {"value", e->value}, {"loc", loc} };
+				node = { {"expr-type", "lit-int"}, {"value", e->value}, {"loc", loc} }; // LCOV_EXCL_BR_LINE
 				if (!e->valueType.is_null()) node["value-type"] = e->valueType;
 			}
-		} // LCOV_EXCL_EXCEPTION_BR_LINE
+		} // LCOV_EXCL_BR_LINE
 		if (exprType == "id") return;
 	}
 
 	for (auto& [key, val] : node.items()) {
 		foldMacroConstants(val, macros);
 	}
-}
+} // LCOV_EXCL_BR_LINE

@@ -39,6 +39,7 @@ enum {
 	KW_CONSTRUCT =	PlnParser::token::KW_CONSTRUCT,
 	KW_INTERFACE =	PlnParser::token::KW_INTERFACE,
 	KW_CONST =	PlnParser::token::KW_CONST,
+	KW_GLOBAL =	PlnParser::token::KW_GLOBAL,
 	KW_VOID =	PlnParser::token::KW_VOID,
 	KW_RETURN = PlnParser::token::KW_RETURN,
 	KW_FOR =	PlnParser::token::KW_FOR,
@@ -59,6 +60,7 @@ enum {
 	OPE_SHR =	PlnParser::token::OPE_SHR,
 	ARROW =	PlnParser::token::ARROW,
 	DBL_ARROW =	PlnParser::token::DBL_ARROW,
+	OPE_TAKE =	PlnParser::token::OPE_TAKE,
 	AT_EXCL =	PlnParser::token::AT_EXCL,
 	DBL_PLUS =	PlnParser::token::DBL_PLUS,
 	OPE_EQ =	PlnParser::token::OPE_EQ,
@@ -149,6 +151,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>"construct" { return KW_CONSTRUCT; }
 <*>"interface" { return KW_INTERFACE; }
 <*>"const" { return KW_CONST; }
+<*>"global" { return KW_GLOBAL; }
 <*>"void" { return KW_VOID; }
 <*>"return" { return KW_RETURN; }
 <*>"for" { return KW_FOR; }
@@ -189,6 +192,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>">>>"	{ return OPE_SHR; }
 <*>"->"	{ return ARROW; }
 <*>"->>"	{ return DBL_ARROW; }
+<*>"<<="	{ return OPE_TAKE; }
 <*>"@!"	{ return AT_EXCL; }
 <*>"++"	{ return DBL_PLUS; }
 <*>"=="	{ return OPE_EQ; }

@@ -1,0 +1,21 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 x; int32 y; };
+type Q { int32 k; [+]int32 a; P p; };
+func bump(P p) -> int32 { p.x + 10 -> p.x; return p.x; }
+func mk(int32 n) -> P { return [n, n + 1]; }
+func sumQ(Q q) -> int32 { 9 -> q.a.push(); return q.k + int32(len(@q.a)) + q.p.y; }
+func keep(P p, @!Q q) { p ->> q.p; }
+func give(P p) -> P { return p; }
+mtrace();
+{
+	P s = [1, 2];
+	printf("%d %d\n", bump(s), s.x);
+	printf("%d %d\n", bump([5, 6]), bump(mk(7)));
+	Q q = {k: 1, a: [1, 2], p: [3, 4]};
+	printf("%d %d\n", sumQ(q), len(@q.a));
+	keep(s, @!q);
+	P g = give(q.p);
+	printf("%d %d %d\n", q.p.x, s.x, g.y);
+}
+muntrace();

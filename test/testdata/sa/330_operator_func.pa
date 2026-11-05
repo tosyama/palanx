@@ -1,0 +1,16 @@
+type vec2 { flo32 x; flo32 y; };
+func +(@vec2 a, @vec2 b) -> vec2 { return [a.x + b.x, a.y + b.y]; }
+func -(vec2 a) -> vec2 {
+	-a.x -> a.x;
+	-a.y -> a.y;
+	return a;
+}
+func *(@vec2 v, flo32 f) -> vec2 { return [v.x * f, v.y * f]; }
+func *(@vec2 a, @vec2 b) -> flo32 { return a.x * b.x + a.y * b.y; }
+
+vec2 a = [1.0, 2.0];
+$vec2 b = [3.0, 4.0];
+vec2 c = a + b;
+vec2 d = -(a + b);
+flo32 e = a * 2.0 * b;
+flo32 f = a.x * 2.0 + b.y;

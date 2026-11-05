@@ -1,0 +1,24 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Q { int32 y; };
+type R { $Q q; Q o; int32 n; };
+func take(R r, @Q q) -> int32 { return r.n + q.y; }
+func takeW(R r, @!Q q) -> int32 { q.y + 1 -> q.y; return r.n + q.y; }
+func both(@R a, R b) -> int32 { return a.n + b.n; }
+func pass(R r) -> R { return r; }
+func sum(R r, @R s) -> int32 { return r.n + s.n; }
+mtrace();
+{
+	R r = {q: {y: 2}, o: {y: 3}, n: 10};
+	printf("%d %d\n", take(r>>, @r.q), r == NULL);
+	R s = {q: {y: 4}, o: {y: 5}, n: 20};
+	printf("%d\n", takeW(s>>, @!s.o));
+	R t = {q: {y: 6}, o: {y: 7}, n: 30};
+	printf("%d %d\n", both(@t, t>>), t == NULL);
+	R u = {q: {y: 8}, o: {y: 9}, n: 40};
+	printf("%d\n", u ->> take(@u.q));
+	R v = {q: {y: 1}, o: {y: 1}, n: 50};
+	R w = {q: {y: 1}, o: {y: 1}, n: 5};
+	printf("%d\n", sum(pass(v>>), @w));
+}
+muntrace();

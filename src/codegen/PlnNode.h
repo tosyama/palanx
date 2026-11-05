@@ -43,7 +43,7 @@ enum class ExprKind {
     LogicalAnd,
     LogicalOr,
     AddrOf,
-    CGlobal,
+    StaticAlloc,
     FuncRef,
     PtrCall,
     Temp,
@@ -64,10 +64,12 @@ struct StrLitExpr : Expr {
 
 // Reference to a cinclude'd C global variable (e.g. `stdout`). Lowered to
 // LeaLabel+DerefLoad in PlnVCodeGen -- no dedicated VInstr, no x86 change.
-struct CGlobalExpr : Expr {
-    CGlobalExpr() : Expr(ExprKind::CGlobal) {}
-    string   label;
-    VRegType type = VRegType::Ptr64;
+// A block in static storage; its value is the block's address.
+struct StaticAllocExpr : Expr {
+    StaticAllocExpr() : Expr(ExprKind::StaticAlloc) {}
+    string label;
+    int    size  = 0;
+    int    align = 1;
 };
 
 // A function's address, as a function pointer value. Functions are emitted
@@ -80,12 +82,27 @@ struct FuncRefExpr : Expr {
 };
 
 // A call through a function pointer.
+// One eightbyte of a struct passed or returned by value: the register type
+// it travels in, and how many of its bytes belong to the struct (1-8; a width
+// other than 1/2/4/8 is read or written piecewise). flo64: taken up by one
+// flo64, so it is read whole rather than as two flo32 halves.
+struct Eightbyte { VRegType type; int size; bool flo64 = false; };
+
+// Where a call returning a struct writes it (a pointer), and the struct's
+// eightbytes when it comes back in registers; none means MEMORY class, for
+// which dest is passed as the hidden first argument.
+struct StructRet {
+    unique_ptr<Expr>  dest;
+    vector<Eightbyte> eightbytes;
+};
+
 struct PtrCallExpr : Expr {
     PtrCallExpr() : Expr(ExprKind::PtrCall) {}
     unique_ptr<Expr> callee;
     bool     hasRet  = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
+    std::optional<StructRet> structRet;
 };
 
 struct IntLitExpr : Expr {
@@ -214,28 +231,13 @@ struct ConvertExpr : Expr {
     unique_ptr<Expr> src;
 };
 
-// One eightbyte of a struct passed or returned by value: the register type
-// it travels in, and how many of its bytes belong to the struct (1-8; a width
-// other than 1/2/4/8 is read or written piecewise).
-struct Eightbyte { VRegType type; int size; };
-
 struct CCCallExpr : Expr {
     CCCallExpr() : Expr(ExprKind::CCCall) {}
     string name;
     bool     hasRet = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
-    // Set when sa.json's call node carries a "struct-ret" descriptor (a C
-    // function returning a struct by value, classified per the System V
-    // AMD64 ABI by palan-sa). Mutually exclusive with hasRet: this call has
-    // no ordinary scalar/pointer return value, only this side effect.
-    // structRetVar names the (already-declared) destination struct variable;
-    // structRetEightbytes lists the classified eightbytes in order (empty
-    // means MEMORY class -- the destination pointer was already prepended to
-    // args as an ordinary argument, so no further lowering is needed here).
-    bool              hasStructRet = false;
-    string            structRetVar;
-    vector<Eightbyte> structRetEightbytes;
+    std::optional<StructRet> structRet;
     // Parallel to args: set for an argument passed to a by-value struct
     // parameter, whose expression yields a pointer to the struct to copy.
     // Empty eightbytes means MEMORY class (copied to the stack).
@@ -249,6 +251,7 @@ struct PlnCallExpr : Expr {
     bool     hasRet  = false;
     VRegType retType = VRegType::Int64;
     vector<unique_ptr<Expr>> args;
+    std::optional<StructRet> structRet;
 };
 
 // A raw Linux syscall call (Linux syscall ABI, not System V) -- resolved by
@@ -266,12 +269,15 @@ struct Stmt;
 
 // A temp declared and initialized by body, read as value. Its release runs
 // only once the enclosing full expression has been evaluated, since a call
-// it is given to may return a borrow of it.
+// it is given to may return a borrow of it. Its reset runs once all of the
+// arguments of the call it is given to have been evaluated, since a later
+// one may borrow from the owner it was taken from.
 struct TempExpr : Expr {
     TempExpr() : Expr(ExprKind::Temp) {}
     vector<unique_ptr<Stmt>> body;
     unique_ptr<Expr>         value;
     vector<unique_ptr<Stmt>> release;
+    vector<unique_ptr<Stmt>> reset;
 };
 
 struct VarDef { string name; VRegType type; };
@@ -307,6 +313,7 @@ struct ExprStmt : Stmt {
 
 struct VarEntry {
     string           varName;
+    string           label;      // a global's static slot; empty for a frame variable
     VRegType         type = VRegType::Int64;
     unique_ptr<Expr> init;       // nullable
 };
@@ -330,10 +337,11 @@ struct ReturnStmt : Stmt {
 
 struct TappleDeclStmt : Stmt {
     TappleDeclStmt() : Stmt(StmtKind::TappleDecl) {}
-    vector<VarDef>           vars;
+    vector<VarDef>           vars;      // the values returned in registers
     string                   funcName;
     vector<unique_ptr<Expr>> args;
     vector<VRegType>         retTypes;
+    vector<unique_ptr<Expr>> retDests;  // where each returned struct is written, in order
 };
 
 struct BlockStmt : Stmt {
@@ -425,13 +433,22 @@ struct StrLiteralDef {
     string value;
 };
 
+// A name a function binds to a static slot at its entry.
+struct StaticBinding { string name; string label; VRegType type; };
+
 struct PlnFunc {
     string             name;
+    vector<StaticBinding> globals;
     vector<VarDef>     params;
     bool               hasRetType = false;
     VRegType           retType    = VRegType::Int64;
     string             retVarName;   // single named return variable; empty if none
     vector<VarDef>     retVars;      // multiple named return variables (size>=2)
+    // A single returned struct is built in retSlot, a frame variable, and
+    // returned in registers by these eightbytes; a MEMORY-class one's slot is
+    // the hidden first parameter, returned as retVarName.
+    string             retSlot;
+    vector<Eightbyte>  retSlotEightbytes;
     vector<unique_ptr<Stmt>> body;
     bool               isExport = false;
 };
@@ -439,5 +456,6 @@ struct PlnFunc {
 struct Module {
     string original;
     vector<StrLiteralDef>    strLiterals;
+    vector<string>           globalLabels;  // this module's global slots
     vector<PlnFunc>          functions;
 };

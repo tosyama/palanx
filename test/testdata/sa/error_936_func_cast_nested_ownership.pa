@@ -1,0 +1,4 @@
+type P { int32 x; };
+func cb(P p) { }
+func reg(@func(P) f) { }
+(reg as @func(@func(@P)))(cb);

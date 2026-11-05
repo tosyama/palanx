@@ -428,7 +428,7 @@ TEST(build_mgr, cond_return_owned_mtrace) {
 		if (!fromSharedLib && (line.find(" - ") != string::npos || line.find(" < ") != string::npos)) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 6) << "expected 6 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 8) << "expected 8 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -496,7 +496,7 @@ TEST(build_mgr, varr_struct_mtrace) {
 		if (!fromSharedLib && (line.find(" - ") != string::npos || line.find(" < ") != string::npos)) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 62) << "expected 62 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 63) << "expected 63 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -663,4 +663,18 @@ TEST(build_mgr, for_loop_index_type) {
 	ASSERT_EQ(execTestCommand("bin/palan -o out/for_idx_bin ../test/testdata/build-mgr/367_for_index_type.pa"), "");
 	ASSERT_EQ(execTestCommand("out/for_idx_bin"),
 		"(0,0)1(4,0)3(0,1)4(4,1)6\n254:254 255:255 0:256 1:257 \n");
+}
+
+TEST(build_mgr, top_var_const_in_sig) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/369_top_var_const.pa");
+	ASSERT_EQ(output, "3 10.20\n");
+}
+
+TEST(build_mgr, multi_ret_into_frame_array_mtrace) {
+	expectMtraceRun("387_multi_ret_into_frame_array_mtrace", "6 8\n", 1);
+}
+
+TEST(build_mgr, give_row_const_index_mtrace) {
+	expectMtraceRun("388_give_row_const_index_mtrace", "6\n", 3);
 }

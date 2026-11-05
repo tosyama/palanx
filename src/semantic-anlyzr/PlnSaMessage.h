@@ -67,16 +67,17 @@ enum PlnSaMessageCode {
 	E_IncompleteStructType,		// arg1: struct name, arg2: incomplete reason ("unsupported-field" or "forward-declared")
 	E_UnsupportedParamType,		// arg1: function name, arg2: unsupported type display name
 	E_UnsupportedCFuncSignature,	// arg1: C function name, arg2: unsupported type display name
-	E_CGlobalNotAssignable,		// arg1: C global variable name
-	E_CGlobalNotAddressable,		// arg1: C global variable name
+	E_GlobalNotWritable,		// arg1: variable name
+	E_GlobalNotReplaceable,		// arg1: variable name
 	E_UnsupportedCGlobalType,		// arg1: C global variable name, arg2: unsupported type display name
 	E_ArithOpNotNumeric,
 	E_StructInitNotSupported,	// arg1: struct type name
 	E_IncompatibleTypes,		// arg1: from type display name, arg2: to type display name
-	E_ByvalStructRetDiscarded,	// arg1: struct type name
 	E_FuncNotValue,		// arg1: function name, arg2: the reason
 	E_FuncPtrMutable,
 	E_FuncPtrSigType,	// arg1: type display name
+	E_KeepOutsideCast,
+	E_CallNonFuncPtr,	// arg1: type display name
 	E_AmbiguousFuncPtrCall,	// arg1: the name called
 	E_DerefVoidPointer,		// no args
 	E_InvalidLinkLibName,		// arg1: the library name as written
@@ -119,11 +120,17 @@ enum PlnSaMessageCode {
 	E_NamedRetInitOnStruct,	// arg1: return name
 	E_TransferToNonOwnedField,	// arg1: field name
 	E_ExpiringStructToBorrow,
-	E_TransferFromNonOwner,
+	E_TransferFromNonOwner,	// arg1: operator
+	E_TransferNotArg,
+	E_TransferToParam,	// arg1: parameter, arg2: function
+	E_TransferCast,
+	E_MoveFromReadOnlyView,	// arg1: operator
+	E_TakeIntoFrameVar,	// arg1: variable name
 	E_TransferToBorrowSlot,
 	E_TransferShapeMismatch,	// arg1: destination shape, arg2: source shape
-	E_TransferToNonOwnedVar,	// arg1: variable name
+	E_TransferToNonOwnedVar,	// arg1: variable name, arg2: operator
 	E_TransferToSelf,	// arg1: variable name
+	E_GivenChangedByLaterArg,	// arg1: variable name
 	E_UnsizedArrRowSizeNotConst,
 	E_UnsizedArrRowUnsupported,
 	E_ArrElemShapeMismatch,	// arg1: expected shape, arg2: actual shape
@@ -141,7 +148,11 @@ enum PlnSaMessageCode {
 	E_UnqualifiedAliasType,	// arg1: type name, arg2: module alias
 	E_CircularTypeDecl,	// arg1: type name, arg2: dependency path
 	E_InvalidCastTarget,	// arg1: target type name
-	E_CastToOwnedArr,
+	E_OwnerViewNeedsPtr,	// arg1: target type name
+	E_OwnerViewTargetNeedsPtr,	// arg1: target type name
+	E_KeepWithoutSource,	// arg1: source type name
+	E_KeepParamCount,	// arg1: cast's parameter count, arg2: source type name, arg3: its parameter count
+	E_FuncCastOwnership,	// arg1: source type name, arg2: target type name
 	E_StructLitTarget,
 	E_ArrLitTarget,	// arg1: variable name
 	E_BorrowOfTempEscapes,
@@ -173,6 +184,17 @@ enum PlnSaMessageCode {
 	E_ChangeForRange,	// arg1: the array iterated over
 	E_ForIndexNotInteger,	// arg1: type display name
 	E_ForIndexTooNarrow,	// arg1: type display name, arg2: the array's length
+	E_ConstUsedBeforeKnown,	// arg1: const name, arg2: the name its value waits for
+	E_GlobalNotTopLevel,
+	E_GlobalPermitUnknownVar,	// arg1: variable name
+	E_GlobalPermitNotFunc,	// arg1: function name
+	E_GlobalPermitDuplicate,	// arg1: variable name, arg2: function name
+	E_GlobalUsedBeforeDecl,	// arg1: variable name, arg2: function name
+	E_ImportModuleWithGlobals,	// arg1: variable name
+	E_OperatorFuncArity,	// arg1: operator, arg2: parameter counts it takes
+	E_OperatorFuncNoStruct,	// arg1: operator
+	E_OperatorFuncWritableParam,	// arg1: operator, arg2: parameter name
+	E_NoOperatorFunc,	// arg1: operator, arg2: operand types
 };
 
 class PlnSaMessage

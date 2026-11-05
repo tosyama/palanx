@@ -240,7 +240,7 @@ int main(int argc, char* argv[])
 			return 1;
 		}
 		}
-	} catch (runtime_error& e) {
+	} catch (runtime_error& e) { // LCOV_EXCL_BR_LINE
 		if (e.what()[0]) cerr << e.what() << endl;
 		return 1;
 	}

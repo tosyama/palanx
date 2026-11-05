@@ -1,0 +1,3 @@
+int32 g = 0;
+{ global g for f; }
+func f() { }

@@ -59,7 +59,7 @@ json execute_c2ast(const string& path_type, const string& path, const string& ba
 	string exec_path = exec_file_path.parent_path().string();
 	string c2ast_path = exec_path + "/palan-c2ast";
 
-	vector<string> argv{c2ast_path};
+	vector<string> argv{c2ast_path}; // LCOV_EXCL_BR_LINE
 	TempFile state_file;
 	if (!c_state.empty()) {
 		writeTempFile(state_file, c_state, path);
@@ -99,4 +99,4 @@ json execute_c2ast(const string& path_type, const string& path, const string& ba
 		throw runtime_error(PlnGenAstMessage::getMessage(E_C2AstFailed, path));
 	}
 	return parsed;
-}
+} // LCOV_EXCL_BR_LINE

@@ -844,7 +844,7 @@ TEST(sa_error, struct_lit_init_assign)
 		{"error_443_struct_lit_to_readonly_elem.pa", ":2:16: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
 		{"error_444_struct_lit_assign_count.pa", ":3:1: error: struct 'V' has 2 fields but its literal has 3 values."},
 		{"error_445_struct_lit_assign_ptr_field.pa", ":4:2: error: field 'p' of struct 'P' cannot be initialized by a literal: only numeric, struct and array fields are supported."},
-		{"error_446_struct_lit_transfer.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, or a call result."},
+		{"error_446_struct_lit_transfer.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -956,17 +956,17 @@ TEST(sa_error, func_ptr)
 	const pair<string, string> cases[] = {
 		{"error_599_mutable_func_ptr.pa",
 		 ":1:1: error: a function pointer is read-only; write '@func(...)', not '@!func(...)'."},
-		{"error_600_func_ptr_struct_param.pa", ":2:1: error: 'P'" + sigType},
-		{"error_601_func_ptr_arr_param.pa", ":1:1: error: 'array'" + sigType},
-		{"error_602_func_ptr_alias_struct_param.pa", ":3:1: error: 'P'" + sigType},
+		{"error_600_func_ptr_embed_param.pa", ":2:1: error: 'embed'" + sigType},
+		{"error_601_func_ptr_unsized_arr_param.pa", ":1:1: error: 'array'" + sigType},
+		{"error_602_func_ptr_keep_outside_cast.pa",
+		 ":3:1: error: '_' keeps a type only in a function type a function pointer is cast to."},
 		{"error_603_variadic_func_value.pa",
 		 ":2:27: error: function 'printf' cannot be used as a function pointer: it takes variable arguments."},
 		{"error_604_syscall_func_value.pa",
 		 ":2:27: error: function 'wr' cannot be used as a function pointer: it is a syscall."},
-		{"error_605_owned_param_func_value.pa",
-		 ":3:15: error: function 'g' cannot be used as a function pointer: its parameter type 'P' cannot be passed through one."},
-		{"error_606_owned_ret_func_value.pa",
-		 ":3:19: error: function 'g' cannot be used as a function pointer: its return type 'P' cannot be returned through one."},
+		// A function owning a parameter or its return frees or hands over what a borrow would not.
+		{"error_605_owned_param_func_value.pa", ":3:1: error: cannot convert '@func(P)' to '@func(@P)'."},
+		{"error_606_owned_ret_func_value.pa", ":3:1: error: cannot convert '@func() -> P' to '@func() -> @P'."},
 		{"error_607_ambiguous_func_ptr_call.pa",
 		 ":5:1: error: call to 'f3' is ambiguous: it names both a function pointer and a function."},
 		{"error_608_ambiguous_func_ptr_field_call.pa",

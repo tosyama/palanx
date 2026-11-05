@@ -5,11 +5,12 @@
 
 #include <iostream>
 #include <algorithm>
+#include <cstdint>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
 
-// LCOV_EXCL_EXCEPTION_BR_START
+// LCOV_EXCL_BR_START
 static json makeTempExpr(json body, json value, json release)
 {
 	json out = {{"expr-type","temp"},{"body",move(body)},{"release",move(release)}};
@@ -18,7 +19,39 @@ static json makeTempExpr(json body, json value, json release)
 	out["value"] = move(value);
 	return out;
 }
-// LCOV_EXCL_EXCEPTION_BR_STOP
+// LCOV_EXCL_BR_STOP
+
+static bool givenIn(const json& arg)
+{
+	return arg.value("expr-type", "") == "transfer";
+}
+
+json PlnSemanticAnalyzer::sa_arg_expression(const json& ast, const PlnType* expectedType)
+{
+	bool saved = transferAllowed_;
+	transferAllowed_ = givenIn(ast);
+	json out = sa_expression(ast, expectedType);
+	transferAllowed_ = saved;
+	return out;
+}
+
+json PlnSemanticAnalyzer::sa_expr_transfer(const json& expr)
+{
+	if (!transferAllowed_) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_TransferNotArg) << endl;
+		exit(1);
+	}
+	transferAllowed_ = false;
+	json body = json::array(), reset = json::array();
+	json given = giveValue(expr["value"], expr, expr.value("op", ">>"), body, reset);
+	transferAllowed_ = true;
+	if (body.empty()) return given;
+	json temp = makeTempExpr(move(body), move(given), json::array());
+	// Later arguments may still borrow from the owner, so it is reset just
+	// before the call, after all of them.
+	if (!reset.empty()) temp["reset"] = move(reset);
+	return temp;
+}
 
 // The registered definition of the function `funcDef` defines, among those
 // sharing its name.
@@ -115,7 +148,7 @@ static bool isVariadicSig(const json& funcParams)
 static bool isAggregateLitArg(const json& arg)
 {
 	return isAggregateLit(arg)
-		|| (arg.value("expr-type", "") == "addr-of" && isAggregateLit(arg["object"])); // LCOV_EXCL_EXCEPTION_BR_LINE
+		|| (arg.value("expr-type", "") == "addr-of" && isAggregateLit(arg["object"])); // LCOV_EXCL_BR_LINE
 }
 
 static bool isScalar(const PlnType* t)
@@ -166,12 +199,12 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
 	};
 	if (!arg.pending) return fitOf(arg.ast, arg.sa);
 	if (isAggregateLitArg(arg.ast))
-		return paramVT.value("type-kind", "") == "pntr" || isStructStorage(paramVT) ? ArgFit::Viable : ArgFit::None; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return paramVT.value("type-kind", "") == "pntr" || isStructStorage(paramVT) ? ArgFit::Viable : ArgFit::None; // LCOV_EXCL_BR_LINE
 	if (namesOverloadedFunc(arg.ast)) {
 		const PlnType* want = registry_.fromJson(paramVT);
 		for (auto& c : findCallees(arg.ast["name"].get<string>())) {
 			json fp;
-			if (funcRefType(*c.def, fp).empty() && registry_.fromJson(fp) == want) return ArgFit::Exact; // LCOV_EXCL_EXCEPTION_BR_LINE
+			if (funcRefType(c, fp).empty() && registry_.fromJson(fp) == want) return ArgFit::Exact; // LCOV_EXCL_BR_LINE
 		}
 		return ArgFit::None;
 	}
@@ -183,11 +216,11 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
 	// A chained value: '@v' when the parameter would take it so.
 	const json& vt = arg.probe["value-type"];
 	json form = chainArg(arg.ast, &paramVT, isCFunc, &vt);
-	if (form.value("expr-type", "") != "addr-of" || arg.ast.value("expr-type", "") == "addr-of") // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (form.value("expr-type", "") != "addr-of" || arg.ast.value("expr-type", "") == "addr-of") // LCOV_EXCL_BR_LINE
 		return fitOf(arg.ast, arg.probe);
 	const json& base = paramVT["base-type"];
 	bool match = isArrLevel(vt) ? arrShapeMatch(vt, paramVT)
-	           : isStructStorage(vt) ? base.value("type-kind", "") == "struct" // LCOV_EXCL_EXCEPTION_BR_LINE
+	           : isStructStorage(vt) ? base.value("type-kind", "") == "struct" // LCOV_EXCL_BR_LINE
 	                                   && base["type-name"] == vt["base-type"]["type-name"]
 	           : isVarrStorage(vt) ? base == vt["base-type"]
 	           : base == vt;
@@ -198,11 +231,11 @@ string PlnSemanticAnalyzer::argTypesText(const vector<CallArg>& args)
 {
 	string text;
 	for (auto& a : args) {
-		if (!text.empty()) text += ", "; // LCOV_EXCL_EXCEPTION_BR_LINE
+		if (!text.empty()) text += ", "; // LCOV_EXCL_BR_LINE
 		const json& vt = !a.pending ? a.sa["value-type"]
 		               : a.chained && a.probe.contains("value-type") ? a.probe["value-type"]
 		               : a.probe;
-		text += vt.is_object() ? typeDisplayName(vt) // LCOV_EXCL_EXCEPTION_BR_LINE
+		text += vt.is_object() ? typeDisplayName(vt) // LCOV_EXCL_BR_LINE
 		      : namesOverloadedFunc(a.ast) ? string("function")
 		      : string("literal");
 	}
@@ -213,13 +246,13 @@ string PlnSemanticAnalyzer::calleesText(const string& name, const vector<Callee>
 {
 	string text;
 	for (auto& c : cands) {
-		if (!text.empty()) text += ", "; // LCOV_EXCL_EXCEPTION_BR_LINE
+		if (!text.empty()) text += ", "; // LCOV_EXCL_BR_LINE
 		text += name + "(";
 		bool first = true;
 		for (auto& p : (*c.def)["parameters"]) {
 			if (!first) text += ", ";
 			first = false;
-			text += p.value("name", "") == "..." ? string("...") : typeDisplayName(p["var-type"]); // LCOV_EXCL_EXCEPTION_BR_LINE
+			text += p.value("name", "") == "..." ? string("...") : typeDisplayName(p["var-type"]); // LCOV_EXCL_BR_LINE
 		}
 		text += ")";
 	}
@@ -272,7 +305,7 @@ vector<Callee> PlnSemanticAnalyzer::usableCallees(const json& expr, const vector
 	for (auto& c : cands)
 		if ((!expr.value("method-form", false) || firstParamMutable(*c.def))
 		    && (!expr.contains("multi-ret")
-		        || (*c.def).value("rets", json::array()).size() == expr["multi-ret"].get<size_t>())) // LCOV_EXCL_EXCEPTION_BR_LINE
+		        || (*c.def).value("rets", json::array()).size() == expr["multi-ret"].get<size_t>())) // LCOV_EXCL_BR_LINE
 			usable.push_back(c);
 	return usable;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
@@ -281,7 +314,35 @@ vector<Callee> PlnSemanticAnalyzer::usableCallees(const json& expr, const vector
 // ('@v') depends on the function chosen, so bindCallArgs decides it.
 static json chainedValue(const json& value)
 {
-	return {{"expr-type", "chained-value"}, {"value", value}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"expr-type", "chained-value"}, {"value", value}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+// An arithmetic operator with a struct operand: a call of the functions the
+// operator names, given the operands as values chained into it, so that each
+// function chosen decides whether it borrows or copies one. An operand
+// already analyzed (in `probes`) is not analyzed again: a nested operator
+// would otherwise be analyzed once per enclosing one.
+json PlnSemanticAnalyzer::sa_operator_call(const json& expr, const string& op,
+                                           const vector<const json*>& operands, vector<json> probes)
+{
+	json call = {{"expr-type", "call"}, {"name", op}, {"args", json::array()}}; // LCOV_EXCL_BR_LINE
+	if (expr.contains("loc")) call["loc"] = expr["loc"];
+	vector<CallArg> args;
+	for (size_t i = 0; i < operands.size(); i++) {
+		CallArg a;
+		a.ast = *operands[i];
+		a.pending = a.chained = true;
+		if (!probes[i].is_null()) a.probe = move(probes[i]);
+		else if (!isAggregateLitArg(a.ast)) a.probe = literalDefaultType(a.ast);
+		args.push_back(move(a));
+	}
+	vector<Callee> cands = findCallees(op);
+	if (cands.empty()) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_NoOperatorFunc, op, argTypesText(args)) << endl;
+		exit(1);
+	}
+	Callee callee = selectCallee(call, op, cands, args);
+	return makeCallNode(call, callee, op, &args);
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 // A call of one of `cands`: a single one is bound as it is, so its own
@@ -298,18 +359,23 @@ json PlnSemanticAnalyzer::makeCall(const json& expr, const vector<Callee>& cands
 // since the callee may return a borrow of it.
 json PlnSemanticAnalyzer::bindCallTemp(json saArg)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	string name = "__tmp_" + to_string(tempVarCounter_++);
 	json storage = saArg["value-type"];
 	storage.erase("mutable");
 	json valueType = saArg["value-type"];
+	json value = {{"expr-type","id"},{"name",name},{"var-type",storage},{"value-type",move(valueType)}};
+	if (isStructRetCall(saArg)) {
+		json release = frameStructRelease(name, storage);
+		return makeTempExpr(declareStructRet(name, storage, move(saArg), VarStorage::Frame), move(value),
+		                    release.is_null() ? json::array() : json::array({move(release)}));
+	}
 	json decl = {{"stmt-type","var-decl"},
 	             {"vars",json::array({{{"name",name},{"var-type",storage},{"init",move(saArg)}}})}};
-	json value = {{"expr-type","id"},{"name",name},{"var-type",storage},{"value-type",move(valueType)}};
 	return makeTempExpr(json::array({move(decl)}), move(value),
 	                    json::array({makeOwnedFreeStmt(name, storage)}));
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 // '@f()'/'@!f()' as a call argument: the returned struct is borrowed for the
 // call, held in a temp (bindCallTemp).
@@ -320,7 +386,11 @@ json PlnSemanticAnalyzer::sa_call_borrow_arg(const json& arg)
 		cerr << locPrefix(arg) << PlnSaMessage::getMessage(E_AddrOfNotAddressable) << endl;
 		exit(1);
 	}
-	bool isMutable = arg["mutable"];
+	return borrowExpiring(move(saArg), arg["mutable"]);
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+json PlnSemanticAnalyzer::borrowExpiring(json saArg, bool isMutable)
+{
 	json& vt = saArg["value-type"];
 	if (isArrLevel(vt)) vt = withArrPermission(vt, isMutable);
 	else vt["mutable"] = isMutable;
@@ -351,7 +421,7 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 		rejectContext();
 	bool isStruct = isStructPntr(*paramVT);
 	json declType = isStruct
-		? json{{"type-kind","prim"},{"type-name",(*paramVT)["base-type"]["type-name"]}} // LCOV_EXCL_EXCEPTION_BR_LINE
+		? json{{"type-kind","prim"},{"type-name",(*paramVT)["base-type"]["type-name"]}} // LCOV_EXCL_BR_LINE
 		: paramVT->contains("arr-size") ? astTypeOf(*paramVT) : json();
 	if (declType.is_null()) {
 		if (!paramVT->contains("arr-size"))
@@ -361,7 +431,7 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 	}
 
 	enterScope();
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	string name = "__lit_" + to_string(tempVarCounter_++);
 	json decl = {{"stmt-type","var-decl"},{"loc",lit.value("loc", json::array())},
 		{"vars",json::array({{{"name",name},{"var-type",declType}}})}};
@@ -384,10 +454,10 @@ json PlnSemanticAnalyzer::sa_lit_arg(const json& arg, const json* paramVT, const
 	json saArg = sa_expression(argAst);
 	size_t idx = arrayScopeVars_.size() - 1;
 	release = collectFreeStmts(idx, idx + 1);
-	// LCOV_EXCL_EXCEPTION_BR_STOP
+	// LCOV_EXCL_BR_STOP
 	leaveScope();
 	return saArg;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // The call node for `expr` calling `callee`, as written by `writtenName`.
 json PlnSemanticAnalyzer::makeCallNode(const json& expr, const Callee& callee, const string& writtenName,
@@ -416,6 +486,7 @@ json PlnSemanticAnalyzer::makeCallNode(const json& expr, const Callee& callee, c
 	}
 	if (sa_expr.contains("value-type") && sa_expr["value-type"].value("type-kind","") == "pntr")
 		sa_expr["category"] = "expiring";
+	markStructRet(sa_expr, expr);
 	sa_expr["args"] = analyzedArgs
 		? bindCallArgs(expr, *analyzedArgs, def["parameters"], callee.isC, writtenName)
 		: saCallArgs(expr, expr["args"], def["parameters"], callee.isC, writtenName);
@@ -428,27 +499,30 @@ json PlnSemanticAnalyzer::makeCallNode(const json& expr, const Callee& callee, c
 
 // The `@func` type a call through a pointer to `def` would have, or why
 // there can be none.
-string PlnSemanticAnalyzer::funcRefType(const json& def, json& funcPtr) const
+string PlnSemanticAnalyzer::funcRefType(const Callee& callee, json& funcPtr) const
 {
-	json func = {{"type-kind","func"},{"parameters",json::array()}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	const json& def = *callee.def;
+	json func = {{"type-kind","func"},{"parameters",json::array()}}; // LCOV_EXCL_BR_LINE
 	if (def.value("func-type", "") == "syscall") return "it is a syscall";
 	if (def.contains("rets") && def["rets"].size() > 1) return "it returns multiple values";
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	func["ret-type"] = def.contains("ret-type") ? def["ret-type"]
 	                 : def.contains("rets") ? def["rets"][0]["var-type"]
 	                 : json{{"type-kind","prim"},{"type-name","void"}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
+	// LCOV_EXCL_BR_STOP
 	for (auto& p : def["parameters"]) {
 		if (p.value("name", "") == "...") return "it takes variable arguments";
-		func["parameters"].push_back({{"var-type", p["var-type"]}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+		func["parameters"].push_back({{"var-type", p["var-type"]}}); // LCOV_EXCL_BR_LINE
 	}
+	// A C function's by-value struct parameter has an owned struct's shape but
+	// is passed in registers or on the stack, which no function pointer does.
 	for (auto& p : func["parameters"])
-		if (!isFuncSigType(p["var-type"]))
+		if (!isFuncSigType(p["var-type"]) || (callee.isC && isStructStorage(p["var-type"])))
 			return "its parameter type '" + typeDisplayName(p["var-type"]) + "' cannot be passed through one";
 	const json& ret = func["ret-type"];
-	if (ret.value("type-name", "") != "void" && !isFuncSigType(ret)) // LCOV_EXCL_EXCEPTION_BR_LINE
+	if (ret.value("type-name", "") != "void" && !isFuncSigType(ret)) // LCOV_EXCL_BR_LINE
 		return "its return type '" + typeDisplayName(ret) + "' cannot be returned through one";
-	funcPtr = {{"type-kind","pntr"},{"mutable",false},{"base-type",move(func)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	funcPtr = {{"type-kind","pntr"},{"mutable",false},{"base-type",move(func)}}; // LCOV_EXCL_BR_LINE
 	return "";
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
@@ -458,7 +532,7 @@ bool PlnSemanticAnalyzer::namesOverloadedFunc(const json& expr) const
 {
 	if (expr.value("expr-type", "") != "id") return false;
 	const string& name = expr["name"].get<string>();
-	return !findVar(name) && !findCGlobal(name) && findCallees(name).size() > 1; // LCOV_EXCL_EXCEPTION_BR_LINE
+	return !findVar(name) && !findCGlobal(name) && findCallees(name).size() > 1; // LCOV_EXCL_BR_LINE
 }
 
 // A function named as a value: its address, typed as the `@func` it can be
@@ -475,7 +549,7 @@ json PlnSemanticAnalyzer::sa_func_ref(const json& expr, const PlnType* expectedT
 		vector<Callee> typed;
 		for (auto& c : cands) {
 			json fp;
-			if (funcRefType(*c.def, fp).empty() && registry_.fromJson(fp) == expectedType) typed.push_back(c); // LCOV_EXCL_EXCEPTION_BR_LINE
+			if (funcRefType(c, fp).empty() && registry_.fromJson(fp) == expectedType) typed.push_back(c); // LCOV_EXCL_BR_LINE
 		}
 		if (typed.size() > 1) {
 			cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_AmbiguousCall,
@@ -490,18 +564,18 @@ json PlnSemanticAnalyzer::sa_func_ref(const json& expr, const PlnType* expectedT
 		callee = typed[0];
 	}
 	if (callee.isC) requireSupportedCFuncSig(*callee.def, name, expr);
-	string reason = funcRefType(*callee.def, funcPtr);
+	string reason = funcRefType(callee, funcPtr);
 	if (!reason.empty()) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_FuncNotValue, name, reason) << endl;
 		exit(1);
 	}
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json out = {{"expr-type", "func-ref"}, {"name", callee.isC ? cLinkName(*callee.def) : (*callee.def)["symbol"]},
-	            {"value-type", move(funcPtr)}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
+	            {"func-type", callee.isC ? "c" : "palan"}, {"value-type", move(funcPtr)}};
+	// LCOV_EXCL_BR_STOP
 	if (expr.contains("loc")) out["loc"] = expr["loc"];
 	return out;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // The function pointer variable a call names, or null. A function of the same
 // name makes the call ambiguous.
@@ -539,10 +613,10 @@ json PlnSemanticAnalyzer::funcPtrField(const json& memberCall)
 			cerr << locPrefix(memberCall) << PlnSaMessage::getMessage(E_AmbiguousFuncPtrCall, method) << endl;
 			exit(1);
 		}
-	json access = {{"expr-type", "field-access"}, {"object", obj}, {"field", method}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	json access = {{"expr-type", "field-access"}, {"object", obj}, {"field", method}}; // LCOV_EXCL_BR_LINE
 	if (memberCall.contains("loc")) access["loc"] = memberCall["loc"];
 	return access;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A call through a function pointer. Its arguments follow a Palan function's
 // rules whatever the pointer came from: the pointer's type is all that is
@@ -550,19 +624,21 @@ json PlnSemanticAnalyzer::funcPtrField(const json& memberCall)
 json PlnSemanticAnalyzer::sa_expr_call_ptr(const json& expr, json callee, const string& funcName)
 {
 	const json& func = callee["value-type"]["base-type"];
-	json sa_expr = {{"expr-type", "call-ptr"}, {"callee", callee}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	json sa_expr = {{"expr-type", "call-ptr"}, {"callee", callee}}; // LCOV_EXCL_BR_LINE
 	if (expr.contains("loc")) sa_expr["loc"] = expr["loc"];
 	if (func["ret-type"].value("type-name", "") != "void")
 		sa_expr["value-type"] = func["ret-type"];
+	if (isOwnedBlock(func["ret-type"])) sa_expr["category"] = "expiring";
+	markStructRet(sa_expr, expr);
 	sa_expr["args"] = saCallArgs(expr, expr["args"], func["parameters"], false, funcName);
 	return sa_expr;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	const string& callName = expr["name"].get<string>();
 	if (findFuncPtrVar(expr)) {
-		json id = {{"expr-type", "id"}, {"name", expr["name"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json id = {{"expr-type", "id"}, {"name", expr["name"]}}; // LCOV_EXCL_BR_LINE
 		if (expr.contains("loc")) id["loc"] = expr["loc"];
 		return sa_expr_call_ptr(expr, sa_expression(id), callName);
 	}
@@ -578,7 +654,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 		undefinedNameError(expr, expr, E_UndefinedFunction);
 	}
 	return makeCall(expr, usableCallees(expr, cands), callName);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Shared by sa_expr_call and sa_expr_member_call: these used to duplicate
 // only part of this loop, silently dropping variadic promotion for an
@@ -615,7 +691,7 @@ vector<CallArg> PlnSemanticAnalyzer::analyzeCallArgs(const json& args)
 		if (literal)
 			a.probe = literalDefaultType(a.ast);
 		else if (!typeless)
-			(a.chained ? a.probe : a.sa) = isCallBorrow(a.ast) ? sa_call_borrow_arg(a.ast) : sa_expression(a.ast);
+			(a.chained ? a.probe : a.sa) = isCallBorrow(a.ast) ? sa_call_borrow_arg(a.ast) : sa_arg_expression(a.ast);
 		callArgs.push_back(move(a));
 	}
 	return callArgs;
@@ -627,9 +703,9 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 {
 	const json& paramVT = param["var-type"];
 	// What an owned parameter takes is copied into it.
-	if (!isCFunc && isOwnedParam(paramVT)) {
+	if (!isCFunc && isOwnedBlock(paramVT)) {
 		if (copySourceMatch(saArg["value-type"], paramVT)) return nullopt;
-		return SaDiag{E_IncompatibleTypes, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_IncompatibleTypes, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_BR_LINE
 	}
 	if (paramVT.contains("arr-size")) {
 		if (auto d = arrBorrowBindingMismatch(argAst, saArg, paramVT)) return d;
@@ -645,24 +721,24 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 			if (!argSized || (*argRow)["arr-size"] != paramElem["arr-size"]) {
 				string actual = argSized
 					? to_string((*argRow)["arr-size"].get<int64_t>()) : "variable";
-				// LCOV_EXCL_EXCEPTION_BR_START
+				// LCOV_EXCL_BR_START
 				return SaDiag{E_EmbeddedArrInnerSizeMismatch,
 				              to_string(paramElem["arr-size"].get<int64_t>()), actual};
-				// LCOV_EXCL_EXCEPTION_BR_STOP
+				// LCOV_EXCL_BR_STOP
 			}
 		} else if (!argContig) {
-			return SaDiag{E_IncompatibleTypes, typeDisplayName(argVT), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			return SaDiag{E_IncompatibleTypes, typeDisplayName(argVT), typeDisplayName(paramVT)}; // LCOV_EXCL_BR_LINE
 		}
 	}
 	if (auto d = elemShapeMismatch(saArg, paramVT)) return d;
 	if (auto d = callArgConvMismatch(saArg, paramVT)) return d;
 	if (isStructBorrow(paramVT) && isStructStorage(saArg["value-type"]))
-		return SaDiag{E_StructBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_StructBorrowNeedsAddrOf}; // LCOV_EXCL_BR_LINE
 	if (isVarrPntr(paramVT) && isPtrBorrow(paramVT) && isVarrStorage(saArg["value-type"]))
-		return SaDiag{E_VarrBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_VarrBorrowNeedsAddrOf}; // LCOV_EXCL_BR_LINE
 	// A C function takes an array by name, as C passes one.
 	if (!isCFunc && isPtrBorrow(paramVT) && namesArrStorage(saArg))
-		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_BR_LINE
 	// A by-value struct is only read, to copy it, so a read-only source is fine.
 	if (isCFunc && isStructStorage(paramVT)) return nullopt;
 	// An upgrade's diagnostic differs by callee kind, since a C parameter's
@@ -671,10 +747,148 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgMismatch(const json& argAst, const 
 	if (isCFunc && ptrPermission(saArg["value-type"], paramVT) == PtrPermission::Upgrade) {
 		string paramName = param.value("name", "");
 		if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
-		return SaDiag{E_ReadOnlyPtrToNonConstCParam, funcName, paramName}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_ReadOnlyPtrToNonConstCParam, funcName, paramName}; // LCOV_EXCL_BR_LINE
 	}
 	return ptrPermissionMismatch(saArg["value-type"], paramVT);
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+static json withoutLoc(const json& e)
+{
+	if (e.is_object()) {
+		json out = json::object();
+		for (auto& [k, v] : e.items())
+			if (k != "loc") out[k] = withoutLoc(v);
+		return out;
+	}
+	if (e.is_array()) {
+		json out = json::array();
+		for (auto& v : e) out.push_back(withoutLoc(v));
+		return out;
+	}
+	return e;
+}
+
+// The steps of a location path from its variable: "v:name", ".field",
+// "[index]"; empty for anything but a path.
+static vector<string> pathKeys(const json& e)
+{
+	string et = e.value("expr-type", "");
+	vector<string> keys;
+	if (et == "id") {
+		keys.push_back("v:" + e["name"].get<string>());
+	} else if (et == "field-access" || et == "arr-index") {
+		bool field = et == "field-access";
+		keys = pathKeys(e[field ? "object" : "array"]);
+		if (!keys.empty())
+			keys.push_back(field ? "." + e["field"].get<string>() : "[" + withoutLoc(e["index"]).dump() + "]");
+	}
+	return keys;
+}
+
+static bool isPrefixOf(const vector<string>& a, const vector<string>& b)
+{
+	return a.size() <= b.size() && equal(a.begin(), a.end(), b.begin());
+}
+
+// Each path read in e, and each of their own prefixes.
+static void collectPaths(const json& e, set<vector<string>>& paths, set<string>& vars)
+{
+	if (e.is_array()) {
+		for (auto& v : e) collectPaths(v, paths, vars);
+		return;
+	}
+	if (!e.is_object()) return;
+	vector<string> keys = pathKeys(e);
+	if (!keys.empty()) {
+		paths.insert(keys);
+		vars.insert(keys[0].substr(2));
+	}
+	for (auto& [k, v] : e.items()) collectPaths(v, paths, vars);
+}
+
+// What a later argument must not change while the owner given away by
+// `given` waits to be reset: the containers of the path (not the path itself,
+// whose borrow only reaches what it owns), and every path its indices read.
+struct GivenOwner {
+	string                 text;
+	vector<string>         path;
+	set<vector<string>>    changeable;
+	set<string>            vars;
+};
+
+static GivenOwner givenOwnerOf(const json& given)
+{
+	GivenOwner g;
+	g.path = pathKeys(given["value"]);
+	for (size_t n = 1; n < g.path.size(); n++)
+		g.changeable.insert(vector<string>(g.path.begin(), g.path.begin() + n));
+	if (g.path.empty()) return g;
+	g.vars.insert(g.path[0].substr(2));
+	for (auto& k : g.path)
+		g.text += k[0] == 'v' ? k.substr(2) : k[0] == '.' ? k : "[..]";
+	for (const json* e = &given["value"]; e->value("expr-type", "") != "id"; ) {
+		bool field = (*e)["expr-type"] == "field-access";
+		if (!field) collectPaths((*e)["index"], g.changeable, g.vars);
+		e = &(*e)[field ? "object" : "array"];
+	}
+	return g;
+} // LCOV_EXCL_LINE
+
+// The node in e that may change the owner g waits to reset, if any.
+static const json* changesGiven(const json& e, const GivenOwner& g)
+{
+	if (e.is_array()) {
+		for (auto& v : e)
+			if (const json* c = changesGiven(v, g)) return c;
+		return nullptr;
+	}
+	if (!e.is_object()) return nullptr;
+	string et = e.value("expr-type", "");
+	if (et == "transfer") {
+		vector<string> p = pathKeys(e["value"]);
+		if (!p.empty() && (isPrefixOf(p, g.path) || isPrefixOf(g.path, p))) return &e;
+	} // LCOV_EXCL_BR_LINE
+	if (et == "addr-of" && e.value("mutable", false) && g.changeable.count(pathKeys(e["object"])))
+		return &e;
+	// A method-form receiver is borrowed with '@!'.
+	if (et == "member-call" && g.changeable.count(pathKeys(e["object"])))
+		return &e;
+	for (auto& [k, v] : e.items())
+		if (const json* c = changesGiven(v, g)) return c;
+	return nullptr;
+}
+
+// A function binds a global it uses statically; at the top level a global is
+// a variable of the outermost scope.
+bool PlnSemanticAnalyzer::isGlobalName(const string& name) const
+{
+	if (isStaticBound(name)) return true;
+	for (size_t i = varScopes.size(); i > 0; --i)
+		if (varScopes[i-1].count(name))
+			return i == 1 && globals_.count(name);
+	return false;
+}
+
+// An owner given away with '>>' is reset only after all of the call's
+// arguments, so none after it may change it in between.
+void PlnSemanticAnalyzer::checkGivenOwners(const json& locNode, const vector<json>& argAsts, const json& saArgs)
+{
+	for (size_t i = 0; i < argAsts.size(); i++) {
+		if (!givenIn(argAsts[i]) || !saArgs[i].contains("reset")) continue;
+		GivenOwner g = givenOwnerOf(argAsts[i]);
+		if (g.path.empty()) continue;
+		bool global = any_of(g.vars.begin(), g.vars.end(), [&](const string& v) { return isGlobalName(v); });
+		for (size_t j = i + 1; j < argAsts.size(); j++) {
+			const json* c = changesGiven(argAsts[j], g);
+			// A function a global permits may write it.
+			if (!c && global && hasCall(saArgs[j])) c = &argAsts[j];
+			if (!c) continue;
+			cerr << locPrefix(c->contains("loc") ? *c : locNode)
+			     << PlnSaMessage::getMessage(E_GivenChangedByLaterArg, g.text) << endl;
+			exit(1);
+		}
+	}
+}
 
 // Binds the analyzed arguments to the chosen callee's parameters: a pending
 // argument is analyzed now with its parameter's type, then each is checked
@@ -685,6 +899,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 	bool isVariadic = isVariadicSig(funcParams);
 	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
 	json saArgs = json::array();
+	vector<json> argAsts;
 	for (size_t argIdx = 0; argIdx < args.size(); argIdx++) {
 		CallArg& ca = args[argIdx];
 		const json* param = argIdx < fixedCount ? &funcParams[argIdx] : nullptr;
@@ -696,18 +911,30 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		json argAst = arg;
 		json litBody, litRelease;
 		bool isLit = isAggregateLitArg(arg);
-		if (!isCFunc && paramVT && isOwnedParam(*paramVT)) {
+		bool ownedParam = !isCFunc && paramVT && isOwnedBlock(*paramVT);
+		argAsts.push_back(arg);
+		if (givenIn(arg) && !ownedParam) {
+			string paramName = param ? param->value("name", "") : "";
+			if (paramName.empty()) paramName = "#" + to_string(argIdx + 1);
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_TransferToParam, paramName, funcName) << endl;
+			exit(1);
+		} // LCOV_EXCL_LINE
+		if (ownedParam) {
 			saArgs.push_back(ownedBlockArg(locNode, arg, ca, *param, argIdx, funcName));
 			continue;
 		}
+		// A returned value chained as '@v' is borrowed as it was analyzed: an
+		// operator's operand may be one with no call written for '@' to take.
+		bool borrowsProbe = probed && arg != ca.ast && isExpiringOwned(ca.probe);
 		json saArg = isLit ? sa_lit_arg(arg, isCFunc && !byValStruct ? nullptr : paramVT,
 		                                param ? param->value("name", "") : "", funcName,
 		                                argAst, litBody, litRelease)
 		           : probed && arg == ca.ast ? move(ca.probe)
+		           : borrowsProbe ? borrowExpiring(move(ca.probe), arg["mutable"])
 		           : !ca.pending ? move(ca.sa)
 		           : isCallBorrow(arg) ? sa_call_borrow_arg(arg)
-		           : sa_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
-		bool expiring = isCallBorrow(arg) || isExpiringOwned(saArg);
+		           : sa_arg_expression(arg, paramVT ? registry_.fromJson(*paramVT) : nullptr);
+		bool expiring = borrowsProbe || isCallBorrow(arg) || isExpiringOwned(saArg);
 		if (takesVarrData(saArg["value-type"], paramVT, isCFunc))
 			saArg = varrData(move(saArg));
 		if (paramVT) {
@@ -728,17 +955,19 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 			saArg = bindCallTemp(move(saArg));
 		if (byValStruct) {
 			const StructDef& def = requireCompleteStruct((*paramVT)["base-type"]["type-name"].get<string>(), locNode);
-			saArg["struct-arg"] = {{"size", def.totalSize}, {"eightbytes", eightbytesJson(def, structDefs_)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			saArg["struct-arg"] = {{"size", def.totalSize}, {"eightbytes", eightbytesJson(def, structDefs_)}}; // LCOV_EXCL_BR_LINE
 		} else {
 			noteEscape(saArg);
 		}
 		saArgs.push_back(saArg);
 	}
+	checkGivenOwners(locNode, argAsts, saArgs);
 	return saArgs;
-}
+} // LCOV_EXCL_BR_LINE
 
-// An owned parameter takes the argument over: a returned block as it is,
-// anything else as a copy the callee frees.
+// An owned parameter takes the argument over: a returned array block as it
+// is, a returned struct written into a block of its own, anything else as a
+// copy the callee frees.
 json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, CallArg& ca,
                                          const json& param, size_t argIdx, const string& funcName)
 {
@@ -746,12 +975,21 @@ json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, Ca
 	bool isLit = isAggregateLitArg(arg);
 	json saArg;
 	if (!isLit) {
-		saArg = !ca.pending ? move(ca.sa) : sa_expression(arg, registry_.fromJson(paramVT));
+		bool probed = ca.chained && ca.probe.contains("expr-type") && arg == ca.ast;
+		saArg = !ca.pending ? move(ca.sa) : probed ? move(ca.probe)
+		      : sa_arg_expression(arg, registry_.fromJson(paramVT));
 		if (auto d = callArgMismatch(arg, saArg, param, argIdx, false, funcName))
 			reportDiag(locNode, *d);
+		if (isStructRetCall(saArg)) {
+			// LCOV_EXCL_BR_START
+			string name = "__arg_" + to_string(tempVarCounter_++);
+			json value = {{"expr-type","id"},{"name",name},{"var-type",paramVT},{"value-type",paramVT}};
+			return makeTempExpr(declareStructRet(name, paramVT, move(saArg), VarStorage::Heap), move(value), json::array());
+			// LCOV_EXCL_BR_STOP
+		}
 		if (isExpiringOwned(saArg)) return saArg;
 	}
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	string name = "__arg_" + to_string(tempVarCounter_++);
 	json var = {{"name",name},{"var-type",astTypeOf(paramVT)}};
 	if (isLit) {
@@ -766,8 +1004,8 @@ json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, Ca
 	takeScopeRelease(name);
 	leaveScope();
 	return makeTempExpr(move(body), move(value), json::array());
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 // Embedded-array shape and pointer-permission checks are callArgMismatch's,
 // since those differ by callee kind (C vs. Palan).
@@ -778,11 +1016,11 @@ optional<SaDiag> PlnSemanticAnalyzer::callArgConvMismatch(const json& saArg, con
 	if (fromType == toType) return nullopt;
 	if (isScalar(fromType) && isScalar(toType)) {
 		if (argConvOk(fromType, toType)) return nullopt;
-		return SaDiag{E_InvalidNarrowingConv, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_InvalidNarrowingConv, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_BR_LINE
 	}
 	// pntr(void) is bidirectionally Identical with any pntr(T), which is how NULL passes.
 	if (typeCompat(fromType, toType, registry_) == TypeCompat::Incompatible)
-		return SaDiag{E_IncompatibleTypes, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return SaDiag{E_IncompatibleTypes, typeDisplayName(saArg["value-type"]), typeDisplayName(paramVT)}; // LCOV_EXCL_BR_LINE
 	return nullopt;
 }
 
@@ -882,12 +1120,12 @@ json PlnSemanticAnalyzer::normalizeMethodCall(const json& expr)
 	json recv = isBorrow ? obj : json{{"expr-type", "addr-of"}, {"mutable", true}, {"object", obj}};
 	if (!isBorrow && obj.contains("loc")) recv["loc"] = obj["loc"];
 
-	json call = {{"expr-type", "call"}, {"name", method}, {"args", json::array({recv})}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	json call = {{"expr-type", "call"}, {"name", method}, {"args", json::array({recv})}}; // LCOV_EXCL_BR_LINE
 	if (cands.size() > 1) call["method-form"] = true;
 	for (auto& a : expr["args"]) call["args"].push_back(a);
 	if (expr.contains("loc")) call["loc"] = expr["loc"];
 	return call;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 static const json* fixedParamType(const json* callee, size_t idx)
 {
@@ -902,7 +1140,8 @@ static const json* fixedParamType(const json* callee, size_t idx)
 // visible at the call. A C function takes an array as it is.
 json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool isCFunc, const json* valueType)
 {
-	if (!paramVT || value.value("expr-type", "") == "addr-of") return value;
+	string vet = value.value("expr-type", "");
+	if (!paramVT || vet == "addr-of" || vet == "transfer") return value;
 	if (paramVT->value("type-kind", "") != "pntr" || paramVT->value("mutable", true)) return value;
 	// A literal has no type of its own until it is given a target, so it is
 	// borrowed as '@[..]'/'@{..}' and checked against the parameter.
@@ -914,10 +1153,10 @@ json PlnSemanticAnalyzer::chainArg(const json& value, const json* paramVT, bool 
 				&& !(ownedArr && !isCFunc && isArrBorrowVar(*paramVT)))
 			return value;
 	}
-	json out = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}};
+	json out = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", value}}; // LCOV_EXCL_BR_LINE
 	if (value.contains("loc")) out["loc"] = value["loc"];
 	return out;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 size_t PlnSemanticAnalyzer::chainRetCount(const json& value) const
 {
@@ -943,31 +1182,45 @@ json PlnSemanticAnalyzer::chainInto(json call, size_t at, const vector<json>& va
 	json& args = call["args"];
 	for (size_t i = 0; i < values.size(); i++) {
 		json arg = overloaded ? chainedValue(values[i]) : chainArg(values[i], fixedParamType(callee, at + i), isCFunc);
-		args.insert(args.begin() + at + i, move(arg)); // LCOV_EXCL_EXCEPTION_BR_LINE
+		args.insert(args.begin() + at + i, move(arg)); // LCOV_EXCL_BR_LINE
 	}
 	return call;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A value chained to a method-form call, evaluated into a temp in body so that
 // it comes before the receiver; returns what is chained in its place. What no
 // call can change, and what takes its type from the parameter, is left as is.
 json PlnSemanticAnalyzer::chainValueAhead(const json& value, const json* paramVT, json& body)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	if (foldConstExpr(value)["expr-type"].get<string>().rfind("lit-", 0) == 0
-	    || isAggregateLitArg(value) || namesOverloadedFunc(value))
+	    || isAggregateLitArg(value) || namesOverloadedFunc(value) || value["expr-type"] == "transfer")
 		return value;
 	auto tempId = [&](const string& name) {
 		json id = {{"expr-type", "id"}, {"name", name}};
 		if (value.contains("loc")) id["loc"] = value["loc"];
 		return id;
 	};
+	// A returned struct is written into a frame temp of the statement's scope.
+	auto frameTemp = [&](json sa) {
+		json type = sa["value-type"];
+		string name = "__pin_" + to_string(tempVarCounter_++);
+		declareVar(name, type);
+		for (auto& s : declareStructRet(name, type, move(sa), VarStorage::Frame)) body.push_back(move(s));
+		arrayScopeVars_.back().push_back({name, frameStructRelease(name, type), false});
+		return name;
+	};
 	if (isCallBorrow(value)) {
 		json sa = sa_call_borrow_arg(value);
 		sa["value-type"].erase("mutable");
-		json storage = sa["value-type"];
-		string name = pinTemp(move(sa), value, body);
-		addOwnedScopeVar(name, makeOwnedFreeStmt(name, storage));
+		string name;
+		if (isStructRetCall(sa)) {
+			name = frameTemp(move(sa));
+		} else {
+			json storage = sa["value-type"];
+			name = pinTemp(move(sa), value, body);
+			addOwnedScopeVar(name, makeOwnedFreeStmt(name, storage));
+		}
 		return {{"expr-type", "addr-of"}, {"mutable", value["mutable"]}, {"object", tempId(name)}};
 	}
 	json sa;
@@ -983,14 +1236,16 @@ json PlnSemanticAnalyzer::chainValueAhead(const json& value, const json* paramVT
 		if (!sa.contains("value-type")) return value;
 	}
 	noteEscape(sa);
+	if (isStructRetCall(sa))
+		return tempId(frameTemp(move(sa)));
 	bool owned = isExpiringOwned(sa);
 	json type = sa["value-type"];
 	string name = pinTemp(move(sa), value, body);
 	if (name.empty()) return value;
 	if (owned) addOwnedScopeVar(name, makeOwnedFreeStmt(name, type));
 	return tempId(name);
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 // Rewrites a chained call `v -> f(args)` to `f(v, args)`, and `v -> x.f(args)`
 // to `f(@!x, v, args)`. A chain whose value is evaluated into temps first -- a
@@ -1011,14 +1266,14 @@ json PlnSemanticAnalyzer::normalizeChainCall(const json& expr)
 	}
 	size_t at;
 	json target = chainTarget(call, at);
-	return chainInto(move(target), at, {move(value)});
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return chainInto(move(target), at, {move(value)}); // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Evaluates a chained call's values into temps, appending their declarations
 // to body, and returns the call with the temps in their place.
 json PlnSemanticAnalyzer::chainAheadCall(const json& chain, json& body)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json value = chain["value"];
 	if (value["expr-type"] == "chain-call")
 		value = chainAheadCall(value, body);
@@ -1041,8 +1296,8 @@ json PlnSemanticAnalyzer::chainAheadCall(const json& chain, json& body)
 	for (auto& s : sa_tapple_decl(decl))
 		body.push_back(s);
 	return chainInto(move(call), at, temps);
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_chain_call(const json& expr)
 {
@@ -1057,7 +1312,7 @@ json PlnSemanticAnalyzer::sa_expr_chain_call(const json& expr)
 	json release = collectFreeStmts(idx, idx + 1);
 	leaveScope();
 	return makeTempExpr(move(body), move(saCall), move(release));
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 {
@@ -1070,7 +1325,7 @@ json PlnSemanticAnalyzer::sa_expr_member_call(const json& expr)
 		exit(1);
 	}
 	return makeCall(expr, usableCallees(expr, cands), method);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount)
 {

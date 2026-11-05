@@ -1323,3 +1323,83 @@ TEST(sa, for_loop_allowed_changes)
 	json jout = run_sa("../test/testdata/sa/323_for_mutation.pa");
 	ASSERT_TRUE(jout.is_object());
 }
+
+TEST(sa, global_var)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/329_global.pa");
+	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["globals"].size(), 3);
+	ASSERT_EQ(jout["globals"][0]["label"], "_329_global.hits");
+
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[0]["vars"][0]["label"], "_329_global.hits");
+	// A `$T` global's storage is static too, so it outlives the top level.
+	const auto& origin = stmts[4]["vars"][0];
+	ASSERT_EQ(origin["label"], "_329_global.origin");
+	ASSERT_EQ(origin["init"]["expr-type"], "static-alloc");
+	ASSERT_EQ(origin["init"]["label"], "_329_global.origin.data");
+	// What a global owns is never freed: the call is the last statement.
+	ASSERT_EQ(stmts.size(), 8);
+	ASSERT_EQ(stmts[7]["body"]["name"], "_329_global..count.v");
+
+	const auto& fs = jout["functions"];
+	// count: a writable scalar and a C global it is permitted to write.
+	ASSERT_EQ(fs[0]["globals"][0]["name"], "hits");
+	ASSERT_EQ(fs[0]["globals"][1]["label"], "optind");
+	ASSERT_EQ(fs[0]["body"][1]["stmt-type"], "assign");
+	ASSERT_EQ(fs[0]["body"][1]["name"], "optind");
+	// move: a struct global seen as a '@!' borrow.
+	ASSERT_EQ(fs[1]["globals"][0]["var-type"]["mutable"], true);
+	// report: an array global seen as a '@' borrow.
+	ASSERT_EQ(fs[2]["globals"][0]["name"], "arr");
+	ASSERT_EQ(fs[2]["globals"][0]["var-type"]["mutable"], false);
+}
+
+// An operator over a struct calls the function it names, each operand passed
+// as the function's parameter takes it: borrowed, or copied into a 'T'.
+TEST(sa, operator_func)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/330_operator_func.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const string vec2 = "R4vec2";
+	const auto& fs = jout["functions"];
+	ASSERT_EQ(fs[0]["name"], "_330_operator_func..0add." + vec2 + "." + vec2);
+	ASSERT_EQ(fs[1]["name"], "_330_operator_func..0sub.P4vec2");
+
+	const auto& stmts = jout["statements"];
+	// c = a + b: both borrowed, the struct returned into c.
+	const auto& add = stmts[7]["body"];
+	ASSERT_EQ(add["name"], fs[0]["name"]);
+	ASSERT_EQ(add["args"][0]["value-type"]["mutable"], false);
+	ASSERT_EQ(add["ret-dest"]["name"], "c");
+	// d = -(a + b): the sum handed to the owning parameter without a copy.
+	const auto& neg = stmts[9]["body"];
+	ASSERT_EQ(neg["name"], fs[1]["name"]);
+	ASSERT_EQ(neg["args"][0]["expr-type"], "temp");
+	ASSERT_EQ(neg["args"][0]["body"][1]["body"]["name"], fs[0]["name"]);
+	// e = a * 2.0 * b: the product borrowed by the dot product, the literal
+	// typed by the parameter.
+	const auto& dot = stmts[10]["vars"][0]["init"];
+	ASSERT_EQ(dot["name"], fs[3]["name"]);
+	const auto& scaled = dot["args"][0]["body"][1]["body"];
+	ASSERT_EQ(scaled["name"], fs[2]["name"]);
+	ASSERT_EQ(scaled["args"][1]["value-type"]["type-name"], "flo32");
+	// f = a.x * 2.0 + b.y: no struct, plain arithmetic.
+	ASSERT_EQ(stmts[11]["vars"][0]["init"]["expr-type"], "add");
+}
+
+// An operator over a struct field or a call returning a struct is no number a
+// parameter types, so an overloaded function taking the struct is chosen.
+TEST(sa, operator_func_overload_arg)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/331_operator_func_overload_arg.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const string gVec2 = "_331_operator_func_overload_arg..g.P4vec2";
+	vector<string> names;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "expr") names.push_back(s["body"]["name"]);
+	ASSERT_EQ(names, vector<string>({gVec2, gVec2, "_331_operator_func_overload_arg..g.int32"}));
+}

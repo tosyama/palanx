@@ -578,11 +578,9 @@ TEST(sa, c_widen_arg)
 
 TEST(sa, c_global)
 {
-	// `stderr` referenced as `fprintf`'s first argument
-	// resolves through the cGlobalScopes -> "id" fallback chain (findVar
-	// -> constDecls_ -> findCGlobal) into a "c-global" node, not a plain "id"
-	// (which would otherwise carry the raw name and no linker label).
-	// Covers: sa_expression "id" branch, findCGlobal fallback
+	// `stderr` referenced as `fprintf`'s first argument is a plain "id"; the
+	// top level binds the name to the C symbol's label in `main.globals`.
+	// Covers: lookupVar findCGlobal fallback, bindStatic
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/164_c_global.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -592,9 +590,11 @@ TEST(sa, c_global)
 	ASSERT_EQ(call["func-type"], "c");
 	ASSERT_EQ(call["name"], "fprintf");
 	const auto& arg = call["args"][0];
-	ASSERT_EQ(arg["expr-type"], "c-global");
-	ASSERT_EQ(arg["label"], "stderr");
-	ASSERT_FALSE(arg.contains("name"));
+	ASSERT_EQ(arg["expr-type"], "id");
+	ASSERT_EQ(arg["name"], "stderr");
+	ASSERT_EQ(jout["main"]["globals"].size(), 1);
+	ASSERT_EQ(jout["main"]["globals"][0]["name"], "stderr");
+	ASSERT_EQ(jout["main"]["globals"][0]["label"], "stderr");
 	ASSERT_EQ(arg["value-type"]["type-kind"], "pntr");
 	ASSERT_EQ(arg["value-type"]["mutable"], true);
 	ASSERT_EQ(arg["value-type"]["base-type"]["type-kind"], "struct");
@@ -613,8 +613,8 @@ TEST(sa, c_global_alias)
 
 	const auto& call = jout["statements"][0]["body"];
 	ASSERT_EQ(call["name"], "fprintf");
-	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
-	ASSERT_EQ(call["args"][0]["label"], "stderr");
+	ASSERT_EQ(call["args"][0]["name"], "stderr");
+	ASSERT_EQ(jout["main"]["globals"][0]["label"], "stderr");
 }
 
 TEST(sa, c_global_block_scope)
@@ -629,7 +629,8 @@ TEST(sa, c_global_block_scope)
 	ASSERT_EQ(jout["statements"][0]["stmt-type"], "block");
 	const auto& call = jout["statements"][0]["body"][0]["body"];
 	ASSERT_EQ(call["func-type"], "c");
-	ASSERT_EQ(call["args"][0]["expr-type"], "c-global");
+	ASSERT_EQ(call["args"][0]["name"], "stderr");
+	ASSERT_EQ(jout["main"]["globals"][0]["label"], "stderr");
 }
 
 TEST(sa, neg_lit_expected_type)
@@ -719,13 +720,9 @@ TEST(sa, usual_arith_conv)
 }
 
 TEST(sa, struct_ret_c_call) {
-	// Pins the SA->codegen contract for
-	// C-function struct-by-value return in place -- `div_t d = div(7, 2);`
-	// must emit the malloc-backed var-decl for `d` followed by a bare `call`
-	// statement carrying a `struct-ret` descriptor (var/struct-name/size/
-	// eightbytes), with `value-type` erased from that call node (codegen's
-	// toVRegType has no struct case, so a lingering value-type there would
-	// silently reach an unhandled branch instead of the struct-ret path).
+	// A C function's by-value struct return is normalized to a Palan one:
+	// `div_t d = div(7, 2);` allocates d, then the call writes into it
+	// (`ret-dest`) and has no value of its own.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/171_struct_ret_c_call.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -745,10 +742,9 @@ TEST(sa, struct_ret_c_call) {
 	ASSERT_EQ(call["func-type"], "c");
 	ASSERT_EQ(call["name"], "div");
 	ASSERT_FALSE(call.contains("value-type"));
+	ASSERT_EQ(call["ret-dest"]["name"], "d");
 
 	const auto& sr = call["struct-ret"];
-	ASSERT_EQ(sr["var"], "d");
-	ASSERT_EQ(sr["struct-name"], "div_t");
 	ASSERT_EQ(sr["size"], 8);
 	ASSERT_EQ(sr["eightbytes"].size(), 1);
 	ASSERT_EQ(sr["eightbytes"][0]["class"], "int");
@@ -756,12 +752,8 @@ TEST(sa, struct_ret_c_call) {
 }
 
 TEST(sa, struct_ret_memory_class) {
-	// MEMORY class (>16 bytes) takes a different SA-side
-	// path than the register classes -- `eightbytes` stays empty and the
-	// destination pointer is prepended to `args` as an ordinary first
-	// argument (the ABI's hidden-pointer convention), so codegen needs no
-	// struct-ret-specific lowering for this class at all.
-	// Covers: sa_struct_var_decl MEMORY-class branch (PlnSaDecl.cpp ~879-888)
+	// MEMORY class (>16 bytes) has no eightbytes; codegen passes `ret-dest`
+	// as the hidden first argument, so SA leaves `args` as written.
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/172_struct_ret_memory_class.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -772,15 +764,12 @@ TEST(sa, struct_ret_memory_class) {
 	const auto& call = stmts[1]["body"];
 	ASSERT_EQ(call["name"], "get_big");
 	ASSERT_FALSE(call.contains("value-type"));
+	ASSERT_EQ(call["ret-dest"]["name"], "g");
 
 	const auto& sr = call["struct-ret"];
-	ASSERT_EQ(sr["var"], "g");
 	ASSERT_EQ(sr["size"], 24);
 	ASSERT_TRUE(sr["eightbytes"].empty());
-
-	ASSERT_EQ(call["args"].size(), 1);
-	ASSERT_EQ(call["args"][0]["expr-type"], "id");
-	ASSERT_EQ(call["args"][0]["name"], "g");
+	ASSERT_EQ(call["args"].size(), 0);
 }
 
 TEST(sa, struct_ret_ptr_field) {
@@ -854,6 +843,7 @@ TEST(sa, struct_ret_sse_field) {
 	ASSERT_EQ(sr["size"], 8);
 	ASSERT_EQ(sr["eightbytes"].size(), 1);
 	ASSERT_EQ(sr["eightbytes"][0]["class"], "sse");
+	ASSERT_EQ(sr["eightbytes"][0]["flo64"], true);
 }
 
 TEST(sa, struct_ret_embed_arr_sse_field) {
@@ -872,6 +862,8 @@ TEST(sa, struct_ret_embed_arr_sse_field) {
 	ASSERT_EQ(sr["eightbytes"].size(), 2);
 	ASSERT_EQ(sr["eightbytes"][0]["class"], "sse");
 	ASSERT_EQ(sr["eightbytes"][1]["class"], "sse");
+	ASSERT_FALSE(sr["eightbytes"][0].contains("flo64"));
+	ASSERT_FALSE(sr["eightbytes"][1].contains("flo64"));
 }
 
 TEST(sa, c_callback_arg) {

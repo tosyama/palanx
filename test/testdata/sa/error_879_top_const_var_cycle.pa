@@ -1,0 +1,2 @@
+[N]int32 a;
+const N = a->len();

@@ -7,6 +7,7 @@
 #include <string>
 #include <charconv>
 #include <boost/assert.hpp>
+#include <cstdint>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnType.h"
 // FieldLayout/StructDef live in PlnSemanticAnalyzer.h, not here; every SA .cpp
@@ -18,7 +19,7 @@
 using json = nlohmann::json;
 using namespace std;
 
-// LCOV_EXCL_EXCEPTION_BR_START
+// LCOV_EXCL_BR_START
 inline json wrapConvert(const json& expr, const json& to_type) {
 	// Adding or dropping an enum label changes no bits, so no convert node.
 	const json& from_type = expr["value-type"];
@@ -35,7 +36,7 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 		{"src",        expr}
 	};
 }
-// LCOV_EXCL_EXCEPTION_BR_STOP
+// LCOV_EXCL_BR_STOP
 
 // True if `t` is a non-float primitive type (int8..uint64). Shared by every
 // operator that requires integer operands (logical &&/||/!, bitwise &/|/^/~)
@@ -97,13 +98,19 @@ inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true)
 // The symbol of one of the functions build-mgr generates, and a call to it.
 json shapeElem(const json& elem);
 json helperLens(const json& elem);
+// The root of an array location (the variable `a` of `a[i][j]`) and how many
+// levels down it the location lies.
+std::pair<const json*, size_t> arrRoot(const json& location);
+// Level `level` of the array variable `root`, known only at run time, which the
+// variable keeps from its declaration as __<name>_d<level>.
+json runtimeLen(const json& root, size_t level);
 string allocShapeKey(const AllocShapeRef& shape);
 string allocHelperSymbol(const AllocShapeRef& shape, const string& op);
 json allocHelperCall(const AllocShapeRef& shape, const string& op, json args);
 inline AllocShapeRef structShape(const string& name)
 {
-	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 // len, push, resize and pop of the `[+]T` whose header type is varr, as call
 // candidates calling impl's helpers; only their signatures without impl.
 json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl = nullptr);
@@ -118,6 +125,7 @@ enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 // Non-pointer types, and narrowing while every level above is read-only, are fine.
 // FuncSigMismatch: the function types reached differ in a pointer permission.
 inline bool funcSigPermissionOk(const json& from, const json& to);
+inline bool isOwnedBlock(const json& vt);
 
 inline PtrPermission ptrPermission(const json& from, const json& to)
 {
@@ -141,6 +149,10 @@ inline bool ptrPermissionOk(const json& from, const json& to)
 	return ptrPermission(from, to) == PtrPermission::Ok;
 }
 
+// A function owning a parameter frees it, so it cannot stand in for one
+// borrowing it, nor the reverse.
+inline bool sameOwnership(const json& a, const json& b) { return isOwnedBlock(a) == isOwnedBlock(b); }
+
 // A function stored as `to` is called with `to`'s arguments and its result is
 // read as `to`'s, so permissions are checked in the direction each value
 // flows: reversed for the parameters. Types themselves are compared by the
@@ -152,8 +164,29 @@ inline bool funcSigPermissionOk(const json& from, const json& to)
 	const json& tp = to["parameters"];
 	BOOST_ASSERT(fp.size() == tp.size());
 	for (size_t i = 0; i < fp.size(); i++)
-		if (!ptrPermissionOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
-	return ptrPermissionOk(from["ret-type"], to["ret-type"]);
+		if (!sameOwnership(tp[i]["var-type"], fp[i]["var-type"])
+		    || !ptrPermissionOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
+	return sameOwnership(from["ret-type"], to["ret-type"]) && ptrPermissionOk(from["ret-type"], to["ret-type"]);
+}
+
+// funcSigPermissionOk's ownership half alone, for a cast: a cast may change
+// pointer permissions, but not who frees what a function is given or returns.
+inline bool funcSigOwnershipOk(const json& from, const json& to)
+{
+	const json* f = &from;
+	const json* t = &to;
+	while (f->value("type-kind","") == "pntr" && t->value("type-kind","") == "pntr") {
+		f = &(*f)["base-type"];
+		t = &(*t)["base-type"];
+	}
+	if (f->value("type-kind","") != "func" || t->value("type-kind","") != "func") return true;
+	const json& fp = (*f)["parameters"];
+	const json& tp = (*t)["parameters"];
+	BOOST_ASSERT(fp.size() == tp.size());
+	for (size_t i = 0; i < fp.size(); i++)
+		if (!sameOwnership(tp[i]["var-type"], fp[i]["var-type"])
+		    || !funcSigOwnershipOk(tp[i]["var-type"], fp[i]["var-type"])) return false;
+	return sameOwnership((*f)["ret-type"], (*t)["ret-type"]) && funcSigOwnershipOk((*f)["ret-type"], (*t)["ret-type"]);
 }
 
 // A pntr(struct) with no "mutable" key is a struct's own storage (a struct
@@ -180,13 +213,13 @@ inline bool isAggregateLit(const json& expr)
 	string et = expr.value("expr-type", "");
 	return et == "arr-lit" || et == "dict-lit";
 }
-// A type a function pointer's parameter or return may have: a scalar or a
-// borrow. An owned struct or array passes ownership by a convention the
-// function pointer does not carry.
+// A type a function pointer's parameter or return may have: a scalar, a
+// borrow, or an owned block, passed as a function passes it.
 inline bool isFuncSigType(const json& vt)
 {
 	string tk = vt.value("type-kind","");
-	return (tk == "prim" && vt.value("type-name","") != "void") || (tk == "pntr" && vt.contains("mutable"));
+	return (tk == "prim" && vt.value("type-name","") != "void") || (tk == "pntr" && vt.contains("mutable"))
+	    || isOwnedBlock(vt);
 }
 inline bool isFuncPtr(const json& vt)
 {
@@ -228,27 +261,27 @@ inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
 // laid out in place.
 inline json varrPntrType(const json& elem, bool embedded)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json varr = {{"type-kind","varr"},{"base-type",elem}};
 	if (embedded) varr["embedded"] = true;
 	return {{"type-kind","pntr"},{"base-type",move(varr)}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 inline bool isVarrEmbedded(const json& vt) { return vt["base-type"].value("embedded", false); }
 inline json lenLit(int64_t v)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	return {{"expr-type","lit-int"},{"value",to_string(v)},{"value-type",{{"type-kind","prim"},{"type-name","int64"}}}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 // The header's len, which `len(@v)` reads in place of a call.
 inline json varrLen(json varr)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
 	return {{"expr-type","field-access"},{"ptr-expr",move(varr)},{"offset",0},{"value-type",move(i64)}};
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 inline bool isStructBorrow(const json& vt)  { return isStructPntr(vt) && isPtrBorrow(vt); }
 // Strips a declared variable's `$` and returns where its storage lives.
 inline VarStorage takeVarStorage(json& varType)
@@ -259,12 +292,12 @@ inline VarStorage takeVarStorage(json& varType)
 	return VarStorage::Frame;
 }
 inline bool isArrLevel(const json& t);
-// A struct's, a `[+]T`'s or a constant-size array's own block: what a variable
-// owns and frees, and what a copy into it fills.
+// A struct's, a `[+]T`'s or a constant-size array's own block: what a variable or a Palan
+// parameter owns and frees, and what a copy into it fills.
 inline bool isOwnedBlock(const json& vt)
 {
 	return isStructStorage(vt) || isVarrStorage(vt)
-	    || (isArrLevel(vt) && vt.contains("arr-size") && !vt.contains("mutable"));
+	    || (isArrLevel(vt) && (vt.contains("arr-size") || vt.contains("run-size")) && !vt.contains("mutable"));
 }
 // An owned element (a struct's, a `[+]T`'s or a row's storage) has no
 // permission of its own: it is writable only as far as the array it is
@@ -276,6 +309,13 @@ inline bool isWritableElem(const json& saIdx) {
 inline bool isExpiringOwned(const json& v)
 {
 	return v.value("category", "") == "expiring" && isOwnedBlock(v["value-type"]);
+}
+// A call returning a struct (or a temp holding one) whose receiver has not yet
+// given it the storage to write the struct into.
+inline bool isStructRetCall(const json& v)
+{
+	if (v.value("expr-type", "") == "temp") return isStructRetCall(v["value"]);
+	return v.contains("struct-ret") && !v.contains("ret-dest");
 }
 // An owned array, row or array field named as it is: its value is a pointer to
 // its elements, so only the missing permission tells it from `@a`. A `[]T`
@@ -328,7 +368,7 @@ inline bool hasCall(const json& e)
 {
 	if (e.is_object()) {
 		string et = e.value("expr-type", "");
-		if (et == "call" || et == "member-call" || et == "chain-call") return true;
+		if (et == "call" || et == "member-call" || et == "chain-call" || et == "call-ptr") return true;
 		for (auto& [k, v] : e.items())
 			if (hasCall(v)) return true;
 	} else if (e.is_array()) {
@@ -342,14 +382,16 @@ inline bool isLocationExpr(const json& e)
 	string et = e.value("expr-type", "");
 	return et == "id" || et == "arr-index" || et == "field-access";
 }
+// An arithmetic operator is a call when an operator function defines it.
 inline bool isCallBorrow(const json& expr)
 {
 	if (expr.value("expr-type", "") != "addr-of") return false;
 	string et = expr["object"].value("expr-type", "");
-	return et == "call" || et == "member-call" || et == "chain-call";
+	return et == "call" || et == "member-call" || et == "chain-call"
+	    || et == "add" || et == "sub" || et == "mul" || et == "div" || et == "mod" || et == "neg";
 }
 
-// LCOV_EXCL_EXCEPTION_BR_START
+// LCOV_EXCL_BR_START
 inline json fieldPrimLeaf(const FieldLayout& f)
 {
 	json t = {{"type-kind","prim"},{"type-name",f.typeName}};
@@ -392,7 +434,7 @@ inline json fieldValueType(const FieldLayout& f)
 		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
 	return {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",f.typeName}}}};
 }
-// LCOV_EXCL_EXCEPTION_BR_STOP
+// LCOV_EXCL_BR_STOP
 
 // Returns element byte size for a primitive type name; -1 if unknown
 inline int elemSizeBytes(const string& typeName)
@@ -428,50 +470,57 @@ inline int64_t inPlaceBytes(const json& elem, const map<string, StructDef>& defs
 
 // SysV AMD64 ABI (§3.2.3) eightbyte classes for a struct passed or returned by value.
 enum class EightbyteClass { Integer, Sse };
-struct Eightbyte { EightbyteClass cls; int size; };  // only the last eightbyte may be <8
+struct Eightbyte {
+	EightbyteClass cls;
+	int size;            // only the last eightbyte may be <8
+	bool flo64 = false;  // taken up by one flo64 (codegen loads it whole)
+};
 
 // Recursively marks the eightbytes covered by one field as INTEGER; SSE is
-// `cls`'s initial value, so an all-float field simply leaves it unmarked
+// each eightbyte's initial class, so an all-float field simply leaves it unmarked
 // (mixing within one eightbyte follows the "any INTEGER wins" merge rule).
+// A flo64 is 8-byte aligned (or the struct is MEMORY class), so it takes up
+// exactly one eightbyte, which is marked as such.
 // `base` is the field's struct-relative offset already shifted by every
 // enclosing embed/embed-arr, so recursion always marks against the same
-// top-level `cls` vector.
+// top-level `ebs` vector.
 inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
                               const map<string, StructDef>& defs,
-                              vector<EightbyteClass>& cls)
+                              vector<Eightbyte>& ebs)
 {
-	auto mark = [&](int offset, int size, EightbyteClass fieldCls) {
-		if (fieldCls != EightbyteClass::Integer) return;  // Sse is the default; nothing to mark
+	auto markInt = [&](int offset, int size) {
 		for (int b = offset; b < offset + size; b++) {
 			int eb = b / 8;
-			if (eb < nEightbytes) cls[eb] = EightbyteClass::Integer;
+			if (eb < nEightbytes) ebs[eb].cls = EightbyteClass::Integer;
 		}
+	};
+	auto markPrim = [&](int offset, const string& name, int size) {
+		if (name == "flo64") ebs[offset / 8].flo64 = true;
+		else if (name != "flo32") markInt(offset, size);  // Sse is the default
 	};
 	for (auto& f : d.fields) {
 		int off = base + f.offset;
 		if (f.typeKind == "prim") {
-			bool isFloat = (f.typeName == "flo32" || f.typeName == "flo64");
-			mark(off, f.size, isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+			markPrim(off, f.typeName, f.size);
 		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned") {
-			mark(off, 8, EightbyteClass::Integer);
+			markInt(off, 8);
 		} else if (f.typeKind == "embed") {
-			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, cls);
+			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, ebs);
 		} else if (f.typeKind == "embed-arr") {
 			// Each element laid out in place, down to primitives, structs and pointers.
 			function<void(const json&, int)> walk = [&](const json& t, int at) {
 				string kind = t.value("type-kind", "");
 				if (kind == "struct") {
-					classifySysVWalk(defs.at(t["type-name"].get<string>()), at, nEightbytes, defs, cls);
+					classifySysVWalk(defs.at(t["type-name"].get<string>()), at, nEightbytes, defs, ebs);
 				} else if (kind == "prim") {
 					string name = t["type-name"].get<string>();
-					bool isFloat = (name == "flo32" || name == "flo64");
-					mark(at, elemSizeBytes(name), isFloat ? EightbyteClass::Sse : EightbyteClass::Integer);
+					markPrim(at, name, elemSizeBytes(name));
 				} else if (isArrLevel(t)) {
 					const json& elem = t["base-type"];
 					int64_t size = inPlaceBytes(elem, defs);
 					for (int64_t i = 0; i < t["arr-size"].get<int64_t>(); i++) walk(elem, at + (int)(i * size));
 				} else {
-					mark(at, 8, EightbyteClass::Integer);
+					markInt(at, 8);
 				}
 			};
 			walk(f.type, off);
@@ -489,12 +538,10 @@ inline vector<Eightbyte> classifySysVStruct(const StructDef& def, const map<stri
 	int nEightbytes = (def.totalSize + 7) / 8;
 	int tailWidth = def.totalSize - 8 * (nEightbytes - 1);
 
-	vector<EightbyteClass> cls(nEightbytes, EightbyteClass::Sse);
-	classifySysVWalk(def, 0, nEightbytes, defs, cls);
-
 	vector<Eightbyte> result;
 	for (int i = 0; i < nEightbytes; i++)
-		result.push_back({cls[i], (i == nEightbytes - 1) ? tailWidth : 8});
+		result.push_back({EightbyteClass::Sse, (i == nEightbytes - 1) ? tailWidth : 8});
+	classifySysVWalk(def, 0, nEightbytes, defs, result);
 	return result;
 }
 
@@ -503,13 +550,16 @@ inline vector<Eightbyte> classifySysVStruct(const StructDef& def, const map<stri
 inline json eightbytesJson(const StructDef& def, const map<string, StructDef>& defs)
 {
 	json ebs = json::array();
-	for (auto& eb : classifySysVStruct(def, defs))
-		ebs.push_back({{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+	for (auto& eb : classifySysVStruct(def, defs)) {
+		json j = {{"class", eb.cls == EightbyteClass::Integer ? "int" : "sse"}, {"size", eb.size}}; // LCOV_EXCL_BR_LINE
+		if (eb.flo64) j["flo64"] = true; // LCOV_EXCL_BR_LINE
+		ebs.push_back(move(j));
+	}
 	return ebs;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Builds a synthetic free() expression statement for the named pointer variable
-// LCOV_EXCL_EXCEPTION_BR_START
+// LCOV_EXCL_BR_START
 inline json makeFreeStmt(const string& name, const json& pntrType)
 {
 	return {
@@ -523,7 +573,7 @@ inline json makeFreeStmt(const string& name, const json& pntrType)
 		}}
 	};
 }
-// LCOV_EXCL_EXCEPTION_BR_STOP
+// LCOV_EXCL_BR_STOP
 
 inline const PlnType* variadicPromote(const PlnType* t, PlnTypeRegistry& reg)
 {
@@ -550,9 +600,12 @@ inline int64_t constArrSize(const json& sz) {
 	return stoll((*e)["value"].get<string>());
 }
 
+// A size known only at run time is kept by the variable owning the array,
+// which a `[]T` parameter's level, also without "arr-size", is not.
 inline void setArrSize(json& pntrType, const json& saSize) {
 	int64_t n = constArrSize(saSize);
 	if (n >= 0) pntrType["arr-size"] = n;
+	else pntrType["run-size"] = true;
 }
 
 // The array levels stop at an element that is a struct's own storage or a
@@ -618,7 +671,7 @@ inline string typeDisplayName(const json& t) {
 		cur = &(*cur)["base-type"];
 	}
 	return out + typeDisplayName(*cur);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Shape equality for binding an array to a borrowed array type: same depth,
 // same embedded layout, every size `to` names known and equal (a borrowed
@@ -682,7 +735,7 @@ inline bool isCopiedByValue(const json& t) { return isOwnedBlock(t) || isArrLeve
 // null when an element is not one a literal gives.
 inline json astTypeOf(const json& saType)
 {
-	// LCOV_EXCL_EXCEPTION_BR_START
+	// LCOV_EXCL_BR_START
 	json out, elem;
 	if (isVarrPntr(saType)) {
 		out = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",nullptr}};
@@ -704,18 +757,23 @@ inline json astTypeOf(const json& saType)
 		return nullptr;
 	out["base-type"] = move(elem);
 	return out;
-	// LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
 
 // Shape equality for such a copy, which is a plain byte copy level by level:
-// every size known and equal, the same layout and the exact same element
-// type, since no conversion can apply.
+// the same layout and the exact same element type, since no conversion can
+// apply, and equal sizes where both are known. A size known only at run time
+// matches any: the lengths are the receiving owner's, and that they agree is
+// the programmer's responsibility.
 inline bool copyShapeMatch(const json& from, const json& to) {
 	if (isArrLevel(to)) {
-		if (!isArrLevel(from) || !to.contains("arr-size") || from.value("arr-size", -1) != to["arr-size"]
-		    || from.value("embedded", false) != to.value("embedded", false))
+		if (!isArrLevel(from) || from.value("embedded", false) != to.value("embedded", false))
 			return false;
-		if (to.value("embedded", false) && !to.contains("stride"))
+		bool fromSized = from.contains("arr-size"), toSized = to.contains("arr-size");
+		if ((!fromSized && !from.contains("run-size")) || (!toSized && !to.contains("run-size")))
+			return false;
+		if (fromSized && toSized && from["arr-size"] != to["arr-size"])
 			return false;
 		return copyShapeMatch(from["base-type"], to["base-type"]);
 	}
@@ -770,9 +828,6 @@ inline bool copySourceMatch(const json& from, const json& vt)
 {
 	return isVarrStorage(vt) ? varrCopySourceMatch(from, vt) : copyShapeMatch(from, vt);
 }
-// A Palan parameter that owns what it is given (a copy, or a call's result)
-// and frees it. A struct parameter only borrows.
-inline bool isOwnedParam(const json& vt) { return isOwnedBlock(vt) && !isStructStorage(vt); }
 
 // An array is borrowed with one permission for every level down to its
 // elements, so a read-only 2D borrow also makes its rows read-only. A struct
@@ -835,7 +890,7 @@ inline json normalizeCType(const json& type) {
 		return t;
 	}
 	return type;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // typeAliases_ holds types in native syntax's shape (what `type A = ...;`
 // writes), so a normalizeCType'd C typedef is written back into it: a struct
@@ -843,15 +898,15 @@ inline json normalizeCType(const json& type) {
 inline json cTypeAsAlias(const json& type) {
 	string tk = type.value("type-kind", "");
 	if (tk == "pntr")
-		return {{"type-kind", "pntr"}, {"mutable", type["mutable"]}, // LCOV_EXCL_EXCEPTION_BR_LINE
-		        {"base-type", cTypeAsAlias(type["base-type"])}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return {{"type-kind", "pntr"}, {"mutable", type["mutable"]}, // LCOV_EXCL_BR_LINE
+		        {"base-type", cTypeAsAlias(type["base-type"])}}; // LCOV_EXCL_BR_LINE
 	if (tk == "struct")
-		return {{"type-kind", "prim"}, {"type-name", type["type-name"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return {{"type-kind", "prim"}, {"type-name", type["type-name"]}}; // LCOV_EXCL_BR_LINE
 	json t = type;
 	t.erase("const");
 	t.erase("typedef-name");
 	return t;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // The symbol a C call or function pointer links to: a header can declare a
 // name as an alias of another function (`#define sscanf __isoc99_sscanf`).
@@ -861,9 +916,10 @@ inline const json& cLinkName(const json& funcDef) {
 
 // An unrepresentable parameter/return type is recorded as "_unsupported-sig"
 // rather than rejected here, so cinclude'ing the header is not itself an
-// error -- only calling the function is. A by-value struct parameter takes
-// the shape of a native `T` parameter, so a call checks its argument the same
-// way; the call then passes a copy (saCallArgs marks it "struct-arg").
+// error -- only calling the function is. A by-value struct parameter or return
+// takes the shape of a native `T` one, so a call checks its argument and is
+// received the same way; the call then passes a copy (saCallArgs marks it
+// "struct-arg") and returns the struct as a Palan function does.
 inline void normalizeCFuncSig(json& funcDef) {
 	string bad;
 	if (funcDef.contains("parameters"))
@@ -872,16 +928,20 @@ inline void normalizeCFuncSig(json& funcDef) {
 				json vt = normalizeCType(p["var-type"]);
 				if (bad.empty()) bad = unrepresentableTypeName(vt);
 				if (vt.value("type-kind", "") == "struct")
-					vt = {{"type-kind","pntr"}, // LCOV_EXCL_EXCEPTION_BR_LINE
-					      {"base-type",{{"type-kind","struct"},{"type-name",vt["type-name"]}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+					vt = {{"type-kind","pntr"}, // LCOV_EXCL_BR_LINE
+					      {"base-type",{{"type-kind","struct"},{"type-name",vt["type-name"]}}}}; // LCOV_EXCL_BR_LINE
 				p["var-type"] = move(vt);
 			}
 	if (funcDef.contains("ret-type")) {
-		funcDef["ret-type"] = normalizeCType(funcDef["ret-type"]);
-		if (bad.empty()) bad = unrepresentableTypeName(funcDef["ret-type"]);
+		json rt = normalizeCType(funcDef["ret-type"]);
+		if (bad.empty()) bad = unrepresentableTypeName(rt);
+		if (rt.value("type-kind", "") == "struct")
+			rt = {{"type-kind","pntr"}, // LCOV_EXCL_BR_LINE
+			      {"base-type",{{"type-kind","struct"},{"type-name",rt["type-name"]}}}}; // LCOV_EXCL_BR_LINE
+		funcDef["ret-type"] = move(rt);
 	}
 	if (!bad.empty()) funcDef["_unsupported-sig"] = bad;
-}
+} // LCOV_EXCL_BR_LINE
 
 // Symmetric counterpart to normalizeCFuncSig for a single cinclude'd C global
 // object declaration (see the "Global variable model" in ASTSpec.md). Same

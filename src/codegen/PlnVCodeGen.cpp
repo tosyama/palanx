@@ -3,6 +3,7 @@
 /// @file PlnVCodeGen.cpp
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
+#include <algorithm>
 #include "PlnVCodeGen.h"
 #include <boost/assert.hpp>
 
@@ -43,19 +44,36 @@ void PlnVCodeGen::leaveVarScope()
     varScopes.pop_back();
 }
 
-VReg PlnVCodeGen::findVar(const string& name) const
+const PlnVCodeGen::VarBinding& PlnVCodeGen::findBinding(const string& name) const
 {
     for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
         auto f = it->find(name);
         if (f != it->end()) return f->second;
     }
     BOOST_ASSERT(false);  // variable not declared
-    return -1;
+    static const VarBinding none;
+    return none;  // LCOV_EXCL_LINE
+}
+
+VReg PlnVCodeGen::findVar(const string& name, VFunc& func)
+{
+    const VarBinding& b = findBinding(name);
+    if (b.label.empty()) return b.reg;
+    VReg addr = allocVReg();
+    func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, b.label});
+    VReg dst = allocVReg();
+    func.instrs.push_back(DerefLoad{dst, addr, 0, b.type});
+    return dst;
 }
 
 void PlnVCodeGen::declareVar(const string& name, VReg r)
 {
-    varScopes.back()[name] = r;
+    varScopes.back()[name] = VarBinding{r, "", VRegType::Int64}; // LCOV_EXCL_BR_LINE
+}
+
+void PlnVCodeGen::bindStatic(const string& name, const string& label, VRegType type)
+{
+    varScopes.back()[name] = VarBinding{-1, label, type}; // LCOV_EXCL_BR_LINE
 }
 
 // -------- Utilities --------
@@ -76,12 +94,11 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(LeaLabel{r, VRegType::Ptr64, e.label});
             return r;
         }
-        case ExprKind::CGlobal: {
-            auto& e = static_cast<const CGlobalExpr&>(expr);
-            VReg addr = allocVReg();
-            func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, e.label});
+        case ExprKind::StaticAlloc: {
+            auto& e = static_cast<const StaticAllocExpr&>(expr);
+            prog_->bss.push_back({e.label, e.size, e.align}); // LCOV_EXCL_BR_LINE
             VReg dst = allocVReg();
-            func.instrs.push_back(DerefLoad{dst, addr, 0, e.type});
+            func.instrs.push_back(LeaLabel{dst, VRegType::Ptr64, e.label});
             return dst;
         }
         case ExprKind::FuncRef: {
@@ -115,7 +132,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::Id: {
             auto& e = static_cast<const IdExpr&>(expr);
-            return findVar(e.name);
+            return findVar(e.name, func);
         }
         case ExprKind::FrameAlloc: {
             auto& e = static_cast<const FrameAllocExpr&>(expr);
@@ -126,9 +143,12 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::AddrOf: {
             auto& e = static_cast<const AddrOfExpr&>(expr);
-            VReg local = findVar(e.name);
+            const VarBinding& b = findBinding(e.name);
             VReg dst = allocVReg();
-            func.instrs.push_back(LeaLocal{dst, local});
+            if (b.label.empty())
+                func.instrs.push_back(LeaLocal{dst, b.reg});
+            else
+                func.instrs.push_back(LeaLabel{dst, VRegType::Ptr64, b.label});
             return dst;
         }
         case ExprKind::Add: {
@@ -232,7 +252,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             VReg l   = lowerExpr(*e.left, func);
             VReg r   = lowerExpr(*e.right, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(Cmp{dst, e.op, l, r, e.operandType}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(Cmp{dst, e.op, l, r, e.operandType}); // LCOV_EXCL_BR_LINE
             return dst;
         }
         case ExprKind::FloLit: {
@@ -244,32 +264,30 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
         }
         case ExprKind::CCCall: {
             auto& e = static_cast<const CCCallExpr&>(expr);
-            // A struct-ret call produces no scalar value to plug into an
-            // expression context; sa_expression_stmt (E_ByvalStructRetDiscarded)
-            // and sa_struct_var_decl are the only SA producers of one, and both
-            // always place it as a bare statement (lowerExprStmt), never here.
-            BOOST_ASSERT(e.hasRet && !e.hasStructRet);
+            // A call returning a struct has no value; palan-sa always makes it
+            // a statement of its own (lowerExprStmt).
+            BOOST_ASSERT(e.hasRet && !e.structRet);
             vector<StructArgSpan> spans;
             vector<VReg> args = lowerCCallArgs(e, spans, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(CallC{e.name, args, {dst}, {e.retType}, std::nullopt, spans}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CallC{e.name, args, {dst}, {e.retType}, std::nullopt, spans}); // LCOV_EXCL_BR_LINE
             return dst;
         }
         case ExprKind::PlnCall: {
             auto& e = static_cast<const PlnCallExpr&>(expr);
-            BOOST_ASSERT(e.hasRet);
+            BOOST_ASSERT(e.hasRet && !e.structRet);
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(CallPln{e.name, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CallPln{e.name, args, {dst}, {e.retType}}); // LCOV_EXCL_BR_LINE
             return dst;
         }
         case ExprKind::PtrCall: {
             auto& e = static_cast<const PtrCallExpr&>(expr);
-            BOOST_ASSERT(e.hasRet);
+            BOOST_ASSERT(e.hasRet && !e.structRet);
             VReg callee = lowerExpr(*e.callee, func);
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(CallC{"", args, {dst}, {e.retType}, callee}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CallC{"", args, {dst}, {e.retType}, callee}); // LCOV_EXCL_BR_LINE
             return dst;
         }
         case ExprKind::SysCall: {
@@ -277,7 +295,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             BOOST_ASSERT(e.hasRet);
             vector<VReg> args = lowerArgs(e.args, func);
             VReg dst = allocVReg();
-            func.instrs.push_back(CallSys{e.sysNum, args, {dst}, {e.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CallSys{e.sysNum, args, {dst}, {e.retType}}); // LCOV_EXCL_BR_LINE
             return dst;
         }
         case ExprKind::LogicalNot: {
@@ -289,7 +307,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             func.instrs.push_back(InitVar{dst, VRegType::Uint8, 1});  // assume true
 
             VReg src = lowerExpr(*e.operand, func);
-            func.instrs.push_back(CondJmp{endLabel, src, true});  // operand==0 → keep 1 // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CondJmp{endLabel, src, true});  // operand==0 → keep 1 // LCOV_EXCL_BR_LINE
 
             VReg zero = allocVReg();
             func.instrs.push_back(MovImm{zero, VRegType::Uint8, 0});
@@ -308,11 +326,11 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
 
             VReg l = lowerExpr(*e.left, func);
             flushReleases(func);
-            func.instrs.push_back(CondJmp{endLabel, l, true});   // l==0 → skip // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CondJmp{endLabel, l, true});   // l==0 → skip // LCOV_EXCL_BR_LINE
 
             VReg r = lowerExpr(*e.right, func);
             flushReleases(func);
-            func.instrs.push_back(CondJmp{endLabel, r, true});   // r==0 → skip // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CondJmp{endLabel, r, true});   // r==0 → skip // LCOV_EXCL_BR_LINE
 
             VReg one = allocVReg();
             func.instrs.push_back(MovImm{one, VRegType::Uint8, 1});
@@ -332,11 +350,11 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
 
             VReg l = lowerExpr(*e.left, func);
             flushReleases(func);
-            func.instrs.push_back(CondJmp{trueLabel, l, false});  // l!=0 → true // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CondJmp{trueLabel, l, false});  // l!=0 → true // LCOV_EXCL_BR_LINE
 
             VReg r = lowerExpr(*e.right, func);
             flushReleases(func);
-            func.instrs.push_back(CondJmp{trueLabel, r, false});  // r!=0 → true // LCOV_EXCL_EXCEPTION_BR_LINE
+            func.instrs.push_back(CondJmp{trueLabel, r, false});  // r!=0 → true // LCOV_EXCL_BR_LINE
 
             func.instrs.push_back(Jmp{endLabel});
 
@@ -354,7 +372,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             return lowerArrIndexExpr(static_cast<const ArrIndexExpr&>(expr), func);
         case ExprKind::FieldAccess: {
             auto& e   = static_cast<const FieldAccessExpr&>(expr);
-            VReg  ptr = e.ptrExpr ? lowerExpr(*e.ptrExpr, func) : findVar(e.varName);
+            VReg  ptr = e.ptrExpr ? lowerExpr(*e.ptrExpr, func) : findVar(e.varName, func);
             VReg  dst = allocVReg();
             if (e.addrOnly)
                 func.instrs.push_back(CalcAddr{dst, ptr, e.offset});
@@ -366,7 +384,7 @@ VReg PlnVCodeGen::lowerExpr(const Expr& expr, VFunc& func)
             BOOST_ASSERT(false);
             return -1;
     }
-}
+} // LCOV_EXCL_BR_LINE
 
 // A width other than 1/2/4/8 is moved as 4-, 2- and 1-byte pieces from the
 // low end, so no byte outside the struct is touched.
@@ -379,7 +397,7 @@ static vector<pair<int, VRegType>> eightbytePieces(int size)
         pos += w;
     }
     return pieces;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_LINE
 
 static bool isWholeEightbyte(const Eightbyte& eb)
 {
@@ -388,6 +406,15 @@ static bool isWholeEightbyte(const Eightbyte& eb)
 
 VReg PlnVCodeGen::loadEightbyte(VReg ptr, int offset, const Eightbyte& eb, VFunc& func)
 {
+    // An eightbyte of two floats is usually just written as two 4-byte stores,
+    // which an 8-byte load spanning both would wait for (no store forwarding).
+    if (eb.type == VRegType::Float64 && eb.size == 8 && !eb.flo64) {
+        VReg lo = allocVReg(), hi = allocVReg(), packed = allocVReg();
+        func.instrs.push_back(DerefLoad{lo, ptr, offset, VRegType::Float32});
+        func.instrs.push_back(DerefLoad{hi, ptr, offset + 4, VRegType::Float32});
+        func.instrs.push_back(PackF32x2{packed, lo, hi});
+        return packed;
+    }
     VReg acc = allocVReg();
     if (isWholeEightbyte(eb)) {
         func.instrs.push_back(DerefLoad{acc, ptr, offset, eb.type});
@@ -430,9 +457,9 @@ void PlnVCodeGen::storeEightbyte(VReg ptr, int offset, VReg src, const Eightbyte
 // A struct passed by value becomes its eightbytes, read from the struct the
 // argument points at; MEMORY class is read the same way, in 8-byte INTEGER
 // units, for the emitter to copy to the stack.
-vector<VReg> PlnVCodeGen::lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func)
+vector<VReg> PlnVCodeGen::lowerCCallArgs(const CCCallExpr& expr, vector<StructArgSpan>& spans, VFunc& func,
+                                         vector<VReg> args)
 {
-    vector<VReg> args;
     for (size_t i = 0; i < expr.args.size(); i++) {
         VReg v = lowerExpr(*expr.args[i], func);
         if (!expr.structArgs[i]) {
@@ -453,54 +480,98 @@ vector<VReg> PlnVCodeGen::lowerCCallArgs(const CCCallExpr& expr, vector<StructAr
             args.push_back(loadEightbyte(v, 8 * (int)k, ebs[k], func));
     }
     return args;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
+
+// The pointer a call returning a struct writes it through, evaluated ahead of
+// the arguments; a MEMORY-class one is also the hidden first argument.
+VReg PlnVCodeGen::lowerStructRetDest(const std::optional<StructRet>& sr, vector<VReg>& args, VFunc& func)
+{
+    if (!sr) return VReg{};
+    VReg dest = lowerExpr(*sr->dest, func);
+    if (sr->eightbytes.empty()) args.push_back(dest);
+    return dest;
+}
+
+// A struct of up to 16 bytes comes back as its eightbytes in fresh vregs...
+std::pair<vector<VReg>, vector<VRegType>> PlnVCodeGen::structRetDsts(const std::optional<StructRet>& sr)
+{
+    std::pair<vector<VReg>, vector<VRegType>> out;
+    if (!sr) return out;
+    for (const Eightbyte& eb : sr->eightbytes) {
+        out.first.push_back(allocVReg());
+        out.second.push_back(eb.type);
+    }
+    return out;
+} // LCOV_EXCL_LINE
+
+// ...which are stored through the destination right after the call.
+void PlnVCodeGen::storeStructRet(VReg dest, const std::optional<StructRet>& sr, const vector<VReg>& dsts, VFunc& func)
+{
+    for (size_t i = 0; i < dsts.size(); i++)
+        storeEightbyte(dest, 8 * (int)i, dsts[i], sr->eightbytes[i], func);
+}
 
 void PlnVCodeGen::lowerCCCallExpr(const CCCallExpr& expr, VFunc& func)
 {
+    vector<VReg> prefix;
+    VReg dest = lowerStructRetDest(expr.structRet, prefix, func);
     vector<StructArgSpan> spans;
-    vector<VReg> args = lowerCCallArgs(expr, spans, func);
-    if (!expr.hasStructRet || expr.structRetEightbytes.empty()) {
-        // Plain void-context call, or a MEMORY-class (>16B) struct return --
-        // sa_struct_var_decl already prepended the destination pointer to
-        // args as an ordinary first argument for the MEMORY case, so the
-        // callee writes the whole struct through it directly; no dsts needed.
-        func.instrs.push_back(CallC{expr.name, args, {}, {}, std::nullopt, spans}); // LCOV_EXCL_EXCEPTION_BR_LINE
-        return;
-    }
-    // Register-class struct return (<=16B): the call writes each eightbyte
-    // into a fresh vreg (from %rax/%rdx or %xmm0/%xmm1), then a DerefStore
-    // per eightbyte copies it into the destination struct's heap storage.
-    // var-decl always precedes this call in the same var-decl statement
-    // (sa_struct_var_decl), so the destination is already declared.
-    VReg dstPtr = findVar(expr.structRetVar);
-    vector<VReg> dsts;
-    vector<VRegType> types;
-    for (const Eightbyte& eb : expr.structRetEightbytes) {
-        dsts.push_back(allocVReg());
-        types.push_back(eb.type);
-    }
-    func.instrs.push_back(CallC{expr.name, args, dsts, types, std::nullopt, spans}); // LCOV_EXCL_EXCEPTION_BR_LINE
-    for (size_t i = 0; i < dsts.size(); i++)
-        storeEightbyte(dstPtr, 8 * (int)i, dsts[i], expr.structRetEightbytes[i], func);
+    vector<VReg> args = lowerCCallArgs(expr, spans, func, move(prefix));
+    auto [dsts, types] = structRetDsts(expr.structRet);
+    func.instrs.push_back(CallC{expr.name, args, dsts, types, std::nullopt, spans}); // LCOV_EXCL_BR_LINE
+    storeStructRet(dest, expr.structRet, dsts, func);
 }
 
 void PlnVCodeGen::lowerPlnCallExpr(const PlnCallExpr& expr, VFunc& func)
 {
-    vector<VReg> args = lowerArgs(expr.args, func);
-    func.instrs.push_back(CallPln{expr.name, args, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    vector<VReg> args;
+    VReg dest = lowerStructRetDest(expr.structRet, args, func);
+    for (VReg a : lowerArgs(expr.args, func)) args.push_back(a);
+    auto [dsts, types] = structRetDsts(expr.structRet);
+    func.instrs.push_back(CallPln{expr.name, args, dsts, types, true}); // LCOV_EXCL_BR_LINE
+    storeStructRet(dest, expr.structRet, dsts, func);
+}
+
+void PlnVCodeGen::lowerPtrCallStmt(const PtrCallExpr& expr, VFunc& func)
+{
+    vector<VReg> args;
+    VReg dest = lowerStructRetDest(expr.structRet, args, func);
+    VReg callee = lowerExpr(*expr.callee, func);
+    for (VReg a : lowerArgs(expr.args, func)) args.push_back(a);
+    auto [dsts, types] = structRetDsts(expr.structRet);
+    func.instrs.push_back(CallC{"", args, dsts, types, callee}); // LCOV_EXCL_BR_LINE
+    storeStructRet(dest, expr.structRet, dsts, func);
 }
 
 void PlnVCodeGen::lowerSysCallExpr(const SysCallExpr& expr, VFunc& func)
 {
     vector<VReg> args = lowerArgs(expr.args, func);
-    func.instrs.push_back(CallSys{expr.sysNum, args, {}, {}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    func.instrs.push_back(CallSys{expr.sysNum, args, {}, {}}); // LCOV_EXCL_BR_LINE
 }
 
 vector<VReg> PlnVCodeGen::lowerArgs(const vector<unique_ptr<Expr>>& args, VFunc& func)
 {
+    vector<const Stmt*> outer = move(pendingResets_);
+    pendingResets_.clear();
     vector<VReg> regs;
     for (auto& a : args)
         regs.push_back(lowerExpr(*a, func));
+    for (auto s : pendingResets_) {
+        // An argument read straight from a local the reset writes is its
+        // canonical VReg, which the reset updates in place.
+        if (s->kind != StmtKind::Assign) continue;
+        const VarBinding& b = findBinding(static_cast<const AssignStmt*>(s)->name);
+        if (!b.label.empty()) continue;
+        for (VReg& r : regs) {
+            if (r != b.reg) continue;
+            VReg c = allocVReg();
+            func.instrs.push_back(Copy{c, r, VRegType::Ptr64}); // LCOV_EXCL_BR_LINE
+            r = c;
+        }
+    }
+    for (auto s : pendingResets_)
+        lowerStmt(*s, func);
+    pendingResets_ = move(outer);
     return regs;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
@@ -514,7 +585,9 @@ VReg PlnVCodeGen::lowerTempExpr(const TempExpr& e, VFunc& func)
         lowerStmt(*s, func);
     pendingReleases_ = move(outer);
     for (auto& s : e.release)
-        pendingReleases_.push_back(s.get()); // LCOV_EXCL_EXCEPTION_BR_LINE
+        pendingReleases_.push_back(s.get()); // LCOV_EXCL_BR_LINE
+    for (auto& s : e.reset)
+        pendingResets_.push_back(s.get()); // LCOV_EXCL_BR_LINE
     return lowerExpr(*e.value, func);
 }
 
@@ -529,20 +602,19 @@ void PlnVCodeGen::flushReleases(VFunc& func)
 void PlnVCodeGen::lowerAssignStmt(const AssignStmt& stmt, VFunc& func)
 {
     VReg src = lowerExpr(*stmt.value, func);
-    // Find the variable's canonical VReg and emit a Mov to update it in place.
-    // This keeps the VReg identity stable so that backward references — most
-    // importantly, while-loop condition VInstrs that captured the VReg before the
-    // loop body ran — always see the current value after each iteration.
-    for (auto it = varScopes.rbegin(); it != varScopes.rend(); ++it) {
-        auto f = it->find(stmt.name);
-        if (f != it->end()) {
-            VReg old_vreg = f->second;
-            if (old_vreg != src)
-                func.instrs.push_back(Mov{old_vreg, src, stmt.type});
-            return;
-        }
+    const VarBinding& b = findBinding(stmt.name);
+    if (!b.label.empty()) {
+        VReg addr = allocVReg();
+        func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, b.label});
+        func.instrs.push_back(DerefStore{addr, 0, src, stmt.type});
+        return;
     }
-    BOOST_ASSERT(false);  // variable not found
+    // Update the variable's canonical VReg in place with a Mov. This keeps the
+    // VReg identity stable so that backward references — most importantly,
+    // while-loop condition VInstrs that captured the VReg before the loop body
+    // ran — always see the current value after each iteration.
+    if (b.reg != src)
+        func.instrs.push_back(Mov{b.reg, src, stmt.type});
 }
 
 VReg PlnVCodeGen::lowerArrIndexExpr(const ArrIndexExpr& e, VFunc& func)
@@ -585,18 +657,37 @@ void PlnVCodeGen::lowerArrAssignStmt(const ArrAssignStmt& s, VFunc& func)
     func.instrs.push_back(DerefStoreIdx{base, idx, s.scale, src, s.type, s.idx_type});
 }
 
+// A struct built in the frame returns as its eightbytes in the SysV return registers.
+void PlnVCodeGen::lowerSlotReturn(VFunc& func)
+{
+    VReg slot = findVar(currentPlnFunc_->retSlot, func);
+    vector<VReg>     rets;
+    vector<VRegType> types;
+    for (size_t i = 0; i < currentPlnFunc_->retSlotEightbytes.size(); i++) {
+        const Eightbyte& eb = currentPlnFunc_->retSlotEightbytes[i];
+        rets.push_back(loadEightbyte(slot, 8 * (int)i, eb, func));
+        types.push_back(eb.type);
+    }
+    func.instrs.push_back(RetPln{rets, types, true}); // LCOV_EXCL_BR_LINE
+}
+
 void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
 {
+    if (currentPlnFunc_ && !currentPlnFunc_->retSlot.empty()) {
+        BOOST_ASSERT(stmt.values.empty());
+        lowerSlotReturn(func);
+        return;
+    }
     // Multi-return: bare return using retVars
     if (currentPlnFunc_ && !currentPlnFunc_->retVars.empty()) {
         BOOST_ASSERT(stmt.values.empty());
         vector<VReg>     rets;
         vector<VRegType> types;
         for (auto& rv : currentPlnFunc_->retVars) {
-            rets.push_back(findVar(rv.name));
+            rets.push_back(findVar(rv.name, func));
             types.push_back(rv.type);
         }
-        func.instrs.push_back(RetPln{rets, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        func.instrs.push_back(RetPln{rets, types}); // LCOV_EXCL_BR_LINE
         return;
     }
     if (!currentPlnFunc_ || !currentPlnFunc_->hasRetType) {
@@ -608,18 +699,20 @@ void PlnVCodeGen::lowerReturnStmt(const ReturnStmt& stmt, VFunc& func)
         BOOST_ASSERT(stmt.values.size() == 1);
         VReg r = lowerExpr(*stmt.values[0], func);
         flushReleases(func);
-        func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}}); // LCOV_EXCL_BR_LINE
     } else {
         // Bare return: return named variable's current value
         BOOST_ASSERT(!currentPlnFunc_->retVarName.empty());
-        VReg r = findVar(currentPlnFunc_->retVarName);
-        func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        VReg r = findVar(currentPlnFunc_->retVarName, func);
+        func.instrs.push_back(RetPln{{r}, {currentPlnFunc_->retType}}); // LCOV_EXCL_BR_LINE
     }
 }
 
 void PlnVCodeGen::lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func)
 {
-    vector<VReg> args = lowerArgs(stmt.args, func);
+    // Each returned struct is written through a hidden argument, in order, ahead of the arguments.
+    vector<VReg> args = lowerArgs(stmt.retDests, func);
+    for (VReg a : lowerArgs(stmt.args, func)) args.push_back(a);
 
     vector<VReg>     dsts;
     vector<VRegType> types;
@@ -629,7 +722,7 @@ void PlnVCodeGen::lowerTappleDeclStmt(const TappleDeclStmt& stmt, VFunc& func)
         types.push_back(stmt.retTypes[j]);
         declareVar(stmt.vars[j].name, r);
     }
-    func.instrs.push_back(CallPln{stmt.funcName, args, move(dsts), move(types)}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    func.instrs.push_back(CallPln{stmt.funcName, args, move(dsts), move(types)}); // LCOV_EXCL_BR_LINE
 }
 
 void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
@@ -644,13 +737,9 @@ void PlnVCodeGen::lowerExprStmt(const ExprStmt& stmt, VFunc& func)
         case ExprKind::SysCall:
             lowerSysCallExpr(static_cast<const SysCallExpr&>(*stmt.body), func);
             return;
-        case ExprKind::PtrCall: {
-            auto& e = static_cast<const PtrCallExpr&>(*stmt.body);
-            VReg callee = lowerExpr(*e.callee, func);
-            vector<VReg> args = lowerArgs(e.args, func);
-            func.instrs.push_back(CallC{"", args, {}, {}, callee}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        case ExprKind::PtrCall:
+            lowerPtrCallStmt(static_cast<const PtrCallExpr&>(*stmt.body), func);
             return;
-        }
         default:
             BOOST_ASSERT(false);  // only call expressions are valid as statements
     }
@@ -712,8 +801,8 @@ VReg PlnVCodeGen::lowerU64FloatConvert(VReg src, VRegType from, VRegType to, VFu
     if (toFloat) {
         func.instrs.push_back(InitVarF{dst, to, addFloatLiteral("0.0", to)});
 
-        VReg neg = op(Cmp{allocVReg(), "<", src, imm(VRegType::Int64, 0), VRegType::Int64}); // LCOV_EXCL_EXCEPTION_BR_LINE
-        func.instrs.push_back(CondJmp{hiLabel, neg, false}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        VReg neg = op(Cmp{allocVReg(), "<", src, imm(VRegType::Int64, 0), VRegType::Int64}); // LCOV_EXCL_BR_LINE
+        func.instrs.push_back(CondJmp{hiLabel, neg, false}); // LCOV_EXCL_BR_LINE
         VReg lo = op(Convert{allocVReg(), src, VRegType::Int64, to});
         func.instrs.push_back(Mov{dst, lo, to});
         func.instrs.push_back(Jmp{endLabel});
@@ -732,8 +821,8 @@ VReg PlnVCodeGen::lowerU64FloatConvert(VReg src, VRegType from, VRegType to, VFu
 
         VReg lim = allocVReg();
         func.instrs.push_back(InitVarF{lim, from, addFloatLiteral("9223372036854775808.0", from)});
-        VReg ge = op(Cmp{allocVReg(), ">=", src, lim, from}); // LCOV_EXCL_EXCEPTION_BR_LINE
-        func.instrs.push_back(CondJmp{hiLabel, ge, false}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        VReg ge = op(Cmp{allocVReg(), ">=", src, lim, from}); // LCOV_EXCL_BR_LINE
+        func.instrs.push_back(CondJmp{hiLabel, ge, false}); // LCOV_EXCL_BR_LINE
         VReg lo = op(Convert{allocVReg(), src, from, VRegType::Int64});
         func.instrs.push_back(Mov{dst, lo, VRegType::Uint64});
         func.instrs.push_back(Jmp{endLabel});
@@ -752,13 +841,23 @@ VReg PlnVCodeGen::lowerU64FloatConvert(VReg src, VRegType from, VRegType to, VFu
 string PlnVCodeGen::addFloatLiteral(const string& value, VRegType type)
 {
     string label = ".LF" + to_string(floatLabelCounter_++);
-    prog_->floatData.push_back(VFloatLiteral{label, value, type}); // LCOV_EXCL_EXCEPTION_BR_LINE
+    prog_->floatData.push_back(VFloatLiteral{label, value, type}); // LCOV_EXCL_BR_LINE
     return label;
 }
 
 void PlnVCodeGen::lowerVarDeclStmt(const VarDeclStmt& stmt, VFunc& func)
 {
     for (auto& ve : stmt.vars) {
+        if (!ve.label.empty()) {
+            if (ve.init) {
+                VReg v = lowerExpr(*ve.init, func);
+                VReg addr = allocVReg();
+                func.instrs.push_back(LeaLabel{addr, VRegType::Ptr64, ve.label});
+                func.instrs.push_back(DerefStore{addr, 0, v, ve.type});
+            }
+            bindStatic(ve.varName, ve.label, ve.type);
+            continue;
+        }
         VReg r;
         if (ve.init) {
             if (ve.init->kind == ExprKind::FloLit) {
@@ -819,7 +918,7 @@ void PlnVCodeGen::lowerBranchCond(const Expr& expr, VFunc& func, const string& f
         auto& e = static_cast<const LogicalNotExpr&>(expr);
         VReg cond = lowerExpr(*e.operand, func);
         flushReleases(func);
-        func.instrs.push_back(CondJmp{falseLabel, cond, false});  // jne // LCOV_EXCL_EXCEPTION_BR_LINE
+        func.instrs.push_back(CondJmp{falseLabel, cond, false});  // jne // LCOV_EXCL_BR_LINE
         return;
     }
     if (expr.kind == ExprKind::LogicalAnd) {
@@ -839,7 +938,7 @@ void PlnVCodeGen::lowerBranchCond(const Expr& expr, VFunc& func, const string& f
     }
     VReg cond = lowerExpr(expr, func);
     flushReleases(func);
-    func.instrs.push_back(CondJmp{falseLabel, cond, true});  // je // LCOV_EXCL_EXCEPTION_BR_LINE
+    func.instrs.push_back(CondJmp{falseLabel, cond, true});  // je // LCOV_EXCL_BR_LINE
 }
 
 void PlnVCodeGen::lowerBranchCondTrue(const Expr& expr, VFunc& func, const string& trueLabel)
@@ -848,7 +947,7 @@ void PlnVCodeGen::lowerBranchCondTrue(const Expr& expr, VFunc& func, const strin
         auto& e = static_cast<const LogicalNotExpr&>(expr);
         VReg cond = lowerExpr(*e.operand, func);
         flushReleases(func);
-        func.instrs.push_back(CondJmp{trueLabel, cond, true});   // je: !x true when x==0 // LCOV_EXCL_EXCEPTION_BR_LINE
+        func.instrs.push_back(CondJmp{trueLabel, cond, true});   // je: !x true when x==0 // LCOV_EXCL_BR_LINE
         return;
     }
     if (expr.kind == ExprKind::LogicalOr) {
@@ -868,7 +967,7 @@ void PlnVCodeGen::lowerBranchCondTrue(const Expr& expr, VFunc& func, const strin
     }
     VReg cond = lowerExpr(expr, func);
     flushReleases(func);
-    func.instrs.push_back(CondJmp{trueLabel, cond, false});  // jne: jump when non-zero // LCOV_EXCL_EXCEPTION_BR_LINE
+    func.instrs.push_back(CondJmp{trueLabel, cond, false});  // jne: jump when non-zero // LCOV_EXCL_BR_LINE
 }
 
 void PlnVCodeGen::lowerIfStmt(const IfStmt& stmt, VFunc& func)
@@ -904,7 +1003,7 @@ void PlnVCodeGen::lowerWhileStmt(const WhileStmt& stmt, VFunc& func)
     func.instrs.push_back(Jmp{startLabel});
     func.instrs.push_back(Label{endLabel});
     loopStack_.pop_back();
-}
+} // LCOV_EXCL_BR_LINE
 
 void PlnVCodeGen::lowerBreakStmt(VFunc& func)
 {
@@ -957,7 +1056,7 @@ void PlnVCodeGen::lowerStmt(const Stmt& stmt, VFunc& func)
         case StmtKind::FieldAssign: {
             auto& s   = static_cast<const FieldAssignStmt&>(stmt);
             VReg  src = lowerExpr(*s.value, func);
-            VReg  ptr = s.ptrExpr ? lowerExpr(*s.ptrExpr, func) : findVar(s.varName);
+            VReg  ptr = s.ptrExpr ? lowerExpr(*s.ptrExpr, func) : findVar(s.varName, func);
             func.instrs.push_back(DerefStore{ptr, s.offset, src, s.type});
             break;
         }
@@ -976,7 +1075,9 @@ VProg PlnVCodeGen::generate(const Module& module)
 
     // Populate .rodata entries
     for (auto& d : module.strLiterals)
-        prog.data.push_back(VStringLiteral{d.label, d.value}); // LCOV_EXCL_EXCEPTION_BR_LINE
+        prog.data.push_back(VStringLiteral{d.label, d.value}); // LCOV_EXCL_BR_LINE
+    for (auto& label : module.globalLabels)
+        prog.bss.push_back({label, 8, 8}); // LCOV_EXCL_BR_LINE
 
     for (auto& pf : module.functions) {
         VFunc vf;
@@ -988,6 +1089,8 @@ VProg PlnVCodeGen::generate(const Module& module)
             vf.params.push_back({r, p.type});
             declareVar(p.name, r);
         }
+        for (auto& g : pf.globals)
+            bindStatic(g.name, g.label, g.type);
         // Pre-declare single named return variable
         auto zeroInit = [&](VReg r, VRegType t) {
             if (t == VRegType::Float32 || t == VRegType::Float64)
@@ -995,7 +1098,10 @@ VProg PlnVCodeGen::generate(const Module& module)
             else
                 vf.instrs.push_back(InitVar{r, t, 0});
         };
-        if (!pf.retVarName.empty()) {
+        // A MEMORY-class struct's slot is the hidden parameter, already declared.
+        bool retIsParam = std::any_of(pf.params.begin(), pf.params.end(),
+                                      [&](const VarDef& p) { return p.name == pf.retVarName; });
+        if (!pf.retVarName.empty() && !retIsParam) {
             VReg r = allocVReg();
             zeroInit(r, pf.retType);
             declareVar(pf.retVarName, r);
@@ -1012,17 +1118,21 @@ VProg PlnVCodeGen::generate(const Module& module)
         currentPlnFunc_ = nullptr;
         // Append implicit return if the last instruction is not RetPln.
         if (vf.instrs.empty() || !std::get_if<RetPln>(&vf.instrs.back())) {
-            if (!pf.retVars.empty()) {
+            if (!pf.retSlot.empty()) {
+                currentPlnFunc_ = &pf;
+                lowerSlotReturn(vf);
+                currentPlnFunc_ = nullptr;
+            } else if (!pf.retVars.empty()) {
                 vector<VReg>     rets;
                 vector<VRegType> types;
                 for (auto& rv : pf.retVars) {
-                    rets.push_back(findVar(rv.name));
+                    rets.push_back(findVar(rv.name, vf));
                     types.push_back(rv.type);
                 }
-                vf.instrs.push_back(RetPln{rets, types}); // LCOV_EXCL_EXCEPTION_BR_LINE
+                vf.instrs.push_back(RetPln{rets, types}); // LCOV_EXCL_BR_LINE
             } else if (pf.hasRetType && !pf.retVarName.empty()) {
-                VReg r = findVar(pf.retVarName);
-                vf.instrs.push_back(RetPln{{r}, {pf.retType}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+                VReg r = findVar(pf.retVarName, vf);
+                vf.instrs.push_back(RetPln{{r}, {pf.retType}}); // LCOV_EXCL_BR_LINE
             } else {
                 vf.instrs.push_back(RetPln{{}, {}});
             }
@@ -1032,4 +1142,4 @@ VProg PlnVCodeGen::generate(const Module& module)
     }
 
     return prog;
-}
+} // LCOV_EXCL_BR_LINE

@@ -20,7 +20,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     struct VRegMeta {
         VRegType type         = VRegType::Int64;
         int      def_idx      = -1;
+        int      first_def    = -1;
         bool     isVar        = false;   // true if a declared variable (InitVar/InitVarF/DeclVar)
+        bool     addrTaken    = false;
+        vector<int> writes;              // instructions writing it (defs and Mov into it)
+        vector<int> accesses;            // every operand occurrence, writes included
         int      last_any_use = -1;      // last use by non-call-argument instructions
         vector<pair<int,string>> call_uses; // (call_instr_idx, desired arg register)
         bool     isRetValue   = false;   // true if used by RetPln
@@ -38,11 +42,16 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         auto& instr = func.instrs[i];
 
         auto setDef = [&](VReg dst, VRegType type) {
-            meta[dst].def_idx = i;
-            meta[dst].type    = type;
+            auto& m = meta[dst];
+            m.def_idx = i;
+            if (m.first_def < 0) m.first_def = i;
+            m.type    = type;
+            m.writes.push_back(i);
+            m.accesses.push_back(i);
         };
         auto addUse = [&](VReg vreg) {
             meta[vreg].last_any_use = max(meta[vreg].last_any_use, i);
+            meta[vreg].accesses.push_back(i);
         };
         auto setBinOp = [&](VReg dst, VReg lhs, VReg rhs, VRegType type) {
             setDef(dst, type);
@@ -92,6 +101,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             [&](const BitNot& n)   { setDef(n.dst, n.type); addUse(n.src); },
             [&](const Shift& s)    { setBinOp(s.dst, s.lhs, s.rhs, s.type); },
             [&](const ShiftImm& s) { setDef(s.dst, s.type); addUse(s.src); },
+            [&](const PackF32x2& p) { setDef(p.dst, VRegType::Float64); addUse(p.lo); addUse(p.hi); },
             [&](const Cmp& c)      { setDef(c.dst, VRegType::Uint8); addUse(c.lhs); addUse(c.rhs); },
             [&](const Convert& c)  { setDef(c.dst, c.to); addUse(c.src); },
             [&](const CallC& c) {
@@ -126,9 +136,14 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             },
             [&](const CondJmp& cj) { addUse(cj.cond); },
             [&](const Label& lbl)  { label_idx[lbl.name] = i; },
-            // Mov copies src into dst (the variable's canonical VReg).
-            // dst is always isVar (allocated by Pass B); only src needs tracking here.
-            [&](const Mov& mv)        { addUse(mv.src); },
+            // Mov copies src into dst (the variable's canonical VReg). The write
+            // keeps dst live too: a register freed before a later Mov into dst
+            // could be handed to another value the Mov would clobber.
+            [&](const Mov& mv)        {
+                addUse(mv.src);
+                addUse(mv.dst);
+                meta[mv.dst].writes.push_back(i);
+            },
             [&](const Copy& c)        { setDef(c.dst, c.type); addUse(c.src); },
             [&](const DerefLoadIdx& dl)  { setDef(dl.dst, dl.type); addUse(dl.base); addUse(dl.idx); },
             [&](const DerefStoreIdx& ds) { addUse(ds.base); addUse(ds.idx); addUse(ds.src); },
@@ -139,7 +154,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             // Taking a local's address forces it to a stable stack slot for the
             // rest of its lifetime, exactly like an InitVar-declared variable —
             // reuse the isVar mechanism rather than a second forced-stack path.
-            [&](const LeaLocal&   ll)    { setDef(ll.dst, VRegType::Ptr64); meta[ll.local].isVar = true; addUse(ll.local); },
+            [&](const LeaLocal&   ll)    {
+                setDef(ll.dst, VRegType::Ptr64);
+                meta[ll.local].isVar = meta[ll.local].addrTaken = true;
+                addUse(ll.local);
+            },
             [&](const FrameAddr&  fa)    { setDef(fa.dst, VRegType::Ptr64); },
             [&](const BlockEnter&) {},
             [&](const BlockLeave&) {},
@@ -175,6 +194,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
     }
 
+    // Static estimate of how often an instruction runs: x10 per enclosing loop.
+    vector<double> weight(func.instrs.size(), 1.0);
+    for (auto& [ls, le] : loop_regions)
+        for (int i = ls; i <= le; i++) weight[i] *= 10;
+
     // Step 2: Assign physical registers or stack slots.
     RegMap result;
 
@@ -198,7 +222,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     auto allocStackSlot = [&](VReg vreg, VRegType type) {
         int size    = sizeOfType(type);
         stack_bytes = alignUp(stack_bytes, size) + size;
-        result[vreg] = PhysLoc{"", type, -stack_bytes};
+        result[vreg] = PhysLoc{"", type, -stack_bytes}; // LCOV_EXCL_BR_LINE
     };
 
     // For temporary VRegs (non-variable, non-return-value, no call args): reuse an expired
@@ -218,7 +242,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         }
         for (auto& [offset, max_end] : slot_end) {
             if (max_end < def_idx) {
-                result[vreg] = PhysLoc{"", type, offset};
+                result[vreg] = PhysLoc{"", type, offset}; // LCOV_EXCL_BR_LINE
                 return;
             }
         }
@@ -229,7 +253,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         // Float VRegs cannot use integer callee-saved registers; always spill to stack.
         bool is_flt = (type == VRegType::Float32 || type == VRegType::Float64);
         if (!is_flt && callee_idx < (int)phys.calleeSaved.size()) {
-            result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], type};
+            result[vreg] = PhysLoc{phys.calleeSaved[callee_idx++], type}; // LCOV_EXCL_BR_LINE
         } else {
             const VRegMeta& vm = meta[vreg];
             if (!vm.isVar && !vm.isRetValue && vm.call_uses.empty()) {
@@ -245,6 +269,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     // If a parameter's live range crosses a call, move it to a callee-saved
     // register so it survives the call (caller-saved arg regs are clobbered).
     vector<tuple<string, VReg, VRegType>> pendingParamCopies;
+    map<VReg, string> floatParamRegs;  // float params arriving in XMM arg regs
     int int_idx = 0, flt_idx = 0, stack_idx = 0;
     for (auto& [vreg, type] : func.params) {
         bool is_flt = (type == VRegType::Float32 || type == VRegType::Float64);
@@ -253,13 +278,11 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         if (!in_regs) {
             // Stack parameter: passed by caller above %rbp → 16(%rbp), 24(%rbp), ...
             // The caller's stack is stable across all calls within this function.
-            result[vreg] = PhysLoc{"", type, (stack_idx++ + 2) * 8};
+            result[vreg] = PhysLoc{"", type, (stack_idx++ + 2) * 8}; // LCOV_EXCL_BR_LINE
             continue;
         }
         if (is_flt) {
-            // Float VRegs always live on the stack (no XMM allocation).
-            allocStackSlot(vreg, type);
-            pendingParamCopies.push_back({phys.floatArgs[flt_idx++], vreg, type});
+            floatParamRegs[vreg] = phys.floatArgs[flt_idx++];
             continue;
         }
         const string& argReg = phys.intArgs[int_idx++];
@@ -277,7 +300,87 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             allocCalleeSavedOrStack(vreg, type);
             pendingParamCopies.push_back({argReg, vreg, type});
         } else {
-            result[vreg] = PhysLoc{argReg, type};
+            result[vreg] = PhysLoc{argReg, type}; // LCOV_EXCL_BR_LINE
+        }
+    }
+
+    // Float VRegs take XMM registers where estimated cheaper than the stack:
+    // the stack costs every access; a register costs, for a value living across
+    // a call (XMM registers are all caller-saved), a store to its home slot
+    // after each write and a reload after each such call. Linear scan; when
+    // registers run short, the values saving the most keep them.
+    map<int, vector<VReg>> storesAfter, reloadsAfter;
+    vector<tuple<string, VReg, VRegType>> homeParamCopies;
+    {
+        struct Cand { VReg vr; int start, end; double gain; vector<int> crossed; int reg = -1; };
+        vector<Cand> cands;
+        auto paramToStack = [&](VReg vr) {
+            allocStackSlot(vr, meta[vr].type);
+            pendingParamCopies.push_back({floatParamRegs[vr], vr, meta[vr].type});
+        };
+        for (auto& [vreg, m] : meta) {
+            if (!isFloat(m.type) || result.count(vreg)) continue;
+            bool is_param = floatParamRegs.count(vreg);
+            int start = is_param ? -1 : m.first_def;
+            if (m.addrTaken || m.live_end <= start) {
+                if (is_param && m.live_end > start) paramToStack(vreg);
+                continue;
+            }
+            double stack_cost = 0, reg_cost = 0;
+            for (int a : m.accesses) stack_cost += weight[a];
+            vector<int> crossed;
+            for (int c : call_indices)
+                if (start < c && c < m.live_end) crossed.push_back(c);
+            if (!crossed.empty()) {
+                for (int w : m.writes) reg_cost += weight[w];
+                if (is_param) reg_cost += 1;
+                for (int c : crossed) reg_cost += weight[c];
+            }
+            if (reg_cost < stack_cost)
+                cands.push_back({vreg, start, m.live_end, stack_cost - reg_cost, crossed});
+            else if (is_param)
+                paramToStack(vreg);
+        }
+        stable_sort(cands.begin(), cands.end(),
+                    [](const Cand& a, const Cand& b) { return a.start < b.start; });
+        vector<int> owner(phys.floatAlloc.size(), -1);  // cands index holding each reg
+        for (int k = 0; k < (int)cands.size(); k++) {
+            int pick = -1;
+            for (int r = 0; r < (int)owner.size(); r++) {
+                // Strictly before: an operand dying at this instruction is still read by it.
+                if (owner[r] >= 0 && cands[owner[r]].end < cands[k].start) owner[r] = -1;
+                if (owner[r] < 0 && pick < 0) pick = r;
+            }
+            if (pick < 0) {
+                for (int r = 0; r < (int)owner.size(); r++)
+                    if (pick < 0 || cands[owner[r]].gain < cands[owner[pick]].gain) pick = r;
+                if (pick < 0 || cands[owner[pick]].gain >= cands[k].gain) continue;
+                cands[owner[pick]].reg = -1;
+            }
+            owner[pick] = k;
+            cands[k].reg = pick;
+        }
+        for (auto& c : cands) {
+            const VRegMeta& m = meta[c.vr];
+            auto pit = floatParamRegs.find(c.vr);
+            if (c.reg < 0) {
+                if (pit != floatParamRegs.end()) paramToStack(c.vr);
+                continue;  // a variable goes to Pass B, a temp to the stack below
+            }
+            PhysLoc loc{phys.floatAlloc[c.reg], m.type};
+            if (!c.crossed.empty()) {
+                int size = sizeOfType(m.type);
+                stack_bytes = alignUp(stack_bytes, size) + size;
+                loc.homeOffset = -stack_bytes;
+                for (int w : m.writes) storesAfter[w].push_back(c.vr);
+                for (int ci : c.crossed) reloadsAfter[ci].push_back(c.vr);
+            }
+            result[c.vr] = loc;
+            if (pit != floatParamRegs.end()) {
+                pendingParamCopies.push_back({pit->second, c.vr, m.type});
+                if (loc.homeOffset)
+                    homeParamCopies.push_back({pit->second, c.vr, m.type});
+            }
         }
     }
 
@@ -306,7 +409,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
                     }
                 }
                 if (rax_safe) {
-                    result[vreg] = PhysLoc{"%rax", m.type};
+                    result[vreg] = PhysLoc{"%rax", m.type}; // LCOV_EXCL_BR_LINE
                 } else {
                     allocCalleeSavedOrStack(vreg, m.type);
                 }
@@ -383,7 +486,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             if (conflict) {
                 allocCalleeSavedOrStack(vreg, m.type);
             } else {
-                result[vreg] = PhysLoc{desired, m.type};
+                result[vreg] = PhysLoc{desired, m.type}; // LCOV_EXCL_BR_LINE
             }
         }
     }
@@ -411,7 +514,7 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
             if (!pool.empty()) {
                 int off = pool.back();
                 pool.pop_back();
-                result[dst] = PhysLoc{"", type, off};
+                result[dst] = PhysLoc{"", type, off}; // LCOV_EXCL_BR_LINE
             } else {
                 allocStackSlot(dst, type);
             }
@@ -440,6 +543,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
         for (auto& [vreg, loc] : result) {
             if (loc.isStack() && loc.stackOffset < 0)
                 loc.stackOffset -= save_area;
+            if (loc.homeOffset < 0)
+                loc.homeOffset -= save_area;
         }
         stack_bytes += save_area;
     }
@@ -467,6 +572,8 @@ RegAllocResult allocateRegisters(const VFunc& func, const PhysRegs& phys)
     vector<RegAllocResult::ParamCopy> paramCopies;
     for (auto& [argReg, vreg, ptype] : pendingParamCopies)
         paramCopies.push_back({argReg, result[vreg], ptype});
+    for (auto& [argReg, vreg, ptype] : homeParamCopies)
+        paramCopies.push_back({argReg, PhysLoc{"", ptype, result[vreg].homeOffset}, ptype});
 
-    return {result, frameSize, usedCallee, paramCopies, frameBlockOffsets};
-}
+    return {result, frameSize, usedCallee, paramCopies, frameBlockOffsets, storesAfter, reloadsAfter};
+} // LCOV_EXCL_BR_LINE

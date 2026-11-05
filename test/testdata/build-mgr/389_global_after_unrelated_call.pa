@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+func other() { puts("x"); }
+func use() { cnt + 1 -> cnt; }
+other();
+global int32 cnt = 0 for use!;
+use();
+printf("%d\n", cnt);

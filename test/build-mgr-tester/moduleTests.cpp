@@ -43,6 +43,14 @@ TEST(build_mgr, alias_import) {
 	ASSERT_EQ(output, "9\n8\n");
 }
 
+// An operator cannot be written qualified, so an alias import brings it
+// unqualified; a selective import names it.
+TEST(build_mgr, operator_func_import) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/381_operator_func_import.pa");
+	ASSERT_EQ(output, "2 4 6\n-1 -2 -3\n");
+}
+
 TEST(build_mgr, selective_alias_import) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/048_selective_alias_import.pa");
@@ -190,7 +198,7 @@ TEST(build_mgr, chain_call_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 7) << "expected 7 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -222,7 +230,7 @@ TEST(build_mgr, chain_lit_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 5) << "expected 5 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 4) << "expected 4 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -346,7 +354,7 @@ TEST(build_mgr, chain_method_mtrace) {
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 10) << "expected 10 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 5) << "expected 5 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -393,4 +401,39 @@ TEST(build_mgr, run_args) {
 // The header of `args` is in the frame: only the copy is allocated and freed.
 TEST(build_mgr, implicit_args_mtrace) {
 	expectMtraceRun("361_args_mtrace", "4 a end\n", 2, " a b");
+}
+
+// A callback C calls with fixed arguments (qsort's comparator) reaches what it
+// needs through globals.
+TEST(build_mgr, global_var) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/370_global.pa"),
+		"1 3 5\n5 3 1\n1 13 4\n7\n");
+}
+
+// What a global owns lives as long as the process: only the value it was
+// moved away from is freed.
+TEST(build_mgr, global_var_mtrace) {
+	cleanTestEnv();
+	string bin = "/tmp/palan_global_mtrace_bin";
+	ASSERT_EQ(execTestCommand("bin/palan -o " + bin + " ../test/testdata/build-mgr/371_global_mtrace.pa"), "");
+	string traceFile = "/tmp/palan_global_mtrace.log";
+	ASSERT_EQ(execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so "
+		"MALLOC_TRACE=" + traceFile + " " + bin), "6\n15\n");
+	auto [allocs, frees] = parseMtraceLog(traceFile);
+	EXPECT_EQ(allocs, 2);
+	EXPECT_EQ(frees, 1);
+}
+
+TEST(build_mgr, import_global_var) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/372_import_global.pa");
+	ASSERT_NE(out.find("372_import_global.pa:1:1: error: cannot import a module whose functions use its global variable 'x'"),
+		string::npos) << out;
+}
+
+TEST(build_mgr, global_after_unrelated_call) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/389_global_after_unrelated_call.pa"), "x\n1\n");
 }

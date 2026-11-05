@@ -722,7 +722,7 @@ TEST(build_mgr, struct_ret_copy_mtrace) {
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 16) << "expected 16 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 10) << "expected 10 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -753,7 +753,7 @@ TEST(build_mgr, struct_ret_temp_mtrace) {
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 18) << "expected 18 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 3) << "expected 3 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -844,7 +844,7 @@ TEST(build_mgr, named_ret_struct_mtrace) {
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 10) << "expected 10 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 5) << "expected 5 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -875,7 +875,7 @@ TEST(build_mgr, struct_init_from_call_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 8) << "expected 8 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 9) << "expected 9 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -975,7 +975,7 @@ TEST(build_mgr, struct_lit_struct_expr_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 42) << "expected 42 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 38) << "expected 38 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -1016,7 +1016,7 @@ TEST(build_mgr, return_unowned_struct_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 25) << "expected 25 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 22) << "expected 22 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -1052,7 +1052,7 @@ TEST(build_mgr, embed_field_value_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 7) << "expected 7 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 8) << "expected 8 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -1090,7 +1090,7 @@ TEST(build_mgr, call_temp_borrow_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 17) << "expected 17 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 3) << "expected 3 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -1126,7 +1126,7 @@ TEST(build_mgr, lit_arg_mtrace)
 		if (!fromSharedLib && line.find(" - ") != string::npos) frees++;
 		pos = (eol == string::npos) ? string::npos : eol + 1;
 	}
-	EXPECT_EQ(allocs, 17) << "expected 17 allocs, got " << allocs;
+	EXPECT_EQ(allocs, 16) << "expected 16 allocs, got " << allocs;
 	EXPECT_EQ(allocs, frees)
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
@@ -1217,13 +1217,56 @@ TEST(build_mgr, store_eval_once_mtrace) {
 		<< "malloc/free not balanced: " << allocs << " allocs, " << frees << " frees";
 }
 
+TEST(build_mgr, struct_param_owned_mtrace) {
+	// A struct parameter owns a copy of its argument, or the struct a call
+	// returned, and frees it unless it gives it away.
+	expectMtraceRun("373_struct_param_owned_mtrace", "11 1\n15 17\n8 2\n1 1 2\n", 15);
+}
+
+TEST(build_mgr, give_take_mtrace) {
+	// '>>' moves a value into a parameter owning it or gives it to C, which
+	// realloc hands back for '<<=' to take over; nothing leaks or is freed twice.
+	expectMtraceRun("374_give_take_mtrace", "5 1\n4\n3\n10\n102\n7 9 1 5 4 1\n", 22);
+}
+
+TEST(build_mgr, give_then_borrow_mtrace) {
+	// An owner given away with '>>' is set to NULL only just before the call,
+	// so the call's other arguments, before or after it, still see it.
+	expectMtraceRun("384_give_then_borrow_mtrace", "12 1\n26\n60 1\n48\n55\n", 13);
+}
+
+TEST(build_mgr, give_path_call_once_mtrace) {
+	// The calls on the path to an owner given away run once, though the
+	// owner is read and later reset through it.
+	expectMtraceRun("385_give_path_call_once_mtrace", "1\n3\n2 4 3 2 1\n", 7);
+}
+
+TEST(build_mgr, func_cast_ownership_mtrace) {
+	// A C function cast to own a parameter keeps what '>>' gives it until the
+	// Palan callback owning it frees it, and a pointer in a read-only struct's
+	// field is taken over by viewing it as its owner.
+	expectMtraceRun("375_func_cast_ownership_mtrace", "work 3 2\n1\n2 1\n", 5);
+}
+
+TEST(build_mgr, runtime_size_ownership_mtrace) {
+	// Arrays sized at run time, of structs and rows too, are moved, given, taken
+	// over and copied by the lengths their receiving variable keeps.
+	expectMtraceRun("376_runtime_size_ownership_mtrace", "1 4 3 10\n3:1 1:1 \n7 9\n5 5\n", 43);
+}
+
+TEST(build_mgr, owner_view_target_mtrace) {
+	// A block given to a C pointer viewed as its owner is held there until it is
+	// taken back over, sized at run time on both sides.
+	expectMtraceRun("377_owner_view_target_mtrace", "16 7\n3 1\n", 3);
+}
+
 TEST(build_mgr, store_value_first) {
 	cleanTestEnv();
 	// A call in the target that writes the value through a pointer it was
-	// given -- by '@', a struct or []T parameter, a raw pointer or an integer
+	// given -- by '@', a []T parameter, a raw pointer or an integer
 	// cast, even one given later in a loop -- does not change what is stored.
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/311_store_value_first.pa");
-	ASSERT_EQ(output, "5 5\n1 2\n1 11\n1 2\n1 11\n1 101\n1 1001\n3 9\ng i 1 2\n"
+	ASSERT_EQ(output, "5 5\n1 2\n1 1\n1 2\n1 11\n1 101\n1 1001\n3 9\ng i 1 2\n"
 	                  "1 2 27\ni i i 6 4 1\ni 2 2\n");
 }
 
@@ -1295,7 +1338,7 @@ TEST(build_mgr, struct_multilevel_field_mtrace) {
 // frees it, and a struct literal sets its length.
 TEST(build_mgr, struct_varr_field_mtrace) {
 	expectMtraceRun("351_struct_varr_field_mtrace",
-		"3 5 1 1\n20 9 39\n4 5\n2 2 5\n8 3 9 1\n2 9\n3 2 9 6 5\n1 2 3 3\n", 72);
+		"3 5 1 1\n20 9 39\n4 5\n2 2 5\n8 3 9 1\n2 9\n3 2 9 6 5\n1 2 3 3\n", 73);
 }
 
 // A field's `$[n]...` lies in its struct, rows, structs and pointer slots
@@ -1314,5 +1357,35 @@ TEST(build_mgr, field_inline_owned_mtrace) {
 TEST(build_mgr, layout_share_mtrace) {
 	expectMtraceRun("350_layout_share_mtrace",
 		"-7 4000000001 1 1\n-128 255 0 -2 254\n2.25 1\n5 6 2.5 4000000000 1\n"
-		"2 6 0.25 4000000000\n-3 252 0 0\n", 47);
+		"2 6 0.25 4000000000\n-3 252 0 0\n", 49);
+}
+
+// A returned struct is written into storage its receiver provides: a frame
+// temp, a `$` variable, a heap variable, an owning parameter's block, or the
+// caller's own return slot; in registers or through a hidden pointer.
+TEST(build_mgr, struct_ret_dest_mtrace) {
+	expectMtraceRun("378_struct_ret_dest_mtrace",
+		"42 9\n10 28\n3 1.5 7 15\n5 6 4 3\n3 8 9\n9 10\n11 12\n", 33);
+}
+
+// A C function's struct return is received wherever a Palan one is.
+TEST(build_mgr, c_struct_ret_mtrace) {
+	expectMtraceRun("379_c_struct_ret_mtrace", "3 1 14 2\n4 3 3\n4 2 2\n", 5);
+}
+
+// Struct returns whose SSE eightbytes are one flo64, two flo32, or a flo64
+// array element.
+TEST(build_mgr, struct_ret_flo64) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/383_struct_ret_flo64.pa");
+	ASSERT_EQ(output, "1.5 2.5 5\n-4 -3.75\n0.75 -0.75\n0.5 1.5\n");
+}
+
+TEST(build_mgr, operator_func_mtrace) {
+	expectMtraceRun("380_operator_func_mtrace",
+		"1.5 2.5 3.5\n0.5 1.5 2.5\n-1 -2 -3\n-1.5 -2.5 -3.5\n1.5 3 4.5\n0 -1 -2\n3\n2.5 4.5 6.5\n", 4);
+}
+
+TEST(build_mgr, chain_ahead_of_receiver_mtrace) {
+	expectMtraceRun("386_chain_ahead_of_receiver_mtrace", "5\n1 4\n1 4\n1 5\n4\n4\n4\n", 10);
 }

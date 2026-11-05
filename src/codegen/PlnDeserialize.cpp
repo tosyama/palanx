@@ -19,7 +19,7 @@ using namespace std;
 static Eightbyte toEightbyte(const json& eb) {
     int size = eb["size"].get<int>();
     if (eb["class"] == "sse")
-        return {size == 4 ? VRegType::Float32 : VRegType::Float64, size};
+        return {size == 4 ? VRegType::Float32 : VRegType::Float64, size, eb.value("flo64", false)};
     VRegType t = size == 1 ? VRegType::Int8 : size == 2 ? VRegType::Int16
                : size <= 4 ? VRegType::Int32 : VRegType::Int64;
     return {t, size};
@@ -46,6 +46,7 @@ static VRegType toVRegType(const json& vt) {
 
 static unique_ptr<Expr> deserializeExpr(const json& j);
 static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr);
+static std::optional<StructRet> deserializeStructRet(const json& j);
 
 static void deserializeArgs(const json& call, vector<unique_ptr<Expr>>& args)
 {
@@ -53,7 +54,7 @@ static void deserializeArgs(const json& call, vector<unique_ptr<Expr>>& args)
         return;
     for (auto& arg : call["args"])
         args.push_back(deserializeExpr(arg));
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 static unique_ptr<Expr> deserializeExpr(const json& j)
 {
@@ -62,12 +63,6 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
     if (expr_type == "lit-str") {
         auto e = make_unique<StrLitExpr>();
         e->label = j["label"];
-        return e;
-    }
-    if (expr_type == "c-global") {
-        auto e = make_unique<CGlobalExpr>();
-        e->label = j["label"];
-        e->type  = toVRegType(j["value-type"]);
         return e;
     }
     if (expr_type == "lit-int") {
@@ -98,10 +93,19 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
         e->body    = deserializeStatements(j["body"]);
         e->value   = deserializeExpr(j["value"]);
         e->release = deserializeStatements(j["release"]);
+        if (j.contains("reset"))
+            e->reset = deserializeStatements(j["reset"]);
         return e;
     }
     if (expr_type == "frame-alloc") {
         auto e = make_unique<FrameAllocExpr>();
+        e->size  = j["size"];
+        e->align = j["align"];
+        return e;
+    }
+    if (expr_type == "static-alloc") {
+        auto e = make_unique<StaticAllocExpr>();
+        e->label = j["label"];
         e->size  = j["size"];
         e->align = j["align"];
         return e;
@@ -124,6 +128,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
             e->retType = toVRegType(j["value-type"]);
         }
         deserializeArgs(j, e->args);
+        e->structRet = deserializeStructRet(j);
         return e;
     }
     if (expr_type == "convert") {
@@ -227,13 +232,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
                 e->hasRet  = true;
                 e->retType = toVRegType(j["value-type"]);
             }
-            if (j.contains("struct-ret")) {
-                const json& sr = j["struct-ret"];
-                e->hasStructRet = true;
-                e->structRetVar = sr["var"].get<string>();
-                for (auto& eb : sr["eightbytes"])
-                    e->structRetEightbytes.push_back(toEightbyte(eb));
-            }
+            e->structRet = deserializeStructRet(j);
             deserializeArgs(j, e->args);
             for (auto& arg : j.value("args", json::array())) {
                 if (!arg.contains("struct-arg")) {
@@ -263,6 +262,7 @@ static unique_ptr<Expr> deserializeExpr(const json& j)
                 e->hasRet  = true;
                 e->retType = toVRegType(j["value-type"]);
             }
+            e->structRet = deserializeStructRet(j);
             deserializeArgs(j, e->args);
             return e;
         }
@@ -337,6 +337,7 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
             VarEntry ve;
             ve.varName  = jv["name"];
             ve.type     = toVRegType(jv["var-type"]);
+            ve.label    = jv.value("label", "");
             if (jv.contains("init")) {
                 ve.init = deserializeExpr(jv["init"]);
             }
@@ -362,11 +363,15 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     if (stmt_type == "tapple-decl") {
         auto s = make_unique<TappleDeclStmt>();
         s->funcName = j["value"]["name"];
-        for (auto& jv : j["vars"])
+        for (auto& jv : j["vars"]) {
+            if (jv.contains("ret-dest")) {
+                s->retDests.push_back(deserializeExpr(jv["ret-dest"]));
+                continue;
+            }
             s->vars.push_back({jv["var-name"], toVRegType(jv["var-type"])});
+            s->retTypes.push_back(toVRegType(jv["var-type"]));
+        }
         deserializeArgs(j["value"], s->args);
-        for (auto& vt : j["value"]["value-types"])
-            s->retTypes.push_back(toVRegType(vt));
         return s;
     }
     if (stmt_type == "block") {
@@ -429,7 +434,7 @@ static unique_ptr<Stmt> deserializeStmt(const json& j)
     }
     cerr << PlnCodegenMessage::getMessage(E_UnknownStmtType, stmt_type) << endl;
     exit(1);
-}
+} // LCOV_EXCL_BR_LINE
 
 static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr)
 {
@@ -439,14 +444,27 @@ static vector<unique_ptr<Stmt>> deserializeStatements(const json& arr)
     return result;
 }
 
+static std::optional<StructRet> deserializeStructRet(const json& j)
+{
+    if (!j.contains("ret-dest"))
+        return std::nullopt;
+    StructRet sr;
+    sr.dest = deserializeExpr(j["ret-dest"]);
+    for (auto& eb : j["struct-ret"]["eightbytes"])
+        sr.eightbytes.push_back(toEightbyte(eb));
+    return sr;
+}
+
 static PlnFunc deserializeSig(const json& jf)
 {
     PlnFunc pf;
     pf.name = jf["name"];
     for (auto& jp : jf["parameters"])
         pf.params.push_back({jp["name"], toVRegType(jp["var-type"])});
+    for (auto& jg : jf.value("globals", json::array()))
+        pf.globals.push_back({jg["name"], jg["label"], toVRegType(jg["var-type"])});
     return pf;
-}
+} // LCOV_EXCL_BR_LINE
 
 Module deserialize(const json& sa)
 {
@@ -459,6 +477,9 @@ Module deserialize(const json& sa)
         }
     }
 
+    for (auto& g : sa.value("globals", json::array()))
+        mod.globalLabels.push_back(g["label"]);
+
     if (sa.contains("functions")) {
         for (auto& jf : sa["functions"]) {
             PlnFunc pf = deserializeSig(jf);
@@ -466,12 +487,29 @@ Module deserialize(const json& sa)
                 pf.hasRetType = true;
                 pf.retType    = toVRegType(jf["ret-type"]);
             }
-            if (jf.contains("rets") && jf["rets"].size() == 1) {
+            // Struct returns written through hidden pointers come ahead of the parameters.
+            vector<VarDef> hidden;
+            if (jf.contains("ret-slot")) {
+                const json& rs = jf["ret-slot"];
+                for (auto& eb : rs["eightbytes"])
+                    pf.retSlotEightbytes.push_back(toEightbyte(eb));
+                if (pf.retSlotEightbytes.empty()) {
+                    pf.retVarName = rs["name"];
+                    hidden.push_back({rs["name"], VRegType::Ptr64});
+                } else {
+                    pf.retSlot = rs["name"];
+                }
+            } else if (jf.contains("rets") && jf["rets"].size() == 1) {
                 pf.retVarName = jf["rets"][0]["name"];
             } else if (jf.contains("rets") && jf["rets"].size() >= 2) {
-                for (auto& r : jf["rets"])
-                    pf.retVars.push_back({r["name"], toVRegType(r["var-type"])});
+                for (auto& r : jf["rets"]) {
+                    if (r.value("slot", false))
+                        hidden.push_back({r["name"], VRegType::Ptr64});
+                    else
+                        pf.retVars.push_back({r["name"], toVRegType(r["var-type"])});
+                }
             }
+            pf.params.insert(pf.params.begin(), hidden.begin(), hidden.end());
             pf.isExport = jf.value("export", false);
             pf.body = deserializeStatements(jf["body"]);
             mod.functions.push_back(move(pf));
@@ -487,4 +525,4 @@ Module deserialize(const json& sa)
     mod.functions.push_back(move(top));
 
     return mod;
-}
+} // LCOV_EXCL_BR_LINE

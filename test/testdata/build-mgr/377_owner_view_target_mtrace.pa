@@ -1,0 +1,27 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Buf { @!int8 base; uint64 len; };
+func alloc(uint64 size, @!Buf buf)
+{
+	[size]int8 data;
+	7 -> data[size - 1];
+	data ->> buf.base as [size]int8;
+	size -> buf.len;
+}
+func take(int64 n, @Buf buf) -> int32
+{
+	[n]int8 data <<= buf.base as [n]int8;
+	return int32(data[n - 1]);
+}
+mtrace();
+{
+	Buf b;
+	alloc(16, @!b);
+	printf("%d %d\n", int32(b.len), take(int64(b.len), @b));
+	@!int8 p;
+	[4]int8 q = [1, 2, 3, 4];
+	q ->> p as [4]int8;
+	printf("%d %d\n", p[2], q == NULL);
+	[4]int8 back <<= p as [4]int8;
+}
+muntrace();

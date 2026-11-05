@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.2.2
+ver. 0.2.3
 
 \* - Required
 
@@ -38,7 +38,7 @@ AST model
 
 Function definition model
 -------------------------
-- name\* - Function name string
+- name\* - Function name string; an operator function's is its operator: "+" "-" "*" "/" "%"
 - func-type\* - Function type string: "palan" "c" "syscall"
 - loc\* - Location Array (palan, syscall only)
 
@@ -257,7 +257,7 @@ Same structure as Palan Parameter.
 
 Variable type
 -------------
-- type-kind\* - Type kind string: "prim" "pntr" "arr" "embed" "strct" "union" "enum" "func" "user"
+- type-kind\* - Type kind string: "prim" "pntr" "arr" "embed" "strct" "union" "enum" "func" "user" "keep"
 - const - Boolean, true if const qualified (omitted when false). c2ast/cinclude-only: a C
   pointer's own qualifier (`T * const`) is emitted on the `pntr` node itself; the pointee's
   qualifier (`const T *`) is emitted on `pntr`'s `base-type`. SA folds pointee `const` into
@@ -364,6 +364,7 @@ Variable type
       reject. A function's return type is taken greedily, so `e as @func(T) -> X` is a cast
       to a function returning `X`. A C typedef of a function type is expanded where it is
       referenced (not listed in `typedefs`).
+    - A parameter or return type written `_` is `keep` (below).
   9. user - An identifier used as a type that c2ast could not resolve to a recognized keyword
      or a previously-registered typedef — including an anonymous struct/union body via a
      multi-declarator or derived-declarator typedef (see type-kind "strct" above for the one
@@ -373,6 +374,9 @@ Variable type
      reference with that typedef's type at ingestion. Otherwise unrepresentable in SA this
      version (see SASpec.md's C-origin signature admission).
     - type-name\* - The unresolved identifier string
+  10. keep - `_` as a function type's parameter or return type: the type a cast's source has at
+      that place (`free as @func(Q)`, `f as @func(_, P) -> _`). SA accepts it only in a cast's
+      `target-type`. No other fields.
 
 Note: C `restrict` qualifier is not represented in the AST (optimization hint only).
 
@@ -397,12 +401,12 @@ Used in `func-def` bodies and standalone block statements.
 
 Statement model
 ---------------
-- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "for" "break" "continue" "not-impl" "enum-def"
+- stmt-type\* - Statement type: "import" "cinclude" "expr" "var-decl" "assign" "arr-assign" "struct-def" "type-alias" "const-decl" "field-assign" "return" "tapple-decl" "tapple-assign" "block" "if" "while" "for" "break" "continue" "not-impl" "enum-def" "global-permit"
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
     - path\* - Path string
-    - targets - Import target name string list, null - all
+    - targets - Import target name string list (a function name, a type name or an operator), null - all
     - alias - Alias name string
   2. cinclude - C header include statement (expands in place, scope-aware)
     - path-type\* - Path type string: "src" "inc"
@@ -426,18 +430,27 @@ Statement model
   3. expr - expression statement
     - body\* - Expression model
   4. var-decl - variable declaration statement
+    - global - Boolean, true for a `global` declaration (omitted when false); `vars` then holds
+      exactly one typed variable; any other `global` declaration (a type-omitted or tuple one) is
+      a `not-impl` statement instead.
     - vars\* - Variable declaration list
       - name\* - Variable name string
       - var-type\* - Variable type
       - init - Initializer expression model (omitted if no initializer)
+      - ownership-transfer - Boolean, true if the initializer is given with `<<=` (`T b <<= v`),
+        taking over what `v` owns; omitted when false
   5. assign - assignment statement (`expr -> var` or `expr ->> var`)
     - name\* - Target variable name string
     - value\* - Source expression model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
+    - owner-view-type - With `ownership-transfer`, the type the target is viewed as the owner of
+      (`expr ->> loc as T`); omitted otherwise
   6. arr-assign - array element assignment statement (`expr -> arr[i]` or `expr ->> arr[i]`)
     - target\* - arr-index expression model (see Expression model §12)
     - value\* - Source expression model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
+    - owner-view-type - With `ownership-transfer`, the type the target is viewed as the owner of
+      (`expr ->> loc as T`); omitted otherwise
   7. struct-def - struct type definition (`type Name { field_decl... }`; consumed by SA, not emitted to sa.json)
     - name\* - Struct name string
     - export - Boolean, true if declared with `export` (omitted when false)
@@ -458,6 +471,8 @@ Statement model
     - field\*  - Field name string
     - value\*  - Source expression model
     - ownership-transfer - Boolean, true if `->>` ownership-transfer syntax; omitted when false
+    - owner-view-type - With `ownership-transfer`, the type the target is viewed as the owner of
+      (`expr ->> loc as T`); omitted otherwise
   11. return - return statement
     - values - Return expression list (omitted for bare `return;`)
   12. tapple-decl - tuple-style multiple return value declaration (`(type name, ...) = call(...)`)
@@ -509,10 +524,18 @@ Statement model
       - name\* - Enumerator name string
       - value - Value expression model (omitted when the value is implicit)
       - loc\* - Location Array
+  22. global-permit - the functions allowed to use a global variable: the `for` list of a
+      `global` declaration (emitted right after its `var-decl`) or a later `global name for ...;`,
+      or, with no list, `global name;`
+    - name\* - Variable name string
+    - funcs\* - Permitted function list, in source order (empty for `global name;`)
+      - name\* - Function name string (an operator for an operator function)
+      - writable\* - Boolean, true when written with a trailing `!`
+      - loc\* - Location Array
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer" "call-ptr"
 - loc\* - Location Array
   1. lit-str - String literal
     - value\* - String value
@@ -653,6 +676,17 @@ Expression model
     - value\* - Expression model whose value (or return values) come first in the arguments; a
       nested `chain-call` for `x -> f() -> g()`, or an assignment statement node for `x -> v -> f()`
     - call\* - `call` or `member-call` expression model, its `args` without the chained value
+    `value ->> f(args)` is a `chain-call` whose `value` is a `transfer` of the value (`op` "->>").
+  33. transfer - A value given away (`v>>`), written after it and binding tighter than `as` and
+      the binary operators (`v>> as T` is a cast of it, which SA rejects). SA accepts it only as a
+      call argument (see SASpec.md "Giving values away")
+    - value\* - Expression model whose owned value is given away
+    - op - Operator string for diagnostics: "->>" when it comes from `value ->> f(args)`;
+      omitted for `>>`
+  34. call-ptr - A call through a parenthesized expression, `(callee)(args)`. A parenthesized
+      list of several expressions called this way is `not-impl`
+    - callee\* - Expression model of a function pointer
+    - args\* - Argument expression list
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

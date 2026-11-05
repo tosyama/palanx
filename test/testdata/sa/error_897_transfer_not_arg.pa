@@ -1,0 +1,3 @@
+type Q { int32 y; };
+Q q;
+Q r = q>>;

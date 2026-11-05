@@ -10,6 +10,7 @@
 #include <boost/assert.hpp>
 #include <cstdio>
 #include <regex>
+#include <cstdint>
 
 using std::regex;
 using std::to_string;
@@ -273,15 +274,11 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       + "', a C type this version cannot represent; only integer and floating-point "
 			         "types, pointers, and struct pointers are supported in a cinclude'd signature.";
 
-		case E_CGlobalNotAssignable:
+		case E_GlobalNotWritable:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot assign to '" + arg1 + "': a cinclude'd C global variable is read-only.";
-
-		case E_CGlobalNotAddressable:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot take the address of, or access a field through, '" + arg1
-			       + "': it is a cinclude'd C global variable's value, not a storage location "
-			         "Palan owns.";
+			return "cannot write to '" + arg1 + "': a global variable is written only where a 'global' "
+			       "statement permits it ('global " + arg1 + " for f!;' for function f; for a C global at "
+			       "the top level, 'global " + arg1 + ";').";
 
 		case E_UnsupportedCGlobalType:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -302,11 +299,6 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "cannot convert '" + arg1 + "' to '" + arg2 + "'.";
 
-		case E_ByvalStructRetDiscarded:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "the return value of this call (a '" + arg1 + "' returned by value) is "
-			       "discarded; assign it to a newly declared '" + arg1 + "' variable instead.";
-
 		case E_FuncNotValue:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
@@ -318,7 +310,14 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_FuncPtrSigType:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "'" + arg1 + "' cannot be a parameter or return type of a function pointer; "
-			       "use a primitive type or a borrowed pointer ('@T'/'@!T').";
+			       "use a primitive type, a pointer, or an owned struct or array ('T', '[n]T', '[+]T').";
+
+		case E_CallNonFuncPtr:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is not a function pointer and cannot be called.";
+
+		case E_KeepOutsideCast:
+			return "'_' keeps a type only in a function type a function pointer is cast to.";
 
 		case E_AmbiguousFuncPtrCall:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -449,6 +448,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_UnsizedVarrElemArr:
 			return "an unsized array of variable-length arrays ('[][+]T') is not supported in this version; borrow the array as '@[n][+]T' or '@[+][+]T'.";
 
+		case E_ConstUsedBeforeKnown:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "const '" + arg1 + "' cannot be used here: its value uses '" + arg2
+				+ "', which is not a top-level variable declared before the const.";
+
 		case E_SigArrSizeNotConst:
 			return "every size in an array parameter or return type must be a compile-time constant.";
 
@@ -466,6 +471,36 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ForRangeNotArray:
 			return "'for' takes an array to iterate over.";
+
+		case E_GlobalNotReplaceable:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot assign to '" + arg1 + "': a function writes the elements or fields of an array "
+			       "or struct global variable, but does not replace it.";
+
+		case E_GlobalNotTopLevel:
+			return "'global' is allowed only at the top level of a module.";
+
+		case E_GlobalPermitUnknownVar:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is not a global variable: declare it with 'global', or cinclude the C global first.";
+
+		case E_GlobalPermitNotFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is not a function at the top level of this module.";
+
+		case E_GlobalPermitDuplicate:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "'" + arg2 + "' is already permitted to use '" + arg1 + "'.";
+
+		case E_GlobalUsedBeforeDecl:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "this reaches '" + arg2 + "', which uses global variable '" + arg1
+			       + "', before '" + arg1 + "' is declared.";
+
+		case E_ImportModuleWithGlobals:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot import a module whose functions use its global variable '" + arg1
+			       + "': an imported module's top level does not run, so '" + arg1 + "' is never initialized.";
 
 		case E_AssignToForIndex:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -552,7 +587,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_CopyShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "cannot copy '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+			return "cannot copy '" + arg2 + "' into '" + arg1 + "': both need the same element type and layout, and the same sizes where both are known at compile time; a size known only at run time must be its owner's.";
 
 		case E_CopyUnsupportedShape:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -597,8 +632,32 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       "in this version.";
 
 		case E_TransferFromNonOwner:
-			return "'->>' needs a source that owns its value: an owning variable, an owned field "
-			       "or element, or a call result.";
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' needs a source that owns its value: an owning variable, an owned field "
+			       "or element, a call result, or a pointer viewed as an owner ('p as T').";
+
+		case E_TransferNotArg:
+			return "'>>' gives a value away only as a call argument, to a parameter that owns it.";
+
+		case E_TransferToParam:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg1 + "' of '" + arg2 + "' cannot take a value given away with '>>': "
+			       "only a parameter that owns it can. A C function takes it when called through a "
+			       "function pointer type owning that parameter: '(f as @func(T))(x>>)'.";
+
+		case E_TransferCast:
+			return "a value given away with '>>' cannot be cast: it is given as the type it has. "
+			       "To give it to a C function, cast the function instead: '(f as @func(T))(x>>)'.";
+
+		case E_MoveFromReadOnlyView:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' cannot move from a read-only pointer viewed as an owner ('@X as T'): "
+			       "what it points to is not to be freed through it.";
+
+		case E_TakeIntoFrameVar:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'<<=' needs a variable that owns its storage; '" + arg1 + "' is laid out in place.";
 
 		case E_TransferToBorrowSlot:
 			return "'->>' cannot give ownership to a borrowed pointer slot ('@T'/'@!T'); store into it with '->'.";
@@ -606,11 +665,17 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_TransferShapeMismatch:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
-			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and the same sizes known at compile time.";
+			return "cannot transfer '" + arg2 + "' into '" + arg1 + "': both need the same element type and layout, and the same sizes where both are known at compile time; a size known only at run time must be its owner's.";
 
 		case E_TransferToNonOwnedVar:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "'->>' needs a variable that owns its array or struct; '" + arg1 + "' does not.";
+			BOOST_ASSERT(arg2 != "\x01");
+			return "'" + arg2 + "' needs a variable that owns its array or struct; '" + arg1 + "' does not.";
+
+		case E_GivenChangedByLaterArg:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is given away with '>>' and set to NULL just before the call, "
+			       "but this later argument of the same call may change it.";
 
 		case E_TransferToSelf:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -686,12 +751,33 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "type '" + arg1 + "' depends on itself: " + arg2 + ".";
 
-		case E_CastToOwnedArr:
-			return "cannot cast to an owned array: only a borrowed array ('@[n]T'/'@![n]T') can be a cast target.";
+		case E_OwnerViewNeedsPtr:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "cannot cast to '" + arg1 + "': only a pointer ('@!X') can be viewed as an owner, "
+			       "and a cast never creates ownership of a value.";
+
+		case E_OwnerViewTargetNeedsPtr:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'->>' cannot give a value to '" + arg1 + "': '->> loc as T' needs a location holding a "
+			       "writable pointer ('@!X') and an owned type T (a struct, '[n]T' or '[+]T').";
+
+		case E_KeepWithoutSource:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'_' keeps the type of the cast's source at its place, but '" + arg1 + "' has no such place.";
+
+		case E_KeepParamCount:
+			BOOST_ASSERT(arg3 != "\x01");
+			return "the cast's function type has " + arg1 + (arg1 == "1" ? " parameter" : " parameters")
+			       + ", but '" + arg2 + "' has " + arg3 + ".";
+
+		case E_FuncCastOwnership:
+			BOOST_ASSERT(arg2 != "\x01");
+			return "cannot cast '" + arg1 + "' to '" + arg2 + "': only a C function can be cast to take or give ownership.";
 
 		case E_InvalidCastTarget:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot cast to '" + arg1 + "': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target.";
+			return "cannot cast to '" + arg1 + "': only a primitive, enum, pointer, borrowed array ('@[n]T'/'@![n]T'), "
+			       "or owned struct or array viewed from a pointer can be a cast target.";
 
 		case E_UnsupportedCFieldType:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -726,6 +812,26 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			BOOST_ASSERT(arg3 != "\x01");
 			return "No function '" + arg1 + "' takes (" + arg2 + "); there are " + arg3 + ".";
+
+		case E_OperatorFuncArity:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "operator function '" + arg1 + "' must take " + arg2 + ".";
+
+		case E_OperatorFuncNoStruct:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "operator function '" + arg1 + "' must take a struct ('T' or '@T') parameter.";
+
+		case E_OperatorFuncWritableParam:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg2 + "' of operator function '" + arg1
+			       + "' cannot be '@!': an operand is never passed for writing.";
+
+		case E_NoOperatorFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "No operator function '" + arg1 + "' takes (" + arg2 + ").";
 
 		case E_FuncNameNeedsType:
 			BOOST_ASSERT(arg1 != "\x01");

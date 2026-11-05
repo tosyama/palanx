@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+
+type Light { flo32 x; flo32 intensity; };
+[]Light lights = [[1.0, 1.5], [2.0, 1.8], [3.0, 1.7]];
+const LN = lights->len();
+
+func total(@[LN]Light ls) -> flo32 t {
+	for @l in ls { t + l.x * l.intensity -> t; }
+}
+
+printf("%d %.2f\n", LN, total(@lights));

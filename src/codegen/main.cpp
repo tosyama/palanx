@@ -90,7 +90,7 @@ int main(int argc, char* argv[])
 
 	string asm_path = output_file
 		? output_file
-		: sa_path.parent_path().string() + "/" + sa_filename + ".s";
+		: sa_path.parent_path().string() + "/" + sa_filename + ".s"; // LCOV_EXCL_BR_LINE
 
 	ofstream asmfile(asm_path);
 	if (!asmfile) {

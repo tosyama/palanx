@@ -1,0 +1,3 @@
+func g(@func(int32) f) {}
+@func(@func(int32)) p = g;
+(p as @func(@func(int32, _)))(g);

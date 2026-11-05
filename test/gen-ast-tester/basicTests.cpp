@@ -1218,8 +1218,94 @@ TEST(gen_ast, shift) {
 	ASSERT_EQ(stmts[2]["body"]["left"]["expr-type"], "shr");
 	ASSERT_EQ(stmts[3]["body"]["expr-type"], "shr");
 	ASSERT_EQ(stmts[3]["body"]["left"]["expr-type"], "shl");
-	// '>>' stays the move-owner mark.
-	ASSERT_EQ(stmts[4]["body"]["args"][0]["expr-type"], "not-impl");
+	// '>>' stays the mark that gives a value away.
+	ASSERT_EQ(stmts[4]["body"]["args"][0]["expr-type"], "transfer");
+}
+
+TEST(gen_ast, give_take) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/152_give_take.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 6);
+
+	// '>>' marks the value given away, binding tighter than 'as' and a binary operator.
+	const auto& args = stmts[0]["body"]["args"];
+	ASSERT_EQ(args[0]["expr-type"], "transfer");
+	ASSERT_EQ(args[0]["value"]["name"], "a");
+	ASSERT_EQ(args[1]["expr-type"], "cast");
+	ASSERT_EQ(args[1]["src"]["expr-type"], "transfer");
+	ASSERT_EQ(args[2]["expr-type"], "add");
+	ASSERT_EQ(args[2]["right"]["expr-type"], "transfer");
+
+	// '<<=' initializes a variable by taking over its value, also an inherited-type one.
+	const auto& vars = stmts[1]["vars"];
+	ASSERT_EQ(vars[0]["ownership-transfer"], true);
+	ASSERT_EQ(vars[0]["init"]["expr-type"], "cast");
+	ASSERT_EQ(vars[1]["ownership-transfer"], true);
+	ASSERT_EQ(vars[1]["var-type"]["type-name"], "P");
+
+	// 'v ->> f()' chains v given away.
+	ASSERT_EQ(stmts[2]["body"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[2]["body"]["value"]["expr-type"], "transfer");
+	ASSERT_EQ(stmts[2]["body"]["value"]["op"], "->>");
+	ASSERT_EQ(stmts[3]["body"]["call"]["expr-type"], "member-call");
+	ASSERT_EQ(stmts[3]["body"]["value"]["expr-type"], "transfer");
+
+	// A parenthesized expression is called through, and '_' in a function type keeps a place.
+	const auto& cast = stmts[4]["body"]["callee"];
+	ASSERT_EQ(stmts[4]["body"]["expr-type"], "call-ptr");
+	ASSERT_EQ(stmts[4]["body"]["args"].size(), 2);
+	ASSERT_EQ(cast["expr-type"], "cast");
+	const auto& func = cast["target-type"]["base-type"];
+	ASSERT_EQ(func["parameters"][0]["var-type"]["type-kind"], "keep");
+	ASSERT_EQ(func["parameters"][1]["var-type"]["type-name"], "P");
+	ASSERT_EQ(func["ret-type"]["type-kind"], "keep");
+	ASSERT_EQ(stmts[5]["body"]["callee"]["name"], "g");
+	ASSERT_EQ(stmts[5]["body"]["args"].size(), 0);
+}
+
+// 'as' after a '->>' target views that location as the owner it receives; after
+// a chained call it still casts the call's result.
+TEST(gen_ast, owner_view_target) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/153_owner_view_target.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 4);
+	ASSERT_EQ(stmts[0]["stmt-type"], "field-assign");
+	ASSERT_EQ(stmts[0]["ownership-transfer"], true);
+	ASSERT_EQ(stmts[0]["owner-view-type"]["size-expr"]["value"], "8");
+	ASSERT_EQ(stmts[1]["stmt-type"], "assign");
+	ASSERT_EQ(stmts[1]["owner-view-type"]["size-expr"]["name"], "n");
+	ASSERT_EQ(stmts[2]["stmt-type"], "arr-assign");
+	ASSERT_TRUE(stmts[2].contains("owner-view-type"));
+	const auto& init = stmts[3]["vars"][0]["init"];
+	ASSERT_EQ(init["expr-type"], "cast");
+	ASSERT_EQ(init["src"]["expr-type"], "chain-call");
+}
+
+// An operator names a function where a function name can be written: its
+// definition, an import target and a global's permit.
+TEST(gen_ast, operator_func) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/154_operator_func.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& fs = jout["ast"]["functions"];
+	ASSERT_EQ(fs.size(), 2);
+	ASSERT_EQ(fs[0]["name"], "+");
+	ASSERT_EQ(fs[0]["parameters"].size(), 2);
+	ASSERT_EQ(fs[1]["name"], "-");
+	ASSERT_EQ(fs[1]["export"], true);
+	ASSERT_EQ(fs[1]["parameters"].size(), 1);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts[1]["targets"], json::array({"vec3", "*", "%"}));
+	ASSERT_EQ(stmts[3]["funcs"][0]["name"], "/");
+	ASSERT_EQ(stmts[3]["funcs"][0]["writable"], true);
+	ASSERT_EQ(stmts[3]["funcs"][1]["name"], "+");
 }
 
 // '->' binds tighter than comparisons and logical operators, looser than arithmetic.
@@ -1301,4 +1387,32 @@ TEST(gen_ast, for_loop_index_type) {
 	ASSERT_EQ(stmts[0]["range"]["name"], "v");
 	ASSERT_EQ(stmts[1]["elem"]["borrow"], false);
 	ASSERT_EQ(stmts[1]["index-type"]["type-name"], "Idx");
+}
+
+TEST(gen_ast, global_decl) {
+	// A `for` list becomes its own global-permit statement after the var-decl,
+	// the same statement a later `global name for ...;` produces.
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/151_global.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts.size(), 6);
+	ASSERT_EQ(stmts[0]["stmt-type"], "var-decl");
+	ASSERT_EQ(stmts[0]["global"], true);
+	ASSERT_EQ(stmts[0]["vars"][0]["name"], "hits");
+	ASSERT_EQ(stmts[1]["stmt-type"], "global-permit");
+	ASSERT_EQ(stmts[1]["name"], "hits");
+	ASSERT_EQ(stmts[1]["funcs"][0]["name"], "count");
+	ASSERT_EQ(stmts[1]["funcs"][0]["writable"], true);
+	ASSERT_EQ(stmts[1]["funcs"][1]["name"], "report");
+	ASSERT_EQ(stmts[1]["funcs"][1]["writable"], false);
+	ASSERT_EQ(stmts[2]["global"], true);
+	ASSERT_FALSE(stmts[2]["vars"][0].contains("init"));
+	ASSERT_EQ(stmts[3]["stmt-type"], "global-permit");
+	ASSERT_EQ(stmts[3]["funcs"].size(), 1);
+	ASSERT_EQ(stmts[4]["stmt-type"], "global-permit");
+	ASSERT_EQ(stmts[4]["name"], "optind");
+	ASSERT_TRUE(stmts[4]["funcs"].empty());
+	ASSERT_EQ(stmts[5]["stmt-type"], "not-impl");
 }

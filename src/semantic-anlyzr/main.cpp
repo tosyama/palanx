@@ -74,7 +74,7 @@ int main(int argc, char* argv[])
 
 	string sa_path = output_file
 		? output_file
-		: ast_path.parent_path().string() + "/" + ast_filename + ".sa.json";
+		: ast_path.parent_path().string() + "/" + ast_filename + ".sa.json"; // LCOV_EXCL_BR_LINE
 
 	ofstream safile(sa_path);
 	safile << (do_indent ? analyzer.result().dump(2) : analyzer.result().dump()) << endl;

@@ -1,3 +1,0 @@
-cinclude <stdlib.h>;
-
-div(7, 2);

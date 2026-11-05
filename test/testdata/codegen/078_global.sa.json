@@ -1,0 +1,302 @@
+{
+  "alloc-shapes": [],
+  "functions": [
+    {
+      "body": [
+        {
+          "name": "n",
+          "stmt-type": "assign",
+          "value": {
+            "expr-type": "add",
+            "left": {
+              "expr-type": "id",
+              "loc": [
+                7,
+                5,
+                7,
+                6
+              ],
+              "name": "n",
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "int32"
+              },
+              "var-type": {
+                "type-kind": "prim",
+                "type-name": "int32"
+              }
+            },
+            "loc": [
+              7,
+              5,
+              7,
+              10
+            ],
+            "right": {
+              "expr-type": "lit-int",
+              "loc": [
+                7,
+                9,
+                7,
+                10
+              ],
+              "value": "1",
+              "value-type": {
+                "type-kind": "prim",
+                "type-name": "int32"
+              }
+            },
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            }
+          }
+        },
+        {
+          "offset": 0,
+          "stmt-type": "field-assign",
+          "value": {
+            "expr-type": "id",
+            "loc": [
+              8,
+              5,
+              8,
+              6
+            ],
+            "name": "n",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            },
+            "var-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            }
+          },
+          "value-type": {
+            "type-kind": "prim",
+            "type-name": "int32"
+          },
+          "var": "p"
+        },
+        {
+          "name": "optind",
+          "stmt-type": "assign",
+          "value": {
+            "expr-type": "id",
+            "loc": [
+              9,
+              5,
+              9,
+              6
+            ],
+            "name": "n",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            },
+            "var-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            }
+          }
+        },
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            {
+              "init": {
+                "expr-type": "addr-of",
+                "loc": [
+                  10,
+                  17,
+                  10,
+                  20
+                ],
+                "mutable": true,
+                "name": "n",
+                "value-type": {
+                  "base-type": {
+                    "type-kind": "prim",
+                    "type-name": "int32"
+                  },
+                  "mutable": true,
+                  "type-kind": "pntr"
+                }
+              },
+              "name": "q",
+              "var-type": {
+                "base-type": {
+                  "type-kind": "prim",
+                  "type-name": "int32"
+                },
+                "mutable": true,
+                "type-kind": "pntr"
+              }
+            }
+          ]
+        }
+      ],
+      "func-type": "palan",
+      "globals": [
+        {
+          "label": "_078_global.n",
+          "name": "n",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "int32"
+          }
+        },
+        {
+          "label": "_078_global.p",
+          "name": "p",
+          "var-type": {
+            "base-type": {
+              "type-kind": "struct",
+              "type-name": "__pln_Lee9f1c06db263887_1_P"
+            },
+            "mutable": true,
+            "type-kind": "pntr"
+          }
+        },
+        {
+          "label": "optind",
+          "name": "optind",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "int32"
+          }
+        }
+      ],
+      "loc": [
+        6,
+        1,
+        11,
+        2
+      ],
+      "name": "_078_global..inc.v",
+      "parameters": []
+    }
+  ],
+  "globals": [
+    {
+      "label": "_078_global.n",
+      "var-type": {
+        "type-kind": "prim",
+        "type-name": "int32"
+      }
+    },
+    {
+      "label": "_078_global.p",
+      "var-type": {
+        "base-type": {
+          "type-kind": "struct",
+          "type-name": "__pln_Lee9f1c06db263887_1_P"
+        },
+        "type-kind": "pntr"
+      }
+    }
+  ],
+  "libs": [],
+  "main": {
+    "name": "_078_global..main",
+    "parameters": [
+      {
+        "name": "__argc",
+        "var-type": {
+          "type-kind": "prim",
+          "type-name": "int64"
+        }
+      },
+      {
+        "name": "__argv",
+        "var-type": {
+          "base-type": {
+            "base-type": {
+              "type-kind": "prim",
+              "type-name": "uint8"
+            },
+            "type-kind": "pntr"
+          },
+          "type-kind": "pntr"
+        }
+      }
+    ]
+  },
+  "objs": [],
+  "original": "/test/078_global.pa",
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "expr-type": "lit-int",
+            "loc": [
+              3,
+              18,
+              3,
+              19
+            ],
+            "value": "5",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "int32"
+            }
+          },
+          "label": "_078_global.n",
+          "name": "n",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "int32"
+          }
+        }
+      ]
+    },
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "align": 8,
+            "expr-type": "static-alloc",
+            "label": "_078_global.p.data",
+            "size": 16,
+            "value-type": {
+              "base-type": {
+                "type-kind": "struct",
+                "type-name": "__pln_Lee9f1c06db263887_1_P"
+              },
+              "type-kind": "pntr"
+            }
+          },
+          "label": "_078_global.p",
+          "name": "p",
+          "var-type": {
+            "base-type": {
+              "type-kind": "struct",
+              "type-name": "__pln_Lee9f1c06db263887_1_P"
+            },
+            "type-kind": "pntr"
+          }
+        }
+      ]
+    },
+    {
+      "body": {
+        "args": [],
+        "expr-type": "call",
+        "func-type": "palan",
+        "loc": [
+          12,
+          1,
+          12,
+          6
+        ],
+        "name": "_078_global..inc.v"
+      },
+      "stmt-type": "expr"
+    }
+  ],
+  "str-literals": []
+}

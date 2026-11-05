@@ -1,6 +1,6 @@
 {
   "original": "/test/069_c_global.pa",
-  "main": {"name": "_069_c_global..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},
+  "main": {"name": "_069_c_global..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}], "globals": [{"name": "stderr", "label": "stderr", "var-type": {"type-kind": "pntr", "mutable": true, "base-type": {"type-kind": "struct", "type-name": "_IO_FILE"}}}]},
   "str-literals": [
     {"label": ".str0", "value": "hi\n"}
   ],
@@ -12,7 +12,7 @@
         "func-type": "c",
         "name": "fprintf",
         "args": [
-          {"expr-type": "c-global", "label": "stderr", "value-type": {"type-kind": "pntr", "mutable": true, "base-type": {"type-kind": "struct", "type-name": "_IO_FILE"}}},
+          {"expr-type": "id", "name": "stderr", "value-type": {"type-kind": "pntr", "mutable": true, "base-type": {"type-kind": "struct", "type-name": "_IO_FILE"}}},
           {"expr-type": "lit-str", "label": ".str0", "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}
         ]
       }

@@ -1,0 +1,70 @@
+cinclude <stdio.h>;
+cinclude <math.h> link "m";
+
+func twice(flo64 x) -> flo64
+{
+	return x * 2.0;
+}
+
+// Parameters and a local used many times around calls: kept in registers,
+// reloaded from their home slots after each call.
+func around_calls(flo64 a, flo64 b) -> flo64
+{
+	flo64 s = a * b;
+	flo64 t = twice(s);
+	flo64 u = twice(t + a);
+	return s + t + u + a + b + s * a + s * b;
+}
+
+// A variable written before a loop and used after a call inside it.
+func loop_call(flo64 k) -> flo64
+{
+	flo64 acc = 1.0;
+	int32 i = 0;
+	while i < 5 {
+		acc * k -> acc;
+		flo64 d = twice(acc);
+		acc + d / 100.0 -> acc;
+		i + 1 -> i;
+	}
+	return acc;
+}
+
+// More values live at once than there are registers.
+func pressure(flo32 x) -> flo32
+{
+	flo32 a1 = x * 1, a2 = x * 2, a3 = x * 3, a4 = x * 4;
+	flo32 a5 = x * 5, a6 = x * 6, a7 = x * 7, a8 = x * 8, a9 = x * 9;
+	return a1 - a2 + a3 - a4 + a5 - a6 + a7 - a8 + a9 + -a1;
+}
+
+func pair(flo64 x, flo64 y) -> flo64 lo, flo64 hi
+{
+	x * y -> lo;
+	x + y -> hi;
+	if lo > hi { hi -> lo; x * y -> hi; }
+}
+
+func nine(flo64 f1, flo64 f2, flo64 f3, flo64 f4, flo64 f5, flo64 f6, flo64 f7, flo64 f8, flo64 f9) -> flo64
+{
+	flo64 s = f1 + f2 + f3;
+	flo64 t = twice(f9);
+	return s + f4 + f5 + f6 + f7 + f8 + f9 + t;
+}
+
+flo64 sum = 0.0;
+int32 i = 0;
+while i < 10 {
+	sum + i * 0.5 -> sum;
+	i + 1 -> i;
+}
+printf("%g\n", sum);
+printf("%g\n", around_calls(1.5, 2.0));
+printf("%g\n", loop_call(1.5));
+printf("%g\n", pressure(1.5));
+(flo64 lo, flo64 hi) = pair(3.0, 4.0);
+printf("%g %g\n", lo, hi);
+printf("%g\n", nine(1, 2, 3, 4, 5, 6, 7, 8, 9));
+flo64 ip;
+flo64 frac = modf(3.75, @!ip);
+printf("%g %g\n", ip, frac);

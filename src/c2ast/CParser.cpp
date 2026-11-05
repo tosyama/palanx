@@ -93,7 +93,7 @@ void CParser::captureStructTag(const string &name, const json *body, bool is_uni
 	if (it == structIndex_.end()) {
 		idx = (int)capturedStructs_.size();
 		structIndex_[name] = idx;
-		json entry = {{"name", name}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json entry = {{"name", name}}; // LCOV_EXCL_BR_LINE
 		if (is_union) entry["union"] = true;
 		capturedStructs_.push_back(move(entry));
 	} else {
@@ -104,7 +104,7 @@ void CParser::captureStructTag(const string &name, const json *body, bool is_uni
 	entry["fields"] = (*body)["fields"];
 	for (const char *key : {"packed", "aligned"})
 		if (body->contains(key)) entry[key] = (*body)[key];
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Named after the body's source location rather than a per-run counter:
 // each cinclude runs its own c2ast process and SA keeps the first complete
@@ -408,13 +408,13 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 				base_vt["type-name"] = tag;
 				// C11 anonymous member: no member name, its fields belong to the owner.
 				if (CONSUME_PUNC(';')) {
-					fields.push_back({{"var-type", base_vt}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+					fields.push_back({{"var-type", base_vt}}); // LCOV_EXCL_BR_LINE
 					continue;
 				}
 			}
 			json spec_attrs = flocal.value("attributes", json::object());
 			do {
-				json field = {{"var-type", base_vt}, {"attributes", spec_attrs}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				json field = {{"var-type", base_vt}, {"attributes", spec_attrs}}; // LCOV_EXCL_BR_LINE
 				int peek = index;
 				bool unnamed_bits = consume_punc(':', tokens, peek);
 				if (!unnamed_bits && !declarator(field, tokens, index, false)) {
@@ -426,7 +426,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 					json width;
 					if (!constant_expression(width, tokens, index)) return false;
 					// A width that doesn't fold leaves the struct's layout unknown.
-					field["bits"] = isLitInt(width) ? json(litIntBits(width)) : json(); // LCOV_EXCL_EXCEPTION_BR_LINE
+					field["bits"] = isLitInt(width) ? json(litIntBits(width)) : json(); // LCOV_EXCL_BR_LINE
 					if (!attribute_specifiers(attrs, tokens, index)) return false;
 				}
 				if (attrs.contains("unsupported")) throwUnsupportedAttribute(attrs);
@@ -452,7 +452,7 @@ bool CParser::struct_union_definition(json &ast, const vector<CToken*> &tokens, 
 		captureStructTag(tagName, &ast, !is_struct);
 	result_index = index;
 	return true;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 bool CParser::enum_definition(string &name, const vector<CToken*> &tokens, int &result_index)
 {
@@ -565,8 +565,8 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 		ast["var-type"] = move(vt);
 	};
 	auto set_prim = [&](const char* name) {
-		set_vt({{"type-kind", "prim"}, {"type-name", name}});
-	}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		set_vt({{"type-kind", "prim"}, {"type-name", name}}); // LCOV_EXCL_BR_LINE
+	}; // LCOV_EXCL_BR_LINE
 
 	if (CONSUME(TT_ID)) {	// typedef name
 		string name = *tokens[index-1]->info.id;
@@ -576,7 +576,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 			vt["typedef-name"] = name;
 			set_vt(move(vt));
 		} else {
-			set_vt({{"type-kind", "user"}, {"type-name", name}});
+			set_vt({{"type-kind", "user"}, {"type-name", name}}); // LCOV_EXCL_BR_LINE
 		}
 		result_index = index;
 		return true;
@@ -604,7 +604,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_STRUCT)) {
 		if (struct_union_definition(ast, tokens, index, true)) {
-			json vt = {{"type-kind", "strct"}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			json vt = {{"type-kind", "strct"}}; // LCOV_EXCL_BR_LINE
 			string tagName = ast.value("struct-name", "");
 			if (!tagName.empty()) {
 				vt["type-name"] = tagName;
@@ -618,7 +618,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 
 	if (CONSUME_KW(TK_UNION)) {
 		if (struct_union_definition(ast, tokens, index, false)) {
-			json vt = {{"type-kind", "union"}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			json vt = {{"type-kind", "union"}}; // LCOV_EXCL_BR_LINE
 			string tagName = ast.value("struct-name", "");
 			if (!tagName.empty()) {
 				vt["type-name"] = tagName;
@@ -641,7 +641,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 			if (!enum_attrs.empty())
 				throwUnsupportedAttribute(enum_attrs.contains("packed") ? "packed" : "aligned",
 					tokens[attr_start]);
-			set_vt({{"type-kind", "enum"}, {"type-name", name}});
+			set_vt({{"type-kind", "enum"}, {"type-name", name}}); // LCOV_EXCL_BR_LINE
 			result_index = index;
 			return true;
 		}
@@ -652,7 +652,7 @@ bool CParser::declaration_specifiers(json &ast, const vector<CToken*> &tokens, i
 	if (CONSUME_KW(TK_BOOL)) { set_prim("bool"); result_index = index; return true; }
 
 	return false;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // C array-parameter decay: "T name[n]...[m]" as a parameter type means "pointer to
 // T[m]..." -- only the outermost dimension decays to a pointer, any inner dimensions
@@ -661,9 +661,9 @@ static void decayArrayParam(json &param)
 {
 	json &vt = param["var-type"];
 	if (vt.value("type-kind", "") == "arr") {
-		vt = {{"type-kind", "pntr"}, {"base-type", vt["base-type"]}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		vt = {{"type-kind", "pntr"}, {"base-type", vt["base-type"]}}; // LCOV_EXCL_BR_LINE
 	}
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A parameter's layout attributes don't change how it is passed; one that
 // changes its type can't be represented.
@@ -680,7 +680,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 	json local;
 	if (declaration_specifiers(local, tokens, index)) {
 		json param = {{"var-type", local.value("var-type", json{})},
-			{"attributes", local.value("attributes", json::object())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			{"attributes", local.value("attributes", json::object())}}; // LCOV_EXCL_BR_LINE
 		if (!declarator(param, tokens, index, false)) {
 			if (!declarator(param, tokens, index, true)) { // abstract declarator
 				// debug_token(tokens[index]);
@@ -695,7 +695,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 			json local2;
 			if (declaration_specifiers(local2, tokens, index)) {
 				json param2 = {{"var-type", local2.value("var-type", json{})},
-					{"attributes", local2.value("attributes", json::object())}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+					{"attributes", local2.value("attributes", json::object())}}; // LCOV_EXCL_BR_LINE
 				if (!declarator(param2, tokens, index, false)) {
 					if (!declarator(param2, tokens, index, true)) { // abstract declarator
 						// debug_token(tokens[index]);
@@ -706,7 +706,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 				decayArrayParam(param2);
 				params.push_back(param2);
 			} else if (CONSUME_PUNC('...')) {
-				params.push_back({{"name", "..."}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+				params.push_back({{"name", "..."}}); // LCOV_EXCL_BR_LINE
 				EXPECT_PUNC(')');
 				index--;	// backtrack for ')'
 			} else {
@@ -730,7 +730,7 @@ bool CParser::parameter_list(vector<json> &params, const vector<CToken*> &tokens
 		return true;
 	}
 	return false;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Wraps decl["var-type"] with pending array dimensions (outermost-first in `dims`),
 // nesting from the innermost (last-parsed) dimension outward so "T m[2][3]" becomes
@@ -741,10 +741,10 @@ static void wrapArrayDims(json &var_type, vector<json> &dims)
 {
 	for (int i = (int)dims.size() - 1; i >= 0; --i) {
 		var_type = {{"type-kind", "arr"}, {"base-type", var_type},
-			{"size-expr", dims[i]}, {"embedded", true}, {"specifier", "raw"}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			{"size-expr", dims[i]}, {"embedded", true}, {"specifier", "raw"}}; // LCOV_EXCL_BR_LINE
 	}
 	dims.clear();
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &result_index)
 {
@@ -762,7 +762,7 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 				}
 				// A null size-expr means `[]`, so a size that doesn't fold must not
 				// reach the AST as one.
-				if (arr_size_value.is_null()) arr_size_value = {{"expr-type", "not-const"}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				if (arr_size_value.is_null()) arr_size_value = {{"expr-type", "not-const"}}; // LCOV_EXCL_BR_LINE
 			}
 			dims.push_back(move(arr_size_value));
 
@@ -773,7 +773,7 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 				parameter_list(params, tokens, index);
 				EXPECT_PUNC(')');
 			}
-			decl["var-type"] = {{"type-kind", "func"}, {"ret-type", decl["var-type"]}, {"parameters", params}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			decl["var-type"] = {{"type-kind", "func"}, {"ret-type", decl["var-type"]}, {"parameters", params}}; // LCOV_EXCL_BR_LINE
 
 		} else {
 			break;
@@ -783,7 +783,7 @@ bool CParser::declarator_tail(json &decl, const vector<CToken*> &tokens, int &re
 
 	result_index = index;
 	return true;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Advances `index` from the token just after an already-consumed '(' to the position
 // just after its matching ')', tracking nested parens (a parameter list inside the
@@ -840,7 +840,7 @@ bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_
 	while (CONSUME_PUNC('*')) {
 		bool ptr_const = CONSUME_KW(TK_CONST);       // e.g. int * const p
 		CONSUME_KW(TK_VOLATILE);
-		decl["var-type"] = {{"type-kind", "pntr"}, {"base-type", move(decl["var-type"])}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		decl["var-type"] = {{"type-kind", "pntr"}, {"base-type", move(decl["var-type"])}}; // LCOV_EXCL_BR_LINE
 		if (ptr_const) decl["var-type"]["const"] = true;
 		if (!attribute_specifiers(attrs, tokens, index)) return fail();
 	}
@@ -874,7 +874,7 @@ bool CParser::declarator(json &decl, const vector<CToken*> &tokens, int &result_
 
 	result_index = index;
 	return true;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_index, bool is_top_level)
 {
@@ -926,7 +926,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 		}
 		if (local.contains("attributes")) mergeAttributes(decl_attrs, local["attributes"]);
 		vector<json> decls;
-		decls.push_back({{"var-type", base_vt}, {"attributes", decl_attrs}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+		decls.push_back({{"var-type", base_vt}, {"attributes", decl_attrs}}); // LCOV_EXCL_BR_LINE
 		if (declarator(decls.back(), tokens, index, false)) {
 			// parsed first declarator
 
@@ -935,7 +935,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 			// below -- all go through emitDeclarator() rather than only the
 			// first being visible.
 			while (CONSUME_PUNC(',')) {
-				decls.push_back({{"var-type", base_vt}, {"attributes", decl_attrs}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+				decls.push_back({{"var-type", base_vt}, {"attributes", decl_attrs}}); // LCOV_EXCL_BR_LINE
 				bool ok = declarator(decls.back(), tokens, index, false);
 				BOOST_ASSERT(ok);
 			}
@@ -1005,7 +1005,7 @@ bool CParser::declaration(json &ast, const vector<CToken*> &tokens, int &result_
 
 	return false;
 
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Classifies one completed declarator (the first in a declaration, or any
 // comma-separated successor) and emits it into the appropriate AST channel,
@@ -1030,14 +1030,14 @@ void CParser::emitDeclarator(json &ast, json &decl,
 	if (!is_static && !is_typedef && tk == "func") {
 		BOOST_ASSERT(decl.contains("name"));
 		BOOST_ASSERT(vt.contains("ret-type") && !vt["ret-type"].is_null());
-		// LCOV_EXCL_EXCEPTION_BR_START
+		// LCOV_EXCL_BR_START
 		ast["ast"]["functions"].push_back({
 			{"name", move(decl["name"])},
 			{"func-type", "c"},
 			{"ret-type", move(vt["ret-type"])},
 			{"parameters", move(vt["parameters"])}
 		});
-		// LCOV_EXCL_EXCEPTION_BR_STOP
+		// LCOV_EXCL_BR_STOP
 	} else if (is_typedef) {
 		if (tk == "prim" || tk == "pntr" || tk == "func") {
 			registerTypedef(decl["name"].get<string>(), vt);
@@ -1067,18 +1067,18 @@ void CParser::emitDeclarator(json &ast, json &decl,
 		// (e.g. "extern FILE *stdout;"). Array and by-value struct/union
 		// globals are left unregistered -- same non-goal as elsewhere in this
 		// iteration.
-		// LCOV_EXCL_EXCEPTION_BR_START
+		// LCOV_EXCL_BR_START
 		ast["ast"]["globals"].push_back({
 			{"name", move(decl["name"])},
 			{"var-type", move(vt)}
 		});
-		// LCOV_EXCL_EXCEPTION_BR_STOP
+		// LCOV_EXCL_BR_STOP
 	}
 	// else: static function, non-func/non-typedef/non-extern-object
 	// declaration, or a shape outside what the globals channel represents --
 	// discarded, matching pre-existing behavior for everything but
 	// "func"/typedef.
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 void CParser::registerTypedef(const string &name, json vt)
 {
@@ -1134,18 +1134,18 @@ static bool intTypeInfo(const json &type, int &width, bool &is_signed)
 	static const map<string, pair<int, bool>> infos = {
 		{"int8", {8, true}}, {"int16", {16, true}}, {"int32", {32, true}}, {"int64", {64, true}},
 		{"uint8", {8, false}}, {"uint16", {16, false}}, {"uint32", {32, false}}, {"uint64", {64, false}},
-	}; // LCOV_EXCL_EXCEPTION_BR_LINE
+	}; // LCOV_EXCL_BR_LINE
 	auto it = infos.find(type.value("type-name", ""));
 	if (it == infos.end()) return false;
 	width = it->second.first;
 	is_signed = it->second.second;
 	return true;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 static json intPrimType(int width, bool is_signed)
 {
-	return {{"type-kind", "prim"}, {"type-name", (is_signed ? "int" : "uint") + to_string(width)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"type-kind", "prim"}, {"type-name", (is_signed ? "int" : "uint") + to_string(width)}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Two's complement bit pattern of a lit-int's value.
 static unsigned long long litIntBits(const json &node)
@@ -1168,8 +1168,8 @@ static json makeTypedLitInt(unsigned long long bits, const json &type)
 			bits |= ~mask;
 	}
 	string value = is_signed ? to_string((long long)bits) : to_string(bits);
-	return {{"expr-type", "lit-int"}, {"value", value}, {"value-type", type}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"expr-type", "lit-int"}, {"value", value}, {"value-type", type}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // C11 6.4.4.1 integer constant typing (LP64). An unsuffixed literal stays untyped.
 static json parseIntLiteral(const string &text)
@@ -1195,7 +1195,7 @@ static json parseIntLiteral(const string &text)
 	bool is_decimal = text.size() == 1 || text[0] != '0';
 	if (!has_u && !l_count) {
 		if (v > LLONG_MAX) return json{};
-		return {{"expr-type", "lit-int"}, {"value", to_string(v)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return {{"expr-type", "lit-int"}, {"value", to_string(v)}}; // LCOV_EXCL_BR_LINE
 	}
 	if (has_u) {
 		bool fits32 = !l_count && v <= UINT32_MAX;
@@ -1203,7 +1203,7 @@ static json parseIntLiteral(const string &text)
 	}
 	if (v > LLONG_MAX && is_decimal) return json{};
 	return makeTypedLitInt(v, intPrimType(64, v <= LLONG_MAX));
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Width and signedness a lit-int operand takes in C arithmetic, after integer promotion.
 // An untyped operand is taken as int, or long when its value doesn't fit int.
@@ -1253,8 +1253,8 @@ static json foldUntypedBinaryInt(long long l, int op, long long r)
 	default:
 		return json{};
 	}
-	return {{"expr-type", "lit-int"}, {"value", to_string(v)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"expr-type", "lit-int"}, {"value", to_string(v)}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Shift: the result takes the promoted left operand's type (not the usual arithmetic
 // conversions), and a count outside [0, width) is undefined behavior.
@@ -1340,7 +1340,7 @@ static json foldNegate(const json &node)
 	if (!node.contains("value-type")) {
 		long long v = stoll(node["value"].get<string>());
 		if (v == LLONG_MIN) return json{};
-		return {{"expr-type", "lit-int"}, {"value", to_string(-v)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return {{"expr-type", "lit-int"}, {"value", to_string(-v)}}; // LCOV_EXCL_BR_LINE
 	}
 	int width;
 	bool is_signed;
@@ -1351,19 +1351,19 @@ static json foldNegate(const json &node)
 		if (v == LLONG_MIN || !fitsSigned(-v, width)) return json{};
 	}
 	return makeTypedLitInt(0 - bits, intPrimType(width, is_signed));
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // An untyped operand is int or long, both signed, so ~v keeps its width and fits as is.
 static json foldBitNot(const json &node)
 {
 	if (!isLitInt(node)) return json{};
 	if (!node.contains("value-type"))
-		return {{"expr-type", "lit-int"}, {"value", to_string(~stoll(node["value"].get<string>()))}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		return {{"expr-type", "lit-int"}, {"value", to_string(~stoll(node["value"].get<string>()))}}; // LCOV_EXCL_BR_LINE
 	int width;
 	bool is_signed;
 	promotedIntType(node, width, is_signed);
 	return makeTypedLitInt(~litIntBits(node), intPrimType(width, is_signed));
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // GCC's __attribute__((...)) lists. Only what changes a layout ("packed",
 // "aligned") or a type itself ("vector_size", "mode") is recorded into
@@ -1387,8 +1387,8 @@ bool CParser::attribute_specifiers(json &attrs, const vector<CToken*> &tokens, i
 
 			json found = json::object();
 			auto unsupported = [&]() {
-				found["unsupported"] = {{"name", name}, {"lexer", at->lexer_no}, {"token0", at->token0_no}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-			}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				found["unsupported"] = {{"name", name}, {"lexer", at->lexer_no}, {"token0", at->token0_no}}; // LCOV_EXCL_BR_LINE
+			}; // LCOV_EXCL_BR_LINE
 			if (name == "packed") found["packed"] = true;
 			else if (name == "vector_size" || name == "mode") unsupported();
 			if (CONSUME_PUNC('(')) {
@@ -1428,7 +1428,7 @@ bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
 			{"int8", 1}, {"uint8", 1}, {"bool", 1}, {"int16", 2}, {"uint16", 2},
 			{"int32", 4}, {"uint32", 4}, {"flo32", 4}, {"int64", 8}, {"uint64", 8},
 			{"flo64", 8}, {"flt128", 16},
-		}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		}; // LCOV_EXCL_BR_LINE
 		auto it = sizes.find(vt.value("type-name", ""));
 		if (it == sizes.end()) return false;
 		size = align = it->second;
@@ -1509,7 +1509,7 @@ bool CParser::typeSizeAlign(const json &vt, long long &size, long long &align)
 		return true;
 	}
 	return false;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Each function in this expression chain (primary_expression .. expression) recognizes
 // C expression grammar and, when the (sub)expression is one of a small set of computable
@@ -1527,7 +1527,7 @@ bool CParser::primary_expression(json &value, const vector<CToken*> &tokens, int
 	if (CONSUME(TT_ID)) {
 		auto it = enumerators_.find(*tokens[index-1]->info.id);
 		if (it != enumerators_.end())
-			value = {{"expr-type", "lit-int"}, {"value", to_string(it->second.value)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+			value = {{"expr-type", "lit-int"}, {"value", to_string(it->second.value)}}; // LCOV_EXCL_BR_LINE
 		else
 			value = json{};
 		result_index = index;
@@ -1549,7 +1549,7 @@ bool CParser::primary_expression(json &value, const vector<CToken*> &tokens, int
 	}
 
 	return false;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 bool CParser::postfix_expression(json &value, const vector<CToken*> &tokens, int &result_index)
 {
@@ -1625,7 +1625,7 @@ bool CParser::unary_expression(json &value, const vector<CToken*> &tokens, int &
 		if (!declaration_specifiers(slocal, tokens, index)) {
 			return false;
 		}
-		json sdecl = {{"var-type", slocal.value("var-type", json{})}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json sdecl = {{"var-type", slocal.value("var-type", json{})}}; // LCOV_EXCL_BR_LINE
 		if (!declarator(sdecl, tokens, index, true)) {
 			return false;
 		}
@@ -1641,7 +1641,7 @@ bool CParser::unary_expression(json &value, const vector<CToken*> &tokens, int &
 	}
 
 	return false;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 bool CParser::cast_expression(json &value, const vector<CToken*> &tokens, int &result_index)
 {
@@ -1658,7 +1658,7 @@ bool CParser::cast_expression(json &value, const vector<CToken*> &tokens, int &r
 			index = save_index; // backtrack
 			break;
 		}
-		json cdecl = {{"var-type", clocal.value("var-type", json{})}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json cdecl = {{"var-type", clocal.value("var-type", json{})}}; // LCOV_EXCL_BR_LINE
 		if (!declarator(cdecl, tokens, index, true)) {
 			index = save_index; // backtrack
 			break;
@@ -1682,7 +1682,7 @@ bool CParser::cast_expression(json &value, const vector<CToken*> &tokens, int &r
 			if (isLitInt(inner_value) && intTypeInfo(*it, width, is_signed))
 				inner_value = makeTypedLitInt(litIntBits(inner_value), *it);
 			else
-				inner_value = {{"expr-type", "cast"}, {"target-type", *it}, {"src", inner_value}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				inner_value = {{"expr-type", "cast"}, {"target-type", *it}, {"src", inner_value}}; // LCOV_EXCL_BR_LINE
 		}
 		value = inner_value;
 		result_index = index;
@@ -1699,7 +1699,7 @@ bool CParser::cast_expression(json &value, const vector<CToken*> &tokens, int &r
 	}
 
 	return false;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 bool CParser::multiplicative_expression(json &value, const vector<CToken*> &tokens, int &result_index)
 {
@@ -2028,7 +2028,7 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 	json unexported = json::array();
 	for (CMacro* m : macros) {
 		if (m->type != MT_OBJ) {
-			unexported.push_back({{"name", m->name}, {"function-like", true}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+			unexported.push_back({{"name", m->name}, {"function-like", true}}); // LCOV_EXCL_BR_LINE
 			continue;
 		}
 		// "#define X X" over an anonymous enum's X: parse() already exported X.
@@ -2049,7 +2049,7 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 		if (ok && expanded.size() == 1 && expanded[0]->type == TT_ID) {
 			const CapturedEnum &e = capturedEnums_[enumerators_.at(*expanded[0]->info.id).enumIndex];
 			if (!e.anonymous)
-				type = {{"type-kind", "enum"}, {"type-name", e.name}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+				type = {{"type-kind", "enum"}, {"type-name", e.name}}; // LCOV_EXCL_BR_LINE
 		}
 
 		// "#define stderr stderr": the name means whatever C declares under it.
@@ -2065,17 +2065,17 @@ void CParser::exportMacroConstants(json &ast, const vector<CMacro*> &macros, CPr
 		if (!alias_target.empty() && exportFuncAlias(ast, m->name, alias_target))
 			continue;
 		if (!ok) {
-			if (!self_ref) unexported.push_back({{"name", m->name}});
+			if (!self_ref) unexported.push_back({{"name", m->name}}); // LCOV_EXCL_BR_LINE
 			continue;
 		}
 
-		json constant = {{"name", m->name}, {"value", value}}; // LCOV_EXCL_EXCEPTION_BR_LINE
+		json constant = {{"name", m->name}, {"value", value}}; // LCOV_EXCL_BR_LINE
 		if (!type.is_null()) constant["value-type"] = type;
 		ast["ast"]["constants"].push_back(constant);
 	}
 	if (!unexported.empty())
 		ast["ast"]["unexported-macros"] = move(unexported);
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Starting point of parsing (top level & included file)
 int CParser::parse(json &ast, const vector<CToken*> &tokens)
@@ -2127,11 +2127,11 @@ int CParser::parse(json &ast)
 			if (!e.evaluable || inherited(inheritedEnums_, e.name, enumState(e))) continue;
 			json enumerators = json::array();
 			for (auto &[ename, v] : e.values) {
-				enumerators.push_back({{"name", ename}, {"value", to_string(v)}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+				enumerators.push_back({{"name", ename}, {"value", to_string(v)}}); // LCOV_EXCL_BR_LINE
 				if (e.anonymous)
-					ast["ast"]["constants"].push_back({{"name", ename}, {"value", to_string(v)}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+					ast["ast"]["constants"].push_back({{"name", ename}, {"value", to_string(v)}}); // LCOV_EXCL_BR_LINE
 			}
-			enums.push_back({{"name", e.name}, {"enumerators", move(enumerators)}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+			enums.push_back({{"name", e.name}, {"enumerators", move(enumerators)}}); // LCOV_EXCL_BR_LINE
 		} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 		if (!enums.empty())
 			ast["ast"]["enums"] = move(enums);
@@ -2141,30 +2141,30 @@ int CParser::parse(json &ast)
 			if (inherited(inheritedTypedefs_, name, vt)) continue;
 			string tk = vt.value("type-kind", "");
 			if (tk == "prim" || tk == "pntr" || tk == "user" || ((tk == "strct" || tk == "union" || tk == "enum") && vt.contains("type-name")))
-				typedefs.push_back({{"name", name}, {"var-type", vt}}); // LCOV_EXCL_EXCEPTION_BR_LINE
+				typedefs.push_back({{"name", name}, {"var-type", vt}}); // LCOV_EXCL_BR_LINE
 		}
 		if (!typedefs.empty())
 			ast["ast"]["typedefs"] = move(typedefs);
 	}
 	return ret;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 json CParser::enumState(const CapturedEnum &e) const
 {
 	json values = json::array();
-	for (auto &[ename, v] : e.values) values.push_back({ename, v}); // LCOV_EXCL_EXCEPTION_BR_LINE
-	return {{"name", e.name}, {"anonymous", e.anonymous}, {"evaluable", e.evaluable}, {"values", move(values)}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	for (auto &[ename, v] : e.values) values.push_back({ename, v}); // LCOV_EXCL_BR_LINE
+	return {{"name", e.name}, {"anonymous", e.anonymous}, {"evaluable", e.evaluable}, {"values", move(values)}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 json CParser::dumpState() const
 {
 	json enums = json::array();
 	for (const CapturedEnum &e : capturedEnums_) enums.push_back(enumState(e));
 	json enumerators = json::object();
-	for (auto &[name, en] : enumerators_) enumerators[name] = {en.value, en.enumIndex}; // LCOV_EXCL_EXCEPTION_BR_LINE
-	return {{"typedefs", typedefs_}, {"structs", capturedStructs_}, {"enums", move(enums)}, // LCOV_EXCL_EXCEPTION_BR_LINE
-	        {"enumerators", move(enumerators)}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	for (auto &[name, en] : enumerators_) enumerators[name] = {en.value, en.enumIndex}; // LCOV_EXCL_BR_LINE
+	return {{"typedefs", typedefs_}, {"structs", capturedStructs_}, {"enums", move(enums)}, // LCOV_EXCL_BR_LINE
+	        {"enumerators", move(enumerators)}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 void CParser::loadState(const json &state)
 {
@@ -2178,7 +2178,7 @@ void CParser::loadState(const json &state)
 		inheritedStructs_[s["name"]] = s;
 	}
 	for (const json &e : state["enums"]) {
-		CapturedEnum captured = {e["name"], e["anonymous"], e["evaluable"], {}};
+		CapturedEnum captured = {e["name"], e["anonymous"], e["evaluable"], {}}; // LCOV_EXCL_BR_LINE
 		for (const json &v : e["values"]) captured.values.push_back({v[0], v[1]});
 		enumIndex_[captured.name] = (int)capturedEnums_.size();
 		capturedEnums_.push_back(move(captured));
@@ -2186,4 +2186,4 @@ void CParser::loadState(const json &state)
 	}
 	for (auto &[name, en] : state["enumerators"].items())
 		enumerators_[name] = {en[0], en[1]};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE

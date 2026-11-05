@@ -1,0 +1,4 @@
+global []int32 a = [1] for f!;
+func f() {
+	[2] -> a;
+}

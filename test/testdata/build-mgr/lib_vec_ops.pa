@@ -1,0 +1,13 @@
+export type vec3 { flo32 x; flo32 y; flo32 z; };
+
+export func +(@vec3 a, @vec3 b) -> vec3 { return [a.x + b.x, a.y + b.y, a.z + b.z]; }
+export func -(@vec3 a, @vec3 b) -> vec3 { return [a.x - b.x, a.y - b.y, a.z - b.z]; }
+export func -(vec3 a) -> vec3 {
+	-a.x -> a.x;
+	-a.y -> a.y;
+	-a.z -> a.z;
+	return a;
+}
+export func *(@vec3 v, flo32 f) -> vec3 { return [v.x * f, v.y * f, v.z * f]; }
+export func *(flo32 f, @vec3 v) -> vec3 { return [v.x * f, v.y * f, v.z * f]; }
+export func *(@vec3 a, @vec3 b) -> flo32 { return a.x * b.x + a.y * b.y + a.z * b.z; }

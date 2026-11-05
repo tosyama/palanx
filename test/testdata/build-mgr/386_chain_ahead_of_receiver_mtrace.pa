@@ -1,0 +1,30 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 a; int32 b; };
+type S { P p; };
+func mk(int32 x, int32 y) -> P r { x -> r.a; y -> r.b; }
+func mka() -> [3]int32 r { 4 -> r[1]; }
+func meth(@!P recv, @[3]int32 a) -> int32 { return recv.a + a[1]; }
+func methp(@!P recv, @P v) -> P r { recv.a -> r.a; v.b -> r.b; }
+func methb(@!P recv, @[3]int32 a) -> P r { recv.a -> r.a; a[1] -> r.b; }
+func wr(@!P o) -> P { return @mka() -> o.methb(); }
+mtrace();
+{
+	P o = mk(1, 2);
+	int32 t = @mka() -> o.meth();
+	printf("%d\n", t);
+	$P f = @mka() -> o.methb();
+	printf("%d %d\n", f.a, f.b);
+	P h = @mk(3, 4) -> o.methp();
+	printf("%d %d\n", h.a, h.b);
+	$P g = @mk(3, 5) -> o.methp();
+	printf("%d %d\n", g.a, g.b);
+	S s;
+	@mka() -> o.methb() -> s.p;
+	printf("%d\n", s.p.b);
+	P r = wr(@!o);
+	printf("%d\n", r.b);
+	@mka() -> o.methb() -> r;
+	printf("%d\n", r.b);
+}
+muntrace();

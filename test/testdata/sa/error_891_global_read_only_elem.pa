@@ -1,0 +1,4 @@
+global [2]int32 a = [1, 2] for f;
+func f() {
+	3 -> a[0];
+}

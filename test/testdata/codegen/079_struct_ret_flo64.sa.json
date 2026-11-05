@@ -1,0 +1,310 @@
+{
+  "alloc-shapes": [],
+  "functions": [
+    {
+      "body": [
+        {
+          "stmt-type": "var-decl",
+          "vars": [
+            {
+              "init": {
+                "align": 8,
+                "expr-type": "frame-alloc",
+                "size": 16,
+                "value-type": {
+                  "base-type": {
+                    "type-kind": "struct",
+                    "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+                  },
+                  "type-kind": "pntr"
+                }
+              },
+              "name": "__ret",
+              "var-type": {
+                "base-type": {
+                  "type-kind": "struct",
+                  "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+                },
+                "type-kind": "pntr"
+              }
+            }
+          ]
+        },
+        {
+          "offset": 0,
+          "stmt-type": "field-assign",
+          "value": {
+            "expr-type": "id",
+            "loc": [
+              4,
+              10,
+              4,
+              11
+            ],
+            "name": "a",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "flo64"
+            },
+            "var-type": {
+              "type-kind": "prim",
+              "type-name": "flo64"
+            }
+          },
+          "value-type": {
+            "type-kind": "prim",
+            "type-name": "flo64"
+          },
+          "var": "__ret"
+        },
+        {
+          "offset": 8,
+          "stmt-type": "field-assign",
+          "value": {
+            "expr-type": "id",
+            "loc": [
+              4,
+              13,
+              4,
+              14
+            ],
+            "name": "b",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "flo32"
+            },
+            "var-type": {
+              "type-kind": "prim",
+              "type-name": "flo32"
+            }
+          },
+          "value-type": {
+            "type-kind": "prim",
+            "type-name": "flo32"
+          },
+          "var": "__ret"
+        },
+        {
+          "offset": 12,
+          "stmt-type": "field-assign",
+          "value": {
+            "expr-type": "id",
+            "loc": [
+              4,
+              16,
+              4,
+              17
+            ],
+            "name": "b",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "flo32"
+            },
+            "var-type": {
+              "type-kind": "prim",
+              "type-name": "flo32"
+            }
+          },
+          "value-type": {
+            "type-kind": "prim",
+            "type-name": "flo32"
+          },
+          "var": "__ret"
+        },
+        {
+          "stmt-type": "return"
+        }
+      ],
+      "func-type": "palan",
+      "loc": [
+        2,
+        1,
+        5,
+        2
+      ],
+      "name": "_079_struct_ret_flo64..make.flo64.flo32",
+      "parameters": [
+        {
+          "name": "a",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "flo64"
+          }
+        },
+        {
+          "name": "b",
+          "var-type": {
+            "type-kind": "prim",
+            "type-name": "flo32"
+          }
+        }
+      ],
+      "ret-slot": {
+        "eightbytes": [
+          {
+            "class": "sse",
+            "flo64": true,
+            "size": 8
+          },
+          {
+            "class": "sse",
+            "size": 8
+          }
+        ],
+        "name": "__ret",
+        "size": 16
+      },
+      "ret-type": {
+        "base-type": {
+          "type-kind": "struct",
+          "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+        },
+        "type-kind": "pntr"
+      }
+    }
+  ],
+  "libs": [],
+  "main": {
+    "name": "_079_struct_ret_flo64..main",
+    "parameters": [
+      {
+        "name": "__argc",
+        "var-type": {
+          "type-kind": "prim",
+          "type-name": "int64"
+        }
+      },
+      {
+        "name": "__argv",
+        "var-type": {
+          "base-type": {
+            "base-type": {
+              "type-kind": "prim",
+              "type-name": "uint8"
+            },
+            "type-kind": "pntr"
+          },
+          "type-kind": "pntr"
+        }
+      }
+    ]
+  },
+  "objs": [],
+  "original": "/test/079_struct_ret_flo64.pa",
+  "statements": [
+    {
+      "stmt-type": "var-decl",
+      "vars": [
+        {
+          "init": {
+            "args": [
+              {
+                "expr-type": "lit-int",
+                "value": "16",
+                "value-type": {
+                  "type-kind": "prim",
+                  "type-name": "uint64"
+                }
+              }
+            ],
+            "expr-type": "call",
+            "func-type": "c",
+            "name": "malloc",
+            "value-type": {
+              "base-type": {
+                "type-kind": "struct",
+                "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+              },
+              "type-kind": "pntr"
+            }
+          },
+          "name": "d",
+          "var-type": {
+            "base-type": {
+              "type-kind": "struct",
+              "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+            },
+            "type-kind": "pntr"
+          }
+        }
+      ]
+    },
+    {
+      "body": {
+        "args": [
+          {
+            "expr-type": "lit-flo",
+            "loc": [
+              6,
+              12,
+              6,
+              15
+            ],
+            "value": "1.5",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "flo64"
+            }
+          },
+          {
+            "expr-type": "lit-flo",
+            "loc": [
+              6,
+              17,
+              6,
+              20
+            ],
+            "value": "2.5",
+            "value-type": {
+              "type-kind": "prim",
+              "type-name": "flo32"
+            }
+          }
+        ],
+        "expr-type": "call",
+        "func-type": "palan",
+        "loc": [
+          6,
+          7,
+          6,
+          21
+        ],
+        "name": "_079_struct_ret_flo64..make.flo64.flo32",
+        "ret-dest": {
+          "expr-type": "id",
+          "name": "d",
+          "value-type": {
+            "base-type": {
+              "type-kind": "struct",
+              "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+            },
+            "type-kind": "pntr"
+          },
+          "var-type": {
+            "base-type": {
+              "type-kind": "struct",
+              "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+            },
+            "type-kind": "pntr"
+          }
+        },
+        "struct-ret": {
+          "eightbytes": [
+            {
+              "class": "sse",
+              "flo64": true,
+              "size": 8
+            },
+            {
+              "class": "sse",
+              "size": 8
+            }
+          ],
+          "size": 16
+        }
+      },
+      "stmt-type": "expr"
+    }
+  ],
+  "str-literals": []
+}

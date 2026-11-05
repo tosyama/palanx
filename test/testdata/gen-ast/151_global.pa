@@ -1,0 +1,7 @@
+global int32 hits = 0 for count!, report;
+global []int32 arr;
+global arr for report;
+global optind;
+global n = 1;
+func count() { }
+func report() { }

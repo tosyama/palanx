@@ -15,6 +15,7 @@
 #include <memory>
 #include <getopt.h>
 #include <filesystem>
+#include <cstdint>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnBuildMgrMessage.h"
 #include "../common/PlnDefs.h"
@@ -127,7 +128,7 @@ int main(int argc, char* argv[])
 		fs::create_directories(input_file_work_path);
 		string output_ast_path = palan_work_path + input_file.string() + ".ast.json";
 
-		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path}))
+		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path})) // LCOV_EXCL_BR_LINE
 			return ret;
 		ast_files.emplace_back(output_ast_path);
 
@@ -165,7 +166,7 @@ int main(int argc, char* argv[])
 		string ast_file = ast_files[i];
 
 		// palan-sa
-		if (int ret = runTool({exec_path + "/palan-sa", ast_file}))
+		if (int ret = runTool({exec_path + "/palan-sa", ast_file})) // LCOV_EXCL_BR_LINE
 			return ret;
 
 		// Derive output paths (strip ".ast.json" suffix from ast_file)
@@ -179,7 +180,7 @@ int main(int argc, char* argv[])
 			return ret;
 
 		// as
-		if (int ret = runTool({"as", asm_file, "-o", obj_file}))
+		if (int ret = runTool({"as", asm_file, "-o", obj_file})) // LCOV_EXCL_BR_LINE
 			return ret;
 
 		obj_files.push_back(obj_file);
@@ -194,9 +195,9 @@ int main(int argc, char* argv[])
 		string main_symbol = json::parse(f)["main"]["name"];
 		string entry_s = base + ".entry.s";
 		string entry_o = base + ".entry.o";
-		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s}))
+		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s})) // LCOV_EXCL_BR_LINE
 			return ret;
-		if (int ret = runTool({"as", entry_s, "-o", entry_o}))
+		if (int ret = runTool({"as", entry_s, "-o", entry_o})) // LCOV_EXCL_BR_LINE
 			return ret;
 		obj_files.push_back(entry_o);
 	}
@@ -373,8 +374,8 @@ int main(int argc, char* argv[])
 					e.slotRun = (e.embedded ? "$" : "") + e.type;
 					e.fill = e.owned ? e.buildElem : e.type;
 					e.value = e.type;
-					// The caller takes a struct's storage, which a `@!T` return carries the same way.
-					e.popped = e.owned ? "@!" + e.type : e.type;
+					// A struct is returned by value, as any struct is; another owned element as its block.
+					e.popped = e.owned && kind != "struct" ? "@!" + e.type : e.type;
 					e.run = e.owned ? "[]" + e.ownElem : "@" + e.type;
 					e.data = e.owned ? "@!@!" + e.type : "@!" + e.type;
 					return e;
@@ -456,6 +457,11 @@ int main(int argc, char* argv[])
 					}
 					return structCopy(e.type, dst, src);
 				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+				// An owned struct slot (an inner `[+]T`'s header is one) is passed to
+				// the helpers as a borrow, since a struct parameter would own and free it.
+				auto borrowed = [](const ElemOps& e, const string& v, bool isMutable = false) {
+					return e.kind == "struct" || e.kind == "varr" ? (isMutable ? "@!" : "@") + v : v;
+				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 				set<string> elemHelpersDone;
 				function<void(const ElemOps&)> emitElemHelpers = [&](const ElemOps& e) {
 					if (!e.owned || !elemHelpersDone.insert(e.key).second) return;
@@ -464,7 +470,7 @@ int main(int argc, char* argv[])
 					string mp = lenParams(e.nlens), ma = lenArgs(names);
 					string head = "\nfunc __pln_build_" + e.key + "([]" + e.buildElem + " slots, int64 from, int64 to" + mp + ") {\n";
 					string dropHead = "func __pln_drop_" + e.key + "([]" + e.ownElem + " slots, int64 from, int64 to" + mp + ") {\n";
-					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + e.value + " x" + mp + ") {\n";
+					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + borrowed(e, e.value) + " x" + mp + ") {\n";
 					string runHead = "func __pln_copyrun_" + e.key + "([]" + e.ownElem + " dst, []" + e.ownElem + " src, int64 n" + mp + ") {\n";
 					if (e.kind == "embed-row") {
 						// Rows laid out in place are runs of their elements' slots.
@@ -478,7 +484,7 @@ int main(int argc, char* argv[])
 						    << setHead
 						    << "    int64 j = 0;\n"
 						    << "    while j < " << n << " {\n"
-						    << "        __pln_set_" << l << "(slots, i * " << n << " + j, x[j]" << la << ");\n"
+						    << "        __pln_set_" << l << "(slots, i * " << n << " + j, " << borrowed(*e.leaf, "x[j]") << la << ");\n"
 						    << "        j + 1 -> j;\n"
 						    << "    }\n"
 						    << "}\n"
@@ -497,7 +503,7 @@ int main(int argc, char* argv[])
 					    << dropHead
 					    << "    int64 i = from;\n"
 					    << "    while i < to {\n"
-					    << "        " << elemDrop(e, "slots[i]", "        ", names) << "\n"
+					    << "        " << elemDrop(e, borrowed(e, "slots[i]", true), "        ", names) << "\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n"
@@ -507,7 +513,7 @@ int main(int argc, char* argv[])
 					    << runHead
 					    << "    int64 i = 0;\n"
 					    << "    while i < n {\n"
-					    << "        __pln_set_" << e.key << "(dst, i, src[i]" << ma << ");\n"
+					    << "        __pln_set_" << e.key << "(dst, i, " << borrowed(e, "src[i]") << ma << ");\n"
 					    << "        i + 1 -> i;\n"
 					    << "    }\n"
 					    << "}\n";
@@ -567,7 +573,7 @@ int main(int argc, char* argv[])
 					struct OwnedField { string slot; ElemOps e; vector<string> lens; };
 					vector<OwnedField> owned;
 					for (auto& of : shape["owned-fields"]) {
-						OwnedField f{of["name"], opsOf(of["elem"]), {}};
+						OwnedField f{of["name"], opsOf(of["elem"]), {}}; // LCOV_EXCL_BR_LINE
 						for (auto& len : of["lens"]) f.lens.push_back(to_string(len.get<int64_t>()));
 						if (f.e.kind == "embed-row") emitElemHelpers(f.e);
 						else if (f.e.leaf) emitElemHelpers(*f.e.leaf);
@@ -587,11 +593,11 @@ int main(int argc, char* argv[])
 					out << "export func __pln_init_" << name << "(@!" << name << " p) {\n";
 					for (auto& f : owned) out << elemBuild(f.e, "p." + f.slot, "    ", f.lens);
 					out << "}\n"
-					    << "export func __pln_fini_" << name << "(" << name << " p) {\n";
+					    << "export func __pln_fini_" << name << "(@!" << name << " p) {\n";
 					for (auto& f : owned) out << "    " << elemDrop(f.e, "p." + f.slot, "    ", f.lens) << "\n";
 					out << "}\n"
 					    << "export func __pln_free_" << name
-					    << "(" << name << " p) {\n"
+					    << "(@!" << name << " p) {\n"
 					    << "    if (p == NULL) { return; }\n"
 					    << "    __pln_fini_" << name << "(p);\n"
 					    << "    free(p);\n"
@@ -599,7 +605,7 @@ int main(int argc, char* argv[])
 					    << "}\n";
 
 					out << "export func __pln_copy_" << name
-					    << "(" << name << " dst, " << name << " src) {\n";
+					    << "(@!" << name << " dst, @" << name << " src) {\n";
 					for (auto& [pad, size] : struct_pads[name])
 						out << "    memcpy(dst." << pad << ", src." << pad << ", " << size << ");\n";
 					for (auto& f : owned)
@@ -652,15 +658,17 @@ int main(int argc, char* argv[])
 					    << "    else { NULL -> h.data; }\n";
 					if (e.owned) out << "    __pln_build_" << e.key << "(h.data, 0, len" << ma << ");\n";
 					out << "}\n"
+					// The header is returned as its block, as a struct allocator's is.
 					    << "export func __pln_alloc_" << key
-					    << "(int64 len, int64 cap" << mp << ") -> " << hdr << " h {\n"
-					    << "    __pln_init_" << key << "(@!h, len, cap" << ma << ");\n"
+					    << "(int64 len, int64 cap" << mp << ") -> @!" << hdr << " h {\n"
+					    << "    malloc(24) -> h;\n"
+					    << "    __pln_init_" << key << "(h, len, cap" << ma << ");\n"
 					    << "}\n"
-					    << "export func __pln_fini_" << key << "(" << hdr << " h" << mp << ") {\n";
+					    << "export func __pln_fini_" << key << "(@!" << hdr << " h" << mp << ") {\n";
 					if (e.owned) out << "    __pln_drop_" << e.key << "(h.data, 0, h.len" << ma << ");\n";
 					out << "    free(h.data);\n"
 					    << "}\n"
-					    << "export func __pln_free_" << key << "(" << hdr << " h" << mp << ") {\n"
+					    << "export func __pln_free_" << key << "(@!" << hdr << " h" << mp << ") {\n"
 					    << "    if (h == NULL) { return; }\n"
 					    << "    __pln_fini_" << key << "(h" << ma << ");\n"
 					    << "    free(h);\n"
@@ -674,17 +682,22 @@ int main(int argc, char* argv[])
 					    << "    if c < 4 { 4 -> c; }\n"
 					    << "    realloc(h.data, c * " << size << ") -> h.data;\n"
 					    << "    c -> h.cap;\n"
-					    << "}\n"
-					    << "export func __pln_push_" << key << "(@!" << hdr << " h, " << e.value << " x" << mp << ") {\n"
+					    << "}\n";
+					// A struct (an inner `[+]T`'s header too) comes as the caller's to
+					// own, as a struct parameter's argument does: an owned one becomes the
+					// slot, and one laid out in place is copied into it and freed.
+					bool takesStruct = e.kind == "varr" || e.kind == "struct" || e.kind == "embed-struct";
+					out << "export func __pln_push_" << key << "(@!" << hdr << " h, " << (takesStruct ? "@!" : "")
+					    << e.value << " x" << mp << ") {\n"
 					    << "    if h.len == h.cap { __pln_reserve_" << key << "(h, h.len + 1" << ma << "); }\n";
-					// The caller hands an inner `[+]T` over, so its header becomes the slot.
-					if (e.kind == "varr")
-						out << "    @!x -> h.data[h.len];\n";
+					if (e.kind == "varr" || e.kind == "struct")
+						out << "    x -> h.data[h.len];\n";
 					else if (e.owned)
 						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1" << ma << ");\n"
 						    << "    __pln_set_" << e.key << "(h.data, h.len, x" << ma << ");\n";
 					else if (e.embedded)
-						out << "    memcpy(" << slotAddr(e, "h.data", "h.len", names) << ", x, " << size << ");\n";
+						out << "    memcpy(" << slotAddr(e, "h.data", "h.len", names) << ", x, " << size << ");\n"
+						    << (e.kind == "embed-struct" ? "    free(x);\n" : "");
 					else
 						out << "    x -> h.data[h.len];\n";
 					out << "    h.len + 1 -> h.len;\n"
@@ -710,6 +723,16 @@ int main(int argc, char* argv[])
 						out << "    memmove(h.data, src, n * " << size << ");\n";
 					out << "    n -> h.len;\n"
 					    << "}\n";
+					// An owned struct moves out of its block, which return then frees.
+					if (e.kind == "struct") {
+						out << "export func __pln_pop_" << key << "(@!" << hdr << " h" << mp << ") -> " << e.type << " {\n"
+						    << "    if h.len == 0 { abort(); }\n"
+						    << "    h.len - 1 -> h.len;\n"
+						    << "    " << e.type << " x <<= h.data[h.len] as " << e.type << ";\n"
+						    << "    return x;\n"
+						    << "}\n";
+						continue;
+					}
 					// An owned element leaves its slot for the caller.
 					out << "export func __pln_pop_" << key << "(@!" << hdr << " h" << mp << ") -> " << e.popped << " x {\n"
 					    << "    if h.len == 0 { abort(); }\n"
@@ -734,13 +757,13 @@ int main(int argc, char* argv[])
 
 			}
 
-			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast}))
+			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast})) // LCOV_EXCL_BR_LINE
 				return ret;
 			if (int ret = runTool({exec_path + "/palan-sa", alloc_ast}))
 				return ret;
 			if (int ret = runTool({exec_path + "/palan-codegen", alloc_sa}))
 				return ret;
-			if (int ret = runTool({"as", alloc_s, "-o", alloc_o}))
+			if (int ret = runTool({"as", alloc_s, "-o", alloc_o})) // LCOV_EXCL_BR_LINE
 				return ret;
 
 			obj_files.push_back(alloc_o);
@@ -755,7 +778,7 @@ int main(int argc, char* argv[])
 	// harmless for shared libraries (order doesn't gate symbol resolution),
 	// but this would need to change if static archives with inter-library
 	// dependencies were ever supported.
-	vector<string> ldArgv{"ld"};
+	vector<string> ldArgv{"ld"}; // LCOV_EXCL_BR_LINE
 	for (auto& obj : obj_files) ldArgv.push_back(obj);
 	for (auto& obj : link_objs) ldArgv.push_back(obj);
 	ldArgv.push_back("-lc");

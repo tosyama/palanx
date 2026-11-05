@@ -3,6 +3,8 @@
 /// @file CToken.h
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
+#include <cstdint>
+
 typedef enum {
 	TT0_ID,
 	TT0_PUNCTUATOR,

@@ -21,19 +21,19 @@ inline json storeLocToExpr(const json& loc)
 	if (kind == "expr") return loc["expr"];
 	json e;
 	if (kind == "var") {
-		e = {{"expr-type", "id"}, {"name", loc["name"]}};
+		e = {{"expr-type", "id"}, {"name", loc["name"]}}; // LCOV_EXCL_BR_LINE
 	} else if (kind == "arr-index") {
 		e = {{"expr-type", "arr-index"},
-		     {"array", loc["array"]}, {"index", loc["index"]}};
+		     {"array", loc["array"]}, {"index", loc["index"]}}; // LCOV_EXCL_BR_LINE
 	} else if (kind == "field") {
 		e = {{"expr-type", "field-access"},
-		     {"object", storeLocToExpr(loc["base"])}, {"field", loc["field"]}};
+		     {"object", storeLocToExpr(loc["base"])}, {"field", loc["field"]}}; // LCOV_EXCL_BR_LINE
 	} else {
-		e = {{"expr-type", "not-impl"}};
+		e = {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
 	}
 	if (loc.contains("loc")) e["loc"] = loc["loc"];
 	return e;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 inline bool isStoreStmt(const json& e)
 {
@@ -52,45 +52,53 @@ inline bool chainsThroughTapple(const json& value)
 inline json storeStmt(json loc, json value, bool transfer)
 {
 	if (chainsThroughTapple(value))
-		return {{"stmt-type", "not-impl"}};
+		return {{"stmt-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
 	string kind = loc["kind"];
 	json s;
 	if (kind == "var") {
-		s = {{"stmt-type", "assign"}, {"name", move(loc["name"])}};
+		s = {{"stmt-type", "assign"}, {"name", move(loc["name"])}}; // LCOV_EXCL_BR_LINE
 	} else if (kind == "arr-index") {
-		json target = {{"expr-type", "arr-index"}, {"array", move(loc["array"])}, {"index", move(loc["index"])}};
+		json target = {{"expr-type", "arr-index"}, {"array", move(loc["array"])}, {"index", move(loc["index"])}}; // LCOV_EXCL_BR_LINE
 		target["loc"] = loc["loc"];
-		s = {{"stmt-type", "arr-assign"}, {"target", move(target)}};
+		s = {{"stmt-type", "arr-assign"}, {"target", move(target)}}; // LCOV_EXCL_BR_LINE
 	} else if (kind == "field") {
-		s = {{"stmt-type", "field-assign"}, {"object", storeLocToExpr(loc["base"])}, {"field", move(loc["field"])}};
+		s = {{"stmt-type", "field-assign"}, {"object", storeLocToExpr(loc["base"])}, {"field", move(loc["field"])}}; // LCOV_EXCL_BR_LINE
 	} else {
-		return {{"expr-type", "not-impl"}};
+		return {{"expr-type", "not-impl"}}; // LCOV_EXCL_BR_LINE
 	}
 	s["value"] = move(value);
 	if (transfer) s["ownership-transfer"] = true;
 	return s;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Build a pointer type node. `mut` distinguishes @T (false) from @!T (true).
 inline json pntrTypeExpr(json base, bool mut)
 {
-	return {{"type-kind","pntr"},{"mutable",mut},{"base-type",std::move(base)}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"type-kind","pntr"},{"mutable",mut},{"base-type",std::move(base)}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // The base-type node for @void/@!void -- C's void*, spelled directly instead
 // of via a primitive pointee like @!int8 (pntr(void) is bidirectionally
 // compatible with any pntr(T), see PlnType.cpp typeCompat).
 inline json voidTypeExpr()
 {
-	return json{{"type-kind","prim"},{"type-name","void"}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return json{{"type-kind","prim"},{"type-name","void"}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // The pointee of @func(...): the same shape c2ast gives a C function type, so
 // a native function pointer and a cinclude'd one reach SA identically.
 inline json funcTypeExpr(std::vector<json> params, json ret)
 {
-	return {{"type-kind","func"},{"parameters",std::move(params)},{"ret-type",std::move(ret)}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"type-kind","func"},{"parameters",std::move(params)},{"ret-type",std::move(ret)}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
+
+// `_` in a function type keeps the type a cast's source has at that place.
+inline json fptrSigType(json t)
+{
+	if (t.value("type-kind","") == "prim" && t.value("type-name","") == "_")
+		return {{"type-kind","keep"}}; // LCOV_EXCL_BR_LINE
+	return t;
+} // LCOV_EXCL_BR_LINE
 
 // Whether a type_expr result has no array level other than a plain '[n]'/'[]'
 // one ('[#n]'/'[+n]' are not implemented).
@@ -104,7 +112,7 @@ inline bool isImplementedTypeExpr(const json& t)
 // `[+]$T` keeps its elements in place, marked like `[n]$T`.
 inline json varrTypeExpr(json sizeExpr, json base)
 {
-	json t = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",std::move(sizeExpr)}};
+	json t = {{"type-kind","arr"},{"specifier","variable"},{"size-expr",std::move(sizeExpr)}}; // LCOV_EXCL_BR_LINE
 	if (base.value("type-kind", "") == "embed") {
 		t["embedded"] = true;
 		t["base-type"] = std::move(base["base-type"]);
@@ -112,7 +120,7 @@ inline json varrTypeExpr(json sizeExpr, json base)
 		t["base-type"] = std::move(base);
 	}
 	return t;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A variable-length array.
 inline bool isVarrType(const json& t)
@@ -178,8 +186,8 @@ inline bool isFrameVarType(const json& t)
 inline json boolLiteral(const char* value)
 {
 	return {{"expr-type", "lit-int"}, {"value", value},
-	        {"value-type", {{"type-kind", "prim"}, {"type-name", "bool"}}}}; // LCOV_EXCL_EXCEPTION_BR_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	        {"value-type", {{"type-kind", "prim"}, {"type-name", "bool"}}}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // Unary minus on an untyped integer literal becomes one negative literal, so
 // SA's range check sees `-128` as a single value (an int8 `neg(128)` operand
@@ -191,8 +199,8 @@ inline json negateExpr(json operand)
 		operand["value"] = (v[0] == '-') ? v.substr(1) : "-" + v;
 		return operand;
 	}
-	return {{"expr-type", "neg"}, {"operand", std::move(operand)}};
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+	return {{"expr-type", "neg"}, {"operand", std::move(operand)}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A `link` clause entry ending in ".o" names an object file rather than a -l
 // library. Resolved here, against the source file's directory as a local

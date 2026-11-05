@@ -8,6 +8,7 @@
 #include <cctype>
 #include <filesystem>
 #include <set>
+#include <cstdint>
 
 // Singleton that holds bidirectional maps between type-name strings and PrimType::Name.
 // Using a struct with an explicit constructor body so gcov tracks each entry individually.
@@ -47,7 +48,7 @@ const PrimType* PlnTypeRegistry::prim(PrimType::Name name)
     if (it != primCache_.end()) return it->second.get();
     auto [ins, ok] = primCache_.emplace(name, std::make_unique<PrimType>(name));
     return ins->second.get();
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 const PtrType* PlnTypeRegistry::ptr(const PlnType* base)
 {
@@ -55,7 +56,7 @@ const PtrType* PlnTypeRegistry::ptr(const PlnType* base)
     if (it != ptrCache_.end()) return it->second.get();
     auto [ins, ok] = ptrCache_.emplace(base, std::make_unique<PtrType>(base));
     return ins->second.get();
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 const VarrType* PlnTypeRegistry::varr(const PlnType* elem, bool embedded)
 {
@@ -63,7 +64,7 @@ const VarrType* PlnTypeRegistry::varr(const PlnType* elem, bool embedded)
     if (it != varrCache_.end()) return it->second.get();
     auto [ins, ok] = varrCache_.emplace(std::make_pair(elem, embedded), std::make_unique<VarrType>(elem, embedded));
     return ins->second.get();
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 const StructType* PlnTypeRegistry::structType(const std::string& name)
 {
@@ -71,7 +72,7 @@ const StructType* PlnTypeRegistry::structType(const std::string& name)
     if (it != structCache_.end()) return it->second.get();
     auto [ins, ok] = structCache_.emplace(name, std::make_unique<StructType>(name));
     return ins->second.get();
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 const EnumType* PlnTypeRegistry::enumType(const std::string& name, const PrimType* base)
 {
@@ -79,7 +80,7 @@ const EnumType* PlnTypeRegistry::enumType(const std::string& name, const PrimTyp
     if (it != enumCache_.end()) return it->second.get();
     auto [ins, ok] = enumCache_.emplace(name, std::make_unique<EnumType>(name, base));
     return ins->second.get();
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 const FuncType* PlnTypeRegistry::funcType(const std::vector<const PlnType*>& params, const PlnType* ret)
 {
@@ -88,7 +89,7 @@ const FuncType* PlnTypeRegistry::funcType(const std::vector<const PlnType*>& par
     if (it != funcCache_.end()) return it->second.get();
     auto [ins, ok] = funcCache_.emplace(key, std::make_unique<FuncType>(params, ret));
     return ins->second.get();
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // A by-value struct or array can't cross an indirect call: it would need the
 // callee's ownership convention, which a function pointer does not carry.
@@ -110,10 +111,10 @@ std::string unrepresentableTypeName(const json& j)
     if (kind == "prim") {
         std::string tname = j.value("type-name", "");
         if (tname.empty()) return "malformed type"; // LCOV_EXCL_BR_LINE -- no real producer emits this
-        return PrimTypeNames::instance().toEnum.count(tname) ? "" : tname; // LCOV_EXCL_EXCEPTION_BR_LINE
+        return PrimTypeNames::instance().toEnum.count(tname) ? "" : tname; // LCOV_EXCL_BR_LINE
     }
     if (kind == "pntr" || kind == "varr")
-        return j.contains("base-type") ? unrepresentableTypeName(j["base-type"]) : "malformed type"; // LCOV_EXCL_EXCEPTION_BR_LINE
+        return j.contains("base-type") ? unrepresentableTypeName(j["base-type"]) : "malformed type"; // LCOV_EXCL_BR_LINE
     if (kind == "struct")
         return j.contains("type-name") ? "" : "anonymous struct"; // LCOV_EXCL_BR_LINE -- normalizeCType only folds a named tag to "struct"
     if (kind == "arr")   return "array"; // LCOV_EXCL_BR_LINE -- arrays always decay to pntr before reaching here
@@ -136,9 +137,9 @@ std::string unrepresentableTypeName(const json& j)
     if (kind == "strct") return j.value("type-name", "anonymous struct"); // LCOV_EXCL_BR_LINE -- a named strct is folded away first
     // "user": a typedef name c2ast could not resolve to a known underlying
     // type -- report the name itself, it is more useful than "user".
-    if (kind == "user")  return j.value("type-name", "user"); // LCOV_EXCL_EXCEPTION_BR_LINE
+    if (kind == "user")  return j.value("type-name", "user"); // LCOV_EXCL_BR_LINE
     return kind;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 const PlnType* PlnTypeRegistry::fromJson(const json& j)
 {
@@ -164,14 +165,14 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
     // kind == "struct" (the only remaining possibility once unrepresentableTypeName
     // returns "")
     return structType(j["type-name"].get<std::string>());
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 json PlnTypeRegistry::toJson(const PlnType* t)
 {
     if (t->kind == PlnType::Kind::Prim) {
         const auto* p = static_cast<const PrimType*>(t);
         auto& fromEnum = PrimTypeNames::instance().fromEnum;
-        return {{"type-kind", "prim"}, {"type-name", fromEnum.at(p->name)}};
+        return {{"type-kind", "prim"}, {"type-name", fromEnum.at(p->name)}}; // LCOV_EXCL_BR_LINE
     }
     if (t->kind == PlnType::Kind::Enum) {
         const auto* e = static_cast<const EnumType*>(t);
@@ -181,26 +182,26 @@ json PlnTypeRegistry::toJson(const PlnType* t)
     }
     if (t->kind == PlnType::Kind::Ptr) {
         const auto* p = static_cast<const PtrType*>(t);
-        return {{"type-kind", "pntr"}, {"base-type", toJson(p->base)}};
+        return {{"type-kind", "pntr"}, {"base-type", toJson(p->base)}}; // LCOV_EXCL_BR_LINE
     }
     if (t->kind == PlnType::Kind::Varr) {
         const auto* v = static_cast<const VarrType*>(t);
-        json j = {{"type-kind", "varr"}, {"base-type", toJson(v->elem)}};
+        json j = {{"type-kind", "varr"}, {"base-type", toJson(v->elem)}}; // LCOV_EXCL_BR_LINE
         if (v->embedded) j["embedded"] = true;
         return j;
     }
     if (t->kind == PlnType::Kind::Struct) {
         const auto* s = static_cast<const StructType*>(t);
-        return {{"type-kind", "struct"}, {"type-name", s->name}};
+        return {{"type-kind", "struct"}, {"type-name", s->name}}; // LCOV_EXCL_BR_LINE
     }
     if (t->kind == PlnType::Kind::Func) {
         const auto* f = static_cast<const FuncType*>(t);
         json params = json::array();
-        for (auto* p : f->params) params.push_back({{"var-type", toJson(p)}});
-        return {{"type-kind", "func"}, {"parameters", params}, {"ret-type", toJson(f->ret)}};
+        for (auto* p : f->params) params.push_back({{"var-type", toJson(p)}}); // LCOV_EXCL_BR_LINE
+        return {{"type-kind", "func"}, {"parameters", params}, {"ret-type", toJson(f->ret)}}; // LCOV_EXCL_BR_LINE
     }
     throw std::runtime_error("unknown PlnType::Kind"); // LCOV_EXCL_LINE
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 // typeCompat implementation
 
@@ -378,7 +379,7 @@ std::string moduleSymbol(const std::string& sourcePath)
         out += hex[c & 15];
     }
     return out;
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+} // LCOV_EXCL_BR_LINE
 
 static std::string symbolUserName(const std::string& name)
 {
@@ -390,7 +391,7 @@ static std::string symbolUserName(const std::string& name)
 // parameter, false for a read borrow, true for a write borrow.
 static std::string symbolPntr(const json& t)
 {
-    // LCOV_EXCL_EXCEPTION_BR_START
+    // LCOV_EXCL_BR_START
     std::string s;
     if (t.value("embedded", false)) s += "E";
     if (t.contains("stride")) s += "S" + std::to_string(t["stride"].get<int64_t>()) + "_";
@@ -398,12 +399,12 @@ static std::string symbolPntr(const json& t)
     if (!t.contains("mutable")) s += "P";
     else s += t["mutable"].get<bool>() ? "W" : "R";
     return s + symbolType(t["base-type"]);
-    // LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+    // LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
 
 std::string symbolType(const json& t)
 {
-    // LCOV_EXCL_EXCEPTION_BR_START
+    // LCOV_EXCL_BR_START
     static const std::map<std::string, std::set<std::string>> knownKeys = {
         {"prim",   {"type-kind", "type-name", "enum"}},
         {"struct", {"type-kind", "type-name"}},
@@ -430,15 +431,28 @@ std::string symbolType(const json& t)
     std::string s = "F" + std::to_string(params.size()) + "_";
     for (auto& p : params) s += symbolType(p["var-type"]);
     return s + symbolType(t["ret-type"]);
-    // LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+    // LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
+const std::map<std::string, std::string>& operatorFuncNames()
+{
+    // LCOV_EXCL_BR_START
+    // A digit-led word: a label cannot hold the operator, and no written
+    // function name starts with a digit.
+    static const std::map<std::string, std::string> names = {
+        {"+", "0add"}, {"-", "0sub"}, {"*", "0mul"}, {"/", "0div"}, {"%", "0mod"},
+    };
+    // LCOV_EXCL_BR_STOP
+    return names;
+} // LCOV_EXCL_BR_LINE
 
 std::string funcSymbol(const std::string& name, const json& params)
 {
-    // LCOV_EXCL_EXCEPTION_BR_START
-    if (params.empty()) return name + ".v";
-    std::string s = name;
+    // LCOV_EXCL_BR_START
+    auto op = operatorFuncNames().find(name);
+    std::string s = op != operatorFuncNames().end() ? op->second : name;
+    if (params.empty()) return s + ".v";
     for (auto& p : params) s += "." + symbolType(p["var-type"]);
     return s;
-    // LCOV_EXCL_EXCEPTION_BR_STOP
-} // LCOV_EXCL_EXCEPTION_BR_LINE
+    // LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE

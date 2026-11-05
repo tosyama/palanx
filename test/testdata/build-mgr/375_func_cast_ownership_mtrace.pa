@@ -1,0 +1,30 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+cinclude <pthread.h>;
+cinclude <mcheck.h>;
+type Q { int32 y; [+]int32 v; };
+type Buf { @!int8 base; uint64 len; };
+func work(Q q) -> @!void
+{
+	printf("work %d %d\n", q.y, int32(len(@q.v)));
+	return NULL;
+}
+func firstOf(@Buf b) -> int32
+{
+	[4]int8 data <<= b.base as [4]int8;
+	return int32(data[1]);
+}
+mtrace();
+{
+	Q q = {y: 3, v: [1, 2]};
+	pthread_t t;
+	(pthread_create as @func(_, _, @func(Q) -> @!void, Q) -> _)(@!t, NULL, work, q>>);
+	pthread_join(t, NULL);
+	printf("%d\n", q == NULL);
+
+	Buf b;
+	[4]int8 d = [1, 2, 3, 4];
+	(memmove as @func([4]int8, @void, uint64) -> _)(d>>, NULL, 0) -> b.base;
+	printf("%d %d\n", firstOf(@b), d == NULL);
+}
+muntrace();

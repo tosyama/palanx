@@ -548,7 +548,6 @@ TEST(sa_error, unknown_type_name)
 		{"error_356_transfer_to_ptr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
 		{"error_357_transfer_to_arr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
 		{"error_358_transfer_row_size_mismatch.pa", ":3:1: error: cannot transfer '[5]int32' into '[3]int32'"},
-		{"error_359_transfer_to_dynamic_row.pa", ":4:1: error: cannot transfer '[3]int32' into '[?]int32'"},
 		{"error_361_struct_to_embed_struct_param.pa", ":4:1: error: cannot convert 'P' to '[?]$P'."},
 		{"error_362_transfer_to_embed_ptr_slot.pa", ":3:1: error: '->>' cannot give ownership to a borrowed pointer slot"},
 		{"error_363_unsized_rows_arg_mismatch.pa", ":3:1: error: array shape '[2][4]int32' does not match '[?][3]int32'"},
@@ -561,12 +560,11 @@ TEST(sa_error, unknown_type_name)
 		{"error_371_borrow_elems_arg_as_owned.pa", ":6:1: error: array shape '[1]@!P' does not match '[?]P'"},
 		{"error_665_transfer_to_frame_var.pa", ":4:1: error: '->>' needs a variable that owns its array or struct; 'q' does not."},
 		{"error_666_transfer_to_borrow_var.pa", ":4:1: error: '->>' needs a variable that owns its array or struct; 'b' does not."},
-		{"error_667_transfer_to_struct_param.pa", ":2:20: error: '->>' needs a variable that owns its array or struct; 'p' does not."},
+		{"error_667_transfer_to_borrow_param.pa", ":2:22: error: '->>' needs a variable that owns its array or struct; 'p' does not."},
 		{"error_668_transfer_to_prim_var.pa", ":3:1: error: '->>' needs a variable that owns its array or struct; 'x' does not."},
 		{"error_669_transfer_to_self.pa", ":2:1: error: '->>' cannot give 'a' to itself."},
 		{"error_670_transfer_var_size_mismatch.pa", ":3:1: error: cannot transfer '[4]int32' into '[3]int32'"},
 		// The variable frees by the size it was declared with.
-		{"error_671_transfer_var_runtime_size.pa", ":4:1: error: cannot transfer '[?]int32' into '[?]int32'"},
 		{"error_672_transfer_var_struct_mismatch.pa", ":5:1: error: cannot transfer 'P' into 'Q'"},
 		{"error_673_transfer_frame_arr_to_var.pa", ":3:1: error: '->>' needs a source that owns its value"},
 		{"error_372_owned_elems_arg_as_borrow.pa", ":5:1: error: array shape '[2]P' does not match '[?]@!P'"},
@@ -828,8 +826,6 @@ TEST(sa_error, expr_not_implemented)
 		{"error_417_expr_not_impl_stmt.pa", ":1:1: error: this expression is not supported"},
 		{"error_521_chain_tapple_value.pa", ":4:1: error: this expression is not supported"},
 		{"error_523_expr_not_impl_sizeof_nested.pa", ":1:12: error: this expression is not supported"},
-		{"error_553_arg_move_owner.pa", ":3:3: error: this expression is not supported"},
-		{"error_554_c_arg_move_owner.pa", ":3:16: error: this expression is not supported"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -853,6 +849,10 @@ TEST(sa_error, sig_not_implemented)
 		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
 		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
 		{"error_552_ret_untyped.pa", ":1:13: error: this return value is not supported in this version."},
+		{"error_941_take_undeclarable.pa", ":2:1: error: this statement is not supported in this version."},
+		{"error_942_transfer_to_expr.pa", ":3:1: error: this expression is not supported in this version."},
+		{"error_943_tapple_call.pa", ":3:1: error: this expression is not supported in this version."},
+		{"error_944_unknown_field_overload_arg.pa", ":5:3: error: struct 'P' has no field 'nofield'."},
 		{"error_555_import_not_impl_sig.pa", "lib_sa_not_impl_sig.pa:1:15: error: this parameter is not supported in this version."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -930,6 +930,7 @@ TEST(sa_error, circular_type_decl)
 		{"error_433_import_mutual_embed.pa", "error_433_import_mutual_embed.pa:2:1: error: type 'B' depends on itself: B -> A -> B."},
 		{"error_434_owned_cycle.pa", ":2:1: error: type 'P' depends on itself: P -> Q -> P."},
 		{"error_435_alias_cycle.pa", ":2:1: error: type 'X' depends on itself: X -> Y -> X."},
+		{"error_879_top_const_var_cycle.pa", ":1:1: error: type 'N' depends on itself: N -> a -> N."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -946,9 +947,9 @@ TEST(sa_error, circular_type_decl)
 TEST(sa_error, alias_cast)
 {
 	const pair<string, string> cases[] = {
-		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
-		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
-		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_436_cast_alias_struct.pa", ":3:11: error: cannot cast to 'PT': only a pointer ('@!X') can be viewed as an owner"},
+		{"error_437_cast_alias_array.pa", ":2:11: error: cannot cast to 'R': only a pointer ('@!X') can be viewed as an owner"},
+		{"error_438_cast_opaque.pa", ":2:11: error: cannot cast to 'FILE': only a pointer ('@!X') can be viewed as an owner"},
 		{"error_439_cast_alias_arg_count.pa", ":2:8: error: cast 'U8(...)' takes exactly one argument."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -964,11 +965,13 @@ TEST(sa_error, alias_cast)
 TEST(sa_error, as_cast)
 {
 	const pair<string, string> cases[] = {
-		{"error_579_cast_owned_arr.pa", ":2:14: error: cannot cast to an owned array: only a borrowed array ('@[n]T'/'@![n]T') can be a cast target."},
+		{"error_579_cast_owned_arr.pa", ":2:14: error: cannot cast to 'array': only a pointer ('@!X') can be viewed as an owner"},
+		{"error_938_cast_unsized_arr.pa", ":2:12: error: cannot cast to 'array': only a primitive"},
+		{"error_939_cast_embed.pa", ":3:8: error: cannot cast to 'embed': only a primitive"},
 		{"error_580_cast_ptr_to_narrow_int.pa", ":3:11: error: Cannot cast type '@!int32' to 'int32'."},
 		{"error_581_cast_int_to_ptr.pa", ":2:13: error: Cannot cast type 'int32' to '@!int32'."},
 		{"error_582_cast_int_to_borrowed_arr.pa", ":2:16: error: Cannot cast type 'uint64' to '@![4]int32'."},
-		{"error_583_cast_struct_value.pa", ":3:7: error: cannot cast to 'P': only a primitive, enum, pointer, or borrowed array ('@[n]T'/'@![n]T') type can be a cast target."},
+		{"error_583_cast_struct_value.pa", ":3:7: error: cannot cast to 'P': only a pointer ('@!X') can be viewed as an owner"},
 		{"error_584_cast_struct_to_ptr.pa", ":3:13: error: Cannot cast type 'P' to '@!uint8'."},
 		{"error_585_cast_enum_to_ptr.pa", ":3:13: error: Cannot cast type 'Big' to '@!int32'."},
 		{"error_586_cast_ptr_to_enum.pa", ":3:9: error: Cannot cast type '@!int32' to 'Big'."},
@@ -1128,7 +1131,6 @@ TEST(sa_error, chain_call)
 		{"error_514_chain_mut_needs_at.pa", ":4:6: error: a struct given to a '@T'/'@!T' pointer must be written as '@name' or '@!name'"},
 		{"error_515_chain_multi_to_mut.pa", ":3:17: error: cannot convert 'int32' to '@!int32'."},
 		{"error_516_chain_void_value.pa", ":3:1: error: Void function call cannot be used as a value."},
-		{"error_517_chain_transfer.pa", ":3:1: error: this expression is not supported in this version."},
 		{"error_518_chain_method_ro_recv.pa", ":4:7: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 		{"error_519_chain_multi_to_tapple.pa", ":3:1: error: the return values of a '->' chain whose value is evaluated first"},
 		{"error_520_chain_multi_borrow_escapes.pa", ":4:1: error: a borrow returned by a call given a temporary struct may point to that struct"},
@@ -1137,7 +1139,6 @@ TEST(sa_error, chain_call)
 		{"error_721_chain_method_type.pa", ":4:6: error: cannot convert 'V' to 'int32'."},
 		{"error_722_chain_method_ahead_to_tapple.pa", ":5:1: error: the return values of a '->' chain whose value is evaluated first"},
 		{"error_723_chain_method_borrow_escapes.pa", ":6:10: error: a borrow returned by a call given a temporary struct may point to that struct"},
-		{"error_724_chain_method_c_struct_value.pa", ":6:16: error: cannot convert 'div_t' to '@div_t'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -1315,6 +1316,142 @@ TEST(sa_error, unqualified_enumerator)
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_types.pa -o out/lib_sa_types.pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, const_used_before_known)
+{
+	const pair<string, string> cases[] = {
+		{"error_878_top_const_before_var.pa", ":3:10: error: const 'N' cannot be used here: its value uses 'a', which is not a top-level variable declared before the const."},
+		{"error_880_top_const_cglobal.pa", ":3:11: error: const 'N' cannot be used here: its value uses 'stdin', which is not a top-level variable declared before the const."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, global_var)
+{
+	const string notWritable = "a global variable is written only where a 'global' statement permits it";
+	const pair<string, string> cases[] = {
+		{"error_881_global_in_func.pa", ":2:2: error: 'global' is allowed only at the top level of a module."},
+		{"error_882_global_in_block.pa", ":2:2: error: 'global' is allowed only at the top level of a module."},
+		{"error_937_permit_in_block.pa", ":2:3: error: 'global' is allowed only at the top level of a module."},
+		{"error_883_permit_not_global.pa", ":2:1: error: 'x' is not a global variable: declare it with 'global', or cinclude the C global first."},
+		{"error_884_permit_not_func.pa", ":1:24: error: 'y' is not a function at the top level of this module."},
+		{"error_885_permit_duplicate.pa", ":2:14: error: 'f' is already permitted to use 'x'."},
+		{"error_886_global_before_decl.pa", ":1:1: error: this reaches 'f', which uses global variable 'x', before 'x' is declared."},
+		{"error_887_global_before_decl_indirect.pa", ":1:1: error: this reaches 'f', which uses global variable 'x', before 'x' is declared."},
+		{"error_888_global_before_decl_ref.pa", ":2:8: error: this reaches 'f', which uses global variable 'x', before 'x' is declared."},
+		{"error_889_global_read_only.pa", ":3:2: error: cannot write to 'x': " + notWritable},
+		{"error_890_global_replace.pa", ":3:2: error: cannot assign to 'a': a function writes the elements or fields of an array or struct global variable, but does not replace it."},
+		{"error_891_global_read_only_elem.pa", ":3:2: error: cannot write through read-only pointer"},
+		{"error_892_c_global_read_only_func.pa", ":4:2: error: cannot write to 'stderr': " + notWritable},
+		{"error_893_import_global.pa", ":1:1: error: cannot import a module whose functions use its global variable 'x'"},
+		{"error_894_global_param_clash.pa", ":2:1: error: Variable 'x' is already declared."},
+		{"error_895_global_init_uses_self.pa", ":1:18: error: this reaches 'f', which uses global variable 'x', before 'x' is declared."},
+		{"error_896_global_addr_read_only.pa", ":3:14: error: cannot write to 'x': " + notWritable},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_global.pa -o out/lib_sa_global.pa.ast.json");
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, give_and_take)
+{
+	const string nonOwner = " needs a source that owns its value: an owning variable, an owned field or element, "
+	                        "a call result, or a pointer viewed as an owner ('p as T').";
+	const string toParam = " cannot take a value given away with '>>': only a parameter that owns it can.";
+	const string viewTarget = ": '->> loc as T' needs a location holding a writable pointer ('@!X') "
+	                          "and an owned type T (a struct, '[n]T' or '[+]T').";
+	const string castGiven = ": a value given away with '>>' cannot be cast: it is given as the type it has.";
+	const pair<string, string> cases[] = {
+		{"error_553_arg_move_owner.pa", ":3:3: error: '>>'" + nonOwner},
+		{"error_554_c_arg_move_owner.pa", ":3:16: error: '>>'" + nonOwner},
+		{"error_517_chain_transfer.pa", ":3:1: error: '->>'" + nonOwner},
+		{"error_897_transfer_not_arg.pa", ":3:7: error: '>>' gives a value away only as a call argument, to a parameter that owns it."},
+		{"error_898_transfer_to_borrow_param.pa", ":4:1: error: parameter 'q' of 'f'" + toParam},
+		// A C function's pointer parameter borrows; only a cast of the function hands ownership over.
+		{"error_899_transfer_to_c_ptr_param.pa", ":4:1: error: parameter '__ptr' of 'free'" + toParam},
+		{"error_900_transfer_to_variadic.pa", ":4:1: error: parameter '#2' of 'printf'" + toParam},
+		{"error_901_transfer_cast.pa", ":4:3: error" + castGiven},
+		{"error_902_transfer_from_frame_var.pa", ":4:20: error: '>>'" + nonOwner},
+		{"error_903_take_from_read_only_view.pa",
+		 ":4:1: error: '<<=' cannot move from a read-only pointer viewed as an owner ('@X as T')"},
+		{"error_904_take_shape_mismatch.pa", ":3:1: error: cannot transfer 'Q' into '[2]int32'"},
+		{"error_905_take_into_frame_var.pa", ":3:1: error: '<<=' needs a variable that owns its storage; 'r' is laid out in place."},
+		{"error_906_take_into_prim.pa", ":2:1: error: '<<=' needs a variable that owns its array or struct; 'm' does not."},
+		{"error_907_take_from_non_owner.pa", ":3:1: error: '<<='" + nonOwner},
+		{"error_908_take_from_prim.pa", ":3:1: error: '<<='" + nonOwner},
+		{"error_940_owner_view_from_non_owner.pa", ":3:1: error: '->>'" + nonOwner},
+		{"error_909_call_non_func_ptr.pa", ":2:1: error: 'int32' is not a function pointer and cannot be called."},
+		{"error_910_keep_param_count.pa",
+		 ":2:13: error: the cast's function type has 2 parameters, but '@func(uint64) -> @!void' has 1."},
+		{"error_911_keep_from_non_func.pa",
+		 ":2:12: error: '_' keeps the type of the cast's source at its place, but 'int64' has no such place."},
+		{"error_912_owner_view_target_read_only.pa", ":4:1: error: '->>' cannot give a value to '@int8'" + viewTarget},
+		{"error_913_owner_view_target_not_ptr.pa", ":3:1: error: '->>' cannot give a value to 'int64'" + viewTarget},
+		{"error_914_owner_view_target_not_owned.pa", ":3:1: error: '->>' cannot give a value to '@!int8'" + viewTarget},
+		{"error_915_owner_view_target_shape.pa", ":3:1: error: cannot transfer '[4]int8' into '[4]int32'"},
+		// A `[]T` parameter keeps no length, nor does a `[+]T` take one from the array it copies.
+		{"error_916_copy_from_unsized_borrow.pa", ":4:2: error: cannot copy '[?]int32' into '[4]int32'"},
+		{"error_917_varr_copy_from_run_size.pa", ":4:1: error: cannot copy '[?]int32' into '[+]int32'"},
+		{"error_918_operator_func_arity.pa", ":2:1: error: operator function '%' must take two parameters."},
+		{"error_919_operator_func_no_struct.pa",
+		 ":1:1: error: operator function '*' must take a struct ('T' or '@T') parameter."},
+		{"error_920_operator_func_writable_param.pa",
+		 ":2:1: error: parameter 'a' of operator function '+' cannot be '@!': an operand is never passed for writing."},
+		{"error_921_no_operator_func.pa", ":3:10: error: No operator function '/' takes (vec2, vec2)."},
+		// An operand cannot be written so as to choose between a borrow and a copy.
+		{"error_922_operator_func_ambiguous.pa", ":5:10: error: Ambiguous function call '-': it can mean -(@vec2), -(vec2)."},
+		{"error_923_operator_func_no_match.pa",
+		 ":4:10: error: No function '+' takes (vec2, flo64); there are +(@vec2, @vec2)."},
+		{"error_924_keep_param_count_nested.pa",
+		 ":3:2: error: the cast's function type has 2 parameters, but '@func(int32)' has 1."},
+		{"error_925_given_twice.pa",
+		 ":4:8: error: 's' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_926_given_container_borrowed.pa",
+		 ":6:18: error: 's.p' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_927_given_index_borrowed.pa",
+		 ":6:15: error: 'arr[..]' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_928_given_receiver.pa",
+		 ":6:10: error: 's.p' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_929_given_global_call.pa",
+		 ":5:9: error: 'gs' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_930_given_path_overlap.pa",
+		 ":5:8: error: 's' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		{"error_931_given_global_in_func.pa",
+		 ":4:37: error: 'arr[..]' is given away with '>>' and set to NULL just before the call, but this later argument of the same call may change it."},
+		// Only a C function's cast may change ownership: any other function frees by its signature.
+		{"error_932_func_cast_owned_to_borrow.pa",
+		 ":4:2: error: cannot cast '@func(P)' to '@func(@P)': only a C function can be cast to take or give ownership."},
+		{"error_933_func_cast_borrow_to_owned.pa",
+		 ":4:2: error: cannot cast '@func(@P)' to '@func(P)': only a C function can be cast to take or give ownership."},
+		{"error_934_func_cast_owned_ret.pa",
+		 ":3:9: error: cannot cast '@func() -> P' to '@func() -> @P': only a C function can be cast to take or give ownership."},
+		{"error_935_func_ptr_var_cast_ownership.pa",
+		 ":4:15: error: cannot cast '@func(P)' to '@func(@P)': only a C function can be cast to take or give ownership."},
+		{"error_936_func_cast_nested_ownership.pa",
+		 ":4:2: error: cannot cast '@func(@func(P))' to '@func(@func(@P))': only a C function can be cast to take or give ownership."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");

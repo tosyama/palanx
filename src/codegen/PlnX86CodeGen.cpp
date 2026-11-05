@@ -15,17 +15,19 @@ const PhysRegs PlnX86CodeGen::x86PhysRegs = {
     { "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7" },
     { "%rbx", "%r12", "%r13", "%r14", "%r15" },
     { "%rdi", "%rsi", "%rdx", "%r10", "%r8", "%r9" },
-    { "%r10", "%r11" }
+    { "%r10", "%r11" },
+    { "%xmm10", "%xmm11", "%xmm12", "%xmm13", "%xmm14", "%xmm15" }
 };
 
 void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs)
 {
     if (!prog.data.empty() || !prog.floatData.empty() || prog.needsF32Neg || prog.needsF64Neg) {
         emitSection(".rodata");
+        // xorps/xorpd read a 16-byte operand, which must be 16-byte aligned.
         if (prog.needsF32Neg)
-            out << ".neg_mask_f32:\n\t.long 0x80000000\n";
+            out << "\t.p2align 4\n.neg_mask_f32:\n\t.long 0x80000000, 0, 0, 0\n";
         if (prog.needsF64Neg)
-            out << ".neg_mask_f64:\n\t.quad 0x8000000000000000\n";
+            out << "\t.p2align 4\n.neg_mask_f64:\n\t.quad 0x8000000000000000, 0\n";
         for (auto& d : prog.data)
             emitStringLiteral(d.label, d.value);
         for (auto& f : prog.floatData) {
@@ -34,6 +36,15 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
                 out << "\t.float " << f.value << "\n";
             else
                 out << "\t.double " << f.value << "\n";
+        }
+    }
+
+    if (!prog.bss.empty()) {
+        emitSection(".bss");
+        for (auto& b : prog.bss) {
+            out << "\t.align " << b.align << "\n";
+            emitLabel(b.label);
+            out << "\t.zero " << b.size << "\n";
         }
     }
 
@@ -49,7 +60,8 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
 
         emitFuncPrologue(func, ra, rm);
 
-        for (auto& instr : func.instrs) {
+        for (size_t ii = 0; ii < func.instrs.size(); ++ii) {
+            auto& instr = func.instrs[ii];
             if      (auto* i  = std::get_if<LeaLabel> (&instr)) emitInstrLeaLabel(*i, rm);
             else if (auto* i  = std::get_if<MovImm>   (&instr)) emitInstrMovImm(*i, rm);
             else if (auto* i  = std::get_if<InitVar>  (&instr)) emitInstrInitVar(*i, rm);
@@ -66,6 +78,7 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<BitNot>   (&instr)) emitInstrBitNot(*i, rm);
             else if (auto* i  = std::get_if<Shift>    (&instr)) emitInstrShift(*i, rm);
             else if (auto* i  = std::get_if<ShiftImm> (&instr)) emitInstrShiftImm(*i, rm);
+            else if (auto* i  = std::get_if<PackF32x2>(&instr)) emitInstrPackF32x2(*i, rm);
             else if (auto* i  = std::get_if<Cmp>      (&instr)) emitInstrCmp(*i, rm);
             else if (auto* i  = std::get_if<Convert>  (&instr)) emitInstrConvert(*i, rm);
             else if (auto* i  = std::get_if<CallC>    (&instr)) emitInstrCallC(*i, rm);
@@ -86,10 +99,24 @@ void PlnX86CodeGen::emit(const VProg& prog, const vector<RegAllocResult>& allocs
             else if (auto* i  = std::get_if<LeaLocal>     (&instr)) emitInstrLeaLocal(*i, rm);
             else if (auto* i  = std::get_if<FrameAddr>    (&instr)) emitInstrFrameAddr(*i, rm, ra.frameBlockOffsets);
             // DeclVar, BlockEnter and BlockLeave are no-ops
+            emitHomeMoves(ra.storesAfter, ii, rm, true);
+            emitHomeMoves(ra.reloadsAfter, ii, rm, false);
         }
     }
 
     emitNoteGnuStack();
+}
+
+void PlnX86CodeGen::emitHomeMoves(const map<int, vector<VReg>>& moves, int idx, const RegMap& rm, bool store)
+{
+    auto it = moves.find(idx);
+    if (it == moves.end()) return;
+    for (VReg vr : it->second) {
+        const PhysLoc& loc = rm.at(vr);
+        string home = to_string(loc.homeOffset) + "(%rbp)";
+        out << "\t" << movInstrForType(loc.type) << " "
+            << (store ? loc.base : home) << ", " << (store ? home : loc.base) << "\n";
+    }
 }
 
 void PlnX86CodeGen::emitFuncPrologue(const VFunc& func, const RegAllocResult& ra, const RegMap& rm)
@@ -113,6 +140,7 @@ void PlnX86CodeGen::emitFuncPrologue(const VFunc& func, const RegAllocResult& ra
 
 void PlnX86CodeGen::emitInstrLeaLabel(const LeaLabel& i, const RegMap& rm)
 {
+    if (!rm.count(i.dst)) return;  // dead: result never used
     const PhysLoc& loc = rm.at(i.dst);
     if (!loc.isStack()) {
         emitLeaLabel(sizedRegName(loc.base, loc.type), i.label);

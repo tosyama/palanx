@@ -1,6 +1,0 @@
-cinclude <stdlib.h>;
-type Acc { int32 n; };
-func addd(@!Acc a, @div_t d) { a.n + d.quot -> a.n; }
-func g() -> int32 { return 7; }
-Acc acc;
-div(g(), 2) -> acc.addd();

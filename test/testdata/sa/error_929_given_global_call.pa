@@ -1,0 +1,5 @@
+type S { int32 n; };
+func f(S s, int32 n) {}
+func k() -> int32 { return 0; }
+global S gs for k!;
+f(gs>>, k());

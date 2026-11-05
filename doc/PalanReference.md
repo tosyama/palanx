@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.2.2
+**Version:** v0.2.3
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -186,6 +186,10 @@ A cast can convert:
   `@T as @!T` drops the read-only restriction, for a C function whose parameter is not
   `const` but which doesn't write through it. No bits change; reading or writing through the
   result as the new type is the programmer's responsibility, as in C.
+- From a function pointer to another function pointer type. Writing `_` for a parameter or
+  return type keeps the one the source has there, so `free as @func(Q)` and
+  `memmove as @func([4]int8, _, _) -> _` change only what they name. This is how a C function
+  takes or returns ownership (see [Giving Values Away](#giving-values-away--and-taking-them-over-)).
 - Between a pointer and `int64`/`uint64`, in either direction. A narrower integer is rejected
   rather than dropping the upper half of the address.
 - From a pointer or an array to a borrowed array (`@[n]T`/`@![n]T`, including `@[n]$[m]T`),
@@ -201,9 +205,15 @@ cinclude <stdlib.h>;
 255 -> img[10][20];
 ```
 
-An owned array (`[n]T`) or a struct value can't be a cast target — a cast never creates
-ownership — and a struct value can't be cast into a pointer: take its address first
-(`@!s as @!uint8`).
+- From a pointer (`@!X`) to an owned struct or array (`T`, `[n]T`, `[+]T`), which views what it
+  points to as that type's owner, as C hands such a thing back. It is copied like an owned
+  variable when assigned or passed, and moved by `<<=`, `->>` or `>>`; a move leaves the pointer
+  as it is. A `@X` pointer can be viewed this way only to copy from it. A `@!X` location is
+  viewed this way to be given a value: `v ->> loc as T` (see
+  [Ownership Across C Functions](#ownership-across-c-functions)).
+
+A value is never cast into an owned type — a cast never creates ownership — and a struct value
+can't be cast into a pointer: take its address first (`@!s as @!uint8`).
 
 `as` binds tighter than every binary operator and looser than a unary one: `p as @!int32 == NULL`
 compares the cast pointer, `a + b as int64` casts only `b`, and `-x as uint32` casts `-x`.
@@ -423,8 +433,11 @@ printf("%ld\n", MaxLen);   // 256
 
 #### Restrictions
 
-- Only a top-level const can size a borrowed array parameter (`@[N]T`); function signatures are
-  registered before any other statement is processed.
+- Only a top-level const can size a borrowed array parameter (`@[N]T`). Its value may use the
+  length of a top-level array declared before it (`[]Light lights = [...]; const LN =
+  lights->len();`) when the array's declaration fixes its size, but not other variables: such a
+  const is known only from its own statement on, so it cannot size a parameter or a top-level
+  type.
 
 ### Type Aliases
 
@@ -854,7 +867,9 @@ divmod(17, 5) -> add3(100);                    // add3(q, r, 100)
   and `divmod(7, 2) -> acc.add3(9)` is `add3(@!acc, q, r, 9)`. `v` is evaluated before `x`, so in
   `next(@!i) -> a[i].f()` `a[i]` uses the `i` `next` changed, and in `n -> a[bump(@!n)].f()` the
   `n` passed is the one before `bump`.
-- Not supported in this version: `->>` to a call, and receiving with `(a, b) = ...` the return
+- `v ->> f()` gives `v` away to `f`, as `f(v>>)` does (see
+  [Giving Values Away](#giving-values-away--and-taking-them-over-)).
+- Not supported in this version: receiving with `(a, b) = ...` the return
   values of a chain whose value is evaluated first: a call given several chained values, or a
   method-form call where the value or `x` has a call (`(a, b) = g() -> acc.two()`).
 
@@ -912,26 +927,30 @@ printf("%d\n", o.op(4));           // 8
   element (`[4]@func(int32) -> int32`). Parameter names are not written.
 - It is read-only like `@T`: code is never written through it, so `@!func(...)` is an error.
   The variable itself can be given another function with `->`.
-- A parameter or return type must be a primitive or a borrowed pointer (`@T`/`@!T`, including
-  another function pointer). A struct or an array passed or returned by value is not allowed.
+- A parameter or return type is a primitive, a borrowed pointer (`@T`/`@!T`, including another
+  function pointer), or an owned struct or array (`T`, `[n]T` with a constant `n`, `[+]T`), which
+  is passed and returned as a function passes it: the called function owns an owned argument and
+  frees it, and the caller owns an owned return value. A `$T` or `[]T` is not allowed.
 - A function becomes a function pointer by writing its name where a value is expected. This works
   for a Palan function returning nothing or one value (a single named return counts as one), an
   imported function, and a C function that is not variadic. A function with several return
-  values, a variadic C function, and a `syscall` cannot be used this way. A variable of the same
+  values, a variadic C function, a C function taking or returning a struct by value, and a
+  `syscall` cannot be used this way. A variable of the same
   name is used in preference to the function.
 - A function fits a function pointer type when the parameter count is the same, each parameter
   and the return type are the same type (no widening: `int32` does not fit `int64`), and pointer
   permissions flow the right way: a function taking `@!T` does not fit a pointer that passes
-  `@T`, while a function taking `@T` fits one that passes `@!T`. A `@void` parameter or return
-  matches any pointer, as it does elsewhere.
+  `@T`, while a function taking `@T` fits one that passes `@!T`. Ownership must match too: a
+  function owning a parameter (`T`) does not fit a pointer that lends it (`@!T`), nor the
+  reverse. A `@void` parameter or return matches any pointer, as it does elsewhere.
 - A function pointer is a pointer otherwise: it can be `NULL` and compared with `==`/`!=`, a
   `@void` converts to it, and `as` converts it to `@void` or `int64`/`uint64` and back. Calling a
   `NULL` function pointer is not checked.
 - `f(x)` when both a function pointer `f` and a function `f` are visible is an error, and so is
   `s.f(x)` when `s` has a function pointer field `f` and a function `f` could take `s` as a method
   (its first parameter is `@!`).
-- Not supported in this version: calling the result of an expression directly, such as
-  `tbl[0](3)` or `pick(true)(3)`; store it in a variable first.
+- A parenthesized expression is called through: `(tbl[0])(3)`, `(pick(true))(3)`,
+  `(f as @func(@!int8))(p)`. Without the parentheses (`tbl[0](3)`) it is not supported.
 
 ### Overloading
 
@@ -969,6 +988,42 @@ show(2.5);          // float 2.5
 - Receiving several return values (`(a, b) = f(x)`) needs the functions returning that many to
   return the same types.
 
+### Operator Functions
+
+A function named by an operator defines binary `+`, `-`, `*`, `/`, `%` or unary `-` where an
+operand is a struct (a struct variable, field, borrow or returned struct):
+
+```palan
+cinclude <stdio.h>;
+
+type vec3 { flo32 x; flo32 y; flo32 z; };
+
+func +(@vec3 a, @vec3 b) -> vec3 { return [a.x + b.x, a.y + b.y, a.z + b.z]; }
+func *(@vec3 v, flo32 f) -> vec3 { return [v.x * f, v.y * f, v.z * f]; }
+func *(flo32 f, @vec3 v) -> vec3 { return [v.x * f, v.y * f, v.z * f]; }
+func -(vec3 v) -> vec3 {
+    -v.x -> v.x; -v.y -> v.y; -v.z -> v.z;
+    return v;
+}
+
+vec3 a = [1, 2, 3];
+vec3 b = -(a + a * 2.0);           // -3 -6 -9
+vec3 c = 2.0 * b;                  // -6 -12 -18
+printf("%g %g %g\n", c.x, c.y, c.z);
+```
+
+- `a + b` calls the `+` functions as `+(a, b)` would, chosen as an [overloaded](#overloading)
+  call among those taking two parameters; `-a` among the `-` functions taking one. With no
+  function for the operator and the operands' types, it is a compile error.
+- An operand is passed as a value chained into a call (`a -> f()`) is: a `@T` parameter borrows
+  it, a `T` parameter receives a copy, and a struct an operator or a call returns is handed over
+  without one. When both a `@T` and a `T` function fit, the operator is ambiguous.
+- `+`, `*`, `/` and `%` take two parameters, `-` one or two. At least one parameter must be a
+  struct (`T` or `@T`), and none can be `@!`.
+- An operator over numbers only is the built-in one and cannot be defined.
+- A struct an operator returns can be borrowed as a call argument: `f(@(a + b))`.
+- Comparison operators cannot be defined.
+
 ---
 
 ## 8. Arrays
@@ -992,6 +1047,25 @@ cinclude <stdio.h>;
     printf("%s", buf);
 }                             // free(buf) called here automatically
 ```
+
+### Sizes Known Only at Run Time
+
+An array variable whose size is known only at run time (`[n]int32 a;` for a variable `n`) keeps
+that size from its declaration. It is moved, given, taken over and copied like any other
+array, by the sizes of the variable or row receiving the value or releasing it; that the two
+sizes agree is the program's responsibility, as it is not checked:
+
+```palan
+int64 n = 100;
+[n]int32 a;
+[n]int32 b <<= a;        // a is now NULL
+[n]int32 c;
+b -> c;                  // copies n elements
+```
+
+- A `[]T` parameter keeps no size, so it cannot be copied from into an array, and a `[+]T`
+  cannot copy from an array whose size is known only at run time.
+- A parameter's or return value's sizes are known at compile time.
 
 ### Stack Arrays (`$[n]T`)
 
@@ -1226,8 +1300,9 @@ minos[0][3] -> mino[0];      // copy one struct element
 2 -> mino[1].x;              // minos is unchanged
 ```
 
-- The source must have the same element type and the same sizes as the destination, all known
-  at compile time; otherwise it is a compile error. A source may be borrowed (`@[n]T`, `@T`).
+- The source must have the same element type and layout as the destination, and the same sizes
+  where both are known at compile time; otherwise it is a compile error. A source may be borrowed
+  (`@[n]T`, `@T`). A size known only at run time is [the owner's](#sizes-known-only-at-run-time).
 - What the destination owns is copied too: owned struct fields and arrays, and the structs of a
   `[n]T` array, get copies of the source's. A `@T`/`@!T` pointer is copied as a pointer.
 - A struct returned by a function is copied the same way, and then freed. A `[]T` return has
@@ -1248,7 +1323,8 @@ inner ->> outer[0];      // outer's original row 0 is freed; inner is set to NUL
 // free(inner) at scope exit → free(NULL) = no-op
 ```
 
-A row must have the same element type and the same size as `val`, both known at compile time.
+A row must have the same element type as `val`, and the same size where both are known at
+compile time.
 A `@T`/`@!T` pointer slot (including `[n]@![]T`) cannot take ownership; `->>` into one is a
 compile error.
 
@@ -1264,8 +1340,8 @@ p ->> w.pt;              // w's original Point is freed; p is set to NULL
 
 `val ->> var` transfers `val` into a variable that owns its array or struct. What the variable
 held is freed first, and `val` is set to NULL as above. An array must have the same element type
-and the same sizes as the variable, both known at compile time; a struct must be of the same
-type. A stack (`$`) variable, a borrow, a struct parameter, or `val` naming the variable itself is
+as the variable, and the same sizes where both are known at compile time; a struct must be of
+the same type. A stack (`$`) variable, a borrow, or `val` naming the variable itself is
 a compile error.
 
 ```palan
@@ -1277,10 +1353,96 @@ a ->> c;                 // c's original array is freed; a is set to NULL
 The source must own what it gives away: a variable that owns its array or struct, an owned
 field or element (`v.pt ->> w.pt`, `pts[1] ->> w.pt`, `m[1] ->> w.arr`), or a value returned by
 a function. A field or element source is set to NULL like a variable. A borrow (`@T`/`@!T`,
-`@[n]T`), a struct parameter, a stack (`$`) variable, or a `@T` field is a compile error.
+`@[n]T`), a stack (`$`) variable, or a `@T` field is a compile error.
 
 `return` on a tracked array variable also transfers ownership: the variable is removed from
 free-tracking and the caller receives the pointer.
+
+### Giving Values Away (`>>`) and Taking Them Over (`<<=`)
+
+`v>>` gives what `v` owns away as a call argument, and `v` is set to NULL as by `->>`. Given to a
+parameter that owns its argument (a struct `T`, `[n]T`, `[+]T`), it is passed without a copy:
+
+```palan
+func total([+]int32 v) -> int64 t {   // v is freed when total returns
+    0 -> t;
+    for copy e in v { t + e -> t; }
+}
+
+[+]int32 big = [1, 2, 3];
+total(big>>);                // no copy; big is now NULL
+big ->> total();             // the same, chained
+```
+
+- The source is an owner, as for `->>`: a variable that owns its array or struct, an owned field
+  or element, a value a call returns, or a pointer viewed as an owner (`p as T`).
+- `v>>` is written only as a call argument to a parameter that owns it, and cannot be cast.
+  Given to a `@T`/`@!T` parameter, a C function's pointer parameter, or a variadic argument, it
+  is a compile error, since nothing would own it.
+- The call's arguments are evaluated left to right, and `v>>` reads `v` where it is written, but
+  `v` becomes NULL only after all of them, just before the call. Another argument can still
+  borrow from it, as a C function taking a request and a part of it expects
+  (`(uv_write as @func(write_req_t, _, _, _, _))(req>>, client, @req.buf, 1, on_write)`).
+- An argument after `v>>` that could change `v` before that is a compile error: giving `v`, a
+  part of it or what contains it away again; borrowing with `@!` (or calling a method on) what
+  contains `v`, or a variable its index reads (`f(a[i]>>, g(@!i))`); or, when `v` or its index
+  is reached from a global, calling any function.
+
+`T b <<= v;` declares `b` taking over what `v` owns, without a copy. `v` is an owner (set to
+NULL) or a call result:
+
+```palan
+[4]int32 a = [1, 2, 3, 4];
+[4]int32 c <<= a;                     // a is now NULL
+```
+
+- `b` must own its array or struct: not a `$` variable, a borrow or a primitive. `v` must have
+  `b`'s type (for an array, the same sizes where both are known at compile time).
+
+#### Ownership Across C Functions
+
+A C function's pointer parameter only borrows, as C's types say nothing about who frees what. A
+C function that keeps what it is given, or hands back what the caller is to free, is called
+through a [cast](#explicit-cast) to a function pointer type owning that parameter or return
+value, and `>>` gives the value to it. Nothing frees it in Palan from then on:
+
+```palan
+uv_tcp_t client;
+...
+(uv_close as @func(uv_tcp_t, @func(uv_tcp_t)))(client>>, on_close);
+
+func on_close(uv_tcp_t client) { }    // libuv hands client back; it is freed here
+```
+
+Only a C function named in the cast can be read this way. A Palan function frees what its own
+parameters own, so casting it, or any function pointer value, to a type that owns or borrows
+differently is an error: `on_close as @func(@!uv_handle_t)` would have the caller keep what
+`on_close` frees.
+
+A pointer C hands back inside a struct is viewed as its owner with `as` and taken over:
+
+```palan
+func on_read(@!uv_stream_t s, int64 nread, @uv_buf_t buf)
+{
+    [65536]int8 data <<= buf.base as [65536]int8;
+}   // data is freed here; buf.base is left as it is
+```
+
+A pointer C is to hold is given the same way, by viewing the location it goes to as an owner.
+What the location held is not freed, as it is no Palan owner:
+
+```palan
+func alloc_buffer(@!uv_handle_t handle, uint64 size, @!uv_buf_t buf)
+{
+    [size]int8 data;
+    data ->> buf.base as [size]int8;     // data is now NULL; buf.base holds the block
+    size -> buf.len;
+}
+```
+
+- Whether a pointer really points to a `T` that Palan can free is not checked, as in C.
+- A Palan function owning a parameter frees what it owns inside it; C's `free` does not, so give
+  C's `free` only a struct or array that owns nothing further.
 
 ### Two-Dimensional Arrays (`[m][n]T`)
 
@@ -1895,12 +2057,19 @@ printf("%ld\n", n2.val);               // 42
 
 ### Struct Types in Function Signatures
 
-A struct-type parameter is passed as a pointer (borrowed, not freed by the callee):
+A struct-type parameter owns its argument, as a `[n]T` parameter does: the caller passes a copy
+(a struct a call returns is handed over without one), and the function frees it when it returns,
+unless it returns it or gives it away with `->>`. Writing to it does not change the caller's
+struct:
 
 ```palan
-func getX(Point p) -> int64 x {
-    p.x -> x;
+func shifted(Point p) -> Point {
+    p.x + 1 -> p.x;
+    return p;
 }
+
+Point pt;
+Point q = shifted(pt);       // pt.x stays 0; q.x is 1
 ```
 
 A `@T`/`@!T` parameter borrows a struct, and the caller writes `@s` (read-only) or `@!s`
@@ -2170,7 +2339,8 @@ import square from "lib_math.pa";
 printf("%ld\n", square(4));   // 16  (cube is not imported)
 ```
 
-Multiple names can be listed with commas: `import square, cube from "lib_math.pa"`.
+Multiple names can be listed with commas: `import square, cube from "lib_math.pa"`. An
+[operator function](#operator-functions) is listed by its operator: `import vec3, +, - from "vec3.pa"`.
 
 ### Alias Import
 
@@ -2185,6 +2355,7 @@ printf("%ld\n", L.cube(2));    // 8
 ```
 
 - All calls must use the `L.f()` qualified form. Unqualified `square()` is a compile error.
+- Operator functions apply unqualified (`a + b`), since an operator cannot be written with `L.`.
 - A variable named `L` hides the alias: `L.f()` is then a method-form call on the variable (see §7).
 
 ### Selective Alias Import
@@ -2264,10 +2435,47 @@ printf("%lld\n", x);
   ```
 
   `palan echo.pa x y` prints `x` and `y`.
-- There are no global variables: a top-level variable is visible to the top-level statements
-  after it, but not inside functions.
+- A top-level variable is visible to the top-level statements after it, but not inside
+  functions, unless it is a [global variable](#global-variables).
 - User-defined functions can be placed before or after top-level statements.
 - `return` is not valid at top-level. To exit early, call `exit()` from `<stdlib.h>`.
+
+### Global Variables
+
+```palan
+cinclude <stdlib.h>;
+
+global int32 calls = 0 for cmp!, report;
+global int32 dir = 1;
+global dir for cmp;
+
+func cmp(@int32 a, @int32 b) -> int32 r {
+    calls + 1 -> calls;
+    (a[0] - b[0]) * dir -> r;
+}
+```
+
+- A top-level variable declared with `global` can be used by the functions its `for` list
+  names, an [operator function](#operator-functions) by its operator (`for +`). A function named
+  alone may only read the variable; with `!` after its name it may also write it. A `global` statement without a type adds functions to the list later
+  (`global dir for cmp;`). Functions not listed do not see the variable, so they may use its
+  name for their own parameters and variables; a listed function may not.
+- This is how a function C calls with fixed arguments, such as a `qsort` comparator or a libuv
+  callback, gets at what it needs.
+- `global` is a reserved word. It is written only at the top level of a file, declares one
+  variable, and lists only functions defined at the top level of the same file (a name covers all
+  its overloads).
+- A listed function sees an array or struct variable as it would a `@` parameter (`@!` with `!`):
+  it reads (or writes) the elements and fields, but cannot replace the variable itself. A
+  number or pointer variable it can assign only with `!`; what a pointer points to keeps the
+  pointer's own type (`@!T` stays writable through).
+- The variable is initialized where it is declared, so a top-level statement before the
+  declaration may not call a listed function, directly or through other functions, nor take its
+  address (a compile error).
+- What a global variable owns lives until the program ends; it is not freed at the end of the
+  top level. A value it is reassigned away from at the top level is freed as usual.
+- A file whose global variables are used by its functions cannot be imported, since an imported
+  file's top-level statements, which would initialize them, do not run.
 
 ---
 
@@ -2444,11 +2652,14 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
   fprintf(stderr, "starting up\n");   // stderr resolves to the C global
   ```
 
-- **Read-only from Palan**: assigning to a C global (`x -> stdout`) is a compile error, and so is
-  taking its address (`@stdout`) or reaching a field through it. This is a restriction on the
-  variable binding itself, not on what it points to — the *pointee* keeps its own C-declared
-  mutability, so `fwrite(data, 1, n, stdout)` (writing through the `FILE *` value `stdout` holds)
-  works normally.
+- **Written only with permission**: a C global can be read anywhere it is visible, but writing
+  it needs a `global` statement, the same one that lists the functions of a
+  [global variable](#global-variables): `global optind;` lets the top-level statements after it
+  write `optind`, and `global optind for parse!;` lets `parse` write it too. Without one,
+  assigning to it (`x -> stdout`) or taking a writable address (`@!optind`) is a compile error.
+  This restricts the variable itself, not what it points to — the *pointee* keeps its own
+  C-declared mutability, so `fwrite(data, 1, n, stdout)` (writing through the `FILE *` value
+  `stdout` holds) works normally.
 - Aliased cinclude (`cinclude <x.h> as X;`) does not namespace C globals either — like typedefs
   and constants, they are always registered globally; only a function call needs the `X.`
   qualifier.

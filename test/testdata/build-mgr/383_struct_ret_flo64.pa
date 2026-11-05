@@ -1,0 +1,20 @@
+cinclude <stdio.h>;
+
+type D { flo64 a; flo32 b; flo32 c; };
+type DD { flo64 x; flo64 y; };
+type FF { flo32 p; flo32 q; };
+type A { $[2]flo64 v; };
+
+func make_d(flo64 a, flo32 b) -> D { return [a, b, b * 2]; }
+func make_dd(flo64 x) -> DD { return [x, x + 0.25]; }
+func make_ff(flo32 p) -> FF { return [p, -p]; }
+func make_a(flo64 x) -> A { return [[x, x * 3]]; }
+
+$D d = make_d(1.5, 2.5);
+$DD dd = make_dd(-4.0);
+$FF ff = make_ff(0.75);
+$A a = make_a(0.5);
+printf("%g %g %g\n", d.a, d.b, d.c);
+printf("%g %g\n", dd.x, dd.y);
+printf("%g %g\n", ff.p, ff.q);
+printf("%g %g\n", a.v[0], a.v[1]);

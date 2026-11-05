@@ -718,8 +718,8 @@ TEST(codegen, float_neg) {
     string asm_text = readFile(asmf);
     ASSERT_NE(asm_text.find("xorpd"), string::npos);  // flo64 neg
     ASSERT_NE(asm_text.find("xorps"), string::npos);  // flo32 neg
-    ASSERT_NE(asm_text.find(".neg_mask_f64"), string::npos);
-    ASSERT_NE(asm_text.find(".neg_mask_f32"), string::npos);
+    ASSERT_NE(asm_text.find("\t.p2align 4\n.neg_mask_f64:\n\t.quad 0x8000000000000000, 0\n"), string::npos);
+    ASSERT_NE(asm_text.find("\t.p2align 4\n.neg_mask_f32:\n\t.long 0x80000000, 0, 0, 0\n"), string::npos);
 }
 
 TEST(codegen, array_buf) {
@@ -1253,8 +1253,8 @@ TEST(codegen, bitwise_ops) {
 }
 
 TEST(codegen, c_global) {
-    // A C global reference (e.g. `stderr`) lowers to the same LeaLabel+DerefLoad
-    // as a string literal, with no dedicated VInstr of its own.
+    // A name bound to a static slot (here the C global `stderr`) is read with
+    // LeaLabel+DerefLoad, with no dedicated VInstr of its own.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/069_c_global.sa.json";
     string asmf = "out/069_c_global.s";
@@ -1304,15 +1304,36 @@ TEST(codegen, struct_ret_mixed) {
     ASSERT_NE(asm_text.find("movq %rax,"),     string::npos);
     ASSERT_NE(asm_text.find("movsd %xmm0,"),   string::npos);
     ASSERT_NE(asm_text.find(", 8(%r"),         string::npos);
-    ASSERT_EQ(asm_text.find("%xmm1"),          string::npos);
+    ASSERT_EQ(asm_text.find("%xmm1,"),         string::npos);
+    ASSERT_EQ(asm_text.find("%xmm1\n"),        string::npos);
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/071_struct_ret_mixed.o"), "");
 }
 
+TEST(codegen, struct_ret_flo64) {
+    // {flo64 a; flo32 b; flo32 c;} returned from a ret-slot: the eightbyte
+    // marked flo64 is read whole, the two flo32 halves are read and packed.
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/079_struct_ret_flo64.sa.json";
+    string asmf = "out/079_struct_ret_flo64.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    ASSERT_NE(asm_text.find("\tmovsd ("), string::npos);
+    ASSERT_EQ(asm_text.find("\tmovss ("), string::npos);
+    ASSERT_EQ(asm_text.find("\tmovss 4("), string::npos);
+    size_t pack = asm_text.find("unpcklps");
+    ASSERT_NE(pack, string::npos);
+    ASSERT_EQ(asm_text.find("unpcklps", pack + 1), string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/079_struct_ret_flo64.o"), "");
+}
+
 TEST(codegen, struct_ret_memory) {
-    // >16 bytes: MEMORY class -- the caller's calloc'd pointer is prepended
-    // as an ordinary first argument (hidden pointer); no register-based
-    // eightbyte store follows the call.
+    // >16 bytes: MEMORY class -- the ret-dest pointer is passed as the hidden
+    // first argument; no register-based eightbyte store follows the call.
     cleanTestEnv();
     string sa   = "../test/testdata/codegen/072_struct_ret_memory.sa.json";
     string asmf = "out/072_struct_ret_memory.s";
@@ -1491,4 +1512,26 @@ TEST(codegen, frame_alloc)
     ASSERT_NE(asm_text.find("call memset"), string::npos);
 
     ASSERT_EQ(execTestCommand("as " + asmf + " -o out/077_frame_alloc.o"), "");
+}
+
+TEST(codegen, global_var)
+{
+    cleanTestEnv();
+    string sa   = "../test/testdata/codegen/078_global.sa.json";
+    string asmf = "out/078_global.s";
+
+    string err = run_codegen(sa, asmf);
+    ASSERT_EQ(err, "");
+
+    string asm_text = readFile(asmf);
+    // A slot per global, and the `$P` global's storage, in .bss.
+    ASSERT_NE(asm_text.find(".section .bss"), string::npos);
+    ASSERT_NE(asm_text.find("_078_global.n:\n\t.zero 8"), string::npos);
+    ASSERT_NE(asm_text.find("_078_global.p.data:\n\t.zero 16"), string::npos);
+    // Every access goes through the label, a C global's as well.
+    ASSERT_NE(asm_text.find("leaq _078_global.n(%rip)"), string::npos);
+    ASSERT_NE(asm_text.find("leaq _078_global.p(%rip)"), string::npos);
+    ASSERT_NE(asm_text.find("leaq optind(%rip)"), string::npos);
+
+    ASSERT_EQ(execTestCommand("as " + asmf + " -o out/078_global.o"), "");
 }

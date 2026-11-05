@@ -72,6 +72,7 @@ struct BitNot   { VReg dst; VReg src; VRegType type; };            // dst = ~src
 enum class ShiftOp { Shl, Shr, Sar };  // Sar only lowers division; Palan has no arithmetic shift
 struct Shift    { VReg dst; VReg lhs; VReg rhs; ShiftOp op; VRegType type; }; // count taken modulo the width
 struct ShiftImm { VReg dst; VReg src; int count; ShiftOp op; VRegType type; }; // 0 < count < width
+struct PackF32x2 { VReg dst; VReg lo; VReg hi; };                               // Float64 dst = lo, hi as its two halves
 struct Cmp      { VReg dst; string op; VReg lhs; VReg rhs; VRegType type; }; // dst (uint8) = (lhs op rhs) ? 1 : 0
 struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (to)src
 // dsts/retTypes hold zero (statement-level, no return used), one (an ordinary
@@ -87,12 +88,14 @@ struct Convert  { VReg dst; VReg src; VRegType from; VRegType to; }; // dst = (t
 struct StructArgSpan { size_t first; size_t count; bool inMemory; };
 struct CallC    { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes;
                   std::optional<VReg> callee = std::nullopt; vector<StructArgSpan> structArgs = {}; };
-struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
+// sysvRet: the dsts are a returned struct's eightbytes, in the System V
+// return registers (%rax/%rdx, %xmm0/%xmm1) instead of Palan's multiple-value ones.
+struct CallPln  { string name; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; bool sysvRet = false; };
 // Same dsts/retTypes shape as CallC/CallPln, but always 0 or 1 (palan-sa's
 // validateSyscallDecl rejects multi-return syscall declarations) and no
 // name -- num is the Linux syscall number (raw syscall ABI, not System V).
 struct CallSys  { long long num; vector<VReg> args; vector<VReg> dsts; vector<VRegType> retTypes; };
-struct RetPln   { vector<VReg> rets; vector<VRegType> types; };
+struct RetPln   { vector<VReg> rets; vector<VRegType> types; bool sysvRet = false; };
 struct BlockEnter {};
 struct BlockLeave { vector<VReg> expiredVars; };
 struct Label      { string name; };                              // name:
@@ -110,7 +113,7 @@ struct LeaLocal      { VReg dst; VReg local; };                                 
 struct FrameAddr     { VReg dst; int block; };                                                         // dst = address of VFunc::frameBlocks[block]
 
 using VInstr = std::variant<LeaLabel, MovImm, InitVar, InitVarF, DeclVar, Add, Sub, Mul, Div, Mod, Neg,
-                             BitAnd, BitOr, BitXor, BitNot, Shift, ShiftImm, Cmp, Convert,
+                             BitAnd, BitOr, BitXor, BitNot, Shift, ShiftImm, PackF32x2, Cmp, Convert,
                              CallC, CallPln, CallSys, RetPln,
                              BlockEnter, BlockLeave,
                              Label, Jmp, CondJmp, Mov, Copy, DerefLoadIdx, DerefStoreIdx, CalcAddrIdx,
@@ -160,6 +163,7 @@ struct VFloatLiteral {
 };
 
 struct FrameBlock { int size; int align; };
+struct StaticBlock { string label; int size; int align; };
 
 struct VFunc {
     string         name;
@@ -172,6 +176,7 @@ struct VFunc {
 struct VProg {
     vector<VStringLiteral> data;       // .rodata string literals
     vector<VFloatLiteral>  floatData;  // .rodata float literals
+    vector<StaticBlock>    bss;        // .bss global slots and storage
     vector<VFunc>          funcs;      // .text
     bool needsF32Neg = false;          // true if any Neg{Float32} instruction exists
     bool needsF64Neg = false;          // true if any Neg{Float64} instruction exists

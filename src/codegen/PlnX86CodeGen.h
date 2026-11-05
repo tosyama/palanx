@@ -26,6 +26,7 @@ class PlnX86CodeGen : public PlnCodeGen {
 
     // Per-function prologue
     void emitFuncPrologue(const VFunc& func, const RegAllocResult& ra, const RegMap& rm);
+    void emitHomeMoves(const map<int, vector<VReg>>& moves, int idx, const RegMap& rm, bool store);
 
     // Shared helper: emit a binary reg-reg arithmetic instruction (Add/Sub/Mul/BitAnd/BitOr/BitXor)
     void emitBinArith(const string& op, VReg dst, VReg lhs, VReg rhs, VRegType type, const RegMap& rm);
@@ -45,6 +46,7 @@ class PlnX86CodeGen : public PlnCodeGen {
     void emitInstrBitNot(const BitNot& i, const RegMap& rm);
     void emitInstrShift(const Shift& i, const RegMap& rm);
     void emitInstrShiftImm(const ShiftImm& i, const RegMap& rm);
+    void emitInstrPackF32x2(const PackF32x2& i, const RegMap& rm);
     void emitInstrCmp(const Cmp& i, const RegMap& rm);
     void emitInstrConvert(const Convert& i, const RegMap& rm);
     void emitInstrCallC(const CallC& i, const RegMap& rm);

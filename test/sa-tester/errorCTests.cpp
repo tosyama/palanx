@@ -417,45 +417,29 @@ TEST(sa_error, c_unsupported_aliased_call)
 
 TEST(sa_error, c_global_not_assignable)
 {
-	// `fopen(...) -> stderr;` -- a C global is read-only.
-	// Covers: sa_assign_stmt findCGlobal branch, E_CGlobalNotAssignable
+	// `fopen(...) -> stderr;` -- writing a C global needs a `global stderr;` first.
+	// Covers: requireAssignable C global branch, E_GlobalNotWritable
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_143_c_global_not_assignable.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("cannot assign to 'stderr'"), string::npos);
-	ASSERT_NE(sa.find("read-only"), string::npos);
+	ASSERT_NE(sa.find("cannot write to 'stderr'"), string::npos);
+	ASSERT_NE(sa.find("'global stderr;'"), string::npos);
 }
 
 TEST(sa_error, c_global_addr_of)
 {
-	// `@stderr;` -- a C global is a value, not a storage location Palan owns.
-	// Covers: sa_expr_addr_of "id" branch findCGlobal check, E_CGlobalNotAddressable
+	// `@stderr;` -- stderr is a FILE pointer, a borrow as any '@!FILE' variable is.
+	// Covers: sa_expr_addr_of lookupVar of a C global, E_AddrOfBorrowed
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
 		"bin/palan-gen-ast ../test/testdata/sa/error_144_c_global_addr_of.pa -o " + ast_out), "");
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("'stderr'"), string::npos);
-	ASSERT_NE(sa.find("not a storage location"), string::npos);
-}
-
-TEST(sa_error, c_global_field_access)
-{
-	// `stderr._flags` -- field access requires resolveObjectChain to treat
-	// the base as an ordinary struct-pointer local, which a C global is not.
-	// Covers: resolveObjectChain "id" branch findCGlobal check, E_CGlobalNotAddressable
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_145_c_global_field_access.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("'stderr'"), string::npos);
-	ASSERT_NE(sa.find("not a storage location"), string::npos);
+	ASSERT_NE(sa.find("'stderr' is already a borrow"), string::npos);
 }
 
 TEST(sa_error, c_global_out_of_block_scope)
@@ -503,21 +487,6 @@ TEST(sa_error, call_arg_ptr_mismatch_c)
 	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot convert '@!int32' to '@!int64'"), string::npos);
-}
-
-TEST(sa_error, byval_struct_ret_discarded)
-{
-	// `div(7, 2);` as a bare statement -- a C function's
-	// struct-by-value return reaching sa_expression_stmt with no
-	// destination variable to write it into.
-	// Covers: sa_expression_stmt struct value-type rejection, E_ByvalStructRetDiscarded
-	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_157_byval_struct_ret_discarded.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
-	ASSERT_NE(sa, "");
-	ASSERT_NE(sa.find("the return value of this call (a 'div_t' returned by value) is discarded"), string::npos);
 }
 
 TEST(sa_error, callback_arg_not_func)

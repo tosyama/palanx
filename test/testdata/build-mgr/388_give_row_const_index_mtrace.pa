@@ -1,0 +1,11 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+const K = 1;
+func tk([2]int32 v, int32 w) -> int32 { return v[1] + w; }
+mtrace();
+{
+	[2][2]int32 arr;
+	5 -> arr[1][1];
+	printf("%d\n", tk(arr[K]>>, 1));
+}
+muntrace();

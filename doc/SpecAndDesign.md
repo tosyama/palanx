@@ -6,32 +6,46 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-10-26)
-version: 0.2.2 — bit-field layout, command-line arguments, `for` loop
+### 2.1 Iteration Goal (2026-10-29)
+version: 0.2.3 — improvements found through the samples (ray tracer, echo server)
 
-- Bit-fields: c2ast reads C bit-fields, and SA lays out structs that contain them by the x86-64
-  C rules, so headers such as `netinet/tcp.h` (and `uv.h` through it) can be included. Accessing
-  a bit-field member from Palan is an error. `__extension__` before a struct member is accepted.
-  Each `cinclude` also starts from the typedefs, structs and enums of the earlier ones, not just
-  their macros, so a header whose dependencies an earlier `cinclude` already read
-  (`cinclude <stdio.h>; cinclude <uv.h>;`) can still size their types.
-- Command-line arguments: the top-level statements of a module see an implicit read-only
-  `args`, a borrowed `[+]` array of borrowed C strings (`@[+]@[]uint8`) built from argc/argv.
-  The entry module is chosen at link time, so a module compiles the same whether it is the entry
-  or imported, and its top level can be run on its own as its tests or demo.
-  `palan source.pa arg...` passes everything after the source to the program it runs, and
-  builds that program in the working directory instead of the current one.
-  `[+]@T`/`[+]@!T` (variable-length arrays of pointer slots) are added for it.
-- `for copy a in arr { }` and `for copy a, i in arr { }` loop over every array whose length `len`
-  can give; `i` is the index, `int64` unless a type is written (`for @a, int32 i in arr`).
-  `copy a` is a copy; `@a` and `@!a` are the element itself, read-only and writable
-  (`0 -> a` writes `arr[i]`). A bare `a` is a compile error, so a copy is
-  always chosen explicitly. Changing the length of `arr` inside the loop (`push`, `pop`, `resize`, replacing it
-  with `->`/`->>`, or passing `@!arr`) is an error.
+- Top-level variable declarations are resolved when first needed, as top-level types and consts
+  are, so a const computed from one (`const LN = lights->len();`) can size a borrowed array
+  parameter (`@[LN]Light`).
+- Global variables: a top-level variable declared `global` is kept in static storage, and the
+  functions its declaration lists (`global int32 hits = 0 for count!, report;`, `!` for writing)
+  can use it, so a callback C calls with fixed arguments (a libuv `on_new_connection`) can reach
+  the event loop. A module's top level runs only when it is the entry, so importing a module
+  whose functions use its globals is a compile error. A C global variable becomes writable the
+  same way (`global optind for parse!;`); reading it stays unrestricted.
+- Operator functions: a function named by an operator (`func -(@vec3 a, @vec3 b) -> vec3`)
+  defines binary `+ - * / %` or unary `-` when at least one operand is a struct. It is chosen
+  like any overloaded function, and an operand is passed as a value chained into a call is
+  (`a -> f()`): borrowed by a `@T` parameter, copied into a `T` one; a `@!T` parameter is not
+  allowed. A module imported under an alias brings its operators too, and a selective import
+  lists them by their symbols (`import vec3, +, - from "vecmath.pa";`).
+- Performance: a function returning a struct returns it into storage the caller provides (frame
+  storage for a temporary or a `$T` variable) instead of allocating it on the heap on every call,
+  and `flo32`/`flo64` values are kept in XMM registers. Both are
+  measured on the ray tracer before and after. A C function returning a struct by value is
+  called the same way and can be used wherever a Palan one can, not only as an initializer.
+- A struct parameter `T` owns its argument as a `[n]T` one does (a copy the callee frees), where
+  it used to borrow it.
+- Ownership across calls: `x>>` passes an owned value to a parameter owning it without a copy,
+  and `T b <<= v;` moves one from another owner. A C function takes or returns ownership when
+  it is called through a cast to a function pointer type that owns that parameter or return
+  (`(uv_close as @func(uv_tcp_t, @func(uv_tcp_t)))(client>>, on_close)`, `_` keeping a type as
+  it is; only a C function's own name can be cast so), and a pointer C hands back in a struct field is viewed as its owner with `as`
+  (`[n]uint8 data <<= buf.base as [n]uint8;`), as is one C is to hold
+  (`data ->> buf.base as [n]uint8;`).
+- An array whose size is known only at run time is moved, given, taken over and copied like
+  any other, by the lengths of the variable receiving it.
+- Samples: the ray tracer is rewritten with the above, and a libuv echo server is added; gaps
+  found while writing them are fixed as they are found.
 
-Out of scope: reading or writing bit-field members; `len` and `for` over an array whose size is
-known only at run time; detecting a length change made through another borrow of the array.
-The ticket list is kept in `localtickets/iteration-2026-10-26-v0220-bitfield-args-for.md`.
+Out of scope: exporting global variables and initializing an imported module's top-level
+variables; comparison operators as operator functions.
+The ticket list is kept in `localtickets/iteration-2026-10-29-v0230-samples.md`.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
@@ -103,6 +117,9 @@ Design:
  A growing list is therefore a persistent list (`PList`) that shares its prefix, and statements
  hold nested blocks by handle (`LazyNode`) and are converted to JSON once at the end; appending or
  nesting never copies what is already built.
+ The `for` list of a `global` declaration is emitted as a `global-permit` statement right after
+ its `var-decl`, the statement a later `global hits for log!;` also produces, so a permission has
+ one AST form.
 
 ### 3.3 C-to-AST Translator (palan-c2ast)
 Responsibility:
@@ -172,6 +189,33 @@ Design:
  Explicit casts (`expr as type`, or `type-name(expr)` for a named type) allow narrowing, signed↔unsigned,
  and pointer conversions; palan-sa resolves
  the `cast` AST node to a `convert` node (or removes it for identical types) and emits `convert` to sa.json.
+ Top-level types and consts are resolved when first needed, before function signatures are
+ registered, so source order does not decide whether a signature can use them. A const whose value
+ names a top-level variable is evaluated from that variable's type alone, taken from the shape of
+ its declaration (the written type and an array literal's element count); its initializer is still
+ analyzed in statement order. A const sees only the variables declared before it in the source.
+ A static variable is a name bound to an assembly label: a top-level variable declared `global`
+ (label `<module>.<name>`, which no function symbol can be, since those continue `<module>..`) or a
+ C global variable a cinclude captures (label: its C name). Both are checked by one rule, the one
+ a parameter of the same type follows. A function sees a Palan global only when a
+ `global-permit` lists it; the global joins the function's parameter scope, as a `@T` borrow
+ (`@!T` with `!`) when it holds an array or struct, else with its own type, assignable only with
+ `!`. A C global stays visible from its cinclude on and readable anywhere, and is writable only
+ where a permit allows: in a function listed with `!`, or at the top level after a `global`
+ statement names it. palan-sa records which functions each top-level statement and each function
+ calls or takes the address of; after the module is analyzed, a top-level statement before a
+ Palan global's declaration that reaches a function permitted to use it is an error, since the
+ global is not initialized yet. A Palan global lives as long as the process: what it owns is not
+ freed at the end of the top level (only a value it is reassigned away from is), and the storage
+ of a `$T` or fixed-size array global is a `static-alloc` instead of a `frame-alloc`, so a
+ function C calls after the top level returns (an `atexit` handler) still finds it. Importing a module that permits a function to use one of its
+ Palan globals is an error, since an imported module's top level never runs.
+ An arithmetic operator (`+ - * / %`, unary `-`) with a struct operand (its storage or a borrow)
+ is a call of the functions named by its symbol, resolved as values chained into a call are: each
+ operand is analyzed once, and the function chosen decides whether it is borrowed or copied.
+ sa.json has no operator form; the call is an ordinary Palan call, and an operator function's
+ symbol spells the operator as a name starting with a digit (`0sub`), a valid label that no
+ written function name can be.
 
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:
@@ -205,6 +249,14 @@ Design:
  - A single return value is returned in rax, or xmm0 for a float (System V compatible).
  - Two or more return values take each class's argument register sequence in order
    (integers in rdi/rsi/rdx/..., floats in xmm0/xmm1/...; caller-saved, read immediately after call).
+ - A struct is returned as System V returns it, by Palan and C functions and through function
+   pointers alike, into storage the caller provides: one of up to 16 bytes comes back in rax/rdx
+   and xmm0/xmm1 by its eightbytes' classes and the caller stores it; a larger one is written
+   through a pointer the caller passes as a hidden first argument (rdi), which the callee
+   returns in rax. Each struct among two or more return values is written through such a
+   pointer, one per struct in order, ahead of the arguments. palan-sa only says where the value
+   goes (`ret-dest`, SASpec.md); the hidden arguments and the stores are codegen's. An array is
+   still returned as a pointer to a heap block.
  - Normal Palan functions use standard frame setup (pushq %rbp / movq %rsp, %rbp / subq $N, %rsp)
    with frameSize rounded to a multiple of 16, and epilogue `leave; ret`.
  - A module's top-level function returns like any Palan function; `return` statements are
@@ -215,6 +267,28 @@ Design:
  - Symbol names: a Palan function's symbol is the `name` palan-sa gives it, built from its module,
    its name and its parameter types (`util..show.int32`; SASpec.md "Symbol names"), so overloads
    and same-named functions of different modules link side by side. codegen emits it as given.
+
+ Register allocation (PlnRegAlloc, per function, on live ranges in instruction order; a value
+ defined before a loop and used in it lives until the loop's backward jump):
+ - An integer or pointer value used only as a call's argument, with no call in between, takes
+   that argument register; one living across a call takes a callee-saved register (rbx, r12-r15)
+   while they last. The rest, and locals initialized by a literal, take stack slots.
+ - A float value takes one of xmm10-xmm15 (xmm0-xmm7 carry arguments and return values, xmm8 and
+   xmm9 are the emitter's scratch). Every XMM register is caller-saved, so a value living across
+   a call also gets a home stack slot: it is stored there after each write and reloaded after
+   each call it lives across. A value goes to a register only when that is estimated to be
+   cheaper: on the stack it costs its reads and writes; in a register, those stores and reloads
+   (nothing if it crosses no call). Each count is weighted by 10 for every loop around it. When
+   registers run short, the values saving the most keep them.
+ - A local whose address is taken stays on the stack.
+
+ Static variables: each function, the top-level one included, lists in sa.json the names it binds
+ to labels at entry (`globals`), and a top-level `global` declaration binds its name where it is
+ declared. A name bound to a label is read by loading from the label and assigned by storing to
+ it; the slot holds what a local's virtual register would (a scalar or a pointer). Every access
+ goes to memory, since a call may change the variable. Palan globals are emitted as local `.bss`
+ slots, and a `static-alloc` (the storage of a `$T` or fixed-size array global) as a local `.bss`
+ block; a C global is the C library's own symbol.
 
  String literals are collected by palan-sa into the `str-literals` table in sa.json,
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
@@ -305,17 +379,59 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
 | Category | Expression |
 |----------|------------|
 | `owned`    | an `id` naming a variable that owns its storage and releases it at scope exit (a heap struct or array, not a `$` variable) |
-| `expiring` | a Palan function call returning a pointer type; a returned struct has no owner yet |
+| `expiring` | a call returning an owned value that has no owner yet: an array as a heap block, a struct as contents written to storage the receiver provides |
+| `owner-view` | a pointer cast to an owned type (`p as T`): what it points to, viewed as an owner that is no Palan variable |
 | (absent)   | anything else |
 
-- A returned struct initializing a variable becomes owned by it without a copy; a `$T` variable
-  gets its contents and the returned block is freed. Assigned with `->`, it is copied and freed.
-- A returned struct given as an argument, or not used, is freed once the statement has been
-  evaluated: the callee only borrows it. Binding it to a `@T`/`@!T` borrow is an error.
-- `return v` of an owned `v` drops it from scope-exit release; the caller owns the value.
-  Returning a struct the function doesn't own returns a copy.
+- A returned struct is written into storage its receiver provides, and what the struct owns
+  goes with it. A variable it initializes (`T v = f();`, `$T v = f();`, `T v <<= f();`) and an
+  owning parameter it is given to provide their own storage (a raw heap block, or the frame for
+  `$T`), so it is not copied. `return f();` passes the function's own return storage on.
+  Anywhere else it goes to a frame temp: assigned with `->` it is copied from there, and the
+  parts it owns are released once the statement has been evaluated.
+- A Palan parameter of an owned type (a struct `T`, `[n]T`, `[+]T`) owns its argument: the caller
+  passes a copy, or hands a returned value over without one, and the callee frees it at exit.
+- A returned struct given to a borrowing parameter (`@T`/`@!T`, a C function's), or not used, is
+  released once the statement has been evaluated. Binding it to a `@T`/`@!T` borrow is an error.
+- `return v` of an owned `v` drops it from scope-exit release; the caller owns the value. A
+  returned struct is moved into the return storage: its bytes are copied and, for a heap `v`,
+  only `v`'s block is freed. A named struct return is the return storage itself. Returning a
+  struct the function doesn't own returns a copy.
 - `v ->> target` needs an owned `v` and sets `v` to NULL after the transfer, so its scope-exit
   free is a no-op; an `expiring` source has nothing to reset.
+- `v>>` gives a call argument away the same way, to a parameter owning its type, without a copy;
+  anywhere else it is an error. `v ->> f()` is `f(v>>)`. Arguments are still evaluated left to
+  right and `v` is read where `v>>` is written, but `v` is set to NULL only once all of the
+  call's arguments have been evaluated, just before the call, so a later argument can still
+  borrow from it (`uv_write(req>>, s, @req.buf, ...)`, as C passes a request and a part of it).
+  A later argument that may change `v` in between is an error: giving away `v` (or a path it
+  shares a prefix with) again, borrowing with `@!` (or as a method-form receiver) what contains
+  `v` or what its indices read (a borrow of `v` itself reaches only what it owns), or, when its
+  path reads a global, any call.
+- A function pointer type can have owned parameters and an owned return, with a Palan function's
+  convention (the callee owns an argument, the caller the returned value; a struct is returned
+  by value, so a pointer C returns is taken over by viewing it as an owner:
+  `(f as @func() -> @!T)() as T`). Ownership is part of
+  the signature: a pointer to a function owning a parameter does not bind where one borrowing it
+  is expected, or the reverse. A C function hands ownership across only when called through a
+  cast to such a type, so ownership leaves or enters Palan only where the call says so. Only a C
+  function named in the cast may change ownership this way, as C's types say nothing about it;
+  any other cast to a function pointer type (a Palan function, a function pointer variable or
+  field) keeps it, as binding does, since the function frees what its own signature says.
+- `p as T` for a `@!X` pointer `p` and an owned type `T` is an `owner-view`: `=` or an owning
+  parameter copies it as from an owned variable, and `<<=`, `->>` or `>>` move it. A move leaves
+  `p` as it is, since `p` is not an owner; a `@X` pointer cannot be moved from.
+- `v ->> loc as T` for a writable location `loc` of a `@!X` pointer type stores what `v` owns
+  there, as the pointer C is to hold; what `loc` held is not freed, since it is no Palan owner.
+  Without `as T`, `->>` into a location that does not own its value is an error.
+- An array level whose size is known only at run time has no `arr-size` in its type. Its owner
+  is a variable keeping that size from its declaration (`__<name>_d<k>`), or a row of one, so a
+  free or a copy uses the lengths of the owner receiving or releasing the value, and a size
+  known only at run time on either side matches any size; that the sizes agree is the
+  programmer's responsibility. A borrowed `[]T` has no lengths to copy by, and a signature's
+  sizes stay constant.
+- `T b <<= v;` initializes `b` with what `v` owns: an owned `v` (set to NULL) or an
+  `owner-view` moves into it, and a call result is taken over as with `=`.
 - `v -> target` with an owned array or struct `target` and a non-expiring `v` copies the contents
   (owned parts included); neither side's ownership changes.
 

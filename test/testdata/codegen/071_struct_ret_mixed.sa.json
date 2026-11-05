@@ -29,9 +29,8 @@
         "func-type": "c",
         "name": "get_mixed",
         "args": [],
+        "ret-dest": {"expr-type": "id", "name": "m", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Mixed"}}, "value-type": {"type-kind": "pntr", "base-type": {"type-kind": "struct", "type-name": "Mixed"}}},
         "struct-ret": {
-          "var": "m",
-          "struct-name": "Mixed",
           "size": 16,
           "eightbytes": [{"class": "int", "size": 8}, {"class": "sse", "size": 8}]
         }
