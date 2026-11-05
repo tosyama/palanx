@@ -11,6 +11,7 @@ add_executable(palan-codegen
 	PlnX86Call.cpp
 	PlnX86Mem.cpp
 )
+palan_tool(palan-codegen)
 
 option(OUTPUT_COVERAGE "Output coverage files.")
 

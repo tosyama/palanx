@@ -13,7 +13,7 @@ using namespace std;
 TEST(gen_ast, basic_tests) {
 	cleanTestEnv();
 	string output;
-	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
+	output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	ASSERT_EQ(jout["ast"]["statements"].size(), 19);
@@ -31,12 +31,12 @@ TEST(gen_ast, basic_tests) {
 	}
 	ASSERT_TRUE(found_printf);
 
-	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/100_quicksort.pa");
+	output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/100_quicksort.pa");
 	ASSERT_TRUE(checkerr(output));
 	jout = json::parse(output);
 	ASSERT_EQ(jout["ast"]["statements"].size(), 6);
 
-	output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
+	output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
 	ASSERT_TRUE(checkerr(output));
 	jout = json::parse(output);
 	ASSERT_EQ(jout["ast"]["statements"].size(), 12);
@@ -59,7 +59,7 @@ static json stripLoc(const json& j) {
 
 TEST(gen_ast, arr_lit_2d_forms) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -82,7 +82,7 @@ TEST(gen_ast, arr_lit_2d_forms) {
 
 TEST(gen_ast, varr_var_decl) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/002_arraypattern.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -100,7 +100,7 @@ TEST(gen_ast, varr_var_decl) {
 
 TEST(gen_ast, arr_lit_trailing_comma) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/121_arr_lit_trailing_comma.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/121_arr_lit_trailing_comma.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -117,7 +117,7 @@ TEST(gen_ast, arr_lit_trailing_comma) {
 
 TEST(gen_ast, dict_lit) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/122_dict_lit.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/122_dict_lit.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -138,7 +138,7 @@ TEST(gen_ast, dict_lit) {
 
 TEST(gen_ast, addition) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/003_addition.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/build-mgr/003_addition.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -168,7 +168,7 @@ TEST(gen_ast, addition) {
 
 TEST(gen_ast, unary_minus) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/007_unary_minus.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/build-mgr/007_unary_minus.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -192,7 +192,7 @@ TEST(gen_ast, unary_minus) {
 
 TEST(gen_ast, comparison) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/005_comparison.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/build-mgr/005_comparison.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -217,7 +217,7 @@ TEST(gen_ast, comparison) {
 
 TEST(gen_ast, var_decl_int32) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/build-mgr/004_int32_widening.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/build-mgr/004_int32_widening.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -237,7 +237,7 @@ TEST(gen_ast, var_decl_int32) {
 
 TEST(gen_ast, cast) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/101_cast.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/101_cast.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -271,7 +271,7 @@ TEST(gen_ast, cast) {
 
 TEST(gen_ast, func_def) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/005_func_def.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/005_func_def.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -319,7 +319,7 @@ TEST(gen_ast, func_def) {
 
 TEST(gen_ast, block_stmt) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/006_block.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/006_block.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -350,7 +350,7 @@ TEST(gen_ast, block_stmt) {
 TEST(gen_ast, export_func) {
 	cleanTestEnv();
 	string output = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/007_export_func.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/007_export_func.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -378,7 +378,7 @@ TEST(gen_ast, export_func) {
 
 TEST(gen_ast, if_stmt) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/008_if_stmt.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/008_if_stmt.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -416,7 +416,7 @@ TEST(gen_ast, if_stmt) {
 
 TEST(gen_ast, while_loop) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/009_while_loop.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/009_while_loop.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -441,7 +441,7 @@ TEST(gen_ast, stmt_list_patterns) {
 	cleanTestEnv();
 	// Covers stmt_list_b/body_list_b grammar rules added for optional semicolon:
 	// B;E and B;func_def at top-level, and B B / B;B / B func_def / B;func_def inside blocks.
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/012_stmt_list_patterns.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/012_stmt_list_patterns.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -463,7 +463,7 @@ TEST(gen_ast, stmt_list_patterns) {
 
 TEST(gen_ast, break_continue) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/011_break_continue.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/011_break_continue.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -489,7 +489,7 @@ TEST(gen_ast, optional_semicolon) {
 	cleanTestEnv();
 	// Last statement in a block can omit the semicolon.
 	// The AST output should be identical to the version with semicolon.
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/010_optional_semicolon.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/010_optional_semicolon.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -503,7 +503,7 @@ TEST(gen_ast, optional_semicolon) {
 
 TEST(gen_ast, float_literal) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/013_float_literal.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/013_float_literal.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -527,19 +527,19 @@ TEST(gen_ast, float_literal) {
 
 TEST(gen_ast, cli_tests) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast -h");
+	string output = execTestCommand("palan-gen-ast -h");
 	ASSERT_EQ(output.substr(0,7), "Usage: ");
 
-	output = execTestCommand("bin/palan-gen-ast not_exist_file.pa");
+	output = execTestCommand("palan-gen-ast not_exist_file.pa");
 	ASSERT_EQ(output, "return1::Could not open file 'not_exist_file.pa'.\n");
 
-	output = execTestCommand("bin/palan-gen-ast -i ../test/testdata/gen-ast/001_basicPattern.pa -o out/001ast.json");
+	output = execTestCommand("palan-gen-ast -i ../test/testdata/gen-ast/001_basicPattern.pa -o out/001ast.json");
 	ASSERT_EQ(output, "");
 }
 
 TEST(gen_ast, array_decl) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/014_array_decl.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/014_array_decl.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	ASSERT_EQ(jout["ast"]["statements"].size(), 3);
@@ -572,7 +572,7 @@ TEST(gen_ast, array_decl) {
 
 TEST(gen_ast, arr_index_expr) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/015_arr_index_expr.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/015_arr_index_expr.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	// statements: var-decl, expr(a[0]), expr(a[i+1])
@@ -596,7 +596,7 @@ TEST(gen_ast, arr_index_expr) {
 
 TEST(gen_ast, arr_assign_stmt) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/016_arr_assign_stmt.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/016_arr_assign_stmt.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	// statements: var-decl, arr-assign(1->a[0]), arr-assign(x->a[i])
@@ -624,7 +624,7 @@ TEST(gen_ast, arr_assign_stmt) {
 
 TEST(gen_ast, multidim_arr) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/017_multidim_arr.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/017_multidim_arr.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -656,7 +656,7 @@ TEST(gen_ast, multidim_arr) {
 
 TEST(gen_ast, embed_arr_decl) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/019_embed_arr_decl.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/019_embed_arr_decl.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -687,7 +687,7 @@ TEST(gen_ast, embed_arr_decl) {
 
 TEST(gen_ast, logical_ops) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/018_logical_ops.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/018_logical_ops.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -720,7 +720,7 @@ TEST(gen_ast, logical_ops) {
 
 TEST(gen_ast, bitwise_ops) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/036_bitwise_ops.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/036_bitwise_ops.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -764,7 +764,7 @@ TEST(gen_ast, bitwise_ops) {
 
 TEST(gen_ast, addr_of) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/104_addr_of.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/104_addr_of.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -794,7 +794,7 @@ TEST(gen_ast, addr_of) {
 
 TEST(gen_ast, addr_of_field) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/106_addr_of_field.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/106_addr_of_field.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -828,7 +828,7 @@ TEST(gen_ast, addr_of_field) {
 
 TEST(gen_ast, addr_of_arr_index) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/107_addr_of_arr_index.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/107_addr_of_arr_index.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -853,7 +853,7 @@ TEST(gen_ast, addr_of_arr_index) {
 
 TEST(gen_ast, addr_of_call) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/132_addr_of_call.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/132_addr_of_call.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -878,7 +878,7 @@ TEST(gen_ast, addr_of_call) {
 
 TEST(gen_ast, addr_of_member_call) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/133_addr_of_member_call.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/133_addr_of_member_call.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -913,7 +913,7 @@ TEST(gen_ast, addr_of_member_call) {
 
 TEST(gen_ast, addr_of_type_alias_mix) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/105_addr_of_type_alias_mix.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/105_addr_of_type_alias_mix.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -935,7 +935,7 @@ TEST(gen_ast, addr_of_type_alias_mix) {
 
 TEST(gen_ast, uint_literal) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/020_uint_literal.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/020_uint_literal.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -954,7 +954,7 @@ TEST(gen_ast, uint_literal) {
 
 TEST(gen_ast, member_call) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/021_member_call.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/021_member_call.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -977,7 +977,7 @@ TEST(gen_ast, member_call) {
 
 TEST(gen_ast, char_literal) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/120_char_literal.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/120_char_literal.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -994,7 +994,7 @@ TEST(gen_ast, char_literal) {
 
 TEST(gen_ast, bool_literal) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/124_bool_literal.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/124_bool_literal.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 
@@ -1015,7 +1015,7 @@ TEST(gen_ast, linear_parse_time) {
 	const int n = 2000;
 	auto parse = [](const string& name, const string& src) {
 		ofstream("out/" + name) << src;
-		string output = execTestCommand("bin/palan-gen-ast out/" + name);
+		string output = execTestCommand("palan-gen-ast out/" + name);
 		EXPECT_TRUE(checkerr(output)) << name;
 		return output[0] == '{' ? json::parse(output) : json();
 	};
@@ -1059,7 +1059,7 @@ TEST(gen_ast, deep_nesting) {
 	src += "a + 1 -> a;\n" + string(depth, '}') + "\n}\n";
 	ofstream("out/deep_nesting.pa") << src;
 
-	string output = execTestCommand("bin/palan-gen-ast out/deep_nesting.pa");
+	string output = execTestCommand("palan-gen-ast out/deep_nesting.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	json* inner = &jout["ast"]["functions"][0]["block"]["body"][1];
@@ -1069,7 +1069,7 @@ TEST(gen_ast, deep_nesting) {
 
 TEST(gen_ast, sizeof) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/129_sizeof.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/129_sizeof.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1085,7 +1085,7 @@ TEST(gen_ast, sizeof) {
 
 TEST(gen_ast, float_exponent_no_point) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/131_float_exponent_no_point.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/131_float_exponent_no_point.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1100,7 +1100,7 @@ TEST(gen_ast, float_exponent_no_point) {
 
 TEST(gen_ast, addr_of_lit) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/134_addr_of_lit.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/134_addr_of_lit.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1130,7 +1130,7 @@ TEST(gen_ast, addr_of_lit) {
 
 TEST(gen_ast, chain_call) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/135_chain_call.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/135_chain_call.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1175,7 +1175,7 @@ TEST(gen_ast, chain_call) {
 
 TEST(gen_ast, as_cast) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/136_as_cast.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/136_as_cast.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1204,7 +1204,7 @@ TEST(gen_ast, as_cast) {
 
 TEST(gen_ast, shift) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/137_shift.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/137_shift.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1224,7 +1224,7 @@ TEST(gen_ast, shift) {
 
 TEST(gen_ast, give_take) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/152_give_take.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/152_give_take.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1270,7 +1270,7 @@ TEST(gen_ast, give_take) {
 // a chained call it still casts the call's result.
 TEST(gen_ast, owner_view_target) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/153_owner_view_target.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/153_owner_view_target.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1291,7 +1291,7 @@ TEST(gen_ast, owner_view_target) {
 // definition, an import target and a global's permit.
 TEST(gen_ast, operator_func) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/154_operator_func.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/154_operator_func.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& fs = jout["ast"]["functions"];
@@ -1311,7 +1311,7 @@ TEST(gen_ast, operator_func) {
 // '->' binds tighter than comparisons and logical operators, looser than arithmetic.
 TEST(gen_ast, arrow_precedence) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/146_arrow_precedence.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/146_arrow_precedence.pa");
 	ASSERT_TRUE(checkerr(output));
 	json ast = json::parse(output)["ast"];
 	const auto& stmts = ast["statements"];
@@ -1334,7 +1334,7 @@ TEST(gen_ast, arrow_precedence) {
 // `[+]` levels nest under `[+]` and `[n]`, and a literal row may be empty.
 TEST(gen_ast, nested_varr) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/147_nested_varr.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/147_nested_varr.pa");
 	ASSERT_TRUE(checkerr(output));
 	json ast = json::parse(output)["ast"];
 	const auto& stmts = ast["statements"];
@@ -1353,7 +1353,7 @@ TEST(gen_ast, nested_varr) {
 // 'in' and 'copy' are matched by spelling, so a field or variable may still be named so.
 TEST(gen_ast, for_loop) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/148_for.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/148_for.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1378,7 +1378,7 @@ TEST(gen_ast, for_loop) {
 
 TEST(gen_ast, for_loop_index_type) {
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/150_for_index_type.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/150_for_index_type.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];
@@ -1393,7 +1393,7 @@ TEST(gen_ast, global_decl) {
 	// A `for` list becomes its own global-permit statement after the var-decl,
 	// the same statement a later `global name for ...;` produces.
 	cleanTestEnv();
-	string output = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/151_global.pa");
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/151_global.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
 	const auto& stmts = jout["ast"]["statements"];

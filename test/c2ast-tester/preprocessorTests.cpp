@@ -16,14 +16,14 @@ using namespace std;
 TEST(c2ast, va_args) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/001_va_args.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/001_va_args.h");
     ASSERT_EQ(output, "int testproc(){mylog(\"hello\",1,2);}");
 }
 
 TEST(c2ast, named_va_args) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/046_named_va_args.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/046_named_va_args.h");
     ASSERT_EQ(output, "int testproc(){mylog(\"none\",);mylog(\"one\",1);mylog(\"many\",1,(2,3),4);"
         "\"a , b\";\"c , d\";}union {struct {int x;int y;}a;struct tg{int x;int y;}b;}g;");
 }
@@ -32,51 +32,51 @@ TEST(c2ast, func_macro_no_paren) {
     // A function-like macro's name not followed by '(' is not an invocation.
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/048_func_macro_no_paren.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/048_func_macro_no_paren.h");
     ASSERT_EQ(output, "int testproc(){return F;return F+1;return F;return (2+1);return (3+1);}");
-    output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/048_func_macro_no_paren.h");
+    output = execTestCommand("palan-c2ast ../test/testdata/c2ast/048_func_macro_no_paren.h");
     ASSERT_NE(output.find("{\"name\":\"K\"}"), string::npos);
 }
 
 TEST(c2ast, token_paste_nonid) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/002_token_paste.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/002_token_paste.h");
     ASSERT_EQ(output, "int testproc(){return val1;return 1val;return 12;return int_t;}");
 }
 
 TEST(c2ast, pragma_once) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/003_pragma_once_main.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/003_pragma_once_main.h");
     ASSERT_EQ(output, "int result=1;");
 }
 
 TEST(c2ast, char_const_in_if) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/004_char_const.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/004_char_const.h");
     ASSERT_EQ(output, "int char_result=1;");
 }
 
 TEST(c2ast, token_paste_keyword) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/005_token_paste_kw.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/005_token_paste_kw.h");
     ASSERT_EQ(output, "int x;");
 }
 
 TEST(c2ast, stringizing) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/007_stringify.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/007_stringify.h");
     ASSERT_EQ(output, "int n=\"hello\";char *s=\"1 + 2\";");
 }
 
 TEST(c2ast, warning_directive) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/006_warning.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/006_warning.h");
     ASSERT_TRUE(output.find("int warning_test=1;") != string::npos);
     ASSERT_TRUE(output.find("warning: this is a test warning") != string::npos);
 }
@@ -84,14 +84,14 @@ TEST(c2ast, warning_directive) {
 TEST(c2ast, include_macro) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/008_include_macro.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/008_include_macro.h");
     ASSERT_EQ(output, "int macro_include_result=1;");
 }
 
 TEST(c2ast, include_next_warning) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/010_include_next.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/010_include_next.h");
     ASSERT_TRUE(output.find("int include_next_result=1;") != string::npos);
     ASSERT_TRUE(output.find("warning: '#include_next' is not supported, ignored") != string::npos);
 }
@@ -99,7 +99,7 @@ TEST(c2ast, include_next_warning) {
 TEST(c2ast, line_directive_warning_once) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/011_line_directive.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/011_line_directive.h");
     ASSERT_TRUE(output.find("int line_directive_result=1;") != string::npos);
     // warning appears exactly once despite two #line directives
     size_t first = output.find("warning: '#line' is not supported");
@@ -110,7 +110,7 @@ TEST(c2ast, line_directive_warning_once) {
 TEST(c2ast, unknown_directive_warning) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/012_unknown_directive.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/012_unknown_directive.h");
     ASSERT_TRUE(output.find("int unknown_dir_result=1;") != string::npos);
     ASSERT_TRUE(output.find("warning: unsupported directive '#ident'") != string::npos);
 }
@@ -118,13 +118,13 @@ TEST(c2ast, unknown_directive_warning) {
 TEST(c2ast, include_macro_bracket) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/009_include_macro_bracket.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/009_include_macro_bracket.h");
     ASSERT_TRUE(output.find("int printf(const char") != string::npos);
 }
 
 TEST(c2ast, relational_ops) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/014_relational_ops.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/014_relational_ops.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     bool found = false;
@@ -134,7 +134,7 @@ TEST(c2ast, relational_ops) {
 
 TEST(c2ast, macro_const_simple) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/018_macro_const_simple.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/018_macro_const_simple.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -159,7 +159,7 @@ TEST(c2ast, macro_const_simple) {
 
 TEST(c2ast, macro_const_null) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/019_macro_const_null.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/019_macro_const_null.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -175,7 +175,7 @@ TEST(c2ast, macro_const_null) {
 
 TEST(c2ast, macro_const_alias_chain) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/024_macro_const_alias.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/024_macro_const_alias.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -201,7 +201,7 @@ TEST(c2ast, macro_const_alias_chain) {
 
 TEST(c2ast, macro_const_fold_expr) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/029_macro_const_expr.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/029_macro_const_expr.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -244,7 +244,7 @@ TEST(c2ast, macro_const_fold_expr) {
 
 TEST(c2ast, macro_const_suffix) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/038_macro_const_suffix.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/038_macro_const_suffix.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -309,7 +309,7 @@ TEST(c2ast, macro_const_suffix) {
 
 TEST(c2ast, int_constant_width) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s stdlib.h");
+    string output = execTestCommand("palan-c2ast -s stdlib.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -333,7 +333,7 @@ TEST(c2ast, int_constant_width) {
 
 TEST(c2ast, sys_stat_h_perm_masks) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s sys/stat.h");
+    string output = execTestCommand("palan-c2ast -s sys/stat.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -363,7 +363,7 @@ TEST(c2ast, sys_stat_h_perm_masks) {
 
 TEST(c2ast, string_h_null_constant) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s string.h");
+    string output = execTestCommand("palan-c2ast -s string.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -380,19 +380,19 @@ TEST(c2ast, string_h_null_constant) {
 
 TEST(c2ast, empty_header) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/033_empty_header.h");
+    string output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/033_empty_header.h");
     ASSERT_EQ(output, "");
 }
 
 TEST(c2ast, blank_lines) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -d ../test/testdata/c2ast/034_blank_lines.h");
+    string output = execTestCommand("palan-c2ast -d ../test/testdata/c2ast/034_blank_lines.h");
     ASSERT_EQ(output, "int f(int a);int g(int b);");
 }
 
 TEST(c2ast, macro_state) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/045_macro_state_a.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/045_macro_state_a.h");
     json a = json::parse(output);
     string state = a["c-state"]["macros"];
     // Spelled back token by token, so each line re-lexes to the same macro.
@@ -407,7 +407,7 @@ TEST(c2ast, macro_state) {
 
     string state_file = "045_macro_state.tmp";
     ofstream(state_file) << a["c-state"].dump();
-    output = execTestCommand("bin/palan-c2ast -S " + state_file + " ../test/testdata/c2ast/045_macro_state_b.h");
+    output = execTestCommand("palan-c2ast -S " + state_file + " ../test/testdata/c2ast/045_macro_state_b.h");
     remove(state_file.c_str());
     json b = json::parse(output);
     // a.h is skipped by its #pragma once, so a_func is not declared again.
@@ -429,10 +429,10 @@ TEST(c2ast, macro_state) {
 // only what this header adds or completes is exported.
 TEST(c2ast, c_state_types) {
     cleanTestEnv();
-    json a = json::parse(execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/054_c_state_a.h"));
+    json a = json::parse(execTestCommand("palan-c2ast ../test/testdata/c2ast/054_c_state_a.h"));
     string state_file = "054_c_state.tmp";
     ofstream(state_file) << a["c-state"].dump();
-    string output = execTestCommand("bin/palan-c2ast --state " + state_file + " ../test/testdata/c2ast/054_c_state_b.h");
+    string output = execTestCommand("palan-c2ast --state " + state_file + " ../test/testdata/c2ast/054_c_state_b.h");
     remove(state_file.c_str());
     json b = json::parse(output);
     ASSERT_EQ(b["ast"]["structs"], json::parse(R"([
@@ -452,7 +452,7 @@ TEST(c2ast, c_state_types) {
 
 TEST(c2ast, func_alias_macro) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/049_func_alias_macro.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/049_func_alias_macro.h");
     json ast = json::parse(output);
     auto funcs = [&](const string& name) {
         vector<json> found;
@@ -472,6 +472,6 @@ TEST(c2ast, func_alias_macro) {
     ASSERT_EQ(funcs("missing_f").size(), 0u);
     ASSERT_EQ(ast["ast"]["unexported-macros"], json::parse(R"([{"name":"missing_f"}])"));
 
-    ast = json::parse(execTestCommand("bin/palan-c2ast -s stdio.h"));
+    ast = json::parse(execTestCommand("palan-c2ast -s stdio.h"));
     ASSERT_EQ(funcs("sscanf")[0]["symbol"], "__isoc99_sscanf");
 }

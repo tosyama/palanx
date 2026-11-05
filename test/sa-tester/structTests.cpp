@@ -1688,7 +1688,7 @@ TEST(sa, embed_field_value)
 TEST(sa, member_call_borrow)
 {
 	cleanTestEnv();
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_mk.pa -o out/lib_sa_mk.pa.ast.json");
+	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_mk.pa -o out/lib_sa_mk.pa.ast.json");
 	json jout = run_sa("../test/testdata/sa/247_member_call_borrow.pa");
 	ASSERT_TRUE(jout.is_object());
 

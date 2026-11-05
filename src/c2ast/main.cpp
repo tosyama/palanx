@@ -181,7 +181,7 @@ int main(int argc, char* argv[])
 				// The state's macros already hold predefined.h's (or their #undefs).
 				cpp.loadMacros(CFileInfo(state_file, istringstream(state["macros"].get<string>())));
 			} else {
-				cpp.loadMacros(CFileInfo(exec_path + "/c2ast/predefined.h"));
+				cpp.loadMacros(CFileInfo(exec_path + "/../" + target + "/c2ast/predefined.h"));
 			}
 			set<string> inherited_names;
 			for (CMacro* m : macros) inherited_names.insert(m->name);

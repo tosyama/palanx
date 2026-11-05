@@ -12,7 +12,7 @@ using namespace std;
 
 TEST(c2ast, struct_enum_typedef) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/013_struct_enum.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/013_struct_enum.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     auto& structs = ast["ast"]["structs"];
@@ -63,7 +63,7 @@ TEST(c2ast, struct_enum_typedef) {
 
 TEST(c2ast, struct_union_decl_backtrack) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/020_struct_decl_backtrack.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/020_struct_decl_backtrack.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
@@ -87,7 +87,7 @@ TEST(c2ast, struct_union_decl_backtrack) {
 
 TEST(c2ast, struct_capture) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/021_struct_capture.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/021_struct_capture.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     auto& structs = ast["ast"]["structs"];
@@ -147,7 +147,7 @@ TEST(c2ast, struct_capture) {
 
 TEST(c2ast, typedef_scalar) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/015_typedef_scalar.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/015_typedef_scalar.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
@@ -166,7 +166,7 @@ TEST(c2ast, typedef_scalar) {
 
 TEST(c2ast, typedef_chain) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/016_typedef_chain.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/016_typedef_chain.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
@@ -185,7 +185,7 @@ TEST(c2ast, typedef_chain) {
 
 TEST(c2ast, typedef_anon_union) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/017_typedef_anon_union.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/017_typedef_anon_union.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     auto& structs = ast["ast"]["structs"];
@@ -205,7 +205,7 @@ TEST(c2ast, typedef_anon_union) {
 
 TEST(c2ast, extension_keyword) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/052_extension.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/052_extension.h");
     json ast = json::parse(output);
     auto& structs = ast["ast"]["structs"];
 
@@ -222,7 +222,7 @@ TEST(c2ast, extension_keyword) {
 
 TEST(c2ast, bit_field) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/053_bitfield.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/053_bitfield.h");
     json ast = json::parse(output);
     auto& structs = ast["ast"]["structs"];
 
@@ -250,7 +250,7 @@ TEST(c2ast, bit_field) {
 
 TEST(c2ast, typedef_pointer_chain) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/022_typedef_pointer_chain.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/022_typedef_pointer_chain.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
@@ -278,7 +278,7 @@ TEST(c2ast, typedef_struct_tag) {
     // struct Body { int a; };  -- the definition arrives later
     // struct Never *use(X *x); -- X used as a parameter type; Never never declared at all
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/027_typedef_struct.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/027_typedef_struct.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     auto& structs = ast["ast"]["structs"];
@@ -329,7 +329,7 @@ TEST(c2ast, typedef_struct_tag) {
 
 TEST(c2ast, const_capture) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/025_const_capture.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/025_const_capture.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     auto& structs = ast["ast"]["structs"];
@@ -388,7 +388,7 @@ TEST(c2ast, const_capture) {
 
 TEST(c2ast, typedef_anon_struct) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/031_typedef_anon_struct.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/031_typedef_anon_struct.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     auto& structs = ast["ast"]["structs"];
@@ -465,7 +465,7 @@ TEST(c2ast, typedef_anon_struct) {
 
 TEST(c2ast, union_capture) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/036_union_capture.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/036_union_capture.h");
     json ast = json::parse(output);
     auto& structs = ast["ast"]["structs"];
     auto& typedefs = ast["ast"]["typedefs"];
@@ -519,7 +519,7 @@ TEST(c2ast, union_capture) {
 
 TEST(c2ast, anon_member_tag) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/037_anon_member_tag.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/037_anon_member_tag.h");
     json ast = json::parse(output);
     auto& structs = ast["ast"]["structs"];
 
@@ -583,7 +583,7 @@ TEST(c2ast, anon_member_tag) {
 
 TEST(c2ast, anon_member_unnamed) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/044_anon_member_unnamed.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/044_anon_member_unnamed.h");
     json ast = json::parse(output);
     auto& structs = ast["ast"]["structs"];
 
@@ -621,7 +621,7 @@ TEST(c2ast, anon_member_unnamed) {
 // register its types at all. See stdint_typedefs below for that end-to-end case.
 TEST(c2ast, typedef_section) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/035_typedef_section.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/035_typedef_section.h");
     json ast = json::parse(output);
     auto& typedefs = ast["ast"]["typedefs"];
 
@@ -687,7 +687,7 @@ TEST(c2ast, typedef_section) {
 
 TEST(c2ast, enum_capture) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/040_enum.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/040_enum.h");
     json ast = json::parse(output);
     auto& enums = ast["ast"]["enums"];
     auto find = [](json& list, const string& name) -> json* {
@@ -743,7 +743,7 @@ TEST(c2ast, enum_capture) {
 
 TEST(c2ast, typedef_pointer) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/042_typedef_pointer.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/042_typedef_pointer.h");
     json ast = json::parse(output);
     ASSERT_EQ(ast["ast"]["typedefs"], json::parse(R"([
         {"name":"CP","var-type":{"type-kind":"pntr","base-type":{"type-kind":"prim","type-name":"int32","const":true}}},
@@ -760,7 +760,7 @@ TEST(c2ast, typedef_pointer) {
 TEST(c2ast, undeclared_typedef) {
     // The undeclared name may be an earlier cinclude's typedef, which SA resolves.
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/041_undeclared_typedef.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/041_undeclared_typedef.h");
     json ast = json::parse(output);
     ASSERT_EQ(ast["ast"]["typedefs"], json::parse(R"([
         {"name":"X","var-type":{"type-kind":"user","type-name":"undeclared_t"}}])"));

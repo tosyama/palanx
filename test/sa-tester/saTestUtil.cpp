@@ -15,10 +15,10 @@ json run_sa(const string& pa_file)
 	string ast_out = "out/test.ast.json";
 	string sa_out = "out/test.sa.json";
 
-	string gen = execTestCommand("bin/palan-gen-ast " + pa_file + " -o " + ast_out);
+	string gen = execTestCommand("palan-gen-ast " + pa_file + " -o " + ast_out);
 	if (gen != "") return json{};
 
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o " + sa_out);
+	string sa = execTestCommand("palan-sa " + ast_out + " -o " + sa_out);
 	if (sa != "") return json{};
 
 	ifstream f(sa_out);
@@ -67,11 +67,11 @@ string tempRelease(const json& arg)
 
 void genLibSaImport()
 {
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
 }
 
 void genLibSaTypes()
 {
 	for (string lib : {"lib_sa_types", "lib_sa_types_mid", "lib_sa_types2"})
-		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
+		execTestCommand("palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
 }

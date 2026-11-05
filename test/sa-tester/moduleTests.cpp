@@ -89,7 +89,7 @@ TEST(sa, import_non_pa_ignored)
 
 static void genLibNoExport()
 {
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_no_export.pa -o out/lib_no_export.pa.ast.json");
+	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_no_export.pa -o out/lib_no_export.pa.ast.json");
 }
 
 TEST(sa, import_no_export_ignored)
@@ -105,7 +105,7 @@ TEST(sa, import_no_export_ignored)
 
 static void genLibSaNamedRet()
 {
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_named_ret.pa -o out/lib_sa_named_ret.pa.ast.json");
+	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_named_ret.pa -o out/lib_sa_named_ret.pa.ast.json");
 }
 
 TEST(sa, import_single_named_ret)
@@ -144,7 +144,7 @@ TEST(sa, import_absolute_path)
 
 static void genLibSaSyscallImport()
 {
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_syscall.pa -o out/lib_sa_syscall.pa.ast.json");
+	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_syscall.pa -o out/lib_sa_syscall.pa.ast.json");
 }
 
 TEST(sa, import_syscall) {
@@ -387,7 +387,7 @@ TEST(sa, import_mutual_type)
 {
 	cleanTestEnv();
 	for (string f : {"lib_sa_mutual", "235_import_mutual_type"})
-		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+		execTestCommand("palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
 	json jout = run_sa("../test/testdata/sa/235_import_mutual_type.pa");
 	ASSERT_TRUE(jout.is_object());
 	// Pair: n $Node (id 4 (+4) + leaf 16 + pair 8) + ls [2]$Leaf 32
@@ -400,7 +400,7 @@ TEST(sa, import_mutual_alias)
 	// struct that embeds Node, so both resolve only after Node is settled.
 	cleanTestEnv();
 	for (string f : {"lib_sa_mutual_alias", "252_import_mutual_alias"})
-		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+		execTestCommand("palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
 	json jout = run_sa("../test/testdata/sa/252_import_mutual_alias.pa");
 	ASSERT_TRUE(jout.is_object());
 	// Node: id 4 (+4) + leaf (v 8 + up 8 + o 8)
@@ -410,7 +410,7 @@ TEST(sa, import_mutual_alias)
 TEST(sa, import_c_enum_field)
 {
 	cleanTestEnv();
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_c_enum.pa -o out/lib_sa_c_enum.pa.ast.json");
+	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_c_enum.pa -o out/lib_sa_c_enum.pa.ast.json");
 	json jout = run_sa("../test/testdata/sa/251_import_c_enum_field.pa");
 	ASSERT_TRUE(jout.is_object());
 	const auto& init = jout["statements"].back()["vars"][0]["init"];

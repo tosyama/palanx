@@ -16,20 +16,20 @@ using namespace std;
 TEST(c2ast, basic_tests) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -d ../test/testdata/000_temp_c_header.h");
+    output = execTestCommand("palan-c2ast -d ../test/testdata/000_temp_c_header.h");
     ASSERT_EQ(output, "int testproc(){H((A+H(1)));123;return xSz;}");
 }
 
 TEST(c2ast, std_headers) {
     cleanTestEnv();
     string output;
-    output = execTestCommand("bin/palan-c2ast -ds stdio.h");
+    output = execTestCommand("palan-c2ast -ds stdio.h");
 	ASSERT_TRUE(output.find("int printf(const char") != string::npos);
 }
 
 TEST(c2ast, stdio_functions_in_ast) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s stdio.h");
+    string output = execTestCommand("palan-c2ast -s stdio.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
@@ -112,7 +112,7 @@ TEST(c2ast, extern_globals) {
     //                                      registered, so take_a's signature
     //                                      resolves to int32/int32, not "user"
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/028_extern_globals.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/028_extern_globals.h");
     json ast = json::parse(output);
     auto& globals = ast["ast"]["globals"];
 
@@ -162,7 +162,7 @@ TEST(c2ast, extern_globals) {
 
 TEST(c2ast, ctype_h_parses) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s ctype.h");
+    string output = execTestCommand("palan-c2ast -s ctype.h");
     json ast = json::parse(output);
     auto& fns = ast["ast"]["functions"];
     std::set<string> names;
@@ -181,7 +181,7 @@ TEST(c2ast, ctype_h_parses) {
 
 TEST(c2ast, time_h_struct_pointer) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s time.h");
+    string output = execTestCommand("palan-c2ast -s time.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
@@ -218,7 +218,7 @@ TEST(c2ast, time_h_struct_pointer) {
 
 TEST(c2ast, sys_stat_h_public_names) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s sys/stat.h");
+    string output = execTestCommand("palan-c2ast -s sys/stat.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
 
@@ -234,7 +234,7 @@ TEST(c2ast, sys_stat_h_public_names) {
 
 TEST(c2ast, array_decl) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/023_array_decl.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/023_array_decl.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     auto& structs = ast["ast"]["structs"];
@@ -327,7 +327,7 @@ TEST(c2ast, ptr_array_decl) {
     // "int *a[3]" (array of pointers) and "int (*a)[3]" (pointer to array) must
     // NOT come out swapped.
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/026_ptr_array_decl.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/026_ptr_array_decl.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
     auto& structs = ast["ast"]["structs"];
@@ -403,7 +403,7 @@ TEST(c2ast, ptr_array_decl) {
 
 TEST(c2ast, array_size_expr_fold) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/030_array_size_expr.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/030_array_size_expr.h");
     json ast = json::parse(output);
     auto& structs = ast["ast"]["structs"];
 
@@ -434,7 +434,7 @@ TEST(c2ast, array_size_expr_fold) {
 
 TEST(c2ast, sizeof_fold) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/043_sizeof.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/043_sizeof.h");
     json ast = json::parse(output);
     auto& constants = ast["ast"]["constants"];
     auto find_const = [&](const string& name) -> json* {
@@ -478,7 +478,7 @@ TEST(c2ast, sizeof_fold) {
 
 TEST(c2ast, sizeof_unknown) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/050_sizeof_unknown.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/050_sizeof_unknown.h");
     json ast = json::parse(output);
     map<string, string> constants;
     for (auto& c : ast["ast"]["constants"]) constants[c["name"]] = c["value"];
@@ -491,7 +491,7 @@ TEST(c2ast, sizeof_unknown) {
 
 TEST(c2ast, unfolded_arr_size) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/051_unfolded_arr_size.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/051_unfolded_arr_size.h");
     json ast = json::parse(output);
     map<string, json> tails;
     for (auto& s : ast["ast"]["structs"]) tails[s["name"]] = s["fields"][1]["var-type"]["size-expr"];
@@ -509,7 +509,7 @@ TEST(c2ast, unfolded_arr_size) {
 
 TEST(c2ast, attributes) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/047_attributes.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/047_attributes.h");
     json ast = json::parse(output);
     auto find = [&](const string& section, const string& name) -> json* {
         for (auto& e : ast["ast"][section])
@@ -561,7 +561,7 @@ TEST(c2ast, attributes) {
 TEST(c2ast, sizeof_fd_set) {
     // fd_set's array size and __NFDBITS are both built from sizeof.
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s sys/select.h");
+    string output = execTestCommand("palan-c2ast -s sys/select.h");
     json ast = json::parse(output);
     json* fd_set = nullptr;
     for (auto& s : ast["ast"]["structs"])
@@ -583,7 +583,7 @@ TEST(c2ast, sizeof_fd_set) {
 // path is piggybacking on a function/global's var-type node).
 TEST(c2ast, stdint_typedefs) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast -s stdint.h");
+    string output = execTestCommand("palan-c2ast -s stdint.h");
     json ast = json::parse(output);
     auto& typedefs = ast["ast"]["typedefs"];
 
@@ -611,7 +611,7 @@ TEST(c2ast, stdint_typedefs) {
 // parameter and an already-empty `()` are left untouched.
 TEST(c2ast, void_param_list) {
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/032_void_param_list.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/032_void_param_list.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 
@@ -649,7 +649,7 @@ TEST(c2ast, void_param_list) {
 TEST(c2ast, bool_keyword) {
     // stdbool.h's `bool` is a macro for `_Bool`, so both spellings reach the same keyword.
     cleanTestEnv();
-    string output = execTestCommand("bin/palan-c2ast ../test/testdata/c2ast/039_bool.h");
+    string output = execTestCommand("palan-c2ast ../test/testdata/c2ast/039_bool.h");
     json ast = json::parse(output);
     auto& functions = ast["ast"]["functions"];
 

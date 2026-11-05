@@ -11,6 +11,7 @@ add_executable(palan-sa
 	PlnSaMessage.cpp
 	PlnType.cpp
 )
+palan_tool(palan-sa)
 
 option(OUTPUT_COVERAGE "Output coverage files.")
 

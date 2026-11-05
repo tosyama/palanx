@@ -120,7 +120,16 @@ make clean      # remove build/ and build-debug/
 make coverage   # coverage report (build-cov/lcov.info)
 ```
 
-The tools are placed in `build/bin/`.
+`build/bin/palan` runs the toolchain; the tools it uses are in `build/lib/palan/dev/tools/`.
+
+To install, with `--strip` leaving out the debug information:
+
+```bash
+cmake --install build --prefix ~/.local --strip
+```
+
+`bin/palan` then points at the version installed last, and versions can stay side by side. To remove
+one, run `lib/palan/<version>/uninstall` under the prefix; `bin/palan` moves to the newest one left.
 
 ## Toolchain
 

@@ -54,10 +54,12 @@ cd build && bin/sa-tester --gtest_filter=sa.helloworld_sa
 ### Running Individual Tools
 
 ```bash
-cd build && bin/palan-c2ast -s stdio.h                         # Parse system header to AST
-cd build && bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa
+cd build && lib/palan/dev/tools/palan-c2ast -s stdio.h         # Parse system header to AST
+cd build && lib/palan/dev/tools/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa
 cd build && bin/palan ../test/testdata/build-mgr/001_helloworld.pa
 ```
+
+`build/` has the installation layout (SpecAndDesign §6) with `dev` as the version: `bin/palan` is a symbolic link into `lib/palan/dev/tools/`. Testers are in `bin/` and name the internal tools bare; `test/test-base/testBase.cpp` puts them on `PATH`.
 
 ## Architecture
 
@@ -100,12 +102,13 @@ source.pa
 ```
 src/
 ├── build-mgr/       palan — build manager (orchestrates pipeline)
+│   └── uninstall.sh     Installed as lib/palan/<version>/uninstall
 ├── c2ast/           palan-c2ast — C header parser
 │   ├── CLexer.*         Hand-written C lexer
 │   ├── CParser.*        Recursive descent C parser
 │   ├── CPreprocessor.*  Macro expansion and #include handling
 │   ├── CToken.*         Token definitions
-│   └── predefined.h     Built-in macro definitions (copied to build/bin/c2ast/)
+│   └── predefined.h     Built-in macro definitions (copied to <target>/c2ast/ in the layout)
 ├── gen-ast/         palan-gen-ast — Palan parser
 │   ├── PlnLexer.ll      Flex lexer rules
 │   ├── PlnParser.yy     Bison grammar rules

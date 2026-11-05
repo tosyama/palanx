@@ -176,3 +176,9 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 25. Global Variables Cannot Be Exported or Initialized in an Imported File
 
 **Summary:** A `global` variable can be used only by functions of its own file, and a file whose functions use its global variables cannot be imported, since an imported file's top-level statements, which would initialize them, do not run (v0.2.3). A module keeping its own state, or state shared between modules, needs both a way to export a global variable and a way to initialize an imported file's top-level variables.
+
+---
+
+## 26. Versions Side by Side in a deb Package
+
+**Summary:** Versions install side by side and `bin/palan` selects one (v0.2.4), but two deb packages cannot both own `/usr/bin/palan`. A deb needs either `update-alternatives` to manage the link, or a single package that replaces the version before it. The install rules already fit a package build, respecting `DESTDIR` and keeping `uninstall` and the documents in separate components; Debian's `share/doc/<package>/` would also have to be settled then.

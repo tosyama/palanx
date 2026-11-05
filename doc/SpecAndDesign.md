@@ -127,7 +127,7 @@ Design:
  The generated AST nodes are then serialized into a JSON format written to stdout (or to a file via -o).
  In the normal pipeline, palan-gen-ast invokes palan-c2ast and reads its stdout output directly;
  no intermediate file is produced.
- The predefined macros will be read from `./c2ast/predefined.h` in the execution directory of palan-c2ast.
+ The predefined macros will be read from `../<target>/c2ast/predefined.h`, relative to the execution directory of palan-c2ast (6.1).
  The output's top-level `c-state` is where the header leaves off, for the next run to start from:
  `macros`, the macro table written as `#define` lines (each body re-spelled token by token) plus a
  `#pragma palan_once_included "<path>"` line per file read under `#pragma once`; and `typedefs`,
@@ -537,15 +537,18 @@ it is per target.
 
 ### 6.2 Build Tree, Installation and Release
 - Build tree: `build/` has this layout with `dev` in place of `<version>`, since a tool never reads
-  the name and the path stays the same when the version changes. CMake builds the tools, then builds
-  `std` from `src/std/` with them (again when a tool or a source changes), then the testers.
-  `std-tester` runs it.
-- Installation: `cmake --install` writes the layout to the prefix. A test installs to a temporary
+  the name and the path stays the same when the version changes. `uninstall` and the documents are
+  left out, since only an installation needs them, and the testers are in `build/bin/`, since the
+  layout holds only what is installed. CMake builds the tools, then builds `std` from `src/std/`
+  with them (again when a tool or a source changes), then the testers. `std-tester` runs it.
+- Installation: `cmake --install` writes the layout to the prefix, or under `DESTDIR` as a package
+  build does. Every destination is relative to the prefix, and `uninstall` and the documents are
+  separate components, so that a package can leave them out. A test installs to a temporary
   directory and compiles and runs a program using `std` from there.
 - Uninstallation: `lib/palan/<version>/uninstall`, a shell script in the layout, so it works however
   the version was installed. It removes the version's directories, and any left empty. If `bin/palan`
   points at that version, it is pointed at the newest one left, or removed if none is. Each user's
   `~/.palan/work/` stays, for `palan --clean`.
 - Release: a tag starts a CI job that packs the layout as `palan-<version>-<target>.tar.gz`, then
-  unpacks it elsewhere and runs the same test. The tools link libstdc++ statically, so they do not
-  need the build machine's. The system must still provide `as`, `ld`, libc and C headers.
+  unpacks it elsewhere and runs the same test. The system must provide `as`, `ld`, C headers, and
+  a libc and libstdc++ at least as new as the ones the release was built with.

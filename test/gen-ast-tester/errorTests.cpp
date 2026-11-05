@@ -13,39 +13,39 @@ namespace fs = std::filesystem;
 
 TEST(gen_ast_error, help) {
 	cleanTestEnv();
-	string out = execTestCommand("bin/palan-gen-ast --help");
+	string out = execTestCommand("palan-gen-ast --help");
 	ASSERT_NE(out.find("Usage: palan-gen-ast"), string::npos);
 }
 
 TEST(gen_ast_error, version) {
 	cleanTestEnv();
-	string out = execTestCommand("bin/palan-gen-ast --version");
+	string out = execTestCommand("palan-gen-ast --version");
 	ASSERT_NE(out.find("palan-gen-ast"), string::npos);
 }
 
 TEST(gen_ast_error, no_input_file) {
 	cleanTestEnv();
-	string out = execTestCommand("bin/palan-gen-ast");
+	string out = execTestCommand("palan-gen-ast");
 	ASSERT_NE(out.find("no input file"), string::npos);
 }
 
 TEST(gen_ast_error, could_not_open_file) {
 	cleanTestEnv();
-	string out = execTestCommand("bin/palan-gen-ast no_such_file.pa");
+	string out = execTestCommand("palan-gen-ast no_such_file.pa");
 	ASSERT_NE(out.find("Could not open file"), string::npos);
 }
 
 TEST(gen_ast_error, could_not_open_output_file) {
 	cleanTestEnv();
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa -o /nonexistent/dir/out.json");
+		"palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa -o /nonexistent/dir/out.json");
 	ASSERT_NE(out.find("Could not open output file"), string::npos);
 }
 
 TEST(gen_ast_error, syntax_error_with_loc) {
 	cleanTestEnv();
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_001_syntax_error.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_001_syntax_error.pa");
 	ASSERT_NE(out.find(":1:"), string::npos);   // loc format
 	ASSERT_NE(out.find("error:"), string::npos);
 }
@@ -58,7 +58,7 @@ TEST(gen_ast_error, c2ast_failed) {
 	// prefix -- just the message, same style as could_not_open_file above.
 	cleanTestEnv();
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_002_c2ast_failed.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_002_c2ast_failed.pa");
 	ASSERT_NE(out.find("Failed to read C header"), string::npos);
 }
 
@@ -70,7 +70,7 @@ TEST(gen_ast_error, link_keyword_typo) {
 	// source location prefix.
 	cleanTestEnv();
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_003_link_keyword_typo.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_003_link_keyword_typo.pa");
 	ASSERT_NE(out.find("Expected 'link' keyword"), string::npos);
 }
 
@@ -83,7 +83,7 @@ TEST(gen_ast_error, cinclude_sys_path_injection) {
 	cleanTestEnv();
 	execTestCommand("rm -f PWNED");
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_004_cinclude_sys_injection.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_004_cinclude_sys_injection.pa");
 	ASSERT_NE(out.find("Failed to read C header"), string::npos);
 	ASSERT_FALSE(fs::exists("PWNED"));
 }
@@ -96,7 +96,7 @@ TEST(gen_ast_error, syscall_as_identifier) {
 	// two leading comment lines).
 	cleanTestEnv();
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_006_syscall_as_identifier.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_006_syscall_as_identifier.pa");
 	ASSERT_NE(out.find(":3:"), string::npos);
 	ASSERT_NE(out.find("error:"), string::npos);
 }
@@ -104,7 +104,7 @@ TEST(gen_ast_error, syscall_as_identifier) {
 TEST(gen_ast_error, true_as_identifier) {
 	cleanTestEnv();
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_013_true_as_identifier.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_013_true_as_identifier.pa");
 	ASSERT_NE(out.find(":2:7: error: syntax error"), string::npos) << out;
 }
 
@@ -113,7 +113,7 @@ TEST(gen_ast_error, unknown_char) {
 	// "return1::" prefix (empty stdout between the colons) checks it no longer does.
 	cleanTestEnv();
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_007_unknown_char.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_007_unknown_char.pa");
 	ASSERT_EQ(out.rfind("return1::", 0), 0u) << out;
 	ASSERT_NE(out.find(":3:13: error: Unexpected character '`'."), string::npos) << out;
 }
@@ -123,7 +123,7 @@ TEST(gen_ast_error, unknown_char_nonascii) {
 	// error must still be reported exactly once.
 	cleanTestEnv();
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_008_unknown_char_nonascii.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_008_unknown_char_nonascii.pa");
 	ASSERT_NE(out.find(":2:10: error: Unexpected character '\\xC3'."), string::npos) << out;
 	ASSERT_EQ(out.find("syntax error"), string::npos) << out;
 }
@@ -137,7 +137,7 @@ TEST(gen_ast_error, invalid_char_literal) {
 		{"error_012_char_literal_nonascii.pa", ":2:11: error: Invalid character literal '\xC3\xA9'."},
 	};
 	for (auto& c : cases) {
-		string out = execTestCommand(string("bin/palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
+		string out = execTestCommand(string("palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
 		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
 		EXPECT_NE(out.find(c[1]), string::npos) << out;
 	}
@@ -152,7 +152,7 @@ TEST(gen_ast_error, invalid_number_literal) {
 		{"error_017_number_literal_exponent_suffix.pa", ":2:12: error: Invalid number literal '1e10x'."},
 	};
 	for (auto& c : cases) {
-		string out = execTestCommand(string("bin/palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
+		string out = execTestCommand(string("palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
 		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
 		EXPECT_NE(out.find(c[1]), string::npos) << out;
 	}
@@ -168,7 +168,7 @@ TEST(gen_ast_error, syscall_named_return) {
 		{"error_020_syscall_multi_return_inherit.pa", ":1:18: "},
 	};
 	for (auto& c : cases) {
-		string out = execTestCommand(string("bin/palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
+		string out = execTestCommand(string("palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
 		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
 		EXPECT_NE(out.find(c[1] + msg), string::npos) << out;
 	}
@@ -176,7 +176,7 @@ TEST(gen_ast_error, syscall_named_return) {
 
 TEST(gen_ast_error, for_expected_in) {
 	cleanTestEnv();
-	string out = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/error_021_for_expected_in.pa");
+	string out = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/error_021_for_expected_in.pa");
 	EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
 	EXPECT_NE(out.find(":1:12: error: Expected 'in' after the loop variable, but found 'on'."), string::npos) << out;
 }
@@ -188,7 +188,7 @@ TEST(gen_ast_error, for_elem_mode) {
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
-		string out = execTestCommand("bin/palan-gen-ast ../test/testdata/gen-ast/" + file);
+		string out = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/" + file);
 		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
 		EXPECT_NE(out.find(expected), string::npos) << out;
 	}
@@ -200,7 +200,7 @@ TEST(gen_ast_error, cinclude_local_path_injection) {
 	cleanTestEnv();
 	execTestCommand("rm -f PWNED");
 	string out = execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/gen-ast/error_005_cinclude_local_injection.pa");
+		"palan-gen-ast ../test/testdata/gen-ast/error_005_cinclude_local_injection.pa");
 	ASSERT_NE(out.find("Failed to read C header"), string::npos);
 	ASSERT_FALSE(fs::exists("PWNED"));
 }
@@ -213,7 +213,7 @@ TEST(gen_ast_error, nesting_too_deep) {
 	src += "a + 1 -> a;\n" + string(depth, '}') + "\n}\n";
 	ofstream("out/nesting_too_deep.pa") << src;
 
-	string out = execTestCommand("bin/palan-gen-ast out/nesting_too_deep.pa");
+	string out = execTestCommand("palan-gen-ast out/nesting_too_deep.pa");
 	EXPECT_EQ(out.rfind("return1::", 0), 0u) << out.substr(0, 200);
 	EXPECT_NE(out.find("error: memory exhausted"), string::npos) << out.substr(0, 200);
 }

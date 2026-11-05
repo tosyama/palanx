@@ -14,7 +14,7 @@ using namespace std;
 
 static string run_codegen(const string& sa_file, const string& asm_out)
 {
-    return execTestCommand("bin/palan-codegen " + sa_file + " -o " + asm_out);
+    return execTestCommand("palan-codegen " + sa_file + " -o " + asm_out);
 }
 
 static string readFile(const string& path)
@@ -1427,7 +1427,7 @@ TEST(codegen, entry) {
     cleanTestEnv();
     string asmf = "out/entry.s";
 
-    string err = execTestCommand("bin/palan-codegen --entry app..main -o " + asmf);
+    string err = execTestCommand("palan-codegen --entry app..main -o " + asmf);
     ASSERT_EQ(err, "");
 
     string asm_text = readFile(asmf);
@@ -1446,10 +1446,10 @@ TEST(codegen, entry) {
 TEST(codegen, entry_usage) {
     cleanTestEnv();
     string usage = "Usage: palan-codegen -e <symbol> -o <file>";
-    ASSERT_NE(execTestCommand("bin/palan-codegen --entry app..main").find(usage), string::npos);
-    ASSERT_NE(execTestCommand("bin/palan-codegen --entry app..main -o out/entry.s "
+    ASSERT_NE(execTestCommand("palan-codegen --entry app..main").find(usage), string::npos);
+    ASSERT_NE(execTestCommand("palan-codegen --entry app..main -o out/entry.s "
                               "../test/testdata/codegen/001_helloworld.sa.json").find(usage), string::npos);
-    ASSERT_NE(execTestCommand("bin/palan-codegen --entry app..main -o out/no-such-dir/entry.s")
+    ASSERT_NE(execTestCommand("palan-codegen --entry app..main -o out/no-such-dir/entry.s")
               .find("Could not open output file"), string::npos);
 }
 
