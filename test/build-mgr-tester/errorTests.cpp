@@ -37,6 +37,13 @@ TEST(build_mgr_error, could_not_open_file) {
 	ASSERT_NE(out.find("could not open file"), string::npos);
 }
 
+TEST(build_mgr_error, unsupported_target) {
+	cleanTestEnv();
+	// Reported ahead of the missing source: nothing runs for such a target.
+	string out = execTestCommand("bin/palan --target aarch64-linux-gnu no_such_file.pa");
+	ASSERT_NE(out.find("palan: unsupported target 'aarch64-linux-gnu'"), string::npos);
+}
+
 TEST(build_mgr_error, block_import_scope_out) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_045_block_import_scope.pa");

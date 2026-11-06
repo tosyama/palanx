@@ -14,6 +14,7 @@ TEST(sa, helloworld_sa) {
 	json jout = run_sa("../test/testdata/build-mgr/001_helloworld.pa");
 
 	ASSERT_TRUE(jout.is_object());
+	ASSERT_EQ(jout["target"], "x86_64-linux-gnu");
 
 	// printf call is annotated as C function
 	bool found = false;

@@ -1,4 +1,5 @@
 {
+    "target": "x86_64-linux-gnu",
     "functions": [],
     "original": "034_int_convert_extra.pa",
     "main": {"name": "_034_int_convert_extra..main", "parameters": [{"name": "__argc", "var-type": {"type-kind": "prim", "type-name": "int64"}}, {"name": "__argv", "var-type": {"type-kind": "pntr", "base-type": {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}}}]},

@@ -20,6 +20,7 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 				"Options\n"
 				" -o, --output=<output-path>   Output AST to file.\n"
 				" -i, --indent                 Output AST json with indent.\n"
+				" --target=<name>              Specify the target.\n"
 				" -v, --version                Display version.\n"
 				" -h, --help                   Display help.\n";
 
@@ -36,6 +37,10 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 
 		case E_NoInputFile:
 			return "palan-gen-ast: no input file";
+
+		case E_UnsupportedTarget:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "palan-gen-ast: unsupported target '" + arg1 + "'";
 
 		case E_C2AstFailed:
 			BOOST_ASSERT(arg1 != "\x01");

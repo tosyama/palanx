@@ -23,6 +23,12 @@ TEST(gen_ast_error, version) {
 	ASSERT_NE(out.find("palan-gen-ast"), string::npos);
 }
 
+TEST(gen_ast_error, unsupported_target) {
+	cleanTestEnv();
+	string out = execTestCommand("palan-gen-ast --target aarch64-linux-gnu ../test/testdata/gen-ast/001_basicPattern.pa");
+	ASSERT_NE(out.find("palan-gen-ast: unsupported target 'aarch64-linux-gnu'"), string::npos);
+}
+
 TEST(gen_ast_error, no_input_file) {
 	cleanTestEnv();
 	string out = execTestCommand("palan-gen-ast");

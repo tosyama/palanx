@@ -5,7 +5,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS src/common/PlnDef
 file(STRINGS src/common/PlnDefs.h PALAN_VERSION_LINE REGEX "#define PALAN_VERSION ")
 string(REGEX REPLACE ".*\"(.*)\".*" "\\1" PALAN_VERSION "${PALAN_VERSION_LINE}")
 
-set(PALAN_TARGET x86_64-linux-gnu)
+file(STRINGS src/common/PlnDefs.h PALAN_TARGET_LINE REGEX "#define PALAN_TARGET ")
+string(REGEX REPLACE ".*\"(.*)\".*" "\\1" PALAN_TARGET "${PALAN_TARGET_LINE}")
 set(PALAN_BUILD_LIB_DIR ${CMAKE_BINARY_DIR}/lib/palan/dev)
 set(PALAN_INSTALL_LIB_DIR lib/palan/${PALAN_VERSION})
 

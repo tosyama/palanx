@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.2.3
+ver. 0.2.4
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -11,6 +11,8 @@ type information and pre-collected literal tables.
 Root
 ----
 - original\* - original source file path
+- target\* - Target name string, as in the AST (see ASTSpec.md's Root). palan-codegen rejects a
+  missing or unsupported one.
 - main\* - The module's top-level function, whose body is `statements`: `name` (its symbol,
   `<module>..main`; see Symbol names) and `parameters` (`__argc` int64 and `__argv`
   `pntr(pntr(uint8))`, in the Function definition model's form), and `globals` as a Palan

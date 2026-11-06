@@ -10,7 +10,7 @@
 
 %defines
 %define api.parser.class	{PlnParser}
-%parse-param	{PlnLexer& lexer}	{json& ast}	{MacroTable& macros}	{string& cState}
+%parse-param	{PlnLexer& lexer}	{json& ast}	{MacroTable& macros}	{string& cState}	{const string& buildTarget}
 %lex-param	{PlnLexer& lexer}
 
 %code requires
@@ -367,7 +367,7 @@ expr_stmt: import
 		$$["stmt-type"] = "cinclude";
 
 		json c_ast = execute_c2ast($$["path-type"], $$["path"],
-		                          fs::path(lexer.inputFile).parent_path().string(), cState);
+		                          fs::path(lexer.inputFile).parent_path().string(), cState, buildTarget);
 		if (c_ast.is_object() && c_ast.contains("c-state"))
 			cState = c_ast["c-state"].dump();
 		if (c_ast.is_object() && c_ast.contains("ast")) {

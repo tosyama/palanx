@@ -12,6 +12,7 @@
 
 namespace fs = std::filesystem;
 
+#include "../common/PlnDefs.h"
 #include "PlnGenAstMessage.h"
 #include "PlnGenAstMacroFold.h"
 #include "PlnParser.h"
@@ -27,12 +28,14 @@ int main(int argc, char* argv[])
 		{ "version", no_argument, NULL, 'v' },
 		{ "output", required_argument, NULL, 'o' },
 		{ "indent", no_argument, NULL, 'i' },
+		{ "target", required_argument, NULL, 't' },
 		{ 0 }
 	};
 
 	int opt, option_index = 0;
 	char *output_file = NULL;
 	bool do_indent = false;
+	string target = PALAN_TARGET;
 
 	while (0 < (opt = getopt_long(argc, argv, "hvo:i", long_options, NULL))) {
 		switch (opt) {
@@ -48,9 +51,17 @@ int main(int argc, char* argv[])
 			case 'i':
 				do_indent = true;
 				break;
+			case 't':
+				target = optarg;
+				break;
 			default:
 				break;
 		}
+	}
+
+	if (!isSupportedTarget(target)) {
+		cerr << PlnGenAstMessage::getMessage(E_UnsupportedTarget, target) << endl;
+		return 1;
 	}
 
 	if ((argc-optind) != 1) {
@@ -66,11 +77,12 @@ int main(int argc, char* argv[])
 		json ast;
 		MacroTable macros;
 		string cState;
-		PlnParser parser(lexer, ast, macros, cState);
+		PlnParser parser(lexer, ast, macros, cState, target);
 
 		int ret;
 		ret = parser.parse();
 		ast["original"] = input_file;
+		ast["target"] = target;
 		if (ret == 0) {
 			foldMacroConstants(ast["ast"], macros);
 			if (ast.contains("export")) foldMacroConstants(ast["export"], macros);

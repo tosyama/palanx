@@ -39,7 +39,7 @@ Usage: palan [options] <source file> [program arguments...]
                             specified, the binary is linked in the working directory and run
                             with the program arguments.
    --lib                    Build the library the source file is the main source of (see 3.7).
-   --target <name>          Specify the target (see 6.1). The default is the running system's.
+   --target <name>          Specify the target (see 6.1). The default is the one the tools were built for.
    -c, --clean              Remove all cached work files (the whole working directory)
    -h, --help               Display help information
    -v, --version            Display version information
@@ -55,7 +55,8 @@ Design:
  is chosen only at link time: `palan-codegen --entry` emits a `_start` calling the given module's
  top-level function, and all object files and the archives of the libraries used are linked with
  `ld` to create the final executable. Two modules with one identity are reported here, before `ld`.
- The target is decided once, here, and passed to every tool.
+ The target is decided once, here. It is passed to palan-gen-ast, which records it in ast.json for
+ the rest of the pipeline, and to `palan-codegen --entry`, which has no such file to read.
  Options are read only before the source file; every argument after it goes to the program.
  With `-o`, the executable is written to the given path and not run, and an argument after the
  source file is an error. Without it, the executable is linked in the entry's directory under the
@@ -79,6 +80,7 @@ Usage: palan-gen-ast [options] <source file>
  options:
    -o, --output <file path> Specify output AST file path. If not specified, standard output is used.
    -i, --indent             Generate indented (pretty-printed) JSON output
+   --target <name>          Specify the target (see 6.1), recorded in the AST and passed to palan-c2ast
    -h, --help               Display help information
    -v, --version            Display version information
 ```
@@ -118,6 +120,8 @@ Usage: palan-c2ast [options] <C header file>
    -s, --sysheader          Specify when input C header file is a system header
    -i, --indent             Generate indented (pretty-printed) JSON output
    -S, --state <file>       Start from a previous run's `c-state` instead of predefined.h
+   --target <name>          Specify the target (see 6.1), which selects predefined.h and the system
+                            header directories
    -v, --version            Display version information
 ```
 
@@ -156,7 +160,8 @@ Usage: palan-sa [options] <AST file>
 ```
 
 Design:
- The semantic analyzer reads the ast.json file and builds a new sa.json independently.
+ The semantic analyzer reads the ast.json file and builds a new sa.json independently, carrying
+ over its target.
  It processes statements in order, maintaining a scope stack for C function declarations
  registered via cinclude statements (scope-aware: functions are visible from the cinclude
  point until the end of the enclosing scope).
@@ -211,12 +216,14 @@ Usage: palan-codegen [options] <SA file>
    -o, --output <file path> Specify output assembly file path. If not specified, defaults to <source>.s.
    -e, --entry <symbol>     Emit the program entry instead: a _start calling <symbol>, a module's
                             top-level function, and __dso_handle
+   --target <name>          With -e, specify the target (see 6.1). An SA file records its own.
    -h, --help               Display help information
    -v, --version            Display version information
 ```
 
 Design:
- The code generator reads sa.json and emits x86-64 AT&T syntax assembly for use with `as`.
+ The code generator reads sa.json and emits x86-64 AT&T syntax assembly for use with `as`. An sa.json
+ whose target is missing or unsupported is an error.
  A module's top-level statements are its exported function `<module>..main`, which takes argc and
  argv. The entry point `_start` (from `--entry`) calls it with argc and argv from the initial
  stack, then `exit(0)`. The final executable is produced by the build manager,

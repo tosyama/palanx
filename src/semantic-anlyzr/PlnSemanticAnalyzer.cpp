@@ -700,6 +700,7 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
 	symbolScope_  = moduleSymbol(moduleId_);
 	sa["original"]      = ast["original"];
+	sa["target"]        = ast["target"];
 	// LCOV_EXCL_BR_START
 	json u8 = {{"type-kind","prim"},{"type-name","uint8"}};
 	sa["main"] = {{"name", symbolScope_ + "..main"}, {"parameters", {

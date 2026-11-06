@@ -20,6 +20,12 @@ TEST(c2ast, basic_tests) {
     ASSERT_EQ(output, "int testproc(){H((A+H(1)));123;return xSz;}");
 }
 
+TEST(c2ast, explicit_target) {
+    cleanTestEnv();
+    string output = execTestCommand("palan-c2ast --target x86_64-linux-gnu -s stdio.h");
+    ASSERT_EQ(output[0], '{');
+}
+
 TEST(c2ast, std_headers) {
     cleanTestEnv();
     string output;

@@ -22,11 +22,16 @@ string PlnCodegenMessage::getMessage(PlnCodegenMessageCode msg_code, string arg1
 				" -o, --output <file>   Output assembly file path.\n"
 				" -e, --entry <symbol>  Emit the _start that calls <symbol>, a module's\n"
 				"                       top-level function, instead of compiling an SA file.\n"
+				" --target <name>       With -e, specify the target.\n"
 				" -v, --version         Display version.\n"
 				" -h, --help            Display help.\n";
 
 		case M_Version:
 			return "palan-codegen " PALAN_VERSION;
+
+		case E_UnsupportedTarget:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "palan-codegen: unsupported target '" + arg1 + "'";
 
 		case E_UnknownType:
 			BOOST_ASSERT(arg1 != "\x01");

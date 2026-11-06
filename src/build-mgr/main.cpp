@@ -62,6 +62,7 @@ int main(int argc, char* argv[])
 		{ "version", no_argument,       NULL, 'v' },
 		{ "clean",   no_argument,       NULL, 'c' },
 		{ "output",  required_argument, NULL, 'o' },
+		{ "target",  required_argument, NULL, 't' },
 		{ 0 }
 	};
 
@@ -69,6 +70,7 @@ int main(int argc, char* argv[])
 	bool do_clean = false;
 	string binary_name;
 	bool output_specified = false;
+	string target = PALAN_TARGET;
 
 	while (0 < (opt = getopt_long(argc, argv, "+hvco:", long_options, NULL))) {
 		switch (opt) {
@@ -85,9 +87,17 @@ int main(int argc, char* argv[])
 				binary_name = optarg;
 				output_specified = true;
 				break;
+			case 't':
+				target = optarg;
+				break;
 			default:
 				break;
 		}
+	}
+
+	if (!isSupportedTarget(target)) {
+		cerr << PlnBuildMgrMessage::getMessage(E_UnsupportedTarget, target) << endl;
+		return 1;
 	}
 
 	string palan_dir_path = getPalanDirPath();
@@ -128,7 +138,7 @@ int main(int argc, char* argv[])
 		fs::create_directories(input_file_work_path);
 		string output_ast_path = palan_work_path + input_file.string() + ".ast.json";
 
-		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path})) // LCOV_EXCL_BR_LINE
+		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path, "--target", target})) // LCOV_EXCL_BR_LINE
 			return ret;
 		ast_files.emplace_back(output_ast_path);
 
@@ -195,7 +205,7 @@ int main(int argc, char* argv[])
 		string main_symbol = json::parse(f)["main"]["name"];
 		string entry_s = base + ".entry.s";
 		string entry_o = base + ".entry.o";
-		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s})) // LCOV_EXCL_BR_LINE
+		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s, "--target", target})) // LCOV_EXCL_BR_LINE
 			return ret;
 		if (int ret = runTool({"as", entry_s, "-o", entry_o})) // LCOV_EXCL_BR_LINE
 			return ret;
@@ -757,7 +767,7 @@ int main(int argc, char* argv[])
 
 			}
 
-			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast})) // LCOV_EXCL_BR_LINE
+			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast, "--target", target})) // LCOV_EXCL_BR_LINE
 				return ret;
 			if (int ret = runTool({exec_path + "/palan-sa", alloc_ast}))
 				return ret;

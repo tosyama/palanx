@@ -15,6 +15,7 @@ enum PlnBuildMgrMessageCode {
 	E_CouldNotOpenFile,		// arg1: file path
 	E_PalanDirNotDirectory,	// arg1: path string
 	E_FailedToExecute,		// arg1: program name, arg2: strerror text
+	E_UnsupportedTarget,	// arg1: target name
 };
 
 class PlnBuildMgrMessage

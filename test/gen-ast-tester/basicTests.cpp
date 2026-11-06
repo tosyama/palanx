@@ -10,6 +10,18 @@
 
 using namespace std;
 
+TEST(gen_ast, target) {
+	cleanTestEnv();
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa");
+	ASSERT_TRUE(checkerr(output));
+	ASSERT_EQ(json::parse(output)["target"], "x86_64-linux-gnu");
+
+	// The source has a cinclude, so c2ast must accept the target too.
+	output = execTestCommand("palan-gen-ast --target x86_64-linux-gnu ../test/testdata/gen-ast/001_basicPattern.pa");
+	ASSERT_TRUE(checkerr(output));
+	ASSERT_EQ(json::parse(output)["target"], "x86_64-linux-gnu");
+}
+
 TEST(gen_ast, basic_tests) {
 	cleanTestEnv();
 	string output;

@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.2.3
+ver. 0.2.4
 
 \* - Required
 
@@ -10,6 +10,7 @@ Root
 - import - import file list
 - export - export declaration list
 - original - original file path
+- target\* - Target name string (`<arch>-<os>-<abi>`), which the C declarations depend on
 - ast\* - AST model
 
 Import file list

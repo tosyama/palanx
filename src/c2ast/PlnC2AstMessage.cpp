@@ -25,6 +25,7 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 				" -s, --sysheader       Treat input as a system header.\n"
 				" -S, --state <file>    Start from an earlier run's \"c-state\" output\n"
 				"                       instead of predefined.h.\n"
+				" --target <name>       Specify the target.\n"
 				" -v, --version         Display version.\n"
 				" -h, --help            Display help.\n";
 
@@ -33,6 +34,10 @@ string PlnC2AstMessage::getMessage(PlnC2AstMessageCode msg_code, string arg1)
 
 		case E_NoInputFile:
 			return "palan-c2ast: no input file";
+
+		case E_UnsupportedTarget:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "palan-c2ast: unsupported target '" + arg1 + "'";
 
 		case E_ErrorDirective:
 			BOOST_ASSERT(arg1 != "\x01");

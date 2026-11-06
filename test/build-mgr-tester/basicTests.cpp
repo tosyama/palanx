@@ -15,6 +15,12 @@ TEST(build_mgr, helloworld) {
 	ASSERT_EQ(output, "Hello World!\n");
 }
 
+TEST(build_mgr, explicit_target) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan --target x86_64-linux-gnu ../test/testdata/build-mgr/001_helloworld.pa");
+	ASSERT_EQ(output, "Hello World!\n");
+}
+
 TEST(build_mgr, basic_expr) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/101_basic_expr.pa");

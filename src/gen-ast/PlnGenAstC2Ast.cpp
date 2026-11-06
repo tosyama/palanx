@@ -53,13 +53,13 @@ static void writeTempFile(TempFile& tf, const string& content, const string& pat
 }
 
 json execute_c2ast(const string& path_type, const string& path, const string& base_dir,
-                   const string& c_state)
+                   const string& c_state, const string& target)
 {
 	fs::path exec_file_path = fs::canonical("/proc/self/exe");
 	string exec_path = exec_file_path.parent_path().string();
 	string c2ast_path = exec_path + "/palan-c2ast";
 
-	vector<string> argv{c2ast_path}; // LCOV_EXCL_BR_LINE
+	vector<string> argv{c2ast_path, "--target", target}; // LCOV_EXCL_BR_LINE
 	TempFile state_file;
 	if (!c_state.empty()) {
 		writeTempFile(state_file, c_state, path);

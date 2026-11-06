@@ -19,6 +19,7 @@ string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string ar
 				"\n"
 				"Options\n"
 				" -o, --output=<file>   Write binary to file (do not auto-run).\n"
+				" --target=<name>       Specify the target. Only " PALAN_TARGET " is supported.\n"
 				" -c, --clean           Remove all cached work files.\n"
 				" -v, --version         Display version.\n"
 				" -h, --help            Display help.\n";
@@ -40,6 +41,10 @@ string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string ar
 		case E_FailedToExecute:
 			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
 			return "palan: failed to execute '" + arg1 + "': " + arg2;
+
+		case E_UnsupportedTarget:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "palan: unsupported target '" + arg1 + "'";
 
 		default:
 			BOOST_ASSERT(false);

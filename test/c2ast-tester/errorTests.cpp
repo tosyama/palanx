@@ -28,6 +28,12 @@ TEST(c2ast_error, version) {
 	ASSERT_NE(out.find("palan-c2ast"), string::npos);
 }
 
+TEST(c2ast_error, unsupported_target) {
+	cleanTestEnv();
+	string out = execTestCommand("palan-c2ast --target aarch64-linux-gnu -s stdio.h");
+	ASSERT_NE(out.find("palan-c2ast: unsupported target 'aarch64-linux-gnu'"), string::npos);
+}
+
 // --- Preprocessor errors ---
 
 TEST(c2ast_error, error_directive) {

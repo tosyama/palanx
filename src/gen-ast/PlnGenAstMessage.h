@@ -14,6 +14,7 @@ enum PlnMessageCode {
 	E_CouldNotOpenFile,		// filename
 	E_CouldNotOpenOutputFile,	// filename
 	E_NoInputFile,
+	E_UnsupportedTarget,		// target name
 	E_C2AstFailed,			// header path
 	E_ExpectedLinkKeyword,		// identifier
 	E_UnexpectedChar,		// character
