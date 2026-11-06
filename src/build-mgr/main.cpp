@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <getopt.h>
+#include <unistd.h>
 #include <filesystem>
 #include <cstdint>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
@@ -53,6 +54,27 @@ static int runTool(const vector<string>& argv)
 				E_FailedToExecute, argv[0], strerror(r.err_no)) << endl;
 			return 127;
 	}
+}
+
+static string tempNameOf(const string& path)
+{
+	return path + ".tmp." + to_string(getpid());
+}
+
+// Builds racing over one work file must only ever see it complete, so it takes
+// its name once finished. Every tool the pipeline runs takes `-o`.
+static int runToolTo(vector<string> argv, const string& path)
+{
+	string tmp = tempNameOf(path);
+	argv.push_back("-o");
+	argv.push_back(tmp);
+	if (int ret = runTool(argv)) {
+		error_code ignored;
+		fs::remove(tmp, ignored);
+		return ret;
+	}
+	fs::rename(tmp, path);
+	return 0;
 }
 
 int main(int argc, char* argv[])
@@ -101,12 +123,13 @@ int main(int argc, char* argv[])
 	}
 
 	string palan_dir_path = getPalanDirPath();
-	string palan_work_path = palan_dir_path + "/work";
 
 	if (do_clean) {
-		fs::remove_all(palan_work_path);
+		fs::remove_all(palan_dir_path + "/work");
 		return 0;
 	}
+
+	string palan_work_path = palan_dir_path + "/work/" + target;
 
 	if ((argc-optind) < 1 || (output_specified && (argc-optind) != 1)) {
 		cerr << PlnBuildMgrMessage::getMessage(E_WrongNumberOfArgs) << endl;
@@ -119,9 +142,10 @@ int main(int argc, char* argv[])
 	vector<string> target_files;
 	vector<string> ast_files;
 	target_files.push_back(fs::weakly_canonical(argv[optind]).string());
+	string entry_dir = palan_work_path + target_files[0] + ".d";
 	vector<string> run_argv;
 	if (!output_specified) {
-		binary_name = palan_work_path + target_files[0] + ".out";
+		binary_name = entry_dir + "/out";
 		run_argv.push_back(binary_name);
 		run_argv.insert(run_argv.end(), argv + optind + 1, argv + argc);
 	}
@@ -138,7 +162,7 @@ int main(int argc, char* argv[])
 		fs::create_directories(input_file_work_path);
 		string output_ast_path = palan_work_path + input_file.string() + ".ast.json";
 
-		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path, "--target", target})) // LCOV_EXCL_BR_LINE
+		if (int ret = runToolTo({exec_path + "/palan-gen-ast", input_file.string(), "--target", target}, output_ast_path)) // LCOV_EXCL_BR_LINE
 			return ret;
 		ast_files.emplace_back(output_ast_path);
 
@@ -175,22 +199,22 @@ int main(int argc, char* argv[])
 	for (int i=0; i<ast_files.size(); i++) {
 		string ast_file = ast_files[i];
 
-		// palan-sa
-		if (int ret = runTool({exec_path + "/palan-sa", ast_file})) // LCOV_EXCL_BR_LINE
-			return ret;
-
 		// Derive output paths (strip ".ast.json" suffix from ast_file)
 		string base = ast_file.substr(0, ast_file.size() - 9);  // remove ".ast.json"
 		string sa_file  = base + ".sa.json";
 		string asm_file = base + ".s";
 		string obj_file = base + ".o";
 
+		// palan-sa
+		if (int ret = runToolTo({exec_path + "/palan-sa", ast_file}, sa_file)) // LCOV_EXCL_BR_LINE
+			return ret;
+
 		// palan-codegen
-		if (int ret = runTool({exec_path + "/palan-codegen", sa_file}))
+		if (int ret = runToolTo({exec_path + "/palan-codegen", sa_file}, asm_file))
 			return ret;
 
 		// as
-		if (int ret = runTool({"as", asm_file, "-o", obj_file})) // LCOV_EXCL_BR_LINE
+		if (int ret = runToolTo({"as", asm_file}, obj_file)) // LCOV_EXCL_BR_LINE
 			return ret;
 
 		obj_files.push_back(obj_file);
@@ -199,15 +223,16 @@ int main(int argc, char* argv[])
 	// The entry is chosen here, at link time: every module compiles the same
 	// whichever role it plays, and only this stub names the first one's
 	// top-level function.
+	fs::create_directories(entry_dir);
 	{
 		string base = ast_files[0].substr(0, ast_files[0].size() - 9);
 		ifstream f(base + ".sa.json");
 		string main_symbol = json::parse(f)["main"]["name"];
-		string entry_s = base + ".entry.s";
-		string entry_o = base + ".entry.o";
-		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s, "--target", target})) // LCOV_EXCL_BR_LINE
+		string entry_s = entry_dir + "/entry.s";
+		string entry_o = entry_dir + "/entry.o";
+		if (int ret = runToolTo({exec_path + "/palan-codegen", "--entry", main_symbol, "--target", target}, entry_s)) // LCOV_EXCL_BR_LINE
 			return ret;
-		if (int ret = runTool({"as", entry_s, "-o", entry_o})) // LCOV_EXCL_BR_LINE
+		if (int ret = runToolTo({"as", entry_s}, entry_o)) // LCOV_EXCL_BR_LINE
 			return ret;
 		obj_files.push_back(entry_o);
 	}
@@ -250,8 +275,8 @@ int main(int argc, char* argv[])
 		}
 
 		if (!struct_shapes.empty() || !elem_arr_shapes.empty()) {
-			string workdir = fs::path(ast_files[0]).parent_path().string();
-			string alloc_pa  = workdir + "/" PALAN_ALLOCATORS_MODULE ".pa";
+			string alloc_pa  = entry_dir + "/" PALAN_ALLOCATORS_MODULE ".pa";
+			string alloc_h   = entry_dir + "/" PALAN_ALLOCATORS_MODULE ".h";
 			string alloc_ast = alloc_pa + ".ast.json";
 			string alloc_sa  = alloc_pa + ".sa.json";
 			string alloc_s   = alloc_pa + ".s";
@@ -263,7 +288,7 @@ int main(int argc, char* argv[])
 				// names into this module, so it declares only what it calls.
 				// With no `link` clause, its sa.json never contributes to
 				// link_libs and need not join the aggregation loop above.
-				ofstream hdr(workdir + "/__allocators.h");
+				ofstream hdr(tempNameOf(alloc_h));
 				hdr << "#define NULL ((void *)0)\n"
 				    << "void *malloc(unsigned long size);\n"
 				    << "void *calloc(unsigned long nmemb, unsigned long size);\n"
@@ -272,7 +297,7 @@ int main(int argc, char* argv[])
 				    << "void *memmove(void *dest, const void *src, unsigned long n);\n"
 				    << "void *realloc(void *ptr, unsigned long size);\n"
 				    << "void abort(void);\n";
-				ofstream out(alloc_pa);
+				ofstream out(tempNameOf(alloc_pa));
 				out << "cinclude \"__allocators.h\";\n";
 
 				map<string, const json*> struct_by_name;
@@ -767,13 +792,16 @@ int main(int argc, char* argv[])
 
 			}
 
-			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast, "--target", target})) // LCOV_EXCL_BR_LINE
+			fs::rename(tempNameOf(alloc_h), alloc_h);
+			fs::rename(tempNameOf(alloc_pa), alloc_pa);
+
+			if (int ret = runToolTo({exec_path + "/palan-gen-ast", alloc_pa, "--target", target}, alloc_ast)) // LCOV_EXCL_BR_LINE
 				return ret;
-			if (int ret = runTool({exec_path + "/palan-sa", alloc_ast}))
+			if (int ret = runToolTo({exec_path + "/palan-sa", alloc_ast}, alloc_sa))
 				return ret;
-			if (int ret = runTool({exec_path + "/palan-codegen", alloc_sa}))
+			if (int ret = runToolTo({exec_path + "/palan-codegen", alloc_sa}, alloc_s))
 				return ret;
-			if (int ret = runTool({"as", alloc_s, "-o", alloc_o})) // LCOV_EXCL_BR_LINE
+			if (int ret = runToolTo({"as", alloc_s}, alloc_o)) // LCOV_EXCL_BR_LINE
 				return ret;
 
 			obj_files.push_back(alloc_o);
@@ -795,10 +823,14 @@ int main(int argc, char* argv[])
 	for (auto& lib : link_libs) ldArgv.push_back("-l" + lib);
 	ldArgv.push_back("-dynamic-linker");
 	ldArgv.push_back("/lib64/ld-linux-x86-64.so.2");
-	ldArgv.push_back("-o");
-	ldArgv.push_back(binary_name);
-	if (int ret = runTool(ldArgv))
+	if (output_specified) {
+		ldArgv.push_back("-o");
+		ldArgv.push_back(binary_name);
+		if (int ret = runTool(ldArgv))
+			return ret;
+	} else if (int ret = runToolTo(ldArgv, binary_name)) {
 		return ret;
+	}
 
 	if (!output_specified) {
 		PlnProcResult r = runProcess(run_argv);

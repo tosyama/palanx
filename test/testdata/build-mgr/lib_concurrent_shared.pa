@@ -1,0 +1,8 @@
+export func sum(@[+]int64 v) -> int64 s
+{
+	int64 i = 0;
+	while i < v -> len() {
+		s + v[i] -> s;
+		i + 1 -> i;
+	}
+}

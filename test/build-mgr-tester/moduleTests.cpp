@@ -5,11 +5,49 @@
 
 #include <gtest/gtest.h>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <vector>
 #include "../test-base/testBase.h"
+#include "../../src/common/PlnDefs.h"
 #include "buildMgrTestUtil.h"
 
 using namespace std;
 namespace fs = std::filesystem;
+
+static string targetWorkDir() {
+	return string(getenv("HOME")) + "/.palan/work/" PALAN_TARGET;
+}
+
+// execTestCommand gives up after 5 seconds and has one err file, so the builds
+// are started directly and each writes its own output.
+static void expectConcurrentRuns(const vector<pair<string, string>>& programs) {
+	const int rounds = 3;
+	cleanTestEnv();
+	string script;
+	for (int r = 0; r < rounds; r++)
+		for (size_t p = 0; p < programs.size(); p++)
+			script += "bin/palan ../test/testdata/build-mgr/" + programs[p].first + " > out/run"
+				+ to_string(p) + "_" + to_string(r) + " 2>&1 &\n";
+	script += "wait\n";
+	ASSERT_EQ(system(script.c_str()), 0);
+	for (int r = 0; r < rounds; r++)
+		for (size_t p = 0; p < programs.size(); p++) {
+			ifstream f("out/run" + to_string(p) + "_" + to_string(r));
+			stringstream ss;
+			ss << f.rdbuf();
+			EXPECT_EQ(ss.str(), programs[p].second) << programs[p].first << " round " << r;
+		}
+	EXPECT_EQ(execTestCommand("find " + targetWorkDir() + " -name '*.tmp.*'"), "");
+}
+
+TEST(build_mgr, concurrent_programs_in_one_dir) {
+	expectConcurrentRuns({{"391_concurrent_a.pa", "a 7\n"}, {"392_concurrent_b.pa", "b 1.5\n"}});
+}
+
+TEST(build_mgr, concurrent_programs_sharing_source) {
+	expectConcurrentRuns({{"393_shared_a.pa", "a 5\n"}, {"394_shared_b.pa", "b 4 5\n"}});
+}
 
 TEST(build_mgr, import_basic) {
 	cleanTestEnv();
@@ -364,7 +402,7 @@ TEST(build_mgr, chain_method_mtrace) {
 TEST(build_mgr, entry_at_link) {
 	cleanTestEnv();
 	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
-	string libObj = string(getenv("HOME")) + "/.palan/work" + dir + "/lib_entry_demo.pa.o";
+	string libObj = targetWorkDir() + dir + "/lib_entry_demo.pa.o";
 
 	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/358_entry_at_link.pa"), "15\n");
 	fs::copy_file(libObj, "out/lib_entry_demo_imported.o");
@@ -389,7 +427,7 @@ TEST(build_mgr, implicit_args) {
 TEST(build_mgr, run_args) {
 	cleanTestEnv();
 	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
-	string bin = string(getenv("HOME")) + "/.palan/work" + dir + "/359_args.pa.out";
+	string bin = targetWorkDir() + dir + "/359_args.pa.d/out";
 	fs::remove(bin);
 	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/359_args.pa x -o 'y z'"),
 		"4\n1:x\n2:-o\n3:y z\nrebound\n");

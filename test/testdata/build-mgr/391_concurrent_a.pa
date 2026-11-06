@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+[+]int32 v;
+v.push(7);
+printf("a %d\n", v[0]);

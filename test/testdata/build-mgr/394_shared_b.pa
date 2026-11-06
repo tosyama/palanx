@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+import "lib_concurrent_shared.pa";
+[+]int64 v;
+[+]int32 w;
+v.push(4);
+w.push(5);
+printf("b %ld %d\n", sum(@v), w[0]);

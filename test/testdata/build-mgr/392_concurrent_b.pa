@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+[+]flo64 v;
+v.push(1.5);
+printf("b %.1f\n", v[0]);

@@ -301,8 +301,8 @@ inline loops. A struct that owns nothing and a `[n]T` array of primitives use `m
 palan-sa emits only calls to these functions; it records each shape it needs in sa.json's
 `alloc-shapes` (SASpec.md's Root), as it collects `str-literals`. The build manager collects the
 shapes of all modules, deduplicates them by key (each module defining its own copy would collide
-at link time), and writes the functions as Palan source `__allocators.pa` in the working directory
-of the given source file, with `__allocators.h` declaring the C functions it calls. It is compiled
+at link time), and writes the functions as Palan source `__allocators.pa` in the entry's directory
+under the working directory (5.1), with `__allocators.h` declaring the C functions it calls. It is compiled
 as one more module. Each struct appears there as an exported type declaring only
 its owned fields, at their offsets, with the rest of its bytes as padding, so a C struct or a type
 of another module needs no Palan declaration of its other fields. A struct owning nothing is
