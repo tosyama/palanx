@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
+#include "saTestUtil.h"
 
 using namespace std;
 
@@ -175,9 +176,20 @@ TEST(sa_error, tuple_var_count_mismatch) {
 
 TEST(sa_error, import_file_not_found) {
 	cleanTestEnv();
-	string ast_out = "out/test.ast.json";
+	string ast_out = moduleAstPath("../test/testdata/sa/035_import_file_not_found.pa");
 	ASSERT_EQ(execTestCommand(
 		"palan-gen-ast ../test/testdata/sa/035_import_file_not_found.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_NE(sa.find("Could not open import file"), string::npos);
+}
+
+// Without the work tree layout there is nowhere to look for an imported AST.
+TEST(sa_error, import_outside_work_tree) {
+	cleanTestEnv();
+	string ast_out = "out/test.ast.json";
+	genLibSaImport();
+	ASSERT_EQ(execTestCommand(
+		"palan-gen-ast ../test/testdata/sa/058_import_unqualified.pa -o " + ast_out), "");
 	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("Could not open import file"), string::npos);
 }
@@ -253,8 +265,8 @@ TEST(sa_error, float_bitnot) {
 TEST(sa_error, unqualified_alias_call)
 {
 	cleanTestEnv();
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
-	string ast_out = "out/test.ast.json";
+	genModuleAst("../test/testdata/sa/lib_sa_import.pa");
+	string ast_out = moduleAstPath("../test/testdata/sa/error_054_unqualified_alias_call.pa");
 	ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/sa/error_054_unqualified_alias_call.pa -o " + ast_out), "");
 	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("requires a module alias qualifier"), string::npos);
@@ -263,8 +275,8 @@ TEST(sa_error, unqualified_alias_call)
 TEST(sa_error, chain_alias_undefined)
 {
 	cleanTestEnv();
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
-	string ast_out = "out/test.ast.json";
+	genModuleAst("../test/testdata/sa/lib_sa_import.pa");
+	string ast_out = moduleAstPath("../test/testdata/sa/error_701_chain_alias_undefined.pa");
 	ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/sa/error_701_chain_alias_undefined.pa -o " + ast_out), "");
 	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:16: error: Undefined function 'nosuch'."), string::npos);
@@ -273,17 +285,19 @@ TEST(sa_error, chain_alias_undefined)
 TEST(sa_error, ambiguous_call)
 {
 	cleanTestEnv();
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import2.pa -o out/lib_sa_import2.pa.ast.json");
-	string ast_out = "out/test.ast.json";
+	genModuleAst("../test/testdata/sa/lib_sa_import.pa");
+	genModuleAst("../test/testdata/sa/lib_sa_import2.pa");
+	string ast_out = moduleAstPath("../test/testdata/sa/error_055_ambiguous_call.pa");
 	ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/sa/error_055_ambiguous_call.pa -o " + ast_out), "");
 	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("Ambiguous function call"), string::npos);
 
+	ast_out = moduleAstPath("../test/testdata/sa/error_683_func_value_ambiguous_import.pa");
 	ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/sa/error_683_func_value_ambiguous_import.pa -o " + ast_out), "");
 	sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":3:27: error: Ambiguous function call 'square'"), string::npos) << sa;
 
+	ast_out = moduleAstPath("../test/testdata/sa/error_684_func_ptr_import_func_call.pa");
 	ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/sa/error_684_func_ptr_import_func_call.pa -o " + ast_out), "");
 	sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":3:11: error: call to 'square' is ambiguous: it names both a function pointer and a function."), string::npos) << sa;
@@ -301,8 +315,8 @@ TEST(sa_error, unknown_alias)
 TEST(sa_error, import_block_scope_out)
 {
 	cleanTestEnv();
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
-	string ast_out = "out/test.ast.json";
+	genModuleAst("../test/testdata/sa/lib_sa_import.pa");
+	string ast_out = moduleAstPath("../test/testdata/sa/error_057_import_block_scope_out.pa");
 	ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/sa/error_057_import_block_scope_out.pa -o " + ast_out), "");
 	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("Undefined function"), string::npos);
@@ -324,8 +338,8 @@ TEST(sa_error, alias_unknown_method)
 	// lib.nonexistent() — alias "lib" exists but method not found
 	// Covers: findImportFuncByAlias returning nullptr
 	cleanTestEnv();
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
-	string ast_out = "out/test.ast.json";
+	genModuleAst("../test/testdata/sa/lib_sa_import.pa");
+	string ast_out = moduleAstPath("../test/testdata/sa/error_075_alias_unknown_method.pa");
 	ASSERT_EQ(execTestCommand(
 		"palan-gen-ast ../test/testdata/sa/error_075_alias_unknown_method.pa -o " + ast_out), "");
 	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
@@ -613,8 +627,8 @@ TEST(sa_error, pln_call_too_many_args)
 TEST(sa_error, alias_call_arg_count)
 {
 	cleanTestEnv();
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
-	string ast_out = "out/test.ast.json";
+	genModuleAst("../test/testdata/sa/lib_sa_import.pa");
+	string ast_out = moduleAstPath("../test/testdata/sa/error_388_alias_call_arg_count.pa");
 	ASSERT_EQ(execTestCommand(
 		"palan-gen-ast ../test/testdata/sa/error_388_alias_call_arg_count.pa -o " + ast_out), "");
 	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
@@ -775,8 +789,8 @@ TEST(sa_error, type_name_conflict)
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
-		execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_types2.pa -o out/lib_sa_types2.pa.ast.json");
-		string ast_out = "out/test.ast.json";
+		genModuleAst("../test/testdata/sa/lib_sa_types2.pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
@@ -857,8 +871,8 @@ TEST(sa_error, sig_not_implemented)
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
-		execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_not_impl_sig.pa -o out/lib_sa_not_impl_sig.pa.ast.json");
-		string ast_out = "out/test.ast.json";
+		genModuleAst("../test/testdata/sa/lib_sa_not_impl_sig.pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
@@ -914,8 +928,8 @@ TEST(sa_error, import_type)
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		for (string lib : {"lib_sa_types", "lib_sa_types2", "lib_sa_bad_struct", "lib_sa_private_alias"})
-			execTestCommand("palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
-		string ast_out = "out/test.ast.json";
+			genModuleAst("../test/testdata/sa/" + lib + ".pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
@@ -935,8 +949,8 @@ TEST(sa_error, circular_type_decl)
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		for (string f : {"lib_sa_mutual_cycle", "error_433_import_mutual_embed"})
-			execTestCommand("palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
-		string ast_out = "out/test.ast.json";
+			genModuleAst("../test/testdata/sa/" + f + ".pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
@@ -1315,8 +1329,8 @@ TEST(sa_error, unqualified_enumerator)
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
-		execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_types.pa -o out/lib_sa_types.pa.ast.json");
-		string ast_out = "out/test.ast.json";
+		genModuleAst("../test/testdata/sa/lib_sa_types.pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
@@ -1364,8 +1378,8 @@ TEST(sa_error, global_var)
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
-		execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_global.pa -o out/lib_sa_global.pa.ast.json");
-		string ast_out = "out/test.ast.json";
+		genModuleAst("../test/testdata/sa/lib_sa_global.pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");

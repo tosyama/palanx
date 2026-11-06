@@ -8,6 +8,8 @@
 
 using json = nlohmann::json;
 
+std::string moduleAstPath(const std::string& pa_file);
+void genModuleAst(const std::string& pa_file);
 json run_sa(const std::string& pa_file);
 json written(const json& sa);
 std::string funcName(const json& linkName);

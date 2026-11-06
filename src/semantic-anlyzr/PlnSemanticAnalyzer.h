@@ -140,8 +140,6 @@ struct ConstVal {
 };
 
 class PlnSemanticAnalyzer {
-	string basePath;
-	string astFileName;
 	string c2astPath;
 	string inputFilePath;
 	string moduleId_;  // the module's identity, a type's origin
@@ -357,10 +355,10 @@ class PlnSemanticAnalyzer {
 	void beginModule(const json& ast);
 	void prescanTypes(const json& stmts);
 	void indexTopDecls(const json& stmts);
-	json loadImportAst(const json& stmt, filesystem::path& impPath) const;
+	json loadImportAst(const json& stmt) const;
 	// The imported module's type context, shared program-wide; its types are
 	// resolved only as they are needed.
-	PlnSemanticAnalyzer& importTypeContext(json impAst, const filesystem::path& impPath);
+	PlnSemanticAnalyzer& importTypeContext(json impAst);
 	// Resolves the type or const `name` (as written in this module) if a
 	// top-level declaration or import provides it and it is not resolved yet.
 	// Through a pointer, a struct only has to exist.
@@ -723,8 +721,8 @@ class PlnSemanticAnalyzer {
 	json sa_continue_stmt(const json& stmt);
 
 public:
-	PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path);
+	PlnSemanticAnalyzer(string c2ast_path);
 	~PlnSemanticAnalyzer();
-	void analysis(const json &ast);
+	void analysis(const json &ast, const string& astPath);
 	const json& result();
 };

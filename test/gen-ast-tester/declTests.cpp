@@ -5,10 +5,12 @@
 
 #include <gtest/gtest.h>
 #include <filesystem>
+#include <fstream>
 #include "../test-base/testBase.h"
 #include "genAstTestUtil.h"
 
 using namespace std;
+namespace fs = std::filesystem;
 
 TEST(gen_ast, struct_def) {
 	cleanTestEnv();
@@ -323,6 +325,26 @@ TEST(gen_ast, cinclude_local_header) {
 		if (found_add_one) break;
 	}
 	ASSERT_TRUE(found_add_one);
+}
+
+TEST(gen_ast, import_path_absolute) {
+	cleanTestEnv();
+	fs::create_directories("out/d");
+	ofstream("out/d/h.h") << "";
+	ofstream("out/d/m.pa") << "import \"../x.pa\";\nimport a from \"./sub/../y.txt\";\nimport <z.pa>;\ncinclude \"h.h\";\n";
+	string output = execTestCommand("palan-gen-ast out/d/m.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	string out = fs::weakly_canonical("out").string();
+
+	ASSERT_EQ(jout["import"][0]["path"], out + "/x.pa");
+	ASSERT_EQ(jout["import"][1]["path"], out + "/d/y.txt");
+	ASSERT_EQ(jout["import"][2]["path"], "z.pa");
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts[0]["path"], out + "/x.pa");
+	ASSERT_EQ(stmts[1]["path"], out + "/d/y.txt");
+	ASSERT_EQ(stmts[2]["path"], "z.pa");
+	ASSERT_EQ(stmts[3]["path"], "h.h");
 }
 
 TEST(gen_ast, cinclude_same_line) {

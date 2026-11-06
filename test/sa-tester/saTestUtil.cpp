@@ -4,15 +4,30 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <fstream>
+#include <filesystem>
 #include <regex>
 #include "../test-base/testBase.h"
 #include "saTestUtil.h"
 
 using namespace std;
+namespace fs = std::filesystem;
+
+// Where palan-sa looks for a module's AST: out/ stands for the work tree.
+string moduleAstPath(const string& pa_file)
+{
+	fs::path ast = "out" + fs::weakly_canonical(pa_file).string() + ".ast.json";
+	fs::create_directories(ast.parent_path());
+	return ast.string();
+}
+
+void genModuleAst(const string& pa_file)
+{
+	execTestCommand("palan-gen-ast " + pa_file + " -o " + moduleAstPath(pa_file));
+}
 
 json run_sa(const string& pa_file)
 {
-	string ast_out = "out/test.ast.json";
+	string ast_out = moduleAstPath(pa_file);
 	string sa_out = "out/test.sa.json";
 
 	string gen = execTestCommand("palan-gen-ast " + pa_file + " -o " + ast_out);
@@ -67,11 +82,11 @@ string tempRelease(const json& arg)
 
 void genLibSaImport()
 {
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_import.pa -o out/lib_sa_import.pa.ast.json");
+	genModuleAst("../test/testdata/sa/lib_sa_import.pa");
 }
 
 void genLibSaTypes()
 {
 	for (string lib : {"lib_sa_types", "lib_sa_types_mid", "lib_sa_types2"})
-		execTestCommand("palan-gen-ast ../test/testdata/sa/" + lib + ".pa -o out/" + lib + ".pa.ast.json");
+		genModuleAst("../test/testdata/sa/" + lib + ".pa");
 }

@@ -18,7 +18,7 @@ Root
 Import file list
 ----------------
 - path-type\* - Path type string: "src" "inc"
-- path\* - Path string
+- path\* - Path string. For "src", absolute with symbolic links resolved (SpecAndDesign.md 3.7)
 
 Export declaration list
 -------------------------
@@ -408,7 +408,7 @@ Statement model
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
-    - path\* - Path string
+    - path\* - Path string, as in the import file list
     - targets - Import target name string list (a function name, a type name or an operator), null - all
     - alias - Alias name string
   2. cinclude - C header include statement (expands in place, scope-aware)

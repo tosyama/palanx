@@ -188,10 +188,6 @@ int main(int argc, char* argv[])
 					string import_path = imp["path"];
 
 					if (import_path.ends_with(".pa")) {
-						if (import_path[0] != '/') {
-							import_path = input_file.parent_path().string() + "/" + import_path;
-						}
-						import_path = fs::weakly_canonical(import_path);
 						auto it = find(target_files.begin(), target_files.end(), import_path);
 						if (it == target_files.end()) {
 							target_files.emplace_back(import_path);

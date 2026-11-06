@@ -69,8 +69,8 @@ int main(int argc, char* argv[])
 		ast_filename.erase(ast_filename.size() - suffix.size());
 	}
 
-	PlnSemanticAnalyzer analyzer(ast_path.parent_path().string(), ast_filename, c2ast_path);
-	analyzer.analysis(ast);
+	PlnSemanticAnalyzer analyzer(c2ast_path);
+	analyzer.analysis(ast, ast_path.string());
 
 	string sa_path = output_file
 		? output_file

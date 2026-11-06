@@ -178,6 +178,55 @@ TEST(build_mgr, import_path_injection) {
 	ASSERT_FALSE(fs::exists("PWNED"));
 }
 
+static void writeModule(const string& path, const string& source) {
+	fs::create_directories(fs::path(path).parent_path());
+	ofstream(path) << source;
+}
+
+static const string printF = "cinclude <stdio.h>;\nprintf(\"%d\\n\", f());\n";
+
+// The relative import inside real.pa means next to the real file, not the link.
+TEST(build_mgr, import_symlink_file) {
+	cleanTestEnv();
+	writeModule("out/b/real.pa", "import \"sib.pa\";\nexport func f() -> int32 { return g(); }\n");
+	writeModule("out/b/sib.pa", "export func g() -> int32 { return 7; }\n");
+	writeModule("out/a/main.pa", "import \"link.pa\";\n" + printF);
+	fs::create_symlink("../b/real.pa", "out/a/link.pa");
+	ASSERT_EQ(execTestCommand("bin/palan out/a/main.pa"), "7\n");
+}
+
+TEST(build_mgr, import_symlink_dir) {
+	cleanTestEnv();
+	writeModule("out/real/lib.pa", "export func f() -> int32 { return 7; }\n");
+	writeModule("out/a/main.pa", "import \"linked/lib.pa\";\n" + printF);
+	fs::create_directory_symlink("../real", "out/a/linked");
+	ASSERT_EQ(execTestCommand("bin/palan out/a/main.pa"), "7\n");
+}
+
+TEST(build_mgr, import_one_file_two_spellings) {
+	cleanTestEnv();
+	writeModule("out/real.pa", "export func f() -> int32 { return 7; }\n");
+	fs::create_symlink("real.pa", "out/link.pa");
+	writeModule("out/main.pa", "import \"link.pa\";\nimport \"real.pa\";\nimport \"./real.pa\";\n" + printF);
+	ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "7\n");
+}
+
+TEST(build_mgr, import_cycle_across_dirs) {
+	cleanTestEnv();
+	writeModule("out/d1/a.pa", "import \"../d2/b.pa\";\nexport func one() -> int32 { return 1; }\n"
+		"cinclude <stdio.h>;\nprintf(\"%d\\n\", two());\n");
+	writeModule("out/d2/b.pa", "import \"./../d1/a.pa\";\nimport \"./b.pa\";\n"
+		"export func two() -> int32 { return one() + 1; }\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/d1/a.pa"), "2\n");
+}
+
+TEST(build_mgr, import_absolute_path) {
+	cleanTestEnv();
+	writeModule("out/lib/abs.pa", "export func f() -> int32 { return 7; }\n");
+	writeModule("out/main.pa", "import \"" + fs::weakly_canonical("out/lib/abs.pa").string() + "\";\n" + printF);
+	ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "7\n");
+}
+
 TEST(build_mgr, import_syscall) {
 	// The library module exports no code at all, only a prototype, so this also
 	// covers assembling and linking an object with no callable symbol.

@@ -240,3 +240,14 @@ inline string resolveLinkObjPath(const string& name, const string& inputFile)
 		p = std::filesystem::absolute(std::filesystem::path(inputFile).parent_path() / p);
 	return p.lexically_normal().string();
 }
+
+// Links are resolved, unlike a `link` object's path: a module is identified by
+// its file, so two spellings of one file must come out the same.
+inline json resolveImportPath(json pathInf, const string& inputFile)
+{
+	if (pathInf["path-type"] == "src") {
+		std::filesystem::path p = std::filesystem::path(inputFile).parent_path() / pathInf["path"].get<string>();
+		pathInf["path"] = std::filesystem::weakly_canonical(p).string();
+	}
+	return pathInf;
+}

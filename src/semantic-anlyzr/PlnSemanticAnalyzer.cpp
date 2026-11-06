@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <set>
 #include <deque>
+#include <optional>
 #include <stdexcept>
 #include <boost/assert.hpp>
 #include <cstdint>
@@ -21,6 +22,7 @@ struct PlnSemanticAnalyzer::TypeProgram {
 	struct Resolving { PlnSemanticAnalyzer* module; string name; const json* stmt; };
 	vector<Resolving> resolving;
 	deque<function<void()>> settled;
+	optional<string> workRoot;  // none: the AST is outside the work tree layout
 };
 
 // Collect release stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
@@ -36,8 +38,8 @@ json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx, const
 	return result;
 }
 
-PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
-	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path), inputFilePath(""),
+PlnSemanticAnalyzer::PlnSemanticAnalyzer(string c2ast_path)
+	: c2astPath(c2ast_path), inputFilePath(""),
 	  ownedProgram_(make_unique<TypeProgram>()), program_(ownedProgram_.get())
 {
 }
@@ -757,10 +759,9 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 		} else if (t == "cinclude") {
 			registerCIncludeTypes(stmt);
 		} else if (t == "import") {
-			filesystem::path impPath;
-			json impAst = loadImportAst(stmt, impPath);
+			json impAst = loadImportAst(stmt);
 			if (impAst.is_null()) continue;
-			PlnSemanticAnalyzer& mod = importTypeContext(move(impAst), impPath);
+			PlnSemanticAnalyzer& mod = importTypeContext(move(impAst));
 			if (!(*mod.moduleAstRoot_)["ast"].contains("statements")) continue;
 			string alias = stmt.value("alias", "");
 			set<string> targets;
@@ -1000,8 +1001,19 @@ void PlnSemanticAnalyzer::whenSettled(function<void()> f)
 	else program_->settled.push_back(move(f));
 }
 
-void PlnSemanticAnalyzer::analysis(const json &ast)
+// Work files mirror their sources' absolute paths, so where this AST is tells
+// where the ASTs of the modules it imports are.
+static optional<string> workRootOf(const string& astPath, const string& original)
 {
+	string path = filesystem::absolute(astPath).lexically_normal().string();
+	string tail = original + ".ast.json";
+	if (!path.ends_with(tail)) return nullopt;
+	return path.substr(0, path.size() - tail.size());
+}
+
+void PlnSemanticAnalyzer::analysis(const json &ast, const string& astPath)
+{
+	program_->workRoot = workRootOf(astPath, ast["original"]);
 	beginModule(ast);
 	if (ast["ast"].contains("statements")) {
 		prescanTypes(ast["ast"]["statements"]);
@@ -1212,38 +1224,27 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 
 } // LCOV_EXCL_BR_LINE
 
-static bool is_absolute(filesystem::path &path)
-{
-	if (path.string()[0] == '/') {
-		return true;
-	}
-	return false;
-}
-
 // Null for an import of a non-Palan file.
-json PlnSemanticAnalyzer::loadImportAst(const json& stmt, filesystem::path& impPath) const
+json PlnSemanticAnalyzer::loadImportAst(const json& stmt) const
 {
-	impPath = stmt["path"].get<string>();
-	if (stmt["path-type"] == "src" && !is_absolute(impPath))
-		impPath = basePath + '/' + impPath.string();
+	string path = stmt["path"];
+	if (!path.ends_with(".pa")) return json();
+	string astPath = program_->workRoot.value_or("") + path + ".ast.json";
 
-	if (!impPath.string().ends_with(".pa")) return json();
-	filesystem::path astPath = impPath;
-	astPath += ".ast.json";
-
-	ifstream astfile(astPath.string());
+	ifstream astfile;
+	if (program_->workRoot) astfile.open(astPath);
 	if (!astfile.is_open()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, astPath.string()) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, astPath) << endl;
 		exit(1);
 	}
 	return json::parse(astfile);
 }
 
-PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst, const filesystem::path& impPath)
+PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst)
 {
 	auto known = program_->modules.find(impAst["module"].get<string>());
 	if (known != program_->modules.end()) return *known->second;
-	auto sub = make_unique<PlnSemanticAnalyzer>(impPath.parent_path().string(), "", c2astPath);
+	auto sub = make_unique<PlnSemanticAnalyzer>(c2astPath);
 	sub->ownedProgram_.reset();
 	sub->program_ = program_;
 	sub->moduleAst_ = move(impAst);
@@ -1257,12 +1258,11 @@ PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst, const f
 
 void PlnSemanticAnalyzer::sa_import(const json& stmt)
 {
-	filesystem::path imp_path;
-	json imp_ast = loadImportAst(stmt, imp_path);
+	json imp_ast = loadImportAst(stmt);
 	if (imp_ast.is_null()) return;
 
 	rejectImportedGlobals(stmt, imp_ast);
-	PlnSemanticAnalyzer& sub = importTypeContext(imp_ast, imp_path);
+	PlnSemanticAnalyzer& sub = importTypeContext(imp_ast);
 	adoptExportedTypes(stmt, imp_ast, sub);
 
 	if (!imp_ast.contains("export")) return;

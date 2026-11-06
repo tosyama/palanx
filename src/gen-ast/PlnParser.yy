@@ -528,16 +528,16 @@ stmt_list_b: block_stmt
 
 import: KW_IMPORT import_path import_as
 	{
-		ast["import"].emplace_back($2);
-		$$ = move($2);
+		$$ = resolveImportPath($2, lexer.inputFile);
+		ast["import"].emplace_back($$);
 		if ($3.size()) {
 			$$["alias"] = $3;
 		}
 	}
 	| KW_IMPORT import_ids KW_FROM import_path import_as
 	{
-		ast["import"].emplace_back($4);
-		$$ = move($4);
+		$$ = resolveImportPath($4, lexer.inputFile);
+		ast["import"].emplace_back($$);
 		$$["targets"] = $2.toVector();
 		if ($5.size()) { $$["alias"] = $5; }
 	}

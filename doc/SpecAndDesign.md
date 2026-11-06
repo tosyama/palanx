@@ -161,7 +161,9 @@ Usage: palan-sa [options] <AST file>
 
 Design:
  The semantic analyzer reads the ast.json file and builds a new sa.json independently, carrying
- over its target.
+ over its target. An imported module's AST is read from the same work tree as its own: the root is
+ the AST file's path without its `original` and `.ast.json`, since work files mirror their sources'
+ absolute paths (5.1). An AST outside that layout can import no Palan module.
  It processes statements in order, maintaining a scope stack for C function declarations
  registered via cinclude statements (scope-aware: functions are visible from the cinclude
  point until the end of the enclosing scope).
@@ -388,8 +390,9 @@ any module and only adds a place to look, for the whole program. `std` is not lo
 always comes from the tools' own version (6.1), which `libpath` cannot replace. One package name
 found in two places is an error rather than decided by order, since the union has none. A library
 needing another lists it in its interface; the program's `libpath`s must find it. The lookup is one
-function in `src/common/`. An `import "..."` is made absolute by palan-gen-ast, so the build manager
-and palan-sa do not each resolve it.
+function in `src/common/`. An `import "..."` is made absolute by palan-gen-ast, relative to the
+importing file and with symbolic links resolved, so the build manager and palan-sa do not each
+resolve it, and one file reached by two spellings is one module.
 
 **Interface (`.pai`).** What importing a module needs: its identity, target, tool version, exports,
 and top-level declarations, including the C declarations its `cinclude`s brought in, without

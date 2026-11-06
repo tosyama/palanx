@@ -1242,7 +1242,7 @@ TEST(sa, owned_rows_ro_slots)
 TEST(sa, runtime_size_aggregates)
 {
 	cleanTestEnv();
-	execTestCommand("palan-gen-ast ../test/testdata/sa/lib_sa_func_ptr_field.pa -o out/lib_sa_func_ptr_field.pa.ast.json");
+	genModuleAst("../test/testdata/sa/lib_sa_func_ptr_field.pa");
 	json jout = run_sa("../test/testdata/sa/283_runtime_size_aggregates.pa");
 	ASSERT_TRUE(jout.is_object());
 	const auto& stmts = jout["statements"];
