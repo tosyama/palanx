@@ -6,7 +6,6 @@
 #include "PlnType.h"
 #include <stdexcept>
 #include <cctype>
-#include <filesystem>
 #include <set>
 #include <cstdint>
 
@@ -364,22 +363,6 @@ bool argConvOk(const PlnType* from, const PlnType* to)
 }
 
 // Symbol elements
-
-// The stem alone, so a symbol is the same wherever the source is checked out.
-std::string moduleSymbol(const std::string& sourcePath)
-{
-    std::string stem = std::filesystem::path(sourcePath).stem().string();
-    static const char hex[] = "0123456789abcdef";
-    // A leading digit would make `as` read the symbol as a number.
-    std::string out = isdigit((unsigned char)stem[0]) ? "_" : "";
-    for (unsigned char c : stem) {
-        if (isalnum(c) || c == '_') { out += c; continue; }
-        out += '_';
-        out += hex[c >> 4];
-        out += hex[c & 15];
-    }
-    return out;
-} // LCOV_EXCL_BR_LINE
 
 static std::string symbolUserName(const std::string& name)
 {

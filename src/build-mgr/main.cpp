@@ -77,6 +77,16 @@ static int runToolTo(vector<string> argv, const string& path)
 	return 0;
 }
 
+// Reported here since `ld` would blame the symbols, and palan-sa takes a
+// module's identity as unique.
+static bool claimModuleId(map<string, string>& module_ids, const string& id, const string& source)
+{
+	auto [it, is_new] = module_ids.emplace(id, source);
+	if (!is_new)
+		cerr << PlnBuildMgrMessage::getMessage(E_DuplicateModuleId, source, id, it->second) << endl;
+	return is_new;
+}
+
 int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
@@ -141,6 +151,7 @@ int main(int argc, char* argv[])
 
 	vector<string> target_files;
 	vector<string> ast_files;
+	map<string, string> module_ids;
 	target_files.push_back(fs::weakly_canonical(argv[optind]).string());
 	string entry_dir = palan_work_path + target_files[0] + ".d";
 	vector<string> run_argv;
@@ -169,6 +180,8 @@ int main(int argc, char* argv[])
 		// check import files and add targets
 		ifstream astfile(output_ast_path);
 		json ast = json::parse(astfile);
+		if (!claimModuleId(module_ids, ast["module"], input_file.string()))
+			return 1;
 		if (!ast["import"].is_null()) {
 			for (auto imp: ast["import"]) {
 				if (imp["path-type"] == "src") {
@@ -276,6 +289,8 @@ int main(int argc, char* argv[])
 
 		if (!struct_shapes.empty() || !elem_arr_shapes.empty()) {
 			string alloc_pa  = entry_dir + "/" PALAN_ALLOCATORS_MODULE ".pa";
+			if (!claimModuleId(module_ids, PALAN_ALLOCATORS_MODULE, alloc_pa))
+				return 1;
 			string alloc_h   = entry_dir + "/" PALAN_ALLOCATORS_MODULE ".h";
 			string alloc_ast = alloc_pa + ".ast.json";
 			string alloc_sa  = alloc_pa + ".sa.json";

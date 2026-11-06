@@ -144,7 +144,7 @@ class PlnSemanticAnalyzer {
 	string astFileName;
 	string c2astPath;
 	string inputFilePath;
-	string moduleId_;  // canonical path of the source file, a type's origin
+	string moduleId_;  // the module's identity, a type's origin
 	json sa;
 	PlnTypeRegistry registry_;
 	map<string, string> strLiteralLabels;  // value -> label

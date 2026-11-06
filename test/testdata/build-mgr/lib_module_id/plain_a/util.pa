@@ -1,0 +1,1 @@
+export func one() -> int32 { return 1; }

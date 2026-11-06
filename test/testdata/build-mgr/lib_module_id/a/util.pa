@@ -1,0 +1,4 @@
+library proj.a;
+export func name() -> int32 { return 1; }
+func hidden() -> int32 { return 10; }
+export func total() -> int32 { return name() + hidden(); }

@@ -50,6 +50,19 @@ TEST(build_mgr_error, block_import_scope_out) {
 	ASSERT_NE(out.find("Undefined function"), string::npos);
 }
 
+TEST(build_mgr_error, same_module_identity) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_064_same_identity.pa");
+	ASSERT_NE(out.find("plain_b/util.pa' has the same module identity 'util' as '"), string::npos) << out;
+	ASSERT_NE(out.find("plain_a/util.pa'"), string::npos) << out;
+}
+
+TEST(build_mgr_error, allocators_identity) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_065_allocators_identity.pa");
+	ASSERT_NE(out.find("has the same module identity '__allocators' as '"), string::npos) << out;
+}
+
 TEST(build_mgr_error, unqualified_alias_call) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_046_unqualified_alias.pa");

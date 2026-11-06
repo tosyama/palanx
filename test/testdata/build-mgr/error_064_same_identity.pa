@@ -1,0 +1,2 @@
+import "lib_module_id/plain_a/util.pa";
+import "lib_module_id/plain_b/util.pa";

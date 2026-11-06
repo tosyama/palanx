@@ -235,6 +235,7 @@ struct BodyList {
 %token <string>	ID	"identifier"
 %token <string>	PATH	"path"
 %token <string>	INCLUDE_FILE	"include file"
+%token KW_LIBRARY	"library"
 %token KW_EXPORT	"export"
 %token KW_IMPORT	"import"
 %token KW_CINCLUDE	"cinclude"
@@ -282,7 +283,7 @@ struct BodyList {
 %type <json>	import cinclude import_path
 %type <PList<string>>	import_ids link_libs
 %type <vector<string>>	link_clause
-%type <string>	import_as func_name op_func_name
+%type <string>	import_as func_name op_func_name library_decl library_name
 %type <json>	expression term store_loc
 %type <PList<json>>	arguments
 %type <json>	array_desc array_row dict_desc
@@ -325,12 +326,25 @@ struct BodyList {
 %start module
 
 %%
-module: statements
+module: library_decl statements
 	{
+		ast["module"] = moduleIdentity($1, lexer.inputFile);
 		if (!ast["ast"].contains("functions"))
 			ast["ast"]["functions"] = json::array();
-		ast["ast"]["statements"] = LazyNode::toJsonArray($1);
+		ast["ast"]["statements"] = LazyNode::toJsonArray($2);
 	}
+	;
+
+library_decl: /* empty */
+	{ }
+	| KW_LIBRARY library_name ';'
+	{ $$ = $2; }
+	;
+
+library_name: ID
+	{ $$ = $1; }
+	| library_name '.' ID
+	{ $$ = $1 + "." + $3; }
 	;
 
 statements: /* empty */

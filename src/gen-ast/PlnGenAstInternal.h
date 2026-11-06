@@ -4,12 +4,35 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
+#include <cctype>
 #include <filesystem>
 #include <vector>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
 using json = nlohmann::json;
 using std::string;
+
+// A module's identity comes from the source alone, so a symbol is the same
+// wherever the source is checked out and whichever module is the entry. An
+// escape is `_` and two lowercase hex digits, so a `_` that looks like one is
+// escaped too; a leading digit would make `as` read the symbol as a number.
+inline string moduleIdentity(const string& library, const string& sourcePath)
+{
+	string stem = std::filesystem::path(sourcePath).stem().string();
+	auto isHex = [](unsigned char c) { return isdigit(c) || (c >= 'a' && c <= 'f'); };
+	static const char hex[] = "0123456789abcdef";
+	string out = library.empty() ? "" : library + ".";
+	if (isdigit((unsigned char)stem[0])) out += '_';
+	for (size_t i = 0; i < stem.size(); i++) {
+		unsigned char c = stem[i];
+		bool looksEscaped = c == '_' && i + 2 < stem.size() && isHex(stem[i + 1]) && isHex(stem[i + 2]);
+		if (isalnum(c) || (c == '_' && !looksEscaped)) { out += c; continue; }
+		out += '_';
+		out += hex[c >> 4];
+		out += hex[c & 15];
+	}
+	return out;
+} // LCOV_EXCL_BR_LINE
 
 // Convert a `kind`-tagged store_loc intermediate node into an `expr-type`-tagged
 // expression node, recursively (needed since a store_loc base can itself be a

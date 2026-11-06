@@ -9,7 +9,7 @@
 #include "../common/PlnDefs.h"
 #include <boost/assert.hpp>
 
-string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string arg1, string arg2)
+string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string arg1, string arg2, string arg3)
 {
 	switch (msg_code) {
 		case M_Help:
@@ -45,6 +45,10 @@ string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string ar
 		case E_UnsupportedTarget:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "palan: unsupported target '" + arg1 + "'";
+
+		case E_DuplicateModuleId:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01" && arg3 != "\x01");
+			return "palan: '" + arg1 + "' has the same module identity '" + arg2 + "' as '" + arg3 + "'";
 
 		default:
 			BOOST_ASSERT(false);

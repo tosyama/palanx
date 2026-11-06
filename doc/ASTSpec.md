@@ -10,6 +10,8 @@ Root
 - import - import file list
 - export - export declaration list
 - original - original file path
+- module\* - Module identity string (SpecAndDesign.md 3.7), from the file's `library` declaration
+  and name (`std.utf8`, `util`)
 - target\* - Target name string (`<arch>-<os>-<abi>`), which the C declarations depend on
 - ast\* - AST model
 

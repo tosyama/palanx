@@ -23,6 +23,16 @@ TEST(gen_ast_error, version) {
 	ASSERT_NE(out.find("palan-gen-ast"), string::npos);
 }
 
+TEST(gen_ast_error, library_decl_misplaced) {
+	for (string source : {"library a;\nlibrary b;\n", "int32 x;\nlibrary a;\n", "{ library a; }\n",
+	                      "library a..b;\n", "library a.;\n", "library;\n", "library a\n"}) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << source;
+		string out = execTestCommand("palan-gen-ast out/m.pa");
+		EXPECT_NE(out.find("error"), string::npos) << source << out;
+	}
+}
+
 TEST(gen_ast_error, unsupported_target) {
 	cleanTestEnv();
 	string out = execTestCommand("palan-gen-ast --target aarch64-linux-gnu ../test/testdata/gen-ast/001_basicPattern.pa");

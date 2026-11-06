@@ -584,7 +584,7 @@ string allocHelperSymbol(const AllocShapeRef& shape, const string& op)
 	json jparams = json::array();
 	for (auto& t : params) jparams.push_back({{"var-type", t}});
 	string name = "__pln_" + op + "_" + allocShapeKey(shape);
-	return moduleSymbol(PALAN_ALLOCATORS_MODULE) + ".." + funcSymbol(name, jparams);
+	return PALAN_ALLOCATORS_MODULE ".." + funcSymbol(name, jparams);
 	// LCOV_EXCL_BR_STOP
 } // LCOV_EXCL_BR_LINE
 

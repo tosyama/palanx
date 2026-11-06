@@ -16,11 +16,12 @@ enum PlnBuildMgrMessageCode {
 	E_PalanDirNotDirectory,	// arg1: path string
 	E_FailedToExecute,		// arg1: program name, arg2: strerror text
 	E_UnsupportedTarget,	// arg1: target name
+	E_DuplicateModuleId,	// arg1: source file, arg2: identity, arg3: other source file
 };
 
 class PlnBuildMgrMessage
 {
 public:
 	static string getMessage(PlnBuildMgrMessageCode msg_code,
-	                         string arg1="\x01", string arg2="\x01");
+	                         string arg1="\x01", string arg2="\x01", string arg3="\x01");
 };

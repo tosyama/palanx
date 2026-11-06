@@ -49,6 +49,39 @@ TEST(build_mgr, concurrent_programs_sharing_source) {
 	expectConcurrentRuns({{"393_shared_a.pa", "a 5\n"}, {"394_shared_b.pa", "b 4 5\n"}});
 }
 
+// One file name in two directories: the declarations tell the modules apart,
+// functions of one name and parameters included.
+TEST(build_mgr, same_file_name_with_library) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/395_same_name_library.pa"), "11 22\n");
+}
+
+TEST(build_mgr, escaped_file_names_coexist) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/396_escaped_names.pa"), "3 4\n");
+}
+
+TEST(build_mgr, library_module_same_for_any_entry) {
+	cleanTestEnv();
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
+	string obj = targetWorkDir() + dir + "/lib_module_id/entry_demo.pa.o";
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/397_library_entry_demo.pa"), "15\n");
+	fs::copy_file(obj, "out/entry_demo_imported.o");
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_module_id/entry_demo.pa"), "demo 12\n");
+	ASSERT_EQ(execTestCommand("cmp out/entry_demo_imported.o " + obj), "");
+}
+
+TEST(build_mgr, module_same_at_any_location) {
+	cleanTestEnv();
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr/lib_module_id").string();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_module_id/local_type.pa"), "7\n");
+	fs::copy_file("../test/testdata/build-mgr/lib_module_id/local_type.pa", "out/local_type.pa");
+	ASSERT_EQ(execTestCommand("bin/palan out/local_type.pa"), "7\n");
+	string moved = fs::weakly_canonical("out").string();
+	ASSERT_EQ(execTestCommand("cmp " + targetWorkDir() + dir + "/local_type.pa.s "
+		+ targetWorkDir() + moved + "/local_type.pa.s"), "");
+}
+
 TEST(build_mgr, import_basic) {
 	cleanTestEnv();
 	string output = execTestCommand(

@@ -1,0 +1,1 @@
+export func unrelated() -> int32 { return 5; }

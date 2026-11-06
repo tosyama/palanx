@@ -373,11 +373,14 @@ names). It comes from its source alone, never from the entry or the source's loc
 | `io/file.pa` declaring `library std.io;` | `std.io.file` |
 | `util.pa` declaring nothing | `util` |
 
-palan-gen-ast reads the declaration and records the identity in ast.json; later tools only receive
-it. A byte of the file name outside `[A-Za-z0-9_]` is written `_` and two hex digits, as is a `_`
-followed by two hex digits, so two file names cannot meet. `a/util.pa` and `b/util.pa` declaring
-nothing have one identity, an error; declaring `library proj.a;` and `library proj.b;` lets them
-coexist. The allocators' identity stays `__allocators`, given by the build manager.
+A declaration comes first in the file, at most one. palan-gen-ast reads it and records the identity
+in ast.json; later tools only receive it. A byte of the file name outside `[A-Za-z0-9_]` is written
+`_` and two lowercase hex digits, as is a `_` followed by two of them, so `my-lib.pa` and
+`my_2dlib.pa` do not meet. A leading digit gets a `_` in front (`001_hello.pa` is `_001_hello`),
+which `as` needs and which reads better than escaping it; so `1x.pa` and `_1x.pa`, or `-x.pa` and
+`2dx.pa`, do meet. `a/util.pa` and `b/util.pa` declaring nothing also have one identity. One identity
+in a program is an error; declaring `library proj.a;` and `library proj.b;` lets them coexist. The
+allocators' identity stays `__allocators`, given by the build manager through their file name.
 
 **Finding a library.** `import <std/io/file>` reads `<dir>/<target>/std/io/file.pai`. `<dir>` is
 each `libpath "dir";`, relative to the file writing it. Like `link`, a `libpath` may be written in

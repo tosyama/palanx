@@ -697,8 +697,8 @@ void PlnSemanticAnalyzer::nonConstNames(const json& expr, vector<const json*>& i
 void PlnSemanticAnalyzer::beginModule(const json& ast)
 {
 	inputFilePath = ast["original"];
-	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
-	symbolScope_  = moduleSymbol(moduleId_);
+	moduleId_     = ast["module"];
+	symbolScope_  = moduleId_;
 	sa["original"]      = ast["original"];
 	sa["target"]        = ast["target"];
 	// LCOV_EXCL_BR_START
@@ -1241,7 +1241,7 @@ json PlnSemanticAnalyzer::loadImportAst(const json& stmt, filesystem::path& impP
 
 PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst, const filesystem::path& impPath)
 {
-	auto known = program_->modules.find(filesystem::weakly_canonical(impAst["original"].get<string>()).string());
+	auto known = program_->modules.find(impAst["module"].get<string>());
 	if (known != program_->modules.end()) return *known->second;
 	auto sub = make_unique<PlnSemanticAnalyzer>(impPath.parent_path().string(), "", c2astPath);
 	sub->ownedProgram_.reset();
@@ -1284,7 +1284,7 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 
 		// Resolved in the exporting module, where the type names it uses mean
 		// what its author meant.
-		json funcEntry = sub.normalizeFuncSig(f, moduleSymbol(sub.moduleId_));
+		json funcEntry = sub.normalizeFuncSig(f, sub.moduleId_);
 		funcEntry["_module"] = sub.moduleId_;
 		for (auto& p : funcEntry.value("parameters", json::array()))
 			adoptTypeDeps(sub, p["var-type"], stmt);

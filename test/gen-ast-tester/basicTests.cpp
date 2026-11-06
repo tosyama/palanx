@@ -22,6 +22,28 @@ TEST(gen_ast, target) {
 	ASSERT_EQ(json::parse(output)["target"], "x86_64-linux-gnu");
 }
 
+// Sources are written into out/ since most of what matters here is their name.
+static string moduleOf(const string& fileName, const string& source = "") {
+	string path = "out/" + fileName;
+	ofstream(path) << source;
+	string output = execTestCommand("palan-gen-ast '" + path + "'");
+	return json::parse(output)["module"];
+}
+
+TEST(gen_ast, module_identity) {
+	cleanTestEnv();
+	EXPECT_EQ(moduleOf("util.pa"), "util");
+	EXPECT_EQ(moduleOf("utf8.pa", "library std;\n"), "std.utf8");
+	EXPECT_EQ(moduleOf("file.pa", "// a comment\nlibrary std.io;\nint32 x;\n"), "std.io.file");
+	EXPECT_EQ(moduleOf("001_hello.pa"), "_001_hello");
+	EXPECT_EQ(moduleOf("1x.pa", "library a;\n"), "a._1x");
+	EXPECT_EQ(moduleOf("my-lib.v2.pa"), "my_2dlib_2ev2");
+	EXPECT_EQ(moduleOf("my_2dlib.pa"), "my_5f2dlib");
+	EXPECT_EQ(moduleOf("a_2.pa"), "a_2");
+	EXPECT_EQ(moduleOf("a_2D.pa"), "a_2D");
+	EXPECT_EQ(moduleOf("a_x.pa"), "a_x");
+}
+
 TEST(gen_ast, basic_tests) {
 	cleanTestEnv();
 	string output;
