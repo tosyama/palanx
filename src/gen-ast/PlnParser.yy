@@ -422,8 +422,10 @@ expr_stmt: import
 
 		json c_ast = execute_c2ast($$["path-type"], $$["path"],
 		                          fs::path(lexer.inputFile).parent_path().string(), cState, buildTarget);
-		if (c_ast.is_object() && c_ast.contains("c-state"))
+		if (c_ast.is_object() && c_ast.contains("c-state")) {
 			cState = c_ast["c-state"].dump();
+			for (auto& header : c_ast["headers"]) ast["c-headers"].push_back(header);
+		}
 		if (c_ast.is_object() && c_ast.contains("ast")) {
 			if (c_ast["ast"].contains("functions")) {
 				$$["functions"] = move(c_ast["ast"]["functions"]);

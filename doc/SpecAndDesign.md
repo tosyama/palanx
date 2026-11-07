@@ -380,10 +380,10 @@ them release through `free`.
 ### 3.7 Modules and Libraries
 
 **Status.** This section and 5.1 describe the structure version 0.2.4 is being built toward.
-Implemented: module identity, `import "..."` resolution, the `.pai` form and reading it, and
-`palan-gen-ast --interface` for one module. Not yet: `palan --lib` and archives, merging and narrowing
-a library's modules, `import <...>` and `libpath`, a library module's own allocators (3.6), and
-skipping steps whose result is still valid (5.1).
+Implemented: module identity, `import "..."` resolution, the `.pai` form and reading it,
+`palan-gen-ast --interface` for one module, and skipping steps whose result is still valid (5.1).
+Not yet: `palan --lib` and archives, merging and narrowing a library's modules, `import <...>` and
+`libpath`, and a library module's own allocators (3.6).
 
 **Module identity.** A module's identity is the module part of its symbols (SASpec.md's Symbol
 names). It comes from its source alone, never from the entry or the source's location:
@@ -545,23 +545,29 @@ are of two kinds:
 
 ```
 ~/.palan/work/<target>/
-  home/user/proj/util.pa.{ast.json,sa.json,s,o,key}         a module's, reused by every entry
+  home/user/proj/util.pa.{ast.json,sa.json,s,o}             a module's, reused by every entry
   home/user/proj/main.pa.d/{__allocators.*,entry.*,out}     an entry's own
 ```
 
 A module's files mirror the absolute path of its source and do not depend on the entry, so `palan
-util.pa` (its top-level tests) and `palan main.pa` (importing it) share them. `.key` records what
-they were built from; a step runs only if that changed:
+util.pa` (its top-level tests) and `palan main.pa` (importing it) share them. As with `make`, a step
+is skipped if its result is newer than everything it depends on; an equal time counts as older, so
+an edit right after a build is not missed:
 
-- generating the AST: the source, the C headers it read, the tools, the target;
-- compiling: the AST, the interface of each of its imports, the tools.
+- generating the AST (`.ast.json`): the source, the C headers it read (`c-headers` in ast.json), the tools;
+- compiling (`.o`, with `.sa.json` present): its `.ast.json`, the `.ast.json` of every module its
+  imports reach, the tools.
 
-For a source import, the interface is a hash palan-gen-ast records in ast.json of the module's
-declarations as a `.pai` writes them, with no file written; for a library, the `.pai` itself. The text has no
-locations, so a change to a function's body, even one that moves later lines, leaves it as it was,
-and importers are not compiled again.
-The tools are identified by size and modification time, since a development build keeps its
-version. Files are written under a temporary name and renamed: two builds racing produce the same
+The tools are `palan-gen-ast`, `palan-c2ast`, `palan-sa`, `palan-codegen` and `predefined.h`. Any
+change to an imported source compiles its importers again, a change to a function's body too. A step
+that fails leaves its result older, so an error is reported on every run. The generated allocators
+follow the same rule, written only when their content changed. The entry stub and `ld` always run.
+
+Not detected, and cleared by `palan --clean`: a file whose time went back (`cp -p`), a header newly
+placed earlier on the search path, a symbolic link pointed elsewhere, a switch to an older version's
+tools.
+
+Files are written under a temporary name and renamed: two builds racing produce the same
 content, at worst compiled twice. What differs per program, the generated allocators and the
 executable, is kept per entry, so programs in one directory can run at the same time.
 

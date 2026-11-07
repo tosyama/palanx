@@ -475,3 +475,17 @@ TEST(c2ast, func_alias_macro) {
     ast = json::parse(execTestCommand("palan-c2ast -s stdio.h"));
     ASSERT_EQ(funcs("sscanf")[0]["symbol"], "__isoc99_sscanf");
 }
+
+// The state file and predefined.h are the tool's input, not the source's headers.
+TEST(c2ast, headers_read) {
+    cleanTestEnv();
+    const string dir = "../test/testdata/c2ast/";
+    json a = json::parse(execTestCommand("palan-c2ast " + dir + "045_macro_state_a.h"));
+    ASSERT_EQ(a["headers"], json::array({dir + "045_macro_state_a.h"}));
+
+    string state_file = "out/state";
+    ofstream(state_file) << a["c-state"].dump();
+    json b = json::parse(execTestCommand("palan-c2ast -S " + state_file + " " + dir + "045_macro_state_b.h"));
+    // a.h is skipped by its #pragma once: the run before this one read it.
+    ASSERT_EQ(b["headers"], json::array({dir + "045_macro_state_b.h"}));
+}

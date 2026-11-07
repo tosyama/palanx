@@ -1212,3 +1212,16 @@ TEST(gen_ast, interface_ignores_what_only_runs) {
 	ASSERT_NE(base, paiOf("[]int32 a = [1, 2];\nconst N = a->len();\n"
 		"export func f() -> int64 { return 1; }\nexport func g() -> int32 { return 1; }\n"));
 }
+
+TEST(gen_ast, c_headers) {
+	cleanTestEnv();
+	json jout = json::parse(execTestCommand("palan-gen-ast ../test/testdata/gen-ast/035_cinclude_local_header.pa"));
+	bool found = false;
+	for (auto& header : jout["c-headers"])
+		found = found || header.get<string>().ends_with(".h");
+	ASSERT_TRUE(found) << jout["c-headers"];
+
+	ofstream("out/none.pa") << "int32 x;\n";
+	jout = json::parse(execTestCommand("palan-gen-ast out/none.pa"));
+	ASSERT_FALSE(jout.contains("c-headers"));
+}

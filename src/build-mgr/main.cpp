@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <getopt.h>
 #include <unistd.h>
@@ -75,6 +76,79 @@ static int runToolTo(vector<string> argv, const string& path)
 	}
 	fs::rename(tmp, path);
 	return 0;
+}
+
+static fs::file_time_type newestToolTime(const string& exec_path, const string& target)
+{
+	fs::file_time_type newest = fs::file_time_type::min();
+	for (const string& tool : {
+			exec_path + "/palan-gen-ast", exec_path + "/palan-c2ast", exec_path + "/palan-sa",
+			exec_path + "/palan-codegen", exec_path + "/../" + target + "/c2ast/predefined.h"}) {
+		error_code ignored;
+		newest = max(newest, fs::last_write_time(tool, ignored));
+	}
+	return newest;
+}
+
+// An equal time counts as older, so an edit right after a build is not missed.
+// An unreadable dependency counts as newer, for the tool to report it.
+static bool isUpToDate(const string& result, fs::file_time_type tools_time, const vector<string>& deps)
+{
+	error_code ec;
+	fs::file_time_type result_time = fs::last_write_time(result, ec);
+	if (ec || result_time <= tools_time) return false;
+	for (const string& dep : deps) {
+		fs::file_time_type dep_time = fs::last_write_time(dep, ec);
+		if (ec || result_time <= dep_time) return false;
+	}
+	return true;
+}
+
+// Leaves `ast` holding the AST: the headers it read are known only from the AST itself.
+static int generateAst(const string& source, const string& ast_path, const string& exec_path,
+                       const string& target, fs::file_time_type tools_time, json& ast)
+{
+	ifstream existing(ast_path);
+	ast = json::parse(existing, nullptr, false);
+	if (ast.is_object()) {
+		vector<string> deps{source};
+		for (auto& header : ast.value("c-headers", json::array())) deps.push_back(header);
+		if (isUpToDate(ast_path, tools_time, deps)) return 0;
+	}
+	if (int ret = runToolTo({exec_path + "/palan-gen-ast", source, "--target", target}, ast_path)) // LCOV_EXCL_BR_LINE
+		return ret;
+	ifstream generated(ast_path);
+	ast = json::parse(generated);
+	return 0;
+}
+
+// `base` is the source's path in the working directory; deps are the ASTs the result comes from.
+static int compileModule(const string& base, const string& exec_path,
+                         fs::file_time_type tools_time, const vector<string>& deps)
+{
+	string sa_file = base + ".sa.json";
+	string asm_file = base + ".s";
+	string obj_file = base + ".o";
+	if (fs::exists(sa_file) && isUpToDate(obj_file, tools_time, deps))
+		return 0;
+	if (int ret = runToolTo({exec_path + "/palan-sa", base + ".ast.json"}, sa_file)) // LCOV_EXCL_BR_LINE
+		return ret;
+	if (int ret = runToolTo({exec_path + "/palan-codegen", sa_file}, asm_file))
+		return ret;
+	return runToolTo({"as", asm_file}, obj_file); // LCOV_EXCL_BR_LINE
+}
+
+// Kept as it was when the content is the same, so its time still says what it was compiled from.
+static void renameIfChanged(const string& tmp, const string& path)
+{
+	auto contentOf = [](const string& p) {
+		ifstream f(p);
+		return string(istreambuf_iterator<char>(f), {});
+	};
+	if (fs::exists(path) && contentOf(tmp) == contentOf(path))
+		fs::remove(tmp);
+	else
+		fs::rename(tmp, path);
 }
 
 // Reported here since `ld` would blame the symbols, and palan-sa takes a
@@ -152,6 +226,8 @@ int main(int argc, char* argv[])
 	vector<string> target_files;
 	vector<string> ast_files;
 	map<string, string> module_ids;
+	map<string, vector<string>> module_imports;
+	fs::file_time_type tools_time = newestToolTime(exec_path, target);
 	target_files.push_back(fs::weakly_canonical(argv[optind]).string());
 	string entry_dir = palan_work_path + target_files[0] + ".d";
 	vector<string> run_argv;
@@ -173,13 +249,12 @@ int main(int argc, char* argv[])
 		fs::create_directories(input_file_work_path);
 		string output_ast_path = palan_work_path + input_file.string() + ".ast.json";
 
-		if (int ret = runToolTo({exec_path + "/palan-gen-ast", input_file.string(), "--target", target}, output_ast_path)) // LCOV_EXCL_BR_LINE
+		json ast;
+		if (int ret = generateAst(input_file.string(), output_ast_path, exec_path, target, tools_time, ast))
 			return ret;
 		ast_files.emplace_back(output_ast_path);
 
 		// check import files and add targets
-		ifstream astfile(output_ast_path);
-		json ast = json::parse(astfile);
 		if (!claimModuleId(module_ids, ast["module"], input_file.string()))
 			return 1;
 		if (!ast["import"].is_null()) {
@@ -188,6 +263,7 @@ int main(int argc, char* argv[])
 					string import_path = imp["path"];
 
 					if (import_path.ends_with(".pa")) {
+						module_imports[input_file.string()].push_back(import_path);
 						auto it = find(target_files.begin(), target_files.end(), import_path);
 						if (it == target_files.end()) {
 							target_files.emplace_back(import_path);
@@ -207,26 +283,24 @@ int main(int argc, char* argv[])
 
 	for (int i=0; i<ast_files.size(); i++) {
 		string ast_file = ast_files[i];
-
-		// Derive output paths (strip ".ast.json" suffix from ast_file)
 		string base = ast_file.substr(0, ast_file.size() - 9);  // remove ".ast.json"
-		string sa_file  = base + ".sa.json";
-		string asm_file = base + ".s";
-		string obj_file = base + ".o";
 
-		// palan-sa
-		if (int ret = runToolTo({exec_path + "/palan-sa", ast_file}, sa_file)) // LCOV_EXCL_BR_LINE
+		// palan-sa reads through an imported module's own imports, so all of them count.
+		vector<string> deps{ast_file};
+		set<string> reached;
+		function<void(const string&)> reach = [&](const string& source) {
+			for (auto& import_path : module_imports[source])
+				if (reached.insert(import_path).second) {
+					deps.push_back(palan_work_path + import_path + ".ast.json");
+					reach(import_path);
+				}
+		};
+		reach(target_files[i]);
+
+		if (int ret = compileModule(base, exec_path, tools_time, deps))
 			return ret;
 
-		// palan-codegen
-		if (int ret = runToolTo({exec_path + "/palan-codegen", sa_file}, asm_file))
-			return ret;
-
-		// as
-		if (int ret = runToolTo({"as", asm_file}, obj_file)) // LCOV_EXCL_BR_LINE
-			return ret;
-
-		obj_files.push_back(obj_file);
+		obj_files.push_back(base + ".o");
 	}
 
 	// The entry is chosen here, at link time: every module compiles the same
@@ -289,9 +363,6 @@ int main(int argc, char* argv[])
 				return 1;
 			string alloc_h   = entry_dir + "/" PALAN_ALLOCATORS_MODULE ".h";
 			string alloc_ast = alloc_pa + ".ast.json";
-			string alloc_sa  = alloc_pa + ".sa.json";
-			string alloc_s   = alloc_pa + ".s";
-			string alloc_o   = alloc_pa + ".o";
 
 			{
 				// The struct types below are named after the program's own,
@@ -803,19 +874,16 @@ int main(int argc, char* argv[])
 
 			}
 
-			fs::rename(tempNameOf(alloc_h), alloc_h);
-			fs::rename(tempNameOf(alloc_pa), alloc_pa);
+			renameIfChanged(tempNameOf(alloc_h), alloc_h);
+			renameIfChanged(tempNameOf(alloc_pa), alloc_pa);
 
-			if (int ret = runToolTo({exec_path + "/palan-gen-ast", alloc_pa, "--target", target}, alloc_ast)) // LCOV_EXCL_BR_LINE
+			json alloc_ast_json;
+			if (int ret = generateAst(alloc_pa, alloc_ast, exec_path, target, tools_time, alloc_ast_json))
 				return ret;
-			if (int ret = runToolTo({exec_path + "/palan-sa", alloc_ast}, alloc_sa))
-				return ret;
-			if (int ret = runToolTo({exec_path + "/palan-codegen", alloc_sa}, alloc_s))
-				return ret;
-			if (int ret = runToolTo({"as", alloc_s}, alloc_o)) // LCOV_EXCL_BR_LINE
+			if (int ret = compileModule(alloc_pa, exec_path, tools_time, {alloc_ast}))
 				return ret;
 
-			obj_files.push_back(alloc_o);
+			obj_files.push_back(alloc_pa + ".o");
 		}
 	}
 

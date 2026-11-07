@@ -204,6 +204,7 @@ int main(int argc, char* argv[])
 				}
 				input_file = found;
 			}
+			size_t first_header = cpp.lexers.size();
 			cpp.preprocess(input_file);
 
 			if (do_dump_preprocessed) {
@@ -232,6 +233,10 @@ int main(int argc, char* argv[])
 				cpp.dumpMacroState(macro_state);
 				ast["c-state"] = cparser.dumpState();
 				ast["c-state"]["macros"] = macro_state.str();
+
+				ast["headers"] = json::array();
+				for (size_t i = first_header; i < cpp.lexers.size(); i++)
+					ast["headers"].push_back(cpp.lexers[i]->infile.fname);
 
 				ostream* out = &cout;
 				ofstream outfile;

@@ -4,6 +4,7 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -260,9 +261,10 @@ TEST(build_mgr, import_float)
 
 TEST(build_mgr, clean) {
 	cleanTestEnv();
-
-	string output = execTestCommand("bin/palan --clean");
-	ASSERT_EQ(output, "");
+	// Its own HOME, so the work files the other tests reuse stay.
+	fs::create_directories("out/home/.palan/work/" PALAN_TARGET);
+	ASSERT_EQ(execTestCommand("HOME=out/home bin/palan --clean"), "");
+	ASSERT_FALSE(fs::exists("out/home/.palan/work"));
 }
 
 TEST(build_mgr, method_call) {
@@ -556,4 +558,186 @@ TEST(build_mgr, import_global_var) {
 TEST(build_mgr, global_after_unrelated_call) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/389_global_after_unrelated_call.pa"), "x\n1\n");
+}
+
+static string reusePath(const string& name) {
+	return targetWorkDir() + (fs::current_path() / "out" / name).string();
+}
+
+static fs::file_time_type objTime(const string& source) {
+	return fs::last_write_time(reusePath(source) + ".o");
+}
+
+// writeOldSource's times go back, which a work file left by an earlier run would hide.
+static void cleanReuseEnv() {
+	cleanTestEnv();
+	fs::remove_all(reusePath(""));
+}
+
+// Backdated, or a build finishing within one clock tick of the write would see
+// its result as not newer and compile again.
+static void writeOldSource(const string& name, const string& content) {
+	string path = "out/" + name;
+	ofstream(path) << content;
+	fs::last_write_time(path, fs::file_time_type::clock::now() - chrono::minutes(1));
+}
+
+static void writeImportChain() {
+	cleanReuseEnv();
+	writeOldSource("c.pa", "export func c() -> int32 { return 1; }\n");
+	writeOldSource("b.pa", "import \"c.pa\";\nexport func b() -> int32 { return c(); }\n");
+	writeOldSource("a.pa", "cinclude <stdio.h>;\nimport \"b.pa\";\nprintf(\"%d\\n\", b());\n");
+}
+
+struct ChainTimes {
+	fs::file_time_type a = objTime("a.pa"), b = objTime("b.pa"), c = objTime("c.pa");
+};
+
+TEST(build_mgr, reuse_nothing_changed) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	auto astTime = fs::last_write_time(reusePath("a.pa") + ".ast.json");
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes after;
+	EXPECT_EQ(after.a, before.a);
+	EXPECT_EQ(after.b, before.b);
+	EXPECT_EQ(after.c, before.c);
+	EXPECT_EQ(fs::last_write_time(reusePath("a.pa") + ".ast.json"), astTime);
+}
+
+TEST(build_mgr, reuse_own_source_changed) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	ofstream("out/a.pa") << "cinclude <stdio.h>;\nimport \"b.pa\";\nprintf(\"%d\\n\", b() + 1);\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "2\n");
+	ChainTimes after;
+	EXPECT_NE(after.a, before.a);
+	EXPECT_EQ(after.b, before.b);
+	EXPECT_EQ(after.c, before.c);
+}
+
+TEST(build_mgr, reuse_import_changed) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	ofstream("out/b.pa") << "import \"c.pa\";\nexport func b() -> int32 { return c() + 1; }\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "2\n");
+	ChainTimes after;
+	EXPECT_NE(after.a, before.a);
+	EXPECT_NE(after.b, before.b);
+	EXPECT_EQ(after.c, before.c);
+}
+
+TEST(build_mgr, reuse_indirect_import_changed) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	ofstream("out/c.pa") << "export func c() -> int32 { return 5; }\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "5\n");
+	ChainTimes after;
+	EXPECT_NE(after.a, before.a);
+	EXPECT_NE(after.b, before.b);
+	EXPECT_NE(after.c, before.c);
+}
+
+TEST(build_mgr, reuse_mutual_import) {
+	cleanReuseEnv();
+	writeOldSource("m1.pa", "cinclude <stdio.h>;\nimport \"m2.pa\";\nexport func f1() -> int32 { return 1; }\nprintf(\"%d\\n\", f2());\n");
+	writeOldSource("m2.pa", "import \"m1.pa\";\nexport func f2() -> int32 { return f1() + 1; }\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/m1.pa"), "2\n");
+	auto m1 = objTime("m1.pa");
+	auto m2 = objTime("m2.pa");
+	ASSERT_EQ(execTestCommand("bin/palan out/m1.pa"), "2\n");
+	EXPECT_EQ(objTime("m1.pa"), m1);
+	EXPECT_EQ(objTime("m2.pa"), m2);
+}
+
+// A header counts wherever it is reached from: through another header, or a
+// `cinclude` inside a function body.
+TEST(build_mgr, reuse_header_changed) {
+	cleanReuseEnv();
+	writeOldSource("nested.h", "typedef int nested_t;\n");
+	writeOldSource("top.h", "#include \"nested.h\"\n");
+	writeOldSource("body.h", "typedef int body_t;\n");
+	writeOldSource("m.pa", "cinclude \"top.h\";\nexport func f() -> int32 { cinclude \"body.h\"; return 1; }\n");
+	writeOldSource("main.pa", "cinclude <stdio.h>;\nimport \"m.pa\";\nprintf(\"%d\\n\", f());\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "1\n");
+	for (const char* header : {"nested.h", "body.h"}) {
+		auto m = objTime("m.pa");
+		auto importer = objTime("main.pa");
+		ofstream("out/" + string(header)) << "typedef int changed_t;\n";
+		ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "1\n");
+		EXPECT_NE(objTime("m.pa"), m) << header;
+		EXPECT_NE(objTime("main.pa"), importer) << header;
+	}
+
+	ASSERT_TRUE(fs::remove("out/nested.h"));
+	EXPECT_NE(execTestCommand("bin/palan out/main.pa").find("nested.h"), string::npos);
+}
+
+TEST(build_mgr, reuse_tools_changed) {
+	writeImportChain();
+	// Run with system(): copying the tools can outlast execTestCommand's timeout.
+	ASSERT_EQ(system("cp -r lib/palan/dev out/dev"), 0);
+	const string palan = "out/dev/tools/palan out/a.pa";
+	ASSERT_EQ(execTestCommand(palan), "1\n");
+	ChainTimes built;
+	ASSERT_EQ(execTestCommand(palan), "1\n");
+	EXPECT_EQ(objTime("c.pa"), built.c);
+
+	auto touchedRebuilds = [&](const string& file) {
+		auto before = objTime("c.pa");
+		fs::last_write_time(file, fs::file_time_type::clock::now());
+		EXPECT_EQ(execTestCommand(palan), "1\n") << file;
+		return objTime("c.pa") != before;
+	};
+	EXPECT_TRUE(touchedRebuilds("out/dev/tools/palan-sa"));
+	EXPECT_TRUE(touchedRebuilds("out/dev/" PALAN_TARGET "/c2ast/predefined.h"));
+}
+
+TEST(build_mgr, reuse_shared_by_entries) {
+	cleanReuseEnv();
+	writeOldSource("shared.pa", "cinclude <stdio.h>;\nexport func s() -> int32 { return 7; }\nprintf(\"test\\n\");\n");
+	writeOldSource("e1.pa", "cinclude <stdio.h>;\nimport \"shared.pa\";\nprintf(\"%d\\n\", s());\n");
+	writeOldSource("e2.pa", "cinclude <stdio.h>;\nimport \"shared.pa\";\nprintf(\"%d\\n\", s() + 1);\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/e1.pa"), "7\n");
+	auto shared = objTime("shared.pa");
+	ASSERT_EQ(execTestCommand("bin/palan out/e2.pa"), "8\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/shared.pa"), "test\n");
+	EXPECT_EQ(objTime("shared.pa"), shared);
+}
+
+TEST(build_mgr, reuse_error_reported_every_run) {
+	cleanReuseEnv();
+	writeOldSource("bad.pa", "int32 x = undefined_name;\n");
+	string first = execTestCommand("bin/palan out/bad.pa");
+	EXPECT_NE(first.find("error"), string::npos) << first;
+	EXPECT_EQ(execTestCommand("bin/palan out/bad.pa"), first);
+}
+
+TEST(build_mgr, reuse_rebuilds_missing_sa) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	auto before = objTime("c.pa");
+	ASSERT_TRUE(fs::remove(reusePath("c.pa") + ".sa.json"));
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	EXPECT_NE(objTime("c.pa"), before);
+}
+
+TEST(build_mgr, reuse_allocators) {
+	cleanReuseEnv();
+	writeOldSource("alloc.pa", "cinclude <stdio.h>;\n[+]int32 v = [1, 2];\nprintf(\"%d\\n\", int32(len(@v)));\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/alloc.pa"), "2\n");
+	string allocators = reusePath("alloc.pa") + ".d/" PALAN_ALLOCATORS_MODULE ".pa.o";
+	auto before = fs::last_write_time(allocators);
+
+	ofstream("out/alloc.pa") << "cinclude <stdio.h>;\n[+]int32 v = [1, 2, 3];\nprintf(\"%d\\n\", int32(len(@v)));\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/alloc.pa"), "3\n");
+	EXPECT_EQ(fs::last_write_time(allocators), before);
+
+	ofstream("out/alloc.pa") << "cinclude <stdio.h>;\n[+]int64 v = [1, 2];\nprintf(\"%d\\n\", int32(len(@v)));\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/alloc.pa"), "2\n");
+	EXPECT_NE(fs::last_write_time(allocators), before);
 }
