@@ -17,6 +17,11 @@ enum PlnBuildMgrMessageCode {
 	E_FailedToExecute,		// arg1: program name, arg2: strerror text
 	E_UnsupportedTarget,	// arg1: target name
 	E_DuplicateModuleId,	// arg1: source file, arg2: identity, arg3: other source file
+	E_LibNeedsOutput,
+	E_LibModuleNotDeclared,	// arg1: source file
+	E_LibPackageMismatch,	// arg1: source file, arg2: its package, arg3: the main's package
+	E_LibModuleWithGlobals,	// arg1: source file, arg2: variable name
+	E_LibSymbolMismatch,	// arg1: main source file, arg2: symbol
 };
 
 class PlnBuildMgrMessage

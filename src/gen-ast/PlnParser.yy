@@ -198,19 +198,22 @@ struct BodyList {
 			for (auto& child : node) rejectCIncludeExport(child, file);
 	}
 
-	// `link` and `built` stay identifiers elsewhere, like 'in'. Neither is a
+	// `link`, `built` and `target` stay identifiers elsewhere, like 'in'. None is a
 	// statement of the program, so no node comes out (an empty statement list).
 	static json interfaceStmt(json& ast, const string& word, const string& value, const string& file,
-	                          const palan::PlnParser::location_type& loc)
+	                          const string& buildTarget, const palan::PlnParser::location_type& loc)
 	{
 		auto fail = [&](PlnMessageCode code, const string& arg) {
 			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
 				PlnGenAstMessage::getMessage(code, arg)));
 		};
-		if (word != "link" && word != "built") fail(E_UnexpectedString, word);
+		if (word != "link" && word != "built" && word != "target") fail(E_UnexpectedString, word);
 		if (!isInterfaceFile(file)) fail(E_InterfaceOnly, "'" + word + "'");
 		if (word == "link") {
 			ast["libs"].push_back(value);
+		} else if (word == "target") {
+			if (value != buildTarget) fail(E_InterfaceOtherTarget, value);
+			ast["target"] = value;
 		} else {
 			if (value != PALAN_VERSION) fail(E_InterfaceOtherVersion, value);
 			ast["built"] = value;
@@ -372,6 +375,9 @@ module: library_decl statements
 		if (isInterfaceFile(lexer.inputFile) && !ast.contains("built"))
 			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, 1, 1,
 				PlnGenAstMessage::getMessage(E_InterfaceNoVersion)));
+		if (isInterfaceFile(lexer.inputFile) && !ast.contains("target"))
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, 1, 1,
+				PlnGenAstMessage::getMessage(E_InterfaceNoTarget)));
 	}
 	;
 
@@ -487,7 +493,7 @@ expr_stmt: import
 	| KW_GLOBAL ID KW_FOR global_funcs
 	{ $$ = globalPermit($2, $4, @$); }
 	| ID STRING
-	{ $$ = interfaceStmt(ast, $1, $2, lexer.inputFile, @$); }
+	{ $$ = interfaceStmt(ast, $1, $2, lexer.inputFile, buildTarget, @$); }
 	| const_decl
 	{ $$ = {{"stmt-type", "const-decl"}, {"name", $1["name"]}, {"value", move($1["value"])}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| type_decl

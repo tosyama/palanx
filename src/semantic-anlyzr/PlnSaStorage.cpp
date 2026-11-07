@@ -552,7 +552,7 @@ static json pushedValue(json value)
 	return value;
 }
 
-string allocHelperSymbol(const AllocShapeRef& shape, const string& op)
+static string allocSymbolIn(const string& allocators, const AllocShapeRef& shape, const string& op)
 {
 	// LCOV_EXCL_BR_START
 	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
@@ -584,12 +584,17 @@ string allocHelperSymbol(const AllocShapeRef& shape, const string& op)
 	json jparams = json::array();
 	for (auto& t : params) jparams.push_back({{"var-type", t}});
 	string name = "__pln_" + op + "_" + allocShapeKey(shape);
-	return PALAN_ALLOCATORS_MODULE ".." + funcSymbol(name, jparams);
+	return allocators + ".." + funcSymbol(name, jparams);
 	// LCOV_EXCL_BR_STOP
 } // LCOV_EXCL_BR_LINE
 
 // A `[+]T`'s functions also take the lengths its element's type gives.
-json allocHelperCall(const AllocShapeRef& shape, const string& op, json args)
+string PlnSemanticAnalyzer::allocHelperSymbol(const AllocShapeRef& shape, const string& op) const
+{
+	return allocSymbolIn(allocatorsModuleOf(moduleId_), shape, op);
+}
+
+json PlnSemanticAnalyzer::allocHelperCall(const AllocShapeRef& shape, const string& op, json args) const
 {
 	// LCOV_EXCL_BR_START
 	if (shape.family == AllocFamily::Varr || shape.family == AllocFamily::EVarr)
@@ -748,14 +753,14 @@ void PlnSemanticAnalyzer::recordVarrShape(const json& vt)
 {
 	if (!varrBuiltinTypes_.insert(symbolType(vt)).second) return;
 	AllocShapeRef shape = varrShape(vt);
-	for (auto& def : varrBuiltinDefs(vt["base-type"], &shape))
+	for (auto& def : varrBuiltinDefs(vt["base-type"], &shape, allocatorsModuleOf(moduleId_)))
 		varrBuiltins_[def["name"].get<string>()].push_back(def);
 	recordElemShape(shape);
 }
 
 // push takes an element by value and pop returns one; a struct goes as its
 // storage, which push takes over and pop's caller owns.
-json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl)
+json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl, const string& allocators)
 {
 	// LCOV_EXCL_BR_START
 	json i64 = {{"type-kind","prim"},{"type-name","int64"}};
@@ -776,7 +781,7 @@ json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl)
 		if (name == "len") {
 			def["inline"] = true;
 		} else if (impl) {
-			def["symbol"] = allocHelperSymbol(*impl, name);
+			def["symbol"] = allocSymbolIn(allocators, *impl, name);
 			def["len-args"] = helperLens(impl->elem);
 		}
 		if (ret) def["ret-type"] = *ret;

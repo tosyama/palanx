@@ -20,16 +20,18 @@ static const char localTypePrefix[] = "__pln_L";
 string PlnSaMessage::localTypeName(const string& moduleId, int seq, const string& name)
 {
 	// FNV-1a: the module's part must be the same in every build of it.
+	// A top-level type (seq 0) has only its name: a library's interface leaves
+	// other private types out, and the name must stay the one in the object.
 	uint64_t h = 14695981039346656037ull;
 	for (unsigned char c : moduleId) h = (h ^ c) * 1099511628211ull;
 	char hex[17];
 	snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
-	return localTypePrefix + string(hex) + "_" + to_string(seq) + "_" + name;
+	return localTypePrefix + string(hex) + "_" + (seq ? to_string(seq) + "_" : "") + name;
 }
 
 string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
 {
-	static const regex localTypePart(string(localTypePrefix) + "[0-9a-f]{16}_[0-9]+_");
+	static const regex localTypePart(string(localTypePrefix) + "[0-9a-f]{16}_([0-9]+_)?");
 	return regex_replace(format(msg_code, arg1, arg2, arg3), localTypePart, "");
 }
 
@@ -44,6 +46,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 				"Options\n"
 				" -o, --output=<output-path>   Output SA result to file.\n"
 				" -i, --indent                 Output SA json with indent.\n"
+				" --interface                  Check a .pai's AST; output its functions' symbols.\n"
 				" -v, --version                Display version.\n"
 				" -h, --help                   Display help.\n";
 

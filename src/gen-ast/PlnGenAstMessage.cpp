@@ -47,6 +47,13 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 		case E_InterfaceNoVersion:
 			return "an interface file needs a 'built' statement.";
 
+		case E_InterfaceOtherTarget:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "this interface is for the target " + arg1 + ", not the one being built for.";
+
+		case E_InterfaceNoTarget:
+			return "an interface file needs a 'target' statement.";
+
 		case E_NestedCIncludeExport:
 			return "an 'export' clause is accepted only on a top-level cinclude.";
 

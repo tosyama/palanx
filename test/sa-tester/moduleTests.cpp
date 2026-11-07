@@ -594,7 +594,7 @@ TEST(sa, unexported_type_name)
 	// Another module may declare its own A; an importer writes B as is.
 	const json& st = jout["statements"];
 	string a = st[0]["vars"][0]["var-type"]["base-type"]["type-name"];
-	ASSERT_TRUE(regex_match(a, regex("__pln_L[0-9a-f]{16}_[0-9]+_A"))) << a;
+	ASSERT_TRUE(regex_match(a, regex("__pln_L[0-9a-f]{16}_A"))) << a;
 	ASSERT_EQ(st[1]["vars"][0]["var-type"]["base-type"]["type-name"], "B");
 	ASSERT_EQ(jout["alloc-shapes"][1]["owned-fields"][0]["elem"]["name"], a);
 }
@@ -800,7 +800,7 @@ TEST(sa, import_through_interface) {
 
 TEST(sa_error, interface_as_program) {
 	cleanTestEnv();
-	ofstream("out/m.pai") << "built \"" PALAN_VERSION "\";\nexport func f();\n";
+	ofstream("out/m.pai") << "built \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func f();\n";
 	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pai -o out/m.json"), "");
 	string out = execTestCommand("palan-sa out/m.json -o out/m.sa.json");
 	ASSERT_NE(out.find("is an interface, which has no code to compile."), string::npos) << out;

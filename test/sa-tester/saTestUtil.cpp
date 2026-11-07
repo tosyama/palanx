@@ -46,7 +46,7 @@ json run_sa(const string& pa_file)
 json written(const json& sa)
 {
 	// A name inside a symbol carries its length in front, which shrinks with it.
-	static const regex internal("([0-9]*)__pln_L[0-9a-f]{16}_[0-9]+_");
+	static const regex internal("([0-9]*)__pln_L[0-9a-f]{16}_([0-9]+_)?");
 	string in = sa.dump(), out;
 	auto pos = in.cbegin();
 	for (smatch m; regex_search(pos, in.cend(), m, internal); pos = m[0].second) {

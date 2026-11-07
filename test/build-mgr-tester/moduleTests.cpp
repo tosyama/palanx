@@ -741,3 +741,112 @@ TEST(build_mgr, reuse_allocators) {
 	ASSERT_EQ(execTestCommand("bin/palan out/alloc.pa"), "2\n");
 	EXPECT_NE(fs::last_write_time(allocators), before);
 }
+
+static string libBuild(const string& file) {
+	return "bin/palan --lib -o out/lib ../test/testdata/build-mgr/lib_build/" + file;
+}
+
+static const char libOut[] = "out/lib/";
+
+static string fileText(const string& path) {
+	ifstream f(path);
+	stringstream ss;
+	ss << f.rdbuf();
+	return ss.str();
+}
+
+TEST(build_mgr, lib_interface_merges_what_the_main_publishes) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("demo.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/demo.pai"),
+		"library demo;\n"
+		"built \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\n"
+		"link \"m\";\n"
+		"cinclude <stdio.h> export FILE;\n"
+		"type Dup {\n\tint16 keep;\n};\n"
+		"type Used {\n\tint32 q;\n\t[2]int32 owned;\n};\n"
+		"const C = 2;\n"
+		"export type W {\n\t@T t;\n\t[C]int32 c;\n\t@Dup d;\n};\n"
+		"const N = 3;\n"
+		"type OnlyInPrivate {\n\tint32 i;\n};\n"
+		"type Priv {\n\tint32 x;\n\t@OnlyInPrivate i;\n};\n"
+		"type __m1_Dup {\n\tint8 a;\n};\n"
+		"export type Color enum {\n\tRed,\n\tBlue,\n};\n"
+		"export type T {\n\t[N]int32 a;\n\t@Priv p;\n\t@FILE f;\n\t@__m1_Dup d;\n};\n"
+		"export func value(@Used u, Color c) -> int32;\n"
+		"export func many() -> [+]T;\n");
+}
+
+TEST(build_mgr, lib_archive_links_without_the_source) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("demo.pa")), "");
+	string archive = string(libOut) + "demo/demo.a";
+	EXPECT_EQ(execTestCommand("ar t " + archive + " | sort"),
+		"demo.demo.__allocators.o\ndemo.demo.o\ndemo.shapes.__allocators.o\ndemo.shapes.o\n");
+	// A program's first use of the archive: only the stub is not from it.
+	ASSERT_EQ(execTestCommand("lib/palan/dev/tools/palan-codegen --entry demo.demo..main --target " PALAN_TARGET " -o out/entry.s"), "");
+	ASSERT_EQ(execTestCommand("as out/entry.s -o out/entry.o"), "");
+	ASSERT_EQ(execTestCommand("ld out/entry.o " + archive + " -lc -lm -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o out/demo"), "");
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so MALLOC_TRACE=out/trace.log out/demo");
+	ASSERT_EQ(output, "len 2 1 q 7\n");
+	expectBalancedMtrace("out/trace.log", 12);
+}
+
+// Same object file names in one archive: every module's allocators, and a file name of two directories.
+TEST(build_mgr, lib_members_of_one_file_name) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("shared_name_a.pa")), "");
+	EXPECT_EQ(execTestCommand("ar t " + string(libOut) + "demo/a/shared_name_a.a | sort"),
+		"demo.a.shared_name_a.o\ndemo.same.__allocators.o\ndemo.same.o\ndemo.sub.same.__allocators.o\ndemo.sub.same.o\n");
+}
+
+TEST(build_mgr, lib_leaving_out_a_private_type_keeps_the_symbols) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("private_order.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/private_order.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\ntype B {\n\tint32 b;\n};\nexport func get(@B b) -> int32;\n");
+}
+
+// The symbol of `get` holds the type the private alias stands for.
+TEST(build_mgr, lib_type_behind_a_private_alias_stays_public) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("private_alias_public.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/private_alias_public.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\ntype A = Kept;\n"
+		"export type Kept {\n\tint32 k;\n};\nexport func get(@A a) -> int32;\n");
+}
+
+TEST(build_mgr, lib_local_header_used_only_in_bodies) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("body_header.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/body_header.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func one() -> int32;\n");
+}
+
+TEST(build_mgr, lib_library_module_has_its_own_allocators) {
+	expectMtraceRun("398_library_allocators", "1 3\n", 12);
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
+	EXPECT_TRUE(fs::exists(targetWorkDir() + dir + "/lib_build/shapes.pa.alloc/" PALAN_ALLOCATORS_MODULE ".pa.o"));
+	EXPECT_TRUE(fs::exists(targetWorkDir() + dir + "/398_library_allocators.pa.d/" PALAN_ALLOCATORS_MODULE ".pa.o"));
+}
+
+TEST(build_mgr, lib_errors) {
+	string lib_build = fs::weakly_canonical("../test/testdata/build-mgr/lib_build").string() + "/";
+	cleanTestEnv();
+	EXPECT_EQ(execTestCommand("bin/palan --lib ../test/testdata/build-mgr/lib_build/demo.pa"),
+		"return1::palan: --lib needs an output directory (-o)\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_no_decl.pa")),
+		"return1::palan: '" + lib_build + "err_no_decl.pa' has no library declaration, which every module of a library needs\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_inner_no_decl.pa")),
+		"return1::palan: '" + lib_build + "plain.pa' has no library declaration, which every module of a library needs\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_package.pa")),
+		"return1::palan: '" + lib_build + "other_package.pa' belongs to library 'other', not 'demo'\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_global.pa")),
+		"return1::palan: '" + lib_build + "err_global.pa' permits a function to use its global 'hits', but a library's top level never runs\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_local_header.pa")),
+		"return1::" + lib_build + "err_local_header.pa:2:1: error: a library's public declaration cannot yet use a C type of the local header 'local_type.h': its reader would not find the header.\n");
+	EXPECT_NE(execTestCommand(libBuild("err_no_export_clause.pa")).find("FILE"), string::npos);
+	EXPECT_NE(execTestCommand(libBuild("err_private_alias.pa")).find("which its object does not define"), string::npos);
+	EXPECT_FALSE(fs::exists("out/lib"));
+}

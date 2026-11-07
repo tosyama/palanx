@@ -395,6 +395,7 @@ class PlnSemanticAnalyzer {
 	// Exits if `written` names a Palan type this scope cannot write.
 	void requireWritableTypeName(const json& locNode, const string& written) const;
 	void sa_import(const json &stmt);
+	PlnSemanticAnalyzer& importModule(const json& stmt, const json& imp_ast);
 	void sa_cinclude(const json &stmt);
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
 	json foldConstExpr(const json& expr);
@@ -522,10 +523,13 @@ class PlnSemanticAnalyzer {
 	AllocShapeRef varrShape(const json& vt);
 	void recordArrShape(const json& elem);
 	void recordVarrShape(const json& vt);
+	// The symbol of one of the functions build-mgr generates, and a call to it.
+	string allocHelperSymbol(const AllocShapeRef& shape, const string& op) const;
+	json allocHelperCall(const AllocShapeRef& shape, const string& op, json args) const;
 	void recordElemShape(const AllocShapeRef& shape);
 	json varrData(json varr);
 	void enterBlockDecls(const json& stmts);
-	void declareLocalTypeName(const json& stmt);
+	void declareLocalTypeName(const json& stmt, int seq);
 	void leaveBlockDecls();
 	string declaredTypeName(const string& written) const;
 	bool isDeclNameTaken(const string& name) const;
@@ -725,4 +729,6 @@ public:
 	~PlnSemanticAnalyzer();
 	void analysis(const json &ast, const string& astPath);
 	const json& result();
+	// The symbols of a .pai's public functions, as an importer of it resolves them.
+	json interfaceSymbols(const json& ast);
 };

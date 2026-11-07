@@ -59,6 +59,7 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 palan source.pa                  # compile, link and run
 palan source.pa a -b             # run with the arguments "a" and "-b"
 palan -o myapp source.pa         # compile & link -> ./myapp
+palan --lib -o dir main.pa        # build the library main.pa is the main source of
 palan --clean                    # clean intermediate files
 ```
 
@@ -2406,6 +2407,27 @@ flo32 l = len2(@p);
 - Two files may import each other and use each other's types anywhere, including in type
   declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
 
+### Building a Library
+
+`palan --lib -o <dir> main.pa` builds a library from `main.pa` and the files it imports, each of
+which must declare `library` with the same first name:
+
+```palan
+// utf8.pa
+library std;
+export func length([]uint8 s) -> int64 { ... }
+```
+
+This writes `<dir>/std/utf8.pai`, the interface a person reads to learn the library, and
+`<dir>/std/utf8.a`, the code, for the target being built for. Using a library with `import <std/utf8>` is not available yet.
+
+- The interface holds the main file's `export`s, the exported types of other files they use, and
+  whatever private types and constants those need. Any other `export` of an imported file is
+  visible only inside the library, including a type only a private type uses.
+- A file permitting a function to use its `global` is a compile error, since a library's top level never runs.
+- Names starting with `__` should not be declared: the interface may rename a private type to one.
+- Publishing a function with a type alias of another file's private type is a compile error.
+
 ### Program Structure
 
 ```palan
@@ -2536,7 +2558,7 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 ### Exporting C Types
 
 `cinclude <stdio.h> export FILE, fpos_t;` names the C types a module's public declarations use, for
-building it as a library (building libraries is not available yet).
+building it as a library (see [Building a Library](#building-a-library)).
 
 - The module still uses the whole header, so `printf` works as it does without the clause.
 - A program using the library needs the header too. A `cinclude` without the clause, used only in
@@ -2545,6 +2567,8 @@ building it as a library (building libraries is not available yet).
 - The clause comes before `link`: `cinclude <uv.h> export uv_loop_t link "uv";`.
 - It is accepted only on a top-level `cinclude`; in a block or a function it is a compile error.
 - An ordinary `import` of a source file does not read the clause.
+- A local header (`cinclude "x.h" export T;`) is not supported yet when the library's public
+  declarations use the type: its reader would not find the header, so `--lib` reports an error.
 
 ### Typedefs
 

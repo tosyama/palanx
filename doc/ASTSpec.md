@@ -15,7 +15,8 @@ Root
   (SpecAndDesign.md 5.1)
 - module\* - Module identity string (SpecAndDesign.md 3.7), from the file's `library` declaration
   and name (`std.utf8`, `util`)
-- target\* - Target name string (`<arch>-<os>-<abi>`), which the C declarations depend on
+- target\* - Target name string (`<arch>-<os>-<abi>`), which the C declarations depend on; a `.pai`'s
+  `target` statement must name the same
 - ast\* - AST model
 - libs - Link library name string list from `link` statements; only from a `.pai`
 - built - Version string from the `built` statement; only from a `.pai`

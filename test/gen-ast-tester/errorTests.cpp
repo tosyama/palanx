@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include "../test-base/testBase.h"
+#include "../../src/common/PlnDefs.h"
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -69,13 +70,28 @@ TEST(gen_ast_error, interface_only_forms_in_source) {
 
 TEST(gen_ast_error, interface_version) {
 	cleanTestEnv();
-	ofstream("out/old.pai") << "built \"0.0.0\";\nexport func f();\n";
+	ofstream("out/old.pai") << "built \"0.0.0\";\ntarget \"" PALAN_TARGET "\";\nexport func f();\n";
 	string out = execTestCommand("palan-gen-ast out/old.pai");
 	ASSERT_NE(out.find("old.pai:1:1: error: this interface was built by version 0.0.0"), string::npos) << out;
 
 	ofstream("out/none.pai") << "export func f();\n";
 	out = execTestCommand("palan-gen-ast out/none.pai");
 	ASSERT_NE(out.find("none.pai:1:1: error: an interface file needs a 'built' statement."), string::npos) << out;
+}
+
+TEST(gen_ast_error, interface_target) {
+	cleanTestEnv();
+	ofstream("out/other.pai") << "built \"" PALAN_VERSION "\";\ntarget \"aarch64-linux-gnu\";\nexport func f();\n";
+	string out = execTestCommand("palan-gen-ast out/other.pai");
+	ASSERT_NE(out.find("other.pai:2:1: error: this interface is for the target aarch64-linux-gnu"), string::npos) << out;
+
+	ofstream("out/none.pai") << "built \"" PALAN_VERSION "\";\nexport func f();\n";
+	out = execTestCommand("palan-gen-ast out/none.pai");
+	ASSERT_NE(out.find("none.pai:1:1: error: an interface file needs a 'target' statement."), string::npos) << out;
+
+	ofstream("out/m.pa") << "target \"x\";\n";
+	out = execTestCommand("palan-gen-ast out/m.pa");
+	ASSERT_NE(out.find("m.pa:1:1: error: 'target' is accepted only in an interface file (.pai)."), string::npos) << out;
 }
 
 TEST(gen_ast_error, cinclude_export_not_top_level) {

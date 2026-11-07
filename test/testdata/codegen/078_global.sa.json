@@ -154,7 +154,7 @@
           "var-type": {
             "base-type": {
               "type-kind": "struct",
-              "type-name": "__pln_Lee9f1c06db263887_1_P"
+              "type-name": "__pln_Lee9f1c06db263887_P"
             },
             "mutable": true,
             "type-kind": "pntr"
@@ -192,7 +192,7 @@
       "var-type": {
         "base-type": {
           "type-kind": "struct",
-          "type-name": "__pln_Lee9f1c06db263887_1_P"
+          "type-name": "__pln_Lee9f1c06db263887_P"
         },
         "type-kind": "pntr"
       }
@@ -266,7 +266,7 @@
             "value-type": {
               "base-type": {
                 "type-kind": "struct",
-                "type-name": "__pln_Lee9f1c06db263887_1_P"
+                "type-name": "__pln_Lee9f1c06db263887_P"
               },
               "type-kind": "pntr"
             }
@@ -276,7 +276,7 @@
           "var-type": {
             "base-type": {
               "type-kind": "struct",
-              "type-name": "__pln_Lee9f1c06db263887_1_P"
+              "type-name": "__pln_Lee9f1c06db263887_P"
             },
             "type-kind": "pntr"
           }

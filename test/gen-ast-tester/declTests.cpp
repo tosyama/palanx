@@ -1115,6 +1115,7 @@ TEST(gen_ast, interface_text) {
 	ASSERT_EQ(readText("out/io.pai"),
 		"library std.io;\n"
 		"built \"" PALAN_VERSION "\";\n"
+		"target \"" PALAN_TARGET "\";\n"
 		"link \"m\";\n"
 		"link \"rt\";\n"
 		"import \"" + abs + "/other.pa\";\n"
@@ -1150,7 +1151,7 @@ TEST(gen_ast, interface_reads_back_as_the_source) {
 		if (file == "156_interface_forms.pa") {
 			// A signature here has no body: read once as a .pai to get a source to write.
 			execTestCommand("cp ../test/testdata/gen-ast/" + file + " out/forms.pai");
-			ofstream("out/forms.pai", ios::app) << "built \"" PALAN_VERSION "\";\n";
+			ofstream("out/forms.pai", ios::app) << "built \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\n";
 			ASSERT_EQ(execTestCommand("palan-gen-ast out/forms.pai -o out/source.json --interface out/m.pai"), "");
 		} else {
 			ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/gen-ast/" + file
@@ -1181,7 +1182,7 @@ TEST(gen_ast, interface_reads_back_as_the_source) {
 TEST(gen_ast, interface_const_values_read_back) {
 	cleanTestEnv();
 	execTestCommand("cp ../test/testdata/gen-ast/156_interface_forms.pa out/forms.pai");
-	ofstream("out/forms.pai", ios::app) << "built \"" PALAN_VERSION "\";\n";
+	ofstream("out/forms.pai", ios::app) << "built \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\n";
 	ASSERT_EQ(execTestCommand("palan-gen-ast out/forms.pai -o out/source.json --interface out/m.pai"), "");
 	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pai -o out/pai.json"), "");
 	map<string, json> source, pai;

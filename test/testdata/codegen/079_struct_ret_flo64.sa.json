@@ -15,7 +15,7 @@
                 "value-type": {
                   "base-type": {
                     "type-kind": "struct",
-                    "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+                    "type-name": "__pln_Ld2382aadbd5a2010_D"
                   },
                   "type-kind": "pntr"
                 }
@@ -24,7 +24,7 @@
               "var-type": {
                 "base-type": {
                   "type-kind": "struct",
-                  "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+                  "type-name": "__pln_Ld2382aadbd5a2010_D"
                 },
                 "type-kind": "pntr"
               }
@@ -158,7 +158,7 @@
       "ret-type": {
         "base-type": {
           "type-kind": "struct",
-          "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+          "type-name": "__pln_Ld2382aadbd5a2010_D"
         },
         "type-kind": "pntr"
       }
@@ -214,7 +214,7 @@
             "value-type": {
               "base-type": {
                 "type-kind": "struct",
-                "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+                "type-name": "__pln_Ld2382aadbd5a2010_D"
               },
               "type-kind": "pntr"
             }
@@ -223,7 +223,7 @@
           "var-type": {
             "base-type": {
               "type-kind": "struct",
-              "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+              "type-name": "__pln_Ld2382aadbd5a2010_D"
             },
             "type-kind": "pntr"
           }
@@ -277,14 +277,14 @@
           "value-type": {
             "base-type": {
               "type-kind": "struct",
-              "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+              "type-name": "__pln_Ld2382aadbd5a2010_D"
             },
             "type-kind": "pntr"
           },
           "var-type": {
             "base-type": {
               "type-kind": "struct",
-              "type-name": "__pln_Ld2382aadbd5a2010_1_D"
+              "type-name": "__pln_Ld2382aadbd5a2010_D"
             },
             "type-kind": "pntr"
           }

@@ -832,17 +832,17 @@ void PlnSemanticAnalyzer::enterBlockDecls(const json& stmts)
 		}
 		names.push_back(name);
 		topDecls_.emplace(name, TopDecl{&stmt});
-		if (t == "struct-def" || t == "enum-def") declareLocalTypeName(stmt);
+		if (t == "struct-def" || t == "enum-def") declareLocalTypeName(stmt, ++localTypeSeq_);
 	}
 	blockDeclNames_.push_back(names);
 	blockImportedTypes_.emplace_back();
 	for (auto& name : names) ensureTypeName(name, false);
 } // LCOV_EXCL_BR_LINE
 
-void PlnSemanticAnalyzer::declareLocalTypeName(const json& stmt)
+void PlnSemanticAnalyzer::declareLocalTypeName(const json& stmt, int seq)
 {
 	string name = stmt["name"].get<string>();
-	string internal = PlnSaMessage::localTypeName(moduleId_, ++localTypeSeq_, name);
+	string internal = PlnSaMessage::localTypeName(moduleId_, seq, name);
 	localTypeNames_[name] = internal;
 	// A pointer may name the struct before its layout is resolved.
 	if (stmt["stmt-type"] == "struct-def") {

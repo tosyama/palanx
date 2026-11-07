@@ -204,8 +204,8 @@ among such blocks of the enclosing function or of the top level (`util..a.v..b1.
   `[A-Za-z0-9_]` and each `_` followed by two lowercase hex digits written `_` and two lowercase hex
   digits, and `_` in front of a leading digit (`001_hello.pa` → `_001_hello`), after the name of the
   file's `library` declaration if any (`library std;` in `utf8.pa` gives `std.utf8..len.v`). The
-  allocators build-mgr generates are in module `__allocators`, which SA names in the calls it makes
-  to them.
+  allocators build-mgr generates are in module `__allocators`, or `<module>.__allocators` for a module
+  with a `library` declaration (`std.utf8.__allocators`), which SA names in the calls it makes to them.
 - `<param>`: the parameter's normalized `var-type`, each type self-delimiting:
   - prim: its name (`int32`, `flo64`, `bool`, `void`); an enum: `N<len><enum name><base prim>`
   - struct: `<len><type-name>`
@@ -314,9 +314,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Struct and enum names are program-wide identities (build-mgr keys struct allocators
     by them). Each records its defining module, so the same name from a second module,
     or one a C type has, is `E_DuplicateTypeName`. An alias has no program-wide name.
-    An exported struct/enum keeps its written name. One that is not exported, or is
-    declared in a block, is named `__pln_L<module hash>_<seq>_<Name>` in sa.json, so
-    modules and blocks may each declare their own; a message shows the written name.
+    An exported struct/enum keeps its written name. One that is not exported is named
+    `__pln_L<module hash>_<Name>` in sa.json, and one declared in a block
+    `__pln_L<module hash>_<seq>_<Name>`, so modules and blocks may each declare their own;
+    a message shows the written name.
   - A type declaration clashes only with names written in its scope: a type an import
     makes writable, a C type, a const, or another declaration. An imported type that is
     not writable does not clash.

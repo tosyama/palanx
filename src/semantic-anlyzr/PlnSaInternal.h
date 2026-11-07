@@ -95,7 +95,6 @@ inline bool isFloatPrim(const PlnType* t) {
 // struct/array variables, which carry no read-only concept of their own.
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
-// The symbol of one of the functions build-mgr generates, and a call to it.
 json shapeElem(const json& elem);
 json helperLens(const json& elem);
 // The root of an array location (the variable `a` of `a[i][j]`) and how many
@@ -105,15 +104,14 @@ std::pair<const json*, size_t> arrRoot(const json& location);
 // variable keeps from its declaration as __<name>_d<level>.
 json runtimeLen(const json& root, size_t level);
 string allocShapeKey(const AllocShapeRef& shape);
-string allocHelperSymbol(const AllocShapeRef& shape, const string& op);
-json allocHelperCall(const AllocShapeRef& shape, const string& op, json args);
 inline AllocShapeRef structShape(const string& name)
 {
 	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 // len, push, resize and pop of the `[+]T` whose header type is varr, as call
-// candidates calling impl's helpers; only their signatures without impl.
-json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl = nullptr);
+// candidates calling impl's helpers in module `allocators`; only their signatures
+// without impl.
+json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl = nullptr, const string& allocators = "");
 
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 

@@ -182,3 +182,9 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 26. Versions Side by Side in a deb Package
 
 **Summary:** Versions install side by side and `bin/palan` selects one (v0.2.4), but two deb packages cannot both own `/usr/bin/palan`. A deb needs either `update-alternatives` to manage the link, or a single package that replaces the version before it. The install rules already fit a package build, respecting `DESTDIR` and keeping `uninstall` and the documents in separate components; Debian's `share/doc/<package>/` would also have to be settled then.
+
+---
+
+## 27. A Library's Public Declarations Cannot Use a Local Header's C Types
+
+**Summary:** `palan --lib` reports an error when a public declaration needs a type of `cinclude "x.h" export T;`, since the `.pai` would name a path only the build machine has (v0.2.4). Supporting it means installing the header beside the `.pai`, along with the local headers it includes, and rules for where they go. To be decided when a real library needs it.

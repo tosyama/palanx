@@ -1,0 +1,3 @@
+library demo;
+type Hidden { int32 x; };
+export type Name = Hidden;

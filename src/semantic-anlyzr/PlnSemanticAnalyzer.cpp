@@ -792,7 +792,7 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 				t == "const-decl" ? E_DuplicateConstDecl : E_DuplicateTypeName, name) << endl;
 			exit(1);
 		}
-		if (localType) declareLocalTypeName(stmt);
+		if (localType) declareLocalTypeName(stmt, 0);
 	}
 }
 
@@ -1260,16 +1260,41 @@ PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst)
 	return mod;
 }
 
+// The interface is imported by a module of nothing else, so it meets whatever
+// a first user of the library would, private declarations included.
+json PlnSemanticAnalyzer::interfaceSymbols(const json& ast)
+{
+	json probe = {{"original", ast["original"]}, {"module", "__interface_check"}, {"target", ast["target"]}, {"ast", json::object()}}; // LCOV_EXCL_BR_LINE
+	beginModule(probe);
+	json stmt = {{"stmt-type", "import"}}; // LCOV_EXCL_BR_LINE
+	PlnSemanticAnalyzer& sub = importModule(stmt, ast);
+	if (ast["ast"].contains("statements"))
+		for (auto& decl : ast["ast"]["statements"])
+			if (decl.contains("name") && sub.topDecls_.count(decl["name"].get<string>()))
+				sub.ensureTypeName(decl["name"].get<string>(), false);
+	json symbols = json::array();
+	for (auto& f : ast.value("export", json::array())) {
+		json entry = sub.normalizeFuncSig(f, sub.moduleId_);
+		if (entry.contains("symbol")) symbols.push_back(entry["symbol"]);
+	}
+	return symbols;
+} // LCOV_EXCL_BR_LINE
+
 void PlnSemanticAnalyzer::sa_import(const json& stmt)
 {
 	json imp_ast = loadImportAst(stmt);
 	if (imp_ast.is_null()) return;
+	importModule(stmt, imp_ast);
+}
+
+PlnSemanticAnalyzer& PlnSemanticAnalyzer::importModule(const json& stmt, const json& imp_ast)
+{
 
 	rejectImportedGlobals(stmt, imp_ast);
 	PlnSemanticAnalyzer& sub = importTypeContext(imp_ast);
 	adoptExportedTypes(stmt, imp_ast, sub);
 
-	if (!imp_ast.contains("export")) return;
+	if (!imp_ast.contains("export")) return sub;
 
 	string alias = stmt.value("alias", "");
 	bool hasAlias = !alias.empty();
@@ -1299,4 +1324,5 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 		// An operator cannot be written qualified, so an alias does not hide it.
 		currentScope[operatorFuncNames().count(fname) ? "" : alias][fname].push_back(funcEntry);
 	}
+	return sub;
 }

@@ -1,0 +1,3 @@
+library demo;
+import "plain.pa";
+export func f() { g(); }

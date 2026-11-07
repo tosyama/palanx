@@ -19,11 +19,12 @@ namespace {
 
 class Writer {
 public:
-	explicit Writer(const json& ast) : ast_(ast) {}
+	Writer(const json& ast, const vector<string>& libs) : ast_(ast), libs_(libs) {}
 	string write();
 
 private:
 	const json& ast_;
+	const vector<string>& libs_;
 
 	[[noreturn]] void fail(const json& node, const string& what) const;
 	string type(const json& t) const;
@@ -310,9 +311,8 @@ string Writer::write()
 	size_t dot = module.rfind('.');
 	if (dot != string::npos) out += "library " + module.substr(0, dot) + ";\n";
 	out += "built \"" PALAN_VERSION "\";\n";
-	vector<string> libs;
-	collectLinks(ast_["ast"], libs);
-	for (auto& lib : libs) out += "link \"" + lib + "\";\n";
+	out += "target \"" + ast_["target"].get<string>() + "\";\n";
+	for (auto& lib : libs_) out += "link \"" + lib + "\";\n";
 	for (auto& s : stmts) {
 		string kind = s.value("stmt-type", "");
 		if (kind == "var-decl") {
@@ -331,9 +331,256 @@ string Writer::write()
 	return out;
 }
 
+// One library's modules merged into the AST of one interface. Names are looked
+// up in the module writing them, since two modules may mean different things by one.
+class Merger {
+public:
+	Merger(const json& main, const vector<json>& internals);
+	json merged();
+
+private:
+	using Key = pair<int, string>;  // a module's index, a name it declares
+	struct Decl { const json* stmt; const json* var; };
+
+	vector<const json*> modules_;
+	map<string, int> moduleOf_;
+	vector<map<string, Decl>> decls_;
+	vector<map<string, const json*>> cTypes_;  // a C type name, the cinclude naming it
+	set<Key> reached_;
+	set<Key> public_;  // reached without going through a private struct or a const
+	vector<Key> queue_;
+	bool marksPublic_ = true;
+	map<pair<string, string>, vector<string>> cNames_;
+	map<pair<string, string>, const json*> cIncludes_;
+	vector<pair<string, string>> cOrder_;
+	map<Key, string> finals_;
+
+	const json& stmts(int m) const { return (*modules_[m])["ast"]["statements"]; }
+	optional<Key> find(int m, const string& written) const;
+	void mark(const Key& key);
+	bool isPublic(const Key& key) const;
+	void ref(json& nameNode, int m, bool rename);
+	void walk(json& node, int m, bool rename);
+	json declBody(const Key& key) const;
+	void assignFinalNames();
+};
+
+Merger::Merger(const json& main, const vector<json>& internals)
+{
+	modules_.push_back(&main);
+	for (auto& ast : internals) modules_.push_back(&ast);
+	static const json noStmts = json::array();
+	decls_.resize(modules_.size());
+	cTypes_.resize(modules_.size());
+	for (int m = 0; m < modules_.size(); m++) {
+		moduleOf_[(*modules_[m])["original"].get<string>()] = m;
+		const json& list = (*modules_[m])["ast"].contains("statements") ? stmts(m) : noStmts;
+		for (auto& s : list) {
+			string kind = s.value("stmt-type", "");
+			if (kind == "struct-def" || kind == "enum-def" || kind == "type-alias" || kind == "const-decl")
+				decls_[m][s["name"]] = {&s, nullptr};
+			else if (kind == "var-decl")
+				for (auto& v : s["vars"]) decls_[m][v["name"]] = {&s, &v};
+			else if (kind == "cinclude" && s.contains("export-types"))
+				for (auto& name : s["export-types"]) cTypes_[m][name] = &s;
+		}
+	}
+}
+
+optional<Merger::Key> Merger::find(int m, const string& written) const
+{
+	size_t dot = written.find('.');
+	string alias = dot == string::npos ? "" : written.substr(0, dot);
+	string name = dot == string::npos ? written : written.substr(dot + 1);
+	if (alias.empty() && decls_[m].count(name)) return Key{m, name};
+	if (!(*modules_[m])["ast"].contains("statements")) return nullopt;
+	for (auto& s : stmts(m)) {
+		if (s.value("stmt-type", "") != "import" || s.value("alias", "") != alias) continue;
+		auto target = moduleOf_.find(s.value("path", ""));
+		if (target == moduleOf_.end()) continue;
+		if (s.contains("targets")) {
+			const json& targets = s["targets"];
+			if (std::find(targets.begin(), targets.end(), name) == targets.end()) continue;
+		}
+		auto decl = decls_[target->second].find(name);
+		if (decl != decls_[target->second].end() && decl->second.stmt->value("export", false))
+			return Key{target->second, name};
+	}
+	return nullopt;
+}
+
+void Merger::mark(const Key& key)
+{
+	bool isNew = reached_.insert(key).second;
+	bool nowPublic = marksPublic_ && public_.insert(key).second;
+	if (isNew || nowPublic) queue_.push_back(key);
+}
+
+bool Merger::isPublic(const Key& key) const
+{
+	return public_.count(key) && decls_[key.first].at(key.second).stmt->value("export", false);
+}
+
+void Merger::ref(json& nameNode, int m, bool rename)
+{
+	string written = nameNode;
+	auto key = find(m, written);
+	if (key) {
+		if (rename) nameNode = finals_.at(*key);
+		else mark(*key);
+		return;
+	}
+	auto c = cTypes_[m].find(written);
+	if (c == cTypes_[m].end() || rename) return;
+	const json& inc = *c->second;
+	if (inc["path-type"] == "src") {
+		string at = (*modules_[m])["original"].get<string>() + ":" + to_string(inc["loc"][0].get<int>()) + ":"
+			+ to_string(inc["loc"][1].get<int>());
+		throw runtime_error(at + ": error: a library's public declaration cannot yet use a C type of the local header '"
+			+ inc["path"].get<string>() + "': its reader would not find the header.");
+	}
+	pair<string, string> id{inc["path"], inc.value("alias", "")};
+	if (!cIncludes_.count(id)) {
+		cIncludes_[id] = &inc;
+		cOrder_.push_back(id);
+	}
+	auto& names = cNames_[id];
+	if (std::find(names.begin(), names.end(), written) == names.end()) names.push_back(written);
+}
+
+void Merger::walk(json& node, int m, bool rename)
+{
+	if (node.is_array()) {
+		for (auto& child : node) walk(child, m, rename);
+		return;
+	}
+	if (!node.is_object()) return;
+	string kind = node.value("expr-type", "");
+	if (kind == "id" || kind == "call") ref(node["name"], m, rename);
+	if (node.contains("type-kind") && node.contains("type-name") && node["type-name"].is_string())
+		ref(node["type-name"], m, rename);
+	for (auto& [k, child] : node.items())
+		if (child.is_structured()) walk(child, m, rename);
+}
+
+// What of a declaration names other declarations: all of it but a variable's
+// initial value, of which an interface keeps only the sizes.
+json Merger::declBody(const Key& key) const
+{
+	const Decl& d = decls_[key.first].at(key.second);
+	if (!d.var) return *d.stmt;
+	json body = *d.var;
+	body.erase("init");
+	return body;
+}
+
+// An exported type's name is its identity in the program, and the main's other
+// names are in its symbols, so another module's private ones give way.
+void Merger::assignFinalNames()
+{
+	set<string> taken;
+	for (auto& [id, names] : cNames_) taken.insert(names.begin(), names.end());
+	for (auto& key : reached_)
+		if (isPublic(key)) {
+			taken.insert(key.second);
+			finals_[key] = key.second;
+		}
+	for (int m = 0; m < modules_.size(); m++)
+		for (auto& [name, decl] : decls_[m]) {
+			Key key{m, name};
+			if (!reached_.count(key) || finals_.count(key)) continue;
+			finals_[key] = taken.insert(name).second ? name : "__m" + to_string(m) + "_" + name;
+			taken.insert(finals_[key]);
+		}
+}
+
+json Merger::merged()
+{
+	const json& main = *modules_[0];
+	static const json noStmts = json::array();
+	const json& mainStmts = main["ast"].contains("statements") ? stmts(0) : noStmts;
+	for (auto& s : mainStmts) {
+		string kind = s.value("stmt-type", "");
+		bool isDecl = kind == "struct-def" || kind == "enum-def" || kind == "type-alias";
+		if (isDecl && s.value("export", false)) mark({0, s["name"]});
+	}
+	json funcs = main.value("export", json::array());
+	walk(funcs, 0, false);
+	while (!queue_.empty()) {
+		Key key = queue_.back();
+		queue_.pop_back();
+		// A signature's symbol holds what an alias stands for, so an alias, even a
+		// private one, hides nothing. Only a layout depends on a private struct's fields.
+		const json& stmt = *decls_[key.first].at(key.second).stmt;
+		string kind = stmt["stmt-type"];
+		marksPublic_ = public_.count(key) && (kind == "type-alias" || isPublic(key));
+		json body = declBody(key);
+		walk(body, key.first, false);
+	}
+	assignFinalNames();
+	walk(funcs, 0, true);
+
+	json out = json::array();
+	// A library imported by any module stays: its archive is linked.
+	set<string> imported;
+	for (int m = 0; m < modules_.size(); m++) {
+		if (!(*modules_[m])["ast"].contains("statements")) continue;
+		for (auto& s : stmts(m)) {
+			if (s.value("stmt-type", "") != "import" || s["path-type"] == "src") continue;
+			if (imported.insert(s["path"].get<string>() + " " + s.value("alias", "")).second) out.push_back(s);
+		}
+	}
+	for (auto& id : cOrder_) {
+		const json& inc = *cIncludes_.at(id);
+		json c = {{"stmt-type", "cinclude"}, {"path", inc["path"]}, {"path-type", inc["path-type"]}, {"export-types", cNames_.at(id)}};
+		if (inc.contains("alias")) c["alias"] = inc["alias"];
+		out.push_back(move(c));
+	}
+	for (int m = 0; m < modules_.size(); m++) {
+		if (!(*modules_[m])["ast"].contains("statements")) continue;
+		for (auto& s : stmts(m)) {
+			string kind = s.value("stmt-type", "");
+			if (kind == "var-decl") {
+				json decl = s;
+				decl["vars"] = json::array();
+				for (auto& v : s["vars"]) {
+					Key key{m, v["name"]};
+					if (!reached_.count(key)) continue;
+					json var = v;
+					walk(var["var-type"], m, true);
+					var["name"] = finals_.at(key);
+					decl["vars"].push_back(move(var));
+				}
+				if (!decl["vars"].empty()) out.push_back(move(decl));
+			} else if (kind == "struct-def" || kind == "enum-def" || kind == "type-alias" || kind == "const-decl") {
+				Key key{m, s["name"]};
+				if (!reached_.count(key)) continue;
+				json decl = s;
+				walk(decl, m, true);
+				decl["name"] = finals_.at(key);
+				if (!isPublic(key)) decl.erase("export");
+				out.push_back(move(decl));
+			}
+		}
+	}
+	return {{"original", main["original"]}, {"module", main["module"]}, {"target", main["target"]},
+		{"ast", {{"statements", move(out)}}}, {"export", move(funcs)}};
+}
+
 } // namespace
 
 string writeInterface(const json& ast)
 {
-	return Writer(ast).write();
+	vector<string> libs;
+	collectLinks(ast["ast"], libs);
+	return Writer(ast, libs).write();
+}
+
+string writeLibraryInterface(const json& main, const vector<json>& internals)
+{
+	vector<string> libs;
+	collectLinks(main["ast"], libs);
+	for (auto& ast : internals) collectLinks(ast["ast"], libs);
+	json merged = Merger(main, internals).merged();
+	return Writer(merged, libs).write();
 }

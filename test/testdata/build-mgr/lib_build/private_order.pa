@@ -1,0 +1,4 @@
+library demo;
+type A { int32 a; };
+type B { int32 b; };
+export func get(@B b) -> int32 { return b.b; }

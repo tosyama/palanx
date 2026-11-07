@@ -1,0 +1,12 @@
+import "lib_build/demo.pa" as D;
+import "lib_build/shapes.pa" as S;
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type Mine { [2]int32 a; };
+mtrace();
+{
+	[+]S.T t = D.many();
+	[+]Mine m;
+	m.resize(3);
+	printf("%ld %ld\n", len(@t), len(@m));
+}
